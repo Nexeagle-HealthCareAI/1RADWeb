@@ -1,57 +1,54 @@
 trigger:
-branches:
-include:
-- main
+  branches:
+    include:
+      - main
 
 pr:
-branches:
-include:
-- "*"
+  branches:
+    include:
+      - "*"
 
 pool:
-vmImage: ubuntu-latest
+  vmImage: ubuntu-latest
 
 variables:
-nodeVersion: '20.x'     # Updated Node version
+  nodeVersion: '20.x'         # Node LTS
 
 stages:
-
-* stage: BuildAndDeploy
+- stage: BuildAndDeploy
   displayName: Build & Deploy to Azure Static Web Apps
   jobs:
-
-  * job: Build
+  - job: Build
     displayName: Build React
     steps:
-
-    * checkout: self
+    - checkout: self
       clean: true
 
-    * task: NodeTool@0
+    - task: NodeTool@0
       inputs:
-      versionSpec: $(nodeVersion)
+        versionSpec: $(nodeVersion)
       displayName: Use Node $(nodeVersion)
 
-    * task: Cache@2
+    # (Optional) speed up builds by caching node_modules based on package-lock.json
+    - task: Cache@2
       inputs:
-      key: 'npm | "$(Agent.OS)" | $(Build.SourcesDirectory)/package-lock.json'
-      restoreKeys: |
-      npm | "$(Agent.OS)"
-      path: $(Build.SourcesDirectory)/node_modules
+        key: 'npm | "$(Agent.OS)" | $(Build.SourcesDirectory)/package-lock.json'
+        restoreKeys: |
+          npm | "$(Agent.OS)"
+        path: $(Build.SourcesDirectory)/node_modules
       displayName: Cache node_modules
 
-    * script: |
-      node -v
-      npm -v
-      npm ci
-      npm run build
+    - script: |
+        npm ci
+        npm run build
       workingDirectory: $(Build.SourcesDirectory)
       displayName: npm ci & build
 
-    * task: AzureStaticWebApp@0
+    # Deploy to Azure Static Web Apps
+    - task: AzureStaticWebApp@0
       displayName: Deploy to Azure Static Web Apps
       inputs:
-      app_location: '.'
-      output_location: 'dist'
-      api_location: ''
-      azure_static_web_apps_api_token: '63267714dcea289a5d17b2d9f8758cf2ea3a6346a7758d78c822af846803efe601-ac25efd2-8938-4c37-8d4e-c7d5dddc25ca0000326058a09500'
+        app_location: '.'                            # React app root (repo root)
+        output_location: 'dist'                      # Vite build output folder
+        api_location: ''                             # leave empty if you don't have an API
+        azure_static_web_apps_api_token: '3ad2ed7d5cb0df7d75644e9bafe0a0f7368ad9f53ddd18500f295df2e40588ba03-5875f55b-cc00-44ed-90df-6e92871dbb8e000212708b1f9b00'
