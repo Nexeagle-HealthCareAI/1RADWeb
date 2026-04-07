@@ -1852,6 +1852,15 @@ button {
     gap: 12px !important;
   }
 
+  .force-stack-mobile {
+    flex-direction: column !important;
+    align-items: flex-start !important;
+  }
+
+  .mobile-grid-1 {
+    grid-template-columns: 1fr !important;
+  }
+
   /* Table Cardification Transformation */
   .data-table {
     min-width: 100% !important;

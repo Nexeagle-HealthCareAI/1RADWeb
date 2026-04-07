@@ -324,8 +324,8 @@ export default function AdminBoard() {
 
     return (
       <div className="analytics-view" style={{ display: 'flex', flexDirection: 'column', gap: '40px' }}>
-        <div className="filter-bar responsive-control-bar" style={{ background: 'white', borderRadius: '12px', border: '1px solid #dee2e6', padding: '20px', display: 'flex', flexWrap: 'wrap', gap: '20px', boxShadow: '0 2px 10px rgba(0,0,0,0.03)' }}>
-          <div className="filter-group responsive-control-bar" style={{ display: 'flex', alignItems: 'center', gap: '10px 15px', flexWrap: 'wrap' }}>
+        <div className="filter-bar responsive-control-bar force-stack-mobile" style={{ background: 'white', borderRadius: '12px', border: '1px solid #dee2e6', padding: '20px', display: 'flex', flexWrap: 'wrap', gap: '20px', boxShadow: '0 2px 10px rgba(0,0,0,0.03)' }}>
+          <div className="filter-group responsive-control-bar force-stack-mobile" style={{ display: 'flex', alignItems: 'center', gap: '10px 15px', flexWrap: 'wrap' }}>
             <label style={{ fontSize: '11px', fontWeight: 900, color: '#0f52ba', textTransform: 'uppercase', letterSpacing: '1px' }}>Governance Intensity:</label>
             <div className="btn-group" style={{ display: 'flex', gap: '5px' }}>
               <button 
@@ -353,7 +353,7 @@ export default function AdminBoard() {
               <span>Daily Referral Source Distribution</span>
               <span style={{ color: '#0f52ba' }}>{selectedDateFilter === TODAY ? 'TODAY' : selectedDateFilter}</span>
            </div>
-           <div className="referral-list" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '25px' }}>
+           <div className="referral-list mobile-grid-1" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '25px' }}>
               {dynamicReferralStats.length > 0 ? dynamicReferralStats.map((ref, i) => (
                  <div key={ref.name} style={{ background: '#f8f9fa', padding: '15px', borderRadius: '10px', border: i === 0 ? '1px solid #0f52ba' : '1px solid #eee' }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px' }}>

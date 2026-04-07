@@ -167,7 +167,7 @@ export default function TechnicianPage() {
       </div>
 
       {/* Control & Recon Bar */}
-      <div className="filter-bar responsive-control-bar" style={{ background: '#f8f9fa', padding: '20px', borderRadius: '12px', border: '1px solid #eee', marginBottom: '30px', display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '20px', alignItems: 'center' }}>
+      <div className="filter-bar responsive-control-bar force-stack-mobile" style={{ background: '#f8f9fa', padding: '20px', borderRadius: '12px', border: '1px solid #eee', marginBottom: '30px', display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '20px', alignItems: 'center' }}>
         <div className="search-input-group" style={{ background: 'white', border: '1px solid #ddd', borderRadius: '8px', padding: '10px 15px' }}>
           <span className="search-icon">🔍</span>
           <input 
