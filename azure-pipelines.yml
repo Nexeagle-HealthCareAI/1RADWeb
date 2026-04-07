@@ -51,4 +51,4 @@ stages:
         app_location: '.'                            # React app root (repo root)
         output_location: 'dist'                      # Vite build output folder
         api_location: ''                             # leave empty if you don't have an API
-        azure_static_web_apps_api_token: '3ad2ed7d5cb0df7d75644e9bafe0a0f7368ad9f53ddd18500f295df2e40588ba03-5875f55b-cc00-44ed-90df-6e92871dbb8e000212708b1f9b00'
+        azure_static_web_apps_api_token: '63267714dcea289a5d17b2d9f8758cf2ea3a6346a7758d78c822af846803efe601-ac25efd2-8938-4c37-8d4e-c7d5dddc25ca0000326058a09500'
