@@ -9,11 +9,11 @@ export const ROLES = {
 };
 
 export const ROLE_LABELS = {
-  admindoctor: 'Admin Doctor (Full Control)',
-  admin: 'Administrator',
-  receptionist: 'Reception / Appointment',
-  technician: 'Technician',
-  doctor: 'Doctor / Radiologist',
+  admindoctor: 'Chief Medical Officer',
+  admin: 'Operations Director',
+  receptionist: 'Intake Coordinator',
+  technician: 'Imaging Specialist',
+  doctor: 'Diagnostic Consultant',
 };
 
 // Default landing route for each role
@@ -28,27 +28,31 @@ export const ROLE_HOME = {
 // Sidebar navigation items
 export const NAV_ITEMS = [
   {
-    label: 'Admin Board',
+    label: 'COMMAND CENTER',
     route: '/admin-board',
-    icon: '⚙️',
+    icon: '🏢',
     allowedRoles: ['admindoctor', 'admin'],
   },
   {
-    label: 'Appointment Board',
+    label: 'MISSION SCHEDULER',
     route: '/appointment-board',
-    icon: '📅',
+    icon: '📡',
     allowedRoles: ['admindoctor', 'admin', 'receptionist'],
   },
+/*
   {
-    label: 'Technician Page',
+    label: 'SCANNING BAY',
     route: '/technician',
-    icon: '🖥️',
+    icon: '🧿',
     allowedRoles: ['admindoctor', 'technician'],
+    isUpcoming: true,
   },
   {
-    label: 'Doctor Board',
+    label: 'DIAGNOSTIC SUITE',
     route: '/doctor-board',
-    icon: '🩺',
+    icon: '🧠',
     allowedRoles: ['admindoctor', 'doctor'],
+    isUpcoming: true,
   },
+*/
 ];

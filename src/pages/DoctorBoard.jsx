@@ -124,10 +124,13 @@ export default function DoctorBoard() {
             </div>
             <div style={{ flex: 1, overflowY: 'auto', padding: '40px', display: 'flex', justifyContent: 'center' }}>
                <div id="printable-report" style={{ width: '210mm', minHeight: '297mm', background: 'white', padding: '20mm', color: '#333', fontFamily: 'serif', position: 'relative' }}>
-                  <div style={{ borderBottom: '2px solid #0f52ba', paddingBottom: '15px', marginBottom: '20px' }}>
-                     <h1 style={{ color: '#0f52ba', margin: 0, fontSize: '24px' }}>easyRAD DIAGNOSTICS</h1>
-                     <p style={{ fontSize: '10px', color: '#666' }}>Finalized Diagnostic Impression</p>
-                  </div>
+                   <div style={{ borderBottom: '2px solid #0f52ba', paddingBottom: '15px', marginBottom: '20px', display: 'flex', alignItems: 'center', gap: '15px' }}>
+                      <img src="/Logo.png" alt="NexEgale" style={{ height: '30px', width: 'auto' }} />
+                      <div>
+                        <h1 style={{ color: '#0f52ba', margin: 0, fontSize: '24px' }}>NexEgale 1Rad</h1>
+                        <p style={{ fontSize: '10px', color: '#666' }}>Finalized Diagnostic Impression</p>
+                      </div>
+                   </div>
                   <div style={{ background: '#f8f9fa', padding: '15px', borderRadius: '4px', marginBottom: '25px', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', border: '1px solid #eee' }}>
                      <div style={{ fontSize: '11px' }}><strong>PATIENT:</strong> {printModalData.patientName}</div>
                      <div style={{ fontSize: '11px' }}><strong>STUDY:</strong> {printModalData.studyType}</div>

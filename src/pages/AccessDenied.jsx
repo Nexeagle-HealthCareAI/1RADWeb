@@ -9,7 +9,7 @@ export default function AccessDenied() {
 
   const handleGoHome = () => {
     if (currentUser) {
-      navigate(ROLE_HOME[currentUser.role] || '/');
+      navigate(ROLE_HOME[currentUser.roles?.[0]] || '/');
     } else {
       navigate('/login');
     }

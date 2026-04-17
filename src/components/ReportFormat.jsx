@@ -44,8 +44,6 @@ export default function ReportFormat({ doc, onUpdate }) {
     if (!file) return;
 
     setFileType(file.type);
-    const url = URL.createObjectURL(file);
-    setPreviewUrl(url);
 
     const reader = new FileReader();
     reader.onload = (ev) => {

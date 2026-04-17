@@ -1,7 +1,6 @@
-import { useState, useMemo } from 'react';
+import React, { useState, useMemo } from 'react';
 import useAuth from '../auth/useAuth';
 import { ROLE_LABELS } from '../data/roles';
-import ReportFormat from '../components/ReportFormat';
 import '../styles/global.css';
 
 // --- HELPERS ---
@@ -77,13 +76,15 @@ const SECTIONS_POOL = [
 ];
 
 export default function AdminBoard() {
-  const { currentUser, users, createUser, updateUser, deleteUser } = useAuth();
-  const [activeTab, setActiveTab] = useState('ANALYTICS');
+  const { currentUser, users, createUser, updateUser, deleteUser, activeCenter } = useAuth();
+  const [activeTab, setActiveTab] = useState('INTELLIGENCE');
   const [layouts, setLayouts] = useState(INITIAL_LAYOUTS);
   const [patients, setPatients] = useState([
-    { id: 'P001', name: 'Robert Fox', mobile: '9876543210', age: 52, gender: 'Male', district: 'Downtown', referredBy: 'Dr. Brown', registered: '2024-04-01' },
-    { id: 'P002', name: 'Emily Chen', mobile: '9123456789', age: 28, gender: 'Female', district: 'Westside', referredBy: 'Dr. Sarah', registered: '2024-04-03' },
-    { id: 'P003', name: 'Michael Ross', mobile: '9555666777', age: 41, gender: 'Male', district: 'Uptown', referredBy: 'Dr. Mike', registered: '2024-04-04' }
+    { id: 'P001', name: 'James Wilson', mobile: '9876543210', age: 45, gender: 'Male', district: 'Downtown', referredBy: 'Dr. Sarah Mitchell', sourceContact: '9888776655', registered: TODAY },
+    { id: 'P002', name: 'Elena Rodriguez', mobile: '9876543211', age: 32, gender: 'Female', district: 'Westside', referredBy: 'Self / Walk-in', sourceContact: 'N/A', registered: TODAY },
+    { id: 'P003', name: 'Marcus Chen', mobile: '9876543212', age: 28, gender: 'Male', district: 'Uptown', referredBy: 'Dr. Mike', sourceContact: '9555666777', registered: getISODate(2) },
+    { id: 'P004', name: 'Sarah Jenkins', mobile: '9123456780', age: 34, gender: 'Female', district: 'Downtown', referredBy: 'Dr. Sarah Mitchell', sourceContact: '9888776655', registered: getISODate(1) },
+    { id: 'P005', name: 'Robert Fox', mobile: '9876543214', age: 52, gender: 'Male', district: 'Downtown', referredBy: 'Dr. John Doe', sourceContact: '9777665544', registered: getISODate(5) }
   ]);
   const [patientSearch, setPatientSearch] = useState('');
   
@@ -105,6 +106,11 @@ export default function AdminBoard() {
   // Custom Sections Registry
   const [customSections, setCustomSections] = useState([]);
   const [newSectionName, setNewSectionName] = useState('');
+
+  // Referral Intel State
+  const [referralRange, setReferralRange] = useState({ start: getISODate(7), end: TODAY });
+  const [referralFilterMode, setReferralFilterMode] = useState('RANGE'); // 'SINGLE' or 'RANGE'
+  const [expandedReferrer, setExpandedReferrer] = useState(null);
 
   // Subscription & System Governance
   const [subscription, setSubscription] = useState({ 
@@ -144,13 +150,13 @@ export default function AdminBoard() {
 
   const topReferrerName = dynamicReferralStats.length > 0 ? dynamicReferralStats[0].name : 'N/A';
 
-  const handleDeleteUser = (id, role) => {
-    if (role === 'admindoctor') return alert('Access Denied: The primary AdminDoctor account is permanently locked.');
+  const handleDeleteUser = (id, roles) => {
+    if (roles && roles.includes('admindoctor')) return alert('Access Denied: The primary AdminDoctor account is permanently locked.');
     if (window.confirm('Are you sure you want to permanently delete this user account?')) deleteUser(id);
   };
 
   const handleOpenUserDrawer = (user = null) => {
-    setEditUser(user || { 
+    setEditUser(user ? { ...user, role: user.roles?.[0] || 'doctor' } : { 
       name: '', 
       email: '', 
       password: '', 
@@ -175,9 +181,11 @@ export default function AdminBoard() {
     }
 
     if (editUser.id) {
-       updateUser(editUser.id, editUser);
+       const { role, ...rest } = editUser;
+       updateUser(editUser.id, { ...rest, roles: [role] });
     } else {
-       createUser({ ...editUser, id: Date.now(), status: 'active' });
+       const { role, ...rest } = editUser;
+       createUser({ ...rest, id: Date.now(), status: 'active', roles: [role] });
     }
     setIsUserDrawerOpen(false);
   };
@@ -287,7 +295,7 @@ export default function AdminBoard() {
 
   // --- RENDERERS ---
   const renderDocumentation = () => {
-    const doctors = users.filter(u => u.role === 'doctor' || u.role === 'admindoctor');
+    const doctors = users.filter(u => u.roles?.includes('doctor') || u.roles?.includes('admindoctor'));
     const docId = selectedDocId || (doctors[0]?.id.toString());
     const doc = users.find(u => u.id === parseInt(docId));
 
@@ -307,14 +315,15 @@ export default function AdminBoard() {
             onChange={e => setSelectedDocId(e.target.value)}
             style={{ padding: '8px', borderRadius: '8px', border: '2px solid #0f52ba', fontWeight: 700, minWidth: '220px', cursor: 'pointer' }}
           >
-            {doctors.map(d => <option key={d.id} value={d.id}>{d.name} ({ROLE_LABELS[d.role]})</option>)}
+            {doctors.map(d => <option key={d.id} value={d.id}>{d.name} ({ROLE_LABELS[d.roles?.[0]]})</option>)}
           </select>
         </div>
 
-        <ReportFormat 
-          doc={doc} 
-          onUpdate={(type, data) => updateUser(doc.id, { [type]: data })}
-        />
+        <div style={{ padding: '40px', background: '#f8f9fa', borderRadius: '12px', border: '1px dashed #ccc', textAlign: 'center', color: '#888' }}>
+           <div style={{ fontSize: '24px', marginBottom: '10px' }}>📁</div>
+           <div style={{ fontSize: '12px', fontWeight: 900 }}>REPORTING PROTOCOLS DEACTIVATED</div>
+           <div style={{ fontSize: '10px' }}>Protocol branding and template management has been moved to the core configuration bay.</div>
+        </div>
       </div>
     );
   };
@@ -372,32 +381,48 @@ export default function AdminBoard() {
            </div>
         </div>
 
-        {/* Level 1: Primary Metrics */}
-        <div className="summary-grid" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '20px' }}>
-          <div className="summary-card" style={{ background: 'white', border: '1px solid #dee2e6', padding: '20px', borderRadius: '12px', boxShadow: '0 2px 10px rgba(0,0,0,0.03)' }}>
-             <span className="label" style={{ display: 'block', fontSize: '10px', fontWeight: 800, color: '#6c5ce7', textTransform: 'uppercase', marginBottom: '10px' }}>Unique Patients</span>
-             <span className="value" style={{ fontSize: '28px', fontWeight: 900, color: '#2c3e50' }}>{patients.length}</span>
-             <div className="mini-trend" style={{ fontSize: '10px', color: '#6c5ce7', marginTop: '5px' }}>Total Agent Registry</div>
+        {/* Level 1: Tactical Hero KPI Nodes */}
+        <div className="summary-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: '25px' }}>
+          <div className="summary-card" style={{ background: 'linear-gradient(135deg, #0f52ba 0%, #061a40 100%)', padding: '28px', borderRadius: '20px', color: 'white', border: '1px solid rgba(255,255,255,0.05)', boxShadow: '0 10px 30px rgba(15, 82, 186, 0.2)' }}>
+             <span className="label" style={{ display: 'block', fontSize: '10px', fontWeight: 900, color: 'var(--tactical-cyan)', textTransform: 'uppercase', letterSpacing: '2px', marginBottom: '15px' }}>Universal Registry</span>
+             <div style={{ display: 'flex', alignItems: 'baseline', gap: '10px' }}>
+                <span className="value" style={{ fontSize: '42px', fontWeight: 950, lineHeight: 1 }}>{patients.length}</span>
+                <span style={{ fontSize: '12px', fontWeight: 700, opacity: 0.6 }}>UNITS</span>
+             </div>
+             <div className="mini-trend" style={{ fontSize: '9px', color: 'var(--tactical-cyan)', marginTop: '20px', fontWeight: 800 }}>LIVE CLOUD SYNC ACTIVE</div>
           </div>
-          <div className="summary-card" style={{ background: 'white', border: '1px solid #dee2e6', padding: '20px', borderRadius: '12px', boxShadow: '0 2px 10px rgba(0,0,0,0.03)' }}>
-             <span className="label" style={{ display: 'block', fontSize: '10px', fontWeight: 800, color: '#0f52ba', textTransform: 'uppercase', marginBottom: '10px' }}>Daily Volume</span>
-             <span className="value" style={{ fontSize: '28px', fontWeight: 900, color: '#2c3e50' }}>{REFERRAL_LOG.filter(l => l.date === selectedDateFilter && (referrerFilter === 'ALL' || l.referredBy === referrerFilter)).length}</span>
-             <div className="mini-trend" style={{ fontSize: '10px', color: '#2ecc71', marginTop: '5px' }}>↑ 12% vs Standard</div>
+
+          <div className="summary-card" style={{ background: 'white', border: '1px solid #eee', padding: '28px', borderRadius: '20px', boxShadow: '0 4px 20px rgba(0,0,0,0.03)' }}>
+             <span className="label" style={{ display: 'block', fontSize: '10px', fontWeight: 900, color: '#64748b', textTransform: 'uppercase', letterSpacing: '2px', marginBottom: '15px' }}>Strategic Volume</span>
+             <div style={{ display: 'flex', alignItems: 'baseline', gap: '10px' }}>
+                <span className="value" style={{ fontSize: '42px', fontWeight: 950, color: '#0f52ba', lineHeight: 1 }}>{REFERRAL_LOG.filter(l => l.date === selectedDateFilter).length}</span>
+                <span style={{ fontSize: '12px', fontWeight: 800, color: '#0f52ba', opacity: 0.6 }}>MISSIONS</span>
+             </div>
+             <div style={{ marginTop: '20px', fontSize: '9px', fontWeight: 900, color: '#2ecc71', background: '#e9f7ef', padding: '4px 10px', borderRadius: '20px', display: 'inline-block' }}>↑ 14% OPS GROWTH</div>
           </div>
-          <div className="summary-card" style={{ background: 'white', border: '1px solid #dee2e6', padding: '20px', borderRadius: '12px', boxShadow: '0 2px 10px rgba(0,0,0,0.03)' }}>
-             <span className="label" style={{ display: 'block', fontSize: '10px', fontWeight: 800, color: '#2ecc71', textTransform: 'uppercase', marginBottom: '10px' }}>Estimated Yield</span>
-             <span className="value" style={{ fontSize: '28px', fontWeight: 900, color: '#27ae60' }}>${REFERRAL_LOG.filter(l => l.date === selectedDateFilter && (referrerFilter === 'ALL' || l.referredBy === referrerFilter)).length * 80}</span>
-             <div className="mini-trend" style={{ fontSize: '10px', color: '#aaa', marginTop: '5px' }}>Projected Revenue</div>
+
+          <div className="summary-card" style={{ background: 'white', border: '1px solid #eee', padding: '28px', borderRadius: '20px', boxShadow: '0 4px 20px rgba(0,0,0,0.03)' }}>
+             <span className="label" style={{ display: 'block', fontSize: '10px', fontWeight: 900, color: '#64748b', textTransform: 'uppercase', letterSpacing: '2px', marginBottom: '15px' }}>Financial Yield</span>
+             <div style={{ display: 'flex', alignItems: 'baseline', gap: '10px' }}>
+                <span style={{ fontSize: '24px', fontWeight: 900, color: '#10b981' }}>$</span>
+                <span className="value" style={{ fontSize: '42px', fontWeight: 950, color: '#10b981', lineHeight: 1 }}>{REFERRAL_LOG.filter(l => l.date === selectedDateFilter).length * 85}</span>
+             </div>
+             <div style={{ marginTop: '20px', height: '4px', background: '#f1f5f9', borderRadius: '2px', overflow: 'hidden' }}>
+                <div style={{ width: '75%', height: '100%', background: '#10b981', borderRadius: '2px' }}></div>
+             </div>
+             <div style={{ fontSize: '8px', color: '#94a3b8', fontWeight: 800, marginTop: '8px' }}>PROJECTED TARGET ATTAINMENT: 75%</div>
           </div>
-          <div className="summary-card" style={{ background: 'white', border: '1px solid #dee2e6', padding: '20px', borderRadius: '12px', boxShadow: '0 2px 10px rgba(0,0,0,0.03)' }}>
-             <span className="label" style={{ display: 'block', fontSize: '10px', fontWeight: 800, color: '#f39c12', textTransform: 'uppercase', marginBottom: '10px' }}>Dominant Channel</span>
-             <span className="value" style={{ fontSize: '13px', fontWeight: 900, color: '#2c3e50', overflow: 'hidden', textOverflow: 'ellipsis', display: 'block' }}>{topReferrerName}</span>
-             <div className="mini-trend" style={{ fontSize: '10px', color: '#f39c12', marginTop: '5px' }}>Top Referrer Status</div>
-          </div>
-          <div className="summary-card" style={{ background: 'white', border: '1px solid #dee2e6', padding: '20px', borderRadius: '12px', boxShadow: '0 2px 10px rgba(0,0,0,0.03)' }}>
-             <span className="label" style={{ display: 'block', fontSize: '10px', fontWeight: 800, color: '#e74c3c', textTransform: 'uppercase', marginBottom: '10px' }}>Study Latency</span>
-             <span className="value" style={{ fontSize: '28px', fontWeight: 900, color: '#c0392b' }}>42m</span>
-             <div className="mini-trend" style={{ fontSize: '10px', color: '#e74c3c', marginTop: '5px' }}>Sector Performance</div>
+
+          <div className="summary-card" style={{ background: 'white', border: '1px solid #eee', padding: '28px', borderRadius: '20px', boxShadow: '0 4px 20px rgba(0,0,0,0.03)' }}>
+             <span className="label" style={{ display: 'block', fontSize: '10px', fontWeight: 900, color: '#64748b', textTransform: 'uppercase', letterSpacing: '2px', marginBottom: '15px' }}>Command Latency</span>
+             <div style={{ display: 'flex', alignItems: 'baseline', gap: '10px' }}>
+                <span className="value" style={{ fontSize: '42px', fontWeight: 950, color: '#e74c3c', lineHeight: 1 }}>38m</span>
+                <span style={{ fontSize: '12px', fontWeight: 800, color: '#e74c3c', opacity: 0.6 }}>AVG</span>
+             </div>
+             <div style={{ display: 'flex', gap: '4px', marginTop: '20px' }}>
+                {[1,2,3,4,5].map(i => <div key={i} style={{ flex: 1, height: '4px', borderRadius: '2px', background: i <= 3 ? '#e74c3c' : '#f1f5f9' }}></div>)}
+             </div>
+             <div style={{ fontSize: '9px', fontWeight: 900, color: '#e74c3c', marginTop: '8px' }}>CRITICAL PEAK FLOW DETECTED</div>
           </div>
         </div>
 
@@ -601,56 +626,181 @@ export default function AdminBoard() {
            </div>
         </div>
 
-        {/* Level 4: Operational Study Funnel */}
-        <div className="chart-container" style={{ background: 'white', border: '1px solid #dee2e6', padding: '25px', borderRadius: '12px' }}>
-           <div className="chart-title" style={{ fontSize: '11px', fontWeight: 900, color: '#888', textTransform: 'uppercase', letterSpacing: '1px', marginBottom: '30px' }}>Operational Diagnostic Funnel (Study Lifecycle)</div>
-           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', position: 'relative' }}>
-              {[
-                 { label: 'APPOINTMENTS', count: 1250, color: '#eee' },
-                 { label: 'ARRIVED/READY', count: 840, color: '#f39c12' },
-                 { label: 'IN PROGRESS', count: 520, color: '#0f52ba' },
-                 { label: 'FINAL REPORTED', count: 485, color: '#2ecc71' }
-              ].map((step, i) => (
-                 <div key={step.label} style={{ flex: 1, textAlign: 'center', position: 'relative', zIndex: 2 }}>
-                    <div style={{ fontSize: '20px', fontWeight: 900, color: step.color === '#eee' ? '#333' : step.color }}>{step.count}</div>
-                    <div style={{ fontSize: '9px', fontWeight: 800, marginTop: '8px', color: '#888' }}>{step.label}</div>
-                    {i < 3 && <div style={{ position: 'absolute', top: '15px', right: '-25%', width: '50%', height: '2px', background: '#eee', zIndex: -1 }}></div>}
-                 </div>
-              ))}
-           </div>
-        </div>
       </div>
     );
   };
 
-  const renderSettings = () => {
+  const renderReferralIntel = () => {
+    // Aggregate data based on range
+    const aggregated = patients.reduce((acc, p) => {
+      const isMatched = referralFilterMode === 'SINGLE' 
+        ? p.registered === referralRange.start
+        : (p.registered >= referralRange.start && p.registered <= referralRange.end);
+
+      if (isMatched) {
+        const source = p.referredBy || 'Direct / Walk-in';
+        if (!acc[source]) {
+          acc[source] = {
+            name: source,
+            contact: p.sourceContact || 'N/A',
+            patients: []
+          };
+        }
+        acc[source].patients.push(p);
+      }
+      return acc;
+    }, {});
+
+    const sources = Object.values(aggregated).sort((a, b) => b.patients.length - a.patients.length);
+
     return (
-      <div className="settings-coming-soon" style={{ 
-        height: '400px', 
-        background: 'white', 
-        border: '1px solid #dee2e6', 
-        borderRadius: '15px', 
-        display: 'flex', 
-        flexDirection: 'column', 
-        alignItems: 'center', 
-        justifyContent: 'center',
-        textAlign: 'center',
-        padding: '40px',
-        boxShadow: '0 4px 20px rgba(0,0,0,0.05)'
-      }}>
-         <div style={{ width: '80px', height: '80px', background: '#f0f3fd', borderRadius: '50%', display: 'flex', alignItems: 'center', justify: 'center', marginBottom: '25px' }}>
-            <span style={{ fontSize: '32px' }}>⚙️</span>
-         </div>
-         <h2 style={{ fontSize: '24px', fontWeight: 900, color: '#0f52ba', marginBottom: '10px' }}>SYSTEM GOVERNANCE SETTINGS</h2>
-         <p style={{ fontSize: '14px', color: '#666', maxWidth: '400px', lineHeight: '1.6', fontWeight: 600 }}>
-            Advanced institutional licensing, multi-center sync, and AI-reporting protocols are scheduled for the next clinical deployment (Q3 2026).
-         </p>
-         <div style={{ marginTop: '30px', display: 'flex', gap: '15px', alignItems: 'center' }}>
-            <span style={{ background: '#f1f2f6', color: '#0f52ba', padding: '6px 15px', borderRadius: '20px', fontSize: '10px', fontWeight: 900 }}>PROVISIONING ACTIVE 📡</span>
-            <div style={{ width: '100px', height: '4px', background: '#eee', borderRadius: '2px', overflow: 'hidden' }}>
-               <div style={{ width: '75%', height: '100%', background: '#0f52ba' }}></div>
+      <div className="referral-intel-view">
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '35px' }}>
+          <div>
+            <h2 style={{ fontSize: '12px', fontWeight: 900, textTransform: 'uppercase', letterSpacing: '2px', color: '#0f52ba', marginBottom: '4px' }}>Source Intelligence Matrix</h2>
+            <p style={{ fontSize: '11px', color: '#888', fontWeight: 600 }}>Deep-recon analysis of patient acquisition channels and source attribution.</p>
+          </div>
+          
+          <div style={{ display: 'flex', gap: '15px', alignItems: 'center', background: 'rgba(255,255,255,0.8)', padding: '8px', borderRadius: '14px', border: '1px solid #eee', backdropFilter: 'blur(10px)' }}>
+            <div style={{ display: 'flex', background: '#f1f2f6', padding: '4px', borderRadius: '10px' }}>
+              {['SINGLE', 'RANGE'].map(mode => (
+                <button 
+                  key={mode}
+                  onClick={() => setReferralFilterMode(mode)}
+                  style={{ 
+                    padding: '8px 16px', borderRadius: '8px', border: 'none', fontSize: '9px', fontWeight: 950,
+                    background: referralFilterMode === mode ? 'white' : 'transparent',
+                    color: referralFilterMode === mode ? '#0f52ba' : '#64748b',
+                    boxShadow: referralFilterMode === mode ? '0 4px 10px rgba(0,0,0,0.05)' : 'none',
+                    cursor: 'pointer', transition: 'all 0.2s', letterSpacing: '1px'
+                  }}
+                >
+                  {mode === 'SINGLE' ? 'SINGLE SCAN' : 'TEMPORAL RANGE'}
+                </button>
+              ))}
             </div>
-         </div>
+
+            <div style={{ display: 'flex', gap: '12px', alignItems: 'center', padding: '0 10px' }}>
+              <input 
+                type="date" 
+                value={referralRange.start} 
+                onChange={e => setReferralRange(prev => ({ ...prev, start: e.target.value }))}
+                style={{ border: 'none', background: 'transparent', fontSize: '11px', fontWeight: 800, color: '#0f52ba', outline: 'none' }}
+              />
+              {referralFilterMode === 'RANGE' && (
+                <>
+                  <span style={{ fontSize: '10px', color: '#ccc' }}>→</span>
+                  <input 
+                    type="date" 
+                    value={referralRange.end} 
+                    onChange={e => setReferralRange(prev => ({ ...prev, end: e.target.value }))}
+                    style={{ border: 'none', background: 'transparent', fontSize: '11px', fontWeight: 800, color: '#0f52ba', outline: 'none' }}
+                  />
+                </>
+              )}
+            </div>
+          </div>
+        </div>
+
+        <div className="summary-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '20px', marginBottom: '35px' }}>
+          <div style={{ background: 'white', padding: '24px', borderRadius: '18px', border: '1px solid #eee', boxShadow: '0 4px 15px rgba(0,0,0,0.02)' }}>
+            <span style={{ fontSize: '9px', fontWeight: 900, color: '#aaa', letterSpacing: '1px' }}>TOTAL CAPTURED</span>
+            <div style={{ fontSize: '28px', fontWeight: 950, color: '#0f52ba', marginTop: '8px' }}>
+              {Object.values(aggregated).reduce((sum, s) => sum + s.patients.length, 0)}
+              <span style={{ fontSize: '12px', color: '#ccc', marginLeft: '8px' }}>SCAN UNITS</span>
+            </div>
+          </div>
+          <div style={{ background: 'white', padding: '24px', borderRadius: '18px', border: '1px solid #eee', boxShadow: '0 4px 15px rgba(0,0,0,0.02)' }}>
+            <span style={{ fontSize: '9px', fontWeight: 900, color: '#aaa', letterSpacing: '1px' }}>ACTIVE CHANNELS</span>
+            <div style={{ fontSize: '28px', fontWeight: 950, color: '#1a1a2e', marginTop: '8px' }}>{sources.length}</div>
+          </div>
+          <div style={{ background: 'linear-gradient(135deg, #10b981 0%, #059669 100%)', padding: '24px', borderRadius: '18px', color: 'white', boxShadow: '0 8px 20px rgba(16, 185, 129, 0.2)' }}>
+            <span style={{ fontSize: '9px', fontWeight: 900, opacity: 0.8, letterSpacing: '1px' }}>DOMINANT PROTOCOL SOURCE</span>
+            <div style={{ fontSize: '20px', fontWeight: 950, marginTop: '8px' }}>{sources[0]?.name || 'N/A'}</div>
+          </div>
+        </div>
+
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '15px' }}>
+          {sources.map(s => {
+            const isExpanded = expandedReferrer === s.name;
+            return (
+              <div key={s.name} style={{ 
+                background: 'white', borderRadius: '16px', border: isExpanded ? '1px solid #0f52ba' : '1px solid #eee', 
+                overflow: 'hidden', transition: 'all 0.3s ease',
+                boxShadow: isExpanded ? '0 10px 30px rgba(15, 82, 186, 0.1)' : '0 2px 8px rgba(0,0,0,0.02)'
+              }}>
+                <div style={{ padding: '20px 25px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <div style={{ display: 'flex', gap: '20px', alignItems: 'center' }}>
+                    <div style={{ width: '45px', height: '45px', borderRadius: '12px', background: '#f0f5ff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '20px', color: '#0f52ba', border: '1px solid rgba(15, 82, 186, 0.1)' }}>
+                      📡
+                    </div>
+                    <div>
+                      <div style={{ fontSize: '15px', fontWeight: 900, color: '#1a1a2e' }}>{s.name.toUpperCase()}</div>
+                      <div style={{ fontSize: '10px', color: '#888', fontWeight: 700, marginTop: '2px' }}>CONTACT RECON: {s.contact}</div>
+                    </div>
+                  </div>
+                  
+                  <div style={{ display: 'flex', gap: '25px', alignItems: 'center' }}>
+                    <div style={{ textAlign: 'right' }}>
+                      <div style={{ fontSize: '18px', fontWeight: 950, color: '#0f52ba' }}>{s.patients.length}</div>
+                      <div style={{ fontSize: '8px', fontWeight: 900, color: '#aaa', letterSpacing: '1px' }}>MISSIONS</div>
+                    </div>
+                    <button 
+                      onClick={() => setExpandedReferrer(isExpanded ? null : s.name)}
+                      style={{ 
+                        padding: '10px 20px', borderRadius: '12px', border: 'none', 
+                        background: isExpanded ? '#0f52ba' : '#f8f9fa', 
+                        color: isExpanded ? 'white' : '#64748b',
+                        fontSize: '9px', fontWeight: 950, cursor: 'pointer',
+                        transition: 'all 0.2s', letterSpacing: '1px'
+                      }}
+                    >
+                      {isExpanded ? 'SCAN COMPLETE' : 'DEPLOY LOGS \u2193'}
+                    </button>
+                  </div>
+                </div>
+
+                {isExpanded && (
+                  <div style={{ padding: '0 25px 25px', background: '#fcfdfe' }}>
+                    <div style={{ 
+                      background: 'white', borderRadius: '12px', border: '1px solid rgba(15, 82, 186, 0.1)', 
+                      padding: '0', overflow: 'hidden'
+                    }}>
+                      <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                        <thead style={{ background: '#f8f9fa' }}>
+                          <tr style={{ borderBottom: '1px solid #eee' }}>
+                            <th style={{ padding: '12px 20px', textAlign: 'left', fontSize: '9px', fontWeight: 900, color: '#aaa', letterSpacing: '1px' }}>MISSION ID</th>
+                            <th style={{ padding: '12px 20px', textAlign: 'left', fontSize: '9px', fontWeight: 900, color: '#aaa', letterSpacing: '1px' }}>TARGET NAME</th>
+                            <th style={{ padding: '12px 20px', textAlign: 'left', fontSize: '9px', fontWeight: 900, color: '#aaa', letterSpacing: '1px' }}>DEMO</th>
+                            <th style={{ padding: '12px 20px', textAlign: 'right', fontSize: '9px', fontWeight: 900, color: '#aaa', letterSpacing: '1px' }}>DEPLOYED</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {s.patients.map(p => (
+                            <tr key={p.id} style={{ borderBottom: '1px solid #f8f9fa' }}>
+                              <td style={{ padding: '14px 20px', fontSize: '11px', fontWeight: 900, color: '#0f52ba', fontFamily: 'monospace' }}>{p.id}</td>
+                              <td style={{ padding: '14px 20px', fontSize: '11px', fontWeight: 800, color: '#1a1a2e' }}>{p.name.toUpperCase()}</td>
+                              <td style={{ padding: '14px 20px', fontSize: '10px', color: '#64748b', fontWeight: 700 }}>{p.age}y / {p.gender[0]}</td>
+                              <td style={{ padding: '14px 20px', fontSize: '10px', color: '#94a3b8', textAlign: 'right', fontWeight: 800 }}>{p.registered}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+
+        {sources.length === 0 && (
+          <div style={{ padding: '100px 20px', textAlign: 'center', background: 'white', borderRadius: '20px', border: '1px dashed #eee' }}>
+            <div style={{ fontSize: '42px', marginBottom: '15px' }}>📡</div>
+            <div style={{ fontSize: '16px', fontWeight: 950, color: '#1a1a2e' }}>NO SIGNAL DETECTED</div>
+            <div style={{ fontSize: '11px', color: '#888', marginTop: '5px' }}>Temporal scan in the current range yielded zero patient acquisition.</div>
+          </div>
+        )}
       </div>
     );
   };
@@ -687,113 +837,188 @@ export default function AdminBoard() {
 
   const renderUserManagement = () => (
     <div className="users-view">
-       <div className="board-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '30px' }}>
-         <h2 style={{ fontSize: '12px', fontWeight: 900, textTransform: 'uppercase', letterSpacing: '1px', color: '#888' }}>Hospital Personnel Roster</h2>
-         <button className="btn-primary" onClick={() => handleOpenUserDrawer()}>+ Register Personnel</button>
-       </div>
-       <div className="table-container">
-          <table className="data-table">
-             <thead>
-               <tr>
-                 <th>Staff Member</th>
-                 <th>Operational Credentials</th>
-                 <th>Roster Role</th>
-                 <th>System Status</th>
-                 <th>Actions</th>
-               </tr>
-             </thead>
-             <tbody>
-               {users.map(u => {
-                 const isSuper = u.role === 'admindoctor';
-                 const canAdminEdit = currentUser.role === 'admindoctor' || (currentUser.role === 'admin' && !isSuper);
-                 const hasFormat = !!u.reportFormat;
-                 
-                 const roleIcons = {
-                   doctor: '🩺',
-                   admindoctor: '🩺',
-                   technician: '🛠️',
-                   receptionist: '📅',
-                   admin: '🔑'
-                 };
+      <div className="board-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '30px' }}>
+        <div>
+          <h2 style={{ fontSize: '12px', fontWeight: 900, textTransform: 'uppercase', letterSpacing: '1px', color: '#888', marginBottom: '4px' }}>Hospital Personnel Roster</h2>
+          <p style={{ fontSize: '11px', color: '#aaa' }}>Active deployment and credential management for clinical staff.</p>
+        </div>
+        <button className="btn-primary" onClick={() => handleOpenUserDrawer()}>+ REGISTER PERSONNEL</button>
+      </div>
 
-                 return (
-                   <tr key={u.id} style={{ borderBottom: '1px solid #f8f9fa' }}>
-                      <td>
-                         <div style={{ display: 'flex', alignItems: 'center', gap: '15px' }}>
-                            <div style={{ width: '38px', height: '38px', borderRadius: '50%', background: '#0f52ba', color: 'white', display: 'flex', alignItems: 'center', justify: 'center', fontWeight: '900', fontSize: '14px' }}>
-                               {u.name.charAt(0)}
-                            </div>
-                            <div>
-                               <div style={{ fontWeight: 800, color: '#2c3e50', fontSize: '14px' }}>{u.name}</div>
-                             {(u.role === 'doctor' || u.role === 'admindoctor') && (
-                               <div style={{ marginTop: '4px' }}>
-                                  <span style={{ fontSize: '9px', color: !!u.reportFormat ? '#2ecc71' : '#e74c3c', fontWeight: 900, background: '#f8f9fa', padding: '2px 4px', borderRadius: '4px' }}>
-                                     REPORT FORMAT {!!u.reportFormat ? 'ACTIVE ✔️' : 'MISSING ⚠'}
-                                  </span>
-                               </div>
-                             )}
-                            </div>
-                         </div>
-                      </td>
-                      <td>
-                         <div style={{ display: 'flex', flexDirection: 'column' }}>
-                            <span style={{ fontSize: '12px', fontWeight: 700, color: '#0f52ba' }}>{u.email}</span>
-                            <span style={{ fontSize: '10px', color: '#aaa', fontWeight: 700 }}>ID: PRO-{u.id} | MW: {u.password}</span>
-                         </div>
-                      </td>
-                      <td>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                           <span style={{ fontSize: '16px' }}>{roleIcons[u.role] || '👤'}</span>
-                           <span className={`role-badge role-${u.role}`} style={{ fontWeight: 900 }}>{ROLE_LABELS[u.role].toUpperCase()}</span>
-                        </div>
-                      </td>
-                      <td><span style={{ fontSize: '10px', fontWeight: 900, color: u.status === 'active' ? '#2ecc71' : '#aaa' }}>{(u.status || 'ACTIVE').toUpperCase()}</span></td>
-                      <td>
-                         <div className="action-buttons" style={{ display: 'flex', gap: '10px' }}>
-                            {canAdminEdit && (
-                              <>
-                                <button className="btn-logout" style={{ padding: '6px 12px', fontSize: '11px', fontWeight: 800 }} onClick={() => handleOpenUserDrawer(u)}>EDIT</button>
-                                <button className="btn-icon" style={{ color: '#e74c3c', opacity: 0.8 }} onClick={() => handleDeleteUser(u.id, u.role)} title="Delete Roster Member">🗑️</button>
-                              </>
-                            )}
-                            {!canAdminEdit && <span style={{ fontSize: '10px', fontWeight: 900, color: '#aaa' }}>SECURE LOCK</span>}
-                         </div>
-                      </td>
-                   </tr>
-                 );
-               })}
-             </tbody>
-          </table>
-       </div>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(360px, 1fr))', gap: '25px' }}>
+        {users.map(u => {
+          const userRole = u.roles?.[0];
+          const isSuper = userRole === 'admindoctor';
+          const currentRole = currentUser.roles?.[0];
+          const canAdminEdit = currentRole === 'admindoctor' || (currentRole === 'admin' && !isSuper);
+          
+          const roleMeta = {
+            doctor: { color: 'var(--tactical-cyan)', bg: '#f0faff', icon: '🩺' },
+            admindoctor: { color: 'var(--tactical-indigo)', bg: '#f0f5ff', icon: '🔱' },
+            technician: { color: '#f39c12', bg: '#fef9e7', icon: '🛠️' },
+            receptionist: { color: '#e84393', bg: '#fdf0f6', icon: '📅' },
+            admin: { color: '#0f52ba', bg: '#e8f0fe', icon: '🔑' }
+          }[userRole] || { color: '#64748b', bg: '#f1f5f9', icon: '👤' };
+
+          return (
+            <div key={u.id} className="personnel-card" style={{ 
+              background: 'white', borderRadius: '20px', border: '1px solid #eee', 
+              padding: '24px', position: 'relative', overflow: 'hidden',
+              boxShadow: '0 4px 15px rgba(0,0,0,0.03)', transition: 'all 0.3s ease'
+            }}>
+              {/* Tactical Accent */}
+              <div style={{ position: 'absolute', top: 0, left: 0, width: '4px', bottom: 0, background: roleMeta.color }}></div>
+              
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '20px' }}>
+                <div style={{ display: 'flex', gap: '15px', alignItems: 'center' }}>
+                  <div style={{ 
+                    width: '50px', height: '50px', borderRadius: '14px', 
+                    background: roleMeta.bg, color: roleMeta.color,
+                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    fontSize: '22px', border: `1px solid ${roleMeta.color}20`
+                  }}>
+                    {u.name.charAt(0)}
+                  </div>
+                  <div>
+                    <div style={{ fontWeight: 950, color: '#1a1a2e', fontSize: '16px', letterSpacing: '-0.3px' }}>{u.name.toUpperCase()}</div>
+                    <span style={{ marginTop: '4px', fontSize: '8px', color: '#aaa', fontWeight: 800 }}>PRO-SECURE-DEPL-{u.id}</span>
+                  </div>
+                </div>
+                <div style={{ 
+                  padding: '4px 10px', borderRadius: '20px', background: roleMeta.bg, 
+                  color: roleMeta.color, fontSize: '9px', fontWeight: 900, letterSpacing: '1px' 
+                }}>
+                  {ROLE_LABELS[userRole]?.toUpperCase()}
+                </div>
+              </div>
+
+              <div style={{ background: '#f8f9fa', borderRadius: '12px', padding: '15px', marginBottom: '20px' }}>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                    <span style={{ fontSize: '9px', fontWeight: 900, color: '#aaa', letterSpacing: '1px' }}>SYSTEM IDENTITY</span>
+                    <span style={{ fontSize: '11px', fontWeight: 700, color: '#333' }}>{u.email}</span>
+                  </div>
+                  <div style={{ borderTop: '1px solid #eee', paddingTop: '8px', display: 'flex', justifyContent: 'space-between' }}>
+                    <span style={{ fontSize: '9px', fontWeight: 900, color: '#aaa', letterSpacing: '1px' }}>ACCESS KEY</span>
+                    <span style={{ fontSize: '11px', fontWeight: 900, color: '#0f52ba', fontFamily: 'monospace' }}>{u.password}</span>
+                  </div>
+                </div>
+              </div>
+
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <div style={{ display: 'flex', gap: '15px' }}>
+                  <div style={{ display: 'flex', flexDirection: 'column' }}>
+                     <span style={{ fontSize: '8px', fontWeight: 900, color: '#aaa' }}>LAST ACTIVE</span>
+                     <span style={{ fontSize: '10px', fontWeight: 900, color: u.lastLogin ? '#1a1a2e' : '#ccc' }}>{u.lastLogin || 'OFFLINE'}</span>
+                  </div>
+                  <div style={{ width: '1px', height: '20px', background: '#eee' }}></div>
+                  <div style={{ display: 'flex', flexDirection: 'column' }}>
+                     <span style={{ fontSize: '8px', fontWeight: 900, color: '#aaa' }}>STATUS</span>
+                     <span style={{ fontSize: '10px', fontWeight: 900, color: u.status === 'active' ? '#2ecc71' : '#ccc' }}>{(u.status || 'ACTIVE').toUpperCase()}</span>
+                  </div>
+                </div>
+
+                <div style={{ display: 'flex', gap: '8px' }}>
+                  {canAdminEdit && (
+                    <>
+                      <button 
+                        className="btn-logout" 
+                        style={{ padding: '8px 16px', borderRadius: '10px', fontSize: '10px', fontWeight: 950, border: '1px solid #dee2e6' }} 
+                        onClick={() => handleOpenUserDrawer(u)}
+                      >
+                        EDIT CONFIG
+                      </button>
+                      <button 
+                        style={{ width: '34px', height: '34px', borderRadius: '10px', background: '#fff5f5', border: '1px solid #fecaca', color: '#e74c3c', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }} 
+                        onClick={() => handleDeleteUser(u.id, u.roles)}
+                      >
+                        🗑️
+                      </button>
+                    </>
+                  )}
+                  {!canAdminEdit && (
+                    <div style={{ padding: '8px 12px', background: '#f8f9fa', borderRadius: '10px', border: '1px solid #eee', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                      <span style={{ fontSize: '12px' }}>🔒</span>
+                      <span style={{ fontSize: '9px', fontWeight: 900, color: '#aaa', letterSpacing: '1px' }}>PROTECTED ENTRY</span>
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+          );
+        })}
+      </div>
     </div>
   );
 
   return (
-    <div className="page-wrapper board-padding">
-      <div style={{ marginBottom: '30px' }}>
-        <h1 className="page-title" style={{ marginBottom: '12px', color: '#0f52ba', fontWeight: 900, letterSpacing: '-0.5px' }}>SYSTEM GOVERNANCE</h1>
-        <p style={{ fontSize: '11px', color: '#888', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '1px' }}>Hospital Command & Personnel Roster</p>
+    <div className="page-wrapper board-padding" style={{ paddingTop: '30px' }}>
+      <div style={{ marginBottom: '40px', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end' }}>
+        <div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '15px', marginBottom: '8px' }}>
+            <span style={{ fontSize: '28px' }}>📊</span>
+            <h1 style={{ fontSize: '26px', fontWeight: 950, color: '#0a1628', letterSpacing: '-1px', margin: 0 }}>OPERATIONAL COMMAND</h1>
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginLeft: '43px' }}>
+            <span style={{ fontSize: '10px', color: '#0f52ba', fontWeight: 900, textTransform: 'uppercase', letterSpacing: '2px' }}>
+              {activeCenter?.name?.toUpperCase() || 'INSTITUTIONAL HUB'}
+            </span>
+            <span style={{ width: '4px', height: '4px', background: '#ccc', borderRadius: '50%' }}></span>
+            <span style={{ fontSize: '10px', color: '#888', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '1px' }}>
+               Command Center Governance v4.2
+            </span>
+          </div>
+        </div>
+        
+        <div style={{ background: '#f8f9fa', padding: '15px 25px', borderRadius: '16px', border: '1px solid #eee', display: 'flex', gap: '20px', alignItems: 'center' }}>
+          <div style={{ textAlign: 'right' }}>
+            <div style={{ fontSize: '9px', fontWeight: 900, color: '#aaa', letterSpacing: '1px' }}>SYSTEM HEALTH</div>
+            <div style={{ fontSize: '12px', fontWeight: 900, color: '#2ecc71' }}>CORE STABLE</div>
+          </div>
+          <div className="tactical-node-active" style={{ width: '10px', height: '10px' }}></div>
+        </div>
       </div>
       
-      <div className="admin-tabs" style={{ background: '#f8f9fa', padding: '5px', borderRadius: '10px', border: '1px solid #dee2e6', marginBottom: '35px', display: 'flex' }}>
-        {['ANALYTICS', 'DOCUMENTATION', 'PROTOCOLS', 'USERS', 'PATIENTS', 'SETTINGS'].map(tab => (
+      {/* Hub Controller Navigation */}
+      <div className="admin-tabs" style={{ 
+        background: 'rgba(15, 82, 186, 0.03)', 
+        backdropFilter: 'blur(10px)',
+        padding: '6px', 
+        borderRadius: '16px', 
+        border: '1px solid rgba(15, 82, 186, 0.1)', 
+        marginBottom: '40px', 
+        display: 'flex',
+        boxShadow: '0 4px 20px rgba(0,0,0,0.03)'
+      }}>
+        {['INTELLIGENCE', 'REFERRAL INTEL', 'PERSONNEL'].map(tab => (
           <button 
             key={tab}
             className={`admin-tab ${activeTab === tab ? 'active' : ''}`} 
             onClick={() => setActiveTab(tab)}
-            style={{ flex: 1, borderRadius: '6px', border: 'none', padding: '12px', fontWeight: 900, letterSpacing: '1px', background: activeTab === tab ? 'white' : 'transparent', boxShadow: activeTab === tab ? '0 2px 8px rgba(0,0,0,0.05)' : 'none', textTransform: 'uppercase' }}
+            style={{ 
+              flex: 1, 
+              borderRadius: '12px', 
+              border: 'none', 
+              padding: '14px', 
+              fontWeight: 950, 
+              letterSpacing: '1px', 
+              background: activeTab === tab ? 'white' : 'transparent', 
+              color: activeTab === tab ? '#0f52ba' : '#64748b',
+              boxShadow: activeTab === tab ? '0 8px 20px rgba(15, 82, 186, 0.15)' : 'none', 
+              textTransform: 'uppercase', 
+              fontSize: '11px',
+              transition: 'all 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275)',
+              cursor: 'pointer'
+            }}
           >
-            {tab === 'USERS' ? 'ROSTER' : tab}
+            {tab}
           </button>
         ))}
       </div>
 
-      {activeTab === 'ANALYTICS' && renderAnalytics()}
-      {activeTab === 'DOCUMENTATION' && renderDocumentation()}
-      {activeTab === 'PROTOCOLS' && renderLayouts()}
-      {activeTab === 'USERS' && renderUserManagement()}
-      {activeTab === 'PATIENTS' && renderPatients()}
-      {activeTab === 'SETTINGS' && renderSettings()}
+      {activeTab === 'INTELLIGENCE' && renderAnalytics()}
+      {activeTab === 'REFERRAL INTEL' && renderReferralIntel()}
+      {activeTab === 'PERSONNEL' && renderUserManagement()}
 
       {/* Personnel Roster Drawer */}
       {isUserDrawerOpen && (
@@ -839,7 +1064,7 @@ export default function AdminBoard() {
                             <option value="technician">Technician (🛠️ Ops)</option>
                             <option value="doctor">Doctor (🩺 Precision)</option>
                             <option value="admin">Admin (🔑 Governance)</option>
-                            {currentUser.role === 'admindoctor' && <option value="admindoctor">AdminDoctor (🔱 Master)</option>}
+                            {currentUser.roles?.[0] === 'admindoctor' && <option value="admindoctor">AdminDoctor (🔱 Master)</option>}
                          </select>
                       </div>
 

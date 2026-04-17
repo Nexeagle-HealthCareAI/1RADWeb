@@ -15,8 +15,9 @@ export default function ProtectedRoute({ allowedRoles, children }) {
     return <Navigate to="/login" replace state={{ from: location }} />;
   }
 
-  // 3. Role Authorization Check: If the user's role is not allowed for this route
-  if (allowedRoles && !allowedRoles.includes(currentUser.role)) {
+  // 3. Role Authorization Check: If the user's roles are not allowed for this route
+  const userRoles = currentUser.roles || [];
+  if (allowedRoles && !userRoles.some(role => allowedRoles.includes(role))) {
     return <Navigate to="/access-denied" replace />;
   }
 

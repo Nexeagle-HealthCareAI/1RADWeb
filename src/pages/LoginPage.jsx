@@ -2,6 +2,8 @@ import { useState } from 'react';
 import { useNavigate, useLocation, Navigate, Link } from 'react-router-dom';
 import useAuth from '../auth/useAuth';
 import { ROLE_HOME, ROLE_LABELS } from '../data/roles';
+import RadiologyWorkflowBG from '../components/RadiologyWorkflowBG';
+import TacticalWorkflow from '../components/TacticalWorkflow';
 import '../styles/global.css';
 
 export default function LoginPage() {
@@ -17,114 +19,194 @@ export default function LoginPage() {
 
   const [identifier, setIdentifier] = useState('');
   const [password, setPassword] = useState('');
+  const [otp, setOtp] = useState('');
+  const [loginMode, setLoginMode] = useState('password'); // 'password' or 'otp'
+  const [otpStep, setOtpStep] = useState('request'); // 'request' or 'verify'
   const [error, setError] = useState(null);
+  const [loading, setLoading] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
 
   const handleSubmit = (e) => {
     e.preventDefault();
-    handleLogin(identifier, password);
+    if (loginMode === 'password') {
+      handleLogin(identifier, password);
+    } else if (otpStep === 'request') {
+      handleRequestOtp();
+    } else {
+      handleVerifyOtp();
+    }
   };
 
   const handleLogin = (id, pwd) => {
     const result = login(id, pwd);
     if (result.success) {
-      const home = ROLE_HOME[result.user.role] || '/';
+      const home = ROLE_HOME[result.user.roles?.[0]] || '/';
       navigate(from === '/' ? home : from, { replace: true });
     } else {
       setError(result.error);
     }
   };
 
-  const demoLogin = (demoId, demoPwd) => {
-    setIdentifier(demoId);
-    setPassword(demoPwd);
-    handleLogin(demoId, demoPwd);
+  const handleRequestOtp = () => {
+    if (!identifier) return setError('Enter your ID code first');
+    setLoading(true);
+    // Mocking OTP request
+    setTimeout(() => {
+      setLoading(false);
+      setOtpStep('verify');
+      setError(null);
+      console.log('OTP sent to:', identifier);
+    }, 800);
   };
 
+  const handleVerifyOtp = () => {
+    if (otp === '123456') { // Mock OTP
+      handleLogin(identifier, 'master123'); // Demo auto-login
+    } else {
+      setError('Invalid passcode. Try 123456 for demo.');
+    }
+  };
+
+
   return (
-    <div className="auth-split-container">
-      {/* Left side: Brand/Hero section */}
-      <div className="auth-hero-section">
-        <div className="hero-content">
-          <div className="hero-logo">eR</div>
-          <h1 className="hero-title">Welcome to <span className="highlight">easyRAD</span></h1>
-          <p className="hero-description">The ultimate command center for modern radiology. Manage cases, track volume, and lead your team with precision.</p>
-          <div className="hero-stats">
-            <div className="stat-pill">Online Now: 42 Doctors</div>
-            <div className="stat-pill">Studies Today: 1,204</div>
+    <div className="auth-immersive-container">
+      <RadiologyWorkflowBG />
+      <div className="immersive-brand">
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-start', marginBottom: '5px' }}>
+          <div className="immersive-logo" style={{ background: 'transparent', boxShadow: 'none', height: '28px', width: 'auto', marginRight: '12px', display: 'flex', alignItems: 'center' }}>
+            <img src="/Logo.png" alt="NexEgale" style={{ height: '100%', width: 'auto', objectFit: 'contain' }} />
+          </div>
+          <div className="immersive-logo-text" style={{ fontSize: '24px', fontWeight: 950, color: 'white', letterSpacing: '2px', lineHeight: 1 }}>
+            NEX<span style={{ color: '#00f2fe' }}>EGALE</span>
           </div>
         </div>
-        <div className="hero-gradient-overlay"></div>
+        <div className="immersive-tagline">1Rad Clinical Command</div>
+        
+        {/* Tactical Pipeline View */}
+        <TacticalWorkflow />
       </div>
 
-      {/* Right side: Login Card */}
-      <div className="auth-right-panel">
-        <div className="auth-card gamified-card">
-          <div className="auth-header">
-            <h2 className="auth-title">Agent Portal</h2>
-            <p className="auth-subtitle">Verify your credentials to enter the grid</p>
-          </div>
+      <div className="glass-card">
+        <div className="auth-header" style={{ textAlign: 'center', marginBottom: '30px' }}>
+          <h2 className="auth-title" style={{ color: '#fff', fontSize: '24px', fontWeight: 900 }}>CLINICAL COMMAND HUB</h2>
+          <p className="auth-subtitle" style={{ color: 'rgba(255,255,255,0.5)', fontSize: '12px' }}>VERIFY CREDENTIALS TO ENTER THE GRID</p>
+        </div>
 
-          <form onSubmit={handleSubmit} className="auth-form">
-            <div className="form-group">
-              <label>Ident Code (Email/Mobile)</label>
-              <input
-                type="text"
-                value={identifier}
-                onChange={(e) => setIdentifier(e.target.value)}
-                placeholder="e.g. admin@easyrad.com"
-                required
-              />
-            </div>
-            <div className="form-group">
-              <label>Secure Key (Password)</label>
-              <input
-                type="password"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                placeholder="••••••••"
-                required
-              />
-            </div>
+        <div className="login-mode-toggle" style={{ display: 'flex', gap: '10px', marginBottom: '25px', padding: '4px', background: 'rgba(255,255,255,0.05)', borderRadius: '10px' }}>
+          <button 
+            type="button"
+            onClick={() => { setLoginMode('password'); setError(null); }}
+            className={`toggle-btn ${loginMode === 'password' ? 'active' : ''}`}
+            style={{ 
+              flex: 1, 
+              padding: '12px', 
+              border: 'none', 
+              borderRadius: '8px', 
+              cursor: 'pointer', 
+              fontSize: '11px', 
+              fontWeight: 800, 
+              transition: 'all 0.3s', 
+              background: loginMode === 'password' ? '#00f2fe' : 'transparent', 
+              color: loginMode === 'password' ? '#060a12' : '#fff',
+              boxShadow: loginMode === 'password' ? '0 0 15px rgba(0, 242, 254, 0.4)' : 'none'
+            }}
+          >
+            SECURE KEY
+          </button>
+          <button 
+            type="button"
+            onClick={() => { setLoginMode('otp'); setError(null); }}
+            className={`toggle-btn ${loginMode === 'otp' ? 'active' : ''}`}
+            style={{ 
+              flex: 1, 
+              padding: '12px', 
+              border: 'none', 
+              borderRadius: '8px', 
+              cursor: 'pointer', 
+              fontSize: '11px', 
+              fontWeight: 800, 
+              transition: 'all 0.3s', 
+              background: loginMode === 'otp' ? '#00f2fe' : 'transparent', 
+              color: loginMode === 'otp' ? '#060a12' : '#fff',
+              boxShadow: loginMode === 'otp' ? '0 0 15px rgba(0, 242, 254, 0.4)' : 'none'
+            }}
+          >
+            ONE-TIME PASS
+          </button>
+        </div>
 
-            {error && <div className="error-message">{error}</div>}
-
-            <button type="submit" className="btn-primary btn-block gamified-btn">
-              Authenticate Account
-            </button>
-          </form>
-
-          <div className="demo-accounts-section">
-            <p className="demo-label">Select Agent Class (Quick Access):</p>
-            <div className="demo-grid" style={{ gridTemplateColumns: 'repeat(3, 1fr)' }}>
-              <button onClick={() => demoLogin('master@easyrad.com', 'master123')} className="demo-card-btn" style={{ gridColumn: 'span 3', background: '#fff5f5', borderColor: '#feb2b2' }}>
-                <span className="demo-role" style={{ color: '#c53030' }}>Super Admin (AdminDoctor)</span>
-                <span className="demo-lvl">Lv.99 (Max)</span>
-              </button>
-              <button onClick={() => demoLogin('admin@easyrad.com', 'admin123')} className="demo-card-btn">
-                <span className="demo-role">Admin</span>
-                <span className="demo-lvl">Lv.80</span>
-              </button>
-              <button onClick={() => demoLogin('frontdesk@easyrad.com', 'desk123')} className="demo-card-btn">
-                <span className="demo-role">Reception</span>
-                <span className="demo-lvl">Lv.12</span>
-              </button>
-              <button onClick={() => demoLogin('tech@easyrad.com', 'tech123')} className="demo-card-btn">
-                <span className="demo-role">Technician</span>
-                <span className="demo-lvl">Lv.25</span>
-              </button>
-              <button onClick={() => demoLogin('doctor@easyrad.com', 'doc123')} className="demo-card-btn">
-                <span className="demo-role">Doctor</span>
-                <span className="demo-lvl">Lv.50</span>
-              </button>
-            </div>
+        <form onSubmit={handleSubmit} className="auth-form">
+          <div className="form-group">
+            <label>IDENT CODE (EMAIL/MOBILE)</label>
+            <input
+              type="text"
+              value={identifier}
+              onChange={(e) => setIdentifier(e.target.value)}
+              placeholder="e.g. admin@1rad.com"
+              required
+              disabled={loginMode === 'otp' && otpStep === 'verify'}
+            />
           </div>
           
-          <div className="auth-footer" style={{ marginTop: '20px', textAlign: 'center' }}>
-             <p style={{ fontSize: '11px', color: '#888', marginBottom: '8px' }}>Need assistance? Contact System Command.</p>
-             <p style={{ fontSize: '13px', fontWeight: 600 }}>
-                New center? <Link to="/register" style={{ color: '#0052cc', textDecoration: 'none' }}>Register for easyRAD</Link>
-             </p>
-          </div>
+          {loginMode === 'password' ? (
+            <div className="form-group">
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+                <label>SECURE KEY (PASSWORD)</label>
+                <Link to="/forgot-password" style={{ fontSize: '10px', color: '#00f2fe', textDecoration: 'none', fontWeight: 800 }}>FORGOT KEY?</Link>
+              </div>
+              <div style={{ position: 'relative' }}>
+                <input
+                  type={showPassword ? "text" : "password"}
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  placeholder="••••••••"
+                  required
+                />
+                <button 
+                  type="button" 
+                  onClick={() => setShowPassword(!showPassword)}
+                  style={{ position: 'absolute', right: '12px', top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', cursor: 'pointer', fontSize: '14px', padding: 0, opacity: 0.6 }}
+                >
+                  {showPassword ? '👁️' : '👁️‍🗨️'}
+                </button>
+              </div>
+            </div>
+          ) : (
+            otpStep === 'verify' && (
+              <div className="form-group animate-in">
+                <label>PASSCODE (6-DIGITS)</label>
+                <input
+                  type="text"
+                  maxLength="6"
+                  value={otp}
+                  onChange={(e) => setOtp(e.target.value)}
+                  placeholder="0 0 0 0 0 0"
+                  style={{ letterSpacing: '8px', textAlign: 'center', fontWeight: 900, fontSize: '18px' }}
+                  required
+                />
+                <p style={{ fontSize: '10px', color: 'rgba(255,255,255,0.4)', marginTop: '8px', textAlign: 'center' }}>
+                  DIDN'T RECEIVE CODE? <button type="button" onClick={handleRequestOtp} style={{ background: 'none', border: 'none', color: '#00f2fe', cursor: 'pointer', padding: 0, fontWeight: 800, fontSize: '10px' }}>RESEND IN 0:30</button>
+                </p>
+              </div>
+            )
+          )}
+
+          {error && <div className="error-message" style={{ background: 'rgba(231, 76, 60, 0.1)', color: '#e74c3c', border: '1px solid rgba(231, 76, 60, 0.2)' }}>{error}</div>}
+
+          <button type="submit" className="btn-primary btn-block gamified-btn" disabled={loading} style={{ marginTop: '10px' }}>
+            {loading ? 'INITIALIZING...' : (
+              loginMode === 'password' ? 'ACCESS THE GRID' : 
+              (otpStep === 'request' ? 'REQUEST PASSCODE' : 'VERIFY & ENTER')
+            )}
+          </button>
+        </form>
+
+        <div className="neon-divider"></div>
+        
+        <div className="auth-footer" style={{ textAlign: 'center' }}>
+           <p style={{ fontSize: '13px', fontWeight: 600, color: 'rgba(255,255,255,0.7)' }}>
+              NEW CENTER? <Link to="/register" style={{ color: '#00f2fe', textDecoration: 'none', borderBottom: '1px solid #00f2fe' }}>REGISTER FOR 1RAD</Link>
+           </p>
         </div>
       </div>
     </div>

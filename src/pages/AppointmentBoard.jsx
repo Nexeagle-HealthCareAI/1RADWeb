@@ -10,37 +10,82 @@ const INITIAL_PATIENTS = [
 ];
 
 const INITIAL_APPOINTMENTS = [
-  { id: 'APP-101', patientId: 'P001', patientName: 'James Wilson', mobile: '9876543210', service: 'Chest X-Ray PA', modality: 'X-RAY', dateTime: '2024-04-04T09:30', type: 'BOOKED', doctor: 'Dr. Brown', status: 'BOOKED' },
-  { id: 'APP-102', patientId: 'P002', patientName: 'Elena Rodriguez', mobile: '9876543211', service: 'Brain MRI (Contrast)', modality: 'MRI', dateTime: '2024-04-04T10:15', type: 'EMERGENCY', doctor: 'Dr. Sarah', status: 'ARRIVED' },
-  { id: 'APP-103', patientId: 'P003', patientName: 'Marcus Chen', mobile: '9876543212', service: 'Abdomen CT', modality: 'CT', dateTime: '2024-04-04T11:00', type: 'ROUTINE', doctor: 'Dr. Mike', status: 'IN_PROGRESS' },
-  { id: 'APP-104', patientId: 'P004', patientName: 'Sarah Jenkins', mobile: '9876543213', service: 'Pelvis Ultrasound', modality: 'ULTRASOUND', dateTime: '2024-04-04T11:45', type: 'BOOKED', doctor: 'Dr. Lisa', status: 'CANCELLED' }
+  { id: 'APP-101', patientId: 'P001', patientName: 'James Wilson', mobile: '9876543210', service: 'Chest X-Ray PA', modality: 'X-RAY', dateTime: '2024-04-04T09:30', type: 'BOOKED', doctor: 'Dr. Brown', status: 'BOOKED', referredBy: 'Dr. Sarah Mitchell', referredContact: '9888776655' },
+  { id: 'APP-102', patientId: 'P002', patientName: 'Elena Rodriguez', mobile: '9876543211', service: 'Brain MRI (Contrast)', modality: 'MRI', dateTime: '2024-04-04T10:15', type: 'EMERGENCY', doctor: 'Dr. Sarah', status: 'ARRIVED', referredBy: 'Self / Walk-in', referredContact: 'N/A' },
+  { id: 'APP-103', patientId: 'P003', patientName: 'Marcus Chen', mobile: '9876543212', service: 'Abdomen CT', modality: 'CT', dateTime: '2024-04-04T11:00', type: 'ROUTINE', doctor: 'Dr. Mike', status: 'IN_PROGRESS', referredBy: 'Dr. Sarah Mitchell', referredContact: '9888776655' },
+  { id: 'APP-104', patientId: 'P004', patientName: 'Sarah Jenkins', mobile: '9876543213', service: 'Pelvis Ultrasound', modality: 'ULTRASOUND', dateTime: '2024-04-04T11:45', type: 'BOOKED', doctor: 'Dr. Lisa', status: 'CANCELLED', referredBy: 'Dr. John Doe', referredContact: '9777665544' }
 ];
 
-const MODALITIES = ['X-RAY', 'MRI', 'CT', 'ULTRASOUND', 'DEXA'];
+const MODALITIES = ['X-RAY', 'MRI', 'CT', 'ULTRASOUND', 'DEXA', 'ANGIOGRAPHY', 'MAMMOGRAPHY', 'PET-CT', 'NUCLEAR MEDICINE', 'FLUOROSCOPY'];
 const DOCTORS = ['Dr. Brown', 'Dr. Sarah', 'Dr. Mike', 'Dr. Lisa'];
-const TODAY = '2024-04-04';
+const TODAY = new Date().toISOString().split('T')[0];
+
+const INITIAL_REFERRERS = [
+  { id: 'REF-001', name: 'Dr. Sarah Mitchell', contact: '9888776655', address: 'Riverside Clinic, Sector 12' },
+  { id: 'REF-002', name: 'Dr. John Doe', contact: '9777665544', address: 'City Heart Hospital' },
+  { id: 'REF-003', name: 'Self / Walk-in', contact: '', address: '' },
+];
+
+const INFORMATION_SOURCES = [
+  'Social Media',
+  'Word of Mouth',
+  'Newspaper / Ad',
+  'Radio / TV',
+  'Hospital Website',
+  'Specialist Referral',
+  'Community Outreach',
+  'Other'
+];
+
+const STATUS_META = {
+  BOOKED:      { icon: '\u{1F4CB}', label: 'Booked', color: '#3498db', bg: '#e8f4fd', glow: 'rgba(52,152,219,0.15)' },
+  ARRIVED:     { icon: '\u{1F4CD}', label: 'Arrived', color: '#2ecc71', bg: '#e9f7ef', glow: 'rgba(46,204,113,0.15)' },
+  IN_PROGRESS: { icon: '\u26A1', label: 'Scanning', color: '#f39c12', bg: '#fef9e7', glow: 'rgba(243,156,18,0.15)' },
+  COMPLETED:   { icon: '\u2705', label: 'Complete', color: '#27ae60', bg: '#d5f5e3', glow: 'rgba(39,174,96,0.15)' },
+  CANCELLED:   { icon: '\u26D4', label: 'Cancelled', color: '#e74c3c', bg: '#fdedec', glow: 'rgba(231,76,60,0.15)' },
+};
+
+const MODALITY_ICONS = {
+  'X-RAY': '\u{1FA7B}', 
+  'MRI': '\u{1F9E0}', 
+  'CT': '\u{1F300}', 
+  'ULTRASOUND': '\u{1F930}', 
+  'DEXA': '\u{1F9B4}',
+  'ANGIOGRAPHY': '\u{1FAC0}',
+  'MAMMOGRAPHY': '\u{1F380}',
+  'PET-CT': '\u2622',
+  'NUCLEAR MEDICINE': '\u{1F52C}',
+  'FLUOROSCOPY': '\u1F4FA'
+};
 
 export default function AppointmentBoard() {
-  // --- STATE ---
   const [appointments, setAppointments] = useState(INITIAL_APPOINTMENTS);
   const [patients, setPatients] = useState(INITIAL_PATIENTS);
   const [searchQuery, setSearchQuery] = useState('');
-  const [filters, setFilters] = useState({ date: '2024-04-04', status: 'ALL', modality: 'ALL', doctor: 'ALL' });
-  
-  // Drawer & Modal States
+  const [filters, setFilters] = useState({ date: TODAY, status: 'ALL', modality: 'ALL', doctor: 'ALL' });
+  const [expandedRow, setExpandedRow] = useState(null);
+
   const [isBookingOpen, setIsBookingOpen] = useState(false);
   const [isAddPatientOpen, setIsAddPatientOpen] = useState(false);
   const [printModalData, setPrintModalData] = useState(null);
-  
-  // Booking Wizard State
+  const [tokenPrintData, setTokenPrintData] = useState(null);
+
   const [bookingStep, setBookingStep] = useState(1);
-  const [newBooking, setNewBooking] = useState({ patientId: '', service: '', modality: 'X-RAY', date: '2024-04-04', time: '09:00', doctor: '', notes: '' });
-  
-  // Add Patient Form State
-  const [newPatient, setNewPatient] = useState({ name: '', mobile: '', age: '', gender: 'Male', village: '', district: '', address: '', referredBy: '' });
+  const [newBooking, setNewBooking] = useState({ patientId: '', service: '', modality: 'X-RAY', date: TODAY, time: '09:00', doctor: '', notes: '' });
+
+  const [newPatient, setNewPatient] = useState({ 
+    name: '', mobile: '', age: '', gender: 'Male', 
+    village: '', district: '', address: '', 
+    referredBy: '', sourceOfInfo: '' 
+  });
   const [duplicatePatient, setDuplicatePatient] = useState(null);
 
-  // --- DERIVED DATA ---
+  const [referrers, setReferrers] = useState(INITIAL_REFERRERS);
+  const [isAddingNewReferrer, setIsAddingNewReferrer] = useState(false);
+  const [newReferrer, setNewReferrer] = useState({ name: '', contact: '', address: '' });
+  const [referrerSearchValue, setReferrerSearchValue] = useState('');
+
+  // --- DERIVED ---
   const filteredAppointments = useMemo(() => {
     return appointments.filter(app => {
       const matchesSearch = app.patientName.toLowerCase().includes(searchQuery.toLowerCase()) || app.mobile.includes(searchQuery) || app.id.includes(searchQuery);
@@ -52,22 +97,36 @@ export default function AppointmentBoard() {
   }, [appointments, searchQuery, filters]);
 
   const stats = {
-    today: appointments.length,
+    total: appointments.length,
+    booked: appointments.filter(a => a.status === 'BOOKED').length,
     arrived: appointments.filter(a => a.status === 'ARRIVED').length,
+    inProgress: appointments.filter(a => a.status === 'IN_PROGRESS').length,
+    completed: appointments.filter(a => a.status === 'COMPLETED').length,
     cancelled: appointments.filter(a => a.status === 'CANCELLED').length,
-    studies: appointments.filter(a => a.status === 'COMPLETED').length
   };
+  const completionRate = stats.total > 0 ? Math.round((stats.completed / stats.total) * 100) : 0;
+  const activeRate = stats.total > 0 ? Math.round(((stats.total - stats.cancelled) / stats.total) * 100) : 0;
 
   // --- HANDLERS ---
   const handleAction = (id, action) => {
     setAppointments(prev => prev.map(app => {
       if (app.id === id) {
         if (action === 'ARRIVE') return { ...app, status: 'ARRIVED' };
+        if (action === 'START') return { ...app, status: 'IN_PROGRESS' };
+        if (action === 'COMPLETE') return { ...app, status: 'COMPLETED' };
         if (action === 'CANCEL') return { ...app, status: 'CANCELLED' };
-        if (action === 'STUDY') return { ...app, status: 'COMPLETED' };
       }
       return app;
     }));
+  };
+
+  const getNextAction = (status) => {
+    switch (status) {
+      case 'BOOKED': return { action: 'ARRIVE', label: 'CHECK IN', icon: '\u{1F4CD}', color: '#2ecc71' };
+      case 'ARRIVED': return { action: 'START', label: 'BEGIN SCAN', icon: '\u26A1', color: '#f39c12' };
+      case 'IN_PROGRESS': return { action: 'COMPLETE', label: 'FINALIZE', icon: '\u2705', color: '#27ae60' };
+      default: return null;
+    }
   };
 
   const handleAddPatient = (e) => {
@@ -81,15 +140,19 @@ export default function AppointmentBoard() {
     const patientToAdd = { ...newPatient, id };
     setPatients([...patients, patientToAdd]);
     setIsAddPatientOpen(false);
-    setNewPatient({ name: '', mobile: '', age: '', gender: 'Male', address: '', referredBy: '' });
+    setNewPatient({ name: '', mobile: '', age: '', gender: 'Male', village: '', district: '', address: '', referredBy: '', sourceOfInfo: '' });
     setDuplicatePatient(null);
-    // Auto-select for booking if was in middle of booking
     setNewBooking(prev => ({ ...prev, patientId: id }));
   };
 
   const handleBookAppointment = () => {
     const patient = patients.find(p => p.id === newBooking.patientId);
     const id = `APP-${100 + appointments.length + 1}`;
+    
+    // Resolve referrer contact
+    const refName = newPatient.referredBy || patient.referredBy;
+    const referrerObj = referrers.find(r => r.name === refName);
+
     const appToAdd = {
       id,
       patientId: patient.id,
@@ -97,10 +160,12 @@ export default function AppointmentBoard() {
       mobile: patient.mobile,
       service: newBooking.service,
       modality: newBooking.modality,
-      dateTime: `${newBooking.date}T${newBooking.time}`,
+      dateTime: new Date().toISOString(),
       type: 'BOOKED',
       doctor: newBooking.doctor || 'Unassigned',
-      status: 'BOOKED'
+      status: 'BOOKED',
+      referredBy: refName,
+      referredContact: referrerObj ? referrerObj.contact : 'N/A'
     };
     setAppointments([...appointments, appToAdd]);
     setIsBookingOpen(false);
@@ -109,247 +174,644 @@ export default function AppointmentBoard() {
 
   const resetBooking = () => {
     setBookingStep(1);
-    setNewBooking({ patientId: '', service: '', modality: 'X-RAY', date: '2024-04-04', time: '09:00', doctor: '', notes: '' });
+    setNewBooking({ patientId: '', service: '', modality: 'X-RAY', doctor: '', notes: '' });
   };
 
-  const MODALITY_ICONS = {
-    'X-RAY': '🩻',
-    'MRI': '🧠',
-    'CT': '🌀',
-    'ULTRASOUND': '🤰',
-    'DEXA': '🦴'
+  // ============================================================
+  //  STATUS PIPELINE
+  // ============================================================
+
+  // ============================================================
+  //  MISSION INTEL CARDS
+  // ============================================================
+  const renderIntelCards = () => {
+    const readyCount = stats.booked + stats.arrived;
+    const progressCount = stats.inProgress;
+    
+    return (
+      <div style={{
+        display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))',
+        gap: '20px', marginBottom: '32px',
+      }}>
+        {/* Card: Total Missions */}
+        <div style={{
+          background: 'linear-gradient(135deg, #0a1628 0%, #1e293b 100%)',
+          borderRadius: '20px', padding: '24px', color: 'white', position: 'relative', overflow: 'hidden',
+          boxShadow: '0 10px 30px rgba(0,0,0,0.15)', border: '1px solid rgba(255,255,255,0.05)'
+        }}>
+          <div style={{ position: 'absolute', top: '-10px', right: '-10px', fontSize: '100px', opacity: 0.05, lineHeight: 1 }}>{'\u{1F4E1}'}</div>
+          <div style={{ fontSize: '10px', fontWeight: 900, textTransform: 'uppercase', letterSpacing: '2px', opacity: 0.7, marginBottom: '12px' }}>Total Missions</div>
+          <div style={{ display: 'flex', alignItems: 'baseline', gap: '8px' }}>
+            <div style={{ fontSize: '48px', fontWeight: 950, lineHeight: 1 }}>{stats.total}</div>
+            <div style={{ fontSize: '12px', fontWeight: 700, opacity: 0.6 }}>UNITS</div>
+          </div>
+          <div style={{ marginTop: '20px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <div style={{ flex: 1, height: '4px', background: 'rgba(255,255,255,0.1)', borderRadius: '2px', overflow: 'hidden' }}>
+              <div style={{ width: '100%', height: '100%', background: 'var(--tactical-cyan)', borderRadius: '2px' }} />
+            </div>
+            <span style={{ fontSize: '9px', fontWeight: 900, color: 'var(--tactical-cyan)' }}>100% REGISTRY</span>
+          </div>
+        </div>
+
+        {/* Card: Ready Stats */}
+        <div style={{
+          background: 'white', borderRadius: '20px', padding: '24px',
+          border: '1px solid #dee2e6', position: 'relative', overflow: 'hidden',
+          boxShadow: '0 4px 20px rgba(0,0,0,0.03)'
+        }}>
+          <div style={{ position: 'absolute', top: '-10px', right: '-10px', fontSize: '100px', opacity: 0.04, lineHeight: 1 }}>{'\u{1F6EB}'}</div>
+          <div style={{ fontSize: '10px', fontWeight: 900, textTransform: 'uppercase', letterSpacing: '2px', color: '#64748b', marginBottom: '12px' }}>Ready for Deployment</div>
+          <div style={{ display: 'flex', alignItems: 'baseline', gap: '8px' }}>
+            <span style={{ fontSize: '48px', fontWeight: 950, color: '#0f52ba', lineHeight: 1 }}>{readyCount}</span>
+            <span style={{ fontSize: '12px', fontWeight: 800, color: '#0f52ba', opacity: 0.8 }}>READY</span>
+          </div>
+          <div style={{ marginTop: '20px', display: 'flex', gap: '12px' }}>
+            <div style={{ display: 'flex', flexDirection: 'column' }}>
+              <span style={{ fontSize: '9px', fontWeight: 900, color: '#94a3b8' }}>BOOKED</span>
+              <span style={{ fontSize: '14px', fontWeight: 900, color: '#334155' }}>{stats.booked}</span>
+            </div>
+            <div style={{ width: '1px', background: '#e2e8f0', margin: '4px 0' }}></div>
+            <div style={{ display: 'flex', flexDirection: 'column' }}>
+              <span style={{ fontSize: '9px', fontWeight: 900, color: '#94a3b8' }}>ARRIVED</span>
+              <span style={{ fontSize: '14px', fontWeight: 900, color: '#334155' }}>{stats.arrived}</span>
+            </div>
+          </div>
+        </div>
+
+        {/* Card: Progress Stats */}
+        <div style={{
+          background: 'white', borderRadius: '20px', padding: '24px',
+          border: '1px solid #dee2e6', position: 'relative', overflow: 'hidden',
+          boxShadow: '0 4px 20px rgba(0,0,0,0.03)'
+        }}>
+          <div style={{ position: 'absolute', top: '-10px', right: '-10px', fontSize: '100px', opacity: 0.04, lineHeight: 1 }}>{'\u26A1'}</div>
+          <div style={{ fontSize: '10px', fontWeight: 900, textTransform: 'uppercase', letterSpacing: '2px', color: '#64748b', marginBottom: '12px' }}>Mission in Progress</div>
+          <div style={{ display: 'flex', alignItems: 'baseline', gap: '8px' }}>
+            <span style={{ fontSize: '48px', fontWeight: 950, color: '#f39c12', lineHeight: 1 }}>{progressCount}</span>
+            <span style={{ fontSize: '12px', fontWeight: 800, color: '#f39c12', opacity: 0.8 }}>ACTIVE SCAN</span>
+          </div>
+          <div style={{ marginTop: '20px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <div style={{ flex: 1, height: '4px', background: '#f1f5f9', borderRadius: '2px', overflow: 'hidden' }}>
+              <div style={{ width: progressCount > 0 ? '100%' : '0%', height: '100%', background: '#f39c12', borderRadius: '2px', transition: 'width 0.5s ease' }} />
+            </div>
+            <span style={{ fontSize: '9px', fontWeight: 900, color: '#f39c12' }}>{progressCount > 0 ? 'SCANNING' : 'IDLE'}</span>
+          </div>
+        </div>
+
+        {/* Card: Completed Stats */}
+        <div style={{
+          background: 'white', borderRadius: '20px', padding: '24px',
+          border: '1px solid #dee2e6', position: 'relative', overflow: 'hidden',
+          boxShadow: '0 4px 20px rgba(0,0,0,0.03)'
+        }}>
+          <div style={{ position: 'absolute', top: '-10px', right: '-10px', fontSize: '100px', opacity: 0.04, lineHeight: 1 }}>{'\u2705'}</div>
+          <div style={{ fontSize: '10px', fontWeight: 900, textTransform: 'uppercase', letterSpacing: '2px', color: '#64748b', marginBottom: '12px' }}>Completed Operations</div>
+          <div style={{ display: 'flex', alignItems: 'baseline', gap: '8px' }}>
+            <span style={{ fontSize: '48px', fontWeight: 950, color: '#10b981', lineHeight: 1 }}>{stats.completed}</span>
+            <span style={{ fontSize: '12px', fontWeight: 800, color: '#10b981', opacity: 0.8 }}>SUCCESS</span>
+          </div>
+          <div style={{ marginTop: '20px', height: '4px', background: '#f1f5f9', borderRadius: '2px', overflow: 'hidden' }}>
+            <div style={{ width: `${(stats.completed / (stats.total || 1)) * 100}%`, height: '100%', background: '#10b981', borderRadius: '2px', transition: 'width 0.5s ease' }} />
+          </div>
+          <div style={{ fontSize: '9px', color: '#94a3b8', fontWeight: 800, marginTop: '8px', textTransform: 'uppercase' }}>Mission Success Rate: {Math.round((stats.completed / (stats.total || 1)) * 100)}%</div>
+        </div>
+      </div>
+    );
   };
 
-  // --- RENDER HELPERS ---
+  // ============================================================
+  //  FILTER CONSOLE
+  // ============================================================
+  const renderFilterBar = () => (
+    <div style={{
+      display: 'flex', alignItems: 'center', gap: '12px',
+      marginBottom: '24px', flexWrap: 'wrap',
+    }}>
+      <div style={{
+        flex: '1 1 280px', display: 'flex', alignItems: 'center', gap: '10px',
+        background: 'white', border: '1px solid #dee2e6', borderRadius: '12px',
+        padding: '10px 16px', transition: 'border-color 0.2s',
+      }}>
+        <span style={{ fontSize: '16px', opacity: 0.4 }}>{'\u{1F50D}'}</span>
+        <input
+          type="text"
+          placeholder="Search patient, mobile, or ID..."
+          value={searchQuery}
+          onChange={e => setSearchQuery(e.target.value)}
+          style={{
+            border: 'none', outline: 'none', background: 'transparent',
+            fontSize: '13px', fontWeight: 600, width: '100%', color: '#333',
+          }}
+        />
+        {searchQuery && (
+          <button onClick={() => setSearchQuery('')} style={{ border: 'none', background: 'none', cursor: 'pointer', fontSize: '14px', color: '#aaa', padding: 0 }}>{'\u2715'}</button>
+        )}
+      </div>
+
+      <select
+        value={filters.doctor}
+        onChange={e => setFilters({...filters, doctor: e.target.value})}
+        style={{
+          background: 'white', border: '1px solid #dee2e6', borderRadius: '12px',
+          padding: '10px 16px', fontSize: '12px', fontWeight: 700, color: '#555',
+          cursor: 'pointer', minWidth: '160px',
+        }}
+      >
+        <option value="ALL">All Specialists</option>
+        {DOCTORS.map(d => <option key={d} value={d}>{d}</option>)}
+      </select>
+
+      {(filters.status !== 'ALL' || filters.modality !== 'ALL' || filters.doctor !== 'ALL' || searchQuery) && (
+        <button
+          onClick={() => { setFilters({ date: TODAY, status: 'ALL', modality: 'ALL', doctor: 'ALL' }); setSearchQuery(''); }}
+          style={{
+            display: 'flex', alignItems: 'center', gap: '6px',
+            padding: '10px 16px', borderRadius: '12px',
+            background: '#fff5f5', border: '1px solid #fecaca', cursor: 'pointer',
+            fontSize: '11px', fontWeight: 800, color: '#e74c3c',
+            transition: 'all 0.2s',
+          }}
+        >
+          {'\u2715'} CLEAR FILTERS
+        </button>
+      )}
+
+
+    </div>
+  );
+
+  // ============================================================
+  //  APPOINTMENT TABLE ROW
+  // ============================================================
+  const renderAppointmentRow = (app) => {
+    const meta = STATUS_META[app.status];
+    const next = getNextAction(app.status);
+    const isExpanded = expandedRow === app.id;
+    const statusIndex = ['BOOKED','ARRIVED','IN_PROGRESS','COMPLETED'].indexOf(app.status);
+    const patient = patients.find(p => p.id === app.patientId);
+
+    return (
+      <div key={app.id} style={{ marginBottom: '10px' }}>
+        <div
+          onClick={() => setExpandedRow(isExpanded ? null : app.id)}
+          style={{
+            display: 'grid',
+            gridTemplateColumns: '0.6fr 1.8fr 1.8fr 0.8fr 1fr 1.6fr',
+            alignItems: 'center',
+            padding: '16px 22px',
+            background: isExpanded ? '#fafbff' : 'white',
+            borderRadius: isExpanded ? '14px 14px 0 0' : '14px',
+            border: `1px solid ${isExpanded ? '#c5d5f0' : '#eee'}`,
+            borderBottom: isExpanded ? '1px dashed #dde5f5' : `1px solid ${isExpanded ? '#c5d5f0' : '#eee'}`,
+            cursor: 'pointer',
+            transition: 'all 0.2s ease',
+            position: 'relative',
+            overflow: 'hidden',
+          }}
+        >
+          <div style={{ position: 'absolute', left: 0, top: 0, bottom: 0, width: '4px', background: meta.color, borderRadius: '4px 0 0 4px' }} />
+
+          <div style={{ fontSize: '11px', fontWeight: 900, color: '#aaa', fontFamily: 'monospace' }}>{app.id}</div>
+
+          <div style={{ display: 'flex', flexDirection: 'column' }}>
+            <div style={{ fontWeight: 800, color: '#1a1a2e', fontSize: '13px' }}>{app.patientName}</div>
+            <div style={{ fontSize: '10px', color: '#888', fontWeight: 600 }}>{app.mobile} {'\u00B7'} {patient?.age}y {patient?.gender}</div>
+          </div>
+
+          <div style={{ display: 'flex', flexDirection: 'column' }}>
+            <div style={{ fontSize: '12px', color: '#0f52ba', fontWeight: 800 }}>{app.referredBy || 'Self'}</div>
+            <div style={{ fontSize: '11px', color: '#888', fontWeight: 600 }}>{app.referredContact !== 'N/A' ? app.referredContact : ''}</div>
+          </div>
+
+          <div style={{
+            display: 'inline-flex', alignItems: 'center', gap: '5px',
+            padding: '4px 8px', borderRadius: '20px',
+            background: meta.bg, border: `1px solid ${meta.color}20`,
+            justifySelf: 'start'
+          }}>
+            <span style={{ fontSize: '10px' }}>{meta.icon}</span>
+            <span style={{ fontSize: '8px', fontWeight: 950, color: meta.color, textTransform: 'uppercase' }}>{meta.label}</span>
+          </div>
+
+          <div style={{ fontWeight: 700, color: '#333', fontSize: '11px' }}>{app.doctor}</div>
+
+          <div style={{ display: 'flex', alignItems: 'center', gap: '6px', justifySelf: 'end' }}>
+            {next && (
+              <button
+                onClick={(e) => { e.stopPropagation(); handleAction(app.id, next.action); }}
+                style={{
+                  display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '5px',
+                  padding: '6px 10px', borderRadius: '8px',
+                  background: next.color, border: 'none', cursor: 'pointer',
+                  fontSize: '9px', fontWeight: 950, color: 'white',
+                  boxShadow: `0 3px 8px ${next.color}30`, transition: 'all 0.2s',
+                  width: '90px'
+                }}
+              >
+                {next.icon} {next.label}
+              </button>
+            )}
+
+            <button
+              onClick={(e) => { e.stopPropagation(); setTokenPrintData(app); }}
+              style={{
+                width: '28px', height: '28px', borderRadius: '8px',
+                background: '#e8f0fe', border: '1px solid #c5d5f0', cursor: 'pointer',
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                fontSize: '12px', color: '#0f52ba', transition: 'all 0.2s',
+              }}
+              title="Print Thermal Token"
+            >
+              {'\u{1F5A8}\uFE0F'}
+            </button>
+
+            {app.status !== 'CANCELLED' && app.status !== 'COMPLETED' && (
+              <button
+                onClick={(e) => { e.stopPropagation(); handleAction(app.id, 'CANCEL'); }}
+                style={{
+                  width: '28px', height: '28px', borderRadius: '8px',
+                  background: '#fff5f5', border: '1px solid #fecaca', cursor: 'pointer',
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  fontSize: '12px', color: '#e74c3c', transition: 'all 0.2s',
+                }}
+                title="Abort Mission"
+              >
+                {'\u2715'}
+              </button>
+            )}
+
+            <div style={{ marginLeft: '4px', transition: 'transform 0.2s', transform: `rotate(${isExpanded ? 180 : 0}deg)`, fontSize: '10px', color: '#ccc' }}>{'\u25BC'}</div>
+          </div>
+        </div>
+
+        {isExpanded && (
+          <div style={{
+            background: '#fafbff', borderRadius: '0 0 14px 14px',
+            border: '1px solid #c5d5f0', borderTop: 'none',
+            padding: '20px 22px',
+          }}>
+            <div style={{ display: 'flex', gap: '24px', alignItems: 'flex-start', flexWrap: 'wrap' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flex: '0 0 auto' }}>
+                {['BOOKED','ARRIVED','IN_PROGRESS','COMPLETED'].map((s, i) => {
+                  const sMeta = STATUS_META[s];
+                  const reached = statusIndex >= i;
+                  const isCurrent = s === app.status;
+                  return (
+                    <div key={s} style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                      <div style={{
+                        width: isCurrent ? '32px' : '24px', height: isCurrent ? '32px' : '24px',
+                        borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center',
+                        background: reached ? sMeta.color : '#eee',
+                        color: reached ? 'white' : '#ccc',
+                        fontSize: isCurrent ? '14px' : '10px', fontWeight: 900,
+                        transition: 'all 0.3s', boxShadow: isCurrent ? `0 0 12px ${sMeta.glow}` : 'none',
+                      }}>
+                        {reached ? sMeta.icon : (i + 1)}
+                      </div>
+                      {i < 3 && (
+                        <div style={{
+                          width: '24px', height: '2px',
+                          background: statusIndex > i ? sMeta.color : '#eee',
+                          borderRadius: '1px',
+                        }} />
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+
+              {patient && (
+                <div style={{ display: 'flex', gap: '32px', flex: 1 }}>
+                </div>
+              )}
+
+              <div style={{ display: 'flex', gap: '8px', alignItems: 'center', marginLeft: 'auto' }}>
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+    );
+  };
+
+  // ============================================================
+  //  BOOKING DRAWER
+  // ============================================================
   const renderDrawer = () => {
     const isStep1 = bookingStep === 1;
     const isStep2 = bookingStep === 2;
     const isStep3 = bookingStep === 3;
-    const progress = (bookingStep / 3) * 100;
 
     if (isBookingOpen) return (
       <div className="drawer-overlay" onClick={() => setIsBookingOpen(false)}>
         <div className="drawer-content" onClick={e => e.stopPropagation()}>
-          <div className="drawer-header" style={{ background: 'linear-gradient(90deg, #0f52ba 0%, #061a40 100%)', color: 'white' }}>
+          <div className="drawer-header" style={{ background: 'linear-gradient(135deg, #0a1628 0%, #0f52ba 100%)', color: 'white', padding: '28px 30px', border: 'none' }}>
             <div style={{ display: 'flex', flexDirection: 'column' }}>
-               <h2 style={{ fontSize: '18px', fontWeight: 800 }}>MISSION BRIEFING: APPOINTMENT</h2>
-               <p style={{ fontSize: '11px', opacity: 0.8, textTransform: 'uppercase', letterSpacing: '1px' }}>Phase {bookingStep}: {isStep1 ? 'Infiltration & Identity' : isStep2 ? 'Objective' : 'Deployment'}</p>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '4px' }}>
+                <span style={{ fontSize: '20px' }}>{isStep1 ? '\u{1F3AF}' : '\u{1F680}'}</span>
+                <h2 style={{ fontSize: '18px', fontWeight: 900, margin: 0 }}>NEW MISSION</h2>
+              </div>
+              <p style={{ fontSize: '11px', opacity: 0.7, textTransform: 'uppercase', letterSpacing: '1px' }}>Phase {bookingStep}: {isStep1 ? 'Target Identity' : 'Mission Configuration'}</p>
             </div>
-            <button className="btn-close" style={{ color: 'white' }} onClick={() => setIsBookingOpen(false)}>&times;</button>
-          </div>
-          
-          <div className="step-progress-wrapper" style={{ padding: '0 25px', marginTop: '15px' }}>
-             <div className="step-progress-bar">
-                <div className="step-progress-fill" style={{ width: `${progress}%` }}></div>
-             </div>
+            <button className="btn-close" style={{ color: 'white', fontSize: '28px' }} onClick={() => setIsBookingOpen(false)}>&times;</button>
           </div>
 
-          <div className="drawer-body" style={{ paddingTop: '5px' }}>
+          <div style={{ padding: '0 30px', marginTop: '20px' }}>
+            <div style={{ display: 'flex', gap: '4px' }}>
+              {[1,2].map(s => (
+                <div key={s} style={{
+                  flex: 1, height: '5px', borderRadius: '3px',
+                  background: s <= bookingStep ? 'linear-gradient(90deg, #0f52ba, #00f2fe)' : '#eef0f2',
+                  transition: 'background 0.4s ease',
+                }} />
+              ))}
+            </div>
+          </div>
+
+          <div className="drawer-body" style={{ paddingTop: '10px' }}>
             {isStep1 && (
               <div className="quest-step-container">
-                <div className="section-instruction">
-                  <h3 style={{ fontSize: '14px', fontWeight: 700 }}>IDENTITY VERIFICATION</h3>
-                  <p style={{ fontSize: '12px', color: '#666' }}>Search the database or initialize a new record below.</p>
-                </div>
-                
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '25px' }}>
-                   {/* Top: Search Section */}
-                   <div style={{ background: '#f8f9fa', padding: '15px', borderRadius: '12px', border: '1px solid #eee' }}>
-                      <label style={{ fontSize: '11px', color: '#0f52ba', fontWeight: 800, marginBottom: '10px', display: 'block' }}>RECONNAISSANCE: SEARCH SYSTEM</label>
-                      <div className="search-input-group" style={{ width: '100%' }}>
-                         <span className="search-icon">🔍</span>
-                         <input 
-                           type="text" 
-                           placeholder="Search by Name or Mobile..." 
-                           value={searchQuery}
-                           onChange={(e) => setSearchQuery(e.target.value)} 
-                           autoFocus
-                         />
-                      </div>
+                <div style={{ background: '#f8f9fa', padding: '18px', borderRadius: '14px', border: '1px solid #eee' }}>
+                  <label style={{ fontSize: '10px', color: '#0f52ba', fontWeight: 800, marginBottom: '10px', display: 'block', letterSpacing: '1px' }}>SEARCH PATIENT DATABASE</label>
+                  <div className="search-input-group" style={{ width: '100%' }}>
+                    <span className="search-icon">{'\u{1F50D}'}</span>
+                    <input type="text" placeholder="Name or mobile number..." value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} autoFocus />
+                  </div>
 
-                      {searchQuery && (
-                        <div className="patient-results-list" style={{ marginTop: '10px', maxHeight: '150px', overflowY: 'auto' }}>
-                           {patients.filter(p => p.name.toLowerCase().includes(searchQuery.toLowerCase()) || p.mobile.includes(searchQuery)).map(p => (
-                             <div key={p.id} 
-                                className={`patient-search-result ${newBooking.patientId === p.id ? 'selected' : ''}`}
-                                onClick={() => {setNewBooking({...newBooking, patientId: p.id}); setDuplicatePatient(null);}}
-                             >
-                                <div className="user-avatar" style={{ width: '28px', height: '28px', fontSize: '10px' }}>{p.name.charAt(0)}</div>
-                                <div style={{ flex: 1 }}>
-                                   <div style={{ fontWeight: 700, fontSize: '12px' }}>{p.name}</div>
-                                   <div style={{ fontSize: '10px', color: '#888' }}>{p.mobile}</div>
-                                </div>
-                                {newBooking.patientId === p.id && <span style={{ color: '#0f52ba' }}>✔️</span>}
-                             </div>
-                           ))}
-                           {!patients.some(p => p.name.toLowerCase().includes(searchQuery.toLowerCase()) || p.mobile.includes(searchQuery)) && (
-                              <div style={{ padding: '10px', textAlign: 'center', color: '#999', fontSize: '12px' }}>New agent detected. Use form below.</div>
-                           )}
+                  {searchQuery && (
+                    <div style={{ marginTop: '10px', maxHeight: '160px', overflowY: 'auto' }}>
+                      {patients.filter(p => p.name.toLowerCase().includes(searchQuery.toLowerCase()) || p.mobile.includes(searchQuery)).map(p => (
+                        <div key={p.id}
+                          className={`patient-search-result ${newBooking.patientId === p.id ? 'selected' : ''}`}
+                          onClick={() => { 
+                            setNewBooking({...newBooking, patientId: p.id}); 
+                            setNewPatient({
+                              name: p.name,
+                              mobile: p.mobile,
+                              age: p.age || '',
+                              gender: p.gender || 'Male',
+                              village: p.village || '',
+                              district: p.district || '',
+                              address: p.address || '',
+                              referredBy: p.referredBy || '',
+                              sourceOfInfo: p.sourceOfInfo || ''
+                            });
+                            setDuplicatePatient(null); 
+                          }}
+                        >
+                          <div style={{
+                            width: '32px', height: '32px', borderRadius: '10px',
+                            background: newBooking.patientId === p.id ? '#0f52ba' : '#e8f0fe',
+                            color: newBooking.patientId === p.id ? 'white' : '#0f52ba',
+                            display: 'flex', alignItems: 'center', justifyContent: 'center',
+                            fontWeight: 900, fontSize: '12px', flexShrink: 0,
+                          }}>{p.name.charAt(0)}</div>
+                          <div style={{ flex: 1 }}>
+                            <div style={{ fontWeight: 700, fontSize: '13px', color: '#1a1a2e' }}>{p.name}</div>
+                            <div style={{ fontSize: '10px', color: '#888' }}>{p.mobile} {'\u00B7'} {p.age}y {p.gender}</div>
+                          </div>
+                          {newBooking.patientId === p.id && <span style={{ color: '#0f52ba', fontWeight: 900 }}>{'\u2714'}</span>}
                         </div>
+                      ))}
+                      {!patients.some(p => p.name.toLowerCase().includes(searchQuery.toLowerCase()) || p.mobile.includes(searchQuery)) && (
+                        <div style={{ padding: '12px', textAlign: 'center', color: '#999', fontSize: '12px' }}>New capture required - provide details below</div>
                       )}
-                   </div>
+                    </div>
+                  )}
+                </div>
 
-                   {/* Middle: Registration Section */}
-                   <div style={{ background: 'white', padding: '25px', borderRadius: '12px', border: '2px dashed #e3f2fd' }}>
-                      <label style={{ fontSize: '11px', color: '#0f52ba', fontWeight: 800, marginBottom: '20px', display: 'block' }}>INITIALIZE NEW AGENT PROFILE</label>
-                      
-                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px' }}>
-                        <div className="form-group" style={{ marginBottom: '10px' }}>
-                          <label style={{ fontSize: '11px', fontWeight: 700 }}>FULL NAME</label>
-                          <input type="text" placeholder="e.g. Michael Thorne" style={{ fontSize: '14px', padding: '12px' }} value={newPatient.name} onChange={e => setNewPatient({...newPatient, name: e.target.value})} />
-                        </div>
-                        <div className="form-group" style={{ marginBottom: '10px' }}>
-                          <label style={{ fontSize: '11px', fontWeight: 700 }}>MOBILE NUMBER</label>
-                          <input type="tel" placeholder="987..." style={{ fontSize: '14px', padding: '12px' }} value={newPatient.mobile} onChange={e => setNewPatient({...newPatient, mobile: e.target.value})} />
+                <div style={{ background: 'white', padding: '22px', borderRadius: '14px', border: '2px dashed #dde5f5' }}>
+                  <label style={{ fontSize: '10px', color: '#0f52ba', fontWeight: 800, marginBottom: '18px', display: 'block', letterSpacing: '1px' }}>ENTER MISSION TARGET DETAILS</label>
+                  
+                  {/* REFERRED BY SECTION (MOVED TO TOP) */}
+                  <div className="form-group" style={{ marginBottom: '16px', gridColumn: 'span 2' }}>
+                    <label style={{ fontSize: '10px', fontWeight: 800, color: '#0f52ba', letterSpacing: '0.5px', marginBottom: '8px', display: 'block' }}>MISSION SOURCE (REFERRED BY)</label>
+                    
+                    {!isAddingNewReferrer ? (
+                      <div style={{ position: 'relative' }}>
+                        <div style={{ display: 'flex', gap: '8px' }}>
+                          <div className="search-input-group" style={{ flex: 1, margin: 0 }}>
+                            <span className="search-icon">{'\u{1F50D}'}</span>
+                            <input 
+                              type="text" 
+                              placeholder="Search saved referrers..." 
+                              value={referrerSearchValue} 
+                              onChange={(e) => {
+                                setReferrerSearchValue(e.target.value);
+                                setNewPatient(prev => ({ ...prev, referredBy: e.target.value }));
+                              }} 
+                              style={{ fontSize: '13px' }}
+                            />
+                          </div>
+                          <button 
+                            type="button"
+                            onClick={() => setIsAddingNewReferrer(true)}
+                            style={{ 
+                              background: '#e8f0fe', color: '#0f52ba', border: '1px solid #c5d5f0', 
+                              borderRadius: '10px', padding: '0 15px', fontSize: '11px', fontWeight: 800,
+                              cursor: 'pointer'
+                            }}
+                          >
+                            + NEW
+                          </button>
                         </div>
                         
-                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '15px' }}>
-                           <div className="form-group" style={{ marginBottom: '10px' }}>
-                             <label style={{ fontSize: '11px', fontWeight: 700 }}>AGE</label>
-                             <input type="text" placeholder="25" style={{ fontSize: '14px', padding: '12px' }} value={newPatient.age} onChange={e => setNewPatient({...newPatient, age: e.target.value})} />
-                           </div>
-                           <div className="form-group" style={{ marginBottom: '10px' }}>
-                             <label style={{ fontSize: '11px', fontWeight: 700 }}>GENDER</label>
-                             <select style={{ fontSize: '14px', padding: '12px', height: '46px' }} value={newPatient.gender} onChange={e => setNewPatient({...newPatient, gender: e.target.value})}>
-                                <option>Male</option><option>Female</option><option>Other</option>
-                             </select>
-                           </div>
-                        </div>
-
-                        <div className="form-group" style={{ marginBottom: '10px' }}>
-                          <label style={{ fontSize: '11px', fontWeight: 700 }}>REFERRED BY</label>
-                          <input type="text" placeholder="Dr. XYZ" style={{ fontSize: '14px', padding: '12px' }} value={newPatient.referredBy} onChange={e => setNewPatient({...newPatient, referredBy: e.target.value})} />
-                        </div>
-
-                        <div className="form-group" style={{ marginBottom: '10px' }}>
-                          <label style={{ fontSize: '11px', fontWeight: 700 }}>VILLAGE</label>
-                          <input type="text" placeholder="Village Name" style={{ fontSize: '14px', padding: '12px' }} value={newPatient.village} onChange={e => setNewPatient({...newPatient, village: e.target.value})} />
-                        </div>
-
-                        <div className="form-group" style={{ marginBottom: '10px' }}>
-                          <label style={{ fontSize: '11px', fontWeight: 700 }}>DISTRICT</label>
-                          <input type="text" placeholder="District" style={{ fontSize: '14px', padding: '12px' }} value={newPatient.district} onChange={e => setNewPatient({...newPatient, district: e.target.value})} />
-                        </div>
-
-                        <div className="form-group" style={{ marginBottom: '10px', gridColumn: 'span 2' }}>
-                          <label style={{ fontSize: '11px', fontWeight: 700 }}>DETAILED ADDRESS</label>
-                          <input type="text" placeholder="Street, Landmark etc." style={{ fontSize: '14px', padding: '12px' }} value={newPatient.address} onChange={e => setNewPatient({...newPatient, address: e.target.value})} />
-                        </div>
+                        {referrerSearchValue && !referrers.find(r => r.name === referrerSearchValue) && (
+                          <div style={{ 
+                            position: 'absolute', top: '100%', left: 0, right: 0, 
+                            background: 'white', border: '1px solid #dee2e6', borderRadius: '10px',
+                            marginTop: '4px', boxShadow: '0 10px 25px rgba(0,0,0,0.1)', zIndex: 10,
+                            maxHeight: '150px', overflowY: 'auto'
+                          }}>
+                            {referrers.filter(r => r.name.toLowerCase().includes(referrerSearchValue.toLowerCase())).map(r => (
+                              <div 
+                                key={r.id}
+                                onClick={() => {
+                                  setNewPatient(prev => ({ ...prev, referredBy: r.name }));
+                                  setReferrerSearchValue(r.name);
+                                }}
+                                style={{ padding: '10px 15px', fontSize: '12px', cursor: 'pointer', borderBottom: '1px solid #f8f9fa' }}
+                                onMouseEnter={e => e.currentTarget.style.background = '#f0f4ff'}
+                                onMouseLeave={e => e.currentTarget.style.background = 'white'}
+                              >
+                                <div style={{ fontWeight: 700 }}>{r.name}</div>
+                                <div style={{ fontSize: '10px', color: '#888' }}>{r.contact} {r.address && '\u00B7'} {r.address}</div>
+                              </div>
+                            ))}
+                          </div>
+                        )}
                       </div>
-                      
-                      <button 
-                         type="button" 
-                         className="btn-primary" 
-                         style={{ marginTop: '5px', width: '100%', background: '#0f52ba', height: '45px', fontWeight: 700 }}
-                         disabled={!newPatient.name || !newPatient.mobile}
-                         onClick={() => {
-                            const id = `P00${patients.length + 1}`;
-                            setPatients([...patients, { ...newPatient, id }]);
-                            setNewBooking({...newBooking, patientId: id});
-                            setNewPatient({ name: '', mobile: '', age: '', gender: 'Male', village: '', district: '', address: '', referredBy: '' });
-                            setSearchQuery(''); // Reset search to show selection
-                         }}
-                      >
-                         AUTHENTICATE & REGISTER
-                      </button>
+                    ) : (
+                      <div style={{ background: '#f8f9fa', padding: '15px', borderRadius: '12px', border: '1.5px solid #0f52ba30' }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
+                          <span style={{ fontSize: '11px', fontWeight: 900, color: '#0f52ba' }}>NEW REFERRER DATA</span>
+                          <button type="button" onClick={() => setIsAddingNewReferrer(false)} style={{ border: 'none', background: 'none', color: '#e74c3c', fontSize: '10px', fontWeight: 800 }}>CANCEL</button>
+                        </div>
+                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', marginBottom: '10px' }}>
+                          <input type="text" placeholder="Name" style={{ fontSize: '12px', padding: '8px 10px', borderRadius: '8px' }} value={newReferrer.name} onChange={e => setNewReferrer(prev => ({ ...prev, name: e.target.value }))} />
+                          <input type="text" placeholder="Contact" style={{ fontSize: '12px', padding: '8px 10px', borderRadius: '8px' }} value={newReferrer.contact} onChange={e => setNewReferrer(prev => ({ ...prev, contact: e.target.value }))} />
+                        </div>
+                        <input type="text" placeholder="Address" style={{ width: '100%', fontSize: '12px', padding: '8px 10px', borderRadius: '8px' }} value={newReferrer.address} onChange={e => setNewReferrer(prev => ({ ...prev, address: e.target.value }))} />
+                        <button type="button" onClick={() => { if(newReferrer.name){ const added = {...newReferrer, id: Date.now()}; setReferrers([...referrers, added]); setNewPatient({...newPatient, referredBy: newReferrer.name}); setIsAddingNewReferrer(false); } }} style={{ marginTop: '10px', width: '100%', background: '#0f52ba', color: 'white', border: 'none', padding: '8px', borderRadius: '8px', fontSize: '11px', fontWeight: 800 }}>SAVE REFERRER</button>
+                      </div>
+                    )}
+                  </div>
 
-                      {newBooking.patientId && (
-                         <div style={{ marginTop: '15px', background: 'linear-gradient(90deg, #e3f2fd 0%, #ffffff 100%)', padding: '12px', borderRadius: '8px', borderLeft: '4px solid #0f52ba', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                            <div>
-                               <div style={{ fontSize: '10px', color: '#0f52ba', fontWeight: 800 }}>ACTIVE TARGET ACQUIRED</div>
-                               <div style={{ fontWeight: 800, color: '#061a40', fontSize: '15px' }}>{patients.find(p => p.id === newBooking.patientId)?.name}</div>
-                            </div>
-                            <span style={{ fontSize: '20px' }}>🎯</span>
-                         </div>
-                      )}
-                   </div>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
+                    <div className="form-group" style={{ marginBottom: '8px' }}>
+                      <label style={{ fontSize: '10px', fontWeight: 700 }}>FULL NAME</label>
+                      <input type="text" placeholder="e.g. Michael Thorne" style={{ fontSize: '13px', padding: '11px 12px' }} value={newPatient.name} onChange={e => { setNewPatient({...newPatient, name: e.target.value}); setNewBooking({...newBooking, patientId: ''}); }} />
+                    </div>
+                    <div className="form-group" style={{ marginBottom: '8px' }}>
+                      <label style={{ fontSize: '10px', fontWeight: 700 }}>MOBILE</label>
+                      <input type="tel" placeholder="987..." style={{ fontSize: '13px', padding: '11px 12px' }} value={newPatient.mobile} onChange={e => { setNewPatient({...newPatient, mobile: e.target.value}); setNewBooking({...newBooking, patientId: ''}); }} />
+                    </div>
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+                      <div className="form-group" style={{ marginBottom: '8px' }}>
+                        <label style={{ fontSize: '10px', fontWeight: 700 }}>AGE</label>
+                        <input type="text" placeholder="25" style={{ fontSize: '13px', padding: '11px 12px' }} value={newPatient.age} onChange={e => setNewPatient({...newPatient, age: e.target.value})} />
+                      </div>
+                      <div className="form-group" style={{ marginBottom: '8px' }}>
+                        <label style={{ fontSize: '10px', fontWeight: 700, color: '#64748b' }}>GENDER</label>
+                        <select style={{ fontSize: '13px', padding: '11px', height: '44px' }} value={newPatient.gender} onChange={e => setNewPatient({...newPatient, gender: e.target.value})}>
+                          <option>Male</option><option>Female</option><option>Other</option>
+                        </select>
+                      </div>
+                    </div>
+                    <div className="form-group" style={{ marginBottom: '8px' }}>
+                      <label style={{ fontSize: '10px', fontWeight: 800, color: '#0f52ba', letterSpacing: '0.5px' }}>SOURCE OF INFORMATION</label>
+                      <input 
+                        type="text" 
+                        placeholder="Discovery source..." 
+                        style={{ fontSize: '13px', padding: '11px 12px', height: '44px', border: '1.5px solid #0f52ba20', background: '#f0f7ff' }} 
+                        value={newPatient.sourceOfInfo} 
+                        onChange={e => setNewPatient({...newPatient, sourceOfInfo: e.target.value})} 
+                      />
+                    </div>
+                    <div className="form-group" style={{ marginBottom: '8px' }}>
+                      <label style={{ fontSize: '10px', fontWeight: 700 }}>VILLAGE</label>
+                      <input type="text" placeholder="Village" style={{ fontSize: '13px', padding: '11px 12px' }} value={newPatient.village} onChange={e => setNewPatient({...newPatient, village: e.target.value})} />
+                    </div>
+                    <div className="form-group" style={{ marginBottom: '8px' }}>
+                      <label style={{ fontSize: '10px', fontWeight: 700 }}>DISTRICT</label>
+                      <input type="text" placeholder="District" style={{ fontSize: '13px', padding: '11px 12px' }} value={newPatient.district} onChange={e => setNewPatient({...newPatient, district: e.target.value})} />
+                    </div>
+                    <div className="form-group" style={{ marginBottom: '8px', gridColumn: 'span 2' }}>
+                      <label style={{ fontSize: '10px', fontWeight: 700 }}>ADDRESS / RESIDENCE DATA</label>
+                      <input type="text" placeholder="Street, Landmark..." style={{ fontSize: '13px', padding: '11px 12px' }} value={newPatient.address} onChange={e => setNewPatient({...newPatient, address: e.target.value})} />
+                    </div>
+
+                  </div>
                 </div>
 
-                <div className="drawer-footer">
-                  <button className="btn-primary gamified-btn" style={{ width: '100%', padding: '16px', borderRadius: '12px' }} disabled={!newBooking.patientId} onClick={() => setBookingStep(2)}>PROCEED TO PHASE 2</button>
+
+                {newBooking.patientId && (
+                  <div style={{
+                    background: 'linear-gradient(90deg, #e8f0fe 0%, #fff 100%)',
+                    padding: '14px 18px', borderRadius: '12px',
+                    borderLeft: '4px solid #0f52ba',
+                    display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+                  }}>
+                    <div>
+                      <div style={{ fontSize: '9px', color: '#0f52ba', fontWeight: 800, letterSpacing: '1px' }}>SELECTED PATIENT</div>
+                      <div style={{ fontWeight: 800, color: '#0a1628', fontSize: '15px', marginTop: '2px' }}>{patients.find(p => p.id === newBooking.patientId)?.name}</div>
+                    </div>
+                    <span style={{ fontSize: '22px' }}>{'\u{1F3AF}'}</span>
+                  </div>
+                )}
+
+                <div className="drawer-footer" style={{ borderTop: 'none', paddingTop: '10px' }}>
+                  <button 
+                    className="gamified-btn" 
+                    style={{ width: '100%', padding: '16px', borderRadius: '12px', fontSize: '13px' }} 
+                    disabled={!newBooking.patientId && (!newPatient.name || !newPatient.mobile)} 
+                    onClick={() => {
+                      if (!newBooking.patientId && newPatient.name && newPatient.mobile) {
+                        const id = `P00${patients.length + 1}`;
+                        setPatients([...patients, { ...newPatient, id }]);
+                        setNewBooking({...newBooking, patientId: id});
+                        setNewPatient({ name: '', mobile: '', age: '', gender: 'Male', village: '', district: '', address: '', referredBy: '', sourceOfInfo: '' });
+                      }
+                      setBookingStep(2);
+                    }}
+                  >
+                    PROCEED {'\u2192'} MISSION CONFIG
+                  </button>
                 </div>
               </div>
             )}
 
             {isStep2 && (
               <div className="quest-step-container">
-                <div className="section-instruction">
-                  <h3 style={{ fontSize: '14px', fontWeight: 700 }}>THE OBJECTIVE: Mission Selection</h3>
-                  <p style={{ fontSize: '12px', color: '#666' }}>Select study modality and specified intelligence service.</p>
+                <div style={{ marginBottom: '8px' }}>
+                  <h3 style={{ fontSize: '14px', fontWeight: 800, color: '#0a1628' }}>1. Select Study Modality</h3>
                 </div>
 
-                <div className="modality-grid">
-                   {MODALITIES.map(m => (
-                     <div 
-                        key={m} 
-                        className={`modality-card ${newBooking.modality === m ? 'active' : ''}`}
-                        onClick={() => setNewBooking({...newBooking, modality: m})}
-                     >
-                        <span className="modality-icon">{MODALITY_ICONS[m] || '📌'}</span>
-                        <span className="modality-name">{m}</span>
-                     </div>
-                   ))}
+                <div className="modality-grid" style={{ gridTemplateColumns: 'repeat(5, 1fr)', gap: '8px' }}>
+                  {MODALITIES.map(m => (
+                    <div key={m} className={`modality-card ${newBooking.modality === m ? 'active' : ''}`} 
+                      style={{ padding: '12px 8px', minHeight: 'auto' }}
+                      onClick={() => setNewBooking({...newBooking, modality: m})}
+                    >
+                      <span className="modality-icon" style={{ fontSize: '18px', marginBottom: '4px' }}>{MODALITY_ICONS[m] || '\u{1F4CC}'}</span>
+                      <span className="modality-name" style={{ fontSize: '9px' }}>{m}</span>
+                    </div>
+                  ))}
                 </div>
 
-                <div className="form-group" style={{ marginTop: '10px' }}>
-                  <label>SERVICE / PROCEDURE</label>
-                  <input 
-                     type="text" 
-                     placeholder="e.g. Chest X-Ray with Lateral" 
-                     value={newBooking.service} 
-                     onChange={e => setNewBooking({...newBooking, service: e.target.value})} 
-                  />
+                <div className="form-group" style={{ marginTop: '16px' }}>
+                  <label style={{ fontSize: '9px', fontWeight: 800, letterSpacing: '0.5px', color: '#888' }}>2. SERVICE / PROCEDURE</label>
+                  <input type="text" placeholder="e.g. Chest X-Ray with Lateral" value={newBooking.service} onChange={e => setNewBooking({...newBooking, service: e.target.value})} style={{ fontSize: '13px', padding: '10px' }} />
                 </div>
 
-                <div className="drawer-footer">
-                  <button className="btn-logout" onClick={() => setBookingStep(1)}>Back</button>
-                  <button className="btn-primary gamified-btn" style={{ flex: 1 }} disabled={!newBooking.service} onClick={() => setBookingStep(3)}>Proceed to Tactical</button>
-                </div>
-              </div>
-            )}
-
-            {isStep3 && (
-              <div className="quest-step-container">
-                <div className="section-instruction">
-                  <h3 style={{ fontSize: '14px', fontWeight: 700 }}>DEPLOYMENT: Specialist & Intelligence</h3>
-                  <p style={{ fontSize: '12px', color: '#666' }}>Assign the lead specialist and finalize mission intelligence.</p>
-                </div>
-
-                <div className="form-group">
-                  <label style={{ marginBottom: '15px', color: '#0f52ba', fontWeight: 800 }}>ASSIGN LEAD SPECIALIST</label>
-                  <div className="doctor-selection-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '15px' }}>
+                <div style={{ marginTop: '16px', marginBottom: '8px' }}>
+                  <label style={{ fontSize: '9px', fontWeight: 800, letterSpacing: '0.5px', color: '#888', display: 'block', marginBottom: '10px' }}>3. ASSIGN LEAD SPECIALIST</label>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '10px' }}>
                     {DOCTORS.map(d => (
-                      <div 
-                        key={d} 
-                        className={`modality-card ${newBooking.doctor === d ? 'active' : ''}`}
-                        style={{ padding: '20px', minHeight: '120px' }}
+                      <div key={d} className={`modality-card ${newBooking.doctor === d ? 'active' : ''}`}
+                        style={{ padding: '12px', position: 'relative', flexDirection: 'row', justifyContent: 'flex-start', gap: '10px', minHeight: 'auto' }}
                         onClick={() => setNewBooking({...newBooking, doctor: d})}
                       >
-                         <div className="user-avatar" style={{ width: '40px', height: '40px', marginBottom: '8px', background: newBooking.doctor === d ? 'rgba(255,255,255,0.2)' : '#f0f2f5' }}>
-                           {d.split('. ')[1]?.charAt(0)}
-                         </div>
-                         <div style={{ fontWeight: 700, fontSize: '13px' }}>{d}</div>
-                         <div style={{ fontSize: '10px', opacity: 0.7, marginTop: '4px' }}>Active Duty</div>
-                         {newBooking.doctor === d && <div style={{ position: 'absolute', top: '10px', right: '10px', fontSize: '12px' }}>✔️</div>}
+                        <div style={{
+                          width: '28px', height: '28px', borderRadius: '8px',
+                          background: newBooking.doctor === d ? 'rgba(255,255,255,0.2)' : '#e8f0fe',
+                          display: 'flex', alignItems: 'center', justifyContent: 'center',
+                          fontWeight: 900, fontSize: '11px', color: newBooking.doctor === d ? 'white' : '#0f52ba', flexShrink: 0,
+                        }}>
+                          {d.split('. ')[1]?.charAt(0)}
+                        </div>
+                        <div style={{ textAlign: 'left' }}>
+                          <div style={{ fontWeight: 800, fontSize: '11px', color: newBooking.doctor === d ? 'white' : '#1a1a2e' }}>{d}</div>
+                        </div>
+                        {newBooking.doctor === d && <span style={{ position: 'absolute', top: '8px', right: '8px', fontSize: '10px' }}>{'\u2714'}</span>}
                       </div>
                     ))}
                   </div>
                 </div>
 
-                <div className="form-group">
-                  <label>ADDITIONAL INTEL (NOTES)</label>
-                  <textarea 
-                    rows="4" 
-                    placeholder="Briefing notes for the technician/doctor..."
-                    style={{ width: '100%', padding: '15px', borderRadius: '12px', border: '1px solid #dee2e6', fontSize: '14px' }}
-                    value={newBooking.notes} 
-                    onChange={e => setNewBooking({...newBooking, notes: e.target.value})}
-                  ></textarea>
+                <div className="form-group" style={{ marginTop: '12px' }}>
+                  <label style={{ fontSize: '9px', fontWeight: 800, letterSpacing: '0.5px', color: '#888' }}>4. NOTES (OPTIONAL)</label>
+                  <textarea rows="2" placeholder="Clinical notes..." style={{ width: '100%', padding: '10px', borderRadius: '10px', border: '1px solid #dee2e6', fontSize: '12px', resize: 'vertical' }} value={newBooking.notes} onChange={e => setNewBooking({...newBooking, notes: e.target.value})} />
                 </div>
 
-                <div className="drawer-footer" style={{ marginTop: '10px' }}>
-                  <button className="btn-logout" onClick={() => setBookingStep(2)}>Back</button>
-                  <button className="btn-primary gamified-btn" style={{ flex: 1 }} onClick={handleBookAppointment}>Authorize Mission</button>
+                <div style={{
+                  background: '#f0f4ff', padding: '14px', borderRadius: '12px',
+                  border: '1px solid #dde5f5', marginTop: '12px',
+                }}>
+                  <div style={{ fontSize: '8px', fontWeight: 900, color: '#0f52ba', textTransform: 'uppercase', letterSpacing: '1px', marginBottom: '8px' }}>Final Mission Briefing Summary</div>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 1fr', gap: '8px' }}>
+                    <div><span style={{ fontSize: '8px', color: '#888', fontWeight: 700 }}>PATIENT</span><div style={{ fontWeight: 800, fontSize: '11px', color: '#1a1a2e' }}>{patients.find(p => p.id === newBooking.patientId)?.name}</div></div>
+                    <div><span style={{ fontSize: '8px', color: '#888', fontWeight: 700 }}>MODALITY</span><div style={{ fontWeight: 800, fontSize: '11px', color: '#1a1a2e' }}>{MODALITY_ICONS[newBooking.modality]} {newBooking.modality}</div></div>
+                    <div><span style={{ fontSize: '8px', color: '#888', fontWeight: 700 }}>SERVICE</span><div style={{ fontWeight: 800, fontSize: '11px', color: '#1a1a2e' }}>{newBooking.service || '\u2014'}</div></div>
+                    <div><span style={{ fontSize: '8px', color: '#888', fontWeight: 700 }}>SPECIALIST</span><div style={{ fontWeight: 800, fontSize: '11px', color: '#1a1a2e' }}>{newBooking.doctor || 'Unassigned'}</div></div>
+                  </div>
+                </div>
+
+                <div className="drawer-footer" style={{ marginTop: '16px' }}>
+                  <button className="btn-logout" style={{ padding: '12px 20px', borderRadius: '10px', fontWeight: 800, fontSize: '12px' }} onClick={() => setBookingStep(1)}>{'\u2190'} Back</button>
+                  <button className="gamified-btn" style={{ flex: 1, padding: '12px', borderRadius: '10px', fontSize: '13px' }} disabled={!newBooking.service || !newBooking.doctor} onClick={handleBookAppointment}>
+                    {'\u{1F680}'} DEPLOY MISSION
+                  </button>
                 </div>
               </div>
             )}
@@ -367,17 +829,11 @@ export default function AppointmentBoard() {
           </div>
           <div className="drawer-body">
             <form onSubmit={handleAddPatient}>
-              <div className="form-group">
-                <label>Full Name</label>
-                <input type="text" required value={newPatient.name} onChange={e => setNewPatient({...newPatient, name: e.target.value})} />
-              </div>
-              <div className="form-group">
-                <label>Mobile Number</label>
-                <input type="tel" required value={newPatient.mobile} onChange={e => setNewPatient({...newPatient, mobile: e.target.value})} />
-              </div>
+              <div className="form-group"><label>Full Name</label><input type="text" required value={newPatient.name} onChange={e => setNewPatient({...newPatient, name: e.target.value})} /></div>
+              <div className="form-group"><label>Mobile Number</label><input type="tel" required value={newPatient.mobile} onChange={e => setNewPatient({...newPatient, mobile: e.target.value})} /></div>
               {duplicatePatient && (
                 <div className="duplicate-info">
-                  <h4>⚠️ Duplicate Found!</h4>
+                  <h4>{'\u26A0\uFE0F'} Duplicate Found!</h4>
                   <p>Patient <strong>{duplicatePatient.name}</strong> exists with this mobile.</p>
                   <div style={{ marginTop: '10px', display: 'flex', gap: '8px' }}>
                     <button type="button" className="btn-primary" style={{ fontSize: '12px' }} onClick={() => { setNewBooking({...newBooking, patientId: duplicatePatient.id}); setIsAddPatientOpen(false); }}>Use Existing</button>
@@ -386,27 +842,11 @@ export default function AppointmentBoard() {
                 </div>
               )}
               <div style={{ display: 'flex', gap: '10px' }}>
-                <div className="form-group" style={{ flex: 1 }}>
-                  <label>Age / DOB</label>
-                  <input type="text" placeholder="e.g. 25" value={newPatient.age} onChange={e => setNewPatient({...newPatient, age: e.target.value})} />
-                </div>
-                <div className="form-group" style={{ flex: 1 }}>
-                  <label>Gender</label>
-                  <select value={newPatient.gender} onChange={e => setNewPatient({...newPatient, gender: e.target.value})}>
-                    <option>Male</option>
-                    <option>Female</option>
-                    <option>Other</option>
-                  </select>
-                </div>
+                <div className="form-group" style={{ flex: 1 }}><label>Age / DOB</label><input type="text" placeholder="e.g. 25" value={newPatient.age} onChange={e => setNewPatient({...newPatient, age: e.target.value})} /></div>
+                <div className="form-group" style={{ flex: 1 }}><label>Gender</label><select value={newPatient.gender} onChange={e => setNewPatient({...newPatient, gender: e.target.value})}><option>Male</option><option>Female</option><option>Other</option></select></div>
               </div>
-              <div className="form-group">
-                <label>Address</label>
-                <input type="text" value={newPatient.address} onChange={e => setNewPatient({...newPatient, address: e.target.value})} />
-              </div>
-              <div className="form-group">
-                <label>Referred By</label>
-                <input type="text" value={newPatient.referredBy} onChange={e => setNewPatient({...newPatient, referredBy: e.target.value})} />
-              </div>
+              <div className="form-group"><label>Address</label><input type="text" value={newPatient.address} onChange={e => setNewPatient({...newPatient, address: e.target.value})} /></div>
+              <div className="form-group"><label>Referred By</label><input type="text" value={newPatient.referredBy} onChange={e => setNewPatient({...newPatient, referredBy: e.target.value})} /></div>
               <div className="drawer-footer">
                 <button type="button" className="btn-logout" onClick={() => setIsAddPatientOpen(false)}>Cancel</button>
                 <button type="submit" className="btn-primary">Add Patient</button>
@@ -420,250 +860,176 @@ export default function AppointmentBoard() {
     return null;
   };
 
-  const renderPrintModal = () => {
-    if (!printModalData) return null;
-    
-    // Simulations of report content based on modality
-    const mockReport = {
-      XRAY: "CHEST PA VIEW: The heart and mediastinal silhouettes are normal. Lungs are clear. No pleural effusion or pneumothorax detected.",
-      MRI: "BRAIN MRI: Brain parenchyma shows normal signal intensity. Ventricular system is within normal limits. No space-occupying lesions.",
-      CT: "ABDOMEN CT: Liver, spleen, and kidneys appear normal in size and attenuation. No enlarged lymph nodes identified."
-    }[printModalData.modality] || "Full diagnostic findings available in clinical repository.";
-
+  // ============================================================
+  //  PRINT MODAL
+  // ============================================================
+  const renderTokenModal = () => {
+    if (!tokenPrintData) return null;
     return (
-      <div className="modal-overlay" style={{ background: 'rgba(0,0,0,0.85)', zIndex: 3000 }}>
-         <div className="print-modal-container" style={{ 
-            width: '850px', 
-            height: '92vh', 
-            background: '#333', 
-            borderRadius: '12px', 
-            display: 'flex', 
-            flexDirection: 'column',
-            overflow: 'hidden',
-            boxShadow: '0 20px 50px rgba(0,0,0,0.5)'
-         }}>
-            <div style={{ padding: '15px 25px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: '#222', borderBottom: '1px solid #444' }}>
-               <h3 style={{ color: '#eee', fontSize: '14px', fontWeight: 800 }}>REPORT PREVIEW & DISPATCH</h3>
-               <div style={{ display: 'flex', gap: '10px' }}>
-                  <button className="btn-primary" style={{ background: '#2ecc71', padding: '8px 20px' }} onClick={() => window.print()}>PRINT REPORT</button>
-                  <button className="btn-logout" style={{ padding: '8px 20px' }} onClick={() => setPrintModalData(null)}>CLOSE</button>
-               </div>
+      <div className="modal-overlay" style={{ background: 'rgba(0,0,0,0.85)', zIndex: 3001 }}>
+        <div style={{ width: '400px', background: 'white', borderRadius: '16px', overflow: 'hidden', boxShadow: '0 20px 60px rgba(0,0,0,0.5)' }}>
+          <div style={{ padding: '20px', background: '#0a1628', color: 'white', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <span style={{ fontSize: '12px', fontWeight: 900, letterSpacing: '1px' }}>THERMAL PREVIEW (80mm)</span>
+            <button onClick={() => setTokenPrintData(null)} style={{ background: 'none', border: 'none', color: 'white', fontSize: '18px', cursor: 'pointer' }}>{'\u2715'}</button>
+          </div>
+          
+          <div style={{ padding: '30px', display: 'flex', justifyContent: 'center', background: '#f1f5f9' }}>
+            <div id="thermal-token" style={{ 
+              width: '80mm', minHeight: '120mm', background: 'white', padding: '15mm 8mm', 
+              boxShadow: '0 5px 15px rgba(0,0,0,0.1)', color: 'black', 
+              fontFamily: 'monospace', textAlign: 'center' 
+            }}>
+              <div style={{ borderBottom: '2px dashed #000', paddingBottom: '10px', marginBottom: '15px' }}>
+                <div style={{ fontSize: '16px', fontWeight: 900 }}>1RAD HUB</div>
+                <div style={{ fontSize: '9px' }}>CLINICAL COMMAND CENTER</div>
+              </div>
+              
+              <div style={{ fontSize: '10px', marginBottom: '5px' }}>TOKEN NUMBER</div>
+              <div style={{ fontSize: '32px', fontWeight: 900, border: '2px solid black', padding: '5px', margin: '5px 0' }}>{tokenPrintData.id.split('-')[1]}</div>
+              
+              <div style={{ marginTop: '15px', textAlign: 'left' }}>
+                <div style={{ fontSize: '9px', fontWeight: 800 }}>TARGET IDENTITY:</div>
+                <div style={{ fontSize: '16px', fontWeight: 900, marginBottom: '2px' }}>{tokenPrintData.patientName}</div>
+                <div style={{ fontSize: '10px' }}>ID: {tokenPrintData.patientId}</div>
+              </div>
+
+              <div style={{ marginTop: '15px', textAlign: 'left', borderTop: '1px solid #333', paddingTop: '10px' }}>
+                <div style={{ fontSize: '11px', fontWeight: 900 }}>MISSION: {tokenPrintData.modality}</div>
+                <div style={{ fontSize: '10px' }}>{tokenPrintData.service}</div>
+              </div>
+              
+              <div style={{ marginTop: '20px', fontSize: '9px', opacity: 0.8 }}>
+                DATE: {new Date().toLocaleDateString()} | {new Date().toLocaleTimeString()}
+              </div>
+              
+              <div style={{ marginTop: '30px', borderTop: '2px dashed #000', paddingTop: '10px', fontSize: '10px', fontWeight: 900 }}>
+                PLEASE WAIT FOR DEPLOYMENT
+              </div>
             </div>
-            
-            <div className="print-area-wrapper" style={{ flex: 1, overflowY: 'auto', padding: '40px', display: 'flex', justifyContent: 'center' }}>
-               {/* 100% Precision A4 Paper */}
-               <div id="printable-report" style={{ 
-                  width: '210mm', 
-                  minHeight: '297mm', 
-                  background: 'white', 
-                  padding: '20mm',
-                  boxShadow: '0 0 20px rgba(0,0,0,0.2)',
-                  position: 'relative',
-                  color: '#333',
-                  fontFamily: '"Times New Roman", Times, serif'
-               }}>
-                  {/* Header Intel */}
-                  <div style={{ borderBottom: '2px solid #0f52ba', paddingBottom: '20px', marginBottom: '30px', display: 'flex', justifyContent: 'space-between' }}>
-                     <div>
-                        <h1 style={{ color: '#0f52ba', fontSize: '24px', margin: 0, fontWeight: 900 }}>easyRAD DIAGNOSTICS</h1>
-                        <p style={{ fontSize: '10px', color: '#666', marginTop: '4px' }}>Advanced Clinical Imaging & Molecular Reporting Suite</p>
-                     </div>
-                     <div style={{ textAlign: 'right' }}>
-                        <div style={{ fontSize: '12px', fontWeight: 800 }}>CENTRAL HOSPITAL HUB</div>
-                        <div style={{ fontSize: '10px', color: '#888' }}>Sector 017-A | Diagnostic Wing</div>
-                     </div>
-                  </div>
+          </div>
 
-                  {/* Patient Demographics Strip */}
-                  <div style={{ background: '#f8f9fa', padding: '15px', borderRadius: '4px', marginBottom: '30px', display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '15px', border: '1px solid #eee' }}>
-                     <div><label style={{ fontSize: '9px', fontWeight: 800, color: '#888', display: 'block' }}>PATIENT NAME</label><span style={{ fontSize: '13px', fontWeight: 700 }}>{printModalData.patientName}</span></div>
-                     <div><label style={{ fontSize: '9px', fontWeight: 800, color: '#888', display: 'block' }}>ID / MOBILE</label><span style={{ fontSize: '12px' }}>{printModalData.patientId} / {printModalData.mobile}</span></div>
-                     <div><label style={{ fontSize: '9px', fontWeight: 800, color: '#888', display: 'block' }}>DATE / TIME</label><span style={{ fontSize: '12px' }}>{printModalData.dateTime.replace('T', ' ')}</span></div>
-                     <div><label style={{ fontSize: '9px', fontWeight: 800, color: '#888', display: 'block' }}>REFERRING DOCTOR</label><span style={{ fontSize: '12px' }}>Dr. External Referrer</span></div>
-                     <div><label style={{ fontSize: '9px', fontWeight: 800, color: '#888', display: 'block' }}>REPORTING DOCTOR</label><span style={{ fontSize: '12px', fontWeight: 700 }}>{printModalData.doctor}</span></div>
-                     <div><label style={{ fontSize: '9px', fontWeight: 800, color: '#888', display: 'block' }}>MODALITY</label><span style={{ fontSize: '12px', fontWeight: 900, color: '#0f52ba' }}>{printModalData.modality}</span></div>
-                  </div>
-
-                  {/* Clinical Content */}
-                  <div style={{ marginBottom: '40px' }}>
-                     <h3 style={{ fontSize: '14px', borderBottom: '1px solid #eee', paddingBottom: '5px', marginBottom: '15px' }}>CLINICAL FINDINGS</h3>
-                     <p style={{ fontSize: '13px', lineHeight: '1.6', textAlign: 'justify' }}>{mockReport}</p>
-                     
-                     <h3 style={{ fontSize: '14px', borderBottom: '1px solid #eee', paddingBottom: '5px', marginBottom: '15px', marginTop: '30px' }}>FINAL IMPRESSION</h3>
-                     <p style={{ fontSize: '13px', fontWeight: 700, lineHeight: '1.6' }}>Diagnostic results are suggestive of a specified clinical variant. Clinical correlation requested.</p>
-                  </div>
-
-                  {/* Signature Section */}
-                  <div style={{ position: 'absolute', bottom: '20mm', right: '20mm', textAlign: 'center' }}>
-                     <div style={{ width: '150px', height: '1px', background: '#333', marginBottom: '10px' }}></div>
-                     <div style={{ fontSize: '12px', fontWeight: 800 }}>{printModalData.doctor}</div>
-                     <div style={{ fontSize: '9px', color: '#666' }}>MD, Radiologist | Reg: ER-894-0</div>
-                  </div>
-               </div>
-            </div>
-         </div>
-         
-         {/* Internal Print Styles */}
-         <style>{`
-            @media print {
-               body * { visibility: hidden; }
-               #printable-report, #printable-report * { visibility: visible; }
-               #printable-report { position: absolute; left: 0; top: 0; box-shadow: none !important; }
-               .modal-overlay, .print-modal-container { background: white !important; }
+          <div style={{ padding: '20px', display: 'flex', gap: '10px' }}>
+            <button 
+              className="gamified-btn" 
+              style={{ flex: 1, padding: '14px' }}
+              onClick={() => window.print()}
+            >
+              CONFIRM PRINT
+            </button>
+            <button 
+              style={{ flex: 1, background: '#f1f5f9', border: '1px solid #dee2e6', borderRadius: '12px', fontSize: '12px', fontWeight: 800, cursor: 'pointer' }}
+              onClick={() => setTokenPrintData(null)}
+            >
+              DISCARD
+            </button>
+          </div>
+        </div>
+        <style>{`
+          @media print {
+            body * { visibility: hidden; }
+            #thermal-token, #thermal-token * { visibility: visible; }
+            #thermal-token { 
+              position: absolute; left: 0; top: 0; width: 80mm; 
+              box-shadow: none !important; margin: 0; padding: 5mm;
             }
-         `}</style>
+          }
+        `}</style>
       </div>
     );
   };
 
-  const getStatusClass = (status) => {
-    switch(status) {
-      case 'BOOKED': return 'status-booked';
-      case 'ARRIVED': return 'status-arrived';
-      case 'IN_PROGRESS': return 'status-in_progress';
-      case 'CANCELLED': return 'status-cancelled';
-      case 'COMPLETED': return 'status-completed';
-      default: return '';
-    }
-  };
-
+  // ============================================================
+  //  MAIN RENDER
+  // ============================================================
   return (
-    <div className="page-wrapper board-padding" style={{ paddingTop: '80px' }}>
-      {/* Top Header: Integrated Command Bar */}
-      <div className="board-header" style={{ marginBottom: '35px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+    <div className="page-wrapper board-padding" style={{ paddingTop: '40px' }}>
+      <div style={{ marginBottom: '32px', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end' }}>
         <div>
-           <h1 className="page-title" style={{ color: '#0f52ba', fontWeight: 900, marginBottom: '5px' }}>APPOINTMENT BOARD</h1>
-           <p style={{ fontSize: '12px', color: '#666', fontWeight: 600 }}>RECEPTION & PATIENT INTAKE COMMAND</p>
-        </div>
-        <div style={{ display: 'flex', gap: '15px' }}>
-          <button className="btn-primary" style={{ padding: '12px 25px', fontWeight: 900 }} onClick={() => setIsBookingOpen(true)}>+ BOOK APPOINTMENT</button>
-        </div>
-      </div>
-
-      {/* Tactical Summary HUD */}
-      <div className="summary-grid" style={{ marginBottom: '35px', display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: '20px' }}>
-        <div className="summary-card" style={{ background: 'white', borderTop: '1px solid #dee2e6', borderRight: '1px solid #dee2e6', borderBottom: '1px solid #dee2e6', padding: '20px', borderRadius: '12px', borderLeft: '5px solid #0f52ba' }}>
-          <span className="label" style={{ fontSize: '10px', color: '#888', fontWeight: 900, textTransform: 'uppercase', letterSpacing: '1px' }}>Total Missions</span>
-          <div className="value" style={{ fontSize: '24px', fontWeight: 900, marginTop: '5px' }}>{stats.today}</div>
-        </div>
-        <div className="summary-card" style={{ background: 'white', borderTop: '1px solid #dee2e6', borderRight: '1px solid #dee2e6', borderBottom: '1px solid #dee2e6', padding: '20px', borderRadius: '12px', borderLeft: '5px solid #2ecc71' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-             <span className="label" style={{ fontSize: '10px', color: '#888', fontWeight: 900, textTransform: 'uppercase' }}>Arrived</span>
-             <span style={{ fontSize: '12px', color: '#2ecc71', fontWeight: 900 }}>READY ✔️</span>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '6px' }}>
+            <span style={{ fontSize: '24px' }}>{'\u{1F4E1}'}</span>
+            <h1 style={{ fontSize: '22px', fontWeight: 900, color: '#0a1628', letterSpacing: '-0.5px', margin: 0 }}>MISSION SCHEDULER</h1>
           </div>
-          <div className="value" style={{ fontSize: '24px', fontWeight: 900, marginTop: '5px' }}>{stats.arrived}</div>
+          <p style={{ fontSize: '12px', color: '#888', fontWeight: 600, marginLeft: '36px' }}>
+            Patient Intake & Appointment Command
+            <span style={{
+              display: 'inline-flex', alignItems: 'center', gap: '4px',
+              marginLeft: '12px', padding: '2px 10px', borderRadius: '10px',
+              background: '#e9f7ef', fontSize: '10px', fontWeight: 800, color: '#2ecc71',
+            }}>
+              {'\u25CF'} LIVE
+            </span>
+          </p>
         </div>
-        <div className="summary-card" style={{ background: 'white', borderTop: '1px solid #dee2e6', borderRight: '1px solid #dee2e6', borderBottom: '1px solid #dee2e6', padding: '20px', borderRadius: '12px', borderLeft: '5px solid #3498db' }}>
-          <span className="label" style={{ fontSize: '10px', color: '#888', fontWeight: 900, textTransform: 'uppercase' }}>In Progress</span>
-          <div className="value" style={{ fontSize: '24px', fontWeight: 900, marginTop: '5px', color: '#3498db' }}>{appointments.filter(a => a.status === 'IN_PROGRESS').length}</div>
-        </div>
-        <div className="summary-card" style={{ background: 'white', borderTop: '1px solid #dee2e6', borderRight: '1px solid #dee2e6', borderBottom: '1px solid #dee2e6', padding: '20px', borderRadius: '12px', borderLeft: '5px solid #e74c3c' }}>
-          <span className="label" style={{ fontSize: '10px', color: '#888', fontWeight: 900, textTransform: 'uppercase' }}>Cancelled</span>
-          <div className="value" style={{ fontSize: '24px', fontWeight: 900, marginTop: '5px', color: '#e74c3c' }}>{stats.cancelled}</div>
-        </div>
-      </div>
-
-      {/* Filter & Recon Console */}
-      <div className="filter-bar" style={{ background: '#f8f9fa', padding: '20px', borderRadius: '12px', border: '1px solid #eee', marginBottom: '30px', display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '20px', alignItems: 'center' }}>
-        <div className="search-input-group" style={{ background: 'white', border: '1px solid #ddd', borderRadius: '8px', padding: '10px 15px' }}>
-          <span className="search-icon">🔍</span>
-          <input 
-            type="text" 
-            placeholder="Search Target Identity..." 
-            value={searchQuery}
-            onChange={e => setSearchQuery(e.target.value)}
-            style={{ border: 'none', background: 'transparent', outline: 'none', width: '200px', marginLeft: '10px', fontWeight: 600 }}
-          />
-        </div>
-        <div className="filter-group">
-          <label style={{ fontSize: '10px', fontWeight: 900, color: '#aaa', textTransform: 'uppercase', display: 'block', marginBottom: '5px' }}>Modality</label>
-          <select value={filters.modality} onChange={e => setFilters({...filters, modality: e.target.value})} style={{ background: 'white', border: '1px solid #ddd', padding: '8px 15px', borderRadius: '8px', fontSize: '13px', fontWeight: 700 }}>
-            <option value="ALL">ALL INTEL</option>
-            {MODALITIES.map(m => <option key={m} value={m}>{m}</option>)}
-          </select>
-        </div>
-        <div className="filter-group">
-          <label style={{ fontSize: '10px', fontWeight: 900, color: '#aaa', textTransform: 'uppercase', display: 'block', marginBottom: '5px' }}>Lead Specialist</label>
-          <select value={filters.doctor} onChange={e => setFilters({...filters, doctor: e.target.value})} style={{ background: 'white', border: '1px solid #ddd', padding: '8px 15px', borderRadius: '8px', fontSize: '13px', fontWeight: 700 }}>
-            <option value="ALL">ALL DOCTORS</option>
-            {DOCTORS.map(d => <option key={d} value={d}>{d}</option>)}
-          </select>
-        </div>
-        <div className="filter-group">
-          <label style={{ fontSize: '10px', fontWeight: 900, color: '#aaa', textTransform: 'uppercase', display: 'block', marginBottom: '5px' }}>Mission Phase</label>
-          <select value={filters.status} onChange={e => setFilters({...filters, status: e.target.value})} style={{ background: 'white', border: '1px solid #ddd', padding: '8px 15px', borderRadius: '8px', fontSize: '13px', fontWeight: 700 }}>
-            <option value="ALL">ALL STATUS</option>
-            <option value="BOOKED">BOOKED</option>
-            <option value="ARRIVED">ARRIVED</option>
-            <option value="IN_PROGRESS">IN PROGRESS</option>
-            <option value="CANCELLED">CANCELLED</option>
-            <option value="COMPLETED">COMPLETED</option>
-          </select>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '24px' }}>
+          <button
+            className="gamified-btn"
+            style={{ 
+              padding: '16px 40px', 
+              fontSize: '14px', 
+              fontWeight: 950, 
+              borderRadius: '16px', 
+              letterSpacing: '1px',
+              boxShadow: '0 8px 25px rgba(15, 82, 186, 0.3)',
+              transform: 'scale(1.05)',
+              transition: 'all 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275)'
+            }}
+            onMouseEnter={e => {
+              e.currentTarget.style.transform = 'scale(1.1)';
+              e.currentTarget.style.boxShadow = '0 12px 30px rgba(15, 82, 186, 0.5)';
+            }}
+            onMouseLeave={e => {
+              e.currentTarget.style.transform = 'scale(1.05)';
+              e.currentTarget.style.boxShadow = '0 8px 25px rgba(15, 82, 186, 0.3)';
+            }}
+            onClick={() => setIsBookingOpen(true)}
+          >
+            + NEW MISSION
+          </button>
+          
         </div>
       </div>
 
-      {/* Main Table: Patient Registry */}
-      <div className="table-container" style={{ background: 'white', borderRadius: '15px', border: '1px solid #dee2e6', overflow: 'hidden' }}>
-        <table className="data-table">
-          <thead style={{ background: '#f8f9fa' }}>
-            <tr>
-              <th style={{ padding: '20px' }}>IDENTITY</th>
-              <th>OPERATIONAL INTEL</th>
-              <th>MODALITY</th>
-              <th>TACTICAL TIME</th>
-              <th>SPECIALIST</th>
-              <th>PHASE</th>
-              <th>ACTIONS</th>
-            </tr>
-          </thead>
-          <tbody>
-            {filteredAppointments.map(app => (
-              <tr key={app.id} style={{ borderBottom: '1px solid #f8f9fa' }}>
-                <td data-label="IDENTITY" style={{ padding: '20px' }}>
-                   <div style={{ display: 'flex', alignItems: 'center', gap: '15px' }}>
-                      <div style={{ width: '38px', height: '38px', borderRadius: '50%', background: '#0f52ba', color: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 900 }}>
-                         {app.patientName.charAt(0)}
-                      </div>
-                      <div>
-                         <div style={{ fontWeight: 800, color: '#2c3e50', fontSize: '14px' }}>{app.patientName}</div>
-                         <div style={{ fontSize: '10px', color: '#aaa', fontWeight: 700 }}>ID: {app.id}</div>
-                      </div>
-                   </div>
-                </td>
-                <td>
-                   <div style={{ display: 'flex', flexDirection: 'column' }}>
-                      <span style={{ fontSize: '12px', fontWeight: 700, color: '#0f52ba' }}>{app.service}</span>
-                      <span style={{ fontSize: '10px', color: '#888', fontWeight: 700 }}>M: {app.mobile}</span>
-                   </div>
-                </td>
-                <td>
-                   <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                      <span style={{ fontSize: '18px' }}>{MODALITY_ICONS[app.modality] || '📌'}</span>
-                      <span className="file-badge" style={{ padding: '4px 8px', fontSize: '10px', fontWeight: 900 }}>{app.modality}</span>
-                   </div>
-                </td>
-                <td data-label="TACTICAL TIME"><span style={{ fontWeight: 800, color: '#2c3e50' }}>{app.dateTime.split('T')[1]}</span></td>
-                <td data-label="SPECIALIST" style={{ fontWeight: 700, color: '#666' }}>{app.doctor}</td>
-                <td data-label="PHASE">
-                  <span className={`status-badge ${getStatusClass(app.status)}`} style={{ padding: '5px 12px', borderRadius: '15px', fontSize: '9px', fontWeight: 900, border: '1px solid rgba(0,0,0,0.05)' }}>
-                    {app.status.replace('_', ' ')}
-                  </span>
-                </td>
-                <td data-label="ACTIONS">
-                  <div className="action-buttons" style={{ display: 'flex', gap: '8px' }}>
-                    <button className="btn-icon" style={{ color: '#0f52ba', background: '#f0f3fd', border: '1px solid #d0d9f7' }} title="Print Study" onClick={() => setPrintModalData(app)}>🖨️</button>
-                    {app.status === 'BOOKED' && <button className="btn-icon" style={{ color: '#2ecc71', background: '#f0fdf4', border: '1px solid #dcfce7' }} title="Mark Arrived" onClick={() => handleAction(app.id, 'ARRIVE')}>📍</button>}
-                    {app.status !== 'CANCELLED' && app.status !== 'COMPLETED' && <button className="btn-icon" style={{ color: '#3498db', background: '#f0f9ff', border: '1px solid #e0f2fe' }} title="Transition Phase" onClick={() => handleAction(app.id, 'STUDY')}>✔️</button>}
-                  </div>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+      {renderIntelCards()}
+      {renderFilterBar()}
+
+      <div style={{ marginBottom: '20px' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '14px' }}>
+          <span style={{ fontSize: '11px', fontWeight: 800, color: '#888', textTransform: 'uppercase', letterSpacing: '1px' }}>
+            {filteredAppointments.length} Mission{filteredAppointments.length !== 1 ? 's' : ''} Found
+          </span>
+        </div>
+
+        <div style={{
+          display: 'grid',
+          gridTemplateColumns: '0.6fr 1.8fr 1.8fr 0.8fr 1fr 1.6fr',
+          padding: '0 22px 10px',
+          fontSize: '9px', fontWeight: 800, color: '#aaa',
+          textTransform: 'uppercase', letterSpacing: '1px',
+        }}>
+          <span>ID</span>
+          <span>Patient Details</span>
+          <span>Referred By</span>
+          <span>Status</span>
+          <span>Specialist</span>
+          <span style={{ textAlign: 'right', paddingRight: '20px' }}>Tactical Actions</span>
+        </div>
+
+        {filteredAppointments.length === 0 ? (
+          <div style={{
+            padding: '60px 20px', textAlign: 'center', color: '#bbb',
+            background: 'white', borderRadius: '16px', border: '1px dashed #dee2e6',
+          }}>
+            <div style={{ fontSize: '40px', marginBottom: '12px' }}>{'\u{1F50D}'}</div>
+            <div style={{ fontSize: '14px', fontWeight: 700 }}>No missions match your filters</div>
+            <div style={{ fontSize: '12px', marginTop: '4px' }}>Try adjusting your search or pipeline filters</div>
+          </div>
+        ) : (
+          filteredAppointments.map(app => renderAppointmentRow(app))
+        )}
       </div>
 
       {renderDrawer()}
-      {renderPrintModal()}
+      {renderTokenModal()}
     </div>
   );
 }

@@ -143,7 +143,7 @@ const ViewerPage = () => {
 
         {/* Bottom Intelligence Strip */}
         <div style={{ position: 'absolute', bottom: '20px', left: '20px', pointerEvents: 'none' }}>
-           <div style={{ fontSize: '12px', fontWeight: 900 }}>EasyRAD Tactical Viewer</div>
+           <div style={{ fontSize: '12px', fontWeight: 900 }}>1Rad Tactical Viewer</div>
            <div style={{ fontSize: '10px', color: '#ff4d4d' }}>⚠️ FOR SIMULATION USE ONLY</div>
         </div>
 

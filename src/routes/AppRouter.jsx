@@ -6,6 +6,7 @@ import { ROLE_HOME } from '../data/roles';
 import AppLayout from '../layouts/AppLayout';
 import LoginPage from '../pages/LoginPage';
 import RegisterPage from '../pages/RegisterPage';
+import ForgotPassword from '../pages/ForgotPassword';
 import AccessDenied from '../pages/AccessDenied';
 import AppointmentBoard from '../pages/AppointmentBoard';
 import TechnicianPage from '../pages/TechnicianPage';
@@ -19,7 +20,9 @@ function RootRedirect() {
   if (!hasAdminDoctor) return <Navigate to="/register" replace />;
   if (!currentUser) return <Navigate to="/login" replace />;
   
-  return <Navigate to={ROLE_HOME[currentUser.role]} replace />;
+  const userRoles = currentUser.roles || [];
+  const homeRole = userRoles.find(role => ROLE_HOME[role]);
+  return <Navigate to={ROLE_HOME[homeRole] || '/'} replace />;
 }
 
 export default function AppRouter() {
@@ -33,6 +36,7 @@ export default function AppRouter() {
         element={<RegisterPage />} 
       />
       <Route path="/login" element={<LoginPage />} />
+      <Route path="/forgot-password" element={<ForgotPassword />} />
       <Route path="/access-denied" element={<AccessDenied />} />
 
       {/* Protected Routes (Authenticated) */}
@@ -59,22 +63,22 @@ export default function AppRouter() {
             </ProtectedRoute>
           }
         />
-        <Route
+        {/* <Route
           path="/technician"
           element={
             <ProtectedRoute allowedRoles={['admindoctor', 'technician']}>
               <TechnicianPage />
             </ProtectedRoute>
           }
-        />
-        <Route
+        /> */}
+        {/* <Route
           path="/doctor-board"
           element={
             <ProtectedRoute allowedRoles={['admindoctor', 'doctor']}>
               <DoctorBoard />
             </ProtectedRoute>
           }
-        />
+        /> */}
         <Route
           path="/viewer"
           element={

@@ -4,9 +4,9 @@ export const MOCK_USERS = [
   {
     id: 0,
     name: 'Dr. System Admin',
-    email: 'master@easyrad.com',
+    email: 'master@1rad.com',
     password: 'master123',
-    role: 'admindoctor',
+    roles: ['admindoctor'],
     avatar: 'SA',
     status: 'active',
     mobile: '9999999999'
@@ -14,9 +14,9 @@ export const MOCK_USERS = [
   {
     id: 1,
     name: 'Arjun Mehta',
-    email: 'admin@easyrad.com',
+    email: 'admin@1rad.com',
     password: 'admin123',
-    role: 'admin',
+    roles: ['admin'],
     avatar: 'AM',
     status: 'active',
     mobile: '9876543210'
@@ -24,9 +24,9 @@ export const MOCK_USERS = [
   {
     id: 2,
     name: 'Priya Sharma',
-    email: 'frontdesk@easyrad.com',
+    email: 'frontdesk@1rad.com',
     password: 'desk123',
-    role: 'receptionist',
+    roles: ['receptionist'],
     avatar: 'PS',
     status: 'active',
     mobile: '9876543211'
@@ -34,9 +34,9 @@ export const MOCK_USERS = [
   {
     id: 3,
     name: 'Ravi Kumar',
-    email: 'tech@easyrad.com',
+    email: 'tech@1rad.com',
     password: 'tech123',
-    role: 'technician',
+    roles: ['technician'],
     avatar: 'RK',
     status: 'active',
     mobile: '9876543212'
@@ -44,9 +44,9 @@ export const MOCK_USERS = [
   {
     id: 4,
     name: 'Dr. Neha Joshi',
-    email: 'doctor@easyrad.com',
+    email: 'doctor@1rad.com',
     password: 'doc123',
-    role: 'doctor',
+    roles: ['doctor'],
     avatar: 'NJ',
     status: 'active',
     mobile: '9876543213'
