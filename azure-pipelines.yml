@@ -12,7 +12,7 @@ pool:
   vmImage: ubuntu-latest
 
 variables:
-  nodeVersion: '18.x'         # Node LTS
+  nodeVersion: '20.x'         # Node LTS
 
 stages:
 - stage: BuildAndDeploy
