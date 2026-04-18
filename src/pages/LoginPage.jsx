@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useNavigate, useLocation, Navigate, Link } from 'react-router-dom';
 import useAuth from '../auth/useAuth';
 import { ROLE_HOME, ROLE_LABELS } from '../data/roles';
@@ -7,15 +7,16 @@ import TacticalWorkflow from '../components/TacticalWorkflow';
 import '../styles/global.css';
 
 export default function LoginPage() {
-  const { login, hasAdminDoctor } = useAuth();
+  const { login, hasAdminDoctor, sendOtp, verifyOtp } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
   const from = location.state?.from?.pathname || '/';
 
   // If no AdminDoctor exists, redirect to register immediately
-  if (!hasAdminDoctor) {
-    return <Navigate to="/register" replace />;
-  }
+  // Temporarily disabled for development - you can always access login
+  // if (!hasAdminDoctor) {
+  //   return <Navigate to="/register" replace />;
+  // }
 
   const [identifier, setIdentifier] = useState('');
   const [password, setPassword] = useState('');
@@ -25,20 +26,47 @@ export default function LoginPage() {
   const [error, setError] = useState(null);
   const [loading, setLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
+  const [countdown, setCountdown] = useState(0);
+  const [timerId, setTimerId] = useState(null);
 
-  const handleSubmit = (e) => {
+  const startCountdown = () => {
+    if (timerId) clearInterval(timerId);
+    setCountdown(30);
+    const id = setInterval(() => {
+      setCountdown(prev => {
+        if (prev <= 1) {
+          clearInterval(id);
+          setTimerId(null);
+          return 0;
+        }
+        return prev - 1;
+      });
+    }, 1000);
+    setTimerId(id);
+  };
+
+  useEffect(() => {
+    return () => {
+      if (timerId) clearInterval(timerId);
+    };
+  }, [timerId]);
+
+  const handleSubmit = async (e) => {
     e.preventDefault();
+    setError(null);
     if (loginMode === 'password') {
-      handleLogin(identifier, password);
+      await handleLogin(identifier, password);
     } else if (otpStep === 'request') {
-      handleRequestOtp();
+      await handleRequestOtp();
     } else {
-      handleVerifyOtp();
+      await handleVerifyOtp();
     }
   };
 
-  const handleLogin = (id, pwd) => {
-    const result = login(id, pwd);
+  const handleLogin = async (id, pwd) => {
+    setLoading(true);
+    const result = await login(id, pwd);
+    setLoading(false);
     if (result.success) {
       const home = ROLE_HOME[result.user.roles?.[0]] || '/';
       navigate(from === '/' ? home : from, { replace: true });
@@ -47,23 +75,34 @@ export default function LoginPage() {
     }
   };
 
-  const handleRequestOtp = () => {
-    if (!identifier) return setError('Enter your ID code first');
+  const handleRequestOtp = async () => {
+    if (!identifier) return setError('Enter your ID (Mobile/Email) first');
     setLoading(true);
-    // Mocking OTP request
-    setTimeout(() => {
-      setLoading(false);
+    const result = await sendOtp(identifier);
+    setLoading(false);
+    if (result.success) {
       setOtpStep('verify');
       setError(null);
-      console.log('OTP sent to:', identifier);
-    }, 800);
+      startCountdown();
+    } else {
+      setError(result.error);
+    }
   };
 
-  const handleVerifyOtp = () => {
-    if (otp === '123456') { // Mock OTP
-      handleLogin(identifier, 'master123'); // Demo auto-login
+  const handleVerifyOtp = async () => {
+    setLoading(true);
+    const result = await verifyOtp(identifier, otp);
+    setLoading(false);
+    if (result.success) {
+      if (result.isRegistered) {
+        const home = ROLE_HOME[currentUser?.roles?.[0]] || '/';
+        navigate(from === '/' ? home : from, { replace: true });
+      } else {
+        // Dual-path: New user detected, route to registration
+        navigate('/register', { state: { identifier, isFromLogin: true } });
+      }
     } else {
-      setError('Invalid passcode. Try 123456 for demo.');
+      setError(result.error);
     }
   };
 
@@ -185,7 +224,11 @@ export default function LoginPage() {
                   required
                 />
                 <p style={{ fontSize: '10px', color: 'rgba(255,255,255,0.4)', marginTop: '8px', textAlign: 'center' }}>
-                  DIDN'T RECEIVE CODE? <button type="button" onClick={handleRequestOtp} style={{ background: 'none', border: 'none', color: '#00f2fe', cursor: 'pointer', padding: 0, fontWeight: 800, fontSize: '10px' }}>RESEND IN 0:30</button>
+                  DIDN'T RECEIVE CODE? {countdown > 0 ? (
+                    <span style={{ color: '#00f2fe', fontWeight: 800 }}>RESEND IN 0:{countdown < 10 ? `0${countdown}` : countdown}</span>
+                  ) : (
+                    <button type="button" onClick={handleRequestOtp} style={{ background: 'none', border: 'none', color: '#00f2fe', cursor: 'pointer', padding: 0, fontWeight: 800, fontSize: '10px', textDecoration: 'underline' }}>RESEND NOW</button>
+                  )}
                 </p>
               </div>
             )

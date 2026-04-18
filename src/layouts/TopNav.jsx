@@ -1,4 +1,6 @@
 import React, { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
+import { ROLE_HOME } from '../data/roles';
 import useAuth from '../auth/useAuth';
 import '../styles/global.css';
 
@@ -7,6 +9,8 @@ export default function TopNav({ currentTime }) {
   const [isSwitcherOpen, setIsSwitcherOpen] = useState(false);
   const [isCenterDrawerOpen, setIsCenterDrawerOpen] = useState(false);
   const [newCenter, setNewCenter] = useState({ name: '', address: '' });
+  const [switching, setSwitching] = useState(false);
+  const navigate = useNavigate();
 
   const handleCreateCenter = (e) => {
     e.preventDefault();
@@ -23,87 +27,94 @@ export default function TopNav({ currentTime }) {
 
   return (
     <>
-      <header className="top-nav">
-      {/* Welcome & Status HUD */}
-      <div className="status-hud" style={{ display: 'flex', gap: '30px', alignItems: 'center' }}>
-        {/* Institutional Switcher HUD - Restricted to Admins */}
-        {currentUser.roles?.some(role => ['admin', 'admindoctor'].includes(role)) && (
-          <div className="center-switcher-hud" style={{ position: 'relative' }}>
-          <button 
-            id="center-switcher-btn"
-            className="command-core-btn"
-            onClick={() => setIsSwitcherOpen(!isSwitcherOpen)}
-          >
-            <div className="tactical-node-active"></div>
-            <div className="hub-identity">
-              <span className="hub-label">DEPLOYED HUB</span>
-              <span className="hub-name">{activeCenter?.name?.toUpperCase()}</span>
-            </div>
-            <div style={{ marginLeft: '10px', fontSize: '10px', transition: 'transform 0.3s', transform: isSwitcherOpen ? 'rotate(180deg)' : 'rotate(0deg)' }}>
-               ▼
-            </div>
-          </button>
+      <header className="top-nav" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', height: '60px', padding: '0 20px', background: 'white', borderBottom: '1px solid #eee', position: 'sticky', top: 0, zIndex: 1000 }}>
+        {/* Welcome & Status HUD */}
+        <div className="status-hud" style={{ display: 'flex', gap: '15px', alignItems: 'center', overflow: 'hidden' }}>
+          {/* Institutional Switcher HUD - Restricted to Admins */}
+          {currentUser.roles?.some(role => ['admin', 'admindoctor'].includes(role)) && (
+            <div className="center-switcher-hud" style={{ position: 'relative' }}>
+              <button 
+                id="center-switcher-btn"
+                className="command-core-btn"
+                onClick={() => setIsSwitcherOpen(!isSwitcherOpen)}
+                style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '6px 12px', borderRadius: '10px', background: '#f8f9fa', border: '1px solid #eee', cursor: 'pointer', transition: 'all 0.2s' }}
+              >
+                <div className={switching ? "pulse-loader-mini" : "tactical-node-active"} style={{ width: '8px', height: '8px', borderRadius: '50%', background: switching ? '#f39c12' : '#2ecc71', boxShadow: switching ? '0 0 10px rgba(243, 156, 18, 0.4)' : '0 0 10px rgba(46, 204, 113, 0.4)' }}></div>
+                <div className="hub-identity" style={{ textAlign: 'left', overflow: 'hidden' }}>
+                  <div className="hub-label hide-mobile" style={{ fontSize: '7px', fontWeight: 950, color: switching ? '#f39c12' : '#aaa', letterSpacing: '1px' }}>{switching ? 'RECONFIGURING HUB...' : 'DEPLOYED HUB'}</div>
+                  <div className="hub-name" style={{ fontSize: '12px', fontWeight: 950, color: '#1a1a2e', whiteSpace: 'nowrap', textOverflow: 'ellipsis', overflow: 'hidden', maxWidth: '120px', opacity: switching ? 0.5 : 1 }}>{activeCenter?.name?.toUpperCase()}</div>
+                </div>
+                <div style={{ fontSize: '8px', color: '#888', transition: 'transform 0.3s', transform: isSwitcherOpen ? 'rotate(180deg)' : 'rotate(0deg)' }}>
+                   ▼
+                </div>
+              </button>
 
-          {isSwitcherOpen && (
-            <div 
-              id="center-dropdown-menu"
-              className="tactical-hub-dropdown"
-              style={{ position: 'absolute', top: '100%', left: 0, marginTop: '12px', width: '320px', zIndex: 1000 }}
-            >
-              <div style={{ padding: '12px', fontSize: '10px', fontWeight: 900, color: 'var(--tactical-indigo)', textTransform: 'uppercase', letterSpacing: '2px', borderBottom: '1px solid rgba(0,0,0,0.05)', marginBottom: '10px', display: 'flex', justifyContent: 'space-between' }}>
-                <span>AUTHORIZED HUBS</span>
-                <span style={{ opacity: 0.5 }}>v2.41</span>
-              </div>
-              
-              <div style={{ maxHeight: '300px', overflowY: 'auto', paddingRight: '5px' }}>
-                {centers.map(center => (
-                  <button
-                    key={center.id}
-                    onClick={() => { switchCenter(center.id); setIsSwitcherOpen(false); }}
-                    className={`hub-option ${activeCenter.id === center.id ? 'active-hub' : ''}`}
-                    style={{ 
-                      width: '100%', textAlign: 'left', padding: '15px', borderRadius: '12px', 
-                      display: 'flex', alignItems: 'center', gap: '15px', cursor: 'pointer', background: 'transparent'
-                    }}
-                  >
-                    <div style={{ 
-                      width: '12px', height: '12px', borderRadius: '4px', 
-                      background: activeCenter.id === center.id ? '#2ecc71' : 'rgba(0,0,0,0.1)',
-                      boxShadow: activeCenter.id === center.id ? '0 0 10px rgba(46, 204, 113, 0.4)' : 'none'
-                    }}></div>
-                    <div style={{ flex: 1 }}>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                        <span style={{ fontSize: '13px', fontWeight: 800, color: '#2c3e50' }}>{center.name}</span>
-                        {activeCenter.id === center.id && <span style={{ fontSize: '9px', color: '#2ecc71', fontWeight: 900 }}>[ ACTIVE ]</span>}
-                      </div>
-                      <span style={{ fontSize: '11px', color: '#888', display: 'block', marginTop: '2px' }}>{center.address}</span>
-                      <span className="id-badge">HUB-ID: {center.id}</span>
-                    </div>
-                  </button>
-                ))}
-              </div>
-
-              <div style={{ padding: '10px', marginTop: '10px', borderTop: '1px solid rgba(0,0,0,0.05)' }}>
-                <button 
-                  onClick={() => { setIsCenterDrawerOpen(true); setIsSwitcherOpen(false); }}
-                  className="gamified-btn"
-                  style={{ width: '100%', padding: '12px', fontSize: '11px', borderRadius: '10px' }}
+              {isSwitcherOpen && (
+                <div 
+                  id="center-dropdown-menu"
+                  className="tactical-hub-dropdown"
+                  style={{ position: 'absolute', top: '100%', left: 0, marginTop: '12px', width: '300px', zIndex: 1100, background: 'white', borderRadius: '14px', border: '1px solid #eee', boxShadow: '0 10px 40px rgba(0,0,0,0.1)', padding: '10px' }}
                 >
-                  + INITIALIZE NEW INFRASTRUCTURE
-                </button>
-              </div>
+                  <div style={{ padding: '8px', fontSize: '9px', fontWeight: 950, color: '#0f52ba', textTransform: 'uppercase', letterSpacing: '2px', borderBottom: '1px solid rgba(0,0,0,0.05)', marginBottom: '10px', display: 'flex', justifyContent: 'space-between' }}>
+                    <span>AUTHORIZED HUBS</span>
+                    <span style={{ opacity: 0.5 }}>v2.41</span>
+                  </div>
+                  
+                  <div style={{ maxHeight: '250px', overflowY: 'auto' }}>
+                    {centers.map(center => (
+                      <button
+                        key={center.id}
+                        onClick={async () => { 
+                          if (activeCenter.id === center.id || switching) return;
+                          setSwitching(true);
+                          const result = await switchCenter(center.id); 
+                          setSwitching(false);
+                          setIsSwitcherOpen(false); 
+                          if (result?.success && result.role) {
+                            navigate(ROLE_HOME[result.role] || '/');
+                          }
+                        }}
+                        className={`hub-option ${activeCenter.id === center.id ? 'active-hub' : ''}`}
+                        style={{ 
+                          width: '100%', textAlign: 'left', padding: '12px', borderRadius: '10px', 
+                          display: 'flex', alignItems: 'center', gap: '12px', cursor: 'pointer', background: activeCenter.id === center.id ? '#f0f7ff' : 'transparent',
+                          border: 'none', transition: 'all 0.2s', marginBottom: '4px'
+                        }}
+                      >
+                        <div style={{ 
+                          width: '8px', height: '8px', borderRadius: '50%', 
+                          background: activeCenter.id === center.id ? '#2ecc71' : 'rgba(0,0,0,0.1)',
+                        }}></div>
+                        <div style={{ flex: 1, overflow: 'hidden' }}>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                            <span style={{ fontSize: '11px', fontWeight: 900, color: '#2c3e50', whiteSpace: 'nowrap', textOverflow: 'ellipsis', overflow: 'hidden' }}>{center.name}</span>
+                          </div>
+                        </div>
+                      </button>
+                    ))}
+                  </div>
+
+                  <div style={{ padding: '8px', marginTop: '8px', borderTop: '1px solid rgba(0,0,0,0.05)' }}>
+                    <button 
+                      onClick={() => { setIsCenterDrawerOpen(true); setIsSwitcherOpen(false); }}
+                      className="gamified-btn"
+                      style={{ width: '100%', padding: '10px', fontSize: '9px', borderRadius: '8px', fontWeight: 950 }}
+                    >
+                      + NEW INFRASTRUCTURE
+                    </button>
+                  </div>
+                </div>
+              )}
             </div>
           )}
         </div>
-      )}
-    </div>
 
-      {/* Temporal HUD */}
-      <div className="temporal-hud">
-        <div className="time-display">{formattedTime}</div>
-        <div className="date-display">{formattedDate}</div>
-      </div>
-    </header>
+        {/* Temporal HUD */}
+        <div className="temporal-hud" style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '2px' }}>
+          <div className="time-display" style={{ fontSize: '14px', fontWeight: 950, color: '#1a1a2e', letterSpacing: '-0.5px' }}>{formattedTime}</div>
+          <div className="date-display hide-mobile" style={{ fontSize: '8px', fontWeight: 800, color: '#aaa', textTransform: 'uppercase', letterSpacing: '1px' }}>{formattedDate}</div>
+        </div>
+      </header>
 
     {/* Center Initialization Drawer */}
     {isCenterDrawerOpen && (

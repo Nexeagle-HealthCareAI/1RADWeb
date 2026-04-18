@@ -24,91 +24,77 @@ export default function Sidebar({ isMobileOpen, onMobileClose }) {
 
 
   return (
-    <aside id="tactical-sidebar" className={`sidebar gamified-sidebar ${isCollapsed ? 'collapsed' : ''} ${isMobileOpen ? 'mobile-open' : ''}`}>
-      <div className="sidebar-header">
-        <div className="brand-info">
-          <div className="logo-icon-container">
+    <aside id="tactical-sidebar" className={`sidebar gamified-sidebar ${isCollapsed ? 'collapsed' : ''} ${isMobileOpen ? 'mobile-open' : ''}`} style={{ transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)' }}>
+      <div className="sidebar-header" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '20px' }}>
+        <div className="brand-info" style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+          <div className="logo-icon-container" style={{ width: '32px', height: '32px' }}>
             <img 
               src="/Logo.png" 
               alt="NexEgale Logo" 
               className="brand-logo-img"
+              style={{ width: '100%', height: '100%', objectFit: 'contain' }}
             />
           </div>
-          {!isCollapsed && (
-            <div className="brand-text-wrapper">
-              <h2 className="brand">
-                1Rad
-              </h2>
-              <span className="brand-subtitle">
-                NEXEGALE COMMAND v2.0
-              </span>
-            </div>
-          )}
+          <div className="brand-text-wrapper hide-on-collapsed" style={{ display: isCollapsed ? 'none' : 'flex', flexDirection: 'column' }}>
+            <h2 className="brand" style={{ fontSize: '20px', fontWeight: 900, color: 'white', margin: 0, letterSpacing: '-0.5px' }}>
+              1Rad
+            </h2>
+            <span className="brand-subtitle" style={{ fontSize: '8px', color: 'rgba(255, 255, 255, 0.6)', textTransform: 'uppercase', letterSpacing: '1px' }}>
+              COMMAND v2.0
+            </span>
+          </div>
         </div>
+        
         <button 
           id="sidebar-toggle-btn"
-          className="btn-collapse" 
+          className="btn-collapse hide-mobile" 
           onClick={() => setIsCollapsed(!isCollapsed)}
-          title={isCollapsed ? "Expand Mission Hub" : "Collapse Mission Hub"}
+          style={{ background: 'transparent', border: 'none', color: 'white', cursor: 'pointer', padding: '5px' }}
         >
-          <span className="toggle-icon">{isCollapsed ? '☰' : '✕'}</span>
+          <span className="toggle-icon" style={{ fontSize: '18px' }}>{isCollapsed ? '☰' : '✕'}</span>
         </button>
       </div>
 
-
-
-      <nav className="sidebar-nav">
+      <nav className="sidebar-nav" style={{ padding: '0 10px', display: 'flex', flexDirection: 'column', gap: '5px' }}>
         {allowedNavItems.map((item, index) => {
-          if (item.isUpcoming) {
-            return (
-              <div
-                key={item.route}
-                className="nav-item gamified-item upcoming"
-                title={`${item.label} (Coming Soon)`}
-                style={{ animationDelay: `${index * 0.05}s`, opacity: 0.5, cursor: 'not-allowed' }}
-              >
-                <span className="nav-icon-container">
-                  <span className="nav-icon">{item.icon}</span>
-                </span>
-                {!isCollapsed && (
-                  <div style={{ display: 'flex', flexDirection: 'column' }}>
-                    <span className="nav-label">{item.label}</span>
-                    <span style={{ fontSize: '8px', color: 'var(--tactical-cyan)', fontWeight: 900, marginTop: '2px' }}>[IN DEVELOPMENT]</span>
-                  </div>
-                )}
-              </div>
-            );
-          }
+          const isUpcoming = item.isUpcoming;
           return (
             <NavLink
               key={item.route}
-              to={item.route}
-              id={`nav-item-${item.label.toLowerCase().replace(/\s+/g, '-')}`}
+              to={isUpcoming ? '#' : item.route}
+              onClick={(e) => { if(isUpcoming) e.preventDefault(); if(isMobileOpen) onMobileClose(); }}
               className={({ isActive }) =>
-                `nav-item gamified-item ${isActive ? 'active' : ''}`
+                `nav-item gamified-item ${isActive && !isUpcoming ? 'active' : ''} ${isUpcoming ? 'upcoming' : ''}`
               }
-              title={isCollapsed ? item.label : ''}
-              style={{ animationDelay: `${index * 0.05}s` }}
+              style={{ 
+                display: 'flex', alignItems: 'center', padding: '12px', borderRadius: '10px', 
+                color: 'white', textDecoration: 'none', opacity: isUpcoming ? 0.4 : 1,
+                background: 'transparent', transition: 'all 0.2s'
+              }}
             >
-              <span className="nav-icon-container">
+              <span className="nav-icon-container" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minWidth: '32px', fontSize: '18px' }}>
                 <span className="nav-icon">{item.icon}</span>
               </span>
-              {!isCollapsed && <span className="nav-label">{item.label}</span>}
+              <div className="nav-label-wrapper hide-on-collapsed" style={{ display: isCollapsed ? 'none' : 'flex', flexDirection: 'column', marginLeft: '12px' }}>
+                <span className="nav-label" style={{ fontSize: '13px', fontWeight: 700 }}>{item.label}</span>
+                {isUpcoming && <span style={{ fontSize: '7px', color: 'var(--tactical-cyan)', fontWeight: 900 }}>[COMING SOON]</span>}
+              </div>
             </NavLink>
           );
         })}
       </nav>
 
-      <div className="sidebar-footer">
+      <div className="sidebar-footer" style={{ marginTop: 'auto', padding: '20px 10px' }}>
          <button 
            id="terminate-session-btn"
            className="nav-item gamified-item terminate-btn" 
-           onClick={handleLogout} 
+           onClick={() => { handleLogout(); if(isMobileOpen) onMobileClose(); }} 
+           style={{ width: '100%', display: 'flex', alignItems: 'center', padding: '12px', borderRadius: '10px', border: 'none', background: 'rgba(231, 76, 60, 0.1)', color: '#e74c3c', cursor: 'pointer' }}
          >
-            <span className="nav-icon-container">
+            <span className="nav-icon-container" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minWidth: '32px', fontSize: '18px' }}>
                <span className="logout-icon">⏻</span>
             </span>
-            {!isCollapsed && <span className="nav-label">Terminate Session</span>}
+            <span className="nav-label hide-on-collapsed" style={{ display: isCollapsed ? 'none' : 'block', marginLeft: '12px', fontSize: '13px', fontWeight: 700 }}>Terminate</span>
          </button>
       </div>
     </aside>

@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import useAuth from '../auth/useAuth';
 import RadiologyWorkflowBG from '../components/RadiologyWorkflowBG';
@@ -6,42 +6,74 @@ import TacticalWorkflow from '../components/TacticalWorkflow';
 import '../styles/global.css';
 
 export default function ForgotPassword() {
-  const { resetPassword } = useAuth();
+  const { forgotPassword, verifyResetCode, resetPassword } = useAuth();
   const navigate = useNavigate();
   const [step, setStep] = useState(1); // 1: Identify, 2: Verification, 3: Reset
   const [identifier, setIdentifier] = useState('');
   const [code, setCode] = useState('');
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
-  const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
+  const [countdown, setCountdown] = useState(0);
+  const [timerId, setTimerId] = useState(null);
 
-  const handleIdentify = (e) => {
+  const startCountdown = () => {
+    if (timerId) clearInterval(timerId);
+    setCountdown(30);
+    const id = setInterval(() => {
+      setCountdown(prev => {
+        if (prev <= 1) {
+          clearInterval(id);
+          setTimerId(null);
+          return 0;
+        }
+        return prev - 1;
+      });
+    }, 1000);
+    setTimerId(id);
+  };
+
+  useEffect(() => {
+    return () => {
+      if (timerId) clearInterval(timerId);
+    };
+  }, [timerId]);
+
+  const handleIdentify = async (e) => {
     e.preventDefault();
     if (!identifier) return setError('Please enter your identity code');
     setLoading(true);
-    setTimeout(() => {
-      setLoading(false);
+    setError(null);
+    const result = await forgotPassword(identifier);
+    setLoading(false);
+    if (result.success) {
       setStep(2);
-      setError(null);
-    }, 1000);
-  };
-
-  const handleVerify = (e) => {
-    e.preventDefault();
-    if (code === '123456') {
-      setStep(3);
-      setError(null);
+      startCountdown();
     } else {
-      setError('Invalid verification code. Use 123456 for demo.');
+      setError(result.error);
     }
   };
 
-  const handleReset = (e) => {
+  const handleVerify = async (e) => {
+    e.preventDefault();
+    if (!code) return setError('Please enter the verification code');
+    setLoading(true);
+    setError(null);
+    const result = await verifyResetCode(identifier, code);
+    setLoading(false);
+    if (result.success) {
+      setStep(3);
+    } else {
+      setError(result.error);
+    }
+  };
+
+  const handleReset = async (e) => {
     e.preventDefault();
     if (newPassword !== confirmPassword) return setError('Passwords do not match');
     setLoading(true);
-    const result = resetPassword(identifier, newPassword);
+    setError(null);
+    const result = await resetPassword(newPassword);
     setLoading(false);
     if (result.success) {
       alert('Password updated successfully! You can now login with your new key.');
@@ -108,7 +140,12 @@ export default function ForgotPassword() {
                 required
               />
               <p style={{ fontSize: '10px', color: 'rgba(255,255,255,0.4)', marginTop: '12px', textAlign: 'center' }}>
-                A TEMPORARY CODE HAS BEEN BEAMED TO YOUR DEVICE.
+                A TEMPORARY CODE HAS BEEN BEAMED TO YOUR DEVICE.{' '}
+                {countdown > 0 ? (
+                  <span style={{ color: '#00f2fe', fontWeight: 800 }}>RESEND IN 0:{countdown < 10 ? `0${countdown}` : countdown}</span>
+                ) : (
+                  <button type="button" onClick={handleIdentify} style={{ background: 'none', border: 'none', color: '#00f2fe', cursor: 'pointer', padding: 0, fontWeight: 800, fontSize: '10px', textDecoration: 'underline' }}>RESEND NOW</button>
+                )}
               </p>
             </div>
             {error && <div className="error-message" style={{ background: 'rgba(231, 76, 60, 0.1)', color: '#e74c3c' }}>{error}</div>}

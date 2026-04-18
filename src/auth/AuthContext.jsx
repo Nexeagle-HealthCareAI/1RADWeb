@@ -1,50 +1,16 @@
 import { createContext, useState, useCallback, useEffect, useMemo } from 'react';
-import { MOCK_USERS } from './mockUsers';
-
-const MOCK_CENTERS = [
-  { id: 'C001', name: 'City Diagnostic Center', address: '123 Healthcare Blvd, Medical District', status: 'active' },
-  { id: 'C002', name: 'Metro Imaging Hub', address: '456 Tech Park, North Wing', status: 'active' },
-  { id: 'C003', name: 'Downtown Scan Lab', address: '789 Central Ave, Ground Floor', status: 'active' }
-];
+import apiClient from '../api/apiClient';
 
 export const AuthContext = createContext(null);
 
 export function AuthProvider({ children }) {
   const [centers, setCenters] = useState(() => {
     const stored = localStorage.getItem('1rad_centers');
-    return stored ? JSON.parse(stored) : MOCK_CENTERS;
+    return stored ? JSON.parse(stored) : [];
   });
 
   const [activeCenterId, setActiveCenterId] = useState(() => {
     return localStorage.getItem('1rad_active_center_id') || (centers[0]?.id);
-  });
-  const [users, setUsers] = useState(() => {
-    // Persistent user store across reloads
-    const storedUsers = localStorage.getItem('1rad_users');
-    const parsed = storedUsers ? JSON.parse(storedUsers) : [];
-    
-    // Auto-sync missing mock users and migrate old 'role' to 'roles'
-    const combined = [...parsed];
-    
-    // Migration: Convert old singular 'role' to plural 'roles' array
-    combined.forEach(u => {
-      if (u.role && !u.roles) {
-        u.roles = [u.role];
-        delete u.role;
-      }
-    });
-
-    MOCK_USERS.forEach(mock => {
-      const existingIndex = combined.findIndex(u => u.email === mock.email);
-      if (existingIndex === -1) {
-        combined.push(mock);
-      } else {
-        // Sync mock updates (like new roles) to existing accounts
-        combined[existingIndex] = { ...combined[existingIndex], ...mock };
-      }
-    });
-
-    return combined;
   });
 
   const [currentUser, setCurrentUser] = useState(() => {
@@ -56,7 +22,6 @@ export function AuthProvider({ children }) {
   // Sync users and centers to localStorage whenever they change
   useEffect(() => {
     try {
-      localStorage.setItem('1rad_users', JSON.stringify(users));
       localStorage.setItem('1rad_centers', JSON.stringify(centers));
       localStorage.setItem('1rad_active_center_id', activeCenterId);
     } catch (e) {
@@ -65,132 +30,226 @@ export function AuthProvider({ children }) {
         console.error('LocalStorage Quota Exceeded:', e);
       }
     }
-  }, [users, centers, activeCenterId]);
+  }, [centers, activeCenterId]);
 
   const activeCenter = useMemo(() => {
     return centers.find(c => c.id === activeCenterId) || centers[0];
   }, [centers, activeCenterId]);
 
-  const switchCenter = useCallback((id) => {
-    setActiveCenterId(id);
-  }, []);
+  const switchCenter = useCallback(async (id) => {
+    try {
+      const response = await apiClient.post('/auth/switch-context', { targetHospitalId: id });
+      const { success, accessToken, error } = response.data;
 
-  // Derived check for the initial registration flow
-  const hasAdminDoctor = useMemo(() => {
-    return users.some(u => u.roles && u.roles.includes('admindoctor'));
-  }, [users]);
-
-  const login = useCallback((identifier, password) => {
-    // Check against email or mobile
-    const user = users.find(u => 
-      (u.email === identifier || u.mobile === identifier) && 
-      u.password === password
-    );
-    
-    if (user) {
-      if (user.status === 'inactive') {
-        return { success: false, error: 'Your account is inactive. Please contact your administrator.' };
+      if (!success) {
+        alert(error || 'Failed to switch context');
+        return;
       }
+
+      // Update token for subsequent requests
+      sessionStorage.setItem('1rad_token', accessToken);
       
-      const lastLogin = new Date().toLocaleString();
-      const updatedUser = { ...user, lastLogin };
+      // Update local state
+      setActiveCenterId(id);
       
-      // Persist to total users list
-      setUsers(prev => prev.map(u => u.id === user.id ? updatedUser : u));
-      
-      setCurrentUser(updatedUser);
-      sessionStorage.setItem('1rad_user', JSON.stringify(updatedUser));
-      return { success: true, user: updatedUser };
+      // Update currentUser roles based on the target center's role
+      const targetCenter = centers.find(c => c.id === id);
+      if (targetCenter && targetCenter.role) {
+        setCurrentUser(prev => ({
+          ...prev,
+          roles: [targetCenter.role]
+        }));
+      }
+
+      return { success: true, role: targetCenter?.role };
+    } catch (err) {
+      console.error('[AUTH] Context switch failure', err);
+      alert('SECURITY ALERT: Context transition failed. Please re-login.');
     }
-    return { success: false, error: 'Invalid credentials. Please try again.' };
-  }, [users]);
+  }, [centers]);
+
+  const login = useCallback(async (identifier, password) => {
+    try {
+      const response = await apiClient.post('/auth/login', { identifier, password });
+      const { userProfile, accessToken, refreshToken, success, error } = response.data;
+      
+      if (!success) return { success: false, error: error || 'Authentication failed.' };
+
+      const user = {
+        id: userProfile.userId,
+        name: userProfile.fullName,
+        email: userProfile.email,
+        roles: userProfile.authorizedHospitals.map(h => h.roleName.toLowerCase())
+      };
+
+      const mappedCenters = userProfile.authorizedHospitals.map(h => ({
+        id: h.hospitalId,
+        name: h.hospitalName,
+        role: h.roleName.toLowerCase()
+      }));
+
+      setCurrentUser(user);
+      setCenters(mappedCenters);
+      if (mappedCenters.length > 0) setActiveCenterId(mappedCenters[0].id);
+
+      sessionStorage.setItem('1rad_user', JSON.stringify(user));
+      sessionStorage.setItem('1rad_token', accessToken);
+      localStorage.setItem('1rad_refresh_token', refreshToken);
+      
+      return { success: true, user };
+    } catch (error) {
+      const errorMsg = error.response?.data?.error || error.response?.data?.message || error.response?.data?.detail || 'Authentication failed.';
+      return { success: false, error: errorMsg };
+    }
+  }, []);
 
   const logout = useCallback(() => {
     setCurrentUser(null);
     sessionStorage.removeItem('1rad_user');
+    sessionStorage.removeItem('1rad_token');
+    sessionStorage.removeItem('1rad_initiation_token');
+    localStorage.removeItem('1rad_refresh_token');
   }, []);
 
-  const registerAdminDoctor = useCallback((userData) => {
-    const centerId = `C-${Date.now()}`;
-    const newCenter = {
-      id: centerId,
-      name: userData.centerName || 'My Clinical Hub',
-      address: userData.centerAddress || 'Universal Address',
-      status: 'active'
-    };
-
-    const newUser = {
-      ...userData,
-      id: Date.now(),
-      roles: ['admindoctor'],
-      status: 'active',
-      createdDate: new Date().toISOString().split('T')[0]
-    };
-
-    setCenters(prev => [...prev, newCenter]);
-    setUsers(prev => [...prev, newUser]);
-    setActiveCenterId(centerId);
-    
-    return { success: true };
-  }, []);
-
-  const createUser = useCallback((userData) => {
-    const newUser = {
-      ...userData,
-      id: Date.now(),
-      status: userData.status || 'active',
-      createdDate: new Date().toISOString().split('T')[0]
-    };
-    setUsers(prev => [...prev, newUser]);
-    return { success: true };
-  }, []);
-
-  const updateUser = useCallback((id, updates) => {
-    setUsers(prev => prev.map(u => u.id === id ? { ...u, ...updates } : u));
-    
-    // If the updated user is the current user, sync the session
-    if (currentUser && currentUser.id === id) {
-      const updatedUser = { ...currentUser, ...updates };
-      setCurrentUser(updatedUser);
-      sessionStorage.setItem('1rad_user', JSON.stringify(updatedUser));
+  const registerAdminDoctor = useCallback(async (userData) => {
+    if (userData.password && userData.password.length < 6) {
+      return { success: false, error: 'SECURITY PROTOCOL: Password must be at least 6 characters.' };
     }
-    
-    return { success: true };
-  }, [currentUser]);
+    try {
+      // Stage 2: Identity Setup
+      const identityRes = await apiClient.post('/auth/identity-setup', {
+        fullName: userData.fullName,
+        email: userData.email,
+        mobile: userData.mobile,
+        password: userData.password
+      });
 
-  const deleteUser = useCallback((id) => {
-    setUsers(prev => prev.filter(u => u.id !== id));
-    return { success: true };
+      const { token: nextToken, userId } = identityRes.data;
+      sessionStorage.setItem('1rad_initiation_token', nextToken);
+
+      // Stage 3: Infrastructure Deployment
+      const roleNameMap = {
+        'admindoctor': 'AdminDoctor',
+        'administrator': 'Admin',
+        'doctor': 'Doctor',
+        'technician': 'Technician',
+        'receptionist': 'Receptionist',
+        'accountant': 'Accountant'
+      };
+
+      await apiClient.post('/auth/deploy-infrastructure', {
+        userId: userId,
+        chainId: null, // Guid
+        chainName: userData.chainName || userData.centerName,
+        hospitalName: userData.centerName,
+        hospitalAddress: userData.centerAddress,
+        roleName: roleNameMap[userData.role] || 'AdminDoctor',
+        gstinNumber: userData.gstinNumber,
+        registrationNumber: userData.registrationNumber,
+        panNumber: userData.panNumber,
+        nabhNumber: userData.nabhNumber,
+        specialization: userData.specialization,
+        degree: userData.degree,
+        licenseNo: userData.licenseNo
+      }, {
+        headers: { Authorization: `Bearer ${nextToken}` }
+      });
+
+      // After deployment, user needs to login or we auto-login
+      return { success: true };
+    } catch (error) {
+      const errorMsg = error.response?.data?.error || error.response?.data?.message || error.response?.data?.detail || 'Registration sequence failed.';
+      return { success: false, error: errorMsg };
+    }
   }, []);
 
-  const sendOtp = useCallback((identifier) => {
-    console.log(`[AUTH] OTP requested for: ${identifier}. Code sent: 123456`);
-    return { success: true };
+  const sendOtp = useCallback(async (identifier) => {
+    try {
+      const cleanMobile = identifier.replace(/\D/g, '');
+      const response = await apiClient.post('/auth/otp/send', { mobile: cleanMobile });
+      return { 
+        success: true, 
+        message: response.data.message 
+      };
+    } catch (error) {
+      const errorMsg = error.response?.data?.error || error.response?.data?.message || error.response?.data?.detail || 'Failed to dispatch OTP.';
+      return { 
+        success: false, 
+        error: errorMsg
+      };
+    }
   }, []);
 
-  const verifyOtp = useCallback((identifier, code) => {
-    if (code === '123456') {
-      const user = users.find(u => u.email === identifier || u.mobile === identifier);
-      if (user) {
+  const verifyOtp = useCallback(async (identifier, code) => {
+    try {
+      const cleanMobile = identifier.replace(/\D/g, '');
+      const response = await apiClient.post('/auth/otp/verify', { mobile: cleanMobile, code });
+      const { success, token, refreshToken, user: backendUser, isRegistered, message } = response.data;
+
+      if (!success) return { success: false, error: message || 'Verification failed.' };
+
+      if (isRegistered) {
+        const user = {
+          id: backendUser.userId,
+          name: backendUser.fullName,
+          email: backendUser.email,
+          mobile: backendUser.mobile,
+          roles: backendUser.roleName.split(',').map(r => r.trim().toLowerCase())
+        };
         setCurrentUser(user);
         sessionStorage.setItem('1rad_user', JSON.stringify(user));
-        return { success: true, user };
+        sessionStorage.setItem('1rad_token', token);
+        localStorage.setItem('1rad_refresh_token', refreshToken);
+        return { success: true, isRegistered: true, user };
+      } else {
+        // Registration path - store initiation token
+        sessionStorage.setItem('1rad_initiation_token', token);
+        return { success: true, isRegistered: false };
       }
-      return { success: false, error: 'User not found in system.' };
+    } catch (error) {
+      const errorMsg = error.response?.data?.error || error.response?.data?.message || error.response?.data?.detail || 'Verification failed.';
+      return { success: false, error: errorMsg };
     }
-    return { success: false, error: 'Invalid passcode.' };
-  }, [users]);
+  }, []);
 
-  const resetPassword = useCallback((identifier, newPassword) => {
-    const userIndex = users.findIndex(u => u.email === identifier || u.mobile === identifier);
-    if (userIndex !== -1) {
-      const updatedUsers = [...users];
-      updatedUsers[userIndex] = { ...updatedUsers[userIndex], password: newPassword };
-      setUsers(updatedUsers);
-      return { success: true };
+  const forgotPassword = useCallback(async (identifier) => {
+    try {
+      const response = await apiClient.post('/auth/forgot-password', { identifier });
+      return { success: true, message: response.data.message };
+    } catch (error) {
+      const errorMsg = error.response?.data?.error || error.response?.data?.message || error.response?.data?.detail || 'Failed to initiate recovery.';
+      return { success: false, error: errorMsg };
     }
-    return { success: false, error: 'User identification failed during reset.' };
-  }, [users]);
+  }, []);
+
+  const verifyResetCode = useCallback(async (identifier, code) => {
+    try {
+      const response = await apiClient.post('/auth/verify-reset-code', { identifier, code });
+      const { success, resetToken, error } = response.data;
+      if (success) {
+        sessionStorage.setItem('1rad_reset_token', resetToken);
+        return { success: true };
+      }
+      return { success: false, error: error || 'Verification failed.' };
+    } catch (error) {
+      const errorMsg = error.response?.data?.error || error.response?.data?.message || error.response?.data?.detail || 'Verification failed.';
+      return { success: false, error: errorMsg };
+    }
+  }, []);
+
+  const resetPassword = useCallback(async (newPassword) => {
+     const resetToken = sessionStorage.getItem('1rad_reset_token');
+     if (!resetToken) return { success: false, error: 'Reset session expired. Please re-verify.' };
+     
+     try {
+       await apiClient.post('/auth/reset-password', { resetToken, newPassword });
+       sessionStorage.removeItem('1rad_reset_token'); // Clean up
+       return { success: true };
+     } catch (error) {
+       const errorMsg = error.response?.data?.error || error.response?.data?.message || error.response?.data?.detail || 'Password reset failed.';
+       return { success: false, error: errorMsg };
+     }
+  }, []);
 
   const createCenter = useCallback((centerData) => {
     const centerId = `C-${Date.now()}`;
@@ -204,23 +263,29 @@ export function AuthProvider({ children }) {
     return { success: true, center: newCenter };
   }, []);
 
+  // Check if there's at least one admin doctor registered
+  const hasAdminDoctor = useMemo(() => {
+    // For now, we'll assume there's always an admin doctor available
+    // In a real implementation, this would check the backend or local storage
+    // for existing admin doctor registrations
+    return true;
+  }, []);
+
   return (
     <AuthContext.Provider value={{ 
-      users, 
       currentUser, 
-      hasAdminDoctor, 
       centers,
       activeCenter,
       switchCenter,
       createCenter,
+      hasAdminDoctor,
       login, 
       logout,
       registerAdminDoctor,
-      createUser,
-      updateUser,
-      deleteUser,
       sendOtp,
       verifyOtp,
+      forgotPassword,
+      verifyResetCode,
       resetPassword
     }}>
       {children}

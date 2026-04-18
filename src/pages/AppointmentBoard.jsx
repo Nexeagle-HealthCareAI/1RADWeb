@@ -1,30 +1,15 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect, useCallback, useContext } from 'react';
+import apiClient from '../api/apiClient';
+import { AuthContext } from '../auth/AuthContext';
 import '../styles/global.css';
 
-// --- MOCK DATA ---
-const INITIAL_PATIENTS = [
-  { id: 'P001', name: 'James Wilson', mobile: '9876543210', age: '45', gender: 'Male', address: '123 Pine St', referredBy: 'Dr. Sarah' },
-  { id: 'P002', name: 'Elena Rodriguez', mobile: '9876543211', age: '32', gender: 'Female', address: '456 Oak Ave', referredBy: 'Self' },
-  { id: 'P003', name: 'Marcus Chen', mobile: '9876543212', age: '28', gender: 'Male', address: '789 Maple Dr', referredBy: 'Dr. Mike' },
-  { id: 'P004', name: 'Sarah Jenkins', mobile: '9876543213', age: '54', gender: 'Female', address: '321 Birch Ln', referredBy: 'Dr. Lisa' }
-];
-
-const INITIAL_APPOINTMENTS = [
-  { id: 'APP-101', patientId: 'P001', patientName: 'James Wilson', mobile: '9876543210', service: 'Chest X-Ray PA', modality: 'X-RAY', dateTime: '2024-04-04T09:30', type: 'BOOKED', doctor: 'Dr. Brown', status: 'BOOKED', referredBy: 'Dr. Sarah Mitchell', referredContact: '9888776655' },
-  { id: 'APP-102', patientId: 'P002', patientName: 'Elena Rodriguez', mobile: '9876543211', service: 'Brain MRI (Contrast)', modality: 'MRI', dateTime: '2024-04-04T10:15', type: 'EMERGENCY', doctor: 'Dr. Sarah', status: 'ARRIVED', referredBy: 'Self / Walk-in', referredContact: 'N/A' },
-  { id: 'APP-103', patientId: 'P003', patientName: 'Marcus Chen', mobile: '9876543212', service: 'Abdomen CT', modality: 'CT', dateTime: '2024-04-04T11:00', type: 'ROUTINE', doctor: 'Dr. Mike', status: 'IN_PROGRESS', referredBy: 'Dr. Sarah Mitchell', referredContact: '9888776655' },
-  { id: 'APP-104', patientId: 'P004', patientName: 'Sarah Jenkins', mobile: '9876543213', service: 'Pelvis Ultrasound', modality: 'ULTRASOUND', dateTime: '2024-04-04T11:45', type: 'BOOKED', doctor: 'Dr. Lisa', status: 'CANCELLED', referredBy: 'Dr. John Doe', referredContact: '9777665544' }
-];
+// --- CONSTANTS ---
 
 const MODALITIES = ['X-RAY', 'MRI', 'CT', 'ULTRASOUND', 'DEXA', 'ANGIOGRAPHY', 'MAMMOGRAPHY', 'PET-CT', 'NUCLEAR MEDICINE', 'FLUOROSCOPY'];
 const DOCTORS = ['Dr. Brown', 'Dr. Sarah', 'Dr. Mike', 'Dr. Lisa'];
 const TODAY = new Date().toISOString().split('T')[0];
 
-const INITIAL_REFERRERS = [
-  { id: 'REF-001', name: 'Dr. Sarah Mitchell', contact: '9888776655', address: 'Riverside Clinic, Sector 12' },
-  { id: 'REF-002', name: 'Dr. John Doe', contact: '9777665544', address: 'City Heart Hospital' },
-  { id: 'REF-003', name: 'Self / Walk-in', contact: '', address: '' },
-];
+// --- CONSTANTS ---
 
 const INFORMATION_SOURCES = [
   'Social Media',
@@ -59,8 +44,10 @@ const MODALITY_ICONS = {
 };
 
 export default function AppointmentBoard() {
-  const [appointments, setAppointments] = useState(INITIAL_APPOINTMENTS);
-  const [patients, setPatients] = useState(INITIAL_PATIENTS);
+  const { activeCenterId } = useContext(AuthContext);
+  const [appointments, setAppointments] = useState([]);
+  const [patients, setPatients] = useState([]);
+  const [loading, setLoading] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [filters, setFilters] = useState({ date: TODAY, status: 'ALL', modality: 'ALL', doctor: 'ALL' });
   const [expandedRow, setExpandedRow] = useState(null);
@@ -80,10 +67,72 @@ export default function AppointmentBoard() {
   });
   const [duplicatePatient, setDuplicatePatient] = useState(null);
 
-  const [referrers, setReferrers] = useState(INITIAL_REFERRERS);
+  const [referrers, setReferrers] = useState([]);
   const [isAddingNewReferrer, setIsAddingNewReferrer] = useState(false);
   const [newReferrer, setNewReferrer] = useState({ name: '', contact: '', address: '' });
   const [referrerSearchValue, setReferrerSearchValue] = useState('');
+
+  // --- API SYNC ---
+  const fetchAppointments = useCallback(async () => {
+    setLoading(true);
+    try {
+      const response = await apiClient.get('/appointments', {
+        params: { 
+          search: searchQuery, 
+          status: filters.status 
+        }
+      });
+      setAppointments(response.data.map(a => ({
+        ...a,
+        id: a.displayId,
+        appointmentId: a.appointmentId
+      })));
+    } catch (error) {
+      console.error('Failed to fetch appointments:', error);
+    } finally {
+      setLoading(false);
+    }
+  }, [searchQuery, filters.status]);
+
+  const fetchPatients = useCallback(async (query) => {
+    try {
+      const response = await apiClient.get('/patients', {
+        params: { search: query }
+      });
+      setPatients(response.data.map(p => ({
+        ...p,
+        id: p.patientId,
+        name: p.fullName
+      })));
+    } catch (error) {
+      console.error('Failed to fetch patients:', error);
+    }
+  }, []);
+
+  const fetchReferrers = useCallback(async (query) => {
+    try {
+      const response = await apiClient.get('/referrers', {
+        params: { search: query }
+      });
+      setReferrers(response.data);
+    } catch (error) {
+      console.error('Failed to fetch referrers:', error);
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchAppointments();
+  }, [fetchAppointments, activeCenterId]);
+
+  useEffect(() => {
+    if (searchQuery.length > 2) {
+      fetchPatients(searchQuery);
+    }
+  }, [searchQuery, fetchPatients]);
+
+  useEffect(() => {
+    fetchReferrers('');
+  }, [fetchReferrers, activeCenterId]);
 
   // --- DERIVED ---
   const filteredAppointments = useMemo(() => {
@@ -108,16 +157,25 @@ export default function AppointmentBoard() {
   const activeRate = stats.total > 0 ? Math.round(((stats.total - stats.cancelled) / stats.total) * 100) : 0;
 
   // --- HANDLERS ---
-  const handleAction = (id, action) => {
-    setAppointments(prev => prev.map(app => {
-      if (app.id === id) {
-        if (action === 'ARRIVE') return { ...app, status: 'ARRIVED' };
-        if (action === 'START') return { ...app, status: 'IN_PROGRESS' };
-        if (action === 'COMPLETE') return { ...app, status: 'COMPLETED' };
-        if (action === 'CANCEL') return { ...app, status: 'CANCELLED' };
-      }
-      return app;
-    }));
+  const handleAction = async (id, action) => {
+    // Find the real GUID for this display ID
+    const app = appointments.find(a => a.id === id);
+    if (!app) return;
+
+    let newStatus = '';
+    if (action === 'ARRIVE') newStatus = 'ARRIVED';
+    if (action === 'START') newStatus = 'IN_PROGRESS';
+    if (action === 'COMPLETE') newStatus = 'COMPLETED';
+    if (action === 'CANCEL') newStatus = 'CANCELLED';
+
+    try {
+      await apiClient.patch(`/appointments/${app.appointmentId}/status`, `"${newStatus}"`, {
+        headers: { 'Content-Type': 'application/json' }
+      });
+      fetchAppointments();
+    } catch (error) {
+      console.error('Failed to update status:', error);
+    }
   };
 
   const getNextAction = (status) => {
@@ -129,47 +187,49 @@ export default function AppointmentBoard() {
     }
   };
 
-  const handleAddPatient = (e) => {
+  const handleAddPatient = async (e) => {
     e.preventDefault();
-    const existing = patients.find(p => p.mobile === newPatient.mobile);
-    if (existing && !duplicatePatient) {
-      setDuplicatePatient(existing);
-      return;
+    try {
+      const response = await apiClient.post('/patients', {
+        fullName: newPatient.name,
+        mobile: newPatient.mobile,
+        age: newPatient.age,
+        gender: newPatient.gender,
+        village: newPatient.village,
+        district: newPatient.district,
+        address: newPatient.address,
+        sourceOfInfo: newPatient.sourceOfInfo
+      });
+      
+      const patientId = response.data.patientId;
+      setIsAddPatientOpen(false);
+      setNewPatient({ name: '', mobile: '', age: '', gender: 'Male', village: '', district: '', address: '', referredBy: '', sourceOfInfo: '' });
+      setNewBooking(prev => ({ ...prev, patientId }));
+      fetchPatients('');
+    } catch (error) {
+      console.error('Failed to add patient:', error);
     }
-    const id = `P00${patients.length + 1}`;
-    const patientToAdd = { ...newPatient, id };
-    setPatients([...patients, patientToAdd]);
-    setIsAddPatientOpen(false);
-    setNewPatient({ name: '', mobile: '', age: '', gender: 'Male', village: '', district: '', address: '', referredBy: '', sourceOfInfo: '' });
-    setDuplicatePatient(null);
-    setNewBooking(prev => ({ ...prev, patientId: id }));
   };
 
-  const handleBookAppointment = () => {
-    const patient = patients.find(p => p.id === newBooking.patientId);
-    const id = `APP-${100 + appointments.length + 1}`;
-    
-    // Resolve referrer contact
-    const refName = newPatient.referredBy || patient.referredBy;
-    const referrerObj = referrers.find(r => r.name === refName);
-
-    const appToAdd = {
-      id,
-      patientId: patient.id,
-      patientName: patient.name,
-      mobile: patient.mobile,
-      service: newBooking.service,
-      modality: newBooking.modality,
-      dateTime: new Date().toISOString(),
-      type: 'BOOKED',
-      doctor: newBooking.doctor || 'Unassigned',
-      status: 'BOOKED',
-      referredBy: refName,
-      referredContact: referrerObj ? referrerObj.contact : 'N/A'
-    };
-    setAppointments([...appointments, appToAdd]);
-    setIsBookingOpen(false);
-    resetBooking();
+  const handleBookAppointment = async () => {
+    try {
+      await apiClient.post('/appointments', {
+        patientId: newBooking.patientId,
+        service: newBooking.service,
+        modality: newBooking.modality,
+        dateTime: new Date().toISOString(),
+        type: 'BOOKED',
+        doctor: newBooking.doctor || 'Unassigned',
+        referredBy: newPatient.referredBy || '',
+        referredContact: '',
+        notes: newBooking.notes
+      });
+      setIsBookingOpen(false);
+      resetBooking();
+      fetchAppointments();
+    } catch (error) {
+      console.error('Failed to book appointment:', error);
+    }
   };
 
   const resetBooking = () => {
@@ -375,7 +435,7 @@ export default function AppointmentBoard() {
 
           <div style={{ display: 'flex', flexDirection: 'column' }}>
             <div style={{ fontWeight: 800, color: '#1a1a2e', fontSize: '13px' }}>{app.patientName}</div>
-            <div style={{ fontSize: '10px', color: '#888', fontWeight: 600 }}>{app.mobile} {'\u00B7'} {patient?.age}y {patient?.gender}</div>
+            <div style={{ fontSize: '10px', color: '#888', fontWeight: 600 }}>{app.mobile} {'\u00B7'} {app.patientAge}y {app.patientGender}</div>
           </div>
 
           <div style={{ display: 'flex', flexDirection: 'column' }}>
@@ -652,7 +712,25 @@ export default function AppointmentBoard() {
                           <input type="text" placeholder="Contact" style={{ fontSize: '12px', padding: '8px 10px', borderRadius: '8px' }} value={newReferrer.contact} onChange={e => setNewReferrer(prev => ({ ...prev, contact: e.target.value }))} />
                         </div>
                         <input type="text" placeholder="Address" style={{ width: '100%', fontSize: '12px', padding: '8px 10px', borderRadius: '8px' }} value={newReferrer.address} onChange={e => setNewReferrer(prev => ({ ...prev, address: e.target.value }))} />
-                        <button type="button" onClick={() => { if(newReferrer.name){ const added = {...newReferrer, id: Date.now()}; setReferrers([...referrers, added]); setNewPatient({...newPatient, referredBy: newReferrer.name}); setIsAddingNewReferrer(false); } }} style={{ marginTop: '10px', width: '100%', background: '#0f52ba', color: 'white', border: 'none', padding: '8px', borderRadius: '8px', fontSize: '11px', fontWeight: 800 }}>SAVE REFERRER</button>
+                        <button 
+                          type="button" 
+                          onClick={async () => { 
+                            if(newReferrer.name){ 
+                              try {
+                                await apiClient.post('/referrers', newReferrer);
+                                fetchReferrers('');
+                                setNewPatient({...newPatient, referredBy: newReferrer.name}); 
+                                setIsAddingNewReferrer(false);
+                                setNewReferrer({ name: '', contact: '', address: '' });
+                              } catch (error) {
+                                console.error('Failed to save referrer:', error);
+                              }
+                            } 
+                          }} 
+                          style={{ marginTop: '10px', width: '100%', background: '#0f52ba', color: 'white', border: 'none', padding: '8px', borderRadius: '8px', fontSize: '11px', fontWeight: 800 }}
+                        >
+                          SAVE REFERRER
+                        </button>
                       </div>
                     )}
                   </div>

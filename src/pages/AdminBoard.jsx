@@ -1,4 +1,5 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
+import apiClient from '../api/apiClient';
 import useAuth from '../auth/useAuth';
 import { ROLE_LABELS } from '../data/roles';
 import '../styles/global.css';
@@ -14,55 +15,12 @@ const TODAY = getISODate(0);
 const YESTERDAY = getISODate(1);
 
 // --- MOCK DATA ---
-const INITIAL_LAYOUTS = [
-  { id: 'L001', name: 'Standard Chest X-Ray', modality: 'X-RAY', type: 'Chest', active: true, updated: '2024-03-20', sections: ['Findings', 'Impression', 'Advice', 'Comparison'] },
-  { id: 'L002', name: 'Neuro Brain MRI', modality: 'MRI', type: 'Brain', active: true, updated: '2024-04-01', sections: ['Clinical History', 'Findings', 'Impression', 'Technique'] },
-  { id: 'L003', name: 'Abdomen CT Contrast', modality: 'CT', type: 'Abdomen', active: false, updated: '2024-02-15', sections: ['Findings', 'Impression', 'Notes'] },
-];
-
-const REFERRAL_LOG = [
-  { id: 101, date: TODAY, referredBy: 'Dr. A. Smith' },
-  { id: 102, date: TODAY, referredBy: 'Dr. A. Smith' },
-  { id: 103, date: TODAY, referredBy: 'City Hospital' },
-  { id: 104, date: TODAY, referredBy: 'Dr. J. Brown' },
-  { id: 105, date: TODAY, referredBy: 'Dr. A. Smith' },
-  { id: 106, date: TODAY, referredBy: 'Green Clinic' },
-  { id: 107, date: TODAY, referredBy: 'Dr. A. Smith' },
-  { id: 201, date: YESTERDAY, referredBy: 'City Hospital' },
-  { id: 202, date: YESTERDAY, referredBy: 'City Hospital' },
-  { id: 203, date: YESTERDAY, referredBy: 'Emergency Dept' },
-];
-
-const DAILY_VOLUME_MOCK = [
-  { day: 'Mon', count: 45, revenue: 3500 },
-  { day: 'Tue', count: 58, revenue: 5200 },
-  { day: 'Wed', count: 42, revenue: 3800 },
-  { day: 'Thu', count: 112, revenue: 8900, peak: true },
-  { day: 'Fri', count: 95, revenue: 7600 },
-  { day: 'Sat', count: 35, revenue: 2500 },
-  { day: 'Sun', count: 15, revenue: 1200 }
-];
-
-const MODALITY_STATS_MOCK = [
-  { label: 'X-RAY', count: 450, color: '#0f52ba', icon: '🩻' },
-  { label: 'MRI', count: 120, color: '#6c5ce7', icon: '🧠' },
-  { label: 'CT', count: 85, color: '#e74c3c', icon: '🌀' },
-  { label: 'ULTRASOUND', count: 180, color: '#2ecc71', icon: '🤰' }
-];
-
-const MODALITY_DAILY_TREND_MOCK = [
-  { modality: 'X-RAY', counts: [45, 52, 48, 65, 78, 32, 12], color: '#0f52ba' },
-  { modality: 'MRI', counts: [12, 15, 18, 12, 22, 8, 4], color: '#6c5ce7' },
-  { modality: 'CT', counts: [8, 12, 10, 25, 20, 5, 2], color: '#e74c3c' },
-  { modality: 'ULTRASOUND', counts: [22, 28, 25, 35, 42, 18, 10], color: '#2ecc71' }
-];
-
-const STAFF_PERFORMANCE_MOCK = [
-  { name: 'Dr. Brown', reported: 145, efficiency: '98%' },
-  { name: 'Dr. Sarah', reported: 112, efficiency: '95%' },
-  { name: 'Dr. Mike', reported: 98, efficiency: '92%' },
-  { name: 'Dr. Lisa', reported: 84, efficiency: '89%' }
-];
+const INITIAL_LAYOUTS = [];
+const REFERRAL_LOG = [];
+const DAILY_VOLUME_MOCK = [];
+const MODALITY_STATS_MOCK = [];
+const MODALITY_DAILY_TREND_MOCK = [];
+const STAFF_PERFORMANCE_MOCK = [];
 
 const SECTIONS_POOL = [
   { id: 'history', name: 'Clinical History' },
@@ -76,16 +34,10 @@ const SECTIONS_POOL = [
 ];
 
 export default function AdminBoard() {
-  const { currentUser, users, createUser, updateUser, deleteUser, activeCenter } = useAuth();
+  const { currentUser, activeCenter } = useAuth();
   const [activeTab, setActiveTab] = useState('INTELLIGENCE');
   const [layouts, setLayouts] = useState(INITIAL_LAYOUTS);
-  const [patients, setPatients] = useState([
-    { id: 'P001', name: 'James Wilson', mobile: '9876543210', age: 45, gender: 'Male', district: 'Downtown', referredBy: 'Dr. Sarah Mitchell', sourceContact: '9888776655', registered: TODAY },
-    { id: 'P002', name: 'Elena Rodriguez', mobile: '9876543211', age: 32, gender: 'Female', district: 'Westside', referredBy: 'Self / Walk-in', sourceContact: 'N/A', registered: TODAY },
-    { id: 'P003', name: 'Marcus Chen', mobile: '9876543212', age: 28, gender: 'Male', district: 'Uptown', referredBy: 'Dr. Mike', sourceContact: '9555666777', registered: getISODate(2) },
-    { id: 'P004', name: 'Sarah Jenkins', mobile: '9123456780', age: 34, gender: 'Female', district: 'Downtown', referredBy: 'Dr. Sarah Mitchell', sourceContact: '9888776655', registered: getISODate(1) },
-    { id: 'P005', name: 'Robert Fox', mobile: '9876543214', age: 52, gender: 'Male', district: 'Downtown', referredBy: 'Dr. John Doe', sourceContact: '9777665544', registered: getISODate(5) }
-  ]);
+  const [patients, setPatients] = useState([]);
   const [patientSearch, setPatientSearch] = useState('');
   
   // Dashboard Filters
@@ -102,6 +54,7 @@ export default function AdminBoard() {
   const [editUser, setEditUser] = useState(null);
   const [selectedDocId, setSelectedDocId] = useState('');
   const [settings, setSettings] = useState({ allowCustom: true, lockApproved: false, reqFindings: true, reqImpression: true });
+  const [showPasswords, setShowPasswords] = useState(false);
 
   // Custom Sections Registry
   const [customSections, setCustomSections] = useState([]);
@@ -111,8 +64,102 @@ export default function AdminBoard() {
   const [referralRange, setReferralRange] = useState({ start: getISODate(7), end: TODAY });
   const [referralFilterMode, setReferralFilterMode] = useState('RANGE'); // 'SINGLE' or 'RANGE'
   const [expandedReferrer, setExpandedReferrer] = useState(null);
+  const [personnel, setPersonnel] = useState([]);
+  const [loading, setLoading] = useState(false);
 
-  // Subscription & System Governance
+  // Hospital Settings State
+  const [hospitalData, setHospitalData] = useState({
+    hospitalName: '',
+    hospitalAddress: '',
+    gstin: '',
+    registrationNumber: '',
+    pan: '',
+    nabhNumber: ''
+  });
+  const [hospitalLoading, setHospitalLoading] = useState(false);
+  const [savingHospital, setSavingHospital] = useState(false);
+  const [hospitalMessage, setHospitalMessage] = useState({ type: '', text: '' });
+
+  // --- API FETCHING ---
+  const fetchPersonnel = useCallback(async () => {
+    try {
+      setPersonnelLoading(true);
+      const res = await apiClient.get('/personnel');
+      // Map PersonnelDto to frontend state
+      const mapped = res.data.map(p => ({
+        id: p.userId,
+        name: p.fullName,
+        email: p.email,
+        mobile: p.mobile,
+        roles: p.roles.map(r => r.toLowerCase()),
+        specialization: p.specialization,
+        degree: p.degree,
+        licenseNo: p.licenseNo,
+        status: p.status,
+        createdAt: p.createdAt
+      }));
+      setPersonnel(mapped);
+    } catch (err) {
+      console.error('Personnel fetch failed', err);
+    } finally {
+      setPersonnelLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (activeTab === 'PERSONNEL') {
+      fetchPersonnel();
+    }
+    if (activeTab === 'HOSPITAL' && activeCenter?.id) {
+      fetchHospitalData();
+    }
+  }, [activeTab, activeCenter, fetchPersonnel, fetchHospitalData]);
+
+  const fetchHospitalData = useCallback(async () => {
+    try {
+      setHospitalLoading(true);
+      const res = await apiClient.get(`/hospitals/${activeCenter.id}`);
+      // Map Hub Metadata to frontend state
+      setHospitalData({
+        hospitalName: res.data.hospitalName || '',
+        hospitalAddress: res.data.hospitalAddress || '',
+        gstin: res.data.gstin || '',
+        registrationNumber: res.data.registrationNumber || '',
+        pan: res.data.pan || '',
+        nabhNumber: res.data.nabhNumber || ''
+      });
+    } catch (err) {
+      console.error('[HOSPITAL] Fetch failed', err);
+    } finally {
+      setHospitalLoading(false);
+    }
+  }, [activeCenter]);
+
+  const handleSaveHospital = async (e) => {
+    e.preventDefault();
+    try {
+      setSavingHospital(true);
+      setHospitalMessage({ type: '', text: '' });
+      
+      const payload = {
+        hospitalName: hospitalData.hospitalName,
+        hospitalAddress: hospitalData.hospitalAddress,
+        gstin: hospitalData.gstin,
+        registrationNumber: hospitalData.registrationNumber,
+        pan: hospitalData.pan,
+        nabhNumber: hospitalData.nabhNumber
+      };
+
+      await apiClient.put(`/hospitals/${activeCenter.id}`, payload);
+      setHospitalMessage({ type: 'success', text: 'METADATA RE-SYNCED: Hospital configuration updated successfully.' });
+    } catch (err) {
+      setHospitalMessage({ type: 'error', text: err.response?.data?.message || 'DEPLOYMENT FAILURE: Failed to update hospital metadata.' });
+    } finally {
+      setSavingHospital(false);
+    }
+  };
+
+  // --- DERIVED DATA ---
   const [subscription, setSubscription] = useState({ 
     tier: 'PROFESSIONAL', 
     limit: 5000, 
@@ -150,17 +197,24 @@ export default function AdminBoard() {
 
   const topReferrerName = dynamicReferralStats.length > 0 ? dynamicReferralStats[0].name : 'N/A';
 
-  const handleDeleteUser = (id, roles) => {
-    if (roles && roles.includes('admindoctor')) return alert('Access Denied: The primary AdminDoctor account is permanently locked.');
-    if (window.confirm('Are you sure you want to permanently delete this user account?')) deleteUser(id);
+  const handleDeleteUser = async (id) => {
+    if (window.confirm('Are you sure you want to remove this staff member from the current hub?')) {
+      try {
+        await apiClient.delete(`/personnel/${id}`);
+        fetchPersonnel();
+      } catch (err) {
+        alert(err.response?.data?.message || 'Failed to remove personnel.');
+      }
+    }
   };
 
   const handleOpenUserDrawer = (user = null) => {
-    setEditUser(user ? { ...user, role: user.roles?.[0] || 'doctor' } : { 
+    setEditUser(user ? { ...user, roles: user.roles || [] } : { 
       name: '', 
       email: '', 
       password: '', 
-      role: 'doctor', 
+      confirmPassword: '',
+      roles: [], 
       status: 'active',
       specialization: '',
       degree: '',
@@ -171,23 +225,30 @@ export default function AdminBoard() {
     setIsUserDrawerOpen(true);
   };
 
-  const handleSaveUser = (e) => {
+  const handleSaveUser = async (e) => {
     e.preventDefault();
-    const isDoctor = editUser.role === 'doctor' || editUser.role === 'admindoctor';
-    
-    if (userRegStep === 1 && isDoctor) {
-      setUserRegStep(2);
-      return;
-    }
+    try {
+      const payload = {
+        fullName: editUser.name,
+        email: editUser.email,
+        mobile: editUser.mobile,
+        password: editUser.password,
+        roleNames: editUser.roles, // Backend expects roleNames
+        specialization: editUser.specialization,
+        degree: editUser.degree,
+        licenseNo: editUser.licenseNo
+      };
 
-    if (editUser.id) {
-       const { role, ...rest } = editUser;
-       updateUser(editUser.id, { ...rest, roles: [role] });
-    } else {
-       const { role, ...rest } = editUser;
-       createUser({ ...rest, id: Date.now(), status: 'active', roles: [role] });
+      if (editUser.id) {
+        await apiClient.put(`/personnel/${editUser.id}`, payload);
+      } else {
+        await apiClient.post('/personnel', payload);
+      }
+      setIsUserDrawerOpen(false);
+      fetchPersonnel();
+    } catch (err) {
+      alert(err.response?.data?.message || 'Failed to save staff record.');
     }
-    setIsUserDrawerOpen(false);
   };
 
   const handleOpenLayoutDrawer = (layout = null) => {
@@ -295,9 +356,9 @@ export default function AdminBoard() {
 
   // --- RENDERERS ---
   const renderDocumentation = () => {
-    const doctors = users.filter(u => u.roles?.includes('doctor') || u.roles?.includes('admindoctor'));
+    const doctors = personnel.filter(u => u.roles?.includes('doctor') || u.roles?.includes('admindoctor'));
     const docId = selectedDocId || (doctors[0]?.id.toString());
-    const doc = users.find(u => u.id === parseInt(docId));
+    const doc = personnel.find(u => u.id === docId);
 
     if (!doc) return <div style={{ padding: '40px', textAlign: 'center', color: '#888' }}>NO DOCTORS DETECTED ON ROSTER</div>;
 
@@ -328,14 +389,145 @@ export default function AdminBoard() {
     );
   };
 
+  const renderHospitalSettings = () => (
+    <div className="hospital-settings-view">
+      <div className="board-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '35px' }}>
+        <div>
+          <h2 style={{ fontSize: '12px', fontWeight: 900, textTransform: 'uppercase', letterSpacing: '2px', color: '#0f52ba', marginBottom: '4px' }}>Infrastructure Configuration</h2>
+          <p style={{ fontSize: '11px', color: '#888', fontWeight: 600 }}>Manage institutional identity, tax compliance nodes, and clinical accreditations.</p>
+        </div>
+      </div>
+
+      <div style={{ maxWidth: '800px' }}>
+        {hospitalLoading ? (
+            <div style={{ padding: '60px', textAlign: 'center', background: 'white', borderRadius: '20px', border: '1px solid #eee' }}>
+                <div className="pulse-loader" style={{ marginBottom: '15px' }}></div>
+                <p style={{ fontSize: '11px', fontWeight: 900, color: '#0f52ba' }}>ESTABLISHING SECURE LINK...</p>
+            </div>
+        ) : (
+            <form onSubmit={handleSaveHospital} className="glass-card" style={{ background: 'white', padding: '40px', borderRadius: '24px', border: '1px solid #eee', boxShadow: '0 10px 40px rgba(0,0,0,0.02)' }}>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '30px', marginBottom: '30px' }}>
+                    <div className="form-group">
+                        <label style={{ fontSize: '10px', fontWeight: 950, color: '#aaa', textTransform: 'uppercase', letterSpacing: '1px', display: 'block', marginBottom: '12px' }}>Institutional Identity</label>
+                        <input 
+                            type="text" 
+                            required
+                            value={hospitalData.hospitalName} 
+                            onChange={e => setHospitalData({...hospitalData, hospitalName: e.target.value})} 
+                            style={{ width: '100%', border: 'none', borderBottom: '2px solid #f0f0f0', fontSize: '18px', fontWeight: 950, padding: '10px 0', outline: 'none', color: '#1a1a2e' }} 
+                            placeholder="Hospital Name"
+                        />
+                    </div>
+                    <div className="form-group">
+                        <label style={{ fontSize: '10px', fontWeight: 950, color: '#aaa', textTransform: 'uppercase', letterSpacing: '1px', display: 'block', marginBottom: '12px' }}>Operational License #</label>
+                        <input 
+                            type="text" 
+                            value={hospitalData.registrationNumber || ''} 
+                            onChange={e => setHospitalData({...hospitalData, registrationNumber: e.target.value.toUpperCase()})} 
+                            style={{ width: '100%', border: 'none', borderBottom: '2px solid #f0f0f0', fontSize: '16px', fontWeight: 700, padding: '10px 0', outline: 'none' }} 
+                            placeholder="State Reg / UID"
+                        />
+                    </div>
+                </div>
+
+                <div className="form-group" style={{ marginBottom: '35px' }}>
+                    <label style={{ fontSize: '10px', fontWeight: 950, color: '#aaa', textTransform: 'uppercase', letterSpacing: '1px', display: 'block', marginBottom: '12px' }}>Physical Infrastructure Node (Address)</label>
+                    <textarea 
+                        required
+                        value={hospitalData.hospitalAddress} 
+                        onChange={e => setHospitalData({...hospitalData, hospitalAddress: e.target.value})} 
+                        style={{ width: '100%', border: 'none', borderBottom: '2px solid #f0f0f0', fontSize: '14px', fontWeight: 600, padding: '10px 0', outline: 'none', resize: 'none', height: '60px' }} 
+                        placeholder="Complete clinical facility address..."
+                    />
+                </div>
+
+                <div style={{ background: '#f8f9fc', padding: '30px', borderRadius: '20px', marginBottom: '35px', border: '1px solid #eff2f7' }}>
+                    <p style={{ fontSize: '10px', fontWeight: 950, color: '#0f52ba', letterSpacing: '2px', marginBottom: '25px' }}>COMPLIANCE & ACCREDITATION</p>
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '25px' }}>
+                        <div className="form-group">
+                            <label style={{ fontSize: '9px', fontWeight: 850, color: '#888', textTransform: 'uppercase', marginBottom: '10px' }}>GSTIN Module</label>
+                            <input 
+                                type="text" 
+                                value={hospitalData.gstin || ''} 
+                                onChange={e => setHospitalData({...hospitalData, gstin: e.target.value.toUpperCase()})} 
+                                maxLength="15"
+                                style={{ width: '100%', border: 'none', borderBottom: '1px solid #ddd', fontSize: '13px', fontWeight: 800, padding: '8px 0', outline: 'none', background: 'transparent' }} 
+                                placeholder="15-Digit GST"
+                            />
+                        </div>
+                        <div className="form-group">
+                            <label style={{ fontSize: '9px', fontWeight: 850, color: '#888', textTransform: 'uppercase', marginBottom: '10px' }}>IT PAN Node</label>
+                            <input 
+                                type="text" 
+                                value={hospitalData.pan || ''} 
+                                onChange={e => setHospitalData({...hospitalData, pan: e.target.value.toUpperCase()})} 
+                                maxLength="10"
+                                style={{ width: '100%', border: 'none', borderBottom: '1px solid #ddd', fontSize: '13px', fontWeight: 800, padding: '8px 0', outline: 'none', background: 'transparent' }} 
+                                placeholder="10-Digit PAN"
+                            />
+                        </div>
+                        <div className="form-group">
+                            <label style={{ fontSize: '9px', fontWeight: 850, color: '#888', textTransform: 'uppercase', marginBottom: '10px' }}>Quality (NABH/NABL)</label>
+                            <input 
+                                type="text" 
+                                value={hospitalData.nabhNumber || ''} 
+                                onChange={e => setHospitalData({...hospitalData, nabhNumber: e.target.value.toUpperCase()})} 
+                                style={{ width: '100%', border: 'none', borderBottom: '1px solid #ddd', fontSize: '13px', fontWeight: 800, padding: '8px 0', outline: 'none', background: 'transparent' }} 
+                                placeholder="CERT-XXXXX"
+                            />
+                        </div>
+                    </div>
+                </div>
+
+                {hospitalMessage.text && (
+                    <div style={{ 
+                        padding: '15px 20px', 
+                        borderRadius: '12px', 
+                        marginBottom: '30px', 
+                        fontSize: '11px', 
+                        fontWeight: 900,
+                        background: hospitalMessage.type === 'success' ? '#e9f7ef' : '#fdeded',
+                        color: hospitalMessage.type === 'success' ? '#155724' : '#721c24',
+                        border: `1px solid ${hospitalMessage.type === 'success' ? '#c3e6cb' : '#f5c6cb'}`,
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '10px'
+                    }}>
+                        <span>{hospitalMessage.type === 'success' ? '🛡️' : '⚠️'}</span>
+                        {hospitalMessage.text}
+                    </div>
+                )}
+
+                <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '15px' }}>
+                    <button 
+                        type="button" 
+                        onClick={fetchHospitalData}
+                        style={{ padding: '15px 25px', borderRadius: '12px', border: '1px solid #eee', background: 'white', color: '#666', fontSize: '11px', fontWeight: 900, cursor: 'pointer' }}
+                    >
+                        CANCEL
+                    </button>
+                    <button 
+                        type="submit" 
+                        disabled={savingHospital}
+                        style={{ padding: '15px 40px', borderRadius: '12px', border: 'none', background: '#0f52ba', color: 'white', fontSize: '11px', fontWeight: 950, cursor: 'pointer', boxShadow: '0 8px 15px rgba(15, 82, 186, 0.2)' }}
+                    >
+                        {savingHospital ? 'SYNCHRONIZING...' : 'COMMIT CHANGES →'}
+                    </button>
+                </div>
+            </form>
+        )}
+      </div>
+    </div>
+  );
+
   const renderAnalytics = () => {
     const totalModalityCount = MODALITY_STATS_MOCK.reduce((acc, m) => acc + m.count, 0);
 
     return (
-      <div className="analytics-view" style={{ display: 'flex', flexDirection: 'column', gap: '40px' }}>
-        <div className="filter-bar responsive-control-bar force-stack-mobile" style={{ background: 'white', borderRadius: '12px', border: '1px solid #dee2e6', padding: '20px', display: 'flex', flexWrap: 'wrap', gap: '20px', boxShadow: '0 2px 10px rgba(0,0,0,0.03)' }}>
+      <div className="analytics-view" style={{ display: 'flex', flexDirection: 'column', gap: '30px' }}>
+        <div className="filter-bar responsive-control-bar force-stack-mobile" style={{ background: 'white', borderRadius: '12px', border: '1px solid #dee2e6', padding: '15px', display: 'flex', flexWrap: 'wrap', gap: '15px', boxShadow: '0 2px 10px rgba(0,0,0,0.03)' }}>
           <div className="filter-group responsive-control-bar force-stack-mobile" style={{ display: 'flex', alignItems: 'center', gap: '10px 15px', flexWrap: 'wrap' }}>
-            <label style={{ fontSize: '11px', fontWeight: 900, color: '#0f52ba', textTransform: 'uppercase', letterSpacing: '1px' }}>Governance Intensity:</label>
+            <label style={{ fontSize: '10px', fontWeight: 900, color: '#0f52ba', textTransform: 'uppercase', letterSpacing: '1px' }}>Governance Intensity:</label>
             <div className="btn-group" style={{ display: 'flex', gap: '5px' }}>
               <button 
                 className={`btn-secondary ${selectedDateFilter === TODAY ? 'active' : ''}`} 
@@ -382,7 +574,7 @@ export default function AdminBoard() {
         </div>
 
         {/* Level 1: Tactical Hero KPI Nodes */}
-        <div className="summary-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: '25px' }}>
+        <div className="summary-grid tactical-grid-smart" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '20px' }}>
           <div className="summary-card" style={{ background: 'linear-gradient(135deg, #0f52ba 0%, #061a40 100%)', padding: '28px', borderRadius: '20px', color: 'white', border: '1px solid rgba(255,255,255,0.05)', boxShadow: '0 10px 30px rgba(15, 82, 186, 0.2)' }}>
              <span className="label" style={{ display: 'block', fontSize: '10px', fontWeight: 900, color: 'var(--tactical-cyan)', textTransform: 'uppercase', letterSpacing: '2px', marginBottom: '15px' }}>Universal Registry</span>
              <div style={{ display: 'flex', alignItems: 'baseline', gap: '10px' }}>
@@ -427,7 +619,7 @@ export default function AdminBoard() {
         </div>
 
         {/* Level 2: Clinical Modality & Peak Matrix */}
-        <div className="analytics-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(400px, 1fr))', gap: '30px' }}>
+        <div className="analytics-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: '20px' }}>
            <div className="chart-container" style={{ background: 'white', border: '1px solid #dee2e6', padding: '25px', borderRadius: '12px' }}>
               <div className="chart-title" style={{ fontSize: '11px', fontWeight: 900, color: '#888', textTransform: 'uppercase', letterSpacing: '1px', marginBottom: '25px', display: 'flex', justifyContent: 'space-between' }}>
                  <span>Clinical Modality Intel</span>
@@ -702,12 +894,12 @@ export default function AdminBoard() {
           </div>
         </div>
 
-        <div className="summary-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '20px', marginBottom: '35px' }}>
+        <div className="summary-grid tactical-grid-smart" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '20px', marginBottom: '35px' }}>
           <div style={{ background: 'white', padding: '24px', borderRadius: '18px', border: '1px solid #eee', boxShadow: '0 4px 15px rgba(0,0,0,0.02)' }}>
             <span style={{ fontSize: '9px', fontWeight: 900, color: '#aaa', letterSpacing: '1px' }}>TOTAL CAPTURED</span>
             <div style={{ fontSize: '28px', fontWeight: 950, color: '#0f52ba', marginTop: '8px' }}>
               {Object.values(aggregated).reduce((sum, s) => sum + s.patients.length, 0)}
-              <span style={{ fontSize: '12px', color: '#ccc', marginLeft: '8px' }}>SCAN UNITS</span>
+              <span className="hide-mobile" style={{ fontSize: '12px', color: '#ccc', marginLeft: '8px' }}>SCAN UNITS</span>
             </div>
           </div>
           <div style={{ background: 'white', padding: '24px', borderRadius: '18px', border: '1px solid #eee', boxShadow: '0 4px 15px rgba(0,0,0,0.02)' }}>
@@ -715,8 +907,8 @@ export default function AdminBoard() {
             <div style={{ fontSize: '28px', fontWeight: 950, color: '#1a1a2e', marginTop: '8px' }}>{sources.length}</div>
           </div>
           <div style={{ background: 'linear-gradient(135deg, #10b981 0%, #059669 100%)', padding: '24px', borderRadius: '18px', color: 'white', boxShadow: '0 8px 20px rgba(16, 185, 129, 0.2)' }}>
-            <span style={{ fontSize: '9px', fontWeight: 900, opacity: 0.8, letterSpacing: '1px' }}>DOMINANT PROTOCOL SOURCE</span>
-            <div style={{ fontSize: '20px', fontWeight: 950, marginTop: '8px' }}>{sources[0]?.name || 'N/A'}</div>
+            <span style={{ fontSize: '9px', fontWeight: 900, opacity: 0.8, letterSpacing: '1px' }}>DOMINANT PROTOCOL</span>
+            <div style={{ fontSize: '18px', fontWeight: 950, marginTop: '8px', whiteSpace: 'nowrap', textOverflow: 'ellipsis', overflow: 'hidden' }}>{sources[0]?.name || 'N/A'}</div>
           </div>
         </div>
 
@@ -729,33 +921,35 @@ export default function AdminBoard() {
                 overflow: 'hidden', transition: 'all 0.3s ease',
                 boxShadow: isExpanded ? '0 10px 30px rgba(15, 82, 186, 0.1)' : '0 2px 8px rgba(0,0,0,0.02)'
               }}>
-                <div style={{ padding: '20px 25px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                  <div style={{ display: 'flex', gap: '20px', alignItems: 'center' }}>
-                    <div style={{ width: '45px', height: '45px', borderRadius: '12px', background: '#f0f5ff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '20px', color: '#0f52ba', border: '1px solid rgba(15, 82, 186, 0.1)' }}>
+                <div style={{ padding: '15px 20px', display: 'flex', flexDirection: 'column', gap: '15px' }}>
+                  <div style={{ display: 'flex', gap: '15px', alignItems: 'center' }}>
+                    <div style={{ width: '40px', height: '40px', borderRadius: '10px', background: '#f0f5ff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '18px', color: '#0f52ba', border: '1px solid rgba(15, 82, 186, 0.1)', flexShrink: 0 }}>
                       📡
                     </div>
-                    <div>
-                      <div style={{ fontSize: '15px', fontWeight: 900, color: '#1a1a2e' }}>{s.name.toUpperCase()}</div>
-                      <div style={{ fontSize: '10px', color: '#888', fontWeight: 700, marginTop: '2px' }}>CONTACT RECON: {s.contact}</div>
+                    <div style={{ overflow: 'hidden' }}>
+                      <div style={{ fontSize: '14px', fontWeight: 900, color: '#1a1a2e', whiteSpace: 'nowrap', textOverflow: 'ellipsis', overflow: 'hidden' }}>{s.name.toUpperCase()}</div>
+                      <div style={{ fontSize: '9px', color: '#888', fontWeight: 700, marginTop: '2px' }}>RECON: {s.contact}</div>
                     </div>
                   </div>
                   
-                  <div style={{ display: 'flex', gap: '25px', alignItems: 'center' }}>
-                    <div style={{ textAlign: 'right' }}>
-                      <div style={{ fontSize: '18px', fontWeight: 950, color: '#0f52ba' }}>{s.patients.length}</div>
-                      <div style={{ fontSize: '8px', fontWeight: 900, color: '#aaa', letterSpacing: '1px' }}>MISSIONS</div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderTop: '1px solid #f8f9fa', paddingTop: '12px' }}>
+                    <div style={{ display: 'flex', gap: '15px' }}>
+                      <div style={{ textAlign: 'left' }}>
+                        <div style={{ fontSize: '16px', fontWeight: 950, color: '#0f52ba' }}>{s.patients.length}</div>
+                        <div style={{ fontSize: '7px', fontWeight: 900, color: '#aaa', letterSpacing: '1px' }}>MISSIONS</div>
+                      </div>
                     </div>
                     <button 
                       onClick={() => setExpandedReferrer(isExpanded ? null : s.name)}
                       style={{ 
-                        padding: '10px 20px', borderRadius: '12px', border: 'none', 
+                        padding: '8px 16px', borderRadius: '10px', border: 'none', 
                         background: isExpanded ? '#0f52ba' : '#f8f9fa', 
                         color: isExpanded ? 'white' : '#64748b',
                         fontSize: '9px', fontWeight: 950, cursor: 'pointer',
                         transition: 'all 0.2s', letterSpacing: '1px'
                       }}
                     >
-                      {isExpanded ? 'SCAN COMPLETE' : 'DEPLOY LOGS \u2193'}
+                      {isExpanded ? 'COMPLETE' : 'LOGS \u2193'}
                     </button>
                   </div>
                 </div>
@@ -845,8 +1039,9 @@ export default function AdminBoard() {
         <button className="btn-primary" onClick={() => handleOpenUserDrawer()}>+ REGISTER PERSONNEL</button>
       </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(360px, 1fr))', gap: '25px' }}>
-        {users.map(u => {
+      <div className="personnel-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: '20px' }}>
+        {loading && <div style={{ gridColumn: '1/-1', textAlign: 'center', padding: '40px', color: '#888' }}>SYNCHRONIZING PERSONNEL...</div>}
+        {!loading && personnel.map(u => {
           const userRole = u.roles?.[0];
           const isSuper = userRole === 'admindoctor';
           const currentRole = currentUser.roles?.[0];
@@ -953,29 +1148,29 @@ export default function AdminBoard() {
 
   return (
     <div className="page-wrapper board-padding" style={{ paddingTop: '30px' }}>
-      <div style={{ marginBottom: '40px', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end' }}>
+      <div className="board-hero-header flex-stack-mobile" style={{ marginBottom: '30px', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', gap: '20px' }}>
         <div>
           <div style={{ display: 'flex', alignItems: 'center', gap: '15px', marginBottom: '8px' }}>
-            <span style={{ fontSize: '28px' }}>📊</span>
-            <h1 style={{ fontSize: '26px', fontWeight: 950, color: '#0a1628', letterSpacing: '-1px', margin: 0 }}>OPERATIONAL COMMAND</h1>
+            <span style={{ fontSize: '24px' }}>📊</span>
+            <h1 style={{ fontSize: '22px', fontWeight: 950, color: '#0a1628', letterSpacing: '-1px', margin: 0 }}>OPERATIONAL COMMAND</h1>
           </div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginLeft: '43px' }}>
+          <div className="hide-mobile" style={{ display: 'flex', alignItems: 'center', gap: '12px', marginLeft: '39px' }}>
             <span style={{ fontSize: '10px', color: '#0f52ba', fontWeight: 900, textTransform: 'uppercase', letterSpacing: '2px' }}>
               {activeCenter?.name?.toUpperCase() || 'INSTITUTIONAL HUB'}
             </span>
             <span style={{ width: '4px', height: '4px', background: '#ccc', borderRadius: '50%' }}></span>
             <span style={{ fontSize: '10px', color: '#888', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '1px' }}>
-               Command Center Governance v4.2
+               Command Center v4.2
             </span>
           </div>
         </div>
         
-        <div style={{ background: '#f8f9fa', padding: '15px 25px', borderRadius: '16px', border: '1px solid #eee', display: 'flex', gap: '20px', alignItems: 'center' }}>
+        <div style={{ background: '#f8f9fa', padding: '12px 20px', borderRadius: '16px', border: '1px solid #eee', display: 'flex', gap: '15px', alignItems: 'center' }}>
           <div style={{ textAlign: 'right' }}>
-            <div style={{ fontSize: '9px', fontWeight: 900, color: '#aaa', letterSpacing: '1px' }}>SYSTEM HEALTH</div>
-            <div style={{ fontSize: '12px', fontWeight: 900, color: '#2ecc71' }}>CORE STABLE</div>
+            <div style={{ fontSize: '8px', fontWeight: 950, color: '#aaa', letterSpacing: '1px' }}>SYSTEM HEALTH</div>
+            <div style={{ fontSize: '11px', fontWeight: 950, color: '#2ecc71' }}>CORE STABLE</div>
           </div>
-          <div className="tactical-node-active" style={{ width: '10px', height: '10px' }}></div>
+          <div className="tactical-node-active" style={{ width: '8px', height: '8px' }}></div>
         </div>
       </div>
       
@@ -990,7 +1185,7 @@ export default function AdminBoard() {
         display: 'flex',
         boxShadow: '0 4px 20px rgba(0,0,0,0.03)'
       }}>
-        {['INTELLIGENCE', 'REFERRAL INTEL', 'PERSONNEL'].map(tab => (
+        {['INTELLIGENCE', 'REFERRAL INTEL', 'PERSONNEL', 'HOSPITAL'].map(tab => (
           <button 
             key={tab}
             className={`admin-tab ${activeTab === tab ? 'active' : ''}`} 
@@ -1019,110 +1214,271 @@ export default function AdminBoard() {
       {activeTab === 'INTELLIGENCE' && renderAnalytics()}
       {activeTab === 'REFERRAL INTEL' && renderReferralIntel()}
       {activeTab === 'PERSONNEL' && renderUserManagement()}
+      {activeTab === 'HOSPITAL' && renderHospitalSettings()}
 
-      {/* Personnel Roster Drawer */}
+      {/* Personnel Roster Drawer: Redesigned Tactical HUD */}
       {isUserDrawerOpen && (
-        <div className="drawer-overlay" onClick={() => { setIsUserDrawerOpen(false); setUserRegStep(1); }}>
-           <div className="drawer-content" style={{ padding: 0, borderRadius: '0 15px 15px 0' }} onClick={e => e.stopPropagation()}>
-              <div className="drawer-header" style={{ background: 'linear-gradient(90deg, #0f52ba 0%, #061a40 100%)', color: 'white', padding: '30px' }}>
-                 <div style={{ display: 'flex', flexDirection: 'column' }}>
-                    <h2 style={{ fontWeight: 900, letterSpacing: '1px', fontSize: '18px' }}>{editUser?.id ? 'EDIT PERSONNEL' : 'REGISTER PERSONNEL'}</h2>
-                    <p style={{ fontSize: '10px', opacity: 0.8, textTransform: 'uppercase', letterSpacing: '1px', marginTop: '5px' }}>Mission Phase {userRegStep}: {userRegStep === 1 ? 'Identity' : 'Diagnostic Credentials'}</p>
+        <div className="drawer-overlay" onClick={() => { setIsUserDrawerOpen(false); setUserRegStep(1); }} style={{ backdropFilter: 'blur(8px)', background: 'rgba(10, 22, 40, 0.4)' }}>
+           <div className="drawer-content" style={{ 
+             padding: 0, 
+             width: '500px',
+             borderRadius: '24px 0 0 24px', 
+             background: '#fff',
+             boxShadow: '-20px 0 60px rgba(0,0,0,0.1)',
+             display: 'flex',
+             flexDirection: 'column'
+           }} onClick={e => e.stopPropagation()}>
+              
+              {/* Tactical Header */}
+              <div className="drawer-header" style={{ 
+                background: 'linear-gradient(135deg, #0f52ba 0%, #061a40 100%)', 
+                color: 'white', 
+                padding: '40px 30px',
+                position: 'relative',
+                overflow: 'hidden'
+              }}>
+                 {/* Decorative HUD Lines */}
+                 <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: '1px', background: 'rgba(255,255,255,0.1)' }}></div>
+                 <div style={{ position: 'absolute', top: '10px', left: '30px', width: '20px', height: '2px', background: 'var(--tactical-cyan)' }}></div>
+                 
+                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                        <span style={{ fontSize: '10px', fontWeight: 950, letterSpacing: '3px', color: 'var(--tactical-cyan)', textTransform: 'uppercase' }}>Personnel Deployment</span>
+                        <h2 style={{ fontWeight: 950, fontSize: '24px', letterSpacing: '-0.5px' }}>{editUser?.id ? 'CONFIG_IDENTITY' : 'INIT_REGISTRATION'}</h2>
+                    </div>
+                    <button className="btn-close" style={{ color: 'white', opacity: 0.6, fontSize: '28px' }} onClick={() => { setIsUserDrawerOpen(false); setUserRegStep(1); }}>&times;</button>
                  </div>
-                 <button className="btn-close" style={{ color: 'white' }} onClick={() => { setIsUserDrawerOpen(false); setUserRegStep(1); }}>&times;</button>
+
+                 {/* Pulse Badge */}
+                 <div style={{ 
+                   marginTop: '20px',
+                   display: 'inline-flex',
+                   alignItems: 'center',
+                   gap: '8px',
+                   padding: '6px 14px',
+                   background: 'rgba(255,255,255,0.1)',
+                   borderRadius: '20px',
+                   border: '1px solid rgba(255,255,255,0.1)'
+                 }}>
+                    <div className="tactical-node-active" style={{ width: '6px', height: '6px' }}></div>
+                    <span style={{ fontSize: '9px', fontWeight: 950, letterSpacing: '1px' }}>SYSTEM_PHASE_{userRegStep}: {(userRegStep === 1 ? 'BIO_DATA' : 'CREDENTIAL_SYNC')}</span>
+                 </div>
               </div>
 
-               <div className="step-progress-wrapper" style={{ padding: '0 30px', marginTop: '20px' }}>
-                  <div className="step-progress-bar">
-                     <div className="step-progress-fill" style={{ width: `${(userRegStep / ((editUser?.role === 'doctor' || editUser?.role === 'admindoctor') ? 2 : 1)) * 100}%` }}></div>
-                  </div>
-               </div>
+              <div style={{ flex: 1, overflowY: 'auto', padding: '40px 30px' }}>
+                 <form onSubmit={handleSaveUser}>
+                    {userRegStep === 1 && (
+                      <div className="wizard-step" style={{ animation: 'slideRight 0.4s ease' }}>
+                        
+                        {/* Validation HUD Summary */}
+                        {(!editUser.name || !editUser.email || editUser.roles.length === 0) && (
+                          <div style={{ 
+                            background: '#fff9f0', 
+                            border: '1px solid #ffe8cc', 
+                            padding: '16px', 
+                            borderRadius: '16px', 
+                            marginBottom: '30px',
+                            display: 'flex',
+                            gap: '12px',
+                            alignItems: 'center'
+                          }}>
+                            <span style={{ fontSize: '20px' }}>⚠️</span>
+                            <div>
+                              <div style={{ fontSize: '11px', fontWeight: 950, color: '#f39c12' }}>ACTION REQUIRED</div>
+                              <div style={{ fontSize: '10px', color: '#888' }}>Personnel profile core parameters missing or invalid.</div>
+                            </div>
+                          </div>
+                        )}
 
-               <form onSubmit={handleSaveUser} className="drawer-body" style={{ padding: '30px' }}>
-                  {userRegStep === 1 && (
-                    <div className="wizard-step">
-                      <div className="form-group" style={{ marginBottom: '25px' }}>
-                         <label style={{ fontSize: '10px', fontWeight: 800, color: '#888', textTransform: 'uppercase' }}>Full Legal Name</label>
-                         <input type="text" required value={editUser?.name} onChange={e => setEditUser({...editUser, name: e.target.value})} style={{ width: '100%', border: 'none', borderBottom: '2px solid #eee', fontSize: '16px', fontWeight: 700, padding: '10px 0', outline: 'none' }} />
-                      </div>
-                      
-                      <div style={{ display: 'flex', gap: '20px', marginBottom: '25px' }}>
-                         <div className="form-group" style={{ flex: 1 }}>
-                             <label style={{ fontSize: '10px', fontWeight: 800, color: '#888', textTransform: 'uppercase' }}>System Email</label>
-                             <input type="email" required value={editUser?.email} onChange={e => setEditUser({...editUser, email: e.target.value})} style={{ width: '100%', border: 'none', borderBottom: '1px solid #eee', fontSize: '14px', padding: '8px 0', outline: 'none' }} />
-                         </div>
-                         <div className="form-group" style={{ flex: 1 }}>
-                             <label style={{ fontSize: '10px', fontWeight: 800, color: '#888', textTransform: 'uppercase' }}>Key Password</label>
-                             <input type="text" required value={editUser?.password} onChange={e => setEditUser({...editUser, password: e.target.value})} style={{ width: '100%', border: 'none', borderBottom: '1px solid #eee', fontSize: '14px', padding: '8px 0', outline: 'none' }} />
-                         </div>
-                      </div>
-
-                      <div className="form-group" style={{ marginBottom: '25px' }}>
-                         <label style={{ fontSize: '10px', fontWeight: 800, color: '#888', textTransform: 'uppercase' }}>Tactical Role Assignment</label>
-                         <select value={editUser?.role} onChange={e => setEditUser({...editUser, role: e.target.value})} style={{ width: '100%', padding: '12px', borderRadius: '8px', border: '1px solid #eee', fontSize: '14px', fontWeight: 600, background: '#f8f9fa' }}>
-                            <option value="receptionist">Receptionist (📅 Dispatch)</option>
-                            <option value="technician">Technician (🛠️ Ops)</option>
-                            <option value="doctor">Doctor (🩺 Precision)</option>
-                            <option value="admin">Admin (🔑 Governance)</option>
-                            {currentUser.roles?.[0] === 'admindoctor' && <option value="admindoctor">AdminDoctor (🔱 Master)</option>}
-                         </select>
-                      </div>
-
-                      {(editUser?.role === 'doctor' || editUser?.role === 'admindoctor') && (
-                        <div style={{ background: '#f8f9f1', padding: '15px', borderRadius: '10px', border: '1px solid #eee', marginTop: '10px' }}>
-                           <p style={{ fontSize: '10px', fontWeight: 800, color: '#0f52ba', textTransform: 'uppercase', marginBottom: '5px' }}>DOCUMENTATION GOVERNANCE</p>
-                           <p style={{ fontSize: '11px', color: '#666', fontStyle: 'italic' }}>Phase 2 will activate to capture medical credentials after this step.</p>
+                        <div className="form-group" style={{ marginBottom: '30px' }}>
+                           <label style={{ fontSize: '10px', fontWeight: 950, color: '#aaa', textTransform: 'uppercase', letterSpacing: '1px', display: 'block', marginBottom: '12px' }}>Operational Alias (Full Name)</label>
+                           <input 
+                             type="text" 
+                             required 
+                             placeholder="Ex: John Doe"
+                             value={editUser?.name} 
+                             onChange={e => setEditUser({...editUser, name: e.target.value})} 
+                             style={{ 
+                               width: '100%', 
+                               border: 'none', 
+                               borderBottom: '2px solid #f0f0f0', 
+                               fontSize: '18px', 
+                               fontWeight: 800, 
+                               padding: '12px 0', 
+                               outline: 'none',
+                               color: '#1a1a2e',
+                               transition: 'border-color 0.3s ease'
+                             }} 
+                             onFocus={(e) => e.target.style.borderBottomColor = 'var(--tactical-cyan)'}
+                             onBlur={(e) => e.target.style.borderBottomColor = '#f0f0f0'}
+                           />
                         </div>
+                        
+                        <div style={{ display: 'flex', gap: '30px', marginBottom: '35px' }}>
+                           <div className="form-group" style={{ flex: 1 }}>
+                               <label style={{ fontSize: '10px', fontWeight: 950, color: '#aaa', textTransform: 'uppercase', letterSpacing: '1px', display: 'block', marginBottom: '10px' }}>System UID (Email)</label>
+                               <input type="email" required value={editUser?.email} onChange={e => setEditUser({...editUser, email: e.target.value})} style={{ width: '100%', border: 'none', borderBottom: '1px solid #f0f0f0', fontSize: '14px', fontWeight: 700, padding: '10px 0', outline: 'none' }} />
+                           </div>
+                           <div className="form-group" style={{ flex: 1, position: 'relative' }}>
+                               <label style={{ fontSize: '10px', fontWeight: 950, color: '#aaa', textTransform: 'uppercase', letterSpacing: '1px', display: 'block', marginBottom: '10px' }}>Access Crypt (Password)</label>
+                               <input type={showPasswords ? "text" : "password"} required value={editUser?.password} onChange={e => setEditUser({...editUser, password: e.target.value})} style={{ width: '100%', border: 'none', borderBottom: '1px solid #f0f0f0', fontSize: '14px', fontWeight: 700, padding: '10px 0', outline: 'none' }} />
+                               <button 
+                                 type="button" 
+                                 onClick={() => setShowPasswords(!showPasswords)}
+                                 style={{ position: 'absolute', right: 0, bottom: '10px', background: 'none', border: 'none', cursor: 'pointer', fontSize: '12px', opacity: 0.5 }}
+                               >
+                                 {showPasswords ? '👁️‍🗨️' : '👁️'}
+                               </button>
+                           </div>
+                           <div className="form-group" style={{ flex: 1 }}>
+                               <label style={{ fontSize: '10px', fontWeight: 950, color: '#aaa', textTransform: 'uppercase', letterSpacing: '1px', display: 'block', marginBottom: '10px' }}>Confirm Crypt</label>
+                               <input type={showPasswords ? "text" : "password"} required value={editUser?.confirmPassword} onChange={e => setEditUser({...editUser, confirmPassword: e.target.value})} style={{ width: '100%', border: 'none', borderBottom: '1px solid #f0f0f0', fontSize: '14px', fontWeight: 700, padding: '10px 0', outline: 'none' }} />
+                               {editUser.password && editUser.confirmPassword && editUser.password !== editUser.confirmPassword && (
+                                 <div style={{ fontSize: '8px', color: '#e74c3c', fontWeight: 900, marginTop: '4px' }}>MISMATCH DETECTED</div>
+                               )}
+                           </div>
+                        </div>
+
+                        <div className="form-group" style={{ marginBottom: '30px' }}>
+                           <label style={{ fontSize: '10px', fontWeight: 950, color: '#aaa', textTransform: 'uppercase', letterSpacing: '1px', display: 'block', marginBottom: '15px' }}>Assigned Directives (Multi-Role Select)</label>
+                           
+                           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+                              {[
+                                { id: 'doctor', label: 'Doctor', icon: '🩺', desc: 'Precision Reporting', color: 'var(--tactical-cyan)' },
+                                { id: 'technician', label: 'Technician', icon: '🛠️', desc: 'Ops & Acquisition', color: '#f39c12' },
+                                { id: 'receptionist', label: 'Receptionist', icon: '📅', desc: 'Patient Dispatch', color: '#e84393' },
+                                { id: 'admin', label: 'Admin', icon: '🔑', desc: 'Governance Control', color: '#0f52ba' },
+                                ...(currentUser.roles?.[0] === 'admindoctor' ? [{ id: 'admindoctor', label: 'AdminDoctor', icon: '🔱', desc: 'Master Authority', color: 'var(--tactical-indigo)' }] : [])
+                              ].map(role => {
+                                const isSelected = editUser.roles.includes(role.id);
+                                return (
+                                  <div 
+                                    key={role.id}
+                                    onClick={() => {
+                                      const newRoles = isSelected 
+                                        ? editUser.roles.filter(r => r !== role.id)
+                                        : [...editUser.roles, role.id];
+                                      setEditUser({ ...editUser, roles: newRoles });
+                                    }}
+                                    style={{ 
+                                      padding: '12px 16px',
+                                      borderRadius: '16px',
+                                      border: `1px solid ${isSelected ? role.color : '#eee'}`,
+                                      background: isSelected ? `${role.color}05` : 'white',
+                                      cursor: 'pointer',
+                                      transition: 'all 0.2s cubic-bezier(0.175, 0.885, 0.32, 1.275)',
+                                      display: 'flex',
+                                      alignItems: 'center',
+                                      gap: '12px',
+                                      boxShadow: isSelected ? `0 4px 12px ${role.color}15` : 'none'
+                                    }}
+                                  >
+                                    <div style={{ 
+                                      width: '32px', height: '32px', borderRadius: '10px', 
+                                      background: isSelected ? role.color : '#f8f9fa',
+                                      color: isSelected ? 'white' : '#888',
+                                      display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                      fontSize: '16px'
+                                    }}>
+                                      {role.icon}
+                                    </div>
+                                    <div style={{ flex: 1 }}>
+                                      <div style={{ fontSize: '12px', fontWeight: 950, color: isSelected ? role.color : '#1a1a2e' }}>{role.label.toUpperCase()}</div>
+                                      <div style={{ fontSize: '8px', color: '#aaa', fontWeight: 700 }}>{role.desc.toUpperCase()}</div>
+                                    </div>
+                                    {isSelected && <div style={{ color: role.color, fontSize: '10px' }}>✓</div>}
+                                  </div>
+                                );
+                              })}
+                           </div>
+                        </div>
+
+                        {(editUser.roles.includes('doctor') || editUser.roles.includes('admindoctor')) && (
+                          <div style={{ 
+                            background: 'rgba(15, 82, 186, 0.05)', 
+                            padding: '16px', 
+                            borderRadius: '16px', 
+                            border: '1px dashed #0f52ba', 
+                            marginTop: '20px',
+                            display: 'flex',
+                            gap: '12px'
+                          }}>
+                             <span style={{ fontSize: '18px' }}>📋</span>
+                             <div style={{ fontSize: '10px', color: '#0f52ba', fontWeight: 800, lineHeight: 1.4 }}>
+                                CLINICAL ACTIVATION DETECTED: <br/>
+                                <span style={{ opacity: 0.7 }}>Phase 2 will initiate clinical credential syncing for reporting authorization.</span>
+                             </div>
+                          </div>
+                        )}
+                      </div>
+                    )}
+
+                    {userRegStep === 2 && (
+                      <div className="wizard-step" style={{ animation: 'slideLeft 0.4s ease' }}>
+                        <div style={{ 
+                          background: '#f0faff', 
+                          padding: '24px', 
+                          borderRadius: '20px', 
+                          marginBottom: '35px', 
+                          border: '1px solid #e0f2fe',
+                          position: 'relative',
+                          overflow: 'hidden'
+                        }}>
+                          <div style={{ position: 'absolute', top: 0, right: 0, padding: '10px', opacity: 0.1, fontSize: '40px' }}>🩺</div>
+                          <p style={{ fontSize: '10px', fontWeight: 950, color: '#0f52ba', letterSpacing: '2px', marginBottom: '8px' }}>CLINICAL REGISTRY</p>
+                          <p style={{ fontSize: '12px', color: '#64748b', fontWeight: 600, lineHeight: 1.5 }}>Authorized clinical reporting requires verified professional credentials and licensing data.</p>
+                        </div>
+
+                        <div className="form-group" style={{ marginBottom: '30px' }}>
+                           <label style={{ fontSize: '10px', fontWeight: 950, color: '#aaa', textTransform: 'uppercase', letterSpacing: '1px', display: 'block', marginBottom: '10px' }}>Core Specialization / Wing</label>
+                           <input type="text" placeholder="e.g. Neuroradiologist" value={editUser?.specialization} onChange={e => setEditUser({...editUser, specialization: e.target.value})} style={{ width: '100%', border: 'none', borderBottom: '1px solid #f0f0f0', fontSize: '15px', fontWeight: 700, padding: '10px 0', outline: 'none' }} />
+                        </div>
+
+                        <div style={{ display: 'flex', gap: '30px', marginBottom: '30px' }}>
+                           <div className="form-group" style={{ flex: 1 }}>
+                               <label style={{ fontSize: '10px', fontWeight: 950, color: '#aaa', textTransform: 'uppercase', letterSpacing: '1px', display: 'block', marginBottom: '10px' }}>Registration License #</label>
+                               <input type="text" placeholder="Ex: PMC-894-0" value={editUser?.licenseNo} onChange={e => setEditUser({...editUser, licenseNo: e.target.value})} style={{ width: '100%', border: 'none', borderBottom: '1px solid #f0f0f0', fontSize: '14px', fontWeight: 700, padding: '10px 0', outline: 'none' }} />
+                           </div>
+                           <div className="form-group" style={{ flex: 1 }}>
+                               <label style={{ fontSize: '10px', fontWeight: 950, color: '#aaa', textTransform: 'uppercase', letterSpacing: '1px', display: 'block', marginBottom: '10px' }}>Primary Professional Degree</label>
+                               <input type="text" placeholder="MBBS, MD" value={editUser?.degree} onChange={e => setEditUser({...editUser, degree: e.target.value})} style={{ width: '100%', border: 'none', borderBottom: '1px solid #f0f0f0', fontSize: '14px', fontWeight: 700, padding: '10px 0', outline: 'none' }} />
+                           </div>
+                        </div>
+
+                        <div className="form-group" style={{ marginBottom: '30px' }}>
+                           <label style={{ fontSize: '10px', fontWeight: 950, color: '#aaa', textTransform: 'uppercase', letterSpacing: '1px', display: 'block', marginBottom: '10px' }}>Verified Contact Node</label>
+                           <input type="text" placeholder="+91 000-000-0000" value={editUser?.contact} onChange={e => setEditUser({...editUser, contact: e.target.value})} style={{ width: '100%', border: 'none', borderBottom: '1px solid #f0f0f0', fontSize: '15px', fontWeight: 700, padding: '10px 0', outline: 'none' }} />
+                        </div>
+                      </div>
+                    )}
+
+                    <div className="drawer-footer" style={{ marginTop: '40px', display: 'flex', gap: '15px' }}>
+                      {userRegStep === 1 ? (
+                        <>
+                          <button type="button" className="btn-logout" style={{ flex: 1, padding: '18px', borderRadius: '16px', border: '1px solid #eee' }} onClick={() => { setIsUserDrawerOpen(false); setUserRegStep(1); }}>ABORT</button>
+                          <button 
+                            type="submit" 
+                            className="btn-primary" 
+                            style={{ flex: 2, padding: '18px', borderRadius: '16px', background: '#0f52ba', color: 'white', fontWeight: 950, fontSize: '11px', letterSpacing: '1px' }}
+                          >
+                            {(editUser.roles.includes('doctor') || editUser.roles.includes('admindoctor')) ? 'NEXT: CREDENTIALS' : 'FINALIZE DEPLOYMENT'}
+                          </button>
+                        </>
+                      ) : (
+                        <>
+                          <button type="button" className="btn-logout" style={{ flex: 1, padding: '18px', borderRadius: '16px', border: '1px solid #eee' }} onClick={() => setUserRegStep(1)}>REVERT</button>
+                          <button 
+                            type="submit" 
+                            className="btn-primary" 
+                            style={{ flex: 2, padding: '18px', borderRadius: '16px', background: 'var(--tactical-indigo)', color: 'white', fontWeight: 950, fontSize: '11px', letterSpacing: '1px' }}
+                          >
+                            COMPLETE DOCTOR SYNC
+                          </button>
+                        </>
                       )}
                     </div>
-                  )}
-
-                  {userRegStep === 2 && (
-                    <div className="wizard-step">
-                      <div style={{ background: '#f0f7ff', padding: '15px', borderRadius: '10px', marginBottom: '25px', border: '1px solid #e0eefc' }}>
-                        <p style={{ fontSize: '10px', fontWeight: 900, color: '#0f52ba', marginBottom: '4px' }}>PHASE 2: DIAGNOSTIC CREDENTIALS</p>
-                        <p style={{ fontSize: '11px', color: '#666' }}>Verify professional data for high-fidelity clinical reporting.</p>
-                      </div>
-
-                      <div className="form-group" style={{ marginBottom: '25px' }}>
-                         <label style={{ fontSize: '10px', fontWeight: 800, color: '#888', textTransform: 'uppercase' }}>Specialization / Wing</label>
-                         <input type="text" placeholder="e.g. Neuroradiologist" value={editUser?.specialization} onChange={e => setEditUser({...editUser, specialization: e.target.value})} style={{ width: '100%', border: 'none', borderBottom: '1px solid #eee', fontSize: '14px', padding: '8px 0', outline: 'none' }} />
-                      </div>
-
-                      <div style={{ display: 'flex', gap: '20px', marginBottom: '25px' }}>
-                         <div className="form-group" style={{ flex: 1 }}>
-                             <label style={{ fontSize: '10px', fontWeight: 800, color: '#888', textTransform: 'uppercase' }}>Medical Registration #</label>
-                             <input type="text" placeholder="Reg-894-0" value={editUser?.licenseNo} onChange={e => setEditUser({...editUser, licenseNo: e.target.value})} style={{ width: '100%', border: 'none', borderBottom: '1px solid #eee', fontSize: '14px', padding: '8px 0', outline: 'none' }} />
-                         </div>
-                         <div className="form-group" style={{ flex: 1 }}>
-                             <label style={{ fontSize: '10px', fontWeight: 800, color: '#888', textTransform: 'uppercase' }}>Primary Degree</label>
-                             <input type="text" placeholder="MBBS, MD" value={editUser?.degree} onChange={e => setEditUser({...editUser, degree: e.target.value})} style={{ width: '100%', border: 'none', borderBottom: '1px solid #eee', fontSize: '14px', padding: '8px 0', outline: 'none' }} />
-                         </div>
-                      </div>
-
-                      <div className="form-group" style={{ marginBottom: '25px' }}>
-                         <label style={{ fontSize: '10px', fontWeight: 800, color: '#888', textTransform: 'uppercase' }}>Verified Contact Information</label>
-                         <input type="text" placeholder="+1 (555) 000-0000" value={editUser?.contact} onChange={e => setEditUser({...editUser, contact: e.target.value})} style={{ width: '100%', border: 'none', borderBottom: '1px solid #eee', fontSize: '14px', padding: '8px 0', outline: 'none' }} />
-                      </div>
-                    </div>
-                  )}
-
-                  <div className="drawer-footer" style={{ borderTop: '1px solid #eee', paddingTop: '30px', display: 'flex', gap: '15px' }}>
-                    {userRegStep === 1 ? (
-                      <>
-                        <button type="button" className="btn-logout" style={{ flex: 1, padding: '15px' }} onClick={() => { setIsUserDrawerOpen(false); setUserRegStep(1); }}>CANCEL</button>
-                        <button type="submit" className="btn-primary" style={{ flex: 2, padding: '15px', fontWeight: 900 }}>
-                          {(editUser?.role === 'doctor' || editUser?.role === 'admindoctor') ? 'NEXT: CREDENTIALS →' : 'REGISTER PERSONNEL'}
-                        </button>
-                      </>
-                    ) : (
-                      <>
-                        <button type="button" className="btn-logout" style={{ flex: 1, padding: '15px' }} onClick={() => setUserRegStep(1)}>← BACK</button>
-                        <button type="submit" className="btn-primary" style={{ flex: 2, padding: '15px', fontWeight: 900 }}>DEPLOY DOCTOR PROFILE</button>
-                      </>
-                    )}
-                  </div>
-               </form>
+                 </form>
+              </div>
            </div>
         </div>
       )}

@@ -2328,9 +2328,46 @@ button {
     padding: 15px !important;
   }
 
-  /* HUD Mobile Refinement */
+  /* HUD Mobile Refinement - Allow some HUD info to stay or stack */
   .top-navigation-hud {
-    display: none !important; /* Hide HUD on mobile for maximum viewport */
+    padding: 0 10px !important;
+    height: auto !important;
+    min-height: 50px !important;
+    flex-direction: column !important;
+    align-items: flex-start !important;
+    gap: 8px !important;
+    padding-bottom: 10px !important;
+  }
+
+  .hud-node-group {
+    width: 100% !important;
+    justify-content: space-between !important;
+  }
+
+  .welcome-label, .status-separator, .status-label {
+    display: none !important;
+  }
+
+  /* Responsive Layout Utilities */
+  .tactical-grid-responsive {
+    display: grid !important;
+    grid-template-columns: 1fr !important;
+    gap: 20px !important;
+  }
+
+  .flex-stack-mobile {
+    flex-direction: column !important;
+    align-items: stretch !important;
+  }
+
+  .mobile-compact-text {
+    font-size: 10px !important;
+  }
+}
+
+@media (min-width: 769px) and (max-width: 1200px) {
+  .tablet-grid-2 {
+    grid-template-columns: repeat(2, 1fr) !important;
   }
 }
 

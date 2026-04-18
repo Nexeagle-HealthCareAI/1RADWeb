@@ -15,9 +15,8 @@ import AdminBoard from '../pages/AdminBoard';
 import ViewerPage from '../pages/ViewerPage';
 
 function RootRedirect() {
-  const { currentUser, hasAdminDoctor } = useAuth();
+  const { currentUser } = useAuth();
   
-  if (!hasAdminDoctor) return <Navigate to="/register" replace />;
   if (!currentUser) return <Navigate to="/login" replace />;
   
   const userRoles = currentUser.roles || [];
