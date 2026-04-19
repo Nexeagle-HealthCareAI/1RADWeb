@@ -71,9 +71,14 @@ export function AuthProvider({ children }) {
   const login = useCallback(async (identifier, password) => {
     try {
       const response = await apiClient.post('/auth/login', { identifier, password });
-      const { userProfile, accessToken, refreshToken, success, error } = response.data;
+      const { userProfile, accessToken, refreshToken, success, error, errorCode, accountStatus } = response.data;
       
-      if (!success) return { success: false, error: error || 'Authentication failed.' };
+      if (!success) return { 
+        success: false, 
+        error: error || 'Authentication failed.',
+        errorCode,
+        accountStatus
+      };
 
       const user = {
         id: userProfile.userId,
@@ -98,8 +103,14 @@ export function AuthProvider({ children }) {
       
       return { success: true, user };
     } catch (error) {
-      const errorMsg = error.response?.data?.error || error.response?.data?.message || error.response?.data?.detail || 'Authentication failed.';
-      return { success: false, error: errorMsg };
+      const resp = error.response?.data;
+      const errorMsg = resp?.error || resp?.message || resp?.detail || 'Authentication failed.';
+      return { 
+        success: false, 
+        error: errorMsg,
+        errorCode: resp?.errorCode,
+        accountStatus: resp?.accountStatus
+      };
     }
   }, []);
 

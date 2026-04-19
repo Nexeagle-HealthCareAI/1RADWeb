@@ -28,6 +28,8 @@ export default function LoginPage() {
   const [showPassword, setShowPassword] = useState(false);
   const [countdown, setCountdown] = useState(0);
   const [timerId, setTimerId] = useState(null);
+  const [errorCode, setErrorCode] = useState(null);
+  const [accountStatus, setAccountStatus] = useState(null);
 
   const startCountdown = () => {
     if (timerId) clearInterval(timerId);
@@ -65,6 +67,8 @@ export default function LoginPage() {
 
   const handleLogin = async (id, pwd) => {
     setLoading(true);
+    setErrorCode(null);
+    setAccountStatus(null);
     const result = await login(id, pwd);
     setLoading(false);
     if (result.success) {
@@ -72,6 +76,8 @@ export default function LoginPage() {
       navigate(from === '/' ? home : from, { replace: true });
     } else {
       setError(result.error);
+      setErrorCode(result.errorCode);
+      setAccountStatus(result.accountStatus);
     }
   };
 
@@ -234,7 +240,50 @@ export default function LoginPage() {
             )
           )}
 
-          {error && <div className="error-message" style={{ background: 'rgba(231, 76, 60, 0.1)', color: '#e74c3c', border: '1px solid rgba(231, 76, 60, 0.2)' }}>{error}</div>}
+          {error && (
+            <div className={`error-message ${errorCode === 'USER_NOT_FOUND' ? 'cta-error' : ''}`} 
+                 style={{ 
+                   background: errorCode === 'USER_NOT_FOUND' ? 'rgba(0, 242, 254, 0.1)' : 'rgba(231, 76, 60, 0.1)', 
+                   color: errorCode === 'USER_NOT_FOUND' ? '#00f2fe' : '#e74c3c', 
+                   border: errorCode === 'USER_NOT_FOUND' ? '1px solid rgba(0, 242, 254, 0.2)' : '1px solid rgba(231, 76, 60, 0.2)',
+                   padding: '15px',
+                   borderRadius: '8px',
+                   marginBottom: '20px',
+                   display: 'flex',
+                   flexDirection: 'column',
+                   gap: '10px'
+                 }}>
+              <span style={{ fontSize: '11px', fontWeight: 600 }}>{error}</span>
+              
+              {errorCode === 'USER_NOT_FOUND' && (
+                <button 
+                  type="button" 
+                  onClick={() => navigate('/register', { state: { identifier, isFromLogin: true } })}
+                  style={{ 
+                    background: '#00f2fe', 
+                    color: '#060a12', 
+                    border: 'none', 
+                    padding: '8px 12px', 
+                    borderRadius: '4px', 
+                    fontSize: '10px', 
+                    fontWeight: 900, 
+                    cursor: 'pointer',
+                    alignSelf: 'flex-start',
+                    boxShadow: '0 0 10px rgba(0, 242, 254, 0.3)'
+                  }}
+                >
+                  INITIALIZE NEW REGISTRATION
+                </button>
+              )}
+
+              {errorCode === 'ACCOUNT_INACTIVE' && (
+                <p style={{ fontSize: '10px', opacity: 0.8, margin: 0 }}>
+                  ACCOUNT STATE: <span style={{ fontWeight: 800, color: '#00f2fe' }}>{accountStatus?.toUpperCase()}</span>. 
+                  PLEASE WAIT FOR CLINICAL VERIFICATION.
+                </p>
+              )}
+            </div>
+          )}
 
           <button type="submit" className="btn-primary btn-block gamified-btn" disabled={loading} style={{ marginTop: '10px' }}>
             {loading ? 'INITIALIZING...' : (
