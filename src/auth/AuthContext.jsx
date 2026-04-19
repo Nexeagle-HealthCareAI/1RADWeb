@@ -135,7 +135,9 @@ export function AuthProvider({ children }) {
         password: userData.password
       });
 
-      const { token: nextToken, userId } = identityRes.data;
+      const { token: nextToken, userId, error: idError, errorCode: idCode } = identityRes.data;
+      if (idError) return { success: false, error: idError, errorCode: idCode };
+      
       sessionStorage.setItem('1rad_initiation_token', nextToken);
 
       // Stage 3: Infrastructure Deployment
@@ -148,7 +150,7 @@ export function AuthProvider({ children }) {
         'accountant': 'Accountant'
       };
 
-      await apiClient.post('/auth/deploy-infrastructure', {
+      const deployRes = await apiClient.post('/auth/deploy-infrastructure', {
         userId: userId,
         chainId: null, // Guid
         chainName: userData.chainName || userData.centerName,
@@ -166,11 +168,19 @@ export function AuthProvider({ children }) {
         headers: { Authorization: `Bearer ${nextToken}` }
       });
 
+      const { success: dSuccess, error: dError, errorCode: dCode } = deployRes.data;
+      if (!dSuccess) return { success: false, error: dError, errorCode: dCode };
+
       // After deployment, user needs to login or we auto-login
       return { success: true };
     } catch (error) {
-      const errorMsg = error.response?.data?.error || error.response?.data?.message || error.response?.data?.detail || 'Registration sequence failed.';
-      return { success: false, error: errorMsg };
+      const resp = error.response?.data;
+      const errorMsg = resp?.error || resp?.message || resp?.detail || 'Registration sequence failed.';
+      return { 
+        success: false, 
+        error: errorMsg,
+        errorCode: resp?.errorCode 
+      };
     }
   }, []);
 

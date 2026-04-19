@@ -35,6 +35,7 @@ export default function RegisterPage() {
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
+  const [errorCode, setErrorCode] = useState(null);
 
   // GSTIN validation helper
   const validateGSTIN = (gstin) => {
@@ -182,6 +183,7 @@ export default function RegisterPage() {
         navigate('/login', { state: { message: 'Registration successful! Please login with your new credentials.' } });
       } else {
         setError(result.error);
+        setErrorCode(result.errorCode);
       }
     }
   };
@@ -614,7 +616,50 @@ export default function RegisterPage() {
              </div>
           )}
 
-          {error && <div className="error-message" style={{ marginTop: '15px', background: 'rgba(231, 76, 60, 0.1)', color: '#e74c3c' }}>{error}</div>}
+          {error && (
+            <div className="error-message" 
+                 style={{ 
+                   marginTop: '15px', 
+                   background: errorCode === 'IDENTITY_ALREADY_ACTIVE' ? 'rgba(0, 242, 254, 0.1)' : 'rgba(231, 76, 60, 0.1)', 
+                   color: errorCode === 'IDENTITY_ALREADY_ACTIVE' ? '#00f2fe' : '#e74c3c',
+                   border: errorCode === 'IDENTITY_ALREADY_ACTIVE' ? '1px solid rgba(0, 242, 254, 0.2)' : '1px solid rgba(231, 76, 60, 0.2)',
+                   padding: '15px',
+                   borderRadius: '12px',
+                   display: 'flex',
+                   flexDirection: 'column',
+                   gap: '10px'
+                 }}>
+              <span style={{ fontSize: '12px', fontWeight: 600 }}>{error}</span>
+              
+              {errorCode === 'IDENTITY_ALREADY_ACTIVE' && (
+                <button 
+                  type="button" 
+                  onClick={() => navigate('/login', { state: { identifier: formData.mobile } })}
+                  style={{ 
+                    background: '#00f2fe', 
+                    color: '#060a12', 
+                    border: 'none', 
+                    padding: '8px 12px', 
+                    borderRadius: '6px', 
+                    fontSize: '10px', 
+                    fontWeight: 900, 
+                    cursor: 'pointer',
+                    alignSelf: 'flex-start',
+                    boxShadow: '0 0 10px rgba(0, 242, 254, 0.3)'
+                  }}
+                >
+                  RETURN TO LOGIN PORTAL
+                </button>
+              )}
+
+              {errorCode === 'ROLE_NOT_FOUND' && (
+                <p style={{ fontSize: '10px', opacity: 0.8, margin: 0 }}>
+                  The selected role <span style={{ fontWeight: 800 }}>{formData.role}</span> is not available in the current baseline. 
+                  Please select Chief Medical Officer or Operations Director.
+                </p>
+              )}
+            </div>
+          )}
 
           <div className="neon-divider"></div>
 
