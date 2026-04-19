@@ -7,7 +7,7 @@ import { Shield, Lock, Smartphone, Key, Eye, EyeOff } from 'lucide-react-native'
 
 const { width } = Dimensions.get('window');
 
-export default function LoginScreen({ navigation }) {
+export default function LoginScreen({ navigation, route }) {
   const { login, sendOtp, verifyOtp } = useAuth();
   
   // UI State
@@ -67,6 +67,16 @@ export default function LoginScreen({ navigation }) {
     }
   }, [loginMode, otpStep]);
 
+  const [errorCode, setErrorCode] = useState(null);
+  const [accountStatus, setAccountStatus] = useState(null);
+  const [successMessage, setSuccessMessage] = useState(null);
+
+  useEffect(() => {
+    if (route.params?.message) {
+      setSuccessMessage(route.params.message);
+    }
+  }, [route.params]);
+
   const handlePasswordLogin = async () => {
     if (!identifier || !password) {
       setError('INCOMPLETE CREDENTIALS: Enter both ID and password');
@@ -74,10 +84,14 @@ export default function LoginScreen({ navigation }) {
     }
     setLoading(true);
     setError('');
+    setErrorCode(null);
+    setAccountStatus(null);
     const result = await login(identifier, password);
     setLoading(false);
     if (!result.success) {
       setError(result.error || 'AUTHENTICATION FAILED');
+      setErrorCode(result.errorCode);
+      setAccountStatus(result.accountStatus);
     }
   };
 
@@ -260,7 +274,32 @@ export default function LoginScreen({ navigation }) {
             </>
           )}
 
-          {error ? <Text style={styles.errorText}>{error}</Text> : null}
+          {error ? (
+            <View style={styles.errorContainer}>
+              <Text style={styles.errorText}>{error}</Text>
+              
+              {errorCode === 'USER_NOT_FOUND' && (
+                <TouchableOpacity 
+                  style={styles.errorCTA} 
+                  onPress={() => navigation.navigate('Register', { identifier, isFromLogin: true })}
+                >
+                  <Text style={styles.errorCTAText}>INITIALIZE NEW REGISTRATION</Text>
+                </TouchableOpacity>
+              )}
+
+              {errorCode === 'ACCOUNT_INACTIVE' && (
+                <Text style={styles.statusSubtext}>
+                  ACCOUNT STATE: <Text style={{ color: COLORS.cyan, fontWeight: '900' }}>{accountStatus?.toUpperCase()}</Text>
+                </Text>
+              )}
+            </View>
+          ) : null}
+
+          {successMessage && (
+            <View style={styles.successContainer}>
+              <Text style={styles.successText}>✓ {successMessage}</Text>
+            </View>
+          )}
           
           <View style={styles.divider} />
           
@@ -408,6 +447,47 @@ const styles = StyleSheet.create({
     borderRadius: RADIUS.md,
     borderWidth: 1,
     borderColor: 'rgba(231, 76, 60, 0.2)',
+  },
+  errorContainer: {
+    marginTop: 15,
+    backgroundColor: 'rgba(231, 76, 60, 0.1)',
+    borderRadius: RADIUS.md,
+    borderWidth: 1,
+    borderColor: 'rgba(231, 76, 60, 0.2)',
+    overflow: 'hidden',
+  },
+  errorCTA: {
+    backgroundColor: COLORS.cyan,
+    padding: 10,
+    alignItems: 'center',
+  },
+  errorCTAText: {
+    color: COLORS.bgMain,
+    fontSize: 10,
+    fontWeight: '900',
+    letterSpacing: 0.5,
+  },
+  statusSubtext: {
+    fontSize: 10,
+    color: 'rgba(255,255,255,0.6)',
+    textAlign: 'center',
+    padding: 10,
+    paddingTop: 0,
+    fontStyle: 'italic',
+  },
+  successContainer: {
+    marginTop: 15,
+    backgroundColor: 'rgba(40, 167, 69, 0.1)',
+    borderRadius: RADIUS.md,
+    borderWidth: 1,
+    borderColor: 'rgba(40, 167, 69, 0.2)',
+    padding: 12,
+  },
+  successText: {
+    color: '#28a745',
+    fontSize: 11,
+    fontWeight: '700',
+    textAlign: 'center',
   }
 });
 

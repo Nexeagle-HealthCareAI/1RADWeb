@@ -30,6 +30,7 @@ export default function LoginPage() {
   const [timerId, setTimerId] = useState(null);
   const [errorCode, setErrorCode] = useState(null);
   const [accountStatus, setAccountStatus] = useState(null);
+  const [successMessage, setSuccessMessage] = useState(null);
 
   const startCountdown = () => {
     if (timerId) clearInterval(timerId);
@@ -52,6 +53,14 @@ export default function LoginPage() {
       if (timerId) clearInterval(timerId);
     };
   }, [timerId]);
+  
+  useEffect(() => {
+    if (location.state?.message) {
+      setSuccessMessage(location.state.message);
+      // Optional: Clear state after showing
+      window.history.replaceState({}, document.title);
+    }
+  }, [location.state]);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -282,6 +291,24 @@ export default function LoginPage() {
                   PLEASE WAIT FOR CLINICAL VERIFICATION.
                 </p>
               )}
+            </div>
+          )}
+
+          {successMessage && (
+            <div className="success-message animate-in" 
+                 style={{ 
+                   background: 'rgba(40, 167, 69, 0.1)', 
+                   color: '#28a745', 
+                   border: '1px solid rgba(40, 167, 69, 0.2)',
+                   padding: '15px',
+                   borderRadius: '8px',
+                   marginBottom: '20px',
+                   display: 'flex',
+                   alignItems: 'center',
+                   gap: '10px'
+                 }}>
+              <span style={{ fontSize: '18px' }}>✓</span>
+              <span style={{ fontSize: '11px', fontWeight: 600 }}>{successMessage}</span>
             </div>
           )}
 

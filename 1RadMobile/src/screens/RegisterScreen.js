@@ -7,12 +7,12 @@ import { User, Mail, Smartphone, Key, Award, MapPin, Building, FileText, Lock } 
 
 const { width } = Dimensions.get('window');
 
-export default function RegisterScreen({ navigation }) {
+export default function RegisterScreen({ navigation, route }) {
   const { sendOtp, verifyOtp, registerUser } = useAuth();
   const [step, setStep] = useState(1);
   const [formData, setFormData] = useState({
     role: 'admindoctor',
-    mobile: '',
+    mobile: route?.params?.identifier || '',
     otp: '',
     name: '',
     email: '',
@@ -22,6 +22,7 @@ export default function RegisterScreen({ navigation }) {
     licenseNo: '',
     degree: '',
     centerName: '',
+    chainName: '',
     centerAddress: '',
     gstinNumber: '',
     registrationNumber: '',
@@ -130,7 +131,7 @@ export default function RegisterScreen({ navigation }) {
     setLoading(false);
     
     if (result.success) {
-      navigation.navigate('Login');
+      navigation.navigate('Login', { message: 'Registration successful! Infrastructure deployed. Please login.' });
     } else {
       setError(result.error || 'Registration failed');
     }
@@ -311,6 +312,17 @@ export default function RegisterScreen({ navigation }) {
           placeholderTextColor="rgba(255,255,255,0.4)"
           value={formData.centerName}
           onChangeText={text => setFormData({...formData, centerName: text})}
+        />
+      </View>
+
+      <View style={styles.inputGroup}>
+        <Building size={18} color={COLORS.gold} style={styles.inputIcon} />
+        <TextInput
+          style={styles.input}
+          placeholder="INSTITUTIONAL GROUP / CHAIN"
+          placeholderTextColor="rgba(255,255,255,0.4)"
+          value={formData.chainName}
+          onChangeText={text => setFormData({...formData, chainName: text})}
         />
       </View>
 

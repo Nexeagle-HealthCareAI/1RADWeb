@@ -52,7 +52,12 @@ export function AuthProvider({ children }) {
       const data = await response.json();
       
       if (!response.ok) {
-        throw new Error(data.error || `HTTP ${response.status}`);
+        return { 
+          success: false, 
+          error: data.error || `HTTP ${response.status}`,
+          errorCode: data.errorCode,
+          accountStatus: data.accountStatus
+        };
       }
       
       return { success: true, data };
@@ -130,8 +135,17 @@ export function AuthProvider({ children }) {
     console.log(`[MOBILE AUTH] Login attempt for ${identifier}`);
     try {
       const response = await apiClient.post('/auth/login', { identifier, password });
-      const { userProfile, accessToken, refreshToken } = response.data;
+      const { userProfile, accessToken, refreshToken, success, error, errorCode, accountStatus } = response.data;
       
+      if (!success) {
+        return { 
+          success: false, 
+          error: error || 'Authentication failed.', 
+          errorCode, 
+          accountStatus 
+        };
+      }
+
       const mappedUser = {
         id: userProfile.userId,
         name: userProfile.fullName,
@@ -165,7 +179,13 @@ export function AuthProvider({ children }) {
       return { success: true, user: mappedUser };
     } catch (error) {
       console.error('[MOBILE AUTH] Login failed:', error);
-      return { success: false, error: error.response?.data?.error || 'Authentication failed.' };
+      const resp = error.response?.data;
+      return { 
+        success: false, 
+        error: resp?.error || 'Authentication failed.',
+        errorCode: resp?.errorCode,
+        accountStatus: resp?.accountStatus
+      };
     }
   }, []);
 
@@ -198,13 +218,19 @@ export function AuthProvider({ children }) {
       });
 
       if (!identityResult.success) {
-        return { success: false, error: identityResult.error };
+        return { 
+          success: false, 
+          error: identityResult.error, 
+          errorCode: identityResult.errorCode 
+        };
       }
 
-      // Stage 3: Infrastructure Deployment (Field names normalized to backend)
+      // Stage 3: Infrastructure Deployment
       const deployResult = await apiCall('/auth/deploy-infrastructure', {
         method: 'POST',
         body: JSON.stringify({
+          userId: identityResult.data.userId,
+          chainName: userData.chainName || userData.centerName,
           hospitalName: userData.centerName,
           hospitalAddress: userData.centerAddress,
           gstin: userData.gstinNumber,
@@ -213,7 +239,8 @@ export function AuthProvider({ children }) {
           nabhNumber: userData.nabhNumber,
           specialization: userData.specialization,
           degree: userData.degree,
-          licenseNo: userData.licenseNo
+          licenseNo: userData.licenseNo,
+          roleName: userData.role === 'admindoctor' ? 'AdminDoctor' : 'Admin'
         }),
         headers: {
           'Authorization': `Bearer ${identityResult.data.token}`,
@@ -224,7 +251,11 @@ export function AuthProvider({ children }) {
         console.log('[MOBILE AUTH] Registration completed successfully');
         return { success: true };
       } else {
-        return { success: false, error: deployResult.error };
+        return { 
+          success: false, 
+          error: deployResult.error, 
+          errorCode: deployResult.errorCode 
+        };
       }
     } catch (error) {
       console.error('[MOBILE AUTH] Registration failed:', error);

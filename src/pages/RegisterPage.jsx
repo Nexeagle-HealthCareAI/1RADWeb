@@ -435,7 +435,7 @@ export default function RegisterPage() {
                         type="text" 
                         required 
                         value={formData.centerName}
-                        onChange={e => setFormData({...formData, centerName: e.target.value, chainName: formData.chainName || e.target.value})}
+                        onChange={e => setFormData({...formData, centerName: e.target.value})}
                         placeholder="e.g. City Diagnostic Center"
                         style={{ paddingLeft: '40px' }}
                       />
