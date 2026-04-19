@@ -235,6 +235,8 @@ export default function AppointmentBoard() {
   const resetBooking = () => {
     setBookingStep(1);
     setNewBooking({ patientId: '', service: '', modality: 'X-RAY', doctor: '', notes: '' });
+    setNewPatient({ name: '', mobile: '', age: '', gender: 'Male', village: '', district: '', address: '', referredBy: '', sourceOfInfo: '' });
+    setReferrerSearchValue('');
   };
 
   // ============================================================
@@ -643,98 +645,6 @@ export default function AppointmentBoard() {
                 <div style={{ background: 'white', padding: '22px', borderRadius: '14px', border: '2px dashed #dde5f5' }}>
                   <label style={{ fontSize: '10px', color: '#0f52ba', fontWeight: 800, marginBottom: '18px', display: 'block', letterSpacing: '1px' }}>ENTER MISSION TARGET DETAILS</label>
                   
-                  {/* REFERRED BY SECTION (MOVED TO TOP) */}
-                  <div className="form-group" style={{ marginBottom: '16px', gridColumn: 'span 2' }}>
-                    <label style={{ fontSize: '10px', fontWeight: 800, color: '#0f52ba', letterSpacing: '0.5px', marginBottom: '8px', display: 'block' }}>MISSION SOURCE (REFERRED BY)</label>
-                    
-                    {!isAddingNewReferrer ? (
-                      <div style={{ position: 'relative' }}>
-                        <div style={{ display: 'flex', gap: '8px' }}>
-                          <div className="search-input-group" style={{ flex: 1, margin: 0 }}>
-                            <span className="search-icon">{'\u{1F50D}'}</span>
-                            <input 
-                              type="text" 
-                              placeholder="Search saved referrers..." 
-                              value={referrerSearchValue} 
-                              onChange={(e) => {
-                                setReferrerSearchValue(e.target.value);
-                                setNewPatient(prev => ({ ...prev, referredBy: e.target.value }));
-                              }} 
-                              style={{ fontSize: '13px' }}
-                            />
-                          </div>
-                          <button 
-                            type="button"
-                            onClick={() => setIsAddingNewReferrer(true)}
-                            style={{ 
-                              background: '#e8f0fe', color: '#0f52ba', border: '1px solid #c5d5f0', 
-                              borderRadius: '10px', padding: '0 15px', fontSize: '11px', fontWeight: 800,
-                              cursor: 'pointer'
-                            }}
-                          >
-                            + NEW
-                          </button>
-                        </div>
-                        
-                        {referrerSearchValue && !referrers.find(r => r.name === referrerSearchValue) && (
-                          <div style={{ 
-                            position: 'absolute', top: '100%', left: 0, right: 0, 
-                            background: 'white', border: '1px solid #dee2e6', borderRadius: '10px',
-                            marginTop: '4px', boxShadow: '0 10px 25px rgba(0,0,0,0.1)', zIndex: 10,
-                            maxHeight: '150px', overflowY: 'auto'
-                          }}>
-                            {referrers.filter(r => r.name.toLowerCase().includes(referrerSearchValue.toLowerCase())).map(r => (
-                              <div 
-                                key={r.id}
-                                onClick={() => {
-                                  setNewPatient(prev => ({ ...prev, referredBy: r.name }));
-                                  setReferrerSearchValue(r.name);
-                                }}
-                                style={{ padding: '10px 15px', fontSize: '12px', cursor: 'pointer', borderBottom: '1px solid #f8f9fa' }}
-                                onMouseEnter={e => e.currentTarget.style.background = '#f0f4ff'}
-                                onMouseLeave={e => e.currentTarget.style.background = 'white'}
-                              >
-                                <div style={{ fontWeight: 700 }}>{r.name}</div>
-                                <div style={{ fontSize: '10px', color: '#888' }}>{r.contact} {r.address && '\u00B7'} {r.address}</div>
-                              </div>
-                            ))}
-                          </div>
-                        )}
-                      </div>
-                    ) : (
-                      <div style={{ background: '#f8f9fa', padding: '15px', borderRadius: '12px', border: '1.5px solid #0f52ba30' }}>
-                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
-                          <span style={{ fontSize: '11px', fontWeight: 900, color: '#0f52ba' }}>NEW REFERRER DATA</span>
-                          <button type="button" onClick={() => setIsAddingNewReferrer(false)} style={{ border: 'none', background: 'none', color: '#e74c3c', fontSize: '10px', fontWeight: 800 }}>CANCEL</button>
-                        </div>
-                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', marginBottom: '10px' }}>
-                          <input type="text" placeholder="Name" style={{ fontSize: '12px', padding: '8px 10px', borderRadius: '8px' }} value={newReferrer.name} onChange={e => setNewReferrer(prev => ({ ...prev, name: e.target.value }))} />
-                          <input type="text" placeholder="Contact" style={{ fontSize: '12px', padding: '8px 10px', borderRadius: '8px' }} value={newReferrer.contact} onChange={e => setNewReferrer(prev => ({ ...prev, contact: e.target.value }))} />
-                        </div>
-                        <input type="text" placeholder="Address" style={{ width: '100%', fontSize: '12px', padding: '8px 10px', borderRadius: '8px' }} value={newReferrer.address} onChange={e => setNewReferrer(prev => ({ ...prev, address: e.target.value }))} />
-                        <button 
-                          type="button" 
-                          onClick={async () => { 
-                            if(newReferrer.name){ 
-                              try {
-                                await apiClient.post('/referrers', newReferrer);
-                                fetchReferrers('');
-                                setNewPatient({...newPatient, referredBy: newReferrer.name}); 
-                                setIsAddingNewReferrer(false);
-                                setNewReferrer({ name: '', contact: '', address: '' });
-                              } catch (error) {
-                                console.error('Failed to save referrer:', error);
-                              }
-                            } 
-                          }} 
-                          style={{ marginTop: '10px', width: '100%', background: '#0f52ba', color: 'white', border: 'none', padding: '8px', borderRadius: '8px', fontSize: '11px', fontWeight: 800 }}
-                        >
-                          SAVE REFERRER
-                        </button>
-                      </div>
-                    )}
-                  </div>
-
                   <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
                     <div className="form-group" style={{ marginBottom: '8px' }}>
                       <label style={{ fontSize: '10px', fontWeight: 700 }}>FULL NAME</label>
@@ -774,14 +684,149 @@ export default function AppointmentBoard() {
                       <label style={{ fontSize: '10px', fontWeight: 700 }}>DISTRICT</label>
                       <input type="text" placeholder="District" style={{ fontSize: '13px', padding: '11px 12px' }} value={newPatient.district} onChange={e => setNewPatient({...newPatient, district: e.target.value})} />
                     </div>
-                    <div className="form-group" style={{ marginBottom: '8px', gridColumn: 'span 2' }}>
-                      <label style={{ fontSize: '10px', fontWeight: 700 }}>ADDRESS / RESIDENCE DATA</label>
-                      <input type="text" placeholder="Street, Landmark..." style={{ fontSize: '13px', padding: '11px 12px' }} value={newPatient.address} onChange={e => setNewPatient({...newPatient, address: e.target.value})} />
-                    </div>
-
+                     <div className="form-group" style={{ marginBottom: '8px', gridColumn: 'span 2' }}>
+                       <label style={{ fontSize: '10px', fontWeight: 700 }}>ADDRESS / RESIDENCE DATA</label>
+                       <input type="text" placeholder="Street, Landmark..." style={{ fontSize: '13px', padding: '11px 12px' }} value={newPatient.address} onChange={e => setNewPatient({...newPatient, address: e.target.value})} />
+                     </div>
                   </div>
                 </div>
 
+                {/* REFERRED BY SECTION (MOVED TO BOTTOM) */}
+                <div className="form-group" style={{ marginTop: '10px', borderTop: '1px dashed #dde5f5', paddingTop: '16px' }}>
+                  <label style={{ fontSize: '10px', fontWeight: 800, color: '#0f52ba', letterSpacing: '0.5px', marginBottom: '8px', display: 'block' }}>MISSION SOURCE (REFERRED BY)</label>
+                  
+                  {!isAddingNewReferrer ? (
+                    <>
+                      <div style={{ position: 'relative' }}>
+                        <div style={{ display: 'flex', gap: '8px' }}>
+                          <div className="search-input-group" style={{ flex: 1, margin: 0 }}>
+                            <span className="search-icon">{'\u{1F50D}'}</span>
+                            <input 
+                              type="text" 
+                              placeholder="Search saved referrers..." 
+                              value={referrerSearchValue} 
+                              onChange={(e) => {
+                                setReferrerSearchValue(e.target.value);
+                                setNewPatient(prev => ({ ...prev, referredBy: e.target.value }));
+                              }} 
+                              style={{ fontSize: '13px' }}
+                            />
+                          </div>
+                          <button 
+                            type="button"
+                            onClick={() => setIsAddingNewReferrer(true)}
+                            style={{ 
+                              background: '#e8f0fe', color: '#0f52ba', border: '1px solid #c5d5f0', 
+                              borderRadius: '10px', padding: '0 15px', fontSize: '11px', fontWeight: 800,
+                              cursor: 'pointer'
+                            }}
+                          >
+                            + NEW
+                          </button>
+                        </div>
+                        
+                        {referrerSearchValue && !referrers.find(r => r.name === referrerSearchValue) && (
+                          <div style={{ 
+                            position: 'absolute', bottom: '100%', left: 0, right: 0, 
+                            background: 'white', border: '1px solid #dee2e6', borderRadius: '10px',
+                            marginBottom: '4px', boxShadow: '0 -10px 25px rgba(0,0,0,0.1)', zIndex: 10,
+                            maxHeight: '150px', overflowY: 'auto', transform: 'translateY(-100%)'
+                          }}>
+                            {referrers.filter(r => r.name.toLowerCase().includes(referrerSearchValue.toLowerCase())).map(r => (
+                              <div 
+                                key={r.id}
+                                onClick={() => {
+                                  setNewPatient(prev => ({ ...prev, referredBy: r.name }));
+                                  setReferrerSearchValue(r.name);
+                                }}
+                                style={{ padding: '10px 15px', fontSize: '12px', cursor: 'pointer', borderBottom: '1px solid #f8f9fa' }}
+                                onMouseEnter={e => e.currentTarget.style.background = '#f0f4ff'}
+                                onMouseLeave={e => e.currentTarget.style.background = 'white'}
+                              >
+                                <div style={{ fontWeight: 700 }}>{r.name}</div>
+                                <div style={{ fontSize: '10px', color: '#888' }}>{r.contact} {r.address && '\u00B7'} {r.address}</div>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+
+                      {/* SELECTED REFERRER HUD DETAIL */}
+                      {referrerSearchValue && referrers.find(r => r.name === referrerSearchValue) && (
+                        <div style={{ 
+                          marginTop: '12px', 
+                          padding: '12px 16px', 
+                          background: 'rgba(15, 82, 186, 0.05)', 
+                          borderRadius: '12px',
+                          border: '1px solid rgba(15, 82, 186, 0.1)',
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '12px',
+                          animation: 'slideUp 0.3s ease'
+                        }}>
+                          <div style={{ 
+                            width: '32px', height: '32px', borderRadius: '50%', background: '#0f52ba', 
+                            display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white',
+                            fontSize: '14px', fontWeight: 900
+                          }}>
+                            {referrerSearchValue.charAt(0).toUpperCase()}
+                          </div>
+                          <div style={{ flex: 1, minWidth: 0 }}>
+                            <div style={{ fontSize: '9px', fontWeight: 950, color: '#0f52ba', letterSpacing: '1px' }}>SELECTED SPECIALIST</div>
+                            <div style={{ fontSize: '12px', fontWeight: 800, color: '#1a1a2e', whiteSpace: 'nowrap', textOverflow: 'ellipsis', overflow: 'hidden' }}>{referrerSearchValue}</div>
+                            <div style={{ fontSize: '10px', color: '#64748b', marginTop: '2px', display: 'flex', gap: '8px' }}>
+                              <span>{referrers.find(r => r.name === referrerSearchValue)?.contact || 'No Contact'}</span>
+                              <span style={{ opacity: 0.3 }}>|</span>
+                              <span style={{ whiteSpace: 'nowrap', textOverflow: 'ellipsis', overflow: 'hidden' }}>{referrers.find(r => r.name === referrerSearchValue)?.address || 'No Address Data'}</span>
+                            </div>
+                          </div>
+                          <button 
+                            type="button"
+                            onClick={() => {
+                              setReferrerSearchValue('');
+                              setNewPatient(prev => ({ ...prev, referredBy: '' }));
+                            }}
+                            style={{ background: 'none', border: 'none', color: '#e74c3c', fontSize: '18px', cursor: 'pointer', padding: '0 5px', fontWeight: 800 }}
+                          >
+                            &times;
+                          </button>
+                        </div>
+                      )}
+                    </>
+                  ) : (
+                    <div style={{ background: '#f8f9fa', padding: '15px', borderRadius: '12px', border: '1.5px solid #0f52ba30' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
+                        <span style={{ fontSize: '11px', fontWeight: 900, color: '#0f52ba' }}>NEW REFERRER DATA</span>
+                        <button type="button" onClick={() => setIsAddingNewReferrer(false)} style={{ border: 'none', background: 'none', color: '#e74c3c', fontSize: '10px', fontWeight: 800 }}>CANCEL</button>
+                      </div>
+                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', marginBottom: '10px' }}>
+                        <input type="text" placeholder="Name" style={{ fontSize: '12px', padding: '8px 10px', borderRadius: '8px' }} value={newReferrer.name} onChange={e => setNewReferrer(prev => ({ ...prev, name: e.target.value }))} />
+                        <input type="text" placeholder="Contact" style={{ fontSize: '12px', padding: '8px 10px', borderRadius: '8px' }} value={newReferrer.contact} onChange={e => setNewReferrer(prev => ({ ...prev, contact: e.target.value }))} />
+                      </div>
+                      <input type="text" placeholder="Address" style={{ width: '100%', fontSize: '12px', padding: '8px 10px', borderRadius: '8px' }} value={newReferrer.address} onChange={e => setNewReferrer(prev => ({ ...prev, address: e.target.value }))} />
+                      <button 
+                        type="button" 
+                        onClick={async () => { 
+                          if(newReferrer.name){ 
+                            try {
+                              await apiClient.post('/referrers', newReferrer);
+                              fetchReferrers('');
+                              setNewPatient({...newPatient, referredBy: newReferrer.name}); 
+                              setReferrerSearchValue(newReferrer.name);
+                              setIsAddingNewReferrer(false);
+                              setNewReferrer({ name: '', contact: '', address: '' });
+                            } catch (error) {
+                              console.error('Failed to save referrer:', error);
+                            }
+                          } 
+                        }} 
+                        style={{ marginTop: '10px', width: '100%', background: '#0f52ba', color: 'white', border: 'none', padding: '8px', borderRadius: '8px', fontSize: '11px', fontWeight: 800 }}
+                      >
+                        SAVE & AUTO-SELECT REFERRER
+                      </button>
+                    </div>
+                  )}
+                </div>
 
                 {newBooking.patientId && (
                   <div style={{
@@ -789,6 +834,7 @@ export default function AppointmentBoard() {
                     padding: '14px 18px', borderRadius: '12px',
                     borderLeft: '4px solid #0f52ba',
                     display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+                    marginTop: '20px'
                   }}>
                     <div>
                       <div style={{ fontSize: '9px', color: '#0f52ba', fontWeight: 800, letterSpacing: '1px' }}>SELECTED PATIENT</div>
@@ -798,17 +844,32 @@ export default function AppointmentBoard() {
                   </div>
                 )}
 
-                <div className="drawer-footer" style={{ borderTop: 'none', paddingTop: '10px' }}>
+                <div className="drawer-footer" style={{ borderTop: 'none', paddingTop: '20px' }}>
                   <button 
                     className="gamified-btn" 
                     style={{ width: '100%', padding: '16px', borderRadius: '12px', fontSize: '13px' }} 
                     disabled={!newBooking.patientId && (!newPatient.name || !newPatient.mobile)} 
-                    onClick={() => {
+                    onClick={async () => {
                       if (!newBooking.patientId && newPatient.name && newPatient.mobile) {
-                        const id = `P00${patients.length + 1}`;
-                        setPatients([...patients, { ...newPatient, id }]);
-                        setNewBooking({...newBooking, patientId: id});
-                        setNewPatient({ name: '', mobile: '', age: '', gender: 'Male', village: '', district: '', address: '', referredBy: '', sourceOfInfo: '' });
+                        try {
+                          const response = await apiClient.post('/patients', {
+                            fullName: newPatient.name,
+                            mobile: newPatient.mobile,
+                            age: newPatient.age || '0',
+                            gender: newPatient.gender,
+                            village: newPatient.village,
+                            district: newPatient.district,
+                            address: newPatient.address,
+                            sourceOfInfo: newPatient.sourceOfInfo
+                          });
+                          const patientId = response.data.patientId;
+                          setNewBooking(prev => ({...prev, patientId}));
+                          fetchPatients('');
+                        } catch (error) {
+                          console.error('Failed to auto-register patient:', error);
+                          // Optionally show a notification here
+                          return; 
+                        }
                       }
                       setBookingStep(2);
                     }}

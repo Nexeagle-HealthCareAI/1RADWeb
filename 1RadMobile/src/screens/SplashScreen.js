@@ -43,7 +43,7 @@ export default function SplashScreen({ navigation }) {
       ]),
       
       // 2. Company name slides in
-      Animated.delay(200),
+      Animated.delay(300),
       Animated.parallel([
         Animated.timing(companyNameOpacity, {
           toValue: 1,
@@ -59,7 +59,7 @@ export default function SplashScreen({ navigation }) {
       ]),
       
       // 3. Tagline appears
-      Animated.delay(300),
+      Animated.delay(400),
       Animated.parallel([
         Animated.timing(taglineOpacity, {
           toValue: 1,
@@ -74,8 +74,8 @@ export default function SplashScreen({ navigation }) {
         }),
       ]),
       
-      // 4. Hold for a moment
-      Animated.delay(1000),
+      // 4. Hold for longer to show "INITIALIZING SYSTEM..."
+      Animated.delay(2500),
     ]).start(() => {
       // Navigate to Login after animation completes
       navigation.replace('Login');

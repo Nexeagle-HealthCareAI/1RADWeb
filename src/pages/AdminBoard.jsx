@@ -584,7 +584,19 @@ export default function AdminBoard() {
              <div className="mini-trend" style={{ fontSize: '9px', color: 'var(--tactical-cyan)', marginTop: '20px', fontWeight: 800 }}>LIVE CLOUD SYNC ACTIVE</div>
           </div>
 
-          <div className="summary-card" style={{ background: 'white', border: '1px solid #eee', padding: '28px', borderRadius: '20px', boxShadow: '0 4px 20px rgba(0,0,0,0.03)' }}>
+          <div 
+            className="summary-card clickable-card" 
+            onClick={() => navigate('/appointment-board')}
+            style={{ 
+              background: 'white', 
+              border: '1px solid #eee', 
+              padding: '28px', 
+              borderRadius: '20px', 
+              boxShadow: '0 4px 20px rgba(0,0,0,0.03)',
+              cursor: 'pointer',
+              transition: 'transform 0.2s, box-shadow 0.2s'
+            }}
+          >
              <span className="label" style={{ display: 'block', fontSize: '10px', fontWeight: 900, color: '#64748b', textTransform: 'uppercase', letterSpacing: '2px', marginBottom: '15px' }}>Strategic Volume</span>
              <div style={{ display: 'flex', alignItems: 'baseline', gap: '10px' }}>
                 <span className="value" style={{ fontSize: '42px', fontWeight: 950, color: '#0f52ba', lineHeight: 1 }}>{REFERRAL_LOG.filter(l => l.date === selectedDateFilter).length}</span>
