@@ -13,6 +13,7 @@ export default function ForgotPassword() {
   const [code, setCode] = useState('');
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
+  const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const [countdown, setCountdown] = useState(0);
   const [timerId, setTimerId] = useState(null);
@@ -149,8 +150,8 @@ export default function ForgotPassword() {
               </p>
             </div>
             {error && <div className="error-message" style={{ background: 'rgba(231, 76, 60, 0.1)', color: '#e74c3c' }}>{error}</div>}
-            <button type="submit" className="btn-primary btn-block gamified-btn">
-              VERIFY & CONTINUE
+            <button type="submit" className="btn-primary btn-block gamified-btn" disabled={loading}>
+              {loading ? 'VERIFYING...' : 'VERIFY & CONTINUE'}
             </button>
             <button type="button" onClick={() => setStep(1)} style={{ width: '100%', marginTop: '15px', color: 'rgba(255,255,255,0.4)', background: 'none', border: 'none', cursor: 'pointer', fontSize: '11px', fontWeight: 800 }}>
               INCORRECT IDENT? RE-INITIALIZE

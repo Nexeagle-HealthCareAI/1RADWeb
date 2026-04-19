@@ -7,7 +7,7 @@ import TacticalWorkflow from '../components/TacticalWorkflow';
 import '../styles/global.css';
 
 export default function LoginPage() {
-  const { login, hasAdminDoctor, sendOtp, verifyOtp } = useAuth();
+  const { login, hasAdminDoctor, sendOtp, verifyOtp, currentUser } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
   const from = location.state?.from?.pathname || '/';
