@@ -8,8 +8,10 @@ import { Activity, Users, Calendar, Settings, LogOut, ChevronRight, Plus, Shield
 const { width } = Dimensions.get('window');
 
 export default function DashboardScreen({ navigation }) {
-  const { user, isAdmin, logout } = useAuth();
+  const { user, isAdmin, logout, centers, activeCenter } = useAuth();
   const { getTodayAppointments, getUpcomingAppointments } = useAppointments();
+
+  const activeHub = centers.find(c => c.id === activeCenter) || centers[0];
 
   const todayAppointments = getTodayAppointments();
   const upcomingAppointments = getUpcomingAppointments();
@@ -52,6 +54,10 @@ export default function DashboardScreen({ navigation }) {
   return (
     <ScrollView style={styles.container} contentContainerStyle={styles.scrollContent}>
       <View style={styles.header}>
+        <View style={styles.hubContainer}>
+          <Shield size={12} color={COLORS.cyan} />
+          <Text style={styles.hubText}>{activeHub?.name?.toUpperCase() || 'SELECT HUB'}</Text>
+        </View>
         <Text style={styles.welcomeText}>WELCOME, MISSION LEADER</Text>
         <Text style={styles.userName}>{user?.name || 'IDENTITY UNKNOWN'}</Text>
       </View>
@@ -144,6 +150,25 @@ const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: COLORS.bgMain },
   scrollContent: { padding: SPACING.lg },
   header: { marginBottom: 30, marginTop: 10 },
+  hubContainer: { 
+    flexDirection: 'row', 
+    alignItems: 'center', 
+    gap: 6, 
+    backgroundColor: 'rgba(0, 242, 254, 0.1)', 
+    paddingHorizontal: 10, 
+    paddingVertical: 4, 
+    borderRadius: 20,
+    alignSelf: 'flex-start',
+    marginBottom: 8,
+    borderWidth: 1,
+    borderColor: 'rgba(0, 242, 254, 0.2)'
+  },
+  hubText: { 
+    fontSize: 9, 
+    color: COLORS.cyan, 
+    fontWeight: '900', 
+    letterSpacing: 1 
+  },
   welcomeText: { fontSize: 10, color: COLORS.cyan, fontWeight: '900', letterSpacing: 2 },
   userName: { fontSize: 24, color: '#fff', fontWeight: '900', marginTop: 4 },
   statsGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 12, marginBottom: 30 },

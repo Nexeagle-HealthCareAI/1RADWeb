@@ -78,9 +78,9 @@ export default function RegisterScreen({ navigation }) {
     const result = await verifyOtp(formData.mobile, formData.otp);
     setLoading(false);
     if (result.success) {
-      if (result.type === 'Login') {
-        // User already exists, navigate to login
-        navigation.navigate('Login');
+    if (result.isRegistered) {
+      // User already exists, navigate to login
+      navigation.navigate('Login');
       } else {
         setStep(2);
         setError('');

@@ -109,9 +109,9 @@ export default function LoginScreen({ navigation }) {
     const result = await verifyOtp(identifier, otp);
     setLoading(false);
     if (result.success) {
-      if (result.type === 'Login') {
+      if (result.isRegistered) {
         // OTP Login successful
-        // Navigation handled by AuthContext
+        // AuthContext handles state; Navigation will occur via observer/parent
       } else {
         // New user detected, route to registration
         navigation.navigate('Register');

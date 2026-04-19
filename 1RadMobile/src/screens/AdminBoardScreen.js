@@ -106,7 +106,7 @@ export default function AdminBoardScreen({ navigation }) {
     } finally {
       setPersonnelLoading(false);
     }
-  }, []);
+  }, [activeCenter]);
 
   const fetchHospitalData = useCallback(async () => {
     if (!activeCenter?.id) return;
@@ -187,7 +187,7 @@ export default function AdminBoardScreen({ navigation }) {
     } else if (activeTab === 'HOSPITAL') {
       fetchHospitalData();
     }
-  }, [activeTab, fetchPersonnel, fetchHospitalData]);
+  }, [activeTab, fetchPersonnel, fetchHospitalData, activeCenter]);
 
   const handleOpenPersonnelModal = (user = null) => {
     setEditUser(user ? { ...user } : {

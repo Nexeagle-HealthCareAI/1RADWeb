@@ -77,8 +77,10 @@ function CustomDrawerContent({ navigation }) {
   const formattedTime = currentTime.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
   const formattedDate = currentTime.toLocaleDateString([], { weekday: 'short', day: 'numeric', month: 'short' });
 
+  const activeCenterObj = centers.find(c => c.id === activeCenter) || centers[0];
+
   const handleCenterSwitch = async (centerId) => {
-    if (activeCenter?.id === centerId || switching) return;
+    if (activeCenter === centerId || switching) return;
     setSwitching(true);
     await switchCenter(centerId);
     setSwitching(false);
@@ -113,7 +115,7 @@ function CustomDrawerContent({ navigation }) {
                   {switching ? 'RECONFIGURING HUB...' : 'DEPLOYED HUB'}
                 </Text>
                 <Text style={styles.centerName} numberOfLines={1}>
-                  {activeCenter?.name?.toUpperCase() || 'NO CENTER'}
+                  {activeCenterObj?.name?.toUpperCase() || 'NO CENTER'}
                 </Text>
               </View>
               <ChevronDown 
@@ -131,14 +133,14 @@ function CustomDrawerContent({ navigation }) {
                     key={center.id}
                     style={[
                       styles.centerOption,
-                      activeCenter?.id === center.id && styles.centerOptionActive
+                      activeCenter === center.id && styles.centerOptionActive
                     ]}
                     onPress={() => handleCenterSwitch(center.id)}
-                    disabled={switching || activeCenter?.id === center.id}
+                    disabled={switching || activeCenter === center.id}
                   >
                     <View style={[
                       styles.centerOptionDot,
-                      activeCenter?.id === center.id && styles.centerOptionDotActive
+                      activeCenter === center.id && styles.centerOptionDotActive
                     ]} />
                     <Text style={styles.centerOptionText} numberOfLines={1}>
                       {center.name}

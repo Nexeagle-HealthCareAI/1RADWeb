@@ -1,4 +1,5 @@
 import React, { createContext, useState, useContext, useCallback, useEffect } from 'react';
+import * as SecureStore from 'expo-secure-store';
 import apiClient from '../api/apiClient';
 
 const AuthContext = createContext(null);
@@ -13,14 +14,29 @@ export function AuthProvider({ children }) {
   const [centers, setCenters] = useState([]);
   const [activeCenter, setActiveCenter] = useState(null);
 
-  // Sync token with apiClient
+  // Restoration Logic: Load session on startup
   useEffect(() => {
-    if (token) {
-      apiClient.defaults.headers.common['Authorization'] = `Bearer ${token}`;
-    } else {
-      delete apiClient.defaults.headers.common['Authorization'];
+    async function restoreSession() {
+      try {
+        const storedToken = await SecureStore.getItemAsync('1rad_token');
+        const storedUser = await SecureStore.getItemAsync('1rad_user');
+        const storedCenters = await SecureStore.getItemAsync('1rad_centers');
+        const storedActiveCenterId = await SecureStore.getItemAsync('1rad_active_center_id');
+
+        if (storedToken) setToken(storedToken);
+        if (storedUser) {
+          const parsedUser = JSON.parse(storedUser);
+          setUser(parsedUser);
+          setIsAdmin(parsedUser.roles?.some(r => ['admin', 'admindoctor'].includes(r.toLowerCase())));
+        }
+        if (storedCenters) setCenters(JSON.parse(storedCenters));
+        if (storedActiveCenterId) setActiveCenter(storedActiveCenterId);
+      } catch (err) {
+        console.error('[MOBILE AUTH] Session restoration failed:', err);
+      }
     }
-  }, [token]);
+    restoreSession();
+  }, []);
 
   // API Helper function
   const apiCall = async (endpoint, options = {}) => {
@@ -64,20 +80,49 @@ export function AuthProvider({ children }) {
   const verifyOtp = useCallback(async (mobile, code) => {
     console.log(`[MOBILE AUTH] Verifying OTP for ${mobile}`);
     try {
-      const response = await apiClient.post('/auth/otp/verify', { identifier: mobile, otp: code });
-      const { type, token: authToken, user: userData } = response.data;
+      const response = await apiClient.post('/auth/otp/verify', { mobile, code }); // Backend expects mobile/code
+      const { isRegistered, token: authToken, refreshToken, user: backendUser } = response.data;
       
-      if (type === 'Login') {
+      if (isRegistered && backendUser) {
+        const mappedUser = {
+          id: backendUser.userId,
+          name: backendUser.fullName,
+          email: backendUser.email,
+          mobile: backendUser.mobile,
+          roles: backendUser.roleName.split(',').map(r => r.trim().toLowerCase())
+        };
+
+        const mappedCenters = (backendUser.authorizedHospitals || []).map(h => ({
+          id: h.hospitalId,
+          name: h.hospitalName,
+          role: h.roleName.toLowerCase(),
+          isDefault: h.isDefault
+        }));
+
         setToken(authToken);
-        setUser(userData);
-        setIsAdmin(userData.roles?.includes('admin') || userData.roles?.includes('admindoctor'));
-        return { success: true, type: 'Login', user: userData };
+        setUser(mappedUser);
+        setCenters(mappedCenters);
+        
+        const defaultCenter = mappedCenters.find(c => c.isDefault) || mappedCenters[0];
+        if (defaultCenter) setActiveCenter(defaultCenter.id);
+
+        setIsAdmin(mappedUser.roles.some(r => ['admin', 'admindoctor'].includes(r)));
+
+        // Persist
+        await SecureStore.setItemAsync('1rad_token', authToken);
+        await SecureStore.setItemAsync('1rad_refresh_token', refreshToken);
+        await SecureStore.setItemAsync('1rad_user', JSON.stringify(mappedUser));
+        await SecureStore.setItemAsync('1rad_centers', JSON.stringify(mappedCenters));
+        if (defaultCenter) await SecureStore.setItemAsync('1rad_active_center_id', defaultCenter.id);
+
+        return { success: true, isRegistered: true, user: mappedUser };
       } else {
-        return { success: true, type: 'Register', token: authToken };
+        // Not registered, or backend structure mismatch
+        return { success: true, isRegistered: false, token: authToken };
       }
     } catch (error) {
       console.error('[MOBILE AUTH] Verification failed:', error);
-      return { success: false, error: error.response?.data?.error || 'Verification failed.' };
+      return { success: false, error: error.response?.data?.message || 'Verification failed.' };
     }
   }, []);
 
@@ -85,25 +130,56 @@ export function AuthProvider({ children }) {
     console.log(`[MOBILE AUTH] Login attempt for ${identifier}`);
     try {
       const response = await apiClient.post('/auth/login', { identifier, password });
-      const { user: userData, token: authToken, centers: userCenters, activeCenter: userActiveCenter } = response.data;
+      const { userProfile, accessToken, refreshToken } = response.data;
       
-      setToken(authToken);
-      setUser(userData);
-      setIsAdmin(userData.roles?.includes('admin') || userData.roles?.includes('admindoctor'));
+      const mappedUser = {
+        id: userProfile.userId,
+        name: userProfile.fullName,
+        email: userProfile.email,
+        roles: userProfile.authorizedHospitals[0]?.roleName.split(',').map(r => r.trim().toLowerCase()) || []
+      };
+
+      const mappedCenters = userProfile.authorizedHospitals.map(h => ({
+        id: h.hospitalId,
+        name: h.hospitalName,
+        role: h.roleName.toLowerCase(),
+        isDefault: h.isDefault
+      }));
+
+      setToken(accessToken);
+      setUser(mappedUser);
+      setCenters(mappedCenters);
       
-      if (userCenters) setCenters(userCenters);
-      if (userActiveCenter) setActiveCenter(userActiveCenter);
+      const defaultCenter = mappedCenters.find(c => c.isDefault) || mappedCenters[0];
+      if (defaultCenter) setActiveCenter(defaultCenter.id);
+
+      setIsAdmin(mappedUser.roles.some(r => ['admin', 'admindoctor'].includes(r)));
+
+      // Persist
+      await SecureStore.setItemAsync('1rad_token', accessToken);
+      await SecureStore.setItemAsync('1rad_refresh_token', refreshToken);
+      await SecureStore.setItemAsync('1rad_user', JSON.stringify(mappedUser));
+      await SecureStore.setItemAsync('1rad_centers', JSON.stringify(mappedCenters));
+      if (defaultCenter) await SecureStore.setItemAsync('1rad_active_center_id', defaultCenter.id);
       
-      return { success: true, user: userData };
+      return { success: true, user: mappedUser };
     } catch (error) {
       console.error('[MOBILE AUTH] Login failed:', error);
       return { success: false, error: error.response?.data?.error || 'Authentication failed.' };
     }
   }, []);
 
-  const logout = useCallback(() => {
+  const logout = useCallback(async () => {
     setUser(null);
+    setToken(null);
+    setCenters([]);
+    setActiveCenter(null);
     setIsAdmin(false);
+    await SecureStore.deleteItemAsync('1rad_token');
+    await SecureStore.deleteItemAsync('1rad_refresh_token');
+    await SecureStore.deleteItemAsync('1rad_user');
+    await SecureStore.deleteItemAsync('1rad_centers');
+    await SecureStore.deleteItemAsync('1rad_active_center_id');
   }, []);
 
   const registerUser = useCallback(async (userData) => {
@@ -125,15 +201,15 @@ export function AuthProvider({ children }) {
         return { success: false, error: identityResult.error };
       }
 
-      // Stage 3: Infrastructure Deployment
+      // Stage 3: Infrastructure Deployment (Field names normalized to backend)
       const deployResult = await apiCall('/auth/deploy-infrastructure', {
         method: 'POST',
         body: JSON.stringify({
-          centerName: userData.centerName,
-          centerAddress: userData.centerAddress,
-          gstinNumber: userData.gstinNumber,
+          hospitalName: userData.centerName,
+          hospitalAddress: userData.centerAddress,
+          gstin: userData.gstinNumber,
           registrationNumber: userData.registrationNumber,
-          panNumber: userData.panNumber,
+          pan: userData.panNumber,
           nabhNumber: userData.nabhNumber,
           specialization: userData.specialization,
           degree: userData.degree,
@@ -156,6 +232,29 @@ export function AuthProvider({ children }) {
     }
   }, []);
 
+  const switchCenter = useCallback(async (hospitalId) => {
+    try {
+      const response = await apiClient.post('/auth/switch-context', { hospitalId });
+      const { accessToken, roles } = response.data;
+      
+      setToken(accessToken);
+      await SecureStore.setItemAsync('1rad_token', accessToken);
+      
+      setUser(prev => ({
+        ...prev,
+        roles: roles.map(r => r.toLowerCase())
+      }));
+      
+      setActiveCenter(hospitalId);
+      await SecureStore.setItemAsync('1rad_active_center_id', hospitalId);
+      
+      return { success: true, role: roles[0]?.toLowerCase() };
+    } catch (error) {
+      console.error('[MOBILE AUTH] Context switch failed:', error);
+      return { success: false };
+    }
+  }, []);
+
   return (
     <AuthContext.Provider value={{ 
       user, 
@@ -167,7 +266,8 @@ export function AuthProvider({ children }) {
       verifyOtp, 
       login, 
       logout,
-      registerUser
+      registerUser,
+      switchCenter
     }}>
       {children}
     </AuthContext.Provider>

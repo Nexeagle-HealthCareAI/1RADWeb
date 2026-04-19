@@ -1,5 +1,6 @@
 import React, { createContext, useState, useContext, useCallback, useEffect } from 'react';
 import apiClient from '../api/apiClient';
+import { useAuth } from './AuthContext';
 
 const AppointmentContext = createContext(null);
 
@@ -46,12 +47,14 @@ export function AppointmentProvider({ children }) {
     }
   }, []);
 
+  const { activeCenter } = useAuth();
+
   // Lifecycle
   useEffect(() => {
     fetchAppointments();
     fetchPatients();
     fetchPersonnel();
-  }, [fetchAppointments, fetchPatients, fetchPersonnel]);
+  }, [fetchAppointments, fetchPatients, fetchPersonnel, activeCenter]);
 
   // --- Handlers ---
   const createAppointment = useCallback(async (appointmentData) => {
