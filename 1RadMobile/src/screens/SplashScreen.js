@@ -1,5 +1,5 @@
 import React, { useEffect, useRef } from 'react';
-import { View, Text, StyleSheet, Animated, Dimensions } from 'react-native';
+import { View, Text, StyleSheet, Animated, Dimensions, Image } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { COLORS } from '../theme/TacticalTheme';
 
@@ -167,12 +167,12 @@ export default function SplashScreen({ navigation }) {
             ]}
           />
           
-          {/* 1RAD Logo */}
-          <View style={styles.radLogo}>
-            <Text style={styles.radLogoText}>
-              1<Text style={styles.radLogoAccent}>RAD</Text>
-            </Text>
-          </View>
+          {/* NexEagle Logo Image */}
+          <Image
+            source={require('../../assets/logo.png')}
+            style={styles.logoImage}
+            resizeMode="contain"
+          />
         </Animated.View>
 
         {/* Company Name */}
@@ -186,7 +186,7 @@ export default function SplashScreen({ navigation }) {
           ]}
         >
           <Text style={styles.companyName}>
-            CLINICAL COMMAND CENTER
+            NEX<Text style={styles.companyNameHighlight}>EAGLE</Text>
           </Text>
           <View style={styles.underline} />
         </Animated.View>
@@ -201,16 +201,8 @@ export default function SplashScreen({ navigation }) {
             },
           ]}
         >
-          <Text style={styles.tagline}>RADIOLOGY MANAGEMENT SYSTEM</Text>
-          <View style={styles.nexEagleBadge}>
-            <View style={styles.nexEagleIcon}>
-              <View style={styles.miniEagleWing}>
-                <View style={styles.miniWingLeft} />
-                <View style={styles.miniWingRight} />
-              </View>
-            </View>
-            <Text style={styles.subTagline}>Powered by NexEagle</Text>
-          </View>
+          <Text style={styles.tagline}>RADIOLOGY COMMAND SYSTEM</Text>
+          <Text style={styles.subTagline}>Powered by 1RAD Technology</Text>
         </Animated.View>
 
         {/* Loading indicator */}
@@ -288,23 +280,9 @@ const styles = StyleSheet.create({
     backgroundColor: COLORS.cyan,
     opacity: 0.3,
   },
-  radLogo: {
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingHorizontal: 30,
-    paddingVertical: 20,
-  },
-  radLogoText: {
-    fontSize: 80,
-    fontWeight: '900',
-    color: '#ffffff',
-    letterSpacing: 4,
-    textShadowColor: COLORS.cyan,
-    textShadowOffset: { width: 0, height: 0 },
-    textShadowRadius: 20,
-  },
-  radLogoAccent: {
-    color: COLORS.cyan,
+  logoImage: {
+    width: 180,
+    height: 180,
   },
   
   // Company name styles
@@ -313,11 +291,14 @@ const styles = StyleSheet.create({
     marginBottom: 30,
   },
   companyName: {
-    fontSize: 24,
+    fontSize: 48,
     fontWeight: '900',
     color: '#ffffff',
-    letterSpacing: 3,
+    letterSpacing: 4,
     textAlign: 'center',
+  },
+  companyNameHighlight: {
+    color: COLORS.cyan,
   },
   underline: {
     width: 120,
@@ -333,60 +314,18 @@ const styles = StyleSheet.create({
     marginBottom: 60,
   },
   tagline: {
-    fontSize: 12,
+    fontSize: 14,
     fontWeight: '800',
-    color: 'rgba(255, 255, 255, 0.6)',
-    letterSpacing: 2,
+    color: COLORS.cyan,
+    letterSpacing: 3,
     textAlign: 'center',
-    marginBottom: 20,
-  },
-  nexEagleBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: 'rgba(255, 255, 255, 0.05)',
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-    borderRadius: 20,
-    borderWidth: 1,
-    borderColor: 'rgba(0, 242, 254, 0.2)',
-  },
-  nexEagleIcon: {
-    width: 20,
-    height: 20,
-    marginRight: 8,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  miniEagleWing: {
-    width: 20,
-    height: 12,
-    position: 'relative',
-  },
-  miniWingLeft: {
-    position: 'absolute',
-    left: 0,
-    width: 9,
-    height: 8,
-    backgroundColor: COLORS.cyan,
-    borderTopLeftRadius: 8,
-    borderBottomLeftRadius: 4,
-    transform: [{ rotate: '-25deg' }],
-  },
-  miniWingRight: {
-    position: 'absolute',
-    right: 0,
-    width: 9,
-    height: 8,
-    backgroundColor: COLORS.cyan,
-    borderTopRightRadius: 8,
-    borderBottomRightRadius: 4,
-    transform: [{ rotate: '25deg' }],
+    marginBottom: 8,
   },
   subTagline: {
     fontSize: 11,
-    fontWeight: '700',
-    color: COLORS.cyan,
-    letterSpacing: 1.5,
+    fontWeight: '600',
+    color: 'rgba(255, 255, 255, 0.5)',
+    letterSpacing: 2,
     textAlign: 'center',
   },
   
