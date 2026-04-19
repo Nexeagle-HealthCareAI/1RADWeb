@@ -3,7 +3,7 @@ import { View, Text, TextInput, TouchableOpacity, StyleSheet, ScrollView, Animat
 import { LinearGradient } from 'expo-linear-gradient';
 import { useAuth } from '../context/AuthContext';
 import { COLORS, SPACING, RADIUS, SHADOWS } from '../theme/TacticalTheme';
-import { Smartphone, Key, Lock, ArrowLeft } from 'lucide-react-native';
+import { Smartphone, Key, Lock, ArrowLeft, CheckCircle } from 'lucide-react-native';
 
 export default function ForgotPasswordScreen({ navigation }) {
   const { resetPassword, sendOtp, verifyOtp } = useAuth();
@@ -15,6 +15,7 @@ export default function ForgotPasswordScreen({ navigation }) {
   const [confirmPassword, setConfirmPassword] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [showSuccess, setShowSuccess] = useState(false);
 
   // Animation values
   const fadeAnim = useState(new Animated.Value(0))[0];
@@ -114,8 +115,7 @@ export default function ForgotPasswordScreen({ navigation }) {
     setLoading(false);
     
     if (result.success) {
-      // Show success and navigate to login
-      navigation.navigate('Login');
+      setShowSuccess(true);
     } else {
       setError(result.error || 'Password reset failed');
     }
@@ -306,6 +306,44 @@ export default function ForgotPasswordScreen({ navigation }) {
           <Text style={styles.returnLink}>RETURN TO COMMAND PORTAL</Text>
         </TouchableOpacity>
       </View>
+
+      {showSuccess && (
+        <View style={StyleSheet.absoluteFill}>
+          <LinearGradient colors={['#0b1120', '#061a40']} style={StyleSheet.absoluteFill} />
+          <Animated.View 
+            style={[
+              styles.successContainer,
+              {
+                opacity: fadeAnim,
+                transform: [{ scale: fadeAnim }],
+              }
+            ]}
+          >
+            <View style={styles.successIconWrapper}>
+              <CheckCircle size={80} color={COLORS.cyan} strokeWidth={1.5} />
+            </View>
+            
+            <Text style={styles.successTitle}>ACCESS RESTORED</Text>
+            <Text style={styles.successMessage}>
+              Your secure identity keys have been successfully recalibrated. You can now access the 1Rad network.
+            </Text>
+            
+            <TouchableOpacity 
+              style={styles.successBtn} 
+              onPress={() => navigation.navigate('Login')}
+            >
+              <LinearGradient 
+                colors={[COLORS.cyan, '#4facfe']} 
+                start={{ x: 0, y: 0 }} 
+                end={{ x: 1, y: 0 }} 
+                style={styles.gradientBtn}
+              >
+                <Text style={styles.btnText}>TRANSFER TO COMMAND PORTAL</Text>
+              </LinearGradient>
+            </TouchableOpacity>
+          </Animated.View>
+        </View>
+      )}
     </ScrollView>
   );
 }
@@ -467,5 +505,53 @@ const styles = StyleSheet.create({
     borderRadius: RADIUS.md,
     borderWidth: 1,
     borderColor: 'rgba(231, 76, 60, 0.2)',
+  },
+  successContainer: {
+    ...StyleSheet.absoluteFillObject,
+    padding: SPACING.xl,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  successIconWrapper: {
+    width: 140,
+    height: 140,
+    borderRadius: 70,
+    backgroundColor: 'rgba(0, 242, 254, 0.05)',
+    borderWidth: 2,
+    borderColor: COLORS.cyan,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 30,
+    shadowColor: COLORS.cyan,
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.5,
+    shadowRadius: 20,
+    elevation: 10,
+  },
+  successTitle: {
+    fontSize: 28,
+    fontWeight: '900',
+    color: '#fff',
+    letterSpacing: 2,
+    marginBottom: 15,
+    textAlign: 'center',
+  },
+  successMessage: {
+    fontSize: 14,
+    color: 'rgba(255,255,255,0.7)',
+    textAlign: 'center',
+    lineHeight: 22,
+    marginBottom: 40,
+    paddingHorizontal: 20,
+  },
+  successBtn: {
+    width: '100%',
+    borderRadius: RADIUS.md,
+    overflow: 'hidden',
+    shadowColor: COLORS.cyan,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 10,
+    elevation: 5,
   }
 });

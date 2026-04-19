@@ -15,6 +15,7 @@ export default function ForgotPassword() {
   const [confirmPassword, setConfirmPassword] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
+  const [showSuccess, setShowSuccess] = useState(false);
   const [countdown, setCountdown] = useState(0);
   const [timerId, setTimerId] = useState(null);
 
@@ -77,8 +78,7 @@ export default function ForgotPassword() {
     const result = await resetPassword(newPassword);
     setLoading(false);
     if (result.success) {
-      alert('Password updated successfully! You can now login with your new key.');
-      navigate('/login');
+      setShowSuccess(true);
     } else {
       setError(result.error || 'Password reset failed.');
     }
@@ -196,6 +196,60 @@ export default function ForgotPassword() {
           </Link>
         </div>
       </div>
+
+      {showSuccess && (
+        <div className="success-overlay animate-in" style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          background: 'rgba(11, 17, 32, 0.95)',
+          backdropFilter: 'blur(10px)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          zIndex: 1000,
+          animation: 'fade-in 0.5s ease-out'
+        }}>
+          <div className="success-card glass-card" style={{
+            textAlign: 'center',
+            padding: '40px',
+            maxWidth: '400px',
+            border: '1px solid rgba(0, 242, 254, 0.3)',
+            boxShadow: '0 0 30px rgba(0, 242, 254, 0.2)'
+          }}>
+            <div className="success-icon" style={{
+              width: '80px',
+              height: '80px',
+              borderRadius: '50%',
+              background: 'rgba(0, 242, 254, 0.1)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              margin: '0 auto 20px',
+              border: '2px solid #00f2fe',
+              boxShadow: '0 0 20px rgba(0, 242, 254, 0.3)'
+            }}>
+              <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="#00f2fe" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path>
+                <polyline points="22 4 12 14.01 9 11.01"></polyline>
+              </svg>
+            </div>
+            <h2 style={{ color: 'white', fontWeight: 950, letterSpacing: '2px', marginBottom: '10px' }}>ACCESS RESTORED</h2>
+            <p style={{ color: 'rgba(255,255,255,0.7)', fontSize: '14px', lineHeight: 1.6, marginBottom: '30px' }}>
+              Your secure access keys have been updated. You can now login with your new credentials.
+            </p>
+            <button 
+              onClick={() => navigate('/login')}
+              className="btn-primary btn-block gamified-btn"
+              style={{ padding: '15px' }}
+            >
+              PROCEED TO COMMAND PORTAL
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
