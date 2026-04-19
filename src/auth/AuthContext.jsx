@@ -196,7 +196,20 @@ export function AuthProvider({ children }) {
           mobile: backendUser.mobile,
           roles: backendUser.roleName.split(',').map(r => r.trim().toLowerCase())
         };
+
+        const mappedCenters = (backendUser.authorizedHospitals || []).map(h => ({
+          id: h.hospitalId,
+          name: h.hospitalName,
+          role: h.roleName.toLowerCase()
+        }));
+
         setCurrentUser(user);
+        setCenters(mappedCenters);
+        if (mappedCenters.length > 0) {
+          const defaultCenter = mappedCenters.find(c => c.isDefault) || mappedCenters[0];
+          setActiveCenterId(defaultCenter.id);
+        }
+
         sessionStorage.setItem('1rad_user', JSON.stringify(user));
         sessionStorage.setItem('1rad_token', token);
         localStorage.setItem('1rad_refresh_token', refreshToken);

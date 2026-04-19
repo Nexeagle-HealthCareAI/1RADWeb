@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo, useEffect, useCallback } from 'react';
 import apiClient from '../api/apiClient';
 import useAuth from '../auth/useAuth';
 import { ROLE_LABELS } from '../data/roles';
@@ -106,15 +106,6 @@ export default function AdminBoard() {
     }
   }, []);
 
-  useEffect(() => {
-    if (activeTab === 'PERSONNEL') {
-      fetchPersonnel();
-    }
-    if (activeTab === 'HOSPITAL' && activeCenter?.id) {
-      fetchHospitalData();
-    }
-  }, [activeTab, activeCenter, fetchPersonnel, fetchHospitalData]);
-
   const fetchHospitalData = useCallback(async () => {
     try {
       setHospitalLoading(true);
@@ -134,6 +125,15 @@ export default function AdminBoard() {
       setHospitalLoading(false);
     }
   }, [activeCenter]);
+
+  useEffect(() => {
+    if (activeTab === 'PERSONNEL') {
+      fetchPersonnel();
+    }
+    if (activeTab === 'HOSPITAL' && activeCenter?.id) {
+      fetchHospitalData();
+    }
+  }, [activeTab, activeCenter, fetchPersonnel, fetchHospitalData]);
 
   const handleSaveHospital = async (e) => {
     e.preventDefault();

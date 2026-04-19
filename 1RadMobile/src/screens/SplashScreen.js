@@ -167,17 +167,11 @@ export default function SplashScreen({ navigation }) {
             ]}
           />
           
-          {/* NexEagle Logo - Eagle Icon */}
-          <View style={styles.eagleLogo}>
-            <View style={styles.eagleWing}>
-              <View style={styles.wingLeft} />
-              <View style={styles.wingRight} />
-            </View>
-            <View style={styles.eagleBody}>
-              <View style={styles.eagleHead} />
-              <View style={styles.eagleTail} />
-            </View>
-            <View style={styles.eagleEye} />
+          {/* 1RAD Logo */}
+          <View style={styles.radLogo}>
+            <Text style={styles.radLogoText}>
+              1<Text style={styles.radLogoAccent}>RAD</Text>
+            </Text>
           </View>
         </Animated.View>
 
@@ -192,7 +186,7 @@ export default function SplashScreen({ navigation }) {
           ]}
         >
           <Text style={styles.companyName}>
-            NEX<Text style={styles.companyNameHighlight}>EAGLE</Text>
+            CLINICAL COMMAND CENTER
           </Text>
           <View style={styles.underline} />
         </Animated.View>
@@ -207,8 +201,16 @@ export default function SplashScreen({ navigation }) {
             },
           ]}
         >
-          <Text style={styles.tagline}>RADIOLOGY COMMAND SYSTEM</Text>
-          <Text style={styles.subTagline}>Powered by 1RAD Technology</Text>
+          <Text style={styles.tagline}>RADIOLOGY MANAGEMENT SYSTEM</Text>
+          <View style={styles.nexEagleBadge}>
+            <View style={styles.nexEagleIcon}>
+              <View style={styles.miniEagleWing}>
+                <View style={styles.miniWingLeft} />
+                <View style={styles.miniWingRight} />
+              </View>
+            </View>
+            <Text style={styles.subTagline}>Powered by NexEagle</Text>
+          </View>
         </Animated.View>
 
         {/* Loading indicator */}
@@ -280,79 +282,29 @@ const styles = StyleSheet.create({
   },
   logoGlow: {
     position: 'absolute',
-    width: 200,
-    height: 200,
-    borderRadius: 100,
+    width: 250,
+    height: 250,
+    borderRadius: 125,
     backgroundColor: COLORS.cyan,
     opacity: 0.3,
   },
-  eagleLogo: {
-    width: 120,
-    height: 120,
+  radLogo: {
     alignItems: 'center',
     justifyContent: 'center',
-    position: 'relative',
+    paddingHorizontal: 30,
+    paddingVertical: 20,
   },
-  eagleWing: {
-    position: 'absolute',
-    width: 100,
-    height: 60,
-    top: 20,
+  radLogoText: {
+    fontSize: 80,
+    fontWeight: '900',
+    color: '#ffffff',
+    letterSpacing: 4,
+    textShadowColor: COLORS.cyan,
+    textShadowOffset: { width: 0, height: 0 },
+    textShadowRadius: 20,
   },
-  wingLeft: {
-    position: 'absolute',
-    left: 0,
-    width: 45,
-    height: 30,
-    backgroundColor: COLORS.cyan,
-    borderTopLeftRadius: 30,
-    borderBottomLeftRadius: 15,
-    transform: [{ rotate: '-20deg' }],
-  },
-  wingRight: {
-    position: 'absolute',
-    right: 0,
-    width: 45,
-    height: 30,
-    backgroundColor: COLORS.cyan,
-    borderTopRightRadius: 30,
-    borderBottomRightRadius: 15,
-    transform: [{ rotate: '20deg' }],
-  },
-  eagleBody: {
-    width: 30,
-    height: 50,
-    backgroundColor: COLORS.cyan,
-    borderRadius: 15,
-    marginTop: 30,
-  },
-  eagleHead: {
-    width: 25,
-    height: 25,
-    backgroundColor: COLORS.cyan,
-    borderRadius: 12.5,
-    position: 'absolute',
-    top: -10,
-    left: 2.5,
-  },
-  eagleTail: {
-    width: 20,
-    height: 15,
-    backgroundColor: COLORS.cyan,
-    position: 'absolute',
-    bottom: -8,
-    left: 5,
-    borderBottomLeftRadius: 10,
-    borderBottomRightRadius: 10,
-  },
-  eagleEye: {
-    width: 6,
-    height: 6,
-    backgroundColor: '#0b1120',
-    borderRadius: 3,
-    position: 'absolute',
-    top: 48,
-    left: 62,
+  radLogoAccent: {
+    color: COLORS.cyan,
   },
   
   // Company name styles
@@ -361,14 +313,11 @@ const styles = StyleSheet.create({
     marginBottom: 30,
   },
   companyName: {
-    fontSize: 48,
+    fontSize: 24,
     fontWeight: '900',
     color: '#ffffff',
-    letterSpacing: 4,
+    letterSpacing: 3,
     textAlign: 'center',
-  },
-  companyNameHighlight: {
-    color: COLORS.cyan,
   },
   underline: {
     width: 120,
@@ -384,18 +333,60 @@ const styles = StyleSheet.create({
     marginBottom: 60,
   },
   tagline: {
-    fontSize: 14,
+    fontSize: 12,
     fontWeight: '800',
-    color: COLORS.cyan,
-    letterSpacing: 3,
+    color: 'rgba(255, 255, 255, 0.6)',
+    letterSpacing: 2,
     textAlign: 'center',
-    marginBottom: 8,
+    marginBottom: 20,
+  },
+  nexEagleBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(255, 255, 255, 0.05)',
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: 'rgba(0, 242, 254, 0.2)',
+  },
+  nexEagleIcon: {
+    width: 20,
+    height: 20,
+    marginRight: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  miniEagleWing: {
+    width: 20,
+    height: 12,
+    position: 'relative',
+  },
+  miniWingLeft: {
+    position: 'absolute',
+    left: 0,
+    width: 9,
+    height: 8,
+    backgroundColor: COLORS.cyan,
+    borderTopLeftRadius: 8,
+    borderBottomLeftRadius: 4,
+    transform: [{ rotate: '-25deg' }],
+  },
+  miniWingRight: {
+    position: 'absolute',
+    right: 0,
+    width: 9,
+    height: 8,
+    backgroundColor: COLORS.cyan,
+    borderTopRightRadius: 8,
+    borderBottomRightRadius: 4,
+    transform: [{ rotate: '25deg' }],
   },
   subTagline: {
     fontSize: 11,
-    fontWeight: '600',
-    color: 'rgba(255, 255, 255, 0.5)',
-    letterSpacing: 2,
+    fontWeight: '700',
+    color: COLORS.cyan,
+    letterSpacing: 1.5,
     textAlign: 'center',
   },
   
