@@ -74,11 +74,11 @@ export default function SplashScreen({ navigation }) {
         }),
       ]),
       
-      // 4. Hold for longer to show "INITIALIZING SYSTEM..."
-      Animated.delay(2500),
+      // 4. Hold for 1 second to show "INITIALIZING SYSTEM..."
+      Animated.delay(1000),
     ]).start(() => {
-      // Navigate to Login after animation completes
-      navigation.replace('Login');
+      // Navigate to Auth stack (which contains Login)
+      navigation.replace('Auth');
     });
 
     // Continuous glow pulse animation

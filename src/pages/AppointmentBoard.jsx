@@ -647,17 +647,17 @@ export default function AppointmentBoard() {
                   
                   <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
                     <div className="form-group" style={{ marginBottom: '8px' }}>
-                      <label style={{ fontSize: '10px', fontWeight: 700 }}>FULL NAME</label>
-                      <input type="text" placeholder="e.g. Michael Thorne" style={{ fontSize: '13px', padding: '11px 12px' }} value={newPatient.name} onChange={e => { setNewPatient({...newPatient, name: e.target.value}); setNewBooking({...newBooking, patientId: ''}); }} />
+                      <label style={{ fontSize: '10px', fontWeight: 700 }}>FULL NAME <span style={{ color: '#e74c3c' }}>*</span></label>
+                      <input type="text" required placeholder="e.g. Michael Thorne" style={{ fontSize: '13px', padding: '11px 12px' }} value={newPatient.name} onChange={e => { setNewPatient({...newPatient, name: e.target.value}); setNewBooking({...newBooking, patientId: ''}); }} />
                     </div>
                     <div className="form-group" style={{ marginBottom: '8px' }}>
-                      <label style={{ fontSize: '10px', fontWeight: 700 }}>MOBILE</label>
-                      <input type="tel" placeholder="987..." style={{ fontSize: '13px', padding: '11px 12px' }} value={newPatient.mobile} onChange={e => { setNewPatient({...newPatient, mobile: e.target.value}); setNewBooking({...newBooking, patientId: ''}); }} />
+                      <label style={{ fontSize: '10px', fontWeight: 700 }}>MOBILE <span style={{ color: '#e74c3c' }}>*</span></label>
+                      <input type="tel" required placeholder="987..." style={{ fontSize: '13px', padding: '11px 12px' }} value={newPatient.mobile} onChange={e => { setNewPatient({...newPatient, mobile: e.target.value}); setNewBooking({...newBooking, patientId: ''}); }} />
                     </div>
                     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
                       <div className="form-group" style={{ marginBottom: '8px' }}>
-                        <label style={{ fontSize: '10px', fontWeight: 700 }}>AGE</label>
-                        <input type="text" placeholder="25" style={{ fontSize: '13px', padding: '11px 12px' }} value={newPatient.age} onChange={e => setNewPatient({...newPatient, age: e.target.value})} />
+                        <label style={{ fontSize: '10px', fontWeight: 700 }}>AGE <span style={{ color: '#e74c3c' }}>*</span></label>
+                        <input type="text" required placeholder="25" style={{ fontSize: '13px', padding: '11px 12px' }} value={newPatient.age} onChange={e => setNewPatient({...newPatient, age: e.target.value})} />
                       </div>
                       <div className="form-group" style={{ marginBottom: '8px' }}>
                         <label style={{ fontSize: '10px', fontWeight: 700, color: '#64748b' }}>GENDER</label>
@@ -848,7 +848,7 @@ export default function AppointmentBoard() {
                   <button 
                     className="gamified-btn" 
                     style={{ width: '100%', padding: '16px', borderRadius: '12px', fontSize: '13px' }} 
-                    disabled={!newBooking.patientId && (!newPatient.name || !newPatient.mobile)} 
+                    disabled={!newBooking.patientId && (!newPatient.name || !newPatient.mobile || !newPatient.age)} 
                     onClick={async () => {
                       if (!newBooking.patientId && newPatient.name && newPatient.mobile) {
                         try {
@@ -863,15 +863,20 @@ export default function AppointmentBoard() {
                             sourceOfInfo: newPatient.sourceOfInfo
                           });
                           const patientId = response.data.patientId;
+                          if (!patientId) throw new Error("API returned invalid patient identity");
                           setNewBooking(prev => ({...prev, patientId}));
                           fetchPatients('');
                         } catch (error) {
                           console.error('Failed to auto-register patient:', error);
-                          // Optionally show a notification here
+                          alert('Patient registration failed. Please try again.');
                           return; 
                         }
                       }
-                      setBookingStep(2);
+                      
+                      // Final Safety Check before advancing
+                      setTimeout(() => {
+                        setBookingStep(2);
+                      }, 100);
                     }}
                   >
                     PROCEED {'\u2192'} MISSION CONFIG
@@ -899,12 +904,12 @@ export default function AppointmentBoard() {
                 </div>
 
                 <div className="form-group" style={{ marginTop: '16px' }}>
-                  <label style={{ fontSize: '9px', fontWeight: 800, letterSpacing: '0.5px', color: '#888' }}>2. SERVICE / PROCEDURE</label>
-                  <input type="text" placeholder="e.g. Chest X-Ray with Lateral" value={newBooking.service} onChange={e => setNewBooking({...newBooking, service: e.target.value})} style={{ fontSize: '13px', padding: '10px' }} />
+                  <label style={{ fontSize: '9px', fontWeight: 800, letterSpacing: '0.5px', color: '#888' }}>2. SERVICE / PROCEDURE <span style={{ color: '#e74c3c' }}>*</span></label>
+                  <input type="text" required placeholder="e.g. Chest X-Ray with Lateral" value={newBooking.service} onChange={e => setNewBooking({...newBooking, service: e.target.value})} style={{ fontSize: '13px', padding: '10px' }} />
                 </div>
 
                 <div style={{ marginTop: '16px', marginBottom: '8px' }}>
-                  <label style={{ fontSize: '9px', fontWeight: 800, letterSpacing: '0.5px', color: '#888', display: 'block', marginBottom: '10px' }}>3. ASSIGN LEAD SPECIALIST</label>
+                  <label style={{ fontSize: '9px', fontWeight: 800, letterSpacing: '0.5px', color: '#888', display: 'block', marginBottom: '10px' }}>3. ASSIGN LEAD SPECIALIST <span style={{ color: '#e74c3c' }}>*</span></label>
                   <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '10px' }}>
                     {DOCTORS.map(d => (
                       <div key={d} className={`modality-card ${newBooking.doctor === d ? 'active' : ''}`}
@@ -948,7 +953,7 @@ export default function AppointmentBoard() {
 
                 <div className="drawer-footer" style={{ marginTop: '16px' }}>
                   <button className="btn-logout" style={{ padding: '12px 20px', borderRadius: '10px', fontWeight: 800, fontSize: '12px' }} onClick={() => setBookingStep(1)}>{'\u2190'} Back</button>
-                  <button className="gamified-btn" style={{ flex: 1, padding: '12px', borderRadius: '10px', fontSize: '13px' }} disabled={!newBooking.service || !newBooking.doctor} onClick={handleBookAppointment}>
+                  <button className="gamified-btn" style={{ flex: 1, padding: '12px', borderRadius: '10px', fontSize: '13px' }} disabled={!newBooking.patientId || !newBooking.service || !newBooking.doctor} onClick={handleBookAppointment}>
                     {'\u{1F680}'} DEPLOY MISSION
                   </button>
                 </div>
