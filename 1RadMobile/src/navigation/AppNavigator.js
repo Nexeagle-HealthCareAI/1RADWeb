@@ -288,9 +288,8 @@ function MainDrawer() {
   );
 }
 
-export default function AppNavigator() {
+function RootStack() {
   const { user } = useAuth();
-  const [isBooting, setIsBooting] = React.useState(true);
   const [isLocked, setIsLocked] = React.useState(true);
   const [needsAuth, setNeedsAuth] = React.useState(false);
 
@@ -313,18 +312,24 @@ export default function AppNavigator() {
     }
   };
 
-  if (isBooting) {
-    return <SplashScreen onFinish={() => setIsBooting(false)} />;
-  }
-
   // Show lock screen if user is logged in and auth is required
   if (user && needsAuth && isLocked) {
     return <BiometricLockScreen onUnlock={() => setIsLocked(false)} />;
   }
 
   return (
+    <Stack.Navigator screenOptions={{ headerShown: false }}>
+      <Stack.Screen name="Splash" component={SplashScreen} />
+      <Stack.Screen name="Auth" component={AuthStack} />
+      <Stack.Screen name="Main" component={MainDrawer} />
+    </Stack.Navigator>
+  );
+}
+
+export default function AppNavigator() {
+  return (
     <NavigationContainer>
-      {user ? <MainDrawer /> : <AuthStack />}
+      <RootStack />
     </NavigationContainer>
   );
 }
