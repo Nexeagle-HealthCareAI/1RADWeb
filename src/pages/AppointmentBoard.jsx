@@ -85,7 +85,8 @@ export default function AppointmentBoard() {
       setAppointments(response.data.map(a => ({
         ...a,
         id: a.displayId,
-        appointmentId: a.appointmentId
+        appointmentId: a.appointmentId,
+        ptid: a.patientIdentifier // Mapping PTID
       })));
     } catch (error) {
       console.error('Failed to fetch appointments:', error);
@@ -433,7 +434,10 @@ export default function AppointmentBoard() {
         >
           <div style={{ position: 'absolute', left: 0, top: 0, bottom: 0, width: '4px', background: meta.color, borderRadius: '4px 0 0 4px' }} />
 
-          <div style={{ fontSize: '11px', fontWeight: 900, color: '#aaa', fontFamily: 'monospace' }}>{app.id}</div>
+          <div style={{ display: 'flex', flexDirection: 'column' }}>
+            <div style={{ fontSize: '11px', fontWeight: 900, color: '#0f52ba', fontFamily: 'monospace' }}>{app.ptid || app.id}</div>
+            <div style={{ fontSize: '9px', fontWeight: 700, color: '#ccc' }}>{app.id}</div>
+          </div>
 
           <div style={{ display: 'flex', flexDirection: 'column' }}>
             <div style={{ fontWeight: 800, color: '#1a1a2e', fontSize: '13px' }}>{app.patientName}</div>
@@ -629,8 +633,10 @@ export default function AppointmentBoard() {
                             fontWeight: 900, fontSize: '12px', flexShrink: 0,
                           }}>{p.name.charAt(0)}</div>
                           <div style={{ flex: 1 }}>
-                            <div style={{ fontWeight: 700, fontSize: '13px', color: '#1a1a2e' }}>{p.name}</div>
-                            <div style={{ fontSize: '10px', color: '#888' }}>{p.mobile} {'\u00B7'} {p.age}y {p.gender}</div>
+                             <div style={{ fontWeight: 700, fontSize: '13px', color: '#1a1a2e' }}>{p.name}</div>
+                             <div style={{ fontSize: '10px', color: '#888' }}>
+                               <span style={{ color: '#0f52ba', fontWeight: 800 }}>{p.patientIdentifier || p.id}</span> {'\u00B7'} {p.mobile} {'\u00B7'} {p.age}y {p.gender}
+                             </div>
                           </div>
                           {newBooking.patientId === p.id && <span style={{ color: '#0f52ba', fontWeight: 900 }}>{'\u2714'}</span>}
                         </div>
