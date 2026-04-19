@@ -26,6 +26,8 @@ import AppointmentsScreen from '../screens/AppointmentsScreen';
 import CreateAppointmentScreen from '../screens/CreateAppointmentScreen';
 import EditAppointmentScreen from '../screens/EditAppointmentScreen';
 import AdminBoardScreen from '../screens/AdminBoardScreen';
+import BiometricSetupScreen from '../screens/BiometricSetupScreen';
+import BiometricLockScreen from '../screens/BiometricLockScreen';
 
 const Stack = createStackNavigator();
 const Drawer = createDrawerNavigator();
@@ -43,6 +45,12 @@ const NAV_ITEMS = [
     screen: 'Appointments',
     icon: '📡',
     allowedRoles: ['admindoctor', 'admin', 'receptionist'],
+  },
+  {
+    label: 'SECURITY SETTINGS',
+    screen: 'BiometricSetup',
+    icon: '🔐',
+    allowedRoles: ['admindoctor', 'admin', 'receptionist', 'doctor'],
   },
 ];
 
@@ -269,6 +277,13 @@ function MainDrawer() {
           title: 'ADMIN BOARD'
         }}
       />
+      <Drawer.Screen 
+        name="BiometricSetup" 
+        component={BiometricSetupScreen}
+        options={{
+          title: 'SECURITY SETTINGS'
+        }}
+      />
     </Drawer.Navigator>
   );
 }
@@ -276,9 +291,35 @@ function MainDrawer() {
 export default function AppNavigator() {
   const { user } = useAuth();
   const [isBooting, setIsBooting] = React.useState(true);
+  const [isLocked, setIsLocked] = React.useState(true);
+  const [needsAuth, setNeedsAuth] = React.useState(false);
+
+  React.useEffect(() => {
+    checkAuthRequirement();
+  }, [user]);
+
+  const checkAuthRequirement = async () => {
+    if (user) {
+      // Check if biometric or passcode is enabled
+      const BiometricService = require('../services/BiometricService').default;
+      const biometricEnabled = await BiometricService.isBiometricEnabled();
+      const hasPasscode = await BiometricService.hasPasscode();
+      
+      setNeedsAuth(biometricEnabled || hasPasscode);
+      setIsLocked(biometricEnabled || hasPasscode);
+    } else {
+      setNeedsAuth(false);
+      setIsLocked(false);
+    }
+  };
 
   if (isBooting) {
     return <SplashScreen onFinish={() => setIsBooting(false)} />;
+  }
+
+  // Show lock screen if user is logged in and auth is required
+  if (user && needsAuth && isLocked) {
+    return <BiometricLockScreen onUnlock={() => setIsLocked(false)} />;
   }
 
   return (
