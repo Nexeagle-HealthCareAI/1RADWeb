@@ -15,6 +15,7 @@ import {
   Building2,
   ChevronDown
 } from 'lucide-react-native';
+import AuthNavigationHandler from './AuthNavigationHandler';
 
 // Screens
 import SplashScreen from '../screens/SplashScreen';
@@ -332,6 +333,7 @@ export default function AppNavigator() {
   return (
     <NavigationContainer>
       <RootStack />
+      <AuthNavigationHandler />
     </NavigationContainer>
   );
 }

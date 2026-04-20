@@ -140,6 +140,8 @@ export function AuthProvider({ children }) {
     try {
       const response = await apiClient.post('/auth/login', { identifier, password });
       
+      console.log('[MOBILE AUTH] Raw response:', JSON.stringify(response.data, null, 2));
+      
       // Support both camelCase and PascalCase
       const data = response.data;
       const success = data.success !== undefined ? data.success : data.Success;
@@ -150,7 +152,10 @@ export function AuthProvider({ children }) {
       const accessToken = data.accessToken || data.AccessToken;
       const refreshToken = data.refreshToken || data.RefreshToken;
       
-      if (success === false) {
+      console.log('[MOBILE AUTH] Parsed - success:', success, 'userProfile:', !!userProfile, 'accessToken:', !!accessToken);
+      
+      if (success === false || !userProfile || !accessToken) {
+        console.error('[MOBILE AUTH] Login failed - success:', success, 'error:', error);
         return { 
           success: false, 
           error: error || 'Authentication failed.', 
@@ -159,26 +164,36 @@ export function AuthProvider({ children }) {
         };
       }
 
+      const authorizedHospitals = userProfile.authorizedHospitals || userProfile.AuthorizedHospitals || [];
+      console.log('[MOBILE AUTH] Authorized hospitals:', authorizedHospitals.length);
+
+      // Map user - extract roles from all authorized hospitals (like web version)
       const mappedUser = {
         id: userProfile.userId || userProfile.UserId,
         name: userProfile.fullName || userProfile.FullName,
         email: userProfile.email || userProfile.Email,
-        roles: (userProfile.authorizedHospitals || userProfile.AuthorizedHospitals)[0]?.roleName?.split(',').map(r => r.trim().toLowerCase()) || []
+        roles: authorizedHospitals.map(h => (h.roleName || h.RoleName).toLowerCase())
       };
 
-      const mappedCenters = (userProfile.authorizedHospitals || userProfile.AuthorizedHospitals).map(h => ({
+      const mappedCenters = authorizedHospitals.map(h => ({
         id: h.hospitalId || h.HospitalId,
         name: h.hospitalName || h.HospitalName,
         role: (h.roleName || h.RoleName).toLowerCase(),
         isDefault: h.isDefault !== undefined ? h.isDefault : h.IsDefault
       }));
 
+      console.log('[MOBILE AUTH] Mapped user:', mappedUser);
+      console.log('[MOBILE AUTH] Mapped centers:', mappedCenters.length);
+
       setToken(accessToken);
       setUser(mappedUser);
       setCenters(mappedCenters);
       
       const defaultCenter = mappedCenters.find(c => c.isDefault) || mappedCenters[0];
-      if (defaultCenter) setActiveCenter(defaultCenter.id);
+      if (defaultCenter) {
+        setActiveCenter(defaultCenter.id);
+        console.log('[MOBILE AUTH] Active center set:', defaultCenter.name);
+      }
 
       setIsAdmin(mappedUser.roles.some(r => ['admin', 'admindoctor'].includes(r)));
 
@@ -189,17 +204,30 @@ export function AuthProvider({ children }) {
       await SecureStore.setItemAsync('1rad_centers', JSON.stringify(mappedCenters));
       if (defaultCenter) await SecureStore.setItemAsync('1rad_active_center_id', defaultCenter.id);
       
+      console.log('[MOBILE AUTH] Login successful, tokens persisted');
       return { success: true, user: mappedUser };
     } catch (error) {
-      console.error('[MOBILE AUTH] Login failed:', error);
+      console.error('[MOBILE AUTH] Login exception:', error);
+      console.error('[MOBILE AUTH] Error message:', error.message);
+      console.error('[MOBILE AUTH] Error stack:', error.stack);
+      
       const resp = error.response?.data;
       if (resp) {
-        console.log('[MOBILE AUTH] Error details:', JSON.stringify(resp));
+        console.error('[MOBILE AUTH] Error response data:', JSON.stringify(resp, null, 2));
+      }
+      
+      // Check for network errors
+      if (error.message === 'Network Error' || !error.response) {
+        return { 
+          success: false, 
+          error: 'Network connection failed. Please check your internet connection.',
+          errorCode: 'NETWORK_ERROR'
+        };
       }
       
       return { 
         success: false, 
-        error: resp?.error || resp?.Error || 'Authentication failed.',
+        error: resp?.error || resp?.Error || error.message || 'Authentication failed.',
         errorCode: resp?.errorCode || resp?.ErrorCode,
         accountStatus: resp?.accountStatus || resp?.AccountStatus
       };

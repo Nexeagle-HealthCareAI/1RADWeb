@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect, useCallback, useContext } from 'react';
+import { useState, useMemo, useEffect, useCallback, useContext, useRef } from 'react';
 import apiClient from '../api/apiClient';
 import { AuthContext } from '../auth/AuthContext';
 import '../styles/global.css';
@@ -6,7 +6,6 @@ import '../styles/global.css';
 // --- CONSTANTS ---
 
 const MODALITIES = ['X-RAY', 'MRI', 'CT', 'ULTRASOUND', 'DEXA', 'ANGIOGRAPHY', 'MAMMOGRAPHY', 'PET-CT', 'NUCLEAR MEDICINE', 'FLUOROSCOPY'];
-const DOCTORS = ['Dr. Brown', 'Dr. Sarah', 'Dr. Mike', 'Dr. Lisa'];
 const TODAY = new Date().toISOString().split('T')[0];
 
 // --- CONSTANTS ---
@@ -44,11 +43,13 @@ const MODALITY_ICONS = {
 };
 
 export default function AppointmentBoard() {
-  const { activeCenterId } = useContext(AuthContext);
+  const { activeCenterId, activeCenter } = useContext(AuthContext);
   const [appointments, setAppointments] = useState([]);
   const [patients, setPatients] = useState([]);
+  const [doctors, setDoctors] = useState([]);
   const [loading, setLoading] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
+  const [drawerSearchQuery, setDrawerSearchQuery] = useState('');
   const [filters, setFilters] = useState({ date: TODAY, status: 'ALL', modality: 'ALL', doctor: 'ALL' });
   const [expandedRow, setExpandedRow] = useState(null);
 
@@ -71,6 +72,13 @@ export default function AppointmentBoard() {
   const [isAddingNewReferrer, setIsAddingNewReferrer] = useState(false);
   const [newReferrer, setNewReferrer] = useState({ name: '', contact: '', address: '' });
   const [referrerSearchValue, setReferrerSearchValue] = useState('');
+  const drawerBodyRef = useRef(null);
+
+  useEffect(() => {
+    if (drawerBodyRef.current) {
+      drawerBodyRef.current.scrollTop = 0;
+    }
+  }, [bookingStep, isBookingOpen]);
 
   // --- API SYNC ---
   const fetchAppointments = useCallback(async () => {
@@ -121,19 +129,36 @@ export default function AppointmentBoard() {
     }
   }, []);
 
+  const fetchDoctors = useCallback(async () => {
+    try {
+      const response = await apiClient.get('/personnel');
+      const allPersonnel = response.data;
+      // Filter for roles: admindoctor or doctor (case-insensitive)
+      const specialists = allPersonnel.filter(p => 
+        p.roles && p.roles.some(role => 
+          role.toLowerCase() === 'doctor' || role.toLowerCase() === 'admindoctor'
+        )
+      ).map(p => p.fullName);
+      setDoctors(specialists);
+    } catch (error) {
+      console.error('Failed to fetch doctors:', error);
+    }
+  }, []);
+
   useEffect(() => {
     fetchAppointments();
   }, [fetchAppointments, activeCenterId]);
 
   useEffect(() => {
-    if (searchQuery.length > 2) {
-      fetchPatients(searchQuery);
+    if (drawerSearchQuery.length > 2) {
+      fetchPatients(drawerSearchQuery);
     }
-  }, [searchQuery, fetchPatients]);
+  }, [drawerSearchQuery, fetchPatients]);
 
   useEffect(() => {
     fetchReferrers('');
-  }, [fetchReferrers, activeCenterId]);
+    fetchDoctors();
+  }, [fetchReferrers, fetchDoctors, activeCenterId]);
 
   // --- DERIVED ---
   const filteredAppointments = useMemo(() => {
@@ -213,6 +238,15 @@ export default function AppointmentBoard() {
   };
 
   const handleBookAppointment = async () => {
+    if (!newBooking.service) {
+      alert('WARNING: Service/Procedure details are missing. Field is mandatory for deployment.');
+      return;
+    }
+    if (!newBooking.doctor) {
+      alert('WARNING: No Lead Specialist assigned. Mission cannot proceed without a supervisor.');
+      return;
+    }
+
     try {
       await apiClient.post('/appointments', {
         patientId: newBooking.patientId,
@@ -220,7 +254,7 @@ export default function AppointmentBoard() {
         modality: newBooking.modality,
         dateTime: new Date().toISOString(),
         type: 'BOOKED',
-        doctor: newBooking.doctor || 'Unassigned',
+        doctor: newBooking.doctor,
         referredBy: newPatient.referredBy || '',
         referredContact: '',
         notes: newBooking.notes
@@ -230,6 +264,7 @@ export default function AppointmentBoard() {
       fetchAppointments();
     } catch (error) {
       console.error('Failed to book appointment:', error);
+      alert('CRITICAL ERROR: Mission deployment failed. Check backend telemetry.');
     }
   };
 
@@ -238,6 +273,7 @@ export default function AppointmentBoard() {
     setNewBooking({ patientId: '', service: '', modality: 'X-RAY', doctor: '', notes: '' });
     setNewPatient({ name: '', mobile: '', age: '', gender: 'Male', village: '', district: '', address: '', referredBy: '', sourceOfInfo: '' });
     setReferrerSearchValue('');
+    setDrawerSearchQuery('');
   };
 
   // ============================================================
@@ -381,7 +417,7 @@ export default function AppointmentBoard() {
         }}
       >
         <option value="ALL">All Specialists</option>
-        {DOCTORS.map(d => <option key={d} value={d}>{d}</option>)}
+        {doctors.map(d => <option key={d} value={d}>{d}</option>)}
       </select>
 
       {(filters.status !== 'ALL' || filters.modality !== 'ALL' || filters.doctor !== 'ALL' || searchQuery) && (
@@ -594,19 +630,24 @@ export default function AppointmentBoard() {
             </div>
           </div>
 
-          <div className="drawer-body" style={{ paddingTop: '10px' }}>
+          <div className="drawer-body" style={{ paddingTop: '10px' }} ref={drawerBodyRef}>
             {isStep1 && (
               <div className="quest-step-container">
                 <div style={{ background: '#f8f9fa', padding: '18px', borderRadius: '14px', border: '1px solid #eee' }}>
                   <label style={{ fontSize: '10px', color: '#0f52ba', fontWeight: 800, marginBottom: '10px', display: 'block', letterSpacing: '1px' }}>SEARCH PATIENT DATABASE</label>
                   <div className="search-input-group" style={{ width: '100%' }}>
                     <span className="search-icon">{'\u{1F50D}'}</span>
-                    <input type="text" placeholder="Name or mobile number..." value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} autoFocus />
+                    <input type="text" placeholder="Name or mobile number..." value={drawerSearchQuery} onChange={(e) => setDrawerSearchQuery(e.target.value)} autoFocus />
                   </div>
 
-                  {searchQuery && (
+                  {drawerSearchQuery && (
                     <div style={{ marginTop: '10px', maxHeight: '160px', overflowY: 'auto' }}>
-                      {patients.filter(p => p.name.toLowerCase().includes(searchQuery.toLowerCase()) || p.mobile.includes(searchQuery)).map(p => (
+                      {patients.filter(p => 
+                        p.name.toLowerCase().includes(drawerSearchQuery.toLowerCase()) || 
+                        p.mobile.includes(drawerSearchQuery) || 
+                        p.id.toLowerCase().includes(drawerSearchQuery.toLowerCase()) ||
+                        (p.patientIdentifier && p.patientIdentifier.toLowerCase().includes(drawerSearchQuery.toLowerCase()))
+                      ).map(p => (
                         <div key={p.id}
                           className={`patient-search-result ${newBooking.patientId === p.id ? 'selected' : ''}`}
                           onClick={() => { 
@@ -641,7 +682,12 @@ export default function AppointmentBoard() {
                           {newBooking.patientId === p.id && <span style={{ color: '#0f52ba', fontWeight: 900 }}>{'\u2714'}</span>}
                         </div>
                       ))}
-                      {!patients.some(p => p.name.toLowerCase().includes(searchQuery.toLowerCase()) || p.mobile.includes(searchQuery)) && (
+                      {!patients.some(p => 
+                        p.name.toLowerCase().includes(drawerSearchQuery.toLowerCase()) || 
+                        p.mobile.includes(drawerSearchQuery) ||
+                        p.id.toLowerCase().includes(drawerSearchQuery.toLowerCase()) ||
+                        (p.patientIdentifier && p.patientIdentifier.toLowerCase().includes(drawerSearchQuery.toLowerCase()))
+                      ) && (
                         <div style={{ padding: '12px', textAlign: 'center', color: '#999', fontSize: '12px' }}>New capture required - provide details below</div>
                       )}
                     </div>
@@ -733,10 +779,10 @@ export default function AppointmentBoard() {
                         
                         {referrerSearchValue && !referrers.find(r => r.name === referrerSearchValue) && (
                           <div style={{ 
-                            position: 'absolute', bottom: '100%', left: 0, right: 0, 
+                            position: 'absolute', top: '100%', left: 0, right: 0, 
                             background: 'white', border: '1px solid #dee2e6', borderRadius: '10px',
-                            marginBottom: '4px', boxShadow: '0 -10px 25px rgba(0,0,0,0.1)', zIndex: 10,
-                            maxHeight: '150px', overflowY: 'auto', transform: 'translateY(-100%)'
+                            marginTop: '4px', boxShadow: '0 10px 25px rgba(0,0,0,0.1)', zIndex: 10,
+                            maxHeight: '150px', overflowY: 'auto'
                           }}>
                             {referrers.filter(r => r.name.toLowerCase().includes(referrerSearchValue.toLowerCase())).map(r => (
                               <div 
@@ -812,8 +858,9 @@ export default function AppointmentBoard() {
                       <input type="text" placeholder="Address" style={{ width: '100%', fontSize: '12px', padding: '8px 10px', borderRadius: '8px' }} value={newReferrer.address} onChange={e => setNewReferrer(prev => ({ ...prev, address: e.target.value }))} />
                       <button 
                         type="button" 
+                        disabled={!newReferrer.name.trim() || !newReferrer.contact.trim()}
                         onClick={async () => { 
-                          if(newReferrer.name){ 
+                          if(newReferrer.name.trim()){ 
                             try {
                               await apiClient.post('/referrers', newReferrer);
                               fetchReferrers('');
@@ -854,7 +901,7 @@ export default function AppointmentBoard() {
                   <button 
                     className="gamified-btn" 
                     style={{ width: '100%', padding: '16px', borderRadius: '12px', fontSize: '13px' }} 
-                    disabled={!newBooking.patientId && (!newPatient.name || !newPatient.mobile || !newPatient.age)} 
+                    disabled={!newBooking.patientId && (!newPatient.name.trim() || !newPatient.mobile.trim() || !newPatient.age.trim())} 
                     onClick={async () => {
                       if (!newBooking.patientId && newPatient.name && newPatient.mobile) {
                         try {
@@ -917,7 +964,7 @@ export default function AppointmentBoard() {
                 <div style={{ marginTop: '16px', marginBottom: '8px' }}>
                   <label style={{ fontSize: '9px', fontWeight: 800, letterSpacing: '0.5px', color: '#888', display: 'block', marginBottom: '10px' }}>3. ASSIGN LEAD SPECIALIST <span style={{ color: '#e74c3c' }}>*</span></label>
                   <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '10px' }}>
-                    {DOCTORS.map(d => (
+                    {doctors.map(d => (
                       <div key={d} className={`modality-card ${newBooking.doctor === d ? 'active' : ''}`}
                         style={{ padding: '12px', position: 'relative', flexDirection: 'row', justifyContent: 'flex-start', gap: '10px', minHeight: 'auto' }}
                         onClick={() => setNewBooking({...newBooking, doctor: d})}
@@ -928,7 +975,7 @@ export default function AppointmentBoard() {
                           display: 'flex', alignItems: 'center', justifyContent: 'center',
                           fontWeight: 900, fontSize: '11px', color: newBooking.doctor === d ? 'white' : '#0f52ba', flexShrink: 0,
                         }}>
-                          {d.split('. ')[1]?.charAt(0)}
+                          {d.includes('.') ? d.split('. ')[1]?.charAt(0) || d.charAt(0) : d.charAt(0)}
                         </div>
                         <div style={{ textAlign: 'left' }}>
                           <div style={{ fontWeight: 800, fontSize: '11px', color: newBooking.doctor === d ? 'white' : '#1a1a2e' }}>{d}</div>
@@ -1025,35 +1072,57 @@ export default function AppointmentBoard() {
           
           <div style={{ padding: '30px', display: 'flex', justifyContent: 'center', background: '#f1f5f9' }}>
             <div id="thermal-token" style={{ 
-              width: '80mm', minHeight: '120mm', background: 'white', padding: '15mm 8mm', 
+              width: '80mm', minHeight: '120mm', background: 'white', padding: '12mm 5mm', 
               boxShadow: '0 5px 15px rgba(0,0,0,0.1)', color: 'black', 
-              fontFamily: 'monospace', textAlign: 'center' 
+              fontFamily: "'Courier New', Courier, monospace", textAlign: 'center',
+              lineHeight: '1.2'
             }}>
-              <div style={{ borderBottom: '2px dashed #000', paddingBottom: '10px', marginBottom: '15px' }}>
-                <div style={{ fontSize: '16px', fontWeight: 900 }}>1RAD HUB</div>
-                <div style={{ fontSize: '9px' }}>CLINICAL COMMAND CENTER</div>
+              {/* 1. Hospital Name */}
+              <div style={{ borderBottom: '2px solid #000', paddingBottom: '8px', marginBottom: '12px' }}>
+                <div style={{ fontSize: '18px', fontWeight: 900, textTransform: 'uppercase' }}>{activeCenter?.name || '1RAD HUB'}</div>
+                <div style={{ fontSize: '9px', fontWeight: 700, marginTop: '2px' }}>DIAGNOSTIC COMMAND CENTER</div>
               </div>
               
-              <div style={{ fontSize: '10px', marginBottom: '5px' }}>TOKEN NUMBER</div>
-              <div style={{ fontSize: '32px', fontWeight: 900, border: '2px solid black', padding: '5px', margin: '5px 0' }}>{tokenPrintData.id.split('-')[1]}</div>
-              
-              <div style={{ marginTop: '15px', textAlign: 'left' }}>
-                <div style={{ fontSize: '9px', fontWeight: 800 }}>TARGET IDENTITY:</div>
-                <div style={{ fontSize: '16px', fontWeight: 900, marginBottom: '2px' }}>{tokenPrintData.patientName}</div>
-                <div style={{ fontSize: '10px' }}>ID: {tokenPrintData.patientId}</div>
+              {/* 2. Token Number */}
+              <div style={{ marginBottom: '15px' }}>
+                <div style={{ fontSize: '10px', fontWeight: 800 }}>TOKEN NO.</div>
+                <div style={{ fontSize: '42px', fontWeight: 950, margin: '2px 0' }}>{tokenPrintData.id.includes('-') ? tokenPrintData.id.split('-')[1] : tokenPrintData.id}</div>
               </div>
 
-              <div style={{ marginTop: '15px', textAlign: 'left', borderTop: '1px solid #333', paddingTop: '10px' }}>
-                <div style={{ fontSize: '11px', fontWeight: 900 }}>MISSION: {tokenPrintData.modality}</div>
-                <div style={{ fontSize: '10px' }}>{tokenPrintData.service}</div>
+              <div style={{ borderTop: '1px dashed #000', borderBottom: '1px dashed #000', padding: '10px 0', margin: '10px 0', textAlign: 'left' }}>
+                {/* 3. Patient ID */}
+                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '4px' }}>
+                  <span style={{ fontSize: '9px', fontWeight: 700 }}>PATIENT ID:</span>
+                  <span style={{ fontSize: '11px', fontWeight: 900 }}>{tokenPrintData.ptid || tokenPrintData.patientId}</span>
+                </div>
+                
+                {/* 4. Patient Name */}
+                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px' }}>
+                  <span style={{ fontSize: '9px', fontWeight: 700 }}>NAME:</span>
+                  <span style={{ fontSize: '12px', fontWeight: 950 }}>{tokenPrintData.patientName.toUpperCase()}</span>
+                </div>
+
+                {/* 5. Date of Appointment */}
+                <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                  <span style={{ fontSize: '9px', fontWeight: 700 }}>DATE:</span>
+                  <span style={{ fontSize: '11px', fontWeight: 900 }}>{new Date(tokenPrintData.dateTime).toLocaleDateString()}</span>
+                </div>
+              </div>
+
+              {/* 6. Modality & Name */}
+              <div style={{ marginTop: '12px', textAlign: 'left' }}>
+                <div style={{ fontSize: '10px', fontWeight: 800, color: '#333' }}>MODALITY: {tokenPrintData.modality}</div>
+                <div style={{ fontSize: '14px', fontWeight: 950, marginTop: '2px', borderLeft: '3px solid black', paddingLeft: '8px' }}>
+                  {tokenPrintData.service}
+                </div>
               </div>
               
-              <div style={{ marginTop: '20px', fontSize: '9px', opacity: 0.8 }}>
-                DATE: {new Date().toLocaleDateString()} | {new Date().toLocaleTimeString()}
+              <div style={{ marginTop: '25px', fontSize: '9px', fontWeight: 700 }}>
+                PRINTED: {new Date().toLocaleTimeString()}
               </div>
               
-              <div style={{ marginTop: '30px', borderTop: '2px dashed #000', paddingTop: '10px', fontSize: '10px', fontWeight: 900 }}>
-                PLEASE WAIT FOR DEPLOYMENT
+              <div style={{ marginTop: '15px', borderTop: '2px dashed #000', paddingTop: '10px', fontSize: '10px', fontWeight: 950 }}>
+                PLEASE WAIT FOR YOUR TURN
               </div>
             </div>
           </div>
@@ -1131,7 +1200,7 @@ export default function AppointmentBoard() {
               e.currentTarget.style.transform = 'scale(1.05)';
               e.currentTarget.style.boxShadow = '0 8px 25px rgba(15, 82, 186, 0.3)';
             }}
-            onClick={() => setIsBookingOpen(true)}
+            onClick={() => { resetBooking(); setIsBookingOpen(true); }}
           >
             + NEW MISSION
           </button>

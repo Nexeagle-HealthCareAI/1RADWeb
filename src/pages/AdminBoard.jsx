@@ -39,6 +39,7 @@ export default function AdminBoard() {
   const [layouts, setLayouts] = useState(INITIAL_LAYOUTS);
   const [patients, setPatients] = useState([]);
   const [patientSearch, setPatientSearch] = useState('');
+  const [personnelSearch, setPersonnelSearch] = useState('');
   
   // Dashboard Filters
   const [selectedDateFilter, setSelectedDateFilter] = useState(TODAY);
@@ -50,6 +51,7 @@ export default function AdminBoard() {
 
   // User Management State
   const [isUserDrawerOpen, setIsUserDrawerOpen] = useState(false);
+  const [isHospitalDrawerOpen, setIsHospitalDrawerOpen] = useState(false);
   const [userRegStep, setUserRegStep] = useState(1);
   const [editUser, setEditUser] = useState(null);
   const [selectedDocId, setSelectedDocId] = useState('');
@@ -65,6 +67,8 @@ export default function AdminBoard() {
   const [referralFilterMode, setReferralFilterMode] = useState('RANGE'); // 'SINGLE' or 'RANGE'
   const [expandedReferrer, setExpandedReferrer] = useState(null);
   const [personnel, setPersonnel] = useState([]);
+  const [referralLoading, setReferralLoading] = useState(false);
+  const [personnelLoading, setPersonnelLoading] = useState(false);
   const [loading, setLoading] = useState(false);
 
   // Hospital Settings State
@@ -126,14 +130,39 @@ export default function AdminBoard() {
     }
   }, [activeCenter]);
 
+  const fetchPatients = useCallback(async () => {
+    try {
+      setReferralLoading(true);
+      const res = await apiClient.get('/patients');
+      // Map backend Patient objects to frontend state
+      const mapped = res.data.map(p => ({
+        id: p.patientId,
+        name: p.fullName || 'Unknown Patient',
+        age: p.age,
+        gender: p.gender,
+        referredBy: p.referredBy || 'Direct / Walk-in',
+        sourceContact: p.sourceOfInfo,
+        registered: p.createdAt?.split('T')[0] || TODAY // Use registration date for timeline
+      }));
+      setPatients(mapped);
+    } catch (err) {
+      console.error('[PATIENTS] Fetch failed', err);
+    } finally {
+      setReferralLoading(false);
+    }
+  }, []);
+
   useEffect(() => {
     if (activeTab === 'PERSONNEL') {
       fetchPersonnel();
     }
+    if (activeTab === 'REFERRAL INTEL') {
+      fetchPatients();
+    }
     if (activeTab === 'HOSPITAL' && activeCenter?.id) {
       fetchHospitalData();
     }
-  }, [activeTab, activeCenter, fetchPersonnel, fetchHospitalData]);
+  }, [activeTab, activeCenter, fetchPersonnel, fetchHospitalData, fetchPatients]);
 
   const handleSaveHospital = async (e) => {
     e.preventDefault();
@@ -152,6 +181,11 @@ export default function AdminBoard() {
 
       await apiClient.put(`/hospitals/${activeCenter.id}`, payload);
       setHospitalMessage({ type: 'success', text: 'METADATA RE-SYNCED: Hospital configuration updated successfully.' });
+      setTimeout(() => {
+        setIsHospitalDrawerOpen(false);
+        setHospitalMessage({ type: '', text: '' });
+      }, 2000);
+      fetchHospitalData();
     } catch (err) {
       setHospitalMessage({ type: 'error', text: err.response?.data?.message || 'DEPLOYMENT FAILURE: Failed to update hospital metadata.' });
     } finally {
@@ -174,6 +208,16 @@ export default function AdminBoard() {
     multiCenterSync: false,
     auditLogging: true
   });
+
+  const filteredPersonnel = useMemo(() => {
+    if (!personnelSearch.trim()) return personnel;
+    const query = personnelSearch.toLowerCase();
+    return personnel.filter(u => 
+      u.name.toLowerCase().includes(query) || 
+      u.email.toLowerCase().includes(query) || 
+      (u.roles && u.roles.some(r => r.toLowerCase().includes(query)))
+    );
+  }, [personnel, personnelSearch]);
 
   // --- DERIVED DATA ---
   const dynamicReferralStats = useMemo(() => {
@@ -198,6 +242,10 @@ export default function AdminBoard() {
   const topReferrerName = dynamicReferralStats.length > 0 ? dynamicReferralStats[0].name : 'N/A';
 
   const handleDeleteUser = async (id) => {
+    if (id === currentUser.id) {
+      alert('SECURITY PROTOCOL: Self-decommissioning blocked. You cannot remove your own deployment from this hub to prevent lockout.');
+      return;
+    }
     if (window.confirm('Are you sure you want to remove this staff member from the current hub?')) {
       try {
         await apiClient.delete(`/personnel/${id}`);
@@ -219,7 +267,7 @@ export default function AdminBoard() {
       specialization: '',
       degree: '',
       licenseNo: '',
-      contact: ''
+      mobile: ''
     });
     setUserRegStep(1);
     setIsUserDrawerOpen(true);
@@ -394,128 +442,140 @@ export default function AdminBoard() {
       <div className="board-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '35px' }}>
         <div>
           <h2 style={{ fontSize: '12px', fontWeight: 900, textTransform: 'uppercase', letterSpacing: '2px', color: '#0f52ba', marginBottom: '4px' }}>Infrastructure Configuration</h2>
-          <p style={{ fontSize: '11px', color: '#888', fontWeight: 600 }}>Manage institutional identity, tax compliance nodes, and clinical accreditations.</p>
+          <p style={{ fontSize: '11px', color: '#888', fontWeight: 600 }}>Operational status and institutional metadata overview.</p>
         </div>
+        <button 
+          onClick={() => setIsHospitalDrawerOpen(true)}
+          style={{ 
+            padding: '12px 24px', borderRadius: '12px', border: 'none', 
+            background: 'linear-gradient(90deg, #0f52ba 0%, #00f2fe 100%)', 
+            color: 'white', fontSize: '11px', fontWeight: 950, cursor: 'pointer',
+            boxShadow: '0 8px 20px rgba(15, 82, 186, 0.2)'
+          }}
+        >
+          EDIT CONFIGURATION ⚙️
+        </button>
       </div>
 
-      <div style={{ maxWidth: '800px' }}>
-        {hospitalLoading ? (
-            <div style={{ padding: '60px', textAlign: 'center', background: 'white', borderRadius: '20px', border: '1px solid #eee' }}>
-                <div className="pulse-loader" style={{ marginBottom: '15px' }}></div>
-                <p style={{ fontSize: '11px', fontWeight: 900, color: '#0f52ba' }}>ESTABLISHING SECURE LINK...</p>
+      {hospitalLoading ? (
+         <div style={{ padding: '100px', textAlign: 'center' }}>
+            <div className="pulse-loader"></div>
+            <p style={{ fontSize: '11px', fontWeight: 900, color: '#0f52ba', marginTop: '20px' }}>LINKING TO CLOUD REGISTRY...</p>
+         </div>
+      ) : (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '30px' }}>
+          {/* Main Identity Card */}
+          <div style={{ background: 'white', padding: '40px', borderRadius: '24px', border: '1px solid #eee', boxShadow: '0 10px 40px rgba(0,0,0,0.02)', position: 'relative', overflow: 'hidden' }}>
+            <div style={{ position: 'absolute', top: 0, right: 0, width: '150px', height: '150px', background: 'linear-gradient(135deg, transparent 50%, rgba(15, 82, 186, 0.03) 50%)', borderRadius: '0 24px 0 0' }}></div>
+            
+            <div style={{ display: 'flex', gap: '40px' }}>
+              <div style={{ width: '120px', height: '120px', background: '#f8fbfc', borderRadius: '20px', border: '1px solid #edf2f7', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '48px', boxShadow: 'inset 0 4px 10px rgba(0,0,0,0.02)' }}>🏥</div>
+              <div style={{ flex: 1 }}>
+                <span style={{ fontSize: '10px', fontWeight: 950, color: '#0f52ba', letterSpacing: '3px', textTransform: 'uppercase' }}>INSTITUTIONAL_IDENTITY</span>
+                <h1 style={{ fontSize: '32px', fontWeight: 950, color: '#1a1a2e', marginTop: '8px', marginBottom: '4px' }}>{hospitalData.hospitalName || 'UNCONFIGURED_HUB'}</h1>
+                <p style={{ fontSize: '14px', color: '#64748b', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <span>📍</span> {hospitalData.hospitalAddress || 'Address not synchronized.'}
+                </p>
+                <div style={{ marginTop: '20px', display: 'flex', gap: '10px' }}>
+                   <span className="file-badge" style={{ background: '#e9f7ef', color: '#155724', padding: '6px 12px', fontSize: '10px' }}>ACTIVE STATUS: VERIFIED</span>
+                   <span className="file-badge" style={{ background: '#f0f4ff', color: '#0f52ba', padding: '6px 12px', fontSize: '10px' }}>NODE ID: {activeCenter.id.split('-')[0].toUpperCase()}</span>
+                </div>
+              </div>
             </div>
-        ) : (
-            <form onSubmit={handleSaveHospital} className="glass-card" style={{ background: 'white', padding: '40px', borderRadius: '24px', border: '1px solid #eee', boxShadow: '0 10px 40px rgba(0,0,0,0.02)' }}>
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '30px', marginBottom: '30px' }}>
-                    <div className="form-group">
-                        <label style={{ fontSize: '10px', fontWeight: 950, color: '#aaa', textTransform: 'uppercase', letterSpacing: '1px', display: 'block', marginBottom: '12px' }}>Institutional Identity</label>
-                        <input 
-                            type="text" 
-                            required
-                            value={hospitalData.hospitalName} 
-                            onChange={e => setHospitalData({...hospitalData, hospitalName: e.target.value})} 
-                            style={{ width: '100%', border: 'none', borderBottom: '2px solid #f0f0f0', fontSize: '18px', fontWeight: 950, padding: '10px 0', outline: 'none', color: '#1a1a2e' }} 
-                            placeholder="Hospital Name"
-                        />
-                    </div>
-                    <div className="form-group">
-                        <label style={{ fontSize: '10px', fontWeight: 950, color: '#aaa', textTransform: 'uppercase', letterSpacing: '1px', display: 'block', marginBottom: '12px' }}>Operational License #</label>
-                        <input 
-                            type="text" 
-                            value={hospitalData.registrationNumber || ''} 
-                            onChange={e => setHospitalData({...hospitalData, registrationNumber: e.target.value.toUpperCase()})} 
-                            style={{ width: '100%', border: 'none', borderBottom: '2px solid #f0f0f0', fontSize: '16px', fontWeight: 700, padding: '10px 0', outline: 'none' }} 
-                            placeholder="State Reg / UID"
-                        />
-                    </div>
-                </div>
+          </div>
 
-                <div className="form-group" style={{ marginBottom: '35px' }}>
-                    <label style={{ fontSize: '10px', fontWeight: 950, color: '#aaa', textTransform: 'uppercase', letterSpacing: '1px', display: 'block', marginBottom: '12px' }}>Physical Infrastructure Node (Address)</label>
-                    <textarea 
-                        required
-                        value={hospitalData.hospitalAddress} 
-                        onChange={e => setHospitalData({...hospitalData, hospitalAddress: e.target.value})} 
-                        style={{ width: '100%', border: 'none', borderBottom: '2px solid #f0f0f0', fontSize: '14px', fontWeight: 600, padding: '10px 0', outline: 'none', resize: 'none', height: '60px' }} 
-                        placeholder="Complete clinical facility address..."
-                    />
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '20px' }}>
+            {/* Compliance Matrix */}
+            {[
+              { label: 'GSTIN MODULE', value: hospitalData.gstin, icon: '📄' },
+              { label: 'REGISTRATION #', value: hospitalData.registrationNumber, icon: '🔖' },
+              { label: 'TAX PAN NODE', value: hospitalData.pan, icon: '💳' },
+              { label: 'QUALITY ACCREDIT', value: hospitalData.nabhNumber, icon: '🏆' }
+            ].map(item => (
+              <div key={item.label} style={{ background: 'white', padding: '25px', borderRadius: '20px', border: '1px solid #eee', display: 'flex', alignItems: 'center', gap: '20px' }}>
+                <div style={{ width: '45px', height: '45px', borderRadius: '12px', background: '#f8fafc', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '20px' }}>{item.icon}</div>
+                <div>
+                  <div style={{ fontSize: '9px', fontWeight: 950, color: '#94a3b8', letterSpacing: '1px' }}>{item.label}</div>
+                  <div style={{ fontSize: '15px', fontWeight: 800, color: '#1e293b', marginTop: '2px' }}>{item.value || 'NOT_SYNCHRONIZED'}</div>
                 </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
 
-                <div style={{ background: '#f8f9fc', padding: '30px', borderRadius: '20px', marginBottom: '35px', border: '1px solid #eff2f7' }}>
-                    <p style={{ fontSize: '10px', fontWeight: 950, color: '#0f52ba', letterSpacing: '2px', marginBottom: '25px' }}>COMPLIANCE & ACCREDITATION</p>
-                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '25px' }}>
-                        <div className="form-group">
-                            <label style={{ fontSize: '9px', fontWeight: 850, color: '#888', textTransform: 'uppercase', marginBottom: '10px' }}>GSTIN Module</label>
-                            <input 
-                                type="text" 
-                                value={hospitalData.gstin || ''} 
-                                onChange={e => setHospitalData({...hospitalData, gstin: e.target.value.toUpperCase()})} 
-                                maxLength="15"
-                                style={{ width: '100%', border: 'none', borderBottom: '1px solid #ddd', fontSize: '13px', fontWeight: 800, padding: '8px 0', outline: 'none', background: 'transparent' }} 
-                                placeholder="15-Digit GST"
-                            />
-                        </div>
-                        <div className="form-group">
-                            <label style={{ fontSize: '9px', fontWeight: 850, color: '#888', textTransform: 'uppercase', marginBottom: '10px' }}>IT PAN Node</label>
-                            <input 
-                                type="text" 
-                                value={hospitalData.pan || ''} 
-                                onChange={e => setHospitalData({...hospitalData, pan: e.target.value.toUpperCase()})} 
-                                maxLength="10"
-                                style={{ width: '100%', border: 'none', borderBottom: '1px solid #ddd', fontSize: '13px', fontWeight: 800, padding: '8px 0', outline: 'none', background: 'transparent' }} 
-                                placeholder="10-Digit PAN"
-                            />
-                        </div>
-                        <div className="form-group">
-                            <label style={{ fontSize: '9px', fontWeight: 850, color: '#888', textTransform: 'uppercase', marginBottom: '10px' }}>Quality (NABH/NABL)</label>
-                            <input 
-                                type="text" 
-                                value={hospitalData.nabhNumber || ''} 
-                                onChange={e => setHospitalData({...hospitalData, nabhNumber: e.target.value.toUpperCase()})} 
-                                style={{ width: '100%', border: 'none', borderBottom: '1px solid #ddd', fontSize: '13px', fontWeight: 800, padding: '8px 0', outline: 'none', background: 'transparent' }} 
-                                placeholder="CERT-XXXXX"
-                            />
-                        </div>
-                    </div>
-                </div>
+  const renderHospitalDrawer = () => (
+    <div className="drawer-overlay" onClick={() => setIsHospitalDrawerOpen(false)} style={{ backdropFilter: 'blur(8px)', background: 'rgba(10, 22, 40, 0.4)', zIndex: 3001 }}>
+      <div className="drawer-content" style={{ padding: 0, width: '500px', borderRadius: '24px 0 0 24px', background: '#fff', display: 'flex', flexDirection: 'column' }} onClick={e => e.stopPropagation()}>
+        <div className="drawer-header" style={{ background: 'linear-gradient(135deg, #0f52ba 0%, #061a40 100%)', color: 'white', padding: '40px 30px' }}>
+           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                  <span style={{ fontSize: '10px', fontWeight: 950, letterSpacing: '3px', color: 'var(--tactical-cyan)', textTransform: 'uppercase' }}>Config Infrastructure</span>
+                  <h2 style={{ fontWeight: 950, fontSize: '24px', letterSpacing: '-0.5px' }}>SYNC_METADATA</h2>
+              </div>
+              <button className="btn-close" style={{ color: 'white', opacity: 0.6, fontSize: '28px' }} onClick={() => setIsHospitalDrawerOpen(false)}>&times;</button>
+           </div>
+        </div>
 
-                {hospitalMessage.text && (
-                    <div style={{ 
-                        padding: '15px 20px', 
-                        borderRadius: '12px', 
-                        marginBottom: '30px', 
-                        fontSize: '11px', 
-                        fontWeight: 900,
-                        background: hospitalMessage.type === 'success' ? '#e9f7ef' : '#fdeded',
-                        color: hospitalMessage.type === 'success' ? '#155724' : '#721c24',
-                        border: `1px solid ${hospitalMessage.type === 'success' ? '#c3e6cb' : '#f5c6cb'}`,
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: '10px'
-                    }}>
-                        <span>{hospitalMessage.type === 'success' ? '🛡️' : '⚠️'}</span>
-                        {hospitalMessage.text}
-                    </div>
-                )}
+        <div style={{ flex: 1, overflowY: 'auto', padding: '40px 30px' }}>
+           <form onSubmit={handleSaveHospital}>
+              <div className="form-group" style={{ marginBottom: '30px' }}>
+                  <label style={{ fontSize: '10px', fontWeight: 950, color: '#aaa', textTransform: 'uppercase', letterSpacing: '1px', display: 'block', marginBottom: '12px' }}>Institutional Identity</label>
+                  <input 
+                      type="text" required value={hospitalData.hospitalName} 
+                      onChange={e => setHospitalData({...hospitalData, hospitalName: e.target.value})} 
+                      style={{ width: '100%', border: 'none', borderBottom: '2px solid #f0f0f0', fontSize: '18px', fontWeight: 950, padding: '10px 0', outline: 'none' }} 
+                  />
+              </div>
 
-                <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '15px' }}>
-                    <button 
-                        type="button" 
-                        onClick={fetchHospitalData}
-                        style={{ padding: '15px 25px', borderRadius: '12px', border: '1px solid #eee', background: 'white', color: '#666', fontSize: '11px', fontWeight: 900, cursor: 'pointer' }}
-                    >
-                        CANCEL
-                    </button>
-                    <button 
-                        type="submit" 
-                        disabled={savingHospital}
-                        style={{ padding: '15px 40px', borderRadius: '12px', border: 'none', background: '#0f52ba', color: 'white', fontSize: '11px', fontWeight: 950, cursor: 'pointer', boxShadow: '0 8px 15px rgba(15, 82, 186, 0.2)' }}
-                    >
-                        {savingHospital ? 'SYNCHRONIZING...' : 'COMMIT CHANGES →'}
-                    </button>
-                </div>
-            </form>
-        )}
+              <div className="form-group" style={{ marginBottom: '30px' }}>
+                  <label style={{ fontSize: '10px', fontWeight: 950, color: '#aaa', textTransform: 'uppercase', letterSpacing: '1px', display: 'block', marginBottom: '12px' }}>Physical Infrastructure Node (Address)</label>
+                  <textarea 
+                      required value={hospitalData.hospitalAddress} 
+                      onChange={e => setHospitalData({...hospitalData, hospitalAddress: e.target.value})} 
+                      style={{ width: '100%', border: 'none', borderBottom: '2px solid #f0f0f0', fontSize: '14px', fontWeight: 600, padding: '10px 0', outline: 'none', resize: 'none', height: '60px' }} 
+                  />
+              </div>
+
+              <div style={{ background: '#f8f9fc', padding: '25px', borderRadius: '20px', marginBottom: '30px' }}>
+                  <p style={{ fontSize: '10px', fontWeight: 950, color: '#0f52ba', letterSpacing: '2px', marginBottom: '20px' }}>COMPLIANCE NODES</p>
+                  <div className="form-group" style={{ marginBottom: '20px' }}>
+                      <label style={{ fontSize: '9px', fontWeight: 850, color: '#888', textTransform: 'uppercase', marginBottom: '8px', display: 'block' }}>Operational License #</label>
+                      <input type="text" value={hospitalData.registrationNumber} onChange={e => setHospitalData({...hospitalData, registrationNumber: e.target.value.toUpperCase()})} style={{ width: '100%', border: 'none', borderBottom: '1px solid #ddd', fontSize: '13px', fontWeight: 800, padding: '8px 0', outline: 'none', background: 'transparent' }} />
+                  </div>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px' }}>
+                      <div className="form-group">
+                          <label style={{ fontSize: '9px', fontWeight: 850, color: '#888', textTransform: 'uppercase', marginBottom: '8px', display: 'block' }}>GSTIN Module</label>
+                          <input type="text" value={hospitalData.gstin} onChange={e => setHospitalData({...hospitalData, gstin: e.target.value.toUpperCase()})} maxLength="15" style={{ width: '100%', border: 'none', borderBottom: '1px solid #ddd', fontSize: '13px', fontWeight: 800, padding: '8px 0', outline: 'none', background: 'transparent' }} />
+                      </div>
+                      <div className="form-group">
+                          <label style={{ fontSize: '9px', fontWeight: 850, color: '#888', textTransform: 'uppercase', marginBottom: '8px', display: 'block' }}>IT PAN Node</label>
+                          <input type="text" value={hospitalData.pan} onChange={e => setHospitalData({...hospitalData, pan: e.target.value.toUpperCase()})} maxLength="10" style={{ width: '100%', border: 'none', borderBottom: '1px solid #ddd', fontSize: '13px', fontWeight: 800, padding: '8px 0', outline: 'none', background: 'transparent' }} />
+                      </div>
+                  </div>
+                  <div className="form-group" style={{ marginTop: '20px' }}>
+                      <label style={{ fontSize: '9px', fontWeight: 850, color: '#888', textTransform: 'uppercase', marginBottom: '8px', display: 'block' }}>Quality Accreditation (NABH/NABL)</label>
+                      <input type="text" value={hospitalData.nabhNumber} onChange={e => setHospitalData({...hospitalData, nabhNumber: e.target.value.toUpperCase()})} style={{ width: '100%', border: 'none', borderBottom: '1px solid #ddd', fontSize: '13px', fontWeight: 800, padding: '8px 0', outline: 'none', background: 'transparent' }} />
+                  </div>
+              </div>
+
+              {hospitalMessage.text && (
+                  <div style={{ padding: '15px', borderRadius: '12px', marginBottom: '25px', fontSize: '11px', fontWeight: 900, background: hospitalMessage.type === 'success' ? '#e9f7ef' : '#fdeded', color: hospitalMessage.type === 'success' ? '#155724' : '#721c24', border: `1px solid ${hospitalMessage.type === 'success' ? '#c3e6cb' : '#f5c6cb'}`, display: 'flex', alignItems: 'center', gap: '10px' }}>
+                      <span>{hospitalMessage.type === 'success' ? '🛡️' : '⚠️'}</span>
+                      {hospitalMessage.text}
+                  </div>
+              )}
+
+              <div className="drawer-footer" style={{ marginTop: '20px', display: 'flex', gap: '15px' }}>
+                <button type="button" className="btn-logout" style={{ flex: 1, padding: '16px', borderRadius: '16px', border: '1px solid #eee' }} onClick={() => setIsHospitalDrawerOpen(false)}>ABORT</button>
+                <button type="submit" disabled={savingHospital} style={{ flex: 2, padding: '16px', borderRadius: '16px', background: '#0f52ba', color: 'white', fontWeight: 950, fontSize: '11px', letterSpacing: '1px', border: 'none', cursor: 'pointer' }}>
+                    {savingHospital ? 'SYNCHRONIZING...' : 'COMMIT CHANGES →'}
+                </button>
+              </div>
+           </form>
+        </div>
       </div>
     </div>
   );
@@ -856,6 +916,7 @@ export default function AdminBoard() {
     }, {});
 
     const sources = Object.values(aggregated).sort((a, b) => b.patients.length - a.patients.length);
+    const totalPatientsCount = Object.values(aggregated).reduce((sum, s) => sum + s.patients.length, 0);
 
     return (
       <div className="referral-intel-view">
@@ -865,18 +926,18 @@ export default function AdminBoard() {
             <p style={{ fontSize: '11px', color: '#888', fontWeight: 600 }}>Deep-recon analysis of patient acquisition channels and source attribution.</p>
           </div>
           
-          <div style={{ display: 'flex', gap: '15px', alignItems: 'center', background: 'rgba(255,255,255,0.8)', padding: '8px', borderRadius: '14px', border: '1px solid #eee', backdropFilter: 'blur(10px)' }}>
-            <div style={{ display: 'flex', background: '#f1f2f6', padding: '4px', borderRadius: '10px' }}>
+          <div style={{ display: 'flex', gap: '15px', alignItems: 'center', background: 'white', padding: '8px', borderRadius: '16px', border: '1px solid #eee', boxShadow: '0 4px 12px rgba(0,0,0,0.03)' }}>
+            <div style={{ display: 'flex', background: '#f1f5f9', padding: '4px', borderRadius: '12px' }}>
               {['SINGLE', 'RANGE'].map(mode => (
                 <button 
                   key={mode}
                   onClick={() => setReferralFilterMode(mode)}
                   style={{ 
-                    padding: '8px 16px', borderRadius: '8px', border: 'none', fontSize: '9px', fontWeight: 950,
+                    padding: '8px 18px', borderRadius: '10px', border: 'none', fontSize: '10px', fontWeight: 950,
                     background: referralFilterMode === mode ? 'white' : 'transparent',
                     color: referralFilterMode === mode ? '#0f52ba' : '#64748b',
                     boxShadow: referralFilterMode === mode ? '0 4px 10px rgba(0,0,0,0.05)' : 'none',
-                    cursor: 'pointer', transition: 'all 0.2s', letterSpacing: '1px'
+                    cursor: 'pointer', transition: 'all 0.2s', letterSpacing: '0.5px'
                   }}
                 >
                   {mode === 'SINGLE' ? 'SINGLE SCAN' : 'TEMPORAL RANGE'}
@@ -889,16 +950,16 @@ export default function AdminBoard() {
                 type="date" 
                 value={referralRange.start} 
                 onChange={e => setReferralRange(prev => ({ ...prev, start: e.target.value }))}
-                style={{ border: 'none', background: 'transparent', fontSize: '11px', fontWeight: 800, color: '#0f52ba', outline: 'none' }}
+                style={{ border: 'none', background: 'transparent', fontSize: '11px', fontWeight: 900, color: '#1a1a2e', outline: 'none' }}
               />
               {referralFilterMode === 'RANGE' && (
                 <>
-                  <span style={{ fontSize: '10px', color: '#ccc' }}>→</span>
+                  <span style={{ fontSize: '12px', color: '#cbd5e1', fontWeight: 900 }}>→</span>
                   <input 
                     type="date" 
                     value={referralRange.end} 
                     onChange={e => setReferralRange(prev => ({ ...prev, end: e.target.value }))}
-                    style={{ border: 'none', background: 'transparent', fontSize: '11px', fontWeight: 800, color: '#0f52ba', outline: 'none' }}
+                    style={{ border: 'none', background: 'transparent', fontSize: '11px', fontWeight: 900, color: '#1a1a2e', outline: 'none' }}
                   />
                 </>
               )}
@@ -906,106 +967,131 @@ export default function AdminBoard() {
           </div>
         </div>
 
-        <div className="summary-grid tactical-grid-smart" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '20px', marginBottom: '35px' }}>
-          <div style={{ background: 'white', padding: '24px', borderRadius: '18px', border: '1px solid #eee', boxShadow: '0 4px 15px rgba(0,0,0,0.02)' }}>
-            <span style={{ fontSize: '9px', fontWeight: 900, color: '#aaa', letterSpacing: '1px' }}>TOTAL CAPTURED</span>
-            <div style={{ fontSize: '28px', fontWeight: 950, color: '#0f52ba', marginTop: '8px' }}>
-              {Object.values(aggregated).reduce((sum, s) => sum + s.patients.length, 0)}
-              <span className="hide-mobile" style={{ fontSize: '12px', color: '#ccc', marginLeft: '8px' }}>SCAN UNITS</span>
+        {referralLoading ? (
+            <div style={{ padding: '100px', textAlign: 'center' }}>
+                <div className="pulse-loader"></div>
+                <p style={{ fontSize: '11px', fontWeight: 900, color: '#0f52ba', marginTop: '20px' }}>SCANNING SOURCE REGISTRY...</p>
             </div>
-          </div>
-          <div style={{ background: 'white', padding: '24px', borderRadius: '18px', border: '1px solid #eee', boxShadow: '0 4px 15px rgba(0,0,0,0.02)' }}>
-            <span style={{ fontSize: '9px', fontWeight: 900, color: '#aaa', letterSpacing: '1px' }}>ACTIVE CHANNELS</span>
-            <div style={{ fontSize: '28px', fontWeight: 950, color: '#1a1a2e', marginTop: '8px' }}>{sources.length}</div>
-          </div>
-          <div style={{ background: 'linear-gradient(135deg, #10b981 0%, #059669 100%)', padding: '24px', borderRadius: '18px', color: 'white', boxShadow: '0 8px 20px rgba(16, 185, 129, 0.2)' }}>
-            <span style={{ fontSize: '9px', fontWeight: 900, opacity: 0.8, letterSpacing: '1px' }}>DOMINANT PROTOCOL</span>
-            <div style={{ fontSize: '18px', fontWeight: 950, marginTop: '8px', whiteSpace: 'nowrap', textOverflow: 'ellipsis', overflow: 'hidden' }}>{sources[0]?.name || 'N/A'}</div>
-          </div>
-        </div>
+        ) : (
+          <>
+            <div className="summary-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '25px', marginBottom: '40px' }}>
+              <div style={{ background: 'white', padding: '30px', borderRadius: '24px', border: '1px solid #eee', boxShadow: '0 10px 40px rgba(0,0,0,0.02)', position: 'relative', overflow: 'hidden' }}>
+                <div style={{ position: 'absolute', top: 0, right: 0, padding: '20px', opacity: 0.05, fontSize: '40px' }}>📡</div>
+                <span style={{ fontSize: '10px', fontWeight: 950, color: '#64748b', letterSpacing: '2px' }}>TOTAL CAPTURED</span>
+                <div style={{ fontSize: '36px', fontWeight: 950, color: '#0f52ba', marginTop: '12px', display: 'flex', alignItems: 'baseline', gap: '10px' }}>
+                  {totalPatientsCount}
+                  <span style={{ fontSize: '12px', color: '#94a3b8', fontWeight: 800 }}>UNITS</span>
+                </div>
+              </div>
+              
+              <div style={{ background: 'white', padding: '30px', borderRadius: '24px', border: '1px solid #eee', boxShadow: '0 10px 40px rgba(0,0,0,0.02)', position: 'relative', overflow: 'hidden' }}>
+                <div style={{ position: 'absolute', top: 0, right: 0, padding: '20px', opacity: 0.05, fontSize: '40px' }}>🕸️</div>
+                <span style={{ fontSize: '10px', fontWeight: 950, color: '#64748b', letterSpacing: '2px' }}>ACTIVE CHANNELS</span>
+                <div style={{ fontSize: '36px', fontWeight: 950, color: '#1e293b', marginTop: '12px' }}>{sources.length}</div>
+              </div>
+              
+              <div style={{ background: 'linear-gradient(135deg, #0f52ba 0%, #061a40 100%)', padding: '30px', borderRadius: '24px', color: 'white', boxShadow: '0 15px 35px rgba(15, 82, 186, 0.2)', position: 'relative', overflow: 'hidden' }}>
+                <div style={{ position: 'absolute', top: 0, right: 0, padding: '20px', opacity: 0.1, fontSize: '40px' }}>🏆</div>
+                <span style={{ fontSize: '10px', fontWeight: 950, opacity: 0.7, letterSpacing: '2px' }}>DOMINANT PROTOCOL</span>
+                <div style={{ fontSize: '20px', fontWeight: 950, marginTop: '12px', whiteSpace: 'nowrap', textOverflow: 'ellipsis', overflow: 'hidden' }}>{sources[0]?.name.toUpperCase() || 'NO_SIGNAL'}</div>
+                <div style={{ fontSize: '10px', fontWeight: 800, marginTop: '5px', color: 'var(--tactical-cyan)' }}>{sources[0] ? `${((sources[0].patients.length / totalPatientsCount) * 100).toFixed(1)}% ATTRIBUTION` : '0% ATTRIBUTION'}</div>
+              </div>
+            </div>
 
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '15px' }}>
-          {sources.map(s => {
-            const isExpanded = expandedReferrer === s.name;
-            return (
-              <div key={s.name} style={{ 
-                background: 'white', borderRadius: '16px', border: isExpanded ? '1px solid #0f52ba' : '1px solid #eee', 
-                overflow: 'hidden', transition: 'all 0.3s ease',
-                boxShadow: isExpanded ? '0 10px 30px rgba(15, 82, 186, 0.1)' : '0 2px 8px rgba(0,0,0,0.02)'
-              }}>
-                <div style={{ padding: '15px 20px', display: 'flex', flexDirection: 'column', gap: '15px' }}>
-                  <div style={{ display: 'flex', gap: '15px', alignItems: 'center' }}>
-                    <div style={{ width: '40px', height: '40px', borderRadius: '10px', background: '#f0f5ff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '18px', color: '#0f52ba', border: '1px solid rgba(15, 82, 186, 0.1)', flexShrink: 0 }}>
-                      📡
-                    </div>
-                    <div style={{ overflow: 'hidden' }}>
-                      <div style={{ fontSize: '14px', fontWeight: 900, color: '#1a1a2e', whiteSpace: 'nowrap', textOverflow: 'ellipsis', overflow: 'hidden' }}>{s.name.toUpperCase()}</div>
-                      <div style={{ fontSize: '9px', color: '#888', fontWeight: 700, marginTop: '2px' }}>RECON: {s.contact}</div>
-                    </div>
-                  </div>
-                  
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderTop: '1px solid #f8f9fa', paddingTop: '12px' }}>
-                    <div style={{ display: 'flex', gap: '15px' }}>
-                      <div style={{ textAlign: 'left' }}>
-                        <div style={{ fontSize: '16px', fontWeight: 950, color: '#0f52ba' }}>{s.patients.length}</div>
-                        <div style={{ fontSize: '7px', fontWeight: 900, color: '#aaa', letterSpacing: '1px' }}>MISSIONS</div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+              {sources.map(s => {
+                const isExpanded = expandedReferrer === s.name;
+                const percentage = totalPatientsCount > 0 ? (s.patients.length / totalPatientsCount) * 100 : 0;
+                return (
+                  <div key={s.name} style={{ 
+                    background: 'white', borderRadius: '20px', border: isExpanded ? '1px solid #0f52ba' : '1px solid #f1f5f9', 
+                    overflow: 'hidden', transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
+                    boxShadow: isExpanded ? '0 20px 50px rgba(15, 82, 186, 0.1)' : '0 2px 10px rgba(0,0,0,0.01)'
+                  }}>
+                    <div style={{ padding: '25px 30px', display: 'flex', flexDirection: 'column', gap: '20px' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                         <div style={{ display: 'flex', gap: '20px', alignItems: 'center' }}>
+                            <div style={{ width: '50px', height: '50px', borderRadius: '14px', background: '#f8fafc', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '22px', border: '1px solid #f1f5f9' }}>
+                              📡
+                            </div>
+                            <div>
+                              <div style={{ fontSize: '16px', fontWeight: 950, color: '#1e293b' }}>{s.name.toUpperCase()}</div>
+                              <div style={{ fontSize: '10px', color: '#94a3b8', fontWeight: 800, marginTop: '4px', letterSpacing: '0.5px' }}>CHANNEL RECON: {s.contact}</div>
+                            </div>
+                         </div>
+                         
+                         <div style={{ display: 'flex', gap: '40px', alignItems: 'center' }}>
+                            <div style={{ textAlign: 'right' }}>
+                               <div style={{ fontSize: '20px', fontWeight: 950, color: '#0f52ba' }}>{s.patients.length}</div>
+                               <div style={{ fontSize: '9px', fontWeight: 950, color: '#cbd5e1', letterSpacing: '1.5px' }}>MISSIONS</div>
+                            </div>
+                            <button 
+                              onClick={() => setExpandedReferrer(isExpanded ? null : s.name)}
+                              style={{ 
+                                padding: '10px 20px', borderRadius: '12px', border: 'none', 
+                                background: isExpanded ? '#0f52ba' : '#f8fafc', 
+                                color: isExpanded ? 'white' : '#64748b',
+                                fontSize: '10px', fontWeight: 950, cursor: 'pointer',
+                                transition: 'all 0.2s', letterSpacing: '1px'
+                              }}
+                            >
+                              {isExpanded ? 'CLOSE LOGS' : 'ACCESS LOGS ↓'}
+                            </button>
+                         </div>
+                      </div>
+
+                      {/* Power Bar */}
+                      <div style={{ width: '100%', height: '6px', background: '#f8fafc', borderRadius: '10px', overflow: 'hidden' }}>
+                         <div style={{ width: `${percentage}%`, height: '100%', background: 'linear-gradient(90deg, #0f52ba, #00f2fe)', borderRadius: '10px' }}></div>
                       </div>
                     </div>
-                    <button 
-                      onClick={() => setExpandedReferrer(isExpanded ? null : s.name)}
-                      style={{ 
-                        padding: '8px 16px', borderRadius: '10px', border: 'none', 
-                        background: isExpanded ? '#0f52ba' : '#f8f9fa', 
-                        color: isExpanded ? 'white' : '#64748b',
-                        fontSize: '9px', fontWeight: 950, cursor: 'pointer',
-                        transition: 'all 0.2s', letterSpacing: '1px'
-                      }}
-                    >
-                      {isExpanded ? 'COMPLETE' : 'LOGS \u2193'}
-                    </button>
-                  </div>
-                </div>
 
-                {isExpanded && (
-                  <div style={{ padding: '0 25px 25px', background: '#fcfdfe' }}>
-                    <div style={{ 
-                      background: 'white', borderRadius: '12px', border: '1px solid rgba(15, 82, 186, 0.1)', 
-                      padding: '0', overflow: 'hidden'
-                    }}>
-                      <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-                        <thead style={{ background: '#f8f9fa' }}>
-                          <tr style={{ borderBottom: '1px solid #eee' }}>
-                            <th style={{ padding: '12px 20px', textAlign: 'left', fontSize: '9px', fontWeight: 900, color: '#aaa', letterSpacing: '1px' }}>MISSION ID</th>
-                            <th style={{ padding: '12px 20px', textAlign: 'left', fontSize: '9px', fontWeight: 900, color: '#aaa', letterSpacing: '1px' }}>TARGET NAME</th>
-                            <th style={{ padding: '12px 20px', textAlign: 'left', fontSize: '9px', fontWeight: 900, color: '#aaa', letterSpacing: '1px' }}>DEMO</th>
-                            <th style={{ padding: '12px 20px', textAlign: 'right', fontSize: '9px', fontWeight: 900, color: '#aaa', letterSpacing: '1px' }}>DEPLOYED</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {s.patients.map(p => (
-                            <tr key={p.id} style={{ borderBottom: '1px solid #f8f9fa' }}>
-                              <td style={{ padding: '14px 20px', fontSize: '11px', fontWeight: 900, color: '#0f52ba', fontFamily: 'monospace' }}>{p.id}</td>
-                              <td style={{ padding: '14px 20px', fontSize: '11px', fontWeight: 800, color: '#1a1a2e' }}>{p.name.toUpperCase()}</td>
-                              <td style={{ padding: '14px 20px', fontSize: '10px', color: '#64748b', fontWeight: 700 }}>{p.age}y / {p.gender[0]}</td>
-                              <td style={{ padding: '14px 20px', fontSize: '10px', color: '#94a3b8', textAlign: 'right', fontWeight: 800 }}>{p.registered}</td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    </div>
+                    {isExpanded && (
+                      <div style={{ padding: '0 30px 30px', background: '#fcfdfe', animation: 'slideDown 0.3s ease' }}>
+                        <div style={{ 
+                          background: 'white', borderRadius: '16px', border: '1px solid #edf2f7', 
+                          padding: '0', overflow: 'hidden', boxShadow: 'inset 0 2px 10px rgba(0,0,0,0.02)'
+                        }}>
+                          <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                            <thead style={{ background: '#f8fafc' }}>
+                              <tr style={{ borderBottom: '1px solid #eee' }}>
+                                <th style={{ padding: '15px 25px', textAlign: 'left', fontSize: '10px', fontWeight: 950, color: '#94a3b8', letterSpacing: '1.5px' }}>IDENTITY_UID</th>
+                                <th style={{ padding: '15px 25px', textAlign: 'left', fontSize: '10px', fontWeight: 950, color: '#94a3b8', letterSpacing: '1.5px' }}>TARGET_NAME</th>
+                                <th style={{ padding: '15px 25px', textAlign: 'left', fontSize: '10px', fontWeight: 950, color: '#94a3b8', letterSpacing: '1.5px' }}>BIO_METRICS</th>
+                                <th style={{ padding: '15px 25px', textAlign: 'right', fontSize: '10px', fontWeight: 950, color: '#94a3b8', letterSpacing: '1.5px' }}>DEPLOYMENT_DATE</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {s.patients.map(p => (
+                                <tr key={p.id} style={{ borderBottom: '1px solid #f8fafc' }}>
+                                  <td style={{ padding: '18px 25px', fontSize: '12px', fontWeight: 950, color: '#0f52ba', fontFamily: 'monospace' }}>{p.id}</td>
+                                  <td style={{ padding: '18px 25px', fontSize: '13px', fontWeight: 800, color: '#1e293b' }}>{p.name.toUpperCase()}</td>
+                                  <td style={{ padding: '18px 25px' }}>
+                                     <span style={{ fontSize: '11px', color: '#64748b', fontWeight: 700, background: '#f1f5f9', padding: '4px 10px', borderRadius: '8px' }}>
+                                       {p.age}Y / {p.gender.toUpperCase()}
+                                     </span>
+                                  </td>
+                                  <td style={{ padding: '18px 25px', fontSize: '12px', color: '#94a3b8', textAlign: 'right', fontWeight: 800 }}>{p.registered}</td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      </div>
+                    )}
                   </div>
-                )}
+                );
+              })}
+            </div>
+
+            {sources.length === 0 && (
+              <div style={{ padding: '120px 20px', textAlign: 'center', background: 'white', borderRadius: '30px', border: '1px dashed #e2e8f0' }}>
+                <div style={{ fontSize: '50px', marginBottom: '20px' }}>📡</div>
+                <div style={{ fontSize: '18px', fontWeight: 950, color: '#1e293b' }}>NO SIGNAL DETECTED</div>
+                <div style={{ fontSize: '12px', color: '#94a3b8', marginTop: '8px', maxWidth: '300px', margin: '8px auto', lineHeight: 1.6 }}>The temporal scan yielded zero acquisition units for this range. Synchronize with cloud registry to check for live signals.</div>
               </div>
-            );
-          })}
-        </div>
-
-        {sources.length === 0 && (
-          <div style={{ padding: '100px 20px', textAlign: 'center', background: 'white', borderRadius: '20px', border: '1px dashed #eee' }}>
-            <div style={{ fontSize: '42px', marginBottom: '15px' }}>📡</div>
-            <div style={{ fontSize: '16px', fontWeight: 950, color: '#1a1a2e' }}>NO SIGNAL DETECTED</div>
-            <div style={{ fontSize: '11px', color: '#888', marginTop: '5px' }}>Temporal scan in the current range yielded zero patient acquisition.</div>
-          </div>
+            )}
+          </>
         )}
       </div>
     );
@@ -1043,17 +1129,62 @@ export default function AdminBoard() {
 
   const renderUserManagement = () => (
     <div className="users-view">
-      <div className="board-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '30px' }}>
+      <div className="board-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '35px' }}>
         <div>
-          <h2 style={{ fontSize: '12px', fontWeight: 900, textTransform: 'uppercase', letterSpacing: '1px', color: '#888', marginBottom: '4px' }}>Hospital Personnel Roster</h2>
-          <p style={{ fontSize: '11px', color: '#aaa' }}>Active deployment and credential management for clinical staff.</p>
+          <h2 style={{ fontSize: '12px', fontWeight: 900, textTransform: 'uppercase', letterSpacing: '2px', color: '#0f52ba', marginBottom: '4px' }}>Hospital Personnel Roster</h2>
+          <p style={{ fontSize: '11px', color: '#888', fontWeight: 600 }}>Active deployment and credential management for clinical staff.</p>
         </div>
-        <button className="btn-primary" onClick={() => handleOpenUserDrawer()}>+ REGISTER PERSONNEL</button>
+        
+        <div style={{ display: 'flex', gap: '20px', alignItems: 'center' }}>
+          {/* Tactical Search bar */}
+          <div style={{ position: 'relative', width: '300px' }}>
+            <span style={{ position: 'absolute', left: '15px', top: '50%', transform: 'translateY(-50%)', opacity: 0.4 }}>🔍</span>
+            <input 
+              type="text" 
+              placeholder="SEARCH BY IDENTITY / ROLE..." 
+              value={personnelSearch}
+              onChange={e => setPersonnelSearch(e.target.value)}
+              style={{ 
+                width: '100%', padding: '12px 15px 12px 45px', borderRadius: '12px', border: '1px solid #eee', 
+                fontSize: '10px', fontWeight: 950, letterSpacing: '1px', outline: 'none',
+                transition: 'all 0.3s ease', boxShadow: '0 2px 10px rgba(0,0,0,0.02)'
+              }}
+              onFocus={(e) => { e.target.style.borderColor = '#0f52ba'; e.target.style.boxShadow = '0 4px 15px rgba(15, 82, 186, 0.1)'; }}
+              onBlur={(e) => { e.target.style.borderColor = '#eee'; e.target.style.boxShadow = '0 2px 10px rgba(0,0,0,0.02)'; }}
+            />
+          </div>
+          <button 
+            className="btn-primary" 
+            onClick={() => handleOpenUserDrawer()}
+            style={{ 
+              padding: '12px 24px', borderRadius: '12px', border: 'none', 
+              background: 'linear-gradient(90deg, #0f52ba 0%, #00f2fe 100%)', 
+              color: 'white', fontSize: '11px', fontWeight: 950, cursor: 'pointer',
+              boxShadow: '0 8px 20px rgba(15, 82, 186, 0.2)'
+            }}
+          >
+            + REGISTER PERSONNEL
+          </button>
+        </div>
       </div>
 
-      <div className="personnel-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: '20px' }}>
-        {loading && <div style={{ gridColumn: '1/-1', textAlign: 'center', padding: '40px', color: '#888' }}>SYNCHRONIZING PERSONNEL...</div>}
-        {!loading && personnel.map(u => {
+      <div className="personnel-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))', gap: '25px' }}>
+        {personnelLoading && (
+          <div style={{ gridColumn: '1/-1', textAlign: 'center', padding: '60px' }}>
+            <div className="pulse-loader"></div>
+            <p style={{ fontSize: '11px', fontWeight: 900, color: '#0f52ba', marginTop: '20px' }}>SYNCHRONIZING PERSONNEL...</p>
+          </div>
+        )}
+        
+        {!personnelLoading && filteredPersonnel.length === 0 && (
+          <div style={{ gridColumn: '1/-1', textAlign: 'center', padding: '100px 20px', border: '1px dashed #eee', borderRadius: '24px' }}>
+             <div style={{ fontSize: '40px', marginBottom: '15px' }}>👤</div>
+             <div style={{ fontSize: '14px', fontWeight: 950, color: '#1a1a2e' }}>NO PERSONNEL MATCHED</div>
+             <p style={{ fontSize: '11px', color: '#888', marginTop: '5px' }}>Your search query did not return any active staff signatures.</p>
+          </div>
+        )}
+
+        {!personnelLoading && filteredPersonnel.map(u => {
           const userRole = u.roles?.[0];
           const isSuper = userRole === 'admindoctor';
           const currentRole = currentUser.roles?.[0];
@@ -1069,85 +1200,83 @@ export default function AdminBoard() {
 
           return (
             <div key={u.id} className="personnel-card" style={{ 
-              background: 'white', borderRadius: '20px', border: '1px solid #eee', 
-              padding: '24px', position: 'relative', overflow: 'hidden',
-              boxShadow: '0 4px 15px rgba(0,0,0,0.03)', transition: 'all 0.3s ease'
+              background: 'white', borderRadius: '24px', border: '1px solid #eee', 
+              padding: '30px', position: 'relative', overflow: 'hidden',
+              boxShadow: '0 4px 20px rgba(0,0,0,0.02)', transition: 'all 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275)',
+              cursor: 'default'
             }}>
               {/* Tactical Accent */}
-              <div style={{ position: 'absolute', top: 0, left: 0, width: '4px', bottom: 0, background: roleMeta.color }}></div>
+              <div style={{ position: 'absolute', top: 0, left: 0, width: '6px', bottom: 0, background: roleMeta.color }}></div>
               
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '20px' }}>
-                <div style={{ display: 'flex', gap: '15px', alignItems: 'center' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '25px' }}>
+                <div style={{ display: 'flex', gap: '18px', alignItems: 'center' }}>
                   <div style={{ 
-                    width: '50px', height: '50px', borderRadius: '14px', 
+                    width: '60px', height: '60px', borderRadius: '18px', 
                     background: roleMeta.bg, color: roleMeta.color,
                     display: 'flex', alignItems: 'center', justifyContent: 'center',
-                    fontSize: '22px', border: `1px solid ${roleMeta.color}20`
+                    fontSize: '24px', border: `1px solid ${roleMeta.color}20`,
+                    boxShadow: `0 8px 20px ${roleMeta.color}10`
                   }}>
                     {u.name.charAt(0)}
                   </div>
                   <div>
-                    <div style={{ fontWeight: 950, color: '#1a1a2e', fontSize: '16px', letterSpacing: '-0.3px' }}>{u.name.toUpperCase()}</div>
-                    <span style={{ marginTop: '4px', fontSize: '8px', color: '#aaa', fontWeight: 800 }}>PRO-SECURE-DEPL-{u.id}</span>
+                    <div style={{ fontWeight: 950, color: '#1a1a2e', fontSize: '18px', letterSpacing: '-0.5px' }}>{u.name.toUpperCase()}</div>
+                    <span style={{ marginTop: '4px', fontSize: '9px', color: '#94a3b8', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '1px' }}>HUB_NODE_{u.id?.split('-')[0]}</span>
                   </div>
                 </div>
                 <div style={{ 
-                  padding: '4px 10px', borderRadius: '20px', background: roleMeta.bg, 
-                  color: roleMeta.color, fontSize: '9px', fontWeight: 900, letterSpacing: '1px' 
+                  padding: '6px 14px', borderRadius: '20px', background: roleMeta.bg, 
+                  color: roleMeta.color, fontSize: '10px', fontWeight: 950, letterSpacing: '1px' 
                 }}>
                   {ROLE_LABELS[userRole]?.toUpperCase()}
                 </div>
               </div>
 
-              <div style={{ background: '#f8f9fa', borderRadius: '12px', padding: '15px', marginBottom: '20px' }}>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                    <span style={{ fontSize: '9px', fontWeight: 900, color: '#aaa', letterSpacing: '1px' }}>SYSTEM IDENTITY</span>
-                    <span style={{ fontSize: '11px', fontWeight: 700, color: '#333' }}>{u.email}</span>
+              <div style={{ background: '#f8fafc', borderRadius: '16px', padding: '20px', marginBottom: '25px', border: '1px solid #f1f5f9' }}>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <span style={{ fontSize: '10px', fontWeight: 950, color: '#94a3b8', letterSpacing: '1px' }}>SYSTEM IDENTITY</span>
+                    <span style={{ fontSize: '12px', fontWeight: 800, color: '#1e293b' }}>{u.email}</span>
                   </div>
-                  <div style={{ borderTop: '1px solid #eee', paddingTop: '8px', display: 'flex', justifyContent: 'space-between' }}>
-                    <span style={{ fontSize: '9px', fontWeight: 900, color: '#aaa', letterSpacing: '1px' }}>ACCESS KEY</span>
-                    <span style={{ fontSize: '11px', fontWeight: 900, color: '#0f52ba', fontFamily: 'monospace' }}>{u.password}</span>
+                  <div style={{ borderTop: '1px solid #edf2f7', paddingTop: '12px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <span style={{ fontSize: '10px', fontWeight: 950, color: '#94a3b8', letterSpacing: '1px' }}>ACCESS KEY</span>
+                    <span style={{ fontSize: '12px', fontWeight: 950, color: '#0f52ba', fontFamily: 'monospace' }}>{u.password}</span>
                   </div>
                 </div>
               </div>
 
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <div style={{ display: 'flex', gap: '15px' }}>
+                <div style={{ display: 'flex', gap: '20px' }}>
                   <div style={{ display: 'flex', flexDirection: 'column' }}>
-                     <span style={{ fontSize: '8px', fontWeight: 900, color: '#aaa' }}>LAST ACTIVE</span>
-                     <span style={{ fontSize: '10px', fontWeight: 900, color: u.lastLogin ? '#1a1a2e' : '#ccc' }}>{u.lastLogin || 'OFFLINE'}</span>
+                     <span style={{ fontSize: '9px', fontWeight: 950, color: '#cbd5e1', letterSpacing: '0.5px' }}>LAST ACTIVE</span>
+                     <span style={{ fontSize: '11px', fontWeight: 950, color: u.lastLogin ? '#1e293b' : '#cbd5e1' }}>{u.lastLogin ? new Date(u.lastLogin).toLocaleDateString() : 'OFFLINE'}</span>
                   </div>
-                  <div style={{ width: '1px', height: '20px', background: '#eee' }}></div>
+                  <div style={{ width: '1px', height: '24px', background: '#edf2f7' }}></div>
                   <div style={{ display: 'flex', flexDirection: 'column' }}>
-                     <span style={{ fontSize: '8px', fontWeight: 900, color: '#aaa' }}>STATUS</span>
-                     <span style={{ fontSize: '10px', fontWeight: 900, color: u.status === 'active' ? '#2ecc71' : '#ccc' }}>{(u.status || 'ACTIVE').toUpperCase()}</span>
+                     <span style={{ fontSize: '9px', fontWeight: 950, color: '#cbd5e1', letterSpacing: '0.5px' }}>STATUS</span>
+                     <span style={{ fontSize: '11px', fontWeight: 950, color: u.status === 'active' ? '#2ecc71' : '#cbd5e1' }}>{(u.status || 'ACTIVE').toUpperCase()}</span>
                   </div>
                 </div>
 
-                <div style={{ display: 'flex', gap: '8px' }}>
+                <div style={{ display: 'flex', gap: '10px' }}>
                   {canAdminEdit && (
                     <>
                       <button 
                         className="btn-logout" 
-                        style={{ padding: '8px 16px', borderRadius: '10px', fontSize: '10px', fontWeight: 950, border: '1px solid #dee2e6' }} 
+                        style={{ padding: '10px 18px', borderRadius: '12px', fontSize: '11px', fontWeight: 950, border: '1px solid #f1f5f9', background: 'white', cursor: 'pointer' }} 
                         onClick={() => handleOpenUserDrawer(u)}
                       >
                         EDIT CONFIG
                       </button>
-                      <button 
-                        style={{ width: '34px', height: '34px', borderRadius: '10px', background: '#fff5f5', border: '1px solid #fecaca', color: '#e74c3c', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }} 
-                        onClick={() => handleDeleteUser(u.id, u.roles)}
-                      >
-                        🗑️
-                      </button>
+                      {u.id !== currentUser.id && (
+                        <button 
+                          style={{ width: '38px', height: '38px', borderRadius: '12px', background: '#fff5f5', border: '1px solid #fecaca', color: '#e74c3c', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '16px' }} 
+                          onClick={() => handleDeleteUser(u.id, u.roles)}
+                        >
+                          🗑️
+                        </button>
+                      )}
                     </>
-                  )}
-                  {!canAdminEdit && (
-                    <div style={{ padding: '8px 12px', background: '#f8f9fa', borderRadius: '10px', border: '1px solid #eee', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                      <span style={{ fontSize: '12px' }}>🔒</span>
-                      <span style={{ fontSize: '9px', fontWeight: 900, color: '#aaa', letterSpacing: '1px' }}>PROTECTED ENTRY</span>
-                    </div>
                   )}
                 </div>
               </div>
@@ -1227,6 +1356,8 @@ export default function AdminBoard() {
       {activeTab === 'REFERRAL INTEL' && renderReferralIntel()}
       {activeTab === 'PERSONNEL' && renderUserManagement()}
       {activeTab === 'HOSPITAL' && renderHospitalSettings()}
+
+      {isHospitalDrawerOpen && renderHospitalDrawer()}
 
       {/* Personnel Roster Drawer: Redesigned Tactical HUD */}
       {isUserDrawerOpen && (
@@ -1331,6 +1462,13 @@ export default function AdminBoard() {
                                <label style={{ fontSize: '10px', fontWeight: 950, color: '#aaa', textTransform: 'uppercase', letterSpacing: '1px', display: 'block', marginBottom: '10px' }}>System UID (Email)</label>
                                <input type="email" required value={editUser?.email} onChange={e => setEditUser({...editUser, email: e.target.value})} style={{ width: '100%', border: 'none', borderBottom: '1px solid #f0f0f0', fontSize: '14px', fontWeight: 700, padding: '10px 0', outline: 'none' }} />
                            </div>
+                           <div className="form-group" style={{ flex: 1 }}>
+                               <label style={{ fontSize: '10px', fontWeight: 950, color: '#aaa', textTransform: 'uppercase', letterSpacing: '1px', display: 'block', marginBottom: '10px' }}>Mobile Contact</label>
+                               <input type="tel" required placeholder="+91 000-000-0000" value={editUser?.mobile} onChange={e => setEditUser({...editUser, mobile: e.target.value})} style={{ width: '100%', border: 'none', borderBottom: '1px solid #f0f0f0', fontSize: '14px', fontWeight: 700, padding: '10px 0', outline: 'none' }} />
+                           </div>
+                        </div>
+
+                        <div style={{ display: 'flex', gap: '30px', marginBottom: '35px' }}>
                            <div className="form-group" style={{ flex: 1, position: 'relative' }}>
                                <label style={{ fontSize: '10px', fontWeight: 950, color: '#aaa', textTransform: 'uppercase', letterSpacing: '1px', display: 'block', marginBottom: '10px' }}>Access Crypt (Password)</label>
                                <input type={showPasswords ? "text" : "password"} required value={editUser?.password} onChange={e => setEditUser({...editUser, password: e.target.value})} style={{ width: '100%', border: 'none', borderBottom: '1px solid #f0f0f0', fontSize: '14px', fontWeight: 700, padding: '10px 0', outline: 'none' }} />
@@ -1455,11 +1593,6 @@ export default function AdminBoard() {
                                <label style={{ fontSize: '10px', fontWeight: 950, color: '#aaa', textTransform: 'uppercase', letterSpacing: '1px', display: 'block', marginBottom: '10px' }}>Primary Professional Degree</label>
                                <input type="text" placeholder="MBBS, MD" value={editUser?.degree} onChange={e => setEditUser({...editUser, degree: e.target.value})} style={{ width: '100%', border: 'none', borderBottom: '1px solid #f0f0f0', fontSize: '14px', fontWeight: 700, padding: '10px 0', outline: 'none' }} />
                            </div>
-                        </div>
-
-                        <div className="form-group" style={{ marginBottom: '30px' }}>
-                           <label style={{ fontSize: '10px', fontWeight: 950, color: '#aaa', textTransform: 'uppercase', letterSpacing: '1px', display: 'block', marginBottom: '10px' }}>Verified Contact Node</label>
-                           <input type="text" placeholder="+91 000-000-0000" value={editUser?.contact} onChange={e => setEditUser({...editUser, contact: e.target.value})} style={{ width: '100%', border: 'none', borderBottom: '1px solid #f0f0f0', fontSize: '15px', fontWeight: 700, padding: '10px 0', outline: 'none' }} />
                         </div>
                       </div>
                     )}

@@ -1,9 +1,15 @@
 import axios from 'axios';
-
+import { Platform } from 'react-native';
 import * as SecureStore from 'expo-secure-store';
 
+// Use CORS proxy for web testing only
+const BASE_URL = 'https://1radapi-bch4ere7a6cmgkap.centralindia-01.azurewebsites.net/api/v1';
+const API_URL = Platform.OS === 'web' 
+  ? `https://cors-anywhere.herokuapp.com/${BASE_URL}` // CORS proxy for web testing
+  : BASE_URL; // Direct URL for mobile
+
 const apiClient = axios.create({
-  baseURL: 'https://1radapi-bch4ere7a6cmgkap.centralindia-01.azurewebsites.net/api/v1',
+  baseURL: API_URL,
   headers: {
     'Content-Type': 'application/json',
   },

@@ -92,6 +92,9 @@ export default function LoginScreen({ navigation, route }) {
       setError(result.error || 'AUTHENTICATION FAILED');
       setErrorCode(result.errorCode);
       setAccountStatus(result.accountStatus);
+    } else {
+      // Login successful - navigation will happen automatically via AuthContext
+      console.log('[LOGIN] Login successful, user state updated');
     }
   };
 
