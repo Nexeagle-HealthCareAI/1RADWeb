@@ -54,9 +54,9 @@ export function AuthProvider({ children }) {
       if (!response.ok) {
         return { 
           success: false, 
-          error: data.error || `HTTP ${response.status}`,
-          errorCode: data.errorCode,
-          accountStatus: data.accountStatus
+          error: data.error || data.Error || `HTTP ${response.status}`,
+          errorCode: data.errorCode || data.ErrorCode,
+          accountStatus: data.accountStatus || data.AccountStatus
         };
       }
       
@@ -86,45 +86,49 @@ export function AuthProvider({ children }) {
     console.log(`[MOBILE AUTH] Verifying OTP for ${mobile}`);
     try {
       const response = await apiClient.post('/auth/otp/verify', { mobile, code }); // Backend expects mobile/code
-      const { isRegistered, token: authToken, refreshToken, user: backendUser } = response.data;
-      
-      if (isRegistered && backendUser) {
-        const mappedUser = {
-          id: backendUser.userId,
-          name: backendUser.fullName,
-          email: backendUser.email,
-          mobile: backendUser.mobile,
-          roles: backendUser.roleName.split(',').map(r => r.trim().toLowerCase())
-        };
-
-        const mappedCenters = (backendUser.authorizedHospitals || []).map(h => ({
-          id: h.hospitalId,
-          name: h.hospitalName,
-          role: h.roleName.toLowerCase(),
-          isDefault: h.isDefault
-        }));
-
-        setToken(authToken);
-        setUser(mappedUser);
-        setCenters(mappedCenters);
+        const data = response.data;
+        const isRegistered = data.isRegistered !== undefined ? data.isRegistered : data.IsRegistered;
+        const authToken = data.token || data.Token;
+        const refreshToken = data.refreshToken || data.RefreshToken;
+        const backendUser = data.user || data.User;
         
-        const defaultCenter = mappedCenters.find(c => c.isDefault) || mappedCenters[0];
-        if (defaultCenter) setActiveCenter(defaultCenter.id);
-
-        setIsAdmin(mappedUser.roles.some(r => ['admin', 'admindoctor'].includes(r)));
-
-        // Persist
-        await SecureStore.setItemAsync('1rad_token', authToken);
-        await SecureStore.setItemAsync('1rad_refresh_token', refreshToken);
-        await SecureStore.setItemAsync('1rad_user', JSON.stringify(mappedUser));
-        await SecureStore.setItemAsync('1rad_centers', JSON.stringify(mappedCenters));
-        if (defaultCenter) await SecureStore.setItemAsync('1rad_active_center_id', defaultCenter.id);
-
-        return { success: true, isRegistered: true, user: mappedUser };
-      } else {
-        // Not registered, or backend structure mismatch
-        return { success: true, isRegistered: false, token: authToken };
-      }
+        if (isRegistered && backendUser) {
+          const mappedUser = {
+            id: backendUser.userId || backendUser.UserId,
+            name: backendUser.fullName || backendUser.FullName,
+            email: backendUser.email || backendUser.Email,
+            mobile: backendUser.mobile || backendUser.Mobile,
+            roles: (backendUser.roleName || backendUser.RoleName)?.split(',').map(r => r.trim().toLowerCase()) || []
+          };
+  
+          const mappedCenters = (backendUser.authorizedHospitals || backendUser.AuthorizedHospitals || []).map(h => ({
+            id: h.hospitalId || h.HospitalId,
+            name: h.hospitalName || h.HospitalName,
+            role: (h.roleName || h.RoleName)?.toLowerCase(),
+            isDefault: h.isDefault !== undefined ? h.isDefault : h.IsDefault
+          }));
+  
+          setToken(authToken);
+          setUser(mappedUser);
+          setCenters(mappedCenters);
+          
+          const defaultCenter = mappedCenters.find(c => c.isDefault) || mappedCenters[0];
+          if (defaultCenter) setActiveCenter(defaultCenter.id);
+  
+          setIsAdmin(mappedUser.roles.some(r => ['admin', 'admindoctor'].includes(r)));
+  
+          // Persist
+          await SecureStore.setItemAsync('1rad_token', authToken);
+          await SecureStore.setItemAsync('1rad_refresh_token', refreshToken);
+          await SecureStore.setItemAsync('1rad_user', JSON.stringify(mappedUser));
+          await SecureStore.setItemAsync('1rad_centers', JSON.stringify(mappedCenters));
+          if (defaultCenter) await SecureStore.setItemAsync('1rad_active_center_id', defaultCenter.id);
+  
+          return { success: true, isRegistered: true, user: mappedUser };
+        } else {
+          // Not registered
+          return { success: true, isRegistered: false, token: authToken };
+        }
     } catch (error) {
       console.error('[MOBILE AUTH] Verification failed:', error);
       return { success: false, error: error.response?.data?.message || 'Verification failed.' };
@@ -135,9 +139,18 @@ export function AuthProvider({ children }) {
     console.log(`[MOBILE AUTH] Login attempt for ${identifier}`);
     try {
       const response = await apiClient.post('/auth/login', { identifier, password });
-      const { userProfile, accessToken, refreshToken, success, error, errorCode, accountStatus } = response.data;
       
-      if (!success) {
+      // Support both camelCase and PascalCase
+      const data = response.data;
+      const success = data.success !== undefined ? data.success : data.Success;
+      const error = data.error || data.Error;
+      const errorCode = data.errorCode || data.ErrorCode;
+      const accountStatus = data.accountStatus || data.AccountStatus;
+      const userProfile = data.userProfile || data.UserProfile;
+      const accessToken = data.accessToken || data.AccessToken;
+      const refreshToken = data.refreshToken || data.RefreshToken;
+      
+      if (success === false) {
         return { 
           success: false, 
           error: error || 'Authentication failed.', 
@@ -147,17 +160,17 @@ export function AuthProvider({ children }) {
       }
 
       const mappedUser = {
-        id: userProfile.userId,
-        name: userProfile.fullName,
-        email: userProfile.email,
-        roles: userProfile.authorizedHospitals[0]?.roleName.split(',').map(r => r.trim().toLowerCase()) || []
+        id: userProfile.userId || userProfile.UserId,
+        name: userProfile.fullName || userProfile.FullName,
+        email: userProfile.email || userProfile.Email,
+        roles: (userProfile.authorizedHospitals || userProfile.AuthorizedHospitals)[0]?.roleName?.split(',').map(r => r.trim().toLowerCase()) || []
       };
 
-      const mappedCenters = userProfile.authorizedHospitals.map(h => ({
-        id: h.hospitalId,
-        name: h.hospitalName,
-        role: h.roleName.toLowerCase(),
-        isDefault: h.isDefault
+      const mappedCenters = (userProfile.authorizedHospitals || userProfile.AuthorizedHospitals).map(h => ({
+        id: h.hospitalId || h.HospitalId,
+        name: h.hospitalName || h.HospitalName,
+        role: (h.roleName || h.RoleName).toLowerCase(),
+        isDefault: h.isDefault !== undefined ? h.isDefault : h.IsDefault
       }));
 
       setToken(accessToken);
@@ -180,11 +193,15 @@ export function AuthProvider({ children }) {
     } catch (error) {
       console.error('[MOBILE AUTH] Login failed:', error);
       const resp = error.response?.data;
+      if (resp) {
+        console.log('[MOBILE AUTH] Error details:', JSON.stringify(resp));
+      }
+      
       return { 
         success: false, 
-        error: resp?.error || 'Authentication failed.',
-        errorCode: resp?.errorCode,
-        accountStatus: resp?.accountStatus
+        error: resp?.error || resp?.Error || 'Authentication failed.',
+        errorCode: resp?.errorCode || resp?.ErrorCode,
+        accountStatus: resp?.accountStatus || resp?.AccountStatus
       };
     }
   }, []);
@@ -265,7 +282,7 @@ export function AuthProvider({ children }) {
 
   const switchCenter = useCallback(async (hospitalId) => {
     try {
-      const response = await apiClient.post('/auth/switch-context', { hospitalId });
+      const response = await apiClient.post('/auth/switch-context', { targetHospitalId: hospitalId });
       const { accessToken, roles } = response.data;
       
       setToken(accessToken);
