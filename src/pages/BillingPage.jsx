@@ -11,6 +11,25 @@ export default function BillingPage() {
   const [selectedInvoice, setSelectedInvoice] = useState(null);
   const [isInvoiceDrawerOpen, setIsInvoiceDrawerOpen] = useState(false);
   const [isNewInvoiceDrawerOpen, setIsNewInvoiceDrawerOpen] = useState(false);
+  const [isExpenseDrawerOpen, setIsExpenseDrawerOpen] = useState(false);
+  const [activeTab, setActiveTab] = useState('REVENUE'); // 'REVENUE', 'EXPENDITURE'
+  
+  // Expenses State
+  const [expenses, setExpenses] = useState([]);
+  const [selectedExpense, setSelectedExpense] = useState(null);
+  const [expenseCategoryFilter, setExpenseCategoryFilter] = useState('ALL');
+  const [isNewExpenseDrawerOpen, setIsNewExpenseDrawerOpen] = useState(false);
+  const [newExpenseData, setNewExpenseData] = useState({
+    description: '',
+    category: 'Maintenance',
+    amount: 0,
+    taxAmount: 0,
+    paymentMode: 'CASH',
+    vendorName: '',
+    referenceNumber: '',
+    costCenter: 'General',
+    transactionDate: new Date().toISOString().split('T')[0]
+  });
   
   // Patient Search State
   const [patientSearchQuery, setPatientSearchQuery] = useState('');
@@ -80,6 +99,17 @@ export default function BillingPage() {
     }
   }, []);
 
+  const fetchExpenses = useCallback(async () => {
+    try {
+      const res = await apiClient.get('/finance/expenses', {
+        params: { search: searchTerm, category: expenseCategoryFilter }
+      });
+      setExpenses(res.data);
+    } catch (err) {
+      console.error('[FINANCE] Expenses fetch failed', err);
+    }
+  }, [searchTerm, expenseCategoryFilter]);
+
   const fetchPendingBillables = useCallback(async (patientId) => {
     try {
       const res = await apiClient.get(`/finance/pending-billables/${patientId}`);
@@ -94,7 +124,8 @@ export default function BillingPage() {
     fetchStats();
     fetchRegistry();
     fetchMatrix();
-  }, [fetchInvoices, fetchStats, fetchRegistry, fetchMatrix]);
+    fetchExpenses();
+  }, [fetchInvoices, fetchStats, fetchRegistry, fetchMatrix, fetchExpenses]);
 
   // Handle window resize for responsive layout
   useEffect(() => {
@@ -284,6 +315,30 @@ export default function BillingPage() {
       console.error('[FINANCE] Invoice creation failed', err);
       const errorMsg = err.response?.data?.error || err.response?.data?.message || 'SYSTEM FAILURE: Failed to deploy invoice metadata.';
       alert(errorMsg);
+    }
+  };
+
+  const handleRecordExpense = async (e) => {
+    e.preventDefault();
+    try {
+      await apiClient.post('/finance/expense', {
+        ...newExpenseData,
+        amount: Number(newExpenseData.amount),
+        taxAmount: Number(newExpenseData.taxAmount)
+      });
+      setIsNewExpenseDrawerOpen(false);
+      setNewExpenseData({
+        description: '', category: 'Maintenance', amount: 0, taxAmount: 0,
+        paymentMode: 'CASH', vendorName: '', referenceNumber: '', costCenter: 'General',
+        transactionDate: new Date().toISOString().split('T')[0]
+      });
+      fetchExpenses();
+      fetchStats();
+      fetchMatrix();
+      alert('EXPENSE RECORDED: Outbound cashflow successfully registered.');
+    } catch (err) {
+      console.error('[FINANCE] Expense recording failed', err);
+      alert('ERORR: Failed to record expenditure.');
     }
   };
 
@@ -498,6 +553,133 @@ export default function BillingPage() {
       </div>
     );
   };
+
+  const renderNewExpenseDrawer = () => (
+    <div className="drawer-overlay" onClick={() => setIsNewExpenseDrawerOpen(false)} style={{ backdropFilter: 'blur(8px)', background: 'rgba(10, 22, 40, 0.4)', zIndex: 10000 }}>
+      <div className="drawer-content" style={{ padding: 0, width: '550px', background: 'white' }} onClick={e => e.stopPropagation()}>
+        <div style={{ padding: '35px', background: 'linear-gradient(135deg, #e74c3c 0%, #922b21 100%)', color: 'white' }}>
+           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+              <div>
+                 <h2 style={{ fontSize: '11px', fontWeight: 950, color: 'rgba(255,255,255,0.7)', letterSpacing: '3px', textTransform: 'uppercase', marginBottom: '8px' }}>Expenditure Logging</h2>
+                 <div style={{ fontSize: '24px', fontWeight: 950, letterSpacing: '-1px' }}>RECORD INSTITUTIONAL EXPENSE</div>
+              </div>
+              <button 
+                onClick={() => setIsNewExpenseDrawerOpen(false)}
+                style={{ background: 'none', border: 'none', color: 'white', fontSize: '24px', cursor: 'pointer', opacity: 0.7, padding: '5px' }}
+              >✕</button>
+           </div>
+        </div>
+
+        <div style={{ padding: '35px' }}>
+           <form onSubmit={handleRecordExpense}>
+              <div style={{ marginBottom: '25px' }}>
+                 <label style={{ fontSize: '10px', fontWeight: 950, color: '#94a3b8', letterSpacing: '1px', display: 'block', marginBottom: '10px' }}>LOG_DESCRIPTION</label>
+                 <input 
+                    type="text" required placeholder="e.g., Monthly Electricity Bill, Reagent Kit Purchase..." 
+                    value={newExpenseData.description}
+                    onChange={e => setNewExpenseData({ ...newExpenseData, description: e.target.value })}
+                    style={{ width: '100%', padding: '14px', borderRadius: '12px', border: '1px solid #eee', fontSize: '12px', fontWeight: 700 }}
+                 />
+              </div>
+
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px', marginBottom: '25px' }}>
+                 <div>
+                    <label style={{ fontSize: '10px', fontWeight: 950, color: '#94a3b8', display: 'block', marginBottom: '10px' }}>CATEGORY</label>
+                    <select 
+                      value={newExpenseData.category}
+                      onChange={e => setNewExpenseData({ ...newExpenseData, category: e.target.value })}
+                      style={{ width: '100%', padding: '14px', borderRadius: '12px', border: '1px solid #eee', fontSize: '12px', fontWeight: 700 }}
+                    >
+                       <option value="Maintenance">Maintenance</option>
+                       <option value="Staff">Staff / Salaries</option>
+                       <option value="Utilities">Utilities</option>
+                       <option value="Reagents">Clinical Reagents</option>
+                       <option value="Marketing">Marketing</option>
+                       <option value="Rent">Rent</option>
+                       <option value="Equipment">Equipment</option>
+                       <option value="Other">Other</option>
+                    </select>
+                 </div>
+                 <div>
+                    <label style={{ fontSize: '10px', fontWeight: 950, color: '#94a3b8', display: 'block', marginBottom: '10px' }}>COST_CENTER</label>
+                    <select 
+                      value={newExpenseData.costCenter}
+                      onChange={e => setNewExpenseData({ ...newExpenseData, costCenter: e.target.value })}
+                      style={{ width: '100%', padding: '14px', borderRadius: '12px', border: '1px solid #eee', fontSize: '12px', fontWeight: 700 }}
+                    >
+                       <option value="General">General Administration</option>
+                       <option value="Radiology">Radiology Wing</option>
+                       <option value="Lab">Pathology Lab</option>
+                       <option value="OPD">OPD Services</option>
+                       <option value="Pharmacy">Pharmacy</option>
+                    </select>
+                 </div>
+              </div>
+
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px', marginBottom: '25px' }}>
+                 <div>
+                    <label style={{ fontSize: '10px', fontWeight: 950, color: '#94a3b8', display: 'block', marginBottom: '10px' }}>QUANTUM (AMOUNT)</label>
+                    <input 
+                      type="number" required placeholder="₹ 0.00" 
+                      value={newExpenseData.amount}
+                      onChange={e => setNewExpenseData({ ...newExpenseData, amount: e.target.value })}
+                      style={{ width: '100%', padding: '14px', borderRadius: '12px', border: '1px solid #eee', fontSize: '12px', fontWeight: 950 }}
+                    />
+                 </div>
+                 <div>
+                    <label style={{ fontSize: '10px', fontWeight: 950, color: '#94a3b8', display: 'block', marginBottom: '10px' }}>TRANSACTION_DATE</label>
+                    <input 
+                      type="date" required
+                      value={newExpenseData.transactionDate}
+                      onChange={e => setNewExpenseData({ ...newExpenseData, transactionDate: e.target.value })}
+                      style={{ width: '100%', padding: '14px', borderRadius: '12px', border: '1px solid #eee', fontSize: '12px', fontWeight: 700 }}
+                    />
+                 </div>
+              </div>
+
+              <div style={{ marginBottom: '25px' }}>
+                 <label style={{ fontSize: '10px', fontWeight: 950, color: '#94a3b8', display: 'block', marginBottom: '10px' }}>VENDOR_IDENTITY & REFERENCE</label>
+                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px' }}>
+                    <input 
+                      type="text" placeholder="Vendor Name" 
+                      value={newExpenseData.vendorName}
+                      onChange={e => setNewExpenseData({ ...newExpenseData, vendorName: e.target.value })}
+                      style={{ width: '100%', padding: '14px', borderRadius: '12px', border: '1px solid #eee', fontSize: '12px', fontWeight: 700 }}
+                    />
+                    <input 
+                      type="text" placeholder="Ref No / Bill No" 
+                      value={newExpenseData.referenceNumber}
+                      onChange={e => setNewExpenseData({ ...newExpenseData, referenceNumber: e.target.value })}
+                      style={{ width: '100%', padding: '14px', borderRadius: '12px', border: '1px solid #eee', fontSize: '12px', fontWeight: 700 }}
+                    />
+                 </div>
+              </div>
+
+              <div style={{ marginBottom: '30px' }}>
+                 <label style={{ fontSize: '10px', fontWeight: 950, color: '#94a3b8', display: 'block', marginBottom: '10px' }}>PAYMENT_PROTOCOL</label>
+                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '10px' }}>
+                    {['CASH', 'UPI', 'BANK_TRANSFER'].map(m => (
+                      <button 
+                        key={m} type="button"
+                        onClick={() => setNewExpenseData({ ...newExpenseData, paymentMode: m })}
+                        style={{ 
+                          padding: '12px', borderRadius: '12px', border: newExpenseData.paymentMode === m ? '2px solid #e74c3c' : '1px solid #e2e8f0',
+                          background: newExpenseData.paymentMode === m ? '#fef2f2' : 'white', color: newExpenseData.paymentMode === m ? '#e74c3c' : '#64748b',
+                          fontSize: '10px', fontWeight: 950, cursor: 'pointer'
+                        }}
+                      >{m.replace('_', ' ')}</button>
+                    ))}
+                 </div>
+              </div>
+
+              <button type="submit" style={{ width: '100%', padding: '18px', borderRadius: '16px', border: 'none', background: '#e74c3c', color: 'white', fontWeight: 950, cursor: 'pointer', boxShadow: '0 8px 25px rgba(231, 76, 60, 0.3)' }}>
+                 AUTHORIZE EXPENDITURE & SAVE
+              </button>
+           </form>
+        </div>
+      </div>
+    </div>
+  );
 
   const renderNewInvoiceDrawer = () => (
     <div className="drawer-overlay" onClick={() => setIsNewInvoiceDrawerOpen(false)} style={{ backdropFilter: 'blur(8px)', background: 'rgba(10, 22, 40, 0.4)', zIndex: 10000 }}>
@@ -757,32 +939,48 @@ export default function BillingPage() {
              >
                ⚡ EXPORT FISCAL DATA
              </button>
-             {localStorage.getItem('1rad_invoices') && (
-               <button 
-                 onClick={handleSyncLegacyData}
-                 disabled={isSyncing}
-                 style={{ 
-                   padding: '12px 24px', borderRadius: '12px', border: '1px solid #e2e8f0', 
-                   background: '#f8fafc', color: '#0f52ba', fontSize: '11px', fontWeight: 950, cursor: 'pointer',
-                 }}
-               >
-                 {isSyncing ? 'SYNCING...' : '🔄 SYNC LOCAL'}
-               </button>
-             )}
              <button 
-               onClick={() => setIsNewInvoiceDrawerOpen(true)}
-               style={{ padding: '12px 24px', borderRadius: '12px', border: 'none', background: '#0f52ba', color: 'white', fontWeight: 800, fontSize: '11px', cursor: 'pointer', boxShadow: '0 8px 20px rgba(15, 82, 186, 0.2)' }}
+               onClick={() => activeTab === 'REVENUE' ? setIsNewInvoiceDrawerOpen(true) : setIsNewExpenseDrawerOpen(true)}
+               style={{ padding: '12px 24px', borderRadius: '12px', border: 'none', background: activeTab === 'REVENUE' ? '#0f52ba' : '#e74c3c', color: 'white', fontWeight: 800, fontSize: '11px', cursor: 'pointer', boxShadow: `0 8px 20px ${activeTab === 'REVENUE' ? 'rgba(15, 82, 186, 0.2)' : 'rgba(231, 76, 60, 0.2)'}` }}
              >
-               + NEW MANUAL INVOICE
+               {activeTab === 'REVENUE' ? '+ NEW MANUAL INVOICE' : '+ RECORD NEW EXPENSE'}
              </button>
           </div>
         </div>
       </div>
 
+      {/* Tab Control */}
+      <div style={{ display: 'flex', gap: '10px', marginBottom: '30px' }}>
+          <button 
+            onClick={() => setActiveTab('REVENUE')}
+            style={{ 
+              padding: '12px 25px', borderRadius: '12px', border: 'none', fontSize: '11px', fontWeight: 950,
+              background: activeTab === 'REVENUE' ? 'linear-gradient(135deg, #0f52ba 0%, #061a40 100%)' : 'white',
+              color: activeTab === 'REVENUE' ? 'white' : '#64748b',
+              boxShadow: activeTab === 'REVENUE' ? '0 10px 25px rgba(15, 82, 186, 0.2)' : 'none',
+              cursor: 'pointer', transition: 'all 0.3s'
+            }}
+          >
+            🛰️ REVENUE_STREAM
+          </button>
+          <button 
+            onClick={() => setActiveTab('EXPENDITURE')}
+            style={{ 
+              padding: '12px 25px', borderRadius: '12px', border: 'none', fontSize: '11px', fontWeight: 950,
+              background: activeTab === 'EXPENDITURE' ? 'linear-gradient(135deg, #e74c3c 0%, #922b21 100%)' : 'white',
+              color: activeTab === 'EXPENDITURE' ? 'white' : '#64748b',
+              boxShadow: activeTab === 'EXPENDITURE' ? '0 10px 25px rgba(231, 76, 60, 0.2)' : 'none',
+              cursor: 'pointer', transition: 'all 0.3s'
+            }}
+          >
+            📉 EXPENDITURE_LOG
+          </button>
+      </div>
+
       {/* Filter Matrix Controls */}
       <div className="filter-matrix" style={{ display: 'flex', gap: '30px', marginBottom: '30px', background: '#f1f5f9', padding: '15px 25px', borderRadius: '18px', border: '1px solid #e2e8f0', alignItems: 'center' }}>
          <div style={{ display: 'flex', alignItems: 'center', gap: '15px' }}>
-            <span style={{ fontSize: '10px', fontWeight: 950, color: '#64748b', letterSpacing: '1px' }}>TEMPORAL_FILTER:</span>
+            <span style={{ fontSize: '10px', fontWeight: 950, color: '#64748b', letterSpacing: '1px' }}>{activeTab}_TEMPORAL_FILTER:</span>
             <div style={{ display: 'flex', background: 'white', padding: '3px', borderRadius: '10px', border: '1px solid #e2e8f0' }}>
                {['TODAY', 'PAST', 'ALL'].map(t => (
                  <button 
@@ -790,7 +988,7 @@ export default function BillingPage() {
                   onClick={() => setTimeFilter(t)}
                   style={{ 
                     padding: '8px 16px', borderRadius: '8px', border: 'none', fontSize: '9px', fontWeight: 950,
-                    background: timeFilter === t ? 'linear-gradient(135deg, #0f52ba 0%, #061a40 100%)' : 'transparent',
+                    background: timeFilter === t ? (activeTab === 'REVENUE' ? 'linear-gradient(135deg, #0f52ba 0%, #061a40 100%)' : 'linear-gradient(135deg, #e74c3c 0%, #922b21 100%)') : 'transparent',
                     color: timeFilter === t ? 'white' : '#64748b',
                     cursor: 'pointer', transition: 'all 0.2s'
                   }}
@@ -798,6 +996,26 @@ export default function BillingPage() {
                ))}
             </div>
          </div>
+
+         {activeTab === 'EXPENDITURE' && (
+           <div style={{ display: 'flex', alignItems: 'center', gap: '15px' }}>
+              <span style={{ fontSize: '10px', fontWeight: 950, color: '#64748b', letterSpacing: '1px' }}>CATEGORY_PROTOCOL:</span>
+              <div style={{ display: 'flex', background: 'white', padding: '3px', borderRadius: '10px', border: '1px solid #e2e8f0' }}>
+                 {['ALL', 'Maintenance', 'Staff', 'Utilities', 'Reagents'].map(c => (
+                   <button 
+                    key={c}
+                    onClick={() => setExpenseCategoryFilter(c)}
+                    style={{ 
+                      padding: '8px 16px', borderRadius: '8px', border: 'none', fontSize: '9px', fontWeight: 950,
+                      background: expenseCategoryFilter === c ? '#e74c3c' : 'transparent',
+                      color: expenseCategoryFilter === c ? 'white' : '#64748b',
+                      cursor: 'pointer', transition: 'all 0.2s'
+                    }}
+                   >{c.toUpperCase()}</button>
+                 ))}
+              </div>
+           </div>
+         )}
 
          <div style={{ width: '1px', height: '30px', background: '#cbd5e1' }}></div>
 
@@ -830,68 +1048,93 @@ export default function BillingPage() {
       <div className="kpi-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '25px', marginBottom: '40px' }}>
         <div className="kpi-card" style={{ background: 'white', padding: '25px', borderRadius: '24px', border: '1px solid #e2e8f0', boxShadow: '0 4px 20px rgba(0,0,0,0.02)' }}>
           <p style={{ fontSize: '11px', fontWeight: 950, color: '#94a3b8', letterSpacing: '1px', marginBottom: '15px' }}>TOTAL REVENUE (PAID)</p>
-          <div style={{ fontSize: '28px', fontWeight: 950, color: '#1a1a2e' }}>₹{(stats.totalRevenue).toLocaleString()}</div>
-          <div style={{ marginTop: '10px', fontSize: '10px', color: '#2ecc71', fontWeight: 800 }}>SYNCED REAL-TIME</div>
+          <div style={{ fontSize: '28px', fontWeight: 950, color: '#10b981' }}>₹{(stats.totalRevenue).toLocaleString()}</div>
+          <div style={{ marginTop: '10px', fontSize: '10px', color: '#10b981', fontWeight: 800 }}>COLLECTED INVOICES</div>
         </div>
         <div className="kpi-card" style={{ background: 'white', padding: '25px', borderRadius: '24px', border: '1px solid #e2e8f0', boxShadow: '0 4px 20px rgba(0,0,0,0.02)' }}>
-          <p style={{ fontSize: '11px', fontWeight: 950, color: '#94a3b8', letterSpacing: '1px', marginBottom: '15px' }}>PENDING UNPAID</p>
+          <p style={{ fontSize: '11px', fontWeight: 950, color: '#94a3b8', letterSpacing: '1px', marginBottom: '15px' }}>TOTAL EXPENDITURE</p>
+          <div style={{ fontSize: '28px', fontWeight: 950, color: '#e74c3c' }}>₹{stats.totalExpenses?.toLocaleString() || '0'}</div>
+          <div style={{ marginTop: '10px', fontSize: '10px', color: '#e74c3c', fontWeight: 800 }}>OPERATIONAL BURNOUT</div>
+        </div>
+        <div className="kpi-card" style={{ background: 'white', padding: '25px', borderRadius: '24px', border: '1px solid #e2e8f0', boxShadow: '0 4px 20px rgba(0,0,0,0.02)' }}>
+          <p style={{ fontSize: '11px', fontWeight: 950, color: '#94a3b8', letterSpacing: '1px', marginBottom: '15px' }}>NET FISCAL PROFIT</p>
+          <div style={{ fontSize: '28px', fontWeight: 950, color: (stats.netProfit >= 0 ? '#0f52ba' : '#e74c3c') }}>₹{stats.netProfit?.toLocaleString() || '0'}</div>
+          <div style={{ marginTop: '10px', fontSize: '10px', color: '#64748b', fontWeight: 800 }}>REVENUE - EXPENSES</div>
+        </div>
+        <div className="kpi-card" style={{ background: 'white', padding: '25px', borderRadius: '24px', border: '1px solid #e2e8f0', boxShadow: '0 4px 20px rgba(0,0,0,0.02)' }}>
+          <p style={{ fontSize: '11px', fontWeight: 950, color: '#94a3b8', letterSpacing: '1px', marginBottom: '15px' }}>OUTSTANDING DUES</p>
           <div style={{ fontSize: '28px', fontWeight: 950, color: '#f39c12' }}>₹{stats.pendingRevenue.toLocaleString()}</div>
-          <div style={{ marginTop: '10px', fontSize: '10px', color: '#f39c12', fontWeight: 800 }}>{stats.pendingCount} INVOICES OUTSTANDING</div>
-        </div>
-        <div className="kpi-card" style={{ background: 'white', padding: '25px', borderRadius: '24px', border: '1px solid #e2e8f0', boxShadow: '0 4px 20px rgba(0,0,0,0.02)' }}>
-          <p style={{ fontSize: '11px', fontWeight: 950, color: '#94a3b8', letterSpacing: '1px', marginBottom: '15px' }}>COLLECTION EFFICIENCY</p>
-          <div style={{ fontSize: '28px', fontWeight: 950, color: '#0f52ba' }}>{stats.realizationRate}%</div>
-          <div style={{ marginTop: '10px', fontSize: '10px', color: '#0f52ba', fontWeight: 800 }}>TARGET: 98%</div>
-        </div>
-        <div className="kpi-card" style={{ background: 'white', padding: '25px', borderRadius: '24px', border: '1px solid #e2e8f0', boxShadow: '0 4px 20px rgba(0,0,0,0.02)' }}>
-          <p style={{ fontSize: '11px', fontWeight: 950, color: '#94a3b8', letterSpacing: '1px', marginBottom: '15px' }}>AVG TICKET SIZE</p>
-          <div style={{ fontSize: '28px', fontWeight: 950, color: '#1a1a2e' }}>₹{stats.averageTicket.toLocaleString()}</div>
-          <div style={{ marginTop: '10px', fontSize: '10px', color: '#888', fontWeight: 600 }}>PER SUCCESSFUL TRANSACTION</div>
+          <div style={{ marginTop: '10px', fontSize: '10px', color: '#f39c12', fontWeight: 800 }}>{stats.pendingCount} UNPAID INVOICES</div>
         </div>
       </div>
 
       <div className="content-main" style={{ display: 'grid', gridTemplateColumns: '1fr', gap: '30px' }}>
         {/* Ledger Section */}
         <div style={{ background: 'white', borderRadius: '24px', border: '1px solid #e2e8f0', padding: '30px', boxShadow: '0 4px 20px rgba(0,0,0,0.02)' }}>
-           <h3 style={{ fontSize: '14px', fontWeight: 950, marginBottom: '25px', letterSpacing: '1px' }}>GLOBAL TRANSACTION LEDGER</h3>
+           <h3 style={{ fontSize: '14px', fontWeight: 950, marginBottom: '25px', letterSpacing: '1px' }}>{activeTab === 'REVENUE' ? 'GLOBAL TRANSACTION LEDGER' : 'INSTITUTIONAL EXPENDITURE LOG'}</h3>
            <table style={{ width: '100%', borderCollapse: 'collapse' }}>
              <thead>
                <tr style={{ textAlign: 'left', borderBottom: '1px solid #f1f5f9' }}>
-                 <th style={{ padding: '15px 10px', fontSize: '10px', fontWeight: 950, color: '#94a3b8', letterSpacing: '1px' }}>INVOICE_ID</th>
-                 <th style={{ padding: '15px 10px', fontSize: '10px', fontWeight: 950, color: '#94a3b8', letterSpacing: '1px' }}>PATIENT_ENTITY</th>
+                 <th style={{ padding: '15px 10px', fontSize: '10px', fontWeight: 950, color: '#94a3b8', letterSpacing: '1px' }}>{activeTab === 'REVENUE' ? 'INVOICE_ID' : 'EXPENSE_ID'}</th>
+                 <th style={{ padding: '15px 10px', fontSize: '10px', fontWeight: 950, color: '#94a3b8', letterSpacing: '1px' }}>{activeTab === 'REVENUE' ? 'PATIENT_ENTITY' : 'DESCRIPTION'}</th>
                  <th style={{ padding: '15px 10px', fontSize: '10px', fontWeight: 950, color: '#94a3b8', letterSpacing: '1px' }}>TIMESTAMP</th>
                  <th style={{ padding: '15px 10px', fontSize: '10px', fontWeight: 950, color: '#94a3b8', letterSpacing: '1px' }}>QUANTUM</th>
-                 <th style={{ padding: '15px 10px', fontSize: '10px', fontWeight: 950, color: '#94a3b8', letterSpacing: '1px' }}>STATUS</th>
+                 <th style={{ padding: '15px 10px', fontSize: '10px', fontWeight: 950, color: '#94a3b8', letterSpacing: '1px' }}>{activeTab === 'REVENUE' ? 'STATUS' : 'CATEGORY'}</th>
                  <th style={{ padding: '15px 10px', fontSize: '10px', fontWeight: 950, color: '#94a3b8', letterSpacing: '1px', textAlign: 'right' }}>ACTIONS</th>
                </tr>
              </thead>
              <tbody>
-               {filteredInvoices.map(inv => (
-                 <tr key={inv.invoiceId} style={{ borderBottom: '1px solid #f8fafc', transition: 'background 0.2s' }}>
-                   <td style={{ padding: '20px 10px', fontSize: '12px', fontWeight: 900, color: '#0f52ba', fontFamily: 'monospace' }}>{inv.invoiceId}</td>
-                   <td style={{ padding: '20px 10px', fontSize: '13px', fontWeight: 800, color: '#1e293b' }}>{inv.patientName.toUpperCase()}</td>
-                   <td style={{ padding: '20px 10px', fontSize: '12px', color: '#64748b', fontWeight: 600 }}>{new Date(inv.createdAt).toLocaleString()}</td>
-                   <td style={{ padding: '20px 10px', fontSize: '14px', fontWeight: 950, color: '#1a1a2e' }}>₹{inv.totalAmount.toLocaleString()}</td>
-                   <td style={{ padding: '20px 10px' }}>
-                      <span style={{ 
-                        padding: '6px 12px', borderRadius: '8px', fontSize: '9px', fontWeight: 950,
-                        background: inv.status === 'PAID' ? '#ecfdf5' : '#fff7ed',
-                        color: inv.status === 'PAID' ? '#059669' : '#ea580c'
-                      }}>
-                        {inv.status}
-                      </span>
-                   </td>
-                   <td style={{ padding: '20px 10px', textAlign: 'right' }}>
-                      <button 
-                        onClick={() => { setSelectedInvoice(inv); setIsInvoiceDrawerOpen(true); }}
-                        style={{ padding: '8px 16px', borderRadius: '10px', border: '1px solid #e2e8f0', background: 'white', color: '#0f52ba', fontSize: '10px', fontWeight: 950, cursor: 'pointer' }}
-                      >VIEW_DETAILS</button>
-                   </td>
-                 </tr>
-               ))}
-               {filteredInvoices.length === 0 && (
+               {activeTab === 'REVENUE' ? (
+                 filteredInvoices.map(inv => (
+                   <tr key={inv.invoiceId} style={{ borderBottom: '1px solid #f8fafc', transition: 'background 0.2s' }}>
+                     <td style={{ padding: '20px 10px', fontSize: '12px', fontWeight: 900, color: '#0f52ba', fontFamily: 'monospace' }}>{inv.invoiceId}</td>
+                     <td style={{ padding: '20px 10px', fontSize: '13px', fontWeight: 800, color: '#1e293b' }}>{inv.patientName.toUpperCase()}</td>
+                     <td style={{ padding: '20px 10px', fontSize: '12px', color: '#64748b', fontWeight: 600 }}>{new Date(inv.createdAt).toLocaleString()}</td>
+                     <td style={{ padding: '20px 10px', fontSize: '14px', fontWeight: 950, color: '#1a1a2e' }}>₹{inv.totalAmount.toLocaleString()}</td>
+                     <td style={{ padding: '20px 10px' }}>
+                        <span style={{ 
+                          padding: '6px 12px', borderRadius: '8px', fontSize: '9px', fontWeight: 950,
+                          background: inv.status === 'PAID' ? '#ecfdf5' : '#fff7ed',
+                          color: inv.status === 'PAID' ? '#059669' : '#ea580c'
+                        }}>
+                          {inv.status}
+                        </span>
+                     </td>
+                     <td style={{ padding: '20px 10px', textAlign: 'right' }}>
+                        <button 
+                          onClick={() => { setSelectedInvoice(inv); setIsInvoiceDrawerOpen(true); }}
+                          style={{ padding: '8px 16px', borderRadius: '10px', border: '1px solid #e2e8f0', background: 'white', color: '#0f52ba', fontSize: '10px', fontWeight: 950, cursor: 'pointer' }}
+                        >VIEW_DETAILS</button>
+                     </td>
+                   </tr>
+                 ))
+               ) : (
+                 expenses.map(exp => (
+                   <tr key={exp.id} style={{ borderBottom: '1px solid #f8fafc', transition: 'background 0.2s' }}>
+                     <td style={{ padding: '20px 10px', fontSize: '10px', fontWeight: 900, color: '#e74c3c', fontFamily: 'monospace' }}>{exp.id.split('-')[0].toUpperCase()}</td>
+                     <td style={{ padding: '20px 10px', fontSize: '13px', fontWeight: 800, color: '#1e293b' }}>{exp.description}</td>
+                     <td style={{ padding: '20px 10px', fontSize: '12px', color: '#64748b', fontWeight: 600 }}>{new Date(exp.transactionDate).toLocaleDateString()}</td>
+                     <td style={{ padding: '20px 10px', fontSize: '14px', fontWeight: 950, color: '#e74c3c' }}>₹{exp.amount.toLocaleString()}</td>
+                     <td style={{ padding: '20px 10px' }}>
+                        <span style={{ 
+                          padding: '6px 12px', borderRadius: '8px', fontSize: '9px', fontWeight: 950,
+                          background: '#fef2f2',
+                          color: '#b91c1c'
+                        }}>
+                          {exp.category.toUpperCase()}
+                        </span>
+                     </td>
+                     <td style={{ padding: '20px 10px', textAlign: 'right' }}>
+                        <button 
+                          style={{ padding: '8px 16px', borderRadius: '10px', border: '1px solid #e2e8f0', background: 'white', color: '#64748b', fontSize: '10px', fontWeight: 950, cursor: 'pointer' }}
+                        >RECEPT_VIEW</button>
+                     </td>
+                   </tr>
+                 ))
+               )}
+               {(activeTab === 'REVENUE' ? filteredInvoices.length : expenses.length) === 0 && (
                  <tr>
-                   <td colSpan="6" style={{ padding: '80px', textAlign: 'center', color: '#94a3b8', fontSize: '12px', fontWeight: 700 }}>NO TRANSACTIONS DETECTED IN ACTIVE LEDGER</td>
+                   <td colSpan="6" style={{ padding: '80px', textAlign: 'center', color: '#94a3b8', fontSize: '12px', fontWeight: 700 }}>NO {activeTab === 'REVENUE' ? 'TRANSACTIONS' : 'EXPENDITURE'} DETECTED IN ACTIVE LEDGER</td>
                  </tr>
                )}
              </tbody>
@@ -952,6 +1195,7 @@ export default function BillingPage() {
 
       {isInvoiceDrawerOpen && renderInvoiceDrawer()}
       {isNewInvoiceDrawerOpen && renderNewInvoiceDrawer()}
+      {isNewExpenseDrawerOpen && renderNewExpenseDrawer()}
       {isExportDrawerOpen && renderExportDrawer()}
     </div>
   );
