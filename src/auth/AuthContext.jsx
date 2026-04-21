@@ -53,7 +53,9 @@ export function AuthProvider({ children }) {
       setActiveCenterId(id);
       
       // Update currentUser roles based on the target center's roles
-      const targetCenter = centers.find(c => c.id === id);
+      const normalizedTargetId = String(id).toLowerCase();
+      const targetCenter = centers.find(c => String(c.id).toLowerCase() === normalizedTargetId);
+      
       if (targetCenter && targetCenter.roles) {
         setCurrentUser(prev => ({
           ...prev,
@@ -64,42 +66,111 @@ export function AuthProvider({ children }) {
       return { success: true, roles: targetCenter?.roles };
     } catch (err) {
       console.error('[AUTH] Context switch failure', err);
-      alert('SECURITY ALERT: Context transition failed. Please re-login.');
+      return { success: false, error: 'SECURITY ALERT: Context transition failed. Please re-login.' };
     }
   }, [centers]);
 
-  const login = useCallback(async (identifier, password) => {
+  const refreshCenters = useCallback(async () => {
     try {
-      const response = await apiClient.post('/auth/login', { identifier, password });
-      const { userProfile, accessToken, refreshToken, success, error, errorCode, accountStatus } = response.data;
+      const resp = await apiClient.get('/auth/hubs');
+      const data = resp.data || {};
       
-      if (!success) return { 
-        success: false, 
-        error: error || 'Authentication failed.',
-        errorCode,
-        accountStatus
-      };
+      // Handle both wrapped { success, hospitals } and direct [hospitals] responses
+      // Also account for different possible keys (hospitals, hubs, authorizedHubs, authorizedHospitals)
+      const hospitals = Array.isArray(data) 
+        ? data 
+        : (data.hospitals || data.Hospitals || data.hubs || data.Hubs || data.authorizedHubs || data.AuthorizedHubs || data.authorizedHospitals || data.AuthorizedHospitals || []);
+      
+      const isSuccess = Array.isArray(data) 
+        ? true 
+        : (data.success !== undefined ? data.success : (data.Success !== undefined ? data.Success : true));
+
+      if (!isSuccess) {
+        console.error('[AUTH] Hub synchronization failed');
+        return { success: false };
+      }
 
       const allRoles = [];
-      const mappedCenters = userProfile.authorizedHospitals.map(h => {
-        // Handle both roleNames (array) and roleName (legacy string)
-        const rawRoles = h.roleNames || (h.roleName ? h.roleName.split(',') : []);
+      const mappedCenters = hospitals.map(h => {
+        const rawRoles = h.roleNames || h.RoleNames || h.roles || h.Roles || (h.roleName || h.RoleName ? (h.roleName || h.RoleName).split(',') : []);
         const normalizedRoles = rawRoles.map(r => r.trim().toLowerCase()).filter(Boolean);
-        
         allRoles.push(...normalizedRoles);
         
         return {
-          id: h.hospitalId,
-          name: h.hospitalName,
+          id: String(h.hospitalId || h.HospitalId).toLowerCase(),
+          name: h.hospitalName || h.HospitalName,
+          groupName: h.groupName || h.GroupName || '',
           roles: normalizedRoles,
-          role: normalizedRoles[0] || 'viewer' // Backward compatibility
+          role: normalizedRoles[0] || 'viewer',
+          isDefault: h.isDefault || h.IsDefault
+        };
+      });
+
+      setCenters(mappedCenters);
+      setCurrentUser(prev => prev ? {
+        ...prev,
+        roles: [...new Set(allRoles)]
+      } : null);
+
+      return { success: true, centers: mappedCenters };
+    } catch (err) {
+      console.error('[AUTH] Hub refresh failure', err);
+      return { success: false, error: 'Failed to synchronize institutional hubs.' };
+    }
+  }, []);
+
+  // Synchronize Hub Discovery: Automatically refresh centers list when session starts
+  useEffect(() => {
+    if (currentUser?.id) {
+      refreshCenters();
+    }
+  }, [currentUser?.id, refreshCenters]);
+
+  const login = useCallback(async (identifier, password) => {
+    try {
+      const resp = await apiClient.post('/auth/login', { identifier, password });
+      const data = resp.data || {};
+      
+      const isSuccess = data.success || data.Success;
+      const userProfile = data.userProfile || data.UserProfile;
+      
+      if (!isSuccess || !userProfile) {
+        return { 
+          success: false, 
+          error: data.error || data.Error || 'Authentication failed.',
+          errorCode: data.errorCode || data.ErrorCode,
+          accountStatus: data.accountStatus || data.AccountStatus
+        };
+      }
+
+      const accessToken = data.accessToken || data.AccessToken;
+      const refreshToken = data.refreshToken || data.RefreshToken;
+
+      // CRITICAL: Persist credentials BEFORE triggering state updates that rely on the token
+      sessionStorage.setItem('1rad_token', accessToken);
+      localStorage.setItem('1rad_refresh_token', refreshToken);
+
+      const allRoles = [];
+      const authorizedHubs = userProfile.authorizedHospitals || userProfile.AuthorizedHospitals || [];
+
+      const mappedCenters = authorizedHubs.map(h => {
+        const rawRoles = h.roleNames || h.RoleNames || (h.roleName || h.RoleName ? (h.roleName || h.RoleName).split(',') : []);
+        const normalizedRoles = rawRoles.map(r => r.trim().toLowerCase()).filter(Boolean);
+        allRoles.push(...normalizedRoles);
+        
+        return {
+          id: String(h.hospitalId || h.HospitalId).toLowerCase(),
+          name: h.hospitalName || h.HospitalName,
+          groupName: h.groupName || h.GroupName || '',
+          roles: normalizedRoles,
+          role: normalizedRoles[0] || 'viewer' 
         };
       });
 
       const user = {
-        id: userProfile.userId,
-        name: userProfile.fullName,
-        email: userProfile.email,
+        id: userProfile.userId || userProfile.UserId,
+        name: userProfile.fullName || userProfile.FullName,
+        email: userProfile.email || userProfile.Email,
         roles: [...new Set(allRoles)]
       };
 
@@ -108,18 +179,15 @@ export function AuthProvider({ children }) {
       if (mappedCenters.length > 0) setActiveCenterId(mappedCenters[0].id);
 
       sessionStorage.setItem('1rad_user', JSON.stringify(user));
-      sessionStorage.setItem('1rad_token', accessToken);
-      localStorage.setItem('1rad_refresh_token', refreshToken);
       
       return { success: true, user };
     } catch (error) {
-      const resp = error.response?.data;
-      const errorMsg = resp?.error || resp?.message || resp?.detail || 'Authentication failed.';
+      const respData = error.response?.data || {};
       return { 
         success: false, 
-        error: errorMsg,
-        errorCode: resp?.errorCode,
-        accountStatus: resp?.accountStatus
+        error: respData.error || respData.message || 'Authentication failed.',
+        errorCode: respData.errorCode || respData.ErrorCode,
+        accountStatus: respData.accountStatus || respData.AccountStatus
       };
     }
   }, []);
@@ -221,24 +289,25 @@ export function AuthProvider({ children }) {
 
       if (isRegistered) {
         const allRoles = [];
-        const mappedCenters = (backendUser.authorizedHospitals || []).map(h => {
-          const rawRoles = h.roleNames || (h.roleName ? h.roleName.split(',') : []);
+        const mappedCenters = (backendUser.authorizedHospitals || backendUser.AuthorizedHospitals || []).map(h => {
+          const rawRoles = h.roleNames || h.RoleNames || (h.roleName || h.RoleName ? (h.roleName || h.RoleName).split(',') : []);
           const normalizedRoles = rawRoles.map(r => r.trim().toLowerCase()).filter(Boolean);
           allRoles.push(...normalizedRoles);
           return {
-            id: h.hospitalId,
-            name: h.hospitalName,
+            id: h.hospitalId || h.HospitalId,
+            name: h.hospitalName || h.HospitalName,
+            groupName: h.groupName || h.GroupName || '',
             roles: normalizedRoles,
             role: normalizedRoles[0] || 'viewer',
-            isDefault: h.isDefault
+            isDefault: h.isDefault || h.IsDefault
           };
         });
 
         const user = {
-          id: backendUser.userId,
-          name: backendUser.fullName,
-          email: backendUser.email,
-          mobile: backendUser.mobile,
+          id: backendUser.userId || backendUser.UserId,
+          name: backendUser.fullName || backendUser.FullName,
+          email: backendUser.email || backendUser.Email,
+          mobile: backendUser.mobile || backendUser.Mobile,
           roles: [...new Set(allRoles)]
         };
 
@@ -277,7 +346,10 @@ export function AuthProvider({ children }) {
   const verifyResetCode = useCallback(async (identifier, code) => {
     try {
       const response = await apiClient.post('/auth/verify-reset-code', { identifier, code });
-      const { success, resetToken, error } = response.data;
+      const data = response.data || {};
+      const success = data.success || data.Success;
+      const resetToken = data.resetToken || data.ResetToken;
+      const error = data.error || data.Error;
       if (success) {
         sessionStorage.setItem('1rad_reset_token', resetToken);
         return { success: true };
@@ -303,17 +375,7 @@ export function AuthProvider({ children }) {
      }
   }, []);
 
-  const createCenter = useCallback((centerData) => {
-    const centerId = `C-${Date.now()}`;
-    const newCenter = {
-      id: centerId,
-      ...centerData,
-      status: 'active'
-    };
-    setCenters(prev => [...prev, newCenter]);
-    setActiveCenterId(centerId);
-    return { success: true, center: newCenter };
-  }, []);
+
 
   // Check if there's at least one admin doctor registered
   const hasAdminDoctor = useMemo(() => {
@@ -329,10 +391,10 @@ export function AuthProvider({ children }) {
       centers,
       activeCenter,
       switchCenter,
-      createCenter,
       hasAdminDoctor,
       login, 
       logout,
+      refreshCenters,
       registerAdminDoctor,
       sendOtp,
       verifyOtp,

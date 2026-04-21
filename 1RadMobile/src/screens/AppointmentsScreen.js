@@ -8,14 +8,19 @@ import {
   TextInput,
   Alert,
   Modal,
-  Dimensions,
+  useWindowDimensions,
   FlatList,
   RefreshControl,
-  Animated
+  Animated,
+  Platform,
+  ActivityIndicator,
+  KeyboardAvoidingView
 } from 'react-native';
+import DateTimePicker from '@react-native-community/datetimepicker';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useAppointments } from '../context/AppointmentContext';
 import { COLORS, SPACING, RADIUS, SHADOWS } from '../theme/TacticalTheme';
+import apiClient from '../api/apiClient';
 import { 
   Calendar, 
   Clock, 
@@ -45,8 +50,6 @@ import AnimatedStatCard from '../components/AnimatedStatCard';
 import BottomNavBar from '../components/BottomNavBar';
 import { useAuth } from '../context/AuthContext';
 
-const { width } = Dimensions.get('window');
-
 // Constants matching web version
 const MODALITIES = ['X-RAY', 'MRI', 'CT', 'ULTRASOUND', 'DEXA', 'ANGIOGRAPHY', 'MAMMOGRAPHY', 'PET-CT', 'NUCLEAR MEDICINE', 'FLUOROSCOPY'];
 const DOCTORS = ['Dr. Brown', 'Dr. Sarah', 'Dr. Mike', 'Dr. Lisa'];
@@ -68,13 +71,20 @@ const MODALITY_ICONS = {
 export default function AppointmentsScreen({ navigation }) {
   const { user } = useAuth();
   const { appointments, patients, doctors, updateAppointment, deleteAppointment } = useAppointments();
+  const { width } = useWindowDimensions();
   
   // State management matching web version
-  const [searchQuery, setSearchQuery] = useState('');
+  const [appointmentSearchQuery, setAppointmentSearchQuery] = useState('');
+  const [patientSearchQuery, setPatientSearchQuery] = useState('');
   const [filters, setFilters] = useState({ status: 'ALL', modality: 'ALL', doctor: 'ALL' });
   const [expandedRow, setExpandedRow] = useState(null);
   const [loading, setLoading] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
+  
+  // Filter dropdown states
+  const [showStatusFilter, setShowStatusFilter] = useState(false);
+  const [showModalityFilter, setShowModalityFilter] = useState(false);
+  const [showDoctorFilter, setShowDoctorFilter] = useState(false);
   
   // Animation refs
   const fadeAnim = useRef(new Animated.Value(0)).current;
@@ -88,8 +98,14 @@ export default function AppointmentsScreen({ navigation }) {
     service: '', 
     modality: 'X-RAY', 
     doctor: '', 
-    notes: '' 
+    notes: '',
+    appointmentDate: new Date(),
+    appointmentTime: new Date()
   });
+  
+  // Date/Time picker states
+  const [showDatePicker, setShowDatePicker] = useState(false);
+  const [showTimePicker, setShowTimePicker] = useState(false);
   
   // Patient management
   const [newPatient, setNewPatient] = useState({ 
@@ -123,12 +139,23 @@ export default function AppointmentsScreen({ navigation }) {
     ]).start();
   }, []);
 
-  // Pull to refresh
+  // Pull to refresh - now fetches from API
   const onRefresh = async () => {
     setRefreshing(true);
-    // Simulate data refresh
-    await new Promise(resolve => setTimeout(resolve, 1500));
-    setRefreshing(false);
+    try {
+      // Refresh appointments from context (which fetches from API)
+      if (typeof appointments?.refresh === 'function') {
+        await appointments.refresh();
+      }
+      // If context doesn't have refresh, we can manually fetch
+      // The AppointmentContext should handle this, but as fallback:
+      console.log('[APPOINTMENTS] Refreshed appointment list');
+    } catch (error) {
+      console.error('[APPOINTMENTS] Refresh failed:', error);
+      Alert.alert('Refresh Failed', 'Unable to refresh appointments. Please try again.');
+    } finally {
+      setRefreshing(false);
+    }
   };
 
   // Transform appointments to match web format
@@ -150,8 +177,8 @@ export default function AppointmentsScreen({ navigation }) {
         referredBy: 'N/A',
         referredContact: 'N/A',
         notes: apt.notes || '',
-        date: dt.toISOString().split('T')[0],
-        time: dt.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+        date: dt.toLocaleDateString('en-US', { year: 'numeric', month: '2-digit', day: '2-digit' }),
+        time: dt.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true }),
         priority: 'medium'
       };
     });
@@ -172,15 +199,15 @@ export default function AppointmentsScreen({ navigation }) {
   // Filtered appointments
   const filteredAppointments = useMemo(() => {
     return transformedAppointments.filter(app => {
-      const matchesSearch = app.patientName.toLowerCase().includes(searchQuery.toLowerCase()) || 
-                           app.mobile.includes(searchQuery) || 
-                           app.id.includes(searchQuery);
+      const matchesSearch = app.patientName.toLowerCase().includes(appointmentSearchQuery.toLowerCase()) || 
+                           app.mobile.includes(appointmentSearchQuery) || 
+                           app.id.includes(appointmentSearchQuery);
       const matchesStatus = filters.status === 'ALL' || app.status === filters.status;
       const matchesModality = filters.modality === 'ALL' || app.modality === filters.modality;
       const matchesDoctor = filters.doctor === 'ALL' || app.doctor === filters.doctor;
       return matchesSearch && matchesStatus && matchesModality && matchesDoctor;
     });
-  }, [transformedAppointments, searchQuery, filters]);
+  }, [transformedAppointments, appointmentSearchQuery, filters]);
 
   // Action handlers
   const handleAction = async (id, action) => {
@@ -259,11 +286,20 @@ export default function AppointmentsScreen({ navigation }) {
       }
 
       // Create appointment
+      // Combine date and time
+      const appointmentDateTime = new Date(
+        newBooking.appointmentDate.getFullYear(),
+        newBooking.appointmentDate.getMonth(),
+        newBooking.appointmentDate.getDate(),
+        newBooking.appointmentTime.getHours(),
+        newBooking.appointmentTime.getMinutes()
+      );
+
       await apiClient.post('/appointments', {
         patientId: patientId,
         service: newBooking.service,
         modality: newBooking.modality,
-        dateTime: new Date().toISOString(), // TODO: Add date/time picker
+        dateTime: appointmentDateTime.toISOString(),
         type: 'BOOKED',
         doctor: newBooking.doctor,
         referredBy: newPatient.referredBy || '',
@@ -285,7 +321,15 @@ export default function AppointmentsScreen({ navigation }) {
 
   const resetBooking = () => {
     setBookingStep(1);
-    setNewBooking({ patientId: '', service: '', modality: 'X-RAY', doctor: '', notes: '' });
+    setNewBooking({ 
+      patientId: '', 
+      service: '', 
+      modality: 'X-RAY', 
+      doctor: '', 
+      notes: '',
+      appointmentDate: new Date(),
+      appointmentTime: new Date()
+    });
     setNewPatient({ name: '', mobile: '', age: '', gender: 'Male', village: '', district: '', address: '', referredBy: '', sourceOfInfo: '' });
   };
 
@@ -350,6 +394,56 @@ export default function AppointmentsScreen({ navigation }) {
     );
   };
 
+  // Filter Dropdown Component
+  const FilterDropdown = ({ visible, options, selected, onSelect, onClose, title }) => (
+    <Modal
+      visible={visible}
+      animationType="fade"
+      transparent={true}
+      onRequestClose={onClose}
+    >
+      <TouchableOpacity 
+        style={styles.filterModalOverlay} 
+        activeOpacity={1} 
+        onPress={onClose}
+      >
+        <View style={styles.filterModalContent}>
+          <View style={styles.filterModalHeader}>
+            <Text style={styles.filterModalTitle}>{title}</Text>
+            <TouchableOpacity onPress={onClose}>
+              <X size={20} color={COLORS.textPrimary} />
+            </TouchableOpacity>
+          </View>
+          <ScrollView style={styles.filterModalList}>
+            {options.map((option) => (
+              <TouchableOpacity
+                key={option}
+                style={[
+                  styles.filterModalOption,
+                  selected === option && styles.filterModalOptionSelected
+                ]}
+                onPress={() => {
+                  onSelect(option);
+                  onClose();
+                }}
+              >
+                <Text style={[
+                  styles.filterModalOptionText,
+                  selected === option && styles.filterModalOptionTextSelected
+                ]}>
+                  {option === 'ALL' ? `All ${title}` : option}
+                </Text>
+                {selected === option && (
+                  <CheckCircle size={16} color={COLORS.cyan} />
+                )}
+              </TouchableOpacity>
+            ))}
+          </ScrollView>
+        </View>
+      </TouchableOpacity>
+    </Modal>
+  );
+
   // Filter Bar
   const renderFilterBar = () => (
     <View style={styles.filterContainer}>
@@ -360,31 +454,56 @@ export default function AppointmentsScreen({ navigation }) {
           style={styles.searchInput}
           placeholder="Search patient, mobile, or ID..."
           placeholderTextColor={COLORS.textSecondary}
-          value={searchQuery}
-          onChangeText={setSearchQuery}
+          value={appointmentSearchQuery}
+          onChangeText={setAppointmentSearchQuery}
         />
-        {searchQuery && (
-          <TouchableOpacity onPress={() => setSearchQuery('')}>
+        {appointmentSearchQuery && (
+          <TouchableOpacity onPress={() => setAppointmentSearchQuery('')}>
             <X size={16} color={COLORS.textSecondary} />
           </TouchableOpacity>
         )}
       </View>
 
+      {/* Status Filter */}
+      <TouchableOpacity 
+        style={styles.filterSelect}
+        onPress={() => setShowStatusFilter(true)}
+      >
+        <Text style={styles.filterSelectText}>
+          {filters.status === 'ALL' ? 'All Status' : STATUS_META[filters.status]?.label || filters.status}
+        </Text>
+        <ChevronDown size={14} color={COLORS.textSecondary} />
+      </TouchableOpacity>
+
+      {/* Modality Filter */}
+      <TouchableOpacity 
+        style={styles.filterSelect}
+        onPress={() => setShowModalityFilter(true)}
+      >
+        <Text style={styles.filterSelectText}>
+          {filters.modality === 'ALL' ? 'All Modalities' : filters.modality}
+        </Text>
+        <ChevronDown size={14} color={COLORS.textSecondary} />
+      </TouchableOpacity>
+
       {/* Doctor Filter */}
-      <View style={styles.filterSelect}>
+      <TouchableOpacity 
+        style={styles.filterSelect}
+        onPress={() => setShowDoctorFilter(true)}
+      >
         <Text style={styles.filterSelectText}>
           {filters.doctor === 'ALL' ? 'All Specialists' : filters.doctor}
         </Text>
         <ChevronDown size={14} color={COLORS.textSecondary} />
-      </View>
+      </TouchableOpacity>
 
       {/* Clear Filters */}
-      {(filters.status !== 'ALL' || filters.modality !== 'ALL' || filters.doctor !== 'ALL' || searchQuery) && (
+      {(filters.status !== 'ALL' || filters.modality !== 'ALL' || filters.doctor !== 'ALL' || appointmentSearchQuery) && (
         <TouchableOpacity
           style={styles.clearFiltersBtn}
           onPress={() => {
             setFilters({ status: 'ALL', modality: 'ALL', doctor: 'ALL' });
-            setSearchQuery('');
+            setAppointmentSearchQuery('');
           }}
         >
           <X size={12} color={COLORS.error} />
@@ -544,6 +663,57 @@ export default function AppointmentsScreen({ navigation }) {
     );
   };
 
+  // Filter Dropdown Modal
+  const renderFilterDropdown = (visible, onClose, title, options, selectedValue, onSelect) => (
+    <Modal
+      visible={visible}
+      animationType="fade"
+      transparent={true}
+      onRequestClose={onClose}
+    >
+      <TouchableOpacity 
+        style={styles.filterModalOverlay}
+        activeOpacity={1}
+        onPress={onClose}
+      >
+        <View style={styles.filterModalContent}>
+          <View style={styles.filterModalHeader}>
+            <Text style={styles.filterModalTitle}>{title}</Text>
+            <TouchableOpacity onPress={onClose}>
+              <X size={20} color={COLORS.textPrimary} />
+            </TouchableOpacity>
+          </View>
+          
+          <ScrollView style={styles.filterModalList}>
+            {options.map((option) => (
+              <TouchableOpacity
+                key={option.value}
+                style={[
+                  styles.filterModalOption,
+                  selectedValue === option.value && styles.filterModalOptionSelected
+                ]}
+                onPress={() => {
+                  onSelect(option.value);
+                  onClose();
+                }}
+              >
+                <Text style={[
+                  styles.filterModalOptionText,
+                  selectedValue === option.value && styles.filterModalOptionTextSelected
+                ]}>
+                  {option.label}
+                </Text>
+                {selectedValue === option.value && (
+                  <CheckCircle size={16} color={COLORS.cyan} />
+                )}
+              </TouchableOpacity>
+            ))}
+          </ScrollView>
+        </View>
+      </TouchableOpacity>
+    </Modal>
+  );
+
   // Print Token Modal
   const renderTokenModal = () => {
     if (!tokenPrintData) return null;
@@ -633,7 +803,12 @@ export default function AppointmentsScreen({ navigation }) {
         presentationStyle="pageSheet"
         onRequestClose={() => setIsBookingOpen(false)}
       >
-        <View style={styles.bookingModal}>
+        <KeyboardAvoidingView
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+          style={{ flex: 1 }}
+          keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 20}
+        >
+          <View style={styles.bookingModal}>
           <View style={styles.bookingModalHeader}>
             <View>
               <Text style={styles.bookingModalTitle}>NEW MISSION</Text>
@@ -669,17 +844,17 @@ export default function AppointmentsScreen({ navigation }) {
                     style={styles.searchInput}
                     placeholder="Name or mobile number..."
                     placeholderTextColor={COLORS.textSecondary}
-                    value={searchQuery}
-                    onChangeText={setSearchQuery}
+                    value={patientSearchQuery}
+                    onChangeText={setPatientSearchQuery}
                   />
                 </View>
 
-                {searchQuery && (
+                {patientSearchQuery && (
                   <View style={styles.patientResults}>
                     {patients
                       .filter(p => 
-                        p.name.toLowerCase().includes(searchQuery.toLowerCase()) || 
-                        p.phone.includes(searchQuery)
+                        p.name.toLowerCase().includes(patientSearchQuery.toLowerCase()) || 
+                        p.phone.includes(patientSearchQuery)
                       )
                       .map(patient => (
                         <TouchableOpacity
@@ -873,8 +1048,97 @@ export default function AppointmentsScreen({ navigation }) {
                   />
                 </View>
 
+                {/* Date and Time Selection */}
+                <View style={styles.dateTimeSection}>
+                  <Text style={styles.sectionTitle}>3. Schedule Appointment</Text>
+                  <View style={styles.formRow}>
+                    <View style={styles.formGroup}>
+                      <Text style={styles.formLabel}>DATE</Text>
+                      <TouchableOpacity
+                        style={styles.dateTimeButton}
+                        onPress={() => setShowDatePicker(true)}
+                      >
+                        <Calendar size={16} color={COLORS.cyan} />
+                        <Text style={styles.dateTimeButtonText}>
+                          {newBooking.appointmentDate.toLocaleDateString('en-US', {
+                            month: 'short',
+                            day: 'numeric',
+                            year: 'numeric'
+                          })}
+                        </Text>
+                      </TouchableOpacity>
+                    </View>
+                    <View style={styles.formGroup}>
+                      <Text style={styles.formLabel}>TIME</Text>
+                      <TouchableOpacity
+                        style={styles.dateTimeButton}
+                        onPress={() => setShowTimePicker(true)}
+                      >
+                        <Clock size={16} color={COLORS.cyan} />
+                        <Text style={styles.dateTimeButtonText}>
+                          {newBooking.appointmentTime.toLocaleTimeString('en-US', {
+                            hour: '2-digit',
+                            minute: '2-digit'
+                          })}
+                        </Text>
+                      </TouchableOpacity>
+                    </View>
+                  </View>
+                </View>
+
+                {/* Date Picker Modal */}
+                {showDatePicker && (
+                  <DateTimePicker
+                    value={newBooking.appointmentDate}
+                    mode="date"
+                    display={Platform.OS === 'ios' ? 'spinner' : 'default'}
+                    minimumDate={new Date()}
+                    onChange={(event, selectedDate) => {
+                      // Handle Android dismissal
+                      if (Platform.OS === 'android') {
+                        setShowDatePicker(false);
+                      }
+                      
+                      // Update date if not dismissed
+                      if (selectedDate && event.type !== 'dismissed') {
+                        setNewBooking({...newBooking, appointmentDate: selectedDate});
+                      }
+                      
+                      // Handle iOS dismissal
+                      if (Platform.OS === 'ios' && event.type === 'dismissed') {
+                        setShowDatePicker(false);
+                      }
+                    }}
+                  />
+                )}
+
+                {/* Time Picker Modal */}
+                {showTimePicker && (
+                  <DateTimePicker
+                    value={newBooking.appointmentTime}
+                    mode="time"
+                    display={Platform.OS === 'ios' ? 'spinner' : 'default'}
+                    onChange={(event, selectedTime) => {
+                      // Handle Android dismissal
+                      if (Platform.OS === 'android') {
+                        setShowTimePicker(false);
+                      }
+                      
+                      // Update time if not dismissed
+                      if (selectedTime && event.type !== 'dismissed') {
+                        setNewBooking({...newBooking, appointmentTime: selectedTime});
+                      }
+                      
+                      // Handle iOS dismissal
+                      if (Platform.OS === 'ios' && event.type === 'dismissed') {
+                        setShowTimePicker(false);
+                      }
+                    }}
+                  />
+                )}
+
                 <View style={styles.doctorSection}>
-                  <Text style={styles.sectionTitle}>3. Assign Lead Specialist</Text>
+                  <Text style={styles.sectionTitle}>4. Assign Lead Specialist</Text>
                   <View style={styles.doctorGrid}>
                     {DOCTORS.map(doctor => (
                       <TouchableOpacity
@@ -911,7 +1175,7 @@ export default function AppointmentsScreen({ navigation }) {
                 </View>
 
                 <View style={styles.formGroup}>
-                  <Text style={styles.formLabel}>4. NOTES (OPTIONAL)</Text>
+                  <Text style={styles.formLabel}>5. NOTES (OPTIONAL)</Text>
                   <TextInput
                     style={[styles.formInput, styles.textArea]}
                     placeholder="Clinical notes..."
@@ -961,6 +1225,7 @@ export default function AppointmentsScreen({ navigation }) {
             </TouchableOpacity>
           </View>
         </View>
+        </KeyboardAvoidingView>
       </Modal>
     );
   };
@@ -990,13 +1255,18 @@ export default function AppointmentsScreen({ navigation }) {
             gradient={[COLORS.cyan, '#4facfe']}
             onPress={() => setIsBookingOpen(true)}
             size="md"
+            accessibilityLabel="Create new appointment"
+            accessibilityHint="Opens form to schedule a new patient appointment"
           />
         </View>
       </LinearGradient>
 
-      <ScrollView 
-        style={styles.content} 
+      <FlatList
+        data={filteredAppointments}
+        keyExtractor={(item) => item.id}
+        renderItem={renderAppointmentRow}
         showsVerticalScrollIndicator={false}
+        contentContainerStyle={styles.listContent}
         refreshControl={
           <RefreshControl
             refreshing={refreshing}
@@ -1005,47 +1275,94 @@ export default function AppointmentsScreen({ navigation }) {
             colors={[COLORS.cyan]}
           />
         }
-      >
-        {/* Mission Intel Cards */}
-        {renderIntelCards()}
+        ListHeaderComponent={
+          <>
+            {/* Mission Intel Cards */}
+            {renderIntelCards()}
 
-        {/* Filter Bar */}
-        {renderFilterBar()}
+            {/* Filter Bar */}
+            {renderFilterBar()}
 
-        {/* Appointments List */}
-        <View style={styles.appointmentsSection}>
-          <View style={styles.appointmentsHeader}>
-            <Text style={styles.appointmentsCount}>
-              {filteredAppointments.length} Mission{filteredAppointments.length !== 1 ? 's' : ''} Found
-            </Text>
-          </View>
-
-          {filteredAppointments.length === 0 ? (
-            <EmptyState
-              icon={Search}
-              title="No Missions Match Your Filters"
-              subtitle="Try adjusting your search or pipeline filters to find what you're looking for"
-              actionText="CLEAR FILTERS"
-              onAction={() => {
-                setFilters({ status: 'ALL', modality: 'ALL', doctor: 'ALL' });
-                setSearchQuery('');
-              }}
-            />
-          ) : (
-            <FlatList
-              data={filteredAppointments}
-              keyExtractor={(item) => item.id}
-              renderItem={renderAppointmentRow}
-              showsVerticalScrollIndicator={false}
-              scrollEnabled={false}
-            />
-          )}
-        </View>
-      </ScrollView>
+            {/* Appointments Header */}
+            <View style={styles.appointmentsSection}>
+              <View style={styles.appointmentsHeader}>
+                <Text style={styles.appointmentsCount}>
+                  {filteredAppointments.length} Mission{filteredAppointments.length !== 1 ? 's' : ''} Found
+                </Text>
+              </View>
+            </View>
+          </>
+        }
+        ListEmptyComponent={
+          <EmptyState
+            icon={Search}
+            title="No Missions Match Your Filters"
+            subtitle="Try adjusting your search or pipeline filters to find what you're looking for"
+            actionText="CLEAR FILTERS"
+            onAction={() => {
+              setFilters({ status: 'ALL', modality: 'ALL', doctor: 'ALL' });
+              setAppointmentSearchQuery('');
+            }}
+          />
+        }
+      />
 
       {/* Modals */}
       {renderTokenModal()}
       {renderBookingModal()}
+
+      {/* Filter Dropdowns */}
+      {renderFilterDropdown(
+        showStatusFilter,
+        () => setShowStatusFilter(false),
+        'Filter by Status',
+        [
+          { value: 'ALL', label: 'All Status' },
+          { value: 'BOOKED', label: '📋 Booked' },
+          { value: 'SCHEDULED', label: '📋 Scheduled' },
+          { value: 'ARRIVED', label: '📍 Arrived' },
+          { value: 'CONFIRMED', label: '📍 Confirmed' },
+          { value: 'IN_PROGRESS', label: '⚡ In Progress' },
+          { value: 'COMPLETED', label: '✅ Completed' },
+          { value: 'CANCELLED', label: '⛔ Cancelled' },
+        ],
+        filters.status,
+        (value) => setFilters({ ...filters, status: value })
+      )}
+
+      {renderFilterDropdown(
+        showModalityFilter,
+        () => setShowModalityFilter(false),
+        'Filter by Modality',
+        [
+          { value: 'ALL', label: 'All Modalities' },
+          ...MODALITIES.map(m => ({ value: m, label: `${MODALITY_ICONS[m] || '📋'} ${m}` }))
+        ],
+        filters.modality,
+        (value) => setFilters({ ...filters, modality: value })
+      )}
+
+      {renderFilterDropdown(
+        showDoctorFilter,
+        () => setShowDoctorFilter(false),
+        'Filter by Doctor',
+        [
+          { value: 'ALL', label: 'All Specialists' },
+          ...DOCTORS.map(d => ({ value: d, label: d }))
+        ],
+        filters.doctor,
+        (value) => setFilters({ ...filters, doctor: value })
+      )}
+
+      {/* Loading Overlay */}
+      {loading && (
+        <View style={styles.loadingOverlay}>
+          <View style={styles.loadingContainer}>
+            <ActivityIndicator size="large" color={COLORS.cyan} />
+            <Text style={styles.loadingText}>Processing...</Text>
+          </View>
+        </View>
+      )}
 
       {/* Bottom Navigation Bar */}
       <BottomNavBar userRole={user?.roles?.[0] || 'doctor'} />
@@ -1294,11 +1611,10 @@ const styles = StyleSheet.create({
     letterSpacing: 1,
   },
 
-  // Content
-  content: {
-    flex: 1,
+  // List Content
+  listContent: {
     paddingHorizontal: SPACING.lg,
-    paddingBottom: 80, // Space for bottom navigation
+    paddingBottom: 100, // Space for bottom navigation
   },
 
   // Intel Cards Styles
@@ -1498,7 +1814,8 @@ const styles = StyleSheet.create({
     top: 0,
     bottom: 0,
     width: 4,
-    borderRadius: '4px 0 0 4px',
+    borderTopLeftRadius: 4,
+    borderBottomLeftRadius: 4,
   },
   appointmentInfo: {
     flex: 1,
@@ -1578,7 +1895,9 @@ const styles = StyleSheet.create({
   // Expanded Details
   expandedDetails: {
     backgroundColor: '#fafbff',
-    borderRadius: '0 0 14px 14px',
+    borderRadius: 14,
+    borderTopLeftRadius: 0,
+    borderTopRightRadius: 0,
     borderWidth: 1,
     borderColor: '#c5d5f0',
     borderTopWidth: 0,
@@ -1638,9 +1957,89 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
 
+  // Loading Overlay
+  loadingOverlay: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: 'rgba(0, 0, 0, 0.7)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    zIndex: 9999,
+  },
+  loadingContainer: {
+    backgroundColor: COLORS.bgCard,
+    borderRadius: 16,
+    padding: 32,
+    alignItems: 'center',
+    minWidth: 200,
+    ...SHADOWS.card,
+  },
+  loadingText: {
+    marginTop: 16,
+    fontSize: 14,
+    fontWeight: '700',
+    color: COLORS.textPrimary,
+    letterSpacing: 1,
+  },
+
+  // Filter Modal
+  filterModalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    justifyContent: 'flex-end',
+  },
+  filterModalContent: {
+    backgroundColor: COLORS.bgCard,
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    maxHeight: '70%',
+    paddingBottom: Platform.OS === 'ios' ? 34 : 20,
+  },
+  filterModalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    padding: 20,
+    borderBottomWidth: 1,
+    borderBottomColor: COLORS.border,
+  },
+  filterModalTitle: {
+    fontSize: 16,
+    fontWeight: '900',
+    color: COLORS.textPrimary,
+    letterSpacing: 0.5,
+  },
+  filterModalList: {
+    maxHeight: 400,
+  },
+  filterModalOption: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    padding: 16,
+    paddingHorizontal: 20,
+    borderBottomWidth: 1,
+    borderBottomColor: COLORS.border,
+  },
+  filterModalOptionSelected: {
+    backgroundColor: COLORS.cyan + '10',
+  },
+  filterModalOptionText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: COLORS.textPrimary,
+  },
+  filterModalOptionTextSelected: {
+    color: COLORS.cyan,
+    fontWeight: '700',
+  },
+
   // Token Modal
   tokenModal: {
-    width: width * 0.9,
+    width: '90%',
     maxWidth: 400,
     backgroundColor: COLORS.bgCard,
     borderRadius: 16,
@@ -1977,7 +2376,7 @@ const styles = StyleSheet.create({
     gap: 12,
   },
   modalityCard: {
-    width: (width - 120) / 3,
+    width: '30%',
     aspectRatio: 1,
     backgroundColor: COLORS.bgCard,
     borderRadius: 12,
@@ -2006,13 +2405,35 @@ const styles = StyleSheet.create({
   doctorSection: {
     marginBottom: 20,
   },
+  
+  // Date/Time Section
+  dateTimeSection: {
+    marginBottom: 20,
+  },
+  dateTimeButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: COLORS.bgCard,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    borderRadius: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 12,
+    gap: 8,
+  },
+  dateTimeButtonText: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: COLORS.textPrimary,
+    flex: 1,
+  },
   doctorGrid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
     gap: 12,
   },
   doctorCard: {
-    width: (width - 120) / 2,
+    width: '47%',
     backgroundColor: COLORS.bgCard,
     borderRadius: 12,
     borderWidth: 1,

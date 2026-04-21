@@ -14,11 +14,11 @@ const MODALITY_ICONS = {
 
 // --- MOCK DATA ---
 const INITIAL_CASES = [
-  { id: 'SID-203', patientName: 'Michael Ross', patientId: 'P012', age: 41, gender: 'Male', studyType: 'Abdomen CT (VNC)', modality: 'CT', tech: 'Tech John', techNotes: 'Metastatic calcification in series 3. No contrast reactions.', uploadedFiles: 14, status: 'READY_FOR_REVIEW', waitingTime: '25m', priority: 'URGENT', date: TODAY },
-  { id: 'SID-202', patientName: 'Emily Chen', patientId: 'P009', age: 28, gender: 'Female', studyType: 'Brain MRI (T2 FLAIR)', modality: 'MRI', tech: 'Tech Sarah', techNotes: 'Movement artifacts in series 2. Repetition needed for axial T2.', uploadedFiles: 98, status: 'DRAFT', waitingTime: '1h 10m', priority: 'ROUTINE', date: TODAY },
-  { id: 'SID-201', patientName: 'Robert Fox', patientId: 'P005', age: 52, gender: 'Male', studyType: 'Chest X-Ray PA', modality: 'X-RAY', tech: 'Tech John', techNotes: 'Standard PA view. Quality verified.', uploadedFiles: 2, status: 'FINAL_REPORTED', waitingTime: '-', priority: 'ROUTINE', date: SEVEN_DAYS_AGO },
-  { id: 'SID-198', patientName: 'Sarah Jenkins', patientId: 'P034', age: 22, gender: 'Female', studyType: 'Wrist X-Ray (Lateral)', modality: 'X-RAY', tech: 'Tech John', techNotes: 'Fracture Dislocation (Trauma).', uploadedFiles: 4, status: 'FINAL_REPORTED', waitingTime: '-', priority: 'STAT', date: SEVEN_DAYS_AGO },
-  { id: 'SID-204', patientName: 'Janet Taylor', patientId: 'P015', age: 64, gender: 'Female', studyType: 'Pelvis Ultrasound', modality: 'ULTRASOUND', tech: 'Tech Lisa', techNotes: 'Normal scan.', uploadedFiles: 1, status: 'READY_FOR_REVIEW', waitingTime: '5m', priority: 'ROUTINE', date: TODAY }
+  { id: 'SID-203', patientName: 'Michael Ross', patientId: 'P012', age: 41, gender: 'Male', studyType: 'Abdomen CT (VNC)', modality: 'CT', tech: 'Tech John', techNotes: 'Metastatic calcification in series 3. No contrast reactions.', uploadedFiles: 14, status: 'READY_FOR_REVIEW', waitingTime: '25m', priority: 'URGENT', date: TODAY, referredBy: 'Dr. James Wilson', referredContact: '+91 98765 43210', referredAddress: 'Wilson Clinic, Sector 12, Delhi' },
+  { id: 'SID-202', patientName: 'Emily Chen', patientId: 'P009', age: 28, gender: 'Female', studyType: 'Brain MRI (T2 FLAIR)', modality: 'MRI', tech: 'Tech Sarah', techNotes: 'Movement artifacts in series 2. Repetition needed for axial T2.', uploadedFiles: 98, status: 'DRAFT', waitingTime: '1h 10m', priority: 'ROUTINE', date: TODAY, referredBy: 'Dr. Sarah Smith', referredContact: '+91 87654 32109', referredAddress: 'City Hospital, Building A, Mumbai' },
+  { id: 'SID-201', patientName: 'Robert Fox', patientId: 'P005', age: 52, gender: 'Male', studyType: 'Chest X-Ray PA', modality: 'X-RAY', tech: 'Tech John', techNotes: 'Standard PA view. Quality verified.', uploadedFiles: 2, status: 'FINAL_REPORTED', waitingTime: '-', priority: 'ROUTINE', date: SEVEN_DAYS_AGO, referredBy: 'Dr. John Doe', referredContact: '+91 76543 21098', referredAddress: 'Health Care Center, Pune' },
+  { id: 'SID-198', patientName: 'Sarah Jenkins', patientId: 'P034', age: 22, gender: 'Female', studyType: 'Wrist X-Ray (Lateral)', modality: 'X-RAY', tech: 'Tech John', techNotes: 'Fracture Dislocation (Trauma).', uploadedFiles: 4, status: 'FINAL_REPORTED', waitingTime: '-', priority: 'STAT', date: SEVEN_DAYS_AGO, referredBy: 'Dr. Emma Watson', referredContact: '+91 65432 10987', referredAddress: 'Trauma Care, Bangalore' },
+  { id: 'SID-204', patientName: 'Janet Taylor', patientId: 'P015', age: 64, gender: 'Female', studyType: 'Pelvis Ultrasound', modality: 'ULTRASOUND', tech: 'Tech Lisa', techNotes: 'Normal scan.', uploadedFiles: 1, status: 'READY_FOR_REVIEW', waitingTime: '5m', priority: 'ROUTINE', date: TODAY, referredBy: 'Dr. Richard Roe', referredContact: '+91 54321 09876', referredAddress: 'Sunrise Polyclinic, Chennai' }
 ];
 
 const TEMPLATES = {
@@ -131,11 +131,16 @@ export default function DoctorBoard() {
                         <p style={{ fontSize: '10px', color: '#666' }}>Finalized Diagnostic Impression</p>
                       </div>
                    </div>
-                  <div style={{ background: '#f8f9fa', padding: '15px', borderRadius: '4px', marginBottom: '25px', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', border: '1px solid #eee' }}>
+                  <div style={{ background: '#f8f9fa', padding: '15px', borderRadius: '4px', marginBottom: '25px', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '15px', border: '1px solid #eee' }}>
                      <div style={{ fontSize: '11px' }}><strong>PATIENT:</strong> {printModalData.patientName}</div>
                      <div style={{ fontSize: '11px' }}><strong>STUDY:</strong> {printModalData.studyType}</div>
                      <div style={{ fontSize: '11px' }}><strong>ID:</strong> {printModalData.patientId}</div>
-                     <div style={{ fontSize: '11px' }}><strong>RADIOLOGIST:</strong> Dr. System Admin</div>
+                     <div style={{ fontSize: '11px' }}><strong>AGE/GENDER:</strong> {printModalData.age}y / {printModalData.gender}</div>
+                     <div style={{ fontSize: '11px', gridColumn: 'span 2', borderTop: '1px dashed #ddd', paddingTop: '10px', marginTop: '5px' }}>
+                        <strong>REFERRED BY:</strong> {printModalData.referredBy || 'Self / Walk-in'}
+                     </div>
+                     <div style={{ fontSize: '11px' }}><strong>REF. CONTACT:</strong> {printModalData.referredContact || 'N/A'}</div>
+                     <div style={{ fontSize: '11px' }}><strong>REF. ADDRESS:</strong> {printModalData.referredAddress || 'N/A'}</div>
                   </div>
                   <div style={{ fontSize: '13px', lineHeight: '1.6' }}>
                      <h3 style={{ fontSize: '14px', borderBottom: '1px solid #eee' }}>DIAGNOSTIC FINDINGS</h3>
@@ -365,10 +370,18 @@ export default function DoctorBoard() {
           <button className="btn-logout" style={{ border: '1px solid rgba(255,255,255,0.2)', background: 'transparent', color: 'white', padding: '8px 20px', borderRadius: '8px', fontSize: '11px', fontWeight: 900 }} onClick={() => setView('QUEUE')}>← BOARD EXIT</button>
           <div>
             <div style={{ fontSize: '18px', fontWeight: 950, letterSpacing: '1px' }}>{activeCase.patientName.toUpperCase()} <span style={{ fontWeight: 400, opacity: 0.5, marginLeft: '10px' }}>ID: {activeCase.id}</span></div>
-            <div style={{ fontSize: '9px', color: '#00f2fe', fontWeight: 900, textTransform: 'uppercase', marginTop: '2px' }}>Diagnostic Workspace Active</div>
+            <div style={{ fontSize: '9px', color: '#00f2fe', fontWeight: 900, textTransform: 'uppercase', marginTop: '2px', display: 'flex', gap: '15px' }}>
+               <span>Diagnostic Workspace Active</span>
+               <span style={{ color: '#fff', opacity: 0.6 }}>|</span>
+               <span>REF BY: {activeCase.referredBy?.toUpperCase() || 'SELF'} ({activeCase.referredContact || 'N/A'})</span>
+            </div>
           </div>
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: '20px' }}>
+           <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', borderRight: '1px solid rgba(255,255,255,0.1)', paddingRight: '20px' }}>
+              <span style={{ fontSize: '8px', fontWeight: 900, opacity: 0.5, textTransform: 'uppercase' }}>Source Address</span>
+              <span style={{ fontSize: '10px', fontWeight: 700, color: '#aaa', maxWidth: '200px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{activeCase.referredAddress || 'N/A'}</span>
+           </div>
            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end' }}>
               <span style={{ fontSize: '9px', fontWeight: 900, opacity: 0.5, textTransform: 'uppercase' }}>Mission Triage</span>
               <span style={{ fontSize: '11px', fontWeight: 900, color: (activeCase.priority === 'STAT' || activeCase.priority === 'URGENT') ? '#ff4757' : '#2ecc71' }}>{activeCase.priority} PRIORITY</span>

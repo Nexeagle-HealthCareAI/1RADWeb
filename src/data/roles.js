@@ -41,5 +41,11 @@ export const NAV_ITEMS = [
     route: '/appointment-board',
     icon: '📡',
     allowedRoles: ['admindoctor', 'admin', 'receptionist'],
+  },
+  {
+    label: 'FINANCIAL HUB',
+    route: '/billing',
+    icon: '💳',
+    allowedRoles: ['admindoctor', 'admin', 'accountant'],
   }
 ];

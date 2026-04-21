@@ -16,6 +16,7 @@ import {
   ChevronDown
 } from 'lucide-react-native';
 import AuthNavigationHandler from './AuthNavigationHandler';
+import ErrorBoundary from '../components/ErrorBoundary';
 
 // Screens
 import SplashScreen from '../screens/SplashScreen';
@@ -346,23 +347,15 @@ function RootStack() {
     </Stack.Navigator>
   );
 }
-  }
-
-  return (
-    <Stack.Navigator screenOptions={{ headerShown: false }}>
-      <Stack.Screen name="Splash" component={SplashScreen} />
-      <Stack.Screen name="Auth" component={AuthStack} />
-      <Stack.Screen name="Main" component={MainDrawer} />
-    </Stack.Navigator>
-  );
-}
 
 export default function AppNavigator() {
   return (
-    <NavigationContainer>
-      <RootStack />
-      <AuthNavigationHandler />
-    </NavigationContainer>
+    <ErrorBoundary>
+      <NavigationContainer>
+        <RootStack />
+        <AuthNavigationHandler />
+      </NavigationContainer>
+    </ErrorBoundary>
   );
 }
 

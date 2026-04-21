@@ -34,13 +34,16 @@ const SECTIONS_POOL = [
 ];
 
 export default function AdminBoard() {
-  const { currentUser, activeCenter } = useAuth();
+  const { currentUser, logout, activeCenter, centers, switchCenter, refreshCenters, createCenter } = useAuth();
   const [activeTab, setActiveTab] = useState('INTELLIGENCE');
   const [layouts, setLayouts] = useState(INITIAL_LAYOUTS);
   const [patients, setPatients] = useState([]);
   const [patientSearch, setPatientSearch] = useState('');
   const [personnelSearch, setPersonnelSearch] = useState('');
-  const [sourceSearch, setSourceSearch] = useState('');
+  const [referralMatrixSearch, setReferralMatrixSearch] = useState('');
+  const [referralLogSearch, setReferralLogSearch] = useState('');
+  const [referralRosterSearch, setReferralRosterSearch] = useState('');
+  const [referralPatientsSearch, setReferralPatientsSearch] = useState('');
   const [referralViewMode, setReferralViewMode] = useState('MATRIX'); // 'MATRIX' or 'LOG'
   
   // Dashboard Filters
@@ -54,24 +57,56 @@ export default function AdminBoard() {
   // User Management State
   const [isUserDrawerOpen, setIsUserDrawerOpen] = useState(false);
   const [isHospitalDrawerOpen, setIsHospitalDrawerOpen] = useState(false);
+  const [isChainDrawerOpen, setIsChainDrawerOpen] = useState(false);
+  const [isDeployingChain, setIsDeployingChain] = useState(false);
+  const [newChainData, setNewChainData] = useState({ chainName: '', hospitalName: '', hospitalAddress: '' });
+  const [isSwitchingNode, setIsSwitchingNode] = useState(false);
+  const [showChainSelector, setShowChainSelector] = useState(false);
   const [userRegStep, setUserRegStep] = useState(1);
   const [editUser, setEditUser] = useState(null);
   const [selectedDocId, setSelectedDocId] = useState('');
   const [settings, setSettings] = useState({ allowCustom: true, lockApproved: false, reqFindings: true, reqImpression: true });
   const [showPasswords, setShowPasswords] = useState(false);
+  const [sharingUser, setSharingUser] = useState(null);
+  const [copyFeedback, setCopyFeedback] = useState('');
 
   // Custom Sections Registry
   const [customSections, setCustomSections] = useState([]);
   const [newSectionName, setNewSectionName] = useState('');
 
   // Referral Intel State
-  const [referralRange, setReferralRange] = useState({ start: getISODate(7), end: TODAY });
-  const [referralFilterMode, setReferralFilterMode] = useState('RANGE'); // 'SINGLE' or 'RANGE'
+  const [referralRange, setReferralRange] = useState({ start: TODAY, end: TODAY });
+  const [isImporting, setIsImporting] = useState(false);
+  const [importResult, setImportResult] = useState(null);
+  const [patientMasterList, setPatientMasterList] = useState([]);
+  const [loadingMaster, setLoadingMaster] = useState(false);
+  const [referralFilterMode, setReferralFilterMode] = useState('ALL'); // 'SINGLE', 'RANGE' or 'ALL'
   const [expandedReferrer, setExpandedReferrer] = useState(null);
   const [personnel, setPersonnel] = useState([]);
+  const [referralIntelligence, setReferralIntelligence] = useState([]);
   const [referralLoading, setReferralLoading] = useState(false);
   const [personnelLoading, setPersonnelLoading] = useState(false);
+  const [outlookData, setOutlookData] = useState(null);
+  const [loadingOutlook, setLoadingOutlook] = useState(false);
+  const [isExporting, setIsExporting] = useState(false);
+  const [showExportOverlay, setShowExportOverlay] = useState(false);
+  const [exportParams, setExportParams] = useState({ start: TODAY, end: TODAY, allTime: false });
   const [loading, setLoading] = useState(false);
+
+  // Financial Registry State
+  const [servicePrices, setServicePrices] = useState([]);
+  const [billingSettings, setBillingSettings] = useState({ autoBill: false, currency: '₹' });
+  const [isPriceDrawerOpen, setIsPriceDrawerOpen] = useState(false);
+  const [editPrice, setEditPrice] = useState({ modality: 'X-RAY', serviceName: '', amount: 0 });
+
+  const fetchServicePrices = useCallback(async () => {
+    try {
+      const res = await apiClient.get('/finance/registry');
+      setServicePrices(res.data);
+    } catch (err) {
+      console.error('[FINANCE] Registry fetch failed', err);
+    }
+  }, []);
 
   // Hospital Settings State
   const [hospitalData, setHospitalData] = useState({
@@ -82,6 +117,15 @@ export default function AdminBoard() {
     pan: '',
     nabhNumber: ''
   });
+  const [mappedHospitals, setMappedHospitals] = useState([]);
+  const [viewingHubId, setViewingHubId] = useState(null); // null = show list
+
+  // UX Refinement: Auto-populate brand identity
+  useEffect(() => {
+    if (isChainDrawerOpen && activeCenter?.groupName) {
+      setNewChainData(prev => ({ ...prev, chainName: activeCenter.groupName }));
+    }
+  }, [isChainDrawerOpen, activeCenter]);
   const [hospitalLoading, setHospitalLoading] = useState(false);
   const [savingHospital, setSavingHospital] = useState(false);
   const [hospitalMessage, setHospitalMessage] = useState({ type: '', text: '' });
@@ -112,62 +156,245 @@ export default function AdminBoard() {
     }
   }, []);
 
-  const fetchHospitalData = useCallback(async () => {
+  const fetchPatientMasterList = useCallback(async () => {
+    try {
+      setLoadingMaster(true);
+      const params = referralFilterMode === 'ALL'
+        ? { allTime: true, search: referralPatientsSearch }
+        : {
+            startDate: referralRange.start,
+            endDate: referralFilterMode === 'SINGLE' ? referralRange.start : referralRange.end,
+            search: referralPatientsSearch
+          };
+      const res = await apiClient.get('/patients', { params });
+      setPatientMasterList(res.data);
+    } catch (err) {
+      console.error('[PATIENT MASTER] Fetch failed', err);
+    } finally {
+      setLoadingMaster(false);
+    }
+  }, [referralRange, referralFilterMode, referralPatientsSearch]);
+
+  const handleImport = async (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+
+    setIsImporting(true);
+    setImportResult(null);
+
+    const formData = new FormData();
+    formData.append('file', file);
+
+    try {
+      const response = await apiClient.post('/appointments/import', formData, {
+        headers: { 'Content-Type': 'multipart/form-data' }
+      });
+      setImportResult(response.data);
+      fetchReferralIntelligence();
+      if (referralViewMode === 'PATIENTS') fetchPatientMasterList();
+    } catch (error) {
+      console.error('Import failed:', error);
+      setImportResult({ successCount: 0, failureCount: 1, errors: ['PROTOCOL FAILURE: Could not establish secure data stream.'] });
+    } finally {
+      setIsImporting(false);
+      e.target.value = ''; // Reset input
+    }
+  };
+
+  const fetchHospitalData = useCallback(async (hubId) => {
     try {
       setHospitalLoading(true);
-      const res = await apiClient.get(`/hospitals/${activeCenter.id}`);
+      const res = await apiClient.get(`/hospitals/${hubId}`);
       // Map Hub Metadata to frontend state
       setHospitalData({
-        hospitalName: res.data.hospitalName || '',
-        hospitalAddress: res.data.hospitalAddress || '',
-        gstin: res.data.gstin || '',
-        registrationNumber: res.data.registrationNumber || '',
-        pan: res.data.pan || '',
-        nabhNumber: res.data.nabhNumber || ''
+        hospitalName: res.data.hospitalName || res.data.HospitalName || '',
+        hospitalAddress: res.data.hospitalAddress || res.data.HospitalAddress || '',
+        gstin: res.data.gstin || res.data.GSTIN || '',
+        registrationNumber: res.data.registrationNumber || res.data.RegistrationNumber || '',
+        pan: res.data.pan || res.data.PAN || '',
+        nabhNumber: res.data.nabhNumber || res.data.NABHNumber || ''
       });
+      setViewingHubId(hubId);
     } catch (err) {
       console.error('[HOSPITAL] Fetch failed', err);
     } finally {
       setHospitalLoading(false);
     }
-  }, [activeCenter]);
+  }, []);
 
-  const fetchPatients = useCallback(async () => {
+  const fetchMappedHospitals = useCallback(async () => {
+    try {
+      setHospitalLoading(true);
+      // Fetch metadata for the hubs in the current context's group
+      const res = await apiClient.get('/hospitals/group');
+      const groupMetas = Array.isArray(res.data) ? res.data : [];
+
+      // Merge with the total authorized centers list to ensure universal visibility
+      const mapped = centers.map(c => {
+        const meta = groupMetas.find(m => (m.hospitalId || m.HospitalId) === c.id);
+        return {
+          hospitalId: c.id,
+          hospitalName: meta?.hospitalName || meta?.HospitalName || c.name,
+          hospitalAddress: meta?.hospitalAddress || meta?.HospitalAddress || 'Institutional routing active; address metadata pending sync.',
+          gstin: meta?.gstin || meta?.GSTIN || '',
+          registrationNumber: meta?.registrationNumber || meta?.RegistrationNumber || '',
+          pan: meta?.pan || meta?.PAN || '',
+          nabhNumber: meta?.nabhNumber || meta?.NABHNumber || '',
+          status: meta?.status || meta?.Status || 'active'
+        };
+      });
+      setMappedHospitals(mapped);
+    } catch (err) {
+      console.error('[HUB REGISTRY] Sync failed', err);
+      // Fallback: use basic center info if API fails
+      setMappedHospitals(centers.map(c => ({
+        hospitalId: c.id,
+        hospitalName: c.name,
+        hospitalAddress: 'Offline routing active.',
+        status: 'active'
+      })));
+    } finally {
+      setHospitalLoading(false);
+    }
+  }, [centers]);
+
+  const fetchReferralIntelligence = useCallback(async () => {
     try {
       setReferralLoading(true);
-      const res = await apiClient.get('/patients');
-      // Map backend Patient objects to frontend state
-      const mapped = res.data.map(p => ({
-        id: p.patientId,
-        name: p.fullName || 'Unknown Patient',
-        age: p.age,
-        gender: p.gender,
-        referredBy: p.referredBy || 'Direct / Walk-in',
-        sourceContact: p.sourceOfInfo,
-        registered: p.createdAt?.split('T')[0] || TODAY // Use registration date for timeline
-      }));
-      setPatients(mapped);
+      const params = referralFilterMode === 'ALL'
+        ? { allTime: true }
+        : {
+            startDate: referralRange.start,
+            endDate: referralFilterMode === 'SINGLE' ? referralRange.start : referralRange.end
+          };
+      const res = await apiClient.get('/referrers/intelligence', { params });
+      setReferralIntelligence(res.data);
     } catch (err) {
-      console.error('[PATIENTS] Fetch failed', err);
+      console.error('[REFERRAL INTEL] Fetch failed', err);
     } finally {
       setReferralLoading(false);
     }
-  }, []);
+  }, [referralRange, referralFilterMode]);
 
   useEffect(() => {
     if (activeTab === 'PERSONNEL') {
       fetchPersonnel();
     }
     if (activeTab === 'REFERRAL INTEL') {
-      fetchPatients();
+      fetchReferralIntelligence();
+      if (referralViewMode === 'PATIENTS') fetchPatientMasterList();
     }
-    if (activeTab === 'HOSPITAL' && activeCenter?.id) {
-      fetchHospitalData();
+    if (activeTab === 'HOSPITAL SETTINGS') {
+      fetchMappedHospitals();
     }
-  }, [activeTab, activeCenter, fetchPersonnel, fetchHospitalData, fetchPatients]);
+    if (activeTab === 'FINANCE') {
+      fetchServicePrices();
+    }
+  }, [activeTab, fetchPersonnel, fetchReferralIntelligence, fetchPatientMasterList, fetchMappedHospitals, fetchServicePrices, referralViewMode]);
+
+  const fetchStrategicOutlook = useCallback(async (dateString) => {
+    try {
+      setLoadingOutlook(true);
+      const res = await apiClient.get('/intelligence/outlook', { params: { referenceDate: dateString || TODAY } });
+      setOutlookData(res.data);
+    } catch (err) {
+      console.error('Tactical Insight Failure:', err);
+    } finally {
+      setLoadingOutlook(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (activeTab === 'INTELLIGENCE') {
+       fetchStrategicOutlook(selectedDateFilter);
+    }
+  }, [activeTab, selectedDateFilter, fetchStrategicOutlook]);
+
+
+
+  const handleExportIntelligence = async () => {
+    try {
+      setIsExporting(true);
+      const params = exportParams.allTime ? { allTime: true } : { startDate: exportParams.start, endDate: exportParams.end };
+      const response = await apiClient.get('/intelligence/export', {
+        params,
+        responseType: 'blob'
+      });
+      
+      const url = window.URL.createObjectURL(new Blob([response.data]));
+      const link = document.createElement('a');
+      link.href = url;
+      link.setAttribute('download', `1Rad_Intelligence_${exportParams.start}_to_${exportParams.end}.xlsx`);
+      document.body.appendChild(link);
+      link.click();
+      link.parentNode.removeChild(link);
+      setShowExportOverlay(false);
+    } catch (err) {
+      console.error('Export Failed:', err);
+      alert('PROTOCOL FAILURE: Could not compile strategic intelligence export.');
+    } finally {
+      setIsExporting(false);
+    }
+  };
+
+  const handleSwitchNode = async (id) => {
+    if (id === activeCenter?.id) return;
+    try {
+      setIsSwitchingNode(true);
+      setShowChainSelector(false);
+      const result = await switchCenter(id);
+      if (result?.success) {
+        // Clear local data to force re-sync
+        setOutlookData(null);
+        setReferralIntelligence([]);
+        setPersonnel([]);
+        
+        // Success feedback handled by effect dependency on activeCenter
+      }
+    } catch (err) {
+      console.error('Node Transition Failed:', err);
+    } finally {
+      // Small artificial delay for smooth transition feel
+      setTimeout(() => setIsSwitchingNode(false), 800);
+    }
+  };
+
+  const handleDeployChain = async (e) => {
+    e.preventDefault();
+    try {
+      setIsDeployingChain(true);
+      const res = await apiClient.post('/hospitals/chain', newChainData);
+      
+      if (res.data.success) {
+        setIsChainDrawerOpen(false);
+        setNewChainData({ chainName: '', hospitalName: '', hospitalAddress: '' });
+        
+        // Use standard transition logic
+        await handleSwitchNode(res.data.hospitalId);
+      }
+    } catch (err) {
+      console.error('Chain Deployment Failure:', err);
+      alert(err.response?.data?.message || 'DEPLOYMENT FAILURE: Institutional expansion protocol failed.');
+    } finally {
+      setIsDeployingChain(false);
+    }
+  };
+
+  const getStatusConfig = (status) => {
+    const s = status?.toUpperCase() || 'UNKNOWN';
+    if (s.includes('COMPLETED')) return { bg: '#ecfdf5', color: '#059669', label: 'COMPLETED' };
+    if (s.includes('CANCEL')) return { bg: '#fef2f2', color: '#dc2626', label: 'CANCELLED' };
+    if (s.includes('PROGRESS')) return { bg: '#eff6ff', color: '#2563eb', label: 'IN PROGRESS' };
+    if (s.includes('ARRIVE')) return { bg: '#fff7ed', color: '#ea580c', label: 'ARRIVED' };
+    return { bg: '#f8fafc', color: '#64748b', label: s };
+  };
+
 
   const handleSaveHospital = async (e) => {
     e.preventDefault();
+    const targetHubId = viewingHubId || activeCenter?.id;
+    if (!targetHubId) return;
+
     try {
       setSavingHospital(true);
       setHospitalMessage({ type: '', text: '' });
@@ -181,15 +408,19 @@ export default function AdminBoard() {
         nabhNumber: hospitalData.nabhNumber
       };
 
-      await apiClient.put(`/hospitals/${activeCenter.id}`, payload);
-      setHospitalMessage({ type: 'success', text: 'METADATA RE-SYNCED: Hospital configuration updated successfully.' });
+      await apiClient.put(`/hospitals/${targetHubId}`, payload);
+      setHospitalMessage({ type: 'success', text: 'METADATA RE-SYNCED: Hub configuration updated successfully.' });
+      
+      // Refresh the registry and current view
+      fetchMappedHospitals();
+      fetchHospitalData(targetHubId);
+
       setTimeout(() => {
         setIsHospitalDrawerOpen(false);
         setHospitalMessage({ type: '', text: '' });
       }, 2000);
-      fetchHospitalData();
     } catch (err) {
-      setHospitalMessage({ type: 'error', text: err.response?.data?.message || 'DEPLOYMENT FAILURE: Failed to update hospital metadata.' });
+      setHospitalMessage({ type: 'error', text: err.response?.data?.message || 'DEPLOYMENT FAILURE: Failed to update institutional node metadata.' });
     } finally {
       setSavingHospital(false);
     }
@@ -245,44 +476,64 @@ export default function AdminBoard() {
 
   // Referral Intelligence Logic (Moved to top-level to satisfy Rules of Hooks)
   const temporalPatients = useMemo(() => {
-    return patients.filter(p => {
-      const isDateMatched = referralFilterMode === 'SINGLE' 
-        ? p.registered === referralRange.start
-        : (p.registered >= referralRange.start && p.registered <= referralRange.end);
-      
-      if (!isDateMatched) return false;
+    // Flatten all patients from grouped intelligence data
+    const allPatients = referralIntelligence.flatMap(ref => 
+      ref.patients.map(p => ({
+        ...p,
+        referredBy: ref.name,
+        sourceContact: ref.contact,
+        sourceAddress: ref.address,
+        registered: p.registrationDate // Alias for consistency
+      }))
+    );
 
-      if (!sourceSearch) return true;
-      
-      const searchLow = sourceSearch.toLowerCase();
-      const sourceMatch = (p.referredBy || 'Direct / Walk-in').toLowerCase().includes(searchLow);
-      const patientMatch = (p.name || '').toLowerCase().includes(searchLow);
-      
-      return referralViewMode === 'MATRIX' ? sourceMatch : (sourceMatch || patientMatch);
-    });
-  }, [patients, referralRange, referralFilterMode, sourceSearch, referralViewMode]);
+    if (referralViewMode === 'LOG' && referralLogSearch) {
+      const searchLow = referralLogSearch.toLowerCase();
+      return allPatients.filter(p => {
+        const sourceMatch = (p.referredBy || '').toLowerCase().includes(searchLow);
+        const patientMatch = (p.name || '').toLowerCase().includes(searchLow);
+        return sourceMatch || patientMatch;
+      });
+    }
+
+    return allPatients;
+  }, [referralIntelligence, referralLogSearch, referralViewMode]);
 
   const referralAggregated = useMemo(() => {
-    if (referralViewMode !== 'MATRIX') return [];
+    if (referralViewMode !== 'MATRIX' && referralViewMode !== 'ROSTER' ) return [];
     
-    const result = temporalPatients.reduce((acc, p) => {
-      const source = p.referredBy || 'Direct / Walk-in';
-      if (!acc[source]) {
-        acc[source] = {
-          name: source,
-          contact: p.sourceContact || 'N/A',
-          patients: [],
-          modalities: {}
-        };
-      }
-      acc[source].patients.push(p);
-      const mod = p.modality || 'OTHER';
-      acc[source].modalities[mod] = (acc[source].modalities[mod] || 0) + 1;
-      return acc;
-    }, {});
-    
-    return Object.values(result).sort((a, b) => b.patients.length - a.patients.length);
-  }, [temporalPatients, referralViewMode]);
+    // Map the backend intelligence DTOs to the frontend's expected Matrix structure
+    const mapped = referralIntelligence.map(ref => {
+      // Calculate modality breakdown for each referrer
+      const modalities = ref.patients.reduce((acc, p) => {
+        const mod = p.modality || 'OTHER';
+        acc[mod] = (acc[mod] || 0) + 1;
+        return acc;
+      }, {});
+
+      return {
+        name: ref.name,
+        contact: ref.contact,
+        address: ref.address,
+        patients: ref.patients,
+        modalities
+      };
+    });
+
+    if (!referralMatrixSearch) return mapped.sort((a, b) => b.patients.length - a.patients.length);
+
+    const searchLow = referralMatrixSearch.toLowerCase();
+    return mapped
+      .filter(ref => ref.name.toLowerCase().includes(searchLow))
+      .sort((a, b) => b.patients.length - a.patients.length);
+  }, [referralIntelligence, referralViewMode, referralMatrixSearch]);
+
+  // Auto-select first referrer in Matrix mode
+  useEffect(() => {
+    if (referralViewMode === 'MATRIX' && referralAggregated.length > 0 && !expandedReferrer) {
+      setExpandedReferrer(referralAggregated[0].name);
+    }
+  }, [referralViewMode, referralAggregated, expandedReferrer]);
 
   const handleDeleteUser = async (id) => {
     if (id === currentUser.id) {
@@ -297,6 +548,21 @@ export default function AdminBoard() {
         alert(err.response?.data?.message || 'Failed to remove personnel.');
       }
     }
+  };
+
+  const handleCopyCredentials = (user) => {
+    const text = `1Rad Clinical Hub Access\nLogin ID: ${user.email}\nSecurity Key: ${user.password || '[Hidden]'}\nHub URL: ${window.location.origin}`;
+    navigator.clipboard.writeText(text);
+    setCopyFeedback(user.id);
+    setTimeout(() => setCopyFeedback(''), 3000);
+  };
+
+  const handleWhatsAppShare = (user) => {
+    const message = `Hello ${user.name},\n\nYour 1Rad Clinical Hub credentials have been initialized.\n\n🌐 Hub URL: ${window.location.origin}\n🔑 Login ID: ${user.email}\n🛡️ Security Key: ${user.password || '[Please use the reset link if unknown]'}\n\nPlease maintain strict confidentiality of these credentials.`;
+    const encoded = encodeURIComponent(message);
+    const mobile = user.mobile?.replace(/\D/g, ''); // Ensure only numbers
+    const finalMobile = mobile?.length === 10 ? `91${mobile}` : mobile; // Default to India if 10 digits
+    window.open(`https://wa.me/${finalMobile}?text=${encoded}`, '_blank');
   };
 
   const handleOpenUserDrawer = (user = null) => {
@@ -445,6 +711,29 @@ export default function AdminBoard() {
     });
   };
 
+  // --- PRICE MGMT ---
+  const handleSavePrice = async (e) => {
+    e.preventDefault();
+    try {
+      await apiClient.post('/finance/registry', editPrice);
+      setIsPriceDrawerOpen(false);
+      fetchServicePrices();
+    } catch (err) {
+      console.error('[FINANCE] Save failed', err);
+    }
+  };
+
+  const handleDeletePrice = async (id) => {
+    if (window.confirm('Are you sure you want to delete this service charge?')) {
+      try {
+        await apiClient.delete(`/finance/registry/${id}`);
+        fetchServicePrices();
+      } catch (err) {
+        console.error('[FINANCE] Delete failed', err);
+      }
+    }
+  };
+
   // --- RENDERERS ---
   const renderDocumentation = () => {
     const doctors = personnel.filter(u => u.roles?.includes('doctor') || u.roles?.includes('admindoctor'));
@@ -454,100 +743,183 @@ export default function AdminBoard() {
     if (!doc) return <div style={{ padding: '40px', textAlign: 'center', color: '#888' }}>NO DOCTORS DETECTED ON ROSTER</div>;
 
     return (
-      <div className="documentation-module">
-        <div className="board-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '25px', background: 'white', padding: '15px 25px', borderRadius: '12px', border: '1px solid #dee2e6' }}>
-          <div>
-            <h2 style={{ fontSize: '11px', fontWeight: 950, textTransform: 'uppercase', color: '#0f52ba', marginBottom: '4px' }}>Clinical Report Branding</h2>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-               <span style={{ fontSize: '13px', fontWeight: 700, color: '#2c3e50' }}>{doc.name}</span>
+      <>
+        <div className="documentation-module">
+          <div className="board-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '25px', background: 'white', padding: '15px 25px', borderRadius: '12px', border: '1px solid #dee2e6' }}>
+            <div>
+              <h2 style={{ fontSize: '11px', fontWeight: 950, textTransform: 'uppercase', color: '#0f52ba', marginBottom: '4px' }}>Clinical Report Branding</h2>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                 <span style={{ fontSize: '13px', fontWeight: 700, color: '#2c3e50' }}>{doc.name}</span>
+              </div>
             </div>
+            <select 
+              value={docId} 
+              onChange={e => setSelectedDocId(e.target.value)}
+              style={{ padding: '8px', borderRadius: '8px', border: '2px solid #0f52ba', fontWeight: 700, minWidth: '220px', cursor: 'pointer' }}
+            >
+              {doctors.map(d => <option key={d.id} value={d.id}>{d.name} ({ROLE_LABELS[d.roles?.[0]]})</option>)}
+            </select>
           </div>
-          <select 
-            value={docId} 
-            onChange={e => setSelectedDocId(e.target.value)}
-            style={{ padding: '8px', borderRadius: '8px', border: '2px solid #0f52ba', fontWeight: 700, minWidth: '220px', cursor: 'pointer' }}
-          >
-            {doctors.map(d => <option key={d.id} value={d.id}>{d.name} ({ROLE_LABELS[d.roles?.[0]]})</option>)}
-          </select>
         </div>
 
         <div style={{ padding: '40px', background: '#f8f9fa', borderRadius: '12px', border: '1px dashed #ccc', textAlign: 'center', color: '#888' }}>
-           <div style={{ fontSize: '24px', marginBottom: '10px' }}>📁</div>
-           <div style={{ fontSize: '12px', fontWeight: 900 }}>REPORTING PROTOCOLS DEACTIVATED</div>
-           <div style={{ fontSize: '10px' }}>Protocol branding and template management has been moved to the core configuration bay.</div>
+             <div style={{ fontSize: '24px', marginBottom: '10px' }}>📁</div>
+             <div style={{ fontSize: '12px', fontWeight: 900 }}>REPORTING PROTOCOLS DEACTIVATED</div>
+             <div style={{ fontSize: '10px' }}>Protocol branding and template management has been moved to the core configuration bay.</div>
+          </div>
+        </>
+      );
+    };
+
+  const renderHospitalSettings = () => {
+    if (viewingHubId) {
+      return (
+        <div className="hospital-settings-view">
+          <div className="board-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '35px' }}>
+            <div style={{ display: 'flex', gap: '20px', alignItems: 'center' }}>
+               <button 
+                 onClick={() => setViewingHubId(null)}
+                 style={{ width: '40px', height: '40px', borderRadius: '12px', border: '1px solid #eee', background: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', fontSize: '18px' }}
+               >
+                 ←
+               </button>
+               <div>
+                 <h2 style={{ fontSize: '12px', fontWeight: 900, textTransform: 'uppercase', letterSpacing: '2px', color: '#0f52ba', marginBottom: '4px' }}>Hub Configuration</h2>
+                 <p style={{ fontSize: '11px', color: '#888', fontWeight: 600 }}>Managing physical node metadata and compliance parameters.</p>
+               </div>
+            </div>
+            <button 
+              onClick={() => setIsHospitalDrawerOpen(true)}
+              style={{ 
+                padding: '12px 24px', borderRadius: '12px', border: 'none', 
+                background: 'linear-gradient(90deg, #0f52ba 0%, #00f2fe 100%)', 
+                color: 'white', fontSize: '11px', fontWeight: 950, cursor: 'pointer',
+                boxShadow: '0 8px 20px rgba(15, 82, 186, 0.2)'
+              }}
+            >
+              EDIT CONFIGURATION ⚙️
+            </button>
+          </div>
+
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '30px' }}>
+            <div style={{ background: 'white', padding: '40px', borderRadius: '24px', border: '1px solid #eee', boxShadow: '0 10px 40px rgba(0,0,0,0.02)', position: 'relative', overflow: 'hidden' }}>
+              <div style={{ position: 'absolute', top: 0, right: 0, width: '150px', height: '150px', background: 'linear-gradient(135deg, transparent 50%, rgba(15, 82, 186, 0.03) 50%)', borderRadius: '0 24px 0 0' }}></div>
+              <div style={{ display: 'flex', gap: '40px' }}>
+                <div style={{ width: '120px', height: '120px', background: '#f8fbfc', borderRadius: '20px', border: '1px solid #edf2f7', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '48px' }}>🏥</div>
+                <div style={{ flex: 1 }}>
+                  <span style={{ fontSize: '10px', fontWeight: 950, color: '#0f52ba', letterSpacing: '3px', textTransform: 'uppercase' }}>INSTITUTIONAL_IDENTITY</span>
+                  <h1 style={{ fontSize: '32px', fontWeight: 950, color: '#1a1a2e', marginTop: '8px', marginBottom: '4px' }}>{(hospitalData.hospitalName || 'UNCONFIGURED_HUB').toUpperCase()}</h1>
+                  <p style={{ fontSize: '14px', color: '#64748b', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <span>📍</span> {hospitalData.hospitalAddress || 'Address not synchronized.'}
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '20px' }}>
+              {[
+                { label: 'GSTIN MODULE', value: hospitalData.gstin, icon: '📄' },
+                { label: 'REGISTRATION #', value: hospitalData.registrationNumber, icon: '🔖' },
+                { label: 'TAX PAN NODE', value: hospitalData.pan, icon: '💳' },
+                { label: 'QUALITY ACCREDIT', value: hospitalData.nabhNumber, icon: '🏆' }
+              ].map(item => (
+                <div key={item.label} style={{ background: 'white', padding: '25px', borderRadius: '20px', border: '1px solid #eee', display: 'flex', alignItems: 'center', gap: '20px' }}>
+                  <div style={{ width: '45px', height: '45px', borderRadius: '12px', background: '#f8fafc', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '20px' }}>{item.icon}</div>
+                  <div>
+                    <div style={{ fontSize: '9px', fontWeight: 950, color: '#94a3b8', letterSpacing: '1px' }}>{item.label}</div>
+                    <div style={{ fontSize: '15px', fontWeight: 800, color: '#1e293b', marginTop: '2px' }}>{item.value || 'NOT_SYNCHRONIZED'}</div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
         </div>
+      );
+    }
+
+    return (
+      <div className="hospital-settings-view">
+        <div className="board-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '35px' }}>
+          <div>
+            <h2 style={{ fontSize: '12px', fontWeight: 900, textTransform: 'uppercase', letterSpacing: '2px', color: '#0f52ba', marginBottom: '4px' }}>Institutional Hub Registry</h2>
+            <p style={{ fontSize: '11px', color: '#888', fontWeight: 600 }}>Overview of mapped physical centers within your authorized expansion zone.</p>
+          </div>
+          <div style={{ background: '#f8f9fa', padding: '8px 16px', borderRadius: '10px', fontSize: '9px', fontWeight: 900, color: '#64748b', border: '1px solid #eee' }}>
+            PROTOCOL: ACTIVE_MAPPING_ONLY
+          </div>
+        </div>
+
+        {hospitalLoading ? (
+          <div style={{ padding: '100px', textAlign: 'center' }}>
+             <div className="pulse-loader"></div>
+             <p style={{ fontSize: '11px', fontWeight: 900, color: '#0f52ba', marginTop: '20px' }}>SCANNING NETWORK NODES...</p>
+          </div>
+        ) : (
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(350px, 1fr))', gap: '25px' }}>
+            {mappedHospitals.map(hub => (
+              <div 
+                key={hub.hospitalId}
+                style={{ 
+                  background: 'white', border: '1px solid #eee', borderRadius: '24px', padding: '30px', 
+                  boxShadow: '0 4px 20px rgba(0,0,0,0.02)', position: 'relative', overflow: 'hidden',
+                  transition: 'all 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275)'
+                }}
+              >
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '20px' }}>
+                   <div style={{ width: '50px', height: '50px', borderRadius: '14px', background: '#f0f7ff', border: '1px solid #e0efff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '20px' }}>🏙️</div>
+                   {hub.hospitalId === activeCenter.id && (
+                     <span style={{ fontSize: '8px', fontWeight: 950, background: '#e9f7ef', color: '#27ae60', padding: '4px 10px', borderRadius: '20px', border: '1px solid #c3e6cb' }}>CURRENT_ACTIVE_HUB</span>
+                   )}
+                </div>
+                
+                <h3 style={{ fontSize: '18px', fontWeight: 950, color: '#1a1a2e', marginBottom: '8px' }}>{hub.hospitalName.toUpperCase()}</h3>
+                <p style={{ fontSize: '11px', color: '#64748b', fontWeight: 600, display: 'flex', gap: '6px', marginBottom: '25px' }}>
+                   <span>📍</span> {hub.hospitalAddress}
+                </p>
+
+                <div style={{ background: '#f8fafc', padding: '15px', borderRadius: '16px', display: 'flex', justifyContent: 'space-between', marginBottom: '25px' }}>
+                   <div style={{ textAlign: 'center' }}>
+                      <div style={{ fontSize: '8px', fontWeight: 950, color: '#94a3b8', letterSpacing: '1px' }}>STATUS</div>
+                      <div style={{ fontSize: '10px', fontWeight: 950, color: '#2ecc71', marginTop: '2px' }}>{hub.status.toUpperCase()}</div>
+                   </div>
+                   <div style={{ width: '1px', background: '#eee' }}></div>
+                   <div style={{ textAlign: 'center' }}>
+                      <div style={{ fontSize: '8px', fontWeight: 950, color: '#94a3b8', letterSpacing: '1px' }}>NABH</div>
+                      <div style={{ fontSize: '10px', fontWeight: 950, color: '#1e293b', marginTop: '2px' }}>{hub.nabhNumber || 'N/A'}</div>
+                   </div>
+                   <div style={{ width: '1px', background: '#eee' }}></div>
+                   <div style={{ textAlign: 'center' }}>
+                      <div style={{ fontSize: '8px', fontWeight: 950, color: '#94a3b8', letterSpacing: '1px' }}>COMPLIANCE</div>
+                      <div style={{ fontSize: '10px', fontWeight: 950, color: hub.gstin ? '#0f52ba' : '#f39c12', marginTop: '2px' }}>{hub.gstin ? 'VERIFIED' : 'PENDING'}</div>
+                   </div>
+                </div>
+
+                <button 
+                  onClick={() => fetchHospitalData(hub.hospitalId)}
+                  style={{ 
+                    width: '100%', padding: '14px', borderRadius: '14px', border: 'none', 
+                    background: '#0f52ba', color: 'white', fontWeight: 950, fontSize: '10px', 
+                    letterSpacing: '1px', cursor: 'pointer', boxShadow: '0 4px 15px rgba(15, 82, 186, 0.2)'
+                  }}
+                >
+                  MANAGE HUB CONFIGURATION →
+                </button>
+              </div>
+            ))}
+
+            {mappedHospitals.length === 0 && (
+              <div style={{ gridColumn: '1/-1', padding: '100px', textAlign: 'center', border: '1px dashed #eee', borderRadius: '30px' }}>
+                 <div style={{ fontSize: '50px', marginBottom: '20px' }}>🏙️</div>
+                 <h3 style={{ fontSize: '15px', fontWeight: 950, color: '#1a1a2e' }}>NO MAPPED CENTERS DETECTED</h3>
+                 <p style={{ fontSize: '11px', color: '#888', marginTop: '5px' }}>The active mapping protocol returned zero authorized hubs for your current identity.</p>
+              </div>
+            )}
+          </div>
+        )}
       </div>
     );
   };
 
-  const renderHospitalSettings = () => (
-    <div className="hospital-settings-view">
-      <div className="board-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '35px' }}>
-        <div>
-          <h2 style={{ fontSize: '12px', fontWeight: 900, textTransform: 'uppercase', letterSpacing: '2px', color: '#0f52ba', marginBottom: '4px' }}>Infrastructure Configuration</h2>
-          <p style={{ fontSize: '11px', color: '#888', fontWeight: 600 }}>Operational status and institutional metadata overview.</p>
-        </div>
-        <button 
-          onClick={() => setIsHospitalDrawerOpen(true)}
-          style={{ 
-            padding: '12px 24px', borderRadius: '12px', border: 'none', 
-            background: 'linear-gradient(90deg, #0f52ba 0%, #00f2fe 100%)', 
-            color: 'white', fontSize: '11px', fontWeight: 950, cursor: 'pointer',
-            boxShadow: '0 8px 20px rgba(15, 82, 186, 0.2)'
-          }}
-        >
-          EDIT CONFIGURATION ⚙️
-        </button>
-      </div>
-
-      {hospitalLoading ? (
-         <div style={{ padding: '100px', textAlign: 'center' }}>
-            <div className="pulse-loader"></div>
-            <p style={{ fontSize: '11px', fontWeight: 900, color: '#0f52ba', marginTop: '20px' }}>LINKING TO CLOUD REGISTRY...</p>
-         </div>
-      ) : (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '30px' }}>
-          {/* Main Identity Card */}
-          <div style={{ background: 'white', padding: '40px', borderRadius: '24px', border: '1px solid #eee', boxShadow: '0 10px 40px rgba(0,0,0,0.02)', position: 'relative', overflow: 'hidden' }}>
-            <div style={{ position: 'absolute', top: 0, right: 0, width: '150px', height: '150px', background: 'linear-gradient(135deg, transparent 50%, rgba(15, 82, 186, 0.03) 50%)', borderRadius: '0 24px 0 0' }}></div>
-            
-            <div style={{ display: 'flex', gap: '40px' }}>
-              <div style={{ width: '120px', height: '120px', background: '#f8fbfc', borderRadius: '20px', border: '1px solid #edf2f7', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '48px', boxShadow: 'inset 0 4px 10px rgba(0,0,0,0.02)' }}>🏥</div>
-              <div style={{ flex: 1 }}>
-                <span style={{ fontSize: '10px', fontWeight: 950, color: '#0f52ba', letterSpacing: '3px', textTransform: 'uppercase' }}>INSTITUTIONAL_IDENTITY</span>
-                <h1 style={{ fontSize: '32px', fontWeight: 950, color: '#1a1a2e', marginTop: '8px', marginBottom: '4px' }}>{hospitalData.hospitalName || 'UNCONFIGURED_HUB'}</h1>
-                <p style={{ fontSize: '14px', color: '#64748b', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '8px' }}>
-                  <span>📍</span> {hospitalData.hospitalAddress || 'Address not synchronized.'}
-                </p>
-                <div style={{ marginTop: '20px', display: 'flex', gap: '10px' }}>
-                   <span className="file-badge" style={{ background: '#e9f7ef', color: '#155724', padding: '6px 12px', fontSize: '10px' }}>ACTIVE STATUS: VERIFIED</span>
-                   <span className="file-badge" style={{ background: '#f0f4ff', color: '#0f52ba', padding: '6px 12px', fontSize: '10px' }}>NODE ID: {activeCenter.id.split('-')[0].toUpperCase()}</span>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '20px' }}>
-            {/* Compliance Matrix */}
-            {[
-              { label: 'GSTIN MODULE', value: hospitalData.gstin, icon: '📄' },
-              { label: 'REGISTRATION #', value: hospitalData.registrationNumber, icon: '🔖' },
-              { label: 'TAX PAN NODE', value: hospitalData.pan, icon: '💳' },
-              { label: 'QUALITY ACCREDIT', value: hospitalData.nabhNumber, icon: '🏆' }
-            ].map(item => (
-              <div key={item.label} style={{ background: 'white', padding: '25px', borderRadius: '20px', border: '1px solid #eee', display: 'flex', alignItems: 'center', gap: '20px' }}>
-                <div style={{ width: '45px', height: '45px', borderRadius: '12px', background: '#f8fafc', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '20px' }}>{item.icon}</div>
-                <div>
-                  <div style={{ fontSize: '9px', fontWeight: 950, color: '#94a3b8', letterSpacing: '1px' }}>{item.label}</div>
-                  <div style={{ fontSize: '15px', fontWeight: 800, color: '#1e293b', marginTop: '2px' }}>{item.value || 'NOT_SYNCHRONIZED'}</div>
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-    </div>
-  );
 
   const renderHospitalDrawer = () => (
     <div className="drawer-overlay" onClick={() => setIsHospitalDrawerOpen(false)} style={{ backdropFilter: 'blur(8px)', background: 'rgba(10, 22, 40, 0.4)', zIndex: 3001 }}>
@@ -617,340 +989,369 @@ export default function AdminBoard() {
                     {savingHospital ? 'SYNCHRONIZING...' : 'COMMIT CHANGES →'}
                 </button>
               </div>
-           </form>
-        </div>
+            </form>
+         </div>
       </div>
     </div>
   );
 
   const renderAnalytics = () => {
-    const totalModalityCount = MODALITY_STATS_MOCK.reduce((acc, m) => acc + m.count, 0);
+    if (loadingOutlook && !outlookData) {
+      return (
+        <div style={{ padding: '150px', textAlign: 'center' }}>
+          <div className="pulse-loader" style={{ margin: '0 auto' }}></div>
+          <div style={{ marginTop: '20px', fontSize: '12px', fontWeight: 950, color: '#0f52ba', letterSpacing: '2px' }}>SYNCHRONIZING STRATEGIC OUTLOOK...</div>
+        </div>
+      );
+    }
+
+    if (!outlookData) return null;
+
+    const { kpis, modalities, volumeTrends, demographics, topSources } = outlookData;
 
     return (
-      <div className="analytics-view" style={{ display: 'flex', flexDirection: 'column', gap: '30px' }}>
-        <div className="filter-bar responsive-control-bar force-stack-mobile" style={{ background: 'white', borderRadius: '12px', border: '1px solid #dee2e6', padding: '15px', display: 'flex', flexWrap: 'wrap', gap: '15px', boxShadow: '0 2px 10px rgba(0,0,0,0.03)' }}>
-          <div className="filter-group responsive-control-bar force-stack-mobile" style={{ display: 'flex', alignItems: 'center', gap: '10px 15px', flexWrap: 'wrap' }}>
-            <label style={{ fontSize: '10px', fontWeight: 900, color: '#0f52ba', textTransform: 'uppercase', letterSpacing: '1px' }}>Governance Intensity:</label>
-            <div className="btn-group" style={{ display: 'flex', gap: '5px' }}>
-              <button 
-                className={`btn-secondary ${selectedDateFilter === TODAY ? 'active' : ''}`} 
-                onClick={() => setSelectedDateFilter(TODAY)}
-                style={{ padding: '6px 15px', fontSize: '11px', borderRadius: '6px', background: selectedDateFilter === TODAY ? '#0f52ba' : '#f8f9fa', color: selectedDateFilter === TODAY ? 'white' : '#666', border: '1px solid #eee' }}
-              >
-                TODAY
-              </button>
-              <button 
-                className={`btn-secondary ${selectedDateFilter === YESTERDAY ? 'active' : ''}`} 
-                onClick={() => setSelectedDateFilter(YESTERDAY)}
-                style={{ padding: '6px 15px', fontSize: '11px', borderRadius: '6px', background: selectedDateFilter === YESTERDAY ? '#0f52ba' : '#f8f9fa', color: selectedDateFilter === YESTERDAY ? 'white' : '#666', border: '1px solid #eee' }}
-              >
-                YESTERDAY
-              </button>
-            </div>
-            <input type="date" value={selectedDateFilter} onChange={e => setSelectedDateFilter(e.target.value)} style={{ padding: '6px 12px', fontSize: '11px', borderRadius: '6px', border: '1px solid #eee' }} />
-          </div>
-        </div>
-
-        {/* Level 0: Primary Referral Intel */}
-        <div className="chart-container" style={{ background: 'white', border: '1px solid #dee2e6', padding: '25px', borderRadius: '12px', boxShadow: '0 2px 10px rgba(0,0,0,0.03)' }}>
-           <div className="chart-title" style={{ fontSize: '11px', fontWeight: 900, color: '#888', textTransform: 'uppercase', letterSpacing: '1px', marginBottom: '25px', display: 'flex', justifyContent: 'space-between' }}>
-              <span>Daily Referral Source Distribution</span>
-              <span style={{ color: '#0f52ba' }}>{selectedDateFilter === TODAY ? 'TODAY' : selectedDateFilter}</span>
+      <div className="analytics-view fade-in">
+        {/* Intelligence Header: Real-time Flux Search */}
+        <div style={{ background: 'white', padding: '20px 30px', borderRadius: '24px', border: '1px solid #e2e8f0', marginBottom: '30px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+           <div style={{ display: 'flex', alignItems: 'center', gap: '15px', fontSize: '13px', fontWeight: 950, color: '#1e293b' }}>
+              <span style={{ color: '#0f52ba' }}>📡</span>
+              <span>Regional Source Outlook</span>
+              <span style={{ color: '#94a3b8', fontSize: '10px' }}>LOGGED DATE: {selectedDateFilter === TODAY ? 'TODAY' : selectedDateFilter}</span>
            </div>
-           <div className="referral-list mobile-grid-1" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '25px' }}>
-              {dynamicReferralStats.length > 0 ? dynamicReferralStats.map((ref, i) => (
-                 <div key={ref.name} style={{ background: '#f8f9fa', padding: '15px', borderRadius: '10px', border: i === 0 ? '1px solid #0f52ba' : '1px solid #eee' }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px' }}>
-                       <span style={{ fontSize: '11px', fontWeight: 800, color: '#2c3e50' }}>{ref.name}</span>
-                       <span style={{ fontSize: '11px', fontWeight: 900, color: '#0f52ba' }}>{ref.count} Cases</span>
-                    </div>
-                    <div style={{ height: '6px', background: 'white', borderRadius: '3px', overflow: 'hidden' }}>
-                       <div style={{ width: `${ref.percentage}%`, height: '100%', background: i === 0 ? '#0f52ba' : '#3498db', borderRadius: '3px' }}></div>
-                    </div>
-                 </div>
-              )) : (
-                 <div style={{ gridColumn: 'span 3', padding: '20px', textAlign: 'center', color: '#aaa', fontSize: '11px', border: '1px dashed #eee', borderRadius: '8px' }}>
-                    NO REFERRAL INTELLIGENCE FOR THIS PERIOD
-                 </div>
-              )}
+           <div style={{ display: 'flex', gap: '10px' }}>
+              {topSources.map((s, i) => (
+                <div key={s.name} style={{ fontSize: '9px', fontWeight: 950, padding: '6px 12px', background: i === 0 ? '#eff6ff' : '#f8fafc', color: i === 0 ? '#2563eb' : '#64748b', borderRadius: '10px', border: '1px solid #e2e8f0' }}>
+                   {s.name.toUpperCase()} ({s.count})
+                </div>
+              ))}
            </div>
         </div>
 
         {/* Level 1: Tactical Hero KPI Nodes */}
-        <div className="summary-grid tactical-grid-smart" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '20px' }}>
-          <div className="summary-card" style={{ background: 'linear-gradient(135deg, #0f52ba 0%, #061a40 100%)', padding: '28px', borderRadius: '20px', color: 'white', border: '1px solid rgba(255,255,255,0.05)', boxShadow: '0 10px 30px rgba(15, 82, 186, 0.2)' }}>
-             <span className="label" style={{ display: 'block', fontSize: '10px', fontWeight: 900, color: 'var(--tactical-cyan)', textTransform: 'uppercase', letterSpacing: '2px', marginBottom: '15px' }}>Universal Registry</span>
-             <div style={{ display: 'flex', alignItems: 'baseline', gap: '10px' }}>
-                <span className="value" style={{ fontSize: '42px', fontWeight: 950, lineHeight: 1 }}>{patients.length}</span>
-                <span style={{ fontSize: '12px', fontWeight: 700, opacity: 0.6 }}>UNITS</span>
+        <div className="summary-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '20px', marginBottom: '30px' }}>
+          <div className="summary-card" style={{ background: 'linear-gradient(135deg, #0f52ba 0%, #061a40 100%)', padding: '30px', borderRadius: '24px', color: 'white', position: 'relative', overflow: 'hidden' }}>
+             <div style={{ position: 'absolute', top: '-20px', right: '-20px', fontSize: '120px', opacity: 0.05 }}>👤</div>
+             <span style={{ display: 'block', fontSize: '10px', fontWeight: 950, color: 'var(--tactical-cyan)', textTransform: 'uppercase', letterSpacing: '3px', marginBottom: '20px' }}>Universal Registry</span>
+             <div style={{ display: 'flex', alignItems: 'baseline', gap: '12px' }}>
+                <span style={{ fontSize: '48px', fontWeight: 950, letterSpacing: '-2px' }}>{kpis.universalRegistry}</span>
+                <span style={{ fontSize: '14px', fontWeight: 700, opacity: 0.6 }}>ENTITIES</span>
              </div>
-             <div className="mini-trend" style={{ fontSize: '9px', color: 'var(--tactical-cyan)', marginTop: '20px', fontWeight: 800 }}>LIVE CLOUD SYNC ACTIVE</div>
+             <div style={{ marginTop: '25px', fontSize: '9px', color: 'var(--tactical-cyan)', fontWeight: 900, background: 'rgba(255,255,255,0.1)', padding: '5px 12px', borderRadius: '20px', display: 'inline-block' }}>STRATEGIC RESOURCE POOL</div>
           </div>
 
-          <div 
-            className="summary-card clickable-card" 
-            onClick={() => navigate('/appointment-board')}
-            style={{ 
-              background: 'white', 
-              border: '1px solid #eee', 
-              padding: '28px', 
-              borderRadius: '20px', 
-              boxShadow: '0 4px 20px rgba(0,0,0,0.03)',
-              cursor: 'pointer',
-              transition: 'transform 0.2s, box-shadow 0.2s'
-            }}
-          >
-             <span className="label" style={{ display: 'block', fontSize: '10px', fontWeight: 900, color: '#64748b', textTransform: 'uppercase', letterSpacing: '2px', marginBottom: '15px' }}>Strategic Volume</span>
-             <div style={{ display: 'flex', alignItems: 'baseline', gap: '10px' }}>
-                <span className="value" style={{ fontSize: '42px', fontWeight: 950, color: '#0f52ba', lineHeight: 1 }}>{REFERRAL_LOG.filter(l => l.date === selectedDateFilter).length}</span>
-                <span style={{ fontSize: '12px', fontWeight: 800, color: '#0f52ba', opacity: 0.6 }}>MISSIONS</span>
+          <div className="summary-card" style={{ background: 'white', border: '1px solid #e2e8f0', padding: '30px', borderRadius: '24px' }}>
+             <span style={{ display: 'block', fontSize: '10px', fontWeight: 950, color: '#64748b', textTransform: 'uppercase', letterSpacing: '3px', marginBottom: '20px' }}>Live Volume</span>
+             <div style={{ display: 'flex', alignItems: 'baseline', gap: '12px' }}>
+                <span style={{ fontSize: '48px', fontWeight: 950, color: '#1e293b', letterSpacing: '-2px' }}>{kpis.dailyMissions}</span>
+                <span style={{ fontSize: '14px', fontWeight: 700, color: '#0f52ba' }}>MISSIONS</span>
              </div>
-             <div style={{ marginTop: '20px', fontSize: '9px', fontWeight: 900, color: '#2ecc71', background: '#e9f7ef', padding: '4px 10px', borderRadius: '20px', display: 'inline-block' }}>↑ 14% OPS GROWTH</div>
+             <div style={{ marginTop: '25px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <span style={{ fontSize: '10px', fontWeight: 950, color: '#2ecc71' }}>↑ {kpis.growthPercentage}%</span>
+                <span style={{ fontSize: '9px', fontWeight: 800, color: '#94a3b8' }}>OPERATIONAL GAIN</span>
+             </div>
           </div>
 
-          <div className="summary-card" style={{ background: 'white', border: '1px solid #eee', padding: '28px', borderRadius: '20px', boxShadow: '0 4px 20px rgba(0,0,0,0.03)' }}>
-             <span className="label" style={{ display: 'block', fontSize: '10px', fontWeight: 900, color: '#64748b', textTransform: 'uppercase', letterSpacing: '2px', marginBottom: '15px' }}>Financial Yield</span>
-             <div style={{ display: 'flex', alignItems: 'baseline', gap: '10px' }}>
-                <span style={{ fontSize: '24px', fontWeight: 900, color: '#10b981' }}>$</span>
-                <span className="value" style={{ fontSize: '42px', fontWeight: 950, color: '#10b981', lineHeight: 1 }}>{REFERRAL_LOG.filter(l => l.date === selectedDateFilter).length * 85}</span>
+          <div className="summary-card" style={{ background: 'white', border: '1px solid #e2e8f0', padding: '30px', borderRadius: '24px' }}>
+             <span style={{ display: 'block', fontSize: '10px', fontWeight: 950, color: '#64748b', textTransform: 'uppercase', letterSpacing: '3px', marginBottom: '20px' }}>Financial Yield</span>
+             <div style={{ display: 'flex', alignItems: 'baseline', gap: '12px' }}>
+                <span style={{ fontSize: '24px', fontWeight: 950, color: '#059669' }}>$</span>
+                <span style={{ fontSize: '48px', fontWeight: 950, color: '#1e293b', letterSpacing: '-2px' }}>{kpis.financialYield.toLocaleString()}</span>
              </div>
-             <div style={{ marginTop: '20px', height: '4px', background: '#f1f5f9', borderRadius: '2px', overflow: 'hidden' }}>
-                <div style={{ width: '75%', height: '100%', background: '#10b981', borderRadius: '2px' }}></div>
+             <div style={{ marginTop: '25px', height: '6px', background: '#f1f5f9', borderRadius: '3px', overflow: 'hidden' }}>
+                <div style={{ width: '82%', height: '100%', background: '#059669', borderRadius: '3px' }}></div>
              </div>
-             <div style={{ fontSize: '8px', color: '#94a3b8', fontWeight: 800, marginTop: '8px' }}>PROJECTED TARGET ATTAINMENT: 75%</div>
+             <div style={{ fontSize: '9px', fontWeight: 800, color: '#94a3b8', marginTop: '10px' }}>PROJECTED TARGET: 82% ACHIEVED</div>
           </div>
 
-          <div className="summary-card" style={{ background: 'white', border: '1px solid #eee', padding: '28px', borderRadius: '20px', boxShadow: '0 4px 20px rgba(0,0,0,0.03)' }}>
-             <span className="label" style={{ display: 'block', fontSize: '10px', fontWeight: 900, color: '#64748b', textTransform: 'uppercase', letterSpacing: '2px', marginBottom: '15px' }}>Command Latency</span>
-             <div style={{ display: 'flex', alignItems: 'baseline', gap: '10px' }}>
-                <span className="value" style={{ fontSize: '42px', fontWeight: 950, color: '#e74c3c', lineHeight: 1 }}>38m</span>
-                <span style={{ fontSize: '12px', fontWeight: 800, color: '#e74c3c', opacity: 0.6 }}>AVG</span>
+          <div className="summary-card" style={{ background: 'white', border: '1px solid #e2e8f0', padding: '30px', borderRadius: '24px' }}>
+             <span style={{ display: 'block', fontSize: '10px', fontWeight: 950, color: '#64748b', textTransform: 'uppercase', letterSpacing: '3px', marginBottom: '20px' }}>Command Latency</span>
+             <div style={{ display: 'flex', alignItems: 'baseline', gap: '12px' }}>
+                <span style={{ fontSize: '48px', fontWeight: 950, color: '#dc2626', letterSpacing: '-2px' }}>{kpis.averageLatencyMinutes}m</span>
+                <span style={{ fontSize: '14px', fontWeight: 700, color: '#94a3b8' }}>AVG</span>
              </div>
-             <div style={{ display: 'flex', gap: '4px', marginTop: '20px' }}>
-                {[1,2,3,4,5].map(i => <div key={i} style={{ flex: 1, height: '4px', borderRadius: '2px', background: i <= 3 ? '#e74c3c' : '#f1f5f9' }}></div>)}
+             <div style={{ display: 'flex', gap: '6px', marginTop: '25px' }}>
+                {[1,2,3,4,5,6].map(i => <div key={i} style={{ flex: 1, height: '6px', borderRadius: '3px', background: i <= 4 ? '#dc2626' : '#f1f5f9' }}></div>)}
              </div>
-             <div style={{ fontSize: '9px', fontWeight: 900, color: '#e74c3c', marginTop: '8px' }}>CRITICAL PEAK FLOW DETECTED</div>
+             <div style={{ fontSize: '9px', fontWeight: 800, color: '#dc2626', marginTop: '10px' }}>PEAK THROUGHPUT DETECTED</div>
           </div>
         </div>
 
         {/* Level 2: Clinical Modality & Peak Matrix */}
-        <div className="analytics-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: '20px' }}>
-           <div className="chart-container" style={{ background: 'white', border: '1px solid #dee2e6', padding: '25px', borderRadius: '12px' }}>
-              <div className="chart-title" style={{ fontSize: '11px', fontWeight: 900, color: '#888', textTransform: 'uppercase', letterSpacing: '1px', marginBottom: '25px', display: 'flex', justifyContent: 'space-between' }}>
-                 <span>Clinical Modality Intel</span>
-                 <span>TOTAL: {totalModalityCount} UNITS</span>
-              </div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '30px' }}>
-                 <div className="donut-proxy" style={{ width: '140px', height: '140px', borderRadius: '50%', borderWidth: '25px', borderStyle: 'solid', borderColor: '#0f52ba', borderRightColor: '#6c5ce7', borderBottomColor: '#e74c3c', borderLeftColor: '#2ecc71', position: 'relative', transform: 'rotate(45deg)' }}>
-                    <div style={{ position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%, -50%) rotate(-45deg)', textAlign: 'center' }}>
-                       <div style={{ fontSize: '24px', fontWeight: 900 }}>835</div>
-                       <div style={{ fontSize: '9px', opacity: 0.5 }}>TOTAL</div>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: '20px', marginBottom: '30px' }}>
+           {/* Modality Intel */}
+           <div style={{ background: 'white', border: '1px solid #e2e8f0', padding: '30px', borderRadius: '24px' }}>
+              <div style={{ fontSize: '10px', fontWeight: 950, color: '#64748b', textTransform: 'uppercase', letterSpacing: '2px', marginBottom: '30px' }}>Clinical Modality Intel</div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '40px' }}>
+                 <div style={{ width: '150px', height: '150px', borderRadius: '50%', border: '20px solid #eff6ff', display: 'flex', alignItems: 'center', justifyContent: 'center', position: 'relative' }}>
+                    <div style={{ position: 'absolute', width: '100%', height: '100%', borderRadius: '50%', border: '20px solid transparent', borderTopColor: '#0f52ba', transform: 'rotate(45deg)' }}></div>
+                    <div style={{ textAlign: 'center' }}>
+                       <div style={{ fontSize: '32px', fontWeight: 950, color: '#1e293b' }}>{modalities.reduce((a, b) => a + b.count, 0)}</div>
+                       <div style={{ fontSize: '9px', fontWeight: 800, color: '#94a3b8' }}>TOTAL UNITS</div>
                     </div>
                  </div>
-                 <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                    {MODALITY_STATS_MOCK.map(m => (
+                 <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '15px' }}>
+                    {modalities.map(m => (
                        <div key={m.label} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                          <span style={{ fontSize: '11px', fontWeight: 700, color: '#2c3e50', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                             <span style={{ width: '10px', height: '10px', borderRadius: '2px', background: m.color }}></span>
+                          <span style={{ fontSize: '11px', fontWeight: 800, color: '#1e293b', display: 'flex', alignItems: 'center', gap: '10px' }}>
+                             <div style={{ width: '10px', height: '10px', borderRadius: '3px', background: m.color }}></div>
                              {m.label}
                           </span>
-                          <span style={{ fontSize: '11px', fontWeight: 900 }}>{m.count} ({Math.round((m.count/totalModalityCount)*100)}%)</span>
+                          <span style={{ fontSize: '11px', fontWeight: 950, color: '#0f52ba' }}>{m.count}</span>
                        </div>
                     ))}
                  </div>
               </div>
            </div>
 
-           <div className="chart-container" style={{ background: 'white', border: '1px solid #dee2e6', padding: '25px', borderRadius: '12px' }}>
-              <div className="chart-title" style={{ fontSize: '11px', fontWeight: 900, color: '#888', textTransform: 'uppercase', letterSpacing: '1px', marginBottom: '25px' }}>Operational Peak Matrix (Daily)</div>
-              <div className="chart-placeholder" style={{ display: 'flex', alignItems: 'flex-end', gap: '12px', height: '160px', borderBottom: '1px solid #eee', paddingBottom: '10px' }}>
-                {DAILY_VOLUME_MOCK.map(day => (
-                  <div key={day.day} style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '10px' }}>
-                    <div 
-                        style={{ 
-                          width: '100%', 
-                          height: `${(day.count / 120) * 100}%`, 
-                          background: day.peak ? '#e74c3c' : '#0f52ba',
-                          borderRadius: '4px 4px 0 0',
-                          position: 'relative'
-                        }} 
-                    >
-                      <span style={{ position: 'absolute', top: '-18px', width: '100%', textAlign: 'center', fontSize: '9px', fontWeight: 900, color: day.peak ? '#e74c3c' : '#888' }}>{day.count}</span>
+           {/* Peak Matrix */}
+           <div style={{ background: 'white', border: '1px solid #e2e8f0', padding: '30px', borderRadius: '24px' }}>
+              <div style={{ fontSize: '10px', fontWeight: 950, color: '#64748b', textTransform: 'uppercase', letterSpacing: '2px', marginBottom: '30px' }}>Operational Peak Matrix (Daily)</div>
+              <div style={{ display: 'flex', alignItems: 'flex-end', gap: '12px', height: '160px', paddingBottom: '10px', borderBottom: '1px solid #f1f5f9' }}>
+                {volumeTrends.map(day => (
+                  <div key={day.day} style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '12px' }}>
+                    <div style={{ width: '100%', height: `${(day.count / (Math.max(...volumeTrends.map(v => v.count)) || 1)) * 100}%`, background: day.isPeak ? '#dc2626' : '#0f52ba', borderRadius: '6px 6px 0 0', position: 'relative' }}>
+                       <div style={{ position: 'absolute', top: '-20px', width: '100%', textAlign: 'center', fontSize: '9px', fontWeight: 950, color: '#1e293b' }}>{day.count}</div>
                     </div>
-                    <span style={{ fontSize: '10px', fontWeight: 800, color: '#aaa', textTransform: 'uppercase' }}>{day.day}</span>
+                    <span style={{ fontSize: '10px', fontWeight: 800, color: '#94a3b8' }}>{day.day}</span>
                   </div>
                 ))}
               </div>
            </div>
         </div>
 
-        {/* Level 2.5: Technical Flux Matrix (Modality vs Day) */}
-        <div className="chart-container" style={{ background: 'white', border: '1px solid #dee2e6', padding: '25px', borderRadius: '12px', marginBottom: '30px' }}>
-           <div className="chart-title" style={{ fontSize: '11px', fontWeight: 900, color: '#888', textTransform: 'uppercase', letterSpacing: '1px', marginBottom: '25px', display: 'flex', justifyContent: 'space-between' }}>
-              <span>Technical Flux Matrix: Weekly Throughput</span>
-              <span style={{ color: '#0f52ba' }}>MODALITY COMMAND OVERVIEW</span>
+        {/* Level 3: Demographics & Specialist Leadership */}
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: '20px' }}>
+           {/* Gender Matrix */}
+           <div style={{ background: 'white', border: '1px solid #e2e8f0', padding: '30px', borderRadius: '24px' }}>
+              <div style={{ fontSize: '10px', fontWeight: 950, color: '#64748b', textTransform: 'uppercase', letterSpacing: '2px', marginBottom: '30px' }}>Gender Identity Matrix</div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '25px' }}>
+                 <div style={{ display: 'flex', alignItems: 'center', gap: '20px' }}>
+                    <div style={{ width: '50px', height: '50px', borderRadius: '50%', background: '#eff6ff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '24px' }}>♂️</div>
+                    <div style={{ flex: 1 }}>
+                       <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px' }}>
+                          <span style={{ fontSize: '11px', fontWeight: 950, color: '#1e293b' }}>MALE BIOLOGY</span>
+                          <span style={{ fontSize: '11px', fontWeight: 950, color: '#0f52ba' }}>{demographics.gender.male}</span>
+                       </div>
+                       <div style={{ height: '8px', background: '#f1f5f9', borderRadius: '4px', overflow: 'hidden' }}>
+                          <div style={{ width: `${(demographics.gender.male / (demographics.gender.male + demographics.gender.female + demographics.gender.other || 1)) * 100}%`, height: '100%', background: '#0f52ba' }}></div>
+                       </div>
+                    </div>
+                 </div>
+                 <div style={{ display: 'flex', alignItems: 'center', gap: '20px' }}>
+                    <div style={{ width: '50px', height: '50px', borderRadius: '50%', background: '#fdf2f8', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '24px' }}>♀️</div>
+                    <div style={{ flex: 1 }}>
+                       <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px' }}>
+                          <span style={{ fontSize: '11px', fontWeight: 950, color: '#1e293b' }}>FEMALE BIOLOGY</span>
+                          <span style={{ fontSize: '11px', fontWeight: 950, color: '#db2777' }}>{demographics.gender.female}</span>
+                       </div>
+                       <div style={{ height: '8px', background: '#f1f5f9', borderRadius: '4px', overflow: 'hidden' }}>
+                          <div style={{ width: `${(demographics.gender.female / (demographics.gender.male + demographics.gender.female + demographics.gender.other || 1)) * 100}%`, height: '100%', background: '#db2777' }}></div>
+                       </div>
+                    </div>
+                 </div>
+              </div>
            </div>
-           
-           <div style={{ overflowX: 'auto' }}>
-              <table style={{ width: '100%', borderCollapse: 'separate', borderSpacing: '8px' }}>
-                 <thead>
-                    <tr>
-                       <th style={{ textAlign: 'left', fontSize: '10px', color: '#aaa', padding: '10px' }}>MODALITY</th>
-                       {['MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT', 'SUN'].map(day => (
-                          <th key={day} style={{ fontSize: '10px', color: '#aaa', textAlign: 'center' }}>{day}</th>
-                       ))}
-                       <th style={{ textAlign: 'right', fontSize: '10px', color: '#aaa', padding: '10px' }}>WEEK TOTAL</th>
-                    </tr>
-                 </thead>
-                 <tbody>
-                    {MODALITY_DAILY_TREND_MOCK.map(m => {
-                       const rowTotal = m.counts.reduce((a, b) => a + b, 0);
-                       const maxInRow = Math.max(...m.counts);
-                       
-                       return (
-                          <tr key={m.modality}>
-                             <td style={{ padding: '10px' }}>
-                                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                                   <div style={{ width: '8px', height: '8px', borderRadius: '50%', background: m.color }}></div>
-                                   <span style={{ fontSize: '12px', fontWeight: 900, color: '#2c3e50' }}>{m.modality}</span>
-                                </div>
-                             </td>
-                             {m.counts.map((count, i) => {
-                                const intensity = count / 80; // Relative to a hypothetical max
-                                return (
-                                   <td key={i} style={{ textAlign: 'center' }}>
-                                      <div style={{ 
-                                         background: count === maxInRow ? m.color : '#f8f9fa', 
-                                         color: count === maxInRow ? 'white' : '#2c3e50',
-                                         padding: '12px 15px', 
-                                         borderRadius: '8px', 
-                                         fontSize: '11px', 
-                                         fontWeight: 900,
-                                         border: count === maxInRow ? 'none' : '1px solid #eee',
-                                         opacity: count === maxInRow ? 1 : 0.6 + (intensity * 0.4)
-                                      }}>
-                                         {count}
-                                      </div>
-                                   </td>
-                                );
-                             })}
-                             <td style={{ textAlign: 'right', padding: '10px' }}>
-                                <div style={{ fontSize: '13px', fontWeight: 900, color: '#0f52ba' }}>
-                                   {rowTotal}
-                                </div>
-                             </td>
-                          </tr>
-                       );
-                    })}
-                 </tbody>
-              </table>
+
+           {/* Age Stratification */}
+           <div style={{ background: 'white', border: '1px solid #e2e8f0', padding: '30px', borderRadius: '24px' }}>
+              <div style={{ fontSize: '10px', fontWeight: 950, color: '#64748b', textTransform: 'uppercase', letterSpacing: '2px', marginBottom: '30px' }}>Age Stratification Intel</div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '18px' }}>
+                 {demographics.ageGroups.map(tier => (
+                    <div key={tier.label}>
+                       <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px' }}>
+                          <span style={{ fontSize: '10px', fontWeight: 950, color: '#1e293b' }}>{tier.label.toUpperCase()}</span>
+                          <span style={{ fontSize: '10px', fontWeight: 950, color: tier.color }}>{tier.percentage.toFixed(1)}%</span>
+                       </div>
+                       <div style={{ background: '#f1f5f9', height: '6px', borderRadius: '3px', overflow: 'hidden' }}>
+                          <div style={{ width: `${tier.percentage}%`, background: tier.color, height: '100%' }}></div>
+                       </div>
+                    </div>
+                 ))}
+              </div>
            </div>
         </div>
-
-        {/* Level 3: Tactical Demographic Matrix & Specialist Leadership */}
-        <div className="analytics-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: '20px', marginBottom: '30px' }}>
-           {/* Gender Identity Matrix */}
-           <div className="chart-container" style={{ background: 'white', border: '1px solid #dee2e6', padding: '25px', borderRadius: '12px' }}>
-              <div className="chart-title" style={{ fontSize: '11px', fontWeight: 900, color: '#888', textTransform: 'uppercase', letterSpacing: '1px', marginBottom: '20px' }}>Gender Identity Matrix</div>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '25px', padding: '10px 0' }}>
-                 <div style={{ display: 'flex', alignItems: 'center', gap: '20px' }}>
-                    <div style={{ width: '50px', height: '50px', borderRadius: '50%', background: '#f0f3fd', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '24px' }}>♂️</div>
-                    <div style={{ flex: 1 }}>
-                       <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '6px' }}>
-                          <span style={{ fontSize: '11px', fontWeight: 800, color: '#0f52ba' }}>MALE BIOLOGY</span>
-                          <span style={{ fontSize: '11px', fontWeight: 900 }}>58%</span>
-                       </div>
-                       <div style={{ height: '8px', background: '#f1f2f6', borderRadius: '4px', overflow: 'hidden' }}>
-                          <div style={{ width: '58%', height: '100%', background: '#0f52ba', borderRadius: '4px' }}></div>
-                       </div>
-                    </div>
-                 </div>
-                 <div style={{ display: 'flex', alignItems: 'center', gap: '20px' }}>
-                    <div style={{ width: '50px', height: '50px', borderRadius: '50%', background: '#fdf0f6', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '24px' }}>♀️</div>
-                    <div style={{ flex: 1 }}>
-                       <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '6px' }}>
-                          <span style={{ fontSize: '11px', fontWeight: 800, color: '#e84393' }}>FEMALE BIOLOGY</span>
-                          <span style={{ fontSize: '11px', fontWeight: 900 }}>42%</span>
-                       </div>
-                       <div style={{ height: '8px', background: '#f1f2f6', borderRadius: '4px', overflow: 'hidden' }}>
-                          <div style={{ width: '42%', height: '100%', background: '#e84393', borderRadius: '4px' }}></div>
-                       </div>
-                    </div>
-                 </div>
-                 <div style={{ background: '#f8f9fa', padding: '10px', borderRadius: '8px', border: '1px dashed #ddd', textAlign: 'center', fontSize: '10px', color: '#888', fontWeight: 700 }}>
-                    CORE PATIENT SEGMENT: ADULT MALE (35-50)
-                 </div>
-              </div>
-           </div>
-
-           {/* Generational Age Stratification */}
-           <div className="chart-container" style={{ background: 'white', border: '1px solid #dee2e6', padding: '25px', borderRadius: '12px' }}>
-              <div className="chart-title" style={{ fontSize: '11px', fontWeight: 900, color: '#888', textTransform: 'uppercase', letterSpacing: '1px', marginBottom: '20px' }}>Age Stratification Intel</div>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '15px' }}>
-                 {[
-                    { label: '0-18 (Paediatric)', p: 15, count: 125, color: '#00cec9', desc: 'Growth & Development' },
-                    { label: '19-45 (Adult)', p: 45, count: 375, color: '#0f52ba', desc: 'Active Operational' },
-                    { label: '46-65 (Mature)', p: 25, count: 210, color: '#f39c12', desc: 'Systemic Screen' },
-                    { label: '66+ (Geriatric)', p: 15, count: 125, color: '#d63031', desc: 'Critical Care' }
-                 ].map(tier => (
-                    <div key={tier.label}>
-                       <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '6px' }}>
-                          <div style={{ display: 'flex', flexDirection: 'column' }}>
-                             <span style={{ fontSize: '10px', fontWeight: 900, color: '#2c3e50' }}>{tier.label.toUpperCase()}</span>
-                             <span style={{ fontSize: '9px', color: '#aaa', fontWeight: 700 }}>{tier.desc}</span>
-                          </div>
-                          <span style={{ fontSize: '11px', fontWeight: 900, color: tier.color }}>{tier.p}%</span>
-                       </div>
-                       <div style={{ background: '#f1f2f6', height: '6px', borderRadius: '3px', overflow: 'hidden' }}>
-                          <div style={{ width: `${tier.p}%`, background: tier.color, height: '100%', borderRadius: '3px' }}></div>
-                       </div>
-                    </div>
-                 ))}
-              </div>
-           </div>
-
-           {/* Specialist Leadership Matrix (Staff Performance) */}
-           <div className="chart-container" style={{ background: 'white', border: '1px solid #dee2e6', padding: '25px', borderRadius: '12px' }}>
-              <div className="chart-title" style={{ fontSize: '11px', fontWeight: 900, color: '#888', textTransform: 'uppercase', letterSpacing: '1px', marginBottom: '20px' }}>Specialist Leadership Matrix</div>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                 {STAFF_PERFORMANCE_MOCK.map((staff, i) => (
-                    <div key={staff.name} style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: '10px', background: i === 0 ? '#f0f3fd' : '#fcfcfe', borderRadius: '10px', border: i === 0 ? '1px solid #0f52ba' : '1px solid #eee' }}>
-                       <div style={{ width: '28px', height: '28px', borderRadius: '50%', background: i === 0 ? '#0f52ba' : '#eee', color: i === 0 ? 'white' : '#666', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '11px', fontWeight: 900 }}>{i + 1}</div>
-                       <div style={{ flex: 1 }}>
-                          <div style={{ fontSize: '11px', fontWeight: 800 }}>{staff.name}</div>
-                          <div style={{ fontSize: '9px', color: '#888' }}>Eff: {staff.efficiency}</div>
-                       </div>
-                       <div style={{ textAlign: 'right' }}>
-                          <div style={{ fontSize: '12px', fontWeight: 900, color: '#0f52ba' }}>{staff.reported}</div>
-                          <div style={{ fontSize: '8px', color: '#aaa' }}>UNITS</div>
-                       </div>
-                    </div>
-                 ))}
-                 <div style={{ textAlign: 'center', marginTop: '5px' }}>
-                    <button className="btn-logout" style={{ fontSize: '9px', fontWeight: 900, padding: '6px 15px' }}>FULL ROSTER ANALYTICS</button>
-                  </div>
-               </div>
-            </div>
-         </div>
       </div>
     );
   };
 
+  const renderFinance = () => {
+    return (
+      <div className="finance-view">
+        <div className="board-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '35px' }}>
+          <div>
+            <h2 style={{ fontSize: '12px', fontWeight: 900, textTransform: 'uppercase', letterSpacing: '2px', color: '#0f52ba', marginBottom: '4px' }}>Financial Infrastructure</h2>
+            <p style={{ fontSize: '11px', color: '#888', fontWeight: 600 }}>Manage service pricing and automated billing protocols.</p>
+          </div>
+          <button 
+            onClick={() => { setEditPrice({ modality: 'X-RAY', serviceName: '', amount: 0 }); setIsPriceDrawerOpen(true); }}
+            style={{ 
+              padding: '12px 24px', borderRadius: '12px', border: 'none', 
+              background: '#0f52ba', color: 'white', fontSize: '11px', fontWeight: 950, cursor: 'pointer',
+              boxShadow: '0 8px 20px rgba(15, 82, 186, 0.2)'
+            }}
+          >
+            + ADD SERVICE CHARGE
+          </button>
+        </div>
+
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 350px', gap: '30px', alignItems: 'flex-start' }}>
+          {/* Service Price Registry */}
+          <div style={{ background: 'white', borderRadius: '24px', border: '1px solid #e2e8f0', overflow: 'hidden', boxShadow: '0 4px 20px rgba(0,0,0,0.01)' }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+              <thead style={{ background: '#f8fafc' }}>
+                <tr style={{ borderBottom: '1px solid #f1f5f9' }}>
+                  <th style={{ padding: '20px 30px', textAlign: 'left', fontSize: '10px', fontWeight: 950, color: '#94a3b8', letterSpacing: '2px' }}>MODALITY</th>
+                  <th style={{ padding: '20px 30px', textAlign: 'left', fontSize: '10px', fontWeight: 950, color: '#94a3b8', letterSpacing: '2px' }}>SERVICE_NAME</th>
+                  <th style={{ padding: '20px 20px', textAlign: 'left', fontSize: '10px', fontWeight: 950, color: '#94a3b8', letterSpacing: '2px' }}>STANDARD_CHARGE</th>
+                  <th style={{ padding: '20px 30px', textAlign: 'right', fontSize: '10px', fontWeight: 950, color: '#94a3b8', letterSpacing: '2px' }}>ACTIONS</th>
+                </tr>
+              </thead>
+              <tbody>
+                {servicePrices.map(spec => (
+                  <tr key={spec.id} style={{ borderBottom: '1px solid #f8fafc', transition: 'background 0.2s' }}>
+                    <td style={{ padding: '20px 30px' }}>
+                      <span style={{ fontSize: '10px', fontWeight: 950, color: 'white', background: '#334155', padding: '5px 12px', borderRadius: '8px' }}>{spec.modality}</span>
+                    </td>
+                    <td style={{ padding: '20px 30px', fontSize: '13px', fontWeight: 850, color: '#1e293b' }}>{spec.serviceName.toUpperCase()}</td>
+                    <td style={{ padding: '20px 20px', fontSize: '14px', fontWeight: 950, color: '#0f52ba' }}>₹{spec.amount.toLocaleString()}</td>
+                    <td style={{ padding: '20px 30px', textAlign: 'right' }}>
+                       <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
+                          <button onClick={() => { setEditPrice(spec); setIsPriceDrawerOpen(true); }} style={{ padding: '6px 12px', borderRadius: '8px', border: '1px solid #e2e8f0', background: 'white', cursor: 'pointer', fontSize: '10px', fontWeight: 800 }}>EDIT</button>
+                          <button onClick={() => handleDeletePrice(spec.id)} style={{ padding: '6px 12px', borderRadius: '8px', border: '1px solid #fee2e2', background: '#fef2f2', color: '#dc2626', cursor: 'pointer', fontSize: '10px', fontWeight: 800 }}>DELETE</button>
+                       </div>
+                    </td>
+                  </tr>
+                ))}
+                {servicePrices.length === 0 && (
+                  <tr>
+                    <td colSpan="4" style={{ padding: '60px', textAlign: 'center', color: '#94a3b8', fontSize: '12px', fontWeight: 700 }}>NO SERVICE CHARGES CONFIGURED</td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+
+          {/* Billing Protocol Settings */}
+          <div style={{ background: 'white', border: '1px solid #e2e8f0', padding: '30px', borderRadius: '24px', boxShadow: '0 4px 20px rgba(0,0,0,0.02)' }}>
+            <div style={{ fontSize: '10px', fontWeight: 950, color: '#64748b', textTransform: 'uppercase', letterSpacing: '2px', marginBottom: '30px' }}>Global Billing Protocol</div>
+            
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '25px' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                 <div>
+                    <div style={{ fontSize: '12px', fontWeight: 850, color: '#1e293b' }}>Auto-Generate Billing</div>
+                    <div style={{ fontSize: '10px', color: '#94a3b8', fontWeight: 600 }}>Create invoice on mission deployment</div>
+                 </div>
+                 <div 
+                    onClick={() => setBillingSettings(prev => ({ ...prev, autoBill: !prev.autoBill }))}
+                    style={{ 
+                      width: '44px', height: '24px', background: billingSettings.autoBill ? '#0f52ba' : '#cbd5e1', 
+                      borderRadius: '12px', cursor: 'pointer', position: 'relative', transition: 'all 0.3s' 
+                    }}
+                 >
+                    <div style={{ 
+                      position: 'absolute', top: '2px', left: billingSettings.autoBill ? '22px' : '2px', 
+                      width: '20px', height: '20px', background: 'white', borderRadius: '50%', transition: 'all 0.3s' 
+                    }}></div>
+                 </div>
+              </div>
+
+              <div style={{ borderTop: '1px solid #f1f5f9', paddingTop: '25px' }}>
+                 <div style={{ fontSize: '10px', fontWeight: 950, color: '#0f52ba', letterSpacing: '1px', marginBottom: '15px' }}>CURRENCY SYMBOL</div>
+                 <input 
+                    type="text" 
+                    value={billingSettings.currency} 
+                    onChange={e => setBillingSettings(prev => ({ ...prev, currency: e.target.value }))}
+                    style={{ width: '100%', padding: '12px', borderRadius: '12px', border: '1px solid #e2e8f0', fontSize: '12px', fontWeight: 800 }}
+                 />
+              </div>
+
+              <div style={{ background: '#f8fafc', padding: '20px', borderRadius: '16px', border: '1px solid #edf2f7', marginTop: '10px' }}>
+                 <p style={{ fontSize: '10px', color: '#64748b', fontWeight: 700, lineHeight: 1.5 }}>
+                   <strong>NOTE:</strong> Automated billing will only trigger if the specific service booked has a matching charge entry in the registry on the left.
+                 </p>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
+  const renderPriceDrawer = () => (
+    <div className="drawer-overlay" onClick={() => setIsPriceDrawerOpen(false)} style={{ backdropFilter: 'blur(8px)', background: 'rgba(10, 22, 40, 0.4)', zIndex: 10000 }}>
+      <div className="drawer-content" style={{ padding: 0, width: '450px', background: 'white' }} onClick={e => e.stopPropagation()}>
+        <div style={{ padding: '35px', background: 'linear-gradient(135deg, #0f52ba 0%, #061a40 100%)', color: 'white' }}>
+           <h2 style={{ fontSize: '11px', fontWeight: 950, color: 'var(--tactical-cyan)', letterSpacing: '3px', textTransform: 'uppercase', marginBottom: '8px' }}>Financial Protocol</h2>
+           <div style={{ fontSize: '20px', fontWeight: 950, letterSpacing: '-1px' }}>{editPrice.id ? 'CONFIG_SERVICE_CHARGE' : 'INIT_NEW_CHARGE'}</div>
+        </div>
+
+        <div style={{ padding: '35px' }}>
+           <form onSubmit={handleSavePrice}>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '25px' }}>
+                <div className="form-group">
+                   <label style={{ display: 'block', fontSize: '9px', fontWeight: 950, color: '#94a3b8', letterSpacing: '2px', marginBottom: '10px' }}>MODALITY_BRANCH</label>
+                   <select 
+                      value={editPrice.modality} 
+                      onChange={e => setEditPrice({...editPrice, modality: e.target.value})}
+                      style={{ width: '100%', padding: '14px', borderRadius: '12px', border: '1px solid #eee', fontSize: '12px', fontWeight: 700, background: 'white' }}
+                   >
+                     {['X-RAY', 'MRI', 'CT', 'ULTRASOUND', 'DEXA', 'MAMMOGRAPHY', 'PET-CT'].map(m => <option key={m} value={m}>{m}</option>)}
+                   </select>
+                </div>
+
+                <div className="form-group">
+                   <label style={{ display: 'block', fontSize: '9px', fontWeight: 950, color: '#94a3b8', letterSpacing: '2px', marginBottom: '10px' }}>SERVICE_DESCRIPTOR</label>
+                   <input 
+                      type="text" required 
+                      value={editPrice.serviceName} 
+                      placeholder="e.g. MRI BRAIN WITH CONTRAST"
+                      onChange={e => setEditPrice({...editPrice, serviceName: e.target.value})}
+                      style={{ width: '100%', border: 'none', borderBottom: '2px solid #f0f0f0', fontSize: '16px', fontWeight: 800, padding: '10px 0', outline: 'none' }}
+                   />
+                </div>
+
+                <div className="form-group">
+                   <label style={{ display: 'block', fontSize: '9px', fontWeight: 950, color: '#94a3b8', letterSpacing: '2px', marginBottom: '10px' }}>STANDARD_FINANCIAL_UNIT (₹)</label>
+                   <input 
+                      type="number" required 
+                      value={editPrice.amount} 
+                      onChange={e => setEditPrice({...editPrice, amount: parseInt(e.target.value) || 0})}
+                      style={{ width: '100%', border: 'none', borderBottom: '2px solid #f0f0f0', fontSize: '24px', fontWeight: 950, padding: '10px 0', outline: 'none', color: '#0f52ba' }}
+                   />
+                </div>
+
+                <div style={{ marginTop: '30px', display: 'flex', gap: '15px' }}>
+                   <button type="button" className="btn-logout" style={{ flex: 1, padding: '16px', borderRadius: '16px', border: '1px solid #eee', fontWeight: 800 }} onClick={() => setIsPriceDrawerOpen(false)}>ABORT</button>
+                   <button type="submit" className="btn-primary" style={{ flex: 2, padding: '16px', borderRadius: '16px', background: '#0f52ba', color: 'white', fontWeight: 950, border: 'none', cursor: 'pointer' }}>
+                      {editPrice.id ? 'SYNC_PRICE_TARGET' : 'DEPLOY_CHARGE_PROTOCOL'}
+                   </button>
+                </div>
+              </div>
+           </form>
+        </div>
+      </div>
+    </div>
+  );
+
   const renderReferralIntel = () => {
+
     const totalPatientsCount = temporalPatients.length;
 
     return (
       <div className="referral-intel-view">
         {/* Level 1: Tactical Control Deck */}
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '40px' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', marginBottom: '40px' }}>
           <div>
-            <h2 style={{ fontSize: '13px', fontWeight: 950, textTransform: 'uppercase', letterSpacing: '3px', color: '#0f52ba', marginBottom: '6px' }}>Source Intelligence Matrix</h2>
+            <h2 style={{ fontSize: '13px', fontWeight: 950, textTransform: 'uppercase', letterSpacing: '3px', color: '#0f52ba', marginBottom: '12px' }}>Source Intelligence Matrix</h2>
             <div style={{ display: 'flex', alignItems: 'center', gap: '15px' }}>
                <div style={{ display: 'flex', background: '#f1f5f9', padding: '3px', borderRadius: '10px', border: '1px solid #e2e8f0' }}>
-                  {['MATRIX', 'LOG'].map(mode => (
+                  {['MATRIX', 'LOG', 'ROSTER', 'PATIENTS'].map(mode => (
                     <button 
                       key={mode} 
-                      onClick={() => setReferralViewMode(mode)}
+                      onClick={() => {
+                        setReferralViewMode(mode);
+                        if (mode === 'PATIENTS') fetchPatientMasterList();
+                      }}
                       style={{ 
                         padding: '6px 15px', borderRadius: '8px', border: 'none', fontSize: '9px', fontWeight: 950,
                         background: referralViewMode === mode ? 'white' : 'transparent',
@@ -959,12 +1360,10 @@ export default function AdminBoard() {
                         cursor: 'pointer', transition: 'all 0.2s', letterSpacing: '0.5px'
                       }}
                     >
-                      {mode === 'MATRIX' ? 'SOURCE MATRIX' : 'GLOBAL MISSION LOG'}
+                      {mode === 'MATRIX' ? 'SOURCE MATRIX' : mode === 'LOG' ? 'GLOBAL MISSION LOG' : mode === 'ROSTER' ? 'REFERRER ROSTER' : 'PATIENT REGISTRY'}
                     </button>
                   ))}
                </div>
-               <span style={{ width: '4px', height: '4px', background: '#cbd5e1', borderRadius: '50%' }}></span>
-               <p style={{ fontSize: '11px', color: '#64748b', fontWeight: 600 }}>Active Reconnaissance Phase.</p>
             </div>
           </div>
           
@@ -974,9 +1373,23 @@ export default function AdminBoard() {
                 <span style={{ position: 'absolute', left: '15px', top: '50%', transform: 'translateY(-50%)', opacity: 0.3, fontSize: '12px' }}>🔍</span>
                 <input 
                   type="text" 
-                  placeholder={referralViewMode === 'MATRIX' ? "FILTER BY SOURCE..." : "SEARCH MISSIONS..."}
-                  value={sourceSearch}
-                  onChange={e => setSourceSearch(e.target.value)}
+                  placeholder={
+                    referralViewMode === 'MATRIX' ? "FILTER SOURCES..." : 
+                    referralViewMode === 'LOG' ? "SEARCH MISSIONS..." : 
+                    referralViewMode === 'ROSTER' ? "FILTER ROSTER..." : "SEARCH REGISTRY..."
+                  }
+                  value={
+                    referralViewMode === 'MATRIX' ? referralMatrixSearch : 
+                    referralViewMode === 'LOG' ? referralLogSearch : 
+                    referralViewMode === 'ROSTER' ? referralRosterSearch : referralPatientsSearch
+                  }
+                  onChange={e => {
+                    const str = e.target.value;
+                    if (referralViewMode === 'MATRIX') setReferralMatrixSearch(str);
+                    else if (referralViewMode === 'LOG') setReferralLogSearch(str);
+                    else if (referralViewMode === 'ROSTER') setReferralRosterSearch(str);
+                    else setReferralPatientsSearch(str);
+                  }}
                   style={{ 
                     width: '100%', padding: '12px 15px 12px 42px', borderRadius: '14px', border: '1px solid #e2e8f0', 
                     fontSize: '10px', fontWeight: 900, background: 'white', outline: 'none', transition: 'all 0.3s'
@@ -984,10 +1397,10 @@ export default function AdminBoard() {
                 />
              </div>
 
-             {/* Temporal Unit */}
+              {/* Temporal Unit */}
              <div style={{ display: 'flex', background: '#f8fafc', padding: '4px', borderRadius: '16px', border: '1px solid #e2e8f0' }}>
                 <div style={{ display: 'flex', gap: '2px', marginRight: '10px' }}>
-                  {['SINGLE', 'RANGE'].map(mode => (
+                  {['SINGLE', 'RANGE', 'ALL'].map(mode => (
                     <button 
                       key={mode}
                       onClick={() => setReferralFilterMode(mode)}
@@ -998,29 +1411,92 @@ export default function AdminBoard() {
                         cursor: 'pointer', transition: 'all 0.2s', letterSpacing: '1px'
                       }}
                     >
-                      {mode === 'SINGLE' ? 'D' : 'R'}
+                      {mode === 'SINGLE' ? 'D' : mode === 'RANGE' ? 'R' : 'ALL'}
                     </button>
                   ))}
                 </div>
-                <div style={{ display: 'flex', gap: '10px', alignItems: 'center', paddingRight: '10px' }}>
-                  <input 
-                    type="date" 
-                    value={referralRange.start} 
-                    onChange={e => setReferralRange(prev => ({ ...prev, start: e.target.value }))}
-                    style={{ border: 'none', background: 'transparent', fontSize: '11px', fontWeight: 950, color: '#1e293b', outline: 'none' }}
-                  />
-                  {referralFilterMode === 'RANGE' && (
-                    <>
-                      <span style={{ fontSize: '12px', color: '#cbd5e1' }}>→</span>
+                  {referralFilterMode !== 'ALL' && (
+                    <div style={{ display: 'flex', gap: '10px', alignItems: 'center', paddingRight: '10px' }}>
                       <input 
                         type="date" 
-                        value={referralRange.end} 
-                        onChange={e => setReferralRange(prev => ({ ...prev, end: e.target.value }))}
+                        value={referralRange.start} 
+                        onChange={e => setReferralRange(prev => ({ ...prev, start: e.target.value }))}
                         style={{ border: 'none', background: 'transparent', fontSize: '11px', fontWeight: 950, color: '#1e293b', outline: 'none' }}
                       />
-                    </>
+                      {referralFilterMode === 'RANGE' && (
+                        <>
+                          <span style={{ fontSize: '12px', color: '#cbd5e1' }}>→</span>
+                          <input 
+                            type="date" 
+                            value={referralRange.end} 
+                            onChange={e => setReferralRange(prev => ({ ...prev, end: e.target.value }))}
+                            style={{ border: 'none', background: 'transparent', fontSize: '11px', fontWeight: 950, color: '#1e293b', outline: 'none' }}
+                          />
+                        </>
+                      )}
+                    </div>
                   )}
-                </div>
+             </div>
+
+             {/* Tactical Export Node */}
+             <div style={{ position: 'relative' }}>
+                <button 
+                  onClick={() => setShowExportOverlay(!showExportOverlay)}
+                  disabled={isExporting}
+                  style={{ 
+                    padding: '10px 20px', borderRadius: '14px', background: '#f0f3fd', border: '1px solid #0f52ba30',
+                    color: '#0f52ba', fontSize: '9px', fontWeight: 950, letterSpacing: '1px', cursor: 'pointer',
+                    display: 'flex', alignItems: 'center', gap: '8px', transition: 'all 0.2s'
+                  }}
+                >
+                  {isExporting ? 'GENERATING...' : '📥 EXPORT INTEL'}
+                </button>
+
+                {showExportOverlay && (
+                  <div style={{ 
+                    position: 'absolute', top: '100%', right: 0, marginTop: '10px', width: '320px', 
+                    background: 'white', borderRadius: '20px', border: '1px solid #e2e8f0', 
+                    boxShadow: '0 10px 40px rgba(0,0,0,0.1)', padding: '25px', zIndex: 1000 
+                  }}>
+                    <div style={{ fontSize: '10px', fontWeight: 950, color: '#94a3b8', letterSpacing: '2px', marginBottom: '20px' }}>EXPORT PARAMETERS</div>
+                    
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '15px' }}>
+                       <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                          <input 
+                            type="checkbox" 
+                            checked={exportParams.allTime} 
+                            onChange={(e) => setExportParams(prev => ({ ...prev, allTime: e.target.checked }))} 
+                            id="export-all-time"
+                          />
+                          <label htmlFor="export-all-time" style={{ fontSize: '11px', fontWeight: 800, color: '#1e293b' }}>ALL HISTORICAL MISSIONS</label>
+                       </div>
+
+                       {!exportParams.allTime && (
+                         <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                               <span style={{ fontSize: '9px', fontWeight: 900, color: '#64748b' }}>START DATE</span>
+                               <input type="date" value={exportParams.start} onChange={e => setExportParams(prev => ({ ...prev, start: e.target.value }))} style={{ border: '1px solid #e2e8f0', padding: '6px 10px', borderRadius: '8px', fontSize: '11px' }} />
+                            </div>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                               <span style={{ fontSize: '9px', fontWeight: 900, color: '#64748b' }}>END DATE</span>
+                               <input type="date" value={exportParams.end} onChange={e => setExportParams(prev => ({ ...prev, end: e.target.value }))} style={{ border: '1px solid #e2e8f0', padding: '6px 10px', borderRadius: '8px', fontSize: '11px' }} />
+                            </div>
+                         </div>
+                       )}
+
+                       <button 
+                         onClick={handleExportIntelligence}
+                         style={{ 
+                           marginTop: '10px', padding: '12px', borderRadius: '12px', 
+                           background: '#0f52ba', color: 'white', fontWeight: 950, 
+                           fontSize: '10px', border: 'none', cursor: 'pointer', letterSpacing: '1px' 
+                         }}
+                       >
+                         {isExporting ? 'EXPORTING...' : 'INITIATE TACTICAL EXPORT'}
+                       </button>
+                    </div>
+                  </div>
+                )}
              </div>
           </div>
         </div>
@@ -1032,101 +1508,202 @@ export default function AdminBoard() {
             </div>
         ) : (
           <>
-            {/* Level 2: Shared Summary Stats */}
-            <div className="summary-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '25px', marginBottom: '40px' }}>
-              <div style={{ background: 'white', padding: '30px', borderRadius: '24px', border: '1px solid #e2e8f0', boxShadow: '0 4px 20px rgba(0,0,0,0.01)' }}>
-                <span style={{ fontSize: '10px', fontWeight: 950, color: '#94a3b8', letterSpacing: '2px' }}>ACQUISITION VOLUME</span>
-                <div style={{ fontSize: '36px', fontWeight: 950, color: '#1e293b', marginTop: '10px' }}>{totalPatientsCount}</div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '8px' }}>
-                   <div style={{ width: '6px', height: '6px', borderRadius: '50%', background: '#2ecc71' }}></div>
-                   <span style={{ fontSize: '10px', color: '#64748b', fontWeight: 700 }}>Total referred units in period</span>
-                </div>
-              </div>
-              
-              <div style={{ background: 'white', padding: '30px', borderRadius: '24px', border: '1px solid #e2e8f0', boxShadow: '0 4px 20px rgba(0,0,0,0.01)' }}>
-                <span style={{ fontSize: '10px', fontWeight: 950, color: '#94a3b8', letterSpacing: '2px' }}>NETWORK COVERAGE</span>
-                <div style={{ fontSize: '36px', fontWeight: 950, color: '#1e293b', marginTop: '10px' }}>{new Set(temporalPatients.map(p => p.referredBy)).size}</div>
-                <span style={{ fontSize: '10px', color: '#64748b', fontWeight: 700 }}>Unique referring sources active</span>
-              </div>
-              
-              <div style={{ background: 'white', padding: '30px', borderRadius: '24px', border: '1px solid #e2e8f0', boxShadow: '0 4px 20px rgba(0,0,0,0.01)' }}>
-                <span style={{ fontSize: '10px', fontWeight: 950, color: '#94a3b8', letterSpacing: '2px' }}>AVG DAILY CAPTURE</span>
-                <div style={{ fontSize: '36px', fontWeight: 950, color: '#0f52ba', marginTop: '10px' }}>
-                  {referralFilterMode === 'RANGE' ? (totalPatientsCount / (Math.max(1, (new Date(referralRange.end) - new Date(referralRange.start)) / (1000 * 60 * 60 * 24)) + 1)).toFixed(1) : totalPatientsCount}
-                </div>
-                <span style={{ fontSize: '10px', color: '#0f52ba', fontWeight: 800 }}>Units per cycle</span>
-              </div>
-            </div>
 
             {/* Level 3: Dual-Mode Intelligence List */}
-            {referralViewMode === 'MATRIX' ? (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
-                {referralAggregated.map(s => {
-                  const isExpanded = expandedReferrer === s.name;
-                  const percentage = totalPatientsCount > 0 ? (s.patients.length / totalPatientsCount) * 100 : 0;
-                  return (
-                    <div key={s.name} style={{ background: 'white', borderRadius: '20px', border: isExpanded ? '1px solid #0f52ba' : '1px solid #e2e8f0', overflow: 'hidden', transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)' }}>
-                      <div style={{ padding: '25px 30px', display: 'flex', flexDirection: 'column', gap: '20px' }}>
+            {referralViewMode === 'PATIENTS' ? (
+              <div style={{ background: 'white', borderRadius: '24px', border: '1px solid #e2e8f0', overflow: 'hidden' }}>
+                <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                  <thead style={{ background: '#f8fafc', borderBottom: '1px solid #e2e8f0' }}>
+                    <tr>
+                      <th style={{ padding: '20px 30px', textAlign: 'left', fontSize: '10px', fontWeight: 950, color: '#94a3b8', letterSpacing: '1px' }}>ID</th>
+                      <th style={{ padding: '20px 30px', textAlign: 'left', fontSize: '10px', fontWeight: 950, color: '#94a3b8', letterSpacing: '1px' }}>PTID (IDENTIFIER)</th>
+                      <th style={{ padding: '20px 30px', textAlign: 'left', fontSize: '10px', fontWeight: 950, color: '#94a3b8', letterSpacing: '1px' }}>FULL NAME</th>
+                      <th style={{ padding: '20px 30px', textAlign: 'left', fontSize: '10px', fontWeight: 950, color: '#94a3b8', letterSpacing: '1px' }}>CONTACT NODE</th>
+                      <th style={{ padding: '20px 30px', textAlign: 'left', fontSize: '10px', fontWeight: 950, color: '#94a3b8', letterSpacing: '1px' }}>AGE / GENDER</th>
+                      <th style={{ padding: '20px 30px', textAlign: 'right', fontSize: '10px', fontWeight: 950, color: '#94a3b8', letterSpacing: '1px' }}>REG DATE</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {loadingMaster ? (
+                       <tr><td colSpan="6" style={{ padding: '60px', textAlign: 'center' }}><div className="pulse-loader" style={{ margin: '0 auto' }}></div></td></tr>
+                    ) : patientMasterList.length === 0 ? (
+                      <tr>
+                        <td colSpan="6" style={{ padding: '60px', textAlign: 'center', color: '#94a3b8', fontSize: '12px', fontWeight: 700 }}>NO REGISTERED PATIENTS FOUND FOR THIS PERIOD</td>
+                      </tr>
+                    ) : (
+                      patientMasterList.map((p, i) => (
+                        <tr key={p.patientId} style={{ borderBottom: '1px solid #f1f5f9', transition: 'all 0.2s' }}>
+                          <td style={{ padding: '20px 30px' }}>
+                            <div style={{ fontSize: '11px', fontWeight: 950, color: '#94a3b8' }}>#{i + 1}</div>
+                          </td>
+                          <td style={{ padding: '20px 30px' }}>
+                            <div style={{ padding: '4px 10px', background: '#f0f3fd', color: '#0f52ba', borderRadius: '6px', fontSize: '10px', fontWeight: 950, display: 'inline-block' }}>{p.patientIdentifier || 'UNSET'}</div>
+                          </td>
+                          <td style={{ padding: '20px 30px' }}>
+                            <div style={{ fontSize: '13px', fontWeight: 850, color: '#1e293b' }}>{p.fullName.toUpperCase()}</div>
+                          </td>
+                          <td style={{ padding: '20px 30px' }}>
+                            <div style={{ fontSize: '11px', fontWeight: 700, color: '#64748b' }}>{p.mobile}</div>
+                          </td>
+                          <td style={{ padding: '20px 30px' }}>
+                            <div style={{ fontSize: '11px', fontWeight: 800, color: '#1e293b' }}>{p.age}Y / {p.gender.toUpperCase()}</div>
+                          </td>
+                          <td style={{ padding: '20px 30px', textAlign: 'right' }}>
+                            <div style={{ fontSize: '11px', fontWeight: 900, color: '#0f52ba' }}>{new Date(p.registeredAt).toLocaleDateString()}</div>
+                          </td>
+                        </tr>
+                      ))
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            ) : referralViewMode === 'ROSTER' ? (
+              <div style={{ background: 'white', borderRadius: '24px', border: '1px solid #e2e8f0', overflow: 'hidden' }}>
+                <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                  <thead style={{ background: '#f8fafc', borderBottom: '1px solid #e2e8f0' }}>
+                    <tr>
+                      <th style={{ padding: '20px 30px', textAlign: 'left', fontSize: '10px', fontWeight: 950, color: '#94a3b8', letterSpacing: '1px' }}>RANK</th>
+                      <th style={{ padding: '20px 30px', textAlign: 'left', fontSize: '10px', fontWeight: 950, color: '#94a3b8', letterSpacing: '1px' }}>REFERRAL SOURCE</th>
+                      <th style={{ padding: '20px 30px', textAlign: 'left', fontSize: '10px', fontWeight: 950, color: '#94a3b8', letterSpacing: '1px' }}>CONTACT NODE</th>
+                      <th style={{ padding: '20px 30px', textAlign: 'left', fontSize: '10px', fontWeight: 950, color: '#94a3b8', letterSpacing: '1px' }}>ADDRESS / SECTOR</th>
+                      <th style={{ padding: '20px 30px', textAlign: 'right', fontSize: '10px', fontWeight: 950, color: '#94a3b8', letterSpacing: '1px' }}>TOTAL MISSIONS</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {referralAggregated.length === 0 ? (
+                      <tr>
+                        <td colSpan="4" style={{ padding: '60px', textAlign: 'center', color: '#94a3b8', fontSize: '12px', fontWeight: 700 }}>NO RECONNAISSANCE DATA AVAILABLE FOR THIS PERIOD</td>
+                      </tr>
+                    ) : (
+                      referralAggregated
+                        .filter(s => !referralRosterSearch || s.name.toLowerCase().includes(referralRosterSearch.toLowerCase()))
+                        .map((s, i) => (
+                        <tr key={s.name} style={{ borderBottom: '1px solid #f1f5f9', transition: 'all 0.2s' }}>
+                          <td style={{ padding: '20px 30px' }}>
+                            <div style={{ width: '28px', height: '28px', borderRadius: '8px', background: i < 3 ? '#f0f3fd' : '#f8fafc', color: i < 3 ? '#0f52ba' : '#64748b', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '11px', fontWeight: 950 }}>#{i + 1}</div>
+                          </td>
+                          <td style={{ padding: '20px 30px' }}>
+                            <div style={{ fontSize: '13px', fontWeight: 850, color: '#1e293b' }}>{s.name.toUpperCase()}</div>
+                          </td>
+                          <td style={{ padding: '20px 30px' }}>
+                            <div style={{ fontSize: '11px', fontWeight: 700, color: '#64748b' }}>{s.contact}</div>
+                          </td>
+                          <td style={{ padding: '20px 30px' }}>
+                            <div style={{ fontSize: '10px', fontWeight: 800, color: '#1e293b', textTransform: 'uppercase' }}>{s.address || 'GLOBAL'}</div>
+                          </td>
+                          <td style={{ padding: '20px 30px', textAlign: 'right' }}>
+                            <div style={{ fontSize: '16px', fontWeight: 950, color: '#0f52ba' }}>{s.patients.length}</div>
+                            <div style={{ fontSize: '9px', fontWeight: 800, color: '#94a3b8', letterSpacing: '0.5px' }}>UNITS</div>
+                          </td>
+                        </tr>
+                      ))
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            ) : referralViewMode === 'MATRIX' ? (
+              <div style={{ display: 'grid', gridTemplateColumns: '350px 1fr', gap: '30px', alignItems: 'flex-start' }}>
+                {/* Master Pane: Intelligence Roster */}
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '15px' }}>
+                  <div style={{ fontSize: '10px', fontWeight: 950, color: '#94a3b8', letterSpacing: '2px', marginBottom: '5px' }}>INTELLIGENCE ROSTER</div>
+                  {referralAggregated.map((s, i) => {
+                    const isSelected = expandedReferrer === s.name;
+                    return (
+                      <div 
+                        key={s.name} 
+                        onClick={() => setExpandedReferrer(s.name)}
+                        style={{ 
+                          background: isSelected ? '#f0f3fd' : 'white', 
+                          padding: '20px 25px', borderRadius: '18px', border: isSelected ? '1px solid #0f52ba' : '1px solid #e2e8f0', 
+                          cursor: 'pointer', transition: 'all 0.2s', position: 'relative', overflow: 'hidden'
+                        }}
+                      >
+                        {isSelected && <div style={{ position: 'absolute', left: 0, top: 0, bottom: 0, width: '4px', background: '#0f52ba' }}></div>}
                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                           <div style={{ display: 'flex', gap: '20px', alignItems: 'center' }}>
-                              <div style={{ width: '48px', height: '48px', borderRadius: '14px', background: '#f8fafc', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '22px', border: '1px solid #f1f5f9' }}>👤</div>
-                              <div>
-                                <div style={{ fontSize: '16px', fontWeight: 950, color: '#1e293b' }}>{s.name.toUpperCase()}</div>
-                                <div style={{ fontSize: '10px', color: '#94a3b8', fontWeight: 800, marginTop: '4px' }}>IDENTITY: {s.contact}</div>
-                              </div>
-                           </div>
-                           <div style={{ display: 'flex', gap: '30px', alignItems: 'center' }}>
-                              <div style={{ textAlign: 'right' }}>
-                                 <div style={{ fontSize: '20px', fontWeight: 950, color: '#0f52ba' }}>{s.patients.length}</div>
-                                 <div style={{ fontSize: '8px', fontWeight: 950, color: '#cbd5e1', letterSpacing: '1px' }}>MISSIONS</div>
-                              </div>
-                              <button onClick={() => setExpandedReferrer(isExpanded ? null : s.name)} style={{ padding: '10px 18px', borderRadius: '12px', border: 'none', background: isExpanded ? '#0f52ba' : '#f1f5f9', color: isExpanded ? 'white' : '#64748b', fontSize: '9px', fontWeight: 950, cursor: 'pointer', transition: 'all 0.2s' }}>
-                                {isExpanded ? 'CLOSE LOG' : 'RECON LOG ↓'}
-                              </button>
-                           </div>
-                        </div>
-                        <div style={{ display: 'flex', gap: '15px', alignItems: 'center' }}>
-                           <div style={{ flex: 1, height: '4px', background: '#f1f5f9', borderRadius: '10px', overflow: 'hidden' }}>
-                              <div style={{ width: `${percentage}%`, height: '100%', background: '#0f52ba', borderRadius: '10px' }}></div>
-                           </div>
-                           <div style={{ display: 'flex', gap: '8px' }}>
-                              {Object.entries(s.modalities).map(([mod, count]) => (
-                                 <span key={mod} style={{ fontSize: '8px', fontWeight: 950, color: '#0f52ba', background: '#f0f3fd', padding: '3px 8px', borderRadius: '4px' }}>{mod}: {count}</span>
-                              ))}
-                           </div>
+                          <div style={{ display: 'flex', gap: '15px', alignItems: 'center' }}>
+                             <div style={{ width: '32px', height: '32px', borderRadius: '10px', background: isSelected ? 'white' : '#f8fafc', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '14px', border: '1px solid #f1f5f9' }}>👤</div>
+                             <div>
+                                <div style={{ fontSize: '12px', fontWeight: 950, color: isSelected ? '#0f52ba' : '#1e293b' }}>{s.name.toUpperCase()}</div>
+                                <div style={{ fontSize: '9px', color: '#94a3b8', fontWeight: 800 }}>RANK #{i + 1} • {s.patients.length} UNITS</div>
+                                <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', marginTop: '4px' }}>
+                                   <div style={{ fontSize: '10px', color: '#64748b', fontWeight: 850 }}>{s.contact}</div>
+                                   <div style={{ fontSize: '9px', color: '#94a3b8', fontWeight: 700, textTransform: 'uppercase' }}>{s.address}</div>
+                                </div>
+                             </div>
+                          </div>
+                          <div style={{ fontSize: '14px', fontWeight: 950, color: isSelected ? '#0f52ba' : '#cbd5e1' }}>→</div>
                         </div>
                       </div>
-                      {isExpanded && (
-                        <div style={{ padding: '0 30px 30px', background: '#fcfdfe' }}>
-                           <div style={{ background: 'white', borderRadius: '16px', border: '1px solid #edf2f7', overflow: 'hidden' }}>
-                              <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-                                <thead style={{ background: '#f8fafc' }}>
-                                  <tr style={{ borderBottom: '1px solid #f1f5f9' }}>
-                                    <th style={{ padding: '15px 25px', textAlign: 'left', fontSize: '9px', fontWeight: 950, color: '#94a3b8', letterSpacing: '1px' }}>MISSION_ID</th>
-                                    <th style={{ padding: '15px 25px', textAlign: 'left', fontSize: '9px', fontWeight: 950, color: '#94a3b8', letterSpacing: '1px' }}>TARGET_NAME</th>
-                                    <th style={{ padding: '15px 25px', textAlign: 'left', fontSize: '9px', fontWeight: 950, color: '#94a3b8', letterSpacing: '1px' }}>MODALITY</th>
-                                    <th style={{ padding: '15px 25px', textAlign: 'right', fontSize: '9px', fontWeight: 950, color: '#94a3b8', letterSpacing: '1px' }}>DATE</th>
-                                  </tr>
-                                </thead>
-                                <tbody>
-                                  {s.patients.map(p => (
-                                    <tr key={p.id} style={{ borderBottom: '1px solid #f8fafc' }}>
-                                      <td style={{ padding: '15px 25px', fontSize: '11px', fontWeight: 950, color: '#0f52ba', fontFamily: 'monospace' }}>{p.id}</td>
-                                      <td style={{ padding: '15px 25px', fontSize: '13px', fontWeight: 700 }}>{p.name.toUpperCase()}</td>
-                                      <td style={{ padding: '15px 25px' }}>
-                                         <span style={{ fontSize: '9px', color: 'white', background: '#334155', padding: '3px 8px', borderRadius: '6px', fontWeight: 950 }}>{p.modality || 'SCAN'}</span>
-                                      </td>
-                                      <td style={{ padding: '15px 25px', fontSize: '11px', color: '#94a3b8', textAlign: 'right', fontWeight: 900 }}>{p.registered}</td>
+                    );
+                  })}
+                </div>
+
+                {/* Detail Pane: Mission Briefing */}
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+                  {expandedReferrer ? (
+                    (() => {
+                      const selected = referralAggregated.find(r => r.name === expandedReferrer);
+                      if (!selected) return null;
+                      const percentage = totalPatientsCount > 0 ? (selected.patients.length / totalPatientsCount) * 100 : 0;
+
+                      return (
+                        <div style={{ background: 'white', borderRadius: '30px', border: '1px solid #e2e8f0', overflow: 'hidden', boxShadow: '0 10px 40px rgba(0,0,0,0.02)' }}>
+                          <div style={{ padding: '30px' }}>
+                             {/* Mission Log Table */}
+                             <div style={{ borderRadius: '20px', border: '1px solid #f1f5f9', overflow: 'hidden' }}>
+                                <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                                  <thead style={{ background: '#fcfdfe' }}>
+                                    <tr style={{ borderBottom: '1px solid #f1f5f9' }}>
+                                      <th style={{ padding: '15px 25px', textAlign: 'left', fontSize: '9px', fontWeight: 950, color: '#94a3b8', letterSpacing: '1px' }}>MISSION_ID</th>
+                                      <th style={{ padding: '15px 25px', textAlign: 'left', fontSize: '9px', fontWeight: 950, color: '#94a3b8', letterSpacing: '1px' }}>TARGET_IDENTITY</th>
+                                      <th style={{ padding: '15px 25px', textAlign: 'left', fontSize: '9px', fontWeight: 950, color: '#94a3b8', letterSpacing: '1px' }}>CONTACT / SOURCE</th>
+                                      <th style={{ padding: '15px 25px', textAlign: 'left', fontSize: '9px', fontWeight: 950, color: '#94a3b8', letterSpacing: '1px' }}>CLINICAL PACKAGE</th>
+                                      <th style={{ padding: '15px 25px', textAlign: 'left', fontSize: '9px', fontWeight: 950, color: '#94a3b8', letterSpacing: '1px' }}>STATUS</th>
+                                      <th style={{ padding: '15px 25px', textAlign: 'right', fontSize: '9px', fontWeight: 950, color: '#94a3b8', letterSpacing: '1px' }}>DATE</th>
                                     </tr>
-                                  ))}
-                                </tbody>
-                              </table>
-                           </div>
+                                  </thead>
+                                  <tbody>
+                                    {selected.patients.map(p => (
+                                      <tr key={p.patientId} style={{ borderBottom: '1px solid #f8fafc' }}>
+                                        <td style={{ padding: '15px 25px', fontSize: '11px', fontWeight: 950, color: '#0f52ba', fontFamily: 'monospace' }}>{p.patientIdentifier || 'UNSET'}</td>
+                                        <td style={{ padding: '15px 25px' }}>
+                                           <div style={{ fontSize: '13px', fontWeight: 850, color: '#1e293b' }}>{p.name.toUpperCase()}</div>
+                                           <div style={{ fontSize: '10px', color: '#94a3b8', fontWeight: 700 }}>{p.age}Y • {p.gender.toUpperCase()}</div>
+                                        </td>
+                                        <td style={{ padding: '15px 25px' }}>
+                                           <div style={{ fontSize: '11px', fontWeight: 800, color: '#1e293b' }}>{p.mobile}</div>
+                                           <div style={{ fontSize: '9px', color: '#0f52ba', fontWeight: 950, textTransform: 'uppercase' }}>{p.sourceOfInfo || 'DIRECT'}</div>
+                                        </td>
+                                        <td style={{ padding: '15px 25px' }}>
+                                           <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
+                                              <span style={{ fontSize: '9px', color: 'white', background: '#334155', padding: '2px 8px', borderRadius: '4px', fontWeight: 950 }}>{p.modality}</span>
+                                              <span style={{ fontSize: '9px', color: '#475569', border: '1px solid #e2e8f0', padding: '1px 6px', borderRadius: '4px', fontWeight: 850 }}>{p.service}</span>
+                                           </div>
+                                        </td>
+                                        <td style={{ padding: '15px 25px' }}>
+                                           {(() => {
+                                              const cfg = getStatusConfig(p.status);
+                                              return <span style={{ fontSize: '8px', fontWeight: 950, padding: '3px 8px', borderRadius: '6px', background: cfg.bg, color: cfg.color }}>{cfg.label}</span>
+                                           })()}
+                                        </td>
+                                        <td style={{ padding: '15px 25px', fontSize: '11px', color: '#94a3b8', textAlign: 'right', fontWeight: 900 }}>{p.registrationDate}</td>
+                                      </tr>
+                                    ))}
+                                  </tbody>
+                                </table>
+                             </div>
+                          </div>
                         </div>
-                      )}
+                      );
+                    })()
+                  ) : (
+                    <div style={{ padding: '100px', textAlign: 'center', background: 'white', borderRadius: '30px', border: '1px dashed #cbd5e1' }}>
+                       <div style={{ fontSize: '50px', marginBottom: '20px' }}>🧭</div>
+                       <div style={{ fontSize: '14px', fontWeight: 950, color: '#1e293b' }}>SELECT A SOURCE FROM ROSTER</div>
+                       <p style={{ fontSize: '11px', color: '#94a3b8', marginTop: '10px' }}>Pick a referring target on the left to initialize the mission briefing.</p>
                     </div>
-                  );
-                })}
+                  )}
+                </div>
               </div>
             ) : (
               /* Global Mission Log View */
@@ -1134,33 +1711,60 @@ export default function AdminBoard() {
                 <table style={{ width: '100%', borderCollapse: 'collapse' }}>
                   <thead style={{ background: '#f8fafc' }}>
                     <tr style={{ borderBottom: '1px solid #f1f5f9' }}>
-                      <th style={{ padding: '20px 30px', textAlign: 'left', fontSize: '10px', fontWeight: 950, color: '#94a3b8', letterSpacing: '2px' }}>MISSION_ID</th>
+                      <th style={{ padding: '20px 30px', textAlign: 'left', fontSize: '10px', fontWeight: 950, color: '#94a3b8', letterSpacing: '2px', width: '120px' }}>MISSION_ID</th>
                       <th style={{ padding: '20px 30px', textAlign: 'left', fontSize: '10px', fontWeight: 950, color: '#94a3b8', letterSpacing: '2px' }}>TARGET_IDENTITY</th>
-                      <th style={{ padding: '20px 30px', textAlign: 'left', fontSize: '10px', fontWeight: 950, color: '#94a3b8', letterSpacing: '2px' }}>MODALITY</th>
-                      <th style={{ padding: '20px 30px', textAlign: 'left', fontSize: '10px', fontWeight: 950, color: '#94a3b8', letterSpacing: '2px' }}>SOURCE / REFERRER</th>
-                      <th style={{ padding: '20px 30px', textAlign: 'right', fontSize: '10px', fontWeight: 950, color: '#94a3b8', letterSpacing: '2px' }}>DATE</th>
+                      <th style={{ padding: '20px 20px', textAlign: 'left', fontSize: '10px', fontWeight: 950, color: '#94a3b8', letterSpacing: '2px', width: '150px' }}>CONTACT_INTEL</th>
+                      <th style={{ padding: '20px 20px', textAlign: 'left', fontSize: '10px', fontWeight: 950, color: '#94a3b8', letterSpacing: '2px' }}>GEO_ORIGIN (FULL_ADDR)</th>
+                      <th style={{ padding: '20px 20px', textAlign: 'left', fontSize: '10px', fontWeight: 950, color: '#94a3b8', letterSpacing: '2px', width: '150px' }}>CLINICAL BRIEF</th>
+                      <th style={{ padding: '20px 20px', textAlign: 'left', fontSize: '10px', fontWeight: 950, color: '#94a3b8', letterSpacing: '2px', width: '180px' }}>SOURCE / REFERRER</th>
+                      <th style={{ padding: '20px 30px', textAlign: 'left', fontSize: '10px', fontWeight: 950, color: '#94a3b8', letterSpacing: '2px', width: '120px' }}>STATUS</th>
+                      <th style={{ padding: '20px 30px', textAlign: 'right', fontSize: '10px', fontWeight: 950, color: '#94a3b8', letterSpacing: '2px', width: '120px' }}>DATE</th>
                     </tr>
                   </thead>
                   <tbody>
                     {temporalPatients.map(p => (
-                      <tr key={p.id} style={{ borderBottom: '1px solid #f8fafc', transition: 'background 0.2s' }}>
-                        <td style={{ padding: '20px 30px', fontSize: '12px', fontWeight: 950, color: '#0f52ba', fontFamily: 'monospace' }}>{p.id}</td>
+                      <tr key={p.patientId} style={{ borderBottom: '1px solid #f8fafc', transition: 'background 0.2s' }}>
+                        <td style={{ padding: '20px 30px', fontSize: '12px', fontWeight: 950, color: '#0f52ba', fontFamily: 'monospace' }}>{p.patientIdentifier || 'UNSET'}</td>
                         <td style={{ padding: '20px 30px' }}>
                            <div style={{ fontSize: '14px', fontWeight: 800, color: '#1e293b' }}>{p.name.toUpperCase()}</div>
                            <div style={{ fontSize: '10px', color: '#94a3b8', fontWeight: 700 }}>{p.age}Y • {p.gender.toUpperCase()}</div>
                         </td>
-                        <td style={{ padding: '20px 30px' }}>
-                           <span style={{ fontSize: '10px', color: 'white', fontWeight: 950, background: '#334155', padding: '5px 12px', borderRadius: '10px' }}>{p.modality || 'REPORTED'}</span>
-                        </td>
-                        <td style={{ padding: '20px 30px' }}>
-                           <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                              <div style={{ width: '24px', height: '24px', borderRadius: '50%', background: '#f0faff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '12px' }}>👤</div>
-                              <div style={{ fontSize: '13px', fontWeight: 800, color: '#0f52ba' }}>{(p.referredBy || 'Direct / Walk-in').toUpperCase()}</div>
+                        <td style={{ padding: '20px 20px' }}>
+                           <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                              <span style={{ fontSize: '14px' }}>📱</span>
+                              <span style={{ fontSize: '12px', fontWeight: 900, color: '#1e293b' }}>{p.mobile || 'N/A'}</span>
                            </div>
                         </td>
+                        <td style={{ padding: '20px 20px' }}>
+                           <div style={{ display: 'flex', alignItems: 'flex-start', gap: '8px', maxWidth: '250px' }}>
+                              <span style={{ fontSize: '14px', color: '#f39c12' }}>📍</span>
+                              <span style={{ fontSize: '10px', color: '#64748b', fontWeight: 700, lineHeight: 1.5 }}>{p.address?.toUpperCase() || 'UNMAPPED_ORIGIN'}</span>
+                           </div>
+                        </td>
+                        <td style={{ padding: '20px 20px' }}>
+                           <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                              <span style={{ fontSize: '10px', color: 'white', fontWeight: 950, background: '#334155', padding: '5px 12px', borderRadius: '10px' }}>{p.modality}</span>
+                              <span style={{ fontSize: '10px', color: '#475569', fontWeight: 800, border: '1px solid #e2e8f0', padding: '4px 10px', borderRadius: '8px' }}>{p.service}</span>
+                           </div>
+                        </td>
+                        <td style={{ padding: '20px 20px' }}>
+                           <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                              <div style={{ width: '24px', height: '24px', borderRadius: '50%', background: '#f0faff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '12px' }}>👤</div>
+                              <div>
+                                <div style={{ fontSize: '13px', fontWeight: 800, color: '#0f52ba' }}>{(p.referredBy || 'Direct / Walk-in').toUpperCase()}</div>
+                                <div style={{ fontSize: '9px', color: '#94a3b8', fontWeight: 700, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '140px' }}>{p.sourceContact} / {p.sourceAddress}</div>
+                              </div>
+                           </div>
+                        </td>
+                        <td style={{ padding: '20px 30px' }}>
+                           {(() => {
+                              const cfg = getStatusConfig(p.status);
+                              return <span style={{ fontSize: '10px', fontWeight: 950, padding: '5px 12px', borderRadius: '10px', background: cfg.bg, color: cfg.color }}>{cfg.label}</span>
+                           })()}
+                        </td>
                         <td style={{ padding: '20px 30px', textAlign: 'right' }}>
-                           <div style={{ fontSize: '12px', color: '#1e293b', fontWeight: 900 }}>{p.registered}</div>
-                           <div style={{ fontSize: '8px', color: '#94a3b8', fontWeight: 950 }}>COMMITTED</div>
+                           <div style={{ fontSize: '12px', color: '#1e293b', fontWeight: 900 }}>{p.registrationDate}</div>
+                           <div style={{ fontSize: '8px', color: '#94a3b8', fontWeight: 950 }}>LOGGED</div>
                         </td>
                       </tr>
                     ))}
@@ -1324,7 +1928,12 @@ export default function AdminBoard() {
                   </div>
                   <div style={{ borderTop: '1px solid #edf2f7', paddingTop: '12px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                     <span style={{ fontSize: '10px', fontWeight: 950, color: '#94a3b8', letterSpacing: '1px' }}>ACCESS KEY</span>
-                    <span style={{ fontSize: '12px', fontWeight: 950, color: '#0f52ba', fontFamily: 'monospace' }}>{u.password}</span>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                      <span style={{ fontSize: '12px', fontWeight: 950, color: u.password ? '#0f52ba' : '#cbd5e1', fontFamily: 'monospace' }}>
+                        {u.password || '••••••••'}
+                      </span>
+                      {copyFeedback === u.id && <span style={{ fontSize: '8px', color: '#2ecc71', fontWeight: 900 }}>COPIED!</span>}
+                    </div>
                   </div>
                 </div>
               </div>
@@ -1342,15 +1951,29 @@ export default function AdminBoard() {
                   </div>
                 </div>
 
-                <div style={{ display: 'flex', gap: '10px' }}>
+                <div style={{ display: 'flex', gap: '8px' }}>
                   {canAdminEdit && (
                     <>
                       <button 
+                        title="Copy Credentials"
+                        style={{ width: '38px', height: '38px', borderRadius: '12px', background: '#f8fafc', border: '1px solid #e2e8f0', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '16px' }} 
+                        onClick={() => handleCopyCredentials(u)}
+                      >
+                        📋
+                      </button>
+                      <button 
+                        title="Share on WhatsApp"
+                        style={{ width: '38px', height: '38px', borderRadius: '12px', background: '#e9f7ef', border: '1px solid #c3e6cb', color: '#27ae60', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '16px' }} 
+                        onClick={() => handleWhatsAppShare(u)}
+                      >
+                        💬
+                      </button>
+                      <button 
                         className="btn-logout" 
-                        style={{ padding: '10px 18px', borderRadius: '12px', fontSize: '11px', fontWeight: 950, border: '1px solid #f1f5f9', background: 'white', cursor: 'pointer' }} 
+                        style={{ padding: '0 15px', height: '38px', borderRadius: '12px', fontSize: '10px', fontWeight: 950, border: '1px solid #f1f5f9', background: 'white', cursor: 'pointer' }} 
                         onClick={() => handleOpenUserDrawer(u)}
                       >
-                        EDIT CONFIG
+                        EDIT
                       </button>
                       {u.id !== currentUser.id && (
                         <button 
@@ -1375,28 +1998,28 @@ export default function AdminBoard() {
     <div className="page-wrapper board-padding" style={{ paddingTop: '30px' }}>
       <div className="board-hero-header flex-stack-mobile" style={{ marginBottom: '30px', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', gap: '20px' }}>
         <div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '15px', marginBottom: '8px' }}>
-            <span style={{ fontSize: '24px' }}>📊</span>
-            <h1 style={{ fontSize: '22px', fontWeight: 950, color: '#0a1628', letterSpacing: '-1px', margin: 0 }}>OPERATIONAL COMMAND</h1>
-          </div>
-          <div className="hide-mobile" style={{ display: 'flex', alignItems: 'center', gap: '12px', marginLeft: '39px' }}>
-            <span style={{ fontSize: '10px', color: '#0f52ba', fontWeight: 900, textTransform: 'uppercase', letterSpacing: '2px' }}>
-              {activeCenter?.name?.toUpperCase() || 'INSTITUTIONAL HUB'}
-            </span>
-            <span style={{ width: '4px', height: '4px', background: '#ccc', borderRadius: '50%' }}></span>
-            <span style={{ fontSize: '10px', color: '#888', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '1px' }}>
-               Command Center v4.2
-            </span>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+            <h1 style={{ fontSize: '24px', fontWeight: 950, color: '#0a1628', letterSpacing: '-1px', margin: 0 }}>OPERATIONAL COMMAND</h1>
+            <span style={{ fontSize: '10px', color: '#94a3b8', fontWeight: 900, textTransform: 'uppercase', letterSpacing: '4px' }}>Strategic Node Control</span>
           </div>
         </div>
-        
-        <div style={{ background: '#f8f9fa', padding: '12px 20px', borderRadius: '16px', border: '1px solid #eee', display: 'flex', gap: '15px', alignItems: 'center' }}>
-          <div style={{ textAlign: 'right' }}>
-            <div style={{ fontSize: '8px', fontWeight: 950, color: '#aaa', letterSpacing: '1px' }}>SYSTEM HEALTH</div>
-            <div style={{ fontSize: '11px', fontWeight: 950, color: '#2ecc71' }}>CORE STABLE</div>
-          </div>
-          <div className="tactical-node-active" style={{ width: '8px', height: '8px' }}></div>
-        </div>
+
+
+          <button 
+            onClick={() => setIsChainDrawerOpen(true)}
+            style={{ 
+              padding: '12px 20px', borderRadius: '16px', background: 'linear-gradient(135deg, #0f52ba 0%, #061a40 100%)', 
+              border: 'none', color: 'white', display: 'flex', gap: '8px', 
+              alignItems: 'center', cursor: 'pointer', transition: 'all 0.2s',
+              fontSize: '10px', fontWeight: 950, letterSpacing: '1px',
+              boxShadow: '0 8px 25px rgba(15, 82, 186, 0.25)'
+            }}
+            onMouseOver={e => { e.currentTarget.style.transform = 'translateY(-2px)'; e.currentTarget.style.boxShadow = '0 12px 30px rgba(15, 82, 186, 0.35)'; }}
+            onMouseOut={e => { e.currentTarget.style.transform = 'translateY(0)'; e.currentTarget.style.boxShadow = '0 8px 25px rgba(15, 82, 186, 0.25)'; }}
+          >
+            <span style={{ fontSize: '14px' }}>📡</span> REGISTER NEW CHAIN
+          </button>
+          
       </div>
       
       {/* Hub Controller Navigation */}
@@ -1410,7 +2033,7 @@ export default function AdminBoard() {
         display: 'flex',
         boxShadow: '0 4px 20px rgba(0,0,0,0.03)'
       }}>
-        {['INTELLIGENCE', 'REFERRAL INTEL', 'PERSONNEL', 'HOSPITAL'].map(tab => (
+        {['INTELLIGENCE', 'REFERRAL INTEL', 'PERSONNEL', 'HOSPITAL', 'FINANCE'].map(tab => (
           <button 
             key={tab}
             className={`admin-tab ${activeTab === tab ? 'active' : ''}`} 
@@ -1440,8 +2063,11 @@ export default function AdminBoard() {
       {activeTab === 'REFERRAL INTEL' && renderReferralIntel()}
       {activeTab === 'PERSONNEL' && renderUserManagement()}
       {activeTab === 'HOSPITAL' && renderHospitalSettings()}
+      {activeTab === 'FINANCE' && renderFinance()}
 
-      {isHospitalDrawerOpen && renderHospitalDrawer()}
+      {isHospitalDrawerOpen && renderHospitalSettingsDrawer()}
+      {isPriceDrawerOpen && renderPriceDrawer()}
+      {isChainDrawerOpen && renderChainDrawer()}
 
       {/* Personnel Roster Drawer: Redesigned Tactical HUD */}
       {isUserDrawerOpen && (
@@ -1782,6 +2408,113 @@ export default function AdminBoard() {
         </div>
       )}
 
+      {/* Import Status HUD Overlay */}
+      {importResult && (
+        <div className="modal-overlay" style={{ zIndex: 10000 }}>
+          <div style={{ width: '450px', background: 'white', borderRadius: '24px', padding: '35px', boxShadow: '0 25px 70px rgba(0,0,0,0.3)', position: 'relative' }}>
+            <button onClick={() => setImportResult(null)} style={{ position: 'absolute', top: '20px', right: '20px', background: 'none', border: 'none', fontSize: '20px', cursor: 'pointer', opacity: 0.5 }}>✕</button>
+            
+            <div style={{ textAlign: 'center', marginBottom: '25px' }}>
+              <div style={{ width: '60px', height: '60px', borderRadius: '50%', background: '#e9f7ef', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '30px', margin: '0 auto 15px' }}>🛡️</div>
+              <h3 style={{ fontSize: '16px', fontWeight: 950, color: '#1e293b' }}>IMPORT RECONNAISSANCE REPORT</h3>
+              <p style={{ fontSize: '11px', color: '#888', fontWeight: 700, marginTop: '4px' }}>Data synchronization cycle completed.</p>
+            </div>
+
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '15px', marginBottom: '25px' }}>
+              <div style={{ background: '#f0fdf4', padding: '15px', borderRadius: '16px', border: '1px solid #bcf0da', textAlign: 'center' }}>
+                <div style={{ fontSize: '24px', fontWeight: 950, color: '#166534' }}>{importResult.successCount}</div>
+                <div style={{ fontSize: '9px', fontWeight: 800, color: '#166534', letterSpacing: '1px' }}>SUCCESSFUL DEPLOYMENTS</div>
+              </div>
+              <div style={{ background: '#fef2f2', padding: '15px', borderRadius: '16px', border: '1px solid #fecaca', textAlign: 'center' }}>
+                <div style={{ fontSize: '24px', fontWeight: 950, color: '#991b1b' }}>{importResult.failureCount}</div>
+                <div style={{ fontSize: '9px', fontWeight: 800, color: '#991b1b', letterSpacing: '1px' }}>SYSTEM FAILURES</div>
+              </div>
+            </div>
+
+            {importResult.errors?.length > 0 && (
+              <div style={{ maxHeight: '150px', overflowY: 'auto', background: '#f8fafc', padding: '15px', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
+                <p style={{ fontSize: '9px', fontWeight: 950, color: '#64748b', marginBottom: '8px', letterSpacing: '1px' }}>FAILURE LOGS:</p>
+                {importResult.errors.map((err, i) => (
+                  <div key={i} style={{ fontSize: '10px', color: '#ef4444', fontWeight: 700, padding: '4px 0', borderBottom: '1px solid #f1f5f9' }}>
+                    • {err}
+                  </div>
+                ))}
+              </div>
+            )}
+
+            <button 
+              onClick={() => setImportResult(null)}
+              style={{ width: '100%', marginTop: '25px', padding: '16px', background: '#0f52ba', color: 'white', border: 'none', borderRadius: '14px', fontWeight: 950, fontSize: '11px', letterSpacing: '1px', cursor: 'pointer' }}
+            >
+              CLOSE REPORT
+            </button>
+          </div>
+        </div>
+      )}
+
     </div>
   );
+
+  function renderChainDrawer() {
+    return (
+      <div className="drawer-overlay" onClick={() => setIsChainDrawerOpen(false)} style={{ backdropFilter: 'blur(8px)', background: 'rgba(10, 22, 40, 0.4)', zIndex: 10000 }}>
+        <div className="drawer-content" style={{ padding: 0, width: '450px', background: 'white', display: 'flex', flexDirection: 'column' }} onClick={e => e.stopPropagation()}>
+          <div style={{ padding: '35px', background: 'linear-gradient(135deg, #0f52ba 0%, #061a40 100%)', color: 'white' }}>
+             <h2 style={{ fontSize: '11px', fontWeight: 950, color: 'var(--tactical-cyan)', letterSpacing: '3px', textTransform: 'uppercase', marginBottom: '8px' }}>Infrastructure Deployment</h2>
+             <div style={{ fontSize: '20px', fontWeight: 950, letterSpacing: '-1px' }}>REGISTER NEW CHAIN</div>
+             <p style={{ fontSize: '10px', color: 'rgba(255,255,255,0.6)', marginTop: '10px', fontWeight: 600 }}>Spawning new institutional node and re-mapping administrative authority.</p>
+          </div>
+
+          <div style={{ padding: '35px' }}>
+            <form onSubmit={handleDeployChain} style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+               <div className="input-group">
+                  <label style={{ display: 'block', fontSize: '9px', fontWeight: 950, color: '#94a3b8', letterSpacing: '2px', marginBottom: '10px' }}>CHAIN BRAND NAME</label>
+                  <input 
+                    type="text" 
+                    required 
+                    value={newChainData.chainName} 
+                    onChange={e => setNewChainData({...newChainData, chainName: e.target.value})} 
+                    placeholder="e.g. GLOBAL RADIOLOGY NETWORKS"
+                    style={{ width: '100%', padding: '14px', borderRadius: '12px', border: '1px solid #eee', fontSize: '12px', fontWeight: 700 }}
+                  />
+               </div>
+               <div className="input-group">
+                  <label style={{ display: 'block', fontSize: '9px', fontWeight: 950, color: '#94a3b8', letterSpacing: '2px', marginBottom: '10px' }}>CENTRE NAME</label>
+                  <input 
+                    type="text" 
+                    required 
+                    value={newChainData.hospitalName} 
+                    onChange={e => setNewChainData({...newChainData, hospitalName: e.target.value})} 
+                    placeholder="e.g. CITY DIAGNOSTIC HUB"
+                    style={{ width: '100%', padding: '14px', borderRadius: '12px', border: '1px solid #eee', fontSize: '12px', fontWeight: 700 }}
+                  />
+               </div>
+               <div className="input-group">
+                  <label style={{ display: 'block', fontSize: '9px', fontWeight: 950, color: '#94a3b8', letterSpacing: '2px', marginBottom: '10px' }}>NODE LOCATION (ADDRESS)</label>
+                  <textarea 
+                    required 
+                    rows="3"
+                    value={newChainData.hospitalAddress} 
+                    onChange={e => setNewChainData({...newChainData, hospitalAddress: e.target.value})} 
+                    placeholder="FULL INSTITUTIONAL ADDRESS"
+                    style={{ width: '100%', padding: '14px', borderRadius: '12px', border: '1px solid #eee', fontSize: '12px', fontWeight: 700, resize: 'none' }}
+                  />
+               </div>
+
+               <div style={{ marginTop: '30px', display: 'flex', gap: '15px' }}>
+                  <button type="button" onClick={() => setIsChainDrawerOpen(false)} style={{ flex: 1, padding: '16px', borderRadius: '16px', border: '1px solid #eee', fontWeight: 800 }}>ABORT</button>
+                  <button 
+                    type="submit" 
+                    disabled={isDeployingChain}
+                    style={{ flex: 2, padding: '16px', borderRadius: '16px', background: '#0f52ba', color: 'white', fontWeight: 950, border: 'none', cursor: 'pointer' }}
+                  >
+                    {isDeployingChain ? 'DEPLOYING...' : 'INITIATE DEPLOYMENT →'}
+                  </button>
+               </div>
+            </form>
+          </div>
+        </div>
+      </div>
+    );
+  }
 }

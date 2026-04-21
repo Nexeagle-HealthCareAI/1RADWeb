@@ -44,6 +44,11 @@ const MODALITY_ICONS = {
 
 export default function AppointmentBoard() {
   const { activeCenterId, activeCenter } = useContext(AuthContext);
+  const [activeTab, setActiveTab] = useState('TODAY'); // 'TODAY' or 'PAST'
+  const [pastDateRange, setPastDateRange] = useState({ 
+    start: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0], 
+    end: new Date(Date.now() - 1 * 24 * 60 * 60 * 1000).toISOString().split('T')[0] 
+  });
   const [appointments, setAppointments] = useState([]);
   const [patients, setPatients] = useState([]);
   const [doctors, setDoctors] = useState([]);
@@ -59,12 +64,13 @@ export default function AppointmentBoard() {
   const [tokenPrintData, setTokenPrintData] = useState(null);
 
   const [bookingStep, setBookingStep] = useState(1);
+  const [currentPage, setCurrentPage] = useState(1);
+  const listTopRef = useRef(null);
   const [newBooking, setNewBooking] = useState({ patientId: '', service: '', modality: 'X-RAY', date: TODAY, time: '09:00', doctor: '', notes: '' });
 
   const [newPatient, setNewPatient] = useState({ 
     name: '', mobile: '', age: '', gender: 'Male', 
-    village: '', district: '', address: '', 
-    referredBy: '', sourceOfInfo: '' 
+    village: '', district: '', address: '', sourceOfInfo: '', referrerId: null
   });
   const [duplicatePatient, setDuplicatePatient] = useState(null);
 
@@ -72,6 +78,7 @@ export default function AppointmentBoard() {
   const [isAddingNewReferrer, setIsAddingNewReferrer] = useState(false);
   const [newReferrer, setNewReferrer] = useState({ name: '', contact: '', address: '' });
   const [referrerSearchValue, setReferrerSearchValue] = useState('');
+  const [serviceRegistry, setServiceRegistry] = useState([]);
   const drawerBodyRef = useRef(null);
 
   useEffect(() => {
@@ -84,24 +91,43 @@ export default function AppointmentBoard() {
   const fetchAppointments = useCallback(async () => {
     setLoading(true);
     try {
-      const response = await apiClient.get('/appointments', {
-        params: { 
-          search: searchQuery, 
-          status: filters.status 
-        }
-      });
-      setAppointments(response.data.map(a => ({
+      const params = {
+        search: searchQuery,
+        status: filters.status,
+      };
+
+      if (activeTab === 'TODAY') {
+        params.date = TODAY;
+      } else {
+        params.startDate = pastDateRange.start;
+        params.endDate = pastDateRange.end;
+        params.isArchive = true;
+      }
+
+      const response = await apiClient.get('/appointments', { params });
+      let mappedData = response.data.map(a => ({
         ...a,
         id: a.displayId,
         appointmentId: a.appointmentId,
-        ptid: a.patientIdentifier // Mapping PTID
-      })));
+        ptid: a.patientIdentifier
+      }));
+
+      if (activeTab === 'TODAY') {
+        // Sort by dateTime to ensure chronological tokens
+        mappedData.sort((a, b) => new Date(a.dateTime || 0) - new Date(b.dateTime || 0));
+        mappedData = mappedData.map((a, index) => ({
+          ...a,
+          tokenNo: index + 1
+        }));
+      }
+
+      setAppointments(mappedData);
     } catch (error) {
       console.error('Failed to fetch appointments:', error);
     } finally {
       setLoading(false);
     }
-  }, [searchQuery, filters.status]);
+  }, [searchQuery, filters.status, activeTab, pastDateRange]);
 
   const fetchPatients = useCallback(async (query) => {
     try {
@@ -147,7 +173,7 @@ export default function AppointmentBoard() {
 
   useEffect(() => {
     fetchAppointments();
-  }, [fetchAppointments, activeCenterId]);
+  }, [fetchAppointments, activeCenterId, activeTab]);
 
   useEffect(() => {
     if (drawerSearchQuery.length > 2) {
@@ -155,29 +181,73 @@ export default function AppointmentBoard() {
     }
   }, [drawerSearchQuery, fetchPatients]);
 
+  const fetchRegistry = useCallback(async () => {
+    try {
+      const res = await apiClient.get('/finance/registry');
+      setServiceRegistry(res.data);
+    } catch (err) {
+      console.error('[FINANCE] Registry fetch failed', err);
+    }
+  }, []);
+
   useEffect(() => {
     fetchReferrers('');
     fetchDoctors();
-  }, [fetchReferrers, fetchDoctors, activeCenterId]);
+    fetchRegistry();
+  }, [fetchReferrers, fetchDoctors, fetchRegistry, activeCenterId]);
 
   // --- DERIVED ---
   const filteredAppointments = useMemo(() => {
     return appointments.filter(app => {
-      const matchesSearch = app.patientName.toLowerCase().includes(searchQuery.toLowerCase()) || app.mobile.includes(searchQuery) || app.id.includes(searchQuery);
+      // Date filtering (Defensive)
+      const appDate = app.date || (app.dateTime ? app.dateTime.split('T')[0] : null);
+      
+      if (activeTab === 'TODAY') {
+        if (appDate !== TODAY) return false;
+      } else {
+        // Archive mode filtering
+        if (!appDate) return false;
+        if (appDate < pastDateRange.start || appDate > pastDateRange.end) return false;
+      }
+
+      const matchesSearch = app.patientName.toLowerCase().includes(searchQuery.toLowerCase()) || 
+                            app.mobile.includes(searchQuery) || 
+                            app.id.includes(searchQuery);
       const matchesStatus = filters.status === 'ALL' || app.status === filters.status;
       const matchesModality = filters.modality === 'ALL' || app.modality === filters.modality;
       const matchesDoctor = filters.doctor === 'ALL' || app.doctor === filters.doctor;
       return matchesSearch && matchesStatus && matchesModality && matchesDoctor;
     });
-  }, [appointments, searchQuery, filters]);
+  }, [appointments, searchQuery, filters, activeTab, pastDateRange]);
+
+  // Derived validation
+  const isMobileValid = /^\d{10}$/.test(newPatient.mobile);
+  const isNewPatientIncomplete = !newBooking.patientId && 
+    (!newPatient.name.trim() || !isMobileValid || !newPatient.age.trim());
+
+  // Reset page on filter change
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [searchQuery, filters]);
+
+  // Auto-scroll on page change
+  useEffect(() => {
+    if (listTopRef.current) {
+      listTopRef.current.scrollIntoView({ behavior: 'smooth' });
+    }
+  }, [currentPage]);
+
+  const itemsPerPage = 10;
+  const totalPages = Math.ceil(filteredAppointments.length / itemsPerPage);
+  const paginatedAppointments = filteredAppointments.slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage);
 
   const stats = {
-    total: appointments.length,
-    booked: appointments.filter(a => a.status === 'BOOKED').length,
-    arrived: appointments.filter(a => a.status === 'ARRIVED').length,
-    inProgress: appointments.filter(a => a.status === 'IN_PROGRESS').length,
-    completed: appointments.filter(a => a.status === 'COMPLETED').length,
-    cancelled: appointments.filter(a => a.status === 'CANCELLED').length,
+    total: filteredAppointments.length,
+    booked: filteredAppointments.filter(a => a.status === 'BOOKED').length,
+    arrived: filteredAppointments.filter(a => a.status === 'ARRIVED').length,
+    inProgress: filteredAppointments.filter(a => a.status === 'IN_PROGRESS').length,
+    completed: filteredAppointments.filter(a => a.status === 'COMPLETED').length,
+    cancelled: filteredAppointments.filter(a => a.status === 'CANCELLED').length,
   };
   const completionRate = stats.total > 0 ? Math.round((stats.completed / stats.total) * 100) : 0;
   const activeRate = stats.total > 0 ? Math.round(((stats.total - stats.cancelled) / stats.total) * 100) : 0;
@@ -248,7 +318,7 @@ export default function AppointmentBoard() {
     }
 
     try {
-      await apiClient.post('/appointments', {
+      const appointmentRes = await apiClient.post('/appointments', {
         patientId: newBooking.patientId,
         service: newBooking.service,
         modality: newBooking.modality,
@@ -256,9 +326,39 @@ export default function AppointmentBoard() {
         type: 'BOOKED',
         doctor: newBooking.doctor,
         referredBy: newPatient.referredBy || '',
-        referredContact: '',
+        referredContact: referrers.find(r => r.name === newPatient.referredBy)?.contact || '',
+        referredAddress: referrers.find(r => r.name === newPatient.referredBy)?.address || '',
         notes: newBooking.notes
       });
+
+      // --- AUTO-BILLING TRIGGER (API INTEGRATED) ---
+      try {
+        const storedSettings = JSON.parse(localStorage.getItem('1rad_billing_settings') || '{"autoBill":false}');
+        
+        if (storedSettings.autoBill) {
+          const matchedPrice = serviceRegistry.find(p => 
+            p.modality === newBooking.modality && 
+            p.serviceName.toLowerCase() === newBooking.service.toLowerCase()
+          );
+
+          if (matchedPrice) {
+            await apiClient.post('/finance/invoices', {
+              patientId: newBooking.patientId,
+              appointmentId: appointmentRes.data.appointmentId,
+              items: [{
+                description: matchedPrice.serviceName,
+                amount: matchedPrice.amount,
+                quantity: 1
+              }]
+            });
+            console.log('AUTO-BILL: Server-side invoice generated');
+          }
+        }
+      } catch (err) {
+        console.error('AUTO-BILL: Failed to process backend billing', err);
+      }
+      // ----------------------------------------------
+
       setIsBookingOpen(false);
       resetBooking();
       fetchAppointments();
@@ -420,9 +520,36 @@ export default function AppointmentBoard() {
         {doctors.map(d => <option key={d} value={d}>{d}</option>)}
       </select>
 
-      {(filters.status !== 'ALL' || filters.modality !== 'ALL' || filters.doctor !== 'ALL' || searchQuery) && (
+      {activeTab === 'PAST' && (
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', background: 'white', border: '1px solid #dee2e6', borderRadius: '12px', padding: '10px 16px' }}>
+          <span style={{ fontSize: '10px', fontWeight: 900, color: '#0f52ba', textTransform: 'uppercase', marginRight: '5px' }}>Mission Range</span>
+          <input 
+            type="date" 
+            value={pastDateRange.start} 
+            onChange={e => setPastDateRange(prev => ({ ...prev, start: e.target.value }))}
+            style={{ border: 'none', background: 'transparent', outline: 'none', fontSize: '12px', fontWeight: 700, color: '#333' }}
+          />
+          <span style={{ color: '#ccc' }}>→</span>
+          <input 
+            type="date" 
+            value={pastDateRange.end} 
+            onChange={e => setPastDateRange(prev => ({ ...prev, end: e.target.value }))}
+            style={{ border: 'none', background: 'transparent', outline: 'none', fontSize: '12px', fontWeight: 700, color: '#333' }}
+          />
+        </div>
+      )}
+
+      {(filters.status !== 'ALL' || filters.modality !== 'ALL' || filters.doctor !== 'ALL' || searchQuery || activeTab !== 'TODAY') && (
         <button
-          onClick={() => { setFilters({ date: TODAY, status: 'ALL', modality: 'ALL', doctor: 'ALL' }); setSearchQuery(''); }}
+          onClick={() => { 
+            setFilters({ date: TODAY, status: 'ALL', modality: 'ALL', doctor: 'ALL' }); 
+            setSearchQuery(''); 
+            setActiveTab('TODAY');
+            setPastDateRange({ 
+              start: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0], 
+              end: new Date(Date.now() - 1 * 24 * 60 * 60 * 1000).toISOString().split('T')[0] 
+            });
+          }}
           style={{
             display: 'flex', alignItems: 'center', gap: '6px',
             padding: '10px 16px', borderRadius: '12px',
@@ -431,7 +558,7 @@ export default function AppointmentBoard() {
             transition: 'all 0.2s',
           }}
         >
-          {'\u2715'} CLEAR FILTERS
+          {'\u2715'} RESET ARCHIVE
         </button>
       )}
 
@@ -455,7 +582,7 @@ export default function AppointmentBoard() {
           onClick={() => setExpandedRow(isExpanded ? null : app.id)}
           style={{
             display: 'grid',
-            gridTemplateColumns: '0.6fr 1.8fr 1.8fr 0.8fr 1fr 1.6fr',
+            gridTemplateColumns: '0.6fr 0.6fr 1.8fr 1.8fr 0.8fr 1fr 1.6fr',
             alignItems: 'center',
             padding: '16px 22px',
             background: isExpanded ? '#fafbff' : 'white',
@@ -471,8 +598,15 @@ export default function AppointmentBoard() {
           <div style={{ position: 'absolute', left: 0, top: 0, bottom: 0, width: '4px', background: meta.color, borderRadius: '4px 0 0 4px' }} />
 
           <div style={{ display: 'flex', flexDirection: 'column' }}>
-            <div style={{ fontSize: '11px', fontWeight: 900, color: '#0f52ba', fontFamily: 'monospace' }}>{app.ptid || app.id}</div>
+            <div style={{ fontSize: '11px', fontWeight: 900, color: '#0f52ba', fontFamily: 'monospace' }}>{app.ptid || '\u2014'}</div>
             <div style={{ fontSize: '9px', fontWeight: 700, color: '#ccc' }}>{app.id}</div>
+          </div>
+
+          <div style={{ display: 'flex', flexDirection: 'column' }}>
+            <div style={{ fontSize: '14px', fontWeight: 950, color: '#1a1a2e' }}>
+              #{app.tokenNo || (app.id.includes('-') ? app.id.split('-')[1] : app.id)}
+            </div>
+            <div style={{ fontSize: '8px', fontWeight: 900, color: '#abb8c3', textTransform: 'uppercase' }}>TOKEN</div>
           </div>
 
           <div style={{ display: 'flex', flexDirection: 'column' }}>
@@ -704,7 +838,28 @@ export default function AppointmentBoard() {
                     </div>
                     <div className="form-group" style={{ marginBottom: '8px' }}>
                       <label style={{ fontSize: '10px', fontWeight: 700 }}>MOBILE <span style={{ color: '#e74c3c' }}>*</span></label>
-                      <input type="tel" required placeholder="987..." style={{ fontSize: '13px', padding: '11px 12px' }} value={newPatient.mobile} onChange={e => { setNewPatient({...newPatient, mobile: e.target.value}); setNewBooking({...newBooking, patientId: ''}); }} />
+                      <input 
+                        type="tel" 
+                        required 
+                        placeholder="10-digit mobile..." 
+                        style={{ 
+                          fontSize: '13px', 
+                          padding: '11px 12px',
+                          borderColor: newPatient.mobile.length > 0 && !isMobileValid ? '#e74c3c' : '#dee2e6',
+                          boxShadow: newPatient.mobile.length > 0 && !isMobileValid ? '0 0 0 1px #e74c3c' : 'none'
+                        }} 
+                        value={newPatient.mobile} 
+                        onChange={e => { 
+                          const val = e.target.value.replace(/\D/g, '').slice(0, 10);
+                          setNewPatient({...newPatient, mobile: val}); 
+                          setNewBooking({...newBooking, patientId: ''}); 
+                        }} 
+                      />
+                      {newPatient.mobile.length > 0 && !isMobileValid && (
+                        <div style={{ fontSize: '8px', color: '#e74c3c', fontWeight: 800, marginTop: '2px', letterSpacing: '0.5px' }}>
+                          IDENTITY PROTOCOL: Exactly 10 digits required.
+                        </div>
+                      )}
                     </div>
                     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
                       <div className="form-group" style={{ marginBottom: '8px' }}>
@@ -788,7 +943,7 @@ export default function AppointmentBoard() {
                               <div 
                                 key={r.id}
                                 onClick={() => {
-                                  setNewPatient(prev => ({ ...prev, referredBy: r.name }));
+                                  setNewPatient(prev => ({ ...prev, referredBy: r.name, referrerId: r.referrerId }));
                                   setReferrerSearchValue(r.name);
                                 }}
                                 style={{ padding: '10px 15px', fontSize: '12px', cursor: 'pointer', borderBottom: '1px solid #f8f9fa' }}
@@ -836,7 +991,7 @@ export default function AppointmentBoard() {
                             type="button"
                             onClick={() => {
                               setReferrerSearchValue('');
-                              setNewPatient(prev => ({ ...prev, referredBy: '' }));
+                              setNewPatient(prev => ({ ...prev, referredBy: '', referrerId: null }));
                             }}
                             style={{ background: 'none', border: 'none', color: '#e74c3c', fontSize: '18px', cursor: 'pointer', padding: '0 5px', fontWeight: 800 }}
                           >
@@ -862,9 +1017,9 @@ export default function AppointmentBoard() {
                         onClick={async () => { 
                           if(newReferrer.name.trim()){ 
                             try {
-                              await apiClient.post('/referrers', newReferrer);
+                              const res = await apiClient.post('/referrers', newReferrer);
                               fetchReferrers('');
-                              setNewPatient({...newPatient, referredBy: newReferrer.name}); 
+                              setNewPatient({...newPatient, referredBy: newReferrer.name, referrerId: res.data.referrerId}); 
                               setReferrerSearchValue(newReferrer.name);
                               setIsAddingNewReferrer(false);
                               setNewReferrer({ name: '', contact: '', address: '' });
@@ -900,8 +1055,12 @@ export default function AppointmentBoard() {
                 <div className="drawer-footer" style={{ borderTop: 'none', paddingTop: '20px' }}>
                   <button 
                     className="gamified-btn" 
-                    style={{ width: '100%', padding: '16px', borderRadius: '12px', fontSize: '13px' }} 
-                    disabled={!newBooking.patientId && (!newPatient.name.trim() || !newPatient.mobile.trim() || !newPatient.age.trim())} 
+                    style={{ 
+                      width: '100%', padding: '16px', borderRadius: '12px', fontSize: '13px',
+                      opacity: isNewPatientIncomplete ? 0.6 : 1,
+                      cursor: isNewPatientIncomplete ? 'not-allowed' : 'pointer'
+                    }} 
+                    disabled={isNewPatientIncomplete} 
                     onClick={async () => {
                       if (!newBooking.patientId && newPatient.name && newPatient.mobile) {
                         try {
@@ -913,7 +1072,8 @@ export default function AppointmentBoard() {
                             village: newPatient.village,
                             district: newPatient.district,
                             address: newPatient.address,
-                            sourceOfInfo: newPatient.sourceOfInfo
+                            sourceOfInfo: newPatient.sourceOfInfo,
+                            referrerId: newPatient.referrerId
                           });
                           const patientId = response.data.patientId;
                           if (!patientId) throw new Error("API returned invalid patient identity");
@@ -1086,7 +1246,9 @@ export default function AppointmentBoard() {
               {/* 2. Token Number */}
               <div style={{ marginBottom: '15px' }}>
                 <div style={{ fontSize: '10px', fontWeight: 800 }}>TOKEN NO.</div>
-                <div style={{ fontSize: '42px', fontWeight: 950, margin: '2px 0' }}>{tokenPrintData.id.includes('-') ? tokenPrintData.id.split('-')[1] : tokenPrintData.id}</div>
+                <div style={{ fontSize: '42px', fontWeight: 950, margin: '2px 0' }}>
+                  {tokenPrintData.tokenNo || (tokenPrintData.id.includes('-') ? tokenPrintData.id.split('-')[1] : tokenPrintData.id)}
+                </div>
               </div>
 
               <div style={{ borderTop: '1px dashed #000', borderBottom: '1px dashed #000', padding: '10px 0', margin: '10px 0', textAlign: 'left' }}>
@@ -1208,24 +1370,41 @@ export default function AppointmentBoard() {
         </div>
       </div>
 
+      <div style={{ display: 'flex', background: 'white', padding: '5px', borderRadius: '12px', border: '1px solid #eee', width: 'fit-content', marginBottom: '25px', boxShadow: '0 2px 10px rgba(0,0,0,0.02)' }}>
+        <button 
+          onClick={() => setActiveTab('TODAY')}
+          style={{ padding: '8px 25px', borderRadius: '8px', border: 'none', fontSize: '11px', fontWeight: 900, background: activeTab === 'TODAY' ? '#0f52ba' : 'transparent', color: activeTab === 'TODAY' ? 'white' : '#888', cursor: 'pointer', transition: 'all 0.3s', display: 'flex', alignItems: 'center', gap: '8px' }}
+        >
+          <span style={{ fontSize: '14px' }}>📅</span> TODAY'S MISSIONS
+        </button>
+        <button 
+          onClick={() => setActiveTab('PAST')}
+          style={{ padding: '8px 25px', borderRadius: '8px', border: 'none', fontSize: '11px', fontWeight: 900, background: activeTab === 'PAST' ? '#0f52ba' : 'transparent', color: activeTab === 'PAST' ? 'white' : '#888', cursor: 'pointer', transition: 'all 0.3s', display: 'flex', alignItems: 'center', gap: '8px' }}
+        >
+          <span style={{ fontSize: '14px' }}>📜</span> MISSION ARCHIVE
+        </button>
+      </div>
+
       {renderIntelCards()}
       {renderFilterBar()}
 
       <div style={{ marginBottom: '20px' }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '14px' }}>
+        <div ref={listTopRef} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '14px' }}>
           <span style={{ fontSize: '11px', fontWeight: 800, color: '#888', textTransform: 'uppercase', letterSpacing: '1px' }}>
             {filteredAppointments.length} Mission{filteredAppointments.length !== 1 ? 's' : ''} Found
+            {totalPages > 1 && <span style={{ marginLeft: '10px', color: '#0f52ba' }}>— Page {currentPage} of {totalPages}</span>}
           </span>
         </div>
 
         <div style={{
           display: 'grid',
-          gridTemplateColumns: '0.6fr 1.8fr 1.8fr 0.8fr 1fr 1.6fr',
+          gridTemplateColumns: '0.6fr 0.6fr 1.8fr 1.8fr 0.8fr 1fr 1.6fr',
           padding: '0 22px 10px',
           fontSize: '9px', fontWeight: 800, color: '#aaa',
           textTransform: 'uppercase', letterSpacing: '1px',
         }}>
           <span>ID</span>
+          <span>Token</span>
           <span>Patient Details</span>
           <span>Referred By</span>
           <span>Status</span>
@@ -1243,7 +1422,77 @@ export default function AppointmentBoard() {
             <div style={{ fontSize: '12px', marginTop: '4px' }}>Try adjusting your search or pipeline filters</div>
           </div>
         ) : (
-          filteredAppointments.map(app => renderAppointmentRow(app))
+          paginatedAppointments.map(app => renderAppointmentRow(app))
+        )}
+
+        {/* Tactical Pagination HUD */}
+        {totalPages > 1 && (
+          <div style={{ 
+            marginTop: '30px', 
+            padding: '16px', 
+            background: 'white', 
+            borderRadius: '16px', 
+            border: '1px solid #eee',
+            display: 'flex',
+            justifyContent: 'center',
+            alignItems: 'center',
+            gap: '20px',
+            boxShadow: '0 4px 15px rgba(0,0,0,0.02)'
+          }}>
+            <button 
+              disabled={currentPage === 1}
+              onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
+              style={{
+                width: '40px', height: '40px', borderRadius: '10px',
+                border: '1px solid #dee2e6', background: currentPage === 1 ? '#f8f9fa' : 'white',
+                color: currentPage === 1 ? '#ccc' : '#0f52ba', cursor: currentPage === 1 ? 'default' : 'pointer',
+                display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '18px',
+                transition: 'all 0.2s'
+              }}
+            >
+              {'\u2190'}
+            </button>
+
+            <div style={{ display: 'flex', gap: '8px' }}>
+              {[...Array(totalPages)].map((_, i) => {
+                const pageNum = i + 1;
+                // Show max 5 pages or current page neighborhood
+                if (totalPages > 7 && Math.abs(pageNum - currentPage) > 2 && pageNum !== 1 && pageNum !== totalPages) {
+                  if (pageNum === 2 || pageNum === totalPages - 1) return <span key={pageNum} style={{ color: '#ccc' }}>...</span>;
+                  return null;
+                }
+                return (
+                  <button 
+                    key={pageNum}
+                    onClick={() => setCurrentPage(pageNum)}
+                    style={{
+                      width: '32px', height: '32px', borderRadius: '8px',
+                      border: 'none', background: currentPage === pageNum ? '#0f52ba' : 'transparent',
+                      color: currentPage === pageNum ? 'white' : '#64748b',
+                      fontSize: '12px', fontWeight: 900, cursor: 'pointer',
+                      transition: 'all 0.2s'
+                    }}
+                  >
+                    {pageNum}
+                  </button>
+                );
+              })}
+            </div>
+
+            <button 
+              disabled={currentPage === totalPages}
+              onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
+              style={{
+                width: '40px', height: '40px', borderRadius: '10px',
+                border: '1px solid #dee2e6', background: currentPage === totalPages ? '#f8f9fa' : 'white',
+                color: currentPage === totalPages ? '#ccc' : '#0f52ba', cursor: currentPage === totalPages ? 'default' : 'pointer',
+                display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '18px',
+                transition: 'all 0.2s'
+              }}
+            >
+              {'\u2192'}
+            </button>
+          </div>
         )}
       </div>
 

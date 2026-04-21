@@ -10,8 +10,10 @@ import {
   Modal,
   TextInput,
   FlatList,
-  RefreshControl
+  RefreshControl,
+  Platform
 } from 'react-native';
+import DateTimePicker from '@react-native-community/datetimepicker';
 import { useAuth } from '../context/AuthContext';
 import { useAppointments } from '../context/AppointmentContext';
 import apiClient from '../api/apiClient';
@@ -73,11 +75,13 @@ export default function AdminBoardScreen({ navigation }) {
   
   // Referral Intel state
   const [referralRange, setReferralRange] = useState({ 
-    start: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0], 
-    end: new Date().toISOString().split('T')[0] 
+    start: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000),
+    end: new Date()
   });
   const [referralFilterMode, setReferralFilterMode] = useState('RANGE'); // 'SINGLE' or 'RANGE'
   const [expandedReferrer, setExpandedReferrer] = useState(null);
+  const [showStartDatePicker, setShowStartDatePicker] = useState(false);
+  const [showEndDatePicker, setShowEndDatePicker] = useState(false);
   
   // Hospital settings state
   const [hospitalData, setHospitalData] = useState({
@@ -838,11 +842,15 @@ export default function AdminBoardScreen({ navigation }) {
     // Use actual patients data from context instead of mock data
     const patientsData = patients.length > 0 ? patients : mockPatients;
     
+    // Format dates for comparison (YYYY-MM-DD)
+    const startDateStr = referralRange.start.toISOString().split('T')[0];
+    const endDateStr = referralRange.end.toISOString().split('T')[0];
+    
     // Aggregate data based on range
     const aggregated = patientsData.reduce((acc, p) => {
       const isMatched = referralFilterMode === 'SINGLE' 
-        ? p.registered === referralRange.start
-        : (p.registered >= referralRange.start && p.registered <= referralRange.end);
+        ? p.registered === startDateStr
+        : (p.registered >= startDateStr && p.registered <= endDateStr);
 
       if (isMatched) {
         const source = p.referredBy || 'Direct / Walk-in';
@@ -972,26 +980,69 @@ export default function AdminBoardScreen({ navigation }) {
           </View>
 
           <View style={styles.referralDateContainer}>
-            <TextInput
-              style={styles.referralDateInput}
-              value={referralRange.start}
-              onChangeText={(text) => setReferralRange(prev => ({ ...prev, start: text }))}
-              placeholder="Start Date"
-              placeholderTextColor={COLORS.textSecondary}
-            />
+            <TouchableOpacity
+              style={styles.referralDateButton}
+              onPress={() => setShowStartDatePicker(true)}
+            >
+              <Calendar size={16} color={COLORS.cyan} />
+              <Text style={styles.referralDateButtonText}>
+                {referralRange.start.toLocaleDateString('en-US', {
+                  month: 'short',
+                  day: 'numeric',
+                  year: 'numeric'
+                })}
+              </Text>
+            </TouchableOpacity>
             {referralFilterMode === 'RANGE' && (
               <>
                 <Text style={styles.referralDateArrow}>→</Text>
-                <TextInput
-                  style={styles.referralDateInput}
-                  value={referralRange.end}
-                  onChangeText={(text) => setReferralRange(prev => ({ ...prev, end: text }))}
-                  placeholder="End Date"
-                  placeholderTextColor={COLORS.textSecondary}
-                />
+                <TouchableOpacity
+                  style={styles.referralDateButton}
+                  onPress={() => setShowEndDatePicker(true)}
+                >
+                  <Calendar size={16} color={COLORS.cyan} />
+                  <Text style={styles.referralDateButtonText}>
+                    {referralRange.end.toLocaleDateString('en-US', {
+                      month: 'short',
+                      day: 'numeric',
+                      year: 'numeric'
+                    })}
+                  </Text>
+                </TouchableOpacity>
               </>
             )}
           </View>
+
+          {/* Start Date Picker */}
+          {showStartDatePicker && (
+            <DateTimePicker
+              value={referralRange.start}
+              mode="date"
+              display={Platform.OS === 'ios' ? 'spinner' : 'default'}
+              onChange={(event, selectedDate) => {
+                setShowStartDatePicker(Platform.OS === 'ios');
+                if (selectedDate) {
+                  setReferralRange(prev => ({ ...prev, start: selectedDate }));
+                }
+              }}
+            />
+          )}
+
+          {/* End Date Picker */}
+          {showEndDatePicker && (
+            <DateTimePicker
+              value={referralRange.end}
+              mode="date"
+              display={Platform.OS === 'ios' ? 'spinner' : 'default'}
+              minimumDate={referralRange.start}
+              onChange={(event, selectedDate) => {
+                setShowEndDatePicker(Platform.OS === 'ios');
+                if (selectedDate) {
+                  setReferralRange(prev => ({ ...prev, end: selectedDate }));
+                }
+              }}
+            />
+          )}
         </View>
 
         {/* Summary Statistics */}
@@ -1970,16 +2021,23 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: SPACING.md,
   },
-  referralDateInput: {
+  referralDateButton: {
     flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
     borderWidth: 1,
     borderColor: COLORS.border,
     borderRadius: RADIUS.md,
     paddingVertical: SPACING.sm,
     paddingHorizontal: SPACING.md,
+    gap: 8,
+    backgroundColor: COLORS.bgCard,
+  },
+  referralDateButtonText: {
     fontSize: 12,
     fontWeight: '700',
     color: COLORS.textPrimary,
+    flex: 1,
   },
   referralDateArrow: {
     fontSize: 16,
