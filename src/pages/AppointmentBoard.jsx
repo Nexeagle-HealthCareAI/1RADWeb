@@ -1116,9 +1116,48 @@ export default function AppointmentBoard() {
                   ))}
                 </div>
 
-                <div className="form-group" style={{ marginTop: '16px' }}>
+                <div className="form-group" style={{ marginTop: '16px', position: 'relative' }}>
                   <label style={{ fontSize: '9px', fontWeight: 800, letterSpacing: '0.5px', color: '#888' }}>2. SERVICE / PROCEDURE <span style={{ color: '#e74c3c' }}>*</span></label>
-                  <input type="text" required placeholder="e.g. Chest X-Ray with Lateral" value={newBooking.service} onChange={e => setNewBooking({...newBooking, service: e.target.value})} style={{ fontSize: '13px', padding: '10px' }} />
+                  <input 
+                    type="text" 
+                    required 
+                    placeholder="e.g. Chest X-Ray with Lateral" 
+                    value={newBooking.service} 
+                    onChange={e => setNewBooking({...newBooking, service: e.target.value})} 
+                    style={{ fontSize: '13px', padding: '10px' }} 
+                  />
+
+                  {/* Service Suggestions Dropdown */}
+                  {newBooking.service.length > 0 && serviceRegistry.some(s => 
+                    s.modality === newBooking.modality && 
+                    s.serviceName.toLowerCase().includes(newBooking.service.toLowerCase()) && 
+                    s.serviceName !== newBooking.service
+                  ) && (
+                    <div style={{ 
+                      position: 'absolute', top: '100%', left: 0, right: 0, 
+                      background: 'white', border: '1px solid #e2e8f0', borderRadius: '12px', 
+                      boxShadow: '0 10px 30px rgba(0,0,0,0.1)', zIndex: 100, 
+                      maxHeight: '200px', overflowY: 'auto', marginTop: '4px' 
+                    }}>
+                      <div style={{ padding: '8px 12px', background: '#f8f9fa', borderBottom: '1px solid #eee', fontSize: '9px', fontWeight: 900, color: '#0f52ba', letterSpacing: '1px' }}>
+                        MATCHING SERVICES IN {newBooking.modality}
+                      </div>
+                      {serviceRegistry
+                        .filter(s => s.modality === newBooking.modality && s.serviceName.toLowerCase().includes(newBooking.service.toLowerCase()))
+                        .map(s => (
+                          <div 
+                            key={s.id}
+                            onClick={() => setNewBooking({...newBooking, service: s.serviceName})}
+                            style={{ padding: '12px 15px', borderBottom: '1px solid #f8fafc', cursor: 'pointer', transition: 'background 0.2s' }}
+                            onMouseOver={e => e.currentTarget.style.background = '#f0f4ff'}
+                            onMouseOut={e => e.currentTarget.style.background = 'white'}
+                          >
+                             <div style={{ fontSize: '12px', fontWeight: 800, color: '#1e293b' }}>{s.serviceName}</div>
+                             <div style={{ fontSize: '10px', color: '#0f52ba', fontWeight: 950, marginTop: '2px' }}>₹{s.amount.toLocaleString()}</div>
+                          </div>
+                        ))}
+                    </div>
+                  )}
                 </div>
 
                 <div style={{ marginTop: '16px', marginBottom: '8px' }}>
@@ -1159,7 +1198,15 @@ export default function AppointmentBoard() {
                   <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 1fr', gap: '8px' }}>
                     <div><span style={{ fontSize: '8px', color: '#888', fontWeight: 700 }}>PATIENT</span><div style={{ fontWeight: 800, fontSize: '11px', color: '#1a1a2e' }}>{patients.find(p => p.id === newBooking.patientId)?.name}</div></div>
                     <div><span style={{ fontSize: '8px', color: '#888', fontWeight: 700 }}>MODALITY</span><div style={{ fontWeight: 800, fontSize: '11px', color: '#1a1a2e' }}>{MODALITY_ICONS[newBooking.modality]} {newBooking.modality}</div></div>
-                    <div><span style={{ fontSize: '8px', color: '#888', fontWeight: 700 }}>SERVICE</span><div style={{ fontWeight: 800, fontSize: '11px', color: '#1a1a2e' }}>{newBooking.service || '\u2014'}</div></div>
+                    <div style={{ gridColumn: 'span 2' }}>
+                      <span style={{ fontSize: '8px', color: '#888', fontWeight: 700 }}>SERVICE & BILLING</span>
+                      <div style={{ fontWeight: 800, fontSize: '11px', color: '#1a1a2e', display: 'flex', justifyContent: 'space-between' }}>
+                        <span>{newBooking.service || '\u2014'}</span>
+                        {serviceRegistry.find(s => s.modality === newBooking.modality && s.serviceName.toLowerCase() === newBooking.service.toLowerCase()) && (
+                          <span style={{ color: '#0f52ba' }}>₹{serviceRegistry.find(s => s.modality === newBooking.modality && s.serviceName.toLowerCase() === newBooking.service.toLowerCase()).amount.toLocaleString()}</span>
+                        )}
+                      </div>
+                    </div>
                     <div><span style={{ fontSize: '8px', color: '#888', fontWeight: 700 }}>SPECIALIST</span><div style={{ fontWeight: 800, fontSize: '11px', color: '#1a1a2e' }}>{newBooking.doctor || 'Unassigned'}</div></div>
                   </div>
                 </div>

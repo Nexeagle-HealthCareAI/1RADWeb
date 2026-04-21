@@ -17,6 +17,7 @@ export default function BillingPage() {
   const [selectedPatient, setSelectedPatient] = useState(null);
   const [isSearchingPatients, setIsSearchingPatients] = useState(false);
   const [serviceRegistry, setServiceRegistry] = useState([]);
+  const [pendingServices, setPendingServices] = useState([]);
 
   const [newInvoiceData, setNewInvoiceData] = useState({
     patientName: '',
@@ -68,6 +69,15 @@ export default function BillingPage() {
       setMatrix(res.data);
     } catch (err) {
       console.error('[FINANCE] Matrix fetch failed', err);
+    }
+  }, []);
+
+  const fetchPendingBillables = useCallback(async (patientId) => {
+    try {
+      const res = await apiClient.get(`/finance/pending-billables/${patientId}`);
+      setPendingServices(res.data);
+    } catch (err) {
+      console.error('[FINANCE] Pending billables fetch failed', err);
     }
   }, []);
 
@@ -409,7 +419,11 @@ export default function BillingPage() {
                         {patientResults.map(p => (
                           <div 
                             key={p.patientId} 
-                            onClick={() => { setSelectedPatient(p); setPatientResults([]); }}
+                            onClick={() => { 
+                              setSelectedPatient(p); 
+                              setPatientResults([]); 
+                              fetchPendingBillables(p.patientId);
+                            }}
                             style={{ padding: '15px', borderBottom: '1px solid #f1f5f9', cursor: 'pointer', transition: 'background 0.2s' }}
                             onMouseOver={e => e.currentTarget.style.background = '#f8fafc'}
                             onMouseOut={e => e.currentTarget.style.background = 'white'}
@@ -431,16 +445,83 @@ export default function BillingPage() {
                         <div style={{ fontSize: '14px', fontWeight: 950, color: '#1e293b' }}>{selectedPatient.fullName.toUpperCase()}</div>
                         <div style={{ fontSize: '10px', fontWeight: 800, color: '#64748b' }}>UHID: {selectedPatient.patientIdentifier}</div>
                       </div>
-                      <button type="button" onClick={() => setSelectedPatient(null)} style={{ border: 'none', background: 'none', color: '#0f52ba', fontSize: '10px', fontWeight: 950, cursor: 'pointer' }}>CHANGE</button>
+                      <button type="button" onClick={() => { setSelectedPatient(null); setPendingServices([]); }} style={{ border: 'none', background: 'none', color: '#0f52ba', fontSize: '10px', fontWeight: 950, cursor: 'pointer' }}>CHANGE</button>
                    </div>
                  )}
               </div>
 
               <div style={{ marginBottom: '30px', opacity: selectedPatient ? 1 : 0.4, pointerEvents: selectedPatient ? 'auto' : 'none' }}>
-                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '15px' }}>
-                    <span style={{ fontSize: '10px', fontWeight: 950, color: '#94a3b8', letterSpacing: '1px' }}>CHARGE_MANIFEST</span>
-                    <button type="button" onClick={() => setNewInvoiceData({ ...newInvoiceData, items: [...newInvoiceData.items, { description: '', amount: 0, quantity: 1 }] })} style={{ color: '#0f52ba', border: 'none', background: 'none', fontSize: '10px', fontWeight: 950, cursor: 'pointer' }}>+ ADD LINE</button>
-                 </div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '15px' }}>
+                     <span style={{ fontSize: '10px', fontWeight: 950, color: '#94a3b8', letterSpacing: '1px' }}>SERVICE_CATALOG_&_PENDING</span>
+                  </div>
+
+                  {/* Pending Services From Appointments */}
+                  {pendingServices.length > 0 && (
+                    <div style={{ marginBottom: '20px' }}>
+                       <p style={{ fontSize: '9px', fontWeight: 950, color: '#0f52ba', marginBottom: '10px' }}>PENDING FROM APPOINTMENTS</p>
+                       <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
+                          {pendingServices.map((s, idx) => (
+                            <button 
+                              key={idx}
+                              type="button"
+                              onClick={() => {
+                                const newItems = [...newInvoiceData.items];
+                                if (newItems.length === 1 && !newItems[0].description) {
+                                  newItems[0] = { description: s.service, amount: s.amount || 0, quantity: 1, appointmentId: s.appointmentId };
+                                } else {
+                                  newItems.push({ description: s.service, amount: s.amount || 0, quantity: 1, appointmentId: s.appointmentId });
+                                }
+                                setNewInvoiceData({ ...newInvoiceData, items: newItems });
+                                setPendingServices(prev => prev.filter((_, i) => i !== idx));
+                              }}
+                              style={{ 
+                                padding: '8px 12px', border: '1px dashed #0f52ba', background: '#f0f4ff', color: '#0f52ba', 
+                                borderRadius: '10px', fontSize: '10px', fontWeight: 800, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px' 
+                              }}
+                            >
+                              <span style={{ opacity: 0.7 }}>+</span> {s.service} (₹{s.amount || 'N/A'})
+                            </button>
+                          ))}
+                       </div>
+                    </div>
+                  )}
+
+                  {/* Global Service Registry */}
+                  <div>
+                    <p style={{ fontSize: '9px', fontWeight: 950, color: '#64748b', marginBottom: '10px' }}>AVAILABLE SERVICES (REGISTRY)</p>
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', maxHeight: '120px', overflowY: 'auto', padding: '4px' }}>
+                       {serviceRegistry.map((s) => (
+                         <button 
+                           key={s.id}
+                           type="button"
+                           onClick={() => {
+                             const newItems = [...newInvoiceData.items];
+                             if (newItems.length === 1 && !newItems[0].description) {
+                               newItems[0] = { description: s.serviceName, amount: s.amount, quantity: 1 };
+                             } else {
+                               newItems.push({ description: s.serviceName, amount: s.amount, quantity: 1 });
+                             }
+                             setNewInvoiceData({ ...newInvoiceData, items: newItems });
+                           }}
+                           style={{ 
+                             padding: '6px 10px', border: '1px solid #e2e8f0', background: 'white', color: '#1e293b', 
+                             borderRadius: '8px', fontSize: '9px', fontWeight: 700, cursor: 'pointer', transition: 'all 0.2s' 
+                           }}
+                           onMouseOver={e => { e.currentTarget.style.borderColor = '#0f52ba'; e.currentTarget.style.background = '#f8fafc'; }}
+                           onMouseOut={e => { e.currentTarget.style.borderColor = '#e2e8f0'; e.currentTarget.style.background = 'white'; }}
+                         >
+                           {s.serviceName}
+                         </button>
+                       ))}
+                    </div>
+                  </div>
+
+                  <div style={{ height: '30px' }}></div>
+
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '15px' }}>
+                     <span style={{ fontSize: '10px', fontWeight: 950, color: '#94a3b8', letterSpacing: '1px' }}>CHARGE_MANIFEST</span>
+                     <button type="button" onClick={() => setNewInvoiceData({ ...newInvoiceData, items: [...newInvoiceData.items, { description: '', amount: 0, quantity: 1 }] })} style={{ color: '#0f52ba', border: 'none', background: 'none', fontSize: '10px', fontWeight: 950, cursor: 'pointer' }}>+ ADD LINE</button>
+                  </div>
                  
                  <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
                     {newInvoiceData.items.map((item, idx) => (
