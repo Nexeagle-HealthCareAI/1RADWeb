@@ -99,18 +99,19 @@ export default function DashboardScreen({ navigation }) {
   }
 
   return (
-    <ScrollView 
-      style={styles.container} 
-      contentContainerStyle={styles.scrollContent}
-      refreshControl={
-        <RefreshControl
-          refreshing={refreshing}
-          onRefresh={onRefresh}
-          tintColor={COLORS.cyan}
-          colors={[COLORS.cyan]}
-        />
-      }
-    >
+    <View style={{ flex: 1, backgroundColor: COLORS.bgMain }}>
+      <ScrollView 
+        style={styles.container} 
+        contentContainerStyle={styles.scrollContent}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={onRefresh}
+            tintColor={COLORS.cyan}
+            colors={[COLORS.cyan]}
+          />
+        }
+      >
       {/* Animated Header */}
       <Animated.View 
         style={[
@@ -264,6 +265,7 @@ export default function DashboardScreen({ navigation }) {
     
     {/* Bottom Navigation Bar */}
     <BottomNavBar userRole={user?.roles?.[0] || 'doctor'} />
+    </View>
   );
 }
 

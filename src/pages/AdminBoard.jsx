@@ -1943,11 +1943,16 @@ export default function AdminBoard() {
                 </button>
 
                 {showExportOverlay && (
-                  <div style={{ 
-                    position: 'absolute', top: '100%', right: 0, marginTop: '10px', width: '320px', 
-                    background: 'white', borderRadius: '20px', border: '1px solid #e2e8f0', 
-                    boxShadow: '0 10px 40px rgba(0,0,0,0.1)', padding: '25px', zIndex: 1000 
-                  }}>
+                  <>
+                    <div 
+                      style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, zIndex: 999, background: 'transparent' }} 
+                      onClick={() => setShowExportOverlay(false)}
+                    />
+                    <div style={{ 
+                      position: 'absolute', top: '100%', right: 0, marginTop: '10px', width: '320px', 
+                      background: 'white', borderRadius: '20px', border: '1px solid #e2e8f0', 
+                      boxShadow: '0 10px 40px rgba(0,0,0,0.1)', padding: '25px', zIndex: 1000 
+                    }}>
                     <div style={{ fontSize: '10px', fontWeight: 950, color: '#94a3b8', letterSpacing: '2px', marginBottom: '20px' }}>EXPORT PARAMETERS</div>
                     
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '15px' }}>
@@ -1986,7 +1991,8 @@ export default function AdminBoard() {
                        </button>
                     </div>
                   </div>
-                )}
+                </>
+              )}
              </div>
           </div>
         </div>
@@ -2517,15 +2523,20 @@ export default function AdminBoard() {
           </button>
 
           {isSwitcherOpen && (
-            <div 
-              id="center-dropdown-menu"
-              className="tactical-hub-dropdown"
-              style={{ 
-                position: 'absolute', top: '100%', left: 0, marginTop: '12px', width: '350px', 
-                zIndex: 1100, background: 'white', borderRadius: '18px', border: '1px solid #e2e8f0', 
-                boxShadow: '0 15px 50px rgba(0,0,0,0.15)', padding: '15px' 
-              }}
-            >
+            <>
+              <div 
+                style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, zIndex: 1050, background: 'transparent' }} 
+                onClick={() => setIsSwitcherOpen(false)}
+              />
+              <div 
+                id="center-dropdown-menu"
+                className="tactical-hub-dropdown"
+                style={{ 
+                  position: 'absolute', top: '100%', left: 0, marginTop: '12px', width: '350px', 
+                  zIndex: 1100, background: 'white', borderRadius: '18px', border: '1px solid #e2e8f0', 
+                  boxShadow: '0 15px 50px rgba(0,0,0,0.15)', padding: '15px' 
+                }}
+              >
               <div style={{ padding: '0 5px 12px', fontSize: '10px', fontWeight: 950, color: '#0f52ba', textTransform: 'uppercase', letterSpacing: '2px', borderBottom: '1px solid #f1f5f9', marginBottom: '12px', display: 'flex', justifyContent: 'space-between' }}>
                 <span>AUTHORIZED CLINICAL NODES</span>
                 <span style={{ opacity: 0.5 }}>ACTIVE LIST</span>
@@ -2578,7 +2589,8 @@ export default function AdminBoard() {
                    </div>
                  )}
                </div>
-            </div>
+             </div>
+            </>
           )}
         </div>
 
@@ -2985,7 +2997,7 @@ export default function AdminBoard() {
 
       {/* Import Status HUD Overlay */}
       {importResult && (
-        <div className="modal-overlay" style={{ zIndex: 10000 }}>
+        <div className="modal-overlay" onClick={() => setImportResult(null)} style={{ zIndex: 10000 }}>
           <div style={{ width: '450px', background: 'white', borderRadius: '24px', padding: '35px', boxShadow: '0 25px 70px rgba(0,0,0,0.3)', position: 'relative' }}>
             <button onClick={() => setImportResult(null)} style={{ position: 'absolute', top: '20px', right: '20px', background: 'none', border: 'none', fontSize: '20px', cursor: 'pointer', opacity: 0.5 }}>✕</button>
             
