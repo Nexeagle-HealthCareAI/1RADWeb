@@ -1,0 +1,711 @@
+/* ==========================================================================
+   Appointment Board - Responsive Layout
+   ========================================================================== */
+
+.appointment-board-container {
+  width: 100%;
+  max-width: 100%;
+  padding: 16px;
+}
+
+/* ==========================================================================
+   Intel Cards Grid - Responsive
+   ========================================================================== */
+
+.intel-cards-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 16px;
+  margin-bottom: 24px;
+}
+
+/* Mobile: Single column */
+@media (max-width: 639px) {
+  .intel-cards-grid {
+    grid-template-columns: 1fr;
+    gap: 12px;
+    margin-bottom: 20px;
+  }
+}
+
+/* Tablet: 2 columns */
+@media (min-width: 640px) and (max-width: 1023px) {
+  .intel-cards-grid {
+    grid-template-columns: repeat(2, 1fr);
+    gap: 14px;
+    margin-bottom: 22px;
+  }
+}
+
+/* Desktop: 4 columns */
+@media (min-width: 1024px) {
+  .intel-cards-grid {
+    grid-template-columns: repeat(4, 1fr);
+    gap: 16px;
+    margin-bottom: 24px;
+  }
+}
+
+.intel-card {
+  background: white;
+  border-radius: 16px;
+  padding: 20px;
+  border: 1px solid #dee2e6;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.03);
+  transition: all 0.2s ease;
+}
+
+.intel-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.08);
+}
+
+.intel-card.dark {
+  background: linear-gradient(135deg, #0a1628 0%, #1e293b 100%);
+  border-color: rgba(255, 255, 255, 0.05);
+  color: white;
+}
+
+/* ==========================================================================
+   Filter Bar - Responsive Stack
+   ========================================================================== */
+
+.filter-bar-responsive {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 20px;
+  flex-wrap: wrap;
+}
+
+.filter-search-group {
+  flex: 1 1 100%;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  background: white;
+  border: 1px solid #dee2e6;
+  border-radius: 12px;
+  padding: 10px 16px;
+  min-width: 0;
+}
+
+.filter-search-group input {
+  border: none;
+  outline: none;
+  background: transparent;
+  font-size: 13px;
+  font-weight: 600;
+  width: 100%;
+  color: #333;
+}
+
+.filter-search-group input::placeholder {
+  color: #999;
+}
+
+.filter-select-group {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  flex: 1 1 auto;
+}
+
+.filter-select {
+  background: white;
+  border: 1px solid #dee2e6;
+  border-radius: 12px;
+  padding: 10px 16px;
+  font-size: 12px;
+  font-weight: 700;
+  color: #555;
+  cursor: pointer;
+  transition: all 0.2s;
+  min-width: 140px;
+}
+
+.filter-select:hover {
+  border-color: #0f52ba;
+  background: #f8f9fa;
+}
+
+.filter-select:focus {
+  outline: 2px solid #0f52ba;
+  outline-offset: -1px;
+}
+
+.filter-date-range {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: white;
+  border: 1px solid #dee2e6;
+  border-radius: 12px;
+  padding: 10px 16px;
+  flex: 1 1 auto;
+  min-width: 280px;
+}
+
+.filter-date-range input {
+  border: none;
+  background: transparent;
+  outline: none;
+  font-size: 12px;
+  font-weight: 700;
+  color: #333;
+  flex: 1;
+}
+
+.filter-reset-btn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 10px 16px;
+  border-radius: 12px;
+  background: #fff5f5;
+  border: 1px solid #fecaca;
+  cursor: pointer;
+  font-size: 11px;
+  font-weight: 800;
+  color: #e74c3c;
+  transition: all 0.2s;
+  white-space: nowrap;
+}
+
+.filter-reset-btn:active {
+  background: #ffe0e0;
+}
+
+/* Mobile: Stack filters vertically */
+@media (max-width: 639px) {
+  .filter-bar-responsive {
+    gap: 10px;
+    margin-bottom: 16px;
+  }
+
+  .filter-search-group {
+    flex: 1 1 100%;
+    padding: 10px 12px;
+  }
+
+  .filter-search-group input {
+    font-size: 14px;
+  }
+
+  .filter-select-group {
+    flex: 1 1 100%;
+    gap: 8px;
+  }
+
+  .filter-select {
+    flex: 1 1 calc(50% - 4px);
+    min-width: 0;
+    padding: 10px 12px;
+    font-size: 12px;
+  }
+
+  .filter-date-range {
+    flex: 1 1 100%;
+    min-width: 0;
+    padding: 10px 12px;
+    gap: 6px;
+  }
+
+  .filter-date-range input {
+    font-size: 12px;
+  }
+
+  .filter-reset-btn {
+    flex: 1 1 100%;
+    justify-content: center;
+    padding: 12px 16px;
+  }
+}
+
+/* Tablet: 2-column layout */
+@media (min-width: 640px) and (max-width: 1023px) {
+  .filter-bar-responsive {
+    gap: 12px;
+  }
+
+  .filter-search-group {
+    flex: 1 1 100%;
+  }
+
+  .filter-select-group {
+    flex: 1 1 auto;
+    gap: 10px;
+  }
+
+  .filter-select {
+    flex: 1 1 auto;
+    min-width: 120px;
+  }
+
+  .filter-date-range {
+    flex: 1 1 100%;
+    min-width: 0;
+  }
+
+  .filter-reset-btn {
+    flex: 0 1 auto;
+  }
+}
+
+/* Desktop: Horizontal layout */
+@media (min-width: 1024px) {
+  .filter-bar-responsive {
+    gap: 12px;
+    flex-wrap: nowrap;
+  }
+
+  .filter-search-group {
+    flex: 1 1 280px;
+  }
+
+  .filter-select-group {
+    flex: 0 1 auto;
+    gap: 12px;
+  }
+
+  .filter-select {
+    flex: 0 1 auto;
+    min-width: 160px;
+  }
+
+  .filter-date-range {
+    flex: 0 1 auto;
+    min-width: 300px;
+  }
+
+  .filter-reset-btn {
+    flex: 0 1 auto;
+  }
+}
+
+/* ==========================================================================
+   Appointments List - Responsive Display Toggle
+   ========================================================================== */
+
+.appointments-list-container {
+  width: 100%;
+}
+
+/* Mobile/Tablet: Show cards */
+@media (max-width: 1023px) {
+  .appointments-table {
+    display: none;
+  }
+
+  .appointments-cards {
+    display: block;
+  }
+}
+
+/* Desktop: Show table */
+@media (min-width: 1024px) {
+  .appointments-table {
+    display: block;
+  }
+
+  .appointments-cards {
+    display: none;
+  }
+}
+
+.appointments-cards {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+/* ==========================================================================
+   Pagination - Responsive
+   ========================================================================== */
+
+.pagination-container {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 8px;
+  margin-top: 24px;
+  flex-wrap: wrap;
+}
+
+.pagination-btn {
+  padding: 8px 12px;
+  border: 1px solid #dee2e6;
+  background: white;
+  border-radius: 8px;
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 600;
+  transition: all 0.2s;
+  min-height: 36px;
+  min-width: 36px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.pagination-btn:hover:not(:disabled) {
+  border-color: #0f52ba;
+  background: #f8f9fa;
+}
+
+.pagination-btn.active {
+  background: #0f52ba;
+  color: white;
+  border-color: #0f52ba;
+}
+
+.pagination-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.pagination-info {
+  font-size: 12px;
+  color: #666;
+  font-weight: 600;
+}
+
+/* Mobile: Smaller pagination */
+@media (max-width: 639px) {
+  .pagination-container {
+    gap: 6px;
+    margin-top: 20px;
+  }
+
+  .pagination-btn {
+    padding: 8px 10px;
+    font-size: 11px;
+    min-height: 32px;
+    min-width: 32px;
+  }
+
+  .pagination-info {
+    font-size: 11px;
+    flex: 1 1 100%;
+    text-align: center;
+  }
+}
+
+/* ==========================================================================
+   Empty State - Responsive
+   ========================================================================== */
+
+.empty-state {
+  text-align: center;
+  padding: 40px 20px;
+  background: white;
+  border-radius: 12px;
+  border: 1px solid #dee2e6;
+}
+
+.empty-state-icon {
+  font-size: 48px;
+  margin-bottom: 16px;
+}
+
+.empty-state-title {
+  font-size: 18px;
+  font-weight: 700;
+  color: #333;
+  margin-bottom: 8px;
+}
+
+.empty-state-text {
+  font-size: 14px;
+  color: #666;
+}
+
+@media (max-width: 639px) {
+  .empty-state {
+    padding: 30px 16px;
+  }
+
+  .empty-state-icon {
+    font-size: 40px;
+    margin-bottom: 12px;
+  }
+
+  .empty-state-title {
+    font-size: 16px;
+  }
+
+  .empty-state-text {
+    font-size: 13px;
+  }
+}
+
+/* ==========================================================================
+   Loading State - Responsive
+   ========================================================================== */
+
+.loading-skeleton {
+  background: white;
+  border-radius: 12px;
+  padding: 16px;
+  margin-bottom: 12px;
+  border: 1px solid #eee;
+  animation: pulse 2s infinite;
+}
+
+@keyframes pulse {
+  0%, 100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.5;
+  }
+}
+
+/* ==========================================================================
+   Tab Navigation - Responsive
+   ========================================================================== */
+
+.tab-navigation {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 20px;
+  border-bottom: 2px solid #eee;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+.tab-btn {
+  padding: 12px 16px;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 700;
+  color: #666;
+  border-bottom: 3px solid transparent;
+  transition: all 0.2s;
+  white-space: nowrap;
+  position: relative;
+  bottom: -2px;
+}
+
+.tab-btn:hover {
+  color: #0f52ba;
+}
+
+.tab-btn.active {
+  color: #0f52ba;
+  border-bottom-color: #0f52ba;
+}
+
+@media (max-width: 639px) {
+  .tab-navigation {
+    gap: 4px;
+    margin-bottom: 16px;
+  }
+
+  .tab-btn {
+    padding: 10px 12px;
+    font-size: 12px;
+  }
+}
+
+/* ==========================================================================
+   Drawer/Modal - Responsive
+   ========================================================================== */
+
+.booking-drawer {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  background: white;
+  border-radius: 16px 16px 0 0;
+  box-shadow: 0 -4px 20px rgba(0, 0, 0, 0.15);
+  z-index: 1000;
+  max-height: 90vh;
+  overflow-y: auto;
+  animation: slideUp 0.3s ease-out;
+}
+
+@keyframes slideUp {
+  from {
+    transform: translateY(100%);
+    opacity: 0;
+  }
+  to {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
+
+.booking-drawer-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 16px;
+  border-bottom: 1px solid #eee;
+  position: sticky;
+  top: 0;
+  background: white;
+  z-index: 10;
+}
+
+.booking-drawer-title {
+  font-size: 16px;
+  font-weight: 700;
+  color: #333;
+}
+
+.booking-drawer-close {
+  background: none;
+  border: none;
+  font-size: 24px;
+  cursor: pointer;
+  color: #666;
+  padding: 0;
+  width: 32px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.booking-drawer-content {
+  padding: 16px;
+}
+
+/* Desktop: Modal instead of drawer */
+@media (min-width: 1024px) {
+  .booking-drawer {
+    position: fixed;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    bottom: auto;
+    right: auto;
+    border-radius: 16px;
+    max-height: 80vh;
+    width: 90%;
+    max-width: 500px;
+    animation: slideDown 0.3s ease-out;
+  }
+
+  @keyframes slideDown {
+    from {
+      transform: translate(-50%, -60%);
+      opacity: 0;
+    }
+    to {
+      transform: translate(-50%, -50%);
+      opacity: 1;
+    }
+  }
+}
+
+/* ==========================================================================
+   Utility Classes
+   ========================================================================== */
+
+.hidden-mobile {
+  display: none;
+}
+
+@media (min-width: 640px) {
+  .hidden-mobile {
+    display: block;
+  }
+}
+
+.hidden-tablet {
+  display: block;
+}
+
+@media (min-width: 640px) and (max-width: 1023px) {
+  .hidden-tablet {
+    display: none;
+  }
+}
+
+.hidden-desktop {
+  display: block;
+}
+
+@media (min-width: 1024px) {
+  .hidden-desktop {
+    display: none;
+  }
+}
+
+.visible-mobile {
+  display: block;
+}
+
+@media (min-width: 640px) {
+  .visible-mobile {
+    display: none;
+  }
+}
+
+.visible-tablet {
+  display: none;
+}
+
+@media (min-width: 640px) and (max-width: 1023px) {
+  .visible-tablet {
+    display: block;
+  }
+}
+
+.visible-desktop {
+  display: none;
+}
+
+@media (min-width: 1024px) {
+  .visible-desktop {
+    display: block;
+  }
+}
+
+/* ==========================================================================
+   Touch-friendly spacing
+   ========================================================================== */
+
+@media (hover: none) and (pointer: coarse) {
+  .filter-bar-responsive {
+    gap: 12px;
+  }
+
+  .filter-select {
+    padding: 12px 14px;
+    min-height: 44px;
+  }
+
+  .tab-btn {
+    padding: 14px 16px;
+    min-height: 44px;
+  }
+
+  .pagination-btn {
+    min-height: 44px;
+    min-width: 44px;
+  }
+}
+
+/* ==========================================================================
+   Print styles
+   ========================================================================== */
+
+@media print {
+  .filter-bar-responsive,
+  .pagination-container,
+  .tab-navigation {
+    display: none;
+  }
+
+  .appointment-card {
+    page-break-inside: avoid;
+    box-shadow: none;
+    border: 1px solid #ccc;
+  }
+}

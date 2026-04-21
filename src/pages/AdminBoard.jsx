@@ -3,6 +3,7 @@ import apiClient from '../api/apiClient';
 import useAuth from '../auth/useAuth';
 import { ROLE_LABELS } from '../data/roles';
 import '../styles/global.css';
+import '../styles/AdminBoard.css';
 
 // --- HELPERS ---
 const getISODate = (offset = 0) => {
@@ -94,11 +95,46 @@ export default function AdminBoard() {
   const [exportParams, setExportParams] = useState({ start: TODAY, end: TODAY, allTime: false });
   const [loading, setLoading] = useState(false);
 
+  // Responsive layout detection
+  const [isMobile, setIsMobile] = useState(window.innerWidth < 1024);
+  const [windowWidth, setWindowWidth] = useState(window.innerWidth);
+
   // Financial Registry State
   const [servicePrices, setServicePrices] = useState([]);
+  const [financialMatrix, setFinancialMatrix] = useState(null);
+  const [financeViewMode, setFinanceViewMode] = useState('REGISTRY'); // 'REGISTRY' or 'INTEL'
+  const [financeTemporalMode, setFinanceTemporalMode] = useState('MONTHLY');
   const [billingSettings, setBillingSettings] = useState({ autoBill: false, currency: '₹' });
   const [isPriceDrawerOpen, setIsPriceDrawerOpen] = useState(false);
   const [editPrice, setEditPrice] = useState({ modality: 'X-RAY', serviceName: '', amount: 0 });
+
+  // Expense Mgmt State
+  const [isExpenseDrawerOpen, setIsExpenseDrawerOpen] = useState(false);
+  const [savingExpense, setSavingExpense] = useState(false);
+  const [editExpense, setEditExpense] = useState({ 
+    description: '', 
+    category: 'Maintenance', 
+    amount: 0, 
+    taxAmount: 0,
+    transactionDate: TODAY, 
+    paymentMode: 'Cash', 
+    referenceNumber: '',
+    vendorName: '',
+    costCenter: 'Radiology',
+    status: 'Paid'
+  });
+
+  const fetchFinancialMatrix = useCallback(async () => {
+    try {
+      setLoading(true);
+      const res = await apiClient.get('/finance/matrix');
+      setFinancialMatrix(res.data);
+    } catch (err) {
+      console.error('[FINANCE] Matrix fetch failed', err);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
 
   const fetchServicePrices = useCallback(async () => {
     try {
@@ -242,7 +278,9 @@ export default function AdminBoard() {
           registrationNumber: meta?.registrationNumber || meta?.RegistrationNumber || '',
           pan: meta?.pan || meta?.PAN || '',
           nabhNumber: meta?.nabhNumber || meta?.NABHNumber || '',
-          status: meta?.status || meta?.Status || 'active'
+          status: meta?.status || meta?.Status || 'active',
+          groupId: c.groupId || '',
+          groupName: c.groupName || ''
         };
       });
       setMappedHospitals(mapped);
@@ -286,11 +324,12 @@ export default function AdminBoard() {
       fetchReferralIntelligence();
       if (referralViewMode === 'PATIENTS') fetchPatientMasterList();
     }
-    if (activeTab === 'HOSPITAL SETTINGS') {
+    if (activeTab === 'HOSPITAL') {
       fetchMappedHospitals();
     }
     if (activeTab === 'FINANCE') {
       fetchServicePrices();
+      fetchFinancialMatrix();
     }
   }, [activeTab, fetchPersonnel, fetchReferralIntelligence, fetchPatientMasterList, fetchMappedHospitals, fetchServicePrices, referralViewMode]);
 
@@ -461,6 +500,18 @@ export default function AdminBoard() {
       }));
     }
   }, [activeCenter]);
+
+  // Handle window resize for responsive layout
+  useEffect(() => {
+    const handleResize = () => {
+      const newWidth = window.innerWidth;
+      setWindowWidth(newWidth);
+      setIsMobile(newWidth < 1024);
+    };
+
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
 
   // --- DERIVED DATA ---
   const [subscription, setSubscription] = useState({ 
@@ -759,6 +810,33 @@ export default function AdminBoard() {
     }
   };
 
+  const handleSaveExpense = async (e) => {
+    e.preventDefault();
+    try {
+      setSavingExpense(true);
+      await apiClient.post('/finance/expense', editExpense);
+      setIsExpenseDrawerOpen(false);
+      setEditExpense({ 
+        description: '', 
+        category: 'Maintenance', 
+        amount: 0, 
+        taxAmount: 0,
+        transactionDate: TODAY, 
+        paymentMode: 'Cash', 
+        referenceNumber: '',
+        vendorName: '',
+        costCenter: 'Radiology',
+        status: 'Paid'
+      });
+      fetchFinancialMatrix(); // Refresh stats
+    } catch (err) {
+      console.error('[FINANCE] Expense save failed', err);
+      alert('PROTOCOL FAILURE: Failed to record operational expense.');
+    } finally {
+      setSavingExpense(false);
+    }
+  };
+
   const handleDeletePrice = async (id) => {
     if (window.confirm('Are you sure you want to delete this service charge?')) {
       try {
@@ -891,65 +969,160 @@ export default function AdminBoard() {
              <p style={{ fontSize: '11px', fontWeight: 900, color: '#0f52ba', marginTop: '20px' }}>SCANNING NETWORK NODES...</p>
           </div>
         ) : (
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(350px, 1fr))', gap: '25px' }}>
-            {mappedHospitals.map(hub => (
-              <div 
-                key={hub.hospitalId}
-                style={{ 
-                  background: 'white', border: '1px solid #eee', borderRadius: '24px', padding: '30px', 
-                  boxShadow: '0 4px 20px rgba(0,0,0,0.02)', position: 'relative', overflow: 'hidden',
-                  transition: 'all 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275)'
-                }}
-              >
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '20px' }}>
-                   <div style={{ width: '50px', height: '50px', borderRadius: '14px', background: '#f0f7ff', border: '1px solid #e0efff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '20px' }}>🏙️</div>
-                   {hub.hospitalId === activeCenter.id && (
-                     <span style={{ fontSize: '8px', fontWeight: 950, background: '#e9f7ef', color: '#27ae60', padding: '4px 10px', borderRadius: '20px', border: '1px solid #c3e6cb' }}>CURRENT_ACTIVE_HUB</span>
-                   )}
-                </div>
-                
-                <h3 style={{ fontSize: '18px', fontWeight: 950, color: '#1a1a2e', marginBottom: '8px' }}>{hub.hospitalName.toUpperCase()}</h3>
-                <p style={{ fontSize: '11px', color: '#64748b', fontWeight: 600, display: 'flex', gap: '6px', marginBottom: '25px' }}>
-                   <span>📍</span> {hub.hospitalAddress}
-                </p>
+          <div className="topology-registry" style={{ display: 'flex', flexDirection: 'column', gap: '50px' }}>
+            {(() => {
+              // 1. Grouping logic
+              const chains = {};
+              const soloHubs = [];
 
-                <div style={{ background: '#f8fafc', padding: '15px', borderRadius: '16px', display: 'flex', justifyContent: 'space-between', marginBottom: '25px' }}>
-                   <div style={{ textAlign: 'center' }}>
-                      <div style={{ fontSize: '8px', fontWeight: 950, color: '#94a3b8', letterSpacing: '1px' }}>STATUS</div>
-                      <div style={{ fontSize: '10px', fontWeight: 950, color: '#2ecc71', marginTop: '2px' }}>{hub.status.toUpperCase()}</div>
-                   </div>
-                   <div style={{ width: '1px', background: '#eee' }}></div>
-                   <div style={{ textAlign: 'center' }}>
-                      <div style={{ fontSize: '8px', fontWeight: 950, color: '#94a3b8', letterSpacing: '1px' }}>NABH</div>
-                      <div style={{ fontSize: '10px', fontWeight: 950, color: '#1e293b', marginTop: '2px' }}>{hub.nabhNumber || 'N/A'}</div>
-                   </div>
-                   <div style={{ width: '1px', background: '#eee' }}></div>
-                   <div style={{ textAlign: 'center' }}>
-                      <div style={{ fontSize: '8px', fontWeight: 950, color: '#94a3b8', letterSpacing: '1px' }}>COMPLIANCE</div>
-                      <div style={{ fontSize: '10px', fontWeight: 950, color: hub.gstin ? '#0f52ba' : '#f39c12', marginTop: '2px' }}>{hub.gstin ? 'VERIFIED' : 'PENDING'}</div>
-                   </div>
-                </div>
+              mappedHospitals.forEach(hub => {
+                if (hub.groupId && hub.groupId.trim()) {
+                  if (!chains[hub.groupId]) {
+                    chains[hub.groupId] = {
+                      name: hub.groupName || 'UNNAMED_CHAIN',
+                      hubs: []
+                    };
+                  }
+                  chains[hub.groupId].hubs.push(hub);
+                } else {
+                  soloHubs.push(hub);
+                }
+              });
 
-                <button 
-                  onClick={() => fetchHospitalData(hub.hospitalId)}
-                  style={{ 
-                    width: '100%', padding: '14px', borderRadius: '14px', border: 'none', 
-                    background: '#0f52ba', color: 'white', fontWeight: 950, fontSize: '10px', 
-                    letterSpacing: '1px', cursor: 'pointer', boxShadow: '0 4px 15px rgba(15, 82, 186, 0.2)'
-                  }}
-                >
-                  MANAGE HUB CONFIGURATION →
-                </button>
-              </div>
-            ))}
+              return (
+                <>
+                  {/* --- SECTION: LINKED CHAINS --- */}
+                  {Object.entries(chains).map(([groupId, chain]) => (
+                    <div key={groupId} className="tactical-chain-block" style={{ position: 'relative' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '15px', marginBottom: '25px' }}>
+                        <div style={{ width: '32px', height: '2px', background: 'linear-gradient(90deg, #0f52ba, transparent)' }}></div>
+                        <h3 style={{ fontSize: '12px', fontWeight: 950, color: '#0f52ba', letterSpacing: '2px', textTransform: 'uppercase' }}>
+                          CHAIN_PROTOCOL: {chain.name}
+                        </h3>
+                        <div style={{ flex: 1, height: '1px', background: '#f1f5f9' }}></div>
+                      </div>
 
-            {mappedHospitals.length === 0 && (
-              <div style={{ gridColumn: '1/-1', padding: '100px', textAlign: 'center', border: '1px dashed #eee', borderRadius: '30px' }}>
-                 <div style={{ fontSize: '50px', marginBottom: '20px' }}>🏙️</div>
-                 <h3 style={{ fontSize: '15px', fontWeight: 950, color: '#1a1a2e' }}>NO MAPPED CENTERS DETECTED</h3>
-                 <p style={{ fontSize: '11px', color: '#888', marginTop: '5px' }}>The active mapping protocol returned zero authorized hubs for your current identity.</p>
-              </div>
-            )}
+                      <div style={{ position: 'relative', paddingLeft: '40px', display: 'flex', flexDirection: 'column', gap: '20px' }}>
+                        {/* The Vertical Backbone Line */}
+                        <div style={{ 
+                          position: 'absolute', left: '15px', top: '25px', bottom: '25px', 
+                          width: '2px', background: 'rgba(15, 82, 186, 0.1)', borderLeft: '2px dashed rgba(15, 82, 186, 0.2)' 
+                        }}></div>
+
+                        {chain.hubs.map((hub, idx) => {
+                          const isActive = hub.hospitalId === activeCenter.id;
+                          return (
+                            <div key={hub.hospitalId} style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
+                              {/* Horizontal Link to Backbone */}
+                              <div style={{ 
+                                position: 'absolute', left: '-25px', width: '25px', height: '2px', 
+                                background: isActive ? '#0f52ba30' : 'rgba(0,0,0,0.05)' 
+                              }}></div>
+                              
+                              <div 
+                                style={{ 
+                                  flex: 1, background: 'white', border: isActive ? '2px solid #0f52ba' : '1px solid #eee', 
+                                  borderRadius: '24px', padding: '25px', display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+                                  boxShadow: isActive ? '0 15px 40px rgba(15, 82, 186, 0.1)' : '0 4px 20px rgba(0,0,0,0.02)',
+                                  transition: 'all 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275)'
+                                }}
+                              >
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '20px' }}>
+                                   {/* The Connected Dot */}
+                                   <div style={{ 
+                                     width: '12px', height: '12px', borderRadius: '50%', 
+                                     background: isActive ? '#0f52ba' : '#cbd5e1',
+                                     marginLeft: '-35px', marginRight: '23px', zIndex: 2,
+                                     boxShadow: isActive ? '0 0 10px rgba(15, 82, 186, 0.4)' : 'none',
+                                     border: '3px solid white'
+                                   }}></div>
+                                   
+                                   <div style={{ width: '45px', height: '45px', borderRadius: '14px', background: isActive ? '#f0f7ff' : '#f8fafc', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '18px' }}>🏢</div>
+                                   <div>
+                                      <h4 style={{ fontSize: '15px', fontWeight: 950, color: '#1a1a2e', marginBottom: '4px' }}>{hub.hospitalName.toUpperCase()}</h4>
+                                      <div style={{ fontSize: '10px', color: '#64748b', fontWeight: 700 }}>NODE_IDENTITY: {hub.hospitalId.split('-')[0].toUpperCase()}</div>
+                                   </div>
+                                </div>
+
+                                <div style={{ display: 'flex', gap: '30px', alignItems: 'center' }}>
+                                   <div style={{ textAlign: 'right' }}>
+                                      <div style={{ fontSize: '8px', fontWeight: 950, color: '#94a3b8', letterSpacing: '1px' }}>STATUS</div>
+                                      <div style={{ fontSize: '10px', fontWeight: 950, color: '#2ecc71', marginTop: '2px' }}>{hub.status.toUpperCase()}</div>
+                                   </div>
+                                   <button 
+                                     onClick={() => fetchHospitalData(hub.hospitalId)}
+                                     style={{ 
+                                       padding: '10px 20px', borderRadius: '12px', background: isActive ? '#0f52ba' : '#f8fafc', 
+                                       color: isActive ? 'white' : '#64748b', border: isActive ? 'none' : '1px solid #e2e8f0', 
+                                       fontSize: '10px', fontWeight: 950, cursor: 'pointer'
+                                     }}
+                                   >
+                                     MANAGE NODE
+                                   </button>
+                                </div>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  ))}
+
+                  {/* --- SECTION: SOLO STRATEGIC NODES --- */}
+                  {soloHubs.length > 0 && (
+                    <div className="solo-nodes-block">
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '15px', marginBottom: '25px' }}>
+                        <div style={{ width: '32px', height: '2px', background: 'linear-gradient(90deg, #64748b, transparent)' }}></div>
+                        <h3 style={{ fontSize: '12px', fontWeight: 950, color: '#64748b', letterSpacing: '2px', textTransform: 'uppercase' }}>
+                          INDEPENDENT_NODES
+                        </h3>
+                        <div style={{ flex: 1, height: '1px', background: '#f1f5f9' }}></div>
+                      </div>
+
+                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(350px, 1fr))', gap: '25px' }}>
+                        {soloHubs.map(hub => {
+                           const isActive = hub.hospitalId === activeCenter.id;
+                           return (
+                             <div 
+                               key={hub.hospitalId}
+                               style={{ 
+                                 background: 'white', border: isActive ? '2px solid #0f52ba' : '1px solid #eee', 
+                                 borderRadius: '24px', padding: '30px', boxShadow: '0 4px 20px rgba(0,0,0,0.02)',
+                                 position: 'relative', overflow: 'hidden'
+                               }}
+                             >
+                               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '20px' }}>
+                                  <div style={{ width: '50px', height: '50px', borderRadius: '14px', background: '#f8fafc', border: '1px solid #e0efff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '20px' }}>🏙️</div>
+                                  <div style={{ width: '10px', height: '10px', borderRadius: '50%', background: isActive ? '#0f52ba' : '#cbd5e1' }}></div>
+                               </div>
+                               <h3 style={{ fontSize: '18px', fontWeight: 950, color: '#1a1a2e', marginBottom: '8px' }}>{hub.hospitalName.toUpperCase()}</h3>
+                               <p style={{ fontSize: '11px', color: '#64748b', fontWeight: 600, marginBottom: '25px' }}>{hub.hospitalAddress}</p>
+                               <button 
+                                 onClick={() => fetchHospitalData(hub.hospitalId)}
+                                 style={{ 
+                                   width: '100%', padding: '14px', borderRadius: '14px', border: 'none', 
+                                   background: isActive ? '#0f52ba' : '#f8fafc', color: isActive ? 'white' : '#64748b', 
+                                   fontWeight: 950, fontSize: '10px', cursor: 'pointer'
+                                 }}
+                               >
+                                 HUB CONFIGURATION →
+                               </button>
+                             </div>
+                           );
+                        })}
+                      </div>
+                    </div>
+                  )}
+
+                  {mappedHospitals.length === 0 && (
+                    <div style={{ padding: '100px', textAlign: 'center', border: '1px dashed #eee', borderRadius: '30px' }}>
+                       <div style={{ fontSize: '50px', marginBottom: '20px' }}>🏙️</div>
+                       <h3 style={{ fontSize: '15px', fontWeight: 950, color: '#1a1a2e' }}>NO MAPPED CENTERS DETECTED</h3>
+                    </div>
+                  )}
+                </>
+              );
+            })()}
           </div>
         )}
       </div>
@@ -1075,6 +1248,8 @@ export default function AdminBoard() {
              <div style={{ marginTop: '25px', fontSize: '9px', color: 'var(--tactical-cyan)', fontWeight: 900, background: 'rgba(255,255,255,0.1)', padding: '5px 12px', borderRadius: '20px', display: 'inline-block' }}>STRATEGIC RESOURCE POOL</div>
           </div>
 
+
+
           <div className="summary-card" style={{ background: 'white', border: '1px solid #e2e8f0', padding: '30px', borderRadius: '24px' }}>
              <span style={{ display: 'block', fontSize: '10px', fontWeight: 950, color: '#64748b', textTransform: 'uppercase', letterSpacing: '3px', marginBottom: '20px' }}>Live Volume</span>
              <div style={{ display: 'flex', alignItems: 'baseline', gap: '12px' }}>
@@ -1090,13 +1265,13 @@ export default function AdminBoard() {
           <div className="summary-card" style={{ background: 'white', border: '1px solid #e2e8f0', padding: '30px', borderRadius: '24px' }}>
              <span style={{ display: 'block', fontSize: '10px', fontWeight: 950, color: '#64748b', textTransform: 'uppercase', letterSpacing: '3px', marginBottom: '20px' }}>Financial Yield</span>
              <div style={{ display: 'flex', alignItems: 'baseline', gap: '12px' }}>
-                <span style={{ fontSize: '24px', fontWeight: 950, color: '#059669' }}>$</span>
+                <span style={{ fontSize: '24px', fontWeight: 950, color: '#059669' }}>₹</span>
                 <span style={{ fontSize: '48px', fontWeight: 950, color: '#1e293b', letterSpacing: '-2px' }}>{kpis.financialYield.toLocaleString()}</span>
              </div>
              <div style={{ marginTop: '25px', height: '6px', background: '#f1f5f9', borderRadius: '3px', overflow: 'hidden' }}>
-                <div style={{ width: '82%', height: '100%', background: '#059669', borderRadius: '3px' }}></div>
+                <div style={{ width: '100%', height: '100%', background: '#059669', borderRadius: '3px' }}></div>
              </div>
-             <div style={{ fontSize: '9px', fontWeight: 800, color: '#94a3b8', marginTop: '10px' }}>PROJECTED TARGET: 82% ACHIEVED</div>
+             <div style={{ fontSize: '9px', fontWeight: 800, color: '#94a3b8', marginTop: '10px' }}>NOMINAL_SETTLEMENT: 100% REALIZED</div>
           </div>
 
           <div className="summary-card" style={{ background: 'white', border: '1px solid #e2e8f0', padding: '30px', borderRadius: '24px' }}>
@@ -1211,104 +1386,250 @@ export default function AdminBoard() {
   };
 
   const renderFinance = () => {
+    const renderIntelligence = () => {
+      if (!financialMatrix) return null;
+
+      const items = financeTemporalMode === 'DAILY' ? financialMatrix.daily :
+                    financeTemporalMode === 'MONTHLY' ? financialMatrix.monthly : 
+                    financialMatrix.yearly;
+
+      return (
+        <div className="finance-intel-matrix fade-in">
+           {/* Modality Contribution HUD */}
+           <div style={{ background: 'white', padding: '30px', borderRadius: '24px', border: '1px solid #e2e8f0', marginBottom: '30px' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '30px' }}>
+                 <div>
+                    <div style={{ fontSize: '10px', fontWeight: 950, color: '#64748b', textTransform: 'uppercase', letterSpacing: '2px' }}>Modality Revenue Distribution</div>
+                    <div style={{ fontSize: '11px', color: '#94a3b8', fontWeight: 600, marginTop: '4px' }}>Strategic breakdown of fiscal yield by clinical domain.</div>
+                 </div>
+                 <div style={{ display: 'flex', background: '#f1f5f9', padding: '4px', borderRadius: '12px' }}>
+                    {['DAILY', 'MONTHLY', 'YEARLY'].map(mode => (
+                      <button 
+                        key={mode}
+                        onClick={() => setFinanceTemporalMode(mode)}
+                        style={{ 
+                          padding: '8px 16px', borderRadius: '8px', border: 'none', fontSize: '9px', fontWeight: 950,
+                          background: financeTemporalMode === mode ? 'white' : 'transparent',
+                          color: financeTemporalMode === mode ? '#0f52ba' : '#64748b',
+                          boxShadow: financeTemporalMode === mode ? '0 2px 8px rgba(0,0,0,0.05)' : 'none',
+                          cursor: 'pointer'
+                        }}
+                      >
+                        {mode}
+                      </button>
+                    ))}
+                 </div>
+              </div>
+
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '25px' }}>
+                 {financialMatrix.modalityBreakdown.map(m => {
+                   const revenue = financeTemporalMode === 'DAILY' ? m.dailyRevenue : 
+                                   financeTemporalMode === 'MONTHLY' ? m.monthlyRevenue : m.yearlyRevenue;
+                   
+                   return (
+                     <div key={m.modality} style={{ background: '#f8fafc', padding: '25px', borderRadius: '20px', border: '1px solid #f1f5f9' }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '15px' }}>
+                           <span style={{ fontSize: '10px', fontWeight: 950, color: '#1e293b', background: 'white', padding: '4px 10px', borderRadius: '8px', border: '1px solid #edf2f7' }}>{m.modality}</span>
+                           <span style={{ fontSize: '10px', fontWeight: 950, color: '#059669' }}>{m.contributionPercentage}% SHARE</span>
+                        </div>
+                        <div style={{ fontSize: '24px', fontWeight: 950, color: '#1e293b' }}>
+                           ₹{revenue.toLocaleString()}
+                        </div>
+                        <div style={{ height: '4px', background: '#edf2f7', borderRadius: '2px', marginTop: '15px', overflow: 'hidden' }}>
+                           <div style={{ width: `${m.contributionPercentage}%`, height: '100%', background: '#0f52ba' }}></div>
+                        </div>
+                     </div>
+                   );
+                 })}
+              </div>
+           </div>
+
+           {/* Fiscal Temporal Log */}
+           <div style={{ background: 'white', borderRadius: '24px', border: '1px solid #e2e8f0', overflow: 'hidden' }}>
+              <div style={{ padding: '25px 30px', borderBottom: '1px solid #f8fafc', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                 <span style={{ fontSize: '10px', fontWeight: 950, color: '#64748b', textTransform: 'uppercase', letterSpacing: '2px' }}>Temporal Fiscal Matrix</span>
+              </div>
+              <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                 <thead style={{ background: '#f8fafc' }}>
+                    <tr>
+                       <th style={{ padding: '15px 30px', textAlign: 'left', fontSize: '9px', fontWeight: 950, color: '#94a3b8' }}>PERIOD_LABEL</th>
+                       <th style={{ padding: '15px 30px', textAlign: 'right', fontSize: '9px', fontWeight: 950, color: '#94a3b8' }}>INVOICED_TOTAL</th>
+                       <th style={{ padding: '15px 30px', textAlign: 'right', fontSize: '9px', fontWeight: 950, color: '#94a3b8' }}>COLLECTED_FUNDS</th>
+                       <th style={{ padding: '15px 30px', textAlign: 'right', fontSize: '9px', fontWeight: 950, color: '#94a3b8' }}>OP_EXPENSES</th>
+                       <th style={{ padding: '15px 30px', textAlign: 'right', fontSize: '9px', fontWeight: 950, color: '#94a3b8' }}>NET_PROFIT</th>
+                       <th style={{ padding: '15px 30px', textAlign: 'center', fontSize: '9px', fontWeight: 950, color: '#94a3b8' }}>REALIZATION</th>
+                    </tr>
+                 </thead>
+                 <tbody>
+                    {items.map(item => (
+                       <tr key={item.label} style={{ borderBottom: '1px solid #f8fafc' }}>
+                          <td style={{ padding: '15px 30px', fontSize: '11px', fontWeight: 800, color: '#1e293b' }}>{item.label.toUpperCase()}</td>
+                          <td style={{ padding: '15px 30px', textAlign: 'right', fontSize: '12px', fontWeight: 950, color: '#1e293b' }}>₹{item.invoiced.toLocaleString()}</td>
+                          <td style={{ padding: '15px 30px', textAlign: 'right', fontSize: '12px', fontWeight: 950, color: '#059669' }}>₹{item.collected.toLocaleString()}</td>
+                          <td style={{ padding: '15px 30px', textAlign: 'right', fontSize: '12px', fontWeight: 950, color: '#64748b' }}>₹{item.expenses?.toLocaleString() || 0}</td>
+                          <td style={{ padding: '15px 30px', textAlign: 'right', fontSize: '12px', fontWeight: 950, color: item.netProfit >= 0 ? '#0f52ba' : '#dc2626' }}>
+                             ₹{item.netProfit?.toLocaleString() || 0}
+                          </td>
+                          <td style={{ padding: '15px 30px', textAlign: 'center' }}>
+                             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '10px' }}>
+                                <span style={{ fontSize: '10px', fontWeight: 950, color: '#1e293b' }}>{item.realizationRate}%</span>
+                             </div>
+                          </td>
+                       </tr>
+                    ))}
+                 </tbody>
+              </table>
+           </div>
+        </div>
+      );
+    };
+
     return (
       <div className="finance-view">
         <div className="board-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '35px' }}>
           <div>
             <h2 style={{ fontSize: '12px', fontWeight: 900, textTransform: 'uppercase', letterSpacing: '2px', color: '#0f52ba', marginBottom: '4px' }}>Financial Infrastructure</h2>
-            <p style={{ fontSize: '11px', color: '#888', fontWeight: 600 }}>Manage service pricing and automated billing protocols.</p>
+            <div style={{ display: 'flex', gap: '15px', alignItems: 'center', marginTop: '10px' }}>
+               <div style={{ display: 'flex', background: '#f1f5f9', padding: '3px', borderRadius: '10px', border: '1px solid #e2e8f0' }}>
+                  {['REGISTRY', 'INTEL'].map(mode => (
+                    <button 
+                      key={mode}
+                      onClick={() => setFinanceViewMode(mode)}
+                      style={{ 
+                        padding: '6px 15px', borderRadius: '8px', border: 'none', fontSize: '9px', fontWeight: 950,
+                        background: financeViewMode === mode ? 'white' : 'transparent',
+                        color: financeViewMode === mode ? '#0f52ba' : '#64748b',
+                        boxShadow: financeViewMode === mode ? '0 2px 8px rgba(0,0,0,0.05)' : 'none',
+                        cursor: 'pointer'
+                      }}
+                    >
+                      {mode === 'REGISTRY' ? 'SERVICE REGISTRY' : 'FINANCIAL INTELLIGENCE'}
+                    </button>
+                  ))}
+               </div>
+            </div>
           </div>
-          <button 
-            onClick={() => { setEditPrice({ modality: 'X-RAY', serviceName: '', amount: 0 }); setIsPriceDrawerOpen(true); }}
-            style={{ 
-              padding: '12px 24px', borderRadius: '12px', border: 'none', 
-              background: '#0f52ba', color: 'white', fontSize: '11px', fontWeight: 950, cursor: 'pointer',
-              boxShadow: '0 8px 20px rgba(15, 82, 186, 0.2)'
-            }}
-          >
-            + ADD SERVICE CHARGE
-          </button>
+          
+          {financeViewMode === 'REGISTRY' ? (
+            <button 
+              onClick={() => { setEditPrice({ modality: 'X-RAY', serviceName: '', amount: 0 }); setIsPriceDrawerOpen(true); }}
+              style={{ 
+                padding: '12px 24px', borderRadius: '12px', border: 'none', 
+                background: '#0f52ba', color: 'white', fontSize: '11px', fontWeight: 950, cursor: 'pointer',
+                boxShadow: '0 8px 20px rgba(15, 82, 186, 0.2)'
+              }}
+            >
+              + ADD SERVICE CHARGE
+            </button>
+          ) : (
+            <button 
+              onClick={() => { 
+                setEditExpense({ 
+                  description: '', 
+                  category: 'Maintenance', 
+                  amount: 0, 
+                  taxAmount: 0,
+                  transactionDate: TODAY, 
+                  paymentMode: 'Cash', 
+                  referenceNumber: '',
+                  vendorName: '',
+                  costCenter: 'Radiology',
+                  status: 'Paid'
+                }); 
+                setIsExpenseDrawerOpen(true); 
+              }}
+              style={{ 
+                padding: '12px 24px', borderRadius: '12px', border: 'none', 
+                background: '#dc2626', color: 'white', fontSize: '11px', fontWeight: 950, cursor: 'pointer',
+                boxShadow: '0 8px 20px rgba(220, 38, 38, 0.2)'
+              }}
+            >
+              LOG OPERATIONAL EXPENSE 💸
+            </button>
+          )}
         </div>
 
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 350px', gap: '30px', alignItems: 'flex-start' }}>
-          {/* Service Price Registry */}
-          <div style={{ background: 'white', borderRadius: '24px', border: '1px solid #e2e8f0', overflow: 'hidden', boxShadow: '0 4px 20px rgba(0,0,0,0.01)' }}>
-            <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-              <thead style={{ background: '#f8fafc' }}>
-                <tr style={{ borderBottom: '1px solid #f1f5f9' }}>
-                  <th style={{ padding: '20px 30px', textAlign: 'left', fontSize: '10px', fontWeight: 950, color: '#94a3b8', letterSpacing: '2px' }}>MODALITY</th>
-                  <th style={{ padding: '20px 30px', textAlign: 'left', fontSize: '10px', fontWeight: 950, color: '#94a3b8', letterSpacing: '2px' }}>SERVICE_NAME</th>
-                  <th style={{ padding: '20px 20px', textAlign: 'left', fontSize: '10px', fontWeight: 950, color: '#94a3b8', letterSpacing: '2px' }}>STANDARD_CHARGE</th>
-                  <th style={{ padding: '20px 30px', textAlign: 'right', fontSize: '10px', fontWeight: 950, color: '#94a3b8', letterSpacing: '2px' }}>ACTIONS</th>
-                </tr>
-              </thead>
-              <tbody>
-                {servicePrices.map(spec => (
-                  <tr key={spec.id} style={{ borderBottom: '1px solid #f8fafc', transition: 'background 0.2s' }}>
-                    <td style={{ padding: '20px 30px' }}>
-                      <span style={{ fontSize: '10px', fontWeight: 950, color: 'white', background: '#334155', padding: '5px 12px', borderRadius: '8px' }}>{spec.modality}</span>
-                    </td>
-                    <td style={{ padding: '20px 30px', fontSize: '13px', fontWeight: 850, color: '#1e293b' }}>{spec.serviceName.toUpperCase()}</td>
-                    <td style={{ padding: '20px 20px', fontSize: '14px', fontWeight: 950, color: '#0f52ba' }}>₹{spec.amount.toLocaleString()}</td>
-                    <td style={{ padding: '20px 30px', textAlign: 'right' }}>
-                       <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
-                          <button onClick={() => { setEditPrice(spec); setIsPriceDrawerOpen(true); }} style={{ padding: '6px 12px', borderRadius: '8px', border: '1px solid #e2e8f0', background: 'white', cursor: 'pointer', fontSize: '10px', fontWeight: 800 }}>EDIT</button>
-                          <button onClick={() => handleDeletePrice(spec.id)} style={{ padding: '6px 12px', borderRadius: '8px', border: '1px solid #fee2e2', background: '#fef2f2', color: '#dc2626', cursor: 'pointer', fontSize: '10px', fontWeight: 800 }}>DELETE</button>
-                       </div>
-                    </td>
+        {financeViewMode === 'INTEL' ? renderIntelligence() : (
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 350px', gap: '30px', alignItems: 'flex-start' }}>
+            {/* Service Price Registry */}
+            <div style={{ background: 'white', borderRadius: '24px', border: '1px solid #e2e8f0', overflow: 'hidden', boxShadow: '0 4px 20px rgba(0,0,0,0.01)' }}>
+              <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                <thead style={{ background: '#f8fafc' }}>
+                  <tr style={{ borderBottom: '1px solid #f1f5f9' }}>
+                    <th style={{ padding: '20px 30px', textAlign: 'left', fontSize: '10px', fontWeight: 950, color: '#94a3b8', letterSpacing: '2px' }}>MODALITY</th>
+                    <th style={{ padding: '20px 30px', textAlign: 'left', fontSize: '10px', fontWeight: 950, color: '#94a3b8', letterSpacing: '2px' }}>SERVICE_NAME</th>
+                    <th style={{ padding: '20px 20px', textAlign: 'left', fontSize: '10px', fontWeight: 950, color: '#94a3b8', letterSpacing: '2px' }}>STANDARD_CHARGE</th>
+                    <th style={{ padding: '20px 30px', textAlign: 'right', fontSize: '10px', fontWeight: 950, color: '#94a3b8', letterSpacing: '2px' }}>ACTIONS</th>
                   </tr>
-                ))}
-                {servicePrices.length === 0 && (
-                  <tr>
-                    <td colSpan="4" style={{ padding: '60px', textAlign: 'center', color: '#94a3b8', fontSize: '12px', fontWeight: 700 }}>NO SERVICE CHARGES CONFIGURED</td>
-                  </tr>
-                )}
-              </tbody>
-            </table>
-          </div>
+                </thead>
+                <tbody>
+                  {servicePrices.map(spec => (
+                    <tr key={spec.id} style={{ borderBottom: '1px solid #f8fafc', transition: 'background 0.2s' }}>
+                      <td style={{ padding: '20px 30px' }}>
+                        <span style={{ fontSize: '10px', fontWeight: 950, color: 'white', background: '#334155', padding: '5px 12px', borderRadius: '8px' }}>{spec.modality}</span>
+                      </td>
+                      <td style={{ padding: '20px 30px', fontSize: '13px', fontWeight: 850, color: '#1e293b' }}>{spec.serviceName.toUpperCase()}</td>
+                      <td style={{ padding: '20px 20px', fontSize: '14px', fontWeight: 950, color: '#0f52ba' }}>₹{spec.amount.toLocaleString()}</td>
+                      <td style={{ padding: '20px 30px', textAlign: 'right' }}>
+                         <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
+                            <button onClick={() => { setEditPrice(spec); setIsPriceDrawerOpen(true); }} style={{ padding: '6px 12px', borderRadius: '8px', border: '1px solid #e2e8f0', background: 'white', cursor: 'pointer', fontSize: '10px', fontWeight: 800 }}>EDIT</button>
+                            <button onClick={() => handleDeletePrice(spec.id)} style={{ padding: '6px 12px', borderRadius: '8px', border: '1px solid #fee2e2', background: '#fef2f2', color: '#dc2626', cursor: 'pointer', fontSize: '10px', fontWeight: 800 }}>DELETE</button>
+                         </div>
+                      </td>
+                    </tr>
+                  ))}
+                  {servicePrices.length === 0 && (
+                    <tr>
+                      <td colSpan="4" style={{ padding: '60px', textAlign: 'center', color: '#94a3b8', fontSize: '12px', fontWeight: 700 }}>NO SERVICE CHARGES CONFIGURED</td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
 
-          {/* Billing Protocol Settings */}
-          <div style={{ background: 'white', border: '1px solid #e2e8f0', padding: '30px', borderRadius: '24px', boxShadow: '0 4px 20px rgba(0,0,0,0.02)' }}>
-            <div style={{ fontSize: '10px', fontWeight: 950, color: '#64748b', textTransform: 'uppercase', letterSpacing: '2px', marginBottom: '30px' }}>Global Billing Protocol</div>
-            
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '25px' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                 <div>
-                    <div style={{ fontSize: '12px', fontWeight: 850, color: '#1e293b' }}>Auto-Generate Billing</div>
-                    <div style={{ fontSize: '10px', color: '#94a3b8', fontWeight: 600 }}>Create invoice on mission deployment</div>
-                 </div>
-                 <div 
-                    onClick={handleToggleAutoBill}
-                    style={{ 
-                      width: '44px', height: '24px', background: billingSettings.autoBill ? '#0f52ba' : '#cbd5e1', 
-                      borderRadius: '12px', cursor: 'pointer', position: 'relative', transition: 'all 0.3s' 
-                    }}
-                 >
-                    <div style={{ 
-                      position: 'absolute', top: '2px', left: billingSettings.autoBill ? '22px' : '2px', 
-                      width: '20px', height: '20px', background: 'white', borderRadius: '50%', transition: 'all 0.3s' 
-                    }}></div>
-                 </div>
-              </div>
+            {/* Billing Protocol Settings */}
+            <div style={{ background: 'white', border: '1px solid #e2e8f0', padding: '30px', borderRadius: '24px', boxShadow: '0 4px 20px rgba(0,0,0,0.02)' }}>
+              <div style={{ fontSize: '10px', fontWeight: 950, color: '#64748b', textTransform: 'uppercase', letterSpacing: '2px', marginBottom: '30px' }}>Global Billing Protocol</div>
+              
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '25px' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                   <div>
+                      <div style={{ fontSize: '12px', fontWeight: 850, color: '#1e293b' }}>Auto-Generate Billing</div>
+                      <div style={{ fontSize: '10px', color: '#94a3b8', fontWeight: 600 }}>Create invoice on mission deployment</div>
+                   </div>
+                   <div 
+                      onClick={handleToggleAutoBill}
+                      style={{ 
+                        width: '44px', height: '24px', background: billingSettings.autoBill ? '#0f52ba' : '#cbd5e1', 
+                        borderRadius: '12px', cursor: 'pointer', position: 'relative', transition: 'all 0.3s' 
+                      }}
+                   >
+                      <div style={{ 
+                        position: 'absolute', top: '2px', left: billingSettings.autoBill ? '22px' : '2px', 
+                        width: '20px', height: '20px', background: 'white', borderRadius: '50%', transition: 'all 0.3s' 
+                      }}></div>
+                   </div>
+                </div>
 
-              <div style={{ borderTop: '1px solid #f1f5f9', paddingTop: '25px' }}>
-                 <div style={{ fontSize: '10px', fontWeight: 950, color: '#0f52ba', letterSpacing: '1px', marginBottom: '15px' }}>CURRENCY SYMBOL</div>
-                 <input 
-                    type="text" 
-                    value={billingSettings.currency} 
-                    onChange={e => setBillingSettings(prev => ({ ...prev, currency: e.target.value }))}
-                    style={{ width: '100%', padding: '12px', borderRadius: '12px', border: '1px solid #e2e8f0', fontSize: '12px', fontWeight: 800 }}
-                 />
-              </div>
+                <div style={{ borderTop: '1px solid #f1f5f9', paddingTop: '25px' }}>
+                   <div style={{ fontSize: '10px', fontWeight: 950, color: '#0f52ba', letterSpacing: '1px', marginBottom: '15px' }}>CURRENCY SYMBOL</div>
+                   <input 
+                      type="text" 
+                      value={billingSettings.currency} 
+                      onChange={e => setBillingSettings(prev => ({ ...prev, currency: e.target.value }))}
+                      style={{ width: '100%', padding: '12px', borderRadius: '12px', border: '1px solid #e2e8f0', fontSize: '12px', fontWeight: 800 }}
+                   />
+                </div>
 
-              <div style={{ background: '#f8fafc', padding: '20px', borderRadius: '16px', border: '1px solid #edf2f7', marginTop: '10px' }}>
-                 <p style={{ fontSize: '10px', color: '#64748b', fontWeight: 700, lineHeight: 1.5 }}>
-                   <strong>NOTE:</strong> Automated billing will only trigger if the specific service booked has a matching charge entry in the registry on the left.
-                 </p>
+                <div style={{ background: '#f8fafc', padding: '20px', borderRadius: '16px', border: '1px solid #edf2f7', marginTop: '10px' }}>
+                   <p style={{ fontSize: '10px', color: '#64748b', fontWeight: 700, lineHeight: 1.5 }}>
+                     <strong>NOTE:</strong> Automated billing will only trigger if the specific service booked has a matching charge entry in the registry on the left.
+                   </p>
+                </div>
               </div>
             </div>
           </div>
-        </div>
+        )}
       </div>
     );
   };
@@ -1351,17 +1672,150 @@ export default function AdminBoard() {
                    <input 
                       type="number" required 
                       value={editPrice.amount} 
-                      onChange={e => setEditPrice({...editPrice, amount: parseInt(e.target.value) || 0})}
+                      onChange={e => setEditPrice({...editPrice, amount: parseFloat(e.target.value)})}
                       style={{ width: '100%', border: 'none', borderBottom: '2px solid #f0f0f0', fontSize: '24px', fontWeight: 950, padding: '10px 0', outline: 'none', color: '#0f52ba' }}
                    />
                 </div>
+              </div>
 
-                <div style={{ marginTop: '30px', display: 'flex', gap: '15px' }}>
-                   <button type="button" className="btn-logout" style={{ flex: 1, padding: '16px', borderRadius: '16px', border: '1px solid #eee', fontWeight: 800 }} onClick={() => setIsPriceDrawerOpen(false)}>ABORT</button>
-                   <button type="submit" className="btn-primary" style={{ flex: 2, padding: '16px', borderRadius: '16px', background: '#0f52ba', color: 'white', fontWeight: 950, border: 'none', cursor: 'pointer' }}>
-                      {editPrice.id ? 'SYNC_PRICE_TARGET' : 'DEPLOY_CHARGE_PROTOCOL'}
-                   </button>
+              <div style={{ marginTop: '40px', display: 'flex', gap: '15px' }}>
+                 <button type="button" onClick={() => setIsPriceDrawerOpen(false)} style={{ flex: 1, padding: '16px', borderRadius: '16px', border: '1px solid #eee', fontSize: '11px', fontWeight: 950, cursor: 'pointer' }}>ABORT</button>
+                 <button type="submit" style={{ flex: 2, padding: '16px', borderRadius: '16px', border: 'none', background: '#0f52ba', color: 'white', fontSize: '11px', fontWeight: 950, cursor: 'pointer' }}>SAVE PROTOCOL →</button>
+              </div>
+           </form>
+        </div>
+      </div>
+    </div>
+  );
+
+  const renderExpenseDrawer = () => (
+    <div className="drawer-overlay" onClick={() => setIsExpenseDrawerOpen(false)} style={{ backdropFilter: 'blur(8px)', background: 'rgba(10, 22, 40, 0.4)', zIndex: 10000 }}>
+      <div className="drawer-content" style={{ padding: 0, width: '500px', background: 'white' }} onClick={e => e.stopPropagation()}>
+        <div style={{ padding: '35px', background: 'linear-gradient(135deg, #1e293b 0%, #0f172a 100%)', color: 'white' }}>
+           <h2 style={{ fontSize: '11px', fontWeight: 950, color: '#38bdf8', letterSpacing: '3px', textTransform: 'uppercase', marginBottom: '8px' }}>Strategic Fiscal Ledger</h2>
+           <div style={{ fontSize: '20px', fontWeight: 950, letterSpacing: '-1px' }}>INSTITUTIONAL_DEBIT_PROTOCOL</div>
+        </div>
+
+        <div style={{ padding: '35px', maxHeight: 'calc(100vh - 120px)', overflowY: 'auto' }}>
+           <form onSubmit={handleSaveExpense}>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '25px' }}>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px' }}>
+                   <div className="form-group">
+                      <label style={{ display: 'block', fontSize: '9px', fontWeight: 950, color: '#94a3b8', letterSpacing: '2px', marginBottom: '10px' }}>TRANSACTION_DATE</label>
+                      <input 
+                         type="date" required 
+                         value={editExpense.transactionDate} 
+                         onChange={e => setEditExpense({...editExpense, transactionDate: e.target.value})}
+                         style={{ width: '100%', border: 'none', borderBottom: '2px solid #f0f0f0', fontSize: '14px', fontWeight: 700, padding: '10px 0', outline: 'none' }}
+                      />
+                   </div>
+                   <div className="form-group">
+                      <label style={{ display: 'block', fontSize: '9px', fontWeight: 950, color: '#94a3b8', letterSpacing: '2px', marginBottom: '10px' }}>APPROVAL_STATUS</label>
+                      <select 
+                         value={editExpense.status} 
+                         onChange={e => setEditExpense({...editExpense, status: e.target.value})}
+                         style={{ width: '100%', padding: '10px', borderRadius: '10px', border: '1px solid #eee', fontSize: '12px', fontWeight: 700, background: '#f8fafc' }}
+                      >
+                         {['Draft', 'Pending', 'Approved', 'Paid'].map(s => <option key={s} value={s}>{s}</option>)}
+                      </select>
+                   </div>
                 </div>
+
+                <div className="form-group">
+                   <label style={{ display: 'block', fontSize: '9px', fontWeight: 950, color: '#94a3b8', letterSpacing: '2px', marginBottom: '10px' }}>VENDOR / PAYEE IDENTITY</label>
+                   <input 
+                      type="text" required 
+                      value={editExpense.vendorName} 
+                      placeholder="e.g. Reliance Energy or Global Reagents Ltd"
+                      onChange={e => setEditExpense({...editExpense, vendorName: e.target.value})}
+                      style={{ width: '100%', border: 'none', borderBottom: '2px solid #f0f0f0', fontSize: '15px', fontWeight: 800, padding: '10px 0', outline: 'none' }}
+                   />
+                </div>
+
+                <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 0.8fr', gap: '20px' }}>
+                   <div className="form-group">
+                      <label style={{ display: 'block', fontSize: '9px', fontWeight: 950, color: '#94a3b8', letterSpacing: '2px', marginBottom: '10px' }}>EXPENSE_CATEGORY</label>
+                      <select 
+                         value={editExpense.category} 
+                         onChange={e => setEditExpense({...editExpense, category: e.target.value})}
+                         style={{ width: '100%', padding: '14px', borderRadius: '12px', border: '1px solid #eee', fontSize: '12px', fontWeight: 700, background: 'white' }}
+                      >
+                        {['Maintenance', 'Staff Salary', 'Utilities', 'Reagents', 'Marketing', 'Rent', 'Consumables', 'Other'].map(m => <option key={m} value={m}>{m}</option>)}
+                      </select>
+                   </div>
+                   <div className="form-group">
+                      <label style={{ display: 'block', fontSize: '9px', fontWeight: 950, color: '#94a3b8', letterSpacing: '2px', marginBottom: '10px' }}>COST_CENTER</label>
+                      <select 
+                         value={editExpense.costCenter} 
+                         onChange={e => setEditExpense({...editExpense, costCenter: e.target.value})}
+                         style={{ width: '100%', padding: '14px', borderRadius: '12px', border: '1px solid #eee', fontSize: '12px', fontWeight: 700, background: 'white' }}
+                      >
+                        {['Radiology', 'Laboratory', 'Pharmacy', 'OPD', 'Administration', 'Logistics'].map(c => <option key={c} value={c}>{c}</option>)}
+                      </select>
+                   </div>
+                </div>
+
+                <div className="form-group">
+                   <label style={{ display: 'block', fontSize: '9px', fontWeight: 950, color: '#94a3b8', letterSpacing: '2px', marginBottom: '10px' }}>DESCRIPTION_LOG</label>
+                   <input 
+                      type="text" required 
+                      value={editExpense.description} 
+                      placeholder="Detailed breakdown of the expenditure..."
+                      onChange={e => setEditExpense({...editExpense, description: e.target.value})}
+                      style={{ width: '100%', border: 'none', borderBottom: '2px solid #f0f0f0', fontSize: '14px', fontWeight: 700, padding: '10px 0', outline: 'none' }}
+                   />
+                </div>
+
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px' }}>
+                   <div className="form-group">
+                      <label style={{ display: 'block', fontSize: '9px', fontWeight: 950, color: '#94a3b8', letterSpacing: '2px', marginBottom: '10px' }}>BASE_AMOUNT (₹)</label>
+                      <input 
+                         type="number" required 
+                         value={editExpense.amount} 
+                         onChange={e => setEditExpense({...editExpense, amount: parseFloat(e.target.value)})}
+                         style={{ width: '100%', border: 'none', borderBottom: '2px solid #f0f0f0', fontSize: '18px', fontWeight: 950, padding: '10px 0', outline: 'none', color: '#1e293b' }}
+                      />
+                   </div>
+                   <div className="form-group">
+                      <label style={{ display: 'block', fontSize: '9px', fontWeight: 950, color: '#94a3b8', letterSpacing: '2px', marginBottom: '10px' }}>TAX_GST (₹)</label>
+                      <input 
+                         type="number" 
+                         value={editExpense.taxAmount} 
+                         onChange={e => setEditExpense({...editExpense, taxAmount: parseFloat(e.target.value)})}
+                         style={{ width: '100%', border: 'none', borderBottom: '2px solid #f0f0f0', fontSize: '18px', fontWeight: 950, padding: '10px 0', outline: 'none', color: '#64748b' }}
+                      />
+                   </div>
+                </div>
+
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px' }}>
+                   <div className="form-group">
+                      <label style={{ display: 'block', fontSize: '9px', fontWeight: 950, color: '#94a3b8', letterSpacing: '2px', marginBottom: '10px' }}>PAYMENT_MODE</label>
+                      <select 
+                         value={editExpense.paymentMode} 
+                         onChange={e => setEditExpense({...editExpense, paymentMode: e.target.value})}
+                         style={{ width: '100%', padding: '10px', borderRadius: '10px', border: '1px solid #eee', fontSize: '12px', fontWeight: 700, background: 'white' }}
+                      >
+                         {['Cash', 'UPI', 'Bank Transfer', 'Cheque'].map(m => <option key={m} value={m}>{m}</option>)}
+                      </select>
+                   </div>
+                   <div className="form-group">
+                      <label style={{ display: 'block', fontSize: '9px', fontWeight: 950, color: '#94a3b8', letterSpacing: '2px', marginBottom: '10px' }}>REFERENCE_NO</label>
+                      <input 
+                         type="text" 
+                         value={editExpense.referenceNumber} 
+                         placeholder="TXN / BILL ID"
+                         onChange={e => setEditExpense({...editExpense, referenceNumber: e.target.value})}
+                         style={{ width: '100%', border: 'none', borderBottom: '2px solid #f0f0f0', fontSize: '13px', fontWeight: 700, padding: '8px 0', outline: 'none' }}
+                      />
+                   </div>
+                </div>
+              </div>
+
+              <div style={{ marginTop: '40px', display: 'flex', gap: '15px' }}>
+                 <button type="button" onClick={() => setIsExpenseDrawerOpen(false)} style={{ flex: 1, padding: '16px', borderRadius: '16px', border: '1px solid #eee', fontSize: '11px', fontWeight: 950, cursor: 'pointer' }}>CANCEL</button>
+                 <button type="submit" disabled={savingExpense} style={{ flex: 2, padding: '16px', borderRadius: '16px', border: 'none', background: '#0f172a', color: 'white', fontSize: '11px', fontWeight: 950, cursor: 'pointer' }}>
+                   {savingExpense ? 'RECORDING...' : 'COMMIT TO LEDGER →'}
+                 </button>
               </div>
            </form>
         </div>
@@ -2188,6 +2642,7 @@ export default function AdminBoard() {
       {isHospitalDrawerOpen && renderHospitalSettingsDrawer()}
       {isPriceDrawerOpen && renderPriceDrawer()}
       {isChainDrawerOpen && renderChainDrawer()}
+      {isExpenseDrawerOpen && renderExpenseDrawer()}
 
       {/* Personnel Roster Drawer: Redesigned Tactical HUD */}
       {isUserDrawerOpen && (

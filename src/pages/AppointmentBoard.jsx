@@ -1,7 +1,9 @@
 import { useState, useMemo, useEffect, useCallback, useContext, useRef } from 'react';
 import apiClient from '../api/apiClient';
 import { AuthContext } from '../auth/AuthContext';
+import AppointmentCard from '../components/AppointmentCard';
 import '../styles/global.css';
+import '../styles/AppointmentBoard.css';
 
 // --- CONSTANTS ---
 
@@ -22,11 +24,11 @@ const INFORMATION_SOURCES = [
 ];
 
 const STATUS_META = {
-  BOOKED:      { icon: '\u{1F4CB}', label: 'Booked', color: '#3498db', bg: '#e8f4fd', glow: 'rgba(52,152,219,0.15)' },
-  ARRIVED:     { icon: '\u{1F4CD}', label: 'Arrived', color: '#2ecc71', bg: '#e9f7ef', glow: 'rgba(46,204,113,0.15)' },
-  IN_PROGRESS: { icon: '\u26A1', label: 'Scanning', color: '#f39c12', bg: '#fef9e7', glow: 'rgba(243,156,18,0.15)' },
-  COMPLETED:   { icon: '\u2705', label: 'Complete', color: '#27ae60', bg: '#d5f5e3', glow: 'rgba(39,174,96,0.15)' },
-  CANCELLED:   { icon: '\u26D4', label: 'Cancelled', color: '#e74c3c', bg: '#fdedec', glow: 'rgba(231,76,60,0.15)' },
+  scheduled:   { icon: '\u{1F4CB}', label: 'Scheduled', color: '#3498db', bg: '#e8f4fd', glow: 'rgba(52,152,219,0.15)' },
+  confirmed:   { icon: '\u{1F4CD}', label: 'Confirmed', color: '#2ecc71', bg: '#e9f7ef', glow: 'rgba(46,204,113,0.15)' },
+  in_progress: { icon: '\u26A1', label: 'In Progress', color: '#f39c12', bg: '#fef9e7', glow: 'rgba(243,156,18,0.15)' },
+  completed:   { icon: '\u2705', label: 'Completed', color: '#27ae60', bg: '#d5f5e3', glow: 'rgba(39,174,96,0.15)' },
+  cancelled:   { icon: '\u26D4', label: 'Cancelled', color: '#e74c3c', bg: '#fdedec', glow: 'rgba(231,76,60,0.15)' },
 };
 
 const MODALITY_ICONS = {
@@ -60,6 +62,8 @@ export default function AppointmentBoard() {
 
   const [isBookingOpen, setIsBookingOpen] = useState(false);
   const [isAddPatientOpen, setIsAddPatientOpen] = useState(false);
+  const [isEditingOpen, setIsEditingOpen] = useState(false);
+  const [editingAppointment, setEditingAppointment] = useState(null);
   const [printModalData, setPrintModalData] = useState(null);
   const [tokenPrintData, setTokenPrintData] = useState(null);
 
@@ -80,6 +84,10 @@ export default function AppointmentBoard() {
   const [referrerSearchValue, setReferrerSearchValue] = useState('');
   const [serviceRegistry, setServiceRegistry] = useState([]);
   const drawerBodyRef = useRef(null);
+
+  // Responsive layout detection
+  const [isMobile, setIsMobile] = useState(window.innerWidth < 1024);
+  const [windowWidth, setWindowWidth] = useState(window.innerWidth);
 
   useEffect(() => {
     if (drawerBodyRef.current) {
@@ -112,16 +120,21 @@ export default function AppointmentBoard() {
         ptid: a.patientIdentifier
       }));
 
-      if (activeTab === 'TODAY') {
-        // Sort by dateTime to ensure chronological tokens
-        mappedData.sort((a, b) => new Date(a.dateTime || 0) - new Date(b.dateTime || 0));
-        mappedData = mappedData.map((a, index) => ({
-          ...a,
-          tokenNo: index + 1
-        }));
-      }
+      // Sort by absolute dateTime to ensure chronological order across all days
+      const sortedData = mappedData.sort((a, b) => new Date(a.dateTime || 0) - new Date(b.dateTime || 0));
+      
+      const dailyCounters = {};
+      const processedData = sortedData.map(item => {
+        const dateKey = new Date(item.dateTime || TODAY).toISOString().split('T')[0];
+        dailyCounters[dateKey] = (dailyCounters[dateKey] || 0) + 1;
+        
+        return {
+          ...item,
+          tokenNo: dailyCounters[dateKey]
+        };
+      });
 
-      setAppointments(mappedData);
+      setAppointments(processedData);
     } catch (error) {
       console.error('Failed to fetch appointments:', error);
     } finally {
@@ -196,6 +209,18 @@ export default function AppointmentBoard() {
     fetchRegistry();
   }, [fetchReferrers, fetchDoctors, fetchRegistry, activeCenterId]);
 
+  // Handle window resize for responsive layout
+  useEffect(() => {
+    const handleResize = () => {
+      const newWidth = window.innerWidth;
+      setWindowWidth(newWidth);
+      setIsMobile(newWidth < 1024);
+    };
+
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
+
   // --- DERIVED ---
   const filteredAppointments = useMemo(() => {
     return appointments.filter(app => {
@@ -243,11 +268,11 @@ export default function AppointmentBoard() {
 
   const stats = {
     total: filteredAppointments.length,
-    booked: filteredAppointments.filter(a => a.status === 'BOOKED').length,
-    arrived: filteredAppointments.filter(a => a.status === 'ARRIVED').length,
-    inProgress: filteredAppointments.filter(a => a.status === 'IN_PROGRESS').length,
-    completed: filteredAppointments.filter(a => a.status === 'COMPLETED').length,
-    cancelled: filteredAppointments.filter(a => a.status === 'CANCELLED').length,
+    scheduled: filteredAppointments.filter(a => a.status === 'scheduled').length,
+    confirmed: filteredAppointments.filter(a => a.status === 'confirmed').length,
+    inProgress: filteredAppointments.filter(a => a.status === 'in_progress').length,
+    completed: filteredAppointments.filter(a => a.status === 'completed').length,
+    cancelled: filteredAppointments.filter(a => a.status === 'cancelled').length,
   };
   const completionRate = stats.total > 0 ? Math.round((stats.completed / stats.total) * 100) : 0;
   const activeRate = stats.total > 0 ? Math.round(((stats.total - stats.cancelled) / stats.total) * 100) : 0;
@@ -259,10 +284,10 @@ export default function AppointmentBoard() {
     if (!app) return;
 
     let newStatus = '';
-    if (action === 'ARRIVE') newStatus = 'ARRIVED';
-    if (action === 'START') newStatus = 'IN_PROGRESS';
-    if (action === 'COMPLETE') newStatus = 'COMPLETED';
-    if (action === 'CANCEL') newStatus = 'CANCELLED';
+    if (action === 'CONFIRM') newStatus = 'confirmed';
+    if (action === 'START') newStatus = 'in_progress';
+    if (action === 'COMPLETE') newStatus = 'completed';
+    if (action === 'CANCEL') newStatus = 'cancelled';
 
     try {
       await apiClient.patch(`/appointments/${app.appointmentId}/status`, `"${newStatus}"`, {
@@ -276,9 +301,9 @@ export default function AppointmentBoard() {
 
   const getNextAction = (status) => {
     switch (status) {
-      case 'BOOKED': return { action: 'ARRIVE', label: 'CHECK IN', icon: '\u{1F4CD}', color: '#2ecc71' };
-      case 'ARRIVED': return { action: 'START', label: 'BEGIN SCAN', icon: '\u26A1', color: '#f39c12' };
-      case 'IN_PROGRESS': return { action: 'COMPLETE', label: 'FINALIZE', icon: '\u2705', color: '#27ae60' };
+      case 'scheduled': return { action: 'CONFIRM', label: 'CONFIRM', icon: '\u{1F4CD}', color: '#2ecc71' };
+      case 'confirmed': return { action: 'START', label: 'BEGIN SCAN', icon: '\u26A1', color: '#f39c12' };
+      case 'in_progress': return { action: 'COMPLETE', label: 'FINALIZE', icon: '\u2705', color: '#27ae60' };
       default: return null;
     }
   };
@@ -323,7 +348,7 @@ export default function AppointmentBoard() {
         service: newBooking.service,
         modality: newBooking.modality,
         dateTime: new Date().toISOString(),
-        type: 'BOOKED',
+        type: 'scheduled',
         doctor: newBooking.doctor,
         referredBy: newPatient.referredBy || '',
         referredContact: referrers.find(r => r.name === newPatient.referredBy)?.contact || '',
@@ -374,6 +399,37 @@ export default function AppointmentBoard() {
     setDrawerSearchQuery('');
   };
 
+  const handleEditAppointment = async () => {
+    if (!editingAppointment) return;
+    
+    if (!editingAppointment.service) {
+      alert('WARNING: Service/Procedure details are missing. Field is mandatory.');
+      return;
+    }
+    if (!editingAppointment.doctor) {
+      alert('WARNING: No Lead Specialist assigned. Cannot proceed without a supervisor.');
+      return;
+    }
+
+    try {
+      await apiClient.put(`/appointments/${editingAppointment.appointmentId}`, {
+        patientId: editingAppointment.patientId,
+        service: editingAppointment.service,
+        modality: editingAppointment.modality,
+        dateTime: editingAppointment.dateTime,
+        doctor: editingAppointment.doctor,
+        notes: editingAppointment.notes
+      });
+
+      setIsEditingOpen(false);
+      setEditingAppointment(null);
+      fetchAppointments();
+    } catch (error) {
+      console.error('Failed to update appointment:', error);
+      alert('ERROR: Failed to update appointment. Please try again.');
+    }
+  };
+
   // ============================================================
   //  STATUS PIPELINE
   // ============================================================
@@ -382,7 +438,7 @@ export default function AppointmentBoard() {
   //  MISSION INTEL CARDS
   // ============================================================
   const renderIntelCards = () => {
-    const readyCount = stats.booked + stats.arrived;
+    const readyCount = stats.scheduled + stats.confirmed;
     const progressCount = stats.inProgress;
     
     return (
@@ -424,13 +480,13 @@ export default function AppointmentBoard() {
           </div>
           <div style={{ marginTop: '20px', display: 'flex', gap: '12px' }}>
             <div style={{ display: 'flex', flexDirection: 'column' }}>
-              <span style={{ fontSize: '9px', fontWeight: 900, color: '#94a3b8' }}>BOOKED</span>
-              <span style={{ fontSize: '14px', fontWeight: 900, color: '#334155' }}>{stats.booked}</span>
+              <span style={{ fontSize: '9px', fontWeight: 900, color: '#94a3b8' }}>SCHEDULED</span>
+              <span style={{ fontSize: '14px', fontWeight: 900, color: '#334155' }}>{stats.scheduled}</span>
             </div>
             <div style={{ width: '1px', background: '#e2e8f0', margin: '4px 0' }}></div>
             <div style={{ display: 'flex', flexDirection: 'column' }}>
-              <span style={{ fontSize: '9px', fontWeight: 900, color: '#94a3b8' }}>ARRIVED</span>
-              <span style={{ fontSize: '14px', fontWeight: 900, color: '#334155' }}>{stats.arrived}</span>
+              <span style={{ fontSize: '9px', fontWeight: 900, color: '#94a3b8' }}>CONFIRMED</span>
+              <span style={{ fontSize: '14px', fontWeight: 900, color: '#334155' }}>{stats.confirmed}</span>
             </div>
           </div>
         </div>
@@ -477,66 +533,69 @@ export default function AppointmentBoard() {
   };
 
   // ============================================================
-  //  FILTER CONSOLE
+  //  FILTER CONSOLE - RESPONSIVE
   // ============================================================
   const renderFilterBar = () => (
-    <div style={{
-      display: 'flex', alignItems: 'center', gap: '12px',
-      marginBottom: '24px', flexWrap: 'wrap',
-    }}>
-      <div style={{
-        flex: '1 1 280px', display: 'flex', alignItems: 'center', gap: '10px',
-        background: 'white', border: '1px solid #dee2e6', borderRadius: '12px',
-        padding: '10px 16px', transition: 'border-color 0.2s',
-      }}>
-        <span style={{ fontSize: '16px', opacity: 0.4 }}>{'\u{1F50D}'}</span>
+    <div className="filter-bar-responsive">
+      {/* Search Group */}
+      <div className="filter-search-group">
+        <span style={{ fontSize: '16px', opacity: 0.4 }}>🔍</span>
         <input
           type="text"
           placeholder="Search patient, mobile, or ID..."
           value={searchQuery}
           onChange={e => setSearchQuery(e.target.value)}
-          style={{
-            border: 'none', outline: 'none', background: 'transparent',
-            fontSize: '13px', fontWeight: 600, width: '100%', color: '#333',
-          }}
         />
         {searchQuery && (
-          <button onClick={() => setSearchQuery('')} style={{ border: 'none', background: 'none', cursor: 'pointer', fontSize: '14px', color: '#aaa', padding: 0 }}>{'\u2715'}</button>
+          <button 
+            onClick={() => setSearchQuery('')} 
+            style={{ 
+              border: 'none', 
+              background: 'none', 
+              cursor: 'pointer', 
+              fontSize: '14px', 
+              color: '#aaa', 
+              padding: 0 
+            }}
+          >
+            ✕
+          </button>
         )}
       </div>
 
-      <select
-        value={filters.doctor}
-        onChange={e => setFilters({...filters, doctor: e.target.value})}
-        style={{
-          background: 'white', border: '1px solid #dee2e6', borderRadius: '12px',
-          padding: '10px 16px', fontSize: '12px', fontWeight: 700, color: '#555',
-          cursor: 'pointer', minWidth: '160px',
-        }}
-      >
-        <option value="ALL">All Specialists</option>
-        {doctors.map(d => <option key={d} value={d}>{d}</option>)}
-      </select>
+      {/* Select Group */}
+      <div className="filter-select-group">
+        <select
+          value={filters.doctor}
+          onChange={e => setFilters({...filters, doctor: e.target.value})}
+          className="filter-select"
+        >
+          <option value="ALL">All Specialists</option>
+          {doctors.map(d => <option key={d} value={d}>{d}</option>)}
+        </select>
+      </div>
 
+      {/* Date Range (only on PAST tab) */}
       {activeTab === 'PAST' && (
-        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', background: 'white', border: '1px solid #dee2e6', borderRadius: '12px', padding: '10px 16px' }}>
-          <span style={{ fontSize: '10px', fontWeight: 900, color: '#0f52ba', textTransform: 'uppercase', marginRight: '5px' }}>Mission Range</span>
+        <div className="filter-date-range">
+          <span style={{ fontSize: '10px', fontWeight: 900, color: '#0f52ba', textTransform: 'uppercase' }}>
+            Range
+          </span>
           <input 
             type="date" 
             value={pastDateRange.start} 
             onChange={e => setPastDateRange(prev => ({ ...prev, start: e.target.value }))}
-            style={{ border: 'none', background: 'transparent', outline: 'none', fontSize: '12px', fontWeight: 700, color: '#333' }}
           />
           <span style={{ color: '#ccc' }}>→</span>
           <input 
             type="date" 
             value={pastDateRange.end} 
             onChange={e => setPastDateRange(prev => ({ ...prev, end: e.target.value }))}
-            style={{ border: 'none', background: 'transparent', outline: 'none', fontSize: '12px', fontWeight: 700, color: '#333' }}
           />
         </div>
       )}
 
+      {/* Reset Button */}
       {(filters.status !== 'ALL' || filters.modality !== 'ALL' || filters.doctor !== 'ALL' || searchQuery || activeTab !== 'TODAY') && (
         <button
           onClick={() => { 
@@ -548,21 +607,54 @@ export default function AppointmentBoard() {
               end: new Date(Date.now() - 1 * 24 * 60 * 60 * 1000).toISOString().split('T')[0] 
             });
           }}
-          style={{
-            display: 'flex', alignItems: 'center', gap: '6px',
-            padding: '10px 16px', borderRadius: '12px',
-            background: '#fff5f5', border: '1px solid #fecaca', cursor: 'pointer',
-            fontSize: '11px', fontWeight: 800, color: '#e74c3c',
-            transition: 'all 0.2s',
-          }}
+          className="filter-reset-btn"
         >
-          {'\u2715'} RESET ARCHIVE
+          ✕ RESET
         </button>
       )}
-
-
     </div>
   );
+
+  // ============================================================
+  //  PAGINATION RENDERER
+  // ============================================================
+  const renderPagination = () => {
+    if (totalPages <= 1) return null;
+
+    return (
+      <div className="pagination-container">
+        <button
+          className="pagination-btn"
+          onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
+          disabled={currentPage === 1}
+        >
+          ← Prev
+        </button>
+
+        {Array.from({ length: totalPages }, (_, i) => i + 1).map(page => (
+          <button
+            key={page}
+            className={`pagination-btn ${currentPage === page ? 'active' : ''}`}
+            onClick={() => setCurrentPage(page)}
+          >
+            {page}
+          </button>
+        ))}
+
+        <button
+          className="pagination-btn"
+          onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
+          disabled={currentPage === totalPages}
+        >
+          Next →
+        </button>
+
+        <span className="pagination-info">
+          Page {currentPage} of {totalPages}
+        </span>
+      </div>
+    );
+  };
 
   // ============================================================
   //  APPOINTMENT TABLE ROW
@@ -571,7 +663,7 @@ export default function AppointmentBoard() {
     const meta = STATUS_META[app.status];
     const next = getNextAction(app.status);
     const isExpanded = expandedRow === app.id;
-    const statusIndex = ['BOOKED','ARRIVED','IN_PROGRESS','COMPLETED'].indexOf(app.status);
+    const statusIndex = ['scheduled','confirmed','in_progress','completed'].indexOf(app.status);
     const patient = patients.find(p => p.id === app.patientId);
 
     return (
@@ -659,16 +751,40 @@ export default function AppointmentBoard() {
               {'\u{1F5A8}\uFE0F'}
             </button>
 
-            {app.status !== 'CANCELLED' && app.status !== 'COMPLETED' && (
+            {app.status !== 'cancelled' && app.status !== 'completed' && (
               <button
-                onClick={(e) => { e.stopPropagation(); handleAction(app.id, 'CANCEL'); }}
+                onClick={(e) => { 
+                  e.stopPropagation(); 
+                  setEditingAppointment(app); 
+                  setIsEditingOpen(true); 
+                }}
+                style={{
+                  width: '28px', height: '28px', borderRadius: '8px',
+                  background: '#fff9e6', border: '1px solid #ffd966', cursor: 'pointer',
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  fontSize: '12px', color: '#f39c12', transition: 'all 0.2s',
+                }}
+                title="Edit Appointment"
+              >
+                {'\u270F\uFE0F'}
+              </button>
+            )}
+
+            {app.status !== 'cancelled' && app.status !== 'completed' && (
+              <button
+                onClick={(e) => { 
+                  e.stopPropagation(); 
+                  if (confirm(`Are you sure you want to cancel appointment ${app.id}?\n\nPatient: ${app.patientName}\nThis action cannot be undone.`)) {
+                    handleAction(app.id, 'CANCEL');
+                  }
+                }}
                 style={{
                   width: '28px', height: '28px', borderRadius: '8px',
                   background: '#fff5f5', border: '1px solid #fecaca', cursor: 'pointer',
                   display: 'flex', alignItems: 'center', justifyContent: 'center',
                   fontSize: '12px', color: '#e74c3c', transition: 'all 0.2s',
                 }}
-                title="Abort Mission"
+                title="Cancel Appointment"
               >
                 {'\u2715'}
               </button>
@@ -686,7 +802,7 @@ export default function AppointmentBoard() {
           }}>
             <div style={{ display: 'flex', gap: '24px', alignItems: 'flex-start', flexWrap: 'wrap' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flex: '0 0 auto' }}>
-                {['BOOKED','ARRIVED','IN_PROGRESS','COMPLETED'].map((s, i) => {
+                {['scheduled','confirmed','in_progress','completed'].map((s, i) => {
                   const sMeta = STATUS_META[s];
                   const reached = statusIndex >= i;
                   const isCurrent = s === app.status;
@@ -1263,6 +1379,129 @@ export default function AppointmentBoard() {
   };
 
   // ============================================================
+  //  EDIT APPOINTMENT MODAL
+  // ============================================================
+  const renderEditModal = () => {
+    if (!isEditingOpen || !editingAppointment) return null;
+
+    return (
+      <div className="drawer-overlay" onClick={() => setIsEditingOpen(false)}>
+        <div className="drawer-content" onClick={e => e.stopPropagation()} style={{ maxWidth: '600px' }}>
+          <div className="drawer-header" style={{ background: 'linear-gradient(135deg, #f39c12 0%, #e67e22 100%)', color: 'white', padding: '28px 30px', border: 'none' }}>
+            <div style={{ display: 'flex', flexDirection: 'column' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '4px' }}>
+                <span style={{ fontSize: '20px' }}>{'\u270F\uFE0F'}</span>
+                <h2 style={{ fontSize: '18px', fontWeight: 900, margin: 0 }}>EDIT APPOINTMENT</h2>
+              </div>
+              <p style={{ fontSize: '11px', opacity: 0.7, textTransform: 'uppercase', letterSpacing: '1px' }}>
+                Appointment ID: {editingAppointment.id}
+              </p>
+            </div>
+            <button className="btn-close" style={{ color: 'white', fontSize: '28px' }} onClick={() => setIsEditingOpen(false)}>&times;</button>
+          </div>
+
+          <div className="drawer-body" style={{ padding: '30px' }}>
+            {/* Patient Info (Read-only) */}
+            <div style={{ background: '#f8f9fa', padding: '18px', borderRadius: '14px', border: '1px solid #eee', marginBottom: '20px' }}>
+              <label style={{ fontSize: '10px', color: '#0f52ba', fontWeight: 800, marginBottom: '10px', display: 'block', letterSpacing: '1px' }}>PATIENT INFORMATION</label>
+              <div style={{ fontSize: '14px', fontWeight: 700, color: '#1a1a2e', marginBottom: '4px' }}>{editingAppointment.patientName}</div>
+              <div style={{ fontSize: '12px', color: '#888' }}>{editingAppointment.mobile} • {editingAppointment.patientAge}y {editingAppointment.patientGender}</div>
+            </div>
+
+            {/* Service/Procedure */}
+            <div className="form-group" style={{ marginBottom: '16px' }}>
+              <label style={{ fontSize: '10px', fontWeight: 700 }}>SERVICE / PROCEDURE <span style={{ color: '#e74c3c' }}>*</span></label>
+              <input 
+                type="text" 
+                required 
+                placeholder="e.g. Chest X-Ray with Lateral" 
+                style={{ fontSize: '13px', padding: '11px 12px', width: '100%' }} 
+                value={editingAppointment.service || ''} 
+                onChange={e => setEditingAppointment({...editingAppointment, service: e.target.value})} 
+              />
+            </div>
+
+            {/* Modality */}
+            <div className="form-group" style={{ marginBottom: '16px' }}>
+              <label style={{ fontSize: '10px', fontWeight: 700 }}>MODALITY</label>
+              <select 
+                style={{ fontSize: '13px', padding: '11px', height: '44px', width: '100%' }} 
+                value={editingAppointment.modality || 'X-RAY'} 
+                onChange={e => setEditingAppointment({...editingAppointment, modality: e.target.value})}
+              >
+                {MODALITIES.map(m => <option key={m} value={m}>{m}</option>)}
+              </select>
+            </div>
+
+            {/* Doctor */}
+            <div className="form-group" style={{ marginBottom: '16px' }}>
+              <label style={{ fontSize: '10px', fontWeight: 700 }}>LEAD SPECIALIST <span style={{ color: '#e74c3c' }}>*</span></label>
+              <select 
+                style={{ fontSize: '13px', padding: '11px', height: '44px', width: '100%' }} 
+                value={editingAppointment.doctor || ''} 
+                onChange={e => setEditingAppointment({...editingAppointment, doctor: e.target.value})}
+              >
+                <option value="">Select Specialist...</option>
+                {doctors.map(d => <option key={d} value={d}>{d}</option>)}
+              </select>
+            </div>
+
+            {/* Notes */}
+            <div className="form-group" style={{ marginBottom: '16px' }}>
+              <label style={{ fontSize: '10px', fontWeight: 700 }}>NOTES (OPTIONAL)</label>
+              <textarea 
+                placeholder="Clinical notes..." 
+                style={{ fontSize: '13px', padding: '11px 12px', width: '100%', minHeight: '80px', fontFamily: 'inherit' }} 
+                value={editingAppointment.notes || ''} 
+                onChange={e => setEditingAppointment({...editingAppointment, notes: e.target.value})} 
+              />
+            </div>
+
+            {/* Action Buttons */}
+            <div style={{ display: 'flex', gap: '12px', marginTop: '24px' }}>
+              <button
+                onClick={() => setIsEditingOpen(false)}
+                style={{
+                  flex: 1,
+                  padding: '14px',
+                  borderRadius: '12px',
+                  border: '1px solid #dee2e6',
+                  background: 'white',
+                  fontSize: '12px',
+                  fontWeight: 800,
+                  color: '#64748b',
+                  cursor: 'pointer',
+                  transition: 'all 0.2s'
+                }}
+              >
+                CANCEL
+              </button>
+              <button
+                onClick={handleEditAppointment}
+                style={{
+                  flex: 2,
+                  padding: '14px',
+                  borderRadius: '12px',
+                  border: 'none',
+                  background: 'linear-gradient(135deg, #f39c12 0%, #e67e22 100%)',
+                  fontSize: '12px',
+                  fontWeight: 900,
+                  color: 'white',
+                  cursor: 'pointer',
+                  boxShadow: '0 4px 15px rgba(243, 156, 18, 0.3)',
+                  transition: 'all 0.2s'
+                }}
+              >
+                {'\u{1F4BE}'} SAVE CHANGES
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
+  // ============================================================
   //  PRINT MODAL
   // ============================================================
   const renderTokenModal = () => {
@@ -1369,7 +1608,7 @@ export default function AppointmentBoard() {
   // ============================================================
   return (
     <div className="page-wrapper board-padding" style={{ paddingTop: '40px' }}>
-      <div style={{ marginBottom: '32px', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end' }}>
+      <div style={{ marginBottom: '32px', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', flexWrap: 'wrap', gap: '20px' }}>
         <div>
           <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '6px' }}>
             <span style={{ fontSize: '24px' }}>{'\u{1F4E1}'}</span>
@@ -1441,107 +1680,70 @@ export default function AppointmentBoard() {
           </span>
         </div>
 
-        <div style={{
-          display: 'grid',
-          gridTemplateColumns: '0.6fr 0.6fr 1.8fr 1.8fr 0.8fr 1fr 1.6fr',
-          padding: '0 22px 10px',
-          fontSize: '9px', fontWeight: 800, color: '#aaa',
-          textTransform: 'uppercase', letterSpacing: '1px',
-        }}>
-          <span>ID</span>
-          <span>Token</span>
-          <span>Patient Details</span>
-          <span>Referred By</span>
-          <span>Status</span>
-          <span>Specialist</span>
-          <span style={{ textAlign: 'right', paddingRight: '20px' }}>Tactical Actions</span>
+        {/* Desktop: Table Header */}
+        {!isMobile && (
+          <div style={{
+            display: 'grid',
+            gridTemplateColumns: '0.6fr 0.6fr 1.8fr 1.8fr 0.8fr 1fr 1.6fr',
+            padding: '0 22px 10px',
+            fontSize: '9px', fontWeight: 800, color: '#aaa',
+            textTransform: 'uppercase', letterSpacing: '1px',
+          }}>
+            <span>ID</span>
+            <span>Token</span>
+            <span>Patient Details</span>
+            <span>Referred By</span>
+            <span>Status</span>
+            <span>Specialist</span>
+            <span style={{ textAlign: 'right', paddingRight: '20px' }}>Tactical Actions</span>
+          </div>
+        )}
+
+        {/* Appointments List - Responsive Display */}
+        <div className="appointments-list-container">
+          {loading ? (
+            <div className="empty-state">
+              <div className="empty-state-icon">⏳</div>
+              <div className="empty-state-title">Loading Missions...</div>
+            </div>
+          ) : paginatedAppointments.length === 0 ? (
+            <div className="empty-state">
+              <div className="empty-state-icon">🎯</div>
+              <div className="empty-state-title">No Missions Found</div>
+              <div className="empty-state-text">
+                {searchQuery ? 'Try adjusting your search criteria' : 'No appointments scheduled'}
+              </div>
+            </div>
+          ) : isMobile ? (
+            /* Mobile/Tablet: Card Layout */
+            <div className="appointments-cards">
+              {paginatedAppointments.map(app => (
+                <AppointmentCard
+                  key={app.id}
+                  appointment={app}
+                  statusMeta={STATUS_META}
+                  getNextAction={getNextAction}
+                  onAction={handleAction}
+                  onPrint={(app) => setTokenPrintData(app)}
+                  onCancel={(id) => handleAction(id, 'CANCEL')}
+                  patients={patients}
+                />
+              ))}
+            </div>
+          ) : (
+            /* Desktop: Table Layout */
+            <div className="appointments-table">
+              {paginatedAppointments.map(app => renderAppointmentRow(app))}
+            </div>
+          )}
         </div>
 
-        {filteredAppointments.length === 0 ? (
-          <div style={{
-            padding: '60px 20px', textAlign: 'center', color: '#bbb',
-            background: 'white', borderRadius: '16px', border: '1px dashed #dee2e6',
-          }}>
-            <div style={{ fontSize: '40px', marginBottom: '12px' }}>{'\u{1F50D}'}</div>
-            <div style={{ fontSize: '14px', fontWeight: 700 }}>No missions match your filters</div>
-            <div style={{ fontSize: '12px', marginTop: '4px' }}>Try adjusting your search or pipeline filters</div>
-          </div>
-        ) : (
-          paginatedAppointments.map(app => renderAppointmentRow(app))
-        )}
-
-        {/* Tactical Pagination HUD */}
-        {totalPages > 1 && (
-          <div style={{ 
-            marginTop: '30px', 
-            padding: '16px', 
-            background: 'white', 
-            borderRadius: '16px', 
-            border: '1px solid #eee',
-            display: 'flex',
-            justifyContent: 'center',
-            alignItems: 'center',
-            gap: '20px',
-            boxShadow: '0 4px 15px rgba(0,0,0,0.02)'
-          }}>
-            <button 
-              disabled={currentPage === 1}
-              onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
-              style={{
-                width: '40px', height: '40px', borderRadius: '10px',
-                border: '1px solid #dee2e6', background: currentPage === 1 ? '#f8f9fa' : 'white',
-                color: currentPage === 1 ? '#ccc' : '#0f52ba', cursor: currentPage === 1 ? 'default' : 'pointer',
-                display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '18px',
-                transition: 'all 0.2s'
-              }}
-            >
-              {'\u2190'}
-            </button>
-
-            <div style={{ display: 'flex', gap: '8px' }}>
-              {[...Array(totalPages)].map((_, i) => {
-                const pageNum = i + 1;
-                // Show max 5 pages or current page neighborhood
-                if (totalPages > 7 && Math.abs(pageNum - currentPage) > 2 && pageNum !== 1 && pageNum !== totalPages) {
-                  if (pageNum === 2 || pageNum === totalPages - 1) return <span key={pageNum} style={{ color: '#ccc' }}>...</span>;
-                  return null;
-                }
-                return (
-                  <button 
-                    key={pageNum}
-                    onClick={() => setCurrentPage(pageNum)}
-                    style={{
-                      width: '32px', height: '32px', borderRadius: '8px',
-                      border: 'none', background: currentPage === pageNum ? '#0f52ba' : 'transparent',
-                      color: currentPage === pageNum ? 'white' : '#64748b',
-                      fontSize: '12px', fontWeight: 900, cursor: 'pointer',
-                      transition: 'all 0.2s'
-                    }}
-                  >
-                    {pageNum}
-                  </button>
-                );
-              })}
-            </div>
-
-            <button 
-              disabled={currentPage === totalPages}
-              onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
-              style={{
-                width: '40px', height: '40px', borderRadius: '10px',
-                border: '1px solid #dee2e6', background: currentPage === totalPages ? '#f8f9fa' : 'white',
-                color: currentPage === totalPages ? '#ccc' : '#0f52ba', cursor: currentPage === totalPages ? 'default' : 'pointer',
-                display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '18px',
-                transition: 'all 0.2s'
-              }}
-            >
-              {'\u2192'}
-            </button>
-          </div>
-        )}
+        {/* Pagination */}
+        {renderPagination()}
       </div>
 
       {renderDrawer()}
+      {renderEditModal()}
       {renderTokenModal()}
     </div>
   );

@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import useAuth from '../auth/useAuth';
 import apiClient from '../api/apiClient';
+import '../styles/BillingPage.css';
 
 export default function BillingPage() {
   const { activeCenter } = useAuth();
@@ -28,11 +29,18 @@ export default function BillingPage() {
   const [searchTerm, setSearchTerm] = useState('');
   const [timeFilter, setTimeFilter] = useState('TODAY'); // 'TODAY', 'PAST', 'ALL'
   const [statusFilter, setStatusFilter] = useState('ALL'); // 'ALL', 'PAID', 'PENDING'
+  const [isExportDrawerOpen, setIsExportDrawerOpen] = useState(false);
+  const [exportMode, setExportMode] = useState('ALL'); // 'ALL', 'RANGE'
+  const [exportDates, setExportDates] = useState({ start: '', end: '' });
 
   // --- SYNC & FETCH ---
   const [stats, setStats] = useState({ totalRevenue: 0, pendingCount: 0, realizationRate: 0, averageTicket: 0, pendingRevenue: 0 });
   const [matrix, setMatrix] = useState({ daily: [], monthly: [], yearly: [] });
   const [isSyncing, setIsSyncing] = useState(false);
+
+  // Responsive layout detection
+  const [isMobile, setIsMobile] = useState(window.innerWidth < 1024);
+  const [windowWidth, setWindowWidth] = useState(window.innerWidth);
 
   const fetchInvoices = useCallback(async () => {
     try {
@@ -88,6 +96,18 @@ export default function BillingPage() {
     fetchMatrix();
   }, [fetchInvoices, fetchStats, fetchRegistry, fetchMatrix]);
 
+  // Handle window resize for responsive layout
+  useEffect(() => {
+    const handleResize = () => {
+      const newWidth = window.innerWidth;
+      setWindowWidth(newWidth);
+      setIsMobile(newWidth < 1024);
+    };
+
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
+
   const handleSyncLegacyData = async () => {
     const legacy = JSON.parse(localStorage.getItem('1rad_invoices') || '[]');
     if (legacy.length === 0) return alert('No legacy data detected in browser.');
@@ -122,12 +142,13 @@ export default function BillingPage() {
   };
 
   const handleExportData = async () => {
-    const start = window.prompt("ENTER START DATE (YYYY-MM-DD) OR LEAVE BLANK FOR 'ALL':", "");
-    const end = window.prompt("ENTER END DATE (YYYY-MM-DD) OR LEAVE BLANK FOR 'ALL':", "");
-    
     try {
+      const { start, end } = exportDates;
+      const finalStart = exportMode === 'RANGE' ? start : null;
+      const finalEnd = exportMode === 'RANGE' ? end : null;
+
       const response = await apiClient.get('/finance/export', {
-        params: { startDate: start || null, endDate: end || null },
+        params: { startDate: finalStart, endDate: finalEnd },
         responseType: 'blob'
       });
       
@@ -138,6 +159,7 @@ export default function BillingPage() {
       document.body.appendChild(link);
       link.click();
       link.remove();
+      setIsExportDrawerOpen(false);
     } catch (err) {
       console.error('[FINANCE] Export failed', err);
       alert('EXPORT FAILURE: Could not generate report.');
@@ -374,6 +396,103 @@ export default function BillingPage() {
                   <div style={{ fontSize: '10px', color: '#166534', opacity: 0.7, marginTop: '4px' }}>Processed via {selectedInvoice.paymentMethod} on {new Date(selectedInvoice.paidAt).toLocaleString()}</div>
                </div>
              )}
+          </div>
+        </div>
+      </div>
+    );
+  };
+
+  const renderExportDrawer = () => {
+    return (
+      <div className="drawer-overlay" onClick={() => setIsExportDrawerOpen(false)} style={{ backdropFilter: 'blur(8px)', background: 'rgba(10, 22, 40, 0.4)', zIndex: 10000 }}>
+        <div className="drawer-content" style={{ padding: 0, width: '500px', background: 'white' }} onClick={e => e.stopPropagation()}>
+          <div style={{ padding: '35px', background: 'linear-gradient(135deg, #10b981 0%, #064e3b 100%)', color: 'white' }}>
+             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                <div>
+                   <h2 style={{ fontSize: '11px', fontWeight: 950, color: 'rgba(255,255,255,0.7)', letterSpacing: '3px', textTransform: 'uppercase', marginBottom: '8px' }}>Fiscal Intelligence</h2>
+                   <div style={{ fontSize: '24px', fontWeight: 950, letterSpacing: '-1px' }}>FINANCIAL EXPORT CONSOLE</div>
+                </div>
+                <button 
+                  onClick={() => setIsExportDrawerOpen(false)}
+                  style={{ background: 'none', border: 'none', color: 'white', fontSize: '24px', cursor: 'pointer', opacity: 0.7, padding: '5px' }}
+                >✕</button>
+             </div>
+          </div>
+
+          <div style={{ padding: '35px' }}>
+             <div style={{ marginBottom: '35px' }}>
+                <label style={{ fontSize: '10px', fontWeight: 950, color: '#94a3b8', letterSpacing: '1px', display: 'block', marginBottom: '15px' }}>EXPORT_SCOPE_SELECTION</label>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '15px' }}>
+                   <button 
+                     onClick={() => setExportMode('ALL')}
+                     style={{ 
+                       padding: '20px', borderRadius: '16px', border: exportMode === 'ALL' ? '2px solid #10b981' : '1px solid #e2e8f0',
+                       background: exportMode === 'ALL' ? '#f0fdf4' : 'white', textAlign: 'center', cursor: 'pointer'
+                     }}
+                   >
+                     <div style={{ fontSize: '24px', marginBottom: '8px' }}>📊</div>
+                     <div style={{ fontSize: '11px', fontWeight: 950, color: exportMode === 'ALL' ? '#059669' : '#64748b' }}>FULL LEDGER</div>
+                     <div style={{ fontSize: '8px', color: '#94a3b8', marginTop: '4px' }}>ALL RECOREDS (SLOW)</div>
+                   </button>
+                   <button 
+                     onClick={() => setExportMode('RANGE')}
+                     style={{ 
+                       padding: '20px', borderRadius: '16px', border: exportMode === 'RANGE' ? '2px solid #10b981' : '1px solid #e2e8f0',
+                       background: exportMode === 'RANGE' ? '#f0fdf4' : 'white', textAlign: 'center', cursor: 'pointer'
+                     }}
+                   >
+                     <div style={{ fontSize: '24px', marginBottom: '8px' }}>📅</div>
+                     <div style={{ fontSize: '11px', fontWeight: 950, color: exportMode === 'RANGE' ? '#059669' : '#64748b' }}>TEMPORAL RANGE</div>
+                     <div style={{ fontSize: '8px', color: '#94a3b8', marginTop: '4px' }}>CUSTOM DATE WINDOW</div>
+                   </button>
+                </div>
+             </div>
+
+             {exportMode === 'RANGE' && (
+               <div style={{ marginBottom: '40px', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px', animation: 'fadeIn 0.3s' }}>
+                  <div>
+                     <label style={{ fontSize: '10px', fontWeight: 950, color: '#94a3b8', display: 'block', marginBottom: '10px' }}>START_DATE</label>
+                     <input 
+                       type="date" 
+                       value={exportDates.start}
+                       onChange={e => setExportDates({ ...exportDates, start: e.target.value })}
+                       style={{ width: '100%', padding: '14px', borderRadius: '12px', border: '1px solid #eee', fontSize: '12px', fontWeight: 800 }}
+                     />
+                  </div>
+                  <div>
+                     <label style={{ fontSize: '10px', fontWeight: 950, color: '#94a3b8', display: 'block', marginBottom: '10px' }}>END_DATE</label>
+                     <input 
+                       type="date" 
+                       value={exportDates.end}
+                       onChange={e => setExportDates({ ...exportDates, end: e.target.value })}
+                       style={{ width: '100%', padding: '14px', borderRadius: '12px', border: '1px solid #eee', fontSize: '12px', fontWeight: 800 }}
+                     />
+                  </div>
+               </div>
+             )}
+
+             <div style={{ background: '#f8fafc', padding: '20px', borderRadius: '16px', border: '1px solid #f1f5f9', marginBottom: '40px' }}>
+                <div style={{ fontSize: '9px', fontWeight: 950, color: '#64748b', letterSpacing: '1px', marginBottom: '10px' }}>REVENUE_EXTRACTION_DETAILS</div>
+                <div style={{ display: 'flex', gap: '15px' }}>
+                   <div style={{ fontSize: '20px' }}>🛰️</div>
+                   <div>
+                      <div style={{ fontSize: '11px', fontWeight: 950, color: '#1e293b' }}>Format: Microsoft Excel (.xlsx)</div>
+                      <div style={{ fontSize: '10px', color: '#64748b', marginTop: '2px' }}>Includes full audit trail and line-item manifest.</div>
+                   </div>
+                </div>
+             </div>
+
+             <button 
+               onClick={handleExportData}
+               style={{ 
+                 width: '100%', padding: '20px', borderRadius: '18px', border: 'none', 
+                 background: 'linear-gradient(135deg, #10b981 0%, #059669 100%)', 
+                 color: 'white', fontWeight: 950, fontSize: '13px', cursor: 'pointer',
+                 boxShadow: '0 10px 30px rgba(16, 185, 129, 0.3)'
+               }}
+             >
+                INITIATE FISCAL EXPORT
+             </button>
           </div>
         </div>
       </div>
@@ -629,7 +748,7 @@ export default function BillingPage() {
            </div>
           <div style={{ display: 'flex', gap: '15px' }}>
              <button 
-               onClick={handleExportData}
+               onClick={() => setIsExportDrawerOpen(true)}
                style={{ 
                  padding: '12px 24px', borderRadius: '12px', border: '1px solid #e2e8f0', 
                  background: '#10b981', color: 'white', fontSize: '11px', fontWeight: 950, cursor: 'pointer',
@@ -833,6 +952,7 @@ export default function BillingPage() {
 
       {isInvoiceDrawerOpen && renderInvoiceDrawer()}
       {isNewInvoiceDrawerOpen && renderNewInvoiceDrawer()}
+      {isExportDrawerOpen && renderExportDrawer()}
     </div>
   );
 }

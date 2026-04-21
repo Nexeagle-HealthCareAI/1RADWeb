@@ -56,11 +56,11 @@ const DOCTORS = ['Dr. Brown', 'Dr. Sarah', 'Dr. Mike', 'Dr. Lisa'];
 const TODAY = new Date().toISOString().split('T')[0];
 
 const STATUS_META = {
-  BOOKED: { icon: '📋', label: 'Booked', color: '#3498db', bg: '#e8f4fd', glow: 'rgba(52,152,219,0.15)' },
-  ARRIVED: { icon: '📍', label: 'Arrived', color: '#2ecc71', bg: '#e9f7ef', glow: 'rgba(46,204,113,0.15)' },
-  IN_PROGRESS: { icon: '⚡', label: 'Scanning', color: '#f39c12', bg: '#fef9e7', glow: 'rgba(243,156,18,0.15)' },
-  COMPLETED: { icon: '✅', label: 'Complete', color: '#27ae60', bg: '#d5f5e3', glow: 'rgba(39,174,96,0.15)' },
-  CANCELLED: { icon: '⛔', label: 'Cancelled', color: '#e74c3c', bg: '#fdedec', glow: 'rgba(231,76,60,0.15)' },
+  scheduled: { icon: '📋', label: 'Scheduled', color: '#3498db', bg: '#e8f4fd', glow: 'rgba(52,152,219,0.15)' },
+  confirmed: { icon: '📍', label: 'Confirmed', color: '#2ecc71', bg: '#e9f7ef', glow: 'rgba(46,204,113,0.15)' },
+  in_progress: { icon: '⚡', label: 'In Progress', color: '#f39c12', bg: '#fef9e7', glow: 'rgba(243,156,18,0.15)' },
+  completed: { icon: '✅', label: 'Completed', color: '#27ae60', bg: '#d5f5e3', glow: 'rgba(39,174,96,0.15)' },
+  cancelled: { icon: '⛔', label: 'Cancelled', color: '#e74c3c', bg: '#fdedec', glow: 'rgba(231,76,60,0.15)' },
 };
 
 const MODALITY_ICONS = {
@@ -170,7 +170,7 @@ export default function AppointmentsScreen({ navigation }) {
         mobile: patients.find(p => p.id === apt.patientId)?.phone || 'N/A',
         patientAge: 'N/A', // Update if DTO includes age
         patientGender: 'N/A', // Update if DTO includes gender
-        status: apt.status.toUpperCase(),
+        status: apt.status.toLowerCase(), // Ensure lowercase for consistency
         modality: apt.modality || 'X-RAY',
         service: apt.service,
         doctor: apt.doctor,
@@ -187,13 +187,13 @@ export default function AppointmentsScreen({ navigation }) {
   // Statistics calculation
   const stats = useMemo(() => {
     const total = transformedAppointments.length;
-    const booked = transformedAppointments.filter(a => a.status === 'BOOKED' || a.status === 'SCHEDULED').length;
-    const arrived = transformedAppointments.filter(a => a.status === 'ARRIVED' || a.status === 'CONFIRMED').length;
-    const inProgress = transformedAppointments.filter(a => a.status === 'IN_PROGRESS').length;
-    const completed = transformedAppointments.filter(a => a.status === 'COMPLETED').length;
-    const cancelled = transformedAppointments.filter(a => a.status === 'CANCELLED').length;
+    const scheduled = transformedAppointments.filter(a => a.status === 'scheduled').length;
+    const confirmed = transformedAppointments.filter(a => a.status === 'confirmed').length;
+    const inProgress = transformedAppointments.filter(a => a.status === 'in_progress').length;
+    const completed = transformedAppointments.filter(a => a.status === 'completed').length;
+    const cancelled = transformedAppointments.filter(a => a.status === 'cancelled').length;
     
-    return { total, booked, arrived, inProgress, completed, cancelled };
+    return { total, scheduled, confirmed, inProgress, completed, cancelled };
   }, [transformedAppointments]);
 
   // Filtered appointments
@@ -215,7 +215,7 @@ export default function AppointmentsScreen({ navigation }) {
     if (!app) return;
 
     let newStatus = '';
-    if (action === 'ARRIVE') newStatus = 'confirmed';
+    if (action === 'CONFIRM') newStatus = 'confirmed';
     if (action === 'START') newStatus = 'in_progress';
     if (action === 'COMPLETE') newStatus = 'completed';
     if (action === 'CANCEL') newStatus = 'cancelled';
@@ -229,13 +229,11 @@ export default function AppointmentsScreen({ navigation }) {
 
   const getNextAction = (status) => {
     switch (status) {
-      case 'BOOKED':
-      case 'SCHEDULED': 
-        return { action: 'ARRIVE', label: 'CHECK IN', icon: '📍', color: '#2ecc71' };
-      case 'ARRIVED':
-      case 'CONFIRMED': 
+      case 'scheduled': 
+        return { action: 'CONFIRM', label: 'CONFIRM', icon: '📍', color: '#2ecc71' };
+      case 'confirmed': 
         return { action: 'START', label: 'BEGIN SCAN', icon: '⚡', color: '#f39c12' };
-      case 'IN_PROGRESS': 
+      case 'in_progress': 
         return { action: 'COMPLETE', label: 'FINALIZE', icon: '✅', color: '#27ae60' };
       default: 
         return null;
@@ -300,7 +298,7 @@ export default function AppointmentsScreen({ navigation }) {
         service: newBooking.service,
         modality: newBooking.modality,
         dateTime: appointmentDateTime.toISOString(),
-        type: 'BOOKED',
+        type: 'scheduled',
         doctor: newBooking.doctor,
         referredBy: newPatient.referredBy || '',
         referredContact: '',
@@ -335,7 +333,7 @@ export default function AppointmentsScreen({ navigation }) {
 
   // Mission Intel Cards (Statistics Dashboard) - Enhanced with AnimatedStatCard
   const renderIntelCards = () => {
-    const readyCount = stats.booked + stats.arrived;
+    const readyCount = stats.scheduled + stats.confirmed;
     const progressCount = stats.inProgress;
     
     return (
@@ -609,9 +607,9 @@ export default function AppointmentsScreen({ navigation }) {
           <View style={styles.expandedDetails}>
             {/* Status Pipeline */}
             <View style={styles.statusPipeline}>
-              {['BOOKED', 'ARRIVED', 'IN_PROGRESS', 'COMPLETED'].map((status, index) => {
+              {['scheduled', 'confirmed', 'in_progress', 'completed'].map((status, index) => {
                 const statusMeta = STATUS_META[status];
-                const statusIndex = ['BOOKED', 'ARRIVED', 'IN_PROGRESS', 'COMPLETED'].indexOf(app.status);
+                const statusIndex = ['scheduled', 'confirmed', 'in_progress', 'completed'].indexOf(app.status);
                 const reached = statusIndex >= index;
                 const isCurrent = status === app.status;
                 
@@ -1318,13 +1316,11 @@ export default function AppointmentsScreen({ navigation }) {
         'Filter by Status',
         [
           { value: 'ALL', label: 'All Status' },
-          { value: 'BOOKED', label: '📋 Booked' },
-          { value: 'SCHEDULED', label: '📋 Scheduled' },
-          { value: 'ARRIVED', label: '📍 Arrived' },
-          { value: 'CONFIRMED', label: '📍 Confirmed' },
-          { value: 'IN_PROGRESS', label: '⚡ In Progress' },
-          { value: 'COMPLETED', label: '✅ Completed' },
-          { value: 'CANCELLED', label: '⛔ Cancelled' },
+          { value: 'scheduled', label: '📋 Scheduled' },
+          { value: 'confirmed', label: '📍 Confirmed' },
+          { value: 'in_progress', label: '⚡ In Progress' },
+          { value: 'completed', label: '✅ Completed' },
+          { value: 'cancelled', label: '⛔ Cancelled' },
         ],
         filters.status,
         (value) => setFilters({ ...filters, status: value })

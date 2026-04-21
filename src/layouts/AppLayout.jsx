@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { Outlet, useNavigate, useLocation } from 'react-router-dom';
 import Sidebar from './Sidebar';
 import MobileHeader from './MobileHeader';
@@ -12,15 +12,19 @@ export default function AppLayout() {
   const location = useLocation();
   const [currentTime, setCurrentTime] = useState(new Date());
   const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState(false);
+  const pageContentRef = useRef(null);
 
   useEffect(() => {
     const timer = setInterval(() => setCurrentTime(new Date()), 60000); // Update every minute
     return () => clearInterval(timer);
   }, []);
 
-  // Close mobile sidebar on route change
+  // Reset scroll and close mobile sidebar on route change
   useEffect(() => {
     setIsMobileSidebarOpen(false);
+    if (pageContentRef.current) {
+      pageContentRef.current.scrollTop = 0;
+    }
   }, [location.pathname]);
 
   if (!currentUser) return <Outlet />;
@@ -56,7 +60,7 @@ export default function AppLayout() {
       <div className="main-content">
         <TopNav currentTime={currentTime} />
 
-        <main className="page-content" style={{ padding: 0 }}>
+        <main className="page-content" ref={pageContentRef} style={{ padding: 0 }}>
           <Outlet />
         </main>
       </div>

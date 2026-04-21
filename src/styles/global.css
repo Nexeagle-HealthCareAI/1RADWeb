@@ -38,6 +38,18 @@
   --tactical-border: rgba(255, 255, 255, 0.1);
   --tactical-glow-cyan: 0 0 15px rgba(0, 242, 254, 0.4);
   --tactical-glow-indigo: 0 0 15px rgba(99, 102, 241, 0.4);
+
+  /* ========== RESPONSIVE BREAKPOINTS ========== */
+  --breakpoint-mobile: 640px;
+  --breakpoint-tablet: 1024px;
+  --breakpoint-desktop: 1440px;
+
+  /* Mobile-first spacing */
+  --spacing-mobile-xs: 2px;
+  --spacing-mobile-sm: 4px;
+  --spacing-mobile-md: 8px;
+  --spacing-mobile-lg: 12px;
+  --spacing-mobile-xl: 16px;
 }
 
 * {
@@ -67,6 +79,22 @@ button {
 /* ==========================================================================
    Buttons
    ========================================================================== */
+button, a, input[type="button"], input[type="submit"] {
+  min-height: 44px;
+  min-width: 44px;
+  padding: 12px 16px;
+}
+
+/* Mobile: Larger, more spaced buttons */
+@media (max-width: 639px) {
+  button, a, input[type="button"], input[type="submit"] {
+    min-height: 48px;
+    min-width: 48px;
+    padding: 14px 18px;
+    font-size: 16px;
+  }
+}
+
 .btn-primary {
   background-color: var(--primary-color);
   color: var(--text-inverse);
@@ -76,6 +104,18 @@ button {
   font-weight: 500;
   font-size: 14px;
   transition: background-color 0.2s ease;
+  min-height: 44px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+@media (max-width: 639px) {
+  .btn-primary {
+    min-height: 48px;
+    padding: 14px 18px;
+    font-size: 16px;
+  }
 }
 
 .btn-primary:hover {
@@ -94,6 +134,18 @@ button {
   font-size: 13px;
   color: var(--text-primary);
   transition: all 0.2s;
+  min-height: 44px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+@media (max-width: 639px) {
+  .btn-logout {
+    min-height: 48px;
+    padding: 14px 18px;
+    font-size: 16px;
+  }
 }
 
 .btn-logout:hover {
@@ -408,18 +460,66 @@ button {
    ========================================================================== */
 .app-layout {
   display: flex;
+  flex-direction: column;
   height: 100vh;
   overflow: hidden;
 }
 
+/* Desktop: Horizontal layout */
+@media (min-width: 1024px) {
+  .app-layout {
+    flex-direction: row;
+  }
+}
+
 .sidebar {
-  width: 280px; /* Expanded for full label visibility */
+  width: 100%;
+  height: 100vh;
   background-color: var(--bg-sidebar);
   color: var(--text-inverse);
   display: flex;
   flex-direction: column;
   transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1), width 0.3s ease;
   z-index: 1100;
+  
+  /* Mobile: Fixed drawer at bottom */
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  transform: translateX(-100%);
+  height: 100vh;
+  overflow-y: auto;
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+/* Mobile: Sidebar open state */
+.sidebar.open {
+  transform: translateX(0);
+}
+
+/* Tablet: Collapsible sidebar */
+@media (min-width: 640px) and (max-width: 1023px) {
+  .sidebar {
+    width: 200px;
+    position: static;
+    transform: none;
+    height: 100%;
+    border-top: none;
+    border-right: 1px solid rgba(255, 255, 255, 0.1);
+  }
+}
+
+/* Desktop: Full sidebar */
+@media (min-width: 1024px) {
+  .sidebar {
+    width: 280px;
+    position: static;
+    transform: none;
+    height: 100%;
+    border-top: none;
+    border-right: 1px solid rgba(255, 255, 255, 0.1);
+  }
 }
 
 .sidebar.collapsed {
@@ -491,6 +591,7 @@ button {
   border-radius: var(--radius-sm);
   transition: all 0.2s;
   white-space: nowrap;
+  min-height: 44px;
 }
 
 .sidebar.collapsed .nav-item {
@@ -526,11 +627,20 @@ button {
   flex-direction: column;
   background-color: var(--bg-main);
   height: 100vh;
+  overflow: hidden;
 }
 
 .page-content {
   flex: 1;
   overflow-y: auto;
+  padding-bottom: 60px;
+}
+
+/* Desktop: No bottom padding needed */
+@media (min-width: 1024px) {
+  .page-content {
+    padding-bottom: 0;
+  }
 }
 
 /* ==========================================================================
@@ -2514,5 +2624,201 @@ button {
   .auth-form {
     width: 100%;
     max-width: 400px;
+  }
+}
+
+
+/* ==========================================================================
+   MOBILE-FIRST RESPONSIVE OPTIMIZATIONS
+   ========================================================================== */
+
+/* Prevent zoom on input focus (iOS) */
+@media (max-width: 639px) {
+  input, select, textarea {
+    font-size: 16px;
+  }
+}
+
+/* Improve touch feedback */
+@media (hover: none) {
+  button:active {
+    background: var(--primary-hover);
+    transform: scale(0.98);
+  }
+}
+
+/* Reduce motion for accessibility */
+@media (prefers-reduced-motion: reduce) {
+  * {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+/* Mobile: Responsive typography */
+@media (max-width: 639px) {
+  body {
+    font-size: 14px;
+  }
+  
+  h1 { font-size: 24px; }
+  h2 { font-size: 20px; }
+  h3 { font-size: 18px; }
+  h4 { font-size: 16px; }
+  
+  .page-title {
+    font-size: 20px;
+  }
+}
+
+/* Tablet: Medium text */
+@media (min-width: 640px) and (max-width: 1023px) {
+  body {
+    font-size: 15px;
+  }
+  
+  h1 { font-size: 28px; }
+  h2 { font-size: 24px; }
+  h3 { font-size: 20px; }
+  h4 { font-size: 18px; }
+}
+
+/* Desktop: Original text */
+@media (min-width: 1024px) {
+  body {
+    font-size: 16px;
+  }
+  
+  h1 { font-size: 32px; }
+  h2 { font-size: 28px; }
+  h3 { font-size: 24px; }
+  h4 { font-size: 20px; }
+}
+
+/* Mobile: Responsive spacing */
+@media (max-width: 639px) {
+  .page-wrapper {
+    padding: var(--spacing-mobile-lg) var(--spacing-mobile-md) var(--spacing-mobile-md);
+  }
+  
+  .page-card {
+    padding: var(--spacing-mobile-lg);
+  }
+}
+
+/* Mobile: Responsive forms */
+@media (max-width: 639px) {
+  .form-group {
+    margin-bottom: var(--spacing-mobile-lg);
+  }
+  
+  .form-group input,
+  .form-group select,
+  .form-group textarea {
+    padding: 12px;
+    font-size: 16px;
+    min-height: 44px;
+  }
+}
+
+/* Mobile: Responsive modals */
+@media (max-width: 639px) {
+  .modal {
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    border-radius: 20px 20px 0 0;
+    max-height: 90vh;
+    overflow-y: auto;
+  }
+}
+
+/* Mobile: Responsive tables */
+@media (max-width: 639px) {
+  .table-container {
+    overflow-x: auto;
+  }
+  
+  .data-table {
+    min-width: 100%;
+  }
+  
+  .data-table th,
+  .data-table td {
+    padding: 8px;
+    font-size: 12px;
+  }
+}
+
+/* Mobile: Responsive grid layouts */
+@media (max-width: 639px) {
+  .summary-grid {
+    grid-template-columns: 1fr;
+  }
+  
+  .demo-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* Mobile: Responsive filter bar */
+@media (max-width: 639px) {
+  .filter-bar {
+    flex-direction: column;
+    gap: 8px;
+  }
+  
+  .filter-bar input,
+  .filter-bar select {
+    width: 100%;
+  }
+}
+
+/* Mobile: Responsive top nav */
+@media (max-width: 639px) {
+  .top-nav {
+    height: 60px;
+    padding: 0 16px;
+    flex-wrap: wrap;
+  }
+  
+  .status-hud {
+    padding: 8px 16px;
+    font-size: 10px;
+  }
+  
+  .temporal-hud {
+    font-size: 12px;
+  }
+}
+
+/* Tablet: Responsive top nav */
+@media (min-width: 640px) and (max-width: 1023px) {
+  .top-nav {
+    height: 70px;
+    padding: 0 24px;
+  }
+}
+
+/* Mobile: Hide desktop-only elements */
+@media (max-width: 639px) {
+  .desktop-only {
+    display: none;
+  }
+}
+
+/* Tablet: Hide mobile-only elements */
+@media (min-width: 640px) {
+  .mobile-only {
+    display: none;
+  }
+}
+
+/* Desktop: Hide tablet-only elements */
+@media (min-width: 1024px) {
+  .tablet-only {
+    display: none;
   }
 }

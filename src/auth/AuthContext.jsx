@@ -39,36 +39,38 @@ export function AuthProvider({ children }) {
   const switchCenter = useCallback(async (id) => {
     try {
       const response = await apiClient.post('/auth/switch-context', { targetHospitalId: id });
-      const { success, accessToken, error } = response.data;
+      const { success, accessToken, roles, error } = response.data;
 
       if (!success) {
         alert(error || 'Failed to switch context');
         return;
       }
 
-      // Update token for subsequent requests
+      // 1. Update token for subsequent security-validated requests
       sessionStorage.setItem('1rad_token', accessToken);
       
-      // Update local state
+      // 2. Lock the active Hub ID in storage to ensure persistence after reload
+      localStorage.setItem('1rad_active_center_id', id);
       setActiveCenterId(id);
       
-      // Update currentUser roles based on the target center's roles
-      const normalizedTargetId = String(id).toLowerCase();
-      const targetCenter = centers.find(c => String(c.id).toLowerCase() === normalizedTargetId);
+      // 3. Synchronize currentUser with roles returned by the backend
+      // We normalize roles to lowercase to match the application's security checks
+      const normalizedRoles = (roles || []).map(r => String(r).trim().toLowerCase()).filter(Boolean);
       
-      if (targetCenter && targetCenter.roles) {
-        setCurrentUser(prev => ({
-          ...prev,
-          roles: targetCenter.roles
-        }));
-      }
+      const updatedUser = { 
+        ...currentUser, 
+        roles: normalizedRoles 
+      };
+      
+      setCurrentUser(updatedUser);
+      sessionStorage.setItem('1rad_user', JSON.stringify(updatedUser));
 
-      return { success: true, roles: targetCenter?.roles };
+      return { success: true, roles: normalizedRoles };
     } catch (err) {
       console.error('[AUTH] Context switch failure', err);
       return { success: false, error: 'SECURITY ALERT: Context transition failed. Please re-login.' };
     }
-  }, [centers]);
+  }, [currentUser]);
 
   const refreshCenters = useCallback(async () => {
     try {
@@ -107,6 +109,7 @@ export function AuthProvider({ children }) {
         return {
           id: String(hId).toLowerCase(),
           name: h.hospitalName || h.HospitalName || h.name || h.Name || 'Unnamed Hub',
+          groupId: h.groupId || h.GroupId || h.HospitalGroupId || '',
           groupName: h.groupName || h.GroupName || h.group || '',
           roles: normalizedRoles,
           role: normalizedRoles[0] || 'viewer',

@@ -1,0 +1,395 @@
+/* ==========================================================================
+   Appointment Card Component - Responsive Mobile/Tablet Layout
+   ========================================================================== */
+
+.appointment-card {
+  background: white;
+  border: 1px solid #eee;
+  border-radius: 12px;
+  margin-bottom: 12px;
+  overflow: hidden;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
+  transition: all 0.2s ease;
+  position: relative;
+}
+
+.appointment-card:active {
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+}
+
+/* Status indicator bar */
+.card-status-bar {
+  height: 4px;
+  width: 100%;
+  position: absolute;
+  top: 0;
+  left: 0;
+}
+
+/* Card header with token and status */
+.card-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 16px;
+  border-bottom: 1px solid #f0f0f0;
+  gap: 12px;
+}
+
+.card-token {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+}
+
+.token-number {
+  font-size: 18px;
+  font-weight: 950;
+  color: #1a1a2e;
+  line-height: 1;
+}
+
+.token-label {
+  font-size: 8px;
+  font-weight: 900;
+  color: #abb8c3;
+  text-transform: uppercase;
+  margin-top: 4px;
+}
+
+.card-status-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  border-radius: 20px;
+  border: 1px solid;
+  flex-shrink: 0;
+}
+
+.status-icon {
+  font-size: 12px;
+}
+
+.status-label {
+  font-size: 9px;
+  font-weight: 950;
+  text-transform: uppercase;
+}
+
+/* Card sections */
+.card-section {
+  padding: 12px 16px;
+  border-bottom: 1px solid #f5f5f5;
+}
+
+.card-section:last-of-type {
+  border-bottom: none;
+}
+
+.section-title {
+  font-size: 10px;
+  font-weight: 900;
+  color: #94a3b8;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin-bottom: 8px;
+}
+
+/* Patient info */
+.patient-info {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.patient-name {
+  font-size: 14px;
+  font-weight: 800;
+  color: #1a1a2e;
+}
+
+.patient-details {
+  font-size: 12px;
+  color: #888;
+  font-weight: 600;
+}
+
+.patient-id {
+  font-size: 10px;
+  color: #0f52ba;
+  font-weight: 700;
+  font-family: monospace;
+}
+
+/* Referral info */
+.referral-info {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.referral-name {
+  font-size: 13px;
+  font-weight: 800;
+  color: #0f52ba;
+}
+
+.referral-contact {
+  font-size: 11px;
+  color: #888;
+  font-weight: 600;
+}
+
+/* Doctor info */
+.doctor-name {
+  font-size: 13px;
+  font-weight: 700;
+  color: #333;
+}
+
+/* Card actions */
+.card-actions {
+  display: flex;
+  gap: 8px;
+  padding: 12px 16px;
+  background: #fafbfc;
+  flex-wrap: wrap;
+}
+
+.action-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 8px 12px;
+  border: none;
+  border-radius: 8px;
+  font-size: 11px;
+  font-weight: 800;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  text-transform: uppercase;
+  min-height: 36px;
+  flex: 1;
+  min-width: 80px;
+}
+
+.action-btn-primary {
+  background: #3498db;
+  color: white;
+  box-shadow: 0 2px 6px rgba(52, 152, 219, 0.2);
+}
+
+.action-btn-primary:active {
+  transform: scale(0.98);
+  box-shadow: 0 1px 3px rgba(52, 152, 219, 0.3);
+}
+
+.action-btn-secondary {
+  background: #e8f0fe;
+  color: #0f52ba;
+  border: 1px solid #c5d5f0;
+  flex: 0 1 auto;
+  min-width: 36px;
+  padding: 8px;
+}
+
+.action-btn-secondary:active {
+  background: #d0dff5;
+}
+
+.action-btn-danger {
+  background: #fff5f5;
+  color: #e74c3c;
+  border: 1px solid #fecaca;
+  flex: 0 1 auto;
+  min-width: 36px;
+  padding: 8px;
+}
+
+.action-btn-danger:active {
+  background: #ffe0e0;
+}
+
+.action-icon {
+  font-size: 14px;
+}
+
+.action-text {
+  display: none;
+}
+
+/* Show action text on larger cards */
+@media (min-width: 480px) {
+  .action-btn {
+    min-width: 100px;
+  }
+
+  .action-text {
+    display: inline;
+  }
+}
+
+/* ==========================================================================
+   Responsive Breakpoints
+   ========================================================================== */
+
+/* Mobile: < 640px */
+@media (max-width: 639px) {
+  .appointment-card {
+    margin-bottom: 10px;
+    border-radius: 10px;
+  }
+
+  .card-header {
+    padding: 14px;
+    gap: 10px;
+  }
+
+  .token-number {
+    font-size: 16px;
+  }
+
+  .card-section {
+    padding: 10px 14px;
+  }
+
+  .patient-name {
+    font-size: 13px;
+  }
+
+  .patient-details {
+    font-size: 11px;
+  }
+
+  .card-actions {
+    padding: 10px 14px;
+    gap: 6px;
+  }
+
+  .action-btn {
+    padding: 8px 10px;
+    font-size: 10px;
+    min-height: 34px;
+  }
+
+  .action-btn-secondary,
+  .action-btn-danger {
+    min-width: 34px;
+    padding: 8px;
+  }
+}
+
+/* Tablet: 640px - 1024px */
+@media (min-width: 640px) and (max-width: 1023px) {
+  .appointment-card {
+    margin-bottom: 12px;
+  }
+
+  .card-header {
+    padding: 16px;
+  }
+
+  .card-section {
+    padding: 12px 16px;
+  }
+
+  .card-actions {
+    padding: 12px 16px;
+    gap: 8px;
+  }
+
+  .action-btn {
+    padding: 8px 12px;
+    font-size: 11px;
+    min-height: 36px;
+  }
+}
+
+/* Desktop: > 1024px - Hide cards, show table instead */
+@media (min-width: 1024px) {
+  .appointment-card {
+    display: none;
+  }
+}
+
+/* ==========================================================================
+   Touch-friendly interactions
+   ========================================================================== */
+
+@media (hover: none) and (pointer: coarse) {
+  .appointment-card {
+    border: 1px solid #e0e0e0;
+  }
+
+  .appointment-card:active {
+    background: #f9f9f9;
+    border-color: #c5d5f0;
+  }
+
+  .action-btn {
+    min-height: 44px;
+    padding: 10px 14px;
+  }
+
+  .action-btn-secondary,
+  .action-btn-danger {
+    min-width: 44px;
+    min-height: 44px;
+    padding: 10px;
+  }
+}
+
+/* ==========================================================================
+   Accessibility
+   ========================================================================== */
+
+.action-btn:focus {
+  outline: 2px solid #0f52ba;
+  outline-offset: 2px;
+}
+
+.action-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* ==========================================================================
+   Dark mode support (optional)
+   ========================================================================== */
+
+@media (prefers-color-scheme: dark) {
+  .appointment-card {
+    background: #1e1e2e;
+    border-color: #333;
+  }
+
+  .card-header {
+    border-bottom-color: #2a2a3e;
+  }
+
+  .card-section {
+    border-bottom-color: #2a2a3e;
+  }
+
+  .token-number {
+    color: #e0e0e0;
+  }
+
+  .patient-name {
+    color: #e0e0e0;
+  }
+
+  .patient-details {
+    color: #999;
+  }
+
+  .doctor-name {
+    color: #ccc;
+  }
+
+  .card-actions {
+    background: #252535;
+  }
+}
