@@ -25,10 +25,12 @@ const INFORMATION_SOURCES = [
 
 const STATUS_META = {
   scheduled:   { icon: '\u{1F4CB}', label: 'Scheduled', color: '#3498db', bg: '#e8f4fd', glow: 'rgba(52,152,219,0.15)' },
+  booked:      { icon: '\u{1F4CB}', label: 'Booked', color: '#3498db', bg: '#e8f4fd', glow: 'rgba(52,152,219,0.15)' },
   confirmed:   { icon: '\u{1F4CD}', label: 'Confirmed', color: '#2ecc71', bg: '#e9f7ef', glow: 'rgba(46,204,113,0.15)' },
   in_progress: { icon: '\u26A1', label: 'In Progress', color: '#f39c12', bg: '#fef9e7', glow: 'rgba(243,156,18,0.15)' },
   completed:   { icon: '\u2705', label: 'Completed', color: '#27ae60', bg: '#d5f5e3', glow: 'rgba(39,174,96,0.15)' },
   cancelled:   { icon: '\u26D4', label: 'Cancelled', color: '#e74c3c', bg: '#fdedec', glow: 'rgba(231,76,60,0.15)' },
+  unknown:     { icon: '\u2753', label: 'Unknown', color: '#94a3b8', bg: '#f1f5f9', glow: 'rgba(148,163,184,0.15)' }
 };
 
 const MODALITY_ICONS = {
@@ -117,7 +119,8 @@ export default function AppointmentBoard() {
         ...a,
         id: a.displayId,
         appointmentId: a.appointmentId,
-        ptid: a.patientIdentifier
+        ptid: a.patientIdentifier,
+        status: a.status ? a.status.toLowerCase() : 'scheduled'
       }));
 
       // Sort by absolute dateTime to ensure chronological order across all days
@@ -660,7 +663,7 @@ export default function AppointmentBoard() {
   //  APPOINTMENT TABLE ROW
   // ============================================================
   const renderAppointmentRow = (app) => {
-    const meta = STATUS_META[app.status];
+    const meta = STATUS_META[app.status] || STATUS_META.unknown;
     const next = getNextAction(app.status);
     const isExpanded = expandedRow === app.id;
     const statusIndex = ['scheduled','confirmed','in_progress','completed'].indexOf(app.status);
