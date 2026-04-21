@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { 
   View, 
   Text, 
@@ -9,8 +9,11 @@ import {
   Alert,
   Modal,
   Dimensions,
-  FlatList
+  FlatList,
+  RefreshControl,
+  Animated
 } from 'react-native';
+import { LinearGradient } from 'expo-linear-gradient';
 import { useAppointments } from '../context/AppointmentContext';
 import { COLORS, SPACING, RADIUS, SHADOWS } from '../theme/TacticalTheme';
 import { 
@@ -36,6 +39,11 @@ import {
   Printer,
   X
 } from 'lucide-react-native';
+import GradientButton from '../components/GradientButton';
+import EmptyState from '../components/EmptyState';
+import AnimatedStatCard from '../components/AnimatedStatCard';
+import BottomNavBar from '../components/BottomNavBar';
+import { useAuth } from '../context/AuthContext';
 
 const { width } = Dimensions.get('window');
 
@@ -58,6 +66,7 @@ const MODALITY_ICONS = {
 };
 
 export default function AppointmentsScreen({ navigation }) {
+  const { user } = useAuth();
   const { appointments, patients, doctors, updateAppointment, deleteAppointment } = useAppointments();
   
   // State management matching web version
@@ -65,6 +74,11 @@ export default function AppointmentsScreen({ navigation }) {
   const [filters, setFilters] = useState({ status: 'ALL', modality: 'ALL', doctor: 'ALL' });
   const [expandedRow, setExpandedRow] = useState(null);
   const [loading, setLoading] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
+  
+  // Animation refs
+  const fadeAnim = useRef(new Animated.Value(0)).current;
+  const slideAnim = useRef(new Animated.Value(30)).current;
   
   // Booking flow state
   const [isBookingOpen, setIsBookingOpen] = useState(false);
@@ -92,6 +106,30 @@ export default function AppointmentsScreen({ navigation }) {
   
   // Print modal
   const [tokenPrintData, setTokenPrintData] = useState(null);
+
+  // Initial animation
+  useEffect(() => {
+    Animated.parallel([
+      Animated.timing(fadeAnim, {
+        toValue: 1,
+        duration: 600,
+        useNativeDriver: true,
+      }),
+      Animated.timing(slideAnim, {
+        toValue: 0,
+        duration: 500,
+        useNativeDriver: true,
+      }),
+    ]).start();
+  }, []);
+
+  // Pull to refresh
+  const onRefresh = async () => {
+    setRefreshing(true);
+    // Simulate data refresh
+    await new Promise(resolve => setTimeout(resolve, 1500));
+    setRefreshing(false);
+  };
 
   // Transform appointments to match web format
   const transformedAppointments = useMemo(() => {
@@ -177,94 +215,138 @@ export default function AppointmentsScreen({ navigation }) {
     }
   };
 
+  // Handle appointment booking with API integration
+  const handleBookAppointment = async () => {
+    try {
+      setLoading(true);
+
+      // Validate required fields
+      if (!newBooking.service) {
+        Alert.alert('Validation Error', 'Service/Procedure is required');
+        return;
+      }
+      if (!newBooking.doctor) {
+        Alert.alert('Validation Error', 'Doctor assignment is required');
+        return;
+      }
+
+      let patientId = newBooking.patientId;
+
+      // Create new patient if needed
+      if (!patientId && newPatient.name && newPatient.mobile) {
+        try {
+          const patientResponse = await apiClient.post('/patients', {
+            name: newPatient.name,
+            mobile: newPatient.mobile,
+            age: newPatient.age || '0',
+            gender: newPatient.gender,
+            village: newPatient.village,
+            district: newPatient.district,
+            address: newPatient.address,
+            sourceOfInfo: newPatient.sourceOfInfo
+          });
+          patientId = patientResponse.data.patientId;
+        } catch (error) {
+          console.error('[MOBILE APPOINTMENTS] Patient creation failed:', error);
+          Alert.alert('Error', 'Failed to create patient. Please try again.');
+          return;
+        }
+      }
+
+      if (!patientId) {
+        Alert.alert('Validation Error', 'Please select or create a patient');
+        return;
+      }
+
+      // Create appointment
+      await apiClient.post('/appointments', {
+        patientId: patientId,
+        service: newBooking.service,
+        modality: newBooking.modality,
+        dateTime: new Date().toISOString(), // TODO: Add date/time picker
+        type: 'BOOKED',
+        doctor: newBooking.doctor,
+        referredBy: newPatient.referredBy || '',
+        referredContact: '',
+        notes: newBooking.notes
+      });
+
+      Alert.alert('Success', 'Appointment created successfully!');
+      setIsBookingOpen(false);
+      resetBooking();
+      onRefresh(); // Refresh appointment list
+    } catch (error) {
+      console.error('[MOBILE APPOINTMENTS] Booking failed:', error);
+      Alert.alert('Error', error.response?.data?.message || 'Failed to create appointment. Please try again.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const resetBooking = () => {
     setBookingStep(1);
     setNewBooking({ patientId: '', service: '', modality: 'X-RAY', doctor: '', notes: '' });
     setNewPatient({ name: '', mobile: '', age: '', gender: 'Male', village: '', district: '', address: '', referredBy: '', sourceOfInfo: '' });
   };
 
-  // Mission Intel Cards (Statistics Dashboard)
+  // Mission Intel Cards (Statistics Dashboard) - Enhanced with AnimatedStatCard
   const renderIntelCards = () => {
     const readyCount = stats.booked + stats.arrived;
     const progressCount = stats.inProgress;
     
     return (
-      <View style={styles.intelCardsContainer}>
-        {/* Total Missions Card */}
-        <View style={[styles.intelCard, styles.intelCardPrimary]}>
-          <Text style={styles.intelCardLabel}>TOTAL MISSIONS</Text>
-          <View style={styles.intelCardValueContainer}>
-            <Text style={styles.intelCardValuePrimary}>{stats.total}</Text>
-            <Text style={styles.intelCardUnit}>UNITS</Text>
-          </View>
-          <View style={styles.intelCardProgress}>
-            <View style={[styles.intelCardProgressFill, { width: '100%' }]} />
-          </View>
-          <Text style={styles.intelCardTrend}>100% REGISTRY</Text>
-        </View>
+      <Animated.View 
+        style={[
+          styles.intelCardsContainer,
+          {
+            opacity: fadeAnim,
+            transform: [{ translateY: slideAnim }],
+          },
+        ]}
+      >
+        <View style={styles.intelCardsGrid}>
+          <AnimatedStatCard
+            title="TOTAL MISSIONS"
+            value={stats.total}
+            icon={Database}
+            gradient={[COLORS.cyan, '#4facfe']}
+            onPress={() => {}}
+            animated={true}
+            suffix=" UNITS"
+          />
 
-        {/* Ready for Deployment */}
-        <View style={styles.intelCard}>
-          <Text style={styles.intelCardLabel}>READY FOR DEPLOYMENT</Text>
-          <View style={styles.intelCardValueContainer}>
-            <Text style={[styles.intelCardValue, { color: COLORS.cyan }]}>{readyCount}</Text>
-            <Text style={styles.intelCardUnit}>READY</Text>
-          </View>
-          <View style={styles.intelCardStats}>
-            <View style={styles.intelCardStat}>
-              <Text style={styles.intelCardStatLabel}>BOOKED</Text>
-              <Text style={styles.intelCardStatValue}>{stats.booked}</Text>
-            </View>
-            <View style={styles.intelCardDivider} />
-            <View style={styles.intelCardStat}>
-              <Text style={styles.intelCardStatLabel}>ARRIVED</Text>
-              <Text style={styles.intelCardStatValue}>{stats.arrived}</Text>
-            </View>
-          </View>
-        </View>
+          <AnimatedStatCard
+            title="READY FOR DEPLOYMENT"
+            value={readyCount}
+            icon={Shield}
+            gradient={['#667eea', '#764ba2']}
+            onPress={() => setFilters({ ...filters, status: 'BOOKED' })}
+            animated={true}
+            suffix=" READY"
+          />
 
-        {/* Mission in Progress */}
-        <View style={styles.intelCard}>
-          <Text style={styles.intelCardLabel}>MISSION IN PROGRESS</Text>
-          <View style={styles.intelCardValueContainer}>
-            <Text style={[styles.intelCardValue, { color: COLORS.gold }]}>{progressCount}</Text>
-            <Text style={styles.intelCardUnit}>ACTIVE SCAN</Text>
-          </View>
-          <View style={styles.intelCardProgress}>
-            <View style={[
-              styles.intelCardProgressFill, 
-              { 
-                width: progressCount > 0 ? '100%' : '0%',
-                backgroundColor: COLORS.gold
-              }
-            ]} />
-          </View>
-          <Text style={styles.intelCardTrend}>
-            {progressCount > 0 ? 'SCANNING' : 'IDLE'}
-          </Text>
-        </View>
+          <AnimatedStatCard
+            title="MISSION IN PROGRESS"
+            value={progressCount}
+            icon={Zap}
+            gradient={['#f093fb', '#f5576c']}
+            onPress={() => setFilters({ ...filters, status: 'IN_PROGRESS' })}
+            animated={true}
+            pulse={progressCount > 0}
+            suffix=" ACTIVE"
+          />
 
-        {/* Completed Operations */}
-        <View style={styles.intelCard}>
-          <Text style={styles.intelCardLabel}>COMPLETED OPERATIONS</Text>
-          <View style={styles.intelCardValueContainer}>
-            <Text style={[styles.intelCardValue, { color: COLORS.success }]}>{stats.completed}</Text>
-            <Text style={styles.intelCardUnit}>SUCCESS</Text>
-          </View>
-          <View style={styles.intelCardProgress}>
-            <View style={[
-              styles.intelCardProgressFill, 
-              { 
-                width: `${(stats.completed / (stats.total || 1)) * 100}%`,
-                backgroundColor: COLORS.success
-              }
-            ]} />
-          </View>
-          <Text style={styles.intelCardTrend}>
-            Mission Success Rate: {Math.round((stats.completed / (stats.total || 1)) * 100)}%
-          </Text>
+          <AnimatedStatCard
+            title="COMPLETED OPERATIONS"
+            value={stats.completed}
+            icon={CheckCircle}
+            gradient={['#2ecc71', '#27ae60']}
+            onPress={() => setFilters({ ...filters, status: 'COMPLETED' })}
+            animated={true}
+            suffix=" SUCCESS"
+          />
         </View>
-      </View>
+      </Animated.View>
     );
   };
 
@@ -694,6 +776,65 @@ export default function AppointmentsScreen({ navigation }) {
                       </View>
                     </View>
                   </View>
+
+                  <View style={styles.formRow}>
+                    <View style={styles.formGroup}>
+                      <Text style={styles.formLabel}>VILLAGE</Text>
+                      <TextInput
+                        style={styles.formInput}
+                        placeholder="Village name"
+                        placeholderTextColor={COLORS.textSecondary}
+                        value={newPatient.village}
+                        onChangeText={(text) => setNewPatient({...newPatient, village: text})}
+                      />
+                    </View>
+                    <View style={styles.formGroup}>
+                      <Text style={styles.formLabel}>DISTRICT</Text>
+                      <TextInput
+                        style={styles.formInput}
+                        placeholder="District name"
+                        placeholderTextColor={COLORS.textSecondary}
+                        value={newPatient.district}
+                        onChangeText={(text) => setNewPatient({...newPatient, district: text})}
+                      />
+                    </View>
+                  </View>
+
+                  <View style={styles.formGroup}>
+                    <Text style={styles.formLabel}>ADDRESS</Text>
+                    <TextInput
+                      style={[styles.formInput, styles.textArea]}
+                      placeholder="Complete address..."
+                      placeholderTextColor={COLORS.textSecondary}
+                      value={newPatient.address}
+                      onChangeText={(text) => setNewPatient({...newPatient, address: text})}
+                      multiline
+                      numberOfLines={2}
+                    />
+                  </View>
+
+                  <View style={styles.formRow}>
+                    <View style={styles.formGroup}>
+                      <Text style={styles.formLabel}>REFERRED BY</Text>
+                      <TextInput
+                        style={styles.formInput}
+                        placeholder="Referrer name (optional)"
+                        placeholderTextColor={COLORS.textSecondary}
+                        value={newPatient.referredBy}
+                        onChangeText={(text) => setNewPatient({...newPatient, referredBy: text})}
+                      />
+                    </View>
+                    <View style={styles.formGroup}>
+                      <Text style={styles.formLabel}>SOURCE OF INFO</Text>
+                      <TextInput
+                        style={styles.formInput}
+                        placeholder="How did you find us?"
+                        placeholderTextColor={COLORS.textSecondary}
+                        value={newPatient.sourceOfInfo}
+                        onChangeText={(text) => setNewPatient({...newPatient, sourceOfInfo: text})}
+                      />
+                    </View>
+                  </View>
                 </View>
               </View>
             ) : (
@@ -803,21 +944,19 @@ export default function AppointmentsScreen({ navigation }) {
               ]}
               disabled={
                 (bookingStep === 1 && !newBooking.patientId && !newPatient.name) ||
-                (bookingStep === 2 && (!newBooking.service || !newBooking.doctor))
+                (bookingStep === 2 && (!newBooking.service || !newBooking.doctor)) ||
+                loading
               }
-              onPress={() => {
+              onPress={async () => {
                 if (bookingStep === 1) {
                   setBookingStep(2);
                 } else {
-                  // Handle booking submission
-                  Alert.alert('Success', 'Mission deployed successfully!');
-                  setIsBookingOpen(false);
-                  resetBooking();
+                  await handleBookAppointment();
                 }
               }}
             >
               <Text style={styles.bookingNextBtnText}>
-                {bookingStep === 1 ? 'PROCEED → MISSION CONFIG' : '🚀 DEPLOY MISSION'}
+                {loading ? 'DEPLOYING...' : (bookingStep === 1 ? 'PROCEED → MISSION CONFIG' : '🚀 DEPLOY MISSION')}
               </Text>
             </TouchableOpacity>
           </View>
@@ -829,27 +968,44 @@ export default function AppointmentsScreen({ navigation }) {
   return (
     <View style={styles.container}>
       {/* Header */}
-      <View style={styles.header}>
-        <View>
-          <View style={styles.headerTitleRow}>
-            <Text style={styles.headerIcon}>📡</Text>
-            <Text style={styles.headerTitle}>MISSION SCHEDULER</Text>
+      <LinearGradient
+        colors={['rgba(0, 242, 254, 0.1)', 'transparent']}
+        style={styles.headerGradient}
+      >
+        <View style={styles.header}>
+          <View>
+            <View style={styles.headerTitleRow}>
+              <Text style={styles.headerIcon}>📡</Text>
+              <Text style={styles.headerTitle}>MISSION SCHEDULER</Text>
+            </View>
+            <Text style={styles.headerSubtitle}>
+              Patient Intake & Appointment Command
+              <Text style={styles.liveIndicator}> ● LIVE</Text>
+            </Text>
           </View>
-          <Text style={styles.headerSubtitle}>
-            Patient Intake & Appointment Command
-            <Text style={styles.liveIndicator}> ● LIVE</Text>
-          </Text>
+          
+          <GradientButton
+            title="NEW MISSION"
+            icon={Plus}
+            gradient={[COLORS.cyan, '#4facfe']}
+            onPress={() => setIsBookingOpen(true)}
+            size="md"
+          />
         </View>
-        <TouchableOpacity 
-          style={styles.newMissionBtn}
-          onPress={() => setIsBookingOpen(true)}
-        >
-          <Plus size={16} color={COLORS.bgMain} />
-          <Text style={styles.newMissionBtnText}>NEW MISSION</Text>
-        </TouchableOpacity>
-      </View>
+      </LinearGradient>
 
-      <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
+      <ScrollView 
+        style={styles.content} 
+        showsVerticalScrollIndicator={false}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={onRefresh}
+            tintColor={COLORS.cyan}
+            colors={[COLORS.cyan]}
+          />
+        }
+      >
         {/* Mission Intel Cards */}
         {renderIntelCards()}
 
@@ -864,23 +1020,17 @@ export default function AppointmentsScreen({ navigation }) {
             </Text>
           </View>
 
-          <View style={styles.appointmentsTableHeader}>
-            <Text style={styles.tableHeaderText}>ID</Text>
-            <Text style={styles.tableHeaderText}>Patient Details</Text>
-            <Text style={styles.tableHeaderText}>Referred By</Text>
-            <Text style={styles.tableHeaderText}>Status</Text>
-            <Text style={styles.tableHeaderText}>Specialist</Text>
-            <Text style={styles.tableHeaderText}>Actions</Text>
-          </View>
-
           {filteredAppointments.length === 0 ? (
-            <View style={styles.emptyState}>
-              <Search size={40} color={COLORS.textSecondary} />
-              <Text style={styles.emptyStateTitle}>No missions match your filters</Text>
-              <Text style={styles.emptyStateSubtitle}>
-                Try adjusting your search or pipeline filters
-              </Text>
-            </View>
+            <EmptyState
+              icon={Search}
+              title="No Missions Match Your Filters"
+              subtitle="Try adjusting your search or pipeline filters to find what you're looking for"
+              actionText="CLEAR FILTERS"
+              onAction={() => {
+                setFilters({ status: 'ALL', modality: 'ALL', doctor: 'ALL' });
+                setSearchQuery('');
+              }}
+            />
           ) : (
             <FlatList
               data={filteredAppointments}
@@ -896,6 +1046,9 @@ export default function AppointmentsScreen({ navigation }) {
       {/* Modals */}
       {renderTokenModal()}
       {renderBookingModal()}
+
+      {/* Bottom Navigation Bar */}
+      <BottomNavBar userRole={user?.roles?.[0] || 'doctor'} />
     </View>
   );
 }
@@ -904,6 +1057,9 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: COLORS.bgMain,
+  },
+  headerGradient: {
+    paddingTop: SPACING.md,
   },
   header: {
     flexDirection: 'row',
@@ -1142,11 +1298,17 @@ const styles = StyleSheet.create({
   content: {
     flex: 1,
     paddingHorizontal: SPACING.lg,
+    paddingBottom: 80, // Space for bottom navigation
   },
 
   // Intel Cards Styles
   intelCardsContainer: {
     marginBottom: 32,
+  },
+  intelCardsGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 12,
   },
   intelCard: {
     backgroundColor: COLORS.bgCard,

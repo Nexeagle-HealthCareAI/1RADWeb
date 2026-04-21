@@ -40,6 +40,8 @@ export default function AdminBoard() {
   const [patients, setPatients] = useState([]);
   const [patientSearch, setPatientSearch] = useState('');
   const [personnelSearch, setPersonnelSearch] = useState('');
+  const [sourceSearch, setSourceSearch] = useState('');
+  const [referralViewMode, setReferralViewMode] = useState('MATRIX'); // 'MATRIX' or 'LOG'
   
   // Dashboard Filters
   const [selectedDateFilter, setSelectedDateFilter] = useState(TODAY);
@@ -240,6 +242,47 @@ export default function AdminBoard() {
   }, [selectedDateFilter, referrerFilter]);
 
   const topReferrerName = dynamicReferralStats.length > 0 ? dynamicReferralStats[0].name : 'N/A';
+
+  // Referral Intelligence Logic (Moved to top-level to satisfy Rules of Hooks)
+  const temporalPatients = useMemo(() => {
+    return patients.filter(p => {
+      const isDateMatched = referralFilterMode === 'SINGLE' 
+        ? p.registered === referralRange.start
+        : (p.registered >= referralRange.start && p.registered <= referralRange.end);
+      
+      if (!isDateMatched) return false;
+
+      if (!sourceSearch) return true;
+      
+      const searchLow = sourceSearch.toLowerCase();
+      const sourceMatch = (p.referredBy || 'Direct / Walk-in').toLowerCase().includes(searchLow);
+      const patientMatch = (p.name || '').toLowerCase().includes(searchLow);
+      
+      return referralViewMode === 'MATRIX' ? sourceMatch : (sourceMatch || patientMatch);
+    });
+  }, [patients, referralRange, referralFilterMode, sourceSearch, referralViewMode]);
+
+  const referralAggregated = useMemo(() => {
+    if (referralViewMode !== 'MATRIX') return [];
+    
+    const result = temporalPatients.reduce((acc, p) => {
+      const source = p.referredBy || 'Direct / Walk-in';
+      if (!acc[source]) {
+        acc[source] = {
+          name: source,
+          contact: p.sourceContact || 'N/A',
+          patients: [],
+          modalities: {}
+        };
+      }
+      acc[source].patients.push(p);
+      const mod = p.modality || 'OTHER';
+      acc[source].modalities[mod] = (acc[source].modalities[mod] || 0) + 1;
+      return acc;
+    }, {});
+    
+    return Object.values(result).sort((a, b) => b.patients.length - a.patients.length);
+  }, [temporalPatients, referralViewMode]);
 
   const handleDeleteUser = async (id) => {
     if (id === currentUser.id) {
@@ -885,210 +928,252 @@ export default function AdminBoard() {
                  ))}
                  <div style={{ textAlign: 'center', marginTop: '5px' }}>
                     <button className="btn-logout" style={{ fontSize: '9px', fontWeight: 900, padding: '6px 15px' }}>FULL ROSTER ANALYTICS</button>
-                 </div>
-              </div>
-           </div>
-        </div>
-
+                  </div>
+               </div>
+            </div>
+         </div>
       </div>
     );
   };
 
   const renderReferralIntel = () => {
-    // Aggregate data based on range
-    const aggregated = patients.reduce((acc, p) => {
-      const isMatched = referralFilterMode === 'SINGLE' 
-        ? p.registered === referralRange.start
-        : (p.registered >= referralRange.start && p.registered <= referralRange.end);
-
-      if (isMatched) {
-        const source = p.referredBy || 'Direct / Walk-in';
-        if (!acc[source]) {
-          acc[source] = {
-            name: source,
-            contact: p.sourceContact || 'N/A',
-            patients: []
-          };
-        }
-        acc[source].patients.push(p);
-      }
-      return acc;
-    }, {});
-
-    const sources = Object.values(aggregated).sort((a, b) => b.patients.length - a.patients.length);
-    const totalPatientsCount = Object.values(aggregated).reduce((sum, s) => sum + s.patients.length, 0);
+    const totalPatientsCount = temporalPatients.length;
 
     return (
       <div className="referral-intel-view">
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '35px' }}>
+        {/* Level 1: Tactical Control Deck */}
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '40px' }}>
           <div>
-            <h2 style={{ fontSize: '12px', fontWeight: 900, textTransform: 'uppercase', letterSpacing: '2px', color: '#0f52ba', marginBottom: '4px' }}>Source Intelligence Matrix</h2>
-            <p style={{ fontSize: '11px', color: '#888', fontWeight: 600 }}>Deep-recon analysis of patient acquisition channels and source attribution.</p>
+            <h2 style={{ fontSize: '13px', fontWeight: 950, textTransform: 'uppercase', letterSpacing: '3px', color: '#0f52ba', marginBottom: '6px' }}>Source Intelligence Matrix</h2>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '15px' }}>
+               <div style={{ display: 'flex', background: '#f1f5f9', padding: '3px', borderRadius: '10px', border: '1px solid #e2e8f0' }}>
+                  {['MATRIX', 'LOG'].map(mode => (
+                    <button 
+                      key={mode} 
+                      onClick={() => setReferralViewMode(mode)}
+                      style={{ 
+                        padding: '6px 15px', borderRadius: '8px', border: 'none', fontSize: '9px', fontWeight: 950,
+                        background: referralViewMode === mode ? 'white' : 'transparent',
+                        color: referralViewMode === mode ? '#0f52ba' : '#64748b',
+                        boxShadow: referralViewMode === mode ? '0 2px 8px rgba(0,0,0,0.05)' : 'none',
+                        cursor: 'pointer', transition: 'all 0.2s', letterSpacing: '0.5px'
+                      }}
+                    >
+                      {mode === 'MATRIX' ? 'SOURCE MATRIX' : 'GLOBAL MISSION LOG'}
+                    </button>
+                  ))}
+               </div>
+               <span style={{ width: '4px', height: '4px', background: '#cbd5e1', borderRadius: '50%' }}></span>
+               <p style={{ fontSize: '11px', color: '#64748b', fontWeight: 600 }}>Active Reconnaissance Phase.</p>
+            </div>
           </div>
           
-          <div style={{ display: 'flex', gap: '15px', alignItems: 'center', background: 'white', padding: '8px', borderRadius: '16px', border: '1px solid #eee', boxShadow: '0 4px 12px rgba(0,0,0,0.03)' }}>
-            <div style={{ display: 'flex', background: '#f1f5f9', padding: '4px', borderRadius: '12px' }}>
-              {['SINGLE', 'RANGE'].map(mode => (
-                <button 
-                  key={mode}
-                  onClick={() => setReferralFilterMode(mode)}
+          <div style={{ display: 'flex', gap: '15px', alignItems: 'center' }}>
+             {/* Unified Search Sub-node */}
+             <div style={{ position: 'relative', width: '240px' }}>
+                <span style={{ position: 'absolute', left: '15px', top: '50%', transform: 'translateY(-50%)', opacity: 0.3, fontSize: '12px' }}>🔍</span>
+                <input 
+                  type="text" 
+                  placeholder={referralViewMode === 'MATRIX' ? "FILTER BY SOURCE..." : "SEARCH MISSIONS..."}
+                  value={sourceSearch}
+                  onChange={e => setSourceSearch(e.target.value)}
                   style={{ 
-                    padding: '8px 18px', borderRadius: '10px', border: 'none', fontSize: '10px', fontWeight: 950,
-                    background: referralFilterMode === mode ? 'white' : 'transparent',
-                    color: referralFilterMode === mode ? '#0f52ba' : '#64748b',
-                    boxShadow: referralFilterMode === mode ? '0 4px 10px rgba(0,0,0,0.05)' : 'none',
-                    cursor: 'pointer', transition: 'all 0.2s', letterSpacing: '0.5px'
-                  }}
-                >
-                  {mode === 'SINGLE' ? 'SINGLE SCAN' : 'TEMPORAL RANGE'}
-                </button>
-              ))}
-            </div>
+                    width: '100%', padding: '12px 15px 12px 42px', borderRadius: '14px', border: '1px solid #e2e8f0', 
+                    fontSize: '10px', fontWeight: 900, background: 'white', outline: 'none', transition: 'all 0.3s'
+                  }} 
+                />
+             </div>
 
-            <div style={{ display: 'flex', gap: '12px', alignItems: 'center', padding: '0 10px' }}>
-              <input 
-                type="date" 
-                value={referralRange.start} 
-                onChange={e => setReferralRange(prev => ({ ...prev, start: e.target.value }))}
-                style={{ border: 'none', background: 'transparent', fontSize: '11px', fontWeight: 900, color: '#1a1a2e', outline: 'none' }}
-              />
-              {referralFilterMode === 'RANGE' && (
-                <>
-                  <span style={{ fontSize: '12px', color: '#cbd5e1', fontWeight: 900 }}>→</span>
+             {/* Temporal Unit */}
+             <div style={{ display: 'flex', background: '#f8fafc', padding: '4px', borderRadius: '16px', border: '1px solid #e2e8f0' }}>
+                <div style={{ display: 'flex', gap: '2px', marginRight: '10px' }}>
+                  {['SINGLE', 'RANGE'].map(mode => (
+                    <button 
+                      key={mode}
+                      onClick={() => setReferralFilterMode(mode)}
+                      style={{ 
+                        padding: '10px 18px', borderRadius: '12px', border: 'none', fontSize: '9px', fontWeight: 950,
+                        background: referralFilterMode === mode ? '#1e293b' : 'transparent',
+                        color: referralFilterMode === mode ? 'white' : '#64748b',
+                        cursor: 'pointer', transition: 'all 0.2s', letterSpacing: '1px'
+                      }}
+                    >
+                      {mode === 'SINGLE' ? 'D' : 'R'}
+                    </button>
+                  ))}
+                </div>
+                <div style={{ display: 'flex', gap: '10px', alignItems: 'center', paddingRight: '10px' }}>
                   <input 
                     type="date" 
-                    value={referralRange.end} 
-                    onChange={e => setReferralRange(prev => ({ ...prev, end: e.target.value }))}
-                    style={{ border: 'none', background: 'transparent', fontSize: '11px', fontWeight: 900, color: '#1a1a2e', outline: 'none' }}
+                    value={referralRange.start} 
+                    onChange={e => setReferralRange(prev => ({ ...prev, start: e.target.value }))}
+                    style={{ border: 'none', background: 'transparent', fontSize: '11px', fontWeight: 950, color: '#1e293b', outline: 'none' }}
                   />
-                </>
-              )}
-            </div>
+                  {referralFilterMode === 'RANGE' && (
+                    <>
+                      <span style={{ fontSize: '12px', color: '#cbd5e1' }}>→</span>
+                      <input 
+                        type="date" 
+                        value={referralRange.end} 
+                        onChange={e => setReferralRange(prev => ({ ...prev, end: e.target.value }))}
+                        style={{ border: 'none', background: 'transparent', fontSize: '11px', fontWeight: 950, color: '#1e293b', outline: 'none' }}
+                      />
+                    </>
+                  )}
+                </div>
+             </div>
           </div>
         </div>
 
         {referralLoading ? (
-            <div style={{ padding: '100px', textAlign: 'center' }}>
+            <div style={{ padding: '120px', textAlign: 'center' }}>
                 <div className="pulse-loader"></div>
-                <p style={{ fontSize: '11px', fontWeight: 900, color: '#0f52ba', marginTop: '20px' }}>SCANNING SOURCE REGISTRY...</p>
+                <p style={{ fontSize: '11px', fontWeight: 950, color: '#0f52ba', marginTop: '25px', letterSpacing: '2px' }}>SYNCHRONIZING TACTICAL DATA...</p>
             </div>
         ) : (
           <>
+            {/* Level 2: Shared Summary Stats */}
             <div className="summary-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '25px', marginBottom: '40px' }}>
-              <div style={{ background: 'white', padding: '30px', borderRadius: '24px', border: '1px solid #eee', boxShadow: '0 10px 40px rgba(0,0,0,0.02)', position: 'relative', overflow: 'hidden' }}>
-                <div style={{ position: 'absolute', top: 0, right: 0, padding: '20px', opacity: 0.05, fontSize: '40px' }}>📡</div>
-                <span style={{ fontSize: '10px', fontWeight: 950, color: '#64748b', letterSpacing: '2px' }}>TOTAL CAPTURED</span>
-                <div style={{ fontSize: '36px', fontWeight: 950, color: '#0f52ba', marginTop: '12px', display: 'flex', alignItems: 'baseline', gap: '10px' }}>
-                  {totalPatientsCount}
-                  <span style={{ fontSize: '12px', color: '#94a3b8', fontWeight: 800 }}>UNITS</span>
+              <div style={{ background: 'white', padding: '30px', borderRadius: '24px', border: '1px solid #e2e8f0', boxShadow: '0 4px 20px rgba(0,0,0,0.01)' }}>
+                <span style={{ fontSize: '10px', fontWeight: 950, color: '#94a3b8', letterSpacing: '2px' }}>ACQUISITION VOLUME</span>
+                <div style={{ fontSize: '36px', fontWeight: 950, color: '#1e293b', marginTop: '10px' }}>{totalPatientsCount}</div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '8px' }}>
+                   <div style={{ width: '6px', height: '6px', borderRadius: '50%', background: '#2ecc71' }}></div>
+                   <span style={{ fontSize: '10px', color: '#64748b', fontWeight: 700 }}>Total referred units in period</span>
                 </div>
               </div>
               
-              <div style={{ background: 'white', padding: '30px', borderRadius: '24px', border: '1px solid #eee', boxShadow: '0 10px 40px rgba(0,0,0,0.02)', position: 'relative', overflow: 'hidden' }}>
-                <div style={{ position: 'absolute', top: 0, right: 0, padding: '20px', opacity: 0.05, fontSize: '40px' }}>🕸️</div>
-                <span style={{ fontSize: '10px', fontWeight: 950, color: '#64748b', letterSpacing: '2px' }}>ACTIVE CHANNELS</span>
-                <div style={{ fontSize: '36px', fontWeight: 950, color: '#1e293b', marginTop: '12px' }}>{sources.length}</div>
+              <div style={{ background: 'white', padding: '30px', borderRadius: '24px', border: '1px solid #e2e8f0', boxShadow: '0 4px 20px rgba(0,0,0,0.01)' }}>
+                <span style={{ fontSize: '10px', fontWeight: 950, color: '#94a3b8', letterSpacing: '2px' }}>NETWORK COVERAGE</span>
+                <div style={{ fontSize: '36px', fontWeight: 950, color: '#1e293b', marginTop: '10px' }}>{new Set(temporalPatients.map(p => p.referredBy)).size}</div>
+                <span style={{ fontSize: '10px', color: '#64748b', fontWeight: 700 }}>Unique referring sources active</span>
               </div>
               
-              <div style={{ background: 'linear-gradient(135deg, #0f52ba 0%, #061a40 100%)', padding: '30px', borderRadius: '24px', color: 'white', boxShadow: '0 15px 35px rgba(15, 82, 186, 0.2)', position: 'relative', overflow: 'hidden' }}>
-                <div style={{ position: 'absolute', top: 0, right: 0, padding: '20px', opacity: 0.1, fontSize: '40px' }}>🏆</div>
-                <span style={{ fontSize: '10px', fontWeight: 950, opacity: 0.7, letterSpacing: '2px' }}>DOMINANT PROTOCOL</span>
-                <div style={{ fontSize: '20px', fontWeight: 950, marginTop: '12px', whiteSpace: 'nowrap', textOverflow: 'ellipsis', overflow: 'hidden' }}>{sources[0]?.name.toUpperCase() || 'NO_SIGNAL'}</div>
-                <div style={{ fontSize: '10px', fontWeight: 800, marginTop: '5px', color: 'var(--tactical-cyan)' }}>{sources[0] ? `${((sources[0].patients.length / totalPatientsCount) * 100).toFixed(1)}% ATTRIBUTION` : '0% ATTRIBUTION'}</div>
+              <div style={{ background: 'white', padding: '30px', borderRadius: '24px', border: '1px solid #e2e8f0', boxShadow: '0 4px 20px rgba(0,0,0,0.01)' }}>
+                <span style={{ fontSize: '10px', fontWeight: 950, color: '#94a3b8', letterSpacing: '2px' }}>AVG DAILY CAPTURE</span>
+                <div style={{ fontSize: '36px', fontWeight: 950, color: '#0f52ba', marginTop: '10px' }}>
+                  {referralFilterMode === 'RANGE' ? (totalPatientsCount / (Math.max(1, (new Date(referralRange.end) - new Date(referralRange.start)) / (1000 * 60 * 60 * 24)) + 1)).toFixed(1) : totalPatientsCount}
+                </div>
+                <span style={{ fontSize: '10px', color: '#0f52ba', fontWeight: 800 }}>Units per cycle</span>
               </div>
             </div>
 
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
-              {sources.map(s => {
-                const isExpanded = expandedReferrer === s.name;
-                const percentage = totalPatientsCount > 0 ? (s.patients.length / totalPatientsCount) * 100 : 0;
-                return (
-                  <div key={s.name} style={{ 
-                    background: 'white', borderRadius: '20px', border: isExpanded ? '1px solid #0f52ba' : '1px solid #f1f5f9', 
-                    overflow: 'hidden', transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
-                    boxShadow: isExpanded ? '0 20px 50px rgba(15, 82, 186, 0.1)' : '0 2px 10px rgba(0,0,0,0.01)'
-                  }}>
-                    <div style={{ padding: '25px 30px', display: 'flex', flexDirection: 'column', gap: '20px' }}>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                         <div style={{ display: 'flex', gap: '20px', alignItems: 'center' }}>
-                            <div style={{ width: '50px', height: '50px', borderRadius: '14px', background: '#f8fafc', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '22px', border: '1px solid #f1f5f9' }}>
-                              📡
-                            </div>
-                            <div>
-                              <div style={{ fontSize: '16px', fontWeight: 950, color: '#1e293b' }}>{s.name.toUpperCase()}</div>
-                              <div style={{ fontSize: '10px', color: '#94a3b8', fontWeight: 800, marginTop: '4px', letterSpacing: '0.5px' }}>CHANNEL RECON: {s.contact}</div>
-                            </div>
-                         </div>
-                         
-                         <div style={{ display: 'flex', gap: '40px', alignItems: 'center' }}>
-                            <div style={{ textAlign: 'right' }}>
-                               <div style={{ fontSize: '20px', fontWeight: 950, color: '#0f52ba' }}>{s.patients.length}</div>
-                               <div style={{ fontSize: '9px', fontWeight: 950, color: '#cbd5e1', letterSpacing: '1.5px' }}>MISSIONS</div>
-                            </div>
-                            <button 
-                              onClick={() => setExpandedReferrer(isExpanded ? null : s.name)}
-                              style={{ 
-                                padding: '10px 20px', borderRadius: '12px', border: 'none', 
-                                background: isExpanded ? '#0f52ba' : '#f8fafc', 
-                                color: isExpanded ? 'white' : '#64748b',
-                                fontSize: '10px', fontWeight: 950, cursor: 'pointer',
-                                transition: 'all 0.2s', letterSpacing: '1px'
-                              }}
-                            >
-                              {isExpanded ? 'CLOSE LOGS' : 'ACCESS LOGS ↓'}
-                            </button>
-                         </div>
-                      </div>
-
-                      {/* Power Bar */}
-                      <div style={{ width: '100%', height: '6px', background: '#f8fafc', borderRadius: '10px', overflow: 'hidden' }}>
-                         <div style={{ width: `${percentage}%`, height: '100%', background: 'linear-gradient(90deg, #0f52ba, #00f2fe)', borderRadius: '10px' }}></div>
-                      </div>
-                    </div>
-
-                    {isExpanded && (
-                      <div style={{ padding: '0 30px 30px', background: '#fcfdfe', animation: 'slideDown 0.3s ease' }}>
-                        <div style={{ 
-                          background: 'white', borderRadius: '16px', border: '1px solid #edf2f7', 
-                          padding: '0', overflow: 'hidden', boxShadow: 'inset 0 2px 10px rgba(0,0,0,0.02)'
-                        }}>
-                          <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-                            <thead style={{ background: '#f8fafc' }}>
-                              <tr style={{ borderBottom: '1px solid #eee' }}>
-                                <th style={{ padding: '15px 25px', textAlign: 'left', fontSize: '10px', fontWeight: 950, color: '#94a3b8', letterSpacing: '1.5px' }}>IDENTITY_UID</th>
-                                <th style={{ padding: '15px 25px', textAlign: 'left', fontSize: '10px', fontWeight: 950, color: '#94a3b8', letterSpacing: '1.5px' }}>TARGET_NAME</th>
-                                <th style={{ padding: '15px 25px', textAlign: 'left', fontSize: '10px', fontWeight: 950, color: '#94a3b8', letterSpacing: '1.5px' }}>BIO_METRICS</th>
-                                <th style={{ padding: '15px 25px', textAlign: 'right', fontSize: '10px', fontWeight: 950, color: '#94a3b8', letterSpacing: '1.5px' }}>DEPLOYMENT_DATE</th>
-                              </tr>
-                            </thead>
-                            <tbody>
-                              {s.patients.map(p => (
-                                <tr key={p.id} style={{ borderBottom: '1px solid #f8fafc' }}>
-                                  <td style={{ padding: '18px 25px', fontSize: '12px', fontWeight: 950, color: '#0f52ba', fontFamily: 'monospace' }}>{p.id}</td>
-                                  <td style={{ padding: '18px 25px', fontSize: '13px', fontWeight: 800, color: '#1e293b' }}>{p.name.toUpperCase()}</td>
-                                  <td style={{ padding: '18px 25px' }}>
-                                     <span style={{ fontSize: '11px', color: '#64748b', fontWeight: 700, background: '#f1f5f9', padding: '4px 10px', borderRadius: '8px' }}>
-                                       {p.age}Y / {p.gender.toUpperCase()}
-                                     </span>
-                                  </td>
-                                  <td style={{ padding: '18px 25px', fontSize: '12px', color: '#94a3b8', textAlign: 'right', fontWeight: 800 }}>{p.registered}</td>
-                                </tr>
+            {/* Level 3: Dual-Mode Intelligence List */}
+            {referralViewMode === 'MATRIX' ? (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+                {referralAggregated.map(s => {
+                  const isExpanded = expandedReferrer === s.name;
+                  const percentage = totalPatientsCount > 0 ? (s.patients.length / totalPatientsCount) * 100 : 0;
+                  return (
+                    <div key={s.name} style={{ background: 'white', borderRadius: '20px', border: isExpanded ? '1px solid #0f52ba' : '1px solid #e2e8f0', overflow: 'hidden', transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)' }}>
+                      <div style={{ padding: '25px 30px', display: 'flex', flexDirection: 'column', gap: '20px' }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                           <div style={{ display: 'flex', gap: '20px', alignItems: 'center' }}>
+                              <div style={{ width: '48px', height: '48px', borderRadius: '14px', background: '#f8fafc', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '22px', border: '1px solid #f1f5f9' }}>👤</div>
+                              <div>
+                                <div style={{ fontSize: '16px', fontWeight: 950, color: '#1e293b' }}>{s.name.toUpperCase()}</div>
+                                <div style={{ fontSize: '10px', color: '#94a3b8', fontWeight: 800, marginTop: '4px' }}>IDENTITY: {s.contact}</div>
+                              </div>
+                           </div>
+                           <div style={{ display: 'flex', gap: '30px', alignItems: 'center' }}>
+                              <div style={{ textAlign: 'right' }}>
+                                 <div style={{ fontSize: '20px', fontWeight: 950, color: '#0f52ba' }}>{s.patients.length}</div>
+                                 <div style={{ fontSize: '8px', fontWeight: 950, color: '#cbd5e1', letterSpacing: '1px' }}>MISSIONS</div>
+                              </div>
+                              <button onClick={() => setExpandedReferrer(isExpanded ? null : s.name)} style={{ padding: '10px 18px', borderRadius: '12px', border: 'none', background: isExpanded ? '#0f52ba' : '#f1f5f9', color: isExpanded ? 'white' : '#64748b', fontSize: '9px', fontWeight: 950, cursor: 'pointer', transition: 'all 0.2s' }}>
+                                {isExpanded ? 'CLOSE LOG' : 'RECON LOG ↓'}
+                              </button>
+                           </div>
+                        </div>
+                        <div style={{ display: 'flex', gap: '15px', alignItems: 'center' }}>
+                           <div style={{ flex: 1, height: '4px', background: '#f1f5f9', borderRadius: '10px', overflow: 'hidden' }}>
+                              <div style={{ width: `${percentage}%`, height: '100%', background: '#0f52ba', borderRadius: '10px' }}></div>
+                           </div>
+                           <div style={{ display: 'flex', gap: '8px' }}>
+                              {Object.entries(s.modalities).map(([mod, count]) => (
+                                 <span key={mod} style={{ fontSize: '8px', fontWeight: 950, color: '#0f52ba', background: '#f0f3fd', padding: '3px 8px', borderRadius: '4px' }}>{mod}: {count}</span>
                               ))}
-                            </tbody>
-                          </table>
+                           </div>
                         </div>
                       </div>
-                    )}
-                  </div>
-                );
-              })}
-            </div>
+                      {isExpanded && (
+                        <div style={{ padding: '0 30px 30px', background: '#fcfdfe' }}>
+                           <div style={{ background: 'white', borderRadius: '16px', border: '1px solid #edf2f7', overflow: 'hidden' }}>
+                              <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                                <thead style={{ background: '#f8fafc' }}>
+                                  <tr style={{ borderBottom: '1px solid #f1f5f9' }}>
+                                    <th style={{ padding: '15px 25px', textAlign: 'left', fontSize: '9px', fontWeight: 950, color: '#94a3b8', letterSpacing: '1px' }}>MISSION_ID</th>
+                                    <th style={{ padding: '15px 25px', textAlign: 'left', fontSize: '9px', fontWeight: 950, color: '#94a3b8', letterSpacing: '1px' }}>TARGET_NAME</th>
+                                    <th style={{ padding: '15px 25px', textAlign: 'left', fontSize: '9px', fontWeight: 950, color: '#94a3b8', letterSpacing: '1px' }}>MODALITY</th>
+                                    <th style={{ padding: '15px 25px', textAlign: 'right', fontSize: '9px', fontWeight: 950, color: '#94a3b8', letterSpacing: '1px' }}>DATE</th>
+                                  </tr>
+                                </thead>
+                                <tbody>
+                                  {s.patients.map(p => (
+                                    <tr key={p.id} style={{ borderBottom: '1px solid #f8fafc' }}>
+                                      <td style={{ padding: '15px 25px', fontSize: '11px', fontWeight: 950, color: '#0f52ba', fontFamily: 'monospace' }}>{p.id}</td>
+                                      <td style={{ padding: '15px 25px', fontSize: '13px', fontWeight: 700 }}>{p.name.toUpperCase()}</td>
+                                      <td style={{ padding: '15px 25px' }}>
+                                         <span style={{ fontSize: '9px', color: 'white', background: '#334155', padding: '3px 8px', borderRadius: '6px', fontWeight: 950 }}>{p.modality || 'SCAN'}</span>
+                                      </td>
+                                      <td style={{ padding: '15px 25px', fontSize: '11px', color: '#94a3b8', textAlign: 'right', fontWeight: 900 }}>{p.registered}</td>
+                                    </tr>
+                                  ))}
+                                </tbody>
+                              </table>
+                           </div>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            ) : (
+              /* Global Mission Log View */
+              <div style={{ background: 'white', borderRadius: '24px', border: '1px solid #e2e8f0', overflow: 'hidden', boxShadow: '0 4px 20px rgba(0,0,0,0.01)' }}>
+                <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                  <thead style={{ background: '#f8fafc' }}>
+                    <tr style={{ borderBottom: '1px solid #f1f5f9' }}>
+                      <th style={{ padding: '20px 30px', textAlign: 'left', fontSize: '10px', fontWeight: 950, color: '#94a3b8', letterSpacing: '2px' }}>MISSION_ID</th>
+                      <th style={{ padding: '20px 30px', textAlign: 'left', fontSize: '10px', fontWeight: 950, color: '#94a3b8', letterSpacing: '2px' }}>TARGET_IDENTITY</th>
+                      <th style={{ padding: '20px 30px', textAlign: 'left', fontSize: '10px', fontWeight: 950, color: '#94a3b8', letterSpacing: '2px' }}>MODALITY</th>
+                      <th style={{ padding: '20px 30px', textAlign: 'left', fontSize: '10px', fontWeight: 950, color: '#94a3b8', letterSpacing: '2px' }}>SOURCE / REFERRER</th>
+                      <th style={{ padding: '20px 30px', textAlign: 'right', fontSize: '10px', fontWeight: 950, color: '#94a3b8', letterSpacing: '2px' }}>DATE</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {temporalPatients.map(p => (
+                      <tr key={p.id} style={{ borderBottom: '1px solid #f8fafc', transition: 'background 0.2s' }}>
+                        <td style={{ padding: '20px 30px', fontSize: '12px', fontWeight: 950, color: '#0f52ba', fontFamily: 'monospace' }}>{p.id}</td>
+                        <td style={{ padding: '20px 30px' }}>
+                           <div style={{ fontSize: '14px', fontWeight: 800, color: '#1e293b' }}>{p.name.toUpperCase()}</div>
+                           <div style={{ fontSize: '10px', color: '#94a3b8', fontWeight: 700 }}>{p.age}Y • {p.gender.toUpperCase()}</div>
+                        </td>
+                        <td style={{ padding: '20px 30px' }}>
+                           <span style={{ fontSize: '10px', color: 'white', fontWeight: 950, background: '#334155', padding: '5px 12px', borderRadius: '10px' }}>{p.modality || 'REPORTED'}</span>
+                        </td>
+                        <td style={{ padding: '20px 30px' }}>
+                           <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                              <div style={{ width: '24px', height: '24px', borderRadius: '50%', background: '#f0faff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '12px' }}>👤</div>
+                              <div style={{ fontSize: '13px', fontWeight: 800, color: '#0f52ba' }}>{(p.referredBy || 'Direct / Walk-in').toUpperCase()}</div>
+                           </div>
+                        </td>
+                        <td style={{ padding: '20px 30px', textAlign: 'right' }}>
+                           <div style={{ fontSize: '12px', color: '#1e293b', fontWeight: 900 }}>{p.registered}</div>
+                           <div style={{ fontSize: '8px', color: '#94a3b8', fontWeight: 950 }}>COMMITTED</div>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
 
-            {sources.length === 0 && (
-              <div style={{ padding: '120px 20px', textAlign: 'center', background: 'white', borderRadius: '30px', border: '1px dashed #e2e8f0' }}>
-                <div style={{ fontSize: '50px', marginBottom: '20px' }}>📡</div>
-                <div style={{ fontSize: '18px', fontWeight: 950, color: '#1e293b' }}>NO SIGNAL DETECTED</div>
-                <div style={{ fontSize: '12px', color: '#94a3b8', marginTop: '8px', maxWidth: '300px', margin: '8px auto', lineHeight: 1.6 }}>The temporal scan yielded zero acquisition units for this range. Synchronize with cloud registry to check for live signals.</div>
+            {temporalPatients.length === 0 && (
+              <div style={{ padding: '150px 20px', textAlign: 'center', background: 'white', borderRadius: '40px', border: '1px dashed #cbd5e1' }}>
+                <div style={{ fontSize: '60px', marginBottom: '25px' }}>📡</div>
+                <div style={{ fontSize: '18px', fontWeight: 950, color: '#1e293b' }}>NO RECON SIGNALS FOUND</div>
+                <p style={{ fontSize: '12px', color: '#94a3b8', marginTop: '10px', maxWidth: '350px', margin: '15px auto', fontWeight: 600 }}>The temporal scan yielded zero signatures. Synchronize parameters or check global registry.</p>
               </div>
             )}
           </>
@@ -1096,7 +1181,6 @@ export default function AdminBoard() {
       </div>
     );
   };
-
   const renderLayouts = () => (
     <div className="layouts-view">
        <div className="board-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '30px' }}>

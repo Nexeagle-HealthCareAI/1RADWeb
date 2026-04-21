@@ -293,31 +293,59 @@ function MainDrawer() {
 
 function RootStack() {
   const { user } = useAuth();
-  const [isLocked, setIsLocked] = React.useState(true);
+  const [isLocked, setIsLocked] = React.useState(false);
   const [needsAuth, setNeedsAuth] = React.useState(false);
+  const [isChecking, setIsChecking] = React.useState(true);
 
   React.useEffect(() => {
     checkAuthRequirement();
   }, [user]);
 
   const checkAuthRequirement = async () => {
+    setIsChecking(true);
+    
     if (user) {
-      // Check if biometric or passcode is enabled
+      // User is logged in - check if biometric/passcode is enabled
       const BiometricService = require('../services/BiometricService').default;
       const biometricEnabled = await BiometricService.isBiometricEnabled();
       const hasPasscode = await BiometricService.hasPasscode();
       
-      setNeedsAuth(biometricEnabled || hasPasscode);
-      setIsLocked(biometricEnabled || hasPasscode);
+      const authRequired = biometricEnabled || hasPasscode;
+      setNeedsAuth(authRequired);
+      setIsLocked(authRequired);
+      
+      console.log('[NAV] Auth check - User:', !!user, 'Auth required:', authRequired);
     } else {
+      // No user logged in - no biometric needed
       setNeedsAuth(false);
       setIsLocked(false);
+      console.log('[NAV] Auth check - No user, no lock needed');
     }
+    
+    setIsChecking(false);
   };
 
-  // Show lock screen if user is logged in and auth is required
-  if (user && needsAuth && isLocked) {
-    return <BiometricLockScreen onUnlock={() => setIsLocked(false)} />;
+  // Show lock screen ONLY if:
+  // 1. User is logged in
+  // 2. Biometric/passcode is enabled
+  // 3. Screen is currently locked
+  // 4. Not still checking
+  if (user && needsAuth && isLocked && !isChecking) {
+    console.log('[NAV] Showing biometric lock screen');
+    return <BiometricLockScreen onUnlock={() => {
+      console.log('[NAV] Biometric unlocked');
+      setIsLocked(false);
+    }} />;
+  }
+
+  return (
+    <Stack.Navigator screenOptions={{ headerShown: false }}>
+      <Stack.Screen name="Splash" component={SplashScreen} />
+      <Stack.Screen name="Auth" component={AuthStack} />
+      <Stack.Screen name="Main" component={MainDrawer} />
+    </Stack.Navigator>
+  );
+}
   }
 
   return (

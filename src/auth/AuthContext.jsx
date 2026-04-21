@@ -52,16 +52,16 @@ export function AuthProvider({ children }) {
       // Update local state
       setActiveCenterId(id);
       
-      // Update currentUser roles based on the target center's role
+      // Update currentUser roles based on the target center's roles
       const targetCenter = centers.find(c => c.id === id);
-      if (targetCenter && targetCenter.role) {
+      if (targetCenter && targetCenter.roles) {
         setCurrentUser(prev => ({
           ...prev,
-          roles: [targetCenter.role]
+          roles: targetCenter.roles
         }));
       }
 
-      return { success: true, role: targetCenter?.role };
+      return { success: true, roles: targetCenter?.roles };
     } catch (err) {
       console.error('[AUTH] Context switch failure', err);
       alert('SECURITY ALERT: Context transition failed. Please re-login.');
@@ -80,18 +80,28 @@ export function AuthProvider({ children }) {
         accountStatus
       };
 
+      const allRoles = [];
+      const mappedCenters = userProfile.authorizedHospitals.map(h => {
+        // Handle both roleNames (array) and roleName (legacy string)
+        const rawRoles = h.roleNames || (h.roleName ? h.roleName.split(',') : []);
+        const normalizedRoles = rawRoles.map(r => r.trim().toLowerCase()).filter(Boolean);
+        
+        allRoles.push(...normalizedRoles);
+        
+        return {
+          id: h.hospitalId,
+          name: h.hospitalName,
+          roles: normalizedRoles,
+          role: normalizedRoles[0] || 'viewer' // Backward compatibility
+        };
+      });
+
       const user = {
         id: userProfile.userId,
         name: userProfile.fullName,
         email: userProfile.email,
-        roles: userProfile.authorizedHospitals.map(h => h.roleName.toLowerCase())
+        roles: [...new Set(allRoles)]
       };
-
-      const mappedCenters = userProfile.authorizedHospitals.map(h => ({
-        id: h.hospitalId,
-        name: h.hospitalName,
-        role: h.roleName.toLowerCase()
-      }));
 
       setCurrentUser(user);
       setCenters(mappedCenters);
@@ -210,19 +220,27 @@ export function AuthProvider({ children }) {
       if (!success) return { success: false, error: message || 'Verification failed.' };
 
       if (isRegistered) {
+        const allRoles = [];
+        const mappedCenters = (backendUser.authorizedHospitals || []).map(h => {
+          const rawRoles = h.roleNames || (h.roleName ? h.roleName.split(',') : []);
+          const normalizedRoles = rawRoles.map(r => r.trim().toLowerCase()).filter(Boolean);
+          allRoles.push(...normalizedRoles);
+          return {
+            id: h.hospitalId,
+            name: h.hospitalName,
+            roles: normalizedRoles,
+            role: normalizedRoles[0] || 'viewer',
+            isDefault: h.isDefault
+          };
+        });
+
         const user = {
           id: backendUser.userId,
           name: backendUser.fullName,
           email: backendUser.email,
           mobile: backendUser.mobile,
-          roles: backendUser.roleName.split(',').map(r => r.trim().toLowerCase())
+          roles: [...new Set(allRoles)]
         };
-
-        const mappedCenters = (backendUser.authorizedHospitals || []).map(h => ({
-          id: h.hospitalId,
-          name: h.hospitalName,
-          role: h.roleName.toLowerCase()
-        }));
 
         setCurrentUser(user);
         setCenters(mappedCenters);

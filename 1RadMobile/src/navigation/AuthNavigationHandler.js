@@ -16,13 +16,22 @@ export default function AuthNavigationHandler() {
     
     if (user) {
       // User is logged in - navigate to Main
+      // The biometric lock will be handled by RootStack if enabled
       console.log('[AUTH NAV] Navigating to Main screen');
-      navigation.reset({
-        index: 0,
-        routes: [{ name: 'Main' }],
-      });
+      
+      // Use a small delay to ensure the navigation stack is ready
+      setTimeout(() => {
+        try {
+          navigation.reset({
+            index: 0,
+            routes: [{ name: 'Main' }],
+          });
+        } catch (error) {
+          console.error('[AUTH NAV] Navigation error:', error);
+        }
+      }, 100);
     }
-  }, [user, navigation]);
+  }, [user]);
 
   return null; // This component doesn't render anything
 }

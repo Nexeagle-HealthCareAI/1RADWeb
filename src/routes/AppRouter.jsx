@@ -13,6 +13,7 @@ import TechnicianPage from '../pages/TechnicianPage';
 import DoctorBoard from '../pages/DoctorBoard';
 import AdminBoard from '../pages/AdminBoard';
 import ViewerPage from '../pages/ViewerPage';
+import BillingPage from '../pages/BillingPage';
 
 function RootRedirect() {
   const { currentUser } = useAuth();
@@ -62,22 +63,30 @@ export default function AppRouter() {
             </ProtectedRoute>
           }
         />
-        {/* <Route
+        <Route
           path="/technician"
           element={
-            <ProtectedRoute allowedRoles={['admindoctor', 'technician']}>
+            <ProtectedRoute allowedRoles={['admindoctor', 'admin', 'technician']}>
               <TechnicianPage />
             </ProtectedRoute>
           }
-        /> */}
-        {/* <Route
+        />
+        <Route
           path="/doctor-board"
           element={
             <ProtectedRoute allowedRoles={['admindoctor', 'doctor']}>
               <DoctorBoard />
             </ProtectedRoute>
           }
-        /> */}
+        />
+        <Route
+          path="/billing"
+          element={
+            <ProtectedRoute allowedRoles={['admindoctor', 'admin', 'accountant']}>
+              <BillingPage />
+            </ProtectedRoute>
+          }
+        />
         <Route
           path="/viewer"
           element={

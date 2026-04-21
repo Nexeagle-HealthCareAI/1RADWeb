@@ -6,6 +6,7 @@ export const ROLES = {
   RECEPTIONIST: 'receptionist',
   TECHNICIAN: 'technician',
   DOCTOR: 'doctor',
+  ACCOUNTANT: 'accountant'
 };
 
 export const ROLE_LABELS = {
@@ -14,6 +15,7 @@ export const ROLE_LABELS = {
   receptionist: 'Intake Coordinator',
   technician: 'Imaging Specialist',
   doctor: 'Diagnostic Consultant',
+  accountant: 'Financial Comptroller'
 };
 
 // Default landing route for each role
@@ -23,9 +25,10 @@ export const ROLE_HOME = {
   receptionist: '/appointment-board',
   technician: '/technician',
   doctor: '/doctor-board',
+  accountant: '/billing',
 };
 
-// Sidebar navigation items
+// Sidebar navigation items with strict RBAC
 export const NAV_ITEMS = [
   {
     label: 'COMMAND CENTER',
@@ -38,21 +41,5 @@ export const NAV_ITEMS = [
     route: '/appointment-board',
     icon: '📡',
     allowedRoles: ['admindoctor', 'admin', 'receptionist'],
-  },
-/*
-  {
-    label: 'SCANNING BAY',
-    route: '/technician',
-    icon: '🧿',
-    allowedRoles: ['admindoctor', 'technician'],
-    isUpcoming: true,
-  },
-  {
-    label: 'DIAGNOSTIC SUITE',
-    route: '/doctor-board',
-    icon: '🧠',
-    allowedRoles: ['admindoctor', 'doctor'],
-    isUpcoming: true,
-  },
-*/
+  }
 ];

@@ -9,12 +9,18 @@ import {
   Alert,
   Modal,
   TextInput,
-  FlatList
+  FlatList,
+  RefreshControl
 } from 'react-native';
 import { useAuth } from '../context/AuthContext';
 import { useAppointments } from '../context/AppointmentContext';
 import apiClient from '../api/apiClient';
 import { COLORS, SPACING, RADIUS, SHADOWS } from '../theme/TacticalTheme';
+import AnimatedStatCard from '../components/AnimatedStatCard';
+import GradientButton from '../components/GradientButton';
+import EmptyState from '../components/EmptyState';
+import BottomNavBar from '../components/BottomNavBar';
+import { LinearGradient } from 'expo-linear-gradient';
 import {
   Shield,
   Users,
@@ -63,6 +69,7 @@ export default function AdminBoardScreen({ navigation }) {
   const [isPersonnelModalOpen, setIsPersonnelModalOpen] = useState(false);
   const [editUser, setEditUser] = useState(null);
   const [showPassword, setShowPassword] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
   
   // Referral Intel state
   const [referralRange, setReferralRange] = useState({ 
@@ -308,6 +315,7 @@ export default function AdminBoardScreen({ navigation }) {
       subtitle: `${confirmedToday} confirmed`,
       icon: Calendar,
       color: COLORS.cyan,
+      gradient: [COLORS.cyan, '#4facfe'],
       trend: '+12%'
     },
     {
@@ -316,6 +324,7 @@ export default function AdminBoardScreen({ navigation }) {
       subtitle: 'Total registry',
       icon: Users,
       color: COLORS.indigo,
+      gradient: [COLORS.indigo, '#a29bfe'],
       trend: '+8%'
     },
     {
@@ -324,6 +333,7 @@ export default function AdminBoardScreen({ navigation }) {
       subtitle: 'On duty',
       icon: UserCheck,
       color: COLORS.gold,
+      gradient: [COLORS.gold, '#ffeaa7'],
       trend: 'Stable'
     },
     {
@@ -332,9 +342,26 @@ export default function AdminBoardScreen({ navigation }) {
       subtitle: 'Require attention',
       icon: AlertTriangle,
       color: COLORS.error,
+      gradient: [COLORS.error, '#ff7675'],
       trend: '-5%'
     }
   ];
+
+  // Pull to refresh handler
+  const onRefresh = useCallback(async () => {
+    setRefreshing(true);
+    try {
+      if (activeTab === 'PERSONNEL') {
+        await fetchPersonnel();
+      } else if (activeTab === 'HOSPITAL') {
+        await fetchHospitalData();
+      }
+    } catch (error) {
+      console.error('[MOBILE ADMIN] Refresh failed:', error);
+    } finally {
+      setRefreshing(false);
+    }
+  }, [activeTab, fetchPersonnel, fetchHospitalData]);
 
   const TabButton = ({ value, label, icon: Icon }) => (
     <TouchableOpacity
@@ -473,7 +500,17 @@ export default function AdminBoardScreen({ navigation }) {
     ];
 
     return (
-      <ScrollView showsVerticalScrollIndicator={false}>
+      <ScrollView 
+        showsVerticalScrollIndicator={false}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={onRefresh}
+            tintColor={COLORS.cyan}
+            colors={[COLORS.cyan]}
+          />
+        }
+      >
         {/* Date Filter Controls */}
         <View style={styles.analyticsFilterContainer}>
           <Text style={styles.analyticsFilterLabel}>GOVERNANCE INTENSITY:</Text>
@@ -487,25 +524,19 @@ export default function AdminBoardScreen({ navigation }) {
           </View>
         </View>
 
-        {/* Primary Statistics Grid */}
+        {/* Primary Statistics Grid - Using AnimatedStatCard */}
         <View style={styles.statsGrid}>
           {stats.map((stat, index) => (
-            <View key={index} style={styles.statCard}>
-              <View style={styles.statHeader}>
-                <View style={[styles.statIconContainer, { backgroundColor: stat.color + '20' }]}>
-                  <stat.icon size={20} color={stat.color} />
-                </View>
-                <Text style={[styles.statTrend, { 
-                  color: stat.trend.includes('+') ? COLORS.success : 
-                         stat.trend.includes('-') ? COLORS.error : COLORS.textSecondary 
-                }]}>
-                  {stat.trend}
-                </Text>
-              </View>
-              <Text style={styles.statValue}>{stat.value}</Text>
-              <Text style={styles.statTitle}>{stat.title}</Text>
-              <Text style={styles.statSubtitle}>{stat.subtitle}</Text>
-            </View>
+            <AnimatedStatCard
+              key={index}
+              title={stat.title}
+              value={stat.value}
+              icon={stat.icon}
+              color={stat.color}
+              gradient={stat.gradient}
+              animated={true}
+              pulse={stat.title === 'URGENT CASES' && stat.value > 0}
+            />
           ))}
         </View>
 
@@ -762,13 +793,12 @@ export default function AdminBoardScreen({ navigation }) {
             Active deployment and credential management for clinical staff
           </Text>
         </View>
-        <TouchableOpacity
-          style={styles.addPersonnelBtn}
+        <GradientButton
+          title="ADD"
+          icon={Plus}
           onPress={() => handleOpenPersonnelModal()}
-        >
-          <Plus size={16} color={COLORS.bgMain} />
-          <Text style={styles.addPersonnelText}>ADD</Text>
-        </TouchableOpacity>
+          size="sm"
+        />
       </View>
 
       {personnelLoading ? (
@@ -776,6 +806,14 @@ export default function AdminBoardScreen({ navigation }) {
           <Activity size={24} color={COLORS.cyan} />
           <Text style={styles.loadingText}>SYNCHRONIZING PERSONNEL...</Text>
         </View>
+      ) : personnel.length === 0 ? (
+        <EmptyState
+          icon={Users}
+          title="NO PERSONNEL DEPLOYED"
+          subtitle="Add medical staff to begin operational management"
+          actionText="ADD FIRST STAFF MEMBER"
+          onAction={() => handleOpenPersonnelModal()}
+        />
       ) : (
         <FlatList
           data={personnel}
@@ -783,6 +821,14 @@ export default function AdminBoardScreen({ navigation }) {
           renderItem={({ item }) => <PersonnelCard person={item} />}
           showsVerticalScrollIndicator={false}
           contentContainerStyle={styles.personnelList}
+          refreshControl={
+            <RefreshControl
+              refreshing={refreshing}
+              onRefresh={onRefresh}
+              tintColor={COLORS.cyan}
+              colors={[COLORS.cyan]}
+            />
+          }
         />
       )}
     </View>
@@ -991,7 +1037,17 @@ export default function AdminBoardScreen({ navigation }) {
     );
   };
   const renderHospital = () => (
-    <ScrollView showsVerticalScrollIndicator={false}>
+    <ScrollView 
+      showsVerticalScrollIndicator={false}
+      refreshControl={
+        <RefreshControl
+          refreshing={refreshing}
+          onRefresh={onRefresh}
+          tintColor={COLORS.cyan}
+          colors={[COLORS.cyan]}
+        />
+      }
+    >
       <View style={styles.hospitalContainer}>
         <View style={styles.hospitalHeader}>
           <Text style={styles.hospitalTitle}>Infrastructure Configuration</Text>
@@ -1081,15 +1137,14 @@ export default function AdminBoardScreen({ navigation }) {
               </View>
             </View>
 
-            <TouchableOpacity
-              style={[styles.saveBtn, savingHospital && styles.saveBtnDisabled]}
+            <GradientButton
+              title={savingHospital ? 'SYNCHRONIZING...' : 'COMMIT CHANGES'}
               onPress={handleSaveHospital}
+              loading={savingHospital}
               disabled={savingHospital}
-            >
-              <Text style={styles.saveBtnText}>
-                {savingHospital ? 'SYNCHRONIZING...' : 'COMMIT CHANGES →'}
-              </Text>
-            </TouchableOpacity>
+              size="lg"
+              style={{ marginTop: SPACING.xl }}
+            />
           </View>
         )}
       </View>
@@ -1098,17 +1153,22 @@ export default function AdminBoardScreen({ navigation }) {
 
   return (
     <View style={styles.container}>
-      {/* Header */}
-      <View style={styles.header}>
-        <View>
-          <Text style={styles.welcomeText}>OPERATIONAL COMMAND</Text>
-          <Text style={styles.adminName}>Administrator: {user?.name}</Text>
+      {/* Header with Gradient */}
+      <LinearGradient
+        colors={['rgba(15, 82, 186, 0.15)', 'rgba(15, 82, 186, 0.05)', 'transparent']}
+        style={styles.headerGradient}
+      >
+        <View style={styles.header}>
+          <View>
+            <Text style={styles.welcomeText}>OPERATIONAL COMMAND</Text>
+            <Text style={styles.adminName}>Administrator: {user?.name}</Text>
+          </View>
+          <View style={styles.statusIndicator}>
+            <View style={styles.statusDot} />
+            <Text style={styles.statusText}>OPERATIONAL</Text>
+          </View>
         </View>
-        <View style={styles.statusIndicator}>
-          <View style={styles.statusDot} />
-          <Text style={styles.statusText}>OPERATIONAL</Text>
-        </View>
-      </View>
+      </LinearGradient>
 
       {/* Tab Navigation */}
       <View style={styles.tabContainer}>
@@ -1287,6 +1347,9 @@ export default function AdminBoardScreen({ navigation }) {
           </View>
         </View>
       </Modal>
+
+      {/* Bottom Navigation Bar */}
+      <BottomNavBar userRole={user?.roles?.[0] || 'admin'} />
     </View>
   );
 }
@@ -1296,11 +1359,14 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: COLORS.bgMain,
   },
+  headerGradient: {
+    paddingTop: SPACING.lg,
+  },
   header: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'flex-start',
-    padding: SPACING.lg,
+    paddingHorizontal: SPACING.lg,
     paddingBottom: SPACING.md,
   },
   welcomeText: {
@@ -1366,55 +1432,13 @@ const styles = StyleSheet.create({
   tabContent: {
     flex: 1,
     paddingHorizontal: SPACING.lg,
+    paddingBottom: 80, // Space for bottom navigation
   },
-  // Intelligence Tab Styles
   statsGrid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
     gap: SPACING.md,
     marginBottom: SPACING.lg,
-  },
-  statCard: {
-    width: (width - SPACING.lg * 2 - SPACING.md) / 2,
-    backgroundColor: COLORS.bgCard,
-    borderRadius: RADIUS.lg,
-    padding: SPACING.md,
-    borderWidth: 1,
-    borderColor: COLORS.border,
-  },
-  statHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: SPACING.sm,
-  },
-  statIconContainer: {
-    width: 32,
-    height: 32,
-    borderRadius: 8,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  statTrend: {
-    fontSize: 9,
-    fontWeight: '700',
-  },
-  statValue: {
-    fontSize: 24,
-    fontWeight: '900',
-    color: COLORS.textPrimary,
-    marginBottom: 4,
-  },
-  statTitle: {
-    fontSize: 8,
-    fontWeight: '700',
-    color: COLORS.textSecondary,
-    letterSpacing: 1,
-  },
-  statSubtitle: {
-    fontSize: 10,
-    color: COLORS.textSecondary,
-    marginTop: 2,
   },
   section: {
     marginBottom: SPACING.lg,
@@ -1474,21 +1498,6 @@ const styles = StyleSheet.create({
     fontSize: 11,
     color: COLORS.textSecondary,
     marginTop: 4,
-  },
-  addPersonnelBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: COLORS.cyan,
-    paddingHorizontal: SPACING.md,
-    paddingVertical: SPACING.sm,
-    borderRadius: RADIUS.md,
-    gap: 6,
-  },
-  addPersonnelText: {
-    fontSize: 11,
-    fontWeight: '900',
-    color: COLORS.bgMain,
-    letterSpacing: 1,
   },
   loadingContainer: {
     flex: 1,
