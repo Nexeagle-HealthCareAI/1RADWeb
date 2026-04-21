@@ -102,7 +102,8 @@ export function AuthProvider({ children }) {
           groupName: h.groupName || h.GroupName || '',
           roles: normalizedRoles,
           role: normalizedRoles[0] || 'viewer',
-          isDefault: h.isDefault || h.IsDefault
+          isDefault: h.isDefault || h.IsDefault,
+          isAutoBillingEnabled: h.isAutoBillingEnabled || h.IsAutoBillingEnabled || false
         };
       });
 
@@ -163,7 +164,8 @@ export function AuthProvider({ children }) {
           name: h.hospitalName || h.HospitalName,
           groupName: h.groupName || h.GroupName || '',
           roles: normalizedRoles,
-          role: normalizedRoles[0] || 'viewer' 
+          role: normalizedRoles[0] || 'viewer',
+          isAutoBillingEnabled: h.isAutoBillingEnabled || h.IsAutoBillingEnabled || false
         };
       });
 
@@ -299,7 +301,8 @@ export function AuthProvider({ children }) {
             groupName: h.groupName || h.GroupName || '',
             roles: normalizedRoles,
             role: normalizedRoles[0] || 'viewer',
-            isDefault: h.isDefault || h.IsDefault
+            isDefault: h.isDefault || h.IsDefault,
+            isAutoBillingEnabled: h.isAutoBillingEnabled || h.IsAutoBillingEnabled || false
           };
         });
 

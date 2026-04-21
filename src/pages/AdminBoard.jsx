@@ -109,13 +109,8 @@ export default function AdminBoard() {
   }, []);
 
   // Hospital Settings State
-  const [hospitalData, setHospitalData] = useState({
-    hospitalName: '',
-    hospitalAddress: '',
-    gstin: '',
-    registrationNumber: '',
-    pan: '',
-    nabhNumber: ''
+    nabhNumber: '',
+    isAutoBillingEnabled: false
   });
   const [mappedHospitals, setMappedHospitals] = useState([]);
   const [viewingHubId, setViewingHubId] = useState(null); // null = show list
@@ -212,7 +207,8 @@ export default function AdminBoard() {
         gstin: res.data.gstin || res.data.GSTIN || '',
         registrationNumber: res.data.registrationNumber || res.data.RegistrationNumber || '',
         pan: res.data.pan || res.data.PAN || '',
-        nabhNumber: res.data.nabhNumber || res.data.NABHNumber || ''
+        nabhNumber: res.data.nabhNumber || res.data.NABHNumber || '',
+        isAutoBillingEnabled: res.data.isAutoBillingEnabled || res.data.IsAutoBillingEnabled || false
       });
       setViewingHubId(hubId);
     } catch (err) {
@@ -424,7 +420,39 @@ export default function AdminBoard() {
     } finally {
       setSavingHospital(false);
     }
+  const handleToggleAutoBill = async () => {
+    const newAutoBill = !billingSettings.autoBill;
+    const targetHubId = activeCenter?.id;
+    if (!targetHubId) return;
+
+    try {
+      const payload = {
+        hospitalName: activeCenter.name,
+        hospitalAddress: activeCenter.address || 'Metadata synchronization active.',
+        gstin: activeCenter.gstin || '',
+        registrationNumber: activeCenter.registrationNumber || '',
+        pan: activeCenter.pan || '',
+        nabhNumber: activeCenter.nabhNumber || '',
+        isAutoBillingEnabled: newAutoBill
+      };
+
+      await apiClient.put(`/hospitals/${targetHubId}`, payload);
+      setBillingSettings(prev => ({ ...prev, autoBill: newAutoBill }));
+      await refreshCenters();
+    } catch (err) {
+      console.error('[FINANCE] Protocol update failed', err);
+      alert('SYSTEM ERROR: Failed to persist billing protocol. Please check institutional connectivity.');
+    }
   };
+
+  useEffect(() => {
+    if (activeCenter) {
+      setBillingSettings(prev => ({
+        ...prev,
+        autoBill: activeCenter.isAutoBillingEnabled || false
+      }));
+    }
+  }, [activeCenter]);
 
   // --- DERIVED DATA ---
   const [subscription, setSubscription] = useState({ 
@@ -1242,7 +1270,7 @@ export default function AdminBoard() {
                     <div style={{ fontSize: '10px', color: '#94a3b8', fontWeight: 600 }}>Create invoice on mission deployment</div>
                  </div>
                  <div 
-                    onClick={() => setBillingSettings(prev => ({ ...prev, autoBill: !prev.autoBill }))}
+                    onClick={handleToggleAutoBill}
                     style={{ 
                       width: '44px', height: '24px', background: billingSettings.autoBill ? '#0f52ba' : '#cbd5e1', 
                       borderRadius: '12px', cursor: 'pointer', position: 'relative', transition: 'all 0.3s' 

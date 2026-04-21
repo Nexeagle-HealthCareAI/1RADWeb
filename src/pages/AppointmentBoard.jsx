@@ -333,9 +333,7 @@ export default function AppointmentBoard() {
 
       // --- AUTO-BILLING TRIGGER (API INTEGRATED) ---
       try {
-        const storedSettings = JSON.parse(localStorage.getItem('1rad_billing_settings') || '{"autoBill":false}');
-        
-        if (storedSettings.autoBill) {
+        if (activeCenter?.isAutoBillingEnabled) {
           const matchedPrice = serviceRegistry.find(p => 
             p.modality === newBooking.modality && 
             p.serviceName.toLowerCase() === newBooking.service.toLowerCase()

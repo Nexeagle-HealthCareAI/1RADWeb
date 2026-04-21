@@ -246,8 +246,8 @@ export default function BillingPage() {
         appointmentId: null,
         items: newInvoiceData.items.map(it => ({
           description: it.description,
-          amount: it.amount,
-          quantity: it.quantity
+          amount: Number(it.amount),
+          quantity: Number(it.quantity)
         }))
       });
       
@@ -257,8 +257,11 @@ export default function BillingPage() {
       setNewInvoiceData({ patientName: '', items: [{ description: '', amount: 0, quantity: 1 }], paymentMethod: 'CASH' });
       fetchInvoices();
       fetchStats();
+      alert('INVOICE GENERATED: Financial record successfully added to ledger.');
     } catch (err) {
       console.error('[FINANCE] Invoice creation failed', err);
+      const errorMsg = err.response?.data?.error || err.response?.data?.message || 'SYSTEM FAILURE: Failed to deploy invoice metadata.';
+      alert(errorMsg);
     }
   };
 
