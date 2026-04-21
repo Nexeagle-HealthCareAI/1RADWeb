@@ -79,46 +79,56 @@ export function AuthProvider({ children }) {
       // Also account for different possible keys (hospitals, hubs, authorizedHubs, authorizedHospitals)
       const hospitals = Array.isArray(data) 
         ? data 
-        : (data.hospitals || data.Hospitals || data.hubs || data.Hubs || data.authorizedHubs || data.AuthorizedHubs || data.authorizedHospitals || data.AuthorizedHospitals || []);
+        : (data.hospitals || data.Hospitals || data.authorizedHospitals || data.AuthorizedHospitals || data.hubs || data.Hubs || data.authorizedHubs || data.AuthorizedHubs || []);
       
       const isSuccess = Array.isArray(data) 
         ? true 
         : (data.success !== undefined ? data.success : (data.Success !== undefined ? data.Success : true));
 
-      if (!isSuccess) {
-        console.error('[AUTH] Hub synchronization failed');
-        return { success: false };
+      if (!isSuccess || (!Array.isArray(data) && !data.hospitals && !data.Hospitals && !data.authorizedHospitals && !data.AuthorizedHospitals && !data.hubs && !data.Hubs && !data.authorizedHubs && !data.AuthorizedHubs)) {
+        console.warn('[AUTH] Hub synchronization returned empty or failed state');
+        // If it failed but we have data in localStorage, don't wipe it
+        if (!isSuccess && centers.length > 0) return { success: false };
       }
 
       const allRoles = [];
-      const mappedCenters = hospitals.map(h => {
+      const mappedCenters = (hospitals || []).map(h => {
+        if (!h) return null;
         const rawRoles = h.roleNames || h.RoleNames || h.roles || h.Roles || (h.roleName || h.RoleName ? (h.roleName || h.RoleName).split(',') : []);
-        const normalizedRoles = rawRoles.map(r => r.trim().toLowerCase()).filter(Boolean);
+        const normalizedRoles = Array.isArray(rawRoles) 
+          ? rawRoles.map(r => String(r).trim().toLowerCase()).filter(Boolean)
+          : [];
+          
         allRoles.push(...normalizedRoles);
         
+        const hId = h.hospitalId || h.HospitalId || h.id || h.Id;
+        if (!hId) return null;
+
         return {
-          id: String(h.hospitalId || h.HospitalId).toLowerCase(),
-          name: h.hospitalName || h.HospitalName,
-          groupName: h.groupName || h.GroupName || '',
+          id: String(hId).toLowerCase(),
+          name: h.hospitalName || h.HospitalName || h.name || h.Name || 'Unnamed Hub',
+          groupName: h.groupName || h.GroupName || h.group || '',
           roles: normalizedRoles,
           role: normalizedRoles[0] || 'viewer',
           isDefault: h.isDefault || h.IsDefault,
           isAutoBillingEnabled: h.isAutoBillingEnabled || h.IsAutoBillingEnabled || false
         };
-      });
+      }).filter(Boolean);
 
-      setCenters(mappedCenters);
-      setCurrentUser(prev => prev ? {
-        ...prev,
-        roles: [...new Set(allRoles)]
-      } : null);
+      if (mappedCenters.length > 0) {
+        setCenters(mappedCenters);
+        setCurrentUser(prev => prev ? {
+          ...prev,
+          roles: [...new Set([...(prev.roles || []), ...allRoles])]
+        } : null);
+      }
 
       return { success: true, centers: mappedCenters };
     } catch (err) {
       console.error('[AUTH] Hub refresh failure', err);
       return { success: false, error: 'Failed to synchronize institutional hubs.' };
     }
-  }, []);
+  }, [centers.length]);
 
   // Synchronize Hub Discovery: Automatically refresh centers list when session starts
   useEffect(() => {

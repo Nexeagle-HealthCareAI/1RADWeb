@@ -60,8 +60,9 @@ export default function AdminBoard() {
   const [isChainDrawerOpen, setIsChainDrawerOpen] = useState(false);
   const [isDeployingChain, setIsDeployingChain] = useState(false);
   const [newChainData, setNewChainData] = useState({ chainName: '', hospitalName: '', hospitalAddress: '' });
-  const [isSwitchingNode, setIsSwitchingNode] = useState(false);
   const [showChainSelector, setShowChainSelector] = useState(false);
+  const [isSwitcherOpen, setIsSwitcherOpen] = useState(false);
+  const [isSwitchingNode, setIsSwitchingNode] = useState(false);
   const [userRegStep, setUserRegStep] = useState(1);
   const [editUser, setEditUser] = useState(null);
   const [selectedDocId, setSelectedDocId] = useState('');
@@ -2039,22 +2040,106 @@ export default function AdminBoard() {
           </div>
         </div>
 
-
+        {/* Institutional Hub Switcher - Relocated from TopNav */}
+        <div className="center-switcher-hud" style={{ position: 'relative' }}>
           <button 
-            onClick={() => setIsChainDrawerOpen(true)}
+            id="center-switcher-btn"
+            className="command-core-btn"
+            onClick={() => setIsSwitcherOpen(!isSwitcherOpen)}
             style={{ 
-              padding: '12px 20px', borderRadius: '16px', background: 'linear-gradient(135deg, #0f52ba 0%, #061a40 100%)', 
-              border: 'none', color: 'white', display: 'flex', gap: '8px', 
-              alignItems: 'center', cursor: 'pointer', transition: 'all 0.2s',
-              fontSize: '10px', fontWeight: 950, letterSpacing: '1px',
-              boxShadow: '0 8px 25px rgba(15, 82, 186, 0.25)'
+              display: 'flex', alignItems: 'center', gap: '12px', padding: '10px 18px', 
+              borderRadius: '14px', background: 'white', border: '1px solid #e2e8f0', 
+              cursor: 'pointer', transition: 'all 0.2s', boxShadow: '0 4px 15px rgba(0,0,0,0.03)' 
             }}
-            onMouseOver={e => { e.currentTarget.style.transform = 'translateY(-2px)'; e.currentTarget.style.boxShadow = '0 12px 30px rgba(15, 82, 186, 0.35)'; }}
-            onMouseOut={e => { e.currentTarget.style.transform = 'translateY(0)'; e.currentTarget.style.boxShadow = '0 8px 25px rgba(15, 82, 186, 0.25)'; }}
           >
-            <span style={{ fontSize: '14px' }}>📡</span> REGISTER NEW CHAIN
+            <div className={isSwitchingNode ? "pulse-loader-mini" : "tactical-node-active"} style={{ width: '10px', height: '10px', borderRadius: '50%', background: isSwitchingNode ? '#f39c12' : '#2ecc71', boxShadow: isSwitchingNode ? '0 0 10px rgba(243, 156, 18, 0.4)' : '0 0 10px rgba(46, 204, 113, 0.4)' }}></div>
+            <div className="hub-identity" style={{ textAlign: 'left', overflow: 'hidden' }}>
+              <div className="hub-label" style={{ fontSize: '7px', fontWeight: 950, color: isSwitchingNode ? '#f39c12' : '#aaa', letterSpacing: '1px', textTransform: 'uppercase' }}>{isSwitchingNode ? 'RECONFIGURING HUB...' : 'DEPLOYED HUB'}</div>
+              <div className="hub-name" style={{ fontSize: '13px', fontWeight: 950, color: '#1a1a2e', whiteSpace: 'nowrap', textOverflow: 'ellipsis', overflow: 'hidden', maxWidth: '180px', opacity: isSwitchingNode ? 0.5 : 1 }}>{activeCenter?.name?.toUpperCase()}</div>
+            </div>
+            <div style={{ fontSize: '10px', color: '#888', transition: 'transform 0.3s', transform: isSwitcherOpen ? 'rotate(180deg)' : 'rotate(0deg)' }}>
+                ▼
+            </div>
           </button>
-          
+
+          {isSwitcherOpen && (
+            <div 
+              id="center-dropdown-menu"
+              className="tactical-hub-dropdown"
+              style={{ 
+                position: 'absolute', top: '100%', left: 0, marginTop: '12px', width: '350px', 
+                zIndex: 1100, background: 'white', borderRadius: '18px', border: '1px solid #e2e8f0', 
+                boxShadow: '0 15px 50px rgba(0,0,0,0.15)', padding: '15px' 
+              }}
+            >
+              <div style={{ padding: '0 5px 12px', fontSize: '10px', fontWeight: 950, color: '#0f52ba', textTransform: 'uppercase', letterSpacing: '2px', borderBottom: '1px solid #f1f5f9', marginBottom: '12px', display: 'flex', justifyContent: 'space-between' }}>
+                <span>AUTHORIZED CLINICAL NODES</span>
+                <span style={{ opacity: 0.5 }}>ACTIVE LIST</span>
+              </div>
+              
+               <div style={{ maxHeight: '300px', overflowY: 'auto', paddingRight: '5px' }}>
+                 {centers.length > 0 ? (
+                   centers.map(center => (
+                     <button
+                       key={center.id}
+                       onClick={async () => { 
+                         const normalizedActiveId = String(activeCenter?.id || '').toLowerCase();
+                         const normalizedTargetId = String(center.id).toLowerCase();
+                         
+                         if (normalizedActiveId === normalizedTargetId || isSwitchingNode) return;
+                         setIsSwitchingNode(true);
+                         const result = await switchCenter(center.id); 
+                         setIsSwitchingNode(false);
+                         setIsSwitcherOpen(false); 
+                         if (result?.success && result.roles) {
+                           window.location.reload(); 
+                         }
+                       }}
+                       className={`hub-option ${activeCenter?.id === center.id ? 'active-hub' : ''}`}
+                       style={{ 
+                         width: '100%', textAlign: 'left', padding: '15px', borderRadius: '14px', 
+                         display: 'flex', alignItems: 'center', gap: '15px', cursor: 'pointer', 
+                         background: activeCenter?.id === center.id ? '#f0f7ff' : 'transparent',
+                         border: activeCenter?.id === center.id ? '1px solid #dbeafe' : '1px solid transparent', 
+                         transition: 'all 0.2s', marginBottom: '6px'
+                       }}
+                     >
+                       <div style={{ 
+                         width: '10px', height: '10px', borderRadius: '50%', 
+                         background: activeCenter?.id === center.id ? '#2ecc71' : 'rgba(0,0,0,0.1)',
+                         boxShadow: activeCenter?.id === center.id ? '0 0 10px rgba(46, 204, 113, 0.3)' : 'none'
+                       }}></div>
+                       <div style={{ flex: 1, overflow: 'hidden' }}>
+                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                           <span style={{ fontSize: '12px', fontWeight: 900, color: '#1e293b', whiteSpace: 'nowrap', textOverflow: 'ellipsis', overflow: 'hidden' }}>{center.name}</span>
+                           {activeCenter?.id === center.id && <span style={{ fontSize: '9px', fontWeight: 950, color: '#2ecc71', letterSpacing: '1px' }}>ACTIVE</span>}
+                         </div>
+                       </div>
+                     </button>
+                   ))
+                 ) : (
+                   <div style={{ padding: '40px 20px', textAlign: 'center' }}>
+                      <div style={{ fontSize: '32px', marginBottom: '15px' }}>🛰️</div>
+                      <div style={{ fontSize: '11px', fontWeight: 950, color: '#64748b', letterSpacing: '1px' }}>No Authorized Nodes</div>
+                   </div>
+                 )}
+               </div>
+            </div>
+          )}
+        </div>
+
+        <button 
+          onClick={() => setIsChainDrawerOpen(true)}
+          style={{ 
+            padding: '12px 20px', borderRadius: '16px', background: 'linear-gradient(135deg, #0f52ba 0%, #061a40 100%)', 
+            border: 'none', color: 'white', display: 'flex', gap: '8px', 
+            alignItems: 'center', cursor: 'pointer', transition: 'all 0.2s',
+            fontSize: '10px', fontWeight: 950, letterSpacing: '1px',
+            boxShadow: '0 8px 25px rgba(15, 82, 186, 0.25)'
+          }}
+        >
+          <span style={{ fontSize: '14px' }}>📡</span> REGISTER NEW CHAIN
+        </button>
       </div>
       
       {/* Hub Controller Navigation */}
