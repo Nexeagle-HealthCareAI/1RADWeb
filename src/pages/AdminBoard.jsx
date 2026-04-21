@@ -108,7 +108,12 @@ export default function AdminBoard() {
     }
   }, []);
 
-  // Hospital Settings State
+  const [hospitalData, setHospitalData] = useState({
+    hospitalName: '',
+    hospitalAddress: '',
+    gstin: '',
+    registrationNumber: '',
+    pan: '',
     nabhNumber: '',
     isAutoBillingEnabled: false
   });
@@ -420,6 +425,8 @@ export default function AdminBoard() {
     } finally {
       setSavingHospital(false);
     }
+  };
+
   const handleToggleAutoBill = async () => {
     const newAutoBill = !billingSettings.autoBill;
     const targetHubId = activeCenter?.id;
