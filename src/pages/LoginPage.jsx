@@ -134,7 +134,7 @@ export default function LoginPage() {
             NEX<span style={{ color: '#00f2fe' }}>EGALE</span>
           </div>
         </div>
-        <div className="immersive-tagline">1Rad Clinical Command</div>
+        <div className="immersive-tagline">Radiology Management System</div>
         
         {/* Tactical Pipeline View */}
         <TacticalWorkflow />
@@ -142,8 +142,8 @@ export default function LoginPage() {
 
       <div className="glass-card">
         <div className="auth-header" style={{ textAlign: 'center', marginBottom: '30px' }}>
-          <h2 className="auth-title" style={{ color: '#fff', fontSize: '24px', fontWeight: 900 }}>CLINICAL COMMAND HUB</h2>
-          <p className="auth-subtitle" style={{ color: 'rgba(255,255,255,0.5)', fontSize: '12px' }}>VERIFY CREDENTIALS TO ENTER THE GRID</p>
+          <h2 className="auth-title" style={{ color: '#fff', fontSize: '24px', fontWeight: 900 }}>Welcome Back</h2>
+          <p className="auth-subtitle" style={{ color: 'rgba(255,255,255,0.5)', fontSize: '12px' }}>Sign in to your account to continue</p>
         </div>
 
         <div className="login-mode-toggle" style={{ display: 'flex', gap: '10px', marginBottom: '25px', padding: '4px', background: 'rgba(255,255,255,0.05)', borderRadius: '10px' }}>
@@ -165,7 +165,7 @@ export default function LoginPage() {
               boxShadow: loginMode === 'password' ? '0 0 15px rgba(0, 242, 254, 0.4)' : 'none'
             }}
           >
-            SECURE KEY
+            Password
           </button>
           <button 
             type="button"
@@ -185,13 +185,13 @@ export default function LoginPage() {
               boxShadow: loginMode === 'otp' ? '0 0 15px rgba(0, 242, 254, 0.4)' : 'none'
             }}
           >
-            ONE-TIME PASS
+            OTP / SMS Code
           </button>
         </div>
 
         <form onSubmit={handleSubmit} className="auth-form">
           <div className="form-group">
-            <label>IDENT CODE (EMAIL/MOBILE)</label>
+            <label>Email or Mobile Number</label>
             <input
               type="text"
               value={identifier}
@@ -205,8 +205,8 @@ export default function LoginPage() {
           {loginMode === 'password' ? (
             <div className="form-group">
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
-                <label>SECURE KEY (PASSWORD)</label>
-                <Link to="/forgot-password" style={{ fontSize: '10px', color: '#00f2fe', textDecoration: 'none', fontWeight: 800 }}>FORGOT KEY?</Link>
+                <label>Password</label>
+                <Link to="/forgot-password" style={{ fontSize: '10px', color: '#00f2fe', textDecoration: 'none', fontWeight: 800 }}>Forgot Password?</Link>
               </div>
               <div style={{ position: 'relative' }}>
                 <input
@@ -228,7 +228,7 @@ export default function LoginPage() {
           ) : (
             otpStep === 'verify' && (
               <div className="form-group animate-in">
-                <label>PASSCODE (6-DIGITS)</label>
+                <label>Enter the 6-digit OTP sent to you</label>
                 <input
                   type="text"
                   maxLength="6"
@@ -239,10 +239,10 @@ export default function LoginPage() {
                   required
                 />
                 <p style={{ fontSize: '10px', color: 'rgba(255,255,255,0.4)', marginTop: '8px', textAlign: 'center' }}>
-                  DIDN'T RECEIVE CODE? {countdown > 0 ? (
-                    <span style={{ color: '#00f2fe', fontWeight: 800 }}>RESEND IN 0:{countdown < 10 ? `0${countdown}` : countdown}</span>
+                  Didn't receive the code? {countdown > 0 ? (
+                    <span style={{ color: '#00f2fe', fontWeight: 800 }}>Resend in 0:{countdown < 10 ? `0${countdown}` : countdown}</span>
                   ) : (
-                    <button type="button" onClick={handleRequestOtp} style={{ background: 'none', border: 'none', color: '#00f2fe', cursor: 'pointer', padding: 0, fontWeight: 800, fontSize: '10px', textDecoration: 'underline' }}>RESEND NOW</button>
+                    <button type="button" onClick={handleRequestOtp} style={{ background: 'none', border: 'none', color: '#00f2fe', cursor: 'pointer', padding: 0, fontWeight: 800, fontSize: '10px', textDecoration: 'underline' }}>Resend OTP</button>
                   )}
                 </p>
               </div>
@@ -281,14 +281,14 @@ export default function LoginPage() {
                     boxShadow: '0 0 10px rgba(0, 242, 254, 0.3)'
                   }}
                 >
-                  INITIALIZE NEW REGISTRATION
+                  Register as a New Centre
                 </button>
               )}
 
               {errorCode === 'ACCOUNT_INACTIVE' && (
                 <p style={{ fontSize: '10px', opacity: 0.8, margin: 0 }}>
-                  ACCOUNT STATE: <span style={{ fontWeight: 800, color: '#00f2fe' }}>{accountStatus?.toUpperCase()}</span>. 
-                  PLEASE WAIT FOR CLINICAL VERIFICATION.
+                  Account Status: <span style={{ fontWeight: 800, color: '#00f2fe' }}>{accountStatus?.toUpperCase()}</span>. 
+                  Please wait for your account to be verified by the administrator.
                 </p>
               )}
             </div>
@@ -313,9 +313,9 @@ export default function LoginPage() {
           )}
 
           <button type="submit" className="btn-primary btn-block gamified-btn" disabled={loading} style={{ marginTop: '10px' }}>
-            {loading ? 'INITIALIZING...' : (
-              loginMode === 'password' ? 'ACCESS THE GRID' : 
-              (otpStep === 'request' ? 'REQUEST PASSCODE' : 'VERIFY & ENTER')
+            {loading ? 'Signing In...' : (
+              loginMode === 'password' ? 'Sign In' : 
+              (otpStep === 'request' ? 'Send OTP' : 'Verify & Sign In')
             )}
           </button>
         </form>
@@ -324,7 +324,7 @@ export default function LoginPage() {
         
         <div className="auth-footer" style={{ textAlign: 'center' }}>
            <p style={{ fontSize: '13px', fontWeight: 600, color: 'rgba(255,255,255,0.7)' }}>
-              NEW CENTER? <Link to="/register" style={{ color: '#00f2fe', textDecoration: 'none', borderBottom: '1px solid #00f2fe' }}>REGISTER FOR 1RAD</Link>
+              New centre? <Link to="/register" style={{ color: '#00f2fe', textDecoration: 'none', borderBottom: '1px solid #00f2fe' }}>Register here</Link>
            </p>
         </div>
       </div>

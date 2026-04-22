@@ -1,0 +1,376 @@
+# 📱 1Rad Mobile App - Navigation Flow
+
+## Current Navigation Architecture (After Dashboard Removal)
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                        APP LAUNCH                                │
+└─────────────────────────────────────────────────────────────────┘
+                              ↓
+┌─────────────────────────────────────────────────────────────────┐
+│                      SPLASH SCREEN                               │
+│                   (Loading & Auth Check)                         │
+└─────────────────────────────────────────────────────────────────┘
+                              ↓
+                    ┌─────────────────┐
+                    │  User Logged In? │
+                    └─────────────────┘
+                       ↓           ↓
+                     NO           YES
+                       ↓           ↓
+        ┌──────────────────┐     │
+        │   AUTH STACK     │     │
+        │  ┌────────────┐  │     │
+        │  │   Login    │  │     │
+        │  └────────────┘  │     │
+        │  ┌────────────┐  │     │
+        │  │  Register  │  │     │
+        │  └────────────┘  │     │
+        │  ┌────────────┐  │     │
+        │  │   Forgot   │  │     │
+        │  │  Password  │  │     │
+        │  └────────────┘  │     │
+        └──────────────────┘     │
+                  ↓               │
+                  └───────────────┘
+                          ↓
+        ┌─────────────────────────────────┐
+        │      ROLE-BASED ROUTING         │
+        │   (getInitialRoute() function)  │
+        └─────────────────────────────────┘
+                          ↓
+        ┌─────────────────────────────────┐
+        │    Check User Roles Array       │
+        └─────────────────────────────────┘
+                          ↓
+        ┌─────────────────────────────────┐
+        │  Has 'admin' or 'admindoctor'?  │
+        └─────────────────────────────────┘
+                ↓                   ↓
+              YES                  NO
+                ↓                   ↓
+    ┌───────────────────┐   ┌──────────────────┐
+    │   ADMIN BOARD     │   │   APPOINTMENTS   │
+    │   (Command Center)│   │  (Mission Board) │
+    └───────────────────┘   └──────────────────┘
+            ↓                        ↓
+    ┌───────────────────┐   ┌──────────────────┐
+    │  Admin Features:  │   │  Appointment     │
+    │  • User Mgmt      │   │  Features:       │
+    │  • Center Mgmt    │   │  • View List     │
+    │  • Reports        │   │  • Create New    │
+    │  • Settings       │   │  • Edit          │
+    │  • Analytics      │   │  • Cancel        │
+    └───────────────────┘   │  • Filter        │
+                            │  • Search        │
+                            └──────────────────┘
+```
+
+---
+
+## Navigation Components
+
+### 1. Drawer Navigation (Side Menu)
+
+```
+┌─────────────────────────────────────┐
+│         DRAWER MENU                 │
+│  ┌───────────────────────────────┐  │
+│  │  1RAD COMMAND v2.0            │  │
+│  └───────────────────────────────┘  │
+│                                     │
+│  ┌───────────────────────────────┐  │
+│  │  🏢 DEPLOYED HUB              │  │
+│  │  [Center Name]                │  │
+│  │  ▼ (Admin only)               │  │
+│  └───────────────────────────────┘  │
+│                                     │
+│  ┌───────────────────────────────┐  │
+│  │  🏢 COMMAND CENTER            │  │ ← Admin only
+│  │     (AdminBoard)              │  │
+│  └───────────────────────────────┘  │
+│                                     │
+│  ┌───────────────────────────────┐  │
+│  │  📡 MISSION SCHEDULER         │  │ ← All roles
+│  │     (Appointments)            │  │
+│  └───────────────────────────────┘  │
+│                                     │
+│  ┌───────────────────────────────┐  │
+│  │  ⏰ 14:30                     │  │
+│  │     Wed, 22 Apr               │  │
+│  └───────────────────────────────┘  │
+│                                     │
+│  ┌───────────────────────────────┐  │
+│  │  🔴 TERMINATE                 │  │
+│  │     (Logout)                  │  │
+│  └───────────────────────────────┘  │
+└─────────────────────────────────────┘
+```
+
+### 2. Bottom Navigation Bar
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                    BOTTOM NAV BAR                           │
+│  ┌──────────┬──────────┬──────────┬──────────┬──────────┐  │
+│  │    📡    │    👥    │    📄    │    🛡️    │          │  │
+│  │ MISSIONS │ REGISTRY │   INTEL  │  ADMIN   │          │  │
+│  │          │          │          │          │          │  │
+│  │ (Appts)  │(Patients)│(Reports) │(AdminBrd)│          │  │
+│  └──────────┴──────────┴──────────┴──────────┴──────────┘  │
+│                                                             │
+│  Visibility based on user role:                            │
+│  • MISSIONS: All roles                                     │
+│  • REGISTRY: Admin, Receptionist, Doctor                   │
+│  • INTEL: Admin, Doctor                                    │
+│  • ADMIN: Admin, AdminDoctor only                          │
+└─────────────────────────────────────────────────────────────┘
+```
+
+---
+
+## User Role Navigation Matrix
+
+| Screen | Admin | AdminDoctor | Receptionist | Doctor | Technician |
+|--------|-------|-------------|--------------|--------|------------|
+| **Initial Screen** | AdminBoard | AdminBoard | Appointments | Appointments | Appointments |
+| AdminBoard | ✅ | ✅ | ❌ | ❌ | ❌ |
+| Appointments | ✅ | ✅ | ✅ | ✅ | ✅ |
+| Create Appointment | ✅ | ✅ | ✅ | ✅ | ✅ |
+| Edit Appointment | ✅ | ✅ | ✅ | ✅ | ✅ |
+| Patients | ✅ | ✅ | ✅ | ✅ | ❌ |
+| Reports | ✅ | ✅ | ❌ | ✅ | ❌ |
+| Dashboard | ❌ | ❌ | ❌ | ❌ | ❌ |
+
+**Legend:**
+- ✅ = Accessible
+- ❌ = Not accessible
+- 🏠 = Initial/Home screen
+
+---
+
+## Appointment Stack Navigation
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                  APPOINTMENT STACK                          │
+└─────────────────────────────────────────────────────────────┘
+                              ↓
+        ┌─────────────────────────────────────┐
+        │     APPOINTMENTS LIST SCREEN        │
+        │  ┌───────────────────────────────┐  │
+        │  │  Filters: All | Scheduled |   │  │
+        │  │  Confirmed | In Progress |    │  │
+        │  │  Completed | Cancelled         │  │
+        │  └───────────────────────────────┘  │
+        │  ┌───────────────────────────────┐  │
+        │  │  [+] NEW APPOINTMENT          │  │
+        │  └───────────────────────────────┘  │
+        │  ┌───────────────────────────────┐  │
+        │  │  Appointment Card 1           │  │
+        │  │  [Edit] [Cancel]              │  │
+        │  └───────────────────────────────┘  │
+        │  ┌───────────────────────────────┐  │
+        │  │  Appointment Card 2           │  │
+        │  │  [Edit] [Cancel]              │  │
+        │  └───────────────────────────────┘  │
+        └─────────────────────────────────────┘
+                ↓                   ↓
+        [+] NEW APPOINTMENT    [Edit] Button
+                ↓                   ↓
+    ┌───────────────────┐   ┌──────────────────┐
+    │  CREATE           │   │  EDIT            │
+    │  APPOINTMENT      │   │  APPOINTMENT     │
+    │  SCREEN           │   │  SCREEN          │
+    │                   │   │                  │
+    │  • Patient Info   │   │  • Update Info   │
+    │  • Service        │   │  • Change Status │
+    │  • Doctor         │   │  • Modify Time   │
+    │  • Date/Time      │   │  • Save Changes  │
+    │  • [CREATE]       │   │  • [UPDATE]      │
+    └───────────────────┘   └──────────────────┘
+                ↓                   ↓
+        ┌─────────────────────────────────┐
+        │   Back to Appointments List     │
+        └─────────────────────────────────┘
+```
+
+---
+
+## Navigation Code Structure
+
+### AppNavigator.js
+```javascript
+RootStack
+├── Splash Screen
+├── Auth Stack
+│   ├── Login
+│   ├── Register
+│   └── Forgot Password
+└── Main Drawer
+    ├── Appointments Stack
+    │   ├── Appointments List
+    │   ├── Create Appointment
+    │   └── Edit Appointment
+    └── AdminBoard
+```
+
+### Role-Based Initial Route Logic
+```javascript
+function getInitialRoute() {
+  const userRoles = user?.roles || [];
+  
+  // Admin users → AdminBoard
+  if (userRoles.some(role => ['admin', 'admindoctor'].includes(role))) {
+    return 'AdminBoard';
+  }
+  
+  // All other users → Appointments
+  return 'Appointments';
+}
+```
+
+---
+
+## Navigation Transitions
+
+### Login → Main App
+```
+Login Screen
+    ↓ (Successful authentication)
+AuthContext.login()
+    ↓ (Set user, token, centers)
+Navigation.navigate('Main')
+    ↓ (Check user roles)
+getInitialRoute()
+    ↓
+Admin? → AdminBoard
+Other? → Appointments
+```
+
+### Screen Switching
+```
+Current Screen
+    ↓
+User taps drawer menu item
+    ↓
+navigation.navigate(screenName)
+    ↓
+New Screen
+```
+
+### Logout Flow
+```
+Current Screen
+    ↓
+User taps TERMINATE
+    ↓
+AuthContext.logout()
+    ↓ (Clear tokens, user data)
+Navigation.reset()
+    ↓
+Login Screen
+```
+
+---
+
+## Removed Navigation (Dashboard)
+
+### Previous Flow (Before Removal)
+```
+Login → Dashboard → Choose Action → Screen
+```
+
+### Current Flow (After Removal)
+```
+Login → Role Check → Direct to Primary Screen
+```
+
+### Benefits
+- ✅ Faster app launch
+- ✅ Fewer taps to reach work screen
+- ✅ Role-optimized experience
+- ✅ Cleaner navigation structure
+
+---
+
+## Navigation State Management
+
+### AuthContext
+```javascript
+{
+  user: {
+    id: string,
+    name: string,
+    email: string,
+    roles: string[]  // Used for routing
+  },
+  token: string,
+  centers: Center[],
+  activeCenter: string
+}
+```
+
+### Navigation State
+```javascript
+{
+  routes: [
+    { name: 'Splash' },
+    { name: 'Main', state: {
+      routes: [
+        { name: 'Appointments' }  // or 'AdminBoard'
+      ]
+    }}
+  ]
+}
+```
+
+---
+
+## Deep Linking (Future Enhancement)
+
+### Potential Deep Links
+```
+1rad://appointments
+1rad://appointments/create
+1rad://appointments/:id/edit
+1rad://admin
+1rad://patients
+1rad://reports
+```
+
+---
+
+## Navigation Performance
+
+### Current Implementation
+- ✅ Stack navigation for appointments (efficient)
+- ✅ Drawer navigation for main screens (standard)
+- ✅ Bottom tabs for quick access (fast)
+- ✅ Role-based filtering (optimized)
+
+### Optimization Opportunities
+- [ ] Lazy load screens
+- [ ] Preload next likely screen
+- [ ] Cache navigation state
+- [ ] Implement navigation analytics
+
+---
+
+## Summary
+
+The navigation architecture has been streamlined to provide:
+
+1. **Role-Based Routing** - Users land on their primary work screen
+2. **Efficient Structure** - Removed unnecessary intermediate screens
+3. **Clear Hierarchy** - Stack → Drawer → Tabs
+4. **Flexible Access** - Multiple ways to reach screens (drawer, bottom nav)
+5. **Maintainable Code** - Clean, modular navigation setup
+
+**Result:** Faster, more intuitive navigation experience tailored to each user role.
+
+---
+
+**Last Updated:** April 22, 2026  
+**Navigation Version:** 2.0 (Dashboard-free)  
+**Status:** ✅ Implemented and Working

@@ -24,13 +24,15 @@ const INFORMATION_SOURCES = [
 ];
 
 const STATUS_META = {
-  scheduled:   { icon: '\u{1F4CB}', label: 'Scheduled', color: '#3498db', bg: '#e8f4fd', glow: 'rgba(52,152,219,0.15)' },
-  booked:      { icon: '\u{1F4CB}', label: 'Booked', color: '#3498db', bg: '#e8f4fd', glow: 'rgba(52,152,219,0.15)' },
-  confirmed:   { icon: '\u{1F4CD}', label: 'Confirmed', color: '#2ecc71', bg: '#e9f7ef', glow: 'rgba(46,204,113,0.15)' },
-  in_progress: { icon: '\u26A1', label: 'In Progress', color: '#f39c12', bg: '#fef9e7', glow: 'rgba(243,156,18,0.15)' },
-  completed:   { icon: '\u2705', label: 'Completed', color: '#27ae60', bg: '#d5f5e3', glow: 'rgba(39,174,96,0.15)' },
-  cancelled:   { icon: '\u26D4', label: 'Cancelled', color: '#e74c3c', bg: '#fdedec', glow: 'rgba(231,76,60,0.15)' },
-  unknown:     { icon: '\u2753', label: 'Unknown', color: '#94a3b8', bg: '#f1f5f9', glow: 'rgba(148,163,184,0.15)' }
+  scheduled:   { icon: '\u{1F4CB}', label: 'EXPECTED', color: '#64748b', bg: '#f1f5f9', glow: 'rgba(100,116,139,0.1)' },
+  booked:      { icon: '\u{1F4CB}', label: 'EXPECTED', color: '#64748b', bg: '#f1f5f9', glow: 'rgba(100,116,139,0.1)' },
+  confirmed:   { icon: '\u26A1', label: 'ARRIVED', color: '#10b981', bg: '#ecfdf5', glow: 'rgba(16,185,129,0.15)' },
+  in_progress: { icon: '\u{1F300}', label: 'SCANNING', color: '#f59e0b', bg: '#fffbeb', glow: 'rgba(245,158,11,0.15)' },
+  completed:   { icon: '\u{1FA7B}', label: 'SCANNED', color: '#0f52ba', bg: '#f0f4ff', glow: 'rgba(15,82,186,0.15)' },
+  scanned:     { icon: '\u{1FA7B}', label: 'SCANNED', color: '#0f52ba', bg: '#f0f4ff', glow: 'rgba(15,82,186,0.15)' },
+  reported:    { icon: '\u{1F4DC}', label: 'REPORTED', color: '#8b5cf6', bg: '#f5f3ff', glow: 'rgba(139,92,246,0.15)' },
+  cancelled:   { icon: '\u26D4', label: 'CANCELLED', color: '#ef4444', bg: '#fef2f2', glow: 'rgba(239,68,68,0.15)' },
+  unknown:     { icon: '\u2753', label: 'UNKNOWN', color: '#94a3b8', bg: '#f8fafc', glow: 'rgba(148,163,184,0.1)' }
 };
 
 const MODALITY_ICONS = {
@@ -189,6 +191,8 @@ export default function AppointmentBoard() {
 
   useEffect(() => {
     fetchAppointments();
+    const interval = setInterval(fetchAppointments, 30000); // 30s Real-time Heartbeat
+    return () => clearInterval(interval);
   }, [fetchAppointments, activeCenterId, activeTab]);
 
   useEffect(() => {
@@ -304,9 +308,10 @@ export default function AppointmentBoard() {
 
   const getNextAction = (status) => {
     switch (status) {
-      case 'scheduled': return { action: 'CONFIRM', label: 'CONFIRM', icon: '\u{1F4CD}', color: '#2ecc71' };
-      case 'confirmed': return { action: 'START', label: 'BEGIN SCAN', icon: '\u26A1', color: '#f39c12' };
-      case 'in_progress': return { action: 'COMPLETE', label: 'FINALIZE', icon: '\u2705', color: '#27ae60' };
+      case 'scheduled': return { action: 'CONFIRM', label: 'MARK ARRIVED', icon: '\u26A1', color: '#10b981' };
+      case 'booked':    return { action: 'CONFIRM', label: 'MARK ARRIVED', icon: '\u26A1', color: '#10b981' };
+      case 'confirmed': return { action: 'START', label: 'BEGIN SCAN', icon: '\u{1F300}', color: '#f59e0b' };
+      case 'in_progress': return { action: 'COMPLETE', label: 'FINALIZE SCAN', icon: '\u{1FA7B}', color: '#0f52ba' };
       default: return null;
     }
   };

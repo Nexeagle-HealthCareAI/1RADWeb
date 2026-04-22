@@ -47,5 +47,23 @@ export const NAV_ITEMS = [
     route: '/billing',
     icon: '💳',
     allowedRoles: ['admindoctor', 'admin', 'accountant'],
+  },
+  {
+    label: 'SCANNING BAY',
+    route: '/technician',
+    icon: '🩻',
+    allowedRoles: ['admindoctor', 'admin', 'technician'],
+  },
+  {
+    label: 'DOCTOR BOARD',
+    route: '/doctor-board',
+    icon: '👨‍⚕️',
+    allowedRoles: ['admindoctor', 'doctor'],
+  },
+  {
+    label: 'SETTINGS',
+    route: '/settings',
+    icon: '⚙️',
+    allowedRoles: ['admindoctor', 'admin', 'receptionist', 'technician', 'doctor', 'accountant'],
   }
 ];

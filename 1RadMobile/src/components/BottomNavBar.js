@@ -4,60 +4,59 @@ import { useNavigation, useRoute } from '@react-navigation/native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { COLORS, SPACING, RADIUS, SHADOWS } from '../theme/TacticalTheme';
 import {
-  LayoutDashboard,
-  Calendar,
-  Users,
-  FileText,
   Shield,
-  Settings
+  Calendar,
+  DollarSign,
+  Scan,
+  Stethoscope
 } from 'lucide-react-native';
 
 export default function BottomNavBar({ userRole = 'doctor' }) {
   const navigation = useNavigation();
   const route = useRoute();
 
-  // Define navigation items based on role
+  // Define navigation items - 5 fixed tabs for all users
   const getNavItems = () => {
     const baseItems = [
       {
-        name: 'Dashboard',
-        label: 'COMMAND',
-        icon: LayoutDashboard,
-        route: 'Dashboard',
-        roles: ['doctor', 'admindoctor', 'admin', 'technician', 'receptionist']
+        name: 'AdminBoard',
+        label: 'COMMAND\nCENTRE',
+        icon: Shield,
+        route: 'AdminBoard',
+        roles: ['admindoctor', 'admin', 'receptionist', 'doctor', 'technician']
       },
       {
         name: 'Appointments',
-        label: 'MISSIONS',
+        label: 'MISSION\nSCHEDULER',
         icon: Calendar,
         route: 'Appointments',
-        roles: ['doctor', 'admindoctor', 'admin', 'technician', 'receptionist']
+        roles: ['admindoctor', 'admin', 'receptionist', 'doctor', 'technician']
       },
       {
-        name: 'Patients',
-        label: 'REGISTRY',
-        icon: Users,
-        route: 'Patients',
-        roles: ['doctor', 'admindoctor', 'admin', 'receptionist']
+        name: 'Finance',
+        label: 'FINANCE',
+        icon: DollarSign,
+        route: 'Finance',
+        roles: ['admindoctor', 'admin', 'receptionist', 'doctor', 'technician']
       },
       {
-        name: 'Reports',
-        label: 'INTEL',
-        icon: FileText,
-        route: 'Reports',
-        roles: ['doctor', 'admindoctor', 'admin']
+        name: 'ScanningBay',
+        label: 'SCANNING\nBAY',
+        icon: Scan,
+        route: 'ScanningBay',
+        roles: ['admindoctor', 'admin', 'receptionist', 'doctor', 'technician']
       },
       {
-        name: 'AdminBoard',
-        label: 'ADMIN',
-        icon: Shield,
-        route: 'AdminBoard',
-        roles: ['admindoctor', 'admin']
+        name: 'Doctor',
+        label: 'DOCTOR',
+        icon: Stethoscope,
+        route: 'Doctor',
+        roles: ['admindoctor', 'admin', 'receptionist', 'doctor', 'technician']
       }
     ];
 
-    // Filter items based on user role
-    return baseItems.filter(item => item.roles.includes(userRole));
+    // Show all items to all users
+    return baseItems;
   };
 
   const navItems = getNavItems();
@@ -101,7 +100,7 @@ export default function BottomNavBar({ userRole = 'doctor' }) {
                   isActive && styles.iconContainerActive
                 ]}>
                   <Icon 
-                    size={20} 
+                    size={18} 
                     color={isActive ? COLORS.cyan : COLORS.textSecondary} 
                     strokeWidth={isActive ? 2.5 : 2}
                   />
@@ -164,22 +163,23 @@ const styles = StyleSheet.create({
     borderRadius: 2,
   },
   iconContainer: {
-    width: 40,
-    height: 40,
+    width: 36,
+    height: 36,
     alignItems: 'center',
     justifyContent: 'center',
-    borderRadius: 12,
-    marginBottom: 4,
+    borderRadius: 10,
+    marginBottom: 2,
   },
   iconContainerActive: {
     backgroundColor: 'rgba(0, 242, 254, 0.1)',
   },
   label: {
-    fontSize: 9,
+    fontSize: 7,
     fontWeight: '800',
     color: COLORS.textSecondary,
-    letterSpacing: 0.5,
+    letterSpacing: 0.3,
     textAlign: 'center',
+    lineHeight: 10,
   },
   labelActive: {
     color: COLORS.cyan,
