@@ -45,10 +45,15 @@ stages:
       displayName: npm ci & build
 
     # Deploy to Azure Static Web Apps
+    # skip_app_build: true  -> We already ran `npm run build` above, so we hand
+    # the pre-built `dist` folder directly to the SWA action.  This avoids the
+    # Oryx internal file-scan/compression phase that was timing out (>600 s)
+    # because the repo root contains 100+ large .md files & 1RadMobile dir.
     - task: AzureStaticWebApp@0
       displayName: Deploy to Azure Static Web Apps
       inputs:
-        app_location: '.'                            # React app root (repo root)
-        output_location: 'dist'                      # Vite build output folder
-        api_location: ''                             # leave empty if you don't have an API
+        app_location: 'dist'                         # hand pre-built output directly
+        output_location: ''                          # already built; nothing more to output
+        api_location: ''                             # no API project
+        skip_app_build: true                         # skip Oryx build & repo scan
         azure_static_web_apps_api_token: '63267714dcea289a5d17b2d9f8758cf2ea3a6346a7758d78c822af846803efe601-ac25efd2-8938-4c37-8d4e-c7d5dddc25ca0000326058a09500'
