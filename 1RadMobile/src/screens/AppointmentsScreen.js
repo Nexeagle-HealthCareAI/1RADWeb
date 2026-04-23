@@ -70,7 +70,23 @@ const MODALITY_ICONS = {
 
 export default function AppointmentsScreen({ navigation }) {
   const { user } = useAuth();
-  const { appointments, patients, doctors, updateAppointment, deleteAppointment } = useAppointments();
+  const appointmentContext = useAppointments();
+  
+  // Add safety check for context
+  if (!appointmentContext) {
+    return (
+      <View style={styles.container}>
+        <View style={styles.errorContainer}>
+          <AlertCircle size={48} color={COLORS.error} />
+          <Text style={styles.errorText}>Unable to load appointments</Text>
+          <Text style={styles.errorSubtext}>Please restart the app</Text>
+        </View>
+        <BottomNavBar userRole={user?.roles?.[0] || 'doctor'} />
+      </View>
+    );
+  }
+  
+  const { appointments = [], patients = [], doctors = [], updateAppointment, deleteAppointment } = appointmentContext;
   const { width } = useWindowDimensions();
   
   // State management matching web version
@@ -160,28 +176,39 @@ export default function AppointmentsScreen({ navigation }) {
 
   // Transform appointments to match web format
   const transformedAppointments = useMemo(() => {
+    // Safety check - ensure appointments is an array
+    if (!Array.isArray(appointments)) {
+      console.warn('[APPOINTMENTS] appointments is not an array:', appointments);
+      return [];
+    }
+    
     return appointments.map(apt => {
-      const dt = new Date(apt.dateTime);
-      return {
-        id: apt.appointmentId,
-        appointmentId: apt.appointmentId,
-        patientName: apt.patientName,
-        patientId: apt.patientId,
-        mobile: patients.find(p => p.id === apt.patientId)?.phone || 'N/A',
-        patientAge: 'N/A', // Update if DTO includes age
-        patientGender: 'N/A', // Update if DTO includes gender
-        status: apt.status.toLowerCase(), // Ensure lowercase for consistency
-        modality: apt.modality || 'X-RAY',
-        service: apt.service,
-        doctor: apt.doctor,
-        referredBy: 'N/A',
-        referredContact: 'N/A',
-        notes: apt.notes || '',
-        date: dt.toLocaleDateString('en-US', { year: 'numeric', month: '2-digit', day: '2-digit' }),
-        time: dt.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true }),
-        priority: 'medium'
-      };
-    });
+      try {
+        const dt = new Date(apt.dateTime);
+        return {
+          id: apt.appointmentId,
+          appointmentId: apt.appointmentId,
+          patientName: apt.patientName || 'Unknown Patient',
+          patientId: apt.patientId,
+          mobile: patients.find(p => p.id === apt.patientId)?.phone || 'N/A',
+          patientAge: 'N/A', // Update if DTO includes age
+          patientGender: 'N/A', // Update if DTO includes gender
+          status: (apt.status || 'scheduled').toLowerCase(), // Ensure lowercase for consistency
+          modality: apt.modality || 'X-RAY',
+          service: apt.service || 'General Service',
+          doctor: apt.doctor || 'Unassigned',
+          referredBy: 'N/A',
+          referredContact: 'N/A',
+          notes: apt.notes || '',
+          date: dt.toLocaleDateString('en-US', { year: 'numeric', month: '2-digit', day: '2-digit' }),
+          time: dt.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true }),
+          priority: 'medium'
+        };
+      } catch (error) {
+        console.error('[APPOINTMENTS] Error transforming appointment:', apt, error);
+        return null;
+      }
+    }).filter(Boolean); // Remove any null entries from errors
   }, [appointments, patients]);
 
   // Statistics calculation
@@ -1400,21 +1427,25 @@ const styles = StyleSheet.create({
     paddingHorizontal: SPACING.lg,
     marginBottom: SPACING.md,
   },
+  // Search Bar - IMPROVED
   searchBar: {
     flexDirection: 'row',
     alignItems: 'center',
     backgroundColor: COLORS.bgCard,
-    borderRadius: RADIUS.md,
-    paddingHorizontal: SPACING.md,
-    paddingVertical: SPACING.sm,
-    borderWidth: 1,
+    borderRadius: 14,
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+    borderWidth: 1.5,
     borderColor: COLORS.border,
+    marginBottom: 16,
+    minHeight: 50, // Better touch target
   },
   searchInput: {
     flex: 1,
-    marginLeft: SPACING.sm,
+    marginLeft: 12,
     color: COLORS.textPrimary,
-    fontSize: 14,
+    fontSize: 15,
+    fontWeight: '600',
   },
   filtersContainer: {
     paddingHorizontal: SPACING.lg,
@@ -1476,13 +1507,13 @@ const styles = StyleSheet.create({
   },
   appointmentContent: {
     flex: 1,
-    padding: SPACING.md,
+    padding: 18, // Increased padding for better spacing
   },
   appointmentHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'flex-start',
-    marginBottom: SPACING.sm,
+    marginBottom: 14, // Increased spacing
   },
   patientInfo: {
     flex: 1,
@@ -1509,82 +1540,101 @@ const styles = StyleSheet.create({
     letterSpacing: 1,
   },
   appointmentDetails: {
-    marginBottom: SPACING.md,
-  },
-  detailRow: {
     flexDirection: 'row',
-    alignItems: 'center',
+    gap: 16,
+    marginBottom: 16, // Increased spacing
+    paddingTop: 12,
+    borderTopWidth: 1,
+    borderTopColor: COLORS.border + '40',
+  },
+  detailItem: {
+    flex: 1,
+  },
+  detailLabel: {
+    fontSize: 10,
+    fontWeight: '800',
+    color: COLORS.textSecondary,
+    textTransform: 'uppercase',
+    letterSpacing: 0.8,
     marginBottom: 4,
   },
-  detailText: {
-    fontSize: 12,
-    color: COLORS.textSecondary,
-    marginLeft: 6,
-  },
-  appointmentType: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: COLORS.cyan,
-    marginTop: 4,
-  },
-  appointmentNotes: {
-    fontSize: 11,
-    color: COLORS.textSecondary,
-    marginTop: 4,
-    fontStyle: 'italic',
+  detailValue: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: COLORS.textPrimary,
+    lineHeight: 18,
   },
   actionButtons: {
     flexDirection: 'row',
-    gap: SPACING.sm,
+    gap: 10,
+    alignItems: 'center',
   },
   actionBtn: {
+    flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: SPACING.sm,
-    paddingVertical: 6,
-    borderRadius: RADIUS.sm,
-    borderWidth: 1,
-  },
-  confirmBtn: {
-    borderColor: COLORS.success + '40',
-    backgroundColor: COLORS.success + '10',
-  },
-  editBtn: {
-    borderColor: COLORS.cyan + '40',
-    backgroundColor: COLORS.cyan + '10',
-  },
-  deleteBtn: {
-    borderColor: COLORS.error + '40',
-    backgroundColor: COLORS.error + '10',
+    justifyContent: 'center',
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    borderRadius: 12,
+    minHeight: 40, // Better touch target
   },
   actionBtnText: {
-    fontSize: 9,
-    fontWeight: '700',
-    marginLeft: 4,
+    fontSize: 11,
+    fontWeight: '800',
+    color: '#fff',
     letterSpacing: 0.5,
   },
+  actionBtnIcon: {
+    fontSize: 14,
+    marginRight: 6,
+  },
+  printBtn: {
+    width: 40,
+    height: 40,
+    borderRadius: 12,
+    backgroundColor: 'rgba(0, 242, 254, 0.1)',
+    borderWidth: 1.5,
+    borderColor: 'rgba(0, 242, 254, 0.3)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  cancelBtn: {
+    width: 40,
+    height: 40,
+    borderRadius: 12,
+    backgroundColor: 'rgba(231, 76, 60, 0.1)',
+    borderWidth: 1.5,
+    borderColor: 'rgba(231, 76, 60, 0.3)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  expandIcon: {
+    marginLeft: 8,
+  },
 
-  // Header Styles
+  // Header Styles - IMPROVED
   headerTitleRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: 6,
+    marginBottom: 8,
   },
   headerIcon: {
-    fontSize: 24,
-    marginRight: 12,
+    fontSize: 28,
+    marginRight: 10,
   },
   headerTitle: {
-    fontSize: 22,
+    fontSize: 24,
     fontWeight: '900',
     color: COLORS.textPrimary,
-    letterSpacing: -0.5,
+    letterSpacing: 0.5,
   },
   headerSubtitle: {
-    fontSize: 12,
+    fontSize: 13,
     color: COLORS.textSecondary,
     fontWeight: '600',
-    marginLeft: 36,
+    marginLeft: 38,
+    lineHeight: 18,
   },
   liveIndicator: {
     color: COLORS.success,
@@ -1712,27 +1762,28 @@ const styles = StyleSheet.create({
     marginHorizontal: 12,
   },
 
-  // Filter Styles
+  // Filter Styles - IMPROVED for better touch targets
   filterContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: 24,
+    marginBottom: 20,
     flexWrap: 'wrap',
-    gap: 12,
+    gap: 10,
   },
   filterSelect: {
     flexDirection: 'row',
     alignItems: 'center',
     backgroundColor: COLORS.bgCard,
-    borderWidth: 1,
+    borderWidth: 1.5,
     borderColor: COLORS.border,
-    borderRadius: 12,
-    paddingHorizontal: 16,
-    paddingVertical: 10,
-    minWidth: 160,
+    borderRadius: 14,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    minWidth: 140,
+    minHeight: 44, // Better touch target
   },
   filterSelectText: {
-    fontSize: 12,
+    fontSize: 13,
     fontWeight: '700',
     color: COLORS.textPrimary,
     flex: 1,
@@ -1740,18 +1791,20 @@ const styles = StyleSheet.create({
   clearFiltersBtn: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#fff5f5',
-    borderWidth: 1,
-    borderColor: '#fecaca',
-    borderRadius: 12,
-    paddingHorizontal: 16,
-    paddingVertical: 10,
+    backgroundColor: 'rgba(231, 76, 60, 0.1)',
+    borderWidth: 1.5,
+    borderColor: 'rgba(231, 76, 60, 0.3)',
+    borderRadius: 14,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    minHeight: 44, // Better touch target
   },
   clearFiltersText: {
     fontSize: 11,
     fontWeight: '800',
     color: COLORS.error,
     marginLeft: 6,
+    letterSpacing: 0.5,
   },
 
   // Appointments Section
@@ -1785,21 +1838,22 @@ const styles = StyleSheet.create({
     letterSpacing: 1,
   },
 
-  // Appointment Row Styles
+  // Appointment Row Styles - IMPROVED with better spacing and readability
   appointmentRowContainer: {
-    marginBottom: 10,
+    marginBottom: 14,
   },
   appointmentRow: {
     backgroundColor: COLORS.bgCard,
-    borderRadius: 14,
-    borderWidth: 1,
+    borderRadius: 16,
+    borderWidth: 1.5,
     borderColor: COLORS.border,
     position: 'relative',
     overflow: 'hidden',
+    ...SHADOWS.md,
   },
   appointmentRowExpanded: {
-    backgroundColor: '#fafbff',
-    borderColor: '#c5d5f0',
+    backgroundColor: 'rgba(0, 242, 254, 0.03)',
+    borderColor: COLORS.cyan + '40',
     borderBottomWidth: 0,
     borderBottomLeftRadius: 0,
     borderBottomRightRadius: 0,
@@ -1809,7 +1863,7 @@ const styles = StyleSheet.create({
     left: 0,
     top: 0,
     bottom: 0,
-    width: 4,
+    width: 5,
     borderTopLeftRadius: 4,
     borderBottomLeftRadius: 4,
   },
@@ -1818,16 +1872,25 @@ const styles = StyleSheet.create({
   },
   appointmentId: {
     fontSize: 11,
-    fontWeight: '900',
-    color: COLORS.textSecondary,
+    fontWeight: '800',
+    color: COLORS.cyan,
     fontFamily: 'monospace',
+    marginBottom: 6,
+    letterSpacing: 0.5,
+  },
+  patientName: {
+    fontSize: 17,
+    fontWeight: '800',
+    color: COLORS.textPrimary,
     marginBottom: 4,
+    lineHeight: 22,
   },
   patientDetails: {
-    fontSize: 10,
+    fontSize: 12,
     color: COLORS.textSecondary,
     fontWeight: '600',
     marginTop: 2,
+    lineHeight: 16,
   },
   appointmentMeta: {
     alignItems: 'flex-end',
@@ -1835,14 +1898,19 @@ const styles = StyleSheet.create({
   statusBadge: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: 8,
-    paddingVertical: 4,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
     borderRadius: 20,
-    borderWidth: 1,
+    borderWidth: 1.5,
   },
   statusEmoji: {
-    fontSize: 10,
-    marginRight: 5,
+    fontSize: 12,
+    marginRight: 6,
+  },
+  statusText: {
+    fontSize: 11,
+    fontWeight: '800',
+    letterSpacing: 0.5,
   },
   detailItem: {
     flex: 1,
@@ -1888,47 +1956,65 @@ const styles = StyleSheet.create({
     marginLeft: 4,
   },
 
-  // Expanded Details
+  // Expanded Details - IMPROVED
   expandedDetails: {
-    backgroundColor: '#fafbff',
-    borderRadius: 14,
+    backgroundColor: 'rgba(0, 242, 254, 0.03)',
+    borderRadius: 16,
     borderTopLeftRadius: 0,
     borderTopRightRadius: 0,
-    borderWidth: 1,
-    borderColor: '#c5d5f0',
+    borderWidth: 1.5,
+    borderColor: COLORS.cyan + '40',
     borderTopWidth: 0,
     padding: 20,
   },
   statusPipeline: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: 20,
+    justifyContent: 'space-between',
+    marginBottom: 24,
+    paddingHorizontal: 10,
   },
   pipelineStep: {
-    flexDirection: 'row',
     alignItems: 'center',
+    flex: 1,
   },
   pipelineIcon: {
-    borderRadius: 16,
+    borderRadius: 20,
     alignItems: 'center',
     justifyContent: 'center',
+    marginBottom: 8,
   },
   pipelineIconText: {
     fontWeight: '900',
   },
+  pipelineLabel: {
+    fontSize: 9,
+    fontWeight: '700',
+    color: COLORS.textSecondary,
+    textAlign: 'center',
+    marginTop: 4,
+  },
   pipelineConnector: {
-    width: 24,
+    position: 'absolute',
+    top: 16,
+    left: '50%',
+    right: '-50%',
     height: 2,
-    borderRadius: 1,
-    marginHorizontal: 6,
+    backgroundColor: COLORS.border,
   },
   additionalDetails: {
-    marginTop: 16,
+    backgroundColor: COLORS.bgCard,
+    borderRadius: 12,
+    padding: 16,
+    borderWidth: 1,
+    borderColor: COLORS.border,
   },
   additionalDetailText: {
-    fontSize: 12,
-    color: COLORS.textSecondary,
-    marginBottom: 4,
+    fontSize: 13,
+    color: COLORS.textPrimary,
+    marginBottom: 8,
+    lineHeight: 20,
+    fontWeight: '600',
   },
 
   // Empty State
@@ -2486,16 +2572,82 @@ const styles = StyleSheet.create({
     paddingVertical: 16,
     borderRadius: 12,
     alignItems: 'center',
-    ...SHADOWS.cyan,
   },
   bookingNextBtnDisabled: {
     backgroundColor: COLORS.border,
-    ...SHADOWS.none,
+    opacity: 0.5,
   },
   bookingNextBtnText: {
     fontSize: 12,
     fontWeight: '900',
-    color: COLORS.bgCard,
+    color: COLORS.bgMain,
+    letterSpacing: 1,
+  },
+
+  // Loading Overlay
+  loadingOverlay: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: 'rgba(0, 0, 0, 0.7)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    zIndex: 9999,
+  },
+  loadingContainer: {
+    backgroundColor: COLORS.bgCard,
+    padding: 30,
+    borderRadius: 16,
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: COLORS.border,
+  },
+  loadingText: {
+    marginTop: 16,
+    fontSize: 14,
+    fontWeight: '700',
+    color: COLORS.textPrimary,
+  },
+
+  // Error Container
+  errorContainer: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 40,
+  },
+  errorText: {
+    fontSize: 18,
+    fontWeight: '900',
+    color: COLORS.error,
+    marginTop: 20,
+    textAlign: 'center',
+  },
+  errorSubtext: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: COLORS.textSecondary,
+    marginTop: 10,
+    textAlign: 'center',
+  },
+  bookingNextBtn: {
+    flex: 2,
+    backgroundColor: COLORS.cyan,
+    paddingVertical: 16,
+    borderRadius: 12,
+    alignItems: 'center',
+    ...SHADOWS.cyan,
+  },
+  bookingNextBtnDisabled: {
+    backgroundColor: COLORS.border,
+    opacity: 0.5,
+  },
+  bookingNextBtnText: {
+    fontSize: 12,
+    fontWeight: '900',
+    color: COLORS.bgMain,
     letterSpacing: 1,
   },
 });

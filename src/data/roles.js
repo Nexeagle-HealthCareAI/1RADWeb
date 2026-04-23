@@ -59,11 +59,5 @@ export const NAV_ITEMS = [
     route: '/doctor-board',
     icon: '👨‍⚕️',
     allowedRoles: ['admindoctor', 'doctor'],
-  },
-  {
-    label: 'SETTINGS',
-    route: '/settings',
-    icon: '⚙️',
-    allowedRoles: ['admindoctor', 'admin', 'receptionist', 'technician', 'doctor', 'accountant'],
   }
 ];

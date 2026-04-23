@@ -14,7 +14,7 @@ import DoctorBoard from '../pages/DoctorBoard';
 import AdminBoard from '../pages/AdminBoard';
 import ViewerPage from '../pages/ViewerPage';
 import BillingPage from '../pages/BillingPage';
-import SettingsPage from '../pages/SettingsPage';
+import ReportingPage from '../pages/ReportingPage';
 
 function RootRedirect() {
   const { currentUser } = useAuth();
@@ -97,10 +97,10 @@ export default function AppRouter() {
           }
         />
         <Route
-          path="/settings"
+          path="/reporting"
           element={
-            <ProtectedRoute allowedRoles={['admindoctor', 'admin', 'receptionist', 'technician', 'doctor', 'accountant']}>
-              <SettingsPage />
+            <ProtectedRoute allowedRoles={['admindoctor', 'doctor']}>
+              <ReportingPage />
             </ProtectedRoute>
           }
         />

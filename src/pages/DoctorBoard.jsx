@@ -1,5 +1,7 @@
-import { useState, useMemo, useEffect, useCallback } from 'react';
+import { useState, useMemo, useEffect, useCallback, useRef } from 'react';
+import dicomParser from 'dicom-parser';
 import apiClient from '../api/apiClient';
+import SimpleDicomViewer from '../components/SimpleDicomViewer';
 import '../styles/global.css';
 
 const MODALITY_ICONS = {
@@ -10,6 +12,8 @@ const MODALITY_ICONS = {
   'DEXA': '🦴',
   'MAMMOGRAPHY': '🎀'
 };
+
+// Legacy DicomPreview removed in favor of AdvancedDicomViewer
 
 const TEMPLATES = {
   'NORMAL CHEST': { findings: 'The heart and mediastinal silhouettes are normal. Lungs are clear. No pleural effusion or pneumothorax.', impression: 'NORMAL CHEST X-RAY.' },
@@ -22,6 +26,8 @@ export default function DoctorBoard() {
   const [loading, setLoading] = useState(false);
   const [view, setView] = useState('QUEUE'); // 'QUEUE', 'WORKSPACE', or 'HISTORY'
   const [activeCase, setActiveCase] = useState(null);
+  const [loadedDicom, setLoadedDicom] = useState(null);
+  const [isDicomImage, setIsDicomImage] = useState(false);
   
   // Reporting State
   const [report, setReport] = useState({ history: '', findings: '', impression: '', advice: '', technique: '' });
@@ -31,7 +37,7 @@ export default function DoctorBoard() {
 
   // Filters
   const [search, setSearch] = useState('');
-  const [modalityFilter, setModalityFilter] = useState('ALL');
+  const [filters, setFilters] = useState({ modality: 'ALL', priority: 'ALL', clinicalStatus: 'ALL' });
 
   const TODAY = new Date().toISOString().split('T')[0];
 
@@ -75,22 +81,30 @@ export default function DoctorBoard() {
   const filteredCases = useMemo(() => {
     return cases.filter(c => {
       const matchesSearch = c.patientName.toLowerCase().includes(search.toLowerCase()) || c.id.toLowerCase().includes(search.toLowerCase());
-      const matchesModality = modalityFilter === 'ALL' || c.modality === modalityFilter;
+      const matchesModality = filters.modality === 'ALL' || c.modality === filters.modality;
+      const matchesPriority = filters.priority === 'ALL' || c.priority === filters.priority;
       
       const status = c.status?.toLowerCase();
+      const matchesStatus = filters.clinicalStatus === 'ALL' || status === filters.clinicalStatus.toLowerCase();
+
       if (view === 'QUEUE') {
-        return matchesSearch && matchesModality && (c.isToday || ['scanned', 'reporting'].includes(status)) && ['scheduled', 'confirmed', 'in_progress', 'scanned', 'reporting', 'booked'].includes(status);
+        return matchesSearch && matchesModality && matchesPriority && matchesStatus && (c.isToday || ['scanned', 'reporting'].includes(status)) && ['scheduled', 'confirmed', 'in_progress', 'scanned', 'reporting', 'booked'].includes(status);
       } else {
-        return matchesSearch && matchesModality && (status === 'reported' || !c.isToday);
+        return matchesSearch && matchesModality && matchesPriority && matchesStatus && (status === 'reported' || !c.isToday);
       }
     });
-  }, [cases, search, modalityFilter, view, TODAY]);
+  }, [cases, search, filters, view, TODAY]);
 
   const stats = {
     pendingReports: cases.filter(c => ['scanned', 'reporting'].includes(c.status?.toLowerCase())).length,
     drafts: cases.filter(c => c.status?.toLowerCase() === 'reporting').length,
     finalizedToday: cases.filter(c => c.status?.toLowerCase() === 'reported' && c.isToday).length,
-    upcoming: cases.filter(c => c.isToday && ['scheduled', 'confirmed', 'in_progress', 'booked'].includes(c.status?.toLowerCase())).length
+    upcoming: cases.filter(c => c.isToday && ['scheduled', 'confirmed', 'in_progress', 'booked'].includes(c.status?.toLowerCase())).length,
+    // Archive Stats
+    archiveTotal: cases.filter(c => !c.isToday || c.status?.toLowerCase() === 'reported').length,
+    archiveFinalized: cases.filter(c => c.status?.toLowerCase() === 'reported').length,
+    archiveDrafts: cases.filter(c => c.status?.toLowerCase() === 'reporting' && !c.isToday).length,
+    reportingAccuracy: 100 // Placeholder for real metrics
   };
 
   // --- HANDLERS ---
@@ -107,6 +121,14 @@ export default function DoctorBoard() {
       advice: '', 
       technique: `${c.modality} Standard Protocol` 
     });
+    setLoadedDicom(null);
+  };
+
+  const handleDicomUpload = (e) => {
+    const file = e.target.files[0];
+    if (file) {
+      setLoadedDicom(file);
+    }
   };
 
   const handleApplyTemplate = (type) => {
@@ -205,30 +227,37 @@ export default function DoctorBoard() {
               transition: '0.2s', letterSpacing: '1px', textTransform: 'uppercase',
               boxShadow: view === 'HISTORY' ? '0 8px 20px rgba(15, 82, 186, 0.15)' : 'none'
             }}>Clinical Archive</button>
+            <button onClick={() => window.open('/reporting', '_blank')} style={{ 
+              padding: '12px 25px', borderRadius: '12px', border: 'none', fontSize: '10px', 
+              fontWeight: 950, background: 'linear-gradient(45deg, #8b5cf6, #d946ef)', 
+              color: 'white', cursor: 'pointer', 
+              transition: '0.2s', letterSpacing: '1px', textTransform: 'uppercase',
+              boxShadow: '0 8px 20px rgba(139, 92, 246, 0.3)'
+            }}>✨ Premium Workspace</button>
         </div>
       </div>
 
       <div className="board-padding">
-        {view === 'QUEUE' && (
+        {view === 'QUEUE' ? (
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '20px', marginBottom: '40px' }}>
             <div className="summary-card" style={{ background: 'white', border: '1px solid #e2e8f0', padding: '30px', borderRadius: '24px', boxShadow: '0 10px 40px rgba(0,0,0,0.02)' }}>
-              <span style={{ display: 'block', fontSize: '10px', fontWeight: 950, color: '#64748b', textTransform: 'uppercase', letterSpacing: '3px', marginBottom: '20px' }}>Ready for Report</span>
+              <span style={{ display: 'block', fontSize: '10px', fontWeight: 950, color: '#ef4444', textTransform: 'uppercase', letterSpacing: '3px', marginBottom: '20px' }}>Critical Action</span>
               <div style={{ display: 'flex', alignItems: 'baseline', gap: '12px' }}>
                  <span style={{ fontSize: '48px', fontWeight: 950, color: '#ef4444', letterSpacing: '-2px' }}>{stats.pendingReports}</span>
-                 <span style={{ fontSize: '14px', fontWeight: 700, color: '#ef4444' }}>CASES</span>
+                 <span style={{ fontSize: '14px', fontWeight: 700, color: '#ef4444' }}>AWAITING</span>
               </div>
             </div>
 
             <div className="summary-card" style={{ background: 'white', border: '1px solid #e2e8f0', padding: '30px', borderRadius: '24px', boxShadow: '0 10px 40px rgba(0,0,0,0.02)' }}>
-              <span style={{ display: 'block', fontSize: '10px', fontWeight: 950, color: '#64748b', textTransform: 'uppercase', letterSpacing: '3px', marginBottom: '20px' }}>In Acquisition</span>
+              <span style={{ display: 'block', fontSize: '10px', fontWeight: 950, color: '#64748b', textTransform: 'uppercase', letterSpacing: '3px', marginBottom: '20px' }}>In Progress</span>
               <div style={{ display: 'flex', alignItems: 'baseline', gap: '12px' }}>
-                 <span style={{ fontSize: '48px', fontWeight: 950, color: '#f59e0b', letterSpacing: '-2px' }}>{stats.upcoming - (stats.upcoming > 0 ? stats.pendingReports : 0)}</span>
-                 <span style={{ fontSize: '14px', fontWeight: 700, color: '#f59e0b' }}>PIPELINE</span>
+                 <span style={{ fontSize: '48px', fontWeight: 950, color: '#f59e0b', letterSpacing: '-2px' }}>{stats.drafts}</span>
+                 <span style={{ fontSize: '14px', fontWeight: 700, color: '#f59e0b' }}>DRAFTS</span>
               </div>
             </div>
 
             <div className="summary-card" style={{ background: 'white', border: '1px solid #e2e8f0', padding: '30px', borderRadius: '24px', boxShadow: '0 10px 40px rgba(0,0,0,0.02)' }}>
-              <span style={{ display: 'block', fontSize: '10px', fontWeight: 950, color: '#64748b', textTransform: 'uppercase', letterSpacing: '3px', marginBottom: '20px' }}>Finalized Today</span>
+              <span style={{ display: 'block', fontSize: '10px', fontWeight: 950, color: '#64748b', textTransform: 'uppercase', letterSpacing: '3px', marginBottom: '20px' }}>Success Metrics</span>
               <div style={{ display: 'flex', alignItems: 'baseline', gap: '12px' }}>
                  <span style={{ fontSize: '48px', fontWeight: 950, color: '#2ecc71', letterSpacing: '-2px' }}>{stats.finalizedToday}</span>
                  <span style={{ fontSize: '14px', fontWeight: 700, color: '#2ecc71' }}>REPORTS</span>
@@ -236,10 +265,44 @@ export default function DoctorBoard() {
             </div>
 
             <div className="summary-card" style={{ background: 'white', border: '1px solid #e2e8f0', padding: '30px', borderRadius: '24px', boxShadow: '0 10px 40px rgba(0,0,0,0.02)' }}>
-              <span style={{ display: 'block', fontSize: '10px', fontWeight: 950, color: '#64748b', textTransform: 'uppercase', letterSpacing: '3px', marginBottom: '20px' }}>Expected Missions</span>
+              <span style={{ display: 'block', fontSize: '10px', fontWeight: 950, color: '#64748b', textTransform: 'uppercase', letterSpacing: '3px', marginBottom: '20px' }}>Clinical Flux</span>
               <div style={{ display: 'flex', alignItems: 'baseline', gap: '12px' }}>
                  <span style={{ fontSize: '48px', fontWeight: 950, color: '#0f52ba', letterSpacing: '-2px' }}>{stats.upcoming}</span>
-                 <span style={{ fontSize: '14px', fontWeight: 700, color: '#0f52ba' }}>TOTAL</span>
+                 <span style={{ fontSize: '14px', fontWeight: 700, color: '#0f52ba' }}>UNITS</span>
+              </div>
+            </div>
+          </div>
+        ) : (
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '20px', marginBottom: '40px' }}>
+            <div className="summary-card" style={{ background: 'white', border: '1px solid #e2e8f0', padding: '30px', borderRadius: '24px', boxShadow: '0 10px 40px rgba(0,0,0,0.02)' }}>
+              <span style={{ display: 'block', fontSize: '10px', fontWeight: 950, color: '#64748b', textTransform: 'uppercase', letterSpacing: '3px', marginBottom: '20px' }}>Lifetime Archive</span>
+              <div style={{ display: 'flex', alignItems: 'baseline', gap: '12px' }}>
+                 <span style={{ fontSize: '48px', fontWeight: 950, color: '#1e293b', letterSpacing: '-2px' }}>{stats.archiveTotal}</span>
+                 <span style={{ fontSize: '14px', fontWeight: 700, color: '#6366f1' }}>STUDIES</span>
+              </div>
+            </div>
+
+            <div className="summary-card" style={{ background: 'white', border: '1px solid #e2e8f0', padding: '30px', borderRadius: '24px', boxShadow: '0 10px 40px rgba(0,0,0,0.02)' }}>
+              <span style={{ display: 'block', fontSize: '10px', fontWeight: 950, color: '#64748b', textTransform: 'uppercase', letterSpacing: '3px', marginBottom: '20px' }}>Total Finalized</span>
+              <div style={{ display: 'flex', alignItems: 'baseline', gap: '12px' }}>
+                 <span style={{ fontSize: '48px', fontWeight: 950, color: '#059669', letterSpacing: '-2px' }}>{stats.archiveFinalized}</span>
+                 <span style={{ fontSize: '14px', fontWeight: 700, color: '#059669' }}>VALIDATED</span>
+              </div>
+            </div>
+
+            <div className="summary-card" style={{ background: 'white', border: '1px solid #e2e8f0', padding: '30px', borderRadius: '24px', boxShadow: '0 10px 40px rgba(0,0,0,0.02)' }}>
+              <span style={{ display: 'block', fontSize: '10px', fontWeight: 950, color: '#64748b', textTransform: 'uppercase', letterSpacing: '3px', marginBottom: '20px' }}>Legacy Drafts</span>
+              <div style={{ display: 'flex', alignItems: 'baseline', gap: '12px' }}>
+                 <span style={{ fontSize: '48px', fontWeight: 950, color: '#f59e0b', letterSpacing: '-2px' }}>{stats.archiveDrafts}</span>
+                 <span style={{ fontSize: '14px', fontWeight: 700, color: '#f59e0b' }}>DRAFTS</span>
+              </div>
+            </div>
+
+            <div className="summary-card" style={{ background: 'white', border: '1px solid #e2e8f0', padding: '30px', borderRadius: '24px', boxShadow: '0 10px 40px rgba(0,0,0,0.02)' }}>
+              <span style={{ display: 'block', fontSize: '10px', fontWeight: 950, color: '#64748b', textTransform: 'uppercase', letterSpacing: '3px', marginBottom: '20px' }}>Diagnostic Yield</span>
+              <div style={{ display: 'flex', alignItems: 'baseline', gap: '12px' }}>
+                 <span style={{ fontSize: '48px', fontWeight: 950, color: '#6366f1', letterSpacing: '-2px' }}>{stats.reportingAccuracy}%</span>
+                 <span style={{ fontSize: '14px', fontWeight: 700, color: '#6366f1' }}>FIDELITY</span>
               </div>
             </div>
           </div>
@@ -250,10 +313,33 @@ export default function DoctorBoard() {
             <span style={{ position: 'absolute', left: '15px', top: '50%', transform: 'translateY(-50%)', opacity: 0.5 }}>🔍</span>
             <input type="text" placeholder={view === 'QUEUE' ? "SEARCH ACTIVE WORKLIST..." : "SEARCH CLINICAL ARCHIVE..."} value={search} onChange={e => setSearch(e.target.value)} style={{ width: '100%', padding: '14px 14px 14px 45px', borderRadius: '12px', border: '1px solid #e2e8f0', fontSize: '12px', fontWeight: 700, outline: 'none' }} />
           </div>
-          <select value={modalityFilter} onChange={e => setModalityFilter(e.target.value)} style={{ padding: '14px 20px', borderRadius: '12px', border: '1px solid #e2e8f0', fontSize: '12px', fontWeight: 900, background: 'white', outline: 'none' }}>
-            <option value="ALL">ALL MODALITIES</option>
+          <select value={filters.modality} onChange={e => setFilters({...filters, modality: e.target.value})} style={{ padding: '14px 20px', borderRadius: '12px', border: '1px solid #e2e8f0', fontSize: '12px', fontWeight: 900, background: 'white', outline: 'none' }}>
+            <option value="ALL">MODALITY: ALL</option>
             {Object.keys(MODALITY_ICONS).map(m => <option key={m} value={m}>{m}</option>)}
           </select>
+
+          <select value={filters.priority} onChange={e => setFilters({...filters, priority: e.target.value})} style={{ padding: '14px 20px', borderRadius: '12px', border: '1px solid #e2e8f0', fontSize: '12px', fontWeight: 900, background: 'white', outline: 'none' }}>
+            <option value="ALL">PRIORITY: ALL</option>
+            <option value="STAT">⚡ EMERGENCY (STAT)</option>
+            <option value="ROUTINE">📋 ROUTINE</option>
+          </select>
+
+          <select value={filters.clinicalStatus} onChange={e => setFilters({...filters, clinicalStatus: e.target.value})} style={{ padding: '14px 20px', borderRadius: '12px', border: '1px solid #e2e8f0', fontSize: '12px', fontWeight: 900, background: 'white', outline: 'none' }}>
+            <option value="ALL">PHASE: ALL</option>
+            {view === 'QUEUE' ? (
+              <>
+                <option value="SCANNED">📡 READY FOR REPORT</option>
+                <option value="REPORTING">📝 IN DRAFTING</option>
+                <option value="IN_PROGRESS">⚡ IN ACQUISITION</option>
+              </>
+            ) : (
+              <>
+                <option value="REPORTED">📄 FINALIZED</option>
+                <option value="COMPLETED">✅ ARCHIVED</option>
+              </>
+            )}
+          </select>
+
           <button className="gamified-btn" onClick={fetchCases} style={{ padding: '14px 30px', borderRadius: '12px' }}>RE-SYNC HUB</button>
         </div>
 
@@ -341,63 +427,87 @@ export default function DoctorBoard() {
   );
 
   const renderWorkspace = () => (
-    <div style={{ height: 'calc(100vh - 60px)', display: 'flex', flexDirection: 'column' }}>
-       <div style={{ padding: '15px 40px', background: '#0a1628', color: 'white', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+    <div style={{ height: 'calc(100vh - 60px)', display: 'flex', flexDirection: 'column', background: '#f8fafc' }}>
+       {/* COMMAND HEADER (LIGHT) */}
+       <div style={{ padding: '15px 40px', background: 'white', borderBottom: '1px solid #e2e8f0', display: 'flex', justifyContent: 'space-between', alignItems: 'center', boxShadow: '0 4px 20px rgba(0,0,0,0.02)' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '25px' }}>
-             <button onClick={() => setView('QUEUE')} style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', color: 'white', padding: '10px 20px', borderRadius: '10px', fontSize: '11px', fontWeight: 900, cursor: 'pointer' }}>← EXIT BOARD</button>
+             <button onClick={() => setView('QUEUE')} style={{ background: '#f1f5f9', border: '1px solid #e2e8f0', color: '#1a1a2e', padding: '10px 20px', borderRadius: '12px', fontSize: '11px', fontWeight: 900, cursor: 'pointer', transition: '0.2s' }}>← EXIT COMMAND</button>
              <div>
-                <div style={{ fontSize: '18px', fontWeight: 950 }}>{activeCase.patientName.toUpperCase()}</div>
-                <div style={{ fontSize: '10px', color: '#00f2fe', fontWeight: 900, letterSpacing: '1px' }}>DIAGNOSTIC TARGET: {activeCase.modality} // {activeCase.service}</div>
+                <div style={{ fontSize: '18px', fontWeight: 950, color: '#1a1a2e' }}>{activeCase.patientName.toUpperCase()}</div>
+                <div style={{ fontSize: '10px', color: '#0f52ba', fontWeight: 900, letterSpacing: '1px' }}>DIAGNOSTIC TARGET: {activeCase.modality} // {activeCase.service}</div>
               </div>
           </div>
-          <div style={{ display: 'flex', gap: '15px' }}>
+          <div style={{ display: 'flex', gap: '15px', alignItems: 'center' }}>
+             <div style={{ textAlign: 'right', marginRight: '10px' }}>
+                <div style={{ fontSize: '9px', fontWeight: 950, color: '#94a3b8' }}>WORKFLOW_PHASE</div>
+                <div style={{ fontSize: '11px', fontWeight: 950, color: '#2ecc71' }}>● LIVE_REPORTING</div>
+             </div>
              <button 
                 onClick={handleFinalize}
-                style={{ background: '#2ecc71', color: 'white', border: 'none', borderRadius: '10px', padding: '12px 30px', fontWeight: 950, fontSize: '12px', cursor: 'pointer', boxShadow: '0 10px 20px rgba(46, 204, 113, 0.2)' }}
+                style={{ background: '#2ecc71', color: 'white', border: 'none', borderRadius: '12px', padding: '12px 30px', fontWeight: 950, fontSize: '12px', cursor: 'pointer', boxShadow: '0 8px 20px rgba(46, 204, 113, 0.2)' }}
              >DEPLOY FINAL DISPATCH</button>
           </div>
        </div>
 
-       <div style={{ flex: 1, display: 'flex', overflow: 'hidden' }}>
-          <div style={{ flex: 1, background: '#000', position: 'relative', display: 'flex', alignItems: 'center', justifyContent: 'center', borderRight: '1rem solid #111' }}>
-             <div style={{ position: 'absolute', bottom: '30px', left: '50%', transform: 'translateX(-50%)', width: '500px', background: 'rgba(0,0,0,0.8)', padding: '15px 30px', borderRadius: '20px', display: 'flex', alignItems: 'center', gap: '30px' }}>
-                <div style={{ display: 'flex', gap: '10px' }}>
-                   <button style={{ width: '38px', height: '38px', borderRadius: '10px', background: '#222', color: 'white', border: 'none' }}>🔍</button>
-                </div>
-                <input type="range" style={{ flex: 1, accentColor: '#00f2fe' }} min="1" max="50" value={currentSlice} onChange={e => setCurrentSlice(e.target.value)} />
-                <div style={{ fontSize: '10px', fontWeight: 950, color: '#00f2fe' }}>HD</div>
+       <div style={{ flex: 1, display: 'flex', overflow: 'hidden', padding: '30px' }}>
+          {/* DIAGNOSTIC ZONE (DARK) */}
+          <div style={{ flex: 1, background: 'radial-gradient(circle, #1a1a2e 0%, #050510 100%)', position: 'relative', display: 'flex', alignItems: 'center', justifyContent: 'center', borderRadius: '24px', boxShadow: '0 20px 50px rgba(0,0,0,0.15)', overflow: 'hidden', border: '1px solid #1e293b' }}>
+             <div style={{ position: 'absolute', top: '30px', left: '30px', background: 'rgba(0,0,0,0.6)', color: 'white', padding: '15px', borderRadius: '12px', borderLeft: '3px solid #0f52ba', fontSize: '10px', fontWeight: 800, backdropFilter: 'blur(10px)' }}>
+                ACQUISITION_TARGET: {activeCase.modality}<br/>
+                FIDELITY: DIAGNOSTIC_HIGH<br/>
+                ENGINE: 1RAD_CORE_V4
              </div>
-             <div style={{ color: 'white', opacity: 0.1 }}>
-                <div style={{ fontSize: '200px' }}>{MODALITY_ICONS[activeCase.modality] || '🖥️'}</div>
+
+             <div style={{ textAlign: 'center', width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', position: 'relative' }}>
+                {loadedDicom ? (
+                  <SimpleDicomViewer 
+                     key={loadedDicom.name + loadedDicom.size} 
+                     files={[loadedDicom]} 
+                     onImageStatus={setIsDicomImage} 
+                  />
+                ) : (
+                  <>
+                    <div style={{ fontSize: '200px', opacity: 0.05, color: 'white' }}>{MODALITY_ICONS[activeCase.modality] || '🖥️'}</div>
+                    <div style={{ position: 'absolute', display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+                      <p style={{ fontSize: '11px', color: '#0f52ba', fontWeight: 950, letterSpacing: '4px', marginBottom: '20px' }}>[ SECURE_DICOM_STREAM_IDLE ]</p>
+                      <button 
+                         onClick={() => document.getElementById('doctor-dicom-upload').click()}
+                         style={{ background: '#0f52ba', color: 'white', border: 'none', padding: '10px 20px', borderRadius: '12px', fontSize: '11px', fontWeight: 950, cursor: 'pointer', boxShadow: '0 10px 20px rgba(15,82,186,0.3)' }}
+                      >FETCH ASSET STREAM</button>
+                      <input id="doctor-dicom-upload" type="file" accept=".dcm" onChange={handleDicomUpload} style={{ display: 'none' }} />
+                    </div>
+                  </>
+                )}
              </div>
           </div>
 
-          <div style={{ width: '550px', background: 'white', padding: '40px', display: 'flex', flexDirection: 'column', gap: '30px', overflowY: 'auto' }}>
+          {/* REPORTING SIDEBAR (LIGHT) */}
+          <div style={{ width: '500px', background: 'white', marginLeft: '30px', borderRadius: '24px', padding: '40px', display: 'flex', flexDirection: 'column', gap: '30px', overflowY: 'auto', border: '1px solid #e2e8f0', boxShadow: '0 10px 30px rgba(0,0,0,0.02)' }}>
               <div>
-                <label style={{ fontSize: '10px', fontWeight: 950, color: '#94a3b8', letterSpacing: '1px', textTransform: 'uppercase', marginBottom: '15px', display: 'block' }}>Clinical Loadouts</label>
-                <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
+                <label style={{ fontSize: '9px', fontWeight: 950, color: '#0f52ba', letterSpacing: '1px', textTransform: 'uppercase', marginBottom: '15px', display: 'block' }}>CLINICAL_TEMPLATES</label>
+                <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
                    {Object.keys(TEMPLATES).map(name => (
-                      <button key={name} onClick={() => handleApplyTemplate(name)} style={{ padding: '8px 15px', borderRadius: '20px', border: '1px solid #e2e8f0', background: 'white', fontSize: '10px', fontWeight: 900, color: '#0f52ba', cursor: 'pointer' }}>⚡ {name}</button>
+                      <button key={name} onClick={() => handleApplyTemplate(name)} style={{ padding: '8px 16px', borderRadius: '20px', border: '1px solid #e2e8f0', background: '#f8fafc', fontSize: '10px', fontWeight: 950, color: '#1e293b', cursor: 'pointer', transition: '0.2s' }}>⚡ {name}</button>
                    ))}
                 </div>
               </div>
 
-              <div className="report-bubble" style={{ background: '#f8fafc', padding: '25px', borderRadius: '18px', border: '1px solid #e2e8f0' }}>
-                 <label style={{ fontSize: '11px', fontWeight: 950, color: '#0f52ba', textTransform: 'uppercase', display: 'block', marginBottom: '15px' }}>Clinical Observations</label>
+              <div style={{ background: '#f8fafc', padding: '25px', borderRadius: '20px', border: '1px solid #e2e8f0' }}>
+                 <label style={{ fontSize: '10px', fontWeight: 950, color: '#0f52ba', textTransform: 'uppercase', display: 'block', marginBottom: '15px' }}>Diagnostic Findings</label>
                  <textarea 
                     value={report.findings}
                     onChange={e => setReport(prev => ({ ...prev, findings: e.target.value }))}
-                    placeholder="Document anatomical findings..."
-                    style={{ width: '100%', minHeight: '150px', background: 'transparent', border: 'none', fontSize: '14px', lineHeight: '1.6', outline: 'none', resize: 'none' }}
+                    placeholder="Document anatomical observations..."
+                    style={{ width: '100%', minHeight: '180px', background: 'transparent', border: 'none', fontSize: '14px', lineHeight: '1.6', outline: 'none', resize: 'none', color: '#1e293b' }}
                  />
               </div>
 
-              <div className="report-bubble" style={{ background: '#f0f4ff', padding: '25px', borderRadius: '18px', border: '2px solid #0f52ba10' }}>
-                 <label style={{ fontSize: '11px', fontWeight: 950, color: '#0f52ba', textTransform: 'uppercase', display: 'block', marginBottom: '15px' }}>Diagnostic Impression</label>
+              <div style={{ background: '#f0f7ff', padding: '25px', borderRadius: '20px', border: '1px solid #dbeafe' }}>
+                 <label style={{ fontSize: '10px', fontWeight: 950, color: '#0f52ba', textTransform: 'uppercase', display: 'block', marginBottom: '15px' }}>Clinical Impression</label>
                  <textarea 
                     value={report.impression}
                     onChange={e => setReport(prev => ({ ...prev, impression: e.target.value }))}
-                    placeholder="Enter final clinical conclusion..."
+                    placeholder="Enter final diagnostic conclusion..."
                     style={{ width: '100%', minHeight: '100px', background: 'transparent', border: 'none', fontSize: '14px', fontWeight: 900, color: '#1a1a2e', lineHeight: '1.6', outline: 'none', resize: 'none' }}
                  />
               </div>

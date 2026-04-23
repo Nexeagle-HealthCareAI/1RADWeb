@@ -1,5 +1,8 @@
-import { useState, useMemo, useEffect, useCallback } from 'react';
+import { useState, useMemo, useEffect, useCallback, useRef } from 'react';
+import JSZip from 'jszip';
+import dicomParser from 'dicom-parser';
 import apiClient from '../api/apiClient';
+import AdvancedDicomViewer from '../components/AdvancedDicomViewer';
 import '../styles/global.css';
 
 const MODALITY_ICONS = {
@@ -23,14 +26,27 @@ export default function TechnicianPage() {
   const [currentView, setCurrentView] = useState('QUEUE'); // 'QUEUE' or 'WORKSPACE'
   const [hubTab, setHubTab] = useState('ACTIVE'); // 'ACTIVE' or 'ARCHIVE'
   const [activeStudy, setActiveStudy] = useState(null);
+  const [activeAssetIndex, setActiveAssetIndex] = useState(0);
+  const [isDicomImage, setIsDicomImage] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
-  const [filters, setFilters] = useState({ modality: 'ALL' });
+  const [filters, setFilters] = useState({ modality: 'ALL', priority: 'ALL', clinicalStatus: 'ALL' });
   
   // Workspace specific states
   const [uploadedFiles, setUploadedFiles] = useState([]);
   const [techNotes, setTechNotes] = useState('');
   const [currentSlice, setCurrentSlice] = useState(1);
   const [printModalData, setPrintModalData] = useState(null);
+  
+  // New Workspace state
+  const [activeTool, setActiveTool] = useState('WindowLevel');
+  const [activeMetadata, setActiveMetadata] = useState(null);
+  const [cineEnabled, setCineEnabled] = useState(false);
+  const [layoutMode, setLayoutMode] = useState('1x1');
+  const [viewportProps, setViewportProps] = useState({ invert: false, flipHorizontal: false, flipVertical: false, rotation: 0 });
+  const [resetTrigger, setResetTrigger] = useState(0);
+  const [screenshotData, setScreenshotData] = useState(null);
+  const [keyImages, setKeyImages] = useState([]);
+  const [isSyncEnabled, setIsSyncEnabled] = useState(false);
 
   const TODAY = new Date().toISOString().split('T')[0];
 
@@ -79,21 +95,29 @@ export default function TechnicianPage() {
       const matchesModality = filters.modality === 'ALL' || s.modality === filters.modality;
       
       const status = s.status?.toLowerCase();
+      const matchesPriority = filters.priority === 'ALL' || s.priority === filters.priority;
+      const matchesStatus = filters.clinicalStatus === 'ALL' || status === filters.clinicalStatus.toLowerCase();
+
       if (hubTab === 'ACTIVE') {
-        // Today's work: Scheduled, Confirmed, In Progress
-        return matchesSearch && matchesModality && s.isToday && ['scheduled', 'confirmed', 'in_progress', 'booked'].includes(status);
+        // Today's work: Scheduled, Confirmed, In Progress, Scanned, Reporting
+        return matchesSearch && matchesModality && matchesPriority && matchesStatus && s.isToday && ['scheduled', 'confirmed', 'in_progress', 'booked', 'scanned', 'reporting'].includes(status);
       } else {
-        // Archive: Scanned, Reported, or past appointments
-        return matchesSearch && matchesModality && (['scanned', 'reported', 'completed'].includes(status) || !s.isToday);
+        // Archive: Reported, Completed, or past appointments
+        return matchesSearch && matchesModality && matchesPriority && matchesStatus && (['reported', 'completed'].includes(status) || !s.isToday);
       }
     });
   }, [studies, searchQuery, filters, hubTab, TODAY]);
 
   const stats = {
-    total: studies.filter(s => s.isToday && ['scheduled', 'confirmed', 'in_progress', 'booked'].includes(s.status?.toLowerCase())).length,
+    total: studies.filter(s => s.isToday && ['scheduled', 'confirmed', 'in_progress', 'booked', 'scanned', 'reporting'].includes(s.status?.toLowerCase())).length,
     inProgress: studies.filter(s => s.status?.toLowerCase() === 'in_progress').length,
     pending: studies.filter(s => s.status?.toLowerCase() === 'confirmed').length,
-    expected: studies.filter(s => s.isToday && ['scheduled', 'booked'].includes(s.status?.toLowerCase())).length
+    expected: studies.filter(s => s.isToday && ['scheduled', 'booked'].includes(s.status?.toLowerCase())).length,
+    // Archive Stats
+    archiveTotal: studies.filter(s => !s.isToday || ['reported', 'completed'].includes(s.status?.toLowerCase())).length,
+    archiveReported: studies.filter(s => s.status?.toLowerCase() === 'reported').length,
+    archiveCompleted: studies.filter(s => s.status?.toLowerCase() === 'completed').length,
+    archiveEfficiency: studies.length > 0 ? Math.round((studies.filter(s => ['reported', 'completed'].includes(s.status?.toLowerCase())).length / studies.length) * 100) : 0
   };
 
   // --- HANDLERS ---
@@ -102,17 +126,112 @@ export default function TechnicianPage() {
     setCurrentView('WORKSPACE');
     setUploadedFiles([]);
     setTechNotes(study.notes || '');
+    setViewportProps({ invert: false, flipHorizontal: false, flipVertical: false, rotation: 0 });
+    setKeyImages([]);
   };
 
-  const handleFileChange = (e) => {
+  const handleDownloadScreenshot = useCallback((dataUrl) => {
+    const link = document.createElement('a');
+    link.href = dataUrl;
+    link.download = `1RAD_CAPTURE_${activeStudy?.patientName}_${new Date().getTime()}.png`;
+    link.click();
+    setScreenshotData(null); // Reset trigger
+  }, [activeStudy]);
+
+  const toggleKeyImage = () => {
+    const key = `${activeAssetIndex}_${currentSlice}`;
+    setKeyImages(prev => prev.includes(key) ? prev.filter(k => k !== key) : [...prev, key]);
+  };
+
+  const handleFileChange = async (e) => {
     const file = e.target.files[0];
-    if (file) {
+    if (!file) return;
+
+    const isZip = file.name.toLowerCase().endsWith('.zip') || file.type === 'application/zip' || file.type === 'application/x-zip-compressed';
+    
+    if (isZip) {
+      setLoading(true);
+      try {
+        const zip = await JSZip.loadAsync(file);
+        const extractedFiles = [];
+        
+        const fileNames = Object.keys(zip.files);
+        const seriesGroups = {};
+
+        for (const fileName of fileNames) {
+          const zipFile = zip.files[fileName];
+          const isSystemFile = fileName.includes('__MACOSX') || fileName.endsWith('.DS_Store');
+          
+          if (!zipFile.dir && !isSystemFile) {
+            const content = await zipFile.async('arraybuffer');
+            const dcmFile = new File([content], fileName.split('/').pop(), { type: 'application/dicom' });
+            
+            try {
+              const byteArray = new Uint8Array(content);
+              const dataSet = dicomParser.parseDicom(byteArray);
+              
+              if (!dataSet.elements['x7fe00010']) {
+                continue; // Not an image
+              }
+              
+              const seriesUID = dataSet.string('x0020000e') || 'UNKNOWN_SERIES';
+              const seriesDesc = dataSet.string('x0008103e') || 'UNNAMED SERIES';
+              const instanceNum = parseInt(dataSet.string('x00200013') || '0', 10);
+              const studyUID = dataSet.string('x0020000d') || 'UNKNOWN_STUDY';
+              let patientName = dataSet.string('x00100010') || 'UNKNOWN_PATIENT';
+              patientName = patientName.replace(/\^/g, ' ');
+
+              if (!seriesGroups[seriesUID]) {
+                seriesGroups[seriesUID] = {
+                  seriesUID,
+                  seriesDesc,
+                  studyUID,
+                  patientName,
+                  files: []
+                };
+              }
+              seriesGroups[seriesUID].files.push({ file: dcmFile, instanceNum });
+            } catch (err) {
+               console.warn('Failed to parse DICOM:', fileName);
+            }
+          }
+        }
+        
+        const newAssets = Object.values(seriesGroups).map(group => {
+          group.files.sort((a, b) => a.instanceNum - b.instanceNum);
+          return {
+            name: `${group.patientName} - ${group.seriesDesc}`,
+            type: 'DICOM SERIES',
+            size: `${group.files.length} IMAGES`,
+            time: new Date().toLocaleTimeString(),
+            previewUrl: null,
+            isZip: false,
+            rawFiles: group.files.map(f => f.file)
+          };
+        });
+
+        if (newAssets.length > 0) {
+          setUploadedFiles(prev => [...prev, ...newAssets]);
+          setActiveAssetIndex(0); // Auto-focus first extracted asset stack
+        } else {
+          alert('No valid DICOM image series found in the ZIP archive.');
+        }
+      } catch (err) {
+        console.error('[TECH] ZIP extraction failed', err);
+        alert('Failed to extract ZIP archive.');
+      } finally {
+        setLoading(false);
+      }
+    } else {
+      const isDicom = file.name.toLowerCase().endsWith('.dcm') || file.name.toLowerCase().includes('dicom') || file.type === 'application/dicom';
       setUploadedFiles(prev => [...prev, {
         name: file.name,
-        type: file.type || 'DICOM',
+        type: isDicom ? 'DICOM' : (file.type || 'UNKNOWN'),
         size: (file.size / 1024 / 1024).toFixed(2) + ' MB',
         time: new Date().toLocaleTimeString(),
-        previewUrl: URL.createObjectURL(file)
+        previewUrl: isDicom ? null : URL.createObjectURL(file), // Don't use standard img tag for DICOM
+        isZip: false,
+        rawFiles: isDicom ? [file] : null
       }]);
     }
   };
@@ -157,13 +276,13 @@ export default function TechnicianPage() {
 
   const renderQueue = () => (
     <div className="board-view-container" style={{ background: '#fcfdfe', minHeight: '100vh' }}>
-      <div className="board-header" style={{ padding: '40px', background: 'white', borderBottom: '1px solid #f1f5f9', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', marginBottom: '30px' }}>
+      <div className="board-header" style={{ padding: '30px 40px', background: 'white', borderBottom: '1px solid #f1f5f9', display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '30px' }}>
         <div>
            <div style={{ display: 'flex', alignItems: 'center', gap: '15px', marginBottom: '5px' }}>
-              <span style={{ fontSize: '28px' }}>🛰️</span>
-              <h1 style={{ fontSize: '26px', fontWeight: 950, color: '#1a1a2e', letterSpacing: '-1px', margin: 0 }}>SCANNING BAY COMMAND</h1>
+              <span style={{ fontSize: '24px' }}>🛰️</span>
+              <h1 style={{ fontSize: '24px', fontWeight: 950, color: '#1a1a2e', letterSpacing: '-1px', margin: 0 }}>SCANNING BAY COMMAND</h1>
            </div>
-           <p style={{ fontSize: '11px', color: '#64748b', fontWeight: 800, marginLeft: '45px', textTransform: 'uppercase', letterSpacing: '2px' }}>Clinical Acquisition & Worklist Dispatch</p>
+           <p style={{ fontSize: '10px', color: '#64748b', fontWeight: 900, marginLeft: '45px', textTransform: 'uppercase', letterSpacing: '2px' }}>Clinical Acquisition & Worklist Dispatch</p>
         </div>
         
         <div className="admin-tabs" style={{ 
@@ -193,37 +312,71 @@ export default function TechnicianPage() {
       </div>
 
       <div className="board-padding">
-        {hubTab === 'ACTIVE' && (
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '20px', marginBottom: '40px' }}>
-            <div className="summary-card" style={{ background: 'white', border: '1px solid #e2e8f0', padding: '30px', borderRadius: '24px', boxShadow: '0 10px 40px rgba(0,0,0,0.02)' }}>
-              <span style={{ display: 'block', fontSize: '10px', fontWeight: 950, color: '#64748b', textTransform: 'uppercase', letterSpacing: '3px', marginBottom: '20px' }}>Daily Flux</span>
-              <div style={{ display: 'flex', alignItems: 'baseline', gap: '12px' }}>
-                 <span style={{ fontSize: '48px', fontWeight: 950, color: '#1e293b', letterSpacing: '-2px' }}>{stats.total}</span>
-                 <span style={{ fontSize: '14px', fontWeight: 700, color: '#0f52ba' }}>UNITS</span>
+        {hubTab === 'ACTIVE' ? (
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '15px', marginBottom: '30px' }}>
+            <div className="summary-card" style={{ background: 'white', border: '1px solid #e2e8f0', padding: '18px 22px', borderRadius: '16px', boxShadow: '0 4px 15px rgba(0,0,0,0.02)' }}>
+              <span style={{ display: 'block', fontSize: '10px', fontWeight: 950, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '2px', marginBottom: '12px' }}>Daily Flux</span>
+              <div style={{ display: 'flex', alignItems: 'baseline', gap: '8px' }}>
+                 <span style={{ fontSize: '32px', fontWeight: 950, color: '#1e293b', letterSpacing: '-1.5px' }}>{stats.total}</span>
+                 <span style={{ fontSize: '11px', fontWeight: 950, color: '#0f52ba', opacity: 0.8 }}>UNITS</span>
               </div>
             </div>
 
-            <div className="summary-card" style={{ background: 'white', border: '1px solid #e2e8f0', padding: '30px', borderRadius: '24px', boxShadow: '0 10px 40px rgba(0,0,0,0.02)' }}>
-              <span style={{ display: 'block', fontSize: '10px', fontWeight: 950, color: '#64748b', textTransform: 'uppercase', letterSpacing: '3px', marginBottom: '20px' }}>Acquisition Active</span>
-              <div style={{ display: 'flex', alignItems: 'baseline', gap: '12px' }}>
-                 <span style={{ fontSize: '48px', fontWeight: 950, color: '#f59e0b', letterSpacing: '-2px' }}>{stats.inProgress}</span>
-                 <span style={{ fontSize: '14px', fontWeight: 700, color: '#f59e0b' }}>SCANNING</span>
+            <div className="summary-card" style={{ background: 'white', border: '1px solid #e2e8f0', padding: '18px 22px', borderRadius: '16px', boxShadow: '0 4px 15px rgba(0,0,0,0.02)' }}>
+              <span style={{ display: 'block', fontSize: '10px', fontWeight: 950, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '2px', marginBottom: '12px' }}>Acquisition Active</span>
+              <div style={{ display: 'flex', alignItems: 'baseline', gap: '8px' }}>
+                 <span style={{ fontSize: '32px', fontWeight: 950, color: '#f59e0b', letterSpacing: '-1.5px' }}>{stats.inProgress}</span>
+                 <span style={{ fontSize: '11px', fontWeight: 950, color: '#f59e0b', opacity: 0.8 }}>SCANNING</span>
               </div>
             </div>
 
-            <div className="summary-card" style={{ background: 'white', border: '1px solid #e2e8f0', padding: '30px', borderRadius: '24px', boxShadow: '0 10px 40px rgba(0,0,0,0.02)' }}>
-              <span style={{ display: 'block', fontSize: '10px', fontWeight: 950, color: '#64748b', textTransform: 'uppercase', letterSpacing: '3px', marginBottom: '20px' }}>Arrival Confirmed</span>
-              <div style={{ display: 'flex', alignItems: 'baseline', gap: '12px' }}>
-                 <span style={{ fontSize: '48px', fontWeight: 950, color: '#2ecc71', letterSpacing: '-2px' }}>{stats.pending}</span>
-                 <span style={{ fontSize: '14px', fontWeight: 700, color: '#2ecc71' }}>READY</span>
+            <div className="summary-card" style={{ background: 'white', border: '1px solid #e2e8f0', padding: '18px 22px', borderRadius: '16px', boxShadow: '0 4px 15px rgba(0,0,0,0.02)' }}>
+              <span style={{ display: 'block', fontSize: '10px', fontWeight: 950, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '2px', marginBottom: '12px' }}>Arrival Confirmed</span>
+              <div style={{ display: 'flex', alignItems: 'baseline', gap: '8px' }}>
+                 <span style={{ fontSize: '32px', fontWeight: 950, color: '#2ecc71', letterSpacing: '-1.5px' }}>{stats.pending}</span>
+                 <span style={{ fontSize: '11px', fontWeight: 950, color: '#2ecc71', opacity: 0.8 }}>READY</span>
               </div>
             </div>
 
-            <div className="summary-card" style={{ background: 'white', border: '1px solid #e2e8f0', padding: '30px', borderRadius: '24px', boxShadow: '0 10px 40px rgba(0,0,0,0.02)' }}>
-              <span style={{ display: 'block', fontSize: '10px', fontWeight: 950, color: '#64748b', textTransform: 'uppercase', letterSpacing: '3px', marginBottom: '20px' }}>Mission Expected</span>
-              <div style={{ display: 'flex', alignItems: 'baseline', gap: '12px' }}>
-                 <span style={{ fontSize: '48px', fontWeight: 950, color: '#0f52ba', letterSpacing: '-2px' }}>{stats.expected}</span>
-                 <span style={{ fontSize: '14px', fontWeight: 700, color: '#0f52ba' }}>PENDING</span>
+            <div className="summary-card" style={{ background: 'white', border: '1px solid #e2e8f0', padding: '18px 22px', borderRadius: '16px', boxShadow: '0 4px 15px rgba(0,0,0,0.02)' }}>
+              <span style={{ display: 'block', fontSize: '10px', fontWeight: 950, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '2px', marginBottom: '12px' }}>Mission Expected</span>
+              <div style={{ display: 'flex', alignItems: 'baseline', gap: '8px' }}>
+                 <span style={{ fontSize: '32px', fontWeight: 950, color: '#0f52ba', letterSpacing: '-1.5px' }}>{stats.expected}</span>
+                 <span style={{ fontSize: '11px', fontWeight: 950, color: '#0f52ba', opacity: 0.8 }}>PENDING</span>
+              </div>
+            </div>
+          </div>
+        ) : (
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '15px', marginBottom: '30px' }}>
+            <div className="summary-card" style={{ background: 'white', border: '1px solid #e2e8f0', padding: '18px 22px', borderRadius: '16px', boxShadow: '0 4px 15px rgba(0,0,0,0.02)' }}>
+              <span style={{ display: 'block', fontSize: '10px', fontWeight: 950, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '2px', marginBottom: '12px' }}>Archive Magnitude</span>
+              <div style={{ display: 'flex', alignItems: 'baseline', gap: '8px' }}>
+                 <span style={{ fontSize: '32px', fontWeight: 950, color: '#1e293b', letterSpacing: '-1.5px' }}>{stats.archiveTotal}</span>
+                 <span style={{ fontSize: '11px', fontWeight: 950, color: '#6366f1', opacity: 0.8 }}>STUDIES</span>
+              </div>
+            </div>
+
+            <div className="summary-card" style={{ background: 'white', border: '1px solid #e2e8f0', padding: '18px 22px', borderRadius: '16px', boxShadow: '0 4px 15px rgba(0,0,0,0.02)' }}>
+              <span style={{ display: 'block', fontSize: '10px', fontWeight: 950, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '2px', marginBottom: '12px' }}>Clinical Finalized</span>
+              <div style={{ display: 'flex', alignItems: 'baseline', gap: '8px' }}>
+                 <span style={{ fontSize: '32px', fontWeight: 950, color: '#059669', letterSpacing: '-1.5px' }}>{stats.archiveReported}</span>
+                 <span style={{ fontSize: '11px', fontWeight: 950, color: '#059669', opacity: 0.8 }}>REPORTS</span>
+              </div>
+            </div>
+
+            <div className="summary-card" style={{ background: 'white', border: '1px solid #e2e8f0', padding: '18px 22px', borderRadius: '16px', boxShadow: '0 4px 15px rgba(0,0,0,0.02)' }}>
+              <span style={{ display: 'block', fontSize: '10px', fontWeight: 950, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '2px', marginBottom: '12px' }}>Closed Lifecycle</span>
+              <div style={{ display: 'flex', alignItems: 'baseline', gap: '8px' }}>
+                 <span style={{ fontSize: '32px', fontWeight: 950, color: '#0f52ba', letterSpacing: '-1.5px' }}>{stats.archiveCompleted}</span>
+                 <span style={{ fontSize: '11px', fontWeight: 950, color: '#0f52ba', opacity: 0.8 }}>CLOSED</span>
+              </div>
+            </div>
+
+            <div className="summary-card" style={{ background: 'white', border: '1px solid #e2e8f0', padding: '18px 22px', borderRadius: '16px', boxShadow: '0 4px 15px rgba(0,0,0,0.02)' }}>
+              <span style={{ display: 'block', fontSize: '10px', fontWeight: 950, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '2px', marginBottom: '12px' }}>Diagnostic Yield</span>
+              <div style={{ display: 'flex', alignItems: 'baseline', gap: '8px' }}>
+                 <span style={{ fontSize: '32px', fontWeight: 950, color: '#6366f1', letterSpacing: '-1.5px' }}>{stats.archiveEfficiency}%</span>
+                 <span style={{ fontSize: '11px', fontWeight: 950, color: '#6366f1', opacity: 0.8 }}>RATIO</span>
               </div>
             </div>
           </div>
@@ -241,9 +394,33 @@ export default function TechnicianPage() {
             />
           </div>
           <select value={filters.modality} onChange={e => setFilters({...filters, modality: e.target.value})} style={{ padding: '14px 20px', borderRadius: '12px', border: '1px solid #e2e8f0', fontSize: '12px', fontWeight: 900, background: 'white', outline: 'none' }}>
-            <option value="ALL">ALL MODALITIES</option>
+            <option value="ALL">MODALITY: ALL</option>
             {Object.keys(MODALITY_ICONS).map(m => <option key={m} value={m}>{m}</option>)}
           </select>
+
+          <select value={filters.priority} onChange={e => setFilters({...filters, priority: e.target.value})} style={{ padding: '14px 20px', borderRadius: '12px', border: '1px solid #e2e8f0', fontSize: '12px', fontWeight: 900, background: 'white', outline: 'none' }}>
+            <option value="ALL">PRIORITY: ALL</option>
+            <option value="STAT">⚡ EMERGENCY</option>
+            <option value="ROUTINE">📋 ROUTINE</option>
+          </select>
+
+          <select value={filters.clinicalStatus} onChange={e => setFilters({...filters, clinicalStatus: e.target.value})} style={{ padding: '14px 20px', borderRadius: '12px', border: '1px solid #e2e8f0', fontSize: '12px', fontWeight: 900, background: 'white', outline: 'none' }}>
+            <option value="ALL">PHASE: ALL</option>
+            {hubTab === 'ACTIVE' ? (
+              <>
+                <option value="CONFIRMED">📡 AWAITING SCAN</option>
+                <option value="IN_PROGRESS">⚡ IN SCANNING</option>
+                <option value="SCANNED">✅ READY FOR DOC</option>
+                <option value="REPORTING">📝 UNDER REVIEW</option>
+              </>
+            ) : (
+              <>
+                <option value="REPORTED">📄 FINALIZED</option>
+                <option value="COMPLETED">✅ COMPLETED</option>
+              </>
+            )}
+          </select>
+
           <button className="gamified-btn" onClick={fetchWorklist} style={{ padding: '14px 30px', borderRadius: '12px' }}>RE-SYNC HUD</button>
         </div>
 
@@ -262,8 +439,9 @@ export default function TechnicianPage() {
               {filteredStudies.map(study => {
                 const priority = PRIORITY_META[study.priority] || PRIORITY_META.ROUTINE;
                 const status = study.status?.toLowerCase();
-                const isArrived = ['confirmed', 'in_progress'].includes(status);
+                const isArrived = ['confirmed', 'in_progress', 'scanned', 'reporting'].includes(status);
                 const isExpected = ['scheduled', 'booked'].includes(status) && study.isToday;
+                const isDone = ['scanned', 'reporting'].includes(status);
                 
                 return (
                   <tr key={study.appointmentId} style={{ borderBottom: '1px solid #f1f5f9' }}>
@@ -295,12 +473,12 @@ export default function TechnicianPage() {
                     <td style={{ padding: '20px' }}>
                       <span style={{ 
                         padding: '6px 12px', borderRadius: '10px', fontSize: '10px', fontWeight: 950,
-                        background: isArrived ? '#e9f7ef' : isExpected ? '#f0f7ff' : '#f8fafc',
-                        color: isArrived ? '#27ae60' : isExpected ? '#0f52ba' : '#64748b',
-                        border: `1px solid ${isArrived ? '#c3e6cb' : isExpected ? '#dbeafe' : '#e2e8f0'}`,
+                        background: isDone ? '#f0fdf4' : isArrived && !isDone ? '#e9f7ef' : isExpected ? '#f0f7ff' : '#f8fafc',
+                        color: isDone ? '#16a34a' : isArrived && !isDone ? '#27ae60' : isExpected ? '#0f52ba' : '#64748b',
+                        border: `1px solid ${isDone ? '#bbf7d0' : isArrived && !isDone ? '#c3e6cb' : isExpected ? '#dbeafe' : '#e2e8f0'}`,
                         textTransform: 'uppercase'
                       }}>
-                        {status === 'confirmed' ? '📡 ARRIVED' : status === 'in_progress' ? '⚡ SCANNING' : status === 'scheduled' ? '📅 EXPECTED' : status.toUpperCase()}
+                        {status === 'confirmed' ? '📡 ARRIVED' : status === 'in_progress' ? '⚡ SCANNING' : status === 'scanned' ? '✅ READY' : status === 'reporting' ? '📝 REPORTING' : status === 'scheduled' ? '📅 EXPECTED' : status.toUpperCase()}
                       </span>
                     </td>
                     <td style={{ padding: '20px', textAlign: 'right' }}>
@@ -308,10 +486,10 @@ export default function TechnicianPage() {
                         <button 
                           className="gamified-btn" 
                           disabled={!isArrived}
-                          style={{ padding: '10px 20px', borderRadius: '12px', fontSize: '11px', opacity: isArrived ? 1 : 0.4, cursor: isArrived ? 'pointer' : 'not-allowed' }} 
+                          style={{ padding: '10px 20px', borderRadius: '12px', fontSize: '11px', opacity: isArrived ? 1 : 0.4, cursor: isArrived ? 'pointer' : 'not-allowed', background: isDone ? '#1e293b' : '#0f52ba' }} 
                           onClick={() => handleOpenWorkspace(study)}
                         >
-                          ENTER WORKSPACE
+                          {isDone ? 'REVIEW DATA' : 'ENTER WORKSPACE'}
                         </button>
                       ) : (
                         <div style={{ display: 'flex', gap: '10px', justifyContent: 'flex-end' }}>
@@ -347,104 +525,254 @@ export default function TechnicianPage() {
   );
 
   const renderWorkspace = () => (
-    <div style={{ height: 'calc(100vh - 60px)', background: '#050a14', color: 'white', display: 'flex', flexDirection: 'column' }}>
-      <div style={{ padding: '20px 40px', background: '#0a1628', display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '20px' }}>
+    <div className="workspace-view" style={{ display: 'flex', flexDirection: 'column', height: '100vh', background: '#f8fafc', overflow: 'hidden', fontFamily: "'Inter', 'Outfit', sans-serif" }}>
+      
+      {/* TOP COMPACT TOOLBAR */}
+      <div style={{ 
+        height: '54px', 
+        background: '#ffffff', 
+        borderBottom: '1px solid #e2e8f0', 
+        display: 'flex', 
+        alignItems: 'center', 
+        padding: '0 15px', 
+        gap: '8px',
+        zIndex: 100,
+        boxShadow: '0 1px 3px rgba(0,0,0,0.02)'
+      }}>
+        <button onClick={() => setCurrentView('QUEUE')} className="toolbar-btn light" style={{ width: 'auto', padding: '0 15px', fontSize: '11px', fontWeight: 800 }}>
+          ↩ EXIT
+        </button>
+        <div style={{ width: '1px', height: '24px', background: '#e2e8f0', margin: '0 5px' }}></div>
+        
+        {/* UPLOAD & EXPORT */}
+        <button 
+          onClick={() => document.getElementById('tech-study-up').click()} 
+          className="toolbar-btn light active" 
+          title="Import Clinical Data (DICOM / ZIP)"
+          style={{ 
+            background: '#0f52ba', 
+            color: 'white', 
+            border: 'none',
+            display: 'flex',
+            gap: '8px',
+            width: 'auto',
+            padding: '0 12px',
+            fontSize: '11px',
+            fontWeight: 800
+          }}
+        >
+          <span style={{ fontSize: '14px' }}>📦</span> IMPORT
+        </button>
+        <input id="tech-study-up" type="file" style={{ display: 'none' }} accept=".dcm,.zip" onChange={handleFileChange} />
+        
+        <div style={{ width: '1px', height: '24px', background: '#e2e8f0', margin: '0 8px' }}></div>
+
+        {/* VIEWER TOOLS */}
+        {[
+          { id: 'WindowLevel', icon: '🌓', label: 'W/L' },
+          { id: 'StackScroll', icon: '📚', label: 'Stack' },
+          { id: 'Zoom', icon: '🔍', label: 'Zoom' },
+          { id: 'Pan', icon: '✋', label: 'Pan' },
+          { id: 'Length', icon: '📏', label: 'Measure' },
+          { id: 'Angle', icon: '📐', label: 'Angle' },
+          { id: 'EllipticalROI', icon: '⭕', label: 'ROI' },
+          { id: 'ArrowAnnotate', icon: '↗️', label: 'Annotate' },
+        ].map(t => (
           <button 
-            style={{ padding: '10px 20px', background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', color: '#94a3b8', borderRadius: '10px', fontSize: '11px', fontWeight: 900, cursor: 'pointer' }} 
-            onClick={() => setCurrentView('QUEUE')}
-          >
-            ← ABORT TO COMMAND
-          </button>
-          <div>
-            <div style={{ fontSize: '18px', fontWeight: 950, letterSpacing: '-0.5px' }}>{activeStudy.patientName.toUpperCase()} <span style={{ fontWeight: 400, opacity: 0.5, marginLeft: '10px' }}>ID: {activeStudy.id}</span></div>
-            <div style={{ fontSize: '10px', color: '#00f2fe', fontWeight: 900, textTransform: 'uppercase', letterSpacing: '1px' }}>ACQUISITION_TARGET: {activeStudy.modality} // {activeStudy.service}</div>
-          </div>
-        </div>
-        <div style={{ display: 'flex', gap: '20px' }}>
-            <div style={{ textAlign: 'right' }}>
-              <div style={{ fontSize: '9px', fontWeight: 950, color: 'rgba(255,255,255,0.4)' }}>SESSION_LATENCY</div>
-              <div style={{ fontSize: '14px', fontWeight: 900, color: '#f59e0b' }}>04:12m</div>
-            </div>
-            <button 
-                onClick={() => { handleStatusUpdate(activeStudy.appointmentId, 'scanned'); setCurrentView('QUEUE'); }}
-                style={{ background: '#00f2fe', color: '#050a14', border: 'none', borderRadius: '12px', padding: '12px 30px', fontWeight: 950, fontSize: '12px', cursor: 'pointer', boxShadow: '0 0 20px rgba(0,242,254,0.3)' }}
-            >
-                DEPLOY ASSETS TO SPECIALIST
-            </button>
-        </div>
+            key={t.id}
+            onClick={() => setActiveTool(t.id)}
+            className={`toolbar-btn light ${activeTool === t.id ? 'active' : ''}`}
+            title={t.label}
+          >{t.icon}</button>
+        ))}
+
+        <div style={{ width: '1px', height: '30px', background: '#e2e8f0', margin: '0 10px' }}></div>
+
+        {/* SPECIAL TOOLS */}
+        <button onClick={() => setCineEnabled(!cineEnabled)} className={`toolbar-btn light ${cineEnabled ? 'active' : ''}`} title="Cine Loop">🎬 CINE</button>
+        <button 
+          onClick={() => setIsSyncEnabled(!isSyncEnabled)} 
+          className={`toolbar-btn light ${isSyncEnabled ? 'active' : ''}`} 
+          title="Synchronize Viewports"
+          style={{ fontWeight: 950 }}
+        >
+          🔗 SYNC
+        </button>
+
+        <div style={{ flex: 1 }}></div>
+
+        <select 
+           value={layoutMode} 
+           onChange={e => setLayoutMode(e.target.value)}
+           style={{ background: 'white', color: '#1e293b', border: '1px solid #e2e8f0', padding: '6px 12px', borderRadius: '8px', fontSize: '11px', fontWeight: 950 }}
+        >
+           <option value="1x1">LAYOUT: 1X1</option>
+           <option value="2x2">LAYOUT: 2X2</option>
+        </select>
+        
+        <div style={{ width: '1px', height: '24px', background: '#e2e8f0', margin: '0 8px' }}></div>
+        <button onClick={() => toggleKeyImage()} className={`toolbar-btn light ${keyImages.includes(`${activeAssetIndex}_${currentSlice}`) ? 'active' : ''}`} title="Mark Key Image">⭐</button>
+        <button onClick={() => setScreenshotData(true)} className="toolbar-btn light" title="Export Screenshot">📸</button>
+        <button onClick={() => { setResetTrigger(t => t + 1); setViewportProps({ invert: false, flipHorizontal: false, flipVertical: false, rotation: 0 }); }} className="toolbar-btn light" title="Reset Viewer">🔄</button>
+        
+        <div style={{ width: '1px', height: '30px', background: '#e2e8f0', margin: '0 10px' }}></div>
+        
+        <div style={{ flex: 1 }}></div>
+
+        <button 
+          onClick={() => { handleStatusUpdate(activeStudy?.appointmentId, 'scanned'); setCurrentView('QUEUE'); }}
+          className="gamified-btn" style={{ padding: '10px 25px', borderRadius: '12px', fontSize: '11px', textTransform: 'uppercase', letterSpacing: '1px', fontWeight: 950 }}
+        >DEPLOY STUDY</button>
       </div>
 
-      <div style={{ flex: 1, display: 'flex', minHeight: 0 }}>
-        <div style={{ flex: 1, position: 'relative', background: 'radial-gradient(circle, #0a1628 0%, #000 100%)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-          <div style={{ position: 'absolute', top: '30px', left: '30px', background: 'rgba(0,0,0,0.5)', padding: '15px', borderRadius: '10px', borderLeft: '3px solid #00f2fe', fontSize: '10px', fontWeight: 800 }}>
-             SLICE_VOL: {currentSlice} / 25<br/>
-             RESOLUTION: 4096 x 4096<br/>
-             FIDELITY: HI-RES [DICOM]
-          </div>
+      <div style={{ flex: 1, display: 'flex', minHeight: 0, padding: '10px', gap: '10px' }}>
+        
+        {/* LEFT SIDEBAR: STUDY TREE */}
+        <div style={{ width: '280px', background: 'white', borderRadius: '16px', border: '1px solid #e2e8f0', display: 'flex', flexDirection: 'column', padding: '15px', boxShadow: '0 4px 20px rgba(0,0,0,0.02)' }}>
+          <label style={{ fontSize: '10px', fontWeight: 950, color: '#94a3b8', letterSpacing: '1px', marginBottom: '15px', display: 'block', textTransform: 'uppercase' }}>Series Library</label>
           
-          <div style={{ textAlign: 'center' }}>
-              {uploadedFiles.length > 0 && uploadedFiles[0].previewUrl ? (
-                  <img src={uploadedFiles[0].previewUrl} style={{ maxHeight: '75vh', maxWidth: '100%', filter: 'contrast(1.2) brightness(0.9) grayscale(1)' }} alt="Preview" />
-              ) : (
-                  <>
-                    <div style={{ fontSize: '120px', opacity: 0.1 }}>{MODALITY_ICONS[activeStudy.modality] || '🖥️'}</div>
-                    <p style={{ fontSize: '11px', color: '#00f2fe', fontWeight: 950, letterSpacing: '4px', marginTop: '20px' }}>[ AWAITING ACQUISITION INTEL ]</p>
-                  </>
-              )}
+          <div style={{ flex: 1, overflowY: 'auto' }}>
+            <div style={{ background: '#f8fafc', padding: '12px', borderRadius: '12px', marginBottom: '15px', borderLeft: '3px solid #0f52ba', border: '1px solid #e2e8f0' }}>
+              <div style={{ fontSize: '12px', fontWeight: 950, color: '#1e293b' }}>{activeStudy?.patientName}</div>
+              <div style={{ fontSize: '10px', color: '#64748b', marginTop: '4px', fontWeight: 800 }}>UHID: {activeStudy?.id}</div>
+            </div>
+
+            <label style={{ fontSize: '8px', fontWeight: 950, color: '#94a3b8', textTransform: 'uppercase', marginBottom: '10px', display: 'block', letterSpacing: '1px' }}>ACQUISITION_SERIES ({uploadedFiles.length})</label>
+            {uploadedFiles.map((f, i) => (
+              <div 
+                key={i} 
+                onClick={() => setActiveAssetIndex(i)}
+                style={{ 
+                  background: activeAssetIndex === i ? '#eff6ff' : 'white', 
+                  padding: '12px', 
+                  borderRadius: '12px', 
+                  marginBottom: '10px', 
+                  border: `1px solid ${activeAssetIndex === i ? '#3b82f6' : '#e2e8f0'}`, 
+                  cursor: 'pointer',
+                  transition: '0.2s',
+                  display: 'flex',
+                  gap: '12px',
+                  alignItems: 'center',
+                  position: 'relative'
+                }}
+              >
+                {activeAssetIndex === i && <div style={{ position: 'absolute', left: 0, top: 0, bottom: 0, width: '4px', background: '#3b82f6' }}></div>}
+                <div style={{ flex: 1 }}>
+                  <div style={{ fontSize: '10px', fontWeight: 950, color: activeAssetIndex === i ? '#1d4ed8' : '#1e293b', letterSpacing: '0.5px' }}>{f.name.toUpperCase()}</div>
+                  <div style={{ fontSize: '9px', color: '#94a3b8', marginTop: '4px', fontWeight: 700 }}>{f.rawFiles.length} DATA_SLICES</div>
+                </div>
+              </div>
+            ))}
           </div>
 
-          <div style={{ position: 'absolute', bottom: '30px', left: '50%', transform: 'translateX(-50%)', width: '600px', background: 'rgba(10,22,40,0.8)', backdropFilter: 'blur(10px)', padding: '15px 30px', borderRadius: '20px', border: '1px solid rgba(255,255,255,0.1)' }}>
-             <div style={{ display: 'flex', alignItems: 'center', gap: '30px' }}>
-                <div style={{ display: 'flex', gap: '10px' }}>
-                    <button style={{ width: '40px', height: '40px', borderRadius: '10px', background: '#050a14', color: 'white', border: '1px solid #1a1a1a', cursor: 'pointer' }}>🔍</button>
-                    <button style={{ width: '40px', height: '40px', borderRadius: '10px', background: '#050a14', color: 'white', border: '1px solid #1a1a1a', cursor: 'pointer' }}>🌓</button>
-                </div>
-                <input type="range" style={{ flex: 1, accentColor: '#00f2fe' }} min="1" max="25" value={currentSlice} onChange={e => setCurrentSlice(e.target.value)} />
-                <div style={{ fontSize: '10px', fontWeight: 950, color: '#00f2fe' }}>2D / 3D</div>
-             </div>
+          <div style={{ marginTop: '15px', padding: '15px', background: '#f8fafc', borderRadius: '16px', border: '1px solid #f1f5f9' }}>
+            <label style={{ fontSize: '10px', fontWeight: 950, color: '#94a3b8', marginBottom: '10px', display: 'block', textTransform: 'uppercase', letterSpacing: '1px' }}>Clinical Observations</label>
+            <textarea 
+              value={techNotes}
+              onChange={e => setTechNotes(e.target.value)}
+              placeholder="Add findings..."
+              style={{ width: '100%', height: '80px', background: 'transparent', border: 'none', color: '#1e293b', fontSize: '12px', resize: 'none', outline: 'none', fontWeight: 800 }}
+            />
           </div>
         </div>
 
-        <div style={{ width: '400px', background: 'rgba(10,22,40,0.5)', borderLeft: '1px solid rgba(255,255,255,0.05)', padding: '30px', display: 'flex', flexDirection: 'column', gap: '25px' }}>
-            <div>
-                <label style={{ fontSize: '9px', fontWeight: 950, color: '#00f2fe', letterSpacing: '1px', display: 'block', marginBottom: '15px' }}>ACQUISITION_UPLOAD</label>
-                <div 
-                    onClick={() => document.getElementById('tech-study-up').click()}
-                    style={{ border: '2px dashed rgba(0,242,254,0.3)', borderRadius: '15px', padding: '30px', textAlign: 'center', cursor: 'pointer', background: 'rgba(0,242,254,0.02)' }}
-                >
-                    <div style={{ fontSize: '32px' }}>☁️</div>
-                    <div style={{ fontSize: '12px', fontWeight: 950, marginTop: '10px' }}>UPLOAD CLINICAL ASSETS</div>
-                    <input id="tech-study-up" type="file" style={{ display: 'none' }} accept="image/*,.dcm" onChange={handleFileChange} />
-                </div>
-            </div>
-
-            <div style={{ flex: 1, overflowY: 'auto' }}>
-                <label style={{ fontSize: '9px', fontWeight: 950, color: 'rgba(255,255,255,0.4)', letterSpacing: '1px', display: 'block', marginBottom: '15px' }}>LOADED_ASSETS ({uploadedFiles.length})</label>
-                {uploadedFiles.map((f, i) => (
-                    <div key={i} style={{ background: 'rgba(255,255,255,0.03)', padding: '15px', borderRadius: '10px', marginBottom: '10px', borderLeft: '3px solid #00f2fe' }}>
-                        <div style={{ fontSize: '11px', fontWeight: 900 }}>{f.name.toUpperCase()}</div>
-                        <div style={{ fontSize: '9px', opacity: 0.5, marginTop: '4px' }}>{f.type} | {f.size} | {f.time}</div>
+        {/* CENTER MAIN VIEWPORT */}
+        <div style={{ flex: 1, position: 'relative', background: '#f1f5f9', display: 'flex', flexDirection: 'column' }}>
+           <div style={{ flex: 1, padding: '0px', display: 'flex', flexDirection: 'column' }}>
+              {uploadedFiles.length > 0 ? (
+                <div style={{ 
+                  width: '100%', 
+                  height: '100%', 
+                  display: 'grid', 
+                  gridTemplateColumns: layoutMode === '2x2' ? '1fr 1fr' : '1fr',
+                  gridTemplateRows: layoutMode === '2x2' ? '1fr 1fr' : '1fr',
+                  gap: '10px'
+                }}>
+                  {[...Array(layoutMode === '2x2' ? 4 : 1)].map((_, idx) => (
+                    <div key={idx} style={{ position: 'relative', borderRadius: '16px', overflow: 'hidden', border: '1px solid #334155', background: '#000' }}>
+                      <AdvancedDicomViewer 
+                        key={`${activeAssetIndex}_${idx}`} 
+                        engineId={`tech-engine-${idx}`}
+                        viewportId={`tech-viewport-${idx}`}
+                        files={uploadedFiles[(activeAssetIndex + idx) % uploadedFiles.length]?.rawFiles} 
+                        onMetadata={idx === 0 ? setActiveMetadata : null}
+                        isSynced={isSyncEnabled}
+                        onKeyImageToggle={toggleKeyImage}
+                        keyImages={keyImages}
+                        activeTool={activeTool}
+                        isCine={cineEnabled}
+                      />
+                      
+                      {/* VIEWPORT HUD */}
+                      <div style={{ position: 'absolute', top: '15px', left: '15px', display: 'flex', flexDirection: 'column', gap: '5px', zIndex: 10 }}>
+                        <div style={{ background: 'rgba(15, 23, 42, 0.7)', backdropFilter: 'blur(8px)', padding: '4px 10px', borderRadius: '6px', fontSize: '9px', color: '#94a3b8', fontWeight: 950, letterSpacing: '1px', border: '1px solid rgba(255,255,255,0.1)' }}>
+                           {uploadedFiles[(activeAssetIndex + idx) % uploadedFiles.length]?.name.toUpperCase() || 'NO_SIGNAL'}
+                        </div>
+                        {isSyncEnabled && <div style={{ background: 'rgba(16, 185, 129, 0.9)', color: 'white', padding: '4px 8px', borderRadius: '4px', fontSize: '8px', fontWeight: 950 }}>🔗 SYNCED</div>}
+                      </div>
                     </div>
-                ))}
-            </div>
-
-            <div>
-                <label style={{ fontSize: '9px', fontWeight: 950, color: '#0f52ba', letterSpacing: '1px', display: 'block', marginBottom: '15px' }}>FIELD_INTEL / OBSERVATIONS</label>
-                <textarea 
-                    value={techNotes}
-                    onChange={e => setTechNotes(e.target.value)}
-                    placeholder="Enter technician observations for the reporting doctor..."
-                    style={{ width: '100%', height: '150px', background: '#050a14', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '12px', padding: '15px', color: 'white', fontSize: '12px', resize: 'none', outline: 'none' }}
-                />
-            </div>
+                  ))}
+                </div>
+              ) : (
+                <div style={{ height: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
+                   <div style={{ fontSize: '120px', opacity: 0.1 }}>{MODALITY_ICONS[activeStudy?.modality] || '🖥️'}</div>
+                   <p style={{ color: '#0f52ba', fontSize: '10px', fontWeight: 950, letterSpacing: '3px' }}>[ AWAITING ACQUISITION ]</p>
+                </div>
+              )}
+           </div>
         </div>
+
+
       </div>
+
+      <style>{`
+        .toolbar-btn {
+          width: 42px;
+          height: 42px;
+          background: #1e1e2d;
+          border: 1px solid #2a2a3d;
+          border-radius: 10px;
+          color: white;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          cursor: pointer;
+          transition: 0.2s;
+          font-size: 18px;
+        }
+        .toolbar-btn.light {
+          background: #f8fafc;
+          border-color: #e2e8f0;
+          color: #1e293b;
+        }
+        .toolbar-btn.light:hover {
+          background: #f1f5f9;
+          border-color: #0f52ba;
+        }
+        .toolbar-btn.light.active {
+          background: #0f52ba;
+          border-color: #3b82f6;
+          color: white;
+          box-shadow: 0 4px 12px rgba(15, 82, 186, 0.2);
+        }
+        .dicom-loader {
+          width: 40px;
+          height: 40px;
+          border: 3px solid rgba(15, 82, 186, 0.1);
+          border-top: 3px solid #0f52ba;
+          border-radius: 50%;
+          animation: spin 1s linear infinite;
+        }
+        @keyframes spin {
+          0% { transform: rotate(0deg); }
+          100% { transform: rotate(360deg); }
+        }
+      `}</style>
     </div>
   );
 
   return (
-    <div className="page-wrapper" style={{ padding: 0, background: currentView === 'QUEUE' ? '#fcfdfe' : '#050a14' }}>
+    <div className="page-wrapper" style={{ padding: 0, background: currentView === 'QUEUE' ? '#fcfdfe' : '#f8fafc' }}>
       {currentView === 'QUEUE' ? renderQueue() : renderWorkspace()}
       {renderPrintModal()}
       <style>{`

@@ -30,7 +30,8 @@ const STATUS_META = {
   in_progress: { icon: '\u{1F300}', label: 'SCANNING', color: '#f59e0b', bg: '#fffbeb', glow: 'rgba(245,158,11,0.15)' },
   completed:   { icon: '\u{1FA7B}', label: 'SCANNED', color: '#0f52ba', bg: '#f0f4ff', glow: 'rgba(15,82,186,0.15)' },
   scanned:     { icon: '\u{1FA7B}', label: 'SCANNED', color: '#0f52ba', bg: '#f0f4ff', glow: 'rgba(15,82,186,0.15)' },
-  reported:    { icon: '\u{1F4DC}', label: 'REPORTED', color: '#8b5cf6', bg: '#f5f3ff', glow: 'rgba(139,92,246,0.15)' },
+  reporting:   { icon: '\u{1F50E}', label: 'REPORTING', color: '#8b5cf6', bg: '#f5f3ff', glow: 'rgba(139,92,246,0.15)' },
+  reported:    { icon: '\u{1F4DC}', label: 'REPORTED', color: '#059669', bg: '#ecfdf5', glow: 'rgba(5,150,105,0.15)' },
   cancelled:   { icon: '\u26D4', label: 'CANCELLED', color: '#ef4444', bg: '#fef2f2', glow: 'rgba(239,68,68,0.15)' },
   unknown:     { icon: '\u2753', label: 'UNKNOWN', color: '#94a3b8', bg: '#f8fafc', glow: 'rgba(148,163,184,0.1)' }
 };
@@ -373,20 +374,24 @@ export default function AppointmentBoard() {
           );
 
           if (matchedPrice) {
+            console.log('[AUTO-BILL] Initiating invoice for:', matchedPrice.serviceName);
             await apiClient.post('/finance/invoices', {
               patientId: newBooking.patientId,
-              appointmentId: appointmentRes.data.appointmentId,
+              appointmentId: appointmentRes.data.appointmentId || appointmentRes.data.id,
               items: [{
                 description: matchedPrice.serviceName,
-                amount: matchedPrice.amount,
+                amount: parseFloat(matchedPrice.amount),
                 quantity: 1
               }]
             });
-            console.log('AUTO-BILL: Server-side invoice generated');
+            console.log('[AUTO-BILL] Success: Invoice dispatched to backend.');
+          } else {
+             console.warn('[AUTO-BILL] Skipping: No matching price found in registry for', newBooking.service);
           }
         }
       } catch (err) {
-        console.error('AUTO-BILL: Failed to process backend billing', err);
+        console.error('[AUTO-BILL] Backend transmission failure:', err.response?.data || err.message);
+        // We don't alert here to avoid interrupting the main appointment success flow
       }
       // ----------------------------------------------
 
@@ -670,14 +675,14 @@ export default function AppointmentBoard() {
   const renderAppointmentRow = (app) => {
     const meta = STATUS_META[app.status] || STATUS_META.unknown;
     const next = getNextAction(app.status);
-    const isExpanded = expandedRow === app.id;
-    const statusIndex = ['scheduled','confirmed','in_progress','completed'].indexOf(app.status);
+    const isExpanded = expandedRow === app.appointmentId;
+    const statusIndex = ['scheduled','confirmed','in_progress','scanned','reporting','reported'].indexOf(app.status);
     const patient = patients.find(p => p.id === app.patientId);
 
     return (
-      <div key={app.id} style={{ marginBottom: '10px' }}>
+      <div key={app.appointmentId} style={{ marginBottom: '10px' }}>
         <div
-          onClick={() => setExpandedRow(isExpanded ? null : app.id)}
+          onClick={() => setExpandedRow(isExpanded ? null : app.appointmentId)}
           style={{
             display: 'grid',
             gridTemplateColumns: '0.6fr 0.6fr 1.8fr 1.8fr 0.8fr 1fr 1.6fr',
@@ -810,7 +815,7 @@ export default function AppointmentBoard() {
           }}>
             <div style={{ display: 'flex', gap: '24px', alignItems: 'flex-start', flexWrap: 'wrap' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flex: '0 0 auto' }}>
-                {['scheduled','confirmed','in_progress','completed'].map((s, i) => {
+                {['scheduled','confirmed','in_progress','scanned','reporting','reported'].map((s, i) => {
                   const sMeta = STATUS_META[s];
                   const reached = statusIndex >= i;
                   const isCurrent = s === app.status;
@@ -826,7 +831,7 @@ export default function AppointmentBoard() {
                       }}>
                         {reached ? sMeta.icon : (i + 1)}
                       </div>
-                      {i < 3 && (
+                      {i < 5 && (
                         <div style={{
                           width: '24px', height: '2px',
                           background: statusIndex > i ? sMeta.color : '#eee',
@@ -1285,8 +1290,8 @@ export default function AppointmentBoard() {
                 <div style={{ marginTop: '16px', marginBottom: '8px' }}>
                   <label style={{ fontSize: '9px', fontWeight: 800, letterSpacing: '0.5px', color: '#888', display: 'block', marginBottom: '10px' }}>3. ASSIGN LEAD SPECIALIST <span style={{ color: '#e74c3c' }}>*</span></label>
                   <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '10px' }}>
-                    {doctors.map(d => (
-                      <div key={d} className={`modality-card ${newBooking.doctor === d ? 'active' : ''}`}
+                    {doctors.map((d, idx) => (
+                      <div key={`${d}_${idx}`} className={`modality-card ${newBooking.doctor === d ? 'active' : ''}`}
                         style={{ padding: '12px', position: 'relative', flexDirection: 'row', justifyContent: 'flex-start', gap: '10px', minHeight: 'auto' }}
                         onClick={() => setNewBooking({...newBooking, doctor: d})}
                       >
@@ -1727,7 +1732,7 @@ export default function AppointmentBoard() {
             <div className="appointments-cards">
               {paginatedAppointments.map(app => (
                 <AppointmentCard
-                  key={app.id}
+                  key={app.appointmentId}
                   appointment={app}
                   statusMeta={STATUS_META}
                   getNextAction={getNextAction}
