@@ -238,69 +238,69 @@ export default function DoctorBoard() {
       <div className="board-padding">
         {view === 'QUEUE' ? (
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '20px', marginBottom: '40px' }}>
-            <div className="summary-card" style={{ background: 'white', border: '1px solid #e2e8f0', padding: '30px', borderRadius: '24px', boxShadow: '0 10px 40px rgba(0,0,0,0.02)' }}>
-              <span style={{ display: 'block', fontSize: '10px', fontWeight: 950, color: '#ef4444', textTransform: 'uppercase', letterSpacing: '3px', marginBottom: '20px' }}>Critical Action</span>
-              <div style={{ display: 'flex', alignItems: 'baseline', gap: '12px' }}>
-                 <span style={{ fontSize: '48px', fontWeight: 950, color: '#ef4444', letterSpacing: '-2px' }}>{stats.pendingReports}</span>
-                 <span style={{ fontSize: '14px', fontWeight: 700, color: '#ef4444' }}>AWAITING</span>
+            <div className="summary-card" style={{ background: 'white', border: '1px solid #e2e8f0', padding: '20px', borderRadius: '24px', boxShadow: '0 10px 40px rgba(0,0,0,0.02)' }}>
+              <span style={{ display: 'block', fontSize: '10px', fontWeight: 950, color: '#ef4444', textTransform: 'uppercase', letterSpacing: '3px', marginBottom: '12px' }}>Critical Action</span>
+              <div style={{ display: 'flex', alignItems: 'baseline', gap: '8px' }}>
+                 <span style={{ fontSize: '32px', fontWeight: 950, color: '#ef4444', letterSpacing: '-1.5px' }}>{stats.pendingReports}</span>
+                 <span style={{ fontSize: '12px', fontWeight: 700, color: '#ef4444' }}>AWAITING</span>
               </div>
             </div>
 
-            <div className="summary-card" style={{ background: 'white', border: '1px solid #e2e8f0', padding: '30px', borderRadius: '24px', boxShadow: '0 10px 40px rgba(0,0,0,0.02)' }}>
-              <span style={{ display: 'block', fontSize: '10px', fontWeight: 950, color: '#64748b', textTransform: 'uppercase', letterSpacing: '3px', marginBottom: '20px' }}>In Progress</span>
-              <div style={{ display: 'flex', alignItems: 'baseline', gap: '12px' }}>
-                 <span style={{ fontSize: '48px', fontWeight: 950, color: '#f59e0b', letterSpacing: '-2px' }}>{stats.drafts}</span>
-                 <span style={{ fontSize: '14px', fontWeight: 700, color: '#f59e0b' }}>DRAFTS</span>
+            <div className="summary-card" style={{ background: 'white', border: '1px solid #e2e8f0', padding: '20px', borderRadius: '24px', boxShadow: '0 10px 40px rgba(0,0,0,0.02)' }}>
+              <span style={{ display: 'block', fontSize: '10px', fontWeight: 950, color: '#64748b', textTransform: 'uppercase', letterSpacing: '3px', marginBottom: '12px' }}>In Progress</span>
+              <div style={{ display: 'flex', alignItems: 'baseline', gap: '8px' }}>
+                 <span style={{ fontSize: '32px', fontWeight: 950, color: '#f59e0b', letterSpacing: '-1.5px' }}>{stats.drafts}</span>
+                 <span style={{ fontSize: '12px', fontWeight: 700, color: '#f59e0b' }}>DRAFTS</span>
               </div>
             </div>
 
-            <div className="summary-card" style={{ background: 'white', border: '1px solid #e2e8f0', padding: '30px', borderRadius: '24px', boxShadow: '0 10px 40px rgba(0,0,0,0.02)' }}>
-              <span style={{ display: 'block', fontSize: '10px', fontWeight: 950, color: '#64748b', textTransform: 'uppercase', letterSpacing: '3px', marginBottom: '20px' }}>Success Metrics</span>
-              <div style={{ display: 'flex', alignItems: 'baseline', gap: '12px' }}>
-                 <span style={{ fontSize: '48px', fontWeight: 950, color: '#2ecc71', letterSpacing: '-2px' }}>{stats.finalizedToday}</span>
-                 <span style={{ fontSize: '14px', fontWeight: 700, color: '#2ecc71' }}>REPORTS</span>
+            <div className="summary-card" style={{ background: 'white', border: '1px solid #e2e8f0', padding: '20px', borderRadius: '24px', boxShadow: '0 10px 40px rgba(0,0,0,0.02)' }}>
+              <span style={{ display: 'block', fontSize: '10px', fontWeight: 950, color: '#64748b', textTransform: 'uppercase', letterSpacing: '3px', marginBottom: '12px' }}>Success Metrics</span>
+              <div style={{ display: 'flex', alignItems: 'baseline', gap: '8px' }}>
+                 <span style={{ fontSize: '32px', fontWeight: 950, color: '#2ecc71', letterSpacing: '-1.5px' }}>{stats.finalizedToday}</span>
+                 <span style={{ fontSize: '12px', fontWeight: 700, color: '#2ecc71' }}>REPORTS</span>
               </div>
             </div>
 
-            <div className="summary-card" style={{ background: 'white', border: '1px solid #e2e8f0', padding: '30px', borderRadius: '24px', boxShadow: '0 10px 40px rgba(0,0,0,0.02)' }}>
-              <span style={{ display: 'block', fontSize: '10px', fontWeight: 950, color: '#64748b', textTransform: 'uppercase', letterSpacing: '3px', marginBottom: '20px' }}>Clinical Flux</span>
-              <div style={{ display: 'flex', alignItems: 'baseline', gap: '12px' }}>
-                 <span style={{ fontSize: '48px', fontWeight: 950, color: '#0f52ba', letterSpacing: '-2px' }}>{stats.upcoming}</span>
-                 <span style={{ fontSize: '14px', fontWeight: 700, color: '#0f52ba' }}>UNITS</span>
+            <div className="summary-card" style={{ background: 'white', border: '1px solid #e2e8f0', padding: '20px', borderRadius: '24px', boxShadow: '0 10px 40px rgba(0,0,0,0.02)' }}>
+              <span style={{ display: 'block', fontSize: '10px', fontWeight: 950, color: '#64748b', textTransform: 'uppercase', letterSpacing: '3px', marginBottom: '12px' }}>Clinical Flux</span>
+              <div style={{ display: 'flex', alignItems: 'baseline', gap: '8px' }}>
+                 <span style={{ fontSize: '32px', fontWeight: 950, color: '#0f52ba', letterSpacing: '-1.5px' }}>{stats.upcoming}</span>
+                 <span style={{ fontSize: '12px', fontWeight: 700, color: '#0f52ba' }}>UNITS</span>
               </div>
             </div>
           </div>
         ) : (
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '20px', marginBottom: '40px' }}>
-            <div className="summary-card" style={{ background: 'white', border: '1px solid #e2e8f0', padding: '30px', borderRadius: '24px', boxShadow: '0 10px 40px rgba(0,0,0,0.02)' }}>
-              <span style={{ display: 'block', fontSize: '10px', fontWeight: 950, color: '#64748b', textTransform: 'uppercase', letterSpacing: '3px', marginBottom: '20px' }}>Lifetime Archive</span>
-              <div style={{ display: 'flex', alignItems: 'baseline', gap: '12px' }}>
-                 <span style={{ fontSize: '48px', fontWeight: 950, color: '#1e293b', letterSpacing: '-2px' }}>{stats.archiveTotal}</span>
-                 <span style={{ fontSize: '14px', fontWeight: 700, color: '#6366f1' }}>STUDIES</span>
+            <div className="summary-card" style={{ background: 'white', border: '1px solid #e2e8f0', padding: '20px', borderRadius: '24px', boxShadow: '0 10px 40px rgba(0,0,0,0.02)' }}>
+              <span style={{ display: 'block', fontSize: '10px', fontWeight: 950, color: '#64748b', textTransform: 'uppercase', letterSpacing: '3px', marginBottom: '12px' }}>Lifetime Archive</span>
+              <div style={{ display: 'flex', alignItems: 'baseline', gap: '8px' }}>
+                 <span style={{ fontSize: '32px', fontWeight: 950, color: '#1e293b', letterSpacing: '-1.5px' }}>{stats.archiveTotal}</span>
+                 <span style={{ fontSize: '12px', fontWeight: 700, color: '#6366f1' }}>STUDIES</span>
               </div>
             </div>
 
-            <div className="summary-card" style={{ background: 'white', border: '1px solid #e2e8f0', padding: '30px', borderRadius: '24px', boxShadow: '0 10px 40px rgba(0,0,0,0.02)' }}>
-              <span style={{ display: 'block', fontSize: '10px', fontWeight: 950, color: '#64748b', textTransform: 'uppercase', letterSpacing: '3px', marginBottom: '20px' }}>Total Finalized</span>
-              <div style={{ display: 'flex', alignItems: 'baseline', gap: '12px' }}>
-                 <span style={{ fontSize: '48px', fontWeight: 950, color: '#059669', letterSpacing: '-2px' }}>{stats.archiveFinalized}</span>
-                 <span style={{ fontSize: '14px', fontWeight: 700, color: '#059669' }}>VALIDATED</span>
+            <div className="summary-card" style={{ background: 'white', border: '1px solid #e2e8f0', padding: '20px', borderRadius: '24px', boxShadow: '0 10px 40px rgba(0,0,0,0.02)' }}>
+              <span style={{ display: 'block', fontSize: '10px', fontWeight: 950, color: '#64748b', textTransform: 'uppercase', letterSpacing: '3px', marginBottom: '12px' }}>Total Finalized</span>
+              <div style={{ display: 'flex', alignItems: 'baseline', gap: '8px' }}>
+                 <span style={{ fontSize: '32px', fontWeight: 950, color: '#059669', letterSpacing: '-1.5px' }}>{stats.archiveFinalized}</span>
+                 <span style={{ fontSize: '12px', fontWeight: 700, color: '#059669' }}>VALIDATED</span>
               </div>
             </div>
 
-            <div className="summary-card" style={{ background: 'white', border: '1px solid #e2e8f0', padding: '30px', borderRadius: '24px', boxShadow: '0 10px 40px rgba(0,0,0,0.02)' }}>
-              <span style={{ display: 'block', fontSize: '10px', fontWeight: 950, color: '#64748b', textTransform: 'uppercase', letterSpacing: '3px', marginBottom: '20px' }}>Legacy Drafts</span>
-              <div style={{ display: 'flex', alignItems: 'baseline', gap: '12px' }}>
-                 <span style={{ fontSize: '48px', fontWeight: 950, color: '#f59e0b', letterSpacing: '-2px' }}>{stats.archiveDrafts}</span>
-                 <span style={{ fontSize: '14px', fontWeight: 700, color: '#f59e0b' }}>DRAFTS</span>
+            <div className="summary-card" style={{ background: 'white', border: '1px solid #e2e8f0', padding: '20px', borderRadius: '24px', boxShadow: '0 10px 40px rgba(0,0,0,0.02)' }}>
+              <span style={{ display: 'block', fontSize: '10px', fontWeight: 950, color: '#64748b', textTransform: 'uppercase', letterSpacing: '3px', marginBottom: '12px' }}>Legacy Drafts</span>
+              <div style={{ display: 'flex', alignItems: 'baseline', gap: '8px' }}>
+                 <span style={{ fontSize: '32px', fontWeight: 950, color: '#f59e0b', letterSpacing: '-1.5px' }}>{stats.archiveDrafts}</span>
+                 <span style={{ fontSize: '12px', fontWeight: 700, color: '#f59e0b' }}>DRAFTS</span>
               </div>
             </div>
 
-            <div className="summary-card" style={{ background: 'white', border: '1px solid #e2e8f0', padding: '30px', borderRadius: '24px', boxShadow: '0 10px 40px rgba(0,0,0,0.02)' }}>
-              <span style={{ display: 'block', fontSize: '10px', fontWeight: 950, color: '#64748b', textTransform: 'uppercase', letterSpacing: '3px', marginBottom: '20px' }}>Diagnostic Yield</span>
-              <div style={{ display: 'flex', alignItems: 'baseline', gap: '12px' }}>
-                 <span style={{ fontSize: '48px', fontWeight: 950, color: '#6366f1', letterSpacing: '-2px' }}>{stats.reportingAccuracy}%</span>
-                 <span style={{ fontSize: '14px', fontWeight: 700, color: '#6366f1' }}>FIDELITY</span>
+            <div className="summary-card" style={{ background: 'white', border: '1px solid #e2e8f0', padding: '20px', borderRadius: '24px', boxShadow: '0 10px 40px rgba(0,0,0,0.02)' }}>
+              <span style={{ display: 'block', fontSize: '10px', fontWeight: 950, color: '#64748b', textTransform: 'uppercase', letterSpacing: '3px', marginBottom: '12px' }}>Diagnostic Yield</span>
+              <div style={{ display: 'flex', alignItems: 'baseline', gap: '8px' }}>
+                 <span style={{ fontSize: '32px', fontWeight: 950, color: '#6366f1', letterSpacing: '-1.5px' }}>{stats.reportingAccuracy}%</span>
+                 <span style={{ fontSize: '12px', fontWeight: 700, color: '#6366f1' }}>FIDELITY</span>
               </div>
             </div>
           </div>

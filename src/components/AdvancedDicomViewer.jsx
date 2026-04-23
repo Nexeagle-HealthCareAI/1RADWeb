@@ -37,10 +37,10 @@ const DICOM_CONFIG = {
   MAX_WEB_WORKERS: 0,
   
   // Timeout for initial image load (milliseconds)
-  INITIAL_LOAD_TIMEOUT: 60000, // 60 seconds
+  INITIAL_LOAD_TIMEOUT: 120000, // 120 seconds
   
   // Timeout for retry without workers (milliseconds)
-  RETRY_TIMEOUT: 30000, // 30 seconds
+  RETRY_TIMEOUT: 60000, // 60 seconds
   
   // Enable detailed console logging
   DEBUG_LOGGING: true
@@ -123,8 +123,8 @@ async function initCornerstone() {
     const promise = new Promise(async (resolve, reject) => {
       const loaderTimeout = setTimeout(() => {
         console.error(`[DICOM] Loader internal timeout for: ${imageId}`);
-        reject(new Error('Loader internal timeout - DICOM decoder is not responding'));
-      }, 45000);
+        reject(new Error('Loader internal timeout - DICOM decoder is not responding (90s limit)'));
+      }, 90000);
       
       try {
         let loadPromise;

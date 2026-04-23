@@ -381,7 +381,7 @@ export default function AppointmentBoard() {
 
           if (matchedPrice) {
             console.log('[AUTO-BILL] Initiating invoice for:', matchedPrice.serviceName);
-            await apiClient.post('/finance/invoices', {
+            const invoicePayload = {
               patientId: newBooking.patientId,
               appointmentId: appointmentRes.data.appointmentId || appointmentRes.data.id,
               items: [{
@@ -389,7 +389,14 @@ export default function AppointmentBoard() {
                 amount: parseFloat(matchedPrice.amount),
                 quantity: 1
               }]
-            });
+            };
+            
+            if (!invoicePayload.patientId || !invoicePayload.appointmentId) {
+              console.warn('[AUTO-BILL] Aborted: Missing IDs', invoicePayload);
+              return;
+            }
+
+            await apiClient.post('/finance/invoices', invoicePayload);
             console.log('[AUTO-BILL] Success: Invoice dispatched to backend.');
           } else {
              console.warn('[AUTO-BILL] Skipping: No matching price found in registry for', newBooking.service);
@@ -1194,7 +1201,7 @@ export default function AppointmentBoard() {
                           }}>
                             {referrers.filter(r => r.name.toLowerCase().includes(referrerSearchValue.toLowerCase())).map(r => (
                               <div 
-                                key={r.id}
+                                key={r.referrerId}
                                 onClick={() => {
                                   setNewPatient(prev => ({ ...prev, referredBy: r.name, referrerId: r.referrerId }));
                                   setReferrerSearchValue(r.name);
@@ -1872,7 +1879,11 @@ export default function AppointmentBoard() {
           ) : (
             /* Desktop: Table Layout */
             <div className="appointments-table">
-              {paginatedAppointments.map(app => renderAppointmentRow(app))}
+              {paginatedAppointments.map(app => (
+                <div key={app.appointmentId}>
+                  {renderAppointmentRow(app)}
+                </div>
+              ))}
             </div>
           )}
         </div>

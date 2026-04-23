@@ -144,19 +144,21 @@ export default function AdminBoard() {
       }
 
       try {
-        const response = await apiClient.get(`/Prescription/${selectedPrescriptionDoctorId}`);
-        const data = response.data;
-        setPrescriptionSettings({
-          headerMargin: data.headerMargin,
-          leftMargin: data.leftMargin,
-          rightMargin: data.rightMargin,
-          bottomMargin: data.bottomMargin,
-          fontSize: data.fontSize,
-          fontColor: data.fontColor,
-          fontFamily: data.fontFamily,
-          letterhead: data.letterheadBlobUrl,
-          letterheadFile: null
-        });
+        const res = await apiClient.get(`/Prescription/${selectedPrescriptionDoctorId}`);
+        const data = res.data.data;
+        if (data) {
+          setPrescriptionSettings({
+            headerMargin: data.headerMargin ?? 50,
+            leftMargin: data.leftMargin ?? 20,
+            rightMargin: data.rightMargin ?? 20,
+            bottomMargin: data.bottomMargin ?? 30,
+            fontSize: data.fontSize ?? 14,
+            fontColor: data.fontColor || '#1e293b',
+            fontFamily: data.fontFamily || 'Inter',
+            letterhead: data.letterheadBlobUrl,
+            letterheadFile: null
+          });
+        }
       } catch (err) {
         console.error("Failed to fetch protocol:", err);
         setPrescriptionSettings({
@@ -1300,7 +1302,7 @@ export default function AdminBoard() {
             >
               <option value="">SELECT CLINICAL CONSULTANT...</option>
               {doctors.map(doc => (
-                <option key={doc.id} value={doc.id}>{doc.name.toUpperCase()} — {doc.degree || 'MD'}</option>
+                <option key={doc.id} value={doc.id}>{(doc.name || 'Unknown').toUpperCase()} — {doc.degree || 'MD'}</option>
               ))}
             </select>
             {doctors.length === 0 && !personnelLoading && (
@@ -1371,7 +1373,7 @@ export default function AdminBoard() {
                         onChange={(e) => setPrescriptionSettings({...prescriptionSettings, fontColor: e.target.value})}
                         style={{ width: '32px', height: '32px', padding: 0, border: 'none', borderRadius: '6px', cursor: 'pointer' }}
                       />
-                      <span style={{ fontSize: '10px', fontWeight: 800, color: '#64748b', fontFamily: 'monospace' }}>{prescriptionSettings.fontColor.toUpperCase()}</span>
+                      <span style={{ fontSize: '10px', fontWeight: 800, color: '#64748b', fontFamily: 'monospace' }}>{(prescriptionSettings.fontColor || '#1E293B').toUpperCase()}</span>
                     </div>
                   </div>
                 </div>
@@ -1391,7 +1393,18 @@ export default function AdminBoard() {
                       accept="application/pdf,image/*"
                       onChange={(e) => {
                         const file = e.target.files[0];
-                        if (file) setPrescriptionSettings({...prescriptionSettings, letterhead: URL.createObjectURL(file), letterheadFile: file});
+                        if (file) {
+                          setPrescriptionSettings(prev => {
+                            if (prev.letterhead && prev.letterhead.startsWith('blob:')) {
+                              URL.revokeObjectURL(prev.letterhead);
+                            }
+                            return {
+                              ...prev, 
+                              letterhead: URL.createObjectURL(file), 
+                              letterheadFile: file
+                            };
+                          });
+                        }
                       }}
                       style={{ display: 'none' }}
                     />
@@ -1423,7 +1436,7 @@ export default function AdminBoard() {
                       headers: { 'Content-Type': 'multipart/form-data' }
                    });
                    const updated = response.data;
-                   setPrescriptionSettings(prev => ({...prev, letterhead: updated.letterheadBlobUrl, letterheadFile: null}));
+                   setPrescriptionSettings(prev => ({...prev, letterhead: updated.data?.letterheadBlobUrl, letterheadFile: null}));
                    alert("STRATEGIC PROTOCOL SYNCHRONIZED SUCCESSFULLY 📡");
                 } catch (err) {
                    console.error("Sync failed:", err);
@@ -1616,50 +1629,50 @@ export default function AdminBoard() {
         </div>
 
         {/* Level 1: Tactical Hero KPI Nodes */}
-        <div className="summary-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '20px', marginBottom: '30px' }}>
-          <div className="summary-card" style={{ background: 'linear-gradient(135deg, #0f52ba 0%, #061a40 100%)', padding: '30px', borderRadius: '24px', color: 'white', position: 'relative', overflow: 'hidden' }}>
-             <div style={{ position: 'absolute', top: '-20px', right: '-20px', fontSize: '120px', opacity: 0.05 }}>👤</div>
-             <span style={{ display: 'block', fontSize: '10px', fontWeight: 950, color: 'var(--tactical-cyan)', textTransform: 'uppercase', letterSpacing: '3px', marginBottom: '20px' }}>Universal Registry</span>
+        <div className="summary-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: '20px', marginBottom: '30px' }}>
+          <div className="summary-card" style={{ background: 'linear-gradient(135deg, #0f52ba 0%, #061a40 100%)', padding: '20px', borderRadius: '24px', color: 'white', position: 'relative', overflow: 'hidden' }}>
+             <div style={{ position: 'absolute', top: '-10px', right: '-10px', fontSize: '80px', opacity: 0.05 }}>👤</div>
+             <span style={{ display: 'block', fontSize: '10px', fontWeight: 950, color: 'var(--tactical-cyan)', textTransform: 'uppercase', letterSpacing: '3px', marginBottom: '12px' }}>Universal Registry</span>
              <div style={{ display: 'flex', alignItems: 'baseline', gap: '12px' }}>
-                <span style={{ fontSize: '48px', fontWeight: 950, letterSpacing: '-2px' }}>{kpis.universalRegistry}</span>
-                <span style={{ fontSize: '14px', fontWeight: 700, opacity: 0.6 }}>ENTITIES</span>
+                <span style={{ fontSize: '32px', fontWeight: 950, letterSpacing: '-1.5px' }}>{kpis.universalRegistry}</span>
+                <span style={{ fontSize: '12px', fontWeight: 700, opacity: 0.6 }}>ENTITIES</span>
              </div>
-             <div style={{ marginTop: '25px', fontSize: '9px', color: 'var(--tactical-cyan)', fontWeight: 900, background: 'rgba(255,255,255,0.1)', padding: '5px 12px', borderRadius: '20px', display: 'inline-block' }}>STRATEGIC RESOURCE POOL</div>
+             <div style={{ marginTop: '15px', fontSize: '8px', color: 'var(--tactical-cyan)', fontWeight: 900, background: 'rgba(255,255,255,0.1)', padding: '4px 10px', borderRadius: '20px', display: 'inline-block' }}>STRATEGIC RESOURCE POOL</div>
           </div>
 
 
 
-          <div className="summary-card" style={{ background: 'white', border: '1px solid #e2e8f0', padding: '30px', borderRadius: '24px' }}>
-             <span style={{ display: 'block', fontSize: '10px', fontWeight: 950, color: '#64748b', textTransform: 'uppercase', letterSpacing: '3px', marginBottom: '20px' }}>Live Volume</span>
+          <div className="summary-card" style={{ background: 'white', border: '1px solid #e2e8f0', padding: '20px', borderRadius: '24px' }}>
+             <span style={{ display: 'block', fontSize: '10px', fontWeight: 950, color: '#64748b', textTransform: 'uppercase', letterSpacing: '3px', marginBottom: '12px' }}>Live Volume</span>
              <div style={{ display: 'flex', alignItems: 'baseline', gap: '12px' }}>
-                <span style={{ fontSize: '48px', fontWeight: 950, color: '#1e293b', letterSpacing: '-2px' }}>{kpis.dailyMissions}</span>
-                <span style={{ fontSize: '14px', fontWeight: 700, color: '#0f52ba' }}>MISSIONS</span>
+                <span style={{ fontSize: '32px', fontWeight: 950, color: '#1e293b', letterSpacing: '-1.5px' }}>{kpis.dailyMissions}</span>
+                <span style={{ fontSize: '12px', fontWeight: 700, color: '#0f52ba' }}>MISSIONS</span>
              </div>
-             <div style={{ marginTop: '25px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+             <div style={{ marginTop: '15px', display: 'flex', alignItems: 'center', gap: '8px' }}>
                 <span style={{ fontSize: '10px', fontWeight: 950, color: '#2ecc71' }}>↑ {kpis.growthPercentage}%</span>
                 <span style={{ fontSize: '9px', fontWeight: 800, color: '#94a3b8' }}>OPERATIONAL GAIN</span>
              </div>
           </div>
 
-          <div className="summary-card" style={{ background: 'white', border: '1px solid #e2e8f0', padding: '30px', borderRadius: '24px' }}>
-             <span style={{ display: 'block', fontSize: '10px', fontWeight: 950, color: '#64748b', textTransform: 'uppercase', letterSpacing: '3px', marginBottom: '20px' }}>Financial Yield</span>
+          <div className="summary-card" style={{ background: 'white', border: '1px solid #e2e8f0', padding: '20px', borderRadius: '24px' }}>
+             <span style={{ display: 'block', fontSize: '10px', fontWeight: 950, color: '#64748b', textTransform: 'uppercase', letterSpacing: '3px', marginBottom: '12px' }}>Financial Yield</span>
              <div style={{ display: 'flex', alignItems: 'baseline', gap: '12px' }}>
-                <span style={{ fontSize: '24px', fontWeight: 950, color: '#059669' }}>₹</span>
-                <span style={{ fontSize: '48px', fontWeight: 950, color: '#1e293b', letterSpacing: '-2px' }}>{kpis.financialYield.toLocaleString()}</span>
+                <span style={{ fontSize: '20px', fontWeight: 950, color: '#059669' }}>₹</span>
+                <span style={{ fontSize: '32px', fontWeight: 950, color: '#1e293b', letterSpacing: '-1.5px' }}>{kpis.financialYield.toLocaleString()}</span>
              </div>
-             <div style={{ marginTop: '25px', height: '6px', background: '#f1f5f9', borderRadius: '3px', overflow: 'hidden' }}>
+             <div style={{ marginTop: '15px', height: '6px', background: '#f1f5f9', borderRadius: '3px', overflow: 'hidden' }}>
                 <div style={{ width: '100%', height: '100%', background: '#059669', borderRadius: '3px' }}></div>
              </div>
              <div style={{ fontSize: '9px', fontWeight: 800, color: '#94a3b8', marginTop: '10px' }}>NOMINAL_SETTLEMENT: 100% REALIZED</div>
           </div>
 
-          <div className="summary-card" style={{ background: 'white', border: '1px solid #e2e8f0', padding: '30px', borderRadius: '24px' }}>
-             <span style={{ display: 'block', fontSize: '10px', fontWeight: 950, color: '#64748b', textTransform: 'uppercase', letterSpacing: '3px', marginBottom: '20px' }}>Command Latency</span>
+          <div className="summary-card" style={{ background: 'white', border: '1px solid #e2e8f0', padding: '20px', borderRadius: '24px' }}>
+             <span style={{ display: 'block', fontSize: '10px', fontWeight: 950, color: '#64748b', textTransform: 'uppercase', letterSpacing: '3px', marginBottom: '12px' }}>Command Latency</span>
              <div style={{ display: 'flex', alignItems: 'baseline', gap: '12px' }}>
-                <span style={{ fontSize: '48px', fontWeight: 950, color: '#dc2626', letterSpacing: '-2px' }}>{kpis.averageLatencyMinutes}m</span>
-                <span style={{ fontSize: '14px', fontWeight: 700, color: '#94a3b8' }}>AVG</span>
+                <span style={{ fontSize: '32px', fontWeight: 950, color: '#dc2626', letterSpacing: '-1.5px' }}>{kpis.averageLatencyMinutes}m</span>
+                <span style={{ fontSize: '12px', fontWeight: 700, color: '#94a3b8' }}>AVG</span>
              </div>
-             <div style={{ display: 'flex', gap: '6px', marginTop: '25px' }}>
+             <div style={{ display: 'flex', gap: '6px', marginTop: '15px' }}>
                 {[1,2,3,4,5,6].map(i => <div key={i} style={{ flex: 1, height: '6px', borderRadius: '3px', background: i <= 4 ? '#dc2626' : '#f1f5f9' }}></div>)}
              </div>
              <div style={{ fontSize: '9px', fontWeight: 800, color: '#dc2626', marginTop: '10px' }}>PEAK THROUGHPUT DETECTED</div>
@@ -2415,13 +2428,13 @@ export default function AdminBoard() {
                             <div style={{ padding: '4px 10px', background: '#f0f3fd', color: '#0f52ba', borderRadius: '6px', fontSize: '10px', fontWeight: 950, display: 'inline-block' }}>{p.patientIdentifier || 'UNSET'}</div>
                           </td>
                           <td style={{ padding: '20px 30px' }}>
-                            <div style={{ fontSize: '13px', fontWeight: 850, color: '#1e293b' }}>{p.fullName.toUpperCase()}</div>
+                            <div style={{ fontSize: '13px', fontWeight: 850, color: '#1e293b' }}>{(p.fullName || 'Unknown').toUpperCase()}</div>
                           </td>
                           <td style={{ padding: '20px 30px' }}>
                             <div style={{ fontSize: '11px', fontWeight: 700, color: '#64748b' }}>{p.mobile}</div>
                           </td>
                           <td style={{ padding: '20px 30px' }}>
-                            <div style={{ fontSize: '11px', fontWeight: 800, color: '#1e293b' }}>{p.age}Y / {p.gender.toUpperCase()}</div>
+                            <div style={{ fontSize: '11px', fontWeight: 800, color: '#1e293b' }}>{p.age}Y / {(p.gender || 'U').toUpperCase()}</div>
                           </td>
                           <td style={{ padding: '20px 30px', textAlign: 'right' }}>
                             <div style={{ fontSize: '11px', fontWeight: 900, color: '#0f52ba' }}>{new Date(p.registeredAt).toLocaleDateString()}</div>
@@ -2458,7 +2471,7 @@ export default function AdminBoard() {
                             <div style={{ width: '28px', height: '28px', borderRadius: '8px', background: i < 3 ? '#f0f3fd' : '#f8fafc', color: i < 3 ? '#0f52ba' : '#64748b', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '11px', fontWeight: 950 }}>#{i + 1}</div>
                           </td>
                           <td style={{ padding: '20px 30px' }}>
-                            <div style={{ fontSize: '13px', fontWeight: 850, color: '#1e293b' }}>{s.name.toUpperCase()}</div>
+                            <div style={{ fontSize: '13px', fontWeight: 850, color: '#1e293b' }}>{(s.name || 'Anonymous').toUpperCase()}</div>
                           </td>
                           <td style={{ padding: '20px 30px' }}>
                             <div style={{ fontSize: '11px', fontWeight: 700, color: '#64748b' }}>{s.contact}</div>
@@ -2498,7 +2511,7 @@ export default function AdminBoard() {
                           <div style={{ display: 'flex', gap: '15px', alignItems: 'center' }}>
                              <div style={{ width: '32px', height: '32px', borderRadius: '10px', background: isSelected ? 'white' : '#f8fafc', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '14px', border: '1px solid #f1f5f9' }}>👤</div>
                              <div>
-                                <div style={{ fontSize: '12px', fontWeight: 950, color: isSelected ? '#0f52ba' : '#1e293b' }}>{s.name.toUpperCase()}</div>
+                                <div style={{ fontSize: '12px', fontWeight: 950, color: isSelected ? '#0f52ba' : '#1e293b' }}>{(s.name || 'Anonymous').toUpperCase()}</div>
                                 <div style={{ fontSize: '9px', color: '#94a3b8', fontWeight: 800 }}>RANK #{i + 1} • {s.patients.length} UNITS</div>
                                 <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', marginTop: '4px' }}>
                                    <div style={{ fontSize: '10px', color: '#64748b', fontWeight: 850 }}>{s.contact}</div>
@@ -2542,8 +2555,8 @@ export default function AdminBoard() {
                                       <tr key={p.patientId} style={{ borderBottom: '1px solid #f8fafc' }}>
                                         <td style={{ padding: '15px 25px', fontSize: '11px', fontWeight: 950, color: '#0f52ba', fontFamily: 'monospace' }}>{p.patientIdentifier || 'UNSET'}</td>
                                         <td style={{ padding: '15px 25px' }}>
-                                           <div style={{ fontSize: '13px', fontWeight: 850, color: '#1e293b' }}>{p.name.toUpperCase()}</div>
-                                           <div style={{ fontSize: '10px', color: '#94a3b8', fontWeight: 700 }}>{p.age}Y • {p.gender.toUpperCase()}</div>
+                                           <div style={{ fontSize: '13px', fontWeight: 850, color: '#1e293b' }}>{(p.name || 'Unknown').toUpperCase()}</div>
+                                           <div style={{ fontSize: '10px', color: '#94a3b8', fontWeight: 700 }}>{p.age}Y • {(p.gender || 'U').toUpperCase()}</div>
                                         </td>
                                         <td style={{ padding: '15px 25px' }}>
                                            <div style={{ fontSize: '11px', fontWeight: 800, color: '#1e293b' }}>{p.mobile}</div>
@@ -2601,8 +2614,8 @@ export default function AdminBoard() {
                       <tr key={p.patientId} style={{ borderBottom: '1px solid #f8fafc', transition: 'background 0.2s' }}>
                         <td style={{ padding: '20px 30px', fontSize: '12px', fontWeight: 950, color: '#0f52ba', fontFamily: 'monospace' }}>{p.patientIdentifier || 'UNSET'}</td>
                         <td style={{ padding: '20px 30px' }}>
-                           <div style={{ fontSize: '14px', fontWeight: 800, color: '#1e293b' }}>{p.name.toUpperCase()}</div>
-                           <div style={{ fontSize: '10px', color: '#94a3b8', fontWeight: 700 }}>{p.age}Y • {p.gender.toUpperCase()}</div>
+                           <div style={{ fontSize: '14px', fontWeight: 800, color: '#1e293b' }}>{(p.name || 'Unknown').toUpperCase()}</div>
+                           <div style={{ fontSize: '10px', color: '#94a3b8', fontWeight: 700 }}>{p.age}Y • {(p.gender || 'U').toUpperCase()}</div>
                         </td>
                         <td style={{ padding: '20px 20px' }}>
                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
@@ -2672,9 +2685,9 @@ export default function AdminBoard() {
              <tbody>
                {layouts.map(l => (
                  <tr key={l.id}>
-                    <td style={{ fontWeight: 700, color: '#0f52ba' }}>{l.name.toUpperCase()}</td>
-                    <td><span className="file-badge" style={{ padding: '4px 8px' }}>{l.modality}</span></td>
-                    <td>{l.type}</td>
+                    <td style={{ fontWeight: 700, color: '#0f52ba' }}>{(l.name || 'Unnamed Protocol').toUpperCase()}</td>
+                    <td><span className="file-badge" style={{ padding: '4px 8px' }}>{l.modality || 'General'}</span></td>
+                    <td>{l.type || 'N/A'}</td>
                     <td><span style={{ color: l.active ? '#2ecc71' : '#aaa', fontSize: '11px', fontWeight: 900 }}>{l.active ? 'ACTIVE' : 'INACTIVE'}</span></td>
                     <td>
                        <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
@@ -2783,7 +2796,7 @@ export default function AdminBoard() {
                     {u.name.charAt(0)}
                   </div>
                   <div>
-                    <div style={{ fontWeight: 950, color: '#1a1a2e', fontSize: '18px', letterSpacing: '-0.5px' }}>{u.name.toUpperCase()}</div>
+                    <div style={{ fontWeight: 950, color: '#1a1a2e', fontSize: '18px', letterSpacing: '-0.5px' }}>{(u.name || 'Unknown Staff').toUpperCase()}</div>
                     <span style={{ marginTop: '4px', fontSize: '9px', color: '#94a3b8', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '1px' }}>HUB_NODE_{u.id?.split('-')[0]}</span>
                   </div>
                 </div>

@@ -121,13 +121,85 @@ export default function TechnicianPage() {
   };
 
   // --- HANDLERS ---
-  const handleOpenWorkspace = (study) => {
+  const handleOpenWorkspace = async (study) => {
     setActiveStudy(study);
     setCurrentView('WORKSPACE');
     setUploadedFiles([]);
     setTechNotes(study.notes || '');
     setViewportProps({ invert: false, flipHorizontal: false, flipVertical: false, rotation: 0 });
     setKeyImages([]);
+
+    // Fetch existing assets for this mission
+    try {
+        setLoading(true);
+        const res = await apiClient.get(`/Study/${study.appointmentId}/assets`);
+        if (res.data && res.data.length > 0) {
+            const hydAssets = res.data.map(asset => ({
+                id: asset.id,
+                name: asset.fileName,
+                type: asset.fileType.toUpperCase(),
+                remoteUrl: asset.blobUrl,
+                needsHydration: asset.fileType === 'zip',
+                rawFiles: []
+            }));
+            setUploadedFiles(hydAssets);
+        }
+    } catch (err) {
+        console.error('[TECH] Asset fetch failed', err);
+    } finally {
+        setLoading(false);
+    }
+  };
+
+  const hydrateZipAsset = async (index) => {
+    const asset = uploadedFiles[index];
+    if (!asset || !asset.needsHydration || !asset.remoteUrl) return;
+
+    setLoading(true);
+    try {
+      const response = await fetch(asset.remoteUrl);
+      const blob = await response.blob();
+      const zip = await JSZip.loadAsync(blob);
+      const extractedFiles = [];
+      
+      const fileNames = Object.keys(zip.files);
+      for (const fileName of fileNames) {
+        const zipFile = zip.files[fileName];
+        if (!zipFile.dir) {
+          const content = await zipFile.async('arraybuffer');
+          extractedFiles.push(new File([content], fileName.split('/').pop(), { type: 'application/dicom' }));
+        }
+      }
+
+      setUploadedFiles(prev => {
+        const newFiles = [...prev];
+        newFiles[index] = { ...asset, rawFiles: extractedFiles, needsHydration: false };
+        return newFiles;
+      });
+    } catch (err) {
+      console.error('[TECH] Hydration failure', err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    if (uploadedFiles[activeAssetIndex]?.needsHydration) {
+      hydrateZipAsset(activeAssetIndex);
+    }
+  }, [activeAssetIndex, uploadedFiles]);
+
+  const persistStudyAsset = async (file) => {
+    try {
+      const formData = new FormData();
+      formData.append('AppointmentId', activeStudy.appointmentId);
+      formData.append('File', file);
+      await apiClient.post('/Study/upload', formData, {
+        headers: { 'Content-Type': 'multipart/form-data' }
+      });
+    } catch (err) {
+      console.error('[TECH] Persistence failed', err);
+    }
   };
 
   const handleDownloadScreenshot = useCallback((dataUrl) => {
@@ -213,6 +285,9 @@ export default function TechnicianPage() {
           };
         });
 
+        // Background persist the zip file
+        persistStudyAsset(file);
+
         if (newAssets.length > 0) {
           setUploadedFiles(prev => [...prev, ...newAssets]);
           setActiveAssetIndex(0); // Auto-focus first extracted asset stack
@@ -228,6 +303,8 @@ export default function TechnicianPage() {
     } else {
       const isDicom = file.name.toLowerCase().endsWith('.dcm') || file.name.toLowerCase().includes('dicom') || file.type === 'application/dicom';
       
+      persistStudyAsset(file);
+
       setUploadedFiles(prev => [...prev, {
         name: file.name,
         type: isDicom ? 'DICOM' : (file.type || 'UNKNOWN'),
