@@ -158,17 +158,27 @@ async function initCornerstone() {
             height: dataSet.uint16('x00280010'),
             width: dataSet.uint16('x00280011'),
             color: dataSet.uint16('x00280004') === 'RGB',
-            columnPixelSpacing: 1,
-            rowPixelSpacing: 1,
+            columnPixelSpacing: dataSet.string('x00280030')?.split('\\')[1] ? parseFloat(dataSet.string('x00280030').split('\\')[1]) : 1,
+            rowPixelSpacing: dataSet.string('x00280030')?.split('\\')[0] ? parseFloat(dataSet.string('x00280030').split('\\')[0]) : 1,
             sizeInBytes: byteArray.length,
             getPixelData: () => {
               const pixelDataElement = dataSet.elements.x7fe00010;
-              return pixelDataElement ? new Uint8Array(byteArray.buffer, pixelDataElement.dataOffset, pixelDataElement.length) : new Uint8Array(0);
+              if (!pixelDataElement) return new Uint8Array(0);
+              
+              const bitsAllocated = dataSet.uint16('x00280100') || 16;
+              const pixelRepresentation = dataSet.uint16('x00280103') || 0; // 0 = unsigned, 1 = signed
+              
+              const buffer = byteArray.buffer.slice(pixelDataElement.dataOffset, pixelDataElement.dataOffset + pixelDataElement.length);
+              
+              if (bitsAllocated === 16) {
+                return pixelRepresentation === 1 ? new Int16Array(buffer) : new Uint16Array(buffer);
+              }
+              return new Uint8Array(buffer);
             }
           };
           
           clearTimeout(loaderTimeout);
-          console.log(`[DICOM] Manual fallback resolved for: ${imageId}`);
+          console.log(`[DICOM] Manual fallback resolved for: ${imageId} (Bits: ${dataSet.uint16('x00280100')})`);
           resolve(image);
           return;
         }
@@ -209,12 +219,19 @@ async function initCornerstone() {
                    height: dataSet.uint16('x00280010'),
                    width: dataSet.uint16('x00280011'),
                    color: dataSet.uint16('x00280004') === 'RGB',
-                   columnPixelSpacing: 1,
-                   rowPixelSpacing: 1,
+                   columnPixelSpacing: dataSet.string('x00280030')?.split('\\')[1] ? parseFloat(dataSet.string('x00280030').split('\\')[1]) : 1,
+                   rowPixelSpacing: dataSet.string('x00280030')?.split('\\')[0] ? parseFloat(dataSet.string('x00280030').split('\\')[0]) : 1,
                    sizeInBytes: byteArray.length,
                    getPixelData: () => {
                      const pixelDataElement = dataSet.elements.x7fe00010;
-                     return pixelDataElement ? new Uint8Array(byteArray.buffer, pixelDataElement.dataOffset, pixelDataElement.length) : new Uint8Array(0);
+                     if (!pixelDataElement) return new Uint8Array(0);
+                     const bitsAllocated = dataSet.uint16('x00280100') || 16;
+                     const pixelRepresentation = dataSet.uint16('x00280103') || 0;
+                     const buffer = byteArray.buffer.slice(pixelDataElement.dataOffset, pixelDataElement.dataOffset + pixelDataElement.length);
+                     if (bitsAllocated === 16) {
+                       return pixelRepresentation === 1 ? new Int16Array(buffer) : new Uint16Array(buffer);
+                     }
+                     return new Uint8Array(buffer);
                    }
                  };
                  clearTimeout(loaderTimeout);
@@ -572,7 +589,10 @@ const AdvancedDicomViewer = ({
           bindings: [{ mouseButton: toolsEnums.MouseBindings.Auxiliary }] // Middle click
         });
         toolGroup.setToolActive(StackScrollTool.toolName, {
-          bindings: [{ mouseButton: toolsEnums.MouseBindings.Primary, modifierKey: toolsEnums.KeyboardBindings.Alt }]
+          bindings: [
+            { mouseButton: toolsEnums.MouseBindings.Primary, modifierKey: toolsEnums.KeyboardBindings.Alt },
+            { mouseButton: toolsEnums.MouseBindings.Wheel }
+          ]
         });
         
         // Start prefetching for smoother scrolling using the utility
@@ -770,32 +790,68 @@ const AdvancedDicomViewer = ({
         }}
       />
 
-      {/* STACK SLIDER OVERLAY */}
+      {/* TACTICAL STACK SCROLL HUD */}
       {isReady && files && files.length > 1 && (
-        <div style={{ position: 'absolute', right: '10px', top: '50%', transform: 'translateY(-50%)', height: '70%', width: '20px', display: 'flex', flexDirection: 'column', alignItems: 'center', zIndex: 100, pointerEvents: 'none' }}>
-           <input 
-             type="range" 
-             min="0" 
-             max={files.length - 1} 
-             value={currentImageIndex}
-             onChange={(e) => {
-                const index = parseInt(e.target.value);
-                const viewport = renderingEngineRef.current.getViewport(viewportId);
-                if (viewport) viewport.setImageIdIndex(index);
-             }}
-             style={{ 
-               appearance: 'none', 
-               width: '150px', 
-               height: '4px', 
-               background: 'rgba(255,255,255,0.2)', 
-               borderRadius: '2px', 
-               transform: 'rotate(90deg)', 
-               cursor: 'pointer',
-               pointerEvents: 'auto'
-             }} 
-           />
-           <div style={{ color: 'white', fontSize: '10px', fontWeight: 900, marginTop: '70px', textShadow: '0 2px 4px rgba(0,0,0,0.5)', pointerEvents: 'none' }}>
-              {currentImageIndex + 1}/{files.length}
+        <div style={{ 
+          position: 'absolute', 
+          right: '12px', 
+          top: '50%', 
+          transform: 'translateY(-50%)', 
+          height: '80%', 
+          width: '32px', 
+          display: 'flex', 
+          flexDirection: 'column', 
+          alignItems: 'center', 
+          zIndex: 100, 
+          background: 'rgba(15, 23, 42, 0.4)', 
+          backdropFilter: 'blur(10px)', 
+          borderRadius: '16px', 
+          padding: '20px 0',
+          border: '1px solid rgba(255,255,255,0.1)',
+          pointerEvents: 'none' 
+        }}>
+           <div style={{ flex: 1, position: 'relative', width: '100%', display: 'flex', justifyContent: 'center' }}>
+             <input 
+               type="range" 
+               min="0" 
+               max={files.length - 1} 
+               value={currentImageIndex}
+               onChange={(e) => {
+                  const index = parseInt(e.target.value);
+                  const viewport = renderingEngineRef.current.getViewport(viewportId);
+                  if (viewport) viewport.setImageIdIndex(index);
+               }}
+               style={{ 
+                 appearance: 'none', 
+                 width: '180px', 
+                 height: '2px', 
+                 background: 'linear-gradient(to right, #0f52ba, #3b82f6)', 
+                 borderRadius: '2px', 
+                 transform: 'rotate(90deg)', 
+                 cursor: 'pointer',
+                 pointerEvents: 'auto',
+                 position: 'absolute',
+                 top: '50%',
+                 left: '50%',
+                 marginTop: '-1px',
+                 marginLeft: '-90px'
+               }} 
+             />
+           </div>
+           
+           <div style={{ 
+             color: '#fff', 
+             fontSize: '10px', 
+             fontWeight: 950, 
+             background: '#0f52ba', 
+             padding: '4px 8px', 
+             borderRadius: '6px', 
+             marginTop: '10px',
+             boxShadow: '0 4px 10px rgba(15, 82, 186, 0.3)',
+             pointerEvents: 'none',
+             letterSpacing: '0.5px'
+           }}>
+              {currentImageIndex + 1} / {files.length}
            </div>
         </div>
       )}

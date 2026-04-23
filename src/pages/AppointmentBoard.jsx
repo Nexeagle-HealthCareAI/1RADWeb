@@ -4,6 +4,9 @@ import { AuthContext } from '../auth/AuthContext';
 import AppointmentCard from '../components/AppointmentCard';
 import '../styles/global.css';
 import '../styles/AppointmentBoard.css';
+import AdvancedDicomViewer from '../components/AdvancedDicomViewer';
+import JSZip from 'jszip';
+import dicomParser from 'dicom-parser';
 
 // --- CONSTANTS ---
 
@@ -64,6 +67,9 @@ export default function AppointmentBoard() {
   const [drawerSearchQuery, setDrawerSearchQuery] = useState('');
   const [filters, setFilters] = useState({ date: TODAY, status: 'ALL', modality: 'ALL', doctor: 'ALL' });
   const [expandedRow, setExpandedRow] = useState(null);
+  const [uploadedFiles, setUploadedFiles] = useState({}); // { appointmentId: [files] }
+  const [isDicomImage, setIsDicomImage] = useState(false);
+  const [activeTool, setActiveTool] = useState('WindowLevel');
 
   const [isBookingOpen, setIsBookingOpen] = useState(false);
   const [isAddPatientOpen, setIsAddPatientOpen] = useState(false);
@@ -669,6 +675,34 @@ export default function AppointmentBoard() {
     );
   };
 
+  const handleFileChange = async (e, appId) => {
+    const file = e.target.files[0];
+    if (!file) return;
+
+    const isZip = file.name.toLowerCase().endsWith('.zip') || file.type === 'application/zip' || file.type === 'application/x-zip-compressed';
+    
+    if (isZip) {
+      try {
+        const zip = await JSZip.loadAsync(file);
+        const seriesFiles = [];
+
+        for (const fileName of Object.keys(zip.files)) {
+          const zipFile = zip.files[fileName];
+          if (!zipFile.dir && !fileName.includes('__MACOSX')) {
+            const content = await zipFile.async('arraybuffer');
+            const dcmFile = new File([content], fileName.split('/').pop(), { type: 'application/dicom' });
+            seriesFiles.push(dcmFile);
+          }
+        }
+        setUploadedFiles(prev => ({ ...prev, [appId]: seriesFiles }));
+      } catch (err) {
+        console.error('Zip parse failed', err);
+      }
+    } else {
+      setUploadedFiles(prev => ({ ...prev, [appId]: [file] }));
+    }
+  };
+
   // ============================================================
   //  APPOINTMENT TABLE ROW
   // ============================================================
@@ -843,8 +877,100 @@ export default function AppointmentBoard() {
                 })}
               </div>
 
+              <div style={{ flex: 1, minWidth: '400px', background: 'white', borderRadius: '16px', border: '1px solid #e2e8f0', padding: '20px', boxShadow: '0 4px 15px rgba(0,0,0,0.05)' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '15px' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <span style={{ fontSize: '18px' }}>{'\u{1F50E}'}</span>
+                    <h3 style={{ fontSize: '14px', fontWeight: 900, margin: 0, color: '#0f52ba' }}>DIAGNOSTIC WORKSPACE</h3>
+                  </div>
+                  
+                  <div style={{ display: 'flex', gap: '6px' }}>
+                    {['WindowLevel', 'Zoom', 'Pan', 'Length'].map(tool => (
+                      <button 
+                        key={tool}
+                        onClick={() => setActiveTool(tool)}
+                        style={{
+                          padding: '6px 12px', borderRadius: '8px', border: 'none',
+                          background: activeTool === tool ? '#0f52ba' : '#f1f5f9',
+                          color: activeTool === tool ? 'white' : '#64748b',
+                          fontSize: '10px', fontWeight: 800, cursor: 'pointer',
+                          transition: 'all 0.2s'
+                        }}
+                      >
+                        {tool.toUpperCase()}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                <div style={{ height: '450px', background: '#0a0a0f', borderRadius: '12px', overflow: 'hidden', position: 'relative', border: '1px solid #0f52ba30' }}>
+                  {uploadedFiles[app.appointmentId] ? (
+                    <AdvancedDicomViewer 
+                      files={uploadedFiles[app.appointmentId]} 
+                      activeTool={activeTool}
+                      onImageStatus={setIsDicomImage}
+                    />
+                  ) : (
+                    <div style={{ height: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', color: '#64748b' }}>
+                      <div style={{ fontSize: '40px', marginBottom: '15px', opacity: 0.5 }}>{'\u{1F4E5}'}</div>
+                      <p style={{ fontSize: '12px', fontWeight: 800, margin: 0 }}>NO MISSION ASSETS LOADED</p>
+                      <p style={{ fontSize: '10px', opacity: 0.6, marginTop: '5px' }}>Drag & Drop studies or click upload to begin review</p>
+                      <label style={{ 
+                        marginTop: '20px', padding: '10px 24px', background: '#0f52ba', color: 'white', 
+                        borderRadius: '12px', fontSize: '11px', fontWeight: 900, cursor: 'pointer',
+                        boxShadow: '0 5px 15px rgba(15, 82, 186, 0.2)'
+                      }}>
+                        LOAD STUDY ASSETS
+                        <input type="file" hidden multiple onChange={(e) => handleFileChange(e, app.appointmentId)} />
+                      </label>
+                    </div>
+                  )}
+                </div>
+
+                <div style={{ marginTop: '15px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <div style={{ fontSize: '10px', color: '#94a3b8', fontWeight: 700 }}>
+                    ENGINE: CORNERSTONE3D v4.x {'\u00B7'} ACCELERATED WEBGL
+                  </div>
+                  <button 
+                    onClick={() => window.location.href = `/reporting?id=${app.id}`}
+                    style={{ 
+                      padding: '10px 20px', background: '#ecfdf5', color: '#059669', 
+                      border: '1px solid #10b981', borderRadius: '10px', 
+                      fontSize: '11px', fontWeight: 900, cursor: 'pointer' 
+                    }}
+                  >
+                    GO TO NARRATIVE EDITOR {'\u2192'}
+                  </button>
+                </div>
+              </div>
+
               {patient && (
-                <div style={{ display: 'flex', gap: '32px', flex: 1 }}>
+                <div style={{ flex: '0 0 300px', display: 'flex', flexDirection: 'column', gap: '20px' }}>
+                  <div style={{ background: '#f8fafc', padding: '18px', borderRadius: '16px', border: '1px solid #e2e8f0' }}>
+                    <div style={{ fontSize: '10px', fontWeight: 950, color: '#0f52ba', letterSpacing: '1px', marginBottom: '15px' }}>CLINICAL INTEL</div>
+                    
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                        <span style={{ fontSize: '10px', color: '#64748b', fontWeight: 700 }}>STUDY MODALITY</span>
+                        <span style={{ fontSize: '11px', fontWeight: 900, color: '#1a1a2e' }}>{app.modality}</span>
+                      </div>
+                      <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                        <span style={{ fontSize: '10px', color: '#64748b', fontWeight: 700 }}>PROCEDURE</span>
+                        <span style={{ fontSize: '11px', fontWeight: 900, color: '#1a1a2e' }}>{app.service}</span>
+                      </div>
+                      <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                        <span style={{ fontSize: '10px', color: '#64748b', fontWeight: 700 }}>GENDER / AGE</span>
+                        <span style={{ fontSize: '11px', fontWeight: 900, color: '#1a1a2e' }}>{app.patientGender} / {app.patientAge}Y</span>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div style={{ background: '#fffbeb', padding: '18px', borderRadius: '16px', border: '1px solid #fde68a' }}>
+                    <div style={{ fontSize: '10px', fontWeight: 950, color: '#b45309', letterSpacing: '1px', marginBottom: '10px' }}>PHYSICIAN NOTES</div>
+                    <p style={{ fontSize: '12px', color: '#92400e', fontWeight: 600, margin: 0, lineHeight: '1.5' }}>
+                      {app.notes || 'No clinical notes provided for this mission.'}
+                    </p>
+                  </div>
                 </div>
               )}
 

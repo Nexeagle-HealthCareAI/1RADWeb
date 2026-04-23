@@ -21,12 +21,20 @@ function initCornerstoneSimple() {
       useWebWorkers: false, // Disable workers for reliability
       decodeConfig: {
         convertFloatPixelDataToInt: false,
-        use16BitDataType: false
+        use16BitDataType: true // ENABLED for clinical precision
       }
+    });
+
+    // Handle window resize to prevent distortion
+    window.addEventListener('resize', () => {
+      const elements = document.querySelectorAll('.simple-dicom-canvas');
+      elements.forEach(el => {
+        try { cornerstone.resize(el); } catch (e) {}
+      });
     });
     
     cornerstoneInitialized = true;
-    console.log('[SimpleDICOM] Cornerstone initialized successfully');
+    console.log('[SimpleDICOM] Cornerstone initialized successfully (16-bit enabled)');
   } catch (err) {
     console.error('[SimpleDICOM] Initialization error:', err);
   }
@@ -272,6 +280,7 @@ const SimpleDicomViewer = ({ files, onImageStatus, onMetadata }) => {
       {/* DICOM Canvas */}
       <div
         ref={viewerRef}
+        className="simple-dicom-canvas"
         style={{
           flex: 1,
           width: '100%',

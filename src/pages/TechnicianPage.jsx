@@ -178,6 +178,9 @@ export default function TechnicianPage() {
               const seriesDesc = dataSet.string('x0008103e') || 'UNNAMED SERIES';
               const instanceNum = parseInt(dataSet.string('x00200013') || '0', 10);
               const studyUID = dataSet.string('x0020000d') || 'UNKNOWN_STUDY';
+              const modality = dataSet.string('x00080060') || 'UNK';
+              const magStrength = dataSet.string('x00180087') || null;
+              
               let patientName = dataSet.string('x00100010') || 'UNKNOWN_PATIENT';
               patientName = patientName.replace(/\^/g, ' ');
 
@@ -224,6 +227,7 @@ export default function TechnicianPage() {
       }
     } else {
       const isDicom = file.name.toLowerCase().endsWith('.dcm') || file.name.toLowerCase().includes('dicom') || file.type === 'application/dicom';
+      
       setUploadedFiles(prev => [...prev, {
         name: file.name,
         type: isDicom ? 'DICOM' : (file.type || 'UNKNOWN'),
@@ -430,6 +434,7 @@ export default function TechnicianPage() {
               <tr>
                 <th style={{ padding: '20px', textAlign: 'left', fontSize: '10px', fontWeight: 950, color: '#64748b', letterSpacing: '1px' }}>SUBJECT</th>
                 <th style={{ padding: '20px', textAlign: 'left', fontSize: '10px', fontWeight: 950, color: '#64748b', letterSpacing: '1px' }}>MISSION TARGET</th>
+                <th style={{ padding: '20px', textAlign: 'left', fontSize: '10px', fontWeight: 950, color: '#64748b', letterSpacing: '1px' }}>MISSION DATE</th>
                 <th style={{ padding: '20px', textAlign: 'left', fontSize: '10px', fontWeight: 950, color: '#64748b', letterSpacing: '1px' }}>MODALITY</th>
                 <th style={{ padding: '20px', textAlign: 'left', fontSize: '10px', fontWeight: 950, color: '#64748b', letterSpacing: '1px' }}>STATUS</th>
                 <th style={{ padding: '20px', textAlign: 'right', fontSize: '10px', fontWeight: 950, color: '#64748b', letterSpacing: '1px' }}>{hubTab === 'ACTIVE' ? 'WORKSPACE' : 'ACTIONS'}</th>
@@ -463,6 +468,10 @@ export default function TechnicianPage() {
                              {priority.label}
                           </span>
                        </div>
+                    </td>
+                    <td style={{ padding: '20px' }}>
+                        <div style={{ fontWeight: 800, color: '#1e293b', fontSize: '13px' }}>{study.appointmentDate ? new Date(study.appointmentDate).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }).toUpperCase() : 'N/A'}</div>
+                        <div style={{ fontSize: '10px', color: '#94a3b8', fontWeight: 800, marginTop: '4px' }}>TIME: {study.appointmentTime || '09:00 AM'}</div>
                     </td>
                     <td style={{ padding: '20px' }}>
                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
@@ -512,8 +521,8 @@ export default function TechnicianPage() {
               })}
               {filteredStudies.length === 0 && !loading && (
                 <tr>
-                  <td colSpan="5" style={{ textAlign: 'center', padding: '100px', color: '#94a3b8', fontStyle: 'italic', fontSize: '14px' }}>
-                    [ NO MISSIONS DETECTED IN THIS FREQUENCY ]
+                  <td colSpan="6" style={{ textAlign: 'center', padding: '100px', color: '#94a3b8', fontStyle: 'italic', fontSize: '14px' }}>
+                    [ NO DIAGNOSTIC ASSETS IN THIS FREQUENCY ]
                   </td>
                 </tr>
               )}
@@ -546,22 +555,32 @@ export default function TechnicianPage() {
         
         {/* UPLOAD & EXPORT */}
         <button 
-          onClick={() => document.getElementById('tech-study-up').click()} 
+          onClick={() => document.getElementById('tech-study-up').click()}
           className="toolbar-btn light active" 
           title="Import Clinical Data (DICOM / ZIP)"
           style={{ 
-            background: '#0f52ba', 
+            background: 'linear-gradient(135deg, #0f52ba 0%, #003087 100%)', 
             color: 'white', 
             border: 'none',
             display: 'flex',
             gap: '8px',
             width: 'auto',
-            padding: '0 12px',
-            fontSize: '11px',
-            fontWeight: 800
+            padding: '0 15px',
+            fontSize: '10px',
+            fontWeight: 950,
+            borderRadius: '10px',
+            boxShadow: '0 4px 12px rgba(15, 82, 186, 0.3)',
+            height: '34px',
+            transition: 'transform 0.2s cubic-bezier(0.34, 1.56, 0.64, 1)'
           }}
+          onMouseEnter={(e) => e.currentTarget.style.transform = 'scale(1.05)'}
+          onMouseLeave={(e) => e.currentTarget.style.transform = 'scale(1)'}
         >
-          <span style={{ fontSize: '14px' }}>📦</span> IMPORT
+          <span style={{ fontSize: '16px' }}>📦</span> 
+          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', lineHeight: '1' }}>
+            <span>IMPORT</span>
+            <span style={{ fontSize: '7px', opacity: 0.7, marginTop: '2px' }}>DICOM/ZIP</span>
+          </div>
         </button>
         <input id="tech-study-up" type="file" style={{ display: 'none' }} accept=".dcm,.zip" onChange={handleFileChange} />
         
@@ -583,18 +602,19 @@ export default function TechnicianPage() {
             onClick={() => setActiveTool(t.id)}
             className={`toolbar-btn light ${activeTool === t.id ? 'active' : ''}`}
             title={t.label}
+            style={{ width: '32px', height: '32px', fontSize: '13px' }}
           >{t.icon}</button>
         ))}
 
-        <div style={{ width: '1px', height: '30px', background: '#e2e8f0', margin: '0 10px' }}></div>
+        <div style={{ width: '1px', height: '24px', background: '#e2e8f0', margin: '0 8px' }}></div>
 
         {/* SPECIAL TOOLS */}
-        <button onClick={() => setCineEnabled(!cineEnabled)} className={`toolbar-btn light ${cineEnabled ? 'active' : ''}`} title="Cine Loop">🎬 CINE</button>
+        <button onClick={() => setCineEnabled(!cineEnabled)} className={`toolbar-btn light ${cineEnabled ? 'active' : ''}`} title="Cine Loop" style={{ fontSize: '9px', padding: '0 10px', height: '32px' }}>🎬 CINE</button>
         <button 
           onClick={() => setIsSyncEnabled(!isSyncEnabled)} 
           className={`toolbar-btn light ${isSyncEnabled ? 'active' : ''}`} 
           title="Synchronize Viewports"
-          style={{ fontWeight: 950 }}
+          style={{ fontWeight: 950, fontSize: '9px', padding: '0 10px', height: '32px' }}
         >
           🔗 SYNC
         </button>
@@ -611,9 +631,9 @@ export default function TechnicianPage() {
         </select>
         
         <div style={{ width: '1px', height: '24px', background: '#e2e8f0', margin: '0 8px' }}></div>
-        <button onClick={() => toggleKeyImage()} className={`toolbar-btn light ${keyImages.includes(`${activeAssetIndex}_${currentSlice}`) ? 'active' : ''}`} title="Mark Key Image">⭐</button>
-        <button onClick={() => setScreenshotData(true)} className="toolbar-btn light" title="Export Screenshot">📸</button>
-        <button onClick={() => { setResetTrigger(t => t + 1); setViewportProps({ invert: false, flipHorizontal: false, flipVertical: false, rotation: 0 }); }} className="toolbar-btn light" title="Reset Viewer">🔄</button>
+        <button onClick={() => toggleKeyImage()} className={`toolbar-btn light ${keyImages.includes(`${activeAssetIndex}_${currentSlice}`) ? 'active' : ''}`} title="Mark Key Image" style={{ width: '32px', height: '32px', fontSize: '13px' }}>⭐</button>
+        <button onClick={() => setScreenshotData(true)} className="toolbar-btn light" title="Export Screenshot" style={{ width: '32px', height: '32px', fontSize: '13px' }}>📸</button>
+        <button onClick={() => { setResetTrigger(t => t + 1); setViewportProps({ invert: false, flipHorizontal: false, flipVertical: false, rotation: 0 }); }} className="toolbar-btn light" title="Reset Viewer" style={{ width: '32px', height: '32px', fontSize: '13px' }}>🔄</button>
         
         <div style={{ width: '1px', height: '30px', background: '#e2e8f0', margin: '0 10px' }}></div>
         
@@ -714,9 +734,66 @@ export default function TechnicianPage() {
                   ))}
                 </div>
               ) : (
-                <div style={{ height: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
-                   <div style={{ fontSize: '120px', opacity: 0.1 }}>{MODALITY_ICONS[activeStudy?.modality] || '🖥️'}</div>
-                   <p style={{ color: '#0f52ba', fontSize: '10px', fontWeight: 950, letterSpacing: '3px' }}>[ AWAITING ACQUISITION ]</p>
+                <div 
+                  onClick={() => document.getElementById('tech-study-up').click()}
+                  style={{ 
+                    height: '100%', 
+                    margin: '20px',
+                    background: 'white',
+                    borderRadius: '24px',
+                    border: '2px dashed #cbd5e1',
+                    display: 'flex', 
+                    flexDirection: 'column', 
+                    alignItems: 'center', 
+                    justifyContent: 'center',
+                    cursor: 'pointer',
+                    transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
+                    position: 'relative',
+                    overflow: 'hidden'
+                  }}
+                  onMouseEnter={(e) => {
+                    e.currentTarget.style.borderColor = '#0f52ba';
+                    e.currentTarget.style.background = '#f0f7ff';
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.borderColor = '#cbd5e1';
+                    e.currentTarget.style.background = 'white';
+                  }}
+                >
+                  <div style={{ 
+                    width: '200px', 
+                    height: '200px', 
+                    background: '#f8fafc', 
+                    borderRadius: '50%', 
+                    display: 'flex', 
+                    alignItems: 'center', 
+                    justifyContent: 'center',
+                    marginBottom: '30px',
+                    boxShadow: 'inset 0 4px 10px rgba(0,0,0,0.02)',
+                    fontSize: '80px'
+                  }}>
+                    {MODALITY_ICONS[activeStudy?.modality] || '🖥️'}
+                  </div>
+                  
+                  <div style={{ textAlign: 'center', zIndex: 1 }}>
+                    <h2 style={{ fontSize: '24px', fontWeight: 950, color: '#1e293b', marginBottom: '10px', letterSpacing: '-1px' }}>Initialize Acquisition</h2>
+                    <p style={{ color: '#64748b', fontSize: '13px', fontWeight: 600, maxWidth: '300px', margin: '0 auto 25px' }}>
+                      Please select or drag and drop DICOM files or a ZIP study to begin processing for {activeStudy?.patientName}.
+                    </p>
+                    
+                    <div style={{ display: 'flex', gap: '10px', justifyContent: 'center' }}>
+                      <div style={{ background: '#0f52ba', color: 'white', padding: '12px 25px', borderRadius: '12px', fontSize: '11px', fontWeight: 950, letterSpacing: '1px', boxShadow: '0 4px 15px rgba(15, 82, 186, 0.2)' }}>
+                        BROWSE FILES
+                      </div>
+                      <div style={{ background: 'white', color: '#64748b', padding: '12px 25px', borderRadius: '12px', fontSize: '11px', fontWeight: 950, border: '1px solid #e2e8f0' }}>
+                        DRAG & DROP
+                      </div>
+                    </div>
+                  </div>
+
+                  <div style={{ position: 'absolute', bottom: '30px', color: '#94a3b8', fontSize: '9px', fontWeight: 950, letterSpacing: '2px', textTransform: 'uppercase' }}>
+                    [ AWAITING_SECURE_SIGNAL ]
+                  </div>
                 </div>
               )}
            </div>

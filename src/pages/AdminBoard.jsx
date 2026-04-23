@@ -112,17 +112,79 @@ export default function AdminBoard() {
   const [isExpenseDrawerOpen, setIsExpenseDrawerOpen] = useState(false);
   const [savingExpense, setSavingExpense] = useState(false);
   const [editExpense, setEditExpense] = useState({ 
-    description: '', 
-    category: 'Maintenance', 
-    amount: 0, 
-    taxAmount: 0,
-    transactionDate: TODAY, 
-    paymentMode: 'Cash', 
-    referenceNumber: '',
-    vendorName: '',
-    costCenter: 'Radiology',
     status: 'Paid'
   });
+
+  // Prescription Architect State
+  const [selectedPrescriptionDoctorId, setSelectedPrescriptionDoctorId] = useState('');
+  const [doctorPrescriptionMap, setDoctorPrescriptionMap] = useState({}); // { docId: settings }
+  
+  const [prescriptionSettings, setPrescriptionSettings] = useState({
+    headerMargin: 50,
+    leftMargin: 20,
+    rightMargin: 20,
+    bottomMargin: 30,
+    fontSize: 14,
+    fontColor: '#1e293b',
+    fontFamily: 'Inter',
+    letterhead: null
+  });
+  const [isPrescriptionSaving, setIsPrescriptionSaving] = useState(false);
+
+  // Sync settings when doctor selection changes
+  useEffect(() => {
+    const fetchDoctorProtocol = async () => {
+      if (!selectedPrescriptionDoctorId) {
+        setPrescriptionSettings({
+          headerMargin: 50, leftMargin: 20, rightMargin: 20, bottomMargin: 30,
+          fontSize: 14, fontColor: '#1e293b', fontFamily: 'Inter', letterhead: null,
+          letterheadFile: null
+        });
+        return;
+      }
+
+      try {
+        const response = await apiClient.get(`/Prescription/${selectedPrescriptionDoctorId}`);
+        const data = response.data;
+        setPrescriptionSettings({
+          headerMargin: data.headerMargin,
+          leftMargin: data.leftMargin,
+          rightMargin: data.rightMargin,
+          bottomMargin: data.bottomMargin,
+          fontSize: data.fontSize,
+          fontColor: data.fontColor,
+          fontFamily: data.fontFamily,
+          letterhead: data.letterheadBlobUrl,
+          letterheadFile: null
+        });
+      } catch (err) {
+        console.error("Failed to fetch protocol:", err);
+        setPrescriptionSettings({
+          headerMargin: 50, leftMargin: 20, rightMargin: 20, bottomMargin: 30,
+          fontSize: 14, fontColor: '#1e293b', fontFamily: 'Inter', letterhead: null,
+          letterheadFile: null
+        });
+      }
+    };
+
+    fetchDoctorProtocol();
+  }, [selectedPrescriptionDoctorId]);
+
+  const MOCK_REPORT_DATA = {
+    patientName: "Johnathan Doe",
+    age: "45Y",
+    gender: "Male",
+    modality: "MRI BRAIN",
+    date: new Date().toLocaleDateString(),
+    accession: "1RAD-2024-00129",
+    findings: [
+      "The ventricular system and subarachnoid spaces appear normal for the patient's age.",
+      "No evidence of acute intracranial hemorrhage, mass effect or midline shift.",
+      "The major intracranial vascular flow voids are preserved.",
+      "No suspicious signal abnormalities are noted within the brain parenchyma."
+    ],
+    impression: "No significant intracranial abnormality detected. Clinically correlation is advised."
+  };
 
   const fetchFinancialMatrix = useCallback(async () => {
     try {
@@ -317,7 +379,7 @@ export default function AdminBoard() {
   }, [referralRange, referralFilterMode]);
 
   useEffect(() => {
-    if (activeTab === 'PERSONNEL') {
+    if (activeTab === 'PERSONNEL' || activeTab === 'PRESCRIPTION') {
       fetchPersonnel();
     }
     if (activeTab === 'REFERRAL INTEL') {
@@ -1203,6 +1265,323 @@ export default function AdminBoard() {
       </div>
     </div>
   );
+
+  const renderPrescriptionArchitect = () => {
+    const doctors = personnel.filter(p => p.roles.includes('doctor') || p.roles.includes('radiologist') || p.roles.includes('admindoctor'));
+    
+    return (
+      <div className="prescription-architect" style={{ display: 'flex', gap: '30px', height: 'calc(100vh - 200px)', animation: 'fadeIn 0.5s ease' }}>
+        {/* CONTROL SIDEBAR (Strategic Glass) */}
+        <div style={{ 
+          width: '420px', 
+          background: 'rgba(255, 255, 255, 0.8)', 
+          backdropFilter: 'blur(16px)',
+          borderRadius: '30px', 
+          padding: '35px', 
+          boxShadow: '0 20px 50px rgba(15, 82, 186, 0.05)', 
+          overflowY: 'auto', 
+          border: '1px solid rgba(15, 82, 186, 0.1)',
+          display: 'flex',
+          flexDirection: 'column'
+        }}>
+          <div style={{ marginBottom: '35px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '12px' }}>
+              <div style={{ width: '8px', height: '8px', borderRadius: '50%', background: '#0f52ba' }}></div>
+              <h3 style={{ fontSize: '11px', fontWeight: 950, color: '#0f52ba', letterSpacing: '2px', textTransform: 'uppercase', margin: 0 }}>PROFILE SELECTOR</h3>
+            </div>
+            <select 
+              value={selectedPrescriptionDoctorId}
+              onChange={(e) => setSelectedPrescriptionDoctorId(e.target.value)}
+              style={{ 
+                width: '100%', padding: '16px', borderRadius: '18px', border: '1px solid #e2e8f0', 
+                background: '#fff', fontSize: '13px', fontWeight: 950, color: '#1a1a2e',
+                boxShadow: '0 4px 12px rgba(0,0,0,0.03)', cursor: 'pointer'
+              }}
+            >
+              <option value="">SELECT CLINICAL CONSULTANT...</option>
+              {doctors.map(doc => (
+                <option key={doc.id} value={doc.id}>{doc.name.toUpperCase()} — {doc.degree || 'MD'}</option>
+              ))}
+            </select>
+            {doctors.length === 0 && !personnelLoading && (
+               <div style={{ marginTop: '12px', padding: '10px 15px', background: '#fff1f2', border: '1px solid #fda4af', borderRadius: '12px', color: '#be123c', fontSize: '10px', fontWeight: 800 }}>
+                 ⚠️ NO CLINICAL CONSULTANTS DETECTED. PLEASE REGISTER RADIOLOGISTS IN THE PERSONNEL TAB.
+               </div>
+            )}
+          </div>
+
+          <div style={{ flex: 1, opacity: selectedPrescriptionDoctorId ? 1 : 0.3, pointerEvents: selectedPrescriptionDoctorId ? 'auto' : 'none', transition: 'all 0.4s' }}>
+            <div style={{ marginBottom: '30px' }}>
+              <h3 style={{ fontSize: '11px', fontWeight: 950, color: '#64748b', letterSpacing: '2px', textTransform: 'uppercase', marginBottom: '15px' }}>GEOMETRIC ARCHITECTURE</h3>
+              
+              <div style={{ display: 'grid', gap: '25px' }}>
+                {[
+                  { id: 'headerMargin', label: 'HEADER GAP', icon: '🔝', min: 8, max: 150 },
+                  { id: 'leftMargin', label: 'LEFT GUTTER', icon: '⬅️', min: 8, max: 100 },
+                  { id: 'rightMargin', label: 'RIGHT GUTTER', icon: '➡️', min: 8, max: 100 },
+                  { id: 'bottomMargin', label: 'FOOTER GAP', icon: '⬇️', min: 8, max: 100 },
+                  { id: 'fontSize', label: 'FONT SIZE', icon: '🔡', min: 8, max: 32 }
+                ].map(m => (
+                  <div key={m.id}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '10px', alignItems: 'center' }}>
+                      <label style={{ fontSize: '10px', fontWeight: 950, color: '#1e293b', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                        <span>{m.icon}</span> {m.label}
+                      </label>
+                      <span style={{ fontSize: '11px', fontWeight: 950, color: '#0f52ba', background: '#eff6ff', padding: '4px 10px', borderRadius: '6px' }}>{prescriptionSettings[m.id]}mm</span>
+                    </div>
+                    <input 
+                      type="range" 
+                      min={m.min} 
+                      max={m.max} 
+                      value={prescriptionSettings[m.id]} 
+                      onChange={(e) => setPrescriptionSettings({...prescriptionSettings, [m.id]: parseInt(e.target.value)})}
+                      style={{ 
+                        width: '100%', cursor: 'pointer', height: '6px', appearance: 'none', 
+                        background: '#e2e8f0', borderRadius: '3px', outline: 'none'
+                      }}
+                    />
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <div style={{ marginBottom: '30px', paddingTop: '30px', borderTop: '1px solid #f1f5f9' }}>
+              <h3 style={{ fontSize: '11px', fontWeight: 950, color: '#64748b', letterSpacing: '2px', textTransform: 'uppercase', marginBottom: '15px' }}>BRAND IDENTITY</h3>
+              
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+                <div style={{ display: 'grid', gridTemplateColumns: '1.5fr 1fr', gap: '15px' }}>
+                  <div>
+                    <label style={{ fontSize: '10px', fontWeight: 950, color: '#1e293b', display: 'block', marginBottom: '8px' }}>FONT SYSTEM</label>
+                    <select 
+                      value={prescriptionSettings.fontFamily}
+                      onChange={(e) => setPrescriptionSettings({...prescriptionSettings, fontFamily: e.target.value})}
+                      style={{ width: '100%', padding: '12px', borderRadius: '12px', border: '1px solid #e2e8f0', fontSize: '12px', fontWeight: 800 }}
+                    >
+                      {['Inter', 'Roboto', 'Arial', 'Georgia', 'Courier New'].map(f => (
+                        <option key={f} value={f}>{f}</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
+                    <label style={{ fontSize: '10px', fontWeight: 950, color: '#1e293b', display: 'block', marginBottom: '8px' }}>COLOR</label>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '10px', background: '#fff', border: '1px solid #e2e8f0', padding: '6px', borderRadius: '12px' }}>
+                      <input 
+                        type="color" 
+                        value={prescriptionSettings.fontColor}
+                        onChange={(e) => setPrescriptionSettings({...prescriptionSettings, fontColor: e.target.value})}
+                        style={{ width: '32px', height: '32px', padding: 0, border: 'none', borderRadius: '6px', cursor: 'pointer' }}
+                      />
+                      <span style={{ fontSize: '10px', fontWeight: 800, color: '#64748b', fontFamily: 'monospace' }}>{prescriptionSettings.fontColor.toUpperCase()}</span>
+                    </div>
+                  </div>
+                </div>
+
+                <div>
+                  <label style={{ fontSize: '10px', fontWeight: 950, color: '#1e293b', display: 'block', marginBottom: '8px' }}>INSTITUTIONAL LETTERHEAD</label>
+                  <div style={{ 
+                    border: '2px dashed #e2e8f0', padding: '20px', borderRadius: '18px', textAlign: 'center',
+                    background: '#f8fafc', transition: 'all 0.2s', cursor: 'pointer'
+                  }} onClick={() => document.getElementById('letterhead-upload').click()}>
+                    <div style={{ fontSize: '20px', marginBottom: '8px' }}>📑</div>
+                    <div style={{ fontSize: '10px', fontWeight: 950, color: '#0f52ba' }}>UPLOAD REFERENCE PDF</div>
+                    <div style={{ fontSize: '9px', color: '#94a3b8', marginTop: '4px' }}>Supports PDF, JPG, PNG</div>
+                    <input 
+                      id="letterhead-upload"
+                      type="file" 
+                      accept="application/pdf,image/*"
+                      onChange={(e) => {
+                        const file = e.target.files[0];
+                        if (file) setPrescriptionSettings({...prescriptionSettings, letterhead: URL.createObjectURL(file), letterheadFile: file});
+                      }}
+                      style={{ display: 'none' }}
+                    />
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <button 
+              disabled={!selectedPrescriptionDoctorId || isPrescriptionSaving}
+              onClick={async () => {
+                setIsPrescriptionSaving(true);
+                const formData = new FormData();
+                formData.append('DoctorId', selectedPrescriptionDoctorId);
+                formData.append('HeaderMargin', prescriptionSettings.headerMargin);
+                formData.append('LeftMargin', prescriptionSettings.leftMargin);
+                formData.append('RightMargin', prescriptionSettings.rightMargin);
+                formData.append('BottomMargin', prescriptionSettings.bottomMargin);
+                formData.append('FontSize', prescriptionSettings.fontSize);
+                formData.append('FontColor', prescriptionSettings.fontColor);
+                formData.append('FontFamily', prescriptionSettings.fontFamily);
+                
+                if (prescriptionSettings.letterheadFile) {
+                   formData.append('LetterheadFile', prescriptionSettings.letterheadFile);
+                }
+
+                try {
+                   const response = await apiClient.post('/Prescription', formData, {
+                      headers: { 'Content-Type': 'multipart/form-data' }
+                   });
+                   const updated = response.data;
+                   setPrescriptionSettings(prev => ({...prev, letterhead: updated.letterheadBlobUrl, letterheadFile: null}));
+                   alert("STRATEGIC PROTOCOL SYNCHRONIZED SUCCESSFULLY 📡");
+                } catch (err) {
+                   console.error("Sync failed:", err);
+                } finally {
+                   setIsPrescriptionSaving(false);
+                }
+              }}
+              style={{ 
+                width: '100%', padding: '18px', borderRadius: '20px', 
+                background: selectedPrescriptionDoctorId ? 'linear-gradient(135deg, #0f52ba 0%, #061a40 100%)' : '#cbd5e1', 
+                color: 'white', border: 'none', fontWeight: 950, letterSpacing: '1px', fontSize: '11px',
+                cursor: 'pointer', boxShadow: selectedPrescriptionDoctorId ? '0 10px 25px rgba(15, 82, 186, 0.3)' : 'none',
+                transition: 'all 0.3s'
+              }}
+            >
+              {isPrescriptionSaving ? 'INITIALIZING SYNC PROTOCOL...' : 'SAVE DOCTOR PROTOCOL'}
+            </button>
+          </div>
+        </div>
+
+        {/* LIVE A4 STUDIO CANVAS */}
+        <div style={{ 
+          flex: 1, 
+          background: '#0f172a', 
+          borderRadius: '30px', 
+          display: 'flex', 
+          justifyContent: 'center', 
+          padding: '60px', 
+          overflowY: 'auto',
+          position: 'relative',
+          boxShadow: 'inset 0 0 100px rgba(0,0,0,0.5)'
+        }}>
+           {/* Studio HUD */}
+           <div style={{ position: 'absolute', top: '25px', left: '35px', display: 'flex', alignItems: 'center', gap: '15px' }}>
+              <div style={{ background: 'rgba(255,255,255,0.1)', padding: '6px 12px', borderRadius: '8px', border: '1px solid rgba(255,255,255,0.1)' }}>
+                <span style={{ fontSize: '9px', fontWeight: 950, color: '#94a3b8', letterSpacing: '1px' }}>MODE: </span>
+                <span style={{ fontSize: '9px', fontWeight: 950, color: '#fff' }}>LIVE_SIMULATION</span>
+              </div>
+              <div style={{ background: 'rgba(255,255,255,0.1)', padding: '6px 12px', borderRadius: '8px', border: '1px solid rgba(255,255,255,0.1)' }}>
+                <span style={{ fontSize: '9px', fontWeight: 950, color: '#94a3b8', letterSpacing: '1px' }}>RESOLUTION: </span>
+                <span style={{ fontSize: '9px', fontWeight: 950, color: '#fff' }}>300 DPI (A4)</span>
+              </div>
+           </div>
+
+           {isPrescriptionSaving && (
+             <div style={{ 
+               position: 'absolute', top: 0, left: 0, right: 0, height: '100%', 
+               background: 'rgba(15, 82, 186, 0.1)', zIndex: 100, pointerEvents: 'none',
+               overflow: 'hidden'
+             }}>
+                <div style={{ 
+                  height: '4px', background: '#2ecc71', width: '100%', 
+                  boxShadow: '0 0 20px #2ecc71', animation: 'scanLine 2s infinite ease-in-out',
+                  position: 'absolute'
+                }}></div>
+             </div>
+           )}
+
+           <div style={{ 
+             width: '210mm', 
+             minHeight: '297mm', 
+             background: 'white', 
+             boxShadow: '0 40px 100px rgba(0,0,0,0.6)',
+             borderRadius: '2px',
+             position: 'relative',
+             transition: 'all 0.5s cubic-bezier(0.175, 0.885, 0.32, 1.275)',
+             overflow: 'hidden'
+           }}>
+              {/* ASSET REFERENCE LAYER (PDF or IMAGE) */}
+              {prescriptionSettings.letterhead && (
+                (prescriptionSettings.letterhead.toLowerCase().includes('.pdf') || (prescriptionSettings.letterheadFile && prescriptionSettings.letterheadFile.type === 'application/pdf')) ? (
+                  <embed 
+                    src={prescriptionSettings.letterhead} 
+                    type="application/pdf" 
+                    style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', border: 'none', pointerEvents: 'none' }}
+                  />
+                ) : (
+                  <img 
+                    src={prescriptionSettings.letterhead} 
+                    alt="Letterhead Preview"
+                    style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', objectFit: 'fill', pointerEvents: 'none' }}
+                  />
+                )
+              )}
+
+              {/* Geometric Indicators */}
+              <div style={{ 
+                position: 'absolute', top: 0, left: 0, right: 0, height: `${prescriptionSettings.headerMargin}mm`, 
+                background: 'rgba(15, 82, 186, 0.02)', borderBottom: '1px dashed rgba(15, 82, 186, 0.1)',
+                display: 'flex', alignItems: 'flex-end', justifyContent: 'center', paddingBottom: '5px',
+                zIndex: 1
+              }}>
+                <span style={{ fontSize: '8px', color: '#0f52ba', opacity: 0.4, fontWeight: 950, letterSpacing: '2px' }}>HEADER_BOUNDS</span>
+              </div>
+              
+              {/* DIAGNOSTIC TEXT LAYER */}
+              <div style={{ 
+                position: 'relative',
+                zIndex: 2,
+                fontFamily: prescriptionSettings.fontFamily, 
+                fontSize: `${prescriptionSettings.fontSize}px`, 
+                color: prescriptionSettings.fontColor,
+                lineHeight: '1.6',
+                animation: 'fadeIn 0.8s ease',
+                padding: `${prescriptionSettings.headerMargin}mm ${prescriptionSettings.rightMargin}mm ${prescriptionSettings.bottomMargin}mm ${prescriptionSettings.leftMargin}mm`,
+                boxSizing: 'border-box',
+                minHeight: '297mm'
+              }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '40px', borderBottom: `2px solid ${prescriptionSettings.fontColor}20`, paddingBottom: '15px' }}>
+                   <div style={{ fontWeight: 950, fontSize: '1.2em' }}>DIAGNOSTIC REPORT</div>
+                   <div style={{ fontSize: '0.7em', textAlign: 'right', opacity: 0.6 }}>
+                      DATE: {MOCK_REPORT_DATA.date}<br/>
+                      REF: {MOCK_REPORT_DATA.accession}
+                   </div>
+                </div>
+
+                <div style={{ marginBottom: '20px', display: 'flex', gap: '30px' }}>
+                   <div><span style={{ fontWeight: 800, fontSize: '0.7em', opacity: 0.5 }}>PATIENT:</span> <span style={{ fontWeight: 700 }}>{MOCK_REPORT_DATA.patientName.toUpperCase()}</span></div>
+                   <div><span style={{ fontWeight: 800, fontSize: '0.7em', opacity: 0.5 }}>AGE/SEX:</span> <span style={{ fontWeight: 700 }}>{MOCK_REPORT_DATA.age} / {MOCK_REPORT_DATA.gender}</span></div>
+                </div>
+
+                <div style={{ marginBottom: '30px' }}>
+                   <div style={{ fontWeight: 900, textTransform: 'uppercase', fontSize: '0.9em', color: '#0f52ba', marginBottom: '15px' }}>CLINICAL FINDINGS</div>
+                   <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                      {MOCK_REPORT_DATA.findings.map((f, i) => <p key={i} style={{ margin: 0 }}>• {f}</p>)}
+                   </div>
+                </div>
+
+                <div style={{ background: `${prescriptionSettings.fontColor}05`, padding: '20px', borderRadius: '8px', border: `1px solid ${prescriptionSettings.fontColor}10` }}>
+                   <div style={{ fontWeight: 900, fontSize: '0.9em', marginBottom: '8px', color: '#0f52ba' }}>IMPRESSION:</div>
+                   <p style={{ fontSize: '1em', margin: 0, fontWeight: 700 }}>{MOCK_REPORT_DATA.impression}</p>
+                </div>
+
+                {/* Simulated Signature */}
+                <div style={{ marginTop: '80px', textAlign: 'right' }}>
+                   <div style={{ display: 'inline-block', textAlign: 'center' }}>
+                      <div style={{ width: '200px', borderBottom: `1px solid ${prescriptionSettings.fontColor}`, marginBottom: '10px' }}></div>
+                      <div style={{ fontWeight: 900 }}>{selectedPrescriptionDoctorId ? doctors.find(d => d.id === selectedPrescriptionDoctorId)?.name.toUpperCase() : 'CONSULTANT_NAME'}</div>
+                      <div style={{ fontSize: '0.7em', opacity: 0.6 }}>{selectedPrescriptionDoctorId ? doctors.find(d => d.id === selectedPrescriptionDoctorId)?.degree : 'QUALIFICATIONS'}</div>
+                   </div>
+                </div>
+              </div>
+           </div>
+        </div>
+
+        <style>{`
+          @keyframes scanLine {
+            0% { top: 0; }
+            100% { top: 100%; }
+          }
+          @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
+          }
+        `}</style>
+      </div>
+    );
+  };
 
   const renderAnalytics = () => {
     if (loadingOutlook && !outlookData) {
@@ -2619,7 +2998,7 @@ export default function AdminBoard() {
         display: 'flex',
         boxShadow: '0 4px 20px rgba(0,0,0,0.03)'
       }}>
-        {['INTELLIGENCE', 'REFERRAL INTEL', 'PERSONNEL', 'HOSPITAL', 'FINANCE'].map(tab => (
+        {['INTELLIGENCE', 'REFERRAL INTEL', 'PERSONNEL', 'HOSPITAL', 'FINANCE', 'PRESCRIPTION'].map(tab => (
           <button 
             key={tab}
             className={`admin-tab ${activeTab === tab ? 'active' : ''}`} 
@@ -2650,6 +3029,7 @@ export default function AdminBoard() {
       {activeTab === 'PERSONNEL' && renderUserManagement()}
       {activeTab === 'HOSPITAL' && renderHospitalSettings()}
       {activeTab === 'FINANCE' && renderFinance()}
+      {activeTab === 'PRESCRIPTION' && renderPrescriptionArchitect()}
 
       {isHospitalDrawerOpen && renderHospitalSettingsDrawer()}
       {isPriceDrawerOpen && renderPriceDrawer()}

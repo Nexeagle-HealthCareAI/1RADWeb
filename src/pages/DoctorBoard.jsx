@@ -1,7 +1,6 @@
 import { useState, useMemo, useEffect, useCallback, useRef } from 'react';
 import dicomParser from 'dicom-parser';
 import apiClient from '../api/apiClient';
-import SimpleDicomViewer from '../components/SimpleDicomViewer';
 import '../styles/global.css';
 
 const MODALITY_ICONS = {
@@ -109,19 +108,12 @@ export default function DoctorBoard() {
 
   // --- HANDLERS ---
   const handleOpenWorkspace = (c) => {
-    setActiveCase(c);
-    setView('WORKSPACE');
+    // Redirect to the dedicated Reporting Hub with patient context
+    window.location.href = `/reporting?id=${c.id || c.appointmentId}`;
+    
     if (c.status?.toLowerCase() !== 'reporting') {
       handleStatusUpdate(c.appointmentId, 'reporting');
     }
-    setReport({ 
-      history: c.notes || '', 
-      findings: '', 
-      impression: '', 
-      advice: '', 
-      technique: `${c.modality} Standard Protocol` 
-    });
-    setLoadedDicom(null);
   };
 
   const handleDicomUpload = (e) => {
@@ -227,13 +219,6 @@ export default function DoctorBoard() {
               transition: '0.2s', letterSpacing: '1px', textTransform: 'uppercase',
               boxShadow: view === 'HISTORY' ? '0 8px 20px rgba(15, 82, 186, 0.15)' : 'none'
             }}>Clinical Archive</button>
-            <button onClick={() => window.open('/reporting', '_blank')} style={{ 
-              padding: '12px 25px', borderRadius: '12px', border: 'none', fontSize: '10px', 
-              fontWeight: 950, background: 'linear-gradient(45deg, #8b5cf6, #d946ef)', 
-              color: 'white', cursor: 'pointer', 
-              transition: '0.2s', letterSpacing: '1px', textTransform: 'uppercase',
-              boxShadow: '0 8px 20px rgba(139, 92, 246, 0.3)'
-            }}>✨ Premium Workspace</button>
         </div>
       </div>
 
@@ -349,6 +334,7 @@ export default function DoctorBoard() {
               <tr>
                 <th style={{ padding: '20px', textAlign: 'left', fontSize: '10px', fontWeight: 950, color: '#64748b', letterSpacing: '1px' }}>SUBJECT</th>
                 <th style={{ padding: '20px', textAlign: 'left', fontSize: '10px', fontWeight: 950, color: '#64748b', letterSpacing: '1px' }}>MISSION PROFILE</th>
+                <th style={{ padding: '20px', textAlign: 'left', fontSize: '10px', fontWeight: 950, color: '#64748b', letterSpacing: '1px' }}>MISSION DATE</th>
                 <th style={{ padding: '20px', textAlign: 'left', fontSize: '10px', fontWeight: 950, color: '#64748b', letterSpacing: '1px' }}>ACQUISITION</th>
                 <th style={{ padding: '20px', textAlign: 'left', fontSize: '10px', fontWeight: 950, color: '#64748b', letterSpacing: '1px' }}>STATUS</th>
                 <th style={{ padding: '20px', textAlign: 'right', fontSize: '10px', fontWeight: 950, color: '#64748b', letterSpacing: '1px' }}>EXECUTE</th>
@@ -380,6 +366,10 @@ export default function DoctorBoard() {
                             {c.priority === 'STAT' ? '⚡ EMERGENCY' : '📋 ROUTINE'}
                           </span>
                        </div>
+                    </td>
+                    <td style={{ padding: '20px' }}>
+                        <div style={{ fontWeight: 800, color: '#1e293b', fontSize: '13px' }}>{c.appointmentDate ? new Date(c.appointmentDate).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }).toUpperCase() : 'N/A'}</div>
+                        <div style={{ fontSize: '10px', color: '#94a3b8', fontWeight: 800, marginTop: '4px' }}>TIME: {c.appointmentTime || '09:00 AM'}</div>
                     </td>
                     <td style={{ padding: '20px' }}>
                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
@@ -414,7 +404,7 @@ export default function DoctorBoard() {
               })}
               {filteredCases.length === 0 && !loading && (
                 <tr>
-                  <td colSpan="5" style={{ textAlign: 'center', padding: '100px', color: '#94a3b8', fontStyle: 'italic', fontSize: '14px' }}>
+                  <td colSpan="6" style={{ textAlign: 'center', padding: '100px', color: '#94a3b8', fontStyle: 'italic', fontSize: '14px' }}>
                     [ NO DIAGNOSTIC MISSIONS IN THIS FREQUENCY ]
                   </td>
                 </tr>
@@ -532,7 +522,7 @@ export default function DoctorBoard() {
 
   return (
     <div className="page-wrapper" style={{ padding: 0, background: '#fcfdfe' }}>
-      {view === 'WORKSPACE' ? renderWorkspace() : renderQueue()}
+      {renderQueue()}
       {renderPrintModal()}
       <style>{`
         .gamified-btn { background: #0f52ba; color: white; border: none; font-weight: 950; cursor: pointer; transition: all 0.2s; box-shadow: 0 4px 15px rgba(15, 82, 186, 0.2); }
