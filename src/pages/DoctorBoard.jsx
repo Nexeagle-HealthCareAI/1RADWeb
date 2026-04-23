@@ -37,6 +37,19 @@ export default function DoctorBoard() {
   // Filters
   const [search, setSearch] = useState('');
   const [filters, setFilters] = useState({ modality: 'ALL', priority: 'ALL', clinicalStatus: 'ALL' });
+  const [isTablet, setIsTablet] = useState(window.innerWidth < 1100);
+  const [viewMode, setViewMode] = useState('TABLE');
+
+  useEffect(() => {
+    const handleResize = () => {
+      const tablet = window.innerWidth < 1100;
+      setIsTablet(tablet);
+      if (tablet) setViewMode('CARDS');
+      else setViewMode('TABLE');
+    };
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
 
   const TODAY = new Date().toISOString().split('T')[0];
 
@@ -328,7 +341,15 @@ export default function DoctorBoard() {
           <button className="gamified-btn" onClick={fetchCases} style={{ padding: '14px 30px', borderRadius: '12px' }}>RE-SYNC HUB</button>
         </div>
 
+        {!isTablet && (
+          <div style={{ display: 'flex', gap: '10px', marginBottom: '20px', justifyContent: 'flex-end' }}>
+             <button onClick={() => setViewMode('TABLE')} style={{ padding: '8px 16px', borderRadius: '8px', border: 'none', background: viewMode === 'TABLE' ? '#0f52ba' : 'white', color: viewMode === 'TABLE' ? 'white' : '#64748b', fontSize: '11px', fontWeight: 950, cursor: 'pointer', boxShadow: '0 2px 8px rgba(0,0,0,0.05)' }}>GRID_VIEW</button>
+             <button onClick={() => setViewMode('CARDS')} style={{ padding: '8px 16px', borderRadius: '8px', border: 'none', background: viewMode === 'CARDS' ? '#0f52ba' : 'white', color: viewMode === 'CARDS' ? 'white' : '#64748b', fontSize: '11px', fontWeight: 950, cursor: 'pointer', boxShadow: '0 2px 8px rgba(0,0,0,0.05)' }}>CARD_VIEW</button>
+          </div>
+        )}
+
         <div style={{ background: 'white', borderRadius: '20px', border: '1px solid #e2e8f0', overflow: 'hidden', boxShadow: '0 4px 20px rgba(0,0,0,0.03)' }}>
+          {viewMode === 'TABLE' ? (
           <table style={{ width: '100%', borderCollapse: 'collapse' }}>
             <thead style={{ background: '#f8fafc', borderBottom: '1px solid #e2e8f0' }}>
               <tr>
@@ -416,6 +437,61 @@ export default function DoctorBoard() {
               )}
             </tbody>
           </table>
+          ) : (
+            <div style={{ padding: '20px', display: 'grid', gridTemplateColumns: isTablet ? '1fr' : 'repeat(auto-fill, minmax(350px, 1fr))', gap: '20px' }}>
+               {filteredCases.map(c => {
+                  const status = c.status || 'scheduled';
+                  const isReady = status === 'scanned';
+                  const isScanning = status === 'in_progress';
+                  const isExpected = status === 'scheduled';
+                  return (
+                    <div key={c.id || c.appointmentId} style={{ background: 'white', border: '1px solid #e2e8f0', borderRadius: '16px', padding: '20px', display: 'flex', flexDirection: 'column', gap: '15px' }}>
+                       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                          <div>
+                             <div style={{ fontSize: '14px', fontWeight: 950, color: '#1e293b' }}>{c.patientName?.toUpperCase()}</div>
+                             <div style={{ fontSize: '10px', color: '#64748b', fontWeight: 800, marginTop: '4px' }}>UHID: {c.patientIdentifier || 'UH-XXX'}</div>
+                          </div>
+                          <span style={{ 
+                            padding: '6px 12px', borderRadius: '8px', fontSize: '10px', fontWeight: 950,
+                            background: isReady ? '#ecfdf5' : isScanning ? '#fff7ed' : isExpected ? '#eff6ff' : '#f8fafc',
+                            color: isReady ? '#27ae60' : isScanning ? '#d97706' : isExpected ? '#0f52ba' : '#64748b'
+                          }}>{status.toUpperCase()}</span>
+                       </div>
+                       
+                       <div style={{ background: '#f8fafc', padding: '12px', borderRadius: '12px', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
+                          <div>
+                             <div style={{ fontSize: '9px', fontWeight: 950, color: '#94a3b8' }}>STUDY</div>
+                             <div style={{ fontSize: '12px', fontWeight: 900, color: '#0f52ba' }}>{c.service?.toUpperCase()}</div>
+                          </div>
+                          <div>
+                             <div style={{ fontSize: '9px', fontWeight: 950, color: '#94a3b8' }}>DATE/TIME</div>
+                             <div style={{ fontSize: '12px', fontWeight: 800 }}>{c.dateTime ? new Date(c.dateTime).toLocaleDateString('en-GB', { day: '2-digit', month: 'short' }).toUpperCase() : 'N/A'}</div>
+                          </div>
+                       </div>
+
+                       {c.technicianComments && (
+                         <div style={{ fontSize: '11px', color: '#64748b', fontStyle: 'italic', padding: '0 5px' }}>
+                            "{c.technicianComments}"
+                         </div>
+                       )}
+
+                       <div style={{ marginTop: 'auto', display: 'flex', gap: '10px' }}>
+                          <button 
+                            className="btn btn-primary"
+                            onClick={() => handleOpenWorkspace(c)}
+                            style={{ flex: 1, padding: '12px', borderRadius: '10px', fontSize: '11px', fontWeight: 950 }}
+                          >EXECUTE_REPORTER</button>
+                       </div>
+                    </div>
+                  );
+               })}
+               {filteredCases.length === 0 && !loading && (
+                 <div style={{ gridColumn: '1/-1', textAlign: 'center', padding: '60px', color: '#94a3b8', fontStyle: 'italic' }}>
+                    [ NO DIAGNOSTIC MISSIONS IN THIS FREQUENCY ]
+                 </div>
+               )}
+            </div>
+          )}
         </div>
       </div>
     </div>
@@ -444,10 +520,23 @@ export default function DoctorBoard() {
           </div>
        </div>
 
-       <div style={{ flex: 1, display: 'flex', overflow: 'hidden', padding: '30px' }}>
+       <div style={{ flex: 1, display: 'flex', flexDirection: isMobile ? 'column' : 'row', overflow: isMobile ? 'auto' : 'hidden', padding: isMobile ? '15px' : '30px' }}>
           {/* DIAGNOSTIC ZONE (DARK) */}
-          <div style={{ flex: 1, background: 'radial-gradient(circle, #1a1a2e 0%, #050510 100%)', position: 'relative', display: 'flex', alignItems: 'center', justifyContent: 'center', borderRadius: '24px', boxShadow: '0 20px 50px rgba(0,0,0,0.15)', overflow: 'hidden', border: '1px solid #1e293b' }}>
-             <div style={{ position: 'absolute', top: '30px', left: '30px', background: 'rgba(0,0,0,0.6)', color: 'white', padding: '15px', borderRadius: '12px', borderLeft: '3px solid #0f52ba', fontSize: '10px', fontWeight: 800, backdropFilter: 'blur(10px)' }}>
+          <div style={{ 
+            flex: 1, 
+            minHeight: isMobile ? '400px' : 'auto',
+            background: 'radial-gradient(circle, #1a1a2e 0%, #050510 100%)', 
+            position: 'relative', 
+            display: 'flex', 
+            alignItems: 'center', 
+            justifyContent: 'center', 
+            borderRadius: '24px', 
+            boxShadow: '0 20px 50px rgba(0,0,0,0.15)', 
+            overflow: 'hidden', 
+            border: '1px solid #1e293b',
+            marginBottom: isMobile ? '20px' : '0'
+          }}>
+             <div style={{ position: 'absolute', top: isMobile ? '15px' : '30px', left: isMobile ? '15px' : '30px', background: 'rgba(0,0,0,0.6)', color: 'white', padding: '15px', borderRadius: '12px', borderLeft: '3px solid #0f52ba', fontSize: '10px', fontWeight: 800, backdropFilter: 'blur(10px)', zIndex: 5 }}>
                 ACQUISITION_TARGET: {activeCase.modality}<br/>
                 FIDELITY: DIAGNOSTIC_HIGH<br/>
                 ENGINE: 1RAD_CORE_V4
@@ -462,9 +551,9 @@ export default function DoctorBoard() {
                   />
                 ) : (
                   <>
-                    <div style={{ fontSize: '200px', opacity: 0.05, color: 'white' }}>{MODALITY_ICONS[activeCase.modality] || '🖥️'}</div>
+                    <div style={{ fontSize: '100px', opacity: 0.05, color: 'white' }}>{MODALITY_ICONS[activeCase.modality] || '🖥️'}</div>
                     <div style={{ position: 'absolute', display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
-                      <p style={{ fontSize: '11px', color: '#0f52ba', fontWeight: 950, letterSpacing: '4px', marginBottom: '20px' }}>[ SECURE_DICOM_STREAM_IDLE ]</p>
+                      <p style={{ fontSize: '9px', color: '#0f52ba', fontWeight: 950, letterSpacing: '2px', marginBottom: '15px' }}>[ SECURE_DICOM_STREAM_IDLE ]</p>
                       <button 
                          onClick={() => document.getElementById('doctor-dicom-upload').click()}
                          style={{ background: '#0f52ba', color: 'white', border: 'none', padding: '10px 20px', borderRadius: '12px', fontSize: '11px', fontWeight: 950, cursor: 'pointer', boxShadow: '0 10px 20px rgba(15,82,186,0.3)' }}
@@ -477,7 +566,19 @@ export default function DoctorBoard() {
           </div>
 
           {/* REPORTING SIDEBAR (LIGHT) */}
-          <div style={{ width: '500px', background: 'white', marginLeft: '30px', borderRadius: '24px', padding: '40px', display: 'flex', flexDirection: 'column', gap: '30px', overflowY: 'auto', border: '1px solid #e2e8f0', boxShadow: '0 10px 30px rgba(0,0,0,0.02)' }}>
+          <div style={{ 
+            width: isMobile ? '100%' : '500px', 
+            background: 'white', 
+            marginLeft: isMobile ? '0' : '30px', 
+            borderRadius: '24px', 
+            padding: isMobile ? '25px' : '40px', 
+            display: 'flex', 
+            flexDirection: 'column', 
+            gap: '30px', 
+            overflowY: 'visible', 
+            border: '1px solid #e2e8f0', 
+            boxShadow: '0 10px 30px rgba(0,0,0,0.02)' 
+          }}>
               <div>
                 <label style={{ fontSize: '9px', fontWeight: 950, color: '#0f52ba', letterSpacing: '1px', textTransform: 'uppercase', marginBottom: '15px', display: 'block' }}>CLINICAL_TEMPLATES</label>
                 <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>

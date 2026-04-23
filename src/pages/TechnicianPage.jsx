@@ -538,17 +538,17 @@ export default function TechnicianPage() {
       
       {/* TOP COMPACT TOOLBAR */}
       <div style={{ 
-        height: '54px', 
+        height: '46px', 
         background: '#ffffff', 
         borderBottom: '1px solid #e2e8f0', 
         display: 'flex', 
         alignItems: 'center', 
-        padding: '0 15px', 
-        gap: '8px',
+        padding: '0 12px', 
+        gap: '6px',
         zIndex: 100,
         boxShadow: '0 1px 3px rgba(0,0,0,0.02)'
       }}>
-        <button onClick={() => setCurrentView('QUEUE')} className="toolbar-btn light" style={{ width: 'auto', padding: '0 15px', fontSize: '11px', fontWeight: 800 }}>
+        <button onClick={() => setCurrentView('QUEUE')} className="toolbar-btn light" style={{ width: 'auto', padding: '0 12px', fontSize: '10px', fontWeight: 900, height: '30px' }}>
           ↩ EXIT
         </button>
         <div style={{ width: '1px', height: '24px', background: '#e2e8f0', margin: '0 5px' }}></div>
@@ -563,24 +563,18 @@ export default function TechnicianPage() {
             color: 'white', 
             border: 'none',
             display: 'flex',
-            gap: '8px',
+            gap: '6px',
             width: 'auto',
-            padding: '0 15px',
-            fontSize: '10px',
+            padding: '0 12px',
+            fontSize: '9px',
             fontWeight: 950,
-            borderRadius: '10px',
-            boxShadow: '0 4px 12px rgba(15, 82, 186, 0.3)',
-            height: '34px',
-            transition: 'transform 0.2s cubic-bezier(0.34, 1.56, 0.64, 1)'
+            borderRadius: '8px',
+            boxShadow: '0 4px 10px rgba(15, 82, 186, 0.2)',
+            height: '30px'
           }}
-          onMouseEnter={(e) => e.currentTarget.style.transform = 'scale(1.05)'}
-          onMouseLeave={(e) => e.currentTarget.style.transform = 'scale(1)'}
         >
-          <span style={{ fontSize: '16px' }}>📦</span> 
-          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', lineHeight: '1' }}>
-            <span>IMPORT</span>
-            <span style={{ fontSize: '7px', opacity: 0.7, marginTop: '2px' }}>DICOM/ZIP</span>
-          </div>
+          <span style={{ fontSize: '14px' }}>📦</span> 
+          <span>IMPORT</span>
         </button>
         <input id="tech-study-up" type="file" style={{ display: 'none' }} accept=".dcm,.zip" onChange={handleFileChange} />
         
@@ -602,19 +596,19 @@ export default function TechnicianPage() {
             onClick={() => setActiveTool(t.id)}
             className={`toolbar-btn light ${activeTool === t.id ? 'active' : ''}`}
             title={t.label}
-            style={{ width: '32px', height: '32px', fontSize: '13px' }}
+            style={{ width: '28px', height: '28px', fontSize: '11px', padding: 0 }}
           >{t.icon}</button>
         ))}
 
         <div style={{ width: '1px', height: '24px', background: '#e2e8f0', margin: '0 8px' }}></div>
 
         {/* SPECIAL TOOLS */}
-        <button onClick={() => setCineEnabled(!cineEnabled)} className={`toolbar-btn light ${cineEnabled ? 'active' : ''}`} title="Cine Loop" style={{ fontSize: '9px', padding: '0 10px', height: '32px' }}>🎬 CINE</button>
+        <button onClick={() => setCineEnabled(!cineEnabled)} className={`toolbar-btn light ${cineEnabled ? 'active' : ''}`} title="Cine Loop" style={{ fontSize: '8px', padding: '0 8px', height: '28px' }}>🎬 CINE</button>
         <button 
           onClick={() => setIsSyncEnabled(!isSyncEnabled)} 
           className={`toolbar-btn light ${isSyncEnabled ? 'active' : ''}`} 
           title="Synchronize Viewports"
-          style={{ fontWeight: 950, fontSize: '9px', padding: '0 10px', height: '32px' }}
+          style={{ fontWeight: 950, fontSize: '8px', padding: '0 8px', height: '28px' }}
         >
           🔗 SYNC
         </button>
