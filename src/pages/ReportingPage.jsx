@@ -87,6 +87,23 @@ const ReportingPage = () => {
   const [isPreviewOpen, setIsPreviewOpen] = useState(false);
   const isResizing = useRef(false);
 
+  // --- RESPONSIVE STATE ---
+  const [isTablet, setIsTablet] = useState(window.innerWidth < 1100);
+  const [activeWorkspaceMode, setActiveWorkspaceMode] = useState('split'); // 'split', 'dicom', 'editor'
+
+  useEffect(() => {
+    const handleResize = () => {
+      const width = window.innerWidth;
+      const tablet = width < 1100;
+      setIsTablet(tablet);
+      if (tablet && activeWorkspaceMode === 'split') {
+        setActiveWorkspaceMode('editor'); // Default to editor on tablet
+      }
+    };
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, [activeWorkspaceMode]);
+
   // --- API SYNC STATES ---
   const [dbTemplates, setDbTemplates] = useState([]);
   const [dbKeywords, setDbKeywords] = useState([]);
@@ -745,6 +762,12 @@ const ReportingPage = () => {
           border-left: 1px solid #e2e8f0;
         }
 
+        @media (max-width: 1100px) {
+          .reporting-header { height: auto; padding: 10px 15px; flex-direction: column; align-items: flex-start; gap: 10px; }
+          .patient-badge-header { border-left: none; padding-left: 0; }
+          .patient-badge-header div:first-child div:first-child { font-size: 16px !important; }
+        }
+
         .header-title {
           font-weight: 700;
           font-size: 16px;
@@ -844,6 +867,14 @@ const ReportingPage = () => {
           border-left: 1px solid #e2e8f0;
           position: relative;
         }
+
+        @media (max-width: 1100px) {
+          .main-layout { flex-direction: column; }
+          .panel-center { width: 100% !important; height: 50vh; display: ${activeWorkspaceMode === 'editor' ? 'none' : 'flex'}; }
+          .panel-right { width: 100% !important; height: ${activeWorkspaceMode === 'dicom' ? '0' : 'auto'}; display: ${activeWorkspaceMode === 'dicom' ? 'none' : 'flex'}; border-left: none; padding: 20px 15px; }
+          .resizer-handle { display: none; }
+        }
+
         .resizer-handle {
           position: absolute;
           left: -4px;
@@ -1344,26 +1375,47 @@ const ReportingPage = () => {
             padding: '4px', borderRadius: '12px', border: '1px solid rgba(15, 82, 186, 0.1)',
             marginRight: '15px'
           }}>
-            {[
-              { state: 'collapsed', icon: '\u{21E4}', label: 'Diagnostic' },
-              { state: 'standard', icon: '\u{2139}', label: 'Balanced' },
-              { state: 'expanded', icon: '\u{21E5}', label: 'Narrative' }
-            ].map(mode => (
-              <button 
-                key={mode.state}
-                onClick={() => setEditorState(mode.state)}
-                style={{ 
-                  background: editorState === mode.state ? '#0f52ba' : 'transparent',
-                  border: 'none', padding: '6px 12px', borderRadius: '8px', cursor: 'pointer',
-                  color: editorState === mode.state ? 'white' : '#64748b',
-                  fontSize: '10px', fontWeight: 900, display: 'flex', alignItems: 'center', gap: '6px',
-                  transition: 'all 0.3s'
-                }}
-              >
-                <span style={{ fontSize: '14px' }}>{mode.icon}</span>
-                {editorState === mode.state && <span>{mode.label.toUpperCase()}</span>}
-              </button>
-            ))}
+            {isTablet ? (
+               <div style={{ display: 'flex', gap: '5px' }}>
+                  <button 
+                    onClick={() => setActiveWorkspaceMode('dicom')}
+                    style={{ 
+                      background: activeWorkspaceMode === 'dicom' ? '#0f52ba' : 'transparent',
+                      border: 'none', padding: '8px 15px', borderRadius: '8px', color: activeWorkspaceMode === 'dicom' ? 'white' : '#64748b',
+                      fontSize: '11px', fontWeight: 900
+                    }}
+                  >VIEWER</button>
+                  <button 
+                    onClick={() => setActiveWorkspaceMode('editor')}
+                    style={{ 
+                      background: activeWorkspaceMode === 'editor' ? '#0f52ba' : 'transparent',
+                      border: 'none', padding: '8px 15px', borderRadius: '8px', color: activeWorkspaceMode === 'editor' ? 'white' : '#64748b',
+                      fontSize: '11px', fontWeight: 900
+                    }}
+                  >EDITOR</button>
+               </div>
+            ) : (
+              [
+                { state: 'collapsed', icon: '\u{21E4}', label: 'Diagnostic' },
+                { state: 'standard', icon: '\u{2139}', label: 'Balanced' },
+                { state: 'expanded', icon: '\u{21E5}', label: 'Narrative' }
+              ].map(mode => (
+                <button 
+                  key={mode.state}
+                  onClick={() => setEditorState(mode.state)}
+                  style={{ 
+                    background: editorState === mode.state ? '#0f52ba' : 'transparent',
+                    border: 'none', padding: '6px 12px', borderRadius: '8px', cursor: 'pointer',
+                    color: editorState === mode.state ? 'white' : '#64748b',
+                    fontSize: '10px', fontWeight: 900, display: 'flex', alignItems: 'center', gap: '6px',
+                    transition: 'all 0.3s'
+                  }}
+                >
+                  <span style={{ fontSize: '14px' }}>{mode.icon}</span>
+                  {editorState === mode.state && <span>{mode.label.toUpperCase()}</span>}
+                </button>
+              ))
+            )}
           </div>
         </div>
       </header>
