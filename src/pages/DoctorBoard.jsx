@@ -332,12 +332,12 @@ export default function DoctorBoard() {
           <table style={{ width: '100%', borderCollapse: 'collapse' }}>
             <thead style={{ background: '#f8fafc', borderBottom: '1px solid #e2e8f0' }}>
               <tr>
-                <th style={{ padding: '20px', textAlign: 'left', fontSize: '10px', fontWeight: 950, color: '#64748b', letterSpacing: '1px' }}>SUBJECT</th>
-                <th style={{ padding: '20px', textAlign: 'left', fontSize: '10px', fontWeight: 950, color: '#64748b', letterSpacing: '1px' }}>MISSION PROFILE</th>
-                <th style={{ padding: '20px', textAlign: 'left', fontSize: '10px', fontWeight: 950, color: '#64748b', letterSpacing: '1px' }}>MISSION DATE</th>
-                <th style={{ padding: '20px', textAlign: 'left', fontSize: '10px', fontWeight: 950, color: '#64748b', letterSpacing: '1px' }}>ACQUISITION</th>
-                <th style={{ padding: '20px', textAlign: 'left', fontSize: '10px', fontWeight: 950, color: '#64748b', letterSpacing: '1px' }}>STATUS</th>
-                <th style={{ padding: '20px', textAlign: 'right', fontSize: '10px', fontWeight: 950, color: '#64748b', letterSpacing: '1px' }}>EXECUTE</th>
+                <th style={{ padding: '20px', textAlign: 'left', fontSize: '11px', fontWeight: 950, color: '#64748b', letterSpacing: '1px' }}>PATIENT NODE</th>
+                <th style={{ padding: '20px', textAlign: 'left', fontSize: '11px', fontWeight: 950, color: '#64748b', letterSpacing: '1px' }}>STUDY ARCHITECTURE</th>
+                <th style={{ padding: '20px', textAlign: 'left', fontSize: '11px', fontWeight: 950, color: '#64748b', letterSpacing: '1px' }}>MISSION DATE</th>
+                <th style={{ padding: '20px', textAlign: 'left', fontSize: '11px', fontWeight: 950, color: '#64748b', letterSpacing: '1px' }}>SCANNING CONTEXT</th>
+                <th style={{ padding: '20px', textAlign: 'left', fontSize: '11px', fontWeight: 950, color: '#64748b', letterSpacing: '1px' }}>PHASE</th>
+                <th style={{ padding: '20px', textAlign: 'right', fontSize: '11px', fontWeight: 950, color: '#64748b', letterSpacing: '1px' }}>OPERATIONS</th>
               </tr>
             </thead>
             <tbody>
@@ -368,14 +368,19 @@ export default function DoctorBoard() {
                        </div>
                     </td>
                     <td style={{ padding: '20px' }}>
-                        <div style={{ fontWeight: 800, color: '#1e293b', fontSize: '13px' }}>{c.appointmentDate ? new Date(c.appointmentDate).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }).toUpperCase() : 'N/A'}</div>
-                        <div style={{ fontSize: '10px', color: '#94a3b8', fontWeight: 800, marginTop: '4px' }}>TIME: {c.appointmentTime || '09:00 AM'}</div>
+                        <div style={{ fontWeight: 800, color: '#1e293b', fontSize: '13px' }}>{c.dateTime ? new Date(c.dateTime).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }).toUpperCase() : 'N/A'}</div>
+                        <div style={{ fontSize: '10px', color: '#94a3b8', fontWeight: 800, marginTop: '4px' }}>TIME: {c.dateTime ? new Date(c.dateTime).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', hour12: true }).toUpperCase() : '09:00 AM'}</div>
                     </td>
                     <td style={{ padding: '20px' }}>
-                       <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                          <span style={{ fontSize: '20px' }}>{MODALITY_ICONS[c.modality] || '📑'}</span>
-                          <span style={{ fontSize: '10px', fontWeight: 950, color: isReady ? '#27ae60' : '#94a3b8' }}>{isReady ? 'ASSETS LOADED' : 'PIPELINE ACTIVE'}</span>
-                       </div>
+                        <div style={{ maxWidth: '200px' }}>
+                           <div style={{ fontSize: '10px', fontWeight: 800, color: '#0f52ba', display: 'flex', alignItems: 'center', gap: '5px', marginBottom: '4px' }}>
+                              <span style={{ width: '6px', height: '6px', borderRadius: '50%', background: status === 'scanned' ? '#2ecc71' : '#e2e8f0' }}></span>
+                              {status === 'scanned' ? 'SCANNING COMPLETE' : 'IN_PIPELINE'}
+                           </div>
+                           <div style={{ fontSize: '11px', color: c.technicianComments ? '#1e293b' : '#94a3b8', fontWeight: 500, fontStyle: c.technicianComments ? 'normal' : 'italic' }}>
+                              {c.technicianComments || 'No scanning bay observations provided.'}
+                           </div>
+                        </div>
                     </td>
                     <td style={{ padding: '20px' }}>
                       <span style={{ 
@@ -384,7 +389,7 @@ export default function DoctorBoard() {
                         color: isReady ? '#27ae60' : isScanning ? '#d97706' : isExpected ? '#0f52ba' : '#64748b',
                         border: `1px solid ${isReady ? '#c3e6cb' : isScanning ? '#fcd34d' : isExpected ? '#dbeafe' : '#e2e8f0'}`,
                         textTransform: 'uppercase'
-                      }}>{status === 'scanned' ? '📡 READY' : status === 'confirmed' ? '⚡ ARRIVED' : status === 'in_progress' ? '🌀 SCANNING' : status === 'scheduled' ? '📅 EXPECTED' : status.toUpperCase()}</span>
+                      }}>{status === 'scanned' ? '📡 READY' : status === 'confirmed' ? '⚡ ARRIVED' : status === 'in_progress' ? '🌀 SCANNING' : status === 'scheduled' ? '📅 EXPECTED' : status === 'reported' ? '✅ REPORTED' : status.toUpperCase()}</span>
                     </td>
                     <td style={{ padding: '20px', textAlign: 'right' }}>
                       <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
@@ -404,7 +409,7 @@ export default function DoctorBoard() {
               })}
               {filteredCases.length === 0 && !loading && (
                 <tr>
-                  <td colSpan="6" style={{ textAlign: 'center', padding: '100px', color: '#94a3b8', fontStyle: 'italic', fontSize: '14px' }}>
+                  <td colSpan="7" style={{ textAlign: 'center', padding: '100px', color: '#94a3b8', fontStyle: 'italic', fontSize: '14px' }}>
                     [ NO DIAGNOSTIC MISSIONS IN THIS FREQUENCY ]
                   </td>
                 </tr>

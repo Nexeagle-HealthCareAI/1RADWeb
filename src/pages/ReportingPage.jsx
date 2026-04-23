@@ -87,16 +87,91 @@ const ReportingPage = () => {
   const [isPreviewOpen, setIsPreviewOpen] = useState(false);
   const isResizing = useRef(false);
 
-  // Mock patient data
-  const patient = {
-    name: 'Rina Das',
-    age: '34/F',
-    uhid: 'UH-29484',
-    study: 'USG Whole Abdomen',
-    history: 'Pain abdomen, fever',
-    accession: 'ACC-20230910',
-    modality: 'US',
-    refDoctor: 'Dr. A. Sharma'
+  // --- API SYNC STATES ---
+  const [dbTemplates, setDbTemplates] = useState([]);
+  const [dbKeywords, setDbKeywords] = useState([]);
+  const [protocol, setProtocol] = useState(null);
+  const [isSaving, setIsSaving] = useState(false);
+  const [appointmentId, setAppointmentId] = useState(null);
+  const [activeAppointment, setActiveAppointment] = useState(null);
+
+  // --- DATA FETCHING ---
+  const fetchReportingContext = useCallback(async (appId) => {
+    setLoading(true);
+    try {
+      const [templRes, keyRes, protRes, reportRes, appRes] = await Promise.all([
+        apiClient.get('/reporting/templates'),
+        apiClient.get('/reporting/keywords'),
+        apiClient.get('/prescription/me'), 
+        apiClient.get(`/reporting/report/${appId}`).catch(() => ({ data: { success: false } })),
+        apiClient.get(`/appointments/${appId}`).catch(() => ({ data: null }))
+      ]);
+
+      if (templRes.data?.success) setDbTemplates(templRes.data.data);
+      if (keyRes.data?.success) setDbKeywords(keyRes.data.data);
+      if (protRes.data?.success) setProtocol(protRes.data.data);
+      if (appRes?.data) setActiveAppointment(appRes.data);
+      
+      if (reportRes.data?.success) {
+        const r = reportRes.data.data;
+        if (r.findings.startsWith('{')) {
+          setStructuredData(JSON.parse(r.findings));
+        } else {
+          setEditorText(r.findings);
+        }
+        // Set other fields...
+      }
+    } catch (err) {
+      console.error('[REPORTING] Initialization failure', err);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const id = params.get('id');
+    if (id) {
+      setAppointmentId(id);
+      fetchReportingContext(id);
+    }
+  }, [fetchReportingContext]);
+
+  // Dynamic state for structured fields
+  const [structuredData, setStructuredData] = useState({});
+
+  const handleStructuredChange = (fieldId, value) => {
+    setStructuredData(prev => ({ ...prev, [fieldId]: value }));
+  };
+
+  const renderDynamicFields = (template) => {
+    try {
+      const config = JSON.parse(template.content);
+      return config.map(field => (
+        <div key={field.id} style={{ marginBottom: '15px' }}>
+          <label style={{ fontSize: '11px', fontWeight: 800, color: '#64748b', display: 'block', marginBottom: '5px' }}>{field.label.toUpperCase()}</label>
+          {field.type === 'select' ? (
+            <select 
+              value={structuredData[field.id] || field.default || ''} 
+              onChange={(e) => handleStructuredChange(field.id, e.target.value)}
+              style={{ width: '100%', padding: '10px', borderRadius: '8px', border: '1px solid #e2e8f0', fontSize: '13px' }}
+            >
+              {field.options.map(opt => <option key={opt} value={opt}>{opt}</option>)}
+            </select>
+          ) : (
+            <input 
+              type={field.type || 'text'} 
+              value={structuredData[field.id] || field.default || ''}
+              onChange={(e) => handleStructuredChange(field.id, e.target.value)}
+              placeholder={`Enter ${field.label}...`}
+              style={{ width: '100%', padding: '10px', borderRadius: '8px', border: '1px solid #e2e8f0', fontSize: '13px' }}
+            />
+          )}
+        </div>
+      ));
+    } catch (e) {
+      return <div style={{ color: '#ef4444', fontSize: '12px' }}>[ CONFIGURATION ERROR: Invalid Template Schema ]</div>;
+    }
   };
 
   // --- DICOM HANDLERS ---
@@ -209,6 +284,28 @@ const ReportingPage = () => {
     setEditorText(el.innerHTML);
   };
 
+  const handleSaveReport = async (isFinal) => {
+    if (!appointmentId) return;
+    setIsSaving(true);
+    try {
+      const payload = {
+        appointmentId,
+        findings: activeTab === 'Structured' ? JSON.stringify(structuredData) : editorText,
+        impression: 'NORMAL STUDY', // To be linked to a real impression field
+        isFinalized: isFinal
+      };
+      const res = await apiClient.post('/reporting/save', payload);
+      if (res.data.success) {
+        alert(isFinal ? 'STRATEGIC DISPATCH COMPLETE: Report finalized.' : 'DRAFT PERSISTED: Changes saved.');
+        if (isFinal) window.location.href = '/doctor-board';
+      }
+    } catch (err) {
+      alert(`SYNC FAILURE: ${err.response?.data?.error || err.message}`);
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
   const insertContent = (content) => {
     const el = textareaRef.current;
     if (!el) return;
@@ -287,16 +384,22 @@ const ReportingPage = () => {
 
     let bodyContent = '';
     if (activeTab === 'Structured') {
-      const activeTemplate = templates[0]; // Logic to get current active template
-      bodyContent = (activeTemplate?.sections || []).map(s => `
-        <div style="margin-bottom: 25px;">
-          <div style="font-size: 11px; font-weight: 950; color: #64748b; text-transform: uppercase; margin-bottom: 8px; letter-spacing: 1px;">${s.title}</div>
-          <div style="font-size: 14px; line-height: 1.6; color: #1e293b; padding-left: 10px; border-left: 2px solid #e2e8f0;">${(s.content || '').replace(/\n/g, '<br>')}</div>
+      bodyContent = Object.entries(structuredData).map(([key, val]) => `
+        <div style="margin-bottom: 20px;">
+          <div style="font-size: 11px; font-weight: 950; color: #64748b; text-transform: uppercase; margin-bottom: 4px; letter-spacing: 1px;">${key.replace(/_/g, ' ')}</div>
+          <div style="font-size: ${protocol?.fontSize || 12}px; line-height: 1.5; color: ${protocol?.fontColor || '#1e293b'};">${val}</div>
         </div>
       `).join('');
     } else {
-      bodyContent = `<div style="font-size: 14px; line-height: 1.8; color: #1e293b;">${editorText}</div>`;
+      bodyContent = `<div style="font-size: ${protocol?.fontSize || 14}px; line-height: 1.6; color: ${protocol?.fontColor || '#1e293b'}; font-family: ${protocol?.fontFamily || 'inherit'};">${editorText}</div>`;
     }
+
+    const m = {
+      top: (protocol?.headerMargin || 40) + 'mm',
+      left: (protocol?.leftMargin || 20) + 'mm',
+      right: (protocol?.rightMargin || 20) + 'mm',
+      bottom: (protocol?.bottomMargin || 20) + 'mm'
+    };
 
     return (
       <div className="modal-overlay" style={{ background: 'rgba(10, 22, 40, 0.95)', zIndex: 10000, display: 'flex', alignItems: 'center', justifyContent: 'center', position: 'fixed', inset: 0, padding: '40px' }}>
@@ -304,7 +407,7 @@ const ReportingPage = () => {
           <div style={{ padding: '20px 40px', background: '#0a1628', color: 'white', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
             <div>
               <h3 style={{ fontSize: '12px', fontWeight: 950, letterSpacing: '2px', margin: 0 }}>OFFICIAL DIAGNOSTIC PREVIEW</h3>
-              <div style={{ fontSize: '10px', opacity: 0.6 }}>Verify clinical findings before final authorization</div>
+              <div style={{ fontSize: '10px', opacity: 0.6 }}>Branding: {protocol ? 'INSTITUTIONAL_READY' : 'DEFAULT_LAYOUT'}</div>
             </div>
             <div style={{ display: 'flex', gap: '15px' }}>
               <button className="btn btn-primary" onClick={() => window.print()}>🖨️ PRINT FINAL</button>
@@ -313,60 +416,51 @@ const ReportingPage = () => {
           </div>
           
           <div style={{ flex: 1, padding: '50px', background: '#f1f5f9', overflowY: 'auto', display: 'flex', justifyContent: 'center' }}>
-            <div id="printable-report" style={{ width: '210mm', minHeight: '297mm', background: 'white', padding: '25mm', boxShadow: '0 10px 30px rgba(0,0,0,0.1)', color: '#1e293b' }}>
-              {/* Header */}
-              <div style={{ borderBottom: '4px solid #0f52ba', paddingBottom: '30px', marginBottom: '40px', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-                <div>
-                  <h1 style={{ fontSize: '32px', fontWeight: 950, color: '#0f52ba', margin: 0 }}>1RAD DIAGNOSTICS</h1>
-                  <div style={{ fontSize: '12px', color: '#64748b', fontWeight: 700, marginTop: '5px' }}>ADVANCED IMAGING & TELE-RADIOLOGY HUB</div>
-                </div>
-                <div style={{ textAlign: 'right' }}>
-                  <div style={{ fontSize: '10px', fontWeight: 950, color: '#94a3b8' }}>REPORT_ID</div>
-                  <div style={{ fontSize: '16px', fontWeight: 900 }}>{patient.accession}</div>
-                </div>
-              </div>
+            <div id="printable-report" style={{ 
+              width: '210mm', 
+              minHeight: '297mm', 
+              background: 'white', 
+              boxShadow: '0 10px 30px rgba(0,0,0,0.1)', 
+              color: '#1e293b',
+              position: 'relative',
+              backgroundImage: protocol?.letterheadBlobUrl ? `url(${protocol.letterheadBlobUrl})` : 'none',
+              backgroundSize: 'contain',
+              backgroundRepeat: 'no-repeat'
+            }}>
+              {/* Content Overlay with Protocol Margins */}
+              <div style={{ 
+                paddingTop: m.top, 
+                paddingLeft: m.left, 
+                paddingRight: m.right, 
+                paddingBottom: m.bottom 
+              }}>
+                {/* Fallback header if no letterhead */}
+                {!protocol?.letterheadBlobUrl && (
+                  <div style={{ borderBottom: '4px solid #0f52ba', paddingBottom: '30px', marginBottom: '40px' }}>
+                    <h1 style={{ fontSize: '32px', fontWeight: 950, color: '#0f52ba', margin: 0 }}>1RAD DIAGNOSTICS</h1>
+                    <div style={{ fontSize: '12px', color: '#64748b', fontWeight: 700, marginTop: '5px' }}>OFFICIAL CLINICAL RECORD</div>
+                  </div>
+                )}
 
-              {/* Patient Info */}
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '30px', background: '#f8fafc', padding: '25px', borderRadius: '12px', marginBottom: '40px', border: '1px solid #e2e8f0' }}>
-                <div>
-                  <div style={{ fontSize: '10px', fontWeight: 950, color: '#94a3b8', marginBottom: '5px' }}>PATIENT NAME</div>
-                  <div style={{ fontSize: '14px', fontWeight: 950 }}>{patient.name?.toUpperCase()}</div>
+                {/* Patient Info Block */}
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '15px', background: '#f8fafc', padding: '15px', borderRadius: '8px', marginBottom: '30px', border: '1px solid #e2e8f0', fontSize: '12px' }}>
+                  <div><span style={{color: '#64748b'}}>NAME:</span> <strong>{activeAppointment?.patientName?.toUpperCase() || 'N/A'}</strong></div>
+                  <div><span style={{color: '#64748b'}}>AGE/SEX:</span> <strong>{activeAppointment?.patientAge || 'N/A'} / {activeAppointment?.patientGender || 'N/A'}</strong></div>
+                  <div><span style={{color: '#64748b'}}>UHID:</span> <strong>{activeAppointment?.patientIdentifier || 'N/A'}</strong></div>
+                  <div><span style={{color: '#64748b'}}>STUDY:</span> <strong>{activeAppointment?.service || 'N/A'}</strong></div>
+                  <div><span style={{color: '#64748b'}}>DATE:</span> <strong>{activeAppointment?.dateTime ? new Date(activeAppointment.dateTime).toLocaleDateString() : 'N/A'}</strong></div>
+                  <div><span style={{color: '#64748b'}}>REF:</span> <strong>{activeAppointment?.referredBy || 'N/A'}</strong></div>
                 </div>
-                <div>
-                  <div style={{ fontSize: '10px', fontWeight: 950, color: '#94a3b8', marginBottom: '5px' }}>AGE / GENDER</div>
-                  <div style={{ fontSize: '14px', fontWeight: 950 }}>{patient.age}</div>
-                </div>
-                <div>
-                  <div style={{ fontSize: '10px', fontWeight: 950, color: '#94a3b8', marginBottom: '5px' }}>UHID</div>
-                  <div style={{ fontSize: '14px', fontWeight: 950 }}>{patient.uhid}</div>
-                </div>
-                <div>
-                  <div style={{ fontSize: '10px', fontWeight: 950, color: '#94a3b8', marginBottom: '5px' }}>MODALITY</div>
-                  <div style={{ fontSize: '14px', fontWeight: 950 }}>{patient.modality}</div>
-                </div>
-                <div>
-                  <div style={{ fontSize: '10px', fontWeight: 950, color: '#94a3b8', marginBottom: '5px' }}>STUDY</div>
-                  <div style={{ fontSize: '14px', fontWeight: 950 }}>{patient.study}</div>
-                </div>
-                <div>
-                  <div style={{ fontSize: '10px', fontWeight: 950, color: '#94a3b8', marginBottom: '5px' }}>DATE</div>
-                  <div style={{ fontSize: '14px', fontWeight: 950 }}>{new Date().toLocaleDateString()}</div>
-                </div>
-              </div>
 
-              {/* Content */}
-              <div dangerouslySetInnerHTML={{ __html: bodyContent }} />
-
-              {/* Footer */}
-              <div style={{ marginTop: '80px', borderTop: '2px solid #f1f5f9', paddingTop: '40px', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end' }}>
-                <div style={{ fontSize: '10px', color: '#94a3b8' }}>
-                  Digitally signed by 1Rad Core Engine<br/>
-                  Verification ID: AUTH-XP92-8821
-                </div>
-                <div style={{ textAlign: 'center' }}>
-                  <div style={{ width: '180px', height: '60px', borderBottom: '1px solid #1e293b', marginBottom: '10px', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '12px', fontStyle: 'italic', color: '#94a3b8' }}>Digital Signature</div>
-                  <div style={{ fontSize: '14px', fontWeight: 950 }}>{patient.refDoctor}</div>
-                  <div style={{ fontSize: '11px', color: '#64748b' }}>Consultant Radiologist</div>
+                {/* Main Findings */}
+                <div dangerouslySetInnerHTML={{ __html: bodyContent }} />
+                
+                {/* Impression Block */}
+                <div style={{ marginTop: '30px' }}>
+                   <div style={{ fontSize: '11px', fontWeight: 950, color: '#0f52ba', marginBottom: '5px' }}>IMPRESSION:</div>
+                   <div style={{ fontSize: '14px', fontWeight: 900, borderLeft: '3px solid #0f52ba', paddingLeft: '15px' }}>
+                      NORMAL ULTRASOUND OF THE WHOLE ABDOMEN.
+                   </div>
                 </div>
               </div>
             </div>
@@ -376,7 +470,7 @@ const ReportingPage = () => {
           @media print {
             body * { visibility: hidden; }
             #printable-report, #printable-report * { visibility: visible; }
-            #printable-report { position: fixed; left: 0; top: 0; width: 100%; height: 100%; margin: 0; padding: 20mm; box-shadow: none; }
+            #printable-report { position: fixed; left: 0; top: 0; width: 100%; height: 100%; margin: 0; padding: 0; box-shadow: none; }
           }
         `}</style>
       </div>
@@ -1230,17 +1324,17 @@ const ReportingPage = () => {
       {/* --- HEADER --- */}
       <header className="reporting-header">
         <div className="header-left">
-          <button className="back-btn">← Worklist</button>
+          <button className="back-btn" onClick={() => window.location.href = '/doctor-board'}>← Worklist</button>
           <div className="patient-badge-header">
             <div>
-              <div style={{ fontSize: '20px', fontWeight: 950, color: '#1a1a2e', letterSpacing: '-0.5px' }}>{patient.name?.toUpperCase()}</div>
+              <div style={{ fontSize: '20px', fontWeight: 950, color: '#1a1a2e', letterSpacing: '-0.5px' }}>{activeAppointment?.patientName?.toUpperCase() || 'LOADING...'}</div>
               <div style={{ display: 'flex', gap: '8px', marginTop: '4px' }}>
-                <span style={{ fontSize: '10px', fontWeight: 950, color: '#94a3b8', letterSpacing: '1px' }}>ID: {patient.uhid}</span>
-                <span style={{ fontSize: '10px', fontWeight: 950, color: '#94a3b8', letterSpacing: '1px' }}>ACC: {patient.accession}</span>
+                <span style={{ fontSize: '10px', fontWeight: 950, color: '#94a3b8', letterSpacing: '1px' }}>ID: {activeAppointment?.patientIdentifier || '...'}</span>
+                <span style={{ fontSize: '10px', fontWeight: 950, color: '#94a3b8', letterSpacing: '1px' }}>ACC: {activeAppointment?.displayId || '...'}</span>
               </div>
             </div>
             <div style={{ display: 'flex', gap: '8px', marginLeft: '15px' }}>
-              <span style={{ background: '#0f52ba', color: 'white', padding: '4px 10px', borderRadius: '6px', fontSize: '10px', fontWeight: 950, letterSpacing: '1px' }}>{patient.modality}</span>
+              <span style={{ background: '#0f52ba', color: 'white', padding: '4px 10px', borderRadius: '6px', fontSize: '10px', fontWeight: 950, letterSpacing: '1px' }}>{activeAppointment?.modality || '...'}</span>
             </div>
           </div>
         </div>
