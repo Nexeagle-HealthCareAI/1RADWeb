@@ -11,10 +11,6 @@ export default function BillingPage() {
   const [selectedInvoice, setSelectedInvoice] = useState(null);
   const [isInvoiceDrawerOpen, setIsInvoiceDrawerOpen] = useState(false);
   const [isNewInvoiceDrawerOpen, setIsNewInvoiceDrawerOpen] = useState(false);
-  const [activeTab, setActiveTab] = useState('LEDGER'); // 'LEDGER', 'EXPENSES', 'ANALYTICS'
-  const [viewMode, setViewMode] = useState('TABLE');
-  const [expenses, setExpenses] = useState([]);
-  const [isExpenseDrawerOpen, setIsExpenseDrawerOpen] = useState(false);
   
   // Patient Search State
   const [patientSearchQuery, setPatientSearchQuery] = useState('');
@@ -43,7 +39,7 @@ export default function BillingPage() {
   const [isSyncing, setIsSyncing] = useState(false);
 
   // Responsive layout detection
-  const [isMobile, setIsMobile] = useState(window.innerWidth < 1100);
+  const [isMobile, setIsMobile] = useState(window.innerWidth < 1024);
   const [windowWidth, setWindowWidth] = useState(window.innerWidth);
 
   const fetchInvoices = useCallback(async () => {
@@ -93,15 +89,6 @@ export default function BillingPage() {
     }
   }, []);
 
-  const fetchExpenses = useCallback(async () => {
-    try {
-      const res = await apiClient.get('/finance/expenses');
-      setExpenses(res.data);
-    } catch (err) {
-      console.error('[FINANCE] Expense fetch failed', err);
-    }
-  }, []);
-
   useEffect(() => {
     fetchInvoices();
     fetchStats();
@@ -109,23 +96,15 @@ export default function BillingPage() {
     fetchMatrix();
   }, [fetchInvoices, fetchStats, fetchRegistry, fetchMatrix]);
 
-  useEffect(() => {
-    if (activeTab === 'EXPENSES') fetchExpenses();
-  }, [activeTab, fetchExpenses]);
-
   // Handle window resize for responsive layout
   useEffect(() => {
     const handleResize = () => {
       const newWidth = window.innerWidth;
       setWindowWidth(newWidth);
-      const tablet = newWidth < 1100;
-      setIsMobile(tablet);
-      if (tablet) setViewMode('CARDS');
-      else setViewMode('TABLE');
+      setIsMobile(newWidth < 1024);
     };
 
     window.addEventListener('resize', handleResize);
-    handleResize(); // Initial check
     return () => window.removeEventListener('resize', handleResize);
   }, []);
 
@@ -135,6 +114,7 @@ export default function BillingPage() {
     
     setIsSyncing(true);
     try {
+      // Map legacy format to API format
       const payload = legacy.map(inv => ({
         invoiceId: inv.invoiceId,
         patientName: inv.patientName,
@@ -190,18 +170,25 @@ export default function BillingPage() {
     const today = new Date().toISOString().split('T')[0];
     
     return invoices.filter(inv => {
+      // Search Filter
       const matchesSearch = inv.patientName.toLowerCase().includes(searchTerm.toLowerCase()) ||
                             inv.invoiceId.toLowerCase().includes(searchTerm.toLowerCase());
       
       if (!matchesSearch) return false;
+
+      // Status Filter
       if (statusFilter !== 'ALL' && inv.status !== statusFilter) return false;
+
+      // Time Filter
       const invDate = new Date(inv.createdAt).toISOString().split('T')[0];
       if (timeFilter === 'TODAY' && invDate !== today) return false;
       if (timeFilter === 'PAST' && invDate === today) return false;
+
       return true;
     });
   }, [invoices, searchTerm, timeFilter, statusFilter]);
 
+  // --- PATIENT LOOKUP ---
   const fetchPatients = useCallback(async (query) => {
     if (!query) {
       setPatientResults([]);
@@ -228,6 +215,12 @@ export default function BillingPage() {
     return () => clearTimeout(timer);
   }, [patientSearchQuery, fetchPatients]);
 
+  // --- ACTIONS ---
+  const handleOpenInvoice = (inv) => {
+    setSelectedInvoice({ ...inv });
+    setIsInvoiceDrawerOpen(true);
+  };
+
   const handleUpdateItem = (index, field, value) => {
     const newItems = [...selectedInvoice.items];
     newItems[index] = { ...newItems[index], [field]: value };
@@ -250,7 +243,7 @@ export default function BillingPage() {
     try {
       await apiClient.post('/finance/payments', { 
         invoiceId: selectedInvoice.invoiceId, 
-        amount: selectedInvoice.totalAmount, 
+        amount: selectedInvoice.totalAmount, // Assuming full payment in this quick toggle
         paymentMethod 
       });
       setIsInvoiceDrawerOpen(false);
@@ -289,10 +282,20 @@ export default function BillingPage() {
       alert('INVOICE GENERATED: Financial record successfully added to ledger.');
     } catch (err) {
       console.error('[FINANCE] Invoice creation failed', err);
-      alert(err.response?.data?.error || 'SYSTEM FAILURE: Failed to deploy invoice metadata.');
+      const errorMsg = err.response?.data?.error || err.response?.data?.message || 'SYSTEM FAILURE: Failed to deploy invoice metadata.';
+      alert(errorMsg);
     }
   };
 
+  const handleSaveInvoice = () => {
+    const updated = invoices.map(inv => 
+      inv.invoiceId === selectedInvoice.invoiceId ? selectedInvoice : inv
+    );
+    saveInvoices(updated);
+    setIsInvoiceDrawerOpen(false);
+  };
+
+  // --- RENDERERS ---
   const renderInvoiceDrawer = () => {
     if (!selectedInvoice) return null;
     const isPaid = selectedInvoice.status === 'PAID';
@@ -310,7 +313,12 @@ export default function BillingPage() {
                    <div style={{ padding: '8px 15px', background: 'rgba(255,255,255,0.2)', borderRadius: '10px', fontSize: '10px', fontWeight: 950 }}>
                       {selectedInvoice.status}
                    </div>
-                   <button onClick={() => setIsInvoiceDrawerOpen(false)} style={{ background: 'none', border: 'none', color: 'white', fontSize: '24px', cursor: 'pointer', opacity: 0.7 }}>✕</button>
+                   <button 
+                     onClick={() => setIsInvoiceDrawerOpen(false)}
+                     style={{ background: 'none', border: 'none', color: 'white', fontSize: '24px', cursor: 'pointer', opacity: 0.7, padding: '5px' }}
+                     onMouseOver={e => e.currentTarget.style.opacity = 1}
+                     onMouseOut={e => e.currentTarget.style.opacity = 0.7}
+                   >✕</button>
                 </div>
              </div>
           </div>
@@ -326,11 +334,23 @@ export default function BillingPage() {
                    <span style={{ fontSize: '10px', fontWeight: 950, color: '#94a3b8', letterSpacing: '1px' }}>LINE_ITEMS_MANIFEST</span>
                    {!isPaid && <button onClick={handleAddItem} style={{ color: '#0f52ba', border: 'none', background: 'none', fontSize: '10px', fontWeight: 950, cursor: 'pointer' }}>+ ADD CUSTOM ITEM</button>}
                 </div>
+                
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '15px' }}>
                    {selectedInvoice.items.map((item, idx) => (
                      <div key={idx} style={{ display: 'flex', gap: '10px', alignItems: 'center', background: '#f8fafc', padding: '12px', borderRadius: '12px', border: '1px solid #f1f5f9' }}>
-                        <input disabled={isPaid} type="text" value={item.description} onChange={e => handleUpdateItem(idx, 'description', e.target.value)} style={{ flex: 2, background: 'transparent', border: 'none', borderBottom: isPaid ? 'none' : '1px solid #ddd', fontSize: '12px', fontWeight: 700 }} />
-                        <input disabled={isPaid} type="number" value={item.amount} onChange={e => handleUpdateItem(idx, 'amount', parseInt(e.target.value) || 0)} style={{ flex: 1, background: 'transparent', border: 'none', borderBottom: isPaid ? 'none' : '1px solid #ddd', fontSize: '12px', fontWeight: 950, textAlign: 'right' }} />
+                        <input 
+                          disabled={isPaid}
+                          type="text" value={item.description} 
+                          onChange={e => handleUpdateItem(idx, 'description', e.target.value)}
+                          placeholder="Description"
+                          style={{ flex: 2, background: 'transparent', border: 'none', borderBottom: isPaid ? 'none' : '1px solid #ddd', fontSize: '12px', fontWeight: 700 }}
+                        />
+                        <input 
+                          disabled={isPaid}
+                          type="number" value={item.amount} 
+                          onChange={e => handleUpdateItem(idx, 'amount', parseInt(e.target.value) || 0)}
+                          style={{ flex: 1, background: 'transparent', border: 'none', borderBottom: isPaid ? 'none' : '1px solid #ddd', fontSize: '12px', fontWeight: 950, textAlign: 'right' }}
+                        />
                         {!isPaid && <button onClick={() => handleRemoveItem(idx)} style={{ color: '#ef4444', border: 'none', background: 'none', cursor: 'pointer' }}>✕</button>}
                      </div>
                    ))}
@@ -346,8 +366,26 @@ export default function BillingPage() {
 
              {!isPaid ? (
                <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
-                  <div style={{ display: 'flex', gap: '15px' }}>
-                     <button onClick={() => setIsInvoiceDrawerOpen(false)} style={{ flex: 1, padding: '16px', borderRadius: '16px', border: '1px solid #eee', fontWeight: 800, cursor: 'pointer' }}>SAVE CHANGES</button>
+                  <div>
+                     <span style={{ fontSize: '10px', fontWeight: 950, color: '#94a3b8', letterSpacing: '1px', marginBottom: '10px', display: 'block' }}>PAYMENT_PROTOCOL</span>
+                     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '10px' }}>
+                        {['CASH', 'UPI', 'CARD'].map(m => (
+                          <button 
+                            key={m} 
+                            onClick={() => setPaymentMethod(m)}
+                            style={{ 
+                              padding: '12px', borderRadius: '12px', border: paymentMethod === m ? '2px solid #0f52ba' : '1px solid #e2e8f0',
+                              background: paymentMethod === m ? '#f0f4ff' : 'white', color: paymentMethod === m ? '#0f52ba' : '#64748b',
+                              fontSize: '10px', fontWeight: 950, cursor: 'pointer'
+                            }}
+                          >
+                            {m}
+                          </button>
+                        ))}
+                     </div>
+                  </div>
+                  <div style={{ display: 'flex', gap: '15px', marginTop: '10px' }}>
+                     <button onClick={handleSaveInvoice} style={{ flex: 1, padding: '16px', borderRadius: '16px', border: '1px solid #eee', fontWeight: 800, cursor: 'pointer' }}>SAVE CHANGES</button>
                      <button onClick={handleCollectPayment} style={{ flex: 2, padding: '16px', borderRadius: '16px', border: 'none', background: '#0f52ba', color: 'white', fontWeight: 950, cursor: 'pointer' }}>PROCESS PAYMENT & CLOSE</button>
                   </div>
                </div>
@@ -355,8 +393,106 @@ export default function BillingPage() {
                <div style={{ background: '#f0fdf4', border: '1px solid #bcf0da', padding: '20px', borderRadius: '16px', textAlign: 'center' }}>
                   <div style={{ fontSize: '24px', marginBottom: '10px' }}>✅</div>
                   <div style={{ fontSize: '12px', fontWeight: 950, color: '#166534' }}>TRANSACTION SETTLED</div>
+                  <div style={{ fontSize: '10px', color: '#166534', opacity: 0.7, marginTop: '4px' }}>Processed via {selectedInvoice.paymentMethod} on {new Date(selectedInvoice.paidAt).toLocaleString()}</div>
                </div>
              )}
+          </div>
+        </div>
+      </div>
+    );
+  };
+
+  const renderExportDrawer = () => {
+    return (
+      <div className="drawer-overlay" onClick={() => setIsExportDrawerOpen(false)} style={{ backdropFilter: 'blur(8px)', background: 'rgba(10, 22, 40, 0.4)', zIndex: 10000 }}>
+        <div className="drawer-content" style={{ padding: 0, width: '500px', background: 'white' }} onClick={e => e.stopPropagation()}>
+          <div style={{ padding: '35px', background: 'linear-gradient(135deg, #10b981 0%, #064e3b 100%)', color: 'white' }}>
+             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                <div>
+                   <h2 style={{ fontSize: '11px', fontWeight: 950, color: 'rgba(255,255,255,0.7)', letterSpacing: '3px', textTransform: 'uppercase', marginBottom: '8px' }}>Fiscal Intelligence</h2>
+                   <div style={{ fontSize: '24px', fontWeight: 950, letterSpacing: '-1px' }}>FINANCIAL EXPORT CONSOLE</div>
+                </div>
+                <button 
+                  onClick={() => setIsExportDrawerOpen(false)}
+                  style={{ background: 'none', border: 'none', color: 'white', fontSize: '24px', cursor: 'pointer', opacity: 0.7, padding: '5px' }}
+                >✕</button>
+             </div>
+          </div>
+
+          <div style={{ padding: '35px' }}>
+             <div style={{ marginBottom: '35px' }}>
+                <label style={{ fontSize: '10px', fontWeight: 950, color: '#94a3b8', letterSpacing: '1px', display: 'block', marginBottom: '15px' }}>EXPORT_SCOPE_SELECTION</label>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '15px' }}>
+                   <button 
+                     onClick={() => setExportMode('ALL')}
+                     style={{ 
+                       padding: '20px', borderRadius: '16px', border: exportMode === 'ALL' ? '2px solid #10b981' : '1px solid #e2e8f0',
+                       background: exportMode === 'ALL' ? '#f0fdf4' : 'white', textAlign: 'center', cursor: 'pointer'
+                     }}
+                   >
+                     <div style={{ fontSize: '24px', marginBottom: '8px' }}>📊</div>
+                     <div style={{ fontSize: '11px', fontWeight: 950, color: exportMode === 'ALL' ? '#059669' : '#64748b' }}>FULL LEDGER</div>
+                     <div style={{ fontSize: '8px', color: '#94a3b8', marginTop: '4px' }}>ALL RECOREDS (SLOW)</div>
+                   </button>
+                   <button 
+                     onClick={() => setExportMode('RANGE')}
+                     style={{ 
+                       padding: '20px', borderRadius: '16px', border: exportMode === 'RANGE' ? '2px solid #10b981' : '1px solid #e2e8f0',
+                       background: exportMode === 'RANGE' ? '#f0fdf4' : 'white', textAlign: 'center', cursor: 'pointer'
+                     }}
+                   >
+                     <div style={{ fontSize: '24px', marginBottom: '8px' }}>📅</div>
+                     <div style={{ fontSize: '11px', fontWeight: 950, color: exportMode === 'RANGE' ? '#059669' : '#64748b' }}>TEMPORAL RANGE</div>
+                     <div style={{ fontSize: '8px', color: '#94a3b8', marginTop: '4px' }}>CUSTOM DATE WINDOW</div>
+                   </button>
+                </div>
+             </div>
+
+             {exportMode === 'RANGE' && (
+               <div style={{ marginBottom: '40px', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px', animation: 'fadeIn 0.3s' }}>
+                  <div>
+                     <label style={{ fontSize: '10px', fontWeight: 950, color: '#94a3b8', display: 'block', marginBottom: '10px' }}>START_DATE</label>
+                     <input 
+                       type="date" 
+                       value={exportDates.start}
+                       onChange={e => setExportDates({ ...exportDates, start: e.target.value })}
+                       style={{ width: '100%', padding: '14px', borderRadius: '12px', border: '1px solid #eee', fontSize: '12px', fontWeight: 800 }}
+                     />
+                  </div>
+                  <div>
+                     <label style={{ fontSize: '10px', fontWeight: 950, color: '#94a3b8', display: 'block', marginBottom: '10px' }}>END_DATE</label>
+                     <input 
+                       type="date" 
+                       value={exportDates.end}
+                       onChange={e => setExportDates({ ...exportDates, end: e.target.value })}
+                       style={{ width: '100%', padding: '14px', borderRadius: '12px', border: '1px solid #eee', fontSize: '12px', fontWeight: 800 }}
+                     />
+                  </div>
+               </div>
+             )}
+
+             <div style={{ background: '#f8fafc', padding: '20px', borderRadius: '16px', border: '1px solid #f1f5f9', marginBottom: '40px' }}>
+                <div style={{ fontSize: '9px', fontWeight: 950, color: '#64748b', letterSpacing: '1px', marginBottom: '10px' }}>REVENUE_EXTRACTION_DETAILS</div>
+                <div style={{ display: 'flex', gap: '15px' }}>
+                   <div style={{ fontSize: '20px' }}>🛰️</div>
+                   <div>
+                      <div style={{ fontSize: '11px', fontWeight: 950, color: '#1e293b' }}>Format: Microsoft Excel (.xlsx)</div>
+                      <div style={{ fontSize: '10px', color: '#64748b', marginTop: '2px' }}>Includes full audit trail and line-item manifest.</div>
+                   </div>
+                </div>
+             </div>
+
+             <button 
+               onClick={handleExportData}
+               style={{ 
+                 width: '100%', padding: '20px', borderRadius: '18px', border: 'none', 
+                 background: 'linear-gradient(135deg, #10b981 0%, #059669 100%)', 
+                 color: 'white', fontWeight: 950, fontSize: '13px', cursor: 'pointer',
+                 boxShadow: '0 10px 30px rgba(16, 185, 129, 0.3)'
+               }}
+             >
+                INITIATE FISCAL EXPORT
+             </button>
           </div>
         </div>
       </div>
@@ -372,39 +508,205 @@ export default function BillingPage() {
                  <h2 style={{ fontSize: '11px', fontWeight: 950, color: 'rgba(255,255,255,0.7)', letterSpacing: '3px', textTransform: 'uppercase', marginBottom: '8px' }}>Manual Revenue Input</h2>
                  <div style={{ fontSize: '24px', fontWeight: 950, letterSpacing: '-1px' }}>GENERATE NEW INVOICE</div>
               </div>
-              <button onClick={() => setIsNewInvoiceDrawerOpen(false)} style={{ background: 'none', border: 'none', color: 'white', fontSize: '24px', cursor: 'pointer' }}>✕</button>
+              <button 
+                onClick={() => setIsNewInvoiceDrawerOpen(false)}
+                style={{ background: 'none', border: 'none', color: 'white', fontSize: '24px', cursor: 'pointer', opacity: 0.7, padding: '5px' }}
+                onMouseOver={e => e.currentTarget.style.opacity = 1}
+                onMouseOut={e => e.currentTarget.style.opacity = 0.7}
+              >✕</button>
            </div>
         </div>
+
         <div style={{ padding: '35px' }}>
            <form onSubmit={handleCreateManualInvoice}>
-              <div style={{ marginBottom: '30px' }}>
-                 <label style={{ fontSize: '10px', fontWeight: 950, color: '#94a3b8', display: 'block', marginBottom: '10px' }}>SEARCH_PATIENT_REGISTRY</label>
+              <div style={{ marginBottom: '30px', position: 'relative' }}>
+                 <label style={{ fontSize: '10px', fontWeight: 950, color: '#94a3b8', letterSpacing: '1px', display: 'block', marginBottom: '10px' }}>SEARCH_PATIENT_REGISTRY</label>
+                 
                  {!selectedPatient ? (
-                   <input 
-                     type="text" value={patientSearchQuery} placeholder="SEARCH BY NAME / UHID / CONTACT..." 
-                     onChange={e => setPatientSearchQuery(e.target.value)}
-                     style={{ width: '100%', padding: '14px', borderRadius: '12px', border: '1px solid #eee', fontSize: '12px', fontWeight: 700 }}
-                   />
-                 ) : (
-                   <div style={{ background: '#f0f4ff', padding: '15px', borderRadius: '12px', display: 'flex', justifyContent: 'space-between' }}>
-                      <div>
-                        <div style={{ fontSize: '14px', fontWeight: 950 }}>{selectedPatient.fullName.toUpperCase()}</div>
-                        <div style={{ fontSize: '10px' }}>UHID: {selectedPatient.patientIdentifier}</div>
+                   <>
+                    <div style={{ position: 'relative' }}>
+                      <span style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', opacity: 0.5 }}>🔍</span>
+                      <input 
+                          type="text"
+                          value={patientSearchQuery}
+                          placeholder="SEARCH BY NAME / UHID / CONTACT..."
+                          onChange={e => setPatientSearchQuery(e.target.value)}
+                          style={{ width: '100%', padding: '14px 14px 14px 40px', borderRadius: '12px', border: '1px solid #eee', fontSize: '12px', fontWeight: 700 }}
+                      />
+                    </div>
+                    {isSearchingPatients && <div style={{ fontSize: '10px', color: '#0f52ba', marginTop: '5px', fontWeight: 800 }}>SCANNING REGISTRY...</div>}
+                    
+                    {patientResults.length > 0 && (
+                      <div style={{ position: 'absolute', top: '100%', left: 0, right: 0, background: 'white', border: '1px solid #e2e8f0', borderRadius: '12px', boxShadow: '0 10px 40px rgba(0,0,0,0.1)', zIndex: 10, marginTop: '8px', maxHeight: '250px', overflowY: 'auto' }}>
+                        {patientResults.map(p => (
+                          <div 
+                            key={p.patientId} 
+                            onClick={() => { 
+                              setSelectedPatient(p); 
+                              setPatientResults([]); 
+                              fetchPendingBillables(p.patientId);
+                            }}
+                            style={{ padding: '15px', borderBottom: '1px solid #f1f5f9', cursor: 'pointer', transition: 'background 0.2s' }}
+                            onMouseOver={e => e.currentTarget.style.background = '#f8fafc'}
+                            onMouseOut={e => e.currentTarget.style.background = 'white'}
+                          >
+                             <div style={{ fontSize: '12px', fontWeight: 950, color: '#1e293b' }}>{p.fullName.toUpperCase()}</div>
+                             <div style={{ display: 'flex', gap: '15px', marginTop: '4px' }}>
+                                <span style={{ fontSize: '9px', fontWeight: 800, color: '#64748b' }}>UHID: {p.patientIdentifier}</span>
+                                <span style={{ fontSize: '9px', fontWeight: 800, color: '#64748b' }}>{p.gender} | {p.age}Y</span>
+                             </div>
+                          </div>
+                        ))}
                       </div>
-                      <button type="button" onClick={() => setSelectedPatient(null)} style={{ border: 'none', background: 'none', color: '#0f52ba', fontSize: '10px', fontWeight: 950 }}>CHANGE</button>
-                   </div>
-                 )}
-                 {patientResults.length > 0 && (
-                   <div style={{ background: 'white', border: '1px solid #eee', borderRadius: '10px', marginTop: '10px', maxHeight: '200px', overflowY: 'auto' }}>
-                     {patientResults.map(p => (
-                       <div key={p.patientId} onClick={() => { setSelectedPatient(p); setPatientResults([]); fetchPendingBillables(p.patientId); }} style={{ padding: '12px', cursor: 'pointer', borderBottom: '1px solid #f9f9f9' }}>
-                         {p.fullName.toUpperCase()} - {p.patientIdentifier}
-                       </div>
-                     ))}
+                    )}
+                   </>
+                 ) : (
+                   <div style={{ background: '#f0f4ff', padding: '15px', borderRadius: '12px', border: '1px solid #dbeafe', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <div>
+                        <div style={{ fontSize: '10px', fontWeight: 950, color: '#0f52ba', marginBottom: '2px' }}>SELECTED PATIENT</div>
+                        <div style={{ fontSize: '14px', fontWeight: 950, color: '#1e293b' }}>{selectedPatient.fullName.toUpperCase()}</div>
+                        <div style={{ fontSize: '10px', fontWeight: 800, color: '#64748b' }}>UHID: {selectedPatient.patientIdentifier}</div>
+                      </div>
+                      <button type="button" onClick={() => { setSelectedPatient(null); setPendingServices([]); }} style={{ border: 'none', background: 'none', color: '#0f52ba', fontSize: '10px', fontWeight: 950, cursor: 'pointer' }}>CHANGE</button>
                    </div>
                  )}
               </div>
-              <button type="submit" disabled={!selectedPatient} style={{ width: '100%', padding: '18px', borderRadius: '16px', border: 'none', background: selectedPatient ? '#0f52ba' : '#cbd5e1', color: 'white', fontWeight: 950, cursor: 'pointer' }}>
+
+              <div style={{ marginBottom: '30px', opacity: selectedPatient ? 1 : 0.4, pointerEvents: selectedPatient ? 'auto' : 'none' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '15px' }}>
+                     <span style={{ fontSize: '10px', fontWeight: 950, color: '#94a3b8', letterSpacing: '1px' }}>SERVICE_CATALOG_&_PENDING</span>
+                  </div>
+
+                  {/* Pending Services From Appointments */}
+                  {pendingServices.length > 0 && (
+                    <div style={{ marginBottom: '20px' }}>
+                       <p style={{ fontSize: '9px', fontWeight: 950, color: '#0f52ba', marginBottom: '10px' }}>PENDING FROM APPOINTMENTS</p>
+                       <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
+                          {pendingServices.map((s, idx) => (
+                            <button 
+                              key={idx}
+                              type="button"
+                              onClick={() => {
+                                const newItems = [...newInvoiceData.items];
+                                if (newItems.length === 1 && !newItems[0].description) {
+                                  newItems[0] = { description: s.service, amount: s.amount || 0, quantity: 1, appointmentId: s.appointmentId };
+                                } else {
+                                  newItems.push({ description: s.service, amount: s.amount || 0, quantity: 1, appointmentId: s.appointmentId });
+                                }
+                                setNewInvoiceData({ ...newInvoiceData, items: newItems });
+                                setPendingServices(prev => prev.filter((_, i) => i !== idx));
+                              }}
+                              style={{ 
+                                padding: '8px 12px', border: '1px dashed #0f52ba', background: '#f0f4ff', color: '#0f52ba', 
+                                borderRadius: '10px', fontSize: '10px', fontWeight: 800, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px' 
+                              }}
+                            >
+                              <span style={{ opacity: 0.7 }}>+</span> {s.service} (₹{s.amount || 'N/A'})
+                            </button>
+                          ))}
+                       </div>
+                    </div>
+                  )}
+
+                  {/* Global Service Registry */}
+                  <div>
+                    <p style={{ fontSize: '9px', fontWeight: 950, color: '#64748b', marginBottom: '10px' }}>AVAILABLE SERVICES (REGISTRY)</p>
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', maxHeight: '120px', overflowY: 'auto', padding: '4px' }}>
+                       {serviceRegistry.map((s) => (
+                         <button 
+                           key={s.id}
+                           type="button"
+                           onClick={() => {
+                             const newItems = [...newInvoiceData.items];
+                             if (newItems.length === 1 && !newItems[0].description) {
+                               newItems[0] = { description: s.serviceName, amount: s.amount, quantity: 1 };
+                             } else {
+                               newItems.push({ description: s.serviceName, amount: s.amount, quantity: 1 });
+                             }
+                             setNewInvoiceData({ ...newInvoiceData, items: newItems });
+                           }}
+                           style={{ 
+                             padding: '6px 10px', border: '1px solid #e2e8f0', background: 'white', color: '#1e293b', 
+                             borderRadius: '8px', fontSize: '9px', fontWeight: 700, cursor: 'pointer', transition: 'all 0.2s' 
+                           }}
+                           onMouseOver={e => { e.currentTarget.style.borderColor = '#0f52ba'; e.currentTarget.style.background = '#f8fafc'; }}
+                           onMouseOut={e => { e.currentTarget.style.borderColor = '#e2e8f0'; e.currentTarget.style.background = 'white'; }}
+                         >
+                           {s.serviceName}
+                         </button>
+                       ))}
+                    </div>
+                  </div>
+
+                  <div style={{ height: '30px' }}></div>
+
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '15px' }}>
+                     <span style={{ fontSize: '10px', fontWeight: 950, color: '#94a3b8', letterSpacing: '1px' }}>CHARGE_MANIFEST</span>
+                     <button type="button" onClick={() => setNewInvoiceData({ ...newInvoiceData, items: [...newInvoiceData.items, { description: '', amount: 0, quantity: 1 }] })} style={{ color: '#0f52ba', border: 'none', background: 'none', fontSize: '10px', fontWeight: 950, cursor: 'pointer' }}>+ ADD LINE</button>
+                  </div>
+                 
+                 <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                    {newInvoiceData.items.map((item, idx) => (
+                      <div key={idx} style={{ background: '#f8fafc', padding: '15px', borderRadius: '16px', border: '1px solid #f1f5f9' }}>
+                        <div style={{ display: 'flex', gap: '10px', alignItems: 'center', marginBottom: '10px' }}>
+                           <div style={{ flex: 3, position: 'relative' }}>
+                              <label style={{ fontSize: '8px', fontWeight: 950, color: '#94a3b8', display: 'block', marginBottom: '5px' }}>SERVICE_DEFINITION</label>
+                              <input 
+                                type="text" required placeholder="Select or type service..." value={item.description}
+                                onChange={e => {
+                                  const items = [...newInvoiceData.items];
+                                  items[idx].description = e.target.value;
+                                  setNewInvoiceData({ ...newInvoiceData, items });
+                                }}
+                                style={{ width: '100%', padding: '10px', borderRadius: '10px', border: '1px solid #eee', fontSize: '11px', fontWeight: 700 }}
+                              />
+                              
+                              {/* Service Dropdown (shows if text matches or on focus - simplified) */}
+                              {item.description.length > 0 && serviceRegistry.some(s => s.serviceName.toLowerCase().includes(item.description.toLowerCase()) && s.serviceName !== item.description) && (
+                                <div style={{ position: 'absolute', top: '100%', left: 0, right: 0, background: 'white', border: '1px solid #e2e8f0', borderRadius: '8px', boxShadow: '0 4px 15px rgba(0,0,0,0.05)', zIndex: 100, maxHeight: '150px', overflowY: 'auto' }}>
+                                   {serviceRegistry.filter(s => s.serviceName.toLowerCase().includes(item.description.toLowerCase())).map(s => (
+                                     <div 
+                                       key={s.id}
+                                       onClick={() => {
+                                          const items = [...newInvoiceData.items];
+                                          items[idx].description = s.serviceName;
+                                          items[idx].amount = s.amount;
+                                          setNewInvoiceData({ ...newInvoiceData, items });
+                                       }}
+                                       style={{ padding: '10px', fontSize: '10px', fontWeight: 800, cursor: 'pointer', borderBottom: '1px solid #f8fafc' }}
+                                       onMouseOver={e => e.currentTarget.style.background = '#f0f4ff'}
+                                       onMouseOut={e => e.currentTarget.style.background = 'white'}
+                                     >
+                                       {s.modality}: {s.serviceName} (₹{s.amount})
+                                     </div>
+                                   ))}
+                                </div>
+                              )}
+                           </div>
+
+                           <div style={{ flex: 1 }}>
+                              <label style={{ fontSize: '8px', fontWeight: 950, color: '#94a3b8', display: 'block', marginBottom: '5px' }}>AMOUNT</label>
+                              <input 
+                                type="number" required placeholder="₹" value={item.amount}
+                                onChange={e => {
+                                  const items = [...newInvoiceData.items];
+                                  items[idx].amount = parseInt(e.target.value) || 0;
+                                  setNewInvoiceData({ ...newInvoiceData, items });
+                                }}
+                                style={{ width: '100%', padding: '10px', borderRadius: '10px', border: '1px solid #eee', fontSize: '11px', fontWeight: 950, textAlign: 'right' }}
+                              />
+                           </div>
+
+                           {newInvoiceData.items.length > 1 && (
+                             <button type="button" onClick={() => setNewInvoiceData({ ...newInvoiceData, items: newInvoiceData.items.filter((_, i) => i !== idx) })} style={{ color: '#ef4444', border: 'none', background: 'none', cursor: 'pointer', marginTop: '15px' }}>✕</button>
+                           )}
+                        </div>
+                      </div>
+                    ))}
+                 </div>
+              </div>
+
+              <button type="submit" disabled={!selectedPatient} style={{ width: '100%', padding: '18px', borderRadius: '16px', border: 'none', background: selectedPatient ? '#0f52ba' : '#cbd5e1', color: 'white', fontWeight: 950, cursor: selectedPatient ? 'pointer' : 'not-allowed', marginTop: '20px' }}>
                  AUTHORIZE & DEPLOY INVOICE
               </button>
            </form>
@@ -414,179 +716,243 @@ export default function BillingPage() {
   );
 
   return (
-    <div className="billing-page" style={{ padding: isMobile ? '15px' : '40px', background: '#f8fafc', minHeight: '100vh' }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '40px' }}>
-        <h1 style={{ fontSize: '24px', fontWeight: 950, color: '#1a1a2e', letterSpacing: '-1px' }}>FINANCIAL REVENUE HUB</h1>
-        <div style={{ display: 'flex', gap: '15px' }}>
-           <button onClick={() => setIsExportDrawerOpen(true)} style={{ padding: '12px 24px', borderRadius: '12px', border: 'none', background: '#10b981', color: 'white', fontSize: '11px', fontWeight: 950, cursor: 'pointer' }}>EXPORT DATA</button>
-           <button onClick={() => setIsNewInvoiceDrawerOpen(true)} style={{ padding: '12px 24px', borderRadius: '12px', border: 'none', background: '#0f52ba', color: 'white', fontWeight: 950, fontSize: '11px', cursor: 'pointer' }}>NEW INVOICE</button>
+    <div className="billing-page" style={{ padding: '40px', background: '#f8fafc', minHeight: '100vh' }}>
+      {/* Header Section */}
+      <div className="board-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '40px' }}>
+        <div>
+          <h1 style={{ fontSize: '24px', fontWeight: 950, color: '#1a1a2e', letterSpacing: '-1px', marginBottom: '8px' }}>
+            FINANCIAL REVENUE HUB
+          </h1>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+            <span style={{ 
+              background: 'var(--tactical-indigo)', color: 'white', padding: '4px 10px', 
+              borderRadius: '6px', fontSize: '10px', fontWeight: 900, letterSpacing: '1px' 
+            }}>
+              {activeCenter?.name?.toUpperCase() || 'CORE HUB'}
+            </span>
+            <span style={{ fontSize: '12px', color: '#64748b', fontWeight: 600 }}>
+              Fiscal Year 2026-27 | Global Financial Matrix
+            </span>
+          </div>
         </div>
+        <div style={{ display: 'flex', gap: '15px' }}>
+           <div style={{ position: 'relative' }}>
+              <span style={{ position: 'absolute', left: '15px', top: '50%', transform: 'translateY(-50%)', opacity: 0.4 }}>🔍</span>
+              <input 
+                type="text" 
+                placeholder="SEARCH INVOICES / PATIENTS..." 
+                value={searchTerm}
+                onChange={e => setSearchTerm(e.target.value)}
+                style={{ padding: '12px 15px 12px 42px', borderRadius: '12px', border: '1px solid #e2e8f0', width: '280px', fontSize: '11px', fontWeight: 800 }}
+              />
+           </div>
+          <div style={{ display: 'flex', gap: '15px' }}>
+             <button 
+               onClick={() => setIsExportDrawerOpen(true)}
+               style={{ 
+                 padding: '12px 24px', borderRadius: '12px', border: '1px solid #e2e8f0', 
+                 background: '#10b981', color: 'white', fontSize: '11px', fontWeight: 950, cursor: 'pointer',
+                 boxShadow: '0 8px 20px rgba(16, 185, 129, 0.2)'
+               }}
+             >
+               ⚡ EXPORT FISCAL DATA
+             </button>
+             {localStorage.getItem('1rad_invoices') && (
+               <button 
+                 onClick={handleSyncLegacyData}
+                 disabled={isSyncing}
+                 style={{ 
+                   padding: '12px 24px', borderRadius: '12px', border: '1px solid #e2e8f0', 
+                   background: '#f8fafc', color: '#0f52ba', fontSize: '11px', fontWeight: 950, cursor: 'pointer',
+                 }}
+               >
+                 {isSyncing ? 'SYNCING...' : '🔄 SYNC LOCAL'}
+               </button>
+             )}
+             <button 
+               onClick={() => setIsNewInvoiceDrawerOpen(true)}
+               style={{ padding: '12px 24px', borderRadius: '12px', border: 'none', background: '#0f52ba', color: 'white', fontWeight: 800, fontSize: '11px', cursor: 'pointer', boxShadow: '0 8px 20px rgba(15, 82, 186, 0.2)' }}
+             >
+               + NEW MANUAL INVOICE
+             </button>
+          </div>
+        </div>
+      </div>
+
+      {/* Filter Matrix Controls */}
+      <div className="filter-matrix" style={{ display: 'flex', gap: '30px', marginBottom: '30px', background: '#f1f5f9', padding: '15px 25px', borderRadius: '18px', border: '1px solid #e2e8f0', alignItems: 'center' }}>
+         <div style={{ display: 'flex', alignItems: 'center', gap: '15px' }}>
+            <span style={{ fontSize: '10px', fontWeight: 950, color: '#64748b', letterSpacing: '1px' }}>TEMPORAL_FILTER:</span>
+            <div style={{ display: 'flex', background: 'white', padding: '3px', borderRadius: '10px', border: '1px solid #e2e8f0' }}>
+               {['TODAY', 'PAST', 'ALL'].map(t => (
+                 <button 
+                  key={t}
+                  onClick={() => setTimeFilter(t)}
+                  style={{ 
+                    padding: '8px 16px', borderRadius: '8px', border: 'none', fontSize: '9px', fontWeight: 950,
+                    background: timeFilter === t ? 'linear-gradient(135deg, #0f52ba 0%, #061a40 100%)' : 'transparent',
+                    color: timeFilter === t ? 'white' : '#64748b',
+                    cursor: 'pointer', transition: 'all 0.2s'
+                  }}
+                 >{t}</button>
+               ))}
+            </div>
+         </div>
+
+         <div style={{ width: '1px', height: '30px', background: '#cbd5e1' }}></div>
+
+         <div style={{ display: 'flex', alignItems: 'center', gap: '15px' }}>
+            <span style={{ fontSize: '10px', fontWeight: 950, color: '#64748b', letterSpacing: '1px' }}>STATUS_PROTOCOL:</span>
+            <div style={{ display: 'flex', background: 'white', padding: '3px', borderRadius: '10px', border: '1px solid #e2e8f0' }}>
+               {['ALL', 'PAID', 'PENDING'].map(s => (
+                 <button 
+                  key={s}
+                  onClick={() => setStatusFilter(s)}
+                  style={{ 
+                    padding: '8px 16px', borderRadius: '8px', border: 'none', fontSize: '9px', fontWeight: 950,
+                    background: statusFilter === s ? '#0f52ba' : 'transparent',
+                    color: statusFilter === s ? 'white' : '#64748b',
+                    cursor: 'pointer', transition: 'all 0.2s'
+                  }}
+                 >{s}</button>
+               ))}
+            </div>
+         </div>
+
+         {/* Stats Summary Bubble */}
+         <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: '10px' }}>
+            <span style={{ fontSize: '10px', fontWeight: 950, color: '#94a3b8' }}>MATCHING_RECORDS:</span>
+            <span style={{ background: '#0f52ba', color: 'white', padding: '2px 8px', borderRadius: '6px', fontSize: '11px', fontWeight: 950 }}>{filteredInvoices.length}</span>
+         </div>
       </div>
 
       {/* KPI HUD */}
-      <div className="kpi-grid" style={{ 
-        display: 'grid', 
-        gridTemplateColumns: isMobile ? 'repeat(2, 1fr)' : 'repeat(4, 1fr)', 
-        gap: '20px', 
-        marginBottom: '30px' 
-      }}>
-        <div className="kpi-card" style={{ background: 'linear-gradient(135deg, #0f52ba, #1e3a8a)', padding: '20px', borderRadius: '20px', border: '1px solid rgba(255,255,255,0.1)', color: 'white', boxShadow: '0 10px 30px rgba(15, 82, 186, 0.2)' }}>
-          <p style={{ fontSize: '9px', fontWeight: 950, color: 'rgba(255,255,255,0.6)', letterSpacing: '1px', marginBottom: '10px' }}>TOTAL_REVENUE (PAID)</p>
-          <div style={{ fontSize: '24px', fontWeight: 950 }}>₹{(stats.totalRevenue).toLocaleString()}</div>
+      <div className="kpi-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '25px', marginBottom: '40px' }}>
+        <div className="kpi-card" style={{ background: 'white', padding: '25px', borderRadius: '24px', border: '1px solid #e2e8f0', boxShadow: '0 4px 20px rgba(0,0,0,0.02)' }}>
+          <p style={{ fontSize: '11px', fontWeight: 950, color: '#94a3b8', letterSpacing: '1px', marginBottom: '15px' }}>TOTAL REVENUE (PAID)</p>
+          <div style={{ fontSize: '28px', fontWeight: 950, color: '#1a1a2e' }}>₹{(stats.totalRevenue).toLocaleString()}</div>
+          <div style={{ marginTop: '10px', fontSize: '10px', color: '#2ecc71', fontWeight: 800 }}>SYNCED REAL-TIME</div>
         </div>
-        <div className="kpi-card" style={{ background: 'white', padding: '20px', borderRadius: '20px', border: '1px solid #e2e8f0', boxShadow: '0 4px 15px rgba(0,0,0,0.02)' }}>
-          <p style={{ fontSize: '9px', fontWeight: 950, color: '#94a3b8', letterSpacing: '1px', marginBottom: '10px' }}>PENDING_COLLECTION</p>
-          <div style={{ fontSize: '24px', fontWeight: 950, color: '#f59e0b' }}>₹{stats.pendingRevenue.toLocaleString()}</div>
+        <div className="kpi-card" style={{ background: 'white', padding: '25px', borderRadius: '24px', border: '1px solid #e2e8f0', boxShadow: '0 4px 20px rgba(0,0,0,0.02)' }}>
+          <p style={{ fontSize: '11px', fontWeight: 950, color: '#94a3b8', letterSpacing: '1px', marginBottom: '15px' }}>PENDING UNPAID</p>
+          <div style={{ fontSize: '28px', fontWeight: 950, color: '#f39c12' }}>₹{stats.pendingRevenue.toLocaleString()}</div>
+          <div style={{ marginTop: '10px', fontSize: '10px', color: '#f39c12', fontWeight: 800 }}>{stats.pendingCount} INVOICES OUTSTANDING</div>
         </div>
-        <div className="kpi-card" style={{ background: 'white', padding: '20px', borderRadius: '20px', border: '1px solid #e2e8f0', boxShadow: '0 4px 15px rgba(0,0,0,0.02)' }}>
-          <p style={{ fontSize: '9px', fontWeight: 950, color: '#94a3b8', letterSpacing: '1px', marginBottom: '10px' }}>EFFICIENCY_RATE</p>
-          <div style={{ fontSize: '24px', fontWeight: 950, color: '#0f52ba' }}>{stats.realizationRate}%</div>
+        <div className="kpi-card" style={{ background: 'white', padding: '25px', borderRadius: '24px', border: '1px solid #e2e8f0', boxShadow: '0 4px 20px rgba(0,0,0,0.02)' }}>
+          <p style={{ fontSize: '11px', fontWeight: 950, color: '#94a3b8', letterSpacing: '1px', marginBottom: '15px' }}>COLLECTION EFFICIENCY</p>
+          <div style={{ fontSize: '28px', fontWeight: 950, color: '#0f52ba' }}>{stats.realizationRate}%</div>
+          <div style={{ marginTop: '10px', fontSize: '10px', color: '#0f52ba', fontWeight: 800 }}>TARGET: 98%</div>
         </div>
-        <div className="kpi-card" style={{ background: 'white', padding: '20px', borderRadius: '20px', border: '1px solid #e2e8f0', boxShadow: '0 4px 15px rgba(0,0,0,0.02)' }}>
-          <p style={{ fontSize: '9px', fontWeight: 950, color: '#94a3b8', letterSpacing: '1px', marginBottom: '10px' }}>AVG_TICKET_SIZE</p>
-          <div style={{ fontSize: '24px', fontWeight: 950, color: '#1e293b' }}>₹{stats.averageTicket.toLocaleString()}</div>
+        <div className="kpi-card" style={{ background: 'white', padding: '25px', borderRadius: '24px', border: '1px solid #e2e8f0', boxShadow: '0 4px 20px rgba(0,0,0,0.02)' }}>
+          <p style={{ fontSize: '11px', fontWeight: 950, color: '#94a3b8', letterSpacing: '1px', marginBottom: '15px' }}>AVG TICKET SIZE</p>
+          <div style={{ fontSize: '28px', fontWeight: 950, color: '#1a1a2e' }}>₹{stats.averageTicket.toLocaleString()}</div>
+          <div style={{ marginTop: '10px', fontSize: '10px', color: '#888', fontWeight: 600 }}>PER SUCCESSFUL TRANSACTION</div>
         </div>
-      </div>
-
-      <div style={{ display: 'flex', gap: '15px', marginBottom: '25px', background: 'white', padding: '10px', borderRadius: '15px', border: '1px solid #e2e8f0' }}>
-         {['LEDGER', 'EXPENSES', 'ANALYTICS'].map(tab => (
-           <button key={tab} onClick={() => setActiveTab(tab)} style={{ flex: 1, padding: '10px', borderRadius: '10px', border: 'none', background: activeTab === tab ? '#0f52ba' : 'transparent', color: activeTab === tab ? 'white' : '#64748b', fontSize: '11px', fontWeight: 950, cursor: 'pointer' }}>{tab}</button>
-         ))}
       </div>
 
       <div className="content-main" style={{ display: 'grid', gridTemplateColumns: '1fr', gap: '30px' }}>
-        {activeTab === 'LEDGER' && (
-          <div style={{ background: 'white', borderRadius: '24px', border: '1px solid #e2e8f0', padding: isMobile ? '15px' : '30px', boxShadow: '0 4px 20px rgba(0,0,0,0.02)' }}>
-             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '25px' }}>
-                <h3 style={{ fontSize: '14px', fontWeight: 950, letterSpacing: '1px' }}>GLOBAL TRANSACTION LEDGER</h3>
-                <div style={{ display: 'flex', background: '#f1f5f9', padding: '3px', borderRadius: '10px' }}>
-                  <button onClick={() => setViewMode('TABLE')} style={{ padding: '6px 12px', border: 'none', background: viewMode === 'TABLE' ? 'white' : 'transparent', borderRadius: '8px', fontSize: '10px', fontWeight: 900, cursor: 'pointer' }}>TABLE</button>
-                  <button onClick={() => setViewMode('CARDS')} style={{ padding: '6px 12px', border: 'none', background: viewMode === 'CARDS' ? 'white' : 'transparent', borderRadius: '8px', fontSize: '10px', fontWeight: 900, cursor: 'pointer' }}>CARDS</button>
-                </div>
-             </div>
-             {viewMode === 'TABLE' ? (
-               <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-                 <thead>
-                   <tr style={{ textAlign: 'left', borderBottom: '1px solid #f1f5f9' }}>
-                     <th style={{ padding: '15px 10px', fontSize: '10px', fontWeight: 950, color: '#94a3b8' }}>ID</th>
-                     <th style={{ padding: '15px 10px', fontSize: '10px', fontWeight: 950, color: '#94a3b8' }}>PATIENT</th>
-                     <th style={{ padding: '15px 10px', fontSize: '10px', fontWeight: 950, color: '#94a3b8' }}>AMOUNT</th>
-                     <th style={{ padding: '15px 10px', fontSize: '10px', fontWeight: 950, color: '#94a3b8' }}>STATUS</th>
-                     <th style={{ padding: '15px 10px', textAlign: 'right' }}>ACTIONS</th>
-                   </tr>
-                 </thead>
-                 <tbody>
-                   {filteredInvoices.map(inv => (
-                     <tr key={inv.invoiceId} style={{ borderBottom: '1px solid #f8fafc' }}>
-                       <td style={{ padding: '20px 10px', fontSize: '12px', fontWeight: 900, color: '#0f52ba' }}>{inv.invoiceId}</td>
-                       <td style={{ padding: '20px 10px', fontSize: '13px', fontWeight: 800 }}>{inv.patientName.toUpperCase()}</td>
-                       <td style={{ padding: '20px 10px', fontSize: '14px', fontWeight: 950 }}>₹{inv.totalAmount.toLocaleString()}</td>
-                       <td style={{ padding: '20px 10px' }}>
-                          <span style={{ padding: '6px 12px', borderRadius: '8px', fontSize: '9px', fontWeight: 950, background: inv.status === 'PAID' ? '#ecfdf5' : '#fff7ed', color: inv.status === 'PAID' ? '#059669' : '#ea580c' }}>{inv.status}</span>
-                       </td>
-                       <td style={{ padding: '20px 10px', textAlign: 'right' }}><button onClick={() => handleOpenInvoice(inv)} style={{ padding: '8px 16px', borderRadius: '10px', border: '1px solid #e2e8f0', background: 'white', color: '#0f52ba', fontSize: '10px', fontWeight: 950, cursor: 'pointer' }}>VIEW</button></td>
-                     </tr>
-                   ))}
-                 </tbody>
-               </table>
-             ) : (
-               <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : 'repeat(auto-fill, minmax(300px, 1fr))', gap: '20px' }}>
-                  {filteredInvoices.map(inv => (
-                    <div key={inv.invoiceId} style={{ background: '#f8fafc', padding: '20px', borderRadius: '15px', border: '1px solid #e2e8f0' }}>
-                       <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '15px' }}>
-                          <span style={{ fontSize: '10px', fontWeight: 950, color: '#0f52ba' }}>{inv.invoiceId}</span>
-                          <span style={{ padding: '4px 8px', borderRadius: '6px', fontSize: '9px', fontWeight: 950, background: inv.status === 'PAID' ? '#ecfdf5' : '#fff7ed', color: inv.status === 'PAID' ? '#059669' : '#ea580c' }}>{inv.status}</span>
-                       </div>
-                       <div style={{ fontSize: '14px', fontWeight: 800, marginBottom: '5px' }}>{inv.patientName.toUpperCase()}</div>
-                       <div style={{ fontSize: '18px', fontWeight: 950, marginBottom: '15px' }}>₹{inv.totalAmount.toLocaleString()}</div>
-                       <button onClick={() => handleOpenInvoice(inv)} style={{ width: '100%', padding: '10px', borderRadius: '10px', background: 'white', border: '1px solid #e2e8f0', color: '#0f52ba', fontSize: '10px', fontWeight: 950 }}>VIEW DETAILS</button>
-                    </div>
-                  ))}
-               </div>
-             )}
-          </div>
-        )}
+        {/* Ledger Section */}
+        <div style={{ background: 'white', borderRadius: '24px', border: '1px solid #e2e8f0', padding: '30px', boxShadow: '0 4px 20px rgba(0,0,0,0.02)' }}>
+           <h3 style={{ fontSize: '14px', fontWeight: 950, marginBottom: '25px', letterSpacing: '1px' }}>GLOBAL TRANSACTION LEDGER</h3>
+           <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+             <thead>
+               <tr style={{ textAlign: 'left', borderBottom: '1px solid #f1f5f9' }}>
+                 <th style={{ padding: '15px 10px', fontSize: '10px', fontWeight: 950, color: '#94a3b8', letterSpacing: '1px' }}>INVOICE_ID</th>
+                 <th style={{ padding: '15px 10px', fontSize: '10px', fontWeight: 950, color: '#94a3b8', letterSpacing: '1px' }}>PATIENT_ENTITY</th>
+                 <th style={{ padding: '15px 10px', fontSize: '10px', fontWeight: 950, color: '#94a3b8', letterSpacing: '1px' }}>TIMESTAMP</th>
+                 <th style={{ padding: '15px 10px', fontSize: '10px', fontWeight: 950, color: '#94a3b8', letterSpacing: '1px' }}>QUANTUM</th>
+                 <th style={{ padding: '15px 10px', fontSize: '10px', fontWeight: 950, color: '#94a3b8', letterSpacing: '1px' }}>STATUS</th>
+                 <th style={{ padding: '15px 10px', fontSize: '10px', fontWeight: 950, color: '#94a3b8', letterSpacing: '1px', textAlign: 'right' }}>ACTIONS</th>
+               </tr>
+             </thead>
+             <tbody>
+               {filteredInvoices.map(inv => (
+                 <tr key={inv.invoiceId} style={{ borderBottom: '1px solid #f8fafc', transition: 'background 0.2s' }}>
+                   <td style={{ padding: '20px 10px', fontSize: '12px', fontWeight: 900, color: '#0f52ba', fontFamily: 'monospace' }}>{inv.invoiceId}</td>
+                   <td style={{ padding: '20px 10px', fontSize: '13px', fontWeight: 800, color: '#1e293b' }}>{inv.patientName.toUpperCase()}</td>
+                   <td style={{ padding: '20px 10px', fontSize: '12px', color: '#64748b', fontWeight: 600 }}>{new Date(inv.createdAt).toLocaleString()}</td>
+                   <td style={{ padding: '20px 10px', fontSize: '14px', fontWeight: 950, color: '#1a1a2e' }}>₹{inv.totalAmount.toLocaleString()}</td>
+                   <td style={{ padding: '20px 10px' }}>
+                      <span style={{ 
+                        padding: '6px 12px', borderRadius: '8px', fontSize: '9px', fontWeight: 950,
+                        background: inv.status === 'PAID' ? '#ecfdf5' : '#fff7ed',
+                        color: inv.status === 'PAID' ? '#059669' : '#ea580c'
+                      }}>
+                        {inv.status}
+                      </span>
+                   </td>
+                   <td style={{ padding: '20px 10px', textAlign: 'right' }}>
+                      <button 
+                        onClick={() => { setSelectedInvoice(inv); setIsInvoiceDrawerOpen(true); }}
+                        style={{ padding: '8px 16px', borderRadius: '10px', border: '1px solid #e2e8f0', background: 'white', color: '#0f52ba', fontSize: '10px', fontWeight: 950, cursor: 'pointer' }}
+                      >VIEW_DETAILS</button>
+                   </td>
+                 </tr>
+               ))}
+               {filteredInvoices.length === 0 && (
+                 <tr>
+                   <td colSpan="6" style={{ padding: '80px', textAlign: 'center', color: '#94a3b8', fontSize: '12px', fontWeight: 700 }}>NO TRANSACTIONS DETECTED IN ACTIVE LEDGER</td>
+                 </tr>
+               )}
+             </tbody>
+           </table>
+        </div>
 
-        {activeTab === 'EXPENSES' && (
-          <div style={{ background: 'white', borderRadius: '24px', border: '1px solid #e2e8f0', padding: isMobile ? '15px' : '30px' }}>
-             <h3 style={{ fontSize: '14px', fontWeight: 950, marginBottom: '25px' }}>INSTITUTIONAL EXPENSE LEDGER</h3>
-             <div style={{ overflowX: 'auto' }}>
+        {/* TEMPORAL MATRIX SECTION */}
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '30px', marginTop: '30px' }}>
+            <div style={{ background: 'white', borderRadius: '24px', border: '1px solid #e2e8f0', padding: '30px', boxShadow: '0 4px 20px rgba(0,0,0,0.02)' }}>
+                <h3 style={{ fontSize: '12px', fontWeight: 950, marginBottom: '20px', color: '#64748b', letterSpacing: '1px' }}>MONTHLY_PERFORMANCE_MATRIX</h3>
                 <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-                   <thead>
-                      <tr style={{ textAlign: 'left', borderBottom: '1px solid #f1f5f9' }}>
-                         <th style={{ padding: '15px 10px', fontSize: '10px', fontWeight: 950, color: '#94a3b8' }}>DATE</th>
-                         <th style={{ padding: '15px 10px', fontSize: '10px', fontWeight: 950, color: '#94a3b8' }}>CATEGORY</th>
-                         <th style={{ padding: '15px 10px', fontSize: '10px', fontWeight: 950, color: '#94a3b8' }}>DESCRIPTION</th>
-                         <th style={{ padding: '15px 10px', fontSize: '10px', fontWeight: 950, color: '#94a3b8' }}>AMOUNT</th>
-                         <th style={{ padding: '15px 10px', fontSize: '10px', fontWeight: 950, color: '#94a3b8' }}>STATUS</th>
-                      </tr>
-                   </thead>
-                   <tbody>
-                      {expenses.map(exp => (
-                        <tr key={exp.id} style={{ borderBottom: '1px solid #f8fafc' }}>
-                           <td style={{ padding: '20px 10px', fontSize: '12px' }}>{new Date(exp.date).toLocaleDateString()}</td>
-                           <td style={{ padding: '20px 10px' }}><span style={{ padding: '4px 8px', borderRadius: '6px', fontSize: '10px', fontWeight: 900, background: '#f1f5f9' }}>{exp.category.toUpperCase()}</span></td>
-                           <td style={{ padding: '20px 10px', fontSize: '13px' }}>{exp.description}</td>
-                           <td style={{ padding: '20px 10px', fontSize: '14px', fontWeight: 950, color: '#dc2626' }}>₹{exp.amount.toLocaleString()}</td>
-                           <td style={{ padding: '20px 10px' }}><span style={{ padding: '6px 12px', borderRadius: '8px', fontSize: '9px', fontWeight: 950, background: exp.status === 'Paid' ? '#ecfdf5' : '#fef2f2', color: exp.status === 'Paid' ? '#059669' : '#dc2626' }}>{exp.status.toUpperCase()}</span></td>
+                    <thead>
+                        <tr style={{ textAlign: 'left', borderBottom: '1px solid #f1f5f9' }}>
+                            <th style={{ padding: '12px 5px', fontSize: '9px', fontWeight: 950, color: '#94a3b8' }}>MONTH</th>
+                            <th style={{ padding: '12px 5px', fontSize: '9px', fontWeight: 950, color: '#94a3b8' }}>INVOICED</th>
+                            <th style={{ padding: '12px 5px', fontSize: '9px', fontWeight: 950, color: '#94a3b8' }}>COLLECTED</th>
+                            <th style={{ padding: '12px 5px', fontSize: '9px', fontWeight: 950, color: '#94a3b8' }}>RATE</th>
                         </tr>
-                      ))}
-                   </tbody>
+                    </thead>
+                    <tbody>
+                        {matrix.monthly.map((m, idx) => (
+                            <tr key={idx} style={{ borderBottom: '1px solid #f8fafc' }}>
+                                <td style={{ padding: '12px 5px', fontSize: '11px', fontWeight: 900, color: '#1e293b' }}>{m.label}</td>
+                                <td style={{ padding: '12px 5px', fontSize: '11px', fontWeight: 800 }}>₹{m.invoiced.toLocaleString()}</td>
+                                <td style={{ padding: '12px 5px', fontSize: '11px', fontWeight: 800, color: '#059669' }}>₹{m.collected.toLocaleString()}</td>
+                                <td style={{ padding: '12px 5px', fontSize: '11px', fontWeight: 950, color: '#0f52ba' }}>{m.realizationRate}%</td>
+                            </tr>
+                        ))}
+                    </tbody>
                 </table>
-             </div>
-          </div>
-        )}
+            </div>
 
-        {activeTab === 'ANALYTICS' && (
-          <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: '30px' }}>
-             <div style={{ background: 'white', borderRadius: '24px', border: '1px solid #e2e8f0', padding: '30px' }}>
-                 <h3 style={{ fontSize: '12px', fontWeight: 950, marginBottom: '20px', color: '#64748b' }}>MONTHLY_PERFORMANCE</h3>
-                 <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-                     <thead>
-                         <tr style={{ textAlign: 'left', borderBottom: '1px solid #f1f5f9' }}>
-                             <th style={{ padding: '12px 5px', fontSize: '9px', fontWeight: 950 }}>MONTH</th>
-                             <th style={{ padding: '12px 5px', fontSize: '9px', fontWeight: 950 }}>INVOICED</th>
-                             <th style={{ padding: '12px 5px', fontSize: '9px', fontWeight: 950 }}>RATE</th>
-                         </tr>
-                     </thead>
-                     <tbody>
-                         {matrix.monthly.map((m, idx) => (
-                             <tr key={idx} style={{ borderBottom: '1px solid #f8fafc' }}>
-                                 <td style={{ padding: '12px 5px', fontSize: '11px', fontWeight: 900 }}>{m.label}</td>
-                                 <td style={{ padding: '12px 5px', fontSize: '11px' }}>₹{m.invoiced.toLocaleString()}</td>
-                                 <td style={{ padding: '12px 5px', fontSize: '11px', fontWeight: 950, color: '#0f52ba' }}>{m.realizationRate}%</td>
-                             </tr>
-                         ))}
-                     </tbody>
-                 </table>
-             </div>
-             <div style={{ background: 'white', borderRadius: '24px', border: '1px solid #e2e8f0', padding: '30px' }}>
-                 <h3 style={{ fontSize: '12px', fontWeight: 950, marginBottom: '20px', color: '#64748b' }}>DAILY_REVENUE_TREND</h3>
-                 <div style={{ maxHeight: '300px', overflowY: 'auto' }}>
-                     <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-                         <thead>
-                             <tr style={{ textAlign: 'left', borderBottom: '1px solid #f1f5f9' }}>
-                                 <th style={{ padding: '12px 5px', fontSize: '9px', fontWeight: 950 }}>DATE</th>
-                                 <th style={{ padding: '12px 5px', fontSize: '9px', fontWeight: 950 }}>COLLECTED</th>
-                             </tr>
-                         </thead>
-                         <tbody>
-                             {matrix.daily.map((d, idx) => (
-                                 <tr key={idx} style={{ borderBottom: '1px solid #f8fafc' }}>
-                                     <td style={{ padding: '12px 5px', fontSize: '11px', fontWeight: 900 }}>{d.label}</td>
-                                     <td style={{ padding: '12px 5px', fontSize: '11px', color: '#059669', fontWeight: 800 }}>₹{d.collected.toLocaleString()}</td>
-                                 </tr>
-                             ))}
-                         </tbody>
-                     </table>
-                 </div>
-             </div>
-          </div>
-        )}
+            <div style={{ background: 'white', borderRadius: '24px', border: '1px solid #e2e8f0', padding: '30px', boxShadow: '0 4px 20px rgba(0,0,0,0.02)' }}>
+                <h3 style={{ fontSize: '12px', fontWeight: 950, marginBottom: '20px', color: '#64748b', letterSpacing: '1px' }}>DAILY_REVENUE_TREND (LATEST)</h3>
+                <div style={{ maxHeight: '300px', overflowY: 'auto' }}>
+                    <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                        <thead>
+                            <tr style={{ textAlign: 'left', borderBottom: '1px solid #f1f5f9' }}>
+                                <th style={{ padding: '12px 5px', fontSize: '9px', fontWeight: 950, color: '#94a3b8' }}>DATE</th>
+                                <th style={{ padding: '12px 5px', fontSize: '9px', fontWeight: 950, color: '#94a3b8' }}>INVOICED</th>
+                                <th style={{ padding: '12px 5px', fontSize: '9px', fontWeight: 950, color: '#94a3b8' }}>COLLECTED</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {matrix.daily.map((d, idx) => (
+                                <tr key={idx} style={{ borderBottom: '1px solid #f8fafc' }}>
+                                    <td style={{ padding: '12px 5px', fontSize: '11px', fontWeight: 900, color: '#64748b' }}>{d.label}</td>
+                                    <td style={{ padding: '12px 5px', fontSize: '11px', fontWeight: 800 }}>₹{d.invoiced.toLocaleString()}</td>
+                                    <td style={{ padding: '12px 5px', fontSize: '11px', fontWeight: 800, color: '#059669' }}>₹{d.collected.toLocaleString()}</td>
+                                </tr>
+                            ))}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
       </div>
 
       {isInvoiceDrawerOpen && renderInvoiceDrawer()}
       {isNewInvoiceDrawerOpen && renderNewInvoiceDrawer()}
+      {isExportDrawerOpen && renderExportDrawer()}
     </div>
   );
 }
