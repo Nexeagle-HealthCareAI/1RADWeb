@@ -66,6 +66,13 @@ const ReportingPage = () => {
   const [selectedImg, setSelectedImg] = useState(null);
   const [imgToolbarPos, setImgToolbarPos] = useState({ top: 0, left: 0 });
   const [isFullscreen, setIsFullscreen] = useState(false);
+  
+  // --- SEARCH & PAGINATION STATES ---
+  const [templateSearch, setTemplateSearch] = useState('');
+  const [templatePage, setTemplatePage] = useState(1);
+  const [keywordSearch, setKeywordSearch] = useState('');
+  const [keywordPage, setKeywordPage] = useState(1);
+  const itemsPerPage = 5;
 
   // --- DICOM VIEWER STATES ---
   const [activeAssetIndex, setActiveAssetIndex] = useState(0);
@@ -386,6 +393,21 @@ const ReportingPage = () => {
     document.addEventListener('fullscreenchange', handleFsChange);
     return () => document.removeEventListener('fullscreenchange', handleFsChange);
   }, []);
+
+  // --- PAGINATION & FILTERING LOGIC ---
+  const filteredTemplates = (templates || []).filter(t => 
+    t.name.toLowerCase().includes(templateSearch.toLowerCase()) ||
+    t.modality.toLowerCase().includes(templateSearch.toLowerCase())
+  );
+  const totalTemplatePages = Math.ceil(filteredTemplates.length / itemsPerPage);
+  const paginatedTemplates = filteredTemplates.slice((templatePage - 1) * itemsPerPage, templatePage * itemsPerPage);
+
+  const filteredKeywords = (keywordLibrary || []).filter(k => 
+    k.keyword.toLowerCase().includes(keywordSearch.toLowerCase()) ||
+    k.paragraph.toLowerCase().includes(keywordSearch.toLowerCase())
+  );
+  const totalKeywordPages = Math.ceil(filteredKeywords.length / itemsPerPage);
+  const paginatedKeywords = filteredKeywords.slice((keywordPage - 1) * itemsPerPage, keywordPage * itemsPerPage);
 
   const handleSuggestionSelect = () => {
     insertContent('Gall bladder shows echogenic calculi with posterior acoustic shadowing. No pericholecystic fluid is seen.');
@@ -1526,6 +1548,11 @@ const ReportingPage = () => {
           }}>
             {activeTab === 'Structured' && (
               <div style={{ display: 'flex', flexDirection: 'column', flex: 1 }}>
+                <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '12px', padding: '15px 20px', borderBottom: '1px solid #e2e8f0', background: '#fff', marginBottom: '10px' }}>
+                   <button className="btn btn-outline" style={{ padding: '10px 20px', fontSize: '12px' }} onClick={handlePreviewPrint}>👁️ Preview Structured Report</button>
+                   <button className="btn btn-success" style={{ padding: '10px 25px', fontSize: '12px' }} onClick={() => handleSaveReport(true)}>Finalize & Sign</button>
+                </div>
+
                 <div className="struct-container" style={{ flex: 1, overflowY: 'auto' }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px', padding: '15px', background: '#f8fafc', borderRadius: '10px', border: '1px solid #e2e8f0' }}>
                     <div style={{ flex: 1 }}>
@@ -1605,15 +1632,17 @@ const ReportingPage = () => {
                   </div>
                 </div>
 
-                <div style={{ marginTop: 'auto', display: 'flex', justifyContent: 'flex-end', gap: '15px', padding: '20px', borderTop: '1px solid #e2e8f0', background: '#fff' }}>
-                   <button className="btn btn-outline" style={{ padding: '12px 25px' }} onClick={handlePreviewPrint}>👁️ Preview Structured Report</button>
-                   <button className="btn btn-success" style={{ padding: '12px 30px' }}>Finalize & Sign</button>
-                </div>
+
               </div>
             )}
 
             {activeTab === 'Narrative Editor' && (
               <div style={{ display: 'flex', flexDirection: 'column', flex: 1, overflow: 'hidden' }}>
+                <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '12px', padding: '15px 20px', borderBottom: '1px solid #e2e8f0', background: '#fff', marginBottom: '10px' }}>
+                   <button className="btn btn-outline" style={{ padding: '10px 20px', fontSize: '12px' }} onClick={() => handleSaveReport(false)}>💾 Save Draft</button>
+                   <button className="btn btn-outline" style={{ padding: '10px 20px', fontSize: '12px' }} onClick={handlePreviewPrint}>👁️ Preview Narrative Report</button>
+                   <button className="btn btn-success" style={{ padding: '10px 25px', fontSize: '12px' }} onClick={() => handleSaveReport(true)}>Finalize & Sign</button>
+                </div>
                 <div style={{ display: 'flex', gap: '20px', flex: 1, overflow: 'hidden' }}>
                   <div className="editor-container" style={{ flex: 1 }}>
                   <div className="editor-toolbar">
@@ -1785,6 +1814,7 @@ const ReportingPage = () => {
                        SHORCUTS: <span style={{ background: '#e2e8f0', padding: '2px 4px', borderRadius: '3px' }}>Ctrl+S</span> Save | <span style={{ background: '#e2e8f0', padding: '2px 4px', borderRadius: '3px' }}>Ctrl+Enter</span> Finalize
                     </div>
                   </div>
+
                 </div>
               </div>
             </div>
@@ -1873,6 +1903,22 @@ const ReportingPage = () => {
                   </div>
                 )}
 
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '15px' }}>
+                  <div style={{ position: 'relative' }}>
+                    <input 
+                      type="text" 
+                      placeholder="Search templates..." 
+                      value={templateSearch}
+                      onChange={(e) => { setTemplateSearch(e.target.value); setTemplatePage(1); }}
+                      style={{ padding: '8px 12px 8px 35px', border: '1px solid #cbd5e1', borderRadius: '8px', fontSize: '13px', width: '250px' }} 
+                    />
+                    <span style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', opacity: 0.5 }}>🔍</span>
+                  </div>
+                  <div style={{ fontSize: '12px', color: '#64748b', fontWeight: 600 }}>
+                    Showing {paginatedTemplates.length} of {filteredTemplates.length} results
+                  </div>
+                </div>
+
                 <div className="table-container" style={{ border: '1px solid #e2e8f0', borderRadius: '12px', overflow: 'hidden' }}>
                   <table className="table">
                     <thead>
@@ -1884,7 +1930,7 @@ const ReportingPage = () => {
                       </tr>
                     </thead>
                     <tbody>
-                      {templates.map(tpl => (
+                      {paginatedTemplates.length > 0 ? paginatedTemplates.map(tpl => (
                         <tr key={tpl.id}>
                           <td style={{ fontWeight: 600 }}>{tpl.name}</td>
                           <td>{tpl.modality}</td>
@@ -1893,10 +1939,41 @@ const ReportingPage = () => {
                             <button className="btn btn-outline" style={{ padding: '4px 8px', fontSize: '12px' }}>Edit</button>
                           </td>
                         </tr>
-                      ))}
+                      )) : (
+                        <tr>
+                          <td colSpan="4" style={{ textAlign: 'center', padding: '40px', color: '#94a3b8' }}>
+                            No templates found matching "{templateSearch}"
+                          </td>
+                        </tr>
+                      )}
                     </tbody>
                   </table>
                 </div>
+
+                {totalTemplatePages > 1 && (
+                  <div style={{ display: 'flex', justifyContent: 'center', gap: '8px', marginTop: '20px' }}>
+                    <button 
+                      className="btn btn-outline" 
+                      disabled={templatePage === 1}
+                      onClick={() => setTemplatePage(prev => prev - 1)}
+                      style={{ padding: '6px 12px', fontSize: '12px' }}
+                    >Previous</button>
+                    {[...Array(totalTemplatePages)].map((_, i) => (
+                      <button 
+                        key={i}
+                        className={`btn ${templatePage === i + 1 ? 'btn-primary' : 'btn-outline'}`}
+                        onClick={() => setTemplatePage(i + 1)}
+                        style={{ padding: '6px 12px', fontSize: '12px', minWidth: '35px' }}
+                      >{i + 1}</button>
+                    ))}
+                    <button 
+                      className="btn btn-outline" 
+                      disabled={templatePage === totalTemplatePages}
+                      onClick={() => setTemplatePage(prev => prev + 1)}
+                      style={{ padding: '6px 12px', fontSize: '12px' }}
+                    >Next</button>
+                  </div>
+                )}
               </div>
             )}
 
@@ -1955,8 +2032,14 @@ const ReportingPage = () => {
 
                 <div className="card" style={{ padding: '0', overflow: 'hidden' }}>
                   <div style={{ padding: '15px 20px', background: '#f8fafc', borderBottom: '1px solid #e2e8f0', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                    <div style={{ fontWeight: 700, color: '#475569' }}>ACTIVE MACRO LIBRARY ({keywordLibrary.length})</div>
-                    <input type="text" placeholder="Search keywords..." style={{ padding: '6px 12px', border: '1px solid #cbd5e1', borderRadius: '6px', fontSize: '12px', width: '200px' }} />
+                    <div style={{ fontWeight: 700, color: '#475569' }}>ACTIVE MACRO LIBRARY ({filteredKeywords.length})</div>
+                    <input 
+                      type="text" 
+                      placeholder="Search keywords..." 
+                      value={keywordSearch}
+                      onChange={(e) => { setKeywordSearch(e.target.value); setKeywordPage(1); }}
+                      style={{ padding: '6px 12px', border: '1px solid #cbd5e1', borderRadius: '6px', fontSize: '12px', width: '250px' }} 
+                    />
                   </div>
                   <table className="table">
                     <thead>
@@ -1967,7 +2050,7 @@ const ReportingPage = () => {
                       </tr>
                     </thead>
                     <tbody>
-                      {keywordLibrary.map(item => (
+                      {paginatedKeywords.length > 0 ? paginatedKeywords.map(item => (
                         <tr key={item.id}>
                           <td style={{ fontWeight: 800, color: '#2563eb' }}>{item.keyword}</td>
                           <td style={{ fontSize: '13px', color: '#475569' }}>
@@ -1977,10 +2060,41 @@ const ReportingPage = () => {
                             <button className="btn btn-outline" style={{ color: '#ef4444', padding: '4px 8px', fontSize: '11px' }} onClick={() => setKeywordLibrary(keywordLibrary.filter(k => k.id !== item.id))}>Delete</button>
                           </td>
                         </tr>
-                      ))}
+                      )) : (
+                        <tr>
+                          <td colSpan="3" style={{ textAlign: 'center', padding: '40px', color: '#94a3b8' }}>
+                            No keywords found matching "{keywordSearch}"
+                          </td>
+                        </tr>
+                      )}
                     </tbody>
                   </table>
                 </div>
+
+                {totalKeywordPages > 1 && (
+                  <div style={{ display: 'flex', justifyContent: 'center', gap: '8px', marginTop: '20px' }}>
+                    <button 
+                      className="btn btn-outline" 
+                      disabled={keywordPage === 1}
+                      onClick={() => setKeywordPage(prev => prev - 1)}
+                      style={{ padding: '6px 12px', fontSize: '12px' }}
+                    >Previous</button>
+                    {[...Array(totalKeywordPages)].map((_, i) => (
+                      <button 
+                        key={i}
+                        className={`btn ${keywordPage === i + 1 ? 'btn-primary' : 'btn-outline'}`}
+                        onClick={() => setKeywordPage(i + 1)}
+                        style={{ padding: '6px 12px', fontSize: '12px', minWidth: '35px' }}
+                      >{i + 1}</button>
+                    ))}
+                    <button 
+                      className="btn btn-outline" 
+                      disabled={keywordPage === totalKeywordPages}
+                      onClick={() => setKeywordPage(prev => prev + 1)}
+                      style={{ padding: '6px 12px', fontSize: '12px' }}
+                    >Next</button>
+                  </div>
+                )}
               </div>
             )}
 
