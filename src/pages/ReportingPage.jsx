@@ -125,12 +125,13 @@ const ReportingPage = () => {
   const fetchReportingContext = useCallback(async (appId) => {
     setLoading(true);
     try {
-      const [templRes, keyRes, protRes, reportRes, appRes] = await Promise.all([
+      const [templRes, keyRes, protRes, reportRes, appRes, assetRes] = await Promise.all([
         apiClient.get('/reporting/templates'),
         apiClient.get('/reporting/keywords'),
         apiClient.get('/prescription/me'), 
         apiClient.get(`/reporting/report/${appId}`).catch(() => ({ data: { success: false } })),
-        apiClient.get(`/appointments/${appId}`).catch(() => ({ data: null }))
+        apiClient.get(`/appointments/${appId}`).catch(() => ({ data: null })),
+        apiClient.get(`/Study/${appId}/assets`).catch(() => ({ data: [] }))
       ]);
 
       if (templRes.data?.success) setDbTemplates(templRes.data.data);
@@ -138,6 +139,19 @@ const ReportingPage = () => {
       if (protRes.data?.success) setProtocol(protRes.data.data);
       if (appRes?.data) setActiveAppointment(appRes.data);
       
+      // Load Existing Assets
+      if (assetRes.data && assetRes.data.length > 0) {
+        const hydAssets = assetRes.data.map(asset => ({
+          id: asset.id,
+          name: asset.fileName,
+          type: asset.fileType.toUpperCase(),
+          remoteUrl: asset.blobUrl,
+          needsHydration: asset.fileType.toLowerCase() === 'zip',
+          rawFiles: []
+        }));
+        setUploadedFiles(hydAssets);
+      }
+
       if (reportRes.data?.success && reportRes.data.data) {
         const r = reportRes.data.data;
         if (r.findings && r.findings.startsWith('{')) {
@@ -261,6 +275,45 @@ const ReportingPage = () => {
       }
     }
   };
+
+  const hydrateZipAsset = async (index) => {
+    const asset = uploadedFiles[index];
+    if (!asset || !asset.needsHydration || !asset.remoteUrl) return;
+
+    setLoading(true);
+    try {
+      const response = await fetch(asset.remoteUrl);
+      const blob = await response.blob();
+      const zip = await JSZip.loadAsync(blob);
+      const extractedFiles = [];
+      
+      const fileNames = Object.keys(zip.files);
+      for (const fileName of fileNames) {
+        const zipFile = zip.files[fileName];
+        if (!zipFile.dir && !fileName.includes('__MACOSX')) {
+          const content = await zipFile.async('arraybuffer');
+          extractedFiles.push(new File([content], fileName.split('/').pop(), { type: 'application/dicom' }));
+        }
+      }
+
+      setUploadedFiles(prev => {
+        const newFiles = [...prev];
+        newFiles[index] = { ...asset, rawFiles: extractedFiles, needsHydration: false };
+        return newFiles;
+      });
+      setIsDicomImage(true);
+    } catch (err) {
+      console.error('[REPORTING] Hydration failure', err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    if (uploadedFiles[activeAssetIndex]?.needsHydration) {
+      hydrateZipAsset(activeAssetIndex);
+    }
+  }, [activeAssetIndex, uploadedFiles]);
 
 
 
@@ -1564,6 +1617,27 @@ const ReportingPage = () => {
           </div>
 
           <div style={{ flex: 1, background: '#000', position: 'relative', display: 'flex', gap: '2px', padding: '2px' }}>
+            {/* SERIES LIBRARY MINI-SIDEBAR */}
+            {uploadedFiles.length > 1 && (
+              <div style={{ width: '60px', background: '#0f172a', borderRight: '1px solid #1e293b', display: 'flex', flexDirection: 'column', gap: '10px', padding: '10px 5px', zIndex: 10 }}>
+                {uploadedFiles.map((f, i) => (
+                  <button 
+                    key={i}
+                    onClick={() => setActiveAssetIndex(i)}
+                    title={f.name}
+                    style={{ 
+                      width: '100%', height: '50px', background: activeAssetIndex === i ? '#3b82f6' : 'rgba(255,255,255,0.05)', 
+                      border: 'none', borderRadius: '8px', cursor: 'pointer', display: 'flex', flexDirection: 'column',
+                      alignItems: 'center', justifyContent: 'center', transition: '0.2s', gap: '4px'
+                    }}
+                  >
+                    <div style={{ fontSize: '12px' }}>🎞️</div>
+                    <div style={{ fontSize: '8px', color: 'white', fontWeight: 900, whiteSpace: 'nowrap', overflow: 'hidden', width: '100%', textAlign: 'center' }}>S{i+1}</div>
+                  </button>
+                ))}
+              </div>
+            )}
+
             {uploadedFiles.length === 0 ? (
               <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#334155', fontSize: '12px', fontWeight: 950, letterSpacing: '2px', flexDirection: 'column', gap: '20px' }}>
                 <div style={{ fontSize: '48px', opacity: 0.2 }}>📡</div>

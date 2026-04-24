@@ -178,7 +178,7 @@ export default function TechnicianPage() {
 
   const hydrateZipAsset = async (index) => {
     const asset = uploadedFiles[index];
-    if (!asset || !asset.needsHydration || !asset.remoteUrl) return;
+    if (!asset || !asset.needsHydration || !asset.remoteUrl || asset.rawFiles?.length > 0) return;
 
     setLoading(true);
     try {
