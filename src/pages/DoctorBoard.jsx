@@ -689,7 +689,7 @@ export default function DoctorBoard() {
 
   return (
     <div className="page-wrapper" style={{ padding: 0, background: '#fcfdfe' }}>
-      {renderQueue()}
+      {view === 'WORKSPACE' ? renderWorkspace() : renderQueue()}
       {renderPrintModal()}
       <style>{`
         .gamified-btn { background: #0f52ba; color: white; border: none; font-weight: 950; cursor: pointer; transition: all 0.2s; box-shadow: 0 4px 15px rgba(15, 82, 186, 0.2); }

@@ -14,9 +14,9 @@
 
 .intel-cards-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
-  gap: 16px;
-  margin-bottom: 24px;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 15px;
+  margin-bottom: 20px;
 }
 
 /* Mobile: Single column */
@@ -49,7 +49,7 @@
 .intel-card {
   background: white;
   border-radius: 16px;
-  padding: 20px;
+  padding: 16px;
   border: 1px solid #dee2e6;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.03);
   transition: all 0.2s ease;

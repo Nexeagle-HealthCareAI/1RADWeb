@@ -11,7 +11,7 @@ import dicomParser from 'dicom-parser';
 // --- CONSTANTS ---
 
 const MODALITIES = ['X-RAY', 'MRI', 'CT', 'ULTRASOUND', 'DEXA', 'ANGIOGRAPHY', 'MAMMOGRAPHY', 'PET-CT', 'NUCLEAR MEDICINE', 'FLUOROSCOPY'];
-const TODAY = new Date().toISOString().split('T')[0];
+const TODAY = new Date().toLocaleDateString('en-CA'); // YYYY-MM-DD local format
 
 // --- CONSTANTS ---
 
@@ -56,9 +56,10 @@ export default function AppointmentBoard() {
   const { activeCenterId, activeCenter } = useContext(AuthContext);
   const [activeTab, setActiveTab] = useState('TODAY'); // 'TODAY' or 'PAST'
   const [pastDateRange, setPastDateRange] = useState({ 
-    start: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0], 
-    end: new Date(Date.now() - 1 * 24 * 60 * 60 * 1000).toISOString().split('T')[0] 
+    start: TODAY, 
+    end: TODAY 
   });
+  const [archiveFilterMode, setArchiveFilterMode] = useState('ALL'); // 'ALL' or 'RANGE'
   const [appointments, setAppointments] = useState([]);
   const [patients, setPatients] = useState([]);
   const [doctors, setDoctors] = useState([]);
@@ -118,9 +119,11 @@ export default function AppointmentBoard() {
       if (activeTab === 'TODAY') {
         params.date = TODAY;
       } else {
-        params.startDate = pastDateRange.start;
-        params.endDate = pastDateRange.end;
         params.isArchive = true;
+        if (archiveFilterMode === 'RANGE') {
+          params.startDate = pastDateRange.start;
+          params.endDate = pastDateRange.end;
+        }
       }
 
       const response = await apiClient.get('/appointments', { params });
@@ -132,8 +135,12 @@ export default function AppointmentBoard() {
         status: a.status ? a.status.toLowerCase() : 'scheduled'
       }));
 
-      // Sort by absolute dateTime to ensure chronological order across all days
-      const sortedData = mappedData.sort((a, b) => new Date(a.dateTime || 0) - new Date(b.dateTime || 0));
+      // Sort by absolute dateTime to ensure strict chronological order (time-based)
+      const sortedData = mappedData.sort((a, b) => {
+        const timeA = new Date(a.dateTime || 0).getTime();
+        const timeB = new Date(b.dateTime || 0).getTime();
+        return timeA - timeB;
+      });
       
       const dailyCounters = {};
       const processedData = sortedData.map(item => {
@@ -245,8 +252,12 @@ export default function AppointmentBoard() {
         if (appDate !== TODAY) return false;
       } else {
         // Archive mode filtering
-        if (!appDate) return false;
-        if (appDate < pastDateRange.start || appDate > pastDateRange.end) return false;
+        if (archiveFilterMode === 'RANGE') {
+          if (!appDate) return false;
+          if (appDate < pastDateRange.start || appDate > pastDateRange.end) return false;
+        }
+        // In 'ALL' mode, we show everything that is not today (or all history)
+        // Usually archive implies historical data.
       }
 
       const matchesSearch = app.patientName.toLowerCase().includes(searchQuery.toLowerCase()) || 
@@ -267,7 +278,7 @@ export default function AppointmentBoard() {
   // Reset page on filter change
   useEffect(() => {
     setCurrentPage(1);
-  }, [searchQuery, filters]);
+  }, [searchQuery, filters, activeTab, archiveFilterMode, pastDateRange]);
 
   // Auto-scroll on page change
   useEffect(() => {
@@ -276,7 +287,7 @@ export default function AppointmentBoard() {
     }
   }, [currentPage]);
 
-  const itemsPerPage = 10;
+  const itemsPerPage = 5;
   const totalPages = Math.ceil(filteredAppointments.length / itemsPerPage);
   const paginatedAppointments = filteredAppointments.slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage);
 
@@ -469,90 +480,90 @@ export default function AppointmentBoard() {
     
     return (
       <div style={{
-        display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))',
-        gap: '20px', marginBottom: '32px',
+        display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))',
+        gap: '15px', marginBottom: '20px',
       }}>
         {/* Card: Total Missions */}
         <div style={{
           background: 'linear-gradient(135deg, #0a1628 0%, #1e293b 100%)',
-          borderRadius: '20px', padding: '24px', color: 'white', position: 'relative', overflow: 'hidden',
-          boxShadow: '0 10px 30px rgba(0,0,0,0.15)', border: '1px solid rgba(255,255,255,0.05)'
+          borderRadius: '16px', padding: '16px', color: 'white', position: 'relative', overflow: 'hidden',
+          boxShadow: '0 8px 25px rgba(0,0,0,0.12)', border: '1px solid rgba(255,255,255,0.05)'
         }}>
-          <div style={{ position: 'absolute', top: '-10px', right: '-10px', fontSize: '100px', opacity: 0.05, lineHeight: 1 }}>{'\u{1F4E1}'}</div>
-          <div style={{ fontSize: '10px', fontWeight: 900, textTransform: 'uppercase', letterSpacing: '2px', opacity: 0.7, marginBottom: '12px' }}>Total Missions</div>
-          <div style={{ display: 'flex', alignItems: 'baseline', gap: '8px' }}>
-            <div style={{ fontSize: '48px', fontWeight: 950, lineHeight: 1 }}>{stats.total}</div>
-            <div style={{ fontSize: '12px', fontWeight: 700, opacity: 0.6 }}>UNITS</div>
+          <div style={{ position: 'absolute', top: '-5px', right: '-5px', fontSize: '60px', opacity: 0.05, lineHeight: 1 }}>{'\u{1F4E1}'}</div>
+          <div style={{ fontSize: '9px', fontWeight: 900, textTransform: 'uppercase', letterSpacing: '1.5px', opacity: 0.7, marginBottom: '8px' }}>Total Missions</div>
+          <div style={{ display: 'flex', alignItems: 'baseline', gap: '6px' }}>
+            <div style={{ fontSize: '32px', fontWeight: 950, lineHeight: 1 }}>{stats.total}</div>
+            <div style={{ fontSize: '10px', fontWeight: 700, opacity: 0.6 }}>UNITS</div>
           </div>
-          <div style={{ marginTop: '20px', display: 'flex', alignItems: 'center', gap: '8px' }}>
-            <div style={{ flex: 1, height: '4px', background: 'rgba(255,255,255,0.1)', borderRadius: '2px', overflow: 'hidden' }}>
+          <div style={{ marginTop: '15px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <div style={{ flex: 1, height: '3px', background: 'rgba(255,255,255,0.1)', borderRadius: '2px', overflow: 'hidden' }}>
               <div style={{ width: '100%', height: '100%', background: 'var(--tactical-cyan)', borderRadius: '2px' }} />
             </div>
-            <span style={{ fontSize: '9px', fontWeight: 900, color: 'var(--tactical-cyan)' }}>100% REGISTRY</span>
+            <span style={{ fontSize: '8px', fontWeight: 900, color: 'var(--tactical-cyan)' }}>100% REGISTRY</span>
           </div>
         </div>
 
         {/* Card: Ready Stats */}
         <div style={{
-          background: 'white', borderRadius: '20px', padding: '24px',
+          background: 'white', borderRadius: '16px', padding: '16px',
           border: '1px solid #dee2e6', position: 'relative', overflow: 'hidden',
-          boxShadow: '0 4px 20px rgba(0,0,0,0.03)'
+          boxShadow: '0 4px 15px rgba(0,0,0,0.02)'
         }}>
-          <div style={{ position: 'absolute', top: '-10px', right: '-10px', fontSize: '100px', opacity: 0.04, lineHeight: 1 }}>{'\u{1F6EB}'}</div>
-          <div style={{ fontSize: '10px', fontWeight: 900, textTransform: 'uppercase', letterSpacing: '2px', color: '#64748b', marginBottom: '12px' }}>Ready for Deployment</div>
-          <div style={{ display: 'flex', alignItems: 'baseline', gap: '8px' }}>
-            <span style={{ fontSize: '48px', fontWeight: 950, color: '#0f52ba', lineHeight: 1 }}>{readyCount}</span>
-            <span style={{ fontSize: '12px', fontWeight: 800, color: '#0f52ba', opacity: 0.8 }}>READY</span>
+          <div style={{ position: 'absolute', top: '-5px', right: '-5px', fontSize: '60px', opacity: 0.04, lineHeight: 1 }}>{'\u{1F6EB}'}</div>
+          <div style={{ fontSize: '9px', fontWeight: 900, textTransform: 'uppercase', letterSpacing: '1.5px', color: '#64748b', marginBottom: '8px' }}>Ready for Deployment</div>
+          <div style={{ display: 'flex', alignItems: 'baseline', gap: '6px' }}>
+            <span style={{ fontSize: '32px', fontWeight: 950, color: '#0f52ba', lineHeight: 1 }}>{readyCount}</span>
+            <span style={{ fontSize: '10px', fontWeight: 800, color: '#0f52ba', opacity: 0.8 }}>READY</span>
           </div>
-          <div style={{ marginTop: '20px', display: 'flex', gap: '12px' }}>
+          <div style={{ marginTop: '15px', display: 'flex', gap: '10px' }}>
             <div style={{ display: 'flex', flexDirection: 'column' }}>
-              <span style={{ fontSize: '9px', fontWeight: 900, color: '#94a3b8' }}>SCHEDULED</span>
-              <span style={{ fontSize: '14px', fontWeight: 900, color: '#334155' }}>{stats.scheduled}</span>
+              <span style={{ fontSize: '8px', fontWeight: 900, color: '#94a3b8' }}>SCHEDULED</span>
+              <span style={{ fontSize: '12px', fontWeight: 900, color: '#334155' }}>{stats.scheduled}</span>
             </div>
-            <div style={{ width: '1px', background: '#e2e8f0', margin: '4px 0' }}></div>
+            <div style={{ width: '1px', background: '#e2e8f0', margin: '3px 0' }}></div>
             <div style={{ display: 'flex', flexDirection: 'column' }}>
-              <span style={{ fontSize: '9px', fontWeight: 900, color: '#94a3b8' }}>CONFIRMED</span>
-              <span style={{ fontSize: '14px', fontWeight: 900, color: '#334155' }}>{stats.confirmed}</span>
+              <span style={{ fontSize: '8px', fontWeight: 900, color: '#94a3b8' }}>CONFIRMED</span>
+              <span style={{ fontSize: '12px', fontWeight: 900, color: '#334155' }}>{stats.confirmed}</span>
             </div>
           </div>
         </div>
 
         {/* Card: Progress Stats */}
         <div style={{
-          background: 'white', borderRadius: '20px', padding: '24px',
+          background: 'white', borderRadius: '16px', padding: '16px',
           border: '1px solid #dee2e6', position: 'relative', overflow: 'hidden',
-          boxShadow: '0 4px 20px rgba(0,0,0,0.03)'
+          boxShadow: '0 4px 15px rgba(0,0,0,0.02)'
         }}>
-          <div style={{ position: 'absolute', top: '-10px', right: '-10px', fontSize: '100px', opacity: 0.04, lineHeight: 1 }}>{'\u26A1'}</div>
-          <div style={{ fontSize: '10px', fontWeight: 900, textTransform: 'uppercase', letterSpacing: '2px', color: '#64748b', marginBottom: '12px' }}>Mission in Progress</div>
-          <div style={{ display: 'flex', alignItems: 'baseline', gap: '8px' }}>
-            <span style={{ fontSize: '48px', fontWeight: 950, color: '#f39c12', lineHeight: 1 }}>{progressCount}</span>
-            <span style={{ fontSize: '12px', fontWeight: 800, color: '#f39c12', opacity: 0.8 }}>ACTIVE SCAN</span>
+          <div style={{ position: 'absolute', top: '-5px', right: '-5px', fontSize: '60px', opacity: 0.04, lineHeight: 1 }}>{'\u26A1'}</div>
+          <div style={{ fontSize: '9px', fontWeight: 900, textTransform: 'uppercase', letterSpacing: '1.5px', color: '#64748b', marginBottom: '8px' }}>Mission in Progress</div>
+          <div style={{ display: 'flex', alignItems: 'baseline', gap: '6px' }}>
+            <span style={{ fontSize: '32px', fontWeight: 950, color: '#f39c12', lineHeight: 1 }}>{progressCount}</span>
+            <span style={{ fontSize: '10px', fontWeight: 800, color: '#f39c12', opacity: 0.8 }}>ACTIVE SCAN</span>
           </div>
-          <div style={{ marginTop: '20px', display: 'flex', alignItems: 'center', gap: '8px' }}>
-            <div style={{ flex: 1, height: '4px', background: '#f1f5f9', borderRadius: '2px', overflow: 'hidden' }}>
+          <div style={{ marginTop: '15px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <div style={{ flex: 1, height: '3px', background: '#f1f5f9', borderRadius: '2px', overflow: 'hidden' }}>
               <div style={{ width: progressCount > 0 ? '100%' : '0%', height: '100%', background: '#f39c12', borderRadius: '2px', transition: 'width 0.5s ease' }} />
             </div>
-            <span style={{ fontSize: '9px', fontWeight: 900, color: '#f39c12' }}>{progressCount > 0 ? 'SCANNING' : 'IDLE'}</span>
+            <span style={{ fontSize: '8px', fontWeight: 900, color: '#f39c12' }}>{progressCount > 0 ? 'SCANNING' : 'IDLE'}</span>
           </div>
         </div>
 
         {/* Card: Completed Stats */}
         <div style={{
-          background: 'white', borderRadius: '20px', padding: '24px',
+          background: 'white', borderRadius: '16px', padding: '16px',
           border: '1px solid #dee2e6', position: 'relative', overflow: 'hidden',
-          boxShadow: '0 4px 20px rgba(0,0,0,0.03)'
+          boxShadow: '0 4px 15px rgba(0,0,0,0.02)'
         }}>
-          <div style={{ position: 'absolute', top: '-10px', right: '-10px', fontSize: '100px', opacity: 0.04, lineHeight: 1 }}>{'\u2705'}</div>
-          <div style={{ fontSize: '10px', fontWeight: 900, textTransform: 'uppercase', letterSpacing: '2px', color: '#64748b', marginBottom: '12px' }}>Completed Operations</div>
-          <div style={{ display: 'flex', alignItems: 'baseline', gap: '8px' }}>
-            <span style={{ fontSize: '48px', fontWeight: 950, color: '#10b981', lineHeight: 1 }}>{stats.completed}</span>
-            <span style={{ fontSize: '12px', fontWeight: 800, color: '#10b981', opacity: 0.8 }}>SUCCESS</span>
+          <div style={{ position: 'absolute', top: '-5px', right: '-5px', fontSize: '60px', opacity: 0.04, lineHeight: 1 }}>{'\u2705'}</div>
+          <div style={{ fontSize: '9px', fontWeight: 900, textTransform: 'uppercase', letterSpacing: '1.5px', color: '#64748b', marginBottom: '8px' }}>Completed Operations</div>
+          <div style={{ display: 'flex', alignItems: 'baseline', gap: '6px' }}>
+            <span style={{ fontSize: '32px', fontWeight: 950, color: '#10b981', lineHeight: 1 }}>{stats.completed}</span>
+            <span style={{ fontSize: '10px', fontWeight: 800, color: '#10b981', opacity: 0.8 }}>SUCCESS</span>
           </div>
-          <div style={{ marginTop: '20px', height: '4px', background: '#f1f5f9', borderRadius: '2px', overflow: 'hidden' }}>
+          <div style={{ marginTop: '15px', height: '3px', background: '#f1f5f9', borderRadius: '2px', overflow: 'hidden' }}>
             <div style={{ width: `${(stats.completed / (stats.total || 1)) * 100}%`, height: '100%', background: '#10b981', borderRadius: '2px', transition: 'width 0.5s ease' }} />
           </div>
-          <div style={{ fontSize: '9px', color: '#94a3b8', fontWeight: 800, marginTop: '8px', textTransform: 'uppercase' }}>Mission Success Rate: {Math.round((stats.completed / (stats.total || 1)) * 100)}%</div>
+          <div style={{ fontSize: '8px', color: '#94a3b8', fontWeight: 800, marginTop: '6px', textTransform: 'uppercase' }}>Success Rate: {Math.round((stats.completed / (stats.total || 1)) * 100)}%</div>
         </div>
       </div>
     );
@@ -601,23 +612,35 @@ export default function AppointmentBoard() {
         </select>
       </div>
 
-      {/* Date Range (only on PAST tab) */}
+      {/* Date Range / All Toggle (only on PAST tab) */}
       {activeTab === 'PAST' && (
-        <div className="filter-date-range">
-          <span style={{ fontSize: '10px', fontWeight: 900, color: '#0f52ba', textTransform: 'uppercase' }}>
-            Range
-          </span>
-          <input 
-            type="date" 
-            value={pastDateRange.start} 
-            onChange={e => setPastDateRange(prev => ({ ...prev, start: e.target.value }))}
-          />
-          <span style={{ color: '#ccc' }}>→</span>
-          <input 
-            type="date" 
-            value={pastDateRange.end} 
-            onChange={e => setPastDateRange(prev => ({ ...prev, end: e.target.value }))}
-          />
+        <div style={{ display: 'flex', alignItems: 'center', gap: '15px' }}>
+          <div style={{ display: 'flex', background: 'white', padding: '3px', borderRadius: '10px', border: '1px solid #dee2e6' }}>
+            <button 
+              onClick={() => setArchiveFilterMode('ALL')}
+              style={{ padding: '8px 16px', borderRadius: '8px', border: 'none', fontSize: '10px', fontWeight: 950, background: archiveFilterMode === 'ALL' ? '#0f52ba' : 'transparent', color: archiveFilterMode === 'ALL' ? 'white' : '#64748b', cursor: 'pointer' }}
+            >GLOBAL_ALL</button>
+            <button 
+              onClick={() => setArchiveFilterMode('RANGE')}
+              style={{ padding: '8px 16px', borderRadius: '8px', border: 'none', fontSize: '10px', fontWeight: 950, background: archiveFilterMode === 'RANGE' ? '#0f52ba' : 'transparent', color: archiveFilterMode === 'RANGE' ? 'white' : '#64748b', cursor: 'pointer' }}
+            >DATE_RANGE</button>
+          </div>
+          
+          {archiveFilterMode === 'RANGE' && (
+            <div className="filter-date-range">
+              <input 
+                type="date" 
+                value={pastDateRange.start} 
+                onChange={e => setPastDateRange(prev => ({ ...prev, start: e.target.value }))}
+              />
+              <span style={{ color: '#ccc' }}>→</span>
+              <input 
+                type="date" 
+                value={pastDateRange.end} 
+                onChange={e => setPastDateRange(prev => ({ ...prev, end: e.target.value }))}
+              />
+            </div>
+          )}
         </div>
       )}
 

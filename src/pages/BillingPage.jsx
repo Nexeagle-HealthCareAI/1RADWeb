@@ -32,6 +32,9 @@ export default function BillingPage() {
   const [isExportDrawerOpen, setIsExportDrawerOpen] = useState(false);
   const [exportMode, setExportMode] = useState('ALL'); // 'ALL', 'RANGE'
   const [exportDates, setExportDates] = useState({ start: '', end: '' });
+  
+  const [currentPage, setCurrentPage] = useState(1);
+  const itemsPerPage = 5;
 
   // --- SYNC & FETCH ---
   const [stats, setStats] = useState({ totalRevenue: 0, pendingCount: 0, realizationRate: 0, averageTicket: 0, pendingRevenue: 0 });
@@ -172,7 +175,7 @@ export default function BillingPage() {
     return invoices.filter(inv => {
       // Search Filter
       const matchesSearch = inv.patientName.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                            inv.invoiceId.toLowerCase().includes(searchTerm.toLowerCase());
+                            (inv.displayId && inv.displayId.toLowerCase().includes(searchTerm.toLowerCase()));
       
       if (!matchesSearch) return false;
 
@@ -202,6 +205,13 @@ export default function BillingPage() {
 
     return { totalRevenue, pendingRevenue, pendingCount, realizationRate, averageTicket };
   }, [filteredInvoices]);
+
+  const totalPages = Math.ceil(filteredInvoices.length / itemsPerPage);
+  const paginatedInvoices = filteredInvoices.slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage);
+
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [searchTerm, timeFilter, statusFilter]);
 
   // --- PATIENT LOOKUP ---
   const fetchPatients = useCallback(async (query) => {
@@ -258,13 +268,13 @@ export default function BillingPage() {
     try {
       await apiClient.post('/finance/payments', { 
         invoiceId: selectedInvoice.invoiceId, 
-        amount: selectedInvoice.totalAmount, // Assuming full payment in this quick toggle
+        amount: selectedInvoice.balanceAmount, // Pay the remaining balance
         paymentMethod 
       });
       setIsInvoiceDrawerOpen(false);
       fetchInvoices();
       fetchStats();
-      alert(`PAYMENT SUCCESS: Received ₹${selectedInvoice.totalAmount} via ${paymentMethod}`);
+      alert(`PAYMENT SUCCESS: Received ₹${selectedInvoice.balanceAmount} via ${paymentMethod}`);
     } catch (err) {
       console.error('[FINANCE] Payment failed', err);
     }
@@ -311,6 +321,27 @@ export default function BillingPage() {
   };
 
   // --- RENDERERS ---
+  const renderPagination = () => {
+    if (totalPages <= 1) return null;
+    return (
+      <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '10px', marginTop: '25px', padding: '15px', borderTop: '1px solid #f1f5f9' }}>
+        <button 
+          onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
+          disabled={currentPage === 1}
+          style={{ padding: '8px 15px', borderRadius: '8px', border: '1px solid #e2e8f0', background: 'white', fontSize: '11px', fontWeight: 900, cursor: currentPage === 1 ? 'not-allowed' : 'pointer', opacity: currentPage === 1 ? 0.5 : 1 }}
+        >PREVIOUS</button>
+        <div style={{ fontSize: '11px', fontWeight: 900, color: '#64748b' }}>
+          PAGE <span style={{ color: '#0f52ba' }}>{currentPage}</span> OF <span style={{ color: '#0f52ba' }}>{totalPages}</span>
+        </div>
+        <button 
+          onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
+          disabled={currentPage === totalPages}
+          style={{ padding: '8px 15px', borderRadius: '8px', border: '1px solid #e2e8f0', background: 'white', fontSize: '11px', fontWeight: 900, cursor: currentPage === totalPages ? 'not-allowed' : 'pointer', opacity: currentPage === totalPages ? 0.5 : 1 }}
+        >NEXT</button>
+      </div>
+    );
+  };
+
   const renderInvoiceDrawer = () => {
     if (!selectedInvoice) return null;
     const isPaid = selectedInvoice.status === 'PAID';
@@ -322,7 +353,7 @@ export default function BillingPage() {
              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
                 <div>
                    <h2 style={{ fontSize: '11px', fontWeight: 950, color: 'rgba(255,255,255,0.7)', letterSpacing: '3px', textTransform: 'uppercase', marginBottom: '8px' }}>Financial Clearance</h2>
-                   <div style={{ fontSize: '24px', fontWeight: 950, letterSpacing: '-1px' }}>{selectedInvoice.invoiceId}</div>
+                   <div style={{ fontSize: '24px', fontWeight: 950, letterSpacing: '-1px' }}>{selectedInvoice.displayId}</div>
                 </div>
                 <div style={{ display: 'flex', gap: '15px', alignItems: 'center' }}>
                    <div style={{ padding: '8px 15px', background: 'rgba(255,255,255,0.2)', borderRadius: '10px', fontSize: '10px', fontWeight: 950 }}>
@@ -881,9 +912,9 @@ export default function BillingPage() {
                </tr>
              </thead>
              <tbody>
-               {filteredInvoices.map(inv => (
+               {paginatedInvoices.map(inv => (
                  <tr key={inv.invoiceId} style={{ borderBottom: '1px solid #f8fafc', transition: 'background 0.2s' }}>
-                   <td style={{ padding: '20px 10px', fontSize: '12px', fontWeight: 900, color: '#0f52ba', fontFamily: 'monospace' }}>{inv.invoiceId}</td>
+                   <td style={{ padding: '20px 10px', fontSize: '12px', fontWeight: 900, color: '#0f52ba', fontFamily: 'monospace' }}>{inv.displayId}</td>
                    <td style={{ padding: '20px 10px', fontSize: '13px', fontWeight: 800, color: '#1e293b' }}>{inv.patientName.toUpperCase()}</td>
                    <td style={{ padding: '20px 10px', fontSize: '12px', color: '#64748b', fontWeight: 600 }}>{new Date(inv.createdAt).toLocaleString()}</td>
                    <td style={{ padding: '20px 10px', fontSize: '14px', fontWeight: 950, color: '#1a1a2e' }}>₹{inv.totalAmount.toLocaleString()}</td>
@@ -911,6 +942,7 @@ export default function BillingPage() {
                )}
              </tbody>
            </table>
+           {renderPagination()}
         </div>
 
         {/* TEMPORAL MATRIX SECTION */}
