@@ -624,8 +624,13 @@ export default function TechnicianPage() {
                           >📜</button>
                           <button 
                             className="gamified-btn" 
-                            disabled={!isArrived}
-                            style={{ padding: '10px 20px', borderRadius: '12px', fontSize: '11px', opacity: isArrived ? 1 : 0.4, cursor: isArrived ? 'pointer' : 'not-allowed', background: isDone ? '#1e293b' : '#0f52ba' }} 
+                            disabled={!isArrived && !isExpected}
+                            style={{ 
+                              padding: '10px 20px', borderRadius: '12px', fontSize: '11px', 
+                              opacity: (isArrived || isExpected) ? 1 : 0.4, 
+                              cursor: (isArrived || isExpected) ? 'pointer' : 'not-allowed', 
+                              background: isDone ? '#1e293b' : '#0f52ba' 
+                            }} 
                             onClick={() => handleOpenWorkspace(study)}
                           >
                             {isDone ? 'REVIEW DATA' : 'ENTER WORKSPACE'}
