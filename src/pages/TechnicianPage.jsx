@@ -20,6 +20,8 @@ const PRIORITY_META = {
   'ROUTINE': { color: '#3b82f6', label: '📋 ROUTINE', bg: '#dbeafe' }
 };
 
+const TODAY = new Date().toLocaleDateString('en-CA'); // YYYY-MM-DD format in local time
+
 export default function TechnicianPage() {
   const [studies, setStudies] = useState([]);
   const [loading, setLoading] = useState(false);
@@ -36,6 +38,12 @@ export default function TechnicianPage() {
   const [techNotes, setTechNotes] = useState('');
   const [currentSlice, setCurrentSlice] = useState(1);
   const [printModalData, setPrintModalData] = useState(null);
+
+  // Pagination & Archive Filtering
+  const [archivePage, setArchivePage] = useState(1);
+  const [archiveFilterMode, setArchiveFilterMode] = useState('ALL'); // 'ALL' or 'RANGE'
+  const [archiveDateRange, setArchiveDateRange] = useState({ start: TODAY, end: TODAY });
+  const itemsPerPage = 5;
   
   // New Workspace state
   const [activeTool, setActiveTool] = useState('WindowLevel');
@@ -48,7 +56,6 @@ export default function TechnicianPage() {
   const [keyImages, setKeyImages] = useState([]);
   const [isSyncEnabled, setIsSyncEnabled] = useState(false);
 
-  const TODAY = new Date().toISOString().split('T')[0];
 
   // --- API SYNC ---
   const fetchWorklist = useCallback(async () => {
@@ -56,12 +63,15 @@ export default function TechnicianPage() {
     try {
       // Fetch today's missions for the main bay, and past missions if in archive
       const res = await apiClient.get('/appointments');
-      const worklist = res.data.map(a => ({
-        ...a,
-        id: a.displayId,
-        priority: a.type === 'EMERGENCY' ? 'STAT' : 'ROUTINE',
-        isToday: (a.date || (a.dateTime ? a.dateTime.split('T')[0] : null)) === TODAY
-      }));
+      const worklist = res.data.map(a => {
+        const studyDate = a.dateTime ? new Date(a.dateTime).toLocaleDateString('en-CA') : null;
+        return {
+          ...a,
+          id: a.displayId,
+          priority: a.type === 'EMERGENCY' ? 'STAT' : 'ROUTINE',
+          isToday: studyDate === TODAY
+        };
+      });
       setStudies(worklist);
     } catch (err) {
       console.error('[TECH] Worklist fetch failed', err);
@@ -91,7 +101,7 @@ export default function TechnicianPage() {
   // --- DERIVED DATA ---
   const filteredStudies = useMemo(() => {
     return studies.filter(s => {
-      const matchesSearch = s.patientName.toLowerCase().includes(searchQuery.toLowerCase()) || s.id.toLowerCase().includes(searchQuery.toLowerCase());
+      const matchesSearch = (s.patientName?.toLowerCase() || '').includes(searchQuery.toLowerCase()) || (s.id?.toLowerCase() || '').includes(searchQuery.toLowerCase());
       const matchesModality = filters.modality === 'ALL' || s.modality === filters.modality;
       
       const status = s.status?.toLowerCase();
@@ -99,19 +109,31 @@ export default function TechnicianPage() {
       const matchesStatus = filters.clinicalStatus === 'ALL' || status === filters.clinicalStatus.toLowerCase();
 
       if (hubTab === 'ACTIVE') {
-        // Today's work: Scheduled, Confirmed, In Progress, Scanned, Reporting
         return matchesSearch && matchesModality && matchesPriority && matchesStatus && s.isToday && ['scheduled', 'confirmed', 'in_progress', 'booked', 'scanned', 'reporting'].includes(status);
       } else {
-        // Archive: Reported, Completed, or past appointments
-        return matchesSearch && matchesModality && matchesPriority && matchesStatus && (['reported', 'completed'].includes(status) || !s.isToday);
+        const studyDate = s.dateTime ? s.dateTime.split('T')[0] : null;
+        const matchesDate = archiveFilterMode === 'ALL' || (studyDate && studyDate >= archiveDateRange.start && studyDate <= archiveDateRange.end);
+        return matchesSearch && matchesModality && matchesPriority && matchesStatus && matchesDate && (['reported', 'completed'].includes(status) || !s.isToday);
       }
     });
-  }, [studies, searchQuery, filters, hubTab, TODAY]);
+  }, [studies, searchQuery, filters, hubTab, TODAY, archiveFilterMode, archiveDateRange]);
+
+  const paginatedStudies = useMemo(() => {
+    if (hubTab === 'ACTIVE') return filteredStudies;
+    const start = (archivePage - 1) * itemsPerPage;
+    return filteredStudies.slice(start, start + itemsPerPage);
+  }, [filteredStudies, hubTab, archivePage]);
+
+  const totalPages = Math.ceil(filteredStudies.length / itemsPerPage);
+
+  useEffect(() => {
+    setArchivePage(1);
+  }, [searchQuery, filters, hubTab, archiveFilterMode, archiveDateRange]);
 
   const stats = {
     total: studies.filter(s => s.isToday && ['scheduled', 'confirmed', 'in_progress', 'booked', 'scanned', 'reporting'].includes(s.status?.toLowerCase())).length,
-    inProgress: studies.filter(s => s.status?.toLowerCase() === 'in_progress').length,
-    pending: studies.filter(s => s.status?.toLowerCase() === 'confirmed').length,
+    inProgress: studies.filter(s => s.isToday && s.status?.toLowerCase() === 'in_progress').length,
+    pending: studies.filter(s => s.isToday && s.status?.toLowerCase() === 'confirmed').length,
     expected: studies.filter(s => s.isToday && ['scheduled', 'booked'].includes(s.status?.toLowerCase())).length,
     // Archive Stats
     archiveTotal: studies.filter(s => !s.isToday || ['reported', 'completed'].includes(s.status?.toLowerCase())).length,
@@ -357,7 +379,7 @@ export default function TechnicianPage() {
 
   const renderQueue = () => (
     <div className="board-view-container" style={{ background: '#fcfdfe', minHeight: '100vh' }}>
-      <div className="board-header" style={{ padding: '30px 40px', background: 'white', borderBottom: '1px solid #f1f5f9', display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '30px' }}>
+      <div className="board-header" style={{ padding: '12px 30px', background: 'white', borderBottom: '1px solid #f1f5f9', display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
         <div>
            <div style={{ display: 'flex', alignItems: 'center', gap: '15px', marginBottom: '5px' }}>
               <span style={{ fontSize: '24px' }}>🛰️</span>
@@ -394,98 +416,116 @@ export default function TechnicianPage() {
 
       <div className="board-padding">
         {hubTab === 'ACTIVE' ? (
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '15px', marginBottom: '30px' }}>
-            <div className="summary-card" style={{ background: 'white', border: '1px solid #e2e8f0', padding: '18px 22px', borderRadius: '16px', boxShadow: '0 4px 15px rgba(0,0,0,0.02)' }}>
-              <span style={{ display: 'block', fontSize: '10px', fontWeight: 950, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '2px', marginBottom: '12px' }}>Daily Flux</span>
-              <div style={{ display: 'flex', alignItems: 'baseline', gap: '8px' }}>
-                 <span style={{ fontSize: '32px', fontWeight: 950, color: '#1e293b', letterSpacing: '-1.5px' }}>{stats.total}</span>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '10px', marginBottom: '15px' }}>
+            <div className="summary-card" style={{ background: 'white', border: '1px solid #e2e8f0', padding: '8px 12px', borderRadius: '10px', boxShadow: '0 2px 8px rgba(0,0,0,0.02)' }}>
+              <span style={{ display: 'block', fontSize: '9px', fontWeight: 950, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '2px', marginBottom: '4px' }}>Daily Flux</span>
+              <div style={{ display: 'flex', alignItems: 'baseline', gap: '6px' }}>
+                 <span style={{ fontSize: '24px', fontWeight: 950, color: '#1e293b', letterSpacing: '-1px' }}>{stats.total}</span>
                  <span style={{ fontSize: '11px', fontWeight: 950, color: '#0f52ba', opacity: 0.8 }}>UNITS</span>
               </div>
             </div>
 
-            <div className="summary-card" style={{ background: 'white', border: '1px solid #e2e8f0', padding: '18px 22px', borderRadius: '16px', boxShadow: '0 4px 15px rgba(0,0,0,0.02)' }}>
-              <span style={{ display: 'block', fontSize: '10px', fontWeight: 950, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '2px', marginBottom: '12px' }}>Acquisition Active</span>
-              <div style={{ display: 'flex', alignItems: 'baseline', gap: '8px' }}>
-                 <span style={{ fontSize: '32px', fontWeight: 950, color: '#f59e0b', letterSpacing: '-1.5px' }}>{stats.inProgress}</span>
+            <div className="summary-card" style={{ background: 'white', border: '1px solid #e2e8f0', padding: '8px 12px', borderRadius: '10px', boxShadow: '0 2px 8px rgba(0,0,0,0.02)' }}>
+              <span style={{ display: 'block', fontSize: '9px', fontWeight: 950, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '2px', marginBottom: '4px' }}>Acquisition Active</span>
+              <div style={{ display: 'flex', alignItems: 'baseline', gap: '6px' }}>
+                 <span style={{ fontSize: '24px', fontWeight: 950, color: '#f59e0b', letterSpacing: '-1px' }}>{stats.inProgress}</span>
                  <span style={{ fontSize: '11px', fontWeight: 950, color: '#f59e0b', opacity: 0.8 }}>SCANNING</span>
               </div>
             </div>
 
-            <div className="summary-card" style={{ background: 'white', border: '1px solid #e2e8f0', padding: '18px 22px', borderRadius: '16px', boxShadow: '0 4px 15px rgba(0,0,0,0.02)' }}>
-              <span style={{ display: 'block', fontSize: '10px', fontWeight: 950, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '2px', marginBottom: '12px' }}>Arrival Confirmed</span>
-              <div style={{ display: 'flex', alignItems: 'baseline', gap: '8px' }}>
-                 <span style={{ fontSize: '32px', fontWeight: 950, color: '#2ecc71', letterSpacing: '-1.5px' }}>{stats.pending}</span>
+            <div className="summary-card" style={{ background: 'white', border: '1px solid #e2e8f0', padding: '8px 12px', borderRadius: '10px', boxShadow: '0 2px 8px rgba(0,0,0,0.02)' }}>
+              <span style={{ display: 'block', fontSize: '9px', fontWeight: 950, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '2px', marginBottom: '4px' }}>Arrival Confirmed</span>
+              <div style={{ display: 'flex', alignItems: 'baseline', gap: '6px' }}>
+                 <span style={{ fontSize: '24px', fontWeight: 950, color: '#2ecc71', letterSpacing: '-1px' }}>{stats.pending}</span>
                  <span style={{ fontSize: '11px', fontWeight: 950, color: '#2ecc71', opacity: 0.8 }}>READY</span>
               </div>
             </div>
 
-            <div className="summary-card" style={{ background: 'white', border: '1px solid #e2e8f0', padding: '18px 22px', borderRadius: '16px', boxShadow: '0 4px 15px rgba(0,0,0,0.02)' }}>
-              <span style={{ display: 'block', fontSize: '10px', fontWeight: 950, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '2px', marginBottom: '12px' }}>Mission Expected</span>
-              <div style={{ display: 'flex', alignItems: 'baseline', gap: '8px' }}>
-                 <span style={{ fontSize: '32px', fontWeight: 950, color: '#0f52ba', letterSpacing: '-1.5px' }}>{stats.expected}</span>
+            <div className="summary-card" style={{ background: 'white', border: '1px solid #e2e8f0', padding: '8px 12px', borderRadius: '10px', boxShadow: '0 2px 8px rgba(0,0,0,0.02)' }}>
+              <span style={{ display: 'block', fontSize: '9px', fontWeight: 950, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '2px', marginBottom: '4px' }}>Mission Expected</span>
+              <div style={{ display: 'flex', alignItems: 'baseline', gap: '6px' }}>
+                 <span style={{ fontSize: '24px', fontWeight: 950, color: '#0f52ba', letterSpacing: '-1px' }}>{stats.expected}</span>
                  <span style={{ fontSize: '11px', fontWeight: 950, color: '#0f52ba', opacity: 0.8 }}>PENDING</span>
               </div>
             </div>
           </div>
         ) : (
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '15px', marginBottom: '30px' }}>
-            <div className="summary-card" style={{ background: 'white', border: '1px solid #e2e8f0', padding: '18px 22px', borderRadius: '16px', boxShadow: '0 4px 15px rgba(0,0,0,0.02)' }}>
-              <span style={{ display: 'block', fontSize: '10px', fontWeight: 950, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '2px', marginBottom: '12px' }}>Archive Magnitude</span>
-              <div style={{ display: 'flex', alignItems: 'baseline', gap: '8px' }}>
-                 <span style={{ fontSize: '32px', fontWeight: 950, color: '#1e293b', letterSpacing: '-1.5px' }}>{stats.archiveTotal}</span>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '10px', marginBottom: '15px' }}>
+            <div className="summary-card" style={{ background: 'white', border: '1px solid #e2e8f0', padding: '8px 12px', borderRadius: '10px', boxShadow: '0 2px 8px rgba(0,0,0,0.02)' }}>
+              <span style={{ display: 'block', fontSize: '9px', fontWeight: 950, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '2px', marginBottom: '4px' }}>Archive Magnitude</span>
+              <div style={{ display: 'flex', alignItems: 'baseline', gap: '6px' }}>
+                 <span style={{ fontSize: '24px', fontWeight: 950, color: '#1e293b', letterSpacing: '-1px' }}>{stats.archiveTotal}</span>
                  <span style={{ fontSize: '11px', fontWeight: 950, color: '#6366f1', opacity: 0.8 }}>STUDIES</span>
               </div>
             </div>
 
-            <div className="summary-card" style={{ background: 'white', border: '1px solid #e2e8f0', padding: '18px 22px', borderRadius: '16px', boxShadow: '0 4px 15px rgba(0,0,0,0.02)' }}>
-              <span style={{ display: 'block', fontSize: '10px', fontWeight: 950, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '2px', marginBottom: '12px' }}>Clinical Finalized</span>
-              <div style={{ display: 'flex', alignItems: 'baseline', gap: '8px' }}>
-                 <span style={{ fontSize: '32px', fontWeight: 950, color: '#059669', letterSpacing: '-1.5px' }}>{stats.archiveReported}</span>
+            <div className="summary-card" style={{ background: 'white', border: '1px solid #e2e8f0', padding: '8px 12px', borderRadius: '10px', boxShadow: '0 2px 8px rgba(0,0,0,0.02)' }}>
+              <span style={{ display: 'block', fontSize: '9px', fontWeight: 950, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '2px', marginBottom: '4px' }}>Clinical Finalized</span>
+              <div style={{ display: 'flex', alignItems: 'baseline', gap: '6px' }}>
+                 <span style={{ fontSize: '24px', fontWeight: 950, color: '#059669', letterSpacing: '-1px' }}>{stats.archiveReported}</span>
                  <span style={{ fontSize: '11px', fontWeight: 950, color: '#059669', opacity: 0.8 }}>REPORTS</span>
               </div>
             </div>
 
-            <div className="summary-card" style={{ background: 'white', border: '1px solid #e2e8f0', padding: '18px 22px', borderRadius: '16px', boxShadow: '0 4px 15px rgba(0,0,0,0.02)' }}>
-              <span style={{ display: 'block', fontSize: '10px', fontWeight: 950, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '2px', marginBottom: '12px' }}>Closed Lifecycle</span>
-              <div style={{ display: 'flex', alignItems: 'baseline', gap: '8px' }}>
-                 <span style={{ fontSize: '32px', fontWeight: 950, color: '#0f52ba', letterSpacing: '-1.5px' }}>{stats.archiveCompleted}</span>
+            <div className="summary-card" style={{ background: 'white', border: '1px solid #e2e8f0', padding: '8px 12px', borderRadius: '10px', boxShadow: '0 2px 8px rgba(0,0,0,0.02)' }}>
+              <span style={{ display: 'block', fontSize: '9px', fontWeight: 950, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '2px', marginBottom: '4px' }}>Closed Lifecycle</span>
+              <div style={{ display: 'flex', alignItems: 'baseline', gap: '6px' }}>
+                 <span style={{ fontSize: '24px', fontWeight: 950, color: '#0f52ba', letterSpacing: '-1px' }}>{stats.archiveCompleted}</span>
                  <span style={{ fontSize: '11px', fontWeight: 950, color: '#0f52ba', opacity: 0.8 }}>CLOSED</span>
               </div>
             </div>
 
-            <div className="summary-card" style={{ background: 'white', border: '1px solid #e2e8f0', padding: '18px 22px', borderRadius: '16px', boxShadow: '0 4px 15px rgba(0,0,0,0.02)' }}>
-              <span style={{ display: 'block', fontSize: '10px', fontWeight: 950, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '2px', marginBottom: '12px' }}>Diagnostic Yield</span>
-              <div style={{ display: 'flex', alignItems: 'baseline', gap: '8px' }}>
-                 <span style={{ fontSize: '32px', fontWeight: 950, color: '#6366f1', letterSpacing: '-1.5px' }}>{stats.archiveEfficiency}%</span>
+            <div className="summary-card" style={{ background: 'white', border: '1px solid #e2e8f0', padding: '8px 12px', borderRadius: '10px', boxShadow: '0 2px 8px rgba(0,0,0,0.02)' }}>
+              <span style={{ display: 'block', fontSize: '9px', fontWeight: 950, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '2px', marginBottom: '4px' }}>Diagnostic Yield</span>
+              <div style={{ display: 'flex', alignItems: 'baseline', gap: '6px' }}>
+                 <span style={{ fontSize: '24px', fontWeight: 950, color: '#6366f1', letterSpacing: '-1px' }}>{stats.archiveEfficiency}%</span>
                  <span style={{ fontSize: '11px', fontWeight: 950, color: '#6366f1', opacity: 0.8 }}>RATIO</span>
               </div>
             </div>
           </div>
         )}
 
-        <div style={{ background: 'white', padding: '20px', borderRadius: '16px', border: '1px solid #e2e8f0', marginBottom: '30px', display: 'flex', gap: '20px', alignItems: 'center', boxShadow: '0 4px 20px rgba(0,0,0,0.02)' }}>
-          <div style={{ position: 'relative', flex: 1 }}>
+        <div style={{ background: 'white', padding: '15px 20px', borderRadius: '16px', border: '1px solid #e2e8f0', marginBottom: '20px', display: 'flex', gap: '15px', alignItems: 'center', boxShadow: '0 4px 20px rgba(0,0,0,0.02)', flexWrap: 'wrap' }}>
+          <div style={{ position: 'relative', flex: 1, minWidth: '200px' }}>
             <span style={{ position: 'absolute', left: '15px', top: '50%', transform: 'translateY(-50%)', opacity: 0.5 }}>🔍</span>
             <input 
               type="text" 
               placeholder={hubTab === 'ACTIVE' ? "SEARCH TODAY'S MISSIONS..." : "SEARCH HISTORICAL ARCHIVE..."}
               value={searchQuery}
               onChange={e => setSearchQuery(e.target.value)}
-              style={{ width: '100%', padding: '14px 14px 14px 45px', borderRadius: '12px', border: '1px solid #e2e8f0', fontSize: '12px', fontWeight: 700, outline: 'none' }}
+              style={{ width: '100%', padding: '12px 12px 12px 45px', borderRadius: '10px', border: '1px solid #e2e8f0', fontSize: '12px', fontWeight: 700, outline: 'none' }}
             />
           </div>
-          <select value={filters.modality} onChange={e => setFilters({...filters, modality: e.target.value})} style={{ padding: '14px 20px', borderRadius: '12px', border: '1px solid #e2e8f0', fontSize: '12px', fontWeight: 900, background: 'white', outline: 'none' }}>
+
+          {hubTab === 'ARCHIVE' && (
+            <div style={{ display: 'flex', gap: '10px', alignItems: 'center', background: '#f8fafc', padding: '5px 15px', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
+              <div style={{ display: 'flex', background: '#e2e8f0', padding: '2px', borderRadius: '8px' }}>
+                <button onClick={() => setArchiveFilterMode('ALL')} style={{ padding: '6px 12px', borderRadius: '6px', border: 'none', fontSize: '9px', fontWeight: 950, background: archiveFilterMode === 'ALL' ? 'white' : 'transparent', color: archiveFilterMode === 'ALL' ? '#0f52ba' : '#64748b', cursor: 'pointer' }}>ALL</button>
+                <button onClick={() => setArchiveFilterMode('RANGE')} style={{ padding: '6px 12px', borderRadius: '6px', border: 'none', fontSize: '9px', fontWeight: 950, background: archiveFilterMode === 'RANGE' ? 'white' : 'transparent', color: archiveFilterMode === 'RANGE' ? '#0f52ba' : '#64748b', cursor: 'pointer' }}>RANGE</button>
+              </div>
+              
+              {archiveFilterMode === 'RANGE' && (
+                <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                  <input type="date" value={archiveDateRange.start} onChange={e => setArchiveDateRange({...archiveDateRange, start: e.target.value})} style={{ padding: '6px 10px', borderRadius: '8px', border: '1px solid #ddd', fontSize: '11px', fontWeight: 700 }} />
+                  <span style={{ fontSize: '10px', fontWeight: 900, color: '#94a3b8' }}>→</span>
+                  <input type="date" value={archiveDateRange.end} onChange={e => setArchiveDateRange({...archiveDateRange, end: e.target.value})} style={{ padding: '6px 10px', borderRadius: '8px', border: '1px solid #ddd', fontSize: '11px', fontWeight: 700 }} />
+                </div>
+              )}
+            </div>
+          )}
+
+          <select value={filters.modality} onChange={e => setFilters({...filters, modality: e.target.value})} style={{ padding: '12px 15px', borderRadius: '10px', border: '1px solid #e2e8f0', fontSize: '11px', fontWeight: 900, background: 'white', outline: 'none' }}>
             <option value="ALL">MODALITY: ALL</option>
             {Object.keys(MODALITY_ICONS).map(m => <option key={m} value={m}>{m}</option>)}
           </select>
 
-          <select value={filters.priority} onChange={e => setFilters({...filters, priority: e.target.value})} style={{ padding: '14px 20px', borderRadius: '12px', border: '1px solid #e2e8f0', fontSize: '12px', fontWeight: 900, background: 'white', outline: 'none' }}>
+          <select value={filters.priority} onChange={e => setFilters({...filters, priority: e.target.value})} style={{ padding: '12px 15px', borderRadius: '10px', border: '1px solid #e2e8f0', fontSize: '11px', fontWeight: 900, background: 'white', outline: 'none' }}>
             <option value="ALL">PRIORITY: ALL</option>
             <option value="STAT">⚡ EMERGENCY</option>
             <option value="ROUTINE">📋 ROUTINE</option>
           </select>
 
-          <select value={filters.clinicalStatus} onChange={e => setFilters({...filters, clinicalStatus: e.target.value})} style={{ padding: '14px 20px', borderRadius: '12px', border: '1px solid #e2e8f0', fontSize: '12px', fontWeight: 900, background: 'white', outline: 'none' }}>
+          <select value={filters.clinicalStatus} onChange={e => setFilters({...filters, clinicalStatus: e.target.value})} style={{ padding: '12px 15px', borderRadius: '10px', border: '1px solid #e2e8f0', fontSize: '11px', fontWeight: 900, background: 'white', outline: 'none' }}>
             <option value="ALL">PHASE: ALL</option>
             {hubTab === 'ACTIVE' ? (
               <>
@@ -502,7 +542,7 @@ export default function TechnicianPage() {
             )}
           </select>
 
-          <button className="gamified-btn" onClick={fetchWorklist} style={{ padding: '14px 30px', borderRadius: '12px' }}>RE-SYNC HUD</button>
+          <button className="gamified-btn" onClick={fetchWorklist} style={{ padding: '12px 20px', borderRadius: '10px' }}>RE-SYNC HUD</button>
         </div>
 
         <div style={{ background: 'white', borderRadius: '20px', border: '1px solid #e2e8f0', overflow: 'hidden', boxShadow: '0 4px 20px rgba(0,0,0,0.03)' }}>
@@ -518,7 +558,7 @@ export default function TechnicianPage() {
               </tr>
             </thead>
             <tbody>
-              {filteredStudies.map(study => {
+              {paginatedStudies.map(study => {
                 const priority = PRIORITY_META[study.priority] || PRIORITY_META.ROUTINE;
                 const status = study.status?.toLowerCase();
                 const isArrived = ['confirmed', 'in_progress', 'scanned', 'reporting'].includes(status);
@@ -527,38 +567,38 @@ export default function TechnicianPage() {
                 
                 return (
                   <tr key={study.appointmentId} style={{ borderBottom: '1px solid #f1f5f9' }}>
-                    <td style={{ padding: '20px' }}>
-                       <div style={{ display: 'flex', alignItems: 'center', gap: '15px' }}>
-                          <div style={{ width: '40px', height: '40px', borderRadius: '14px', background: '#f8fafc', color: '#0f52ba', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 900, fontSize: '16px', border: '1px solid #e2e8f0' }}>
+                    <td style={{ padding: '8px 15px' }}>
+                       <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                          <div style={{ width: '32px', height: '32px', borderRadius: '10px', background: '#f8fafc', color: '#0f52ba', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 900, fontSize: '14px', border: '1px solid #e2e8f0' }}>
                              {study.patientName.charAt(0)}
                           </div>
                           <div>
-                             <div style={{ fontWeight: 800, color: '#1e293b', fontSize: '14px' }}>{study.patientName.toUpperCase()}</div>
-                             <div style={{ fontSize: '10px', color: '#94a3b8', fontWeight: 700 }}>{study.id} | {study.patientGender} | {study.patientAge}Y</div>
+                             <div style={{ fontWeight: 800, color: '#1e293b', fontSize: '12px' }}>{study.patientName.toUpperCase()}</div>
+                             <div style={{ fontSize: '9px', color: '#94a3b8', fontWeight: 700 }}>{study.id} | {study.patientGender} | {study.patientAge}Y</div>
                           </div>
                        </div>
                     </td>
-                    <td style={{ padding: '20px' }}>
+                    <td style={{ padding: '8px 15px' }}>
                        <div style={{ display: 'flex', flexDirection: 'column' }}>
-                          <span style={{ fontSize: '13px', fontWeight: 800, color: '#1e293b' }}>{study.service}</span>
-                          <span style={{ fontSize: '9px', fontWeight: 950, color: priority.color, background: priority.bg, padding: '2px 8px', borderRadius: '6px', alignSelf: 'flex-start', marginTop: '4px' }}>
+                          <span style={{ fontSize: '12px', fontWeight: 800, color: '#1e293b' }}>{study.service}</span>
+                          <span style={{ fontSize: '8px', fontWeight: 950, color: priority.color, background: priority.bg, padding: '1px 6px', borderRadius: '4px', alignSelf: 'flex-start', marginTop: '2px' }}>
                              {priority.label}
                           </span>
                        </div>
                     </td>
-                    <td style={{ padding: '20px' }}>
-                        <div style={{ fontWeight: 800, color: '#1e293b', fontSize: '13px' }}>{study.appointmentDate ? new Date(study.appointmentDate).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }).toUpperCase() : 'N/A'}</div>
-                        <div style={{ fontSize: '10px', color: '#94a3b8', fontWeight: 800, marginTop: '4px' }}>TIME: {study.appointmentTime || '09:00 AM'}</div>
+                    <td style={{ padding: '8px 15px' }}>
+                        <div style={{ fontWeight: 800, color: '#1e293b', fontSize: '12px' }}>{study.dateTime ? new Date(study.dateTime).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }).toUpperCase() : 'N/A'}</div>
+                        <div style={{ fontSize: '9px', color: '#94a3b8', fontWeight: 800, marginTop: '2px' }}>{study.appointmentTime || '09:00 AM'}</div>
                     </td>
-                    <td style={{ padding: '20px' }}>
-                       <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                          <span style={{ fontSize: '20px' }}>{MODALITY_ICONS[study.modality] || '📑'}</span>
-                          <span style={{ fontSize: '11px', fontWeight: 950, color: '#1e293b' }}>{study.modality}</span>
+                    <td style={{ padding: '8px 15px' }}>
+                       <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                          <span style={{ fontSize: '16px' }}>{MODALITY_ICONS[study.modality] || '📑'}</span>
+                          <span style={{ fontSize: '10px', fontWeight: 950, color: '#1e293b' }}>{study.modality}</span>
                        </div>
                     </td>
-                    <td style={{ padding: '20px' }}>
+                    <td style={{ padding: '8px 15px' }}>
                       <span style={{ 
-                        padding: '6px 12px', borderRadius: '10px', fontSize: '10px', fontWeight: 950,
+                        padding: '4px 8px', borderRadius: '8px', fontSize: '9px', fontWeight: 950,
                         background: isDone ? '#f0fdf4' : isArrived && !isDone ? '#e9f7ef' : isExpected ? '#f0f7ff' : '#f8fafc',
                         color: isDone ? '#16a34a' : isArrived && !isDone ? '#27ae60' : isExpected ? '#0f52ba' : '#64748b',
                         border: `1px solid ${isDone ? '#bbf7d0' : isArrived && !isDone ? '#c3e6cb' : isExpected ? '#dbeafe' : '#e2e8f0'}`,
@@ -567,7 +607,7 @@ export default function TechnicianPage() {
                         {status === 'confirmed' ? '📡 ARRIVED' : status === 'in_progress' ? '⚡ SCANNING' : status === 'scanned' ? '✅ READY' : status === 'reporting' ? '📝 REPORTING' : status === 'scheduled' ? '📅 EXPECTED' : status.toUpperCase()}
                       </span>
                     </td>
-                    <td style={{ padding: '20px', textAlign: 'right' }}>
+                    <td style={{ padding: '8px 15px', textAlign: 'right' }}>
                       {hubTab === 'ACTIVE' ? (
                         <button 
                           className="gamified-btn" 
@@ -605,6 +645,26 @@ export default function TechnicianPage() {
               )}
             </tbody>
           </table>
+          
+          {hubTab === 'ARCHIVE' && totalPages > 1 && (
+            <div style={{ padding: '15px 30px', background: '#f8fafc', borderTop: '1px solid #e2e8f0', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <div style={{ fontSize: '11px', fontWeight: 800, color: '#64748b' }}>
+                SHOWING PAGE <span style={{ color: '#0f52ba' }}>{archivePage}</span> OF <span style={{ color: '#0f52ba' }}>{totalPages}</span>
+              </div>
+              <div style={{ display: 'flex', gap: '10px' }}>
+                <button 
+                  onClick={() => setArchivePage(p => Math.max(1, p - 1))}
+                  disabled={archivePage === 1}
+                  style={{ padding: '8px 15px', borderRadius: '8px', border: '1px solid #e2e8f0', background: 'white', fontSize: '10px', fontWeight: 900, cursor: archivePage === 1 ? 'not-allowed' : 'pointer', opacity: archivePage === 1 ? 0.5 : 1 }}
+                >PREVIOUS</button>
+                <button 
+                  onClick={() => setArchivePage(p => Math.min(totalPages, p + 1))}
+                  disabled={archivePage === totalPages}
+                  style={{ padding: '8px 15px', borderRadius: '8px', border: '1px solid #e2e8f0', background: 'white', fontSize: '10px', fontWeight: 900, cursor: archivePage === totalPages ? 'not-allowed' : 'pointer', opacity: archivePage === totalPages ? 0.5 : 1 }}
+                >NEXT</button>
+              </div>
+            </div>
+          )}
         </div>
       </div>
     </div>

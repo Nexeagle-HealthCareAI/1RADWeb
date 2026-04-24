@@ -167,7 +167,7 @@ export default function BillingPage() {
   };
 
   const filteredInvoices = useMemo(() => {
-    const today = new Date().toISOString().split('T')[0];
+    const today = new Date().toLocaleDateString('en-CA');
     
     return invoices.filter(inv => {
       // Search Filter
@@ -180,13 +180,28 @@ export default function BillingPage() {
       if (statusFilter !== 'ALL' && inv.status !== statusFilter) return false;
 
       // Time Filter
-      const invDate = new Date(inv.createdAt).toISOString().split('T')[0];
+      const invDate = inv.createdAt ? new Date(inv.createdAt).toLocaleDateString('en-CA') : null;
       if (timeFilter === 'TODAY' && invDate !== today) return false;
       if (timeFilter === 'PAST' && invDate === today) return false;
 
       return true;
     });
   }, [invoices, searchTerm, timeFilter, statusFilter]);
+
+  const liveStats = useMemo(() => {
+    const paidInvoices = filteredInvoices.filter(inv => inv.status === 'PAID');
+    const pendingInvoices = filteredInvoices.filter(inv => inv.status === 'PENDING');
+    
+    const totalRevenue = paidInvoices.reduce((sum, inv) => sum + (inv.totalAmount || 0), 0);
+    const pendingRevenue = pendingInvoices.reduce((sum, inv) => sum + (inv.totalAmount || 0), 0);
+    const pendingCount = pendingInvoices.length;
+    
+    const totalBilled = totalRevenue + pendingRevenue;
+    const realizationRate = totalBilled > 0 ? Math.round((totalRevenue / totalBilled) * 100) : 0;
+    const averageTicket = paidInvoices.length > 0 ? Math.round(totalRevenue / paidInvoices.length) : 0;
+
+    return { totalRevenue, pendingRevenue, pendingCount, realizationRate, averageTicket };
+  }, [filteredInvoices]);
 
   // --- PATIENT LOOKUP ---
   const fetchPatients = useCallback(async (query) => {
@@ -830,23 +845,23 @@ export default function BillingPage() {
       <div className="kpi-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '25px', marginBottom: '40px' }}>
         <div className="kpi-card" style={{ background: 'white', padding: '25px', borderRadius: '24px', border: '1px solid #e2e8f0', boxShadow: '0 4px 20px rgba(0,0,0,0.02)' }}>
           <p style={{ fontSize: '11px', fontWeight: 950, color: '#94a3b8', letterSpacing: '1px', marginBottom: '15px' }}>TOTAL REVENUE (PAID)</p>
-          <div style={{ fontSize: '28px', fontWeight: 950, color: '#1a1a2e' }}>₹{(stats.totalRevenue).toLocaleString()}</div>
-          <div style={{ marginTop: '10px', fontSize: '10px', color: '#2ecc71', fontWeight: 800 }}>SYNCED REAL-TIME</div>
+          <div style={{ fontSize: '28px', fontWeight: 950, color: '#1a1a2e' }}>₹{liveStats.totalRevenue.toLocaleString()}</div>
+          <div style={{ marginTop: '10px', fontSize: '10px', color: '#2ecc71', fontWeight: 800 }}>MATCHING CURRENT PROTOCOL</div>
         </div>
         <div className="kpi-card" style={{ background: 'white', padding: '25px', borderRadius: '24px', border: '1px solid #e2e8f0', boxShadow: '0 4px 20px rgba(0,0,0,0.02)' }}>
           <p style={{ fontSize: '11px', fontWeight: 950, color: '#94a3b8', letterSpacing: '1px', marginBottom: '15px' }}>PENDING UNPAID</p>
-          <div style={{ fontSize: '28px', fontWeight: 950, color: '#f39c12' }}>₹{stats.pendingRevenue.toLocaleString()}</div>
-          <div style={{ marginTop: '10px', fontSize: '10px', color: '#f39c12', fontWeight: 800 }}>{stats.pendingCount} INVOICES OUTSTANDING</div>
+          <div style={{ fontSize: '28px', fontWeight: 950, color: '#f39c12' }}>₹{liveStats.pendingRevenue.toLocaleString()}</div>
+          <div style={{ marginTop: '10px', fontSize: '10px', color: '#f39c12', fontWeight: 800 }}>{liveStats.pendingCount} INVOICES OUTSTANDING</div>
         </div>
         <div className="kpi-card" style={{ background: 'white', padding: '25px', borderRadius: '24px', border: '1px solid #e2e8f0', boxShadow: '0 4px 20px rgba(0,0,0,0.02)' }}>
           <p style={{ fontSize: '11px', fontWeight: 950, color: '#94a3b8', letterSpacing: '1px', marginBottom: '15px' }}>COLLECTION EFFICIENCY</p>
-          <div style={{ fontSize: '28px', fontWeight: 950, color: '#0f52ba' }}>{stats.realizationRate}%</div>
-          <div style={{ marginTop: '10px', fontSize: '10px', color: '#0f52ba', fontWeight: 800 }}>TARGET: 98%</div>
+          <div style={{ fontSize: '28px', fontWeight: 950, color: '#0f52ba' }}>{liveStats.realizationRate}%</div>
+          <div style={{ marginTop: '10px', fontSize: '10px', color: '#0f52ba', fontWeight: 800 }}>BASED ON FILTERED SCOPE</div>
         </div>
         <div className="kpi-card" style={{ background: 'white', padding: '25px', borderRadius: '24px', border: '1px solid #e2e8f0', boxShadow: '0 4px 20px rgba(0,0,0,0.02)' }}>
           <p style={{ fontSize: '11px', fontWeight: 950, color: '#94a3b8', letterSpacing: '1px', marginBottom: '15px' }}>AVG TICKET SIZE</p>
-          <div style={{ fontSize: '28px', fontWeight: 950, color: '#1a1a2e' }}>₹{stats.averageTicket.toLocaleString()}</div>
-          <div style={{ marginTop: '10px', fontSize: '10px', color: '#888', fontWeight: 600 }}>PER SUCCESSFUL TRANSACTION</div>
+          <div style={{ fontSize: '28px', fontWeight: 950, color: '#1a1a2e' }}>₹{liveStats.averageTicket.toLocaleString()}</div>
+          <div style={{ marginTop: '10px', fontSize: '10px', color: '#888', fontWeight: 600 }}>PAID INVOICES IN SCOPE</div>
         </div>
       </div>
 
