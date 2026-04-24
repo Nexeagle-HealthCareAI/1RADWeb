@@ -4,6 +4,7 @@ import dicomParser from 'dicom-parser';
 import apiClient from '../api/apiClient';
 import AdvancedDicomViewer from '../components/AdvancedDicomViewer';
 import PrescriptionModal from '../components/PrescriptionModal';
+import { DicomCache } from '../utils/DicomCache';
 import '../styles/global.css';
 
 const MODALITY_ICONS = {
@@ -182,27 +183,103 @@ export default function TechnicianPage() {
 
     setLoading(true);
     try {
-      const response = await fetch(asset.remoteUrl);
-      const blob = await response.blob();
-      const zip = await JSZip.loadAsync(blob);
-      const extractedFiles = [];
+      // TACTICAL CACHE CHECK
+      console.log(`[TECH_LOAD] Checking persistent cache for asset: ${asset.id}`);
+      const cachedData = await DicomCache.get(asset.id);
       
+      if (cachedData && cachedData.series?.length > 0) {
+        console.log(`[TECH_LOAD] Cache HIT for ${asset.id}. Restoring ${cachedData.series.length} series.`);
+        
+        const hydratedFromCache = cachedData.series.map(s => ({
+          ...asset,
+          name: s.name,
+          rawFiles: s.rawFiles,
+          needsHydration: false
+        }));
+
+        setUploadedFiles(prev => {
+          const newFiles = [...prev];
+          newFiles.splice(index, 1, ...hydratedFromCache);
+          return newFiles;
+        });
+        setIsDicomImage(true);
+        setLoading(false);
+        return;
+      }
+
+      console.log(`[TECH_LOAD] Cache MISS. Initializing hydration for asset: ${asset.name} at ${asset.remoteUrl}`);
+      const response = await fetch(asset.remoteUrl);
+      if (!response.ok) throw new Error(`NETWORK_FAILURE: HTTP_${response.status} when fetching asset stream.`);
+
+      const blob = await response.blob();
+      console.log(`[TECH_LOAD] Binary stream received. Size: ${(blob.size / (1024*1024)).toFixed(2)} MB. Parsing ZIP...`);
+      
+      const zip = await JSZip.loadAsync(blob);
+      const seriesGroups = {};
       const fileNames = Object.keys(zip.files);
+      console.log(`[TECH_LOAD] ZIP extracted. File count: ${fileNames.length}. Initializing DICOM classification...`);
+      
       for (const fileName of fileNames) {
         const zipFile = zip.files[fileName];
-        if (!zipFile.dir) {
+        if (!zipFile.dir && !fileName.includes('__MACOSX')) {
           const content = await zipFile.async('arraybuffer');
-          extractedFiles.push(new File([content], fileName.split('/').pop(), { type: 'application/dicom' }));
+          const dcmFile = new File([content], fileName.split('/').pop(), { type: 'application/dicom' });
+          
+          try {
+            const byteArray = new Uint8Array(content);
+            const dataSet = dicomParser.parseDicom(byteArray);
+            if (!dataSet.elements['x7fe00010'] && !dataSet.elements['x00080016']) {
+                console.warn(`[TECH_LOAD] Skipping non-diagnostic file: ${fileName}`);
+                continue;
+            }
+
+            const seriesUID = dataSet.string('x0020000e') || 'UNKNOWN_SERIES';
+            const seriesDesc = dataSet.string('x0008103e') || asset.name || 'UNNAMED_SERIES';
+            const instanceNum = parseInt(dataSet.string('x00200013') || '0', 10);
+
+            if (!seriesGroups[seriesUID]) {
+              seriesGroups[seriesUID] = { seriesUID, seriesDesc, files: [] };
+            }
+            seriesGroups[seriesUID].files.push({ file: dcmFile, instanceNum });
+          } catch (err) {
+            console.error(`[TECH_LOAD] Failed to parse file: ${fileName}`, err);
+          }
         }
+      }
+
+      const classifiedAssets = Object.values(seriesGroups).map(group => ({
+        ...asset,
+        name: group.seriesDesc,
+        rawFiles: group.files.sort((a, b) => a.instanceNum - b.instanceNum).map(f => f.file),
+        needsHydration: false
+      }));
+
+      console.log(`[TECH_LOAD] Classification complete. Discovered ${classifiedAssets.length} valid diagnostic series.`);
+
+      // TACTICAL CACHE STORAGE
+      if (classifiedAssets.length > 0) {
+        const cachePayload = {
+          ...asset,
+          series: classifiedAssets.map(ca => ({ name: ca.name, rawFiles: ca.rawFiles }))
+        };
+        await DicomCache.set(asset.id, cachePayload);
+        console.log(`[TECH_LOAD] Asset ${asset.id} persisted to persistent cache.`);
       }
 
       setUploadedFiles(prev => {
         const newFiles = [...prev];
-        newFiles[index] = { ...asset, rawFiles: extractedFiles, needsHydration: false };
+        if (classifiedAssets.length > 0) {
+          newFiles.splice(index, 1, ...classifiedAssets);
+        } else {
+          console.warn('[TECH_LOAD] No valid DICOM series found in ZIP container.');
+          newFiles[index] = { ...asset, needsHydration: false, rawFiles: [] };
+        }
         return newFiles;
       });
+      setIsDicomImage(true);
     } catch (err) {
-      console.error('[TECH] Hydration failure', err);
+      console.error('[TECH_LOAD] Hydration/Classification failure', err);
+      alert(`ACQUISITION SIGNAL FAILURE: ${err.message}`);
     } finally {
       setLoading(false);
     }
@@ -744,14 +821,13 @@ export default function TechnicianPage() {
 
         {/* VIEWER TOOLS */}
         {[
-          { id: 'WindowLevel', icon: '🌓', label: 'W/L' },
-          { id: 'StackScroll', icon: '📚', label: 'Stack' },
+          { id: 'WindowLevel', icon: '☀️', label: 'W/L' },
           { id: 'Zoom', icon: '🔍', label: 'Zoom' },
           { id: 'Pan', icon: '✋', label: 'Pan' },
-          { id: 'Length', icon: '📏', label: 'Measure' },
+          { id: 'StackScroll', icon: '📜', label: 'Scroll' },
+          { id: 'Length', icon: '📏', label: 'Length' },
           { id: 'Angle', icon: '📐', label: 'Angle' },
-          { id: 'EllipticalROI', icon: '⭕', label: 'ROI' },
-          { id: 'ArrowAnnotate', icon: '↗️', label: 'Annotate' },
+          { id: 'ArrowAnnotate', icon: '↗️', label: 'Annotate' }
         ].map(t => (
           <button 
             key={t.id}
@@ -877,12 +953,18 @@ export default function TechnicianPage() {
                         keyImages={keyImages}
                         activeTool={activeTool}
                         isCine={cineEnabled}
+                        onSliceChange={(index, total) => {
+                          if (idx === 0) setCurrentSlice(index + 1);
+                        }}
                       />
                       
                       {/* VIEWPORT HUD */}
                       <div style={{ position: 'absolute', top: '15px', left: '15px', display: 'flex', flexDirection: 'column', gap: '5px', zIndex: 10 }}>
                         <div style={{ background: 'rgba(15, 23, 42, 0.7)', backdropFilter: 'blur(8px)', padding: '4px 10px', borderRadius: '6px', fontSize: '9px', color: '#94a3b8', fontWeight: 950, letterSpacing: '1px', border: '1px solid rgba(255,255,255,0.1)' }}>
                            {uploadedFiles[(activeAssetIndex + idx) % uploadedFiles.length]?.name.toUpperCase() || 'NO_SIGNAL'}
+                        </div>
+                        <div style={{ background: 'rgba(59, 130, 246, 0.9)', padding: '2px 8px', borderRadius: '4px', fontSize: '10px', color: 'white', fontWeight: 900, width: 'fit-content' }}>
+                          SLICE: {idx === 0 ? currentSlice : '?'} / {uploadedFiles[(activeAssetIndex + idx) % uploadedFiles.length]?.rawFiles?.length || 0}
                         </div>
                         {isSyncEnabled && <div style={{ background: 'rgba(16, 185, 129, 0.9)', color: 'white', padding: '4px 8px', borderRadius: '4px', fontSize: '8px', fontWeight: 950 }}>🔗 SYNCED</div>}
                       </div>

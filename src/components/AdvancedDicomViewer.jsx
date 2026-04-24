@@ -279,6 +279,7 @@ const AdvancedDicomViewer = ({
   onImageStatus, 
   activeTool, 
   onMetadata, 
+  onSliceChange,
   isCine,
   invert,
   flipHorizontal,
@@ -520,7 +521,9 @@ const AdvancedDicomViewer = ({
                 
                 // Add listener for stack scroll index changes
                 elementRef.current.addEventListener(Enums.Events.STACK_NEW_IMAGE, (evt) => {
-                   setCurrentImageIndex(evt.detail.imageIdIndex);
+                   const index = evt.detail.imageIdIndex;
+                   setCurrentImageIndex(index);
+                   if (onSliceChange) onSliceChange(index, files.length);
                 });
 
                 // Use default DICOM VOI if available, otherwise fallback
