@@ -130,6 +130,8 @@ export default function AdminBoard() {
     letterhead: null
   });
   const [isPrescriptionSaving, setIsPrescriptionSaving] = useState(false);
+  const [isProtocolLoading, setIsProtocolLoading] = useState(false);
+  const [activeProtocolData, setActiveProtocolData] = useState(null);
 
   // Sync settings when doctor selection changes
   useEffect(() => {
@@ -143,10 +145,12 @@ export default function AdminBoard() {
         return;
       }
 
+      setIsProtocolLoading(true);
       try {
         const res = await apiClient.get(`/Prescription/${selectedPrescriptionDoctorId}`);
         const data = res.data.data;
         if (data) {
+          setActiveProtocolData(data);
           setPrescriptionSettings({
             headerMargin: data.headerMargin ?? 50,
             leftMargin: data.leftMargin ?? 20,
@@ -158,6 +162,14 @@ export default function AdminBoard() {
             letterhead: data.letterheadBlobUrl,
             letterheadFile: null
           });
+        } else {
+          setActiveProtocolData(null);
+          // Reset to defaults if no protocol found for this doctor
+          setPrescriptionSettings({
+            headerMargin: 50, leftMargin: 20, rightMargin: 20, bottomMargin: 30,
+            fontSize: 14, fontColor: '#1e293b', fontFamily: 'Inter', letterhead: null,
+            letterheadFile: null
+          });
         }
       } catch (err) {
         console.error("Failed to fetch protocol:", err);
@@ -166,6 +178,8 @@ export default function AdminBoard() {
           fontSize: 14, fontColor: '#1e293b', fontFamily: 'Inter', letterhead: null,
           letterheadFile: null
         });
+      } finally {
+        setIsProtocolLoading(false);
       }
     };
 
@@ -1481,6 +1495,12 @@ export default function AdminBoard() {
               </div>
            </div>
 
+           {isProtocolLoading && (
+              <div style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(15, 23, 42, 0.5)', zIndex: 10, display: 'flex', alignItems: 'center', justifyContent: 'center', borderRadius: '30px' }}>
+                <div className="pulse-loader"></div>
+              </div>
+           )}
+
            {isPrescriptionSaving && (
              <div style={{ 
                position: 'absolute', top: 0, left: 0, right: 0, height: '100%', 
@@ -1507,17 +1527,23 @@ export default function AdminBoard() {
            }}>
               {/* ASSET REFERENCE LAYER (PDF or IMAGE) */}
               {prescriptionSettings.letterhead && (
-                (prescriptionSettings.letterhead.toLowerCase().includes('.pdf') || (prescriptionSettings.letterheadFile && prescriptionSettings.letterheadFile.type === 'application/pdf')) ? (
-                  <embed 
-                    src={prescriptionSettings.letterhead} 
-                    type="application/pdf" 
+                (prescriptionSettings.letterhead.toLowerCase().includes('.pdf') || (prescriptionSettings.letterheadFile && prescriptionSettings.letterheadFile.type === 'application/pdf') || prescriptionSettings.letterhead.includes('type=pdf')) ? (
+                  <iframe 
+                    src={prescriptionSettings.letterhead}
                     style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', border: 'none', pointerEvents: 'none' }}
+                    title="PDF Preview"
                   />
                 ) : (
                   <img 
                     src={prescriptionSettings.letterhead} 
                     alt="Letterhead Preview"
                     style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', objectFit: 'fill', pointerEvents: 'none' }}
+                    onError={(e) => {
+                      // If image fails, maybe it was a PDF without extension
+                      if (!prescriptionSettings.letterhead.includes('docs.google.com')) {
+                        e.target.style.display = 'none';
+                      }
+                    }}
                   />
                 )
               )}
@@ -1574,8 +1600,17 @@ export default function AdminBoard() {
                 <div style={{ marginTop: '80px', textAlign: 'right' }}>
                    <div style={{ display: 'inline-block', textAlign: 'center' }}>
                       <div style={{ width: '200px', borderBottom: `1px solid ${prescriptionSettings.fontColor}`, marginBottom: '10px' }}></div>
-                      <div style={{ fontWeight: 900 }}>{selectedPrescriptionDoctorId ? doctors.find(d => d.id === selectedPrescriptionDoctorId)?.name.toUpperCase() : 'CONSULTANT_NAME'}</div>
-                      <div style={{ fontSize: '0.7em', opacity: 0.6 }}>{selectedPrescriptionDoctorId ? doctors.find(d => d.id === selectedPrescriptionDoctorId)?.degree : 'QUALIFICATIONS'}</div>
+                      <div style={{ fontWeight: 900 }}>
+                        {activeProtocolData?.doctor?.fullName?.toUpperCase() || (selectedPrescriptionDoctorId ? doctors.find(d => d.id === selectedPrescriptionDoctorId)?.name?.toUpperCase() : 'CONSULTANT_NAME')}
+                      </div>
+                      <div style={{ fontSize: '0.7em', opacity: 0.6 }}>
+                        {activeProtocolData?.doctor?.degree || (selectedPrescriptionDoctorId ? doctors.find(d => d.id === selectedPrescriptionDoctorId)?.degree : 'QUALIFICATIONS')}
+                      </div>
+                      {activeProtocolData?.doctor?.licenseNo && (
+                        <div style={{ fontSize: '0.6em', opacity: 0.5, marginTop: '2px' }}>
+                          Reg No: {activeProtocolData.doctor.licenseNo}
+                        </div>
+                      )}
                    </div>
                 </div>
               </div>

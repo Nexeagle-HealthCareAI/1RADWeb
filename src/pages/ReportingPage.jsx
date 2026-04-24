@@ -118,6 +118,8 @@ const ReportingPage = () => {
   const [isSaving, setIsSaving] = useState(false);
   const [appointmentId, setAppointmentId] = useState(null);
   const [activeAppointment, setActiveAppointment] = useState(null);
+  const [impression, setImpression] = useState('');
+  const [advice, setAdvice] = useState('');
 
   // --- DATA FETCHING ---
   const fetchReportingContext = useCallback(async (appId) => {
@@ -136,14 +138,19 @@ const ReportingPage = () => {
       if (protRes.data?.success) setProtocol(protRes.data.data);
       if (appRes?.data) setActiveAppointment(appRes.data);
       
-      if (reportRes.data?.success) {
+      if (reportRes.data?.success && reportRes.data.data) {
         const r = reportRes.data.data;
-        if (r.findings.startsWith('{')) {
-          setStructuredData(JSON.parse(r.findings));
+        if (r.findings && r.findings.startsWith('{')) {
+          try {
+            setStructuredData(JSON.parse(r.findings));
+          } catch (e) {
+            setEditorText(r.findings);
+          }
         } else {
-          setEditorText(r.findings);
+          setEditorText(r.findings || '');
         }
-        // Set other fields...
+        setImpression(r.impression || '');
+        setAdvice(r.advice || '');
       }
     } catch (err) {
       console.error('[REPORTING] Initialization failure', err);
@@ -462,16 +469,35 @@ const ReportingPage = () => {
               boxShadow: '0 10px 30px rgba(0,0,0,0.1)', 
               color: '#1e293b',
               position: 'relative',
-              backgroundImage: protocol?.letterheadBlobUrl ? `url(${protocol.letterheadBlobUrl})` : 'none',
-              backgroundSize: 'contain',
-              backgroundRepeat: 'no-repeat'
+              overflow: 'hidden'
             }}>
+              {/* ASSET REFERENCE LAYER (PDF or IMAGE) */}
+              {protocol?.letterheadBlobUrl && (
+                (protocol.letterheadBlobUrl.toLowerCase().includes('.pdf') || protocol.letterheadBlobUrl.includes('type=pdf')) ? (
+                  <iframe 
+                    src={protocol.letterheadBlobUrl}
+                    style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', border: 'none', pointerEvents: 'none' }}
+                    title="Letterhead"
+                  />
+                ) : (
+                  <img 
+                    src={protocol.letterheadBlobUrl} 
+                    alt="Letterhead"
+                    style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', objectFit: 'fill', pointerEvents: 'none' }}
+                  />
+                )
+              )}
+
               {/* Content Overlay with Protocol Margins */}
               <div style={{ 
+                position: 'relative',
+                zIndex: 2,
                 paddingTop: m.top, 
                 paddingLeft: m.left, 
                 paddingRight: m.right, 
-                paddingBottom: m.bottom 
+                paddingBottom: m.bottom,
+                boxSizing: 'border-box',
+                minHeight: '297mm'
               }}>
                 {/* Fallback header if no letterhead */}
                 {!protocol?.letterheadBlobUrl && (
@@ -495,10 +521,44 @@ const ReportingPage = () => {
                 <div dangerouslySetInnerHTML={{ __html: bodyContent }} />
                 
                 {/* Impression Block */}
-                <div style={{ marginTop: '30px' }}>
-                   <div style={{ fontSize: '11px', fontWeight: 950, color: '#0f52ba', marginBottom: '5px' }}>IMPRESSION:</div>
-                   <div style={{ fontSize: '14px', fontWeight: 900, borderLeft: '3px solid #0f52ba', paddingLeft: '15px' }}>
-                      NORMAL ULTRASOUND OF THE WHOLE ABDOMEN.
+                {(impression || activeTab === 'Structured') && (
+                  <div style={{ marginTop: '30px' }}>
+                    <div style={{ fontSize: '11px', fontWeight: 950, color: '#0f52ba', marginBottom: '5px' }}>IMPRESSION:</div>
+                    <div style={{ 
+                      fontSize: `${protocol?.fontSize || 14}px`, 
+                      fontWeight: 900, 
+                      borderLeft: `3px solid ${protocol?.fontColor || '#0f52ba'}`, 
+                      paddingLeft: '15px',
+                      color: protocol?.fontColor || '#1e293b'
+                    }}>
+                      {impression || 'NO SIGNIFICANT ABNORMALITY DETECTED.'}
+                    </div>
+                  </div>
+                )}
+                
+                {/* Advice Block */}
+                {advice && (
+                  <div style={{ marginTop: '20px' }}>
+                    <div style={{ fontSize: '11px', fontWeight: 950, color: '#64748b', marginBottom: '5px' }}>ADVICE:</div>
+                    <div style={{ fontSize: '13px', color: '#475569' }}>{advice}</div>
+                  </div>
+                )}
+
+                {/* Signature Block */}
+                <div style={{ marginTop: '60px', textAlign: 'right' }}>
+                   <div style={{ display: 'inline-block', textAlign: 'center' }}>
+                      <div style={{ width: '180px', borderBottom: `1px solid ${protocol?.fontColor || '#1e293b'}`, marginBottom: '10px' }}></div>
+                      <div style={{ fontWeight: 950, fontSize: '13px', color: protocol?.fontColor || '#1e293b' }}>
+                        {protocol?.doctor?.name?.toUpperCase() || 'AUTHORIZED RADIOLOGIST'}
+                      </div>
+                      <div style={{ fontSize: '10px', color: '#64748b', fontWeight: 700 }}>
+                        {protocol?.doctor?.degree || 'MD, RADIOLOGY'}
+                      </div>
+                      {protocol?.doctor?.licenseNo && (
+                        <div style={{ fontSize: '9px', color: '#94a3b8', marginTop: '2px' }}>
+                          Reg No: {protocol.doctor.licenseNo}
+                        </div>
+                      )}
                    </div>
                 </div>
               </div>
@@ -652,6 +712,13 @@ const ReportingPage = () => {
       });
     };
   }, []);
+
+  const handleSlashCommand = (cmd) => {
+    if (cmd === 'table') setShowTableModal(true);
+    else if (cmd === 'image') fileInputRef.current.click();
+    else if (cmd === 'diagram') alert('DIAGRAM_NODE: Integrated Flowchart engine coming soon.');
+    setShowSlashMenu(false);
+  };
 
   const resizeImg = (size) => {
     if (!selectedImg) return;
@@ -1549,6 +1616,7 @@ const ReportingPage = () => {
             {activeTab === 'Structured' && (
               <div style={{ display: 'flex', flexDirection: 'column', flex: 1 }}>
                 <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '12px', padding: '15px 20px', borderBottom: '1px solid #e2e8f0', background: '#fff', marginBottom: '10px' }}>
+                   <button className="btn btn-outline" style={{ padding: '10px 20px', fontSize: '12px' }} onClick={() => handleSaveReport(false)}>💾 Save Draft</button>
                    <button className="btn btn-outline" style={{ padding: '10px 20px', fontSize: '12px' }} onClick={handlePreviewPrint}>👁️ Preview Structured Report</button>
                    <button className="btn btn-success" style={{ padding: '10px 25px', fontSize: '12px' }} onClick={() => handleSaveReport(true)}>Finalize & Sign</button>
                 </div>
@@ -1627,6 +1695,8 @@ const ReportingPage = () => {
                     <textarea 
                       className="struct-textarea" 
                       placeholder="Type final clinical impression here..."
+                      value={impression}
+                      onChange={(e) => setImpression(e.target.value)}
                       style={{ minHeight: '120px', fontSize: '15px', fontWeight: 500 }}
                     />
                   </div>
@@ -1741,8 +1811,30 @@ const ReportingPage = () => {
                       onInput={handleEditorChange}
                       onKeyDown={handleKeyDown}
                       onBlur={() => setTimeout(() => setSelectedImg(null), 200)}
-                      style={{ height: 'calc(100vh - 250px)', minHeight: '400px' }}
+                      style={{ height: 'calc(100vh - 450px)', minHeight: '300px' }}
                     />
+
+                    {/* Bottom Narrative Inputs (Impression & Advice) */}
+                    <div style={{ padding: '20px', borderTop: '1px solid #e2e8f0', background: '#f8fafc', display: 'flex', gap: '20px' }}>
+                       <div style={{ flex: 1 }}>
+                          <label style={{ fontSize: '10px', fontWeight: 950, color: '#0f52ba', display: 'block', marginBottom: '8px' }}>CLINICAL IMPRESSION</label>
+                          <textarea 
+                            value={impression}
+                            onChange={(e) => setImpression(e.target.value)}
+                            placeholder="Enter final study impression..."
+                            style={{ width: '100%', padding: '12px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '13px', minHeight: '80px', outline: 'none' }}
+                          />
+                       </div>
+                       <div style={{ flex: 1 }}>
+                          <label style={{ fontSize: '10px', fontWeight: 950, color: '#64748b', display: 'block', marginBottom: '8px' }}>FOLLOW-UP ADVICE</label>
+                          <textarea 
+                            value={advice}
+                            onChange={(e) => setAdvice(e.target.value)}
+                            placeholder="Enter patient advice..."
+                            style={{ width: '100%', padding: '12px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '13px', minHeight: '80px', outline: 'none' }}
+                          />
+                       </div>
+                    </div>
 
                     {selectedImg && (
                       <div 
