@@ -7,6 +7,7 @@ import '../styles/AppointmentBoard.css';
 import AdvancedDicomViewer from '../components/AdvancedDicomViewer';
 import JSZip from 'jszip';
 import dicomParser from 'dicom-parser';
+import PrescriptionModal from '../components/PrescriptionModal';
 
 // --- CONSTANTS ---
 
@@ -78,6 +79,8 @@ export default function AppointmentBoard() {
   const [editingAppointment, setEditingAppointment] = useState(null);
   const [printModalData, setPrintModalData] = useState(null);
   const [tokenPrintData, setTokenPrintData] = useState(null);
+  const [isPrescriptionModalOpen, setIsPrescriptionModalOpen] = useState(false);
+  const [prescriptionData, setPrescriptionData] = useState(null);
 
   const [bookingStep, setBookingStep] = useState(1);
   const [currentPage, setCurrentPage] = useState(1);
@@ -826,6 +829,24 @@ export default function AppointmentBoard() {
               title="Print Thermal Token"
             >
               {'\u{1F5A8}\uFE0F'}
+            </button>
+
+            <button
+              onClick={(e) => { 
+                e.stopPropagation(); 
+                // Find doctor ID if possible, or pass the doctor name
+                setPrescriptionData(app);
+                setIsPrescriptionModalOpen(true);
+              }}
+              style={{
+                width: '28px', height: '28px', borderRadius: '8px',
+                background: '#fef3c7', border: '1px solid #fde68a', cursor: 'pointer',
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                fontSize: '12px', color: '#d97706', transition: 'all 0.2s',
+              }}
+              title="Print Prescription"
+            >
+              {'\u{1F4DC}'}
             </button>
 
             {app.status !== 'cancelled' && app.status !== 'completed' && (
@@ -1918,6 +1939,14 @@ export default function AppointmentBoard() {
       {renderDrawer()}
       {renderEditModal()}
       {renderTokenModal()}
+      
+      <PrescriptionModal 
+        isOpen={isPrescriptionModalOpen}
+        onClose={() => setIsPrescriptionModalOpen(false)}
+        doctorId={prescriptionData?.doctorId}
+        doctorName={prescriptionData?.doctor}
+        patientData={prescriptionData}
+      />
     </div>
   );
 }

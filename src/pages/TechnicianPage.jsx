@@ -3,6 +3,7 @@ import JSZip from 'jszip';
 import dicomParser from 'dicom-parser';
 import apiClient from '../api/apiClient';
 import AdvancedDicomViewer from '../components/AdvancedDicomViewer';
+import PrescriptionModal from '../components/PrescriptionModal';
 import '../styles/global.css';
 
 const MODALITY_ICONS = {
@@ -38,6 +39,8 @@ export default function TechnicianPage() {
   const [techNotes, setTechNotes] = useState('');
   const [currentSlice, setCurrentSlice] = useState(1);
   const [printModalData, setPrintModalData] = useState(null);
+  const [isPrescriptionModalOpen, setIsPrescriptionModalOpen] = useState(false);
+  const [prescriptionData, setPrescriptionData] = useState(null);
 
   // Pagination & Archive Filtering
   const [archivePage, setArchivePage] = useState(1);
@@ -609,19 +612,36 @@ export default function TechnicianPage() {
                     </td>
                     <td style={{ padding: '8px 15px', textAlign: 'right' }}>
                       {hubTab === 'ACTIVE' ? (
-                        <button 
-                          className="gamified-btn" 
-                          disabled={!isArrived}
-                          style={{ padding: '10px 20px', borderRadius: '12px', fontSize: '11px', opacity: isArrived ? 1 : 0.4, cursor: isArrived ? 'pointer' : 'not-allowed', background: isDone ? '#1e293b' : '#0f52ba' }} 
-                          onClick={() => handleOpenWorkspace(study)}
-                        >
-                          {isDone ? 'REVIEW DATA' : 'ENTER WORKSPACE'}
-                        </button>
+                        <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
+                          <button 
+                            onClick={(e) => { e.stopPropagation(); setPrescriptionData(study); setIsPrescriptionModalOpen(true); }}
+                            style={{ 
+                              padding: '10px', borderRadius: '12px', background: '#fef3c7', color: '#d97706', 
+                              border: '1px solid #fde68a', cursor: 'pointer', display: 'flex', 
+                              alignItems: 'center', justifyContent: 'center' 
+                            }}
+                            title="Print Prescription"
+                          >📜</button>
+                          <button 
+                            className="gamified-btn" 
+                            disabled={!isArrived}
+                            style={{ padding: '10px 20px', borderRadius: '12px', fontSize: '11px', opacity: isArrived ? 1 : 0.4, cursor: isArrived ? 'pointer' : 'not-allowed', background: isDone ? '#1e293b' : '#0f52ba' }} 
+                            onClick={() => handleOpenWorkspace(study)}
+                          >
+                            {isDone ? 'REVIEW DATA' : 'ENTER WORKSPACE'}
+                          </button>
+                        </div>
                       ) : (
                         <div style={{ display: 'flex', gap: '10px', justifyContent: 'flex-end' }}>
                           <button 
+                            onClick={() => { setPrescriptionData(study); setIsPrescriptionModalOpen(true); }}
+                            style={{ padding: '10px', borderRadius: '12px', border: '1px solid #fde68a', background: '#fef3c7', cursor: 'pointer' }}
+                            title="Print Prescription"
+                          >📜</button>
+                          <button 
                             onClick={() => setPrintModalData(study)}
                             style={{ padding: '10px', borderRadius: '12px', border: '1px solid #e2e8f0', background: 'white', cursor: 'pointer' }}
+                            title="Print Dispatch"
                           >🖨️</button>
                           <button 
                             className="gamified-btn" 
@@ -983,6 +1003,14 @@ export default function TechnicianPage() {
     <div className="page-wrapper" style={{ padding: 0, background: currentView === 'QUEUE' ? '#fcfdfe' : '#f8fafc' }}>
       {currentView === 'QUEUE' ? renderQueue() : renderWorkspace()}
       {renderPrintModal()}
+      
+      <PrescriptionModal 
+        isOpen={isPrescriptionModalOpen}
+        onClose={() => setIsPrescriptionModalOpen(false)}
+        doctorId={prescriptionData?.doctorId}
+        doctorName={prescriptionData?.doctor}
+        patientData={prescriptionData}
+      />
       <style>{`
         .gamified-btn {
           background: #0f52ba;

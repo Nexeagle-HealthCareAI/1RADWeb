@@ -1,6 +1,7 @@
 import { useState, useMemo, useEffect, useCallback, useRef } from 'react';
 import dicomParser from 'dicom-parser';
 import apiClient from '../api/apiClient';
+import PrescriptionModal from '../components/PrescriptionModal';
 import '../styles/global.css';
 
 const MODALITY_ICONS = {
@@ -35,6 +36,8 @@ export default function DoctorBoard() {
   const [isFinalizing, setIsFinalizing] = useState(false);
   const [currentSlice, setCurrentSlice] = useState(1);
   const [printModalData, setPrintModalData] = useState(null);
+  const [isPrescriptionModalOpen, setIsPrescriptionModalOpen] = useState(false);
+  const [prescriptionData, setPrescriptionData] = useState(null);
 
   // Filters
   const [search, setSearch] = useState('');
@@ -455,6 +458,15 @@ export default function DoctorBoard() {
                     </td>
                     <td style={{ padding: '20px', textAlign: 'right' }}>
                       <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
+                        <button 
+                          onClick={(e) => { e.stopPropagation(); setPrescriptionData(c); setIsPrescriptionModalOpen(true); }}
+                          style={{ 
+                            width: '38px', height: '38px', borderRadius: '12px', background: '#fef3c7', color: '#d97706', 
+                            border: '1px solid #fde68a', cursor: 'pointer', display: 'flex', 
+                            alignItems: 'center', justifyContent: 'center', fontSize: '18px'
+                          }}
+                          title="Print Prescription"
+                        >📜</button>
                         {view === 'HISTORY' && <button className="icon-btn" onClick={() => setPrintModalData(c)}>🖨️</button>}
                         <button 
                           className="gamified-btn" 
@@ -538,9 +550,18 @@ export default function DoctorBoard() {
 
                        <div style={{ marginTop: 'auto', display: 'flex', gap: '10px' }}>
                           <button 
+                            onClick={(e) => { e.stopPropagation(); setPrescriptionData(c); setIsPrescriptionModalOpen(true); }}
+                            style={{ 
+                              width: '45px', height: '45px', borderRadius: '12px', background: '#fef3c7', color: '#d97706', 
+                              border: '1px solid #fde68a', cursor: 'pointer', display: 'flex', 
+                              alignItems: 'center', justifyContent: 'center', fontSize: '20px'
+                            }}
+                            title="Print Prescription"
+                          >📜</button>
+                          <button 
                             className="btn btn-primary"
                             onClick={() => handleOpenWorkspace(c)}
-                            style={{ flex: 1, padding: '12px', borderRadius: '10px', fontSize: '11px', fontWeight: 950 }}
+                            style={{ flex: 1, padding: '12px', borderRadius: '10px', fontSize: '11px', fontWeight: 950, background: '#0f52ba', border: 'none', color: 'white', cursor: 'pointer' }}
                           >EXECUTE_REPORTER</button>
                        </div>
                     </div>
@@ -691,6 +712,14 @@ export default function DoctorBoard() {
     <div className="page-wrapper" style={{ padding: 0, background: '#fcfdfe' }}>
       {view === 'WORKSPACE' ? renderWorkspace() : renderQueue()}
       {renderPrintModal()}
+      
+      <PrescriptionModal 
+        isOpen={isPrescriptionModalOpen}
+        onClose={() => setIsPrescriptionModalOpen(false)}
+        doctorId={prescriptionData?.doctorId}
+        doctorName={prescriptionData?.doctor}
+        patientData={prescriptionData}
+      />
       <style>{`
         .gamified-btn { background: #0f52ba; color: white; border: none; font-weight: 950; cursor: pointer; transition: all 0.2s; box-shadow: 0 4px 15px rgba(15, 82, 186, 0.2); }
         .gamified-btn:hover { background: #0d44a0; transform: translateY(-2px); box-shadow: 0 6px 20px rgba(15, 82, 186, 0.3); }
