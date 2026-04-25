@@ -1,4 +1,5 @@
 import React, { useState, useRef, useEffect, useMemo, useCallback } from 'react';
+import { useNavigate, useParams } from 'react-router-dom';
 import JSZip from 'jszip';
 import dicomParser from 'dicom-parser';
 import AdvancedDicomViewer from '../components/AdvancedDicomViewer';
@@ -6,53 +7,26 @@ import apiClient from '../api/apiClient';
 import { DicomCache } from '../utils/DicomCache';
 
 const ReportingPage = () => {
+  const navigate = useNavigate();
+  const params = useParams();
+  const appointmentId = params.id;
   const [activeTab, setActiveTab] = useState('Structured');
   const [showKeywordDrawer, setShowKeywordDrawer] = useState(false);
   const [showTableModal, setShowTableModal] = useState(false);
-  const [editorText, setEditorText] = useState('Liver is normal in size and echotexture. No focal hepatic lesion is seen.\n\n');
+  const [editorText, setEditorText] = useState('');
   const [showInlineSuggestion, setShowInlineSuggestion] = useState(false);
   const [showSlashMenu, setShowSlashMenu] = useState(false);
   const [cursorPos, setCursorPos] = useState({ top: 0, left: 0 });
   const [history, setHistory] = useState([editorText]);
   const [historyIndex, setHistoryIndex] = useState(0);
-  const [templates, setTemplates] = useState([
-    { 
-      id: 1, 
-      name: 'USG Whole Abdomen', 
-      modality: 'USG', 
-      lastModified: '2 days ago',
-      sections: [
-        { id: 1, title: 'Clinical History', content: 'Pain abdomen, fever.' },
-        { id: 2, title: 'Findings', content: 'LIVER: Normal size and echotexture. No focal hepatic lesion seen.\nGB: Normal wall thickness. No calculus seen.\nCBD: Normal caliber.\nPANCREAS: Normal.\nSPLEEN: Normal.\nKIDNEYS: Normal size and position. No calculus or hydronephrosis seen.' },
-        { id: 3, title: 'Impression', content: 'NORMAL ULTRASOUND OF THE WHOLE ABDOMEN.' }
-      ]
-    },
-    { 
-      id: 2, 
-      name: 'USG KUB', 
-      modality: 'USG', 
-      lastModified: '1 week ago',
-      sections: [
-        { id: 1, title: 'Clinical History', content: 'Lower back pain.' },
-        { id: 2, title: 'Findings', content: 'KIDNEYS: Normal size. No calculus seen.\nURETERS: Normal.\nBLADDER: Normal wall thickness. No calculus.' },
-        { id: 3, title: 'Impression', content: 'NORMAL USG KUB.' }
-      ]
-    }
-  ]);
+  const [templates, setTemplates] = useState([]);
   const [showTemplateForm, setShowTemplateForm] = useState(false);
   const [newTemplate, setNewTemplate] = useState({ 
     name: '', 
     modality: 'USG', 
-    sections: [
-      { id: 1, title: 'Clinical History', content: 'Pain abdomen, fever.' },
-      { id: 2, title: 'Findings', content: 'LIVER: Normal size.\nKIDNEYS: {{size}} cm.' },
-      { id: 3, title: 'Impression', content: 'Normal study.' }
-    ]
+    sections: []
   });
-  const [keywordLibrary, setKeywordLibrary] = useState([
-    { id: 1, keyword: 'normal_liver', paragraph: 'LIVER: Normal in size and echotexture. No focal lesion seen. Intrahepatic biliary radicals are not dilated.' },
-    { id: 2, keyword: 'gb_stone', paragraph: 'GALL BLADDER: Shows echogenic calculi with posterior acoustic shadowing. No pericholecystic fluid is seen.' }
-  ]);
+  const [keywordLibrary, setKeywordLibrary] = useState([]);
   const [tablePresets, setTablePresets] = useState([
     { id: 1, name: 'Lesion Measurement', columns: ['Lesion #', 'Location', 'Size (cm)', 'Description'] },
     { id: 2, name: 'Organ Dimensions', columns: ['Organ', 'Size (cm)', 'Echotexture', 'Contours'] }
@@ -60,22 +34,18 @@ const ReportingPage = () => {
   const [showTableBuilder, setShowTableBuilder] = useState(false);
   const [newTable, setNewTable] = useState({ name: '', columns: [''] });
   const [showNewKeywordForm, setShowNewKeywordForm] = useState(false);
-  const [newMacro, setNewMacro] = useState({ keyword: '', paragraph: '' });
+  const [newMacro, setNewMacro] = useState({ trigger: '', replacementText: '' });
   const textareaRef = useRef(null);
   const macroTextareaRef = useRef(null);
   const fileInputRef = useRef(null);
   const [selectedImg, setSelectedImg] = useState(null);
   const [imgToolbarPos, setImgToolbarPos] = useState({ top: 0, left: 0 });
   const [isFullscreen, setIsFullscreen] = useState(false);
-  
-  // --- SEARCH & PAGINATION STATES ---
   const [templateSearch, setTemplateSearch] = useState('');
   const [templatePage, setTemplatePage] = useState(1);
   const [keywordSearch, setKeywordSearch] = useState('');
   const [keywordPage, setKeywordPage] = useState(1);
   const itemsPerPage = 5;
-
-  // --- DICOM VIEWER STATES ---
   const [activeAssetIndex, setActiveAssetIndex] = useState(0);
   const [uploadedFiles, setUploadedFiles] = useState([]);
   const [currentSlice, setCurrentSlice] = useState(1);
@@ -94,10 +64,19 @@ const ReportingPage = () => {
   const [editorWidth, setEditorWidth] = useState(50); // percentage
   const [isPreviewOpen, setIsPreviewOpen] = useState(false);
   const isResizing = useRef(false);
-
-  // --- RESPONSIVE STATE ---
   const [isTablet, setIsTablet] = useState(window.innerWidth < 1100);
   const [activeWorkspaceMode, setActiveWorkspaceMode] = useState('split'); // 'split', 'dicom', 'editor'
+  
+  // --- API SYNC STATES ---
+  const [protocol, setProtocol] = useState(null);
+  const [isSaving, setIsSaving] = useState(false);
+
+  const [activeAppointment, setActiveAppointment] = useState(null);
+  const [impression, setImpression] = useState('');
+  const [advice, setAdvice] = useState('');
+  const [isFinalized, setIsFinalized] = useState(false);
+  const [structuredData, setStructuredData] = useState({});
+  const [selectedTemplateId, setSelectedTemplateId] = useState(null);
 
   useEffect(() => {
     const handleResize = () => {
@@ -112,15 +91,7 @@ const ReportingPage = () => {
     return () => window.removeEventListener('resize', handleResize);
   }, [activeWorkspaceMode]);
 
-  // --- API SYNC STATES ---
-  const [dbTemplates, setDbTemplates] = useState([]);
-  const [dbKeywords, setDbKeywords] = useState([]);
-  const [protocol, setProtocol] = useState(null);
-  const [isSaving, setIsSaving] = useState(false);
-  const [appointmentId, setAppointmentId] = useState(null);
-  const [activeAppointment, setActiveAppointment] = useState(null);
-  const [impression, setImpression] = useState('');
-  const [advice, setAdvice] = useState('');
+
 
   // --- DATA FETCHING ---
   const fetchReportingContext = useCallback(async (appId) => {
@@ -135,29 +106,18 @@ const ReportingPage = () => {
         apiClient.get(`/Study/${appId}/assets`).catch(() => ({ data: [] }))
       ]);
 
-      if (templRes.data?.success) setDbTemplates(templRes.data.data);
-      if (keyRes.data?.success) setDbKeywords(keyRes.data.data);
+      if (templRes.data?.success) setTemplates(templRes.data.data);
+      if (keyRes.data?.success) setKeywordLibrary(keyRes.data.data);
       if (protRes.data?.success) setProtocol(protRes.data.data);
       if (appRes?.data) setActiveAppointment(appRes.data);
       
-      // Load Existing Assets
-      if (assetRes.data && assetRes.data.length > 0) {
-        const hydAssets = assetRes.data.map(asset => ({
-          id: asset.id,
-          name: asset.fileName,
-          type: asset.fileType.toUpperCase(),
-          remoteUrl: asset.blobUrl,
-          needsHydration: asset.fileType.toLowerCase() === 'zip',
-          rawFiles: []
-        }));
-        setUploadedFiles(hydAssets);
-      }
-
+      // If existing report found, populate state
       if (reportRes.data?.success && reportRes.data.data) {
         const r = reportRes.data.data;
         if (r.findings && r.findings.startsWith('{')) {
           try {
-            setStructuredData(JSON.parse(r.findings));
+            const parsed = JSON.parse(r.findings);
+            setStructuredData(parsed);
           } catch (e) {
             setEditorText(r.findings);
           }
@@ -166,6 +126,8 @@ const ReportingPage = () => {
         }
         setImpression(r.impression || '');
         setAdvice(r.advice || '');
+        setIsFinalized(r.isFinalized);
+        if (r.templateId) setSelectedTemplateId(r.templateId);
       }
     } catch (err) {
       console.error('[REPORTING] Initialization failure', err);
@@ -175,16 +137,12 @@ const ReportingPage = () => {
   }, []);
 
   useEffect(() => {
-    const params = new URLSearchParams(window.location.search);
-    const id = params.get('id');
-    if (id) {
-      setAppointmentId(id);
-      fetchReportingContext(id);
+    if (appointmentId) {
+      fetchReportingContext(appointmentId);
     }
-  }, [fetchReportingContext]);
+  }, [appointmentId, fetchReportingContext]);
 
-  // Dynamic state for structured fields
-  const [structuredData, setStructuredData] = useState({});
+
 
   const handleStructuredChange = (fieldId, value) => {
     setStructuredData(prev => ({ ...prev, [fieldId]: value }));
@@ -217,6 +175,114 @@ const ReportingPage = () => {
       ));
     } catch (e) {
       return <div style={{ color: '#ef4444', fontSize: '12px' }}>[ CONFIGURATION ERROR: Invalid Template Schema ]</div>;
+    }
+  };
+  const handleSaveReport = async (finalizing = false) => {
+    if (!appointmentId) {
+      alert('APPOINTMENT CONTEXT MISSING: Cannot save report.');
+      return;
+    }
+    setIsSaving(true);
+    try {
+      const payload = {
+        appointmentId: appointmentId,
+        templateId: selectedTemplateId,
+        findings: activeTab === 'Structured' ? JSON.stringify(structuredData) : editorText,
+        impression: impression || 'NORMAL STUDY',
+        advice: advice,
+        isFinalized: finalizing
+      };
+
+      const res = await apiClient.post('/reporting/save', payload);
+      if (res.data?.success) {
+        alert(finalizing ? 'STRATEGIC DISPATCH COMPLETE: Report finalized.' : 'DRAFT PERSISTED: Changes saved.');
+        if (finalizing) {
+          setIsFinalized(true);
+          navigate('/doctor-board');
+        }
+      }
+    } catch (err) {
+      alert(`SAVE FAILURE: ${err.response?.data?.error || err.message}`);
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const handleSaveTemplate = async () => {
+    try {
+      const payload = {
+        name: newTemplate.name,
+        modality: newTemplate.modality,
+        description: `Custom ${newTemplate.modality} Template`,
+        content: JSON.stringify(newTemplate.sections),
+        isStructured: true
+      };
+      const res = await apiClient.post('/reporting/templates/upsert', payload);
+      if (res.data.success) {
+        alert('TEMPLATE PUBLISHED: Added to clinical library.');
+        setShowTemplateForm(false);
+        fetchReportingContext(appointmentId);
+      }
+    } catch (err) {
+      alert('TEMPLATE SAVE FAILURE');
+    }
+  };
+
+  const handleDeleteTemplate = async (id) => {
+    if (!window.confirm('Are you sure you want to delete this template?')) return;
+    try {
+      await apiClient.delete(`/reporting/templates/${id}`);
+      fetchReportingContext(appointmentId);
+    } catch (err) {
+      alert('DELETE FAILURE');
+    }
+  };
+
+  const handleSaveMacro = async () => {
+    try {
+      const res = await apiClient.post('/reporting/keywords/upsert', newMacro);
+      if (res.data.success) {
+        alert('MACRO SYNCHRONIZED: Available for shorthand entry.');
+        setShowNewKeywordForm(false);
+        fetchReportingContext(appointmentId);
+      }
+    } catch (err) {
+      alert('MACRO SAVE FAILURE');
+    }
+  };
+
+  const handleDeleteKeyword = async (id) => {
+    if (!window.confirm('Delete this macro shortcut?')) return;
+    try {
+      await apiClient.delete(`/reporting/keywords/${id}`);
+      fetchReportingContext(appointmentId);
+    } catch (err) {
+      alert('DELETE FAILURE');
+    }
+  };
+
+  const handleApplyTemplate = (template) => {
+    setSelectedTemplateId(template.id);
+    setActiveTab('Structured');
+    try {
+      const sections = JSON.parse(template.content);
+      const initialData = {};
+      sections.forEach(s => {
+        initialData[s.id] = s.default || '';
+      });
+      setStructuredData(initialData);
+    } catch (e) {
+      setEditorText(template.content);
+      setActiveTab('Narrative Editor');
+    }
+  };
+
+  const handleApplyKeyword = (macro) => {
+    if (activeTab === 'Narrative Editor') {
+      insertContent(macro.replacementText || '');
+    } else {
+      alert(`KEYWORD: "${macro.trigger || ''}" copied to clipboard. Paste into your structured field.`);
+      navigator.clipboard.writeText(macro.replacementText || '');
     }
   };
 
@@ -444,29 +510,6 @@ const ReportingPage = () => {
     }
     setEditorText(el.innerHTML);
   };
-
-  const handleSaveReport = async (isFinal) => {
-    if (!appointmentId) return;
-    setIsSaving(true);
-    try {
-      const payload = {
-        appointmentId,
-        findings: activeTab === 'Structured' ? JSON.stringify(structuredData) : editorText,
-        impression: 'NORMAL STUDY', // To be linked to a real impression field
-        isFinalized: isFinal
-      };
-      const res = await apiClient.post('/reporting/save', payload);
-      if (res.data.success) {
-        alert(isFinal ? 'STRATEGIC DISPATCH COMPLETE: Report finalized.' : 'DRAFT PERSISTED: Changes saved.');
-        if (isFinal) window.location.href = '/doctor-board';
-      }
-    } catch (err) {
-      alert(`SYNC FAILURE: ${err.response?.data?.error || err.message}`);
-    } finally {
-      setIsSaving(false);
-    }
-  };
-
   const insertContent = (content) => {
     const el = textareaRef.current;
     if (!el) return;
@@ -540,8 +583,8 @@ const ReportingPage = () => {
   const paginatedTemplates = filteredTemplates.slice((templatePage - 1) * itemsPerPage, templatePage * itemsPerPage);
 
   const filteredKeywords = (keywordLibrary || []).filter(k => 
-    k.keyword.toLowerCase().includes(keywordSearch.toLowerCase()) ||
-    k.paragraph.toLowerCase().includes(keywordSearch.toLowerCase())
+    (k.trigger || '').toLowerCase().includes(keywordSearch.toLowerCase()) ||
+    (k.replacementText || '').toLowerCase().includes(keywordSearch.toLowerCase())
   );
   const totalKeywordPages = Math.ceil(filteredKeywords.length / itemsPerPage);
   const paginatedKeywords = filteredKeywords.slice((keywordPage - 1) * itemsPerPage, keywordPage * itemsPerPage);
@@ -720,7 +763,7 @@ const ReportingPage = () => {
       const beforeCursor = text.substring(0, cursor);
       const lastSegment = beforeCursor.split(/\s+/).pop();
 
-      const match = keywordLibrary.find(k => k.keyword.toLowerCase() === lastSegment.toLowerCase());
+      const match = keywordLibrary.find(k => (k.trigger || '').toLowerCase() === lastSegment.toLowerCase());
       if (match) {
         e.preventDefault();
         
@@ -729,20 +772,12 @@ const ReportingPage = () => {
         range.deleteContents();
         
         // Insert the paragraph
-        const html = match.paragraph.replace(/\n/g, '<br>');
+        const html = (match.replacementText || '').replace(/\n/g, '<br>');
         document.execCommand('insertHTML', false, html);
         
         setEditorText(el.innerHTML);
       }
     }
-  };
-
-  const handleSaveMacro = () => {
-    if (!newMacro.keyword || !newMacro.paragraph) return alert('Please fill both fields');
-    setKeywordLibrary([...keywordLibrary, { id: Date.now(), ...newMacro }]);
-    setShowNewKeywordForm(false);
-    setNewMacro({ keyword: '', paragraph: '' });
-    if (macroTextareaRef.current) macroTextareaRef.current.innerHTML = '';
   };
 
   const formatMacroText = (style) => {
@@ -752,7 +787,7 @@ const ReportingPage = () => {
     if (style === 'bold') document.execCommand('bold', false, null);
     else if (style === 'italic') document.execCommand('italic', false, null);
     else if (style === 'underline') document.execCommand('underline', false, null);
-    setNewMacro({ ...newMacro, paragraph: el.innerHTML });
+    setNewMacro({ ...newMacro, replacementText: el.innerHTML });
   };
 
   // --- TACTICAL LAYOUT ENGINE ---
@@ -867,28 +902,6 @@ const ReportingPage = () => {
       setSelectedImg(null);
       setEditorText(textareaRef.current.innerHTML);
     }
-  };
-
-  const handleSaveTemplate = () => {
-    if (!newTemplate.name) return alert('Please enter a template name');
-    const template = {
-      ...newTemplate,
-      id: Date.now(),
-      lastModified: 'Just now',
-      contentPreview: newTemplate.sections.map(s => s.title).join(', ')
-    };
-    setTemplates([template, ...templates]);
-    setShowTemplateForm(false);
-    setNewTemplate({ 
-      name: '', 
-      modality: 'USG', 
-      sections: [
-        { id: 1, title: 'Clinical History', content: '' },
-        { id: 2, title: 'Findings', content: '' },
-        { id: 3, title: 'Impression', content: '' },
-        { id: 4, title: 'Recommendation', content: '' }
-      ] 
-    });
   };
 
   const addSection = () => {
@@ -1783,85 +1796,58 @@ const ReportingPage = () => {
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px', padding: '15px', background: '#f8fafc', borderRadius: '10px', border: '1px solid #e2e8f0' }}>
                     <div style={{ flex: 1 }}>
                       <label style={{ fontSize: '10px', fontWeight: 950, color: '#94a3b8', textTransform: 'uppercase', display: 'block', marginBottom: '8px', letterSpacing: '1px' }}>Active Template</label>
-                      <select className="template-selector" defaultValue="usg_abdomen" style={{ margin: 0, width: '100%', maxWidth: '300px', fontWeight: 700 }}>
-                        <option value="usg_abdomen">USG Whole Abdomen - Standard</option>
-                        <option value="usg_kub">USG KUB</option>
-                        <option value="usg_pelvis">USG Pelvis</option>
+                      <select 
+                        className="template-selector" 
+                        value={selectedTemplateId || ''} 
+                        onChange={(e) => {
+                          const tpl = templates.find(t => t.id === e.target.value);
+                          if (tpl) {
+                            setSelectedTemplateId(tpl.id);
+                            // Parse content and apply to structuredData
+                            try {
+                               const sections = JSON.parse(tpl.content || '[]');
+                               const data = {};
+                               sections.forEach(s => {
+                                 data[s.title] = s.content;
+                               });
+                               setStructuredData(data);
+                            } catch (e) {
+                               console.error('Template parse error:', e);
+                            }
+                          }
+                        }}
+                      >
+                        <option value="">Select Clinical Template...</option>
+                        {templates.map(tpl => (
+                          <option key={tpl.id} value={tpl.id}>{tpl.name}</option>
+                        ))}
                       </select>
                     </div>
-                    <div style={{ width: '150px', marginLeft: '20px' }}>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '6px' }}>
-                        <span style={{ fontSize: '10px', fontWeight: 950, color: '#94a3b8', letterSpacing: '1px' }}>COMPLETION</span>
-                        <span style={{ fontSize: '10px', fontWeight: 950, color: '#10b981' }}>85%</span>
+                  </div>
+                    {selectedTemplateId ? (
+                      <div className="structured-form" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: '25px' }}>
+                        {renderDynamicFields(templates.find(t => t.id === selectedTemplateId))}
+                        
+                        {/* Global Impression for Structured Mode */}
+                        <div style={{ gridColumn: '1 / -1', marginTop: '20px', pt: '20px', borderTop: '2px solid #f1f5f9' }}>
+                          <label style={{ fontSize: '11px', fontWeight: 800, color: '#4338ca', display: 'block', marginBottom: '8px' }}>CLINICAL IMPRESSION / CONCLUSION</label>
+                          <textarea 
+                            value={impression}
+                            onChange={(e) => setImpression(e.target.value)}
+                            placeholder="Type final clinical impression here..."
+                            style={{ width: '100%', padding: '15px', borderRadius: '10px', border: '1px solid #cbd5e1', fontSize: '14px', minHeight: '120px', outline: 'none' }}
+                          />
+                        </div>
                       </div>
-                      <div style={{ height: '6px', background: '#e2e8f0', borderRadius: '3px', overflow: 'hidden' }}>
-                        <div style={{ width: '85%', height: '100%', background: '#10b981' }}></div>
+                    ) : (
+                      <div style={{ textAlign: 'center', padding: '100px 0', color: '#94a3b8' }}>
+                        <div style={{ fontSize: '48px', marginBottom: '20px' }}>📑</div>
+                        <h3 style={{ fontSize: '18px', fontWeight: 600 }}>No Protocol Selected</h3>
+                        <p>Choose a clinical template from the dropdown above to begin structured entry.</p>
                       </div>
-                    </div>
-                  </div>
-
-                  <div className="struct-section">
-                    <div className="struct-header">
-                      <span>Clinical History</span>
-                      <span className="status-indicator"></span>
-                    </div>
-                    <textarea 
-                      className="struct-textarea" 
-                      placeholder="Type 'gbstone'..."
-                    />
-                  </div>
-                  
-                  <div className="struct-section">
-                    <div className="struct-header">
-                      <span>CBD</span>
-                      <span className="status-indicator"></span>
-                    </div>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                      <input type="text" defaultValue="5" style={{ width: '60px', padding: '8px', border: '1px solid #cbd5e1', borderRadius: '6px', fontSize: '14px', outline: 'none' }} />
-                      <span style={{ fontSize: '13px', color: '#64748b', fontWeight: 600 }}>mm</span>
-                    </div>
-                  </div>
-
-                  <div className="struct-section">
-                    <div className="struct-header">
-                      <span>Pancreas</span>
-                      <span className="status-indicator status-empty"></span>
-                    </div>
-                    <textarea className="struct-textarea" placeholder="Normal" />
-                  </div>
-                  
-                  <div className="struct-section">
-                    <div className="struct-header">
-                      <span>Spleen</span>
-                      <span className="status-indicator status-empty"></span>
-                    </div>
-                    <textarea className="struct-textarea" placeholder="Normal" />
-                  </div>
-                  
-                  <div className="struct-section">
-                    <div className="struct-header">
-                      <span>Kidneys</span>
-                      <span className="status-indicator status-empty"></span>
-                    </div>
-                    <textarea className="struct-textarea" placeholder="Normal" />
-                  </div>
-                  <div className="struct-section" style={{ border: '2px solid #e0e7ff', background: '#f8faff' }}>
-                    <div className="struct-header">
-                      <span style={{ color: '#4338ca', fontWeight: 800 }}>IMPRESSION / CONCLUSION</span>
-                      <span className="status-indicator" style={{ background: '#4338ca' }}></span>
-                    </div>
-                    <textarea 
-                      className="struct-textarea" 
-                      placeholder="Type final clinical impression here..."
-                      value={impression}
-                      onChange={(e) => setImpression(e.target.value)}
-                      style={{ minHeight: '120px', fontSize: '15px', fontWeight: 500 }}
-                    />
+                    )}
                   </div>
                 </div>
-
-
-              </div>
             )}
 
             {activeTab === 'Narrative Editor' && (
@@ -2186,7 +2172,10 @@ const ReportingPage = () => {
                           <td>{tpl.modality}</td>
                           <td>{tpl.lastModified}</td>
                           <td>
-                            <button className="btn btn-outline" style={{ padding: '4px 8px', fontSize: '12px' }}>Edit</button>
+                            <div style={{ display: 'flex', gap: '8px' }}>
+                              <button className="btn btn-outline" style={{ padding: '4px 8px', fontSize: '12px' }}>Edit</button>
+                              <button className="btn btn-outline" style={{ color: '#ef4444', padding: '4px 8px', fontSize: '12px' }} onClick={() => handleDeleteTemplate(tpl.id)}>Delete</button>
+                            </div>
                           </td>
                         </tr>
                       )) : (
@@ -2248,8 +2237,8 @@ const ReportingPage = () => {
                         <input 
                           type="text" 
                           placeholder="e.g., normal_liver" 
-                          value={newMacro.keyword}
-                          onChange={e => setNewMacro({...newMacro, keyword: e.target.value})}
+                          value={newMacro.trigger}
+                          onChange={e => setNewMacro({...newMacro, trigger: e.target.value})}
                           style={{ width: '100%', padding: '12px', border: '1px solid #cbd5e1', borderRadius: '8px', fontSize: '14px', fontWeight: 700, color: '#2563eb' }}
                         />
                         <div style={{ fontSize: '10px', color: '#94a3b8', marginTop: '5px' }}>Type this in the editor and press Enter.</div>
@@ -2267,7 +2256,7 @@ const ReportingPage = () => {
                         <div 
                           ref={macroTextareaRef}
                           contentEditable="true"
-                          onInput={(e) => setNewMacro({...newMacro, paragraph: e.currentTarget.innerHTML})}
+                          onInput={(e) => setNewMacro({...newMacro, replacementText: e.currentTarget.innerHTML})}
                           style={{ minHeight: '150px', padding: '15px', border: '1px solid #cbd5e1', borderRadius: '8px', background: '#fff', outline: 'none', fontSize: '14px', lineHeight: '1.6' }}
                         />
                       </div>
@@ -2302,12 +2291,12 @@ const ReportingPage = () => {
                     <tbody>
                       {paginatedKeywords.length > 0 ? paginatedKeywords.map(item => (
                         <tr key={item.id}>
-                          <td style={{ fontWeight: 800, color: '#2563eb' }}>{item.keyword}</td>
+                          <td style={{ fontWeight: 800, color: '#2563eb' }}>{item.trigger}</td>
                           <td style={{ fontSize: '13px', color: '#475569' }}>
-                            <div dangerouslySetInnerHTML={{ __html: item.paragraph.substring(0, 150) + (item.paragraph.length > 150 ? '...' : '') }} />
+                            <div dangerouslySetInnerHTML={{ __html: (item.replacementText || '').substring(0, 150) + ((item.replacementText || '').length > 150 ? '...' : '') }} />
                           </td>
                           <td>
-                            <button className="btn btn-outline" style={{ color: '#ef4444', padding: '4px 8px', fontSize: '11px' }} onClick={() => setKeywordLibrary(keywordLibrary.filter(k => k.id !== item.id))}>Delete</button>
+                            <button className="btn btn-outline" style={{ color: '#ef4444', padding: '4px 8px', fontSize: '11px' }} onClick={() => handleDeleteKeyword(item.id)}>Delete</button>
                           </td>
                         </tr>
                       )) : (
