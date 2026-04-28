@@ -331,8 +331,8 @@ const ReportingPage = () => {
         appointmentId: appointmentId,
         templateId: selectedTemplateId,
         findings: activeTab === 'Structured' ? JSON.stringify(structuredData) : editorText,
-        impression: impression || 'NORMAL STUDY',
-        advice: advice,
+        impression: impression || (activeTab === 'Structured' ? (structuredData['Impression'] || structuredData['IMPRESSION'] || '') : ''),
+        advice: advice || '',
         isFinalized: finalizing,
         reportingMode: activeTab
       };

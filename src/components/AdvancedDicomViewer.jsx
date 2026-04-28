@@ -23,6 +23,10 @@ import {
   PlanarFreehandROITool,
   ProbeTool,
   MagnifyTool,
+  BidirectionalTool,
+  CobbAngleTool,
+  HeightTool,
+  AdvancedMagnifyTool,
   Enums as toolsEnums,
   synchronizers,
   utilities,
@@ -68,13 +72,18 @@ const WINDOWING_PRESETS = {
 
 // Measurement tools configuration
 const MEASUREMENT_TOOLS = {
-  'Length': { name: 'LengthTool', icon: '📏', label: 'Distance' },
-  'Angle': { name: 'AngleTool', icon: '📐', label: 'Angle' },
-  'EllipticalROI': { name: 'EllipticalROITool', icon: '⭕', label: 'Ellipse ROI' },
-  'RectangleROI': { name: 'RectangleROITool', icon: '⬜', label: 'Rectangle ROI' },
-  'CircleROI': { name: 'CircleROITool', icon: '🔵', label: 'Circle ROI' },
-  'FreehandROI': { name: 'PlanarFreehandROITool', icon: '✏️', label: 'Freehand ROI' },
-  'Probe': { name: 'ProbeTool', icon: '🎯', label: 'HU Probe' }
+  'Length': { name: 'LengthTool', icon: '📏', label: 'Distance', description: 'Measure linear distance' },
+  'Height': { name: 'HeightTool', icon: '📐', label: 'Height', description: 'Measure vertical height' },
+  'Bidirectional': { name: 'BidirectionalTool', icon: '↔️', label: 'Bidirectional', description: 'Measure length & width (RECIST)' },
+  'Angle': { name: 'AngleTool', icon: '∠', label: 'Angle', description: 'Measure angle between lines' },
+  'CobbAngle': { name: 'CobbAngleTool', icon: '🦴', label: 'Cobb Angle', description: 'Spine curvature measurement' },
+  'EllipticalROI': { name: 'EllipticalROITool', icon: '⭕', label: 'Ellipse ROI', description: 'Elliptical region analysis' },
+  'RectangleROI': { name: 'RectangleROITool', icon: '⬜', label: 'Rectangle ROI', description: 'Rectangular region analysis' },
+  'CircleROI': { name: 'CircleROITool', icon: '🔵', label: 'Circle ROI', description: 'Circular region analysis' },
+  'FreehandROI': { name: 'PlanarFreehandROITool', icon: '✏️', label: 'Freehand ROI', description: 'Custom shape region' },
+  'Probe': { name: 'ProbeTool', icon: '🎯', label: 'HU Probe', description: 'Pixel value & Hounsfield Units' },
+  'Arrow': { name: 'ArrowAnnotateTool', icon: '➡️', label: 'Arrow', description: 'Annotate with arrow' },
+  'AdvancedMagnify': { name: 'AdvancedMagnifyTool', icon: '🔍', label: 'Magnifier', description: 'Advanced magnification tool' }
 };
 // ============================================
 
@@ -129,13 +138,17 @@ async function initCornerstone() {
     StackScrollTool,
     ArrowAnnotateTool,
     LengthTool,
+    HeightTool,
+    BidirectionalTool,
     AngleTool,
+    CobbAngleTool,
     EllipticalROITool,
     RectangleROITool,
     CircleROITool,
     PlanarFreehandROITool,
     ProbeTool,
-    MagnifyTool
+    MagnifyTool,
+    AdvancedMagnifyTool
   ];
   
   tools.forEach(tool => {
@@ -302,7 +315,7 @@ async function initCornerstone() {
   });
 
   // Register professional tools
-  [WindowLevelTool, ZoomTool, PanTool, StackScrollTool, LengthTool, AngleTool, EllipticalROITool, RectangleROITool, CircleROITool, PlanarFreehandROITool, ProbeTool, MagnifyTool].forEach(t => {
+  [WindowLevelTool, ZoomTool, PanTool, StackScrollTool, LengthTool, HeightTool, BidirectionalTool, AngleTool, CobbAngleTool, EllipticalROITool, RectangleROITool, CircleROITool, PlanarFreehandROITool, ProbeTool, MagnifyTool, AdvancedMagnifyTool, ArrowAnnotateTool].forEach(t => {
       try { addTool(t); } catch (e) { /* Already added */ }
   });
 
@@ -357,6 +370,9 @@ const AdvancedDicomViewer = ({
   const [pixelData, setPixelData] = useState(null);
   const [hounsFieldValue, setHounsFieldValue] = useState(null);
   const [imageStatistics, setImageStatistics] = useState(null);
+  const [showMeasurementList, setShowMeasurementList] = useState(true);
+  const [showCrosshairs, setShowCrosshairs] = useState(false);
+  const [showReferenceLines, setShowReferenceLines] = useState(false);
 
   useEffect(() => {
     if (!files || files.length === 0) return;
@@ -635,8 +651,9 @@ const AdvancedDicomViewer = ({
         [
           WindowLevelTool, ZoomTool, PanTool, StackScrollTool,
           ArrowAnnotateTool, 
-          LengthTool, AngleTool, EllipticalROITool, RectangleROITool, 
-          CircleROITool, PlanarFreehandROITool, ProbeTool, MagnifyTool
+          LengthTool, HeightTool, BidirectionalTool, AngleTool, CobbAngleTool,
+          EllipticalROITool, RectangleROITool, CircleROITool, 
+          PlanarFreehandROITool, ProbeTool, MagnifyTool, AdvancedMagnifyTool
         ].forEach(t => {
             if (!toolGroup.hasTool(t.toolName)) {
                toolGroup.addTool(t.toolName);
@@ -886,6 +903,81 @@ const AdvancedDicomViewer = ({
       }
     }
   }, [isReady, viewportId]);
+
+  // --- EXPORT MEASUREMENTS ---
+  const exportMeasurements = useCallback(() => {
+    if (measurements.length === 0) {
+      alert('No measurements to export');
+      return;
+    }
+
+    const exportData = {
+      patientInfo: metadata,
+      timestamp: new Date().toISOString(),
+      measurements: measurements.map(m => ({
+        tool: m.tool,
+        timestamp: m.timestamp,
+        data: {
+          length: m.data?.cachedStats?.length,
+          area: m.data?.cachedStats?.area,
+          angle: m.data?.cachedStats?.angle,
+          mean: m.data?.cachedStats?.mean,
+          stdDev: m.data?.cachedStats?.stdDev,
+          max: m.data?.cachedStats?.max,
+          min: m.data?.cachedStats?.min
+        }
+      }))
+    };
+
+    const blob = new Blob([JSON.stringify(exportData, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `measurements_${metadata?.patientId || 'unknown'}_${Date.now()}.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+    
+    console.log('[DICOM] Measurements exported:', exportData);
+  }, [measurements, metadata]);
+
+  // --- CLEAR ALL ANNOTATIONS ---
+  const clearAllAnnotations = useCallback(() => {
+    if (!elementRef.current) return;
+    
+    try {
+      const allAnnotations = annotation.state.getAllAnnotations();
+      allAnnotations.forEach(ann => {
+        annotation.state.removeAnnotation(ann.annotationUID);
+      });
+      
+      setMeasurements([]);
+      setAnnotations([]);
+      
+      if (renderingEngineRef.current) {
+        renderingEngineRef.current.renderViewports([viewportId]);
+      }
+      
+      console.log('[DICOM] All annotations cleared');
+    } catch (e) {
+      console.warn('[DICOM] Clear annotations failed:', e);
+    }
+  }, [viewportId]);
+
+  // --- DELETE SPECIFIC MEASUREMENT ---
+  const deleteMeasurement = useCallback((measurementId) => {
+    try {
+      annotation.state.removeAnnotation(measurementId);
+      setMeasurements(prev => prev.filter(m => m.id !== measurementId));
+      
+      if (renderingEngineRef.current) {
+        renderingEngineRef.current.renderViewports([viewportId]);
+      }
+      
+      console.log('[DICOM] Measurement deleted:', measurementId);
+    } catch (e) {
+      console.warn('[DICOM] Delete measurement failed:', e);
+    }
+  }, [viewportId]);
 
   // --- EVENT LISTENERS FOR MEASUREMENTS ---
   useEffect(() => {
@@ -1233,24 +1325,110 @@ const AdvancedDicomViewer = ({
           zIndex: 100,
           fontFamily: 'monospace',
           border: '1px solid rgba(255,255,255,0.1)',
-          maxHeight: '200px',
+          maxHeight: '300px',
           overflowY: 'auto',
-          minWidth: '200px'
+          minWidth: '250px',
+          maxWidth: '350px'
         }}>
-          <div style={{ fontWeight: 900, color: '#3b82f6', marginBottom: '6px' }}>MEASUREMENTS</div>
-          {measurements.slice(-5).map((measurement, index) => (
-            <div key={measurement.id} style={{ marginBottom: '4px', padding: '4px', background: 'rgba(255,255,255,0.05)', borderRadius: '4px' }}>
-              <div style={{ color: '#10b981', fontWeight: 700 }}>{measurement.tool}</div>
-              <div style={{ fontSize: '8px', color: '#94a3b8' }}>
-                {measurement.data?.cachedStats?.length && `Length: ${measurement.data.cachedStats.length.toFixed(2)} mm`}
-                {measurement.data?.cachedStats?.angle && `Angle: ${measurement.data.cachedStats.angle.toFixed(1)}°`}
-                {measurement.data?.cachedStats?.area && `Area: ${measurement.data.cachedStats.area.toFixed(2)} mm²`}
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px', position: 'sticky', top: 0, background: 'rgba(15, 23, 42, 0.95)', paddingBottom: '6px', borderBottom: '1px solid rgba(255,255,255,0.1)' }}>
+            <span style={{ fontWeight: 900, color: '#3b82f6' }}>MEASUREMENTS ({measurements.length})</span>
+            <div style={{ display: 'flex', gap: '4px' }}>
+              <button
+                onClick={() => setShowMeasurementList(!showMeasurementList)}
+                style={{
+                  background: 'rgba(59, 130, 246, 0.2)',
+                  border: '1px solid #3b82f6',
+                  color: '#3b82f6',
+                  padding: '2px 6px',
+                  borderRadius: '4px',
+                  fontSize: '8px',
+                  cursor: 'pointer'
+                }}
+                title="Toggle list"
+              >
+                {showMeasurementList ? '▼' : '▶'}
+              </button>
+              <button
+                onClick={exportMeasurements}
+                style={{
+                  background: 'rgba(16, 185, 129, 0.2)',
+                  border: '1px solid #10b981',
+                  color: '#10b981',
+                  padding: '2px 6px',
+                  borderRadius: '4px',
+                  fontSize: '8px',
+                  cursor: 'pointer'
+                }}
+                title="Export measurements"
+              >
+                💾
+              </button>
+              <button
+                onClick={clearAllAnnotations}
+                style={{
+                  background: 'rgba(239, 68, 68, 0.2)',
+                  border: '1px solid #ef4444',
+                  color: '#ef4444',
+                  padding: '2px 6px',
+                  borderRadius: '4px',
+                  fontSize: '8px',
+                  cursor: 'pointer'
+                }}
+                title="Clear all"
+              >
+                🗑️
+              </button>
+            </div>
+          </div>
+          
+          {showMeasurementList && measurements.slice(-10).reverse().map((measurement, index) => (
+            <div key={measurement.id} style={{ marginBottom: '6px', padding: '6px', background: 'rgba(255,255,255,0.05)', borderRadius: '4px', position: 'relative' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <div style={{ color: '#10b981', fontWeight: 700, fontSize: '9px' }}>{measurement.tool}</div>
+                <button
+                  onClick={() => deleteMeasurement(measurement.id)}
+                  style={{
+                    background: 'transparent',
+                    border: 'none',
+                    color: '#ef4444',
+                    cursor: 'pointer',
+                    fontSize: '10px',
+                    padding: '0 4px'
+                  }}
+                  title="Delete measurement"
+                >
+                  ✕
+                </button>
+              </div>
+              <div style={{ fontSize: '8px', color: '#94a3b8', marginTop: '2px' }}>
+                {measurement.data?.cachedStats?.length && (
+                  <div>📏 Length: {measurement.data.cachedStats.length.toFixed(2)} mm</div>
+                )}
+                {measurement.data?.cachedStats?.width && (
+                  <div>↔️ Width: {measurement.data.cachedStats.width.toFixed(2)} mm</div>
+                )}
+                {measurement.data?.cachedStats?.angle && (
+                  <div>∠ Angle: {measurement.data.cachedStats.angle.toFixed(1)}°</div>
+                )}
+                {measurement.data?.cachedStats?.area && (
+                  <div>⬜ Area: {measurement.data.cachedStats.area.toFixed(2)} mm²</div>
+                )}
+                {measurement.data?.cachedStats?.mean !== undefined && (
+                  <div>📊 Mean: {measurement.data.cachedStats.mean.toFixed(1)} HU</div>
+                )}
+                {measurement.data?.cachedStats?.stdDev !== undefined && (
+                  <div>σ StdDev: {measurement.data.cachedStats.stdDev.toFixed(1)}</div>
+                )}
+              </div>
+              <div style={{ fontSize: '7px', color: '#64748b', marginTop: '2px' }}>
+                {new Date(measurement.timestamp).toLocaleTimeString()}
               </div>
             </div>
           ))}
-          {measurements.length > 5 && (
-            <div style={{ fontSize: '8px', color: '#94a3b8', textAlign: 'center', marginTop: '4px' }}>
-              +{measurements.length - 5} more measurements
+          
+          {measurements.length > 10 && (
+            <div style={{ fontSize: '8px', color: '#94a3b8', textAlign: 'center', marginTop: '6px', paddingTop: '6px', borderTop: '1px solid rgba(255,255,255,0.1)' }}>
+              Showing last 10 of {measurements.length} measurements
             </div>
           )}
         </div>
