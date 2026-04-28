@@ -154,27 +154,41 @@ const ReportingPage = () => {
       // If existing report found, populate state
       if (reportRes.data?.success && reportRes.data.data) {
         const r = reportRes.data.data;
-        if (r.findings && r.findings.startsWith('{')) {
+        console.info(`[1RAD] Found Existing Report. Methodology: ${r.reportingMode || 'UNDEFINED'}`);
+
+        // 1. Restore Findings Content
+        if (r.findings && (r.findings.startsWith('{') || r.findings.startsWith('['))) {
           try {
             const parsed = JSON.parse(r.findings);
             setStructuredData(parsed);
+            // Proactive fallback: If findings are JSON but mode is null, force Structured
+            if (!r.reportingMode) r.reportingMode = 'Structured';
           } catch (e) {
             console.error("Findings Parse Error:", e);
+            setEditorText(r.findings);
           }
         } else {
           setEditorText(r.findings || '');
         }
         
-        // Use backend reporting mode if available
-        if (r.reportingMode === 'Structured' || r.reportingMode === 'Narrative Editor') {
-          console.info(`[1RAD] Restoring Backend Paradigm: ${r.reportingMode}`);
-          setActiveTab(r.reportingMode);
-        }
+        // 2. Restore Reporting Paradigm (Backend takes priority)
+        const finalMode = r.reportingMode || (r.findings?.startsWith('{') ? 'Structured' : 'Narrative Editor');
+        console.info(`[1RAD] Reconstituting Workspace Paradigm: ${finalMode}`);
+        setActiveTab(finalMode);
         
         setImpression(r.impression || '');
         setAdvice(r.advice || '');
         setIsFinalized(r.isFinalized);
         if (r.templateId) setSelectedTemplateId(r.templateId);
+      } else {
+        // FALLBACK: New Case. Use Global Preference from Doctor Profile
+        const globalPref = protRes?.data?.data?.doctor?.preferredReportingMode || 
+                           protRes?.data?.data?.preferredReportingMode || 
+                           localStorage.getItem('reporting_paradigm') || 
+                           'Structured';
+        
+        console.info(`[1RAD] New Case Detected. Applying Global Preference: ${globalPref}`);
+        setActiveTab(globalPref);
       }
     } catch (err) {
       console.error('[REPORTING] Initialization failure', err);
