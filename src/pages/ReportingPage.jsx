@@ -594,17 +594,39 @@ const ReportingPage = () => {
       const blob = await response.blob();
       console.log(`[DICOM_LOAD] Binary stream received. Size: ${(blob.size / (1024*1024)).toFixed(2)} MB. Starting optimized processing...`);
       
-      // Use optimized processor with progress tracking
-      const classifiedAssets = await dicomOptimizer.processZipFileOptimized(
+      // Use optimized processor with progress tracking and corruption detection
+      const result = await dicomOptimizer.processZipFileOptimized(
         blob,
         (progress) => {
           setLoadingProgress(progress);
-          setProcessingStatus(`${progress.stage}: ${progress.current}/${progress.total} files${progress.seriesCount ? ` (${progress.seriesCount} series found)` : ''}`);
+          const statusParts = [`${progress.stage}: ${progress.current}/${progress.total} files`];
+          if (progress.seriesCount) statusParts.push(`(${progress.seriesCount} series found)`);
+          if (progress.corruptedFiles > 0) statusParts.push(`⚠️ ${progress.corruptedFiles} corrupted`);
+          setProcessingStatus(statusParts.join(' '));
         },
         (seriesInfo) => {
           console.log(`[DICOM_LOAD] New series discovered: ${seriesInfo.seriesDesc}`);
         }
       );
+
+      const classifiedAssets = result.series;
+      const stats = result.stats;
+
+      // Log statistics
+      console.log(`[DICOM_LOAD] Processing statistics:`, stats);
+      
+      // Show warning if corrupted files were found
+      if (stats.corruptedFiles > 0) {
+        console.warn(`[DICOM_LOAD] ⚠️ Eliminated ${stats.corruptedFiles} corrupted files from study`);
+        setProcessingStatus(`✅ Loaded ${stats.validFiles} valid files (eliminated ${stats.corruptedFiles} corrupted)`);
+        
+        // Show user notification
+        setTimeout(() => {
+          if (stats.corruptedFiles > 0) {
+            alert(`Study loaded successfully!\n\n✅ Valid files: ${stats.validFiles}\n⚠️ Corrupted files eliminated: ${stats.corruptedFiles}\n\nCorrupted files have been automatically removed to ensure optimal viewing.`);
+          }
+        }, 1000);
+      }
 
       const finalAssets = classifiedAssets.map(series => ({
         ...asset,
@@ -612,7 +634,12 @@ const ReportingPage = () => {
         rawFiles: series.files,
         needsHydration: false,
         seriesUID: series.seriesUID,
-        modality: series.modality
+        modality: series.modality,
+        stats: {
+          totalFiles: stats.totalFiles,
+          validFiles: stats.validFiles,
+          corruptedFiles: stats.corruptedFiles
+        }
       }));
 
       console.log(`[DICOM_LOAD] Optimized processing complete. Discovered ${finalAssets.length} valid diagnostic series.`);
@@ -1085,6 +1112,196 @@ const ReportingPage = () => {
     window.addEventListener('keydown', handleKeys);
     return () => window.removeEventListener('keydown', handleKeys);
   }, []);
+
+  // --- DICOM VIEWER KEYBOARD SHORTCUTS ---
+  const [showShortcutsHelp, setShowShortcutsHelp] = useState(false);
+  
+  useEffect(() => {
+    const handleDicomShortcuts = (e) => {
+      // Only activate shortcuts when DICOM viewer is active
+      if (!isDicomImage) return;
+      
+      // Ignore shortcuts when typing in input fields
+      if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA' || e.target.isContentEditable) {
+        return;
+      }
+
+      // Prevent default for our shortcuts
+      const shortcutKeys = ['w', 'z', 'p', 's', 'l', 'h', 'b', 'a', 'c', 'e', 'r', 'f', 'm', 'i', 'v', 'x', 'k', 'n', 't', 'g', 'y'];
+      if (shortcutKeys.includes(e.key.toLowerCase()) || e.key === 'Escape' || e.key === ' ' || e.key === 'ArrowUp' || e.key === 'ArrowDown' || e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
+        e.preventDefault();
+      }
+
+      // Tool Selection Shortcuts
+      switch(e.key.toLowerCase()) {
+        // Navigation & Manipulation
+        case 'w':
+          setActiveTool('WindowLevelTool');
+          console.log('[SHORTCUT] Window/Level (W)');
+          break;
+        case 'z':
+          setActiveTool('ZoomTool');
+          console.log('[SHORTCUT] Zoom (Z)');
+          break;
+        case 'p':
+          setActiveTool('PanTool');
+          console.log('[SHORTCUT] Pan (P)');
+          break;
+        case 's':
+          setActiveTool('StackScrollTool');
+          console.log('[SHORTCUT] Stack Scroll (S)');
+          break;
+
+        // Measurement Tools
+        case 'l':
+          setActiveTool('LengthTool');
+          console.log('[SHORTCUT] Length (L)');
+          break;
+        case 'h':
+          setActiveTool('HeightTool');
+          console.log('[SHORTCUT] Height (H)');
+          break;
+        case 'b':
+          setActiveTool('BidirectionalTool');
+          console.log('[SHORTCUT] Bidirectional/RECIST (B)');
+          break;
+        case 'a':
+          setActiveTool('AngleTool');
+          console.log('[SHORTCUT] Angle (A)');
+          break;
+        case 'c':
+          setActiveTool('CobbAngleTool');
+          console.log('[SHORTCUT] Cobb Angle (C)');
+          break;
+
+        // ROI Tools
+        case 'e':
+          setActiveTool('EllipticalROITool');
+          console.log('[SHORTCUT] Elliptical ROI (E)');
+          break;
+        case 'r':
+          setActiveTool('RectangleROITool');
+          console.log('[SHORTCUT] Rectangle ROI (R)');
+          break;
+        case 'o':
+          setActiveTool('CircleROITool');
+          console.log('[SHORTCUT] Circle ROI (O)');
+          break;
+        case 'f':
+          setActiveTool('PlanarFreehandROITool');
+          console.log('[SHORTCUT] Freehand ROI (F)');
+          break;
+
+        // Analysis Tools
+        case 'u':
+          setActiveTool('ProbeTool');
+          console.log('[SHORTCUT] Probe/HU (U)');
+          break;
+        case 'n':
+          setActiveTool('ArrowAnnotateTool');
+          console.log('[SHORTCUT] Arrow Annotation (N)');
+          break;
+        case 'm':
+          setActiveTool('AdvancedMagnifyTool');
+          console.log('[SHORTCUT] Magnify (M)');
+          break;
+
+        // Image Manipulation
+        case 'i':
+          setViewportProps(prev => ({ ...prev, invert: !prev.invert }));
+          console.log('[SHORTCUT] Invert (I)');
+          break;
+        case 'x':
+          setViewportProps(prev => ({ ...prev, flipHorizontal: !prev.flipHorizontal }));
+          console.log('[SHORTCUT] Flip Horizontal (X)');
+          break;
+        case 'y':
+          setViewportProps(prev => ({ ...prev, flipVertical: !prev.flipVertical }));
+          console.log('[SHORTCUT] Flip Vertical (Y)');
+          break;
+        case 't':
+          setViewportProps(prev => ({ ...prev, rotation: (prev.rotation + 90) % 360 }));
+          console.log('[SHORTCUT] Rotate 90° (T)');
+          break;
+
+        // Playback & Navigation
+        case ' ':
+          setCineEnabled(prev => !prev);
+          console.log('[SHORTCUT] Toggle Cine (Space)');
+          break;
+        case 'k':
+          toggleKeyImage();
+          console.log('[SHORTCUT] Toggle Key Image (K)');
+          break;
+        case 'v':
+          setIsSyncEnabled(prev => !prev);
+          console.log('[SHORTCUT] Toggle Sync (V)');
+          break;
+
+        // Layout
+        case '1':
+          if (e.ctrlKey) {
+            setLayoutMode('1x1');
+            console.log('[SHORTCUT] 1x1 Layout (Ctrl+1)');
+          }
+          break;
+        case '2':
+          if (e.ctrlKey) {
+            setLayoutMode('1x2');
+            console.log('[SHORTCUT] 1x2 Layout (Ctrl+2)');
+          }
+          break;
+        case '3':
+          if (e.ctrlKey) {
+            setLayoutMode('2x2');
+            console.log('[SHORTCUT] 2x2 Layout (Ctrl+3)');
+          }
+          break;
+
+        // Reset & Help
+        case 'escape':
+          setActiveTool('WindowLevelTool');
+          setResetTrigger(prev => prev + 1);
+          console.log('[SHORTCUT] Reset (Escape)');
+          break;
+        case '?':
+          if (e.shiftKey) {
+            setShowShortcutsHelp(prev => !prev);
+            console.log('[SHORTCUT] Toggle Help (?)');
+          }
+          break;
+      }
+
+      // Arrow keys for series/slice navigation
+      if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
+        // Navigate between series
+        if (e.key === 'ArrowUp' && activeAssetIndex > 0) {
+          setActiveAssetIndex(prev => prev - 1);
+          console.log('[SHORTCUT] Previous Series (↑)');
+        } else if (e.key === 'ArrowDown' && activeAssetIndex < uploadedFiles.length - 1) {
+          setActiveAssetIndex(prev => prev + 1);
+          console.log('[SHORTCUT] Next Series (↓)');
+        }
+      }
+
+      // Ctrl+S to save report
+      if (e.ctrlKey && e.key === 's') {
+        e.preventDefault();
+        handleSaveReport(false);
+        console.log('[SHORTCUT] Save Report (Ctrl+S)');
+      }
+
+      // Ctrl+Shift+S to finalize report
+      if (e.ctrlKey && e.shiftKey && e.key === 'S') {
+        e.preventDefault();
+        handleSaveReport(true);
+        console.log('[SHORTCUT] Finalize Report (Ctrl+Shift+S)');
+      }
+    };
+
+    window.addEventListener('keydown', handleDicomShortcuts);
+    return () => window.removeEventListener('keydown', handleDicomShortcuts);
+  }, [isDicomImage, activeAssetIndex, uploadedFiles.length]);
 
   useEffect(() => {
     if (editorState === 'standard') setEditorWidth(45);

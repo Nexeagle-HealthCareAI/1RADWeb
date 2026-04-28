@@ -112,11 +112,149 @@ export class DicomPerformanceOptimizer {
   }
 
   /**
-   * Process DICOM file with worker (or fallback to main thread)
+   * Validate DICOM file integrity
    */
-  async processDicomFile(arrayBuffer, fileName) {
+  validateDicomFile(byteArray, fileName) {
+    const validationResult = {
+      isValid: true,
+      errors: [],
+      warnings: [],
+      fileName
+    };
+
+    try {
+      // Check minimum file size (DICOM header is at least 132 bytes)
+      if (byteArray.length < 132) {
+        validationResult.isValid = false;
+        validationResult.errors.push('File too small to be valid DICOM (< 132 bytes)');
+        return validationResult;
+      }
+
+      // Check DICOM preamble and prefix
+      const preamble = byteArray.slice(128, 132);
+      const prefix = String.fromCharCode(...preamble);
+      
+      if (prefix !== 'DICM') {
+        // Try to parse anyway (some DICOMs don't have preamble)
+        validationResult.warnings.push('Missing DICM prefix - attempting parse anyway');
+      }
+
+      // Attempt to parse
+      let dataSet;
+      try {
+        dataSet = dicomParser.parseDicom(byteArray);
+      } catch (parseError) {
+        validationResult.isValid = false;
+        validationResult.errors.push(`Parse error: ${parseError.message}`);
+        return validationResult;
+      }
+
+      // Check for required DICOM tags
+      const requiredTags = [
+        { tag: 'x00080016', name: 'SOP Class UID' },
+        { tag: 'x00080018', name: 'SOP Instance UID' }
+      ];
+
+      for (const { tag, name } of requiredTags) {
+        if (!dataSet.string(tag)) {
+          validationResult.warnings.push(`Missing ${name} (${tag})`);
+        }
+      }
+
+      // Check if it's a valid image (has pixel data or is SR/KO)
+      const hasPixelData = !!(dataSet.elements['x7fe00010']);
+      const sopClassUID = dataSet.string('x00080016') || '';
+      
+      // Structured Report or Key Object Selection
+      const isStructuredReport = sopClassUID.includes('1.2.840.10008.5.1.4.1.1.88');
+      const isKeyObject = sopClassUID.includes('1.2.840.10008.5.1.4.1.1.88.59');
+      const isPresentationState = sopClassUID.includes('1.2.840.10008.5.1.4.1.1.11');
+      
+      if (!hasPixelData && !isStructuredReport && !isKeyObject && !isPresentationState) {
+        validationResult.isValid = false;
+        validationResult.errors.push('No pixel data and not a valid non-image DICOM type');
+        return validationResult;
+      }
+
+      // If has pixel data, validate image attributes
+      if (hasPixelData) {
+        const rows = dataSet.uint16('x00280010');
+        const columns = dataSet.uint16('x00280011');
+        const bitsAllocated = dataSet.uint16('x00280100');
+        const pixelRepresentation = dataSet.uint16('x00280103');
+
+        if (!rows || !columns) {
+          validationResult.isValid = false;
+          validationResult.errors.push('Missing or invalid image dimensions');
+          return validationResult;
+        }
+
+        if (rows < 1 || rows > 65535 || columns < 1 || columns > 65535) {
+          validationResult.isValid = false;
+          validationResult.errors.push(`Invalid image dimensions: ${rows}x${columns}`);
+          return validationResult;
+        }
+
+        if (!bitsAllocated || (bitsAllocated !== 8 && bitsAllocated !== 16 && bitsAllocated !== 32)) {
+          validationResult.warnings.push(`Unusual bits allocated: ${bitsAllocated}`);
+        }
+
+        // Check pixel data length
+        const pixelDataElement = dataSet.elements['x7fe00010'];
+        if (pixelDataElement) {
+          const expectedSize = rows * columns * (bitsAllocated / 8);
+          const actualSize = pixelDataElement.length;
+          
+          // Allow some tolerance for compressed data
+          if (actualSize < expectedSize * 0.1) {
+            validationResult.warnings.push(`Pixel data size mismatch (expected ~${expectedSize}, got ${actualSize})`);
+          }
+        }
+      }
+
+      // Check for corrupted transfer syntax
+      const transferSyntaxUID = dataSet.string('x00020010');
+      if (transferSyntaxUID) {
+        // List of problematic transfer syntaxes
+        const problematicSyntaxes = [
+          '1.2.840.10008.1.2.4.100', // MPEG2
+          '1.2.840.10008.1.2.4.102', // MPEG4
+          '1.2.840.10008.1.2.4.103'  // MPEG4 BD
+        ];
+        
+        if (problematicSyntaxes.includes(transferSyntaxUID)) {
+          validationResult.warnings.push('Video transfer syntax - may not render in browser');
+        }
+      }
+
+    } catch (error) {
+      validationResult.isValid = false;
+      validationResult.errors.push(`Validation error: ${error.message}`);
+    }
+
+    return validationResult;
+  }
+
+  /**
+   * Process DICOM file with validation
+   */
+  async processDicomFileWithValidation(arrayBuffer, fileName) {
+    const byteArray = new Uint8Array(arrayBuffer);
+    
+    // Validate first
+    const validation = this.validateDicomFile(byteArray, fileName);
+    
+    if (!validation.isValid) {
+      console.warn(`[DICOM_VALIDATOR] Rejected corrupted file: ${fileName}`, validation.errors);
+      throw new Error(`CORRUPTED_FILE: ${validation.errors.join('; ')}`);
+    }
+
+    if (validation.warnings.length > 0) {
+      console.warn(`[DICOM_VALIDATOR] Warnings for ${fileName}:`, validation.warnings);
+    }
+
+    // Proceed with normal processing
     if (this.workers.length === 0) {
-      // Fallback to main thread
       return this.processDicomMainThread(arrayBuffer, fileName);
     }
 
@@ -124,7 +262,6 @@ export class DicomPerformanceOptimizer {
       const jobId = ++this.jobCounter;
       this.activeJobs.set(jobId, { resolve, reject });
       
-      // Find available worker or use round-robin
       const worker = this.workers[jobId % this.workers.length];
       
       worker.postMessage({
@@ -133,7 +270,6 @@ export class DicomPerformanceOptimizer {
         data: { arrayBuffer, fileName }
       });
       
-      // Timeout after 30 seconds
       setTimeout(() => {
         if (this.activeJobs.has(jobId)) {
           this.activeJobs.delete(jobId);
@@ -170,11 +306,19 @@ export class DicomPerformanceOptimizer {
   }
 
   /**
-   * Optimized ZIP processing with streaming and parallel processing
+   * Optimized ZIP processing with streaming, parallel processing, and corruption detection
    */
   async processZipFileOptimized(file, onProgress = null, onSeriesFound = null) {
     console.log(`[DICOM_OPTIMIZER] Starting optimized ZIP processing: ${file.name}`);
     const startTime = performance.now();
+    
+    const stats = {
+      totalFiles: 0,
+      validFiles: 0,
+      corruptedFiles: 0,
+      skippedFiles: 0,
+      corruptedFileNames: []
+    };
     
     try {
       // Initialize workers
@@ -191,6 +335,7 @@ export class DicomPerformanceOptimizer {
         !name.endsWith('.DS_Store')
       );
       
+      stats.totalFiles = fileNames.length;
       console.log(`[DICOM_OPTIMIZER] Found ${fileNames.length} files in ZIP`);
       
       if (onProgress) onProgress({ stage: 'extracting', current: 0, total: fileNames.length });
@@ -211,21 +356,30 @@ export class DicomPerformanceOptimizer {
             return { fileName, content };
           } catch (error) {
             console.warn(`[DICOM_OPTIMIZER] Failed to extract ${fileName}:`, error);
+            stats.skippedFiles++;
             return null;
           }
         });
         
         const extractedBatch = (await Promise.all(extractPromises)).filter(Boolean);
         
-        // Process DICOM files in parallel
+        // Process DICOM files in parallel with validation
         const processPromises = extractedBatch.map(({ fileName, content }) => 
-          this.processDicomFile(content, fileName).catch(error => {
-            console.warn(`[DICOM_OPTIMIZER] Failed to process ${fileName}:`, error);
+          this.processDicomFileWithValidation(content, fileName).catch(error => {
+            if (error.message.startsWith('CORRUPTED_FILE')) {
+              console.warn(`[DICOM_OPTIMIZER] Corrupted file detected: ${fileName} - ${error.message}`);
+              stats.corruptedFiles++;
+              stats.corruptedFileNames.push(fileName);
+            } else {
+              console.warn(`[DICOM_OPTIMIZER] Failed to process ${fileName}:`, error);
+              stats.skippedFiles++;
+            }
             return null;
           })
         );
         
         const processedBatch = (await Promise.all(processPromises)).filter(Boolean);
+        stats.validFiles += processedBatch.length;
         
         // Group by series
         processedBatch.forEach(({ metadata, file }) => {
@@ -266,7 +420,10 @@ export class DicomPerformanceOptimizer {
             stage: 'processing', 
             current: processedCount, 
             total: fileNames.length,
-            seriesCount: Object.keys(seriesGroups).length
+            seriesCount: Object.keys(seriesGroups).length,
+            validFiles: stats.validFiles,
+            corruptedFiles: stats.corruptedFiles,
+            skippedFiles: stats.skippedFiles
           });
         }
         
@@ -284,9 +441,24 @@ export class DicomPerformanceOptimizer {
       
       const endTime = performance.now();
       console.log(`[DICOM_OPTIMIZER] Processing complete in ${(endTime - startTime).toFixed(2)}ms`);
-      console.log(`[DICOM_OPTIMIZER] Found ${sortedSeries.length} series with ${sortedSeries.reduce((sum, s) => sum + s.files.length, 0)} images`);
+      console.log(`[DICOM_OPTIMIZER] Statistics:`, {
+        totalFiles: stats.totalFiles,
+        validFiles: stats.validFiles,
+        corruptedFiles: stats.corruptedFiles,
+        skippedFiles: stats.skippedFiles,
+        seriesFound: sortedSeries.length,
+        totalImages: sortedSeries.reduce((sum, s) => sum + s.files.length, 0)
+      });
       
-      return sortedSeries;
+      if (stats.corruptedFiles > 0) {
+        console.warn(`[DICOM_OPTIMIZER] Eliminated ${stats.corruptedFiles} corrupted files:`, stats.corruptedFileNames);
+      }
+      
+      // Return results with statistics
+      return {
+        series: sortedSeries,
+        stats
+      };
       
     } catch (error) {
       console.error('[DICOM_OPTIMIZER] ZIP processing failed:', error);
