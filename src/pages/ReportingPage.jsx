@@ -6,6 +6,7 @@ import AdvancedDicomViewer from '../components/AdvancedDicomViewer';
 import apiClient from '../api/apiClient';
 import { DicomCache } from '../utils/DicomCache';
 import { dicomOptimizer } from '../utils/DicomPerformanceOptimizer';
+import { jwtDecode } from 'jwt-decode';
 
 const ReportingPage = () => {
   const navigate = useNavigate();
@@ -123,8 +124,26 @@ const ReportingPage = () => {
       
       const appointmentData = appRes.data;
       setActiveAppointment(appointmentData);
-      const doctorId = appointmentData.doctorId || appointmentData.doctorUserId;
-      console.info(`[1RAD] Resolved DoctorID: ${doctorId}`);
+      
+      // TACTICAL RESOLUTION: Try appointment first, then Auth Token fallback
+      let doctorId = appointmentData.doctorId || appointmentData.doctorUserId || appointmentData.doctor?.userId;
+      
+      if (!doctorId) {
+        console.warn("[1RAD] Doctor ID missing in Appointment. Attempting Auth Token fallback...");
+        try {
+          const token = sessionStorage.getItem('1rad_token');
+          if (token) {
+            const decoded = jwtDecode(token);
+            // Try standard OIDC claims
+            doctorId = decoded.sub || decoded.nameid || decoded.UserId || decoded.id;
+            console.info(`[1RAD] Resolved DoctorID from Auth Token: ${doctorId}`);
+          }
+        } catch (jwtErr) {
+          console.error("[1RAD] Auth Token resolution failed:", jwtErr);
+        }
+      }
+
+      console.info(`[1RAD] Final Context DoctorID: ${doctorId}`);
 
       // 2. Parallel fetch for Library and Institutional Branding
       const [templRes, keyRes, protRes, reportRes, assetRes] = await Promise.all([
@@ -753,7 +772,43 @@ const ReportingPage = () => {
     setShowInlineSuggestion(false);
   };
 
-  const handlePreviewPrint = () => {
+  const handlePreviewPrint = async () => {
+    console.log("[1RAD] handlePreviewPrint triggered. Active Appointment:", activeAppointment);
+    
+    // 1. Ensure we have the doctor context (Cascading resolution)
+    let doctorId = activeAppointment?.doctorId || activeAppointment?.doctorUserId || activeAppointment?.doctor?.userId;
+    
+    if (!doctorId) {
+      try {
+        const token = sessionStorage.getItem('1rad_token');
+        if (token) {
+          const decoded = jwtDecode(token);
+          doctorId = decoded.sub || decoded.nameid || decoded.UserId || decoded.id;
+        }
+      } catch (e) {}
+    }
+
+    if (doctorId) {
+      try {
+        console.info(`[1RAD] Attempting to fetch Branding Protocol for Doctor: ${doctorId}`);
+        const res = await apiClient.get(`/Prescription/${doctorId}`);
+        console.log("[1RAD] Prescription API Response:", res.data);
+        
+        if (res.data?.success) {
+          setProtocol(res.data.data);
+          console.info("[1RAD] Branding Protocol Refreshed. Letterhead URL:", res.data.data?.letterheadBlobUrl);
+        } else {
+          console.warn("[1RAD] API returned success:false or empty data", res.data);
+        }
+      } catch (err) {
+        console.error("[1RAD] Real-time Branding Sync failed critically:", err);
+      }
+    } else {
+      console.error("[1RAD] FAILED_TO_RESOLVE_DOCTOR_CONTEXT: No Doctor ID found in appointment record.");
+      // alert("REPORTING_CONTEXT_ERROR: Could not resolve doctor branding. Using default layout.");
+    }
+
+    // 2. Open the preview
     setIsPreviewOpen(true);
   };
 
@@ -761,17 +816,21 @@ const ReportingPage = () => {
     if (!isPreviewOpen) return null;
 
     let bodyContent = '';
+    // Use institutional font settings for content
+    const contentStyle = `font-size: ${protocol?.fontSize || 12}px; line-height: 1.6; color: ${protocol?.fontColor || '#1e293b'}; font-family: ${protocol?.fontFamily || 'inherit'};`;
+
     if (activeTab === 'Structured') {
       bodyContent = Object.entries(structuredData).map(([key, val]) => `
-        <div style="margin-bottom: 20px;">
-          <div style="font-size: 11px; font-weight: 950; color: #64748b; text-transform: uppercase; margin-bottom: 4px; letter-spacing: 1px;">${key.replace(/_/g, ' ')}</div>
-          <div style="font-size: ${protocol?.fontSize || 12}px; line-height: 1.5; color: ${protocol?.fontColor || '#1e293b'};">${val}</div>
+        <div style="margin-bottom: 25px; page-break-inside: avoid;">
+          <div style="font-size: 10px; font-weight: 950; color: #64748b; text-transform: uppercase; margin-bottom: 6px; letter-spacing: 1.5px; border-bottom: 1px solid #f1f5f9; padding-bottom: 2px;">${key.replace(/_/g, ' ')}</div>
+          <div style="${contentStyle} white-space: pre-wrap;">${val}</div>
         </div>
       `).join('');
     } else {
-      bodyContent = `<div style="font-size: ${protocol?.fontSize || 14}px; line-height: 1.6; color: ${protocol?.fontColor || '#1e293b'}; font-family: ${protocol?.fontFamily || 'inherit'};">${editorText}</div>`;
+      bodyContent = `<div style="${contentStyle}">${editorText}</div>`;
     }
 
+    // Surgical Margin Resolution (mm to style)
     const m = {
       top: (protocol?.headerMargin || 40) + 'mm',
       left: (protocol?.leftMargin || 20) + 'mm',
@@ -780,134 +839,151 @@ const ReportingPage = () => {
     };
 
     return (
-      <div className="modal-overlay" style={{ background: 'rgba(10, 22, 40, 0.95)', zIndex: 10000, display: 'flex', alignItems: 'center', justifyContent: 'center', position: 'fixed', inset: 0, padding: '40px' }}>
-        <div style={{ width: '900px', height: '100%', background: 'white', borderRadius: '24px', display: 'flex', flexDirection: 'column', overflow: 'hidden', boxShadow: '0 25px 50px rgba(0,0,0,0.3)' }}>
-          <div style={{ padding: '20px 40px', background: '#0a1628', color: 'white', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <div>
-              <h3 style={{ fontSize: '12px', fontWeight: 950, letterSpacing: '2px', margin: 0 }}>OFFICIAL DIAGNOSTIC PREVIEW</h3>
-              <div style={{ fontSize: '10px', opacity: 0.6 }}>Branding: {protocol ? 'INSTITUTIONAL_READY' : 'DEFAULT_LAYOUT'}</div>
+      <div className="modal-overlay" style={{ background: 'rgba(10, 22, 40, 0.98)', zIndex: 10000, display: 'flex', alignItems: 'center', justifyContent: 'center', position: 'fixed', inset: 0, padding: '40px', backdropFilter: 'blur(10px)' }}>
+        <div style={{ width: '950px', height: '100%', background: '#f8fafc', borderRadius: '32px', display: 'flex', flexDirection: 'column', overflow: 'hidden', boxShadow: '0 40px 100px rgba(0,0,0,0.5)', border: '1px solid rgba(255,255,255,0.1)' }}>
+          <div style={{ padding: '25px 40px', background: '#0a1628', color: 'white', display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '20px' }}>
+               <div style={{ width: '40px', height: '40px', background: '#0f52ba', borderRadius: '12px', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '20px' }}>📄</div>
+               <div>
+                <h3 style={{ fontSize: '13px', fontWeight: 950, letterSpacing: '2px', margin: 0, color: '#60a5fa' }}>DIAGNOSTIC_REPORT_PREVIEW</h3>
+                <div style={{ fontSize: '10px', opacity: 0.6, marginTop: '2px' }}>Protocol: {protocol ? 'INSTITUTIONAL_READY' : 'DEFAULT_LAYOUT'} • Mode: {activeTab.toUpperCase()}</div>
+               </div>
             </div>
             <div style={{ display: 'flex', gap: '15px' }}>
-              <button className="btn btn-primary" onClick={() => window.print()}>🖨️ PRINT FINAL</button>
-              <button onClick={() => setIsPreviewOpen(false)} style={{ background: 'rgba(255,255,255,0.1)', border: '1px solid rgba(255,255,255,0.2)', color: 'white', padding: '10px 20px', borderRadius: '12px', cursor: 'pointer', fontWeight: 900 }}>CLOSE</button>
+              <button className="btn btn-primary" style={{ background: '#0f52ba', border: 'none', padding: '12px 25px', borderRadius: '12px', fontWeight: 900 }} onClick={() => window.print()}>🖨️ PRINT_FINAL</button>
+              <button onClick={() => setIsPreviewOpen(false)} style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', color: '#94a3b8', padding: '12px 25px', borderRadius: '12px', cursor: 'pointer', fontWeight: 900 }}>CLOSE</button>
             </div>
           </div>
           
-          <div style={{ flex: 1, padding: '50px', background: '#f1f5f9', overflowY: 'auto', display: 'flex', justifyContent: 'center' }}>
+          <div style={{ flex: 1, padding: '40px', background: '#e2e8f0', overflowY: 'auto', display: 'flex', justifyContent: 'center' }}>
             <div id="printable-report" style={{ 
               width: '210mm', 
               minHeight: '297mm', 
               background: 'white', 
-              boxShadow: '0 10px 30px rgba(0,0,0,0.1)', 
+              boxShadow: '0 30px 60px rgba(0,0,0,0.15)', 
               color: protocol?.fontColor || '#1e293b',
               fontFamily: protocol?.fontFamily || 'Arial, sans-serif',
               position: 'relative',
               overflow: 'hidden'
             }}>
-              {/* ASSET REFERENCE LAYER (PDF or IMAGE) */}
-              {protocol?.letterheadBlobUrl && (
-                (protocol.letterheadBlobUrl.toLowerCase().includes('.pdf') || protocol.letterheadBlobUrl.includes('type=pdf')) ? (
-                  <iframe 
-                    src={protocol.letterheadBlobUrl}
-                    style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', border: 'none', pointerEvents: 'none' }}
-                    title="Letterhead"
-                  />
-                ) : (
-                  <img 
-                    src={protocol.letterheadBlobUrl} 
-                    alt="Letterhead"
-                    style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', objectFit: 'fill', pointerEvents: 'none' }}
-                  />
-                )
+              
+              {/* WATERMARK FOR NON-FINALIZED */}
+              {!isFinalized && (
+                <div style={{ position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%, -50%) rotate(-45deg)', fontSize: '120px', color: 'rgba(241, 245, 249, 0.4)', fontWeight: 950, pointerEvents: 'none', zIndex: 1, letterSpacing: '20px', whiteSpace: 'nowrap' }}>
+                   DRAFT_PREVIEW
+                </div>
               )}
 
-              {/* Content Overlay with Protocol Margins */}
-              <div style={{ 
-                position: 'relative',
-                zIndex: 2,
-                paddingTop: m.top, 
-                paddingLeft: m.left, 
-                paddingRight: m.right, 
-                paddingBottom: m.bottom,
-                boxSizing: 'border-box',
-                minHeight: '297mm'
-              }}>
-                {/* Fallback header if no letterhead */}
-                {!protocol?.letterheadBlobUrl && (
-                  <div style={{ borderBottom: '4px solid #0f52ba', paddingBottom: '30px', marginBottom: '40px' }}>
-                    <h1 style={{ fontSize: '32px', fontWeight: 950, color: '#0f52ba', margin: 0 }}>1RAD DIAGNOSTICS</h1>
-                    <div style={{ fontSize: '12px', color: '#64748b', fontWeight: 700, marginTop: '5px' }}>OFFICIAL CLINICAL RECORD</div>
+                {/* Letterhead Layer (Z-Index 1: Foundation) */}
+                {protocol?.letterheadBlobUrl && (
+                  <div style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', zIndex: 1, pointerEvents: 'none' }}>
+                    { (protocol.letterheadBlobUrl.toLowerCase().includes('.pdf') || protocol.letterheadBlobUrl.includes('type=pdf')) ? (
+                      <iframe 
+                        src={`${protocol.letterheadBlobUrl}#toolbar=0&navpanes=0&scrollbar=0`}
+                        style={{ width: '100%', height: '100%', border: 'none' }}
+                        title="Institutional Letterhead"
+                      />
+                    ) : (
+                      <div style={{ 
+                        width: '100%', 
+                        height: '100%', 
+                        backgroundImage: `url(${protocol.letterheadBlobUrl})`,
+                        backgroundSize: '100% 100%',
+                        backgroundRepeat: 'no-repeat'
+                      }}></div>
+                    )
+                    }
                   </div>
                 )}
 
-                {/* Patient Info Block */}
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '15px', background: '#f8fafc', padding: '15px', borderRadius: '8px', marginBottom: '30px', border: '1px solid #e2e8f0', fontSize: '11px' }}>
-                  <div><span style={{color: '#64748b', fontSize: '9px'}}>NAME:</span> <br/><strong>{activeAppointment?.patientName?.toUpperCase() || 'N/A'}</strong></div>
-                  <div><span style={{color: '#64748b', fontSize: '9px'}}>AGE/SEX:</span> <br/><strong>{activeAppointment?.patientAge || 'N/A'} / {activeAppointment?.patientGender || 'N/A'}</strong></div>
-                  <div><span style={{color: '#64748b', fontSize: '9px'}}>UHID:</span> <br/><strong>{activeAppointment?.patientIdentifier || 'N/A'}</strong></div>
-                  <div><span style={{color: '#64748b', fontSize: '9px'}}>STUDY:</span> <br/><strong>{activeAppointment?.service || 'N/A'}</strong></div>
-                  <div><span style={{color: '#64748b', fontSize: '9px'}}>DATE:</span> <br/><strong>{activeAppointment?.dateTime ? new Date(activeAppointment.dateTime).toLocaleDateString() : 'N/A'}</strong></div>
-                  <div><span style={{color: '#64748b', fontSize: '9px'}}>REF BY:</span> <br/><strong>{activeAppointment?.referredBy || 'N/A'}</strong></div>
-                </div>
-
-                {/* Main Findings */}
-                <div style={{ fontSize: (protocol?.fontSize || 12) + 'px', lineHeight: '1.6' }}>
-                   <div dangerouslySetInnerHTML={{ __html: bodyContent }} />
-                </div>
-                
-                {/* Impression Block */}
-                {impression && (
-                  <div style={{ marginTop: '30px' }}>
-                    <div style={{ fontSize: '11px', fontWeight: 950, color: protocol?.fontColor || '#0f52ba', marginBottom: '5px' }}>IMPRESSION:</div>
-                    <div style={{ 
-                      fontSize: (protocol?.fontSize || 14) + 'px', 
-                      fontWeight: 900, 
-                      borderLeft: `3px solid ${protocol?.fontColor || '#0f52ba'}`, 
-                      paddingLeft: '15px',
-                      color: protocol?.fontColor || '#1e293b'
-                    }}>
-                      {impression}
-                    </div>
+                {/* REPORT CONTENT OVERLAY */}
+                <div style={{ 
+                  position: 'relative',
+                  zIndex: 2,
+                  paddingTop: m.top, 
+                  paddingLeft: m.left, 
+                  paddingRight: m.right, 
+                  paddingBottom: m.bottom,
+                  boxSizing: 'border-box',
+                  minHeight: '297mm',
+                  display: 'flex',
+                  flexDirection: 'column'
+                }}>
+                  {/* Patient Information Matrix */}
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '0', background: '#fff', borderRadius: '4px', marginBottom: '35px', border: '1px solid #f1f5f9', fontSize: '11px' }}>
+                    <div style={{ padding: '10px', borderRight: '1px solid #f1f5f9', borderBottom: '1px solid #f1f5f9' }}><span style={{color: '#94a3b8', fontSize: '8px', fontWeight: 900}}>PATIENT NAME</span> <br/><strong style={{fontSize: '12px'}}>{activeAppointment?.patientName?.toUpperCase() || ''}</strong></div>
+                    <div style={{ padding: '10px', borderRight: '1px solid #f1f5f9', borderBottom: '1px solid #f1f5f9' }}><span style={{color: '#94a3b8', fontSize: '8px', fontWeight: 900}}>AGE / SEX</span> <br/><strong>{activeAppointment?.patientAge || ''} / {activeAppointment?.patientGender || ''}</strong></div>
+                    <div style={{ padding: '10px', borderBottom: '1px solid #f1f5f9' }}><span style={{color: '#94a3b8', fontSize: '8px', fontWeight: 900}}>PATIENT ID</span> <br/><strong>{activeAppointment?.patientIdentifier || ''}</strong></div>
+                    <div style={{ padding: '10px', borderRight: '1px solid #f1f5f9' }}><span style={{color: '#94a3b8', fontSize: '8px', fontWeight: 900}}>STUDY TYPE</span> <br/><strong>{activeAppointment?.service || ''}</strong></div>
+                    <div style={{ padding: '10px', borderRight: '1px solid #f1f5f9' }}><span style={{color: '#94a3b8', fontSize: '8px', fontWeight: 900}}>DATE</span> <br/><strong>{activeAppointment?.dateTime ? new Date(activeAppointment.dateTime).toLocaleDateString() : ''}</strong></div>
+                    <div style={{ padding: '10px' }}><span style={{color: '#94a3b8', fontSize: '8px', fontWeight: 900}}>REFERRED BY</span> <br/><strong>{activeAppointment?.referredBy || ''}</strong></div>
                   </div>
-                )}
-                
-                {/* Advice Block */}
-                {advice && (
-                  <div style={{ marginTop: '20px' }}>
-                    <div style={{ fontSize: '11px', fontWeight: 950, color: '#64748b', marginBottom: '5px' }}>FOLLOW-UP ADVICE:</div>
-                    <div style={{ fontSize: '12px', color: '#475569', fontStyle: 'italic' }}>{advice}</div>
-                  </div>
-                )}
 
-                {/* Signature Block */}
-                <div style={{ marginTop: '60px', textAlign: 'right' }}>
-                   <div style={{ display: 'inline-block', textAlign: 'center' }}>
-                      <div style={{ width: '180px', borderBottom: `1px solid ${protocol?.fontColor || '#1e293b'}`, marginBottom: '10px' }}></div>
-                      <div style={{ fontWeight: 950, fontSize: '12px' }}>
-                        {protocol?.doctor?.fullName?.toUpperCase() || protocol?.doctor?.name?.toUpperCase() || 'AUTHORIZED RADIOLOGIST'}
+                  {/* Report Findings Matrix */}
+                  <div style={{ flex: 1 }}>
+                    <div style={{ fontSize: '10px', fontWeight: 950, color: protocol?.fontColor || '#0f52ba', marginBottom: '12px', letterSpacing: '1px', borderBottom: '1px solid rgba(15, 82, 186, 0.1)', paddingBottom: '4px' }}>CLINICAL FINDINGS:</div>
+                    <div dangerouslySetInnerHTML={{ __html: bodyContent }} />
+                    
+                    {/* Final Conclusion (Impression) */}
+                    {impression && (
+                      <div style={{ marginTop: '35px', background: 'rgba(15, 82, 186, 0.02)', padding: '15px 20px', borderRadius: '6px', borderLeft: `4px solid ${protocol?.fontColor || '#0f52ba'}` }}>
+                        <div style={{ fontSize: '10px', fontWeight: 950, color: protocol?.fontColor || '#0f52ba', marginBottom: '6px', letterSpacing: '1px' }}>IMPRESSION:</div>
+                        <div style={{ 
+                          fontSize: (protocol?.fontSize || 13) + 'px', 
+                          fontWeight: 900, 
+                          color: protocol?.fontColor || '#1e293b',
+                          lineHeight: '1.5'
+                        }}>
+                          {impression}
+                        </div>
                       </div>
-                      <div style={{ fontSize: '10px', color: '#64748b', fontWeight: 700 }}>
-                        {protocol?.doctor?.specialization || 'Consultant Radiologist'}
+                    )}
+                    
+                    {/* Clinical Advice */}
+                    {advice && (
+                      <div style={{ marginTop: '20px', paddingLeft: '20px' }}>
+                        <div style={{ fontSize: '10px', fontWeight: 950, color: '#64748b', marginBottom: '4px', letterSpacing: '1px' }}>ADVICE:</div>
+                        <div style={{ fontSize: '11px', color: '#475569', fontStyle: 'italic' }}>{advice}</div>
                       </div>
-                      <div style={{ fontSize: '9px', color: '#94a3b8', marginTop: '2px' }}>
-                         {protocol?.doctor?.degree} | Reg No: {protocol?.doctor?.licenseNo}
-                      </div>
-                   </div>
+                    )}
+                  </div>
+
+                  {/* Professional Signatory Block */}
+                  <div style={{ marginTop: '60px', display: 'flex', justifyContent: 'flex-end' }}>
+                     <div style={{ textAlign: 'center' }}>
+                        <div style={{ width: '200px', borderBottom: `1px solid ${protocol?.fontColor || '#1e293b'}`, marginBottom: '10px', opacity: 0.3 }}></div>
+                        <div style={{ fontWeight: 950, fontSize: '12px', color: protocol?.fontColor || '#1e293b' }}>
+                          { (protocol?.doctor?.fullName || protocol?.doctor?.name || '').toUpperCase() }
+                        </div>
+                        <div style={{ fontSize: '10px', color: '#64748b', fontWeight: 700 }}>
+                          {protocol?.doctor?.specialization || ''}
+                        </div>
+                        <div style={{ fontSize: '9px', color: '#94a3b8', marginTop: '3px' }}>
+                           {protocol?.doctor?.degree} {protocol?.doctor?.licenseNo ? `• Reg No: ${protocol.doctor.licenseNo}` : ''}
+                        </div>
+                     </div>
+                  </div>
+
+                  {/* Audit & Compliance Footer */}
+                  <div style={{ marginTop: 'auto', paddingTop: '20px', fontSize: '8px', color: '#cbd5e1', textAlign: 'center', borderTop: '1px solid #f1f5f9', letterSpacing: '0.5px' }}>
+                     ID: {activeAppointment?.displayId || activeAppointment?.appointmentId} • Electronic Diagnostic Record • Verified
                 </div>
               </div>
             </div>
           </div>
+          <style>{`
+            @media print {
+              body * { visibility: hidden; }
+              #printable-report, #printable-report * { visibility: visible; }
+              #printable-report { position: fixed; left: 0; top: 0; width: 100%; height: 100%; margin: 0; padding: 0; box-shadow: none; }
+              .modal-overlay { background: white !important; padding: 0 !important; }
+            }
+          `}</style>
         </div>
-        <style>{`
-          @media print {
-            body * { visibility: hidden; }
-            #printable-report, #printable-report * { visibility: visible; }
-            #printable-report { position: fixed; left: 0; top: 0; width: 100%; height: 100%; margin: 0; padding: 0; box-shadow: none; }
-          }
-        `}</style>
       </div>
     );
   };
+
 
   const handleKeyDown = (e) => {
     if (e.key === 'Enter') {

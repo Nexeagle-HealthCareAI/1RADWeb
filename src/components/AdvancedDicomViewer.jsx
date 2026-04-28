@@ -1,4 +1,4 @@
-import React, { useRef, useState, useEffect, useId } from 'react';
+import React, { useRef, useState, useEffect, useId, useCallback } from 'react';
 import {
   RenderingEngine,
   Enums,
@@ -18,16 +18,22 @@ import {
   LengthTool,
   AngleTool,
   EllipticalROITool,
+  RectangleROITool,
+  CircleROITool,
+  PlanarFreehandROITool,
+  ProbeTool,
+  MagnifyTool,
   Enums as toolsEnums,
   synchronizers,
-  utilities
+  utilities,
+  annotation
 } from '@cornerstonejs/tools';
 import * as cornerstone from '@cornerstonejs/core';
 import cornerstoneDICOMImageLoader from '@cornerstonejs/dicom-image-loader';
 import dicomParser from 'dicom-parser';
 
 // ============================================
-// DICOM VIEWER CONFIGURATION
+// ADVANCED DICOM VIEWER CONFIGURATION
 // ============================================
 const DICOM_CONFIG = {
   // Set to false to disable web workers (may help with timeout issues)
@@ -44,6 +50,31 @@ const DICOM_CONFIG = {
   
   // Enable detailed console logging
   DEBUG_LOGGING: true
+};
+
+// Advanced windowing presets for different anatomies
+const WINDOWING_PRESETS = {
+  'Default': { windowCenter: 128, windowWidth: 256 },
+  'Lung': { windowCenter: -600, windowWidth: 1600 },
+  'Mediastinum': { windowCenter: 50, windowWidth: 350 },
+  'Abdomen': { windowCenter: 60, windowWidth: 400 },
+  'Bone': { windowCenter: 300, windowWidth: 1500 },
+  'Brain': { windowCenter: 40, windowWidth: 80 },
+  'Liver': { windowCenter: 30, windowWidth: 150 },
+  'Spine': { windowCenter: 250, windowWidth: 1800 },
+  'Angio': { windowCenter: 300, windowWidth: 600 },
+  'Pediatric': { windowCenter: 50, windowWidth: 200 }
+};
+
+// Measurement tools configuration
+const MEASUREMENT_TOOLS = {
+  'Length': { name: 'LengthTool', icon: '📏', label: 'Distance' },
+  'Angle': { name: 'AngleTool', icon: '📐', label: 'Angle' },
+  'EllipticalROI': { name: 'EllipticalROITool', icon: '⭕', label: 'Ellipse ROI' },
+  'RectangleROI': { name: 'RectangleROITool', icon: '⬜', label: 'Rectangle ROI' },
+  'CircleROI': { name: 'CircleROITool', icon: '🔵', label: 'Circle ROI' },
+  'FreehandROI': { name: 'PlanarFreehandROITool', icon: '✏️', label: 'Freehand ROI' },
+  'Probe': { name: 'ProbeTool', icon: '🎯', label: 'HU Probe' }
 };
 // ============================================
 
@@ -99,7 +130,12 @@ async function initCornerstone() {
     ArrowAnnotateTool,
     LengthTool,
     AngleTool,
-    EllipticalROITool
+    EllipticalROITool,
+    RectangleROITool,
+    CircleROITool,
+    PlanarFreehandROITool,
+    ProbeTool,
+    MagnifyTool
   ];
   
   tools.forEach(tool => {
@@ -266,7 +302,7 @@ async function initCornerstone() {
   });
 
   // Register professional tools
-  [WindowLevelTool, ZoomTool, PanTool, StackScrollTool, LengthTool, AngleTool, EllipticalROITool].forEach(t => {
+  [WindowLevelTool, ZoomTool, PanTool, StackScrollTool, LengthTool, AngleTool, EllipticalROITool, RectangleROITool, CircleROITool, PlanarFreehandROITool, ProbeTool, MagnifyTool].forEach(t => {
       try { addTool(t); } catch (e) { /* Already added */ }
   });
 
@@ -289,7 +325,14 @@ const AdvancedDicomViewer = ({
   onScreenshot,
   isSynced,
   onKeyImageToggle,
-  keyImages = []
+  keyImages = [],
+  // New advanced props
+  showMetadata = true,
+  showMeasurements = true,
+  showWindowingPresets = true,
+  enableAdvancedTools = true,
+  onMeasurement = null,
+  onAnnotation = null
 }) => {
   const containerRef = useRef(null);
   const elementRef = useRef(null);
@@ -305,6 +348,15 @@ const AdvancedDicomViewer = ({
   const [isReady, setIsReady] = useState(false);
   const [metadata, setMetadata] = useState(null);
   const [currentImageIndex, setCurrentImageIndex] = useState(0);
+  
+  // Advanced viewer states
+  const [currentWindowingPreset, setCurrentWindowingPreset] = useState('Default');
+  const [measurements, setMeasurements] = useState([]);
+  const [annotations, setAnnotations] = useState([]);
+  const [showDicomTags, setShowDicomTags] = useState(false);
+  const [pixelData, setPixelData] = useState(null);
+  const [hounsFieldValue, setHounsFieldValue] = useState(null);
+  const [imageStatistics, setImageStatistics] = useState(null);
 
   useEffect(() => {
     if (!files || files.length === 0) return;
@@ -333,14 +385,24 @@ const AdvancedDicomViewer = ({
           return;
         }
 
+        // Extract only essential metadata for fast loading
         const meta = {
           patientName: dataSet.string('x00100010'),
           patientId: dataSet.string('x00100020'),
           studyDate: dataSet.string('x00080020'),
           modality: dataSet.string('x00080060'),
           seriesDescription: dataSet.string('x0008103e'),
-          instances: files.length
+          instances: files.length,
+          rows: dataSet.uint16('x00280010'),
+          columns: dataSet.uint16('x00280011'),
+          pixelSpacing: dataSet.string('x00280030'),
+          sliceThickness: dataSet.string('x00180050'),
+          windowCenter: dataSet.string('x00281050'),
+          windowWidth: dataSet.string('x00281051'),
+          rescaleIntercept: dataSet.string('x00281052'),
+          rescaleSlope: dataSet.string('x00281053')
         };
+        
         setMetadata(meta);
         if (onMetadata) onMetadata(meta);
 
@@ -573,7 +635,8 @@ const AdvancedDicomViewer = ({
         [
           WindowLevelTool, ZoomTool, PanTool, StackScrollTool,
           ArrowAnnotateTool, 
-          LengthTool, AngleTool, EllipticalROITool
+          LengthTool, AngleTool, EllipticalROITool, RectangleROITool, 
+          CircleROITool, PlanarFreehandROITool, ProbeTool, MagnifyTool
         ].forEach(t => {
             if (!toolGroup.hasTool(t.toolName)) {
                toolGroup.addTool(t.toolName);
@@ -693,6 +756,160 @@ const AdvancedDicomViewer = ({
     }
   }, [activeTool]);
 
+  // --- ADVANCED WINDOWING PRESETS ---
+  const applyWindowingPreset = useCallback((presetName) => {
+    if (!renderingEngineRef.current || !isReady) return;
+    
+    const viewport = renderingEngineRef.current.getViewport(viewportId);
+    if (viewport && viewport.getCurrentImageId()) {
+      const preset = WINDOWING_PRESETS[presetName];
+      if (preset) {
+        try {
+          viewport.setProperties({
+            voiRange: {
+              lower: preset.windowCenter - preset.windowWidth / 2,
+              upper: preset.windowCenter + preset.windowWidth / 2
+            }
+          });
+          viewport.render();
+          setCurrentWindowingPreset(presetName);
+          console.log(`[DICOM] Applied windowing preset: ${presetName}`);
+        } catch (e) {
+          console.warn("[DICOM] Windowing preset failed:", e);
+        }
+      }
+    }
+  }, [isReady, viewportId]);
+
+  // --- MEASUREMENT HANDLING ---
+  const handleMeasurementAdded = useCallback((evt) => {
+    const { detail } = evt;
+    const measurement = {
+      id: detail.annotationUID,
+      tool: detail.toolName,
+      data: detail.annotation.data,
+      timestamp: new Date().toISOString()
+    };
+    
+    setMeasurements(prev => [...prev, measurement]);
+    if (onMeasurement) onMeasurement(measurement);
+    
+    console.log('[DICOM] Measurement added:', measurement);
+  }, [onMeasurement]);
+
+  // --- PIXEL PROBE FUNCTIONALITY ---
+  const handlePixelProbe = useCallback((evt) => {
+    const { detail } = evt;
+    if (detail.element && detail.currentPoints) {
+      const viewport = renderingEngineRef.current.getViewport(viewportId);
+      if (viewport) {
+        try {
+          const canvas = viewport.getCanvas();
+          const image = viewport.getCurrentImageId();
+          
+          // Get pixel value at probe location
+          const pixelCoords = detail.currentPoints.canvas[0];
+          const imageData = canvas.getContext('2d').getImageData(
+            pixelCoords[0], pixelCoords[1], 1, 1
+          );
+          
+          // Calculate Hounsfield Units for CT images
+          if (metadata?.modality === 'CT') {
+            const rescaleSlope = parseFloat(metadata.rescaleSlope) || 1;
+            const rescaleIntercept = parseFloat(metadata.rescaleIntercept) || 0;
+            const pixelValue = imageData.data[0];
+            const hounsfield = pixelValue * rescaleSlope + rescaleIntercept;
+            
+            setHounsFieldValue(hounsfield);
+            setPixelData({
+              x: Math.round(pixelCoords[0]),
+              y: Math.round(pixelCoords[1]),
+              pixelValue,
+              hounsfield: Math.round(hounsfield)
+            });
+          } else {
+            setPixelData({
+              x: Math.round(pixelCoords[0]),
+              y: Math.round(pixelCoords[1]),
+              pixelValue: imageData.data[0]
+            });
+          }
+        } catch (e) {
+          console.warn('[DICOM] Pixel probe failed:', e);
+        }
+      }
+    }
+  }, [metadata, viewportId]);
+
+  // --- IMAGE STATISTICS CALCULATION ---
+  const calculateImageStatistics = useCallback(() => {
+    if (!renderingEngineRef.current || !isReady) return;
+    
+    const viewport = renderingEngineRef.current.getViewport(viewportId);
+    if (viewport) {
+      try {
+        const canvas = viewport.getCanvas();
+        const ctx = canvas.getContext('2d');
+        const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+        const pixels = imageData.data;
+        
+        let min = Infinity, max = -Infinity, sum = 0, count = 0;
+        
+        // Sample every 4th pixel for performance (RGBA -> grayscale)
+        for (let i = 0; i < pixels.length; i += 4) {
+          const gray = (pixels[i] + pixels[i + 1] + pixels[i + 2]) / 3;
+          min = Math.min(min, gray);
+          max = Math.max(max, gray);
+          sum += gray;
+          count++;
+        }
+        
+        const mean = sum / count;
+        
+        // Calculate standard deviation
+        let variance = 0;
+        for (let i = 0; i < pixels.length; i += 4) {
+          const gray = (pixels[i] + pixels[i + 1] + pixels[i + 2]) / 3;
+          variance += Math.pow(gray - mean, 2);
+        }
+        const stdDev = Math.sqrt(variance / count);
+        
+        setImageStatistics({
+          min: Math.round(min),
+          max: Math.round(max),
+          mean: Math.round(mean),
+          stdDev: Math.round(stdDev),
+          pixelCount: count
+        });
+      } catch (e) {
+        console.warn('[DICOM] Statistics calculation failed:', e);
+      }
+    }
+  }, [isReady, viewportId]);
+
+  // --- EVENT LISTENERS FOR MEASUREMENTS ---
+  useEffect(() => {
+    if (!elementRef.current || !isReady) return;
+    
+    const element = elementRef.current;
+    
+    // Listen for measurement events
+    element.addEventListener('cornerstoneToolsMeasurementAdded', handleMeasurementAdded);
+    element.addEventListener('cornerstoneToolsMeasurementModified', handleMeasurementAdded);
+    
+    // Listen for probe events
+    element.addEventListener('cornerstoneToolsProbeClick', handlePixelProbe);
+    
+    return () => {
+      element.removeEventListener('cornerstoneToolsMeasurementAdded', handleMeasurementAdded);
+      element.removeEventListener('cornerstoneToolsMeasurementModified', handleMeasurementAdded);
+      element.removeEventListener('cornerstoneToolsProbeClick', handlePixelProbe);
+    };
+  }, [isReady, handleMeasurementAdded, handlePixelProbe]);
+
+  // Calculate statistics only on demand, not automatically
+  // Removed automatic calculation to improve performance
+
   // --- CINE PLAYBACK ---
   useEffect(() => {
     if (!isCine || !renderingEngineRef.current || !isReady) return;
@@ -772,7 +989,270 @@ const AdvancedDicomViewer = ({
       {!isReady && (
         <div style={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', zIndex: 10, background: '#000' }}>
            <div className="dicom-loader"></div>
-           <p style={{ color: '#0f52ba', fontSize: '10px', fontWeight: 950, marginTop: '20px', letterSpacing: '3px' }}>PARSING_GENOMIC_DATA</p>
+           <p style={{ color: '#0f52ba', fontSize: '10px', fontWeight: 950, marginTop: '20px', letterSpacing: '3px' }}>PARSING_DIAGNOSTIC_DATA</p>
+        </div>
+      )}
+
+      {/* ADVANCED WINDOWING PRESETS TOOLBAR */}
+      {isReady && showWindowingPresets && (
+        <div style={{
+          position: 'absolute',
+          top: '15px',
+          left: '15px',
+          display: 'flex',
+          gap: '5px',
+          zIndex: 100,
+          background: 'rgba(15, 23, 42, 0.9)',
+          backdropFilter: 'blur(10px)',
+          padding: '8px',
+          borderRadius: '12px',
+          border: '1px solid rgba(255,255,255,0.1)'
+        }}>
+          {Object.keys(WINDOWING_PRESETS).map(preset => (
+            <button
+              key={preset}
+              onClick={() => applyWindowingPreset(preset)}
+              style={{
+                background: currentWindowingPreset === preset ? '#3b82f6' : 'rgba(255,255,255,0.1)',
+                border: 'none',
+                color: 'white',
+                padding: '4px 8px',
+                borderRadius: '6px',
+                fontSize: '9px',
+                fontWeight: 700,
+                cursor: 'pointer',
+                transition: 'all 0.2s'
+              }}
+            >
+              {preset}
+            </button>
+          ))}
+        </div>
+      )}
+
+      {/* ENHANCED METADATA OVERLAY - Simplified for performance */}
+      {isReady && showMetadata && metadata && (
+        <div style={{
+          position: 'absolute',
+          top: '15px',
+          right: '15px',
+          background: 'rgba(15, 23, 42, 0.9)',
+          backdropFilter: 'blur(10px)',
+          color: 'white',
+          padding: '10px',
+          borderRadius: '10px',
+          fontSize: '9px',
+          zIndex: 100,
+          fontFamily: 'monospace',
+          border: '1px solid rgba(255,255,255,0.1)',
+          maxWidth: '250px'
+        }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
+            <span style={{ fontWeight: 900, color: '#3b82f6', fontSize: '10px' }}>PATIENT INFO</span>
+            <button
+              onClick={() => setShowDicomTags(!showDicomTags)}
+              style={{
+                background: 'rgba(59, 130, 246, 0.2)',
+                border: '1px solid #3b82f6',
+                color: '#3b82f6',
+                padding: '2px 6px',
+                borderRadius: '4px',
+                fontSize: '8px',
+                cursor: 'pointer'
+              }}
+            >
+              {showDicomTags ? 'HIDE' : 'MORE'}
+            </button>
+          </div>
+          
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 2fr', gap: '3px', fontSize: '9px' }}>
+            <span style={{ color: '#94a3b8' }}>Name:</span>
+            <span>{metadata.patientName || 'Unknown'}</span>
+            <span style={{ color: '#94a3b8' }}>ID:</span>
+            <span>{metadata.patientId || 'Unknown'}</span>
+            <span style={{ color: '#94a3b8' }}>Modality:</span>
+            <span>{metadata.modality || 'Unknown'}</span>
+            
+            {files && files.length > 1 && (
+              <>
+                <span style={{ color: '#94a3b8' }}>Image:</span>
+                <span>{currentImageIndex + 1} / {files.length}</span>
+              </>
+            )}
+          </div>
+
+          {/* Extended DICOM Tags - Only show on demand */}
+          {showDicomTags && (
+            <div style={{ marginTop: '8px', paddingTop: '6px', borderTop: '1px solid rgba(255,255,255,0.1)' }}>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 2fr', gap: '3px', fontSize: '8px' }}>
+                {metadata.studyDate && (
+                  <>
+                    <span style={{ color: '#94a3b8' }}>Study:</span>
+                    <span>{metadata.studyDate}</span>
+                  </>
+                )}
+                {metadata.seriesDescription && (
+                  <>
+                    <span style={{ color: '#94a3b8' }}>Series:</span>
+                    <span>{metadata.seriesDescription}</span>
+                  </>
+                )}
+                {metadata.rows && metadata.columns && (
+                  <>
+                    <span style={{ color: '#94a3b8' }}>Matrix:</span>
+                    <span>{metadata.rows} × {metadata.columns}</span>
+                  </>
+                )}
+                {metadata.sliceThickness && (
+                  <>
+                    <span style={{ color: '#94a3b8' }}>Thickness:</span>
+                    <span>{metadata.sliceThickness} mm</span>
+                  </>
+                )}
+                {metadata.pixelSpacing && (
+                  <>
+                    <span style={{ color: '#94a3b8' }}>Spacing:</span>
+                    <span>{metadata.pixelSpacing} mm</span>
+                  </>
+                )}
+                {metadata.windowCenter && metadata.windowWidth && (
+                  <>
+                    <span style={{ color: '#94a3b8' }}>W/L:</span>
+                    <span>{metadata.windowWidth}/{metadata.windowCenter}</span>
+                  </>
+                )}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* PIXEL PROBE DISPLAY */}
+      {pixelData && (
+        <div style={{
+          position: 'absolute',
+          bottom: '80px',
+          left: '15px',
+          background: 'rgba(15, 23, 42, 0.9)',
+          backdropFilter: 'blur(10px)',
+          color: 'white',
+          padding: '8px 12px',
+          borderRadius: '8px',
+          fontSize: '10px',
+          zIndex: 100,
+          fontFamily: 'monospace',
+          border: '1px solid rgba(255,255,255,0.1)'
+        }}>
+          <div style={{ fontWeight: 900, color: '#3b82f6', marginBottom: '4px' }}>PIXEL PROBE</div>
+          <div>X: {pixelData.x}, Y: {pixelData.y}</div>
+          <div>Value: {pixelData.pixelValue}</div>
+          {pixelData.hounsfield !== undefined && (
+            <div style={{ color: '#10b981' }}>HU: {pixelData.hounsfield}</div>
+          )}
+        </div>
+      )}
+
+      {/* IMAGE STATISTICS PANEL - Only show if calculated */}
+      {imageStatistics && showMetadata && (
+        <div style={{
+          position: 'absolute',
+          bottom: '15px',
+          right: '15px',
+          background: 'rgba(15, 23, 42, 0.9)',
+          backdropFilter: 'blur(10px)',
+          color: 'white',
+          padding: '8px 12px',
+          borderRadius: '8px',
+          fontSize: '9px',
+          zIndex: 100,
+          fontFamily: 'monospace',
+          border: '1px solid rgba(255,255,255,0.1)'
+        }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' }}>
+            <span style={{ fontWeight: 900, color: '#3b82f6' }}>IMAGE STATS</span>
+            <button
+              onClick={calculateImageStatistics}
+              style={{
+                background: 'rgba(59, 130, 246, 0.2)',
+                border: '1px solid #3b82f6',
+                color: '#3b82f6',
+                padding: '2px 6px',
+                borderRadius: '4px',
+                fontSize: '8px',
+                cursor: 'pointer'
+              }}
+            >
+              REFRESH
+            </button>
+          </div>
+          <div>Min: {imageStatistics.min}</div>
+          <div>Max: {imageStatistics.max}</div>
+          <div>Mean: {imageStatistics.mean}</div>
+          <div>StdDev: {imageStatistics.stdDev}</div>
+        </div>
+      )}
+
+      {/* CALCULATE STATS BUTTON - Show when stats not calculated */}
+      {!imageStatistics && showMetadata && isReady && (
+        <div style={{
+          position: 'absolute',
+          bottom: '15px',
+          right: '15px',
+          zIndex: 100
+        }}>
+          <button
+            onClick={calculateImageStatistics}
+            style={{
+              background: 'rgba(59, 130, 246, 0.9)',
+              border: '1px solid #3b82f6',
+              color: 'white',
+              padding: '6px 12px',
+              borderRadius: '8px',
+              fontSize: '9px',
+              cursor: 'pointer',
+              fontWeight: 700
+            }}
+          >
+            📊 CALCULATE STATS
+          </button>
+        </div>
+      )}
+
+      {/* MEASUREMENTS PANEL */}
+      {measurements.length > 0 && showMeasurements && (
+        <div style={{
+          position: 'absolute',
+          top: '80px',
+          left: '15px',
+          background: 'rgba(15, 23, 42, 0.9)',
+          backdropFilter: 'blur(10px)',
+          color: 'white',
+          padding: '8px 12px',
+          borderRadius: '8px',
+          fontSize: '9px',
+          zIndex: 100,
+          fontFamily: 'monospace',
+          border: '1px solid rgba(255,255,255,0.1)',
+          maxHeight: '200px',
+          overflowY: 'auto',
+          minWidth: '200px'
+        }}>
+          <div style={{ fontWeight: 900, color: '#3b82f6', marginBottom: '6px' }}>MEASUREMENTS</div>
+          {measurements.slice(-5).map((measurement, index) => (
+            <div key={measurement.id} style={{ marginBottom: '4px', padding: '4px', background: 'rgba(255,255,255,0.05)', borderRadius: '4px' }}>
+              <div style={{ color: '#10b981', fontWeight: 700 }}>{measurement.tool}</div>
+              <div style={{ fontSize: '8px', color: '#94a3b8' }}>
+                {measurement.data?.cachedStats?.length && `Length: ${measurement.data.cachedStats.length.toFixed(2)} mm`}
+                {measurement.data?.cachedStats?.angle && `Angle: ${measurement.data.cachedStats.angle.toFixed(1)}°`}
+                {measurement.data?.cachedStats?.area && `Area: ${measurement.data.cachedStats.area.toFixed(2)} mm²`}
+              </div>
+            </div>
+          ))}
+          {measurements.length > 5 && (
+            <div style={{ fontSize: '8px', color: '#94a3b8', textAlign: 'center', marginTop: '4px' }}>
+              +{measurements.length - 5} more measurements
+            </div>
+          )}
         </div>
       )}
 

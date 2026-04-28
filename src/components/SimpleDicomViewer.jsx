@@ -2,6 +2,7 @@ import React, { useRef, useState, useEffect } from 'react';
 import cornerstone from 'cornerstone-core';
 import * as cornerstoneWADOImageLoader from 'cornerstone-wado-image-loader';
 import dicomParser from 'dicom-parser';
+import { ANATOMICAL_PRESETS, DicomMetadataExtractor, HounsfieldAnalyzer } from '../utils/DicomToolsEnhancer';
 
 // Simple, reliable DICOM viewer using cornerstone-core (v2.x)
 // This is more stable than the newer @cornerstonejs packages
@@ -40,12 +41,27 @@ function initCornerstoneSimple() {
   }
 }
 
-const SimpleDicomViewer = ({ files, onImageStatus, onMetadata }) => {
+const SimpleDicomViewer = ({ 
+  files, 
+  onImageStatus, 
+  onMetadata,
+  // Enhanced props
+  showEnhancedMetadata = false,
+  showWindowingPresets = false,
+  enablePixelProbe = false,
+  onPixelProbe = null
+}) => {
   const viewerRef = useRef(null);
   const [error, setError] = useState(null);
   const [isLoading, setIsLoading] = useState(false);
   const [metadata, setMetadata] = useState(null);
   const [currentIndex, setCurrentIndex] = useState(0);
+  
+  // Enhanced states
+  const [enhancedMetadata, setEnhancedMetadata] = useState(null);
+  const [currentPreset, setCurrentPreset] = useState('Default');
+  const [pixelProbeData, setPixelProbeData] = useState(null);
+  const [showMetadataPanel, setShowMetadataPanel] = useState(false);
 
   // Initialize cornerstone
   useEffect(() => {
@@ -103,6 +119,12 @@ const SimpleDicomViewer = ({ files, onImageStatus, onMetadata }) => {
         if (isMounted) {
           setMetadata(meta);
           if (onMetadata) onMetadata(meta);
+          
+          // Extract enhanced metadata if enabled
+          if (showEnhancedMetadata) {
+            const enhanced = DicomMetadataExtractor.extractMetadata(dataSet);
+            setEnhancedMetadata(enhanced);
+          }
         }
 
         // Create blob URL for the file
@@ -195,6 +217,71 @@ const SimpleDicomViewer = ({ files, onImageStatus, onMetadata }) => {
     };
   }, [files]);
 
+  // Apply windowing preset
+  const applyWindowingPreset = (presetName) => {
+    if (!viewerRef.current) return;
+    
+    try {
+      const preset = ANATOMICAL_PRESETS[presetName];
+      if (preset) {
+        const viewport = cornerstone.getViewport(viewerRef.current);
+        viewport.voi.windowWidth = preset.windowWidth;
+        viewport.voi.windowCenter = preset.windowCenter;
+        cornerstone.setViewport(viewerRef.current, viewport);
+        setCurrentPreset(presetName);
+        console.log(`[SimpleDICOM] Applied preset: ${presetName}`);
+      }
+    } catch (e) {
+      console.warn('[SimpleDICOM] Preset application failed:', e);
+    }
+  };
+
+  // Handle pixel probe click
+  const handlePixelClick = (e) => {
+    if (!enablePixelProbe || !viewerRef.current) return;
+    
+    try {
+      const rect = viewerRef.current.getBoundingClientRect();
+      const x = e.clientX - rect.left;
+      const y = e.clientY - rect.top;
+      
+      const enabledElement = cornerstone.getEnabledElement(viewerRef.current);
+      const image = enabledElement.image;
+      
+      if (image) {
+        // Convert canvas coordinates to image coordinates
+        const viewport = cornerstone.getViewport(viewerRef.current);
+        const imagePoint = cornerstone.canvasToPixel(enabledElement, { x, y });
+        
+        // Get pixel value
+        const pixelIndex = Math.round(imagePoint.y) * image.width + Math.round(imagePoint.x);
+        const pixelData = image.getPixelData();
+        const pixelValue = pixelData[pixelIndex];
+        
+        // Calculate Hounsfield Units for CT
+        let hounsfield = null;
+        if (metadata?.modality === 'CT' && enhancedMetadata) {
+          const slope = parseFloat(enhancedMetadata.rescaleSlope) || 1;
+          const intercept = parseFloat(enhancedMetadata.rescaleIntercept) || 0;
+          hounsfield = pixelValue * slope + intercept;
+        }
+        
+        const probeData = {
+          x: Math.round(imagePoint.x),
+          y: Math.round(imagePoint.y),
+          pixelValue,
+          hounsfield: hounsfield ? Math.round(hounsfield) : null,
+          tissueType: hounsfield ? HounsfieldAnalyzer.classifyTissue(hounsfield) : null
+        };
+        
+        setPixelProbeData(probeData);
+        if (onPixelProbe) onPixelProbe(probeData);
+      }
+    } catch (e) {
+      console.warn('[SimpleDICOM] Pixel probe failed:', e);
+    }
+  };
+
   if (error) {
     return (
       <div style={{
@@ -253,26 +340,182 @@ const SimpleDicomViewer = ({ files, onImageStatus, onMetadata }) => {
         </div>
       )}
 
-      {/* Metadata overlay */}
+      {/* Enhanced Windowing Presets */}
+      {showWindowingPresets && metadata && (
+        <div style={{
+          position: 'absolute',
+          top: '15px',
+          left: '15px',
+          display: 'flex',
+          flexWrap: 'wrap',
+          gap: '4px',
+          zIndex: 100,
+          background: 'rgba(15, 23, 42, 0.9)',
+          backdropFilter: 'blur(10px)',
+          padding: '8px',
+          borderRadius: '12px',
+          border: '1px solid rgba(255,255,255,0.1)',
+          maxWidth: '300px'
+        }}>
+          <div style={{ width: '100%', fontSize: '9px', color: '#3b82f6', fontWeight: 900, marginBottom: '4px' }}>
+            WINDOWING PRESETS
+          </div>
+          {Object.entries(ANATOMICAL_PRESETS)
+            .filter(([key]) => key.startsWith(metadata.modality) || key === 'Default')
+            .map(([key, preset]) => (
+              <button
+                key={key}
+                onClick={() => applyWindowingPreset(key)}
+                style={{
+                  background: currentPreset === key ? '#3b82f6' : 'rgba(255,255,255,0.1)',
+                  border: 'none',
+                  color: 'white',
+                  padding: '3px 6px',
+                  borderRadius: '4px',
+                  fontSize: '8px',
+                  fontWeight: 700,
+                  cursor: 'pointer',
+                  transition: 'all 0.2s'
+                }}
+                title={preset.description}
+              >
+                {key.replace(`${metadata.modality}_`, '').replace('_', ' ')}
+              </button>
+            ))}
+        </div>
+      )}
+
+      {/* Enhanced metadata overlay */}
       {metadata && (
         <div style={{
           position: 'absolute',
           top: '10px',
-          left: '10px',
-          background: 'rgba(0,0,0,0.7)',
+          right: '10px',
+          background: 'rgba(0,0,0,0.8)',
           color: '#00f2fe',
-          padding: '10px',
-          borderRadius: '5px',
-          fontSize: '11px',
+          padding: '12px',
+          borderRadius: '8px',
+          fontSize: '10px',
           zIndex: 5,
-          fontFamily: 'monospace'
+          fontFamily: 'monospace',
+          border: '1px solid rgba(0, 242, 254, 0.3)'
         }}>
-          <div><strong>Patient:</strong> {metadata.patientName}</div>
-          <div><strong>ID:</strong> {metadata.patientId}</div>
-          <div><strong>Modality:</strong> {metadata.modality}</div>
-          <div><strong>Study Date:</strong> {metadata.studyDate}</div>
-          {files && files.length > 1 && (
-            <div><strong>Image:</strong> {currentIndex + 1} / {files.length}</div>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+            <span style={{ fontWeight: 900, color: '#3b82f6' }}>PATIENT INFO</span>
+            {showEnhancedMetadata && (
+              <button
+                onClick={() => setShowMetadataPanel(!showMetadataPanel)}
+                style={{
+                  background: 'rgba(59, 130, 246, 0.2)',
+                  border: '1px solid #3b82f6',
+                  color: '#3b82f6',
+                  padding: '2px 6px',
+                  borderRadius: '4px',
+                  fontSize: '8px',
+                  cursor: 'pointer'
+                }}
+              >
+                {showMetadataPanel ? 'HIDE' : 'FULL'}
+              </button>
+            )}
+          </div>
+          
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 2fr', gap: '4px', fontSize: '9px' }}>
+            <span style={{ color: '#94a3b8' }}>Name:</span>
+            <span>{metadata.patientName}</span>
+            <span style={{ color: '#94a3b8' }}>ID:</span>
+            <span>{metadata.patientId}</span>
+            <span style={{ color: '#94a3b8' }}>Modality:</span>
+            <span>{metadata.modality}</span>
+            <span style={{ color: '#94a3b8' }}>Study:</span>
+            <span>{metadata.studyDate}</span>
+            <span style={{ color: '#94a3b8' }}>Series:</span>
+            <span>{metadata.seriesDescription}</span>
+            
+            {metadata.rows && metadata.columns && (
+              <>
+                <span style={{ color: '#94a3b8' }}>Matrix:</span>
+                <span>{metadata.rows} × {metadata.columns}</span>
+              </>
+            )}
+            
+            {files && files.length > 1 && (
+              <>
+                <span style={{ color: '#94a3b8' }}>Image:</span>
+                <span>{currentIndex + 1} / {files.length}</span>
+              </>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Enhanced Metadata Panel */}
+      {showMetadataPanel && enhancedMetadata && (
+        <div style={{
+          position: 'absolute',
+          top: '15px',
+          right: '350px',
+          background: 'rgba(15, 23, 42, 0.95)',
+          backdropFilter: 'blur(10px)',
+          color: 'white',
+          padding: '15px',
+          borderRadius: '12px',
+          fontSize: '9px',
+          zIndex: 100,
+          fontFamily: 'monospace',
+          border: '1px solid rgba(255,255,255,0.1)',
+          maxWidth: '400px',
+          maxHeight: '500px',
+          overflowY: 'auto'
+        }}>
+          <div style={{ fontWeight: 900, color: '#3b82f6', marginBottom: '10px' }}>COMPLETE DICOM METADATA</div>
+          
+          {Object.entries(DicomMetadataExtractor.formatForDisplay(enhancedMetadata)).map(([section, data]) => (
+            <div key={section} style={{ marginBottom: '12px' }}>
+              <div style={{ fontWeight: 900, color: '#10b981', marginBottom: '4px', fontSize: '8px' }}>
+                {section.toUpperCase()}
+              </div>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 2fr', gap: '2px', fontSize: '8px' }}>
+                {Object.entries(data).map(([key, value]) => (
+                  <React.Fragment key={key}>
+                    <span style={{ color: '#94a3b8' }}>{key}:</span>
+                    <span style={{ wordBreak: 'break-all' }}>{value}</span>
+                  </React.Fragment>
+                ))}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Pixel Probe Display */}
+      {pixelProbeData && (
+        <div style={{
+          position: 'absolute',
+          bottom: '80px',
+          left: '15px',
+          background: 'rgba(15, 23, 42, 0.9)',
+          backdropFilter: 'blur(10px)',
+          color: 'white',
+          padding: '8px 12px',
+          borderRadius: '8px',
+          fontSize: '10px',
+          zIndex: 100,
+          fontFamily: 'monospace',
+          border: '1px solid rgba(255,255,255,0.1)'
+        }}>
+          <div style={{ fontWeight: 900, color: '#3b82f6', marginBottom: '4px' }}>PIXEL PROBE</div>
+          <div>X: {pixelProbeData.x}, Y: {pixelProbeData.y}</div>
+          <div>Value: {pixelProbeData.pixelValue}</div>
+          {pixelProbeData.hounsfield !== null && (
+            <>
+              <div style={{ color: '#10b981' }}>HU: {pixelProbeData.hounsfield}</div>
+              {pixelProbeData.tissueType && (
+                <div style={{ color: pixelProbeData.tissueType.color, fontSize: '9px' }}>
+                  {pixelProbeData.tissueType.tissue}
+                </div>
+              )}
+            </>
           )}
         </div>
       )}
