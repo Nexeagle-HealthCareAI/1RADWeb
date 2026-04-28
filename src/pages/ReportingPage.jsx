@@ -170,7 +170,29 @@ const ReportingPage = () => {
         console.warn(`[1RAD] Institutional Branding failed for DoctorID: ${doctorId}. Reverting to default.`);
       }
       
-      // If existing report found, populate state
+      if (assetRes.data && assetRes.data.length > 0) {
+        console.info(`[1RAD] Found ${assetRes.data.length} existing study assets`);
+        const hydAssets = assetRes.data.map(asset => ({
+          id: asset.id,
+          name: asset.fileName,
+          type: asset.fileType.toUpperCase(),
+          remoteUrl: asset.blobUrl,
+          needsHydration: asset.fileType.toLowerCase() === 'zip',
+          rawFiles: []
+        }));
+        setUploadedFiles(hydAssets);
+        
+        // Auto-hydrate first asset if it's a ZIP
+        if (hydAssets.length > 0 && hydAssets[0].needsHydration) {
+          console.info(`[1RAD] Auto-hydrating first asset: ${hydAssets[0].name}`);
+          // Trigger hydration after state is set
+          setTimeout(() => {
+            setActiveAssetIndex(0);
+          }, 100);
+        }
+      } else {
+        console.info(`[1RAD] No existing study assets found`);
+      }
       if (reportRes.data?.success && reportRes.data.data) {
         const r = reportRes.data.data;
         console.info(`[1RAD] Found Existing Report. Methodology: ${r.reportingMode || 'UNDEFINED'}`);
