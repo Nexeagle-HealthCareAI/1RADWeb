@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect, useMemo, useCallback } from 'react';
-import { useNavigate, useParams } from 'react-router-dom';
+import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import JSZip from 'jszip';
 import dicomParser from 'dicom-parser';
 import AdvancedDicomViewer from '../components/AdvancedDicomViewer';
@@ -9,7 +9,8 @@ import { DicomCache } from '../utils/DicomCache';
 const ReportingPage = () => {
   const navigate = useNavigate();
   const params = useParams();
-  const appointmentId = params.id;
+  const [searchParams] = useSearchParams();
+  const appointmentId = params.id || searchParams.get('id');
   const [activeTab, setActiveTab] = useState('Structured');
   const [showKeywordDrawer, setShowKeywordDrawer] = useState(false);
   const [showTableModal, setShowTableModal] = useState(false);
@@ -59,6 +60,7 @@ const ReportingPage = () => {
   const [keyImages, setKeyImages] = useState([]);
   const [isSyncEnabled, setIsSyncEnabled] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState(null);
   const [isDicomImage, setIsDicomImage] = useState(false);
   const [editorState, setEditorState] = useState('standard'); // 'standard', 'expanded', 'collapsed'
   const [editorWidth, setEditorWidth] = useState(50); // percentage
@@ -77,6 +79,7 @@ const ReportingPage = () => {
   const [isFinalized, setIsFinalized] = useState(false);
   const [structuredData, setStructuredData] = useState({});
   const [selectedTemplateId, setSelectedTemplateId] = useState(null);
+  const [selectedKeywordId, setSelectedKeywordId] = useState(null);
 
   useEffect(() => {
     const handleResize = () => {
@@ -96,6 +99,7 @@ const ReportingPage = () => {
   // --- DATA FETCHING ---
   const fetchReportingContext = useCallback(async (appId) => {
     setLoading(true);
+    setError(null);
     try {
       const [templRes, keyRes, protRes, reportRes, appRes, assetRes] = await Promise.all([
         apiClient.get('/reporting/templates'),
@@ -107,9 +111,20 @@ const ReportingPage = () => {
       ]);
 
       if (templRes.data?.success) setTemplates(templRes.data.data);
-      if (keyRes.data?.success) setKeywordLibrary(keyRes.data.data);
+      if (keyRes.data?.success) {
+        const mapped = keyRes.data.data.map(k => ({
+          ...k,
+          trigger: k.trigger || k.keyword
+        }));
+        setKeywordLibrary(mapped);
+      }
       if (protRes.data?.success) setProtocol(protRes.data.data);
-      if (appRes?.data) setActiveAppointment(appRes.data);
+      
+      if (appRes?.data) {
+        setActiveAppointment(appRes.data);
+      } else {
+        setError("PATIENT_CONTEXT_NOT_FOUND: The requested appointment record could not be retrieved. Please verify the URL or return to the worklist.");
+      }
       
       // If existing report found, populate state
       if (reportRes.data?.success && reportRes.data.data) {
@@ -131,6 +146,7 @@ const ReportingPage = () => {
       }
     } catch (err) {
       console.error('[REPORTING] Initialization failure', err);
+      setError("SYSTEM_INITIALIZATION_ERROR: A critical failure occurred while preparing the diagnostic workspace. " + (err.message || "Please check your connection."));
     } finally {
       setLoading(false);
     }
@@ -211,20 +227,30 @@ const ReportingPage = () => {
   const handleSaveTemplate = async () => {
     try {
       const payload = {
-        name: newTemplate.name,
-        modality: newTemplate.modality,
-        description: `Custom ${newTemplate.modality} Template`,
-        content: JSON.stringify(newTemplate.sections),
-        isStructured: true
+        Name: newTemplate.name,
+        Modality: newTemplate.modality,
+        Description: `Custom ${newTemplate.modality} Template`,
+        Content: JSON.stringify(newTemplate.sections),
+        IsStructured: true,
+        DoctorId: protocol?.doctorId || activeAppointment?.doctorId,
+        HospitalId: protocol?.hospitalId || activeAppointment?.hospitalId
       };
+      
+      if (selectedTemplateId && selectedTemplateId !== 'new') {
+        payload.Id = selectedTemplateId;
+      }
+      
+      console.log('[TEMPLATE] Upserting payload:', payload);
+
       const res = await apiClient.post('/reporting/templates/upsert', payload);
       if (res.data.success) {
         alert('TEMPLATE PUBLISHED: Added to clinical library.');
-        setShowTemplateForm(false);
+        setSelectedTemplateId(null);
         fetchReportingContext(appointmentId);
       }
     } catch (err) {
-      alert('TEMPLATE SAVE FAILURE');
+      console.error('[TEMPLATE] Save failed', err.response?.data);
+      alert(`TEMPLATE SAVE FAILURE: ${err.response?.data?.errors?.HospitalId?.[0] || err.response?.data?.title || 'Validation Error'}`);
     }
   };
 
@@ -240,14 +266,28 @@ const ReportingPage = () => {
 
   const handleSaveMacro = async () => {
     try {
-      const res = await apiClient.post('/reporting/keywords/upsert', newMacro);
+      const payload = {
+        Trigger: newMacro.trigger,
+        ReplacementText: newMacro.replacementText,
+        DoctorId: protocol?.doctorId || activeAppointment?.doctorId,
+        HospitalId: protocol?.hospitalId || activeAppointment?.hospitalId
+      };
+
+      if (selectedKeywordId && selectedKeywordId !== 'new') {
+        payload.Id = selectedKeywordId;
+      }
+
+      console.log('[MACRO] Upserting payload:', payload);
+
+      const res = await apiClient.post('/reporting/keywords/upsert', payload);
       if (res.data.success) {
         alert('MACRO SYNCHRONIZED: Available for shorthand entry.');
-        setShowNewKeywordForm(false);
+        setSelectedKeywordId(null);
         fetchReportingContext(appointmentId);
       }
     } catch (err) {
-      alert('MACRO SAVE FAILURE');
+      console.error('[MACRO] Save failed', err.response?.data);
+      alert(`MACRO SAVE FAILURE: ${err.response?.data?.errors?.Trigger?.[0] || err.response?.data?.title || 'Validation Error'}`);
     }
   };
 
@@ -935,6 +975,42 @@ const ReportingPage = () => {
     { label: 'Normal Liver', text: 'Liver is normal in size and echotexture. No focal lesion seen.' },
     { label: 'No Calculus', text: 'No evidence of radiopaque calculus or hydronephrosis seen.' }
   ];
+
+  if (loading && !activeAppointment) {
+    return (
+      <div style={{ height: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#f8fafc', flexDirection: 'column', gap: '20px' }}>
+        <div className="clinical-loader" style={{ width: '50px', height: '50px', border: '4px solid rgba(15, 82, 186, 0.1)', borderTopColor: '#0f52ba', borderRadius: '50%', animation: 'spin 1s linear infinite' }}></div>
+        <div style={{ fontSize: '12px', fontWeight: 950, color: '#0f52ba', letterSpacing: '2px', textTransform: 'uppercase' }}>Synchronizing Diagnostic Workspace...</div>
+        <style>{`
+          @keyframes spin { to { transform: rotate(360deg); } }
+        `}</style>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div style={{ height: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#0f172a', color: 'white', flexDirection: 'column', gap: '20px', textAlign: 'center', padding: '20px' }}>
+        <div style={{ fontSize: '64px', animation: 'pulse 2s infinite' }}>⚠️</div>
+        <h2 style={{ fontWeight: 900, letterSpacing: '4px', color: '#3b82f6' }}>SIGNAL_INTERRUPTED</h2>
+        <p style={{ color: '#94a3b8', maxWidth: '500px', lineHeight: '1.6', fontSize: '14px', fontWeight: 600 }}>{error}</p>
+        <button 
+          className="btn btn-primary" 
+          style={{ padding: '12px 30px', borderRadius: '12px', background: '#3b82f6', border: 'none', color: 'white', fontWeight: 800, cursor: 'pointer', marginTop: '20px' }}
+          onClick={() => navigate('/doctor-board')}
+        >
+          RETURN_TO_COMMAND_CENTER
+        </button>
+        <style>{`
+          @keyframes pulse {
+            0% { opacity: 0.5; transform: scale(0.95); }
+            50% { opacity: 1; transform: scale(1); }
+            100% { opacity: 0.5; transform: scale(0.95); }
+          }
+        `}</style>
+      </div>
+    );
+  }
 
   return (
     <div className="reporting-app-container">
@@ -2057,283 +2133,350 @@ const ReportingPage = () => {
           )}
 
             {activeTab === 'Templates' && (
-              <div style={{ padding: '20px' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
-                  <h3 style={{ fontSize: '18px', fontWeight: 700, color: '#0f172a' }}>Template Manager</h3>
-                  <button className="btn btn-primary" onClick={() => setShowTemplateForm(!showTemplateForm)}>
-                    {showTemplateForm ? '✕ Close Builder' : '+ Create New Template'}
-                  </button>
+              <div style={{ display: 'flex', height: 'calc(100vh - 250px)', gap: '25px', padding: '10px', animation: 'fadeIn 0.5s ease' }}>
+                {/* LEFT: Template Registry */}
+                <div style={{ 
+                  width: '320px', 
+                  background: 'white', 
+                  borderRadius: '20px', 
+                  display: 'flex', 
+                  flexDirection: 'column',
+                  boxShadow: '0 10px 30px rgba(0,0,0,0.02)',
+                  border: '1px solid #e2e8f0',
+                  overflow: 'hidden'
+                }}>
+                  <div style={{ padding: '20px', borderBottom: '1px solid #f1f5f9', background: '#f8fafc' }}>
+                    <div style={{ fontSize: '12px', fontWeight: 950, color: '#4338ca', letterSpacing: '1px', marginBottom: '15px' }}>TEMPLATE_LIBRARY</div>
+                    <div style={{ position: 'relative' }}>
+                      <input 
+                        type="text" 
+                        placeholder="Search protocols..." 
+                        value={templateSearch}
+                        onChange={(e) => { setTemplateSearch(e.target.value); setTemplatePage(1); }}
+                        style={{ width: '100%', padding: '10px 10px 10px 35px', borderRadius: '12px', border: '1px solid #e2e8f0', fontSize: '12px', outline: 'none', fontWeight: 600 }}
+                      />
+                      <span style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', opacity: 0.4 }}>🔍</span>
+                    </div>
+                  </div>
+
+                  <div style={{ flex: 1, overflowY: 'auto', padding: '10px' }}>
+                    <button 
+                      onClick={() => {
+                        setSelectedTemplateId('new');
+                        setNewTemplate({ name: '', modality: 'USG', sections: [] });
+                      }}
+                      style={{ 
+                        width: '100%', padding: '12px', borderRadius: '12px', border: '2px dashed #e0e7ff', 
+                        background: selectedTemplateId === 'new' ? '#f5f3ff' : 'transparent',
+                        color: '#4338ca', fontWeight: 800, fontSize: '11px', cursor: 'pointer',
+                        marginBottom: '10px', transition: '0.2s'
+                      }}
+                    >
+                      + CONSTRUCT NEW PROTOCOL
+                    </button>
+
+                    {filteredTemplates.map(tpl => (
+                      <div 
+                        key={tpl.id}
+                        onClick={() => {
+                          setSelectedTemplateId(tpl.id);
+                          try {
+                            const sections = JSON.parse(tpl.content || '[]');
+                            setNewTemplate({ name: tpl.name, modality: tpl.modality, sections });
+                          } catch(e) {
+                            setNewTemplate({ name: tpl.name, modality: tpl.modality, sections: [] });
+                          }
+                        }}
+                        style={{ 
+                          padding: '12px 15px', borderRadius: '14px', cursor: 'pointer',
+                          background: selectedTemplateId === tpl.id ? '#4338ca' : 'transparent',
+                          color: selectedTemplateId === tpl.id ? 'white' : '#1e293b',
+                          transition: 'all 0.2s',
+                          marginBottom: '4px',
+                          border: selectedTemplateId === tpl.id ? '1px solid #4338ca' : '1px solid transparent'
+                        }}
+                      >
+                        <div style={{ fontWeight: 900, fontSize: '13px', display: 'flex', justifyContent: 'space-between' }}>
+                          <span>{tpl.name}</span>
+                          <span style={{ fontSize: '9px', background: selectedTemplateId === tpl.id ? 'rgba(255,255,255,0.2)' : '#e0e7ff', padding: '2px 6px', borderRadius: '4px' }}>{tpl.modality}</span>
+                        </div>
+                        <div style={{ fontSize: '10px', opacity: selectedTemplateId === tpl.id ? 0.7 : 0.5, marginTop: '4px' }}>
+                          Last modified: {tpl.lastModified || 'Just now'}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
                 </div>
-                
-                {showTemplateForm && (
-                  <div className="card" style={{ marginBottom: '20px', border: '1px solid #e0e7ff', background: '#f8faff', padding: '20px' }}>
-                    <div style={{ fontWeight: 700, color: '#4338ca', marginBottom: '20px', fontSize: '16px', borderBottom: '1px solid #e0e7ff', paddingBottom: '10px' }}>
-                      🏗️ Structured Template Builder
-                    </div>
-                    
-                    <div style={{ display: 'flex', gap: '15px', marginBottom: '25px' }}>
-                      <div style={{ flex: 1 }}>
-                        <label style={{ display: 'block', fontSize: '12px', color: '#64748b', marginBottom: '5px', fontWeight: 600 }}>TEMPLATE NAME</label>
-                        <input 
-                          type="text" 
-                          placeholder="e.g. USG Whole Abdomen - Detailed" 
-                          value={newTemplate.name}
-                          onChange={(e) => setNewTemplate({...newTemplate, name: e.target.value})}
-                          style={{ width: '100%', padding: '12px', border: '1px solid #cbd5e1', borderRadius: '8px', fontSize: '14px' }} 
-                        />
-                      </div>
-                      <div style={{ width: '150px' }}>
-                        <label style={{ display: 'block', fontSize: '12px', color: '#64748b', marginBottom: '5px', fontWeight: 600 }}>MODALITY</label>
-                        <select 
-                          value={newTemplate.modality}
-                          onChange={(e) => setNewTemplate({...newTemplate, modality: e.target.value})}
-                          style={{ width: '100%', padding: '12px', border: '1px solid #cbd5e1', borderRadius: '8px', fontSize: '14px' }}
-                        >
-                          <option>USG</option>
-                          <option>CT</option>
-                          <option>MRI</option>
-                          <option>X-RAY</option>
-                        </select>
-                      </div>
-                    </div>
 
-                    <div style={{ marginBottom: '15px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                      <span style={{ fontSize: '14px', fontWeight: 700, color: '#1e293b' }}>Report Sections</span>
-                      <button className="btn btn-outline" style={{ padding: '4px 12px', fontSize: '12px' }} onClick={addSection}>+ Add Section</button>
-                    </div>
-
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '15px' }}>
-                      {newTemplate.sections.map((section, index) => (
-                        <div key={section.id} style={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: '10px', padding: '15px', position: 'relative' }}>
-                          <div style={{ display: 'flex', gap: '10px', marginBottom: '10px' }}>
-                            <input 
-                              type="text" 
-                              value={section.title}
-                              onChange={(e) => updateSection(section.id, 'title', e.target.value)}
-                              placeholder="Section Title (e.g. Findings)"
-                              style={{ flex: 1, fontWeight: 700, border: 'none', borderBottom: '1px solid #f1f5f9', padding: '5px 0', fontSize: '13px', outline: 'none', color: '#4338ca' }}
-                            />
+                {/* RIGHT: Template Detail / Builder */}
+                <div style={{ flex: 1, background: 'white', borderRadius: '24px', boxShadow: '0 20px 50px rgba(0,0,0,0.03)', border: '1px solid #e2e8f0', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+                  {selectedTemplateId ? (
+                    <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
+                      <div style={{ padding: '25px 30px', borderBottom: '1px solid #f1f5f9', display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: '#fcfdfe' }}>
+                        <div>
+                          <h3 style={{ fontSize: '18px', fontWeight: 950, color: '#1e293b', margin: 0 }}>
+                            {selectedTemplateId === 'new' ? 'PROTOCOL_ARCHITECT' : `EDIT: ${newTemplate.name}`}
+                          </h3>
+                          <p style={{ fontSize: '11px', color: '#64748b', fontWeight: 700, marginTop: '4px' }}>Define structured fields and default clinical findings.</p>
+                        </div>
+                        <div style={{ display: 'flex', gap: '12px' }}>
+                          {selectedTemplateId !== 'new' && (
                             <button 
-                              style={{ border: 'none', background: 'transparent', color: '#94a3b8', cursor: 'pointer' }}
-                              onClick={() => removeSection(section.id)}
-                            >✕</button>
+                              className="btn btn-outline" 
+                              style={{ color: '#ef4444', borderColor: '#fee2e2' }}
+                              onClick={() => handleDeleteTemplate(selectedTemplateId)}
+                            >🗑️ DELETE</button>
+                          )}
+                          <button className="btn btn-primary" style={{ padding: '10px 25px', background: '#4338ca' }} onClick={handleSaveTemplate}>
+                            {selectedTemplateId === 'new' ? '🚀 PUBLISH PROTOCOL' : '💾 SAVE CHANGES'}
+                          </button>
+                        </div>
+                      </div>
+
+                      <div style={{ flex: 1, padding: '30px', overflowY: 'auto', background: '#fff' }}>
+                        <div style={{ maxWidth: '800px' }}>
+                          <div style={{ display: 'flex', gap: '20px', marginBottom: '30px' }}>
+                            <div style={{ flex: 2 }}>
+                              <label style={{ fontSize: '11px', fontWeight: 950, color: '#4338ca', display: 'block', marginBottom: '8px' }}>PROTOCOL NAME</label>
+                              <input 
+                                type="text" 
+                                placeholder="e.g. USG Whole Abdomen - Detailed"
+                                value={newTemplate.name}
+                                onChange={e => setNewTemplate({...newTemplate, name: e.target.value})}
+                                style={{ width: '100%', padding: '15px', borderRadius: '12px', border: '2px solid #f5f3ff', background: '#f8faff', fontSize: '14px', fontWeight: 700, outline: 'none' }}
+                              />
+                            </div>
+                            <div style={{ flex: 1 }}>
+                              <label style={{ fontSize: '11px', fontWeight: 950, color: '#4338ca', display: 'block', marginBottom: '8px' }}>MODALITY</label>
+                              <select 
+                                value={newTemplate.modality}
+                                onChange={e => setNewTemplate({...newTemplate, modality: e.target.value})}
+                                style={{ width: '100%', padding: '15px', borderRadius: '12px', border: '2px solid #f5f3ff', background: '#f8faff', fontSize: '14px', fontWeight: 700, outline: 'none' }}
+                              >
+                                <option>USG</option>
+                                <option>CT</option>
+                                <option>MRI</option>
+                                <option>X-RAY</option>
+                              </select>
+                            </div>
                           </div>
-                          <textarea 
-                            value={section.content}
-                            onChange={(e) => updateSection(section.id, 'content', e.target.value)}
-                            placeholder="Enter default findings for this section..."
-                            style={{ width: '100%', minHeight: '80px', border: 'none', resize: 'vertical', fontSize: '13px', lineHeight: '1.6', outline: 'none', color: '#334155' }}
-                          />
-                          <div style={{ fontSize: '10px', color: '#94a3b8', marginTop: '5px', display: 'flex', gap: '10px' }}>
-                             <span>TIP: Use {'{{field}}'} for interactive data</span>
-                             <span>DRAG TO REORDER</span>
+
+                          <div style={{ marginBottom: '20px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                            <span style={{ fontSize: '14px', fontWeight: 950, color: '#1e293b' }}>Clinical Sections</span>
+                            <button className="btn btn-outline" style={{ padding: '6px 15px', fontSize: '11px', fontWeight: 800 }} onClick={addSection}>+ ADD SECTION</button>
+                          </div>
+
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: '15px' }}>
+                            {newTemplate.sections.map((section, index) => (
+                              <div key={section.id} style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '16px', padding: '20px', position: 'relative' }}>
+                                <div style={{ display: 'flex', gap: '15px', marginBottom: '15px' }}>
+                                  <input 
+                                    type="text" 
+                                    value={section.title}
+                                    onChange={(e) => updateSection(section.id, 'title', e.target.value)}
+                                    placeholder="Section Title (e.g. Findings)"
+                                    style={{ flex: 1, fontWeight: 900, border: 'none', background: 'transparent', borderBottom: '1px solid #e2e8f0', padding: '5px 0', fontSize: '13px', outline: 'none', color: '#4338ca' }}
+                                  />
+                                  <button 
+                                    style={{ border: 'none', background: 'transparent', color: '#94a3b8', cursor: 'pointer', fontSize: '16px' }}
+                                    onClick={() => removeSection(section.id)}
+                                  >✕</button>
+                                </div>
+                                <textarea 
+                                  value={section.content}
+                                  onChange={(e) => updateSection(section.id, 'content', e.target.value)}
+                                  placeholder="Enter default clinical observations for this section..."
+                                  style={{ width: '100%', minHeight: '100px', border: 'none', background: 'white', borderRadius: '12px', padding: '15px', fontSize: '13px', lineHeight: '1.6', outline: 'none', color: '#334155', boxShadow: '0 2px 4px rgba(0,0,0,0.02)' }}
+                                />
+                              </div>
+                            ))}
+                            {newTemplate.sections.length === 0 && (
+                              <div style={{ textAlign: 'center', padding: '40px', background: '#f8fafc', borderRadius: '16px', border: '2px dashed #e2e8f0', color: '#94a3b8', fontSize: '13px' }}>
+                                No sections defined. Click "+ ADD SECTION" to begin structuring your report.
+                              </div>
+                            )}
                           </div>
                         </div>
-                      ))}
+                      </div>
                     </div>
-
-                    <div style={{ marginTop: '25px', pt: '20px', borderTop: '1px solid #e0e7ff', display: 'flex', justifyContent: 'flex-end', gap: '12px' }}>
-                      <button className="btn btn-outline" onClick={() => setShowTemplateForm(false)}>Discard Draft</button>
-                      <button className="btn btn-primary" style={{ padding: '10px 25px' }} onClick={handleSaveTemplate}>🚀 Save & Publish Template</button>
-                    </div>
-                  </div>
-                )}
-
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '15px' }}>
-                  <div style={{ position: 'relative' }}>
-                    <input 
-                      type="text" 
-                      placeholder="Search templates..." 
-                      value={templateSearch}
-                      onChange={(e) => { setTemplateSearch(e.target.value); setTemplatePage(1); }}
-                      style={{ padding: '8px 12px 8px 35px', border: '1px solid #cbd5e1', borderRadius: '8px', fontSize: '13px', width: '250px' }} 
-                    />
-                    <span style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', opacity: 0.5 }}>🔍</span>
-                  </div>
-                  <div style={{ fontSize: '12px', color: '#64748b', fontWeight: 600 }}>
-                    Showing {paginatedTemplates.length} of {filteredTemplates.length} results
-                  </div>
-                </div>
-
-                <div className="table-container" style={{ border: '1px solid #e2e8f0', borderRadius: '12px', overflow: 'hidden' }}>
-                  <table className="table">
-                    <thead>
-                      <tr>
-                        <th>Template Name</th>
-                        <th>Modality</th>
-                        <th>Last Modified</th>
-                        <th>Actions</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {paginatedTemplates.length > 0 ? paginatedTemplates.map(tpl => (
-                        <tr key={tpl.id}>
-                          <td style={{ fontWeight: 600 }}>{tpl.name}</td>
-                          <td>{tpl.modality}</td>
-                          <td>{tpl.lastModified}</td>
-                          <td>
-                            <div style={{ display: 'flex', gap: '8px' }}>
-                              <button className="btn btn-outline" style={{ padding: '4px 8px', fontSize: '12px' }}>Edit</button>
-                              <button className="btn btn-outline" style={{ color: '#ef4444', padding: '4px 8px', fontSize: '12px' }} onClick={() => handleDeleteTemplate(tpl.id)}>Delete</button>
-                            </div>
-                          </td>
-                        </tr>
-                      )) : (
-                        <tr>
-                          <td colSpan="4" style={{ textAlign: 'center', padding: '40px', color: '#94a3b8' }}>
-                            No templates found matching "{templateSearch}"
-                          </td>
-                        </tr>
-                      )}
-                    </tbody>
-                  </table>
-                </div>
-
-                {totalTemplatePages > 1 && (
-                  <div style={{ display: 'flex', justifyContent: 'center', gap: '8px', marginTop: '20px' }}>
-                    <button 
-                      className="btn btn-outline" 
-                      disabled={templatePage === 1}
-                      onClick={() => setTemplatePage(prev => prev - 1)}
-                      style={{ padding: '6px 12px', fontSize: '12px' }}
-                    >Previous</button>
-                    {[...Array(totalTemplatePages)].map((_, i) => (
+                  ) : (
+                    <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', color: '#94a3b8', textAlign: 'center', padding: '40px' }}>
+                      <div style={{ fontSize: '64px', marginBottom: '20px', opacity: 0.5 }}>📂</div>
+                      <h3 style={{ fontSize: '20px', fontWeight: 800, color: '#1e293b' }}>Protocol Designer</h3>
+                      <p style={{ maxWidth: '400px', fontSize: '13px', lineHeight: '1.6', marginTop: '10px' }}>
+                        Build and manage high-fidelity structured templates. Choose an existing protocol from the registry or initialize a new one.
+                      </p>
                       <button 
-                        key={i}
-                        className={`btn ${templatePage === i + 1 ? 'btn-primary' : 'btn-outline'}`}
-                        onClick={() => setTemplatePage(i + 1)}
-                        style={{ padding: '6px 12px', fontSize: '12px', minWidth: '35px' }}
-                      >{i + 1}</button>
-                    ))}
-                    <button 
-                      className="btn btn-outline" 
-                      disabled={templatePage === totalTemplatePages}
-                      onClick={() => setTemplatePage(prev => prev + 1)}
-                      style={{ padding: '6px 12px', fontSize: '12px' }}
-                    >Next</button>
-                  </div>
-                )}
+                        className="btn btn-primary" 
+                        style={{ marginTop: '25px', padding: '12px 30px', background: '#4338ca' }}
+                        onClick={() => setSelectedTemplateId('new')}
+                      >+ CONSTRUCT NEW PROTOCOL</button>
+                    </div>
+                  )}
+                </div>
               </div>
             )}
 
             {activeTab === 'Keywords' && (
-              <div style={{ padding: '20px', maxWidth: '1000px', margin: '0 auto' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
-                  <h3 style={{ fontSize: '18px', fontWeight: 700, color: '#0f172a' }}>⌨️ Keyword & Macro Maintenance</h3>
-                  <button className="btn btn-primary" onClick={() => setShowNewKeywordForm(!showNewKeywordForm)}>
-                    {showNewKeywordForm ? '✕ Close Builder' : '+ Create New Macro'}
-                  </button>
+              <div style={{ display: 'flex', height: 'calc(100vh - 250px)', gap: '25px', padding: '10px', animation: 'fadeIn 0.5s ease' }}>
+                {/* LEFT: Master Keyword List */}
+                <div style={{ 
+                  width: '320px', 
+                  background: 'white', 
+                  borderRadius: '20px', 
+                  display: 'flex', 
+                  flexDirection: 'column',
+                  boxShadow: '0 10px 30px rgba(0,0,0,0.02)',
+                  border: '1px solid #e2e8f0',
+                  overflow: 'hidden'
+                }}>
+                  <div style={{ padding: '20px', borderBottom: '1px solid #f1f5f9', background: '#f8fafc' }}>
+                    <div style={{ fontSize: '12px', fontWeight: 950, color: '#0f52ba', letterSpacing: '1px', marginBottom: '15px' }}>KEYWORD_REGISTRY</div>
+                    <div style={{ position: 'relative' }}>
+                      <input 
+                        type="text" 
+                        placeholder="Filter shortcuts..." 
+                        value={keywordSearch}
+                        onChange={(e) => { setKeywordSearch(e.target.value); setKeywordPage(1); }}
+                        style={{ width: '100%', padding: '10px 10px 10px 35px', borderRadius: '12px', border: '1px solid #e2e8f0', fontSize: '12px', outline: 'none', fontWeight: 600 }}
+                      />
+                      <span style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', opacity: 0.4 }}>🔍</span>
+                    </div>
+                  </div>
+
+                  <div style={{ flex: 1, overflowY: 'auto', padding: '10px' }}>
+                    <button 
+                      onClick={() => {
+                        setSelectedKeywordId('new');
+                        setNewMacro({ trigger: '', replacementText: '' });
+                        if (macroTextareaRef.current) macroTextareaRef.current.innerHTML = '';
+                      }}
+                      style={{ 
+                        width: '100%', padding: '12px', borderRadius: '12px', border: '2px dashed #cbd5e1', 
+                        background: selectedKeywordId === 'new' ? '#eff6ff' : 'transparent',
+                        color: '#0f52ba', fontWeight: 800, fontSize: '11px', cursor: 'pointer',
+                        marginBottom: '10px', transition: '0.2s'
+                      }}
+                    >
+                      + INITIALIZE NEW MACRO
+                    </button>
+
+                    {filteredKeywords.map(item => (
+                      <div 
+                        key={item.id}
+                        onClick={() => {
+                          setSelectedKeywordId(item.id);
+                          setNewMacro({ trigger: item.trigger, replacementText: item.replacementText });
+                          if (macroTextareaRef.current) macroTextareaRef.current.innerHTML = item.replacementText;
+                        }}
+                        style={{ 
+                          padding: '12px 15px', borderRadius: '14px', cursor: 'pointer',
+                          background: selectedKeywordId === item.id ? '#0f52ba' : 'transparent',
+                          color: selectedKeywordId === item.id ? 'white' : '#1e293b',
+                          transition: 'all 0.2s',
+                          marginBottom: '4px',
+                          border: selectedKeywordId === item.id ? '1px solid #0f52ba' : '1px solid transparent'
+                        }}
+                      >
+                        <div style={{ fontWeight: 900, fontSize: '13px', display: 'flex', justifyContent: 'space-between' }}>
+                          <span>/{item.trigger}</span>
+                          {selectedKeywordId === item.id && <span style={{ fontSize: '10px', opacity: 0.7 }}>ACTIVE</span>}
+                        </div>
+                        <div style={{ fontSize: '10px', opacity: selectedKeywordId === item.id ? 0.7 : 0.5, marginTop: '2px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                          {item.replacementText?.replace(/<[^>]*>?/gm, '')}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
                 </div>
 
-                {showNewKeywordForm && (
-                  <div className="card" style={{ marginBottom: '30px', background: '#f8faff', padding: '25px', border: '1px solid #e0e7ff' }}>
-                    <div style={{ fontSize: '15px', fontWeight: 800, color: '#4338ca', marginBottom: '20px', borderBottom: '1px solid #e0e7ff', paddingBottom: '10px' }}>
-                      🏗️ Build Clinical Shortcut
-                    </div>
-                    
-                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 2fr', gap: '20px', marginBottom: '20px' }}>
-                      <div>
-                        <label style={{ fontSize: '11px', fontWeight: 700, color: '#64748b', textTransform: 'uppercase', marginBottom: '6px', display: 'block' }}>Keyword Trigger</label>
-                        <input 
-                          type="text" 
-                          placeholder="e.g., normal_liver" 
-                          value={newMacro.trigger}
-                          onChange={e => setNewMacro({...newMacro, trigger: e.target.value})}
-                          style={{ width: '100%', padding: '12px', border: '1px solid #cbd5e1', borderRadius: '8px', fontSize: '14px', fontWeight: 700, color: '#2563eb' }}
-                        />
-                        <div style={{ fontSize: '10px', color: '#94a3b8', marginTop: '5px' }}>Type this in the editor and press Enter.</div>
+                {/* RIGHT: Keyword Detail / Editor */}
+                <div style={{ flex: 1, background: 'white', borderRadius: '24px', boxShadow: '0 20px 50px rgba(0,0,0,0.03)', border: '1px solid #e2e8f0', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+                  {selectedKeywordId ? (
+                    <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
+                      <div style={{ padding: '25px 30px', borderBottom: '1px solid #f1f5f9', display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: '#fcfdfe' }}>
+                        <div>
+                          <h3 style={{ fontSize: '18px', fontWeight: 950, color: '#1e293b', margin: 0 }}>
+                            {selectedKeywordId === 'new' ? 'CREATE_DIAGNOSTIC_MACRO' : `EDIT: /${newMacro.trigger}`}
+                          </h3>
+                          <p style={{ fontSize: '11px', color: '#64748b', fontWeight: 700, marginTop: '4px' }}>Configure shorthands for rapid narrative expansion.</p>
+                        </div>
+                        <div style={{ display: 'flex', gap: '12px' }}>
+                          {selectedKeywordId !== 'new' && (
+                            <button 
+                              className="btn btn-outline" 
+                              style={{ color: '#ef4444', borderColor: '#fee2e2' }}
+                              onClick={() => handleDeleteKeyword(selectedKeywordId)}
+                            >🗑️ DELETE</button>
+                          )}
+                          <button className="btn btn-primary" style={{ padding: '10px 25px' }} onClick={handleSaveMacro}>
+                            {selectedKeywordId === 'new' ? '🚀 PUBLISH MACRO' : '💾 SAVE CHANGES'}
+                          </button>
+                        </div>
                       </div>
-                      
-                      <div>
-                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
-                          <label style={{ fontSize: '11px', fontWeight: 700, color: '#64748b', textTransform: 'uppercase' }}>Diagnostic Paragraph</label>
-                          <div style={{ display: 'flex', gap: '4px' }}>
-                            <button className="tool-btn" style={{ fontWeight: 800 }} onClick={() => formatMacroText('bold')}>B</button>
-                            <button className="tool-btn" style={{ fontStyle: 'italic' }} onClick={() => formatMacroText('italic')}>I</button>
-                            <button className="tool-btn" style={{ textDecoration: 'underline' }} onClick={() => formatMacroText('underline')}>U</button>
+
+                      <div style={{ flex: 1, padding: '30px', overflowY: 'auto', background: '#fff' }}>
+                        <div style={{ maxWidth: '700px' }}>
+                          <div style={{ marginBottom: '25px' }}>
+                            <label style={{ fontSize: '11px', fontWeight: 950, color: '#0f52ba', display: 'block', marginBottom: '8px' }}>TRIGGER KEYWORD (CASE INSENSITIVE)</label>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                              <span style={{ fontSize: '20px', fontWeight: 900, color: '#cbd5e1' }}>/</span>
+                              <input 
+                                type="text" 
+                                placeholder="e.g. normal_liver"
+                                value={newMacro.trigger}
+                                onChange={e => setNewMacro({...newMacro, trigger: e.target.value.toLowerCase().replace(/\s+/g, '_')})}
+                                style={{ flex: 1, padding: '15px', borderRadius: '12px', border: '2px solid #eff6ff', background: '#f8faff', fontSize: '16px', fontWeight: 900, color: '#0f52ba', outline: 'none' }}
+                              />
+                            </div>
+                            <p style={{ fontSize: '10px', color: '#94a3b8', marginTop: '8px', fontWeight: 600 }}>Tip: Use underscores instead of spaces. Shorthand will trigger on [ENTER] in the editor.</p>
+                          </div>
+
+                          <div style={{ flex: 1 }}>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
+                              <label style={{ fontSize: '11px', fontWeight: 950, color: '#0f52ba' }}>REPLACEMENT NARRATIVE</label>
+                              <div style={{ display: 'flex', gap: '5px', background: '#f1f5f9', padding: '3px', borderRadius: '8px' }}>
+                                <button className="tool-btn" style={{ fontWeight: 800, width: '30px', height: '30px' }} onClick={() => formatMacroText('bold')}>B</button>
+                                <button className="tool-btn" style={{ fontStyle: 'italic', width: '30px', height: '30px' }} onClick={() => formatMacroText('italic')}>I</button>
+                                <button className="tool-btn" style={{ textDecoration: 'underline', width: '30px', height: '30px' }} onClick={() => formatMacroText('underline')}>U</button>
+                              </div>
+                            </div>
+                            <div 
+                              ref={macroTextareaRef}
+                              contentEditable="true"
+                              onInput={(e) => setNewMacro({...newMacro, replacementText: e.currentTarget.innerHTML})}
+                              style={{ 
+                                minHeight: '300px', 
+                                padding: '25px', 
+                                borderRadius: '16px', 
+                                border: '1px solid #e2e8f0', 
+                                background: '#fff', 
+                                outline: 'none', 
+                                fontSize: '15px', 
+                                lineHeight: '1.8',
+                                color: '#1e293b',
+                                boxShadow: 'inset 0 2px 4px rgba(0,0,0,0.02)'
+                              }}
+                            />
                           </div>
                         </div>
-                        <div 
-                          ref={macroTextareaRef}
-                          contentEditable="true"
-                          onInput={(e) => setNewMacro({...newMacro, replacementText: e.currentTarget.innerHTML})}
-                          style={{ minHeight: '150px', padding: '15px', border: '1px solid #cbd5e1', borderRadius: '8px', background: '#fff', outline: 'none', fontSize: '14px', lineHeight: '1.6' }}
-                        />
                       </div>
                     </div>
-
-                    <div style={{ display: 'flex', gap: '10px' }}>
-                      <button className="btn btn-outline" style={{ flex: 1 }} onClick={() => setShowNewKeywordForm(false)}>Cancel</button>
-                      <button className="btn btn-primary" style={{ flex: 2 }} onClick={handleSaveMacro}>🚀 Save Macro to Library</button>
-                    </div>
-                  </div>
-                )}
-
-                <div className="card" style={{ padding: '0', overflow: 'hidden' }}>
-                  <div style={{ padding: '15px 20px', background: '#f8fafc', borderBottom: '1px solid #e2e8f0', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                    <div style={{ fontWeight: 700, color: '#475569' }}>ACTIVE MACRO LIBRARY ({filteredKeywords.length})</div>
-                    <input 
-                      type="text" 
-                      placeholder="Search keywords..." 
-                      value={keywordSearch}
-                      onChange={(e) => { setKeywordSearch(e.target.value); setKeywordPage(1); }}
-                      style={{ padding: '6px 12px', border: '1px solid #cbd5e1', borderRadius: '6px', fontSize: '12px', width: '250px' }} 
-                    />
-                  </div>
-                  <table className="table">
-                    <thead>
-                      <tr>
-                        <th style={{ width: '200px' }}>Keyword</th>
-                        <th>Paragraph Content</th>
-                        <th style={{ width: '100px' }}>Actions</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {paginatedKeywords.length > 0 ? paginatedKeywords.map(item => (
-                        <tr key={item.id}>
-                          <td style={{ fontWeight: 800, color: '#2563eb' }}>{item.trigger}</td>
-                          <td style={{ fontSize: '13px', color: '#475569' }}>
-                            <div dangerouslySetInnerHTML={{ __html: (item.replacementText || '').substring(0, 150) + ((item.replacementText || '').length > 150 ? '...' : '') }} />
-                          </td>
-                          <td>
-                            <button className="btn btn-outline" style={{ color: '#ef4444', padding: '4px 8px', fontSize: '11px' }} onClick={() => handleDeleteKeyword(item.id)}>Delete</button>
-                          </td>
-                        </tr>
-                      )) : (
-                        <tr>
-                          <td colSpan="3" style={{ textAlign: 'center', padding: '40px', color: '#94a3b8' }}>
-                            No keywords found matching "{keywordSearch}"
-                          </td>
-                        </tr>
-                      )}
-                    </tbody>
-                  </table>
-                </div>
-
-                {totalKeywordPages > 1 && (
-                  <div style={{ display: 'flex', justifyContent: 'center', gap: '8px', marginTop: '20px' }}>
-                    <button 
-                      className="btn btn-outline" 
-                      disabled={keywordPage === 1}
-                      onClick={() => setKeywordPage(prev => prev - 1)}
-                      style={{ padding: '6px 12px', fontSize: '12px' }}
-                    >Previous</button>
-                    {[...Array(totalKeywordPages)].map((_, i) => (
+                  ) : (
+                    <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', color: '#94a3b8', textAlign: 'center', padding: '40px' }}>
+                      <div style={{ fontSize: '64px', marginBottom: '20px', opacity: 0.5 }}>⌨️</div>
+                      <h3 style={{ fontSize: '20px', fontWeight: 800, color: '#1e293b' }}>Macro Maintenance Hub</h3>
+                      <p style={{ maxWidth: '400px', fontSize: '13px', lineHeight: '1.6', marginTop: '10px' }}>
+                        Select a keyword from the left registry to modify its expansion text, or initialize a new clinical shortcut to speed up your reporting workflow.
+                      </p>
                       <button 
-                        key={i}
-                        className={`btn ${keywordPage === i + 1 ? 'btn-primary' : 'btn-outline'}`}
-                        onClick={() => setKeywordPage(i + 1)}
-                        style={{ padding: '6px 12px', fontSize: '12px', minWidth: '35px' }}
-                      >{i + 1}</button>
-                    ))}
-                    <button 
-                      className="btn btn-outline" 
-                      disabled={keywordPage === totalKeywordPages}
-                      onClick={() => setKeywordPage(prev => prev + 1)}
-                      style={{ padding: '6px 12px', fontSize: '12px' }}
-                    >Next</button>
-                  </div>
-                )}
+                        className="btn btn-primary" 
+                        style={{ marginTop: '25px', padding: '12px 30px' }}
+                        onClick={() => setSelectedKeywordId('new')}
+                      >+ INITIALIZE NEW MACRO</button>
+                    </div>
+                  )}
+                </div>
               </div>
             )}
 

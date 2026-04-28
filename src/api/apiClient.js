@@ -11,9 +11,15 @@ const apiClient = axios.create({
 
 // Interceptor to add Authorization header
 apiClient.interceptors.request.use((config) => {
-  const token = sessionStorage.getItem('1rad_token') || sessionStorage.getItem('1rad_initiation_token');
-  if (token) {
-    config.headers.Authorization = `Bearer ${token}`;
+  // Do not add auth header for public authentication routes
+  const publicRoutes = ['/auth/login', '/auth/otp/send', '/auth/otp/verify', '/auth/forgot-password'];
+  const isPublicRoute = publicRoutes.some(route => config.url.includes(route));
+
+  if (!isPublicRoute) {
+    const token = sessionStorage.getItem('1rad_token') || sessionStorage.getItem('1rad_initiation_token');
+    if (token) {
+      config.headers.Authorization = `Bearer ${token}`;
+    }
   }
   return config;
 }, (error) => {
@@ -25,8 +31,12 @@ apiClient.interceptors.response.use(
   (response) => response,
   (error) => {
     if (error.response?.status === 401) {
-      console.warn('[API] Unauthorized. Session may have expired.');
-      // Optional: Trigger logout flow if token is expired
+      const isLogin = error.config.url.includes('/auth/login');
+      if (!isLogin) {
+        console.warn('[API] Unauthorized. Session may have expired.');
+      } else {
+        console.warn('[API] Login failed: Invalid credentials.');
+      }
     }
     return Promise.reject(error);
   }

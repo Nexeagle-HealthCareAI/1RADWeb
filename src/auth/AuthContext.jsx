@@ -1,4 +1,4 @@
-import { createContext, useState, useCallback, useEffect, useMemo } from 'react';
+import { createContext, useState, useCallback, useEffect, useMemo, useRef } from 'react';
 import apiClient from '../api/apiClient';
 
 export const AuthContext = createContext(null);
@@ -18,6 +18,17 @@ export function AuthProvider({ children }) {
     const stored = sessionStorage.getItem('1rad_user');
     return stored ? JSON.parse(stored) : null;
   });
+
+  // --- INACTIVE SESSION MANAGEMENT ---
+  const [showTimeoutModal, setShowTimeoutModal] = useState(false);
+  const [timeoutCountdown, setTimeoutCountdown] = useState(120); // 2 minutes warning
+  const idleTimerRef = useRef(null);
+  const countdownTimerRef = useRef(null);
+
+  const IDLE_LIMIT = 14 * 60 * 1000; // 14 minutes of inactivity before warning
+  const COUNTDOWN_START = 60; // 1 minute warning countdown
+  const lastActivityRef = useRef(Date.now());
+
 
   // Sync users and centers to localStorage whenever they change
   useEffect(() => {
@@ -213,7 +224,76 @@ export function AuthProvider({ children }) {
     sessionStorage.removeItem('1rad_token');
     sessionStorage.removeItem('1rad_initiation_token');
     localStorage.removeItem('1rad_refresh_token');
+    
+    // Clear timers
+    if (idleTimerRef.current) clearTimeout(idleTimerRef.current);
+    if (countdownTimerRef.current) clearInterval(countdownTimerRef.current);
+    setShowTimeoutModal(false);
   }, []);
+
+  const resetIdleTimer = useCallback(() => {
+    if (!currentUser) return;
+    
+    // Reset state if modal was showing
+    setShowTimeoutModal(false);
+    setTimeoutCountdown(COUNTDOWN_START);
+
+    if (idleTimerRef.current) clearTimeout(idleTimerRef.current);
+    if (countdownTimerRef.current) clearInterval(countdownTimerRef.current);
+
+    idleTimerRef.current = setTimeout(() => {
+      setShowTimeoutModal(true);
+      startCountdown();
+    }, IDLE_LIMIT);
+  }, [currentUser]);
+
+  const startCountdown = () => {
+    if (countdownTimerRef.current) clearInterval(countdownTimerRef.current);
+    
+    let timeRemaining = COUNTDOWN_START;
+    setTimeoutCountdown(timeRemaining);
+
+    countdownTimerRef.current = setInterval(() => {
+      timeRemaining -= 1;
+      setTimeoutCountdown(timeRemaining);
+      
+      if (timeRemaining <= 0) {
+        clearInterval(countdownTimerRef.current);
+        logout();
+      }
+    }, 1000);
+  };
+
+  // Activity Listeners
+  useEffect(() => {
+    if (!currentUser) return;
+
+    let lastActivity = Date.now();
+    const throttleMs = 2000; // Only reset every 2 seconds
+
+    const handleActivity = () => {
+      const now = Date.now();
+      if (now - lastActivityRef.current > throttleMs) {
+        lastActivityRef.current = now;
+        resetIdleTimer();
+      }
+    };
+
+    const events = ['mousedown', 'mousemove', 'keypress', 'scroll', 'touchstart'];
+
+
+    events.forEach(event => window.addEventListener(event, handleActivity));
+    
+    // Initial start
+    resetIdleTimer();
+
+    return () => {
+      events.forEach(event => window.removeEventListener(event, handleActivity));
+      if (idleTimerRef.current) clearTimeout(idleTimerRef.current);
+      if (countdownTimerRef.current) clearInterval(countdownTimerRef.current);
+    };
+  }, [currentUser, resetIdleTimer]);
+
 
   const registerAdminDoctor = useCallback(async (userData) => {
     if (userData.password && userData.password.length < 6) {
@@ -416,7 +496,10 @@ export function AuthProvider({ children }) {
       verifyOtp,
       forgotPassword,
       verifyResetCode,
-      resetPassword
+      resetPassword,
+      showTimeoutModal,
+      timeoutCountdown,
+      resetIdleTimer
     }}>
       {children}
     </AuthContext.Provider>

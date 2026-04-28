@@ -147,7 +147,7 @@ export default function DoctorBoard() {
   // --- HANDLERS ---
   const handleOpenWorkspace = (c) => {
     // Redirect to the dedicated Reporting Hub with patient context
-    window.location.href = `/reporting?id=${c.id || c.appointmentId}`;
+    window.location.href = `/reporting/${c.id || c.appointmentId}`;
     
     if (c.status?.toLowerCase() !== 'reporting') {
       handleStatusUpdate(c.appointmentId, 'reporting');
@@ -663,9 +663,29 @@ export default function DoctorBoard() {
           }}>
               <div>
                 <label style={{ fontSize: '9px', fontWeight: 950, color: '#0f52ba', letterSpacing: '1px', textTransform: 'uppercase', marginBottom: '15px', display: 'block' }}>CLINICAL_TEMPLATES</label>
-                <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
                    {Object.keys(TEMPLATES).map(name => (
-                      <button key={name} onClick={() => handleApplyTemplate(name)} style={{ padding: '8px 16px', borderRadius: '20px', border: '1px solid #e2e8f0', background: '#f8fafc', fontSize: '10px', fontWeight: 950, color: '#1e293b', cursor: 'pointer', transition: '0.2s' }}>⚡ {name}</button>
+                      <button 
+                        key={name} 
+                        onClick={() => handleApplyTemplate(name)} 
+                        style={{ 
+                          padding: '10px 20px', 
+                          borderRadius: '16px', 
+                          border: '1px solid rgba(15, 82, 186, 0.1)', 
+                          background: 'rgba(15, 82, 186, 0.05)', 
+                          fontSize: '11px', 
+                          fontWeight: 950, 
+                          color: '#0f52ba', 
+                          cursor: 'pointer', 
+                          transition: 'all 0.2s',
+                          backdropFilter: 'blur(5px)',
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '8px'
+                        }}
+                      >
+                        <span style={{ fontSize: '14px' }}>⚡</span> {name}
+                      </button>
                    ))}
                 </div>
               </div>

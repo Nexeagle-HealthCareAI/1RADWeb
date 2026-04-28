@@ -97,7 +97,7 @@ export default function AppRouter() {
           }
         />
         <Route
-          path="/reporting"
+          path="/reporting/:id"
           element={
             <ProtectedRoute allowedRoles={['admindoctor', 'doctor']}>
               <ReportingPage />

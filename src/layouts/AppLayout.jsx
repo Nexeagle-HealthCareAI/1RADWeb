@@ -6,9 +6,11 @@ import useAuth from '../auth/useAuth';
 import '../styles/global.css';
 
 import TopNav from './TopNav';
+import SessionTimeoutModal from '../components/SessionTimeoutModal';
+
 
 export default function AppLayout() {
-  const { currentUser } = useAuth();
+  const { currentUser, logout, showTimeoutModal, timeoutCountdown, resetIdleTimer } = useAuth();
   const location = useLocation();
   const [currentTime, setCurrentTime] = useState(new Date());
   const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState(false);
@@ -31,6 +33,14 @@ export default function AppLayout() {
 
   return (
     <div className="app-layout">
+      {/* Session Inactivity Guard */}
+      <SessionTimeoutModal 
+        isOpen={showTimeoutModal}
+        timeLeft={timeoutCountdown}
+        onStayConnected={resetIdleTimer}
+        onLogout={logout}
+      />
+
       {/* Mobile Backdrop Overlay */}
       {isMobileSidebarOpen && (
         <div 

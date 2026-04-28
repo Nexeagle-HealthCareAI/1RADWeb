@@ -2,8 +2,12 @@ import React, { useState, useMemo, useEffect, useCallback } from 'react';
 import apiClient from '../api/apiClient';
 import useAuth from '../auth/useAuth';
 import { ROLE_LABELS } from '../data/roles';
+import { Document, Page, pdfjs } from 'react-pdf';
 import '../styles/global.css';
 import '../styles/AdminBoard.css';
+
+// Configure PDF.js worker - use local worker file
+pdfjs.GlobalWorkerOptions.workerSrc = '/pdf.worker.min.mjs';
 
 // --- HELPERS ---
 const getISODate = (offset = 0) => {
@@ -132,6 +136,9 @@ export default function AdminBoard() {
   const [isPrescriptionSaving, setIsPrescriptionSaving] = useState(false);
   const [isProtocolLoading, setIsProtocolLoading] = useState(false);
   const [activeProtocolData, setActiveProtocolData] = useState(null);
+  const [previewScale, setPreviewScale] = useState(0.8); // 80% default scale to fit screen
+  const [numPdfPages, setNumPdfPages] = useState(null);
+  const [pdfError, setPdfError] = useState(null);
 
   // Sync settings when doctor selection changes
   useEffect(() => {
@@ -142,25 +149,36 @@ export default function AdminBoard() {
           fontSize: 14, fontColor: '#1e293b', fontFamily: 'Inter', letterhead: null,
           letterheadFile: null
         });
+        setActiveProtocolData(null);
         return;
       }
 
       setIsProtocolLoading(true);
       try {
         const res = await apiClient.get(`/Prescription/${selectedPrescriptionDoctorId}`);
-        const data = res.data.data;
-        if (data) {
+        console.log('[PRESCRIPTION] API Response:', res.data);
+        
+        if (res.data?.success && res.data?.data) {
+          const data = res.data.data;
           setActiveProtocolData(data);
+          
+          // Bind all API data to settings
           setPrescriptionSettings({
-            headerMargin: data.headerMargin ?? 50,
-            leftMargin: data.leftMargin ?? 20,
-            rightMargin: data.rightMargin ?? 20,
-            bottomMargin: data.bottomMargin ?? 30,
-            fontSize: data.fontSize ?? 14,
+            headerMargin: Number(data.headerMargin) || 50,
+            leftMargin: Number(data.leftMargin) || 20,
+            rightMargin: Number(data.rightMargin) || 20,
+            bottomMargin: Number(data.bottomMargin) || 30,
+            fontSize: Number(data.fontSize) || 14,
             fontColor: data.fontColor || '#1e293b',
             fontFamily: data.fontFamily || 'Inter',
-            letterhead: data.letterheadBlobUrl,
+            letterhead: data.letterheadBlobUrl || null,
             letterheadFile: null
+          });
+          
+          console.log('[PRESCRIPTION] Settings updated:', {
+            margins: { header: data.headerMargin, left: data.leftMargin, right: data.rightMargin, bottom: data.bottomMargin },
+            font: { size: data.fontSize, color: data.fontColor, family: data.fontFamily },
+            letterhead: data.letterheadBlobUrl
           });
         } else {
           setActiveProtocolData(null);
@@ -170,9 +188,11 @@ export default function AdminBoard() {
             fontSize: 14, fontColor: '#1e293b', fontFamily: 'Inter', letterhead: null,
             letterheadFile: null
           });
+          console.log('[PRESCRIPTION] No protocol found for doctor, using defaults');
         }
       } catch (err) {
-        console.error("Failed to fetch protocol:", err);
+        console.error("[PRESCRIPTION] Failed to fetch protocol:", err);
+        setActiveProtocolData(null);
         setPrescriptionSettings({
           headerMargin: 50, leftMargin: 20, rightMargin: 20, bottomMargin: 30,
           fontSize: 14, fontColor: '#1e293b', fontFamily: 'Inter', letterhead: null,
@@ -1362,6 +1382,19 @@ export default function AdminBoard() {
             </div>
 
             <div style={{ marginBottom: '30px', paddingTop: '30px', borderTop: '1px solid #f1f5f9' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '15px', alignItems: 'center' }}>
+                <h3 style={{ fontSize: '11px', fontWeight: 950, color: '#64748b', letterSpacing: '2px', textTransform: 'uppercase', margin: 0 }}>STUDIO SCALE</h3>
+                <span style={{ fontSize: '10px', fontWeight: 950, color: '#0f52ba' }}>{Math.round(previewScale * 100)}%</span>
+              </div>
+              <input 
+                type="range" min="0.3" max="1.5" step="0.05"
+                value={previewScale} 
+                onChange={(e) => setPreviewScale(parseFloat(e.target.value))}
+                style={{ width: '100%', height: '6px', background: '#e2e8f0', borderRadius: '3px', outline: 'none', appearance: 'none' }}
+              />
+            </div>
+
+            <div style={{ marginBottom: '30px', paddingTop: '10px' }}>
               <h3 style={{ fontSize: '11px', fontWeight: 950, color: '#64748b', letterSpacing: '2px', textTransform: 'uppercase', marginBottom: '15px' }}>BRAND IDENTITY</h3>
               
               <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
@@ -1484,7 +1517,7 @@ export default function AdminBoard() {
           boxShadow: 'inset 0 0 100px rgba(0,0,0,0.5)'
         }}>
            {/* Studio HUD */}
-           <div style={{ position: 'absolute', top: '25px', left: '35px', display: 'flex', alignItems: 'center', gap: '15px' }}>
+           <div style={{ position: 'absolute', top: '25px', left: '35px', display: 'flex', alignItems: 'center', gap: '15px', zIndex: 100 }}>
               <div style={{ background: 'rgba(255,255,255,0.1)', padding: '6px 12px', borderRadius: '8px', border: '1px solid rgba(255,255,255,0.1)' }}>
                 <span style={{ fontSize: '9px', fontWeight: 950, color: '#94a3b8', letterSpacing: '1px' }}>MODE: </span>
                 <span style={{ fontSize: '9px', fontWeight: 950, color: '#fff' }}>LIVE_SIMULATION</span>
@@ -1493,11 +1526,28 @@ export default function AdminBoard() {
                 <span style={{ fontSize: '9px', fontWeight: 950, color: '#94a3b8', letterSpacing: '1px' }}>RESOLUTION: </span>
                 <span style={{ fontSize: '9px', fontWeight: 950, color: '#fff' }}>300 DPI (A4)</span>
               </div>
+              {prescriptionSettings.letterhead && (
+                <div style={{ background: 'rgba(46, 204, 113, 0.2)', padding: '6px 12px', borderRadius: '8px', border: '1px solid rgba(46, 204, 113, 0.3)' }}>
+                  <span style={{ fontSize: '9px', fontWeight: 950, color: '#2ecc71', letterSpacing: '1px' }}>PDF: </span>
+                  <span style={{ fontSize: '9px', fontWeight: 950, color: '#fff' }}>
+                    {numPdfPages ? `RENDERED (${numPdfPages} ${numPdfPages === 1 ? 'PAGE' : 'PAGES'})` : 'LOADING...'}
+                  </span>
+                </div>
+              )}
            </div>
 
+           {/* Debug Panel - Bottom */}
+           {prescriptionSettings.letterhead && (
+             <div style={{ position: 'absolute', bottom: '25px', left: '35px', right: '35px', background: 'rgba(0,0,0,0.8)', padding: '12px 20px', borderRadius: '12px', border: '1px solid rgba(255,255,255,0.1)', zIndex: 100 }}>
+               <div style={{ fontSize: '8px', fontWeight: 950, color: '#94a3b8', letterSpacing: '1px', marginBottom: '6px' }}>LETTERHEAD SOURCE:</div>
+               <div style={{ fontSize: '9px', fontWeight: 700, color: '#fff', fontFamily: 'monospace', wordBreak: 'break-all' }}>{prescriptionSettings.letterhead}</div>
+             </div>
+           )}
+
            {isProtocolLoading && (
-              <div style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(15, 23, 42, 0.5)', zIndex: 10, display: 'flex', alignItems: 'center', justifyContent: 'center', borderRadius: '30px' }}>
+              <div style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(15, 23, 42, 0.8)', zIndex: 10, display: 'flex', alignItems: 'center', justifyContent: 'center', borderRadius: '30px', flexDirection: 'column', gap: '20px' }}>
                 <div className="pulse-loader"></div>
+                <div style={{ color: 'white', fontSize: '12px', fontWeight: 950, letterSpacing: '2px' }}>LOADING PROTOCOL DATA...</div>
               </div>
            )}
 
@@ -1515,105 +1565,249 @@ export default function AdminBoard() {
              </div>
            )}
 
-           <div style={{ 
-             width: '210mm', 
-             minHeight: '297mm', 
-             background: 'white', 
-             boxShadow: '0 40px 100px rgba(0,0,0,0.6)',
-             borderRadius: '2px',
-             position: 'relative',
-             transition: 'all 0.5s cubic-bezier(0.175, 0.885, 0.32, 1.275)',
-             overflow: 'hidden'
-           }}>
+           <div className="prescription-page-preview" style={{ 
+              width: '210mm', 
+              height: '297mm', 
+              background: 'white', 
+              boxShadow: '0 40px 100px rgba(0,0,0,0.6), 0 0 0 1px rgba(0,0,0,0.05)',
+              borderRadius: '2px',
+              position: 'relative',
+              transform: `scale(${previewScale})`,
+              transformOrigin: 'top center',
+              transition: 'transform 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275)',
+              overflow: 'hidden',
+              flexShrink: 0,
+              zIndex: 1
+            }}>
               {/* ASSET REFERENCE LAYER (PDF or IMAGE) */}
-              {prescriptionSettings.letterhead && (
-                (prescriptionSettings.letterhead.toLowerCase().includes('.pdf') || (prescriptionSettings.letterheadFile && prescriptionSettings.letterheadFile.type === 'application/pdf') || prescriptionSettings.letterhead.includes('type=pdf')) ? (
-                  <iframe 
-                    src={prescriptionSettings.letterhead}
-                    style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', border: 'none', pointerEvents: 'none' }}
-                    title="PDF Preview"
-                  />
-                ) : (
-                  <img 
-                    src={prescriptionSettings.letterhead} 
-                    alt="Letterhead Preview"
-                    style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', objectFit: 'fill', pointerEvents: 'none' }}
-                    onError={(e) => {
-                      // If image fails, maybe it was a PDF without extension
-                      if (!prescriptionSettings.letterhead.includes('docs.google.com')) {
-                        e.target.style.display = 'none';
-                      }
-                    }}
-                  />
-                )
+              {prescriptionSettings.letterhead ? (
+                (() => {
+                  const letterheadUrl = prescriptionSettings.letterhead;
+                  console.log('[PRESCRIPTION_PREVIEW] Rendering letterhead:', letterheadUrl);
+                  
+                  // Check if it's a PDF
+                  const isPDF = letterheadUrl.toLowerCase().includes('.pdf') || 
+                                (prescriptionSettings.letterheadFile && prescriptionSettings.letterheadFile.type === 'application/pdf') ||
+                                letterheadUrl.includes('.blob.core.windows.net') ||
+                                (letterheadUrl.startsWith('blob:') && prescriptionSettings.letterheadFile?.type === 'application/pdf');
+
+                  console.log('[PRESCRIPTION_PREVIEW] Is PDF?', isPDF);
+
+                  if (isPDF) {
+                    console.log('[PRESCRIPTION_PREVIEW] Rendering PDF with react-pdf:', letterheadUrl);
+                    
+                    return (
+                      <div style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', zIndex: 1, background: 'white', overflow: 'hidden' }}>
+                        <Document
+                          file={letterheadUrl}
+                          onLoadSuccess={({ numPages }) => {
+                            console.log('[PRESCRIPTION_PREVIEW] PDF loaded successfully. Pages:', numPages);
+                            setNumPdfPages(numPages);
+                            setPdfError(null);
+                          }}
+                          onLoadError={(error) => {
+                            console.error('[PRESCRIPTION_PREVIEW] PDF load error:', error);
+                            setPdfError(error.message);
+                          }}
+                          loading={
+                            <div style={{ 
+                              width: '100%', 
+                              height: '100%', 
+                              display: 'flex', 
+                              alignItems: 'center', 
+                              justifyContent: 'center',
+                              background: 'white'
+                            }}>
+                              <div style={{ textAlign: 'center' }}>
+                                <div className="pulse-loader" style={{ margin: '0 auto 20px' }}></div>
+                                <div style={{ fontSize: '12px', fontWeight: 950, color: '#0f52ba', letterSpacing: '2px' }}>
+                                  LOADING PDF...
+                                </div>
+                              </div>
+                            </div>
+                          }
+                          error={
+                            <div style={{ 
+                              width: '100%', 
+                              height: '100%', 
+                              display: 'flex', 
+                              flexDirection: 'column',
+                              alignItems: 'center', 
+                              justifyContent: 'center',
+                              background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+                              color: 'white',
+                              padding: '40px',
+                              textAlign: 'center'
+                            }}>
+                              <div style={{ fontSize: '64px', marginBottom: '20px' }}>📄</div>
+                              <h3 style={{ fontSize: '18px', fontWeight: 950, marginBottom: '10px', letterSpacing: '1px' }}>
+                                PRESCRIPTION LETTERHEAD LOADED
+                              </h3>
+                              <p style={{ fontSize: '12px', opacity: 0.9, marginBottom: '10px', maxWidth: '400px' }}>
+                                {pdfError || 'Unable to render PDF inline. Click below to open in a new tab.'}
+                              </p>
+                              <a 
+                                href={letterheadUrl} 
+                                target="_blank" 
+                                rel="noopener noreferrer"
+                                style={{ 
+                                  padding: '16px 32px', 
+                                  background: 'white', 
+                                  color: '#667eea', 
+                                  borderRadius: '12px', 
+                                  textDecoration: 'none', 
+                                  fontWeight: 950, 
+                                  fontSize: '13px',
+                                  boxShadow: '0 10px 30px rgba(0,0,0,0.2)',
+                                  display: 'inline-block',
+                                  marginTop: '20px',
+                                  transition: 'transform 0.2s'
+                                }}
+                                onMouseOver={(e) => e.target.style.transform = 'scale(1.05)'}
+                                onMouseOut={(e) => e.target.style.transform = 'scale(1)'}
+                              >
+                                🔗 OPEN LETTERHEAD PDF
+                              </a>
+                            </div>
+                          }
+                        >
+                          <Page 
+                            pageNumber={1} 
+                            width={794} // A4 width in pixels at 96 DPI (210mm)
+                            renderTextLayer={false}
+                            renderAnnotationLayer={false}
+                          />
+                        </Document>
+                      </div>
+                    );
+                  } else {
+                    // For images
+                    console.log('[PRESCRIPTION_PREVIEW] Rendering image');
+                    return (
+                      <img 
+                        key={letterheadUrl}
+                        src={letterheadUrl} 
+                        alt="Letterhead Asset"
+                        style={{ 
+                          position: 'absolute', 
+                          top: 0, 
+                          left: 0, 
+                          width: '100%', 
+                          height: '100%', 
+                          objectFit: 'fill', 
+                          pointerEvents: 'none', 
+                          zIndex: 1 
+                        }}
+                        onLoad={() => console.log('[PRESCRIPTION_PREVIEW] Image loaded successfully')}
+                        onError={(e) => console.error('[PRESCRIPTION_PREVIEW] Image load error:', e)}
+                      />
+                    );
+                  }
+                })()
+              ) : (
+                <div style={{ 
+                  position: 'absolute', 
+                  top: 0, 
+                  left: 0, 
+                  width: '100%', 
+                  height: '100%', 
+                  display: 'flex', 
+                  alignItems: 'center', 
+                  justifyContent: 'center',
+                  background: '#f8fafc',
+                  zIndex: 1
+                }}>
+                  <div style={{ textAlign: 'center', color: '#94a3b8' }}>
+                    <div style={{ fontSize: '48px', marginBottom: '15px' }}>📄</div>
+                    <div style={{ fontSize: '11px', fontWeight: 950, letterSpacing: '2px' }}>NO LETTERHEAD CONFIGURED</div>
+                    <div style={{ fontSize: '9px', marginTop: '5px' }}>Upload a PDF or image to preview</div>
+                  </div>
+                </div>
               )}
 
-              {/* Geometric Indicators */}
-              <div style={{ 
+              {/* Geometric Indicators (Hover only) */}
+              <div className="geometric-overlay" style={{ 
                 position: 'absolute', top: 0, left: 0, right: 0, height: `${prescriptionSettings.headerMargin}mm`, 
-                background: 'rgba(15, 82, 186, 0.02)', borderBottom: '1px dashed rgba(15, 82, 186, 0.1)',
-                display: 'flex', alignItems: 'flex-end', justifyContent: 'center', paddingBottom: '5px',
-                zIndex: 1
+                background: 'rgba(15, 82, 186, 0.05)', borderBottom: '2px dashed rgba(15, 82, 186, 0.2)',
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                zIndex: 10, pointerEvents: 'none', transition: 'opacity 0.3s'
               }}>
-                <span style={{ fontSize: '8px', color: '#0f52ba', opacity: 0.4, fontWeight: 950, letterSpacing: '2px' }}>HEADER_BOUNDS</span>
+                <span style={{ fontSize: '12px', color: '#0f52ba', fontWeight: 950, letterSpacing: '4px', textShadow: '0 0 10px white' }}>HEADER_SAFE_ZONE</span>
               </div>
+
+              <div className="geometric-overlay" style={{ 
+                position: 'absolute', top: 0, bottom: 0, left: 0, width: `${prescriptionSettings.leftMargin}mm`, 
+                background: 'rgba(15, 82, 186, 0.02)', borderRight: '1px dashed rgba(15, 82, 186, 0.1)',
+                zIndex: 10, pointerEvents: 'none'
+              }}></div>
               
-              {/* DIAGNOSTIC TEXT LAYER */}
-              <div style={{ 
-                position: 'relative',
-                zIndex: 2,
-                fontFamily: prescriptionSettings.fontFamily, 
-                fontSize: `${prescriptionSettings.fontSize}px`, 
-                color: prescriptionSettings.fontColor,
-                lineHeight: '1.6',
-                animation: 'fadeIn 0.8s ease',
-                padding: `${prescriptionSettings.headerMargin}mm ${prescriptionSettings.rightMargin}mm ${prescriptionSettings.bottomMargin}mm ${prescriptionSettings.leftMargin}mm`,
-                boxSizing: 'border-box',
-                minHeight: '297mm'
-              }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '40px', borderBottom: `2px solid ${prescriptionSettings.fontColor}20`, paddingBottom: '15px' }}>
-                   <div style={{ fontWeight: 950, fontSize: '1.2em' }}>DIAGNOSTIC REPORT</div>
-                   <div style={{ fontSize: '0.7em', textAlign: 'right', opacity: 0.6 }}>
-                      DATE: {MOCK_REPORT_DATA.date}<br/>
-                      REF: {MOCK_REPORT_DATA.accession}
-                   </div>
-                </div>
+              <div className="geometric-overlay" style={{ 
+                position: 'absolute', top: 0, bottom: 0, right: 0, width: `${prescriptionSettings.rightMargin}mm`, 
+                background: 'rgba(15, 82, 186, 0.02)', borderLeft: '1px dashed rgba(15, 82, 186, 0.1)',
+                zIndex: 10, pointerEvents: 'none'
+              }}></div>
+              
+              {/* DIAGNOSTIC TEXT LAYER - Only show when NO letterhead is configured */}
+              {!prescriptionSettings.letterhead && (
+                <div style={{ 
+                  position: 'relative',
+                  zIndex: 2,
+                  fontFamily: prescriptionSettings.fontFamily, 
+                  fontSize: `${prescriptionSettings.fontSize}px`, 
+                  color: prescriptionSettings.fontColor,
+                  lineHeight: '1.6',
+                  animation: 'fadeIn 0.8s ease',
+                  padding: `${prescriptionSettings.headerMargin}mm ${prescriptionSettings.rightMargin}mm ${prescriptionSettings.bottomMargin}mm ${prescriptionSettings.leftMargin}mm`,
+                  boxSizing: 'border-box',
+                  minHeight: '297mm'
+                }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '40px', borderBottom: `2px solid ${prescriptionSettings.fontColor}20`, paddingBottom: '15px' }}>
+                     <div style={{ fontWeight: 950, fontSize: '1.2em' }}>DIAGNOSTIC REPORT</div>
+                     <div style={{ fontSize: '0.7em', textAlign: 'right', opacity: 0.6 }}>
+                        DATE: {MOCK_REPORT_DATA.date}<br/>
+                        REF: {MOCK_REPORT_DATA.accession}
+                     </div>
+                  </div>
 
-                <div style={{ marginBottom: '20px', display: 'flex', gap: '30px' }}>
-                   <div><span style={{ fontWeight: 800, fontSize: '0.7em', opacity: 0.5 }}>PATIENT:</span> <span style={{ fontWeight: 700 }}>{MOCK_REPORT_DATA.patientName.toUpperCase()}</span></div>
-                   <div><span style={{ fontWeight: 800, fontSize: '0.7em', opacity: 0.5 }}>AGE/SEX:</span> <span style={{ fontWeight: 700 }}>{MOCK_REPORT_DATA.age} / {MOCK_REPORT_DATA.gender}</span></div>
-                </div>
+                  <div style={{ marginBottom: '20px', display: 'flex', gap: '30px' }}>
+                     <div><span style={{ fontWeight: 800, fontSize: '0.7em', opacity: 0.5 }}>PATIENT:</span> <span style={{ fontWeight: 700 }}>{MOCK_REPORT_DATA.patientName.toUpperCase()}</span></div>
+                     <div><span style={{ fontWeight: 800, fontSize: '0.7em', opacity: 0.5 }}>AGE/SEX:</span> <span style={{ fontWeight: 700 }}>{MOCK_REPORT_DATA.age} / {MOCK_REPORT_DATA.gender}</span></div>
+                  </div>
 
-                <div style={{ marginBottom: '30px' }}>
-                   <div style={{ fontWeight: 900, textTransform: 'uppercase', fontSize: '0.9em', color: '#0f52ba', marginBottom: '15px' }}>CLINICAL FINDINGS</div>
-                   <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-                      {MOCK_REPORT_DATA.findings.map((f, i) => <p key={i} style={{ margin: 0 }}>• {f}</p>)}
-                   </div>
-                </div>
+                  <div style={{ marginBottom: '30px' }}>
+                     <div style={{ fontWeight: 900, textTransform: 'uppercase', fontSize: '0.9em', color: '#0f52ba', marginBottom: '15px' }}>CLINICAL FINDINGS</div>
+                     <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                        {MOCK_REPORT_DATA.findings.map((f, i) => <p key={i} style={{ margin: 0 }}>• {f}</p>)}
+                     </div>
+                  </div>
 
-                <div style={{ background: `${prescriptionSettings.fontColor}05`, padding: '20px', borderRadius: '8px', border: `1px solid ${prescriptionSettings.fontColor}10` }}>
-                   <div style={{ fontWeight: 900, fontSize: '0.9em', marginBottom: '8px', color: '#0f52ba' }}>IMPRESSION:</div>
-                   <p style={{ fontSize: '1em', margin: 0, fontWeight: 700 }}>{MOCK_REPORT_DATA.impression}</p>
-                </div>
+                  <div style={{ background: `${prescriptionSettings.fontColor}05`, padding: '20px', borderRadius: '8px', border: `1px solid ${prescriptionSettings.fontColor}10` }}>
+                     <div style={{ fontWeight: 900, fontSize: '0.9em', marginBottom: '8px', color: '#0f52ba' }}>IMPRESSION:</div>
+                     <p style={{ fontSize: '1em', margin: 0, fontWeight: 700 }}>{MOCK_REPORT_DATA.impression}</p>
+                  </div>
 
-                {/* Simulated Signature */}
-                <div style={{ marginTop: '80px', textAlign: 'right' }}>
-                   <div style={{ display: 'inline-block', textAlign: 'center' }}>
-                      <div style={{ width: '200px', borderBottom: `1px solid ${prescriptionSettings.fontColor}`, marginBottom: '10px' }}></div>
-                      <div style={{ fontWeight: 900 }}>
-                        {activeProtocolData?.doctor?.fullName?.toUpperCase() || (selectedPrescriptionDoctorId ? doctors.find(d => d.id === selectedPrescriptionDoctorId)?.name?.toUpperCase() : 'CONSULTANT_NAME')}
-                      </div>
-                      <div style={{ fontSize: '0.7em', opacity: 0.6 }}>
-                        {activeProtocolData?.doctor?.degree || (selectedPrescriptionDoctorId ? doctors.find(d => d.id === selectedPrescriptionDoctorId)?.degree : 'QUALIFICATIONS')}
-                      </div>
-                      {activeProtocolData?.doctor?.licenseNo && (
-                        <div style={{ fontSize: '0.6em', opacity: 0.5, marginTop: '2px' }}>
-                          Reg No: {activeProtocolData.doctor.licenseNo}
+                  {/* Simulated Signature */}
+                  <div style={{ marginTop: '80px', textAlign: 'right' }}>
+                     <div style={{ display: 'inline-block', textAlign: 'center' }}>
+                        <div style={{ width: '200px', borderBottom: `1px solid ${prescriptionSettings.fontColor}`, marginBottom: '10px', opacity: 0.5 }}></div>
+                        <div style={{ fontWeight: 950, fontSize: '1.1em' }}>
+                          {activeProtocolData?.doctor?.fullName?.toUpperCase() || 'CONSULTANT_NAME'}
                         </div>
-                      )}
-                   </div>
+                        <div style={{ fontSize: '0.8em', fontWeight: 700, opacity: 0.7, marginTop: '2px' }}>
+                          {activeProtocolData?.doctor?.degree || 'QUALIFICATIONS'}
+                        </div>
+                        <div style={{ fontSize: '0.75em', fontWeight: 600, opacity: 0.6 }}>
+                          {activeProtocolData?.doctor?.specialization || 'SPECIALIZATION'}
+                        </div>
+                        {activeProtocolData?.doctor?.licenseNo && (
+                          <div style={{ fontSize: '0.7em', opacity: 0.5, marginTop: '4px', fontFamily: 'monospace' }}>
+                            REG_NO: {activeProtocolData.doctor.licenseNo}
+                          </div>
+                        )}
+                     </div>
+                  </div>
                 </div>
-              </div>
+              )}
            </div>
         </div>
 
@@ -1625,6 +1819,12 @@ export default function AdminBoard() {
           @keyframes fadeIn {
             from { opacity: 0; transform: translateY(10px); }
             to { opacity: 1; transform: translateY(0); }
+          }
+          .prescription-page-preview .geometric-overlay {
+            opacity: 0;
+          }
+          .prescription-page-preview:hover .geometric-overlay {
+            opacity: 1;
           }
         `}</style>
       </div>
