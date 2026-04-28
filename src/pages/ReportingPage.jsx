@@ -5,13 +5,14 @@ import dicomParser from 'dicom-parser';
 import AdvancedDicomViewer from '../components/AdvancedDicomViewer';
 import apiClient from '../api/apiClient';
 import { DicomCache } from '../utils/DicomCache';
+import { dicomOptimizer } from '../utils/DicomPerformanceOptimizer';
 
 const ReportingPage = () => {
   const navigate = useNavigate();
   const params = useParams();
   const [searchParams] = useSearchParams();
   const appointmentId = params.id || searchParams.get('id');
-  const [activeTab, setActiveTab] = useState('Structured');
+  const [activeTab, setActiveTab] = useState(localStorage.getItem('reporting_paradigm') || 'Structured');
   const [showKeywordDrawer, setShowKeywordDrawer] = useState(false);
   const [showTableModal, setShowTableModal] = useState(false);
   const [editorText, setEditorText] = useState('');
@@ -44,9 +45,12 @@ const ReportingPage = () => {
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [templateSearch, setTemplateSearch] = useState('');
   const [templatePage, setTemplatePage] = useState(1);
+  const [templateViewMode, setTemplateViewMode] = useState('registry'); // 'registry' or 'table'
+  const templateItemsPerPage = 10;
   const [keywordSearch, setKeywordSearch] = useState('');
   const [keywordPage, setKeywordPage] = useState(1);
-  const itemsPerPage = 5;
+  const [keywordViewMode, setKeywordViewMode] = useState('registry'); // 'registry' or 'table'
+  const keywordItemsPerPage = 10;
   const [activeAssetIndex, setActiveAssetIndex] = useState(0);
   const [uploadedFiles, setUploadedFiles] = useState([]);
   const [currentSlice, setCurrentSlice] = useState(1);
@@ -69,6 +73,10 @@ const ReportingPage = () => {
   const [isTablet, setIsTablet] = useState(window.innerWidth < 1100);
   const [activeWorkspaceMode, setActiveWorkspaceMode] = useState('split'); // 'split', 'dicom', 'editor'
   
+  // Performance optimization states
+  const [loadingProgress, setLoadingProgress] = useState({ stage: '', current: 0, total: 0 });
+  const [processingStatus, setProcessingStatus] = useState('');
+  
   // --- API SYNC STATES ---
   const [protocol, setProtocol] = useState(null);
   const [isSaving, setIsSaving] = useState(false);
@@ -80,6 +88,7 @@ const ReportingPage = () => {
   const [structuredData, setStructuredData] = useState({});
   const [selectedTemplateId, setSelectedTemplateId] = useState(null);
   const [selectedKeywordId, setSelectedKeywordId] = useState(null);
+  const [lastFocusedField, setLastFocusedField] = useState(null); // Track focused structured field
 
   useEffect(() => {
     const handleResize = () => {
@@ -100,13 +109,29 @@ const ReportingPage = () => {
   const fetchReportingContext = useCallback(async (appId) => {
     setLoading(true);
     setError(null);
+    console.info(`[1RAD] Initializing Reporting Context for AppID: ${appId}`);
+
     try {
-      const [templRes, keyRes, protRes, reportRes, appRes, assetRes] = await Promise.all([
+      // 1. Fetch Core Patient & Case Data first to resolve context
+      const appRes = await apiClient.get(`/appointments/${appId}`).catch(() => ({ data: null }));
+      
+      if (!appRes?.data) {
+        setError("PATIENT_CONTEXT_NOT_FOUND: The requested appointment record could not be retrieved.");
+        setLoading(false);
+        return;
+      }
+      
+      const appointmentData = appRes.data;
+      setActiveAppointment(appointmentData);
+      const doctorId = appointmentData.doctorId || appointmentData.doctorUserId;
+      console.info(`[1RAD] Resolved DoctorID: ${doctorId}`);
+
+      // 2. Parallel fetch for Library and Institutional Branding
+      const [templRes, keyRes, protRes, reportRes, assetRes] = await Promise.all([
         apiClient.get('/reporting/templates'),
         apiClient.get('/reporting/keywords'),
-        apiClient.get('/prescription/me'), 
+        doctorId ? apiClient.get(`/Prescription/${doctorId}`).catch(() => null) : Promise.resolve(null),
         apiClient.get(`/reporting/report/${appId}`).catch(() => ({ data: { success: false } })),
-        apiClient.get(`/appointments/${appId}`).catch(() => ({ data: null })),
         apiClient.get(`/Study/${appId}/assets`).catch(() => ({ data: [] }))
       ]);
 
@@ -118,12 +143,12 @@ const ReportingPage = () => {
         }));
         setKeywordLibrary(mapped);
       }
-      if (protRes.data?.success) setProtocol(protRes.data.data);
       
-      if (appRes?.data) {
-        setActiveAppointment(appRes.data);
+      if (protRes?.data?.success) {
+        console.info(`[1RAD] Branding Protocol Synchronized:`, protRes.data.data);
+        setProtocol(protRes.data.data);
       } else {
-        setError("PATIENT_CONTEXT_NOT_FOUND: The requested appointment record could not be retrieved. Please verify the URL or return to the worklist.");
+        console.warn(`[1RAD] Institutional Branding failed for DoctorID: ${doctorId}. Reverting to default.`);
       }
       
       // If existing report found, populate state
@@ -134,11 +159,18 @@ const ReportingPage = () => {
             const parsed = JSON.parse(r.findings);
             setStructuredData(parsed);
           } catch (e) {
-            setEditorText(r.findings);
+            console.error("Findings Parse Error:", e);
           }
         } else {
           setEditorText(r.findings || '');
         }
+        
+        // Use backend reporting mode if available
+        if (r.reportingMode === 'Structured' || r.reportingMode === 'Narrative Editor') {
+          console.info(`[1RAD] Restoring Backend Paradigm: ${r.reportingMode}`);
+          setActiveTab(r.reportingMode);
+        }
+        
         setImpression(r.impression || '');
         setAdvice(r.advice || '');
         setIsFinalized(r.isFinalized);
@@ -164,33 +196,73 @@ const ReportingPage = () => {
     setStructuredData(prev => ({ ...prev, [fieldId]: value }));
   };
 
+  const handleStructuredKeyDown = (e, fieldId) => {
+    if (e.key === 'Enter') {
+      const value = e.target.value;
+      const cursorSlot = e.target.selectionStart;
+      const textBefore = value.substring(0, cursorSlot);
+      
+      // Look for the last word (separated by space or newline)
+      const words = textBefore.split(/[\s\n]+/);
+      const lastWord = words[words.length - 1].trim().toLowerCase();
+      
+      if (lastWord) {
+        const macro = keywordLibrary.find(k => k.trigger.toLowerCase() === lastWord);
+        
+        if (macro) {
+          e.preventDefault();
+          const replacement = macro.replacementText.replace(/<[^>]*>?/gm, ''); // Strip HTML for textarea
+          
+          // Calculate where the last word started
+          const lastWordStart = textBefore.lastIndexOf(lastWord);
+          if (lastWordStart !== -1) {
+            const newValue = value.substring(0, lastWordStart) + replacement + value.substring(cursorSlot);
+            handleStructuredChange(fieldId, newValue);
+            
+            // Tactical: Reset cursor after state update
+            setTimeout(() => {
+              e.target.selectionStart = e.target.selectionEnd = lastWordStart + replacement.length;
+            }, 0);
+          }
+        }
+      }
+    }
+  };
+
   const renderDynamicFields = (template) => {
+    if (!template) return null;
     try {
-      const config = JSON.parse(template.content);
-      return config.map(field => (
-        <div key={field.id} style={{ marginBottom: '15px' }}>
-          <label style={{ fontSize: '11px', fontWeight: 800, color: '#64748b', display: 'block', marginBottom: '5px' }}>{field.label.toUpperCase()}</label>
-          {field.type === 'select' ? (
-            <select 
-              value={structuredData[field.id] || field.default || ''} 
-              onChange={(e) => handleStructuredChange(field.id, e.target.value)}
-              style={{ width: '100%', padding: '10px', borderRadius: '8px', border: '1px solid #e2e8f0', fontSize: '13px' }}
-            >
-              {field.options.map(opt => <option key={opt} value={opt}>{opt}</option>)}
-            </select>
-          ) : (
-            <input 
-              type={field.type || 'text'} 
-              value={structuredData[field.id] || field.default || ''}
-              onChange={(e) => handleStructuredChange(field.id, e.target.value)}
-              placeholder={`Enter ${field.label}...`}
-              style={{ width: '100%', padding: '10px', borderRadius: '8px', border: '1px solid #e2e8f0', fontSize: '13px' }}
-            />
-          )}
+      // Handle both casing possibilities from the API
+      const rawContent = template.content || template.Content || '[]';
+      const sections = JSON.parse(rawContent);
+      
+      return (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '20px', gridColumn: '1 / -1' }}>
+          {sections.map((section, idx) => (
+            <div key={section.id || idx} className="struct-section">
+              <div className="struct-header">
+                <span>{section.title?.toUpperCase() || 'CLINICAL_FINDINGS'}</span>
+                <span className={`status-indicator ${structuredData[section.title] ? '' : 'status-empty'}`}></span>
+              </div>
+              <textarea 
+                className="struct-textarea"
+                placeholder={`Enter observations for ${section.title || 'this section'}...`}
+                value={structuredData[section.title] || ''}
+                onFocus={() => setLastFocusedField(section.title)}
+                onKeyDown={(e) => handleStructuredKeyDown(e, section.title)}
+                onChange={(e) => handleStructuredChange(section.title, e.target.value)}
+                style={{ minHeight: '100px' }}
+              />
+            </div>
+          ))}
         </div>
-      ));
+      );
     } catch (e) {
-      return <div style={{ color: '#ef4444', fontSize: '12px' }}>[ CONFIGURATION ERROR: Invalid Template Schema ]</div>;
+      console.error('[STRUCTURED] Schema Parse Error:', e);
+      return <div style={{ color: '#ef4444', fontSize: '12px', padding: '20px', background: '#fef2f2', borderRadius: '12px', border: '1px solid #fee2e2' }}>
+        [ CONFIGURATION ERROR: Invalid Template Schema ]
+        <div style={{ fontSize: '10px', marginTop: '5px', opacity: 0.7 }}>Ensure your protocol content is valid JSON.</div>
+      </div>;
     }
   };
   const handleSaveReport = async (finalizing = false) => {
@@ -206,7 +278,8 @@ const ReportingPage = () => {
         findings: activeTab === 'Structured' ? JSON.stringify(structuredData) : editorText,
         impression: impression || 'NORMAL STUDY',
         advice: advice,
-        isFinalized: finalizing
+        isFinalized: finalizing,
+        reportingMode: activeTab
       };
 
       const res = await apiClient.post('/reporting/save', payload);
@@ -221,6 +294,22 @@ const ReportingPage = () => {
       alert(`SAVE FAILURE: ${err.response?.data?.error || err.message}`);
     } finally {
       setIsSaving(false);
+    }
+  };
+
+  const handleTabChange = async (tab) => {
+    setActiveTab(tab);
+    localStorage.setItem('reporting_paradigm', tab);
+    
+    // Global Synchronization: Update user's backend preference
+    try {
+      await apiClient.patch('/personnel/preferences', {
+        preferenceKey: 'ReportingMode',
+        preferenceValue: tab
+      });
+      console.info(`[1RAD] Global Preference Saved: ${tab}`);
+    } catch (err) {
+      console.warn('[1RAD] Global Preference Sync Failed:', err);
     }
   };
 
@@ -264,6 +353,13 @@ const ReportingPage = () => {
     }
   };
 
+  // Sync Macro Architect narrative
+  useEffect(() => {
+    if (selectedKeywordId && macroTextareaRef.current) {
+      macroTextareaRef.current.innerHTML = newMacro.replacementText || '';
+    }
+  }, [selectedKeywordId]);
+
   const handleSaveMacro = async () => {
     try {
       const payload = {
@@ -294,10 +390,21 @@ const ReportingPage = () => {
   const handleDeleteKeyword = async (id) => {
     if (!window.confirm('Delete this macro shortcut?')) return;
     try {
-      await apiClient.delete(`/reporting/keywords/${id}`);
-      fetchReportingContext(appointmentId);
+      console.log('[MACRO] Attempting to delete ID:', id);
+      const res = await apiClient.delete(`/reporting/keywords/${id}`);
+      
+      // If status is in the 200 range, we reset the UI regardless of the body content
+      if (res.status >= 200 && res.status < 300) {
+        setSelectedKeywordId(null);
+        setNewMacro({ trigger: '', replacementText: '' });
+        
+        // Use a timeout or immediate call to refresh the list
+        fetchReportingContext(appointmentId);
+        console.log('[MACRO] Delete successful, UI reset enforced.');
+      }
     } catch (err) {
-      alert('DELETE FAILURE');
+      console.error('[MACRO] Delete failed', err.response?.data || err);
+      alert(`DELETE FAILURE: ${err.response?.data?.error || 'Macro could not be removed.'}`);
     }
   };
 
@@ -305,24 +412,36 @@ const ReportingPage = () => {
     setSelectedTemplateId(template.id);
     setActiveTab('Structured');
     try {
-      const sections = JSON.parse(template.content);
+      const rawContent = template.content || template.Content || '[]';
+      const sections = JSON.parse(rawContent);
       const initialData = {};
       sections.forEach(s => {
-        initialData[s.id] = s.default || '';
+        initialData[s.title] = s.content || '';
       });
       setStructuredData(initialData);
     } catch (e) {
-      setEditorText(template.content);
+      setEditorText(template.content || template.Content || '');
       setActiveTab('Narrative Editor');
     }
   };
 
   const handleApplyKeyword = (macro) => {
+    const textToInsert = macro.replacementText || '';
+    
     if (activeTab === 'Narrative Editor') {
-      insertContent(macro.replacementText || '');
+      insertContent(textToInsert);
+    } else if (activeTab === 'Structured') {
+      if (lastFocusedField) {
+        setStructuredData(prev => ({
+          ...prev,
+          [lastFocusedField]: (prev[lastFocusedField] ? prev[lastFocusedField] + '\n' : '') + textToInsert.replace(/<[^>]*>?/gm, '')
+        }));
+      } else {
+        alert('Please focus a clinical section (click in a textarea) before applying a keyword.');
+      }
     } else {
-      alert(`KEYWORD: "${macro.trigger || ''}" copied to clipboard. Paste into your structured field.`);
-      navigator.clipboard.writeText(macro.replacementText || '');
+      alert(`KEYWORD: "${macro.trigger || ''}" copied to clipboard.`);
+      navigator.clipboard.writeText(textToInsert.replace(/<[^>]*>?/gm, ''));
     }
   };
 
@@ -340,45 +459,39 @@ const ReportingPage = () => {
     
     if (isZip) {
       setLoading(true);
+      setProcessingStatus('Initializing optimized DICOM processor...');
+      
       try {
-        const zip = await JSZip.loadAsync(file);
-        const seriesGroups = {};
-
-        for (const fileName of Object.keys(zip.files)) {
-          const zipFile = zip.files[fileName];
-          if (!zipFile.dir && !fileName.includes('__MACOSX')) {
-            const content = await zipFile.async('arraybuffer');
-            const dcmFile = new File([content], fileName.split('/').pop(), { type: 'application/dicom' });
-            
-            try {
-              const byteArray = new Uint8Array(content);
-              const dataSet = dicomParser.parseDicom(byteArray);
-              if (!dataSet.elements['x7fe00010']) continue;
-
-              const seriesUID = dataSet.string('x0020000e') || 'UNKNOWN';
-              const seriesDesc = dataSet.string('x0008103e') || 'UNNAMED SERIES';
-              const instanceNum = parseInt(dataSet.string('x00200013') || '0', 10);
-
-              if (!seriesGroups[seriesUID]) {
-                seriesGroups[seriesUID] = { seriesUID, seriesDesc, files: [] };
-              }
-              seriesGroups[seriesUID].files.push({ file: dcmFile, instanceNum });
-            } catch (err) {}
+        // Use optimized processor for ZIP files
+        const classifiedAssets = await dicomOptimizer.processZipFileOptimized(
+          file,
+          (progress) => {
+            setLoadingProgress(progress);
+            setProcessingStatus(`${progress.stage}: ${progress.current}/${progress.total} files${progress.seriesCount ? ` (${progress.seriesCount} series found)` : ''}`);
+          },
+          (seriesInfo) => {
+            console.log(`[REPORTING] New series discovered: ${seriesInfo.seriesDesc}`);
           }
-        }
+        );
         
-        const assets = Object.values(seriesGroups).map(group => ({
-          name: group.seriesDesc,
-          rawFiles: group.files.sort((a, b) => a.instanceNum - b.instanceNum).map(f => f.file),
-          size: `${group.files.length} slices`
+        const assets = classifiedAssets.map(series => ({
+          name: `${series.patientName} - ${series.seriesDesc}`,
+          rawFiles: series.files,
+          size: `${series.files.length} slices`,
+          seriesUID: series.seriesUID,
+          modality: series.modality
         }));
         
         setUploadedFiles(assets);
         setIsDicomImage(true);
       } catch (err) {
-        console.error('ZIP load failed', err);
+        console.error('Optimized ZIP load failed', err);
+        setProcessingStatus(`Error: ${err.message}`);
+        alert('Failed to process ZIP file: ' + err.message);
       } finally {
         setLoading(false);
+        setProcessingStatus('');
+        setLoadingProgress({ stage: '', current: 0, total: 0 });
       }
     }
   };
@@ -388,6 +501,8 @@ const ReportingPage = () => {
     if (!asset || !asset.needsHydration || !asset.remoteUrl || asset.rawFiles?.length > 0) return;
 
     setLoading(true);
+    setProcessingStatus('Initializing optimized DICOM processor...');
+    
     try {
       // TACTICAL CACHE CHECK
       console.log(`[DICOM_LOAD] Checking persistent cache for asset: ${asset.id}`);
@@ -395,6 +510,7 @@ const ReportingPage = () => {
       
       if (cachedData && cachedData.series?.length > 0) {
         console.log(`[DICOM_LOAD] Cache HIT for ${asset.id}. Restoring ${cachedData.series.length} series.`);
+        setProcessingStatus('Restoring from cache...');
         
         const hydratedFromCache = cachedData.series.map(s => ({
           ...asset,
@@ -410,64 +526,48 @@ const ReportingPage = () => {
         });
         setIsDicomImage(true);
         setLoading(false);
+        setProcessingStatus('');
         return;
       }
 
-      console.log(`[DICOM_LOAD] Cache MISS. Initializing hydration for asset: ${asset.name} at ${asset.remoteUrl}`);
+      console.log(`[DICOM_LOAD] Cache MISS. Initializing optimized hydration for asset: ${asset.name}`);
+      setProcessingStatus('Downloading study data...');
+      
       const response = await fetch(asset.remoteUrl);
       if (!response.ok) throw new Error(`NETWORK_FAILURE: HTTP_${response.status} when fetching asset stream.`);
       
       const blob = await response.blob();
-      console.log(`[DICOM_LOAD] Binary stream received. Size: ${(blob.size / (1024*1024)).toFixed(2)} MB. Parsing ZIP...`);
+      console.log(`[DICOM_LOAD] Binary stream received. Size: ${(blob.size / (1024*1024)).toFixed(2)} MB. Starting optimized processing...`);
       
-      const zip = await JSZip.loadAsync(blob);
-      const seriesGroups = {};
-      const fileNames = Object.keys(zip.files);
-      console.log(`[DICOM_LOAD] ZIP extracted. File count: ${fileNames.length}. Initializing DICOM classification...`);
-      
-      for (const fileName of fileNames) {
-        const zipFile = zip.files[fileName];
-        if (!zipFile.dir && !fileName.includes('__MACOSX')) {
-          const content = await zipFile.async('arraybuffer');
-          const dcmFile = new File([content], fileName.split('/').pop(), { type: 'application/dicom' });
-          
-          try {
-            const byteArray = new Uint8Array(content);
-            const dataSet = dicomParser.parseDicom(byteArray);
-            
-            if (!dataSet.elements['x7fe00010'] && !dataSet.elements['x00080016']) {
-                console.warn(`[DICOM_LOAD] Skipping non-diagnostic file: ${fileName}`);
-                continue;
-            }
-
-            const seriesUID = dataSet.string('x0020000e') || 'UNKNOWN_SERIES';
-            const seriesDesc = dataSet.string('x0008103e') || asset.name || 'UNNAMED_SERIES';
-            const instanceNum = parseInt(dataSet.string('x00200013') || '0', 10);
-
-            if (!seriesGroups[seriesUID]) {
-              seriesGroups[seriesUID] = { seriesUID, seriesDesc, files: [] };
-            }
-            seriesGroups[seriesUID].files.push({ file: dcmFile, instanceNum });
-          } catch (err) {
-            console.error(`[DICOM_LOAD] Failed to parse file: ${fileName}`, err);
-          }
+      // Use optimized processor with progress tracking
+      const classifiedAssets = await dicomOptimizer.processZipFileOptimized(
+        blob,
+        (progress) => {
+          setLoadingProgress(progress);
+          setProcessingStatus(`${progress.stage}: ${progress.current}/${progress.total} files${progress.seriesCount ? ` (${progress.seriesCount} series found)` : ''}`);
+        },
+        (seriesInfo) => {
+          console.log(`[DICOM_LOAD] New series discovered: ${seriesInfo.seriesDesc}`);
         }
-      }
+      );
 
-      const classifiedAssets = Object.values(seriesGroups).map(group => ({
+      const finalAssets = classifiedAssets.map(series => ({
         ...asset,
-        name: group.seriesDesc,
-        rawFiles: group.files.sort((a, b) => a.instanceNum - b.instanceNum).map(f => f.file),
-        needsHydration: false
+        name: `${series.patientName} - ${series.seriesDesc}`,
+        rawFiles: series.files,
+        needsHydration: false,
+        seriesUID: series.seriesUID,
+        modality: series.modality
       }));
 
-      console.log(`[DICOM_LOAD] Classification complete. Discovered ${classifiedAssets.length} valid diagnostic series.`);
+      console.log(`[DICOM_LOAD] Optimized processing complete. Discovered ${finalAssets.length} valid diagnostic series.`);
 
       // TACTICAL CACHE STORAGE
-      if (classifiedAssets.length > 0) {
+      if (finalAssets.length > 0) {
+        setProcessingStatus('Caching for future use...');
         const cachePayload = {
           ...asset,
-          series: classifiedAssets.map(ca => ({ name: ca.name, rawFiles: ca.rawFiles }))
+          series: finalAssets.map(ca => ({ name: ca.name, rawFiles: ca.rawFiles, seriesUID: ca.seriesUID }))
         };
         await DicomCache.set(asset.id, cachePayload);
         console.log(`[DICOM_LOAD] Asset ${asset.id} persisted to persistent cache.`);
@@ -475,8 +575,8 @@ const ReportingPage = () => {
 
       setUploadedFiles(prev => {
         const newFiles = [...prev];
-        if (classifiedAssets.length > 0) {
-          newFiles.splice(index, 1, ...classifiedAssets);
+        if (finalAssets.length > 0) {
+          newFiles.splice(index, 1, ...finalAssets);
         } else {
           console.warn('[DICOM_LOAD] No valid DICOM series found in ZIP container.');
           newFiles[index] = { ...asset, needsHydration: false, rawFiles: [] };
@@ -485,10 +585,13 @@ const ReportingPage = () => {
       });
       setIsDicomImage(true);
     } catch (err) {
-      console.error('[DICOM_LOAD] Hydration/Classification failure', err);
+      console.error('[DICOM_LOAD] Optimized hydration failure', err);
+      setProcessingStatus(`Error: ${err.message}`);
       alert(`DIAGNOSTIC SIGNAL FAILURE: ${err.message}`);
     } finally {
       setLoading(false);
+      setProcessingStatus('');
+      setLoadingProgress({ stage: '', current: 0, total: 0 });
     }
   };
 
@@ -616,18 +719,20 @@ const ReportingPage = () => {
 
   // --- PAGINATION & FILTERING LOGIC ---
   const filteredTemplates = (templates || []).filter(t => 
-    t.name.toLowerCase().includes(templateSearch.toLowerCase()) ||
-    t.modality.toLowerCase().includes(templateSearch.toLowerCase())
+    t.Name?.toLowerCase().includes(templateSearch.toLowerCase()) ||
+    t.Modality?.toLowerCase().includes(templateSearch.toLowerCase()) ||
+    t.name?.toLowerCase().includes(templateSearch.toLowerCase()) ||
+    t.modality?.toLowerCase().includes(templateSearch.toLowerCase())
   );
-  const totalTemplatePages = Math.ceil(filteredTemplates.length / itemsPerPage);
-  const paginatedTemplates = filteredTemplates.slice((templatePage - 1) * itemsPerPage, templatePage * itemsPerPage);
+  const totalTemplatePages = Math.ceil(filteredTemplates.length / templateItemsPerPage);
+  const paginatedTemplates = filteredTemplates.slice((templatePage - 1) * templateItemsPerPage, templatePage * templateItemsPerPage);
 
   const filteredKeywords = (keywordLibrary || []).filter(k => 
     (k.trigger || '').toLowerCase().includes(keywordSearch.toLowerCase()) ||
     (k.replacementText || '').toLowerCase().includes(keywordSearch.toLowerCase())
   );
-  const totalKeywordPages = Math.ceil(filteredKeywords.length / itemsPerPage);
-  const paginatedKeywords = filteredKeywords.slice((keywordPage - 1) * itemsPerPage, keywordPage * itemsPerPage);
+  const totalKeywordPages = Math.ceil(filteredKeywords.length / keywordItemsPerPage);
+  const paginatedKeywords = filteredKeywords.slice((keywordPage - 1) * keywordItemsPerPage, keywordPage * keywordItemsPerPage);
 
   const handleSuggestionSelect = () => {
     insertContent('Gall bladder shows echogenic calculi with posterior acoustic shadowing. No pericholecystic fluid is seen.');
@@ -680,7 +785,8 @@ const ReportingPage = () => {
               minHeight: '297mm', 
               background: 'white', 
               boxShadow: '0 10px 30px rgba(0,0,0,0.1)', 
-              color: '#1e293b',
+              color: protocol?.fontColor || '#1e293b',
+              fontFamily: protocol?.fontFamily || 'Arial, sans-serif',
               position: 'relative',
               overflow: 'hidden'
             }}>
@@ -721,30 +827,32 @@ const ReportingPage = () => {
                 )}
 
                 {/* Patient Info Block */}
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '15px', background: '#f8fafc', padding: '15px', borderRadius: '8px', marginBottom: '30px', border: '1px solid #e2e8f0', fontSize: '12px' }}>
-                  <div><span style={{color: '#64748b'}}>NAME:</span> <strong>{activeAppointment?.patientName?.toUpperCase() || 'N/A'}</strong></div>
-                  <div><span style={{color: '#64748b'}}>AGE/SEX:</span> <strong>{activeAppointment?.patientAge || 'N/A'} / {activeAppointment?.patientGender || 'N/A'}</strong></div>
-                  <div><span style={{color: '#64748b'}}>UHID:</span> <strong>{activeAppointment?.patientIdentifier || 'N/A'}</strong></div>
-                  <div><span style={{color: '#64748b'}}>STUDY:</span> <strong>{activeAppointment?.service || 'N/A'}</strong></div>
-                  <div><span style={{color: '#64748b'}}>DATE:</span> <strong>{activeAppointment?.dateTime ? new Date(activeAppointment.dateTime).toLocaleDateString() : 'N/A'}</strong></div>
-                  <div><span style={{color: '#64748b'}}>REF:</span> <strong>{activeAppointment?.referredBy || 'N/A'}</strong></div>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '15px', background: '#f8fafc', padding: '15px', borderRadius: '8px', marginBottom: '30px', border: '1px solid #e2e8f0', fontSize: '11px' }}>
+                  <div><span style={{color: '#64748b', fontSize: '9px'}}>NAME:</span> <br/><strong>{activeAppointment?.patientName?.toUpperCase() || 'N/A'}</strong></div>
+                  <div><span style={{color: '#64748b', fontSize: '9px'}}>AGE/SEX:</span> <br/><strong>{activeAppointment?.patientAge || 'N/A'} / {activeAppointment?.patientGender || 'N/A'}</strong></div>
+                  <div><span style={{color: '#64748b', fontSize: '9px'}}>UHID:</span> <br/><strong>{activeAppointment?.patientIdentifier || 'N/A'}</strong></div>
+                  <div><span style={{color: '#64748b', fontSize: '9px'}}>STUDY:</span> <br/><strong>{activeAppointment?.service || 'N/A'}</strong></div>
+                  <div><span style={{color: '#64748b', fontSize: '9px'}}>DATE:</span> <br/><strong>{activeAppointment?.dateTime ? new Date(activeAppointment.dateTime).toLocaleDateString() : 'N/A'}</strong></div>
+                  <div><span style={{color: '#64748b', fontSize: '9px'}}>REF BY:</span> <br/><strong>{activeAppointment?.referredBy || 'N/A'}</strong></div>
                 </div>
 
                 {/* Main Findings */}
-                <div dangerouslySetInnerHTML={{ __html: bodyContent }} />
+                <div style={{ fontSize: (protocol?.fontSize || 12) + 'px', lineHeight: '1.6' }}>
+                   <div dangerouslySetInnerHTML={{ __html: bodyContent }} />
+                </div>
                 
                 {/* Impression Block */}
-                {(impression || activeTab === 'Structured') && (
+                {impression && (
                   <div style={{ marginTop: '30px' }}>
-                    <div style={{ fontSize: '11px', fontWeight: 950, color: '#0f52ba', marginBottom: '5px' }}>IMPRESSION:</div>
+                    <div style={{ fontSize: '11px', fontWeight: 950, color: protocol?.fontColor || '#0f52ba', marginBottom: '5px' }}>IMPRESSION:</div>
                     <div style={{ 
-                      fontSize: `${protocol?.fontSize || 14}px`, 
+                      fontSize: (protocol?.fontSize || 14) + 'px', 
                       fontWeight: 900, 
                       borderLeft: `3px solid ${protocol?.fontColor || '#0f52ba'}`, 
                       paddingLeft: '15px',
                       color: protocol?.fontColor || '#1e293b'
                     }}>
-                      {impression || 'NO SIGNIFICANT ABNORMALITY DETECTED.'}
+                      {impression}
                     </div>
                   </div>
                 )}
@@ -752,8 +860,8 @@ const ReportingPage = () => {
                 {/* Advice Block */}
                 {advice && (
                   <div style={{ marginTop: '20px' }}>
-                    <div style={{ fontSize: '11px', fontWeight: 950, color: '#64748b', marginBottom: '5px' }}>ADVICE:</div>
-                    <div style={{ fontSize: '13px', color: '#475569' }}>{advice}</div>
+                    <div style={{ fontSize: '11px', fontWeight: 950, color: '#64748b', marginBottom: '5px' }}>FOLLOW-UP ADVICE:</div>
+                    <div style={{ fontSize: '12px', color: '#475569', fontStyle: 'italic' }}>{advice}</div>
                   </div>
                 )}
 
@@ -761,17 +869,15 @@ const ReportingPage = () => {
                 <div style={{ marginTop: '60px', textAlign: 'right' }}>
                    <div style={{ display: 'inline-block', textAlign: 'center' }}>
                       <div style={{ width: '180px', borderBottom: `1px solid ${protocol?.fontColor || '#1e293b'}`, marginBottom: '10px' }}></div>
-                      <div style={{ fontWeight: 950, fontSize: '13px', color: protocol?.fontColor || '#1e293b' }}>
-                        {protocol?.doctor?.name?.toUpperCase() || 'AUTHORIZED RADIOLOGIST'}
+                      <div style={{ fontWeight: 950, fontSize: '12px' }}>
+                        {protocol?.doctor?.fullName?.toUpperCase() || protocol?.doctor?.name?.toUpperCase() || 'AUTHORIZED RADIOLOGIST'}
                       </div>
                       <div style={{ fontSize: '10px', color: '#64748b', fontWeight: 700 }}>
-                        {protocol?.doctor?.degree || 'MD, RADIOLOGY'}
+                        {protocol?.doctor?.specialization || 'Consultant Radiologist'}
                       </div>
-                      {protocol?.doctor?.licenseNo && (
-                        <div style={{ fontSize: '9px', color: '#94a3b8', marginTop: '2px' }}>
-                          Reg No: {protocol.doctor.licenseNo}
-                        </div>
-                      )}
+                      <div style={{ fontSize: '9px', color: '#94a3b8', marginTop: '2px' }}>
+                         {protocol?.doctor?.degree} | Reg No: {protocol?.doctor?.licenseNo}
+                      </div>
                    </div>
                 </div>
               </div>
@@ -1677,11 +1783,32 @@ const ReportingPage = () => {
             </div>
           </div>
         </div>
-        <div className="header-right">
+        <div className="header-right" style={{ display: 'flex', alignItems: 'center', gap: '20px' }}>
+          {/* COMPACT PARADIGM SWITCH */}
+          <div style={{ display: 'flex', background: '#f1f5f9', padding: '3px', borderRadius: '10px', border: '1px solid #e2e8f0' }}>
+            <button 
+              onClick={() => handleTabChange('Structured')}
+              style={{ 
+                padding: '6px 15px', borderRadius: '7px', border: 'none',
+                background: activeTab === 'Structured' ? '#0f52ba' : 'transparent',
+                color: activeTab === 'Structured' ? 'white' : '#64748b',
+                fontWeight: 900, fontSize: '10px', cursor: 'pointer', transition: 'all 0.2s cubic-bezier(0.4, 0, 0.2, 1)'
+              }}
+            >STRUCTURED_BLUEPRINT</button>
+            <button 
+              onClick={() => handleTabChange('Narrative Editor')}
+              style={{ 
+                padding: '6px 15px', borderRadius: '7px', border: 'none',
+                background: activeTab === 'Narrative Editor' ? '#0f52ba' : 'transparent',
+                color: activeTab === 'Narrative Editor' ? 'white' : '#64748b',
+                fontWeight: 900, fontSize: '10px', cursor: 'pointer', transition: 'all 0.2s cubic-bezier(0.4, 0, 0.2, 1)'
+              }}
+            >NARRATIVE_FREEFLOW</button>
+          </div>
+
           <div style={{ 
             display: 'flex', gap: '2px', background: 'rgba(15, 82, 186, 0.05)', 
-            padding: '4px', borderRadius: '12px', border: '1px solid rgba(15, 82, 186, 0.1)',
-            marginRight: '15px'
+            padding: '4px', borderRadius: '12px', border: '1px solid rgba(15, 82, 186, 0.1)'
           }}>
             {isTablet ? (
                <div style={{ display: 'flex', gap: '5px' }}>
@@ -1704,9 +1831,9 @@ const ReportingPage = () => {
                </div>
             ) : (
               [
-                { state: 'collapsed', icon: '\u{21E4}', label: 'Diagnostic' },
-                { state: 'standard', icon: '\u{2139}', label: 'Balanced' },
-                { state: 'expanded', icon: '\u{21E5}', label: 'Narrative' }
+                { state: 'collapsed', icon: '\u{21E4}', label: 'Diag' },
+                { state: 'standard', icon: '\u{2139}', label: 'Split' },
+                { state: 'expanded', icon: '\u{21E5}', label: 'Edit' }
               ].map(mode => (
                 <button 
                   key={mode.state}
@@ -1715,11 +1842,11 @@ const ReportingPage = () => {
                     background: editorState === mode.state ? '#0f52ba' : 'transparent',
                     border: 'none', padding: '6px 12px', borderRadius: '8px', cursor: 'pointer',
                     color: editorState === mode.state ? 'white' : '#64748b',
-                    fontSize: '10px', fontWeight: 900, display: 'flex', alignItems: 'center', gap: '6px',
+                    fontSize: '9px', fontWeight: 900, display: 'flex', alignItems: 'center', gap: '4px',
                     transition: 'all 0.3s'
                   }}
                 >
-                  <span style={{ fontSize: '14px' }}>{mode.icon}</span>
+                  <span style={{ fontSize: '12px' }}>{mode.icon}</span>
                   {editorState === mode.state && <span>{mode.label.toUpperCase()}</span>}
                 </button>
               ))
@@ -1784,6 +1911,75 @@ const ReportingPage = () => {
           </div>
 
           <div style={{ flex: 1, background: '#000', position: 'relative', display: 'flex', gap: '2px', padding: '2px' }}>
+            {/* PROGRESS OVERLAY */}
+            {loading && (
+              <div style={{
+                position: 'absolute',
+                top: 0,
+                left: 0,
+                right: 0,
+                bottom: 0,
+                background: 'rgba(15, 23, 42, 0.95)',
+                backdropFilter: 'blur(8px)',
+                zIndex: 1000,
+                display: 'flex',
+                flexDirection: 'column',
+                alignItems: 'center',
+                justifyContent: 'center',
+                color: 'white',
+                gap: '20px'
+              }}>
+                <div style={{
+                  width: '60px',
+                  height: '60px',
+                  border: '3px solid rgba(59, 130, 246, 0.2)',
+                  borderTopColor: '#3b82f6',
+                  borderRadius: '50%',
+                  animation: 'spin 1s linear infinite'
+                }}></div>
+                
+                <div style={{ textAlign: 'center', maxWidth: '350px' }}>
+                  <div style={{ fontSize: '14px', fontWeight: 900, marginBottom: '8px', letterSpacing: '1px' }}>
+                    PROCESSING DICOM DATA
+                  </div>
+                  <div style={{ fontSize: '11px', color: '#94a3b8', marginBottom: '15px' }}>
+                    {processingStatus || 'Initializing...'}
+                  </div>
+                  
+                  {loadingProgress.total > 0 && (
+                    <div style={{ width: '250px', margin: '0 auto' }}>
+                      <div style={{
+                        width: '100%',
+                        height: '6px',
+                        background: 'rgba(255, 255, 255, 0.1)',
+                        borderRadius: '3px',
+                        overflow: 'hidden',
+                        marginBottom: '8px'
+                      }}>
+                        <div style={{
+                          width: `${(loadingProgress.current / loadingProgress.total) * 100}%`,
+                          height: '100%',
+                          background: 'linear-gradient(90deg, #3b82f6, #1d4ed8)',
+                          borderRadius: '3px',
+                          transition: 'width 0.3s ease'
+                        }}></div>
+                      </div>
+                      <div style={{ fontSize: '10px', color: '#cbd5e1' }}>
+                        {loadingProgress.current} / {loadingProgress.total} files
+                        {loadingProgress.seriesCount && ` • ${loadingProgress.seriesCount} series`}
+                      </div>
+                    </div>
+                  )}
+                </div>
+                
+                <style>{`
+                  @keyframes spin {
+                    to { transform: rotate(360deg); }
+                  }
+                `}</style>
+              </div>
+            )}
+            
             {/* SERIES LIBRARY MINI-SIDEBAR */}
             {uploadedFiles.length > 1 && (
               <div style={{ width: '60px', background: '#0f172a', borderRight: '1px solid #1e293b', display: 'flex', flexDirection: 'column', gap: '10px', padding: '10px 5px', zIndex: 10 }}>
@@ -1845,14 +2041,14 @@ const ReportingPage = () => {
         {/* RIGHT PANEL: Reporting Workspace */}
         <div className="panel panel-right">
           <div className="resizer-handle" onMouseDown={startResizing}></div>
+
           <div className="tabs" style={{ 
-            marginBottom: '20px', border: 'none', display: editorState === 'collapsed' ? 'none' : 'flex',
-            background: '#f1f5f9', padding: '4px', borderRadius: '12px'
+            marginTop: '0px', marginBottom: '10px', borderBottom: '1px solid #f1f5f9', display: editorState === 'collapsed' ? 'none' : 'flex',
+            justifyContent: 'center', gap: '20px'
           }}>
-            <div className={`tab ${activeTab === 'Structured' ? 'active' : ''}`} style={{ borderRadius: '8px' }} onClick={() => setActiveTab('Structured')}>Structured</div>
-            <div className={`tab ${activeTab === 'Narrative Editor' ? 'active' : ''}`} style={{ borderRadius: '8px' }} onClick={() => setActiveTab('Narrative Editor')}>Narrative</div>
-            <div className={`tab ${activeTab === 'Templates' ? 'active' : ''}`} style={{ borderRadius: '8px' }} onClick={() => setActiveTab('Templates')}>Templates</div>
-            <div className={`tab ${activeTab === 'Keywords' ? 'active' : ''}`} style={{ borderRadius: '8px' }} onClick={() => setActiveTab('Keywords')}>Keywords</div>
+            <div className={`tab ${activeTab === 'Structured' || activeTab === 'Narrative Editor' ? 'active' : ''}`} style={{ fontSize: '10px', fontWeight: 950 }} onClick={() => setActiveTab(activeTab === 'Narrative Editor' ? 'Narrative Editor' : 'Structured')}>REPORT_WORKSPACE</div>
+            <div className={`tab ${activeTab === 'Templates' ? 'active' : ''}`} style={{ fontSize: '10px', fontWeight: 950 }} onClick={() => setActiveTab('Templates')}>Templates</div>
+            <div className={`tab ${activeTab === 'Keywords' ? 'active' : ''}`} style={{ fontSize: '10px', fontWeight: 950 }} onClick={() => setActiveTab('Keywords')}>Keywords</div>
           </div>
 
           <div style={{ 
@@ -1903,17 +2099,6 @@ const ReportingPage = () => {
                     {selectedTemplateId ? (
                       <div className="structured-form" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: '25px' }}>
                         {renderDynamicFields(templates.find(t => t.id === selectedTemplateId))}
-                        
-                        {/* Global Impression for Structured Mode */}
-                        <div style={{ gridColumn: '1 / -1', marginTop: '20px', pt: '20px', borderTop: '2px solid #f1f5f9' }}>
-                          <label style={{ fontSize: '11px', fontWeight: 800, color: '#4338ca', display: 'block', marginBottom: '8px' }}>CLINICAL IMPRESSION / CONCLUSION</label>
-                          <textarea 
-                            value={impression}
-                            onChange={(e) => setImpression(e.target.value)}
-                            placeholder="Type final clinical impression here..."
-                            style={{ width: '100%', padding: '15px', borderRadius: '10px', border: '1px solid #cbd5e1', fontSize: '14px', minHeight: '120px', outline: 'none' }}
-                          />
-                        </div>
                       </div>
                     ) : (
                       <div style={{ textAlign: 'center', padding: '100px 0', color: '#94a3b8' }}>
@@ -2133,350 +2318,536 @@ const ReportingPage = () => {
           )}
 
             {activeTab === 'Templates' && (
-              <div style={{ display: 'flex', height: 'calc(100vh - 250px)', gap: '25px', padding: '10px', animation: 'fadeIn 0.5s ease' }}>
-                {/* LEFT: Template Registry */}
-                <div style={{ 
-                  width: '320px', 
-                  background: 'white', 
-                  borderRadius: '20px', 
-                  display: 'flex', 
-                  flexDirection: 'column',
-                  boxShadow: '0 10px 30px rgba(0,0,0,0.02)',
-                  border: '1px solid #e2e8f0',
-                  overflow: 'hidden'
-                }}>
-                  <div style={{ padding: '20px', borderBottom: '1px solid #f1f5f9', background: '#f8fafc' }}>
-                    <div style={{ fontSize: '12px', fontWeight: 950, color: '#4338ca', letterSpacing: '1px', marginBottom: '15px' }}>TEMPLATE_LIBRARY</div>
-                    <div style={{ position: 'relative' }}>
+              <div style={{ display: 'flex', flexDirection: 'column', height: 'calc(100vh - 250px)', gap: '15px', padding: '10px' }}>
+                {/* Protocol Mode Switcher & Search Bar */}
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'white', padding: '15px 25px', borderRadius: '16px', border: '1px solid #e2e8f0', boxShadow: '0 4px 6px -1px rgba(0,0,0,0.05)' }}>
+                  <div style={{ display: 'flex', gap: '10px', background: '#f1f5f9', padding: '4px', borderRadius: '12px' }}>
+                    <button 
+                      onClick={() => setTemplateViewMode('registry')}
+                      style={{ 
+                        padding: '8px 20px', borderRadius: '8px', border: 'none', 
+                        background: templateViewMode === 'registry' ? 'white' : 'transparent',
+                        color: templateViewMode === 'registry' ? '#4338ca' : '#64748b',
+                        fontWeight: 900, fontSize: '11px', cursor: 'pointer', boxShadow: templateViewMode === 'registry' ? '0 2px 4px rgba(0,0,0,0.05)' : 'none'
+                      }}
+                    >DESIGNER_VIEW</button>
+                    <button 
+                      onClick={() => setTemplateViewMode('table')}
+                      style={{ 
+                        padding: '8px 20px', borderRadius: '8px', border: 'none', 
+                        background: templateViewMode === 'table' ? 'white' : 'transparent',
+                        color: templateViewMode === 'table' ? '#4338ca' : '#64748b',
+                        fontWeight: 900, fontSize: '11px', cursor: 'pointer', boxShadow: templateViewMode === 'table' ? '0 2px 4px rgba(0,0,0,0.05)' : 'none'
+                      }}
+                    >REGISTRY_TABLE</button>
+                  </div>
+
+                  <div style={{ display: 'flex', gap: '15px', alignItems: 'center' }}>
+                    <div style={{ position: 'relative', width: '300px' }}>
                       <input 
                         type="text" 
-                        placeholder="Search protocols..." 
+                        placeholder="Filter blueprints..." 
                         value={templateSearch}
                         onChange={(e) => { setTemplateSearch(e.target.value); setTemplatePage(1); }}
-                        style={{ width: '100%', padding: '10px 10px 10px 35px', borderRadius: '12px', border: '1px solid #e2e8f0', fontSize: '12px', outline: 'none', fontWeight: 600 }}
+                        style={{ width: '100%', padding: '10px 10px 10px 35px', borderRadius: '10px', border: '1px solid #e2e8f0', fontSize: '12px', fontWeight: 600, outline: 'none' }}
                       />
                       <span style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', opacity: 0.4 }}>🔍</span>
                     </div>
-                  </div>
-
-                  <div style={{ flex: 1, overflowY: 'auto', padding: '10px' }}>
                     <button 
+                      className="btn btn-primary" 
                       onClick={() => {
                         setSelectedTemplateId('new');
+                        setTemplateViewMode('registry');
                         setNewTemplate({ name: '', modality: 'USG', sections: [] });
                       }}
-                      style={{ 
-                        width: '100%', padding: '12px', borderRadius: '12px', border: '2px dashed #e0e7ff', 
-                        background: selectedTemplateId === 'new' ? '#f5f3ff' : 'transparent',
-                        color: '#4338ca', fontWeight: 800, fontSize: '11px', cursor: 'pointer',
-                        marginBottom: '10px', transition: '0.2s'
-                      }}
-                    >
-                      + CONSTRUCT NEW PROTOCOL
-                    </button>
-
-                    {filteredTemplates.map(tpl => (
-                      <div 
-                        key={tpl.id}
-                        onClick={() => {
-                          setSelectedTemplateId(tpl.id);
-                          try {
-                            const sections = JSON.parse(tpl.content || '[]');
-                            setNewTemplate({ name: tpl.name, modality: tpl.modality, sections });
-                          } catch(e) {
-                            setNewTemplate({ name: tpl.name, modality: tpl.modality, sections: [] });
-                          }
-                        }}
-                        style={{ 
-                          padding: '12px 15px', borderRadius: '14px', cursor: 'pointer',
-                          background: selectedTemplateId === tpl.id ? '#4338ca' : 'transparent',
-                          color: selectedTemplateId === tpl.id ? 'white' : '#1e293b',
-                          transition: 'all 0.2s',
-                          marginBottom: '4px',
-                          border: selectedTemplateId === tpl.id ? '1px solid #4338ca' : '1px solid transparent'
-                        }}
-                      >
-                        <div style={{ fontWeight: 900, fontSize: '13px', display: 'flex', justifyContent: 'space-between' }}>
-                          <span>{tpl.name}</span>
-                          <span style={{ fontSize: '9px', background: selectedTemplateId === tpl.id ? 'rgba(255,255,255,0.2)' : '#e0e7ff', padding: '2px 6px', borderRadius: '4px' }}>{tpl.modality}</span>
-                        </div>
-                        <div style={{ fontSize: '10px', opacity: selectedTemplateId === tpl.id ? 0.7 : 0.5, marginTop: '4px' }}>
-                          Last modified: {tpl.lastModified || 'Just now'}
-                        </div>
-                      </div>
-                    ))}
+                      style={{ padding: '10px 25px', fontSize: '11px', background: '#4338ca' }}
+                    >+ INITIALIZE PROTOCOL</button>
                   </div>
                 </div>
 
-                {/* RIGHT: Template Detail / Builder */}
-                <div style={{ flex: 1, background: 'white', borderRadius: '24px', boxShadow: '0 20px 50px rgba(0,0,0,0.03)', border: '1px solid #e2e8f0', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
-                  {selectedTemplateId ? (
-                    <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
-                      <div style={{ padding: '25px 30px', borderBottom: '1px solid #f1f5f9', display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: '#fcfdfe' }}>
-                        <div>
-                          <h3 style={{ fontSize: '18px', fontWeight: 950, color: '#1e293b', margin: 0 }}>
-                            {selectedTemplateId === 'new' ? 'PROTOCOL_ARCHITECT' : `EDIT: ${newTemplate.name}`}
-                          </h3>
-                          <p style={{ fontSize: '11px', color: '#64748b', fontWeight: 700, marginTop: '4px' }}>Define structured fields and default clinical findings.</p>
-                        </div>
-                        <div style={{ display: 'flex', gap: '12px' }}>
-                          {selectedTemplateId !== 'new' && (
-                            <button 
-                              className="btn btn-outline" 
-                              style={{ color: '#ef4444', borderColor: '#fee2e2' }}
-                              onClick={() => handleDeleteTemplate(selectedTemplateId)}
-                            >🗑️ DELETE</button>
-                          )}
-                          <button className="btn btn-primary" style={{ padding: '10px 25px', background: '#4338ca' }} onClick={handleSaveTemplate}>
-                            {selectedTemplateId === 'new' ? '🚀 PUBLISH PROTOCOL' : '💾 SAVE CHANGES'}
-                          </button>
-                        </div>
+                {templateViewMode === 'registry' ? (
+                  <div style={{ display: 'flex', gap: '25px', flex: 1, overflow: 'hidden', animation: 'fadeIn 0.4s ease' }}>
+                    {/* LEFT: Master Protocol List */}
+                    <div style={{ 
+                      width: '320px', background: 'white', borderRadius: '20px', 
+                      display: 'flex', flexDirection: 'column', boxShadow: '0 10px 30px rgba(0,0,0,0.02)',
+                      border: '1px solid #e2e8f0', overflow: 'hidden'
+                    }}>
+                      <div style={{ padding: '20px', borderBottom: '1px solid #f1f5f9', background: '#f8fafc' }}>
+                        <div style={{ fontSize: '12px', fontWeight: 950, color: '#4338ca', letterSpacing: '1px' }}>PROTOCOL_BLUEPRINTS</div>
                       </div>
 
-                      <div style={{ flex: 1, padding: '30px', overflowY: 'auto', background: '#fff' }}>
-                        <div style={{ maxWidth: '800px' }}>
-                          <div style={{ display: 'flex', gap: '20px', marginBottom: '30px' }}>
-                            <div style={{ flex: 2 }}>
-                              <label style={{ fontSize: '11px', fontWeight: 950, color: '#4338ca', display: 'block', marginBottom: '8px' }}>PROTOCOL NAME</label>
-                              <input 
-                                type="text" 
-                                placeholder="e.g. USG Whole Abdomen - Detailed"
-                                value={newTemplate.name}
-                                onChange={e => setNewTemplate({...newTemplate, name: e.target.value})}
-                                style={{ width: '100%', padding: '15px', borderRadius: '12px', border: '2px solid #f5f3ff', background: '#f8faff', fontSize: '14px', fontWeight: 700, outline: 'none' }}
-                              />
+                      <div style={{ flex: 1, overflowY: 'auto', padding: '15px' }}>
+                        {paginatedTemplates.map(item => (
+                          <div 
+                            key={item.id}
+                            onClick={() => {
+                              setSelectedTemplateId(item.id);
+                              try {
+                                const sections = JSON.parse(item.content || item.Content || '[]');
+                                setNewTemplate({ name: item.name || item.Name, modality: item.modality || item.Modality, sections });
+                              } catch(e) {
+                                setNewTemplate({ name: item.name || item.Name, modality: item.modality || item.Modality, sections: [] });
+                              }
+                            }}
+                            style={{ 
+                              padding: '15px', borderRadius: '16px', cursor: 'pointer',
+                              background: selectedTemplateId === item.id ? '#4338ca' : '#f8faff',
+                              color: selectedTemplateId === item.id ? 'white' : '#1e293b',
+                              transition: 'all 0.2s', marginBottom: '8px',
+                              border: selectedTemplateId === item.id ? '1px solid #4338ca' : '1px solid #edf2f7',
+                              position: 'relative'
+                            }}
+                          >
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
+                              <span style={{ fontWeight: 950, fontSize: '13px' }}>{item.name || item.Name}</span>
+                              <span style={{ 
+                                fontSize: '8px', background: selectedTemplateId === item.id ? 'rgba(255,255,255,0.2)' : 'rgba(67, 56, 202, 0.1)', 
+                                padding: '2px 6px', borderRadius: '4px', fontWeight: 900, color: selectedTemplateId === item.id ? 'white' : '#4338ca'
+                              }}>{item.modality || item.Modality}</span>
                             </div>
-                            <div style={{ flex: 1 }}>
-                              <label style={{ fontSize: '11px', fontWeight: 950, color: '#4338ca', display: 'block', marginBottom: '8px' }}>MODALITY</label>
-                              <select 
-                                value={newTemplate.modality}
-                                onChange={e => setNewTemplate({...newTemplate, modality: e.target.value})}
-                                style={{ width: '100%', padding: '15px', borderRadius: '12px', border: '2px solid #f5f3ff', background: '#f8faff', fontSize: '14px', fontWeight: 700, outline: 'none' }}
-                              >
-                                <option>USG</option>
-                                <option>CT</option>
-                                <option>MRI</option>
-                                <option>X-RAY</option>
-                              </select>
+                            <div style={{ fontSize: '10px', opacity: selectedTemplateId === item.id ? 0.8 : 0.5 }}>
+                              {JSON.parse(item.content || item.Content || '[]').length} STRUCTURAL_FIELDS
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+
+                      {/* Pagination for Registry */}
+                      <div style={{ padding: '15px', borderTop: '1px solid #f1f5f9', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                        <button disabled={templatePage === 1} onClick={() => setTemplatePage(templatePage - 1)} style={{ padding: '5px 10px', fontSize: '10px', fontWeight: 900, background: '#f1f5f9', border: 'none', borderRadius: '6px', cursor: templatePage === 1 ? 'not-allowed' : 'pointer' }}>PREV</button>
+                        <span style={{ fontSize: '10px', fontWeight: 900, color: '#64748b' }}>PAGE {templatePage} / {totalTemplatePages || 1}</span>
+                        <button disabled={templatePage >= totalTemplatePages} onClick={() => setTemplatePage(templatePage + 1)} style={{ padding: '5px 10px', fontSize: '10px', fontWeight: 900, background: '#f1f5f9', border: 'none', borderRadius: '6px', cursor: templatePage >= totalTemplatePages ? 'not-allowed' : 'pointer' }}>NEXT</button>
+                      </div>
+                    </div>
+
+                    {/* RIGHT: Protocol Architect Detail */}
+                    <div style={{ flex: 1, background: 'white', borderRadius: '24px', boxShadow: '0 20px 50px rgba(0,0,0,0.03)', border: '1px solid #e2e8f0', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+                      {selectedTemplateId ? (
+                        <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
+                          <div style={{ padding: '25px 30px', borderBottom: '1px solid #f1f5f9', display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: '#fcfdfe' }}>
+                            <div>
+                              <h3 style={{ fontSize: '18px', fontWeight: 950, color: '#1e293b', margin: 0 }}>{selectedTemplateId === 'new' ? 'PROTOCOL_ARCHITECT' : `EDIT: ${newTemplate.name}`}</h3>
+                              <p style={{ fontSize: '11px', color: '#64748b', fontWeight: 700, marginTop: '4px' }}>Design interactive clinical blueprints with structured data fields.</p>
+                            </div>
+                            <div style={{ display: 'flex', gap: '12px' }}>
+                              {selectedTemplateId !== 'new' && <button className="btn btn-outline" style={{ color: '#ef4444', borderColor: '#fee2e2' }} onClick={() => handleDeleteTemplate(selectedTemplateId)}>🗑️ DELETE</button>}
+                              <button className="btn btn-primary" style={{ padding: '10px 25px', background: '#4338ca' }} onClick={handleSaveTemplate}>{selectedTemplateId === 'new' ? '🚀 PUBLISH' : '💾 SAVE CHANGES'}</button>
                             </div>
                           </div>
 
-                          <div style={{ marginBottom: '20px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                            <span style={{ fontSize: '14px', fontWeight: 950, color: '#1e293b' }}>Clinical Sections</span>
-                            <button className="btn btn-outline" style={{ padding: '6px 15px', fontSize: '11px', fontWeight: 800 }} onClick={addSection}>+ ADD SECTION</button>
-                          </div>
-
-                          <div style={{ display: 'flex', flexDirection: 'column', gap: '15px' }}>
-                            {newTemplate.sections.map((section, index) => (
-                              <div key={section.id} style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '16px', padding: '20px', position: 'relative' }}>
-                                <div style={{ display: 'flex', gap: '15px', marginBottom: '15px' }}>
-                                  <input 
-                                    type="text" 
-                                    value={section.title}
-                                    onChange={(e) => updateSection(section.id, 'title', e.target.value)}
-                                    placeholder="Section Title (e.g. Findings)"
-                                    style={{ flex: 1, fontWeight: 900, border: 'none', background: 'transparent', borderBottom: '1px solid #e2e8f0', padding: '5px 0', fontSize: '13px', outline: 'none', color: '#4338ca' }}
-                                  />
-                                  <button 
-                                    style={{ border: 'none', background: 'transparent', color: '#94a3b8', cursor: 'pointer', fontSize: '16px' }}
-                                    onClick={() => removeSection(section.id)}
-                                  >✕</button>
+                          <div style={{ flex: 1, padding: '30px', overflowY: 'auto' }}>
+                            <div style={{ maxWidth: '800px', margin: '0 auto' }}>
+                              {/* Header Meta */}
+                              <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: '20px', marginBottom: '30px' }}>
+                                <div>
+                                  <label style={{ fontSize: '10px', fontWeight: 950, color: '#4338ca', display: 'block', marginBottom: '8px' }}>PROTOCOL_NAME</label>
+                                  <input type="text" placeholder="e.g. Abdominal Ultrasound Standard" value={newTemplate.name} onChange={e => setNewTemplate({...newTemplate, name: e.target.value})} style={{ width: '100%', padding: '12px 15px', borderRadius: '12px', border: '1px solid #e2e8f0', background: '#f8faff', fontSize: '14px', fontWeight: 700, outline: 'none' }} />
                                 </div>
-                                <textarea 
-                                  value={section.content}
-                                  onChange={(e) => updateSection(section.id, 'content', e.target.value)}
-                                  placeholder="Enter default clinical observations for this section..."
-                                  style={{ width: '100%', minHeight: '100px', border: 'none', background: 'white', borderRadius: '12px', padding: '15px', fontSize: '13px', lineHeight: '1.6', outline: 'none', color: '#334155', boxShadow: '0 2px 4px rgba(0,0,0,0.02)' }}
-                                />
+                                <div>
+                                  <label style={{ fontSize: '10px', fontWeight: 950, color: '#4338ca', display: 'block', marginBottom: '8px' }}>DIAGNOSTIC_MODALITY</label>
+                                  <select value={newTemplate.modality} onChange={e => setNewTemplate({...newTemplate, modality: e.target.value})} style={{ width: '100%', padding: '12px 15px', borderRadius: '12px', border: '1px solid #e2e8f0', background: '#f8faff', fontSize: '14px', fontWeight: 700, outline: 'none' }}>
+                                    {['USG', 'CT', 'MRI', 'X-RAY', 'DXA', 'MAMMO'].map(m => <option key={m} value={m}>{m}</option>)}
+                                  </select>
+                                </div>
                               </div>
-                            ))}
-                            {newTemplate.sections.length === 0 && (
-                              <div style={{ textAlign: 'center', padding: '40px', background: '#f8fafc', borderRadius: '16px', border: '2px dashed #e2e8f0', color: '#94a3b8', fontSize: '13px' }}>
-                                No sections defined. Click "+ ADD SECTION" to begin structuring your report.
+
+                              {/* Structural Fields */}
+                              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '15px' }}>
+                                <label style={{ fontSize: '10px', fontWeight: 950, color: '#4338ca' }}>STRUCTURAL_COMPONENTS ({newTemplate.sections.length})</label>
+                                <button className="btn btn-outline" style={{ fontSize: '10px', padding: '5px 12px' }} onClick={addSection}>+ ADD COMPONENT</button>
                               </div>
-                            )}
+
+                              <div style={{ display: 'flex', flexDirection: 'column', gap: '15px' }}>
+                                {newTemplate.sections.map((sec, idx) => (
+                                  <div key={sec.id} style={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: '16px', padding: '20px', boxShadow: '0 4px 6px rgba(0,0,0,0.02)' }}>
+                                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '15px' }}>
+                                      <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flex: 1 }}>
+                                        <span style={{ width: '24px', height: '24px', background: '#4338ca', color: 'white', borderRadius: '6px', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '10px', fontWeight: 900 }}>{idx + 1}</span>
+                                        <input type="text" value={sec.title} onChange={e => updateSection(sec.id, 'title', e.target.value)} style={{ border: 'none', background: 'transparent', fontSize: '14px', fontWeight: 800, color: '#1e293b', width: '100%', outline: 'none' }} />
+                                      </div>
+                                      <button style={{ background: 'transparent', border: 'none', color: '#ef4444', fontSize: '14px', cursor: 'pointer', padding: '5px' }} onClick={() => removeSection(sec.id)}>🗑️</button>
+                                    </div>
+                                    <textarea placeholder="Enter clinical description or default findings..." value={sec.content} onChange={e => updateSection(sec.id, 'content', e.target.value)} style={{ width: '100%', minHeight: '80px', padding: '12px', borderRadius: '10px', border: '1px solid #f1f5f9', background: '#fcfdfe', fontSize: '13px', lineHeight: '1.6', outline: 'none', resize: 'vertical' }} />
+                                  </div>
+                                ))}
+                                {newTemplate.sections.length === 0 && (
+                                  <div style={{ textAlign: 'center', padding: '40px', background: '#f8fafc', borderRadius: '16px', border: '2px dashed #e2e8f0', color: '#94a3b8', fontSize: '13px' }}>
+                                    No components defined. Click "+ ADD COMPONENT" to begin structuring your protocol.
+                                  </div>
+                                )}
+                              </div>
+                            </div>
                           </div>
                         </div>
+                      ) : (
+                        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', color: '#94a3b8', textAlign: 'center', padding: '40px' }}>
+                          <div style={{ fontSize: '64px', marginBottom: '20px', opacity: 0.5 }}>📂</div>
+                          <h3 style={{ fontSize: '20px', fontWeight: 800 }}>Protocol Blueprint Gallery</h3>
+                          <p style={{ maxWidth: '400px', fontSize: '13px', marginTop: '10px' }}>Select an existing protocol to modify its architecture, or initialize a new clinical blueprint for structured reporting.</p>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                ) : (
+                  <div style={{ flex: 1, background: 'white', borderRadius: '24px', border: '1px solid #e2e8f0', display: 'flex', flexDirection: 'column', overflow: 'hidden', animation: 'fadeIn 0.5s ease', boxShadow: '0 20px 50px rgba(0,0,0,0.03)' }}>
+                    <div style={{ flex: 1, overflowY: 'auto' }}>
+                      <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left' }}>
+                        <thead style={{ background: '#f8fafc', position: 'sticky', top: 0, zIndex: 10 }}>
+                          <tr>
+                            <th style={{ padding: '15px 25px', fontSize: '11px', fontWeight: 950, color: '#475569', borderBottom: '2px solid #e2e8f0' }}>PROTOCOL_NAME</th>
+                            <th style={{ padding: '15px 25px', fontSize: '11px', fontWeight: 950, color: '#475569', borderBottom: '2px solid #e2e8f0', width: '150px' }}>MODALITY</th>
+                            <th style={{ padding: '15px 25px', fontSize: '11px', fontWeight: 950, color: '#475569', borderBottom: '2px solid #e2e8f0', width: '180px' }}>COMPLEXITY</th>
+                            <th style={{ padding: '15px 25px', fontSize: '11px', fontWeight: 950, color: '#475569', borderBottom: '2px solid #e2e8f0', textAlign: 'center', width: '150px' }}>ACTIONS</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {paginatedTemplates.map((item, idx) => {
+                            let sections = [];
+                            try { sections = JSON.parse(item.content || item.Content || '[]'); } catch(e) {}
+                            return (
+                              <tr key={item.id} style={{ background: idx % 2 === 0 ? '#fff' : '#fcfdfe', borderBottom: '1px solid #f1f5f9' }}>
+                                <td style={{ padding: '20px 25px' }}>
+                                  <div style={{ fontSize: '14px', fontWeight: 900, color: '#1e293b' }}>{item.name || item.Name}</div>
+                                  <div style={{ fontSize: '10px', color: '#64748b', marginTop: '4px' }}>{item.description || 'Clinical reporting protocol'}</div>
+                                </td>
+                                <td style={{ padding: '20px 25px' }}>
+                                  <span style={{ background: 'rgba(67, 56, 202, 0.1)', color: '#4338ca', padding: '4px 10px', borderRadius: '6px', fontSize: '11px', fontWeight: 950 }}>{item.modality || item.Modality}</span>
+                                </td>
+                                <td style={{ padding: '20px 25px' }}>
+                                  <div style={{ display: 'flex', gap: '3px' }}>
+                                    {[1,2,3].map(i => (
+                                      <div key={i} style={{ width: '12px', height: '4px', borderRadius: '2px', background: i <= Math.min(sections.length, 3) ? '#4338ca' : '#e2e8f0' }}></div>
+                                    ))}
+                                    <span style={{ fontSize: '10px', color: '#64748b', marginLeft: '5px' }}>{sections.length} Fields</span>
+                                  </div>
+                                </td>
+                                <td style={{ padding: '20px 25px', textAlign: 'center' }}>
+                                  <div style={{ display: 'flex', gap: '8px', justifyContent: 'center' }}>
+                                    <button 
+                                      onClick={() => {
+                                        setSelectedTemplateId(item.id);
+                                        setNewTemplate({
+                                          name: item.name || item.Name,
+                                          modality: item.modality || item.Modality,
+                                          sections: sections
+                                        });
+                                        setTemplateViewMode('registry');
+                                      }}
+                                      style={{ padding: '8px 15px', borderRadius: '8px', border: '1px solid #e2e8f0', background: 'white', fontSize: '11px', fontWeight: 800, cursor: 'pointer' }}
+                                    >ARCHITECT</button>
+                                  </div>
+                                </td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+
+                    {/* Protocol Table Pagination Controls */}
+                    <div style={{ padding: '20px 25px', borderTop: '2px solid #e2e8f0', background: '#f8fafc', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <div style={{ fontSize: '12px', color: '#64748b', fontWeight: 600 }}>
+                        Showing <span style={{ color: '#4338ca', fontWeight: 950 }}>{paginatedTemplates.length}</span> blueprints
+                      </div>
+                      <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                        <button disabled={templatePage === 1} onClick={() => setTemplatePage(templatePage - 1)} style={{ padding: '8px 16px', borderRadius: '10px', border: '1px solid #e2e8f0', background: 'white', fontSize: '11px', fontWeight: 900, cursor: templatePage === 1 ? 'not-allowed' : 'pointer', opacity: templatePage === 1 ? 0.5 : 1 }}>← PREVIOUS</button>
+                        <button disabled={templatePage >= totalTemplatePages} onClick={() => setTemplatePage(templatePage + 1)} style={{ padding: '8px 16px', borderRadius: '10px', border: '1px solid #e2e8f0', background: 'white', fontSize: '11px', fontWeight: 900, cursor: templatePage >= totalTemplatePages ? 'not-allowed' : 'pointer', opacity: templatePage >= totalTemplatePages ? 0.5 : 1 }}>NEXT →</button>
                       </div>
                     </div>
-                  ) : (
-                    <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', color: '#94a3b8', textAlign: 'center', padding: '40px' }}>
-                      <div style={{ fontSize: '64px', marginBottom: '20px', opacity: 0.5 }}>📂</div>
-                      <h3 style={{ fontSize: '20px', fontWeight: 800, color: '#1e293b' }}>Protocol Designer</h3>
-                      <p style={{ maxWidth: '400px', fontSize: '13px', lineHeight: '1.6', marginTop: '10px' }}>
-                        Build and manage high-fidelity structured templates. Choose an existing protocol from the registry or initialize a new one.
-                      </p>
-                      <button 
-                        className="btn btn-primary" 
-                        style={{ marginTop: '25px', padding: '12px 30px', background: '#4338ca' }}
-                        onClick={() => setSelectedTemplateId('new')}
-                      >+ CONSTRUCT NEW PROTOCOL</button>
-                    </div>
-                  )}
-                </div>
+                  </div>
+                )}
               </div>
             )}
 
             {activeTab === 'Keywords' && (
-              <div style={{ display: 'flex', height: 'calc(100vh - 250px)', gap: '25px', padding: '10px', animation: 'fadeIn 0.5s ease' }}>
-                {/* LEFT: Master Keyword List */}
-                <div style={{ 
-                  width: '320px', 
-                  background: 'white', 
-                  borderRadius: '20px', 
-                  display: 'flex', 
-                  flexDirection: 'column',
-                  boxShadow: '0 10px 30px rgba(0,0,0,0.02)',
-                  border: '1px solid #e2e8f0',
-                  overflow: 'hidden'
-                }}>
-                  <div style={{ padding: '20px', borderBottom: '1px solid #f1f5f9', background: '#f8fafc' }}>
-                    <div style={{ fontSize: '12px', fontWeight: 950, color: '#0f52ba', letterSpacing: '1px', marginBottom: '15px' }}>KEYWORD_REGISTRY</div>
-                    <div style={{ position: 'relative' }}>
+              <div style={{ display: 'flex', flexDirection: 'column', height: 'calc(100vh - 250px)', gap: '15px', padding: '10px' }}>
+                {/* Mode Switcher & Search Bar */}
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'white', padding: '15px 25px', borderRadius: '16px', border: '1px solid #e2e8f0', boxShadow: '0 4px 6px -1px rgba(0,0,0,0.05)' }}>
+                  <div style={{ display: 'flex', gap: '10px', background: '#f1f5f9', padding: '4px', borderRadius: '12px' }}>
+                    <button 
+                      onClick={() => setKeywordViewMode('registry')}
+                      style={{ 
+                        padding: '8px 20px', borderRadius: '8px', border: 'none', 
+                        background: keywordViewMode === 'registry' ? 'white' : 'transparent',
+                        color: keywordViewMode === 'registry' ? '#0f52ba' : '#64748b',
+                        fontWeight: 900, fontSize: '11px', cursor: 'pointer', boxShadow: keywordViewMode === 'registry' ? '0 2px 4px rgba(0,0,0,0.05)' : 'none'
+                      }}
+                    >REGISTRY_VIEW</button>
+                    <button 
+                      onClick={() => setKeywordViewMode('table')}
+                      style={{ 
+                        padding: '8px 20px', borderRadius: '8px', border: 'none', 
+                        background: keywordViewMode === 'table' ? 'white' : 'transparent',
+                        color: keywordViewMode === 'table' ? '#0f52ba' : '#64748b',
+                        fontWeight: 900, fontSize: '11px', cursor: 'pointer', boxShadow: keywordViewMode === 'table' ? '0 2px 4px rgba(0,0,0,0.05)' : 'none'
+                      }}
+                    >TABULAR_OVERVIEW</button>
+                  </div>
+
+                  <div style={{ display: 'flex', gap: '15px', alignItems: 'center' }}>
+                    <div style={{ position: 'relative', width: '300px' }}>
                       <input 
                         type="text" 
-                        placeholder="Filter shortcuts..." 
+                        placeholder="Search macros..." 
                         value={keywordSearch}
                         onChange={(e) => { setKeywordSearch(e.target.value); setKeywordPage(1); }}
-                        style={{ width: '100%', padding: '10px 10px 10px 35px', borderRadius: '12px', border: '1px solid #e2e8f0', fontSize: '12px', outline: 'none', fontWeight: 600 }}
+                        style={{ width: '100%', padding: '10px 10px 10px 35px', borderRadius: '10px', border: '1px solid #e2e8f0', fontSize: '12px', fontWeight: 600, outline: 'none' }}
                       />
                       <span style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', opacity: 0.4 }}>🔍</span>
                     </div>
-                  </div>
-
-                  <div style={{ flex: 1, overflowY: 'auto', padding: '10px' }}>
                     <button 
+                      className="btn btn-primary" 
                       onClick={() => {
                         setSelectedKeywordId('new');
+                        setKeywordViewMode('registry');
                         setNewMacro({ trigger: '', replacementText: '' });
-                        if (macroTextareaRef.current) macroTextareaRef.current.innerHTML = '';
                       }}
-                      style={{ 
-                        width: '100%', padding: '12px', borderRadius: '12px', border: '2px dashed #cbd5e1', 
-                        background: selectedKeywordId === 'new' ? '#eff6ff' : 'transparent',
-                        color: '#0f52ba', fontWeight: 800, fontSize: '11px', cursor: 'pointer',
-                        marginBottom: '10px', transition: '0.2s'
-                      }}
-                    >
-                      + INITIALIZE NEW MACRO
-                    </button>
-
-                    {filteredKeywords.map(item => (
-                      <div 
-                        key={item.id}
-                        onClick={() => {
-                          setSelectedKeywordId(item.id);
-                          setNewMacro({ trigger: item.trigger, replacementText: item.replacementText });
-                          if (macroTextareaRef.current) macroTextareaRef.current.innerHTML = item.replacementText;
-                        }}
-                        style={{ 
-                          padding: '12px 15px', borderRadius: '14px', cursor: 'pointer',
-                          background: selectedKeywordId === item.id ? '#0f52ba' : 'transparent',
-                          color: selectedKeywordId === item.id ? 'white' : '#1e293b',
-                          transition: 'all 0.2s',
-                          marginBottom: '4px',
-                          border: selectedKeywordId === item.id ? '1px solid #0f52ba' : '1px solid transparent'
-                        }}
-                      >
-                        <div style={{ fontWeight: 900, fontSize: '13px', display: 'flex', justifyContent: 'space-between' }}>
-                          <span>/{item.trigger}</span>
-                          {selectedKeywordId === item.id && <span style={{ fontSize: '10px', opacity: 0.7 }}>ACTIVE</span>}
-                        </div>
-                        <div style={{ fontSize: '10px', opacity: selectedKeywordId === item.id ? 0.7 : 0.5, marginTop: '2px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                          {item.replacementText?.replace(/<[^>]*>?/gm, '')}
-                        </div>
-                      </div>
-                    ))}
+                      style={{ padding: '10px 20px', fontSize: '11px' }}
+                    >+ INITIALIZE NEW</button>
                   </div>
                 </div>
 
-                {/* RIGHT: Keyword Detail / Editor */}
-                <div style={{ flex: 1, background: 'white', borderRadius: '24px', boxShadow: '0 20px 50px rgba(0,0,0,0.03)', border: '1px solid #e2e8f0', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
-                  {selectedKeywordId ? (
-                    <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
-                      <div style={{ padding: '25px 30px', borderBottom: '1px solid #f1f5f9', display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: '#fcfdfe' }}>
-                        <div>
-                          <h3 style={{ fontSize: '18px', fontWeight: 950, color: '#1e293b', margin: 0 }}>
-                            {selectedKeywordId === 'new' ? 'CREATE_DIAGNOSTIC_MACRO' : `EDIT: /${newMacro.trigger}`}
-                          </h3>
-                          <p style={{ fontSize: '11px', color: '#64748b', fontWeight: 700, marginTop: '4px' }}>Configure shorthands for rapid narrative expansion.</p>
-                        </div>
-                        <div style={{ display: 'flex', gap: '12px' }}>
-                          {selectedKeywordId !== 'new' && (
-                            <button 
-                              className="btn btn-outline" 
-                              style={{ color: '#ef4444', borderColor: '#fee2e2' }}
-                              onClick={() => handleDeleteKeyword(selectedKeywordId)}
-                            >🗑️ DELETE</button>
-                          )}
-                          <button className="btn btn-primary" style={{ padding: '10px 25px' }} onClick={handleSaveMacro}>
-                            {selectedKeywordId === 'new' ? '🚀 PUBLISH MACRO' : '💾 SAVE CHANGES'}
-                          </button>
-                        </div>
+                {keywordViewMode === 'registry' ? (
+                  <div style={{ display: 'flex', gap: '25px', flex: 1, overflow: 'hidden', animation: 'fadeIn 0.4s ease' }}>
+                    {/* LEFT: Master Keyword List */}
+                    <div style={{ 
+                      width: '320px', 
+                      background: 'white', 
+                      borderRadius: '20px', 
+                      display: 'flex', 
+                      flexDirection: 'column',
+                      boxShadow: '0 10px 30px rgba(0,0,0,0.02)',
+                      border: '1px solid #e2e8f0',
+                      overflow: 'hidden'
+                    }}>
+                      <div style={{ flex: 1, overflowY: 'auto', padding: '15px' }}>
+                        {paginatedKeywords.map(item => (
+                          <div 
+                            key={item.id}
+                            onClick={() => {
+                              setSelectedKeywordId(item.id);
+                              setNewMacro({ trigger: item.trigger, replacementText: item.replacementText });
+                            }}
+                            style={{ 
+                              padding: '15px', 
+                              borderRadius: '16px', 
+                              cursor: 'pointer',
+                              background: selectedKeywordId === item.id ? '#0f52ba' : '#f8faff',
+                              color: selectedKeywordId === item.id ? 'white' : '#1e293b',
+                              transition: 'all 0.2s',
+                              marginBottom: '8px',
+                              border: selectedKeywordId === item.id ? '1px solid #0f52ba' : '1px solid #edf2f7',
+                              position: 'relative',
+                              overflow: 'hidden'
+                            }}
+                          >
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
+                              <span style={{ fontWeight: 950, fontSize: '14px', fontFamily: 'monospace' }}>/{item.trigger}</span>
+                              <span style={{ 
+                                fontSize: '8px', 
+                                background: selectedKeywordId === item.id ? 'rgba(255,255,255,0.2)' : 'rgba(15, 82, 186, 0.1)', 
+                                padding: '2px 6px', 
+                                borderRadius: '4px',
+                                fontWeight: 900,
+                                letterSpacing: '1px'
+                              }}>MACRO</span>
+                            </div>
+                            <div style={{ 
+                              fontSize: '11px', 
+                              opacity: selectedKeywordId === item.id ? 0.8 : 0.6, 
+                              lineHeight: '1.4',
+                              display: '-webkit-box',
+                              WebkitLineClamp: 2,
+                              WebkitBoxOrient: 'vertical',
+                              overflow: 'hidden'
+                            }}>
+                              {item.replacementText?.replace(/<[^>]*>?/gm, '') || 'No content defined...'}
+                            </div>
+                            {selectedKeywordId === item.id && (
+                              <div style={{ position: 'absolute', right: '0', top: '0', bottom: '0', width: '4px', background: '#60a5fa' }}></div>
+                            )}
+                          </div>
+                        ))}
                       </div>
 
-                      <div style={{ flex: 1, padding: '30px', overflowY: 'auto', background: '#fff' }}>
-                        <div style={{ maxWidth: '700px' }}>
-                          <div style={{ marginBottom: '25px' }}>
-                            <label style={{ fontSize: '11px', fontWeight: 950, color: '#0f52ba', display: 'block', marginBottom: '8px' }}>TRIGGER KEYWORD (CASE INSENSITIVE)</label>
-                            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                              <span style={{ fontSize: '20px', fontWeight: 900, color: '#cbd5e1' }}>/</span>
-                              <input 
-                                type="text" 
-                                placeholder="e.g. normal_liver"
-                                value={newMacro.trigger}
-                                onChange={e => setNewMacro({...newMacro, trigger: e.target.value.toLowerCase().replace(/\s+/g, '_')})}
-                                style={{ flex: 1, padding: '15px', borderRadius: '12px', border: '2px solid #eff6ff', background: '#f8faff', fontSize: '16px', fontWeight: 900, color: '#0f52ba', outline: 'none' }}
-                              />
+                      {/* Pagination for Registry */}
+                      <div style={{ padding: '15px', borderTop: '1px solid #f1f5f9', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                        <button disabled={keywordPage === 1} onClick={() => setKeywordPage(keywordPage - 1)} style={{ padding: '5px 10px', fontSize: '10px', fontWeight: 900, background: '#f1f5f9', border: 'none', borderRadius: '6px', cursor: keywordPage === 1 ? 'not-allowed' : 'pointer' }}>PREV</button>
+                        <span style={{ fontSize: '10px', fontWeight: 900, color: '#64748b' }}>PAGE {keywordPage} / {totalKeywordPages || 1}</span>
+                        <button disabled={keywordPage >= totalKeywordPages} onClick={() => setKeywordPage(keywordPage + 1)} style={{ padding: '5px 10px', fontSize: '10px', fontWeight: 900, background: '#f1f5f9', border: 'none', borderRadius: '6px', cursor: keywordPage >= totalKeywordPages ? 'not-allowed' : 'pointer' }}>NEXT</button>
+                      </div>
+                    </div>
+
+                    {/* RIGHT: Keyword Detail / Editor */}
+                    <div style={{ flex: 1, background: 'white', borderRadius: '24px', boxShadow: '0 20px 50px rgba(0,0,0,0.03)', border: '1px solid #e2e8f0', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+                      {selectedKeywordId ? (
+                        <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
+                          <div style={{ padding: '25px 30px', borderBottom: '1px solid #f1f5f9', display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: '#fcfdfe' }}>
+                            <div>
+                              <h3 style={{ fontSize: '18px', fontWeight: 950, color: '#1e293b', margin: 0 }}>
+                                {selectedKeywordId === 'new' ? 'CREATE_DIAGNOSTIC_MACRO' : `EDIT: /${newMacro.trigger}`}
+                              </h3>
+                              <p style={{ fontSize: '11px', color: '#64748b', fontWeight: 700, marginTop: '4px' }}>Configure shorthands for rapid narrative expansion.</p>
                             </div>
-                            <p style={{ fontSize: '10px', color: '#94a3b8', marginTop: '8px', fontWeight: 600 }}>Tip: Use underscores instead of spaces. Shorthand will trigger on [ENTER] in the editor.</p>
+                            <div style={{ display: 'flex', gap: '12px' }}>
+                              {selectedKeywordId !== 'new' && (
+                                <button 
+                                  className="btn btn-outline" 
+                                  style={{ color: '#ef4444', borderColor: '#fee2e2' }}
+                                  onClick={() => handleDeleteKeyword(selectedKeywordId)}
+                                >🗑️ DELETE</button>
+                              )}
+                              <button className="btn btn-primary" style={{ padding: '10px 25px' }} onClick={handleSaveMacro}>
+                                {selectedKeywordId === 'new' ? '🚀 PUBLISH MACRO' : '💾 SAVE CHANGES'}
+                              </button>
+                            </div>
                           </div>
 
-                          <div style={{ flex: 1 }}>
-                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
-                              <label style={{ fontSize: '11px', fontWeight: 950, color: '#0f52ba' }}>REPLACEMENT NARRATIVE</label>
-                              <div style={{ display: 'flex', gap: '5px', background: '#f1f5f9', padding: '3px', borderRadius: '8px' }}>
-                                <button className="tool-btn" style={{ fontWeight: 800, width: '30px', height: '30px' }} onClick={() => formatMacroText('bold')}>B</button>
-                                <button className="tool-btn" style={{ fontStyle: 'italic', width: '30px', height: '30px' }} onClick={() => formatMacroText('italic')}>I</button>
-                                <button className="tool-btn" style={{ textDecoration: 'underline', width: '30px', height: '30px' }} onClick={() => formatMacroText('underline')}>U</button>
+                          <div style={{ flex: 1, padding: '30px', overflowY: 'auto', background: '#fff' }}>
+                            <div style={{ maxWidth: '700px' }}>
+                              <div style={{ marginBottom: '25px' }}>
+                                <label style={{ fontSize: '11px', fontWeight: 950, color: '#0f52ba', display: 'block', marginBottom: '8px' }}>TRIGGER KEYWORD (CASE INSENSITIVE)</label>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                                  <span style={{ fontSize: '20px', fontWeight: 900, color: '#cbd5e1' }}>/</span>
+                                  <input 
+                                    type="text" 
+                                    placeholder="e.g. normal_liver"
+                                    value={newMacro.trigger}
+                                    onChange={e => setNewMacro({...newMacro, trigger: e.target.value.toLowerCase().replace(/\s+/g, '_')})}
+                                    style={{ flex: 1, padding: '15px', borderRadius: '12px', border: '2px solid #eff6ff', background: '#f8faff', fontSize: '16px', fontWeight: 900, color: '#0f52ba', outline: 'none' }}
+                                  />
+                                </div>
+                              </div>
+
+                              <div style={{ flex: 1 }}>
+                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
+                                  <label style={{ fontSize: '11px', fontWeight: 950, color: '#0f52ba' }}>REPLACEMENT NARRATIVE</label>
+                                  <div style={{ display: 'flex', gap: '5px', background: '#f1f5f9', padding: '3px', borderRadius: '8px' }}>
+                                    <button className="tool-btn" style={{ fontWeight: 800, width: '30px', height: '30px' }} onClick={() => formatMacroText('bold')}>B</button>
+                                    <button className="tool-btn" style={{ fontStyle: 'italic', width: '30px', height: '30px' }} onClick={() => formatMacroText('italic')}>I</button>
+                                    <button className="tool-btn" style={{ textDecoration: 'underline', width: '30px', height: '30px' }} onClick={() => formatMacroText('underline')}>U</button>
+                                  </div>
+                                </div>
+                                <div 
+                                  ref={macroTextareaRef}
+                                  contentEditable="true"
+                                  onInput={(e) => setNewMacro({...newMacro, replacementText: e.currentTarget.innerHTML})}
+                                  style={{ 
+                                    minHeight: '300px', 
+                                    padding: '25px', 
+                                    borderRadius: '16px', 
+                                    border: '1px solid #e2e8f0', 
+                                    background: '#fff', 
+                                    outline: 'none', 
+                                    fontSize: '15px', 
+                                    lineHeight: '1.8',
+                                    color: '#1e293b',
+                                    boxShadow: 'inset 0 2px 4px rgba(0,0,0,0.02)'
+                                  }}
+                                />
                               </div>
                             </div>
-                            <div 
-                              ref={macroTextareaRef}
-                              contentEditable="true"
-                              onInput={(e) => setNewMacro({...newMacro, replacementText: e.currentTarget.innerHTML})}
-                              style={{ 
-                                minHeight: '300px', 
-                                padding: '25px', 
-                                borderRadius: '16px', 
-                                border: '1px solid #e2e8f0', 
-                                background: '#fff', 
-                                outline: 'none', 
-                                fontSize: '15px', 
-                                lineHeight: '1.8',
-                                color: '#1e293b',
-                                boxShadow: 'inset 0 2px 4px rgba(0,0,0,0.02)'
-                              }}
-                            />
                           </div>
                         </div>
+                      ) : (
+                        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', color: '#94a3b8', textAlign: 'center', padding: '40px' }}>
+                          <div style={{ fontSize: '64px', marginBottom: '20px', opacity: 0.5 }}>⌨️</div>
+                          <h3 style={{ fontSize: '20px', fontWeight: 800, color: '#1e293b' }}>Macro Maintenance Hub</h3>
+                          <p style={{ maxWidth: '400px', fontSize: '13px', lineHeight: '1.6', marginTop: '10px' }}>
+                            Select a keyword from the left registry to modify its expansion text, or initialize a new clinical shortcut to speed up your reporting workflow.
+                          </p>
+                          <button 
+                            className="btn btn-primary" 
+                            style={{ marginTop: '25px', padding: '12px 30px' }}
+                            onClick={() => setSelectedKeywordId('new')}
+                          >+ INITIALIZE NEW MACRO</button>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                ) : (
+                  <div style={{ flex: 1, background: 'white', borderRadius: '24px', border: '1px solid #e2e8f0', display: 'flex', flexDirection: 'column', overflow: 'hidden', animation: 'fadeIn 0.5s ease', boxShadow: '0 20px 50px rgba(0,0,0,0.03)' }}>
+                    <div style={{ flex: 1, overflowY: 'auto' }}>
+                      <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left' }}>
+                        <thead style={{ background: '#f8fafc', position: 'sticky', top: 0, zIndex: 10 }}>
+                          <tr>
+                            <th style={{ padding: '15px 25px', fontSize: '11px', fontWeight: 950, color: '#475569', borderBottom: '2px solid #e2e8f0', width: '200px' }}>TRIGGER_SHORTHAND</th>
+                            <th style={{ padding: '15px 25px', fontSize: '11px', fontWeight: 950, color: '#475569', borderBottom: '2px solid #e2e8f0' }}>CLINICAL_NARRATIVE_EXPANSION</th>
+                            <th style={{ padding: '15px 25px', fontSize: '11px', fontWeight: 950, color: '#475569', borderBottom: '2px solid #e2e8f0', textAlign: 'center', width: '150px' }}>ACTIONS</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {paginatedKeywords.map((item, idx) => (
+                            <tr key={item.id} style={{ background: idx % 2 === 0 ? '#fff' : '#fcfdfe', borderBottom: '1px solid #f1f5f9', transition: 'background 0.2s' }}>
+                              <td style={{ padding: '20px 25px', verticalAlign: 'top' }}>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                                  <span style={{ background: '#0f52ba', color: 'white', padding: '4px 12px', borderRadius: '8px', fontSize: '12px', fontWeight: 950, fontFamily: 'monospace' }}>/{item.trigger}</span>
+                                </div>
+                              </td>
+                              <td style={{ padding: '20px 25px' }}>
+                                <div style={{ fontSize: '14px', color: '#1e293b', lineHeight: '1.6', maxWidth: '850px' }}>
+                                  {item.replacementText?.replace(/<[^>]*>?/gm, '') || '...'}
+                                </div>
+                              </td>
+                              <td style={{ padding: '20px 25px', textAlign: 'center', verticalAlign: 'top' }}>
+                                <div style={{ display: 'flex', gap: '8px', justifyContent: 'center' }}>
+                                  <button 
+                                    onClick={() => {
+                                      setSelectedKeywordId(item.id);
+                                      setNewMacro({ trigger: item.trigger, replacementText: item.replacementText });
+                                      setKeywordViewMode('registry');
+                                    }}
+                                    style={{ padding: '8px 15px', borderRadius: '8px', border: '1px solid #e2e8f0', background: 'white', fontSize: '11px', fontWeight: 800, cursor: 'pointer' }}
+                                  >EDIT</button>
+                                  <button 
+                                    onClick={() => handleDeleteKeyword(item.id)}
+                                    style={{ padding: '8px 15px', borderRadius: '8px', border: '1px solid #fee2e2', background: '#fff5f5', color: '#ef4444', fontSize: '11px', fontWeight: 800, cursor: 'pointer' }}
+                                  >DEL</button>
+                                </div>
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+
+                    {/* Table Pagination Controls */}
+                    <div style={{ padding: '20px 25px', borderTop: '2px solid #e2e8f0', background: '#f8fafc', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <div style={{ fontSize: '12px', color: '#64748b', fontWeight: 600 }}>
+                        Showing <span style={{ color: '#0f52ba', fontWeight: 950 }}>{paginatedKeywords.length}</span> of <span style={{ color: '#0f52ba', fontWeight: 950 }}>{filteredKeywords.length}</span> total clinical macros
+                      </div>
+                      <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
+                        <button 
+                          disabled={keywordPage === 1} 
+                          onClick={() => setKeywordPage(keywordPage - 1)}
+                          style={{ padding: '8px 16px', borderRadius: '10px', border: '1px solid #e2e8f0', background: 'white', fontSize: '11px', fontWeight: 900, cursor: keywordPage === 1 ? 'not-allowed' : 'pointer', opacity: keywordPage === 1 ? 0.5 : 1 }}
+                        >← PREVIOUS</button>
+                        
+                        <div style={{ display: 'flex', gap: '5px' }}>
+                          {[...Array(totalKeywordPages)].map((_, i) => (
+                            <button 
+                              key={i} 
+                              onClick={() => setKeywordPage(i + 1)}
+                              style={{ 
+                                width: '36px', height: '36px', borderRadius: '10px', border: 'none',
+                                background: keywordPage === i + 1 ? '#0f52ba' : 'transparent',
+                                color: keywordPage === i + 1 ? 'white' : '#64748b',
+                                fontWeight: 950, fontSize: '11px', cursor: 'pointer'
+                              }}
+                            >{i + 1}</button>
+                          ))}
+                        </div>
+
+                        <button 
+                          disabled={keywordPage >= totalKeywordPages} 
+                          onClick={() => setKeywordPage(keywordPage + 1)}
+                          style={{ padding: '8px 16px', borderRadius: '10px', border: '1px solid #e2e8f0', background: 'white', fontSize: '11px', fontWeight: 900, cursor: keywordPage >= totalKeywordPages ? 'not-allowed' : 'pointer', opacity: keywordPage >= totalKeywordPages ? 0.5 : 1 }}
+                        >NEXT →</button>
                       </div>
                     </div>
-                  ) : (
-                    <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', color: '#94a3b8', textAlign: 'center', padding: '40px' }}>
-                      <div style={{ fontSize: '64px', marginBottom: '20px', opacity: 0.5 }}>⌨️</div>
-                      <h3 style={{ fontSize: '20px', fontWeight: 800, color: '#1e293b' }}>Macro Maintenance Hub</h3>
-                      <p style={{ maxWidth: '400px', fontSize: '13px', lineHeight: '1.6', marginTop: '10px' }}>
-                        Select a keyword from the left registry to modify its expansion text, or initialize a new clinical shortcut to speed up your reporting workflow.
-                      </p>
-                      <button 
-                        className="btn btn-primary" 
-                        style={{ marginTop: '25px', padding: '12px 30px' }}
-                        onClick={() => setSelectedKeywordId('new')}
-                      >+ INITIALIZE NEW MACRO</button>
-                    </div>
-                  )}
-                </div>
+                  </div>
+                )}
               </div>
             )}
 

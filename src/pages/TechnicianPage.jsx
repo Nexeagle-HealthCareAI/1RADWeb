@@ -5,6 +5,7 @@ import apiClient from '../api/apiClient';
 import AdvancedDicomViewer from '../components/AdvancedDicomViewer';
 import PrescriptionModal from '../components/PrescriptionModal';
 import { DicomCache } from '../utils/DicomCache';
+import { dicomOptimizer } from '../utils/DicomPerformanceOptimizer';
 import '../styles/global.css';
 
 const MODALITY_ICONS = {
@@ -60,6 +61,10 @@ export default function TechnicianPage() {
   const [keyImages, setKeyImages] = useState([]);
   const [isSyncEnabled, setIsSyncEnabled] = useState(false);
 
+
+  // New state for progressive loading
+  const [loadingProgress, setLoadingProgress] = useState({ stage: '', current: 0, total: 0 });
+  const [processingStatus, setProcessingStatus] = useState('');
 
   // --- API SYNC ---
   const fetchWorklist = useCallback(async () => {
@@ -182,6 +187,8 @@ export default function TechnicianPage() {
     if (!asset || !asset.needsHydration || !asset.remoteUrl || asset.rawFiles?.length > 0) return;
 
     setLoading(true);
+    setProcessingStatus('Initializing DICOM processor...');
+    
     try {
       // TACTICAL CACHE CHECK
       console.log(`[TECH_LOAD] Checking persistent cache for asset: ${asset.id}`);
@@ -189,6 +196,7 @@ export default function TechnicianPage() {
       
       if (cachedData && cachedData.series?.length > 0) {
         console.log(`[TECH_LOAD] Cache HIT for ${asset.id}. Restoring ${cachedData.series.length} series.`);
+        setProcessingStatus('Restoring from cache...');
         
         const hydratedFromCache = cachedData.series.map(s => ({
           ...asset,
@@ -204,63 +212,48 @@ export default function TechnicianPage() {
         });
         setIsDicomImage(true);
         setLoading(false);
+        setProcessingStatus('');
         return;
       }
 
-      console.log(`[TECH_LOAD] Cache MISS. Initializing hydration for asset: ${asset.name} at ${asset.remoteUrl}`);
+      console.log(`[TECH_LOAD] Cache MISS. Initializing optimized hydration for asset: ${asset.name}`);
+      setProcessingStatus('Downloading study data...');
+      
       const response = await fetch(asset.remoteUrl);
       if (!response.ok) throw new Error(`NETWORK_FAILURE: HTTP_${response.status} when fetching asset stream.`);
 
       const blob = await response.blob();
-      console.log(`[TECH_LOAD] Binary stream received. Size: ${(blob.size / (1024*1024)).toFixed(2)} MB. Parsing ZIP...`);
+      console.log(`[TECH_LOAD] Binary stream received. Size: ${(blob.size / (1024*1024)).toFixed(2)} MB. Starting optimized processing...`);
       
-      const zip = await JSZip.loadAsync(blob);
-      const seriesGroups = {};
-      const fileNames = Object.keys(zip.files);
-      console.log(`[TECH_LOAD] ZIP extracted. File count: ${fileNames.length}. Initializing DICOM classification...`);
-      
-      for (const fileName of fileNames) {
-        const zipFile = zip.files[fileName];
-        if (!zipFile.dir && !fileName.includes('__MACOSX')) {
-          const content = await zipFile.async('arraybuffer');
-          const dcmFile = new File([content], fileName.split('/').pop(), { type: 'application/dicom' });
-          
-          try {
-            const byteArray = new Uint8Array(content);
-            const dataSet = dicomParser.parseDicom(byteArray);
-            if (!dataSet.elements['x7fe00010'] && !dataSet.elements['x00080016']) {
-                console.warn(`[TECH_LOAD] Skipping non-diagnostic file: ${fileName}`);
-                continue;
-            }
-
-            const seriesUID = dataSet.string('x0020000e') || 'UNKNOWN_SERIES';
-            const seriesDesc = dataSet.string('x0008103e') || asset.name || 'UNNAMED_SERIES';
-            const instanceNum = parseInt(dataSet.string('x00200013') || '0', 10);
-
-            if (!seriesGroups[seriesUID]) {
-              seriesGroups[seriesUID] = { seriesUID, seriesDesc, files: [] };
-            }
-            seriesGroups[seriesUID].files.push({ file: dcmFile, instanceNum });
-          } catch (err) {
-            console.error(`[TECH_LOAD] Failed to parse file: ${fileName}`, err);
-          }
+      // Use optimized processor with progress tracking
+      const classifiedAssets = await dicomOptimizer.processZipFileOptimized(
+        blob,
+        (progress) => {
+          setLoadingProgress(progress);
+          setProcessingStatus(`${progress.stage}: ${progress.current}/${progress.total} files${progress.seriesCount ? ` (${progress.seriesCount} series found)` : ''}`);
+        },
+        (seriesInfo) => {
+          console.log(`[TECH_LOAD] New series discovered: ${seriesInfo.seriesDesc}`);
         }
-      }
+      );
 
-      const classifiedAssets = Object.values(seriesGroups).map(group => ({
+      const finalAssets = classifiedAssets.map(series => ({
         ...asset,
-        name: group.seriesDesc,
-        rawFiles: group.files.sort((a, b) => a.instanceNum - b.instanceNum).map(f => f.file),
-        needsHydration: false
+        name: `${series.patientName} - ${series.seriesDesc}`,
+        rawFiles: series.files,
+        needsHydration: false,
+        seriesUID: series.seriesUID,
+        modality: series.modality
       }));
 
-      console.log(`[TECH_LOAD] Classification complete. Discovered ${classifiedAssets.length} valid diagnostic series.`);
+      console.log(`[TECH_LOAD] Optimized processing complete. Discovered ${finalAssets.length} valid diagnostic series.`);
 
       // TACTICAL CACHE STORAGE
-      if (classifiedAssets.length > 0) {
+      if (finalAssets.length > 0) {
+        setProcessingStatus('Caching for future use...');
         const cachePayload = {
           ...asset,
-          series: classifiedAssets.map(ca => ({ name: ca.name, rawFiles: ca.rawFiles }))
+          series: finalAssets.map(ca => ({ name: ca.name, rawFiles: ca.rawFiles, seriesUID: ca.seriesUID }))
         };
         await DicomCache.set(asset.id, cachePayload);
         console.log(`[TECH_LOAD] Asset ${asset.id} persisted to persistent cache.`);
@@ -268,8 +261,8 @@ export default function TechnicianPage() {
 
       setUploadedFiles(prev => {
         const newFiles = [...prev];
-        if (classifiedAssets.length > 0) {
-          newFiles.splice(index, 1, ...classifiedAssets);
+        if (finalAssets.length > 0) {
+          newFiles.splice(index, 1, ...finalAssets);
         } else {
           console.warn('[TECH_LOAD] No valid DICOM series found in ZIP container.');
           newFiles[index] = { ...asset, needsHydration: false, rawFiles: [] };
@@ -278,10 +271,13 @@ export default function TechnicianPage() {
       });
       setIsDicomImage(true);
     } catch (err) {
-      console.error('[TECH_LOAD] Hydration/Classification failure', err);
+      console.error('[TECH_LOAD] Optimized hydration failure', err);
+      setProcessingStatus(`Error: ${err.message}`);
       alert(`ACQUISITION SIGNAL FAILURE: ${err.message}`);
     } finally {
       setLoading(false);
+      setProcessingStatus('');
+      setLoadingProgress({ stage: '', current: 0, total: 0 });
     }
   };
 
@@ -325,82 +321,51 @@ export default function TechnicianPage() {
     
     if (isZip) {
       setLoading(true);
+      setProcessingStatus('Initializing optimized ZIP processor...');
+      
       try {
-        const zip = await JSZip.loadAsync(file);
-        const extractedFiles = [];
-        
-        const fileNames = Object.keys(zip.files);
-        const seriesGroups = {};
-
-        for (const fileName of fileNames) {
-          const zipFile = zip.files[fileName];
-          const isSystemFile = fileName.includes('__MACOSX') || fileName.endsWith('.DS_Store');
-          
-          if (!zipFile.dir && !isSystemFile) {
-            const content = await zipFile.async('arraybuffer');
-            const dcmFile = new File([content], fileName.split('/').pop(), { type: 'application/dicom' });
-            
-            try {
-              const byteArray = new Uint8Array(content);
-              const dataSet = dicomParser.parseDicom(byteArray);
-              
-              if (!dataSet.elements['x7fe00010']) {
-                continue; // Not an image
-              }
-              
-              const seriesUID = dataSet.string('x0020000e') || 'UNKNOWN_SERIES';
-              const seriesDesc = dataSet.string('x0008103e') || 'UNNAMED SERIES';
-              const instanceNum = parseInt(dataSet.string('x00200013') || '0', 10);
-              const studyUID = dataSet.string('x0020000d') || 'UNKNOWN_STUDY';
-              const modality = dataSet.string('x00080060') || 'UNK';
-              const magStrength = dataSet.string('x00180087') || null;
-              
-              let patientName = dataSet.string('x00100010') || 'UNKNOWN_PATIENT';
-              patientName = patientName.replace(/\^/g, ' ');
-
-              if (!seriesGroups[seriesUID]) {
-                seriesGroups[seriesUID] = {
-                  seriesUID,
-                  seriesDesc,
-                  studyUID,
-                  patientName,
-                  files: []
-                };
-              }
-              seriesGroups[seriesUID].files.push({ file: dcmFile, instanceNum });
-            } catch (err) {
-               console.warn('Failed to parse DICOM:', fileName);
-            }
+        // Use optimized processor for local file uploads
+        const classifiedAssets = await dicomOptimizer.processZipFileOptimized(
+          file,
+          (progress) => {
+            setLoadingProgress(progress);
+            setProcessingStatus(`${progress.stage}: ${progress.current}/${progress.total} files${progress.seriesCount ? ` (${progress.seriesCount} series found)` : ''}`);
+          },
+          (seriesInfo) => {
+            console.log(`[TECH] New series discovered: ${seriesInfo.seriesDesc}`);
           }
-        }
-        
-        const newAssets = Object.values(seriesGroups).map(group => {
-          group.files.sort((a, b) => a.instanceNum - b.instanceNum);
-          return {
-            name: `${group.patientName} - ${group.seriesDesc}`,
-            type: 'DICOM SERIES',
-            size: `${group.files.length} IMAGES`,
-            time: new Date().toLocaleTimeString(),
-            previewUrl: null,
-            isZip: false,
-            rawFiles: group.files.map(f => f.file)
-          };
-        });
+        );
 
         // Background persist the zip file
         persistStudyAsset(file);
 
+        const newAssets = classifiedAssets.map(series => ({
+          name: `${series.patientName} - ${series.seriesDesc}`,
+          type: 'DICOM SERIES',
+          size: `${series.files.length} IMAGES`,
+          time: new Date().toLocaleTimeString(),
+          previewUrl: null,
+          isZip: false,
+          rawFiles: series.files,
+          seriesUID: series.seriesUID,
+          modality: series.modality
+        }));
+
         if (newAssets.length > 0) {
           setUploadedFiles(prev => [...prev, ...newAssets]);
           setActiveAssetIndex(0); // Auto-focus first extracted asset stack
+          setIsDicomImage(true);
         } else {
           alert('No valid DICOM image series found in the ZIP archive.');
         }
       } catch (err) {
-        console.error('[TECH] ZIP extraction failed', err);
-        alert('Failed to extract ZIP archive.');
+        console.error('[TECH] Optimized ZIP extraction failed', err);
+        setProcessingStatus(`Error: ${err.message}`);
+        alert('Failed to extract ZIP archive: ' + err.message);
       } finally {
         setLoading(false);
+        setProcessingStatus('');
+        setLoadingProgress({ stage: '', current: 0, total: 0 });
       }
     } else {
       const isDicom = file.name.toLowerCase().endsWith('.dcm') || file.name.toLowerCase().includes('dicom') || file.type === 'application/dicom';
@@ -930,6 +895,75 @@ export default function TechnicianPage() {
 
         {/* CENTER MAIN VIEWPORT */}
         <div style={{ flex: 1, position: 'relative', background: '#f1f5f9', display: 'flex', flexDirection: 'column' }}>
+          {/* PROGRESS OVERLAY */}
+          {loading && (
+            <div style={{
+              position: 'absolute',
+              top: 0,
+              left: 0,
+              right: 0,
+              bottom: 0,
+              background: 'rgba(15, 23, 42, 0.95)',
+              backdropFilter: 'blur(8px)',
+              zIndex: 1000,
+              display: 'flex',
+              flexDirection: 'column',
+              alignItems: 'center',
+              justifyContent: 'center',
+              color: 'white',
+              gap: '20px'
+            }}>
+              <div style={{
+                width: '80px',
+                height: '80px',
+                border: '4px solid rgba(59, 130, 246, 0.2)',
+                borderTopColor: '#3b82f6',
+                borderRadius: '50%',
+                animation: 'spin 1s linear infinite'
+              }}></div>
+              
+              <div style={{ textAlign: 'center', maxWidth: '400px' }}>
+                <div style={{ fontSize: '16px', fontWeight: 900, marginBottom: '10px', letterSpacing: '1px' }}>
+                  PROCESSING DIAGNOSTIC DATA
+                </div>
+                <div style={{ fontSize: '12px', color: '#94a3b8', marginBottom: '20px' }}>
+                  {processingStatus || 'Initializing...'}
+                </div>
+                
+                {loadingProgress.total > 0 && (
+                  <div style={{ width: '300px', margin: '0 auto' }}>
+                    <div style={{
+                      width: '100%',
+                      height: '8px',
+                      background: 'rgba(255, 255, 255, 0.1)',
+                      borderRadius: '4px',
+                      overflow: 'hidden',
+                      marginBottom: '10px'
+                    }}>
+                      <div style={{
+                        width: `${(loadingProgress.current / loadingProgress.total) * 100}%`,
+                        height: '100%',
+                        background: 'linear-gradient(90deg, #3b82f6, #1d4ed8)',
+                        borderRadius: '4px',
+                        transition: 'width 0.3s ease'
+                      }}></div>
+                    </div>
+                    <div style={{ fontSize: '11px', color: '#cbd5e1' }}>
+                      {loadingProgress.current} / {loadingProgress.total} files processed
+                      {loadingProgress.seriesCount && ` • ${loadingProgress.seriesCount} series found`}
+                    </div>
+                  </div>
+                )}
+              </div>
+              
+              <style>{`
+                @keyframes spin {
+                  to { transform: rotate(360deg); }
+                }
+              `}</style>
+            </div>
+          )}
+          
            <div style={{ flex: 1, padding: '0px', display: 'flex', flexDirection: 'column' }}>
               {uploadedFiles.length > 0 ? (
                 <div style={{ 

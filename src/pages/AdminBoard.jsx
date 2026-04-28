@@ -139,6 +139,8 @@ export default function AdminBoard() {
   const [previewScale, setPreviewScale] = useState(0.8); // 80% default scale to fit screen
   const [numPdfPages, setNumPdfPages] = useState(null);
   const [pdfError, setPdfError] = useState(null);
+  const [isTestMode, setIsTestMode] = useState(false);
+  const [pageOverflowBehavior, setPageOverflowBehavior] = useState('continue'); // 'continue', 'newPage', 'truncate'
 
   // Sync settings when doctor selection changes
   useEffect(() => {
@@ -1398,6 +1400,96 @@ export default function AdminBoard() {
               <h3 style={{ fontSize: '11px', fontWeight: 950, color: '#64748b', letterSpacing: '2px', textTransform: 'uppercase', marginBottom: '15px' }}>BRAND IDENTITY</h3>
               
               <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+                {/* Test Mode Toggle */}
+                <div style={{ 
+                  background: isTestMode ? 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)' : '#f8fafc', 
+                  padding: '20px', 
+                  borderRadius: '18px', 
+                  border: isTestMode ? '2px solid #667eea' : '1px solid #e2e8f0',
+                  cursor: 'pointer',
+                  transition: 'all 0.3s'
+                }} onClick={() => setIsTestMode(!isTestMode)}>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '8px' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                      <span style={{ fontSize: '20px' }}>🧪</span>
+                      <span style={{ fontSize: '11px', fontWeight: 950, color: isTestMode ? 'white' : '#1e293b', letterSpacing: '1px' }}>
+                        TEST MODE
+                      </span>
+                    </div>
+                    <div style={{ 
+                      width: '50px', 
+                      height: '26px', 
+                      background: isTestMode ? 'rgba(255,255,255,0.3)' : '#cbd5e1', 
+                      borderRadius: '13px', 
+                      position: 'relative',
+                      transition: 'all 0.3s'
+                    }}>
+                      <div style={{ 
+                        width: '22px', 
+                        height: '22px', 
+                        background: 'white', 
+                        borderRadius: '50%', 
+                        position: 'absolute', 
+                        top: '2px', 
+                        left: isTestMode ? '26px' : '2px',
+                        transition: 'all 0.3s',
+                        boxShadow: '0 2px 4px rgba(0,0,0,0.2)'
+                      }}></div>
+                    </div>
+                  </div>
+                  <div style={{ fontSize: '9px', color: isTestMode ? 'rgba(255,255,255,0.9)' : '#64748b', lineHeight: '1.4' }}>
+                    {isTestMode ? 'Extended prescription data overlaid on letterhead' : 'Click to preview with comprehensive prescription data'}
+                  </div>
+                </div>
+
+                {/* Page Overflow Behavior - Only show when test mode is active */}
+                {isTestMode && (
+                  <div style={{ 
+                    background: '#fff7ed', 
+                    padding: '20px', 
+                    borderRadius: '18px', 
+                    border: '2px solid #fed7aa'
+                  }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '15px' }}>
+                      <span style={{ fontSize: '18px' }}>📄</span>
+                      <span style={{ fontSize: '11px', fontWeight: 950, color: '#ea580c', letterSpacing: '1px' }}>
+                        PAGE OVERFLOW BEHAVIOR
+                      </span>
+                    </div>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                      {[
+                        { value: 'continue', label: 'Continue on Same Page', desc: 'Content flows beyond page boundaries' },
+                        { value: 'newPage', label: 'Start New Page', desc: 'Overflow content moves to next page' },
+                        { value: 'truncate', label: 'Truncate Content', desc: 'Cut off content that exceeds page' }
+                      ].map(option => (
+                        <label key={option.value} style={{ 
+                          display: 'flex', 
+                          alignItems: 'center', 
+                          gap: '12px', 
+                          cursor: 'pointer',
+                          padding: '10px',
+                          borderRadius: '10px',
+                          background: pageOverflowBehavior === option.value ? '#fed7aa' : 'transparent',
+                          transition: 'all 0.2s'
+                        }}>
+                          <input 
+                            type="radio" 
+                            name="pageOverflow" 
+                            value={option.value}
+                            checked={pageOverflowBehavior === option.value}
+                            onChange={(e) => setPageOverflowBehavior(e.target.value)}
+                            style={{ margin: 0 }}
+                          />
+                          <div>
+                            <div style={{ fontSize: '10px', fontWeight: 950, color: '#1e293b' }}>{option.label}</div>
+                            <div style={{ fontSize: '8px', color: '#64748b' }}>{option.desc}</div>
+                          </div>
+                        </label>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
                 <div style={{ display: 'grid', gridTemplateColumns: '1.5fr 1fr', gap: '15px' }}>
                   <div>
                     <label style={{ fontSize: '10px', fontWeight: 950, color: '#1e293b', display: 'block', marginBottom: '8px' }}>FONT SYSTEM</label>
@@ -1520,7 +1612,9 @@ export default function AdminBoard() {
            <div style={{ position: 'absolute', top: '25px', left: '35px', display: 'flex', alignItems: 'center', gap: '15px', zIndex: 100 }}>
               <div style={{ background: 'rgba(255,255,255,0.1)', padding: '6px 12px', borderRadius: '8px', border: '1px solid rgba(255,255,255,0.1)' }}>
                 <span style={{ fontSize: '9px', fontWeight: 950, color: '#94a3b8', letterSpacing: '1px' }}>MODE: </span>
-                <span style={{ fontSize: '9px', fontWeight: 950, color: '#fff' }}>LIVE_SIMULATION</span>
+                <span style={{ fontSize: '9px', fontWeight: 950, color: '#fff' }}>
+                  {isTestMode ? `TEST_${pageOverflowBehavior.toUpperCase()}` : 'LIVE_SIMULATION'}
+                </span>
               </div>
               <div style={{ background: 'rgba(255,255,255,0.1)', padding: '6px 12px', borderRadius: '8px', border: '1px solid rgba(255,255,255,0.1)' }}>
                 <span style={{ fontSize: '9px', fontWeight: 950, color: '#94a3b8', letterSpacing: '1px' }}>RESOLUTION: </span>
@@ -1535,14 +1629,6 @@ export default function AdminBoard() {
                 </div>
               )}
            </div>
-
-           {/* Debug Panel - Bottom */}
-           {prescriptionSettings.letterhead && (
-             <div style={{ position: 'absolute', bottom: '25px', left: '35px', right: '35px', background: 'rgba(0,0,0,0.8)', padding: '12px 20px', borderRadius: '12px', border: '1px solid rgba(255,255,255,0.1)', zIndex: 100 }}>
-               <div style={{ fontSize: '8px', fontWeight: 950, color: '#94a3b8', letterSpacing: '1px', marginBottom: '6px' }}>LETTERHEAD SOURCE:</div>
-               <div style={{ fontSize: '9px', fontWeight: 700, color: '#fff', fontFamily: 'monospace', wordBreak: 'break-all' }}>{prescriptionSettings.letterhead}</div>
-             </div>
-           )}
 
            {isProtocolLoading && (
               <div style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(15, 23, 42, 0.8)', zIndex: 10, display: 'flex', alignItems: 'center', justifyContent: 'center', borderRadius: '30px', flexDirection: 'column', gap: '20px' }}>
@@ -1805,6 +1891,268 @@ export default function AdminBoard() {
                           </div>
                         )}
                      </div>
+                  </div>
+                </div>
+              )}
+
+              {/* TEST MODE OVERLAY - Shows comprehensive mock prescription data on top of letterhead */}
+              {isTestMode && prescriptionSettings.letterhead && (
+                <div style={{ 
+                  position: 'absolute',
+                  top: 0,
+                  left: 0,
+                  width: '100%',
+                  height: pageOverflowBehavior === 'truncate' ? '100%' : 'auto',
+                  minHeight: pageOverflowBehavior === 'newPage' ? '297mm' : 'auto',
+                  zIndex: 3,
+                  fontFamily: prescriptionSettings.fontFamily, 
+                  fontSize: `${prescriptionSettings.fontSize}px`, 
+                  color: prescriptionSettings.fontColor,
+                  lineHeight: '1.6',
+                  padding: `${prescriptionSettings.headerMargin}mm ${prescriptionSettings.rightMargin}mm ${prescriptionSettings.bottomMargin}mm ${prescriptionSettings.leftMargin}mm`,
+                  boxSizing: 'border-box',
+                  pointerEvents: 'none',
+                  overflow: pageOverflowBehavior === 'truncate' ? 'hidden' : 'visible'
+                }}>
+                  {/* Test Mode Badge */}
+                  <div style={{ 
+                    position: 'absolute', 
+                    top: '10px', 
+                    right: '10px', 
+                    background: 'rgba(102, 126, 234, 0.95)', 
+                    color: 'white', 
+                    padding: '8px 16px', 
+                    borderRadius: '8px',
+                    fontSize: '10px',
+                    fontWeight: 950,
+                    letterSpacing: '1px',
+                    boxShadow: '0 4px 12px rgba(102, 126, 234, 0.4)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '6px',
+                    zIndex: 10
+                  }}>
+                    <span>🧪</span> TEST MODE - {pageOverflowBehavior.toUpperCase()}
+                  </div>
+
+                  {/* Mock Prescription Content */}
+                  <div style={{ marginTop: '20px' }}>
+                    <div style={{ fontSize: '1.4em', fontWeight: 950, marginBottom: '25px', textAlign: 'center' }}>
+                      PRESCRIPTION
+                    </div>
+
+                    {/* Patient Info */}
+                    <div style={{ marginBottom: '25px', padding: '20px', background: 'rgba(255,255,255,0.95)', borderRadius: '12px', boxShadow: '0 2px 8px rgba(0,0,0,0.1)' }}>
+                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '15px', fontSize: '0.95em' }}>
+                        <div><strong>Patient:</strong> Mrs. Sarah Elizabeth Johnson</div>
+                        <div><strong>Age/Sex:</strong> 34 Years / Female</div>
+                        <div><strong>Date:</strong> {new Date().toLocaleDateString()}</div>
+                        <div><strong>Ref:</strong> RX-2026-{Math.floor(Math.random() * 10000)}</div>
+                        <div><strong>Phone:</strong> +91 98765 43210</div>
+                        <div><strong>Weight:</strong> 65 kg</div>
+                        <div><strong>BP:</strong> 120/80 mmHg</div>
+                        <div><strong>Allergies:</strong> Penicillin, Sulfa drugs</div>
+                      </div>
+                    </div>
+
+                    {/* Chief Complaints */}
+                    <div style={{ marginBottom: '20px' }}>
+                      <div style={{ fontSize: '0.9em', fontWeight: 900, marginBottom: '10px', opacity: 0.7, textTransform: 'uppercase' }}>Chief Complaints:</div>
+                      <div style={{ fontSize: '1em', fontWeight: 600, padding: '12px', background: 'rgba(255,255,255,0.9)', borderRadius: '8px' }}>
+                        • Persistent cough with yellowish sputum for 5 days<br/>
+                        • Mild fever (100-101°F) especially in evenings<br/>
+                        • Chest discomfort and shortness of breath on exertion<br/>
+                        • Fatigue and reduced appetite
+                      </div>
+                    </div>
+
+                    {/* Clinical Findings */}
+                    <div style={{ marginBottom: '20px' }}>
+                      <div style={{ fontSize: '0.9em', fontWeight: 900, marginBottom: '10px', opacity: 0.7, textTransform: 'uppercase' }}>Clinical Examination:</div>
+                      <div style={{ fontSize: '0.95em', padding: '15px', background: 'rgba(255,255,255,0.9)', borderRadius: '8px' }}>
+                        <strong>General:</strong> Patient appears mildly distressed, afebrile at time of examination<br/>
+                        <strong>Respiratory:</strong> Bilateral wheeze present, mild intercostal retractions<br/>
+                        <strong>Cardiovascular:</strong> S1S2 heard, no murmurs detected<br/>
+                        <strong>Abdomen:</strong> Soft, non-tender, bowel sounds normal
+                      </div>
+                    </div>
+
+                    {/* Diagnosis */}
+                    <div style={{ marginBottom: '25px' }}>
+                      <div style={{ fontSize: '0.9em', fontWeight: 900, marginBottom: '10px', opacity: 0.7, textTransform: 'uppercase' }}>Primary Diagnosis:</div>
+                      <div style={{ fontSize: '1.1em', fontWeight: 800, padding: '15px', background: 'rgba(255, 243, 224, 0.95)', borderRadius: '8px', borderLeft: `4px solid ${prescriptionSettings.fontColor}` }}>
+                        Acute Bronchitis with mild respiratory distress secondary to viral infection
+                      </div>
+                    </div>
+
+                    {/* Medications */}
+                    <div style={{ marginBottom: '30px' }}>
+                      <div style={{ fontSize: '0.9em', fontWeight: 900, marginBottom: '15px', opacity: 0.7, textTransform: 'uppercase' }}>Prescribed Medications:</div>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '15px' }}>
+                        {[
+                          { 
+                            name: 'Tab. Azithromycin 500mg', 
+                            dosage: '1 tablet once daily after meals', 
+                            duration: '3 days',
+                            instructions: 'Complete the full course even if symptoms improve'
+                          },
+                          { 
+                            name: 'Syp. Salbutamol 2mg/5ml', 
+                            dosage: '2 teaspoons (10ml) three times daily', 
+                            duration: '7 days',
+                            instructions: 'Take 30 minutes before meals, shake well before use'
+                          },
+                          { 
+                            name: 'Tab. Paracetamol 650mg', 
+                            dosage: 'SOS for fever >100°F', 
+                            duration: 'As needed',
+                            instructions: 'Maximum 4 tablets in 24 hours, maintain 6-hour gap'
+                          },
+                          { 
+                            name: 'Tab. Cetirizine 10mg', 
+                            dosage: '1 tablet at bedtime', 
+                            duration: '5 days',
+                            instructions: 'May cause drowsiness, avoid driving after taking'
+                          },
+                          { 
+                            name: 'Syp. Dextromethorphan 15mg/5ml', 
+                            dosage: '1 teaspoon twice daily', 
+                            duration: '5 days',
+                            instructions: 'For dry cough, take after meals'
+                          },
+                          { 
+                            name: 'Tab. Vitamin C 500mg', 
+                            dosage: '1 tablet twice daily after meals', 
+                            duration: '10 days',
+                            instructions: 'Helps boost immunity and recovery'
+                          }
+                        ].map((med, i) => (
+                          <div key={i} style={{ padding: '18px', background: 'rgba(255,255,255,0.95)', borderRadius: '10px', borderLeft: `4px solid ${prescriptionSettings.fontColor}`, boxShadow: '0 2px 4px rgba(0,0,0,0.05)' }}>
+                            <div style={{ fontWeight: 900, fontSize: '1.05em', marginBottom: '8px', color: prescriptionSettings.fontColor }}>{i + 1}. {med.name}</div>
+                            <div style={{ fontSize: '0.9em', marginBottom: '6px' }}>
+                              <span style={{ fontWeight: 800, color: '#dc2626' }}>Dosage:</span> {med.dosage}
+                            </div>
+                            <div style={{ fontSize: '0.9em', marginBottom: '6px' }}>
+                              <span style={{ fontWeight: 800, color: '#059669' }}>Duration:</span> {med.duration}
+                            </div>
+                            <div style={{ fontSize: '0.85em', fontStyle: 'italic', color: '#64748b' }}>
+                              <span style={{ fontWeight: 700 }}>Note:</span> {med.instructions}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+
+                    {/* Investigations */}
+                    <div style={{ marginBottom: '25px' }}>
+                      <div style={{ fontSize: '0.9em', fontWeight: 900, marginBottom: '12px', opacity: 0.7, textTransform: 'uppercase' }}>Recommended Investigations:</div>
+                      <div style={{ padding: '15px', background: 'rgba(255,255,255,0.9)', borderRadius: '8px' }}>
+                        <div style={{ fontSize: '0.9em', lineHeight: '1.8' }}>
+                          • Complete Blood Count (CBC) with ESR<br/>
+                          • Chest X-ray (PA view) if symptoms persist beyond 7 days<br/>
+                          • Sputum culture and sensitivity (if purulent sputum continues)<br/>
+                          • Pulmonary function test if breathing difficulty worsens
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Detailed Instructions */}
+                    <div style={{ marginBottom: '25px' }}>
+                      <div style={{ fontSize: '0.9em', fontWeight: 900, marginBottom: '12px', opacity: 0.7, textTransform: 'uppercase' }}>Patient Instructions & Lifestyle Modifications:</div>
+                      <div style={{ padding: '18px', background: 'rgba(255,255,255,0.95)', borderRadius: '10px' }}>
+                        <div style={{ fontSize: '0.9em', lineHeight: '1.7' }}>
+                          <strong>Immediate Care:</strong><br/>
+                          • Take all medications as prescribed, do not skip doses<br/>
+                          • Drink warm water frequently (8-10 glasses per day)<br/>
+                          • Use steam inhalation 2-3 times daily for 10-15 minutes<br/>
+                          • Gargle with warm salt water twice daily<br/><br/>
+                          
+                          <strong>Dietary Recommendations:</strong><br/>
+                          • Consume warm, light, easily digestible foods<br/>
+                          • Include vitamin C rich fruits (oranges, lemons, amla)<br/>
+                          • Avoid cold beverages, ice cream, and dairy products temporarily<br/>
+                          • Honey with warm water can soothe throat irritation<br/><br/>
+                          
+                          <strong>Activity & Rest:</strong><br/>
+                          • Take adequate rest, avoid strenuous physical activities<br/>
+                          • Sleep with head slightly elevated using extra pillows<br/>
+                          • Avoid exposure to dust, smoke, and strong odors<br/>
+                          • Use a humidifier or keep a bowl of water in the room<br/><br/>
+                          
+                          <strong>Precautions:</strong><br/>
+                          • Avoid smoking and passive smoking completely<br/>
+                          • Wear a mask when going out in polluted areas<br/>
+                          • Maintain hand hygiene to prevent secondary infections<br/>
+                          • Isolate from family members to prevent spread
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Follow-up Instructions */}
+                    <div style={{ marginBottom: '25px' }}>
+                      <div style={{ fontSize: '0.9em', fontWeight: 900, marginBottom: '12px', opacity: 0.7, textTransform: 'uppercase' }}>Follow-up Schedule:</div>
+                      <div style={{ padding: '15px', background: 'rgba(254, 242, 242, 0.95)', borderRadius: '8px', border: '1px solid #fca5a5' }}>
+                        <div style={{ fontSize: '0.9em', lineHeight: '1.6' }}>
+                          <strong>Next Visit:</strong> After 5 days or earlier if symptoms worsen<br/>
+                          <strong>Emergency Contact:</strong> Return immediately if you experience:<br/>
+                          • High fever &gt;102°F persisting despite medication<br/>
+                          • Severe breathing difficulty or chest pain<br/>
+                          • Blood in sputum or persistent vomiting<br/>
+                          • Worsening of symptoms after 48 hours of treatment
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Doctor's Notes */}
+                    <div style={{ marginBottom: '30px' }}>
+                      <div style={{ fontSize: '0.9em', fontWeight: 900, marginBottom: '10px', opacity: 0.7, textTransform: 'uppercase' }}>Doctor's Notes:</div>
+                      <div style={{ fontSize: '0.85em', fontStyle: 'italic', padding: '12px', background: 'rgba(255,255,255,0.9)', borderRadius: '8px', color: '#64748b' }}>
+                        Patient counseled about the viral nature of the condition and expected recovery timeline of 7-10 days. 
+                        Emphasized importance of medication compliance and lifestyle modifications. 
+                        Advised to monitor symptoms closely and return for follow-up as scheduled.
+                      </div>
+                    </div>
+
+                    {/* Signature */}
+                    <div style={{ marginTop: '40px', textAlign: 'right' }}>
+                      <div style={{ display: 'inline-block', textAlign: 'center', background: 'rgba(255,255,255,0.95)', padding: '20px 30px', borderRadius: '12px', boxShadow: '0 4px 12px rgba(0,0,0,0.1)' }}>
+                        <div style={{ width: '200px', borderBottom: `3px solid ${prescriptionSettings.fontColor}`, marginBottom: '12px' }}></div>
+                        <div style={{ fontWeight: 950, fontSize: '1.1em', marginBottom: '4px' }}>
+                          {activeProtocolData?.doctor?.fullName?.toUpperCase() || 'DR. CONSULTANT NAME'}
+                        </div>
+                        <div style={{ fontSize: '0.85em', fontWeight: 700, opacity: 0.8, marginBottom: '2px' }}>
+                          {activeProtocolData?.doctor?.degree || 'MBBS, MD (Internal Medicine)'}
+                        </div>
+                        <div style={{ fontSize: '0.8em', opacity: 0.7, marginBottom: '8px' }}>
+                          {activeProtocolData?.doctor?.specialization || 'Consultant Physician & Pulmonologist'}
+                        </div>
+                        {activeProtocolData?.doctor?.licenseNo && (
+                          <div style={{ fontSize: '0.75em', opacity: 0.6, fontFamily: 'monospace', background: 'rgba(0,0,0,0.05)', padding: '4px 8px', borderRadius: '4px' }}>
+                            Medical Registration: {activeProtocolData.doctor.licenseNo}
+                          </div>
+                        )}
+                        <div style={{ fontSize: '0.7em', opacity: 0.5, marginTop: '8px' }}>
+                          Date: {new Date().toLocaleDateString()} | Time: {new Date().toLocaleTimeString()}
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Page Break Indicator for New Page Mode */}
+                    {pageOverflowBehavior === 'newPage' && (
+                      <div style={{ 
+                        marginTop: '40px', 
+                        padding: '20px', 
+                        background: 'rgba(59, 130, 246, 0.1)', 
+                        border: '2px dashed #3b82f6', 
+                        borderRadius: '12px',
+                        textAlign: 'center',
+                        fontSize: '0.9em',
+                        fontWeight: 700,
+                        color: '#1e40af'
+                      }}>
+                        📄 PAGE BREAK - Additional content would continue on next page
+                      </div>
+                    )}
                   </div>
                 </div>
               )}
