@@ -26,12 +26,17 @@ function RootRedirect() {
   return <Navigate to={ROLE_HOME[homeRole] || '/'} replace />;
 }
 
+import StatusTracking from '../pages/StatusTracking';
+import WaitingAreaBoard from '../pages/WaitingAreaBoard';
+
 export default function AppRouter() {
   const { hasAdminDoctor } = useAuth();
 
   return (
     <Routes>
       {/* Public / Semi-Public */}
+      <Route path="/track/:id" element={<StatusTracking />} />
+      <Route path="/waiting-board" element={<WaitingAreaBoard />} />
       <Route 
         path="/register" 
         element={<RegisterPage />} 

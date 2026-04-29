@@ -1753,7 +1753,32 @@ export default function AppointmentBoard() {
                 </div>
               </div>
               
-              <div style={{ marginTop: '25px', fontSize: '9px', fontWeight: 700 }}>
+              <div style={{ marginTop: '20px', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '15px' }}>
+                {/* 1D Barcode for Hardware Scanners */}
+                <div style={{ textAlign: 'center' }}>
+                  <img 
+                    src={`https://barcodeapi.org/api/128/${encodeURIComponent(tokenPrintData.ptid || tokenPrintData.patientId)}`} 
+                    alt="" 
+                    style={{ width: '65mm', height: '12mm', objectFit: 'contain' }} 
+                  />
+                  <div style={{ fontSize: '7px', fontWeight: 900, color: '#64748b', marginTop: '4px', letterSpacing: '2px' }}>FOR OFFICIAL USE ONLY</div>
+                </div>
+                
+                {/* QR Code for Mobile Scanning */}
+                <div style={{ display: 'flex', alignItems: 'center', gap: '15px', padding: '12px', background: '#f8fafc', borderRadius: '16px', border: '1px solid #e2e8f0', width: '70mm' }}>
+                  <img 
+                    src={`https://api.qrserver.com/v1/create-qr-code/?size=100x100&data=${encodeURIComponent(`${window.location.origin}/track/${tokenPrintData.appointmentId || tokenPrintData.id}`)}`} 
+                    alt="" 
+                    style={{ width: '18mm', height: '18mm' }} 
+                  />
+                  <div style={{ textAlign: 'left' }}>
+                    <div style={{ fontSize: '10px', fontWeight: 950, color: '#0f52ba' }}>LIVE STATUS</div>
+                    <div style={{ fontSize: '8px', fontWeight: 700, color: '#64748b', marginTop: '2px' }}>SCAN TO TRACK YOUR<br/>DIAGNOSTIC JOURNEY</div>
+                  </div>
+                </div>
+              </div>
+
+              <div style={{ marginTop: '15px', fontSize: '9px', fontWeight: 700 }}>
                 PRINTED: {new Date().toLocaleTimeString()}
               </div>
               

@@ -662,18 +662,28 @@ const AdvancedDicomViewer = ({
 
         // Set default tool states
         toolGroup.addViewport(viewportId, engineId);
+        
+        // Enable all annotation/measurement tools (required before they can be activated)
+        [
+          LengthTool, HeightTool, BidirectionalTool, AngleTool, CobbAngleTool,
+          EllipticalROITool, RectangleROITool, CircleROITool, 
+          PlanarFreehandROITool, ProbeTool, ArrowAnnotateTool, MagnifyTool, AdvancedMagnifyTool
+        ].forEach(t => {
+          toolGroup.setToolEnabled(t.toolName);
+        });
+        
+        // Activate default navigation tool (WindowLevel) with Primary mouse button
         toolGroup.setToolActive(WindowLevelTool.toolName, {
           bindings: [{ mouseButton: toolsEnums.MouseBindings.Primary }]
         });
-        toolGroup.setToolActive(ZoomTool.toolName, {
-          bindings: [{ mouseButton: toolsEnums.MouseBindings.Secondary }]
-        });
-        toolGroup.setToolActive(PanTool.toolName, {
-          bindings: [{ mouseButton: toolsEnums.MouseBindings.Auxiliary }] // Middle click
-        });
+        
+        // Set other navigation tools to passive (will be activated when selected)
+        toolGroup.setToolPassive(ZoomTool.toolName);
+        toolGroup.setToolPassive(PanTool.toolName);
+        
+        // StackScroll always active with wheel (doesn't conflict with Primary button)
         toolGroup.setToolActive(StackScrollTool.toolName, {
           bindings: [
-            { mouseButton: toolsEnums.MouseBindings.Primary, modifierKey: toolsEnums.KeyboardBindings.Alt },
             { mouseButton: toolsEnums.MouseBindings.Wheel }
           ]
         });
@@ -755,21 +765,55 @@ const AdvancedDicomViewer = ({
 
   // --- EXTERNAL TOOL SYNC ---
   useEffect(() => {
-    if (!toolGroupRef.current || !activeTool) return;
+    console.log(`[TOOL PROP] activeTool changed to: ${activeTool}, toolGroupRef exists: ${!!toolGroupRef.current}`);
     
-    // Deactivate current active primary tools
-    const currentActive = toolGroupRef.current.getActivePrimaryMouseButtonTool();
-    if (currentActive) {
-      toolGroupRef.current.setToolPassive(currentActive);
+    if (!toolGroupRef.current || !activeTool) {
+      console.warn('[TOOL PROP] Missing toolGroupRef or activeTool');
+      return;
     }
+    
+    console.log(`[TOOL SWITCH] Switching to: ${activeTool}`);
+    
+    // Get all tools that might be active with Primary mouse button
+    const toolsToDeactivate = [
+      'WindowLevelTool', 'ZoomTool', 'PanTool',
+      'LengthTool', 'HeightTool', 'BidirectionalTool', 'AngleTool', 'CobbAngleTool',
+      'EllipticalROITool', 'RectangleROITool', 'CircleROITool', 'PlanarFreehandROITool',
+      'ProbeTool', 'ArrowAnnotateTool', 'MagnifyTool', 'AdvancedMagnifyTool'
+    ];
+    
+    // Deactivate all tools except StackScroll (which uses wheel)
+    toolsToDeactivate.forEach(toolName => {
+      if (toolName !== activeTool && toolGroupRef.current.hasTool(toolName)) {
+        try {
+          toolGroupRef.current.setToolPassive(toolName);
+        } catch (e) {
+          // Ignore errors for tools that aren't active
+        }
+      }
+    });
     
     // Activate requested tool
     try {
+      // First ensure the tool exists
+      if (!toolGroupRef.current.hasTool(activeTool)) {
+        console.error(`[TOOL ERROR] Tool ${activeTool} not found in tool group`);
+        console.log('[TOOL ERROR] Available tools:', Object.keys(toolGroupRef.current._toolInstances || {}));
+        return;
+      }
+      
+      // Enable the tool (required for annotation tools)
+      toolGroupRef.current.setToolEnabled(activeTool);
+      
+      // Activate with Primary mouse button
       toolGroupRef.current.setToolActive(activeTool, {
         bindings: [{ mouseButton: toolsEnums.MouseBindings.Primary }]
       });
+      
+      console.log(`[TOOL SUCCESS] Activated: ${activeTool}`);
+      console.log(`[TOOL SUCCESS] Current active tool:`, toolGroupRef.current.getActivePrimaryMouseButtonTool());
     } catch (e) {
-      console.warn("Tool activation failed:", activeTool, e);
+      console.error(`[TOOL ERROR] Activation failed for ${activeTool}:`, e);
     }
   }, [activeTool]);
 

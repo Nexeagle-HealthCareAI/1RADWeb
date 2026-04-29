@@ -1,7 +1,8 @@
-import { useState, useMemo, useEffect, useCallback, useRef } from 'react';
+import { useState, useMemo, useEffect, useCallback, useRef, useContext } from 'react';
 import JSZip from 'jszip';
 import dicomParser from 'dicom-parser';
 import apiClient from '../api/apiClient';
+import { AuthContext } from '../auth/AuthContext';
 import AdvancedDicomViewer from '../components/AdvancedDicomViewer';
 import PrescriptionModal from '../components/PrescriptionModal';
 import { DicomCache } from '../utils/DicomCache';
@@ -26,6 +27,7 @@ const PRIORITY_META = {
 const TODAY = new Date().toLocaleDateString('en-CA'); // YYYY-MM-DD format in local time
 
 export default function TechnicianPage() {
+  const { activeCenter } = useContext(AuthContext);
   const [studies, setStudies] = useState([]);
   const [loading, setLoading] = useState(false);
   const [currentView, setCurrentView] = useState('QUEUE'); // 'QUEUE' or 'WORKSPACE'
@@ -60,6 +62,7 @@ export default function TechnicianPage() {
   const [screenshotData, setScreenshotData] = useState(null);
   const [keyImages, setKeyImages] = useState([]);
   const [isSyncEnabled, setIsSyncEnabled] = useState(false);
+  const [tokenPrintData, setTokenPrintData] = useState(null);
 
 
   // New state for progressive loading
@@ -72,13 +75,22 @@ export default function TechnicianPage() {
     try {
       // Fetch today's missions for the main bay, and past missions if in archive
       const res = await apiClient.get('/appointments');
-      const worklist = res.data.map(a => {
+      
+      // Sort and calculate daily tokens
+      const sortedData = res.data.sort((a, b) => new Date(a.dateTime || 0).getTime() - new Date(b.dateTime || 0).getTime());
+      const dailyCounters = {};
+
+      const worklist = sortedData.map(a => {
         const studyDate = a.dateTime ? new Date(a.dateTime).toLocaleDateString('en-CA') : null;
+        const dateKey = studyDate || TODAY;
+        dailyCounters[dateKey] = (dailyCounters[dateKey] || 0) + 1;
+
         return {
           ...a,
           id: a.displayId,
           priority: a.type === 'EMERGENCY' ? 'STAT' : 'ROUTINE',
-          isToday: studyDate === TODAY
+          isToday: studyDate === TODAY,
+          tokenNo: dailyCounters[dateKey]
         };
       });
       setStudies(worklist);
@@ -531,14 +543,42 @@ export default function TechnicianPage() {
         )}
 
         <div style={{ background: 'white', padding: '15px 20px', borderRadius: '16px', border: '1px solid #e2e8f0', marginBottom: '20px', display: 'flex', gap: '15px', alignItems: 'center', boxShadow: '0 4px 20px rgba(0,0,0,0.02)', flexWrap: 'wrap' }}>
-          <div style={{ position: 'relative', flex: 1, minWidth: '200px' }}>
-            <span style={{ position: 'absolute', left: '15px', top: '50%', transform: 'translateY(-50%)', opacity: 0.5 }}>🔍</span>
+          <div style={{ position: 'relative', flex: 1, minWidth: '200px', display: 'flex', gap: '10px', alignItems: 'center' }}>
+            <div style={{ position: 'relative', flex: 1 }}>
+              <span style={{ position: 'absolute', left: '15px', top: '50%', transform: 'translateY(-50%)', opacity: 0.5 }}>🔍</span>
+              <input 
+                type="text" 
+                placeholder={hubTab === 'ACTIVE' ? "SCAN BARCODE OR SEARCH MISSIONS..." : "SEARCH HISTORICAL ARCHIVE..."}
+                value={searchQuery}
+                onChange={e => setSearchQuery(e.target.value)}
+                style={{ 
+                  width: '100%', padding: '12px 12px 12px 45px', borderRadius: '10px', 
+                  border: searchQuery.startsWith('ID:') ? '2px solid #0f52ba' : '1px solid #e2e8f0', 
+                  fontSize: '12px', fontWeight: 700, outline: 'none',
+                  background: searchQuery.startsWith('ID:') ? '#f0f7ff' : 'white'
+                }}
+              />
+              {searchQuery.startsWith('ID:') && (
+                <span style={{ position: 'absolute', right: '15px', top: '50%', transform: 'translateY(-50%)', background: '#0f52ba', color: 'white', fontSize: '8px', fontWeight: 900, padding: '2px 6px', borderRadius: '4px' }}>SCANNER MODE</span>
+              )}
+            </div>
+            <button 
+              onClick={() => document.getElementById('mobile-scanner-trigger')?.click()}
+              style={{ padding: '12px 15px', borderRadius: '10px', background: '#f8fafc', border: '1px solid #e2e8f0', cursor: 'pointer', fontSize: '14px', display: 'flex', alignItems: 'center', gap: '8px', fontWeight: 900 }}
+              title="Open Mobile Scanner"
+            >
+              📷 <span style={{ fontSize: '10px' }}>SCAN</span>
+            </button>
             <input 
-              type="text" 
-              placeholder={hubTab === 'ACTIVE' ? "SEARCH TODAY'S MISSIONS..." : "SEARCH HISTORICAL ARCHIVE..."}
-              value={searchQuery}
-              onChange={e => setSearchQuery(e.target.value)}
-              style={{ width: '100%', padding: '12px 12px 12px 45px', borderRadius: '10px', border: '1px solid #e2e8f0', fontSize: '12px', fontWeight: 700, outline: 'none' }}
+              id="mobile-scanner-trigger" 
+              type="file" 
+              accept="image/*" 
+              capture="camera" 
+              style={{ display: 'none' }} 
+              onChange={(e) => {
+                // In a real app, we'd decode here. For now, we simulate finding the ID.
+                alert('SCANNER CAPTURE ACTIVE: Please point at the Token Barcode. (Simulated)');
+              }}
             />
           </div>
 
@@ -656,6 +696,15 @@ export default function TechnicianPage() {
                       {hubTab === 'ACTIVE' ? (
                         <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
                           <button 
+                            onClick={(e) => { e.stopPropagation(); setTokenPrintData(study); }}
+                            style={{ 
+                              padding: '10px', borderRadius: '12px', background: '#f0f7ff', color: '#0f52ba', 
+                              border: '1px solid #dbeafe', cursor: 'pointer', display: 'flex', 
+                              alignItems: 'center', justifyContent: 'center' 
+                            }}
+                            title="Print Token Slip"
+                          >🎟️</button>
+                          <button 
                             onClick={(e) => { e.stopPropagation(); setPrescriptionData(study); setIsPrescriptionModalOpen(true); }}
                             style={{ 
                               padding: '10px', borderRadius: '12px', background: '#fef3c7', color: '#d97706', 
@@ -680,6 +729,11 @@ export default function TechnicianPage() {
                         </div>
                       ) : (
                         <div style={{ display: 'flex', gap: '10px', justifyContent: 'flex-end' }}>
+                          <button 
+                            onClick={() => setTokenPrintData(study)}
+                            style={{ padding: '10px', borderRadius: '12px', border: '1px solid #dbeafe', background: '#f0f7ff', cursor: 'pointer' }}
+                            title="Print Token Slip"
+                          >🎟️</button>
                           <button 
                             onClick={() => { setPrescriptionData(study); setIsPrescriptionModalOpen(true); }}
                             style={{ padding: '10px', borderRadius: '12px', border: '1px solid #fde68a', background: '#fef3c7', cursor: 'pointer' }}
@@ -1120,10 +1174,87 @@ export default function TechnicianPage() {
     </div>
   );
 
+  const renderTokenModal = () => {
+    if (!tokenPrintData) return null;
+    return (
+      <div className="modal-overlay" style={{ background: 'rgba(0,0,0,0.85)', zIndex: 10000, display: 'flex', alignItems: 'center', justifyContent: 'center', position: 'fixed', inset: 0 }}>
+        <div style={{ width: '400px', background: 'white', borderRadius: '16px', overflow: 'hidden', boxShadow: '0 20px 60px rgba(0,0,0,0.5)' }}>
+          <div style={{ padding: '20px', background: '#0a1628', color: 'white', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <span style={{ fontSize: '12px', fontWeight: 900, letterSpacing: '1px' }}>THERMAL PREVIEW (80mm)</span>
+            <button onClick={() => setTokenPrintData(null)} style={{ background: 'none', border: 'none', color: 'white', fontSize: '18px', cursor: 'pointer' }}>✕</button>
+          </div>
+          <div style={{ padding: '30px', display: 'flex', justifyContent: 'center', background: '#f1f5f9' }}>
+            <div id="thermal-token" style={{ width: '80mm', minHeight: '120mm', background: 'white', padding: '12mm 5mm', boxShadow: '0 5px 15px rgba(0,0,0,0.1)', color: 'black', fontFamily: "'Courier New', Courier, monospace", textAlign: 'center', lineHeight: '1.2' }}>
+              <div style={{ borderBottom: '2px solid #000', paddingBottom: '8px', marginBottom: '12px' }}>
+                <div style={{ fontSize: '18px', fontWeight: 900, textTransform: 'uppercase' }}>{activeCenter?.name || '1RAD HUB'}</div>
+                <div style={{ fontSize: '9px', fontWeight: 700, marginTop: '2px' }}>DIAGNOSTIC COMMAND CENTER</div>
+              </div>
+              <div style={{ marginBottom: '15px' }}>
+                <div style={{ fontSize: '10px', fontWeight: 800 }}>TOKEN NO.</div>
+                <div style={{ fontSize: '42px', fontWeight: 950, margin: '2px 0' }}>{tokenPrintData.tokenNo || tokenPrintData.id}</div>
+              </div>
+              <div style={{ borderTop: '1px dashed #000', borderBottom: '1px dashed #000', padding: '10px 0', margin: '10px 0', textAlign: 'left' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '4px' }}>
+                  <span style={{ fontSize: '9px', fontWeight: 700 }}>PATIENT ID:</span>
+                  <span style={{ fontSize: '11px', fontWeight: 900 }}>{tokenPrintData.patientIdentifier || tokenPrintData.ptid || tokenPrintData.patientId}</span>
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px' }}>
+                  <span style={{ fontSize: '9px', fontWeight: 700 }}>NAME:</span>
+                  <span style={{ fontSize: '12px', fontWeight: 950 }}>{tokenPrintData.patientName.toUpperCase()}</span>
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                  <span style={{ fontSize: '9px', fontWeight: 700 }}>DATE:</span>
+                  <span style={{ fontSize: '11px', fontWeight: 900 }}>{new Date(tokenPrintData.dateTime).toLocaleDateString()}</span>
+                </div>
+              </div>
+              <div style={{ marginTop: '12px', textAlign: 'left' }}>
+                <div style={{ fontSize: '10px', fontWeight: 800, color: '#333' }}>MODALITY: {tokenPrintData.modality}</div>
+                <div style={{ fontSize: '14px', fontWeight: 950, marginTop: '2px', borderLeft: '3px solid black', paddingLeft: '8px' }}>{tokenPrintData.service}</div>
+              </div>
+              
+              <div style={{ marginTop: '20px', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '15px' }}>
+                {/* 1D Barcode for Hardware Scanners */}
+                <div style={{ textAlign: 'center' }}>
+                  <img 
+                    src={`https://barcodeapi.org/api/128/${encodeURIComponent(tokenPrintData.patientIdentifier || tokenPrintData.id)}`} 
+                    alt="" 
+                    style={{ width: '65mm', height: '12mm', objectFit: 'contain' }} 
+                  />
+                  <div style={{ fontSize: '7px', fontWeight: 900, color: '#64748b', marginTop: '4px', letterSpacing: '2px' }}>FOR OFFICIAL USE ONLY</div>
+                </div>
+                
+                {/* QR Code for Mobile Scanning */}
+                <div style={{ display: 'flex', alignItems: 'center', gap: '15px', padding: '12px', background: '#f8fafc', borderRadius: '16px', border: '1px solid #e2e8f0', width: '70mm' }}>
+                  <img 
+                    src={`https://api.qrserver.com/v1/create-qr-code/?size=100x100&data=${encodeURIComponent(`${window.location.origin}/track/${tokenPrintData.appointmentId || tokenPrintData.id}`)}`} 
+                    alt="" 
+                    style={{ width: '18mm', height: '18mm' }} 
+                  />
+                  <div style={{ textAlign: 'left' }}>
+                    <div style={{ fontSize: '10px', fontWeight: 950, color: '#0f52ba' }}>LIVE STATUS</div>
+                    <div style={{ fontSize: '8px', fontWeight: 700, color: '#64748b', marginTop: '2px' }}>SCAN TO TRACK YOUR<br/>DIAGNOSTIC JOURNEY</div>
+                  </div>
+                </div>
+              </div>
+
+              <div style={{ marginTop: '15px', fontSize: '9px', fontWeight: 700 }}>PRINTED: {new Date().toLocaleTimeString()}</div>
+            </div>
+          </div>
+          <div style={{ padding: '20px', display: 'flex', gap: '10px' }}>
+            <button className="gamified-btn" style={{ flex: 1, padding: '14px' }} onClick={() => window.print()}>CONFIRM PRINT</button>
+            <button style={{ flex: 1, background: '#f1f5f9', border: '1px solid #dee2e6', borderRadius: '12px', fontSize: '12px', fontWeight: 800, cursor: 'pointer' }} onClick={() => setTokenPrintData(null)}>DISCARD</button>
+          </div>
+        </div>
+        <style>{`@media print { body * { visibility: hidden !important; } #thermal-token, #thermal-token * { visibility: visible !important; } #thermal-token { position: absolute; left: 0; top: 0; width: 80mm; box-shadow: none !important; margin: 0; padding: 5mm; } }`}</style>
+      </div>
+    );
+  };
+
   return (
     <div className="page-wrapper" style={{ padding: 0, background: currentView === 'QUEUE' ? '#fcfdfe' : '#f8fafc' }}>
       {currentView === 'QUEUE' ? renderQueue() : renderWorkspace()}
       {renderPrintModal()}
+      {renderTokenModal()}
       
       <PrescriptionModal 
         isOpen={isPrescriptionModalOpen}

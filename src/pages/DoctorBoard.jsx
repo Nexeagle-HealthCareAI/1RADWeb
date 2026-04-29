@@ -1,7 +1,10 @@
-import { useState, useMemo, useEffect, useCallback, useRef } from 'react';
+import { useState, useMemo, useEffect, useCallback, useRef, useContext } from 'react';
 import dicomParser from 'dicom-parser';
 import apiClient from '../api/apiClient';
+import axios from 'axios';
+import { AuthContext } from '../auth/AuthContext';
 import PrescriptionModal from '../components/PrescriptionModal';
+import AdvancedDicomViewer from '../components/AdvancedDicomViewer';
 import '../styles/global.css';
 
 const MODALITY_ICONS = {
@@ -21,9 +24,35 @@ const TEMPLATES = {
   'NORMAL ABDOMEN': { findings: 'Liver, spleen, and kidneys appear normal. No free air or fluid in the peritoneal cavity.', impression: 'NO ACUTE ABDOMINAL PATHOLOGY DETECTED.' }
 };
 
-const TODAY = new Date().toLocaleDateString('en-CA'); // YYYY-MM-DD format in local time
+const TODAY = new Date().toLocaleDateString('en-CA');
+
+const renderDynamicFields = (template, structuredData, onFieldChange) => {
+  if (!template) return null;
+  try {
+    const rawContent = template.content || template.Content || '[]';
+    const sections = JSON.parse(rawContent);
+    return (
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+        {sections.map((section, idx) => (
+          <div key={section.id || idx} style={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: '16px', overflow: 'hidden' }}>
+            <div style={{ padding: '12px 20px', background: '#f8fafc', borderBottom: '1px solid #f1f5f9', display: 'flex', justifyContent: 'space-between' }}>
+              <span style={{ fontSize: '11px', fontWeight: 950, color: '#475569' }}>{section.title?.toUpperCase()}</span>
+            </div>
+            <textarea 
+              style={{ width: '100%', minHeight: '100px', padding: '15px', border: 'none', fontSize: '13px', outline: 'none', resize: 'vertical' }}
+              placeholder={`Enter observations...`}
+              value={structuredData[section.title] || ''}
+              onChange={(e) => onFieldChange(section.title, e.target.value)}
+            />
+          </div>
+        ))}
+      </div>
+    );
+  } catch (e) { return null; }
+};
 
 export default function DoctorBoard() {
+  const { activeCenter } = useContext(AuthContext);
   const [cases, setCases] = useState([]);
   const [loading, setLoading] = useState(false);
   const [view, setView] = useState('QUEUE'); // 'QUEUE', 'WORKSPACE', or 'HISTORY'
@@ -31,18 +60,47 @@ export default function DoctorBoard() {
   const [loadedDicom, setLoadedDicom] = useState(null);
   const [isDicomImage, setIsDicomImage] = useState(false);
   
-  // Reporting State
-  const [report, setReport] = useState({ history: '', findings: '', impression: '', advice: '', technique: '' });
+  // Reporting Engine States (V4 Parallel)
+  const [activeTab, setActiveTab] = useState(localStorage.getItem('reporting_paradigm') || 'Structured');
+  const [editorText, setEditorText] = useState('');
+  const [structuredData, setStructuredData] = useState({});
+  const [templates, setTemplates] = useState([]);
+  const [keywordLibrary, setKeywordLibrary] = useState([]);
+  const [selectedTemplateId, setSelectedTemplateId] = useState(null);
+  const [lastFocusedField, setLastFocusedField] = useState(null);
+  const [isPreviewOpen, setIsPreviewOpen] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
+  const [isFinalized, setIsFinalized] = useState(false);
+  const [advice, setAdvice] = useState('');
+  const [impression, setImpression] = useState('');
+  
+  const textareaRef = useRef(null);
   const [isFinalizing, setIsFinalizing] = useState(false);
   const [currentSlice, setCurrentSlice] = useState(1);
   const [printModalData, setPrintModalData] = useState(null);
+  const [currentReport, setCurrentReport] = useState({ findings: '', impression: '', advice: '', technique: '' });
+  
+  const [protocol, setProtocol] = useState({
+    fontFamily: 'Inter, sans-serif',
+    fontSize: 12,
+    fontColor: '#1e293b',
+    headerMargin: 40,
+    leftMargin: 20,
+    rightMargin: 20,
+    bottomMargin: 20,
+    letterheadBlobUrl: '',
+    localLetterheadUrl: ''
+  });
+  
   const [isPrescriptionModalOpen, setIsPrescriptionModalOpen] = useState(false);
   const [prescriptionData, setPrescriptionData] = useState(null);
+  const [tokenPrintData, setTokenPrintData] = useState(null);
 
   // Filters
   const [search, setSearch] = useState('');
   const [filters, setFilters] = useState({ modality: 'ALL', priority: 'ALL', clinicalStatus: 'ALL' });
   const [isTablet, setIsTablet] = useState(window.innerWidth < 1100);
+  const [isMobile, setIsMobile] = useState(window.innerWidth < 768);
   const [viewMode, setViewMode] = useState('TABLE');
   const [archivePage, setArchivePage] = useState(1);
   const [archiveFilterMode, setArchiveFilterMode] = useState('ALL'); // 'ALL' or 'RANGE'
@@ -52,7 +110,9 @@ export default function DoctorBoard() {
   useEffect(() => {
     const handleResize = () => {
       const tablet = window.innerWidth < 1100;
+      const mobile = window.innerWidth < 768;
       setIsTablet(tablet);
+      setIsMobile(mobile);
       if (tablet) setViewMode('CARDS');
       else setViewMode('TABLE');
     };
@@ -67,13 +127,22 @@ export default function DoctorBoard() {
     setLoading(true);
     try {
       const res = await apiClient.get('/appointments');
-      const allCases = res.data.map(a => {
+      
+      // Sort and calculate daily tokens
+      const sortedData = res.data.sort((a, b) => new Date(a.dateTime || 0).getTime() - new Date(b.dateTime || 0).getTime());
+      const dailyCounters = {};
+
+      const allCases = sortedData.map(a => {
         const studyDate = a.dateTime ? new Date(a.dateTime).toLocaleDateString('en-CA') : null;
+        const dateKey = studyDate || TODAY;
+        dailyCounters[dateKey] = (dailyCounters[dateKey] || 0) + 1;
+
         return {
           ...a,
           id: a.displayId,
           priority: a.type === 'EMERGENCY' ? 'STAT' : 'ROUTINE',
-          isToday: studyDate === TODAY
+          isToday: studyDate === TODAY,
+          tokenNo: dailyCounters[dateKey]
         };
       });
       setCases(allCases);
@@ -145,80 +214,331 @@ export default function DoctorBoard() {
   };
 
   // --- HANDLERS ---
+  // --- REPORTING LOGIC (V4 INTEGRATION) ---
+  const fetchReportingContext = useCallback(async (appId) => {
+    setLoading(true);
+    try {
+      const [templRes, keyRes, protRes, reportRes] = await Promise.all([
+        apiClient.get('/reporting/templates'),
+        apiClient.get('/reporting/keywords'),
+        apiClient.get(`/Prescription/${activeCase?.doctorId || 'current'}`).catch(() => null),
+        apiClient.get(`/reporting/report/${appId}`).catch(() => ({ data: { success: false } }))
+      ]);
+
+      if (templRes.data?.success) setTemplates(templRes.data.data);
+      if (keyRes.data?.success) setKeywordLibrary(keyRes.data.data);
+      if (protRes?.data?.success) setProtocol(protRes.data.data);
+
+      if (reportRes.data?.success && reportRes.data.data) {
+        const r = reportRes.data.data;
+        if (r.findings && (r.findings.startsWith('{') || r.findings.startsWith('['))) {
+          try {
+            setStructuredData(JSON.parse(r.findings));
+          } catch (e) {
+            setEditorText(r.findings);
+          }
+        } else {
+          setEditorText(r.findings || '');
+        }
+        setAdvice(r.advice || '');
+        setImpression(r.impression || '');
+        setIsFinalized(r.isFinalized);
+        setActiveTab(r.reportingMode || 'Structured');
+        if (r.templateId) setSelectedTemplateId(r.templateId);
+      }
+    } catch (err) {
+      console.error('[DOCTOR] Context fetch failed', err);
+    } finally {
+      setLoading(false);
+    }
+  }, [activeCase]);
+
   const handleOpenWorkspace = (c) => {
-    // Redirect to the dedicated Reporting Hub with patient context
-    window.location.href = `/reporting/${c.id || c.appointmentId}`;
+    setActiveCase(c);
+    setStructuredData({});
+    setEditorText('');
+    setAdvice('');
+    setImpression('');
+    setLoadedDicom(null);
+    setView('WORKSPACE');
     
+    // Update status to reporting if not already
     if (c.status?.toLowerCase() !== 'reporting') {
-      handleStatusUpdate(c.appointmentId, 'reporting');
+      handleStatusUpdate(c.appointmentId || c.id, 'reporting');
     }
+
+    fetchReportingContext(c.appointmentId || c.id);
   };
 
-  const handleDicomUpload = (e) => {
-    const file = e.target.files[0];
-    if (file) {
-      setLoadedDicom(file);
-    }
+  const formatText = (style) => {
+    const el = textareaRef.current;
+    if (!el) return;
+    el.focus();
+    if (style === 'bold') document.execCommand('bold', false, null);
+    else if (style === 'italic') document.execCommand('italic', false, null);
+    else if (style === 'underline') document.execCommand('underline', false, null);
+    else if (style === 'list') document.execCommand('insertUnorderedList', false, null);
+    setEditorText(el.innerHTML);
   };
 
-  const handleApplyTemplate = (type) => {
-    const template = TEMPLATES[type];
-    if (template) {
-      setReport(prev => ({ ...prev, findings: template.findings, impression: template.impression }));
-    }
+  const handleStructuredChange = (fieldId, value) => {
+    setStructuredData(prev => ({ ...prev, [fieldId]: value }));
   };
 
-  const handleFinalize = () => {
-    if (!report.findings || !report.impression) {
-      alert('REQUIRED: Findings and Impression are mandatory for clinical finalization.');
+  const handleApplyTemplate = (template) => {
+    if (typeof template === 'string') {
+      const t = TEMPLATES[template];
+      if (t) {
+        setEditorText(t.findings);
+        if (textareaRef.current) textareaRef.current.innerHTML = t.findings;
+      }
       return;
     }
-    setIsFinalizing(true);
+    
+    setSelectedTemplateId(template.id);
+    setActiveTab('Structured');
+    try {
+      const sections = JSON.parse(template.content || template.Content || '[]');
+      const initialData = {};
+      sections.forEach(s => { initialData[s.title] = s.content || ''; });
+      setStructuredData(initialData);
+    } catch (e) {
+      setEditorText(template.content || '');
+      setActiveTab('Narrative Editor');
+    }
   };
 
-  const confirmFinalize = async () => {
-    await handleStatusUpdate(activeCase.appointmentId, 'reported');
-    setIsFinalizing(false);
-    setView('QUEUE');
+  const handleSaveReport = async (finalizing = false) => {
+    setIsSaving(true);
+    try {
+      const payload = {
+        appointmentId: activeCase.appointmentId || activeCase.id,
+        templateId: selectedTemplateId,
+        findings: activeTab === 'Structured' ? JSON.stringify(structuredData) : editorText,
+        impression: activeTab === 'Structured' ? (structuredData['Impression'] || structuredData['IMPRESSION'] || '') : impression,
+        advice: advice || '',
+        isFinalized: finalizing,
+        reportingMode: activeTab
+      };
+
+      await apiClient.post('/reporting/save', payload);
+      alert(finalizing ? 'Report finalized successfully.' : 'Draft saved.');
+      if (finalizing) {
+        setIsFinalized(true);
+        setView('QUEUE');
+        fetchCases();
+      }
+    } catch (err) {
+      alert(`Save failed: ${err.message}`);
+    } finally {
+      setIsSaving(false);
+    }
   };
 
-  const renderPrintModal = () => {
-    if (!printModalData) return null;
+  const handlePreviewPrint = async (c) => {
+    try {
+      const docId = c.doctorId || activeCase?.doctorId || localStorage.getItem('doctorId') || localStorage.getItem('UserId');
+      if (!docId || docId === 'null') {
+        console.warn('[1RAD] No Doctor ID found for branding resolution');
+      }
+
+      // 1. Fetch Protocol
+      const brandingRes = docId && docId !== 'null' ? await apiClient.get(`/Prescription/${docId}`).catch(() => ({ data: { success: false } })) : { data: { success: false } };
+      const d = brandingRes.data?.data || {};
+
+      const newProtocol = {
+        fontFamily: d.fontFamily || 'Inter, sans-serif',
+        fontSize: d.fontSize || 12,
+        fontColor: d.fontColor || '#1e293b',
+        headerMargin: d.headerMargin || 40,
+        leftMargin: d.leftMargin || 20,
+        rightMargin: d.rightMargin || 20,
+        bottomMargin: d.bottomMargin || 20,
+        letterheadBlobUrl: d.letterheadBlobUrl || '',
+        localLetterheadUrl: ''
+      };
+
+      // 2. Prepare Report Content (Live Sync)
+      if (view === 'WORKSPACE') {
+        // Use live editor state
+        let findings = '';
+        if (activeTab === 'Structured') {
+          findings = Object.entries(structuredData)
+            .filter(([key]) => key.toLowerCase() !== 'impression')
+            .map(([key, val]) => `
+            <div style="margin-bottom: 15px;">
+              <strong style="color: ${newProtocol.fontColor}; text-transform: uppercase; font-size: 0.9em;">${key.replace(/_/g, ' ')}:</strong>
+              <div>${val}</div>
+            </div>
+          `).join('');
+        } else {
+          findings = editorText;
+        }
+
+        setCurrentReport({
+          findings: findings,
+          impression: activeTab === 'Structured' ? (structuredData['Impression'] || structuredData['IMPRESSION'] || '') : impression,
+          advice: advice || '',
+          technique: ''
+        });
+      } else {
+        // Archive View: Fetch from API
+        const reportRes = await apiClient.get(`/Reporting/mission/${c.id || c.appointmentId}`).catch(() => null);
+        if (reportRes?.data) {
+          setCurrentReport({
+            findings: reportRes.data.findings || '',
+            impression: reportRes.data.impression || '',
+            advice: reportRes.data.advice || '',
+            technique: reportRes.data.technique || ''
+          });
+        }
+      }
+
+      // 3. PDF Hydration
+      if (newProtocol.letterheadBlobUrl && newProtocol.letterheadBlobUrl.toLowerCase().includes('.pdf')) {
+        try {
+          const blobRes = await axios.get(newProtocol.letterheadBlobUrl, { responseType: 'blob' });
+          newProtocol.localLetterheadUrl = URL.createObjectURL(blobRes.data);
+        } catch (err) { console.error(err); }
+      }
+
+      setProtocol(newProtocol);
+      setPrintModalData(c);
+      setIsPreviewOpen(true);
+    } catch (err) {
+      console.error('[1RAD] Preview Prep Failed', err);
+      setPrintModalData(c);
+      setIsPreviewOpen(true);
+    }
+  };
+
+  const renderPreviewModal = () => {
+    if (!isPreviewOpen || !printModalData) return null;
+    const hasLetterhead = !!protocol?.letterheadBlobUrl;
+
     return (
-      <div className="modal-overlay" style={{ background: 'rgba(15, 23, 42, 0.98)', zIndex: 10000 }}>
-         <div style={{ width: '900px', height: '94vh', background: 'white', borderRadius: '20px', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
-            <div style={{ padding: '20px 40px', background: '#0a1628', color: 'white', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+      <div id="preview-modal-overlay" className="modal-overlay" style={{ background: 'rgba(10, 22, 40, 0.98)', zIndex: 10000, display: 'flex', alignItems: 'center', justifyContent: 'center', position: 'fixed', inset: 0, padding: '20px', backdropFilter: 'blur(15px)' }}>
+        <div id="preview-modal-container" style={{ width: '1000px', height: '95vh', background: '#f1f5f9', borderRadius: '24px', display: 'flex', flexDirection: 'column', overflow: 'hidden', boxShadow: '0 50px 100px rgba(0,0,0,0.6)', border: '1px solid rgba(255,255,255,0.1)' }}>
+          {/* Preview Toolbar */}
+          <div id="preview-toolbar" style={{ padding: '20px 40px', background: '#0a1628', color: 'white', display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '20px' }}>
+               <div style={{ width: '42px', height: '42px', background: 'linear-gradient(135deg, #0f52ba, #1e40af)', borderRadius: '14px', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '20px', boxShadow: '0 8px 16px rgba(15, 82, 186, 0.3)' }}>📄</div>
                <div>
-                  <h3 style={{ fontSize: '12px', fontWeight: 950, letterSpacing: '2px', margin: 0 }}>OFFICIAL DIAGNOSTIC DISPATCH</h3>
-               </div>
-               <div style={{ display: 'flex', gap: '15px' }}>
-                  <button className="gamified-btn" style={{ padding: '10px 30px' }} onClick={() => window.print()}>PRINT REPORT</button>
-                  <button onClick={() => setPrintModalData(null)} style={{ background: 'transparent', border: '1px solid rgba(255,255,255,0.2)', color: 'white', padding: '10px 20px', borderRadius: '10px', cursor: 'pointer' }}>CLOSE</button>
+                <h3 style={{ fontSize: '14px', fontWeight: 900, letterSpacing: '2px', margin: 0, color: '#60a5fa' }}>DIAGNOSTIC_REPORT_PREVIEW</h3>
+                <div style={{ fontSize: '10px', opacity: 0.6, marginTop: '2px', textTransform: 'uppercase' }}>
+                  {hasLetterhead ? '⚡ INSTITUTIONAL_BRANDING_ACTIVE' : '⚪ PLAIN_PAPER_MODE'}
+                </div>
                </div>
             </div>
-            <div style={{ flex: 1, padding: '50px', background: '#f1f5f9', display: 'flex', justifyContent: 'center', overflowY: 'auto' }}>
-               <div id="printable-report" style={{ width: '210mm', minHeight: '297mm', background: 'white', padding: '25mm', color: '#1e293b', boxShadow: '0 0 50px rgba(0,0,0,0.1)' }}>
-                   <div style={{ borderBottom: '4px solid #0f52ba', paddingBottom: '25px', marginBottom: '35px', display: 'flex', justifyContent: 'space-between' }}>
-                      <h1 style={{ fontWeight: 950, color: '#0f52ba' }}>1RAD REPORT</h1>
-                      <div style={{ textAlign: 'right' }}>
-                        <div style={{ fontSize: '10px', fontWeight: 950, color: '#94a3b8' }}>DISPATCH_ID</div>
-                        <div style={{ fontSize: '16px', fontWeight: 900 }}>{printModalData.id}</div>
+            <div style={{ display: 'flex', gap: '15px' }}>
+                <button 
+                  onClick={() => {
+                    const printWindow = window.open('', '_blank');
+                    const reportContent = document.querySelector('#printable-report').innerHTML;
+                    const styles = Array.from(document.querySelectorAll('style, link[rel="stylesheet"]')).map(s => s.outerHTML).join('\n');
+                    
+                    const letterheadHtml = hasLetterhead ? `
+                      <div style="position: absolute; top:0; left:0; width:100%; height:100%; z-index:-1;">
+                        ${protocol.letterheadBlobUrl.toLowerCase().includes('.pdf') ? 
+                          `<iframe src="${protocol.localLetterheadUrl || protocol.letterheadBlobUrl}" style="width:100%; height:100%; border:none;"></iframe>` : 
+                          `<img src="${protocol.letterheadBlobUrl}" style="width:100%; height:100%; object-fit:fill;">`
+                        }
                       </div>
-                   </div>
-                   <div style={{ marginBottom: '40px' }}>
-                     <div style={{ fontSize: '20px', fontWeight: 950 }}>{printModalData.patientName.toUpperCase()}</div>
-                     <div style={{ fontSize: '14px', color: '#64748b' }}>MODALITY: {printModalData.modality} | STUDY: {printModalData.service}</div>
-                   </div>
-                   <div style={{ whiteSpace: 'pre-wrap', lineHeight: '1.8' }}>
-                      <h3>FINDINGS</h3>
-                      <p>{report.findings || 'No findings reported.'}</p>
-                      <h3>IMPRESSION</h3>
-                      <p style={{ fontWeight: 900 }}>{report.impression || 'NORMAL STUDY.'}</p>
-                   </div>
-               </div>
+                    ` : '';
+
+                    printWindow.document.write(`
+                      <html>
+                        <head>
+                          <title>Diagnostic Report</title>
+                          ${styles}
+                          <style>
+                            @page { size: A4; margin: 0; }
+                            body { margin: 0; padding: 0; background: white !important; }
+                            #print-container { width: 210mm; min-height: 297mm; position: relative; margin: 0 auto; background: white; }
+                            #print-container > div:first-child { display: none; }
+                          </style>
+                        </head>
+                        <body>
+                          <div id="print-container">${letterheadHtml}<div style="position: relative; z-index: 10;">${reportContent}</div></div>
+                          <script>window.onload = () => { setTimeout(() => { window.print(); window.close(); }, 1000); };</script>
+                        </body>
+                      </html>
+                    `);
+                    printWindow.document.close();
+                  }}
+                  style={{ padding: '12px 30px', borderRadius: '14px', background: 'linear-gradient(135deg, #0f52ba, #1e40af)', color: 'white', border: 'none', fontWeight: 900, fontSize: '12px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '10px', boxShadow: '0 8px 20px rgba(15, 82, 186, 0.4)' }}
+                >
+                  <span style={{ fontSize: '18px' }}>🖨️</span> PRINT FINAL REPORT
+                </button>
+              <button onClick={() => setIsPreviewOpen(false)} style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', color: '#94a3b8', padding: '12px 25px', borderRadius: '12px', cursor: 'pointer', fontWeight: 900 }}>CLOSE</button>
             </div>
-         </div>
-         <style>{`@media print { body * { visibility: hidden; } #printable-report, #printable-report * { visibility: visible; } #printable-report { position: absolute; left: 0; top: 0; width: 100%; } }`}</style>
+          </div>
+          
+          <div id="preview-scroll-container" style={{ flex: 1, padding: '50px 0', background: '#1e293b', overflowY: 'auto', display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+            <div id="printable-report" style={{ 
+              width: '210mm', minHeight: '297mm', background: 'white', 
+              color: protocol?.fontColor || '#1e293b', fontFamily: protocol?.fontFamily || 'Arial, sans-serif',
+              position: 'relative', overflow: 'hidden', boxShadow: '0 0 50px rgba(0,0,0,0.5)'
+            }}>
+                {/* Letterhead Foundation Layer */}
+                {hasLetterhead && (
+                  <div style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', zIndex: 1, pointerEvents: 'none' }}>
+                    { (protocol.letterheadBlobUrl.toLowerCase().includes('.pdf')) ? (
+                      <iframe 
+                        src={protocol.localLetterheadUrl ? `${protocol.localLetterheadUrl}#toolbar=0&navpanes=0&scrollbar=0&view=FitH` : `${protocol.letterheadBlobUrl}#toolbar=0&navpanes=0&scrollbar=0&view=FitH`}
+                        style={{ width: '100%', height: '100%', border: 'none', display: 'block', overflow: 'hidden' }}
+                        scrolling="no"
+                        title="Institutional Letterhead"
+                      />
+                    ) : (
+                      <img src={protocol.letterheadBlobUrl} alt="Letterhead" style={{ width: '100%', height: '100%', objectFit: 'fill' }} />
+                    )}
+                  </div>
+                )}
+
+                {/* Content Overlay */}
+                <div style={{ 
+                  position: 'relative', zIndex: 5, boxSizing: 'border-box', minHeight: '297mm', display: 'flex', flexDirection: 'column',
+                  paddingTop: `${protocol?.headerMargin || 50}mm`, 
+                  paddingLeft: `${protocol?.leftMargin || 20}mm`, 
+                  paddingRight: `${protocol?.rightMargin || 20}mm`, 
+                  paddingBottom: `${protocol?.bottomMargin || 30}mm`,
+                }}>
+                    <div style={{ borderBottom: `2px solid ${protocol?.fontColor || '#0f52ba'}`, paddingBottom: '15px', marginBottom: '25px', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end' }}>
+                       <div>
+                          <div style={{ fontSize: '10px', fontWeight: 900, color: '#64748b', textTransform: 'uppercase', letterSpacing: '1px' }}>Patient Name</div>
+                          <div style={{ fontSize: '18px', fontWeight: 950, color: '#1a1a2e' }}>{printModalData.patientName.toUpperCase()}</div>
+                       </div>
+                       <div style={{ textAlign: 'right' }}>
+                          <div style={{ fontSize: '10px', fontWeight: 900, color: '#64748b', textTransform: 'uppercase', letterSpacing: '1px' }}>Study Mission</div>
+                          <div style={{ fontSize: '14px', fontWeight: 900, color: '#0f52ba' }}>{printModalData.modality} // {printModalData.service}</div>
+                       </div>
+                    </div>
+
+                    <div style={{ flex: 1 }}>
+                      <div style={{ marginBottom: '30px' }}>
+                        <div style={{ fontSize: '9pt', fontWeight: 900, color: protocol?.fontColor || '#0f52ba', marginBottom: '10px', letterSpacing: '1px', textTransform: 'uppercase' }}>Clinical Findings:</div>
+                        <div style={{ fontSize: (protocol?.fontSize || 11) + 'pt', lineHeight: '1.6', color: '#334155', whiteSpace: 'pre-wrap' }}>{currentReport.findings}</div>
+                      </div>
+                      
+                      <div style={{ marginTop: '40px', background: '#f8fafc', padding: '20px', borderRadius: '8px', border: '1px solid #e2e8f0', borderLeft: `6px solid ${protocol?.fontColor || '#0f52ba'}`, pageBreakInside: 'avoid' }}>
+                        <div style={{ fontSize: '9pt', fontWeight: 900, color: protocol?.fontColor || '#0f52ba', marginBottom: '8px', letterSpacing: '1px', textTransform: 'uppercase' }}>Impression:</div>
+                        <div style={{ fontSize: (protocol?.fontSize || 11) + 'pt', fontWeight: 800, color: '#0f172a', lineHeight: '1.4', whiteSpace: 'pre-wrap' }}>{currentReport.impression}</div>
+                      </div>
+                    </div>
+                </div>
+            </div>
+          </div>
+          <style>{`
+            #preview-scroll-container::-webkit-scrollbar { width: 0px; background: transparent; }
+            @media print {
+              body * { visibility: hidden !important; }
+              #printable-report, #printable-report * { visibility: visible !important; }
+              #printable-report { position: fixed !important; left: 0 !important; top: 0 !important; width: 210mm !important; height: 297mm !important; margin: 0 !important; padding: 0 !important; border: none !important; box-shadow: none !important; background: white !important; z-index: 100000 !important; overflow: hidden !important; }
+              * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; box-sizing: border-box !important; }
+            }
+          `}</style>
+        </div>
       </div>
     );
   };
@@ -332,9 +652,42 @@ export default function DoctorBoard() {
         )}
 
         <div style={{ background: 'white', padding: '15px 20px', borderRadius: '16px', border: '1px solid #e2e8f0', marginBottom: '20px', display: 'flex', gap: '15px', alignItems: 'center', boxShadow: '0 4px 20px rgba(0,0,0,0.02)', flexWrap: 'wrap' }}>
-          <div style={{ position: 'relative', flex: 1, minWidth: '200px' }}>
-            <span style={{ position: 'absolute', left: '15px', top: '50%', transform: 'translateY(-50%)', opacity: 0.5 }}>🔍</span>
-            <input type="text" placeholder={view === 'QUEUE' ? "SEARCH ACTIVE WORKLIST..." : "SEARCH CLINICAL ARCHIVE..."} value={search} onChange={e => setSearch(e.target.value)} style={{ width: '100%', padding: '12px 12px 12px 45px', borderRadius: '10px', border: '1px solid #e2e8f0', fontSize: '12px', fontWeight: 700, outline: 'none' }} />
+          <div style={{ position: 'relative', flex: 1, minWidth: '200px', display: 'flex', gap: '10px', alignItems: 'center' }}>
+            <div style={{ position: 'relative', flex: 1 }}>
+              <span style={{ position: 'absolute', left: '15px', top: '50%', transform: 'translateY(-50%)', opacity: 0.5 }}>🔍</span>
+              <input 
+                type="text" 
+                placeholder={view === 'QUEUE' ? "SCAN BARCODE OR SEARCH MISSIONS..." : "SEARCH CLINICAL ARCHIVE..."}
+                value={search} 
+                onChange={e => setSearch(e.target.value)} 
+                style={{ 
+                  width: '100%', padding: '12px 12px 12px 45px', borderRadius: '10px', 
+                  border: search.startsWith('ID:') ? '2px solid #0f52ba' : '1px solid #e2e8f0', 
+                  fontSize: '12px', fontWeight: 700, outline: 'none',
+                  background: search.startsWith('ID:') ? '#f0f7ff' : 'white'
+                }} 
+              />
+              {search.startsWith('ID:') && (
+                <span style={{ position: 'absolute', right: '15px', top: '50%', transform: 'translateY(-50%)', background: '#0f52ba', color: 'white', fontSize: '8px', fontWeight: 900, padding: '2px 6px', borderRadius: '4px' }}>SCANNER MODE</span>
+              )}
+            </div>
+            <button 
+              onClick={() => document.getElementById('doctor-mobile-scanner')?.click()}
+              style={{ padding: '12px 15px', borderRadius: '10px', background: '#f8fafc', border: '1px solid #e2e8f0', cursor: 'pointer', fontSize: '14px', display: 'flex', alignItems: 'center', gap: '8px', fontWeight: 900 }}
+              title="Open Mobile Scanner"
+            >
+              📷 <span style={{ fontSize: '10px' }}>SCAN</span>
+            </button>
+            <input 
+              id="doctor-mobile-scanner" 
+              type="file" 
+              accept="image/*" 
+              capture="camera" 
+              style={{ display: 'none' }} 
+              onChange={(e) => {
+                alert('SCANNER CAPTURE ACTIVE: Please point at the Token Barcode. (Simulated)');
+              }}
+            />
           </div>
 
           {view === 'HISTORY' && (
@@ -458,8 +811,17 @@ export default function DoctorBoard() {
                     </td>
                     <td style={{ padding: '20px', textAlign: 'right' }}>
                       <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
-                        <button 
-                          onClick={(e) => { e.stopPropagation(); setPrescriptionData(c); setIsPrescriptionModalOpen(true); }}
+                         <button 
+                           onClick={(e) => { e.stopPropagation(); setTokenPrintData(c); }}
+                           style={{ 
+                             width: '38px', height: '38px', borderRadius: '12px', background: '#f0f7ff', color: '#0f52ba', 
+                             border: '1px solid #dbeafe', cursor: 'pointer', display: 'flex', 
+                             alignItems: 'center', justifyContent: 'center', fontSize: '18px'
+                           }}
+                           title="Print Token Slip"
+                         >🎟️</button>
+                         <button 
+                           onClick={(e) => { e.stopPropagation(); setPrescriptionData(c); setIsPrescriptionModalOpen(true); }}
                           style={{ 
                             width: '38px', height: '38px', borderRadius: '12px', background: '#fef3c7', color: '#d97706', 
                             border: '1px solid #fde68a', cursor: 'pointer', display: 'flex', 
@@ -467,7 +829,7 @@ export default function DoctorBoard() {
                           }}
                           title="Print Prescription"
                         >📜</button>
-                        {view === 'HISTORY' && <button className="icon-btn" onClick={() => setPrintModalData(c)}>🖨️</button>}
+                        {view === 'HISTORY' && <button className="icon-btn" onClick={() => handlePreviewPrint(c)}>🖨️</button>}
                         <button 
                           className="gamified-btn" 
                           disabled={!isActive && view !== 'HISTORY'}
@@ -549,8 +911,17 @@ export default function DoctorBoard() {
                        )}
 
                        <div style={{ marginTop: 'auto', display: 'flex', gap: '10px' }}>
-                          <button 
-                            onClick={(e) => { e.stopPropagation(); setPrescriptionData(c); setIsPrescriptionModalOpen(true); }}
+                           <button 
+                             onClick={(e) => { e.stopPropagation(); setTokenPrintData(c); }}
+                             style={{ 
+                               width: '45px', height: '45px', borderRadius: '12px', background: '#f0f7ff', color: '#0f52ba', 
+                               border: '1px solid #dbeafe', cursor: 'pointer', display: 'flex', 
+                               alignItems: 'center', justifyContent: 'center', fontSize: '20px'
+                             }}
+                             title="Print Token Slip"
+                           >🎟️</button>
+                           <button 
+                             onClick={(e) => { e.stopPropagation(); setPrescriptionData(c); setIsPrescriptionModalOpen(true); }}
                             style={{ 
                               width: '45px', height: '45px', borderRadius: '12px', background: '#fef3c7', color: '#d97706', 
                               border: '1px solid #fde68a', cursor: 'pointer', display: 'flex', 
@@ -581,134 +952,98 @@ export default function DoctorBoard() {
 
   const renderWorkspace = () => (
     <div style={{ height: 'calc(100vh - 60px)', display: 'flex', flexDirection: 'column', background: '#f8fafc' }}>
-       {/* COMMAND HEADER (LIGHT) */}
+       {/* COMMAND HEADER */}
        <div style={{ padding: '15px 40px', background: 'white', borderBottom: '1px solid #e2e8f0', display: 'flex', justifyContent: 'space-between', alignItems: 'center', boxShadow: '0 4px 20px rgba(0,0,0,0.02)' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '25px' }}>
-             <button onClick={() => setView('QUEUE')} style={{ background: '#f1f5f9', border: '1px solid #e2e8f0', color: '#1a1a2e', padding: '10px 20px', borderRadius: '12px', fontSize: '11px', fontWeight: 900, cursor: 'pointer', transition: '0.2s' }}>← EXIT COMMAND</button>
+             <button onClick={() => setView('QUEUE')} style={{ background: '#f1f5f9', border: '1px solid #e2e8f0', color: '#1a1a2e', padding: '10px 20px', borderRadius: '12px', fontSize: '11px', fontWeight: 900, cursor: 'pointer' }}>← EXIT COMMAND</button>
              <div>
                 <div style={{ fontSize: '18px', fontWeight: 950, color: '#1a1a2e' }}>{activeCase.patientName.toUpperCase()}</div>
-                <div style={{ fontSize: '10px', color: '#0f52ba', fontWeight: 900, letterSpacing: '1px' }}>DIAGNOSTIC TARGET: {activeCase.modality} // {activeCase.service}</div>
+                <div style={{ fontSize: '10px', color: '#0f52ba', fontWeight: 900, letterSpacing: '1px' }}>STUDY: {activeCase.service}</div>
               </div>
           </div>
           <div style={{ display: 'flex', gap: '15px', alignItems: 'center' }}>
-             <div style={{ textAlign: 'right', marginRight: '10px' }}>
-                <div style={{ fontSize: '9px', fontWeight: 950, color: '#94a3b8' }}>WORKFLOW_PHASE</div>
-                <div style={{ fontSize: '11px', fontWeight: 950, color: '#2ecc71' }}>● LIVE_REPORTING</div>
-             </div>
+             <button onClick={() => handleSaveReport(false)} className="btn btn-outline" style={{ fontSize: '11px' }}>💾 SAVE DRAFT</button>
+             <button onClick={() => handlePreviewPrint(activeCase)} className="btn btn-outline" style={{ fontSize: '11px' }}>👁️ PREVIEW</button>
              <button 
-                onClick={handleFinalize}
-                style={{ background: '#2ecc71', color: 'white', border: 'none', borderRadius: '12px', padding: '12px 30px', fontWeight: 950, fontSize: '12px', cursor: 'pointer', boxShadow: '0 8px 20px rgba(46, 204, 113, 0.2)' }}
-             >DEPLOY FINAL DISPATCH</button>
+               onClick={() => handleSaveReport(true)} 
+               disabled={isSaving}
+               style={{ background: '#2ecc71', color: 'white', border: 'none', borderRadius: '12px', padding: '12px 30px', fontWeight: 950, fontSize: '12px', cursor: 'pointer', opacity: isSaving ? 0.7 : 1 }}
+             >{isSaving ? 'AUTHORIZING...' : 'DEPLOY FINAL DISPATCH'}</button>
           </div>
        </div>
 
-       <div style={{ flex: 1, display: 'flex', flexDirection: isMobile ? 'column' : 'row', overflow: isMobile ? 'auto' : 'hidden', padding: isMobile ? '15px' : '30px' }}>
-          {/* DIAGNOSTIC ZONE (DARK) */}
-          <div style={{ 
-            flex: 1, 
-            minHeight: isMobile ? '400px' : 'auto',
-            background: 'radial-gradient(circle, #1a1a2e 0%, #050510 100%)', 
-            position: 'relative', 
-            display: 'flex', 
-            alignItems: 'center', 
-            justifyContent: 'center', 
-            borderRadius: '24px', 
-            boxShadow: '0 20px 50px rgba(0,0,0,0.15)', 
-            overflow: 'hidden', 
-            border: '1px solid #1e293b',
-            marginBottom: isMobile ? '20px' : '0'
-          }}>
-             <div style={{ position: 'absolute', top: isMobile ? '15px' : '30px', left: isMobile ? '15px' : '30px', background: 'rgba(0,0,0,0.6)', color: 'white', padding: '15px', borderRadius: '12px', borderLeft: '3px solid #0f52ba', fontSize: '10px', fontWeight: 800, backdropFilter: 'blur(10px)', zIndex: 5 }}>
-                ACQUISITION_TARGET: {activeCase.modality}<br/>
-                FIDELITY: DIAGNOSTIC_HIGH<br/>
-                ENGINE: 1RAD_CORE_V4
-             </div>
-
-             <div style={{ textAlign: 'center', width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', position: 'relative' }}>
-                {loadedDicom ? (
-                  <SimpleDicomViewer 
-                     key={loadedDicom.name + loadedDicom.size} 
-                     files={[loadedDicom]} 
-                     onImageStatus={setIsDicomImage} 
-                  />
-                ) : (
-                  <>
-                    <div style={{ fontSize: '100px', opacity: 0.05, color: 'white' }}>{MODALITY_ICONS[activeCase.modality] || '🖥️'}</div>
-                    <div style={{ position: 'absolute', display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
-                      <p style={{ fontSize: '9px', color: '#0f52ba', fontWeight: 950, letterSpacing: '2px', marginBottom: '15px' }}>[ SECURE_DICOM_STREAM_IDLE ]</p>
-                      <button 
-                         onClick={() => document.getElementById('doctor-dicom-upload').click()}
-                         style={{ background: '#0f52ba', color: 'white', border: 'none', padding: '10px 20px', borderRadius: '12px', fontSize: '11px', fontWeight: 950, cursor: 'pointer', boxShadow: '0 10px 20px rgba(15,82,186,0.3)' }}
-                      >FETCH ASSET STREAM</button>
-                      <input id="doctor-dicom-upload" type="file" accept=".dcm" onChange={handleDicomUpload} style={{ display: 'none' }} />
-                    </div>
-                  </>
-                )}
-             </div>
+       <div style={{ flex: 1, display: 'flex', overflow: 'hidden' }}>
+          <div style={{ flex: 1.2, background: '#050510', borderRight: '1px solid #e2e8f0', position: 'relative' }}>
+             <AdvancedDicomViewer 
+               files={loadedDicom ? [loadedDicom] : []}
+               activeCase={activeCase}
+               onUpload={() => document.getElementById('dicom-upload').click()}
+             />
+             <input id="dicom-upload" type="file" multiple style={{ display: 'none' }} onChange={(e) => setLoadedDicom(e.target.files[0])} />
           </div>
 
-          {/* REPORTING SIDEBAR (LIGHT) */}
-          <div style={{ 
-            width: isMobile ? '100%' : '500px', 
-            background: 'white', 
-            marginLeft: isMobile ? '0' : '30px', 
-            borderRadius: '24px', 
-            padding: isMobile ? '25px' : '40px', 
-            display: 'flex', 
-            flexDirection: 'column', 
-            gap: '30px', 
-            overflowY: 'visible', 
-            border: '1px solid #e2e8f0', 
-            boxShadow: '0 10px 30px rgba(0,0,0,0.02)' 
-          }}>
-              <div>
-                <label style={{ fontSize: '9px', fontWeight: 950, color: '#0f52ba', letterSpacing: '1px', textTransform: 'uppercase', marginBottom: '15px', display: 'block' }}>CLINICAL_TEMPLATES</label>
-                <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
-                   {Object.keys(TEMPLATES).map(name => (
-                      <button 
-                        key={name} 
-                        onClick={() => handleApplyTemplate(name)} 
-                        style={{ 
-                          padding: '10px 20px', 
-                          borderRadius: '16px', 
-                          border: '1px solid rgba(15, 82, 186, 0.1)', 
-                          background: 'rgba(15, 82, 186, 0.05)', 
-                          fontSize: '11px', 
-                          fontWeight: 950, 
-                          color: '#0f52ba', 
-                          cursor: 'pointer', 
-                          transition: 'all 0.2s',
-                          backdropFilter: 'blur(5px)',
-                          display: 'flex',
-                          alignItems: 'center',
-                          gap: '8px'
+          {/* REPORTING AREA */}
+          <div style={{ flex: 1, display: 'flex', flexDirection: 'column', background: 'white' }}>
+             <div style={{ display: 'flex', borderBottom: '1px solid #e2e8f0', background: '#f8fafc' }}>
+                {['Structured', 'Narrative Editor'].map(tab => (
+                   <button 
+                     key={tab} 
+                     onClick={() => setActiveTab(tab)}
+                     style={{ flex: 1, padding: '15px', border: 'none', background: activeTab === tab ? 'white' : 'transparent', borderBottom: activeTab === tab ? '3px solid #0f52ba' : 'none', fontSize: '11px', fontWeight: 950, color: activeTab === tab ? '#0f52ba' : '#64748b', cursor: 'pointer' }}
+                   >{tab.toUpperCase()}</button>
+                ))}
+             </div>
+
+             <div style={{ flex: 1, overflowY: 'auto', padding: '30px' }}>
+                {activeTab === 'Structured' ? (
+                   <div style={{ display: 'flex', flexDirection: 'column', gap: '25px' }}>
+                      <select 
+                        style={{ width: '100%', padding: '12px', borderRadius: '12px', border: '1px solid #e2e8f0', fontSize: '12px', fontWeight: 700 }}
+                        value={selectedTemplateId || ''}
+                        onChange={(e) => {
+                           const tpl = templates.find(t => t.id === e.target.value);
+                           if (tpl) handleApplyTemplate(tpl);
                         }}
                       >
-                        <span style={{ fontSize: '14px' }}>⚡</span> {name}
-                      </button>
-                   ))}
+                         <option value="">Select Protocol Template...</option>
+                         {templates.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
+                      </select>
+                      {renderDynamicFields(templates.find(t => t.id === selectedTemplateId), structuredData, handleStructuredChange)}
+                   </div>
+                ) : (
+                   <div style={{ display: 'flex', flexDirection: 'column', gap: '20px', height: '100%' }}>
+                      <div style={{ display: 'flex', gap: '5px', padding: '10px', background: '#f8fafc', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
+                         {['bold', 'italic', 'underline', 'list'].map(style => (
+                            <button key={style} onClick={() => formatText(style)} style={{ padding: '8px 12px', borderRadius: '8px', border: '1px solid #cbd5e1', background: 'white', fontWeight: 900, fontSize: '11px', cursor: 'pointer' }}>{style.charAt(0).toUpperCase()}</button>
+                         ))}
+                      </div>
+                      <div 
+                        ref={textareaRef}
+                        contentEditable="true"
+                        onInput={(e) => setEditorText(e.currentTarget.innerHTML)}
+                        dangerouslySetInnerHTML={{ __html: editorText }}
+                        style={{ flex: 1, minHeight: '300px', border: '1px solid #e2e8f0', borderRadius: '16px', padding: '25px', fontSize: '14px', lineHeight: '1.6', outline: 'none', background: 'white' }}
+                      />
+                      <div style={{ marginTop: '20px' }}>
+                         <label style={{ fontSize: '10px', fontWeight: 950, color: '#0f52ba', display: 'block', marginBottom: '8px' }}>CLINICAL IMPRESSION</label>
+                         <textarea 
+                           value={impression}
+                           onChange={(e) => setImpression(e.target.value)}
+                           placeholder="Enter final study impression..."
+                           style={{ width: '100%', padding: '15px', borderRadius: '16px', border: '1px solid #e2e8f0', fontSize: '13px', minHeight: '100px', outline: 'none' }}
+                         />
+                      </div>
+                   </div>
+                )}
+                <div style={{ marginTop: '30px' }}>
+                   <label style={{ fontSize: '10px', fontWeight: 950, color: '#64748b', textTransform: 'uppercase', marginBottom: '10px', display: 'block' }}>Clinical Advice</label>
+                   <textarea 
+                     value={advice} 
+                     onChange={(e) => setAdvice(e.target.value)}
+                     style={{ width: '100%', minHeight: '100px', padding: '15px', borderRadius: '16px', border: '1px solid #e2e8f0', fontSize: '13px', outline: 'none' }}
+                   />
                 </div>
-              </div>
-
-              <div style={{ background: '#f8fafc', padding: '25px', borderRadius: '20px', border: '1px solid #e2e8f0' }}>
-                 <label style={{ fontSize: '10px', fontWeight: 950, color: '#0f52ba', textTransform: 'uppercase', display: 'block', marginBottom: '15px' }}>Diagnostic Findings</label>
-                 <textarea 
-                    value={report.findings}
-                    onChange={e => setReport(prev => ({ ...prev, findings: e.target.value }))}
-                    placeholder="Document anatomical observations..."
-                    style={{ width: '100%', minHeight: '180px', background: 'transparent', border: 'none', fontSize: '14px', lineHeight: '1.6', outline: 'none', resize: 'none', color: '#1e293b' }}
-                 />
-              </div>
-
-              <div style={{ background: '#f0f7ff', padding: '25px', borderRadius: '20px', border: '1px solid #dbeafe' }}>
-                 <label style={{ fontSize: '10px', fontWeight: 950, color: '#0f52ba', textTransform: 'uppercase', display: 'block', marginBottom: '15px' }}>Clinical Impression</label>
-                 <textarea 
-                    value={report.impression}
-                    onChange={e => setReport(prev => ({ ...prev, impression: e.target.value }))}
-                    placeholder="Enter final diagnostic conclusion..."
-                    style={{ width: '100%', minHeight: '100px', background: 'transparent', border: 'none', fontSize: '14px', fontWeight: 900, color: '#1a1a2e', lineHeight: '1.6', outline: 'none', resize: 'none' }}
-                 />
-              </div>
+             </div>
           </div>
        </div>
 
@@ -728,10 +1063,89 @@ export default function DoctorBoard() {
     </div>
   );
 
+   const renderTokenModal = () => {
+    if (!tokenPrintData) return null;
+    return (
+      <div className="modal-overlay" style={{ background: 'rgba(0,0,0,0.85)', zIndex: 10000, display: 'flex', alignItems: 'center', justifyContent: 'center', position: 'fixed', inset: 0 }}>
+        <div style={{ width: '400px', background: 'white', borderRadius: '16px', overflow: 'hidden', boxShadow: '0 20px 60px rgba(0,0,0,0.5)' }}>
+          <div style={{ padding: '20px', background: '#0a1628', color: 'white', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <span style={{ fontSize: '12px', fontWeight: 900, letterSpacing: '1px' }}>THERMAL PREVIEW (80mm)</span>
+            <button onClick={() => setTokenPrintData(null)} style={{ background: 'none', border: 'none', color: 'white', fontSize: '18px', cursor: 'pointer' }}>✕</button>
+          </div>
+          <div style={{ padding: '30px', display: 'flex', justifyContent: 'center', background: '#f1f5f9' }}>
+            <div id="thermal-token" style={{ width: '80mm', minHeight: '120mm', background: 'white', padding: '12mm 5mm', boxShadow: '0 5px 15px rgba(0,0,0,0.1)', color: 'black', fontFamily: "'Courier New', Courier, monospace", textAlign: 'center', lineHeight: '1.2' }}>
+              <div style={{ borderBottom: '2px solid #000', paddingBottom: '8px', marginBottom: '12px' }}>
+                <div style={{ fontSize: '18px', fontWeight: 900, textTransform: 'uppercase' }}>{activeCenter?.name || '1RAD HUB'}</div>
+                <div style={{ fontSize: '9px', fontWeight: 700, marginTop: '2px' }}>DIAGNOSTIC COMMAND CENTER</div>
+              </div>
+              <div style={{ marginBottom: '15px' }}>
+                <div style={{ fontSize: '10px', fontWeight: 800 }}>TOKEN NO.</div>
+                <div style={{ fontSize: '42px', fontWeight: 950, margin: '2px 0' }}>{tokenPrintData.tokenNo || tokenPrintData.id}</div>
+              </div>
+              <div style={{ borderTop: '1px dashed #000', borderBottom: '1px dashed #000', padding: '10px 0', margin: '10px 0', textAlign: 'left' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '4px' }}>
+                  <span style={{ fontSize: '9px', fontWeight: 700 }}>PATIENT ID:</span>
+                  <span style={{ fontSize: '11px', fontWeight: 900 }}>{tokenPrintData.patientIdentifier || tokenPrintData.ptid || tokenPrintData.patientId}</span>
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px' }}>
+                  <span style={{ fontSize: '9px', fontWeight: 700 }}>NAME:</span>
+                  <span style={{ fontSize: '12px', fontWeight: 950 }}>{tokenPrintData.patientName.toUpperCase()}</span>
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                  <span style={{ fontSize: '9px', fontWeight: 700 }}>DATE:</span>
+                  <span style={{ fontSize: '11px', fontWeight: 900 }}>{new Date(tokenPrintData.dateTime).toLocaleDateString()}</span>
+                </div>
+              </div>
+              <div style={{ marginTop: '12px', textAlign: 'left' }}>
+                <div style={{ fontSize: '10px', fontWeight: 800, color: '#333' }}>MODALITY: {tokenPrintData.modality}</div>
+                <div style={{ fontSize: '14px', fontWeight: 950, marginTop: '2px', borderLeft: '3px solid black', paddingLeft: '8px' }}>{tokenPrintData.service}</div>
+              </div>
+
+              <div style={{ marginTop: '20px', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '15px' }}>
+                {/* 1D Barcode for Hardware Scanners */}
+                <div style={{ textAlign: 'center' }}>
+                  <img 
+                    src={`https://barcode.tec-it.com/barcode.ashx?data=${encodeURIComponent(tokenPrintData.patientIdentifier || tokenPrintData.ptid || tokenPrintData.id)}&code=Code128&translate-esc=on`} 
+                    alt="Patient Barcode" 
+                    crossOrigin="anonymous"
+                    style={{ width: '65mm', height: '14mm', objectFit: 'contain', background: 'white', padding: '2mm' }} 
+                  />
+                  <div style={{ fontSize: '7px', fontWeight: 900, color: '#64748b', marginTop: '4px', letterSpacing: '2px' }}>FOR OFFICIAL USE ONLY</div>
+                </div>
+                
+                {/* QR Code for Mobile Scanning */}
+                <div style={{ display: 'flex', alignItems: 'center', gap: '15px', padding: '12px', background: '#f8fafc', borderRadius: '16px', border: '1px solid #e2e8f0', width: '70mm' }}>
+                  <img 
+                    src={`https://api.qrserver.com/v1/create-qr-code/?size=100x100&data=${encodeURIComponent(`${window.location.origin}/track/${tokenPrintData.appointmentId || tokenPrintData.id}`)}`} 
+                    alt="" 
+                    crossOrigin="anonymous"
+                    style={{ width: '18mm', height: '18mm' }} 
+                  />
+                  <div style={{ textAlign: 'left' }}>
+                    <div style={{ fontSize: '10px', fontWeight: 950, color: '#0f52ba' }}>LIVE STATUS</div>
+                    <div style={{ fontSize: '8px', fontWeight: 700, color: '#64748b', marginTop: '2px' }}>SCAN TO TRACK YOUR<br/>DIAGNOSTIC JOURNEY</div>
+                  </div>
+                </div>
+              </div>
+
+              <div style={{ marginTop: '15px', fontSize: '9px', fontWeight: 700 }}>PRINTED: {new Date().toLocaleTimeString()}</div>
+            </div>
+          </div>
+          <div style={{ padding: '20px', display: 'flex', gap: '10px' }}>
+            <button className="gamified-btn" style={{ flex: 1, padding: '14px' }} onClick={() => window.print()}>CONFIRM PRINT</button>
+            <button style={{ flex: 1, background: '#f1f5f9', border: '1px solid #dee2e6', borderRadius: '12px', fontSize: '12px', fontWeight: 800, cursor: 'pointer' }} onClick={() => setTokenPrintData(null)}>DISCARD</button>
+          </div>
+        </div>
+        <style>{`@media print { body * { visibility: hidden !important; } #thermal-token, #thermal-token * { visibility: visible !important; } #thermal-token { position: absolute; left: 0; top: 0; width: 80mm; box-shadow: none !important; margin: 0; padding: 5mm; } }`}</style>
+      </div>
+    );
+  };
+
   return (
     <div className="page-wrapper" style={{ padding: 0, background: '#fcfdfe' }}>
       {view === 'WORKSPACE' ? renderWorkspace() : renderQueue()}
-      {renderPrintModal()}
+      {renderPreviewModal()}
+      {renderTokenModal()}
       
       <PrescriptionModal 
         isOpen={isPrescriptionModalOpen}
