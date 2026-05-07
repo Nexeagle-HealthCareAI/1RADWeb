@@ -50,6 +50,9 @@ export default function AdminBoard() {
   const [referralRosterSearch, setReferralRosterSearch] = useState('');
   const [referralPatientsSearch, setReferralPatientsSearch] = useState('');
   const [referralViewMode, setReferralViewMode] = useState('MATRIX'); // 'MATRIX' or 'LOG'
+  const [matrixPeriod, setMatrixPeriod] = useState('WEEK'); // 'DAY', 'WEEK', 'MONTH', 'YEAR'
+  const [matrixDateStr, setMatrixDateStr] = useState(TODAY);
+  const [matrixWeekIndex, setMatrixWeekIndex] = useState(1);
   
   // Dashboard Filters
   const [selectedDateFilter, setSelectedDateFilter] = useState(TODAY);
@@ -721,6 +724,96 @@ export default function AdminBoard() {
       setExpandedReferrer(referralAggregated[0].name);
     }
   }, [referralViewMode, referralAggregated, expandedReferrer]);
+
+  const temporalMatrixData = useMemo(() => {
+    if (referralViewMode !== 'LOG') return null;
+    
+    let cols = [];
+    let getColKey = () => "";
+    
+    const dStr = matrixDateStr || TODAY;
+    const year = parseInt(dStr.substring(0, 4), 10);
+    const month = parseInt(dStr.substring(5, 7), 10) - 1; // 0-11
+    
+    if (matrixPeriod === 'DAY') {
+      cols = ['Morning (12am-12pm)', 'Afternoon (12pm-5pm)', 'Evening (5pm-12am)'];
+      getColKey = (pStr) => {
+        if (!pStr.startsWith(dStr.substring(0,10))) return null;
+        const d = new Date(pStr);
+        const h = d.getHours();
+        if (h < 12) return cols[0];
+        if (h < 17) return cols[1];
+        return cols[2];
+      };
+    } else if (matrixPeriod === 'WEEK') {
+      const startDay = (matrixWeekIndex - 1) * 7 + 1;
+      const endDay = matrixWeekIndex === 4 ? new Date(year, month + 1, 0).getDate() : startDay + 6;
+      
+      for (let i = startDay; i <= endDay; i++) {
+        const d = new Date(year, month, i);
+        cols.push(d.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' }));
+      }
+      
+      getColKey = (pStr) => {
+        const d = new Date(pStr);
+        if (d.getFullYear() === year && d.getMonth() === month && d.getDate() >= startDay && d.getDate() <= endDay) {
+           return d.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
+        }
+        return null;
+      };
+    } else if (matrixPeriod === 'MONTH') {
+      cols = ['Week 1 (1st-7th)', 'Week 2 (8th-14th)', 'Week 3 (15th-21st)', 'Week 4 (22nd-End)'];
+      getColKey = (pStr) => {
+        const d = new Date(pStr);
+        if (d.getFullYear() === year && d.getMonth() === month) {
+           const dt = d.getDate();
+           if (dt <= 7) return cols[0];
+           if (dt <= 14) return cols[1];
+           if (dt <= 21) return cols[2];
+           return cols[3];
+        }
+        return null;
+      };
+    } else if (matrixPeriod === 'YEAR') {
+      cols = Array.from({length: 12}).map((_, i) => {
+        const d = new Date(year, i, 1);
+        return d.toLocaleDateString('en-US', { month: 'short' });
+      });
+      getColKey = (pStr) => {
+        const d = new Date(pStr);
+        if (d.getFullYear() === year) {
+           return d.toLocaleDateString('en-US', { month: 'short' });
+        }
+        return null;
+      };
+    }
+
+    const searchLow = (referralLogSearch || '').toLowerCase();
+    const rows = referralIntelligence
+      .filter(ref => !searchLow || (ref.name || '').toLowerCase().includes(searchLow))
+      .map(ref => {
+        const counts = {};
+        cols.forEach(c => counts[c] = 0);
+        let totalMatched = 0;
+        ref.patients.forEach(p => {
+           const pStr = p.registrationDate || p.date || TODAY;
+           const key = getColKey(pStr);
+           if (key && counts[key] !== undefined) {
+              counts[key]++;
+              totalMatched++;
+           }
+        });
+        return {
+          name: ref.name,
+          contact: ref.contact,
+          total: totalMatched,
+          counts
+        };
+      })
+      .sort((a, b) => b.total - a.total);
+
+    return { cols, rows };
+  }, [referralIntelligence, referralViewMode, matrixPeriod, matrixDateStr, matrixWeekIndex, referralLogSearch]);
 
   const handleDeleteUser = async (id) => {
     if (id === currentUser.id) {
@@ -3177,74 +3270,136 @@ export default function AdminBoard() {
                 </div>
               </div>
             ) : (
-              /* Global Mission Log View */
-              <div style={{ background: 'white', borderRadius: '24px', border: '1px solid #e2e8f0', overflow: 'hidden', boxShadow: '0 4px 20px rgba(0,0,0,0.01)' }}>
-                <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-                  <thead style={{ background: '#f8fafc' }}>
-                    <tr style={{ borderBottom: '1px solid #f1f5f9' }}>
-                      <th style={{ padding: '20px 30px', textAlign: 'left', fontSize: '10px', fontWeight: 950, color: '#94a3b8', letterSpacing: '2px', width: '120px' }}>MISSION_ID</th>
-                      <th style={{ padding: '20px 30px', textAlign: 'left', fontSize: '10px', fontWeight: 950, color: '#94a3b8', letterSpacing: '2px' }}>TARGET_IDENTITY</th>
-                      <th style={{ padding: '20px 20px', textAlign: 'left', fontSize: '10px', fontWeight: 950, color: '#94a3b8', letterSpacing: '2px', width: '150px' }}>CONTACT_INTEL</th>
-                      <th style={{ padding: '20px 20px', textAlign: 'left', fontSize: '10px', fontWeight: 950, color: '#94a3b8', letterSpacing: '2px' }}>GEO_ORIGIN (FULL_ADDR)</th>
-                      <th style={{ padding: '20px 20px', textAlign: 'left', fontSize: '10px', fontWeight: 950, color: '#94a3b8', letterSpacing: '2px', width: '150px' }}>CLINICAL BRIEF</th>
-                      <th style={{ padding: '20px 20px', textAlign: 'left', fontSize: '10px', fontWeight: 950, color: '#94a3b8', letterSpacing: '2px', width: '180px' }}>SOURCE / REFERRER</th>
-                      <th style={{ padding: '20px 30px', textAlign: 'left', fontSize: '10px', fontWeight: 950, color: '#94a3b8', letterSpacing: '2px', width: '120px' }}>STATUS</th>
-                      <th style={{ padding: '20px 30px', textAlign: 'right', fontSize: '10px', fontWeight: 950, color: '#94a3b8', letterSpacing: '2px', width: '120px' }}>DATE</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {temporalPatients.map(p => (
-                      <tr key={p.patientId} style={{ borderBottom: '1px solid #f8fafc', transition: 'background 0.2s' }}>
-                        <td style={{ padding: '20px 30px', fontSize: '12px', fontWeight: 950, color: '#0f52ba', fontFamily: 'monospace' }}>{p.patientIdentifier || 'UNSET'}</td>
-                        <td style={{ padding: '20px 30px' }}>
-                           <div style={{ fontSize: '14px', fontWeight: 800, color: '#1e293b' }}>{(p.name || 'Unknown').toUpperCase()}</div>
-                           <div style={{ fontSize: '10px', color: '#94a3b8', fontWeight: 700 }}>{p.age}Y • {(p.gender || 'U').toUpperCase()}</div>
-                        </td>
-                        <td style={{ padding: '20px 20px' }}>
-                           <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                              <span style={{ fontSize: '14px' }}>📱</span>
-                              <span style={{ fontSize: '12px', fontWeight: 900, color: '#1e293b' }}>{p.mobile || 'N/A'}</span>
-                           </div>
-                        </td>
-                        <td style={{ padding: '20px 20px' }}>
-                           <div style={{ display: 'flex', alignItems: 'flex-start', gap: '8px', maxWidth: '250px' }}>
-                              <span style={{ fontSize: '14px', color: '#f39c12' }}>📍</span>
-                              <span style={{ fontSize: '10px', color: '#64748b', fontWeight: 700, lineHeight: 1.5 }}>{p.address?.toUpperCase() || 'UNMAPPED_ORIGIN'}</span>
-                           </div>
-                        </td>
-                        <td style={{ padding: '20px 20px' }}>
-                           <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-                              <span style={{ fontSize: '10px', color: 'white', fontWeight: 950, background: '#334155', padding: '5px 12px', borderRadius: '10px' }}>{p.modality}</span>
-                              <span style={{ fontSize: '10px', color: '#475569', fontWeight: 800, border: '1px solid #e2e8f0', padding: '4px 10px', borderRadius: '8px' }}>{p.service}</span>
-                           </div>
-                        </td>
-                        <td style={{ padding: '20px 20px' }}>
-                           <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                              <div style={{ width: '24px', height: '24px', borderRadius: '50%', background: '#f0faff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '12px' }}>👤</div>
-                              <div>
-                                <div style={{ fontSize: '13px', fontWeight: 800, color: '#0f52ba' }}>{(p.referredBy || 'Direct / Walk-in').toUpperCase()}</div>
-                                <div style={{ fontSize: '9px', color: '#94a3b8', fontWeight: 700, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '140px' }}>{p.sourceContact} / {p.sourceAddress}</div>
+              /* Global Mission Matrix View */
+              <div style={{ background: 'white', borderRadius: '24px', border: '1px solid #e2e8f0', overflow: 'hidden', boxShadow: '0 4px 20px rgba(0,0,0,0.01)', padding: '30px' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '25px', flexWrap: 'wrap', gap: '15px' }}>
+                  <div>
+                    <h3 style={{ fontSize: '18px', fontWeight: 900, color: '#1e293b', margin: 0 }}>GLOBAL REFERRAL MATRIX</h3>
+                    <p style={{ fontSize: '12px', color: '#64748b', marginTop: '4px' }}>Temporal breakdown of patient intelligence</p>
+                  </div>
+                  <div style={{ display: 'flex', gap: '15px', alignItems: 'center' }}>
+                    {matrixPeriod === 'DAY' && (
+                      <input 
+                        type="date"
+                        value={matrixDateStr}
+                        onChange={(e) => e.target.value && setMatrixDateStr(e.target.value)}
+                        style={{ padding: '8px 16px', borderRadius: '8px', border: '1px solid #e2e8f0', fontSize: '12px', fontWeight: 800, color: '#1e293b', outline: 'none', background: '#f8fafc' }}
+                      />
+                    )}
+                    {matrixPeriod === 'WEEK' && (
+                      <>
+                        <input 
+                          type="month"
+                          value={matrixDateStr.substring(0,7)}
+                          onChange={(e) => e.target.value && setMatrixDateStr(e.target.value + '-01')}
+                          style={{ padding: '8px 16px', borderRadius: '8px', border: '1px solid #e2e8f0', fontSize: '12px', fontWeight: 800, color: '#1e293b', outline: 'none', background: '#f8fafc' }}
+                        />
+                        <select
+                          value={matrixWeekIndex}
+                          onChange={(e) => setMatrixWeekIndex(parseInt(e.target.value))}
+                          style={{ padding: '8px 16px', borderRadius: '8px', border: '1px solid #e2e8f0', fontSize: '12px', fontWeight: 800, color: '#1e293b', outline: 'none', background: '#f8fafc' }}
+                        >
+                          <option value={1}>Week 1 (1st - 7th)</option>
+                          <option value={2}>Week 2 (8th - 14th)</option>
+                          <option value={3}>Week 3 (15th - 21st)</option>
+                          <option value={4}>Week 4 (22nd - End)</option>
+                        </select>
+                      </>
+                    )}
+                    {matrixPeriod === 'MONTH' && (
+                      <input 
+                        type="month"
+                        value={matrixDateStr.substring(0,7)}
+                        onChange={(e) => e.target.value && setMatrixDateStr(e.target.value + '-01')}
+                        style={{ padding: '8px 16px', borderRadius: '8px', border: '1px solid #e2e8f0', fontSize: '12px', fontWeight: 800, color: '#1e293b', outline: 'none', background: '#f8fafc' }}
+                      />
+                    )}
+                    {matrixPeriod === 'YEAR' && (
+                      <input 
+                        type="number"
+                        min="2000"
+                        max="2100"
+                        step="1"
+                        value={matrixDateStr.substring(0,4)}
+                        onChange={(e) => e.target.value && setMatrixDateStr(`${e.target.value}-01-01`)}
+                        style={{ padding: '8px 16px', borderRadius: '8px', border: '1px solid #e2e8f0', fontSize: '12px', fontWeight: 800, color: '#1e293b', outline: 'none', background: '#f8fafc', width: '90px' }}
+                      />
+                    )}
+                    <div style={{ display: 'flex', gap: '5px', background: '#f8fafc', padding: '6px', borderRadius: '12px', border: '1px solid #f1f5f9' }}>
+                      {['DAY', 'WEEK', 'MONTH', 'YEAR'].map(period => (
+                        <button
+                          key={period}
+                          onClick={() => setMatrixPeriod(period)}
+                          style={{
+                            padding: '8px 16px',
+                            borderRadius: '8px',
+                            border: 'none',
+                            background: matrixPeriod === period ? 'white' : 'transparent',
+                            color: matrixPeriod === period ? '#0f52ba' : '#64748b',
+                            fontSize: '11px',
+                            fontWeight: 850,
+                            cursor: 'pointer',
+                            boxShadow: matrixPeriod === period ? '0 2px 8px rgba(0,0,0,0.05)' : 'none',
+                            transition: 'all 0.2s'
+                          }}
+                        >
+                          {period}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+
+                {temporalMatrixData?.rows.length > 0 && (
+                  <div style={{ overflowX: 'auto', borderRadius: '16px', border: '1px solid #f1f5f9' }}>
+                    <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                      <thead>
+                        <tr>
+                          <th style={{ padding: '15px 20px', textAlign: 'left', fontSize: '11px', fontWeight: 900, color: '#94a3b8', borderBottom: '2px solid #f1f5f9', background: '#fcfdfe', position: 'sticky', left: 0, zIndex: 10, minWidth: '200px' }}>REFERRING SOURCE</th>
+                          {temporalMatrixData?.cols.map(c => (
+                            <th key={c} style={{ padding: '15px 20px', textAlign: 'center', fontSize: '11px', fontWeight: 900, color: '#94a3b8', borderBottom: '2px solid #f1f5f9', background: '#fcfdfe', whiteSpace: 'nowrap' }}>
+                              {c.toUpperCase()}
+                            </th>
+                          ))}
+                          <th style={{ padding: '15px 20px', textAlign: 'center', fontSize: '11px', fontWeight: 900, color: '#0f52ba', borderBottom: '2px solid #f1f5f9', background: '#fcfdfe', whiteSpace: 'nowrap' }}>TOTAL PULL</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {temporalMatrixData?.rows.map((row) => (
+                          <tr key={row.name} style={{ borderBottom: '1px solid #f8fafc', transition: 'background 0.2s', ':hover': { background: '#f8fafc' } }}>
+                            <td style={{ padding: '15px 20px', position: 'sticky', left: 0, background: 'white', zIndex: 5, borderRight: '1px solid #f1f5f9' }}>
+                              <div style={{ fontSize: '13px', fontWeight: 850, color: '#1e293b' }}>{(row.name || 'ANONYMOUS').toUpperCase()}</div>
+                              <div style={{ fontSize: '10px', fontWeight: 700, color: '#94a3b8' }}>{row.contact || 'No Contact Info'}</div>
+                            </td>
+                            {temporalMatrixData?.cols.map(c => {
+                              const count = row.counts[c] || 0;
+                              return (
+                                <td key={c} style={{ padding: '15px 20px', textAlign: 'center' }}>
+                                  {count > 0 ? (
+                                    <div style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', background: '#f0fdf4', color: '#16a34a', width: '28px', height: '28px', borderRadius: '8px', fontSize: '12px', fontWeight: 900 }}>
+                                      {count}
+                                    </div>
+                                  ) : (
+                                    <div style={{ color: '#ef4444', fontSize: '14px', fontWeight: 900 }}>✗</div>
+                                  )}
+                                </td>
+                              );
+                            })}
+                            <td style={{ padding: '15px 20px', textAlign: 'center' }}>
+                              <div style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', background: '#eff6ff', color: '#0f52ba', width: '32px', height: '32px', borderRadius: '10px', fontSize: '13px', fontWeight: 900 }}>
+                                {row.total}
                               </div>
-                           </div>
-                        </td>
-                        <td style={{ padding: '20px 30px' }}>
-                           {(() => {
-                              const cfg = getStatusConfig(p.status);
-                              return <span style={{ fontSize: '10px', fontWeight: 950, padding: '5px 12px', borderRadius: '10px', background: cfg.bg, color: cfg.color }}>{cfg.label}</span>
-                           })()}
-                        </td>
-                        <td style={{ padding: '20px 30px', textAlign: 'right' }}>
-                           <div style={{ fontSize: '12px', color: '#1e293b', fontWeight: 900 }}>{p.registrationDate}</div>
-                           <div style={{ fontSize: '8px', color: '#94a3b8', fontWeight: 950 }}>LOGGED</div>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
               </div>
             )}
 
-            {temporalPatients.length === 0 && (
+            {(referralViewMode === 'LOG' ? (temporalMatrixData?.rows.length === 0) : (temporalPatients.length === 0)) && (
               <div style={{ padding: '150px 20px', textAlign: 'center', background: 'white', borderRadius: '40px', border: '1px dashed #cbd5e1' }}>
                 <div style={{ fontSize: '60px', marginBottom: '25px' }}>📡</div>
                 <div style={{ fontSize: '18px', fontWeight: 950, color: '#1e293b' }}>NO RECON SIGNALS FOUND</div>
