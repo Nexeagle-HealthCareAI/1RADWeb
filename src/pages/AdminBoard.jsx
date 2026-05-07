@@ -118,6 +118,7 @@ export default function AdminBoard() {
   // Expense Mgmt State
   const [isExpenseDrawerOpen, setIsExpenseDrawerOpen] = useState(false);
   const [savingExpense, setSavingExpense] = useState(false);
+  const [expenses, setExpenses] = useState([]);
   const [editExpense, setEditExpense] = useState({ 
     status: 'Paid'
   });
@@ -245,6 +246,15 @@ export default function AdminBoard() {
       setServicePrices(res.data);
     } catch (err) {
       console.error('[FINANCE] Registry fetch failed', err);
+    }
+  }, []);
+
+  const fetchExpenses = useCallback(async () => {
+    try {
+      const res = await apiClient.get('/finance/expenses');
+      setExpenses(res.data);
+    } catch (err) {
+      console.error('[FINANCE] Expenses fetch failed', err);
     }
   }, []);
 
@@ -433,8 +443,9 @@ export default function AdminBoard() {
     if (activeTab === 'FINANCE') {
       fetchServicePrices();
       fetchFinancialMatrix();
+      fetchExpenses();
     }
-  }, [activeTab, fetchPersonnel, fetchReferralIntelligence, fetchPatientMasterList, fetchMappedHospitals, fetchServicePrices, referralViewMode]);
+  }, [activeTab, fetchPersonnel, fetchReferralIntelligence, fetchPatientMasterList, fetchMappedHospitals, fetchServicePrices, fetchExpenses, referralViewMode]);
 
   const fetchStrategicOutlook = useCallback(async (dateString) => {
     try {
@@ -1022,11 +1033,24 @@ export default function AdminBoard() {
         status: 'Paid'
       });
       fetchFinancialMatrix(); // Refresh stats
+      fetchExpenses(); // Refresh expense list
     } catch (err) {
       console.error('[FINANCE] Expense save failed', err);
       alert('PROTOCOL FAILURE: Failed to record operational expense.');
     } finally {
       setSavingExpense(false);
+    }
+  };
+
+  const handleDeleteExpense = async (id) => {
+    if (!window.confirm('Are you sure you want to delete this operational expense?')) return;
+    try {
+      await apiClient.delete(`/finance/expenses/${id}`);
+      fetchExpenses();
+      fetchFinancialMatrix();
+    } catch (err) {
+      console.error('[FINANCE] Failed to delete expense', err);
+      alert('PROTOCOL FAILURE: Could not delete expense.');
     }
   };
 
@@ -2559,7 +2583,7 @@ export default function AdminBoard() {
             <h2 style={{ fontSize: '12px', fontWeight: 900, textTransform: 'uppercase', letterSpacing: '2px', color: '#0f52ba', marginBottom: '4px' }}>Financial Infrastructure</h2>
             <div style={{ display: 'flex', gap: '15px', alignItems: 'center', marginTop: '10px' }}>
                <div style={{ display: 'flex', background: '#f1f5f9', padding: '3px', borderRadius: '10px', border: '1px solid #e2e8f0' }}>
-                  {['REGISTRY', 'INTEL'].map(mode => (
+                  {['REGISTRY', 'INTEL', 'EXPENSES'].map(mode => (
                     <button 
                       key={mode}
                       onClick={() => setFinanceViewMode(mode)}
@@ -2571,14 +2595,14 @@ export default function AdminBoard() {
                         cursor: 'pointer'
                       }}
                     >
-                      {mode === 'REGISTRY' ? 'SERVICE REGISTRY' : 'FINANCIAL INTELLIGENCE'}
+                      {mode === 'REGISTRY' ? 'SERVICE REGISTRY' : mode === 'INTEL' ? 'FINANCIAL INTELLIGENCE' : 'OPERATIONAL EXPENSES'}
                     </button>
                   ))}
                </div>
             </div>
           </div>
           
-          {financeViewMode === 'REGISTRY' ? (
+          {financeViewMode === 'REGISTRY' && (
             <button 
               onClick={() => { setEditPrice({ modality: 'X-RAY', serviceName: '', amount: 0 }); setIsPriceDrawerOpen(true); }}
               style={{ 
@@ -2589,7 +2613,8 @@ export default function AdminBoard() {
             >
               + ADD SERVICE CHARGE
             </button>
-          ) : (
+          )}
+          {financeViewMode === 'EXPENSES' && (
             <button 
               onClick={() => { 
                 setEditExpense({ 
@@ -2617,7 +2642,44 @@ export default function AdminBoard() {
           )}
         </div>
 
-        {financeViewMode === 'INTEL' ? renderIntelligence() : (
+        {financeViewMode === 'INTEL' ? renderIntelligence() : financeViewMode === 'EXPENSES' ? (
+          <div style={{ background: 'white', borderRadius: '24px', border: '1px solid #e2e8f0', overflow: 'hidden', boxShadow: '0 4px 20px rgba(0,0,0,0.01)' }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+              <thead style={{ background: '#f8fafc' }}>
+                <tr style={{ borderBottom: '1px solid #f1f5f9' }}>
+                  <th style={{ padding: '20px 30px', textAlign: 'left', fontSize: '10px', fontWeight: 950, color: '#94a3b8', letterSpacing: '2px' }}>DATE</th>
+                  <th style={{ padding: '20px 30px', textAlign: 'left', fontSize: '10px', fontWeight: 950, color: '#94a3b8', letterSpacing: '2px' }}>DESCRIPTION</th>
+                  <th style={{ padding: '20px 30px', textAlign: 'left', fontSize: '10px', fontWeight: 950, color: '#94a3b8', letterSpacing: '2px' }}>CATEGORY</th>
+                  <th style={{ padding: '20px 30px', textAlign: 'right', fontSize: '10px', fontWeight: 950, color: '#94a3b8', letterSpacing: '2px' }}>AMOUNT</th>
+                  <th style={{ padding: '20px 30px', textAlign: 'right', fontSize: '10px', fontWeight: 950, color: '#94a3b8', letterSpacing: '2px' }}>ACTION</th>
+                </tr>
+              </thead>
+              <tbody>
+                {expenses.map(exp => (
+                  <tr key={exp.id} style={{ borderBottom: '1px solid #f8fafc', transition: 'background 0.2s' }}>
+                    <td style={{ padding: '20px 30px', fontSize: '13px', fontWeight: 850, color: '#1e293b' }}>{new Date(exp.transactionDate).toLocaleDateString('en-US', { day: 'numeric', month: 'short', year: 'numeric' })}</td>
+                    <td style={{ padding: '20px 30px', fontSize: '13px', fontWeight: 850, color: '#1e293b' }}>{exp.description}</td>
+                    <td style={{ padding: '20px 30px' }}>
+                      <span style={{ fontSize: '10px', fontWeight: 950, color: 'white', background: '#dc2626', padding: '5px 12px', borderRadius: '8px' }}>{exp.category}</span>
+                    </td>
+                    <td style={{ padding: '20px 30px', textAlign: 'right', fontSize: '14px', fontWeight: 950, color: '#dc2626' }}>₹{exp.amount.toLocaleString()}</td>
+                    <td style={{ padding: '20px 30px', textAlign: 'right' }}>
+                      <button 
+                        onClick={() => handleDeleteExpense(exp.id)}
+                        style={{ padding: '8px 16px', borderRadius: '10px', border: 'none', background: '#fee2e2', color: '#ef4444', fontSize: '10px', fontWeight: 950, cursor: 'pointer' }}
+                      >DELETE</button>
+                    </td>
+                  </tr>
+                ))}
+                {expenses.length === 0 && (
+                  <tr>
+                    <td colSpan="4" style={{ padding: '50px', textAlign: 'center', color: '#94a3b8', fontSize: '12px', fontWeight: 600 }}>No operational expenses found.</td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+        ) : (
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 350px', gap: '30px', alignItems: 'flex-start' }}>
             {/* Service Price Registry */}
             <div style={{ background: 'white', borderRadius: '24px', border: '1px solid #e2e8f0', overflow: 'hidden', boxShadow: '0 4px 20px rgba(0,0,0,0.01)' }}>
