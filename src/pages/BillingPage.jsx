@@ -1030,6 +1030,8 @@ export default function BillingPage() {
             <span style={{ cursor: 'pointer', opacity: billingViewMode === 'INVOICES' ? 1 : 0.4 }} onClick={() => setBillingViewMode('INVOICES')}>REVENUE HUB</span>
             <span style={{ opacity: 0.2 }}>|</span>
             <span style={{ cursor: 'pointer', opacity: billingViewMode === 'EXPENSES' ? 1 : 0.4, color: '#dc2626' }} onClick={() => setBillingViewMode('EXPENSES')}>EXPENSE LEDGER</span>
+            <span style={{ opacity: 0.2 }}>|</span>
+            <span style={{ cursor: 'pointer', opacity: billingViewMode === 'ANALYTICS' ? 1 : 0.4, color: '#0f52ba' }} onClick={() => setBillingViewMode('ANALYTICS')}>ANALYTICS HUB 📊</span>
           </h1>
           <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
             <span style={{ 
@@ -1178,6 +1180,8 @@ export default function BillingPage() {
         </div>
       ) : (
       <>
+        {billingViewMode === 'INVOICES' && (
+          <>
       {/* Filter Matrix Controls */}
       <div className="filter-matrix" style={{ display: 'flex', gap: '30px', marginBottom: '30px', background: '#f1f5f9', padding: '15px 25px', borderRadius: '18px', border: '1px solid #e2e8f0', alignItems: 'center' }}>
          <div style={{ display: 'flex', alignItems: 'center', gap: '15px' }}>
@@ -1248,6 +1252,63 @@ export default function BillingPage() {
           <div style={{ marginTop: '10px', fontSize: '10px', color: '#888', fontWeight: 600 }}>PAID INVOICES IN SCOPE</div>
         </div>
       </div>
+
+      {billingViewMode === 'ANALYTICS' && (
+        <div className="analytics-view">
+          {/* TEMPORAL MATRIX SECTION */}
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '30px', marginBottom: '40px' }}>
+              <div style={{ background: 'white', borderRadius: '24px', border: '1px solid #e2e8f0', padding: '30px', boxShadow: '0 4px 20px rgba(0,0,0,0.02)' }}>
+                  <h3 style={{ fontSize: '12px', fontWeight: 950, marginBottom: '20px', color: '#64748b', letterSpacing: '1px' }}>MONTHLY_PERFORMANCE_MATRIX</h3>
+                  <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                      <thead>
+                          <tr style={{ textAlign: 'left', borderBottom: '1px solid #f1f5f9' }}>
+                              <th style={{ padding: '12px 5px', fontSize: '9px', fontWeight: 950, color: '#94a3b8' }}>MONTH</th>
+                              <th style={{ padding: '12px 5px', fontSize: '9px', fontWeight: 950, color: '#94a3b8' }}>INVOICED</th>
+                              <th style={{ padding: '12px 5px', fontSize: '9px', fontWeight: 950, color: '#94a3b8' }}>EXPENSES</th>
+                              <th style={{ padding: '12px 5px', fontSize: '9px', fontWeight: 950, color: '#0f52ba' }}>NET_MARGIN</th>
+                          </tr>
+                      </thead>
+                      <tbody>
+                          {matrix.monthly.map((m, idx) => (
+                              <tr key={idx} style={{ borderBottom: '1px solid #f8fafc' }}>
+                                  <td style={{ padding: '12px 5px', fontSize: '11px', fontWeight: 900, color: '#1e293b' }}>{m.label}</td>
+                                  <td style={{ padding: '12px 5px', fontSize: '11px', fontWeight: 800 }}>₹{m.invoiced.toLocaleString()}</td>
+                                  <td style={{ padding: '12px 5px', fontSize: '11px', fontWeight: 800, color: '#dc2626' }}>₹{m.expenses.toLocaleString()}</td>
+                                  <td style={{ padding: '12px 5px', fontSize: '11px', fontWeight: 950, color: m.netProfit >= 0 ? '#0f52ba' : '#ef4444' }}>₹{m.netProfit.toLocaleString()}</td>
+                              </tr>
+                          ))}
+                      </tbody>
+                  </table>
+              </div>
+
+              <div style={{ background: 'white', borderRadius: '24px', border: '1px solid #e2e8f0', padding: '30px', boxShadow: '0 4px 20px rgba(0,0,0,0.02)' }}>
+                  <h3 style={{ fontSize: '12px', fontWeight: 950, marginBottom: '20px', color: '#64748b', letterSpacing: '1px' }}>DAILY_REVENUE_TREND (LATEST)</h3>
+                  <div style={{ maxHeight: '600px', overflowY: 'auto' }}>
+                      <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                          <thead>
+                              <tr style={{ textAlign: 'left', borderBottom: '1px solid #f1f5f9' }}>
+                                  <th style={{ padding: '12px 5px', fontSize: '9px', fontWeight: 950, color: '#94a3b8' }}>DATE</th>
+                                  <th style={{ padding: '12px 5px', fontSize: '9px', fontWeight: 950, color: '#94a3b8' }}>INVOICED</th>
+                                  <th style={{ padding: '12px 5px', fontSize: '9px', fontWeight: 950, color: '#94a3b8' }}>EXPENSES</th>
+                                  <th style={{ padding: '12px 5px', fontSize: '9px', fontWeight: 950, color: '#0f52ba' }}>NET_MARGIN</th>
+                              </tr>
+                          </thead>
+                          <tbody>
+                              {matrix.daily.map((d, idx) => (
+                                  <tr key={idx} style={{ borderBottom: '1px solid #f8fafc' }}>
+                                      <td style={{ padding: '12px 5px', fontSize: '11px', fontWeight: 900, color: '#64748b' }}>{d.label}</td>
+                                      <td style={{ padding: '12px 5px', fontSize: '11px', fontWeight: 800 }}>₹{d.invoiced.toLocaleString()}</td>
+                                      <td style={{ padding: '12px 5px', fontSize: '11px', fontWeight: 800, color: '#dc2626' }}>₹{d.expenses.toLocaleString()}</td>
+                                      <td style={{ padding: '12px 5px', fontSize: '11px', fontWeight: 950, color: d.netProfit >= 0 ? '#0f52ba' : '#ef4444' }}>₹{d.netProfit.toLocaleString()}</td>
+                                  </tr>
+                              ))}
+                          </tbody>
+                      </table>
+                  </div>
+              </div>
+          </div>
+        </div>
+      )}
 
       <div className="content-main" style={{ display: 'grid', gridTemplateColumns: '1fr', gap: '30px' }}>
         {/* Ledger Section */}
@@ -1330,59 +1391,67 @@ export default function BillingPage() {
              </tbody>
            </table>
            {renderPagination()}
-        </div>
-
-        {/* TEMPORAL MATRIX SECTION */}
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '30px', marginTop: '30px' }}>
-            <div style={{ background: 'white', borderRadius: '24px', border: '1px solid #e2e8f0', padding: '30px', boxShadow: '0 4px 20px rgba(0,0,0,0.02)' }}>
-                <h3 style={{ fontSize: '12px', fontWeight: 950, marginBottom: '20px', color: '#64748b', letterSpacing: '1px' }}>MONTHLY_PERFORMANCE_MATRIX</h3>
-                <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-                    <thead>
-                        <tr style={{ textAlign: 'left', borderBottom: '1px solid #f1f5f9' }}>
-                            <th style={{ padding: '12px 5px', fontSize: '9px', fontWeight: 950, color: '#94a3b8' }}>MONTH</th>
-                            <th style={{ padding: '12px 5px', fontSize: '9px', fontWeight: 950, color: '#94a3b8' }}>INVOICED</th>
-                            <th style={{ padding: '12px 5px', fontSize: '9px', fontWeight: 950, color: '#94a3b8' }}>COLLECTED</th>
-                            <th style={{ padding: '12px 5px', fontSize: '9px', fontWeight: 950, color: '#94a3b8' }}>RATE</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        {matrix.monthly.map((m, idx) => (
-                            <tr key={idx} style={{ borderBottom: '1px solid #f8fafc' }}>
-                                <td style={{ padding: '12px 5px', fontSize: '11px', fontWeight: 900, color: '#1e293b' }}>{m.label}</td>
-                                <td style={{ padding: '12px 5px', fontSize: '11px', fontWeight: 800 }}>₹{m.invoiced.toLocaleString()}</td>
-                                <td style={{ padding: '12px 5px', fontSize: '11px', fontWeight: 800, color: '#059669' }}>₹{m.collected.toLocaleString()}</td>
-                                <td style={{ padding: '12px 5px', fontSize: '11px', fontWeight: 950, color: '#0f52ba' }}>{m.realizationRate}%</td>
-                            </tr>
-                        ))}
-                    </tbody>
-                </table>
-            </div>
-
-            <div style={{ background: 'white', borderRadius: '24px', border: '1px solid #e2e8f0', padding: '30px', boxShadow: '0 4px 20px rgba(0,0,0,0.02)' }}>
-                <h3 style={{ fontSize: '12px', fontWeight: 950, marginBottom: '20px', color: '#64748b', letterSpacing: '1px' }}>DAILY_REVENUE_TREND (LATEST)</h3>
-                <div style={{ maxHeight: '300px', overflowY: 'auto' }}>
-                    <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-                        <thead>
-                            <tr style={{ textAlign: 'left', borderBottom: '1px solid #f1f5f9' }}>
-                                <th style={{ padding: '12px 5px', fontSize: '9px', fontWeight: 950, color: '#94a3b8' }}>DATE</th>
-                                <th style={{ padding: '12px 5px', fontSize: '9px', fontWeight: 950, color: '#94a3b8' }}>INVOICED</th>
-                                <th style={{ padding: '12px 5px', fontSize: '9px', fontWeight: 950, color: '#94a3b8' }}>COLLECTED</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            {matrix.daily.map((d, idx) => (
-                                <tr key={idx} style={{ borderBottom: '1px solid #f8fafc' }}>
-                                    <td style={{ padding: '12px 5px', fontSize: '11px', fontWeight: 900, color: '#64748b' }}>{d.label}</td>
-                                    <td style={{ padding: '12px 5px', fontSize: '11px', fontWeight: 800 }}>₹{d.invoiced.toLocaleString()}</td>
-                                    <td style={{ padding: '12px 5px', fontSize: '11px', fontWeight: 800, color: '#059669' }}>₹{d.collected.toLocaleString()}</td>
-                                </tr>
-                            ))}
-                        </tbody>
-                    </table>
-                </div>
-            </div>
-        </div>
+         </div>
       </div>
+      </>
+      )}
+
+      {billingViewMode === 'ANALYTICS' && (
+        <div className="analytics-view">
+          {/* TEMPORAL MATRIX SECTION */}
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '30px', marginBottom: '40px' }}>
+              <div style={{ background: 'white', borderRadius: '24px', border: '1px solid #e2e8f0', padding: '30px', boxShadow: '0 4px 20px rgba(0,0,0,0.02)' }}>
+                  <h3 style={{ fontSize: '12px', fontWeight: 950, marginBottom: '20px', color: '#64748b', letterSpacing: '1px' }}>MONTHLY_PERFORMANCE_MATRIX</h3>
+                  <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                      <thead>
+                          <tr style={{ textAlign: 'left', borderBottom: '1px solid #f1f5f9' }}>
+                              <th style={{ padding: '12px 5px', fontSize: '9px', fontWeight: 950, color: '#94a3b8' }}>MONTH</th>
+                              <th style={{ padding: '12px 5px', fontSize: '9px', fontWeight: 950, color: '#94a3b8' }}>INVOICED</th>
+                              <th style={{ padding: '12px 5px', fontSize: '9px', fontWeight: 950, color: '#94a3b8' }}>EXPENSES</th>
+                              <th style={{ padding: '12px 5px', fontSize: '9px', fontWeight: 950, color: '#0f52ba' }}>NET_MARGIN</th>
+                          </tr>
+                      </thead>
+                      <tbody>
+                          {matrix.monthly.map((m, idx) => (
+                              <tr key={idx} style={{ borderBottom: '1px solid #f8fafc' }}>
+                                  <td style={{ padding: '12px 5px', fontSize: '11px', fontWeight: 900, color: '#1e293b' }}>{m.label}</td>
+                                  <td style={{ padding: '12px 5px', fontSize: '11px', fontWeight: 800 }}>₹{m.invoiced.toLocaleString()}</td>
+                                  <td style={{ padding: '12px 5px', fontSize: '11px', fontWeight: 800, color: '#dc2626' }}>₹{m.expenses.toLocaleString()}</td>
+                                  <td style={{ padding: '12px 5px', fontSize: '11px', fontWeight: 950, color: m.netProfit >= 0 ? '#0f52ba' : '#ef4444' }}>₹{m.netProfit.toLocaleString()}</td>
+                              </tr>
+                          ))}
+                      </tbody>
+                  </table>
+              </div>
+
+              <div style={{ background: 'white', borderRadius: '24px', border: '1px solid #e2e8f0', padding: '30px', boxShadow: '0 4px 20px rgba(0,0,0,0.02)' }}>
+                  <h3 style={{ fontSize: '12px', fontWeight: 950, marginBottom: '20px', color: '#64748b', letterSpacing: '1px' }}>DAILY_REVENUE_TREND (LATEST)</h3>
+                  <div style={{ maxHeight: '600px', overflowY: 'auto' }}>
+                      <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                          <thead>
+                              <tr style={{ textAlign: 'left', borderBottom: '1px solid #f1f5f9' }}>
+                                  <th style={{ padding: '12px 5px', fontSize: '9px', fontWeight: 950, color: '#94a3b8' }}>DATE</th>
+                                  <th style={{ padding: '12px 5px', fontSize: '9px', fontWeight: 950, color: '#94a3b8' }}>INVOICED</th>
+                                  <th style={{ padding: '12px 5px', fontSize: '9px', fontWeight: 950, color: '#94a3b8' }}>EXPENSES</th>
+                                  <th style={{ padding: '12px 5px', fontSize: '9px', fontWeight: 950, color: '#0f52ba' }}>NET_MARGIN</th>
+                              </tr>
+                          </thead>
+                          <tbody>
+                              {matrix.daily.map((d, idx) => (
+                                  <tr key={idx} style={{ borderBottom: '1px solid #f8fafc' }}>
+                                      <td style={{ padding: '12px 5px', fontSize: '11px', fontWeight: 900, color: '#64748b' }}>{d.label}</td>
+                                      <td style={{ padding: '12px 5px', fontSize: '11px', fontWeight: 800 }}>₹{d.invoiced.toLocaleString()}</td>
+                                      <td style={{ padding: '12px 5px', fontSize: '11px', fontWeight: 800, color: '#dc2626' }}>₹{d.expenses.toLocaleString()}</td>
+                                      <td style={{ padding: '12px 5px', fontSize: '11px', fontWeight: 950, color: d.netProfit >= 0 ? '#0f52ba' : '#ef4444' }}>₹{d.netProfit.toLocaleString()}</td>
+                                  </tr>
+                              ))}
+                          </tbody>
+                      </table>
+                  </div>
+              </div>
+          </div>
+        </div>
+      )}
       </>
       )}
 
