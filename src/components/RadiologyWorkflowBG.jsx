@@ -159,68 +159,7 @@ const RadiologyWorkflowBG = () => {
 
   return (
     <div className="workflow-bg-overlay">
-      <div style={{ marginBottom: 16, padding: '16px', backgroundColor: 'rgba(0, 0, 0, 0.7)', borderRadius: '8px' }}>
-        <label style={{ display: 'block', marginBottom: '8px', color: '#00f2fe', fontWeight: 'bold' }}>
-          Upload DICOM ZIP File:
-        </label>
-        <input 
-          type="file" 
-          accept=".zip" 
-          onChange={handleZipUpload}
-          disabled={isLoading}
-          style={{ marginBottom: '8px' }}
-        />
-        {isLoading && (
-          <div style={{ color: '#00f2fe', marginTop: '8px' }}>
-            Loading DICOM files...
-          </div>
-        )}
-        {error && (
-          <div style={{ 
-            color: '#ff4444', 
-            backgroundColor: 'rgba(255, 68, 68, 0.1)', 
-            padding: '8px', 
-            borderRadius: '4px',
-            marginTop: '8px',
-            border: '1px solid #ff4444'
-          }}>
-            {error}
-          </div>
-        )}
-        {dicomFiles.length > 0 && (
-          <div style={{ color: '#00ff00', marginTop: '8px' }}>
-            ✓ Loaded {dicomFiles.length} DICOM file(s)
-          </div>
-        )}
-      </div>
-      {dicomFiles.length > 0 && (
-        <div style={{ 
-          padding: '16px', 
-          backgroundColor: 'rgba(0, 0, 0, 0.7)', 
-          borderRadius: '8px',
-          marginBottom: '16px'
-        }}>
-          <div style={{ color: '#00f2fe', marginBottom: '12px', fontWeight: 'bold' }}>
-            Viewing: {dicomFiles[0].name}
-          </div>
-          <div
-            ref={viewerRef}
-            style={{ 
-              width: '100%',
-              maxWidth: '512px', 
-              height: '512px', 
-              border: '2px solid #00f2fe', 
-              backgroundColor: '#000',
-              boxShadow: '0 0 20px rgba(0, 242, 254, 0.3)'
-            }}
-          />
-          {dicomFiles.length > 1 && (
-            <div style={{ color: '#888', marginTop: '8px', fontSize: '14px' }}>
-              Note: Showing first file. Total files: {dicomFiles.length}
-            </div>
-          )}
-        </div>
-      )}
+      {/* DICOM Upload and Viewer removed for cleaner login interface */}
       {/* ...existing SVG workflow code... */}
       <svg className="workflow-svg" viewBox="0 0 1000 1000" preserveAspectRatio="xMidYMid slice">
         {/* Connection Paths */}

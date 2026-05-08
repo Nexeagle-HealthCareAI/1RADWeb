@@ -2962,7 +2962,7 @@ export default function AdminBoard() {
         {/* Level 1: Tactical Control Deck */}
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', marginBottom: '40px' }}>
           <div>
-            <h2 style={{ fontSize: '13px', fontWeight: 950, textTransform: 'uppercase', letterSpacing: '3px', color: '#0f52ba', marginBottom: '12px' }}>Source Intelligence Matrix</h2>
+            <h2 style={{ fontSize: '13px', fontWeight: 950, textTransform: 'uppercase', letterSpacing: '3px', color: '#0f52ba', marginBottom: '12px' }}>Referral Intelligence Engine</h2>
             <div style={{ display: 'flex', alignItems: 'center', gap: '15px' }}>
                <div style={{ display: 'flex', background: '#f1f5f9', padding: '3px', borderRadius: '10px', border: '1px solid #e2e8f0' }}>
                   {['MATRIX', 'LOG', 'ROSTER', 'PATIENTS'].map(mode => (
@@ -2980,7 +2980,7 @@ export default function AdminBoard() {
                         cursor: 'pointer', transition: 'all 0.2s', letterSpacing: '0.5px'
                       }}
                     >
-                      {mode === 'MATRIX' ? 'SOURCE MATRIX' : mode === 'LOG' ? 'GLOBAL MISSION LOG' : mode === 'ROSTER' ? 'REFERRER ROSTER' : 'PATIENT REGISTRY'}
+                      {mode === 'MATRIX' ? 'SOURCE ANALYTICS' : mode === 'LOG' ? 'REFERRAL CASE LEDGER' : mode === 'ROSTER' ? 'PARTNER NETWORK' : 'MASTER PATIENT INDEX'}
                     </button>
                   ))}
                </div>
@@ -2994,9 +2994,9 @@ export default function AdminBoard() {
                 <input 
                   type="text" 
                   placeholder={
-                    referralViewMode === 'MATRIX' ? "FILTER SOURCES..." : 
-                    referralViewMode === 'LOG' ? "SEARCH MISSIONS..." : 
-                    referralViewMode === 'ROSTER' ? "FILTER ROSTER..." : "SEARCH REGISTRY..."
+                    referralViewMode === 'MATRIX' ? "FILTER ANALYTICS..." : 
+                    referralViewMode === 'LOG' ? "SEARCH CASE LEDGER..." : 
+                    referralViewMode === 'ROSTER' ? "FILTER NETWORK..." : "SEARCH MASTER INDEX..."
                   }
                   value={
                     referralViewMode === 'MATRIX' ? referralMatrixSearch : 
