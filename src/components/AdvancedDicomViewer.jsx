@@ -601,6 +601,7 @@ const AdvancedDicomViewer = ({
     let lastPanPosition = null;
     let isPanning = false;
     let touchStartTime = 0;
+    let isSliceGesture = false;
     
     const getTouchDistance = (touch1, touch2) => {
       const dx = touch1.clientX - touch2.clientX;
@@ -618,16 +619,25 @@ const AdvancedDicomViewer = ({
     const handleTouchStart = (e) => {
       touchStartTime = Date.now();
       
-      if (e.touches.length === 2) {
+      if (e.touches.length === 3) {
+        // Three-finger gesture for slice navigation
+        isSliceGesture = true;
+        isPinching = false;
+        isPanning = false;
+        e.preventDefault();
+        console.log('[DICOM] Three-finger slice gesture started');
+      } else if (e.touches.length === 2) {
         // Two-finger gestures (pinch zoom)
         isPinching = true;
         isPanning = false;
+        isSliceGesture = false;
         initialPinchDistance = getTouchDistance(e.touches[0], e.touches[1]);
         e.preventDefault();
       } else if (e.touches.length === 1) {
         // Single finger gestures (pan or tap)
         isPanning = true;
         isPinching = false;
+        isSliceGesture = false;
         lastPanPosition = {
           x: e.touches[0].clientX,
           y: e.touches[0].clientY
@@ -654,7 +664,41 @@ const AdvancedDicomViewer = ({
     };
     
     const handleTouchMove = (e) => {
-      if (e.touches.length === 2 && isPinching) {
+      if (e.touches.length === 3 && isSliceGesture) {
+        // Three-finger vertical swipe for slice navigation
+        const touch = e.touches[0];
+        if (lastPanPosition) {
+          const deltaY = touch.clientY - lastPanPosition.y;
+          
+          // Only navigate if significant vertical movement (>30px)
+          if (Math.abs(deltaY) > 30) {
+            const direction = deltaY > 0 ? 1 : -1; // Down = next, Up = previous
+            const newIndex = Math.max(0, Math.min(files.length - 1, currentImageIndex + direction));
+            
+            if (newIndex !== currentImageIndex && renderingEngineRef.current) {
+              const viewport = renderingEngineRef.current.getViewport(viewportId);
+              if (viewport) {
+                console.log(`[DICOM] Three-finger slice navigation: ${newIndex + 1}/${files.length}`);
+                viewport.setImageIdIndex(newIndex);
+                setCurrentImageIndex(newIndex);
+                if (onSliceChange) onSliceChange(newIndex, files.length);
+                
+                // Reset position to prevent continuous scrolling
+                lastPanPosition = {
+                  x: touch.clientX,
+                  y: touch.clientY
+                };
+              }
+            }
+          }
+        } else {
+          lastPanPosition = {
+            x: touch.clientX,
+            y: touch.clientY
+          };
+        }
+        e.preventDefault();
+      } else if (e.touches.length === 2 && isPinching) {
         // Pinch zoom
         const currentDistance = getTouchDistance(e.touches[0], e.touches[1]);
         const scaleFactor = currentDistance / initialPinchDistance;
@@ -686,7 +730,7 @@ const AdvancedDicomViewer = ({
         
         initialPinchDistance = currentDistance;
         e.preventDefault();
-      } else if (e.touches.length === 1 && isPanning && lastPanPosition) {
+      } else if (e.touches.length === 1 && isPanning && lastPanPosition && !isSliceGesture) {
         // Single finger pan (only if touch has moved significantly)
         const touch = e.touches[0];
         const deltaX = touch.clientX - lastPanPosition.x;
@@ -739,6 +783,10 @@ const AdvancedDicomViewer = ({
     const handleTouchEnd = (e) => {
       const touchDuration = Date.now() - touchStartTime;
       
+      if (e.touches.length < 3) {
+        isSliceGesture = false;
+      }
+      
       if (e.touches.length < 2) {
         isPinching = false;
       }
@@ -746,9 +794,10 @@ const AdvancedDicomViewer = ({
       if (e.touches.length === 0) {
         isPanning = false;
         lastPanPosition = null;
+        isSliceGesture = false;
         
         // Handle single tap for tool activation (if it was a quick tap, not a pan)
-        if (touchDuration < 200 && !isPinching) {
+        if (touchDuration < 200 && !isPinching && !isSliceGesture) {
           // This was likely a tap, let it through for tool interaction
           // Don't prevent default to allow tool events
         }
@@ -759,6 +808,7 @@ const AdvancedDicomViewer = ({
     const handleTouchCancel = (e) => {
       isPinching = false;
       isPanning = false;
+      isSliceGesture = false;
       lastPanPosition = null;
     };
     
@@ -1778,28 +1828,36 @@ const AdvancedDicomViewer = ({
           color: 'white',
           padding: '12px 20px',
           borderRadius: '25px',
-          fontSize: '11px',
+          fontSize: '10px',
           zIndex: 100,
           border: '2px solid rgba(59, 130, 246, 0.3)',
           display: 'flex',
           alignItems: 'center',
-          gap: '12px',
+          gap: '10px',
           pointerEvents: 'none',
           animation: 'fadeInOut 8s ease-in-out infinite',
-          boxShadow: '0 8px 32px rgba(0,0,0,0.4)'
+          boxShadow: '0 8px 32px rgba(0,0,0,0.4)',
+          maxWidth: '90vw',
+          flexWrap: 'wrap',
+          justifyContent: 'center'
         }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-            <span style={{ fontSize: '16px' }}>🤏</span>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+            <span style={{ fontSize: '14px' }}>🤏</span>
             <span>Pinch: Zoom</span>
           </div>
           <span style={{ color: 'rgba(255,255,255,0.5)' }}>•</span>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-            <span style={{ fontSize: '16px' }}>👆</span>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+            <span style={{ fontSize: '14px' }}>👆</span>
             <span>Drag: Pan</span>
           </div>
           <span style={{ color: 'rgba(255,255,255,0.5)' }}>•</span>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-            <span style={{ fontSize: '16px' }}>👆👆</span>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+            <span style={{ fontSize: '14px' }}>👆👆👆</span>
+            <span>3-Finger: Slices</span>
+          </div>
+          <span style={{ color: 'rgba(255,255,255,0.5)' }}>•</span>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+            <span style={{ fontSize: '14px' }}>👆👆</span>
             <span>Double-tap: Reset</span>
           </div>
         </div>

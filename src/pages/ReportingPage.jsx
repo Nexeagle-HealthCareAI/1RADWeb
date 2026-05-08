@@ -2,6 +2,11 @@ import React, { useState, useRef, useEffect, useMemo, useCallback } from 'react'
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import JSZip from 'jszip';
 import dicomParser from 'dicom-parser';
+import AdvancedDicomViewer from '../components/AdvancedDicomViewer';
+import apiClient, { BASE_URL } from '../api/apiClient';
+import { DicomCache } from '../utils/DicomCache';
+import { dicomOptimizer } from '../utils/DicomPerformanceOptimizer';
+import { jwtDecode } from 'jwt-decode';
 
 const ReportingPage = () => {
   const navigate = useNavigate();
