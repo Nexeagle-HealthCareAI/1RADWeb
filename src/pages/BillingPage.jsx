@@ -35,6 +35,7 @@ export default function BillingPage() {
   const [newInvoiceData, setNewInvoiceData] = useState({
     patientName: '',
     items: [{ description: '', amount: 0, quantity: 1 }],
+    discountAmount: 0,
     paymentMethod: 'CASH'
   });
   const [paymentMethod, setPaymentMethod] = useState('CASH');
@@ -555,6 +556,7 @@ export default function BillingPage() {
       await apiClient.post('/finance/invoices', {
         patientId: selectedPatient.patientId,
         appointmentId: newInvoiceData.items.find(it => it.appointmentId)?.appointmentId || null,
+        discountAmount: Number(newInvoiceData.discountAmount || 0),
         items: newInvoiceData.items.map(it => ({
           description: it.description,
           amount: Number(it.amount),
@@ -565,7 +567,7 @@ export default function BillingPage() {
       setIsNewInvoiceDrawerOpen(false);
       setSelectedPatient(null);
       setPatientSearchQuery('');
-      setNewInvoiceData({ patientName: '', items: [{ description: '', amount: 0, quantity: 1 }], paymentMethod: 'CASH' });
+      setNewInvoiceData({ patientName: '', items: [{ description: '', amount: 0, quantity: 1 }], discountAmount: 0, paymentMethod: 'CASH' });
       fetchInvoices();
       fetchStats();
       alert('INVOICE GENERATED: Financial record successfully added to ledger.');

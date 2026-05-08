@@ -243,14 +243,20 @@ export default function TechnicianPage() {
           
           console.log(`[TECH_LOAD] CORS error detected, trying API proxy fallback...`);
           try {
-            const proxyResponse = await apiClient.get(`/Study/proxy-dicom`, {
+            const proxyResponse = await apiClient.get(`/Study/proxy-asset`, {
               params: { url: asset.remoteUrl },
               responseType: 'blob'
             });
             
-            if (proxyResponse.data) {
+            if (proxyResponse.data && proxyResponse.status === 200) {
               console.log(`[TECH_LOAD] ✅ API proxy successful`);
-              response = proxyResponse;
+              // Convert axios response to fetch-like response
+              response = {
+                ok: true,
+                status: proxyResponse.status,
+                blob: async () => proxyResponse.data,
+                headers: new Headers(proxyResponse.headers)
+              };
             } else {
               throw new Error(`CORS_ERROR: Cross-origin request blocked and API proxy failed. ${fetchError.message}`);
             }

@@ -611,28 +611,34 @@ const ReportingPage = () => {
     try {
       console.log(`[DICOM_TEST] Testing connection to: ${asset.remoteUrl}`);
       const token = sessionStorage.getItem('1rad_token') || sessionStorage.getItem('1rad_initiation_token');
-      const proxyUrl = `${BASE_URL}/Study/proxy-asset?url=${encodeURIComponent(asset.remoteUrl)}`;
 
       // Try direct first
       try {
         const headResponse = await fetch(asset.remoteUrl, { method: 'HEAD', mode: 'cors' });
         if (headResponse.ok) {
-          console.log(`[DICOM_TEST] Direct access successful.`);
+          console.log(`[DICOM_TEST] ✅ Direct access successful.`);
           return { success: true, useProxy: false };
         }
       } catch (e) {
-        console.warn(`[DICOM_TEST] Direct access failed, trying secure proxy...`);
+        console.warn(`[DICOM_TEST] Direct access failed (likely CORS), trying secure proxy...`);
       }
 
-      // Try proxy
-      const proxyResponse = await fetch(proxyUrl, { 
-        method: 'HEAD', 
-        headers: { 'Authorization': `Bearer ${token}` } 
-      });
+      // Try proxy using apiClient (which handles auth automatically)
+      try {
+        const proxyResponse = await apiClient.get(`/Study/proxy-asset`, {
+          params: { url: asset.remoteUrl },
+          responseType: 'blob',
+          // Add a small timeout for the test
+          timeout: 5000
+        });
 
-      if (proxyResponse.ok) {
-        console.log(`[DICOM_TEST] Secure proxy access successful.`);
-        return { success: true, useProxy: true, proxyUrl: proxyUrl };
+        if (proxyResponse.status === 200 && proxyResponse.data) {
+          console.log(`[DICOM_TEST] ✅ Secure proxy access successful.`);
+          return { success: true, useProxy: true };
+        }
+      } catch (proxyError) {
+        console.error(`[DICOM_TEST] Proxy test failed:`, proxyError);
+        return { success: false, error: `PROXY_ERROR: ${proxyError.message}` };
       }
 
       return { success: false, error: "ACCESS_DENIED: Study unreachable via direct or secure proxy." };
@@ -750,19 +756,29 @@ const ReportingPage = () => {
             if (retryCount === 0) {
               console.log(`[DICOM_LOAD] CORS error detected, trying API proxy fallback...`);
               try {
-                const proxyResponse = await apiClient.get(`/Study/proxy-dicom`, {
+                const proxyResponse = await apiClient.get(`/Study/proxy-asset`, {
                   params: { url: asset.remoteUrl },
                   responseType: 'blob'
                 });
                 
-                if (proxyResponse.data) {
+                if (proxyResponse.data && proxyResponse.status === 200) {
                   console.log(`[DICOM_LOAD] ✅ API proxy successful`);
-                  response = proxyResponse;
-                  response.ok = true; // Axios doesn't use .ok property
+                  // Convert axios response to fetch-like response
+                  response = {
+                    ok: true,
+                    status: proxyResponse.status,
+                    blob: async () => proxyResponse.data,
+                    headers: new Headers(proxyResponse.headers)
+                  };
                   break;
                 }
               } catch (proxyError) {
                 console.warn(`[DICOM_LOAD] API proxy failed:`, proxyError);
+                console.warn(`[DICOM_LOAD] Proxy error details:`, {
+                  status: proxyError.response?.status,
+                  statusText: proxyError.response?.statusText,
+                  message: proxyError.message
+                });
                 // Continue with original CORS error handling
               }
             }
