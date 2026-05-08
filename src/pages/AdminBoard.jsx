@@ -98,6 +98,11 @@ export default function AdminBoard() {
   const [outlookData, setOutlookData] = useState(null);
   const [loadingOutlook, setLoadingOutlook] = useState(false);
   const [isExporting, setIsExporting] = useState(false);
+  
+  // Referral Payout State
+  const [isPayoutDrawerOpen, setIsPayoutDrawerOpen] = useState(false);
+  const [isSavingPayout, setIsSavingPayout] = useState(false);
+  const [editPayout, setEditPayout] = useState({ referrerId: '', referrerName: '', amount: 0, modality: 'MRI', remarks: '', referenceNumber: '' });
   const [showExportOverlay, setShowExportOverlay] = useState(false);
   const [exportParams, setExportParams] = useState({ start: TODAY, end: TODAY, allTime: false });
   const [loading, setLoading] = useState(false);
@@ -1062,6 +1067,36 @@ export default function AdminBoard() {
       } catch (err) {
         console.error('[FINANCE] Delete failed', err);
       }
+    }
+  };
+
+  const handleSavePayout = async (e) => {
+    e.preventDefault();
+    if (!editPayout.referrerId) {
+      alert("PROTOCOL ERROR: Referrer identity is missing. Please ensure a valid partner is selected.");
+      return;
+    }
+
+    try {
+      setIsSavingPayout(true);
+      const response = await apiClient.post('/referrers/commissions', {
+        referrerId: editPayout.referrerId,
+        amount: parseFloat(editPayout.amount),
+        modality: editPayout.modality,
+        referenceNumber: editPayout.referenceNumber,
+        remarks: editPayout.remarks
+      });
+
+      if (response.data?.commissionId) {
+        setIsPayoutDrawerOpen(false);
+        fetchReferralIntelligence();
+        alert('PAYMENT LOGGED: Financial commission recorded in strategic ledger.');
+      }
+    } catch (err) {
+      console.error('[PAYOUT] Transaction failure:', err);
+      alert('SYSTEM ERROR: Could not commit payout to global registry.');
+    } finally {
+      setIsSavingPayout(false);
     }
   };
 
@@ -3093,7 +3128,7 @@ export default function AdminBoard() {
                             onChange={(e) => setExportParams(prev => ({ ...prev, allTime: e.target.checked }))} 
                             id="export-all-time"
                           />
-                          <label htmlFor="export-all-time" style={{ fontSize: '11px', fontWeight: 800, color: '#1e293b' }}>ALL HISTORICAL MISSIONS</label>
+                          <label htmlFor="export-all-time" style={{ fontSize: '11px', fontWeight: 800, color: '#1e293b' }}>ALL HISTORICAL REFERRALS</label>
                        </div>
 
                        {!exportParams.allTime && (
@@ -3264,7 +3299,7 @@ export default function AdminBoard() {
                   })}
                 </div>
 
-                {/* Detail Pane: Mission Briefing */}
+                {/* Detail Pane: Referral Briefing */}
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
                   {expandedReferrer ? (
                     (() => {
@@ -3274,13 +3309,41 @@ export default function AdminBoard() {
 
                       return (
                         <div style={{ background: 'white', borderRadius: '30px', border: '1px solid #e2e8f0', overflow: 'hidden', boxShadow: '0 10px 40px rgba(0,0,0,0.02)' }}>
+                          <div style={{ padding: '35px 40px', borderBottom: '1px solid #f1f5f9', display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: '#fcfdfe' }}>
+                             <div>
+                                <div style={{ fontSize: '10px', fontWeight: 950, color: '#0f52ba', letterSpacing: '2px', marginBottom: '8px' }}>REFERRAL BRIEFING</div>
+                                <div style={{ fontSize: '22px', fontWeight: 950, color: '#1e293b', letterSpacing: '-0.5px' }}>{(selected.name || 'Anonymous').toUpperCase()}</div>
+                             </div>
+                             <button 
+                               onClick={() => {
+                                 const refObj = referralIntelligence.find(ri => ri.name === selected.name);
+                                 setEditPayout({
+                                   referrerId: refObj?.referrerId || '',
+                                   referrerName: selected.name,
+                                   amount: 0,
+                                   modality: 'MRI',
+                                   remarks: ''
+                                 });
+                                 setIsPayoutDrawerOpen(true);
+                               }}
+                               style={{ 
+                                 padding: '12px 25px', borderRadius: '15px', background: '#0f52ba', color: 'white', 
+                                 fontSize: '11px', fontWeight: 950, border: 'none', cursor: 'pointer', 
+                                 boxShadow: '0 4px 15px rgba(15, 82, 186, 0.2)', transition: 'all 0.2s',
+                                 display: 'flex', alignItems: 'center', gap: '10px'
+                               }}
+                             >
+                               <span style={{ fontSize: '16px' }}>💸</span> RECORD PAYOUT
+                             </button>
+                          </div>
+
                           <div style={{ padding: '30px' }}>
-                             {/* Mission Log Table */}
+                             {/* Referral Case Table */}
                              <div style={{ borderRadius: '20px', border: '1px solid #f1f5f9', overflow: 'hidden' }}>
                                 <table style={{ width: '100%', borderCollapse: 'collapse' }}>
                                   <thead style={{ background: '#fcfdfe' }}>
                                     <tr style={{ borderBottom: '1px solid #f1f5f9' }}>
-                                      <th style={{ padding: '15px 25px', textAlign: 'left', fontSize: '9px', fontWeight: 950, color: '#94a3b8', letterSpacing: '1px' }}>MISSION_ID</th>
+                                      <th style={{ padding: '15px 25px', textAlign: 'left', fontSize: '9px', fontWeight: 950, color: '#94a3b8', letterSpacing: '1px' }}>REFERRAL_ID</th>
                                       <th style={{ padding: '15px 25px', textAlign: 'left', fontSize: '9px', fontWeight: 950, color: '#94a3b8', letterSpacing: '1px' }}>TARGET_IDENTITY</th>
                                       <th style={{ padding: '15px 25px', textAlign: 'left', fontSize: '9px', fontWeight: 950, color: '#94a3b8', letterSpacing: '1px' }}>CONTACT / SOURCE</th>
                                       <th style={{ padding: '15px 25px', textAlign: 'left', fontSize: '9px', fontWeight: 950, color: '#94a3b8', letterSpacing: '1px' }}>CLINICAL PACKAGE</th>
@@ -3326,17 +3389,17 @@ export default function AdminBoard() {
                     <div style={{ padding: '100px', textAlign: 'center', background: 'white', borderRadius: '30px', border: '1px dashed #cbd5e1' }}>
                        <div style={{ fontSize: '50px', marginBottom: '20px' }}>🧭</div>
                        <div style={{ fontSize: '14px', fontWeight: 950, color: '#1e293b' }}>SELECT A SOURCE FROM ROSTER</div>
-                       <p style={{ fontSize: '11px', color: '#94a3b8', marginTop: '10px' }}>Pick a referring target on the left to initialize the mission briefing.</p>
+                       <p style={{ fontSize: '11px', color: '#94a3b8', marginTop: '10px' }}>Pick a referring target on the left to initialize the referral details.</p>
                     </div>
                   )}
                 </div>
               </div>
             ) : (
-              /* Global Mission Matrix View */
+              /* Global Referral Matrix View */
               <div style={{ background: 'white', borderRadius: '24px', border: '1px solid #e2e8f0', overflow: 'hidden', boxShadow: '0 4px 20px rgba(0,0,0,0.01)', padding: '30px' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '25px', flexWrap: 'wrap', gap: '15px' }}>
                   <div>
-                    <h3 style={{ fontSize: '18px', fontWeight: 900, color: '#1e293b', margin: 0 }}>GLOBAL REFERRAL MATRIX</h3>
+                    <h3 style={{ fontSize: '18px', fontWeight: 900, color: '#1e293b', margin: 0 }}>REFERRAL CASE LEDGER</h3>
                     <p style={{ fontSize: '12px', color: '#64748b', marginTop: '4px' }}>Temporal breakdown of patient intelligence</p>
                   </div>
                   <div style={{ display: 'flex', gap: '15px', alignItems: 'center' }}>
@@ -3464,8 +3527,8 @@ export default function AdminBoard() {
             {(referralViewMode === 'LOG' ? (temporalMatrixData?.rows.length === 0) : (temporalPatients.length === 0)) && (
               <div style={{ padding: '150px 20px', textAlign: 'center', background: 'white', borderRadius: '40px', border: '1px dashed #cbd5e1' }}>
                 <div style={{ fontSize: '60px', marginBottom: '25px' }}>📡</div>
-                <div style={{ fontSize: '18px', fontWeight: 950, color: '#1e293b' }}>NO RECON SIGNALS FOUND</div>
-                <p style={{ fontSize: '12px', color: '#94a3b8', marginTop: '10px', maxWidth: '350px', margin: '15px auto', fontWeight: 600 }}>The temporal scan yielded zero signatures. Synchronize parameters or check global registry.</p>
+                <div style={{ fontSize: '18px', fontWeight: 950, color: '#1e293b' }}>NO REFERRAL DATA FOUND</div>
+                <p style={{ fontSize: '12px', color: '#94a3b8', marginTop: '10px', maxWidth: '350px', margin: '15px auto', fontWeight: 600 }}>The active scan yielded zero signatures. Synchronize parameters or check global registry.</p>
               </div>
             )}
           </>
@@ -4232,6 +4295,7 @@ export default function AdminBoard() {
         </div>
       )}
 
+      {isPayoutDrawerOpen && renderPayoutDrawer()}
     </div>
   );
 
@@ -4292,6 +4356,75 @@ export default function AdminBoard() {
                   </button>
                </div>
             </form>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  function renderPayoutDrawer() {
+    return (
+      <div className="drawer-overlay" onClick={() => setIsPayoutDrawerOpen(false)} style={{ backdropFilter: 'blur(8px)', background: 'rgba(10, 22, 40, 0.4)', zIndex: 10000 }}>
+        <div className="drawer-content" style={{ padding: 0, width: '450px', background: 'white' }} onClick={e => e.stopPropagation()}>
+          <div style={{ padding: '35px', background: 'linear-gradient(135deg, #0f52ba 0%, #061a40 100%)', color: 'white' }}>
+             <h2 style={{ fontSize: '11px', fontWeight: 950, color: '#38bdf8', letterSpacing: '3px', textTransform: 'uppercase', marginBottom: '8px' }}>Fiscal Disbursement</h2>
+             <div style={{ fontSize: '20px', fontWeight: 950, letterSpacing: '-1px' }}>RECORD REFERRAL PAYOUT</div>
+             <p style={{ fontSize: '10px', color: 'rgba(255,255,255,0.6)', marginTop: '10px', fontWeight: 600 }}>Logging financial commission for institutional partners.</p>
+          </div>
+
+          <div style={{ padding: '35px' }}>
+             <form onSubmit={handleSavePayout}>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '25px' }}>
+                   <div className="form-group">
+                      <label style={{ display: 'block', fontSize: '9px', fontWeight: 950, color: '#94a3b8', letterSpacing: '2px', marginBottom: '10px' }}>PARTNER_IDENTITY</label>
+                      <input 
+                         type="text" disabled 
+                         value={editPayout.referrerName?.toUpperCase()} 
+                         style={{ width: '100%', border: 'none', borderBottom: '2px solid #f0f0f0', fontSize: '16px', fontWeight: 950, padding: '10px 0', background: 'transparent', color: '#1e293b' }}
+                      />
+                   </div>
+
+                   <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px' }}>
+                      <div className="form-group">
+                         <label style={{ display: 'block', fontSize: '9px', fontWeight: 950, color: '#94a3b8', letterSpacing: '2px', marginBottom: '10px' }}>DISBURSEMENT_AMOUNT (₹)</label>
+                         <input 
+                            type="number" required 
+                            value={editPayout.amount} 
+                            onChange={e => setEditPayout({...editPayout, amount: e.target.value})}
+                            style={{ width: '100%', border: 'none', borderBottom: '2px solid #f0f0f0', fontSize: '20px', fontWeight: 950, padding: '10px 0', outline: 'none', color: '#0f52ba' }}
+                         />
+                      </div>
+                      <div className="form-group">
+                         <label style={{ display: 'block', fontSize: '9px', fontWeight: 950, color: '#94a3b8', letterSpacing: '2px', marginBottom: '10px' }}>CLINICAL_MODALITY</label>
+                         <select 
+                            value={editPayout.modality} 
+                            onChange={e => setEditPayout({...editPayout, modality: e.target.value})}
+                            style={{ width: '100%', padding: '12px', borderRadius: '12px', border: '1px solid #eee', fontSize: '12px', fontWeight: 700, background: 'white' }}
+                         >
+                            {['MRI', 'CT', 'X-RAY', 'ULTRASOUND', 'DEXA', 'MAMMOGRAPHY', 'LAB'].map(m => <option key={m} value={m}>{m}</option>)}
+                         </select>
+                      </div>
+                   </div>
+
+                   <div className="form-group">
+                      <label style={{ display: 'block', fontSize: '9px', fontWeight: 950, color: '#94a3b8', letterSpacing: '2px', marginBottom: '10px' }}>TRANSACTION_REMARKS</label>
+                      <textarea 
+                         rows="3"
+                         value={editPayout.remarks} 
+                         placeholder="e.g. Incentive for March Neurology cases..."
+                         onChange={e => setEditPayout({...editPayout, remarks: e.target.value})}
+                         style={{ width: '100%', padding: '14px', borderRadius: '12px', border: '1px solid #eee', fontSize: '12px', fontWeight: 700, resize: 'none' }}
+                      />
+                   </div>
+                </div>
+
+                <div style={{ marginTop: '40px', display: 'flex', gap: '15px' }}>
+                   <button type="button" onClick={() => setIsPayoutDrawerOpen(false)} style={{ flex: 1, padding: '16px', borderRadius: '16px', border: '1px solid #eee', fontSize: '11px', fontWeight: 950, cursor: 'pointer' }}>ABORT</button>
+                   <button type="submit" disabled={isSavingPayout} style={{ flex: 2, padding: '16px', borderRadius: '16px', border: 'none', background: '#0f52ba', color: 'white', fontSize: '11px', fontWeight: 950, cursor: 'pointer' }}>
+                     {isSavingPayout ? 'COMMITTING...' : 'CONFIRM PAYOUT →'}
+                   </button>
+                </div>
+             </form>
           </div>
         </div>
       </div>

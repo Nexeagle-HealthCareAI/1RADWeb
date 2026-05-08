@@ -1,4 +1,5 @@
 import { useState, useMemo, useEffect, useCallback, useRef, useContext } from 'react';
+import { useNavigate } from 'react-router-dom';
 import dicomParser from 'dicom-parser';
 import apiClient from '../api/apiClient';
 import axios from 'axios';
@@ -16,66 +17,16 @@ const MODALITY_ICONS = {
   'MAMMOGRAPHY': '🎀'
 };
 
-// Legacy DicomPreview removed in favor of AdvancedDicomViewer
-
-const TEMPLATES = {
-  'NORMAL CHEST': { findings: 'The heart and mediastinal silhouettes are normal. Lungs are clear. No pleural effusion or pneumothorax.', impression: 'NORMAL CHEST X-RAY.' },
-  'NORMAL BRAIN': { findings: 'Brain parenchyma shows normal signal intensity. No space-occupying lesions. Ventricular system is normal.', impression: 'NO ACUTE INTRACRANIAL PATHOLOGY.' },
-  'NORMAL ABDOMEN': { findings: 'Liver, spleen, and kidneys appear normal. No free air or fluid in the peritoneal cavity.', impression: 'NO ACUTE ABDOMINAL PATHOLOGY DETECTED.' }
-};
-
 const TODAY = new Date().toLocaleDateString('en-CA');
-
-const renderDynamicFields = (template, structuredData, onFieldChange) => {
-  if (!template) return null;
-  try {
-    const rawContent = template.content || template.Content || '[]';
-    const sections = JSON.parse(rawContent);
-    return (
-      <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
-        {sections.map((section, idx) => (
-          <div key={section.id || idx} style={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: '16px', overflow: 'hidden' }}>
-            <div style={{ padding: '12px 20px', background: '#f8fafc', borderBottom: '1px solid #f1f5f9', display: 'flex', justifyContent: 'space-between' }}>
-              <span style={{ fontSize: '11px', fontWeight: 950, color: '#475569' }}>{section.title?.toUpperCase()}</span>
-            </div>
-            <textarea 
-              style={{ width: '100%', minHeight: '100px', padding: '15px', border: 'none', fontSize: '13px', outline: 'none', resize: 'vertical' }}
-              placeholder={`Enter observations...`}
-              value={structuredData[section.title] || ''}
-              onChange={(e) => onFieldChange(section.title, e.target.value)}
-            />
-          </div>
-        ))}
-      </div>
-    );
-  } catch (e) { return null; }
-};
 
 export default function DoctorBoard() {
   const { activeCenter } = useContext(AuthContext);
+  const navigate = useNavigate();
   const [cases, setCases] = useState([]);
   const [loading, setLoading] = useState(false);
-  const [view, setView] = useState('QUEUE'); // 'QUEUE', 'WORKSPACE', or 'HISTORY'
-  const [activeCase, setActiveCase] = useState(null);
-  const [loadedDicom, setLoadedDicom] = useState(null);
-  const [isDicomImage, setIsDicomImage] = useState(false);
+  const [view, setView] = useState('QUEUE'); // 'QUEUE' or 'HISTORY'
   
-  // Reporting Engine States (V4 Parallel)
-  const [activeTab, setActiveTab] = useState(localStorage.getItem('reporting_paradigm') || 'Structured');
-  const [editorText, setEditorText] = useState('');
-  const [structuredData, setStructuredData] = useState({});
-  const [templates, setTemplates] = useState([]);
-  const [keywordLibrary, setKeywordLibrary] = useState([]);
-  const [selectedTemplateId, setSelectedTemplateId] = useState(null);
-  const [lastFocusedField, setLastFocusedField] = useState(null);
   const [isPreviewOpen, setIsPreviewOpen] = useState(false);
-  const [isSaving, setIsSaving] = useState(false);
-  const [isFinalized, setIsFinalized] = useState(false);
-  const [advice, setAdvice] = useState('');
-  const [impression, setImpression] = useState('');
-  
-  const textareaRef = useRef(null);
-  const [isFinalizing, setIsFinalizing] = useState(false);
   const [currentSlice, setCurrentSlice] = useState(1);
   const [printModalData, setPrintModalData] = useState(null);
   const [currentReport, setCurrentReport] = useState({ findings: '', impression: '', advice: '', technique: '' });
@@ -214,130 +165,19 @@ export default function DoctorBoard() {
   };
 
   // --- HANDLERS ---
-  // --- REPORTING LOGIC (V4 INTEGRATION) ---
-  const fetchReportingContext = useCallback(async (appId) => {
-    setLoading(true);
-    try {
-      const [templRes, keyRes, protRes, reportRes] = await Promise.all([
-        apiClient.get('/reporting/templates'),
-        apiClient.get('/reporting/keywords'),
-        apiClient.get(`/Prescription/${activeCase?.doctorId || 'current'}`).catch(() => null),
-        apiClient.get(`/reporting/report/${appId}`).catch(() => ({ data: { success: false } }))
-      ]);
-
-      if (templRes.data?.success) setTemplates(templRes.data.data);
-      if (keyRes.data?.success) setKeywordLibrary(keyRes.data.data);
-      if (protRes?.data?.success) setProtocol(protRes.data.data);
-
-      if (reportRes.data?.success && reportRes.data.data) {
-        const r = reportRes.data.data;
-        if (r.findings && (r.findings.startsWith('{') || r.findings.startsWith('['))) {
-          try {
-            setStructuredData(JSON.parse(r.findings));
-          } catch (e) {
-            setEditorText(r.findings);
-          }
-        } else {
-          setEditorText(r.findings || '');
-        }
-        setAdvice(r.advice || '');
-        setImpression(r.impression || '');
-        setIsFinalized(r.isFinalized);
-        setActiveTab(r.reportingMode || 'Structured');
-        if (r.templateId) setSelectedTemplateId(r.templateId);
-      }
-    } catch (err) {
-      console.error('[DOCTOR] Context fetch failed', err);
-    } finally {
-      setLoading(false);
-    }
-  }, [activeCase]);
-
   const handleOpenWorkspace = (c) => {
-    setActiveCase(c);
-    setStructuredData({});
-    setEditorText('');
-    setAdvice('');
-    setImpression('');
-    setLoadedDicom(null);
-    setView('WORKSPACE');
-    
     // Update status to reporting if not already
     if (c.status?.toLowerCase() !== 'reporting') {
       handleStatusUpdate(c.appointmentId || c.id, 'reporting');
     }
 
-    fetchReportingContext(c.appointmentId || c.id);
-  };
-
-  const formatText = (style) => {
-    const el = textareaRef.current;
-    if (!el) return;
-    el.focus();
-    if (style === 'bold') document.execCommand('bold', false, null);
-    else if (style === 'italic') document.execCommand('italic', false, null);
-    else if (style === 'underline') document.execCommand('underline', false, null);
-    else if (style === 'list') document.execCommand('insertUnorderedList', false, null);
-    setEditorText(el.innerHTML);
-  };
-
-  const handleStructuredChange = (fieldId, value) => {
-    setStructuredData(prev => ({ ...prev, [fieldId]: value }));
-  };
-
-  const handleApplyTemplate = (template) => {
-    if (typeof template === 'string') {
-      const t = TEMPLATES[template];
-      if (t) {
-        setEditorText(t.findings);
-        if (textareaRef.current) textareaRef.current.innerHTML = t.findings;
-      }
-      return;
-    }
-    
-    setSelectedTemplateId(template.id);
-    setActiveTab('Structured');
-    try {
-      const sections = JSON.parse(template.content || template.Content || '[]');
-      const initialData = {};
-      sections.forEach(s => { initialData[s.title] = s.content || ''; });
-      setStructuredData(initialData);
-    } catch (e) {
-      setEditorText(template.content || '');
-      setActiveTab('Narrative Editor');
-    }
-  };
-
-  const handleSaveReport = async (finalizing = false) => {
-    setIsSaving(true);
-    try {
-      const payload = {
-        appointmentId: activeCase.appointmentId || activeCase.id,
-        templateId: selectedTemplateId,
-        findings: activeTab === 'Structured' ? JSON.stringify(structuredData) : editorText,
-        impression: activeTab === 'Structured' ? (structuredData['Impression'] || structuredData['IMPRESSION'] || '') : impression,
-        advice: advice || '',
-        isFinalized: finalizing,
-        reportingMode: activeTab
-      };
-
-      await apiClient.post('/reporting/save', payload);
-      alert(finalizing ? 'Report finalized successfully.' : 'Draft saved.');
-      if (finalizing) {
-        setIsFinalized(true);
-        setView('QUEUE');
-        fetchCases();
-      }
-    } catch (err) {
-      alert(`Save failed: ${err.message}`);
-    } finally {
-      setIsSaving(false);
-    }
+    // Navigate to the ReportingPage with the appointment ID
+    navigate(`/reporting/${c.appointmentId || c.id}`);
   };
 
   const handlePreviewPrint = async (c) => {
     try {
-      const docId = c.doctorId || activeCase?.doctorId || localStorage.getItem('doctorId') || localStorage.getItem('UserId');
+      const docId = c.doctorId || localStorage.getItem('doctorId') || localStorage.getItem('UserId');
       if (!docId || docId === 'null') {
         console.warn('[1RAD] No Doctor ID found for branding resolution');
       }
@@ -358,40 +198,23 @@ export default function DoctorBoard() {
         localLetterheadUrl: ''
       };
 
-      // 2. Prepare Report Content (Live Sync)
-      if (view === 'WORKSPACE') {
-        // Use live editor state
-        let findings = '';
-        if (activeTab === 'Structured') {
-          findings = Object.entries(structuredData)
-            .filter(([key]) => key.toLowerCase() !== 'impression')
-            .map(([key, val]) => `
-            <div style="margin-bottom: 15px;">
-              <strong style="color: ${newProtocol.fontColor}; text-transform: uppercase; font-size: 0.9em;">${key.replace(/_/g, ' ')}:</strong>
-              <div>${val}</div>
-            </div>
-          `).join('');
-        } else {
-          findings = editorText;
-        }
-
+      // 2. Prepare Report Content (Archive View)
+      // Fetch from API since we're now using separate reporting page
+      const reportRes = await apiClient.get(`/Reporting/mission/${c.id || c.appointmentId}`).catch(() => null);
+      if (reportRes?.data) {
         setCurrentReport({
-          findings: findings,
-          impression: activeTab === 'Structured' ? (structuredData['Impression'] || structuredData['IMPRESSION'] || '') : impression,
-          advice: advice || '',
-          technique: ''
+          findings: reportRes.data.findings || '',
+          impression: reportRes.data.impression || '',
+          advice: reportRes.data.advice || '',
+          technique: reportRes.data.technique || ''
         });
       } else {
-        // Archive View: Fetch from API
-        const reportRes = await apiClient.get(`/Reporting/mission/${c.id || c.appointmentId}`).catch(() => null);
-        if (reportRes?.data) {
-          setCurrentReport({
-            findings: reportRes.data.findings || '',
-            impression: reportRes.data.impression || '',
-            advice: reportRes.data.advice || '',
-            technique: reportRes.data.technique || ''
-          });
-        }
+        setCurrentReport({
+          findings: '',
+          impression: '',
+          advice: '',
+          technique: ''
+        });
       }
 
       // 3. PDF Hydration
@@ -950,119 +773,6 @@ export default function DoctorBoard() {
     </div>
   );
 
-  const renderWorkspace = () => (
-    <div style={{ height: 'calc(100vh - 60px)', display: 'flex', flexDirection: 'column', background: '#f8fafc' }}>
-       {/* COMMAND HEADER */}
-       <div style={{ padding: '15px 40px', background: 'white', borderBottom: '1px solid #e2e8f0', display: 'flex', justifyContent: 'space-between', alignItems: 'center', boxShadow: '0 4px 20px rgba(0,0,0,0.02)' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '25px' }}>
-             <button onClick={() => setView('QUEUE')} style={{ background: '#f1f5f9', border: '1px solid #e2e8f0', color: '#1a1a2e', padding: '10px 20px', borderRadius: '12px', fontSize: '11px', fontWeight: 900, cursor: 'pointer' }}>← EXIT COMMAND</button>
-             <div>
-                <div style={{ fontSize: '18px', fontWeight: 950, color: '#1a1a2e' }}>{activeCase.patientName.toUpperCase()}</div>
-                <div style={{ fontSize: '10px', color: '#0f52ba', fontWeight: 900, letterSpacing: '1px' }}>STUDY: {activeCase.service}</div>
-              </div>
-          </div>
-          <div style={{ display: 'flex', gap: '15px', alignItems: 'center' }}>
-             <button onClick={() => handleSaveReport(false)} className="btn btn-outline" style={{ fontSize: '11px' }}>💾 SAVE DRAFT</button>
-             <button onClick={() => handlePreviewPrint(activeCase)} className="btn btn-outline" style={{ fontSize: '11px' }}>👁️ PREVIEW</button>
-             <button 
-               onClick={() => handleSaveReport(true)} 
-               disabled={isSaving}
-               style={{ background: '#2ecc71', color: 'white', border: 'none', borderRadius: '12px', padding: '12px 30px', fontWeight: 950, fontSize: '12px', cursor: 'pointer', opacity: isSaving ? 0.7 : 1 }}
-             >{isSaving ? 'AUTHORIZING...' : 'DEPLOY FINAL DISPATCH'}</button>
-          </div>
-       </div>
-
-       <div style={{ flex: 1, display: 'flex', overflow: 'hidden' }}>
-          <div style={{ flex: 1.2, background: '#050510', borderRight: '1px solid #e2e8f0', position: 'relative' }}>
-             <AdvancedDicomViewer 
-               files={loadedDicom ? [loadedDicom] : []}
-               activeCase={activeCase}
-               onUpload={() => document.getElementById('dicom-upload').click()}
-             />
-             <input id="dicom-upload" type="file" multiple style={{ display: 'none' }} onChange={(e) => setLoadedDicom(e.target.files[0])} />
-          </div>
-
-          {/* REPORTING AREA */}
-          <div style={{ flex: 1, display: 'flex', flexDirection: 'column', background: 'white' }}>
-             <div style={{ display: 'flex', borderBottom: '1px solid #e2e8f0', background: '#f8fafc' }}>
-                {['Structured', 'Narrative Editor'].map(tab => (
-                   <button 
-                     key={tab} 
-                     onClick={() => setActiveTab(tab)}
-                     style={{ flex: 1, padding: '15px', border: 'none', background: activeTab === tab ? 'white' : 'transparent', borderBottom: activeTab === tab ? '3px solid #0f52ba' : 'none', fontSize: '11px', fontWeight: 950, color: activeTab === tab ? '#0f52ba' : '#64748b', cursor: 'pointer' }}
-                   >{tab.toUpperCase()}</button>
-                ))}
-             </div>
-
-             <div style={{ flex: 1, overflowY: 'auto', padding: '30px' }}>
-                {activeTab === 'Structured' ? (
-                   <div style={{ display: 'flex', flexDirection: 'column', gap: '25px' }}>
-                      <select 
-                        style={{ width: '100%', padding: '12px', borderRadius: '12px', border: '1px solid #e2e8f0', fontSize: '12px', fontWeight: 700 }}
-                        value={selectedTemplateId || ''}
-                        onChange={(e) => {
-                           const tpl = templates.find(t => t.id === e.target.value);
-                           if (tpl) handleApplyTemplate(tpl);
-                        }}
-                      >
-                         <option value="">Select Protocol Template...</option>
-                         {templates.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
-                      </select>
-                      {renderDynamicFields(templates.find(t => t.id === selectedTemplateId), structuredData, handleStructuredChange)}
-                   </div>
-                ) : (
-                   <div style={{ display: 'flex', flexDirection: 'column', gap: '20px', height: '100%' }}>
-                      <div style={{ display: 'flex', gap: '5px', padding: '10px', background: '#f8fafc', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
-                         {['bold', 'italic', 'underline', 'list'].map(style => (
-                            <button key={style} onClick={() => formatText(style)} style={{ padding: '8px 12px', borderRadius: '8px', border: '1px solid #cbd5e1', background: 'white', fontWeight: 900, fontSize: '11px', cursor: 'pointer' }}>{style.charAt(0).toUpperCase()}</button>
-                         ))}
-                      </div>
-                      <div 
-                        ref={textareaRef}
-                        contentEditable="true"
-                        onInput={(e) => setEditorText(e.currentTarget.innerHTML)}
-                        dangerouslySetInnerHTML={{ __html: editorText }}
-                        style={{ flex: 1, minHeight: '300px', border: '1px solid #e2e8f0', borderRadius: '16px', padding: '25px', fontSize: '14px', lineHeight: '1.6', outline: 'none', background: 'white' }}
-                      />
-                      <div style={{ marginTop: '20px' }}>
-                         <label style={{ fontSize: '10px', fontWeight: 950, color: '#0f52ba', display: 'block', marginBottom: '8px' }}>CLINICAL IMPRESSION</label>
-                         <textarea 
-                           value={impression}
-                           onChange={(e) => setImpression(e.target.value)}
-                           placeholder="Enter final study impression..."
-                           style={{ width: '100%', padding: '15px', borderRadius: '16px', border: '1px solid #e2e8f0', fontSize: '13px', minHeight: '100px', outline: 'none' }}
-                         />
-                      </div>
-                   </div>
-                )}
-                <div style={{ marginTop: '30px' }}>
-                   <label style={{ fontSize: '10px', fontWeight: 950, color: '#64748b', textTransform: 'uppercase', marginBottom: '10px', display: 'block' }}>Clinical Advice</label>
-                   <textarea 
-                     value={advice} 
-                     onChange={(e) => setAdvice(e.target.value)}
-                     style={{ width: '100%', minHeight: '100px', padding: '15px', borderRadius: '16px', border: '1px solid #e2e8f0', fontSize: '13px', outline: 'none' }}
-                   />
-                </div>
-             </div>
-          </div>
-       </div>
-
-       {isFinalizing && (
-          <div className="modal-overlay" style={{ background: 'rgba(10, 22, 40, 0.9)', zIndex: 1000 }}>
-             <div style={{ width: '500px', background: 'white', borderRadius: '24px', padding: '40px', textAlign: 'center' }}>
-                <div style={{ fontSize: '48px', marginBottom: '20px' }}>📜</div>
-                <h2 style={{ fontSize: '22px', fontWeight: 950, color: '#1a1a2e', marginBottom: '10px' }}>Finalize Clinical Dispatch?</h2>
-                <p style={{ fontSize: '14px', color: '#64748b', marginBottom: '30px' }}>This action will authorize the final diagnostic report and notify the patient. This action cannot be undone.</p>
-                <div style={{ display: 'flex', gap: '15px' }}>
-                   <button onClick={() => setIsFinalizing(false)} style={{ flex: 1, padding: '15px', borderRadius: '12px', border: '1px solid #e2e8f0', background: 'white', fontWeight: 900, cursor: 'pointer' }}>WAIT, RE-CHECK</button>
-                   <button onClick={confirmFinalize} style={{ flex: 1, padding: '15px', borderRadius: '12px', border: 'none', background: '#2ecc71', color: 'white', fontWeight: 950, cursor: 'pointer', boxShadow: '0 10px 20px rgba(46, 204, 113, 0.2)' }}>AUTHORIZE & SEND</button>
-                </div>
-             </div>
-          </div>
-       )}
-    </div>
-  );
-
    const renderTokenModal = () => {
     if (!tokenPrintData) return null;
     return (
@@ -1143,7 +853,7 @@ export default function DoctorBoard() {
 
   return (
     <div className="page-wrapper" style={{ padding: 0, background: '#fcfdfe' }}>
-      {view === 'WORKSPACE' ? renderWorkspace() : renderQueue()}
+      {renderQueue()}
       {renderPreviewModal()}
       {renderTokenModal()}
       

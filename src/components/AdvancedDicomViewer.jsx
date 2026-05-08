@@ -345,12 +345,16 @@ const AdvancedDicomViewer = ({
   showWindowingPresets = true,
   enableAdvancedTools = true,
   onMeasurement = null,
-  onAnnotation = null
+  onAnnotation = null,
+  // Fullscreen props
+  enableFullscreen = true,
+  onFullscreenChange = null
 }) => {
   const containerRef = useRef(null);
   const elementRef = useRef(null);
   const renderingEngineRef = useRef(null);
   const toolGroupRef = useRef(null);
+  const fullscreenContainerRef = useRef(null);
   
   const uniqueId = useId().replace(/[^a-zA-Z0-9]/g, '');
   const engineId = `ENGINE_${uniqueId}`;
@@ -373,6 +377,213 @@ const AdvancedDicomViewer = ({
   const [showMeasurementList, setShowMeasurementList] = useState(true);
   const [showCrosshairs, setShowCrosshairs] = useState(false);
   const [showReferenceLines, setShowReferenceLines] = useState(false);
+  
+  // Fullscreen and tablet support states
+  const [isFullscreen, setIsFullscreen] = useState(false);
+  const [isTablet, setIsTablet] = useState(false);
+  const [touchStartDistance, setTouchStartDistance] = useState(0);
+  const [lastTouchTime, setLastTouchTime] = useState(0);
+  const [showToolbar, setShowToolbar] = useState(true);
+
+  // --- TABLET/MOBILE DETECTION ---
+  useEffect(() => {
+    const checkDevice = () => {
+      const width = window.innerWidth;
+      const isTouchDevice = 'ontouchstart' in window || navigator.maxTouchPoints > 0;
+      setIsTablet(isTouchDevice && width >= 768 && width <= 1366);
+    };
+    
+    checkDevice();
+    window.addEventListener('resize', checkDevice);
+    return () => window.removeEventListener('resize', checkDevice);
+  }, []);
+
+  // --- FULLSCREEN MANAGEMENT ---
+  const toggleFullscreen = useCallback(async () => {
+    try {
+      const container = fullscreenContainerRef.current || containerRef.current;
+      
+      if (!document.fullscreenElement) {
+        // Enter fullscreen
+        if (container.requestFullscreen) {
+          await container.requestFullscreen();
+        } else if (container.webkitRequestFullscreen) {
+          await container.webkitRequestFullscreen();
+        } else if (container.mozRequestFullScreen) {
+          await container.mozRequestFullScreen();
+        } else if (container.msRequestFullscreen) {
+          await container.msRequestFullscreen();
+        }
+        setIsFullscreen(true);
+        if (onFullscreenChange) onFullscreenChange(true);
+      } else {
+        // Exit fullscreen
+        if (document.exitFullscreen) {
+          await document.exitFullscreen();
+        } else if (document.webkitExitFullscreen) {
+          await document.webkitExitFullscreen();
+        } else if (document.mozCancelFullScreen) {
+          await document.mozCancelFullScreen();
+        } else if (document.msExitFullscreen) {
+          await document.msExitFullscreen();
+        }
+        setIsFullscreen(false);
+        if (onFullscreenChange) onFullscreenChange(false);
+      }
+      
+      // Trigger resize after fullscreen change
+      setTimeout(() => {
+        if (renderingEngineRef.current) {
+          renderingEngineRef.current.resize();
+        }
+      }, 100);
+    } catch (err) {
+      console.error('[DICOM] Fullscreen toggle failed:', err);
+    }
+  }, [onFullscreenChange]);
+
+  // Listen for fullscreen changes (user pressing ESC, etc.)
+  useEffect(() => {
+    const handleFullscreenChange = () => {
+      const isCurrentlyFullscreen = !!document.fullscreenElement;
+      setIsFullscreen(isCurrentlyFullscreen);
+      if (onFullscreenChange) onFullscreenChange(isCurrentlyFullscreen);
+      
+      // Resize viewport after fullscreen change
+      setTimeout(() => {
+        if (renderingEngineRef.current) {
+          renderingEngineRef.current.resize();
+        }
+      }, 100);
+    };
+
+    document.addEventListener('fullscreenchange', handleFullscreenChange);
+    document.addEventListener('webkitfullscreenchange', handleFullscreenChange);
+    document.addEventListener('mozfullscreenchange', handleFullscreenChange);
+    document.addEventListener('MSFullscreenChange', handleFullscreenChange);
+
+    return () => {
+      document.removeEventListener('fullscreenchange', handleFullscreenChange);
+      document.removeEventListener('webkitfullscreenchange', handleFullscreenChange);
+      document.removeEventListener('mozfullscreenchange', handleFullscreenChange);
+      document.removeEventListener('MSFullscreenChange', handleFullscreenChange);
+    };
+  }, [onFullscreenChange]);
+
+  // --- TOUCH GESTURE SUPPORT FOR TABLETS ---
+  useEffect(() => {
+    if (!elementRef.current || !isTablet) return;
+    
+    const element = elementRef.current;
+    let initialPinchDistance = 0;
+    let isPinching = false;
+    
+    const getTouchDistance = (touch1, touch2) => {
+      const dx = touch1.clientX - touch2.clientX;
+      const dy = touch1.clientY - touch2.clientY;
+      return Math.sqrt(dx * dx + dy * dy);
+    };
+    
+    const handleTouchStart = (e) => {
+      if (e.touches.length === 2) {
+        // Pinch zoom gesture
+        isPinching = true;
+        initialPinchDistance = getTouchDistance(e.touches[0], e.touches[1]);
+        e.preventDefault();
+      } else if (e.touches.length === 1) {
+        // Single touch - check for double tap
+        const currentTime = new Date().getTime();
+        const tapLength = currentTime - lastTouchTime;
+        
+        if (tapLength < 300 && tapLength > 0) {
+          // Double tap detected - reset viewport
+          if (renderingEngineRef.current) {
+            const viewport = renderingEngineRef.current.getViewport(viewportId);
+            if (viewport) {
+              viewport.resetCamera();
+              viewport.render();
+            }
+          }
+        }
+        setLastTouchTime(currentTime);
+      }
+    };
+    
+    const handleTouchMove = (e) => {
+      if (e.touches.length === 2 && isPinching) {
+        // Pinch zoom
+        const currentDistance = getTouchDistance(e.touches[0], e.touches[1]);
+        const scaleFactor = currentDistance / initialPinchDistance;
+        
+        if (renderingEngineRef.current) {
+          const viewport = renderingEngineRef.current.getViewport(viewportId);
+          if (viewport) {
+            const camera = viewport.getCamera();
+            const newZoom = camera.parallelScale / scaleFactor;
+            viewport.setCamera({ parallelScale: newZoom });
+            viewport.render();
+          }
+        }
+        
+        initialPinchDistance = currentDistance;
+        e.preventDefault();
+      }
+    };
+    
+    const handleTouchEnd = (e) => {
+      if (e.touches.length < 2) {
+        isPinching = false;
+      }
+    };
+    
+    // Add touch event listeners with passive: false to allow preventDefault
+    element.addEventListener('touchstart', handleTouchStart, { passive: false });
+    element.addEventListener('touchmove', handleTouchMove, { passive: false });
+    element.addEventListener('touchend', handleTouchEnd, { passive: false });
+    
+    return () => {
+      element.removeEventListener('touchstart', handleTouchStart);
+      element.removeEventListener('touchmove', handleTouchMove);
+      element.removeEventListener('touchend', handleTouchEnd);
+    };
+  }, [isTablet, lastTouchTime, viewportId]);
+
+  // Auto-hide toolbar in fullscreen mode (show on mouse move/touch)
+  useEffect(() => {
+    if (!isFullscreen) {
+      setShowToolbar(true);
+      return;
+    }
+    
+    let hideTimeout;
+    
+    const showToolbarTemporarily = () => {
+      setShowToolbar(true);
+      clearTimeout(hideTimeout);
+      hideTimeout = setTimeout(() => {
+        setShowToolbar(false);
+      }, 3000);
+    };
+    
+    const container = fullscreenContainerRef.current || containerRef.current;
+    if (container) {
+      container.addEventListener('mousemove', showToolbarTemporarily);
+      container.addEventListener('touchstart', showToolbarTemporarily);
+    }
+    
+    // Initially hide after 3 seconds
+    hideTimeout = setTimeout(() => {
+      setShowToolbar(false);
+    }, 3000);
+    
+    return () => {
+      clearTimeout(hideTimeout);
+      if (container) {
+        container.removeEventListener('mousemove', showToolbarTemporarily);
+        container.removeEventListener('touchstart', showToolbarTemporarily);
+      }
+    };
+  }, [isFullscreen]);
 
   useEffect(() => {
     if (!files || files.length === 0) return;
@@ -1121,11 +1332,84 @@ const AdvancedDicomViewer = ({
   }
 
   return (
-    <div ref={containerRef} style={{ width: '100%', height: '100%', position: 'relative', display: 'flex', flexDirection: 'column', background: '#000' }}>
+    <div 
+      ref={fullscreenContainerRef}
+      style={{ 
+        width: '100%', 
+        height: '100%', 
+        position: isFullscreen ? 'fixed' : 'relative', 
+        inset: isFullscreen ? 0 : 'auto',
+        zIndex: isFullscreen ? 9999 : 'auto',
+        display: 'flex', 
+        flexDirection: 'column', 
+        background: '#000' 
+      }}
+    >
+      <div ref={containerRef} style={{ width: '100%', height: '100%', position: 'relative', display: 'flex', flexDirection: 'column', background: '#000' }}>
       {!isReady && (
         <div style={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', zIndex: 10, background: '#000' }}>
            <div className="dicom-loader"></div>
            <p style={{ color: '#0f52ba', fontSize: '10px', fontWeight: 950, marginTop: '20px', letterSpacing: '3px' }}>PARSING_DIAGNOSTIC_DATA</p>
+        </div>
+      )}
+
+      {/* FULLSCREEN TOGGLE BUTTON */}
+      {isReady && enableFullscreen && (
+        <button
+          onClick={toggleFullscreen}
+          style={{
+            position: 'absolute',
+            top: isFullscreen ? '15px' : '15px',
+            right: isFullscreen ? '15px' : showMetadata && metadata ? '280px' : '15px',
+            background: 'rgba(15, 23, 42, 0.9)',
+            backdropFilter: 'blur(10px)',
+            border: '1px solid rgba(255,255,255,0.1)',
+            color: 'white',
+            padding: isTablet ? '12px' : '8px 12px',
+            borderRadius: '10px',
+            cursor: 'pointer',
+            zIndex: 200,
+            fontSize: isTablet ? '20px' : '16px',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '6px',
+            fontWeight: 700,
+            transition: 'all 0.3s',
+            opacity: showToolbar ? 1 : (isFullscreen ? 0.3 : 1),
+            transform: showToolbar ? 'translateY(0)' : (isFullscreen ? 'translateY(-10px)' : 'translateY(0)')
+          }}
+          title={isFullscreen ? 'Exit Fullscreen (ESC)' : 'Enter Fullscreen'}
+        >
+          {isFullscreen ? '⤓' : '⤢'}
+          {!isTablet && <span style={{ fontSize: '10px' }}>{isFullscreen ? 'EXIT' : 'FULLSCREEN'}</span>}
+        </button>
+      )}
+
+      {/* TABLET GESTURE HINT */}
+      {isTablet && isReady && !isFullscreen && (
+        <div style={{
+          position: 'absolute',
+          bottom: '15px',
+          left: '50%',
+          transform: 'translateX(-50%)',
+          background: 'rgba(15, 23, 42, 0.9)',
+          backdropFilter: 'blur(10px)',
+          color: 'white',
+          padding: '8px 16px',
+          borderRadius: '20px',
+          fontSize: '10px',
+          zIndex: 100,
+          border: '1px solid rgba(255,255,255,0.1)',
+          display: 'flex',
+          alignItems: 'center',
+          gap: '10px',
+          pointerEvents: 'none'
+        }}>
+          <span>👆 Double-tap: Reset</span>
+          <span>•</span>
+          <span>🤏 Pinch: Zoom</span>
+          <span>•</span>
+          <span>👆 Swipe: Pan</span>
         </div>
       )}
 
@@ -1136,13 +1420,17 @@ const AdvancedDicomViewer = ({
           top: '15px',
           left: '15px',
           display: 'flex',
+          flexWrap: isTablet ? 'wrap' : 'nowrap',
           gap: '5px',
           zIndex: 100,
           background: 'rgba(15, 23, 42, 0.9)',
           backdropFilter: 'blur(10px)',
-          padding: '8px',
+          padding: isTablet ? '10px' : '8px',
           borderRadius: '12px',
-          border: '1px solid rgba(255,255,255,0.1)'
+          border: '1px solid rgba(255,255,255,0.1)',
+          maxWidth: isTablet ? '90%' : 'auto',
+          opacity: showToolbar ? 1 : (isFullscreen ? 0 : 1),
+          transition: 'opacity 0.3s'
         }}>
           {Object.keys(WINDOWING_PRESETS).map(preset => (
             <button
@@ -1152,12 +1440,13 @@ const AdvancedDicomViewer = ({
                 background: currentWindowingPreset === preset ? '#3b82f6' : 'rgba(255,255,255,0.1)',
                 border: 'none',
                 color: 'white',
-                padding: '4px 8px',
+                padding: isTablet ? '8px 12px' : '4px 8px',
                 borderRadius: '6px',
-                fontSize: '9px',
+                fontSize: isTablet ? '11px' : '9px',
                 fontWeight: 700,
                 cursor: 'pointer',
-                transition: 'all 0.2s'
+                transition: 'all 0.2s',
+                touchAction: 'manipulation'
               }}
             >
               {preset}
@@ -1166,42 +1455,45 @@ const AdvancedDicomViewer = ({
         </div>
       )}
 
-      {/* ENHANCED METADATA OVERLAY - Simplified for performance */}
+      {/* ENHANCED METADATA OVERLAY - Responsive for tablets */}
       {isReady && showMetadata && metadata && (
         <div style={{
           position: 'absolute',
-          top: '15px',
+          top: isFullscreen ? '70px' : '15px',
           right: '15px',
           background: 'rgba(15, 23, 42, 0.9)',
           backdropFilter: 'blur(10px)',
           color: 'white',
-          padding: '10px',
+          padding: isTablet ? '12px' : '10px',
           borderRadius: '10px',
-          fontSize: '9px',
+          fontSize: isTablet ? '11px' : '9px',
           zIndex: 100,
           fontFamily: 'monospace',
           border: '1px solid rgba(255,255,255,0.1)',
-          maxWidth: '250px'
+          maxWidth: isTablet ? '300px' : '250px',
+          opacity: showToolbar ? 1 : (isFullscreen ? 0 : 1),
+          transition: 'opacity 0.3s'
         }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
-            <span style={{ fontWeight: 900, color: '#3b82f6', fontSize: '10px' }}>PATIENT INFO</span>
+            <span style={{ fontWeight: 900, color: '#3b82f6', fontSize: isTablet ? '12px' : '10px' }}>PATIENT INFO</span>
             <button
               onClick={() => setShowDicomTags(!showDicomTags)}
               style={{
                 background: 'rgba(59, 130, 246, 0.2)',
                 border: '1px solid #3b82f6',
                 color: '#3b82f6',
-                padding: '2px 6px',
+                padding: isTablet ? '4px 8px' : '2px 6px',
                 borderRadius: '4px',
-                fontSize: '8px',
-                cursor: 'pointer'
+                fontSize: isTablet ? '10px' : '8px',
+                cursor: 'pointer',
+                touchAction: 'manipulation'
               }}
             >
               {showDicomTags ? 'HIDE' : 'MORE'}
             </button>
           </div>
           
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 2fr', gap: '3px', fontSize: '9px' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 2fr', gap: '3px', fontSize: isTablet ? '11px' : '9px' }}>
             <span style={{ color: '#94a3b8' }}>Name:</span>
             <span>{metadata.patientName || 'Unknown'}</span>
             <span style={{ color: '#94a3b8' }}>ID:</span>
@@ -1220,7 +1512,7 @@ const AdvancedDicomViewer = ({
           {/* Extended DICOM Tags - Only show on demand */}
           {showDicomTags && (
             <div style={{ marginTop: '8px', paddingTop: '6px', borderTop: '1px solid rgba(255,255,255,0.1)' }}>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 2fr', gap: '3px', fontSize: '8px' }}>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 2fr', gap: '3px', fontSize: isTablet ? '10px' : '8px' }}>
                 {metadata.studyDate && (
                   <>
                     <span style={{ color: '#94a3b8' }}>Study:</span>
@@ -1583,23 +1875,26 @@ const AdvancedDicomViewer = ({
             background: keyImages.includes(files?.[currentImageIndex]?.name) ? '#fbbf24' : 'rgba(0,0,0,0.5)', 
             border: 'none',
             color: '#fff', 
-            padding: '8px 12px', 
+            padding: isTablet ? '12px 16px' : '8px 12px', 
             borderRadius: '20px', 
             cursor: 'pointer', 
             zIndex: 10,
-            fontSize: '11px',
+            fontSize: isTablet ? '13px' : '11px',
             fontWeight: 800,
             display: 'flex',
             alignItems: 'center',
             gap: '6px',
             boxShadow: '0 4px 12px rgba(0,0,0,0.3)',
-            transition: 'all 0.2s'
+            transition: 'all 0.2s',
+            touchAction: 'manipulation',
+            opacity: showToolbar ? 1 : (isFullscreen ? 0 : 1)
           }}
         >
           <span>{keyImages.includes(files?.[currentImageIndex]?.name) ? '★' : '☆'}</span>
           KEY_IMAGE
         </button>
       )}
+    </div>
     </div>
   );
 };

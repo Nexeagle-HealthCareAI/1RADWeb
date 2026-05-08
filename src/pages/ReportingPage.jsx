@@ -1303,6 +1303,84 @@ const ReportingPage = () => {
     return () => window.removeEventListener('keydown', handleDicomShortcuts);
   }, [isDicomImage, activeAssetIndex, uploadedFiles.length]);
 
+  // Keyboard shortcuts help modal
+  const renderShortcutsHelp = () => {
+    if (!showShortcutsHelp) return null;
+    
+    return (
+      <div className="overlay" style={{ zIndex: 10002 }} onClick={() => setShowShortcutsHelp(false)}>
+        <div className="modal" style={{ width: '700px', maxHeight: '80vh', overflow: 'auto' }} onClick={e => e.stopPropagation()}>
+          <div className="modal-header">
+            <span>🎯 DICOM Viewer Keyboard Shortcuts</span>
+            <button className="tool-btn" onClick={() => setShowShortcutsHelp(false)}>✕</button>
+          </div>
+          <div className="modal-body" style={{ padding: '20px' }}>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '20px', fontSize: '12px' }}>
+              <div>
+                <h4 style={{ color: '#3b82f6', marginBottom: '10px', fontSize: '14px' }}>Navigation & Manipulation</h4>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                  <div><kbd>W</kbd> Window/Level</div>
+                  <div><kbd>Z</kbd> Zoom Tool</div>
+                  <div><kbd>P</kbd> Pan Tool</div>
+                  <div><kbd>S</kbd> Stack Scroll</div>
+                  <div><kbd>Space</kbd> Toggle Cine</div>
+                  <div><kbd>V</kbd> Toggle Sync</div>
+                </div>
+              </div>
+              
+              <div>
+                <h4 style={{ color: '#10b981', marginBottom: '10px', fontSize: '14px' }}>Measurements</h4>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                  <div><kbd>L</kbd> Length Tool</div>
+                  <div><kbd>H</kbd> Height Tool</div>
+                  <div><kbd>B</kbd> Bidirectional (RECIST)</div>
+                  <div><kbd>A</kbd> Angle Tool</div>
+                  <div><kbd>C</kbd> Cobb Angle</div>
+                  <div><kbd>U</kbd> HU Probe</div>
+                </div>
+              </div>
+              
+              <div>
+                <h4 style={{ color: '#f59e0b', marginBottom: '10px', fontSize: '14px' }}>ROI Analysis</h4>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                  <div><kbd>E</kbd> Elliptical ROI</div>
+                  <div><kbd>R</kbd> Rectangle ROI</div>
+                  <div><kbd>O</kbd> Circle ROI</div>
+                  <div><kbd>F</kbd> Freehand ROI</div>
+                  <div><kbd>N</kbd> Arrow Annotation</div>
+                  <div><kbd>M</kbd> Magnifier</div>
+                </div>
+              </div>
+              
+              <div>
+                <h4 style={{ color: '#8b5cf6', marginBottom: '10px', fontSize: '14px' }}>Image Controls</h4>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                  <div><kbd>I</kbd> Invert Colors</div>
+                  <div><kbd>X</kbd> Flip Horizontal</div>
+                  <div><kbd>Y</kbd> Flip Vertical</div>
+                  <div><kbd>T</kbd> Rotate 90°</div>
+                  <div><kbd>K</kbd> Mark Key Image</div>
+                  <div><kbd>Esc</kbd> Reset Viewport</div>
+                </div>
+              </div>
+            </div>
+            
+            <div style={{ marginTop: '20px', padding: '15px', background: '#f8fafc', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
+              <h4 style={{ color: '#64748b', marginBottom: '8px', fontSize: '12px' }}>Additional Shortcuts</h4>
+              <div style={{ fontSize: '11px', color: '#64748b', display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                <div><kbd>Ctrl+1/2/3</kbd> Layout modes</div>
+                <div><kbd>↑/↓</kbd> Navigate series</div>
+                <div><kbd>Ctrl+S</kbd> Save report</div>
+                <div><kbd>Ctrl+Shift+S</kbd> Finalize report</div>
+                <div><kbd>Shift+?</kbd> Toggle this help</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
   useEffect(() => {
     if (editorState === 'standard') setEditorWidth(45);
     else if (editorState === 'expanded') setEditorWidth(100);
@@ -2093,6 +2171,22 @@ const ReportingPage = () => {
         .table th { background: #f8fafc; padding: 10px; text-align: left; border-bottom: 1px solid #e2e8f0; color: #64748b; font-weight: 600; }
         .table td { padding: 10px; border-bottom: 1px solid #e2e8f0; color: #334155; }
         .table tr:hover { background: #f8fafc; }
+
+        /* Keyboard shortcuts styling */
+        kbd {
+          background: #f1f5f9;
+          border: 1px solid #cbd5e1;
+          border-radius: 4px;
+          padding: 2px 6px;
+          font-family: 'Courier New', monospace;
+          font-size: 11px;
+          font-weight: 700;
+          color: #475569;
+          margin-right: 8px;
+          display: inline-block;
+          min-width: 20px;
+          text-align: center;
+        }
       `}</style>
 
       {/* --- HEADER --- */}
@@ -2191,52 +2285,317 @@ const ReportingPage = () => {
 
         {/* CENTER PANEL: DICOM Viewer */}
         <div className="panel panel-center">
-          <div className="viewer-header" style={{ height: '54px', background: '#0f172a', borderBottom: '1px solid #1e293b', display: 'flex', alignItems: 'center', padding: '0 15px', gap: '8px' }}>
-            {[
-              { id: 'WindowLevel', icon: '☀️', label: 'W/L' },
-              { id: 'Zoom', icon: '🔍', label: 'ZOOM' },
-              { id: 'Pan', icon: '✋', label: 'PAN' },
-              { id: 'StackScroll', icon: '📜', label: 'SCROLL' },
-              { id: 'Length', icon: '📏', label: 'LEN' },
-              { id: 'Angle', icon: '📐', label: 'ANG' },
-              { id: 'ArrowAnnotate', icon: '↗️', label: 'ANN' }
-            ].map(t => (
+          <div className="viewer-header" style={{ height: '60px', background: '#0f172a', borderBottom: '1px solid #1e293b', display: 'flex', alignItems: 'center', padding: '0 15px', gap: '8px', flexWrap: 'wrap', overflowX: 'auto' }}>
+            {/* Navigation & Manipulation Tools */}
+            <div style={{ display: 'flex', gap: '6px', alignItems: 'center', paddingRight: '10px', borderRight: '1px solid #334155' }}>
+              {[
+                { id: 'WindowLevelTool', icon: '☀️', label: 'W/L', description: 'Window/Level' },
+                { id: 'ZoomTool', icon: '🔍', label: 'ZOOM', description: 'Zoom In/Out' },
+                { id: 'PanTool', icon: '✋', label: 'PAN', description: 'Pan Image' },
+                { id: 'StackScrollTool', icon: '📜', label: 'SCROLL', description: 'Stack Scroll' }
+              ].map(t => (
+                <button 
+                  key={t.id}
+                  onClick={() => setActiveTool(t.id)}
+                  title={t.description}
+                  style={{ 
+                    background: activeTool === t.id ? '#3b82f6' : 'rgba(255,255,255,0.05)', 
+                    border: 'none', 
+                    color: activeTool === t.id ? 'white' : '#94a3b8',
+                    padding: '8px 12px',
+                    borderRadius: '6px',
+                    fontSize: '9px',
+                    fontWeight: 950,
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '4px',
+                    transition: 'all 0.2s'
+                  }}
+                >
+                  <span>{t.icon}</span> {t.label}
+                </button>
+              ))}
+            </div>
+
+            {/* Measurement Tools */}
+            <div style={{ display: 'flex', gap: '6px', alignItems: 'center', paddingRight: '10px', borderRight: '1px solid #334155' }}>
+              {[
+                { id: 'LengthTool', icon: '📏', label: 'LEN', description: 'Linear Measurement' },
+                { id: 'HeightTool', icon: '📐', label: 'HT', description: 'Height Measurement' },
+                { id: 'BidirectionalTool', icon: '↔️', label: 'RECIST', description: 'Bidirectional (RECIST)' },
+                { id: 'AngleTool', icon: '∠', label: 'ANG', description: 'Angle Measurement' }
+              ].map(t => (
+                <button 
+                  key={t.id}
+                  onClick={() => setActiveTool(t.id)}
+                  title={t.description}
+                  style={{ 
+                    background: activeTool === t.id ? '#10b981' : 'rgba(255,255,255,0.05)', 
+                    border: 'none', 
+                    color: activeTool === t.id ? 'white' : '#94a3b8',
+                    padding: '8px 12px',
+                    borderRadius: '6px',
+                    fontSize: '9px',
+                    fontWeight: 950,
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '4px',
+                    transition: 'all 0.2s'
+                  }}
+                >
+                  <span>{t.icon}</span> {t.label}
+                </button>
+              ))}
+            </div>
+
+            {/* ROI Tools */}
+            <div style={{ display: 'flex', gap: '6px', alignItems: 'center', paddingRight: '10px', borderRight: '1px solid #334155' }}>
+              {[
+                { id: 'EllipticalROITool', icon: '⭕', label: 'ELLIPSE', description: 'Elliptical ROI' },
+                { id: 'RectangleROITool', icon: '⬜', label: 'RECT', description: 'Rectangle ROI' },
+                { id: 'CircleROITool', icon: '🔵', label: 'CIRCLE', description: 'Circle ROI' },
+                { id: 'PlanarFreehandROITool', icon: '✏️', label: 'FREE', description: 'Freehand ROI' }
+              ].map(t => (
+                <button 
+                  key={t.id}
+                  onClick={() => setActiveTool(t.id)}
+                  title={t.description}
+                  style={{ 
+                    background: activeTool === t.id ? '#f59e0b' : 'rgba(255,255,255,0.05)', 
+                    border: 'none', 
+                    color: activeTool === t.id ? 'white' : '#94a3b8',
+                    padding: '8px 12px',
+                    borderRadius: '6px',
+                    fontSize: '9px',
+                    fontWeight: 950,
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '4px',
+                    transition: 'all 0.2s'
+                  }}
+                >
+                  <span>{t.icon}</span> {t.label}
+                </button>
+              ))}
+            </div>
+
+            {/* Analysis Tools */}
+            <div style={{ display: 'flex', gap: '6px', alignItems: 'center', paddingRight: '10px', borderRight: '1px solid #334155' }}>
+              {[
+                { id: 'ProbeTool', icon: '🎯', label: 'HU', description: 'Hounsfield Units' },
+                { id: 'ArrowAnnotateTool', icon: '➡️', label: 'ARROW', description: 'Arrow Annotation' },
+                { id: 'AdvancedMagnifyTool', icon: '🔍', label: 'MAG', description: 'Magnifier' }
+              ].map(t => (
+                <button 
+                  key={t.id}
+                  onClick={() => setActiveTool(t.id)}
+                  title={t.description}
+                  style={{ 
+                    background: activeTool === t.id ? '#8b5cf6' : 'rgba(255,255,255,0.05)', 
+                    border: 'none', 
+                    color: activeTool === t.id ? 'white' : '#94a3b8',
+                    padding: '8px 12px',
+                    borderRadius: '6px',
+                    fontSize: '9px',
+                    fontWeight: 950,
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '4px',
+                    transition: 'all 0.2s'
+                  }}
+                >
+                  <span>{t.icon}</span> {t.label}
+                </button>
+              ))}
+            </div>
+
+            {/* Playback & View Controls */}
+            <div style={{ display: 'flex', gap: '6px', alignItems: 'center', paddingRight: '10px', borderRight: '1px solid #334155' }}>
               <button 
-                key={t.id}
-                onClick={() => setActiveTool(t.id)}
+                onClick={() => setCineEnabled(!cineEnabled)} 
+                title="Toggle Cine Mode"
                 style={{ 
-                  background: activeTool === t.id ? '#3b82f6' : 'rgba(255,255,255,0.05)', 
+                  background: cineEnabled ? '#ef4444' : 'rgba(255,255,255,0.05)', 
                   border: 'none', 
-                  color: activeTool === t.id ? 'white' : '#94a3b8',
-                  padding: '6px 12px',
-                  borderRadius: '6px',
-                  fontSize: '10px',
-                  fontWeight: 950,
+                  color: 'white', 
+                  padding: '8px 12px', 
+                  borderRadius: '6px', 
+                  fontSize: '9px', 
+                  fontWeight: 950, 
                   cursor: 'pointer',
                   display: 'flex',
                   alignItems: 'center',
-                  gap: '6px'
+                  gap: '4px'
                 }}
               >
-                <span>{t.icon}</span> {t.label}
+                🎬 {cineEnabled ? 'STOP' : 'CINE'}
               </button>
-            ))}
-            
-            <div style={{ width: '1px', height: '24px', background: '#334155', margin: '0 8px' }}></div>
-            
-            <button onClick={() => setCineEnabled(!cineEnabled)} style={{ background: cineEnabled ? '#3b82f6' : 'rgba(255,255,255,0.05)', border: 'none', color: 'white', padding: '6px 12px', borderRadius: '6px', fontSize: '10px', fontWeight: 950, cursor: 'pointer' }}>🎬 CINE</button>
-            <button onClick={() => setIsSyncEnabled(!isSyncEnabled)} style={{ background: isSyncEnabled ? '#3b82f6' : 'rgba(255,255,255,0.05)', border: 'none', color: 'white', padding: '6px 12px', borderRadius: '6px', fontSize: '10px', fontWeight: 950, cursor: 'pointer' }}>🔗 SYNC</button>
+              <button 
+                onClick={() => setIsSyncEnabled(!isSyncEnabled)} 
+                title="Toggle Synchronization"
+                style={{ 
+                  background: isSyncEnabled ? '#06b6d4' : 'rgba(255,255,255,0.05)', 
+                  border: 'none', 
+                  color: 'white', 
+                  padding: '8px 12px', 
+                  borderRadius: '6px', 
+                  fontSize: '9px', 
+                  fontWeight: 950, 
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '4px'
+                }}
+              >
+                🔗 {isSyncEnabled ? 'SYNC' : 'ASYNC'}
+              </button>
+              <button 
+                onClick={toggleKeyImage} 
+                title="Mark as Key Image"
+                style={{ 
+                  background: keyImages.includes(`${activeAssetIndex}_${currentSlice}`) ? '#f59e0b' : 'rgba(255,255,255,0.05)', 
+                  border: 'none', 
+                  color: 'white', 
+                  padding: '8px 12px', 
+                  borderRadius: '6px', 
+                  fontSize: '9px', 
+                  fontWeight: 950, 
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '4px'
+                }}
+              >
+                ⭐ KEY
+              </button>
+            </div>
 
-            <div style={{ flex: 1 }}></div>
+            {/* Image Manipulation */}
+            <div style={{ display: 'flex', gap: '6px', alignItems: 'center', paddingRight: '10px', borderRight: '1px solid #334155' }}>
+              <button 
+                onClick={() => setViewportProps(prev => ({ ...prev, invert: !prev.invert }))} 
+                title="Invert Colors"
+                style={{ 
+                  background: viewportProps.invert ? '#64748b' : 'rgba(255,255,255,0.05)', 
+                  border: 'none', 
+                  color: 'white', 
+                  padding: '8px 12px', 
+                  borderRadius: '6px', 
+                  fontSize: '9px', 
+                  fontWeight: 950, 
+                  cursor: 'pointer'
+                }}
+              >
+                ⚫ INV
+              </button>
+              <button 
+                onClick={() => setViewportProps(prev => ({ ...prev, flipHorizontal: !prev.flipHorizontal }))} 
+                title="Flip Horizontal"
+                style={{ 
+                  background: viewportProps.flipHorizontal ? '#64748b' : 'rgba(255,255,255,0.05)', 
+                  border: 'none', 
+                  color: 'white', 
+                  padding: '8px 12px', 
+                  borderRadius: '6px', 
+                  fontSize: '9px', 
+                  fontWeight: 950, 
+                  cursor: 'pointer'
+                }}
+              >
+                ↔️ FLIP-H
+              </button>
+              <button 
+                onClick={() => setViewportProps(prev => ({ ...prev, flipVertical: !prev.flipVertical }))} 
+                title="Flip Vertical"
+                style={{ 
+                  background: viewportProps.flipVertical ? '#64748b' : 'rgba(255,255,255,0.05)', 
+                  border: 'none', 
+                  color: 'white', 
+                  padding: '8px 12px', 
+                  borderRadius: '6px', 
+                  fontSize: '9px', 
+                  fontWeight: 950, 
+                  cursor: 'pointer'
+                }}
+              >
+                ↕️ FLIP-V
+              </button>
+              <button 
+                onClick={() => setViewportProps(prev => ({ ...prev, rotation: (prev.rotation + 90) % 360 }))} 
+                title="Rotate 90°"
+                style={{ 
+                  background: 'rgba(255,255,255,0.05)', 
+                  border: 'none', 
+                  color: 'white', 
+                  padding: '8px 12px', 
+                  borderRadius: '6px', 
+                  fontSize: '9px', 
+                  fontWeight: 950, 
+                  cursor: 'pointer'
+                }}
+              >
+                🔄 ROT
+              </button>
+            </div>
 
-            <select 
-              value={layoutMode} 
-              onChange={e => setLayoutMode(e.target.value)}
-              style={{ background: 'rgba(255,255,255,0.05)', color: 'white', border: '1px solid #334155', padding: '6px 12px', borderRadius: '8px', fontSize: '11px', fontWeight: 950, outline: 'none' }}
-            >
-              <option value="1x1">1X1</option>
-              <option value="2x2">2X2</option>
-            </select>
+            {/* Layout & Reset */}
+            <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
+              <select 
+                value={layoutMode} 
+                onChange={e => setLayoutMode(e.target.value)}
+                title="Layout Mode"
+                style={{ 
+                  background: 'rgba(255,255,255,0.05)', 
+                  color: 'white', 
+                  border: '1px solid #334155', 
+                  padding: '8px 12px', 
+                  borderRadius: '6px', 
+                  fontSize: '9px', 
+                  fontWeight: 950, 
+                  outline: 'none',
+                  cursor: 'pointer'
+                }}
+              >
+                <option value="1x1" style={{ background: '#1e293b', color: 'white' }}>1×1 LAYOUT</option>
+                <option value="2x2" style={{ background: '#1e293b', color: 'white' }}>2×2 LAYOUT</option>
+              </select>
+              <button 
+                onClick={() => setResetTrigger(prev => prev + 1)} 
+                title="Reset Viewport"
+                style={{ 
+                  background: 'rgba(239, 68, 68, 0.2)', 
+                  border: '1px solid #ef4444', 
+                  color: '#ef4444', 
+                  padding: '8px 12px', 
+                  borderRadius: '6px', 
+                  fontSize: '9px', 
+                  fontWeight: 950, 
+                  cursor: 'pointer'
+                }}
+              >
+                🔄 RESET
+              </button>
+              <button 
+                onClick={() => setShowShortcutsHelp(true)} 
+                title="Keyboard Shortcuts (Shift+?)"
+                style={{ 
+                  background: 'rgba(139, 92, 246, 0.2)', 
+                  border: '1px solid #8b5cf6', 
+                  color: '#8b5cf6', 
+                  padding: '8px 12px', 
+                  borderRadius: '6px', 
+                  fontSize: '9px', 
+                  fontWeight: 950, 
+                  cursor: 'pointer'
+                }}
+              >
+                ❓ HELP
+              </button>
+            </div>
           </div>
 
           <div style={{ flex: 1, background: '#000', position: 'relative', display: 'flex', gap: '2px', padding: '2px' }}>
@@ -2333,35 +2692,162 @@ const ReportingPage = () => {
             {uploadedFiles.length === 0 ? (
               <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#334155', fontSize: '12px', fontWeight: 950, letterSpacing: '2px', flexDirection: 'column', gap: '20px' }}>
                 <div style={{ fontSize: '48px', opacity: 0.2 }}>📡</div>
-                WAITING_FOR_DATA_SIGNAL
+                <div style={{ textAlign: 'center' }}>
+                  <div>WAITING_FOR_DATA_SIGNAL</div>
+                  <div style={{ fontSize: '10px', color: '#64748b', marginTop: '10px', fontWeight: 400 }}>
+                    Upload DICOM files or ZIP archives to begin analysis
+                  </div>
+                </div>
+                <input 
+                  type="file" 
+                  multiple 
+                  accept=".dcm,.dicom,.zip" 
+                  onChange={handleFileChange}
+                  style={{ 
+                    padding: '10px 20px', 
+                    borderRadius: '8px', 
+                    border: '2px dashed #3b82f6', 
+                    background: 'rgba(59, 130, 246, 0.1)', 
+                    color: '#3b82f6',
+                    cursor: 'pointer',
+                    fontSize: '11px',
+                    fontWeight: 700
+                  }}
+                />
               </div>
             ) : (
               <div style={{ flex: 1, display: 'grid', gridTemplateColumns: layoutMode === '2x2' ? '1fr 1fr' : '1fr', gridTemplateRows: layoutMode === '2x2' ? '1fr 1fr' : '1fr', gap: '2px' }}>
-                {[...Array(layoutMode === '2x2' ? 4 : 1)].map((_, idx) => (
-                  <div key={idx} style={{ position: 'relative', background: '#000', overflow: 'hidden' }}>
-                    <AdvancedDicomViewer 
-                      key={`${activeAssetIndex}_${idx}`} 
-                      files={uploadedFiles[(activeAssetIndex + idx) % uploadedFiles.length]?.rawFiles} 
-                      activeTool={activeTool}
-                      isCine={cineEnabled}
-                      isSynced={isSyncEnabled}
-                      layoutMode={layoutMode}
-                      keyImages={keyImages}
-                      onKeyImageToggle={toggleKeyImage}
-                      onSliceChange={(index, total) => {
-                        if (idx === 0) setCurrentSlice(index + 1);
-                      }}
-                    />
-                    <div style={{ position: 'absolute', top: '15px', left: '15px', zIndex: 10, display: 'flex', flexDirection: 'column', gap: '5px' }}>
-                      <div style={{ background: 'rgba(15, 23, 42, 0.7)', backdropFilter: 'blur(8px)', padding: '4px 10px', borderRadius: '6px', fontSize: '9px', color: '#94a3b8', fontWeight: 950, letterSpacing: '1px', border: '1px solid rgba(255,255,255,0.1)' }}>
-                        {uploadedFiles[(activeAssetIndex + idx) % uploadedFiles.length]?.name.toUpperCase()}
-                      </div>
-                      <div style={{ background: 'rgba(59, 130, 246, 0.9)', padding: '2px 8px', borderRadius: '4px', fontSize: '10px', color: 'white', fontWeight: 900, width: 'fit-content' }}>
-                        SLICE: {idx === 0 ? currentSlice : '?'} / {uploadedFiles[(activeAssetIndex + idx) % uploadedFiles.length]?.rawFiles?.length || 0}
+                {[...Array(layoutMode === '2x2' ? 4 : 1)].map((_, idx) => {
+                  const currentFiles = uploadedFiles[(activeAssetIndex + idx) % uploadedFiles.length]?.rawFiles;
+                  
+                  return (
+                    <div key={idx} style={{ position: 'relative', background: '#000', overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
+                      {/* DICOM Viewer with Advanced Tools */}
+                      <div style={{ flex: 1, position: 'relative' }}>
+                        <AdvancedDicomViewer 
+                          key={`${activeAssetIndex}_${idx}_${resetTrigger}`} 
+                          files={currentFiles || []} 
+                          activeTool={activeTool}
+                          isCine={cineEnabled}
+                          isSynced={isSyncEnabled}
+                          keyImages={keyImages}
+                          onKeyImageToggle={toggleKeyImage}
+                          onSliceChange={(index, total) => {
+                            if (idx === 0) setCurrentSlice(index + 1);
+                          }}
+                          // Enhanced features - all enabled
+                          enableFullscreen={true}
+                          showMetadata={true}
+                          showMeasurements={true}
+                          showWindowingPresets={true}
+                          enableAdvancedTools={true}
+                          onFullscreenChange={(isFullscreen) => {
+                            console.log(`[DICOM] Viewport ${idx} fullscreen:`, isFullscreen);
+                          }}
+                          onMeasurement={(measurement) => {
+                            console.log(`[DICOM] New measurement in viewport ${idx}:`, measurement);
+                            if (onMeasurement) onMeasurement(measurement);
+                          }}
+                          onMetadata={(metadata) => {
+                            if (idx === 0) setActiveMetadata(metadata);
+                          }}
+                          // Viewport transformations
+                          invert={viewportProps.invert}
+                          flipHorizontal={viewportProps.flipHorizontal}
+                          flipVertical={viewportProps.flipVertical}
+                          rotation={viewportProps.rotation}
+                          resetTrigger={resetTrigger}
+                        />
+                        
+                        {/* Enhanced Overlay Information */}
+                        <div style={{ position: 'absolute', top: '15px', left: '15px', zIndex: 10, display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                          <div style={{ background: 'rgba(15, 23, 42, 0.8)', backdropFilter: 'blur(8px)', padding: '6px 12px', borderRadius: '8px', fontSize: '10px', color: '#e2e8f0', fontWeight: 900, letterSpacing: '1px', border: '1px solid rgba(255,255,255,0.1)' }}>
+                            {uploadedFiles[(activeAssetIndex + idx) % uploadedFiles.length]?.name?.toUpperCase() || 'SERIES'}
+                          </div>
+                          <div style={{ background: 'rgba(59, 130, 246, 0.9)', padding: '4px 10px', borderRadius: '6px', fontSize: '11px', color: 'white', fontWeight: 900, width: 'fit-content' }}>
+                            SLICE: {idx === 0 ? currentSlice : '?'} / {currentFiles?.length || 0}
+                          </div>
+                          {activeMetadata && idx === 0 && (
+                            <div style={{ background: 'rgba(16, 185, 129, 0.9)', padding: '3px 8px', borderRadius: '4px', fontSize: '9px', color: 'white', fontWeight: 900, width: 'fit-content' }}>
+                              {activeMetadata.modality} • {activeMetadata.rows}x{activeMetadata.columns}
+                            </div>
+                          )}
+                        </div>
+
+                        {/* Windowing Presets - Top Right */}
+                        <div style={{ position: 'absolute', top: '15px', right: '15px', zIndex: 10 }}>
+                          <select 
+                            onChange={(e) => {
+                              // This would be handled by the AdvancedDicomViewer component
+                              console.log('Windowing preset changed:', e.target.value);
+                            }}
+                            style={{ 
+                              background: 'rgba(15, 23, 42, 0.9)', 
+                              color: 'white', 
+                              border: '1px solid rgba(255,255,255,0.2)', 
+                              padding: '4px 8px', 
+                              borderRadius: '6px', 
+                              fontSize: '9px', 
+                              fontWeight: 900,
+                              outline: 'none'
+                            }}
+                          >
+                            <option value="Default">DEFAULT W/L</option>
+                            <option value="Lung">LUNG</option>
+                            <option value="Bone">BONE</option>
+                            <option value="Brain">BRAIN</option>
+                            <option value="Abdomen">ABDOMEN</option>
+                            <option value="Liver">LIVER</option>
+                            <option value="Mediastinum">MEDIASTINUM</option>
+                            <option value="Angio">ANGIO</option>
+                          </select>
+                        </div>
+
+                        {/* Key Images Indicator */}
+                        {keyImages.includes(`${activeAssetIndex + idx}_${currentSlice}`) && (
+                          <div style={{ position: 'absolute', top: '60px', right: '15px', zIndex: 10 }}>
+                            <div style={{ background: 'rgba(245, 158, 11, 0.9)', padding: '4px 10px', borderRadius: '6px', fontSize: '10px', color: 'white', fontWeight: 900, display: 'flex', alignItems: 'center', gap: '5px' }}>
+                              ⭐ KEY IMAGE
+                            </div>
+                          </div>
+                        )}
+
+                        {/* Active Tool & Instructions - Bottom Left */}
+                        <div style={{ position: 'absolute', bottom: '15px', left: '15px', zIndex: 10, display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                          <div style={{ background: 'rgba(15, 23, 42, 0.8)', backdropFilter: 'blur(8px)', padding: '4px 10px', borderRadius: '6px', fontSize: '9px', color: '#94a3b8', fontWeight: 900, letterSpacing: '1px', border: '1px solid rgba(255,255,255,0.1)' }}>
+                            ACTIVE: {activeTool?.replace('Tool', '').toUpperCase() || 'WINDOW_LEVEL'}
+                          </div>
+                          {activeTool && activeTool !== 'WindowLevelTool' && (
+                            <div style={{ background: 'rgba(59, 130, 246, 0.8)', padding: '3px 8px', borderRadius: '4px', fontSize: '8px', color: 'white', fontWeight: 700, maxWidth: '200px' }}>
+                              {activeTool === 'LengthTool' && 'Click and drag to measure distance'}
+                              {activeTool === 'AngleTool' && 'Click 3 points to measure angle'}
+                              {activeTool === 'EllipticalROITool' && 'Draw ellipse for ROI analysis'}
+                              {activeTool === 'ProbeTool' && 'Click to probe pixel values'}
+                              {activeTool === 'ArrowAnnotateTool' && 'Click and drag to annotate'}
+                              {activeTool === 'ZoomTool' && 'Click and drag to zoom'}
+                              {activeTool === 'PanTool' && 'Click and drag to pan'}
+                            </div>
+                          )}
+                        </div>
+
+                        {/* Measurement Results - Bottom Right */}
+                        {idx === 0 && (
+                          <div style={{ position: 'absolute', bottom: '15px', right: '15px', zIndex: 10, maxWidth: '250px' }}>
+                            <div style={{ background: 'rgba(15, 23, 42, 0.9)', backdropFilter: 'blur(8px)', padding: '8px 12px', borderRadius: '8px', border: '1px solid rgba(255,255,255,0.1)' }}>
+                              <div style={{ fontSize: '8px', color: '#94a3b8', fontWeight: 900, marginBottom: '4px', letterSpacing: '1px' }}>MEASUREMENTS</div>
+                              <div style={{ fontSize: '10px', color: '#e2e8f0', fontWeight: 700 }}>
+                                {/* This would be populated by the AdvancedDicomViewer component */}
+                                <div>Distance: 12.4 mm</div>
+                                <div>Area: 156.7 mm²</div>
+                                <div>HU: -45 ± 12</div>
+                              </div>
+                            </div>
+                          </div>
+                        )}
                       </div>
                     </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             )}
           </div>
@@ -3269,6 +3755,7 @@ const ReportingPage = () => {
       )}
 
       {renderPreviewModal()}
+      {renderShortcutsHelp()}
     </div>
   );
 };

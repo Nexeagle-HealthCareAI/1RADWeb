@@ -45,12 +45,18 @@ export default function BillingPage() {
   const [exportMode, setExportMode] = useState('ALL'); // 'ALL', 'RANGE'
   const [exportDates, setExportDates] = useState({ start: '', end: '' });
   
+  // Referral Payout State
+  const [isPayoutDrawerOpen, setIsPayoutDrawerOpen] = useState(false);
+  const [isSavingPayout, setIsSavingPayout] = useState(false);
+  const [editPayout, setEditPayout] = useState({ referrerId: '', referrerName: '', amount: 0, modality: 'MRI', remarks: '', invoiceId: '' });
+  
   const [currentPage, setCurrentPage] = useState(1);
   const itemsPerPage = 5;
 
   // --- SYNC & FETCH ---
   const [stats, setStats] = useState({ totalRevenue: 0, pendingCount: 0, realizationRate: 0, averageTicket: 0, pendingRevenue: 0 });
-  const [matrix, setMatrix] = useState({ daily: [], monthly: [], yearly: [] });
+  const [matrix, setMatrix] = useState({ daily: [], weekly: [], monthly: [], yearly: [], modalityBreakdown: [] });
+  const [selectedPeriod, setSelectedPeriod] = useState('MONTHLY'); // 'DAILY', 'WEEKLY', 'MONTHLY', 'YEARLY'
   const [isSyncing, setIsSyncing] = useState(false);
 
   // Responsive layout detection
@@ -155,6 +161,37 @@ export default function BillingPage() {
       alert('PROTOCOL FAILURE: Failed to record operational expense.');
     } finally {
       setSavingExpense(false);
+    }
+  };
+
+  const handleSavePayout = async (e) => {
+    e.preventDefault();
+    if (!editPayout.referrerId) {
+      alert("PROTOCOL ERROR: Referrer identity is missing. Please ensure a valid partner is selected.");
+      return;
+    }
+
+    try {
+      setIsSavingPayout(true);
+      const response = await apiClient.post('/referrers/commissions', {
+        referrerId: editPayout.referrerId,
+        amount: parseFloat(editPayout.amount),
+        modality: editPayout.modality,
+        referenceNumber: editPayout.invoiceId,
+        remarks: editPayout.remarks
+      });
+
+      if (response.data?.commissionId) {
+        setIsPayoutDrawerOpen(false);
+        fetchInvoices();
+        fetchStats();
+        alert('PAYMENT LOGGED: Referral commission successfully recorded in strategic ledger.');
+      }
+    } catch (err) {
+      console.error('[PAYOUT] Transaction failure:', err);
+      alert('SYSTEM ERROR: Could not commit payout to global registry.');
+    } finally {
+      setIsSavingPayout(false);
     }
   };
 
@@ -372,7 +409,7 @@ export default function BillingPage() {
     try {
       await apiClient.post('/finance/invoices', {
         patientId: selectedPatient.patientId,
-        appointmentId: null,
+        appointmentId: newInvoiceData.items.find(it => it.appointmentId)?.appointmentId || null,
         items: newInvoiceData.items.map(it => ({
           description: it.description,
           amount: Number(it.amount),
@@ -706,7 +743,7 @@ export default function BillingPage() {
                    />
                    <datalist id="vendor-suggestions">
                       {/* System Referrers */}
-                      {referrers.map(r => <option key={`ref-${r.id}`} value={r.fullName} />)}
+                      {referrers.map(r => <option key={`ref-${r.referrerId || r.id}`} value={r.name || r.fullName} />)}
                       {/* Historical Vendors */}
                       {[...new Set(expenses.map(e => e.vendorName))].filter(v => v).map(v => (
                          <option key={`hist-${v}`} value={v} />
@@ -1021,6 +1058,73 @@ export default function BillingPage() {
     </div>
   );
 
+  const renderPayoutDrawer = () => (
+    <div className="drawer-overlay" onClick={() => setIsPayoutDrawerOpen(false)} style={{ backdropFilter: 'blur(8px)', background: 'rgba(10, 22, 40, 0.4)', zIndex: 10000 }}>
+      <div className="drawer-content" style={{ padding: 0, width: '450px', background: 'white' }} onClick={e => e.stopPropagation()}>
+        <div style={{ padding: '35px', background: 'linear-gradient(135deg, #0f52ba 0%, #061a40 100%)', color: 'white' }}>
+           <h2 style={{ fontSize: '11px', fontWeight: 950, color: '#38bdf8', letterSpacing: '3px', textTransform: 'uppercase', marginBottom: '8px' }}>Fiscal Disbursement</h2>
+           <div style={{ fontSize: '20px', fontWeight: 950, letterSpacing: '-1px' }}>RECORD REFERRAL PAYOUT</div>
+           <p style={{ fontSize: '10px', color: 'rgba(255,255,255,0.6)', marginTop: '10px', fontWeight: 600 }}>Logging financial commission for clinical partner based on mission ID: {editPayout.invoiceId}</p>
+        </div>
+
+        <div style={{ padding: '35px' }}>
+           <form onSubmit={handleSavePayout}>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '25px' }}>
+                 <div className="form-group">
+                    <label style={{ display: 'block', fontSize: '9px', fontWeight: 950, color: '#94a3b8', letterSpacing: '2px', marginBottom: '10px' }}>PARTNER_IDENTITY</label>
+                    <input 
+                       type="text" disabled 
+                       value={editPayout.referrerName?.toUpperCase()} 
+                       style={{ width: '100%', border: 'none', borderBottom: '2px solid #f0f0f0', fontSize: '16px', fontWeight: 950, padding: '10px 0', background: 'transparent', color: '#1e293b' }}
+                    />
+                 </div>
+
+                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px' }}>
+                    <div className="form-group">
+                       <label style={{ display: 'block', fontSize: '9px', fontWeight: 950, color: '#94a3b8', letterSpacing: '2px', marginBottom: '10px' }}>DISBURSEMENT_AMOUNT (₹)</label>
+                       <input 
+                          type="number" required 
+                          value={editPayout.amount} 
+                          onChange={e => setEditPayout({...editPayout, amount: e.target.value})}
+                          style={{ width: '100%', border: 'none', borderBottom: '2px solid #f0f0f0', fontSize: '20px', fontWeight: 950, padding: '10px 0', outline: 'none', color: '#0f52ba' }}
+                       />
+                    </div>
+                    <div className="form-group">
+                       <label style={{ display: 'block', fontSize: '9px', fontWeight: 950, color: '#94a3b8', letterSpacing: '2px', marginBottom: '10px' }}>CLINICAL_MODALITY</label>
+                       <select 
+                          value={editPayout.modality} 
+                          onChange={e => setEditPayout({...editPayout, modality: e.target.value})}
+                          style={{ width: '100%', padding: '12px', borderRadius: '12px', border: '1px solid #eee', fontSize: '12px', fontWeight: 700, background: 'white' }}
+                       >
+                          {['MRI', 'CT', 'X-RAY', 'ULTRASOUND', 'DEXA', 'MAMMOGRAPHY', 'LAB'].map(m => <option key={m} value={m}>{m}</option>)}
+                       </select>
+                    </div>
+                 </div>
+
+                 <div className="form-group">
+                    <label style={{ display: 'block', fontSize: '9px', fontWeight: 950, color: '#94a3b8', letterSpacing: '2px', marginBottom: '10px' }}>TRANSACTION_REMARKS</label>
+                    <textarea 
+                       rows="3"
+                       value={editPayout.remarks} 
+                       placeholder="Incentive details..."
+                       onChange={e => setEditPayout({...editPayout, remarks: e.target.value})}
+                       style={{ width: '100%', padding: '14px', borderRadius: '12px', border: '1px solid #eee', fontSize: '12px', fontWeight: 700, resize: 'none' }}
+                    />
+                 </div>
+              </div>
+
+              <div style={{ marginTop: '40px', display: 'flex', gap: '15px' }}>
+                 <button type="button" onClick={() => setIsPayoutDrawerOpen(false)} style={{ flex: 1, padding: '16px', borderRadius: '16px', border: '1px solid #eee', fontSize: '11px', fontWeight: 950, cursor: 'pointer' }}>ABORT</button>
+                 <button type="submit" disabled={isSavingPayout} style={{ flex: 2, padding: '16px', borderRadius: '16px', border: 'none', background: '#0f52ba', color: 'white', fontSize: '11px', fontWeight: 950, cursor: 'pointer' }}>
+                   {isSavingPayout ? 'COMMITTING...' : 'CONFIRM PAYOUT →'}
+                 </button>
+              </div>
+           </form>
+        </div>
+      </div>
+    </div>
+  );
+
   return (
     <div className="billing-page" style={{ padding: '40px', background: '#f8fafc', minHeight: '100vh' }}>
       {/* Header Section */}
@@ -1089,8 +1193,8 @@ export default function BillingPage() {
         </div>
       </div>
 
-      {billingViewMode === 'EXPENSES' ? (
-        <div className="expenses-main" style={{ display: 'grid', gridTemplateColumns: '1fr', gap: '30px' }}>
+      {billingViewMode === 'EXPENSES' && (
+        <div className="expenses-main" style={{ display: 'grid', gridTemplateColumns: '1fr', gap: '30px', animation: 'fadeIn 0.3s' }}>
            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: '15px' }}>
                 <span style={{ fontSize: '10px', fontWeight: 950, color: '#64748b', letterSpacing: '1px' }}>EXPENSE_PROTOCOL:</span>
@@ -1150,7 +1254,7 @@ export default function BillingPage() {
                 <tbody>
                   {expenses.filter(exp => {
                     if (expenseFilter === 'REFERRAL') {
-                      return exp.category === 'Marketing' || exp.description.toLowerCase().includes('referral');
+                      return exp.category === 'Referral' || exp.category === 'Marketing' || exp.description.toLowerCase().includes('referral');
                     }
                     return true;
                   }).map(exp => (
@@ -1158,7 +1262,7 @@ export default function BillingPage() {
                       <td style={{ padding: '20px 30px', fontSize: '13px', fontWeight: 850, color: '#1e293b' }}>{new Date(exp.transactionDate).toLocaleDateString('en-US', { day: 'numeric', month: 'short', year: 'numeric' })}</td>
                       <td style={{ padding: '20px 30px', fontSize: '13px', fontWeight: 850, color: '#1e293b' }}>{exp.description}</td>
                       <td style={{ padding: '20px 30px' }}>
-                        <span style={{ fontSize: '10px', fontWeight: 950, color: 'white', background: '#dc2626', padding: '5px 12px', borderRadius: '8px' }}>{exp.category}</span>
+                        <span style={{ fontSize: '10px', fontWeight: 950, color: 'white', background: exp.category === 'Referral' ? '#e11d48' : '#dc2626', padding: '5px 12px', borderRadius: '8px' }}>{exp.category.toUpperCase()}</span>
                       </td>
                       <td style={{ padding: '20px 30px', textAlign: 'right', fontSize: '14px', fontWeight: 950, color: '#dc2626' }}>₹{exp.amount.toLocaleString()}</td>
                       <td style={{ padding: '20px 30px', textAlign: 'right' }}>
@@ -1171,294 +1275,367 @@ export default function BillingPage() {
                   ))}
                   {expenses.length === 0 && (
                     <tr>
-                      <td colSpan="4" style={{ padding: '50px', textAlign: 'center', color: '#94a3b8', fontSize: '12px', fontWeight: 600 }}>No operational expenses found.</td>
+                      <td colSpan="5" style={{ padding: '50px', textAlign: 'center', color: '#94a3b8', fontSize: '12px', fontWeight: 600 }}>No operational expenses found.</td>
                     </tr>
                   )}
                 </tbody>
               </table>
             </div>
         </div>
-      ) : (
-      <>
-        {billingViewMode === 'INVOICES' && (
-          <>
-      {/* Filter Matrix Controls */}
-      <div className="filter-matrix" style={{ display: 'flex', gap: '30px', marginBottom: '30px', background: '#f1f5f9', padding: '15px 25px', borderRadius: '18px', border: '1px solid #e2e8f0', alignItems: 'center' }}>
-         <div style={{ display: 'flex', alignItems: 'center', gap: '15px' }}>
-            <span style={{ fontSize: '10px', fontWeight: 950, color: '#64748b', letterSpacing: '1px' }}>TEMPORAL_FILTER:</span>
-            <div style={{ display: 'flex', background: 'white', padding: '3px', borderRadius: '10px', border: '1px solid #e2e8f0' }}>
-               {['TODAY', 'PAST', 'ALL'].map(t => (
-                 <button 
-                  key={t}
-                  onClick={() => setTimeFilter(t)}
-                  style={{ 
-                    padding: '8px 16px', borderRadius: '8px', border: 'none', fontSize: '9px', fontWeight: 950,
-                    background: timeFilter === t ? 'linear-gradient(135deg, #0f52ba 0%, #061a40 100%)' : 'transparent',
-                    color: timeFilter === t ? 'white' : '#64748b',
-                    cursor: 'pointer', transition: 'all 0.2s'
-                  }}
-                 >{t}</button>
-               ))}
+      )}
+
+      {billingViewMode === 'INVOICES' && (
+        <div className="invoices-main" style={{ animation: 'fadeIn 0.3s' }}>
+          {/* Filter Matrix Controls */}
+          <div className="filter-matrix" style={{ display: 'flex', gap: '30px', marginBottom: '30px', background: '#f1f5f9', padding: '15px 25px', borderRadius: '18px', border: '1px solid #e2e8f0', alignItems: 'center' }}>
+             <div style={{ display: 'flex', alignItems: 'center', gap: '15px' }}>
+                <span style={{ fontSize: '10px', fontWeight: 950, color: '#64748b', letterSpacing: '1px' }}>TEMPORAL_FILTER:</span>
+                <div style={{ display: 'flex', background: 'white', padding: '3px', borderRadius: '10px', border: '1px solid #e2e8f0' }}>
+                   {['TODAY', 'PAST', 'ALL'].map(t => (
+                     <button 
+                      key={t}
+                      onClick={() => setTimeFilter(t)}
+                      style={{ 
+                        padding: '8px 16px', borderRadius: '8px', border: 'none', fontSize: '9px', fontWeight: 950,
+                        background: timeFilter === t ? 'linear-gradient(135deg, #0f52ba 0%, #061a40 100%)' : 'transparent',
+                        color: timeFilter === t ? 'white' : '#64748b',
+                        cursor: 'pointer', transition: 'all 0.2s'
+                      }}
+                     >{t}</button>
+                   ))}
+                </div>
+             </div>
+
+             <div style={{ width: '1px', height: '30px', background: '#cbd5e1' }}></div>
+
+             <div style={{ display: 'flex', alignItems: 'center', gap: '15px' }}>
+                <span style={{ fontSize: '10px', fontWeight: 950, color: '#64748b', letterSpacing: '1px' }}>STATUS_PROTOCOL:</span>
+                <div style={{ display: 'flex', background: 'white', padding: '3px', borderRadius: '10px', border: '1px solid #e2e8f0' }}>
+                   {['ALL', 'PAID', 'PENDING'].map(s => (
+                     <button 
+                      key={s}
+                      onClick={() => setStatusFilter(s)}
+                      style={{ 
+                        padding: '8px 16px', borderRadius: '8px', border: 'none', fontSize: '9px', fontWeight: 950,
+                        background: statusFilter === s ? '#0f52ba' : 'transparent',
+                        color: statusFilter === s ? 'white' : '#64748b',
+                        cursor: 'pointer', transition: 'all 0.2s'
+                      }}
+                     >{s}</button>
+                   ))}
+                </div>
+             </div>
+
+             {/* Stats Summary Bubble */}
+             <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: '10px' }}>
+                <span style={{ fontSize: '10px', fontWeight: 950, color: '#94a3b8' }}>MATCHING_RECORDS:</span>
+                <span style={{ background: '#0f52ba', color: 'white', padding: '2px 8px', borderRadius: '6px', fontSize: '11px', fontWeight: 950 }}>{filteredInvoices.length}</span>
+             </div>
+          </div>
+
+          {/* KPI HUD */}
+          <div className="kpi-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '25px', marginBottom: '40px' }}>
+            <div className="kpi-card" style={{ background: 'white', padding: '25px', borderRadius: '24px', border: '1px solid #e2e8f0', boxShadow: '0 4px 20px rgba(0,0,0,0.02)' }}>
+              <p style={{ fontSize: '11px', fontWeight: 950, color: '#94a3b8', letterSpacing: '1px', marginBottom: '15px' }}>TOTAL REVENUE (PAID)</p>
+              <div style={{ fontSize: '28px', fontWeight: 950, color: '#1a1a2e' }}>₹{liveStats.totalRevenue.toLocaleString()}</div>
+              <div style={{ marginTop: '10px', fontSize: '10px', color: '#2ecc71', fontWeight: 800 }}>MATCHING CURRENT PROTOCOL</div>
             </div>
-         </div>
-
-         <div style={{ width: '1px', height: '30px', background: '#cbd5e1' }}></div>
-
-         <div style={{ display: 'flex', alignItems: 'center', gap: '15px' }}>
-            <span style={{ fontSize: '10px', fontWeight: 950, color: '#64748b', letterSpacing: '1px' }}>STATUS_PROTOCOL:</span>
-            <div style={{ display: 'flex', background: 'white', padding: '3px', borderRadius: '10px', border: '1px solid #e2e8f0' }}>
-               {['ALL', 'PAID', 'PENDING'].map(s => (
-                 <button 
-                  key={s}
-                  onClick={() => setStatusFilter(s)}
-                  style={{ 
-                    padding: '8px 16px', borderRadius: '8px', border: 'none', fontSize: '9px', fontWeight: 950,
-                    background: statusFilter === s ? '#0f52ba' : 'transparent',
-                    color: statusFilter === s ? 'white' : '#64748b',
-                    cursor: 'pointer', transition: 'all 0.2s'
-                  }}
-                 >{s}</button>
-               ))}
+            <div className="kpi-card" style={{ background: 'white', padding: '25px', borderRadius: '24px', border: '1px solid #e2e8f0', boxShadow: '0 4px 20px rgba(0,0,0,0.02)' }}>
+              <p style={{ fontSize: '11px', fontWeight: 950, color: '#94a3b8', letterSpacing: '1px', marginBottom: '15px' }}>PENDING UNPAID</p>
+              <div style={{ fontSize: '28px', fontWeight: 950, color: '#f39c12' }}>₹{liveStats.pendingRevenue.toLocaleString()}</div>
+              <div style={{ marginTop: '10px', fontSize: '10px', color: '#f39c12', fontWeight: 800 }}>{liveStats.pendingCount} INVOICES OUTSTANDING</div>
             </div>
-         </div>
+            <div className="kpi-card" style={{ background: 'white', padding: '25px', borderRadius: '24px', border: '1px solid #e2e8f0', boxShadow: '0 4px 20px rgba(0,0,0,0.02)' }}>
+              <p style={{ fontSize: '11px', fontWeight: 950, color: '#94a3b8', letterSpacing: '1px', marginBottom: '15px' }}>COLLECTION EFFICIENCY</p>
+              <div style={{ fontSize: '28px', fontWeight: 950, color: '#0f52ba' }}>{liveStats.realizationRate}%</div>
+              <div style={{ marginTop: '10px', fontSize: '10px', color: '#0f52ba', fontWeight: 800 }}>BASED ON FILTERED SCOPE</div>
+            </div>
+            <div className="kpi-card" style={{ background: 'white', padding: '25px', borderRadius: '24px', border: '1px solid #e2e8f0', boxShadow: '0 4px 20px rgba(0,0,0,0.02)' }}>
+              <p style={{ fontSize: '11px', fontWeight: 950, color: '#94a3b8', letterSpacing: '1px', marginBottom: '15px' }}>AVG TICKET SIZE</p>
+              <div style={{ fontSize: '28px', fontWeight: 950, color: '#1a1a2e' }}>₹{liveStats.averageTicket.toLocaleString()}</div>
+              <div style={{ marginTop: '10px', fontSize: '10px', color: '#888', fontWeight: 600 }}>PAID INVOICES IN SCOPE</div>
+            </div>
+          </div>
 
-         {/* Stats Summary Bubble */}
-         <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: '10px' }}>
-            <span style={{ fontSize: '10px', fontWeight: 950, color: '#94a3b8' }}>MATCHING_RECORDS:</span>
-            <span style={{ background: '#0f52ba', color: 'white', padding: '2px 8px', borderRadius: '6px', fontSize: '11px', fontWeight: 950 }}>{filteredInvoices.length}</span>
-         </div>
-      </div>
+          <div className="content-main" style={{ display: 'grid', gridTemplateColumns: '1fr', gap: '30px' }}>
+            <div style={{ background: 'white', borderRadius: '24px', border: '1px solid #e2e8f0', padding: '30px', boxShadow: '0 4px 20px rgba(0,0,0,0.02)' }}>
+               <h3 style={{ fontSize: '14px', fontWeight: 950, marginBottom: '25px', letterSpacing: '1px' }}>GLOBAL TRANSACTION LEDGER</h3>
+               <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                 <thead>
+                   <tr style={{ textAlign: 'left', borderBottom: '1px solid #f1f5f9' }}>
+                     <th style={{ padding: '15px 10px', fontSize: '10px', fontWeight: 950, color: '#94a3b8', letterSpacing: '1px' }}>INVOICE_ID</th>
+                     <th style={{ padding: '15px 10px', fontSize: '10px', fontWeight: 950, color: '#94a3b8', letterSpacing: '1px' }}>PATIENT_ENTITY</th>
+                     <th style={{ padding: '15px 10px', fontSize: '10px', fontWeight: 950, color: '#94a3b8', letterSpacing: '1px' }}>TIMESTAMP</th>
+                     <th style={{ padding: '15px 10px', fontSize: '10px', fontWeight: 950, color: '#94a3b8', letterSpacing: '1px' }}>QUANTUM</th>
+                     <th style={{ padding: '15px 10px', fontSize: '10px', fontWeight: 950, color: '#e11d48', letterSpacing: '1px' }}>REFERRAL_CUT</th>
+                     <th style={{ padding: '15px 10px', fontSize: '10px', fontWeight: 950, color: '#94a3b8', letterSpacing: '1px' }}>STATUS</th>
+                     <th style={{ padding: '15px 10px', fontSize: '10px', fontWeight: 950, color: '#94a3b8', letterSpacing: '1px', textAlign: 'right' }}>ACTIONS</th>
+                   </tr>
+                 </thead>
+                 <tbody>
+                   {paginatedInvoices.map(inv => (
+                     <tr key={inv.invoiceId} style={{ borderBottom: '1px solid #f8fafc', transition: 'background 0.2s' }}>
+                       <td style={{ padding: '20px 10px', fontSize: '12px', fontWeight: 900, color: '#0f52ba', fontFamily: 'monospace' }}>{inv.displayId}</td>
+                       <td style={{ padding: '20px 10px', fontSize: '13px', fontWeight: 800, color: '#1e293b' }}>{inv.patientName.toUpperCase()}</td>
+                       <td style={{ padding: '20px 10px', fontSize: '12px', color: '#64748b', fontWeight: 600 }}>{new Date(inv.createdAt).toLocaleString()}</td>
+                       <td style={{ padding: '20px 10px', fontSize: '14px', fontWeight: 950, color: '#1a1a2e' }}>₹{inv.totalAmount.toLocaleString()}</td>
+                       <td style={{ padding: '20px 10px' }}>
+                           {inv.commissionAmount > 0 ? (
+                             <div style={{ display: 'flex', flexDirection: 'column' }}>
+                                <span style={{ fontSize: '13px', fontWeight: 950, color: '#e11d48' }}>₹{inv.commissionAmount.toLocaleString()}</span>
+                                <span style={{ fontSize: '8px', fontWeight: 800, color: '#e11d48', opacity: 0.7 }}>LOGGED_PAYOUT</span>
+                             </div>
+                           ) : (
+                             <span style={{ fontSize: '12px', color: '#cbd5e1', fontWeight: 700 }}>—</span>
+                           )}
+                       </td>
+                       <td style={{ padding: '20px 10px' }}>
+                          <span style={{ 
+                            padding: '6px 12px', borderRadius: '8px', fontSize: '9px', fontWeight: 950,
+                            background: inv.status === 'PAID' ? '#ecfdf5' : '#fff7ed',
+                            color: inv.status === 'PAID' ? '#059669' : '#ea580c'
+                          }}>
+                            {inv.status}
+                          </span>
+                       </td>
+                       <td style={{ padding: '20px 10px', textAlign: 'right', display: 'flex', gap: '10px', justifyContent: 'flex-end', alignItems: 'center' }}>
+                          <button 
+                            onClick={() => {
+                               const cutAmount = Math.round((inv.totalAmount || 0) * 0.2);
+                               // Multi-stage identity resolution
+                               let refId = inv.referrerId;
+                               if (!refId && inv.referrerName) {
+                                  const match = referrers.find(r => r.name?.toLowerCase() === inv.referrerName.toLowerCase());
+                                  if (match) refId = match.referrerId || match.id;
+                               }
 
-      {/* KPI HUD */}
-      <div className="kpi-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '25px', marginBottom: '40px' }}>
-        <div className="kpi-card" style={{ background: 'white', padding: '25px', borderRadius: '24px', border: '1px solid #e2e8f0', boxShadow: '0 4px 20px rgba(0,0,0,0.02)' }}>
-          <p style={{ fontSize: '11px', fontWeight: 950, color: '#94a3b8', letterSpacing: '1px', marginBottom: '15px' }}>TOTAL REVENUE (PAID)</p>
-          <div style={{ fontSize: '28px', fontWeight: 950, color: '#1a1a2e' }}>₹{liveStats.totalRevenue.toLocaleString()}</div>
-          <div style={{ marginTop: '10px', fontSize: '10px', color: '#2ecc71', fontWeight: 800 }}>MATCHING CURRENT PROTOCOL</div>
+                               setEditPayout({
+                                 referrerId: refId || '',
+                                 referrerName: inv.referrerName || 'DIRECT',
+                                 amount: cutAmount || 0,
+                                 modality: inv.modality || 'MRI', 
+                                 remarks: `Commission for Mission ${inv.displayId} (${inv.patientName})`,
+                                 invoiceId: inv.displayId
+                               });
+                               setIsPayoutDrawerOpen(true);
+                            }}
+                            style={{ padding: '8px 12px', borderRadius: '10px', border: 'none', background: '#fff1f2', color: '#e11d48', fontSize: '10px', fontWeight: 950, cursor: 'pointer', boxShadow: '0 2px 5px rgba(225,29,72,0.1)' }}
+                          >LOG CUT 💸</button>
+                          <button 
+                            onClick={() => { setSelectedInvoice(inv); setIsInvoiceDrawerOpen(true); }}
+                            style={{ padding: '8px 16px', borderRadius: '10px', border: '1px solid #e2e8f0', background: 'white', color: '#0f52ba', fontSize: '10px', fontWeight: 950, cursor: 'pointer' }}
+                          >VIEW_DETAILS</button>
+                          <button 
+                            onClick={() => handleDeleteInvoice(inv.invoiceId)}
+                            style={{ padding: '8px 12px', borderRadius: '10px', border: 'none', background: '#fee2e2', color: '#ef4444', fontSize: '10px', fontWeight: 950, cursor: 'pointer' }}
+                          >DELETE</button>
+                       </td>
+                     </tr>
+                   ))}
+                   {filteredInvoices.length === 0 && (
+                     <tr>
+                       <td colSpan="7" style={{ padding: '80px', textAlign: 'center', color: '#94a3b8', fontSize: '12px', fontWeight: 700 }}>NO TRANSACTIONS DETECTED IN ACTIVE LEDGER</td>
+                     </tr>
+                   )}
+                 </tbody>
+               </table>
+               {renderPagination()}
+             </div>
+          </div>
         </div>
-        <div className="kpi-card" style={{ background: 'white', padding: '25px', borderRadius: '24px', border: '1px solid #e2e8f0', boxShadow: '0 4px 20px rgba(0,0,0,0.02)' }}>
-          <p style={{ fontSize: '11px', fontWeight: 950, color: '#94a3b8', letterSpacing: '1px', marginBottom: '15px' }}>PENDING UNPAID</p>
-          <div style={{ fontSize: '28px', fontWeight: 950, color: '#f39c12' }}>₹{liveStats.pendingRevenue.toLocaleString()}</div>
-          <div style={{ marginTop: '10px', fontSize: '10px', color: '#f39c12', fontWeight: 800 }}>{liveStats.pendingCount} INVOICES OUTSTANDING</div>
+      )}
+
+      {billingViewMode === 'REFERRAL_CUTS' && (
+        <div className="referral-cuts-main" style={{ animation: 'fadeIn 0.3s' }}>
+           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '25px' }}>
+              <div>
+                 <h3 style={{ fontSize: '18px', fontWeight: 950, color: '#1e293b' }}>REFERRAL PAYOUT LEDGER</h3>
+                 <p style={{ fontSize: '11px', color: '#64748b', fontWeight: 600 }}>Tracking all commissions and cuts for clinical partners.</p>
+              </div>
+              <div style={{ background: '#fff1f2', padding: '15px 25px', borderRadius: '16px', border: '1px solid #fecdd3', textAlign: 'right' }}>
+                 <div style={{ fontSize: '10px', fontWeight: 950, color: '#e11d48', marginBottom: '5px' }}>TOTAL PAYOUTS</div>
+                 <div style={{ fontSize: '24px', fontWeight: 950, color: '#881337' }}>
+                   ₹{expenses.filter(e => e.category === 'Referral' || e.description.toLowerCase().includes('referral')).reduce((sum, e) => sum + e.amount, 0).toLocaleString()}
+                 </div>
+              </div>
+           </div>
+
+           <div style={{ background: 'white', borderRadius: '24px', border: '1px solid #e2e8f0', overflow: 'hidden' }}>
+              <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                 <thead style={{ background: '#fff1f2' }}>
+                    <tr>
+                       <th style={{ padding: '20px 30px', textAlign: 'left', fontSize: '10px', fontWeight: 950, color: '#e11d48', letterSpacing: '1px' }}>PAYOUT_DATE</th>
+                       <th style={{ padding: '20px 30px', textAlign: 'left', fontSize: '10px', fontWeight: 950, color: '#e11d48', letterSpacing: '1px' }}>PARTNER (REFERRER)</th>
+                       <th style={{ padding: '20px 30px', textAlign: 'left', fontSize: '10px', fontWeight: 950, color: '#e11d48', letterSpacing: '1px' }}>DESCRIPTION / MISSION</th>
+                       <th style={{ padding: '20px 30px', textAlign: 'left', fontSize: '10px', fontWeight: 950, color: '#e11d48', letterSpacing: '1px' }}>REF_ID</th>
+                       <th style={{ padding: '20px 30px', textAlign: 'right', fontSize: '10px', fontWeight: 950, color: '#e11d48', letterSpacing: '1px' }}>PAYOUT_AMOUNT</th>
+                       <th style={{ padding: '20px 30px', textAlign: 'right', fontSize: '10px', fontWeight: 950, color: '#e11d48', letterSpacing: '1px' }}>ACTION</th>
+                    </tr>
+                 </thead>
+                 <tbody>
+                    {expenses.filter(e => e.category === 'Referral' || e.description.toLowerCase().includes('referral')).length === 0 ? (
+                       <tr><td colSpan="6" style={{ padding: '100px', textAlign: 'center', color: '#94a3b8', fontSize: '12px', fontWeight: 700 }}>NO REFERRAL PAYOUTS DETECTED</td></tr>
+                    ) : (
+                       expenses.filter(e => e.category === 'Referral' || e.description.toLowerCase().includes('referral')).map(e => (
+                          <tr key={e.id} style={{ borderBottom: '1px solid #f1f5f9' }}>
+                             <td style={{ padding: '20px 30px', fontSize: '12px', fontWeight: 800, color: '#1e293b' }}>{new Date(e.transactionDate).toLocaleDateString()}</td>
+                             <td style={{ padding: '20px 30px' }}>
+                                <div style={{ fontSize: '13px', fontWeight: 950, color: '#e11d48' }}>{(e.vendorName || 'DIRECT').toUpperCase()}</div>
+                             </td>
+                             <td style={{ padding: '20px 30px', fontSize: '12px', fontWeight: 700, color: '#64748b' }}>{e.description}</td>
+                             <td style={{ padding: '20px 30px' }}>
+                                <div style={{ padding: '4px 8px', background: '#f1f5f9', borderRadius: '6px', fontSize: '10px', fontWeight: 950, color: '#1e293b', display: 'inline-block', fontFamily: 'monospace' }}>{e.referenceNumber || 'N/A'}</div>
+                             </td>
+                             <td style={{ padding: '20px 30px', textAlign: 'right' }}>
+                                <div style={{ fontSize: '16px', fontWeight: 950, color: '#e11d48' }}>₹{e.amount.toLocaleString()}</div>
+                             </td>
+                             <td style={{ padding: '20px 30px', textAlign: 'right' }}>
+                                <button 
+                                   onClick={() => handleDeleteExpense(e.id)}
+                                   style={{ padding: '8px 12px', borderRadius: '8px', border: 'none', background: '#fee2e2', color: '#ef4444', fontSize: '9px', fontWeight: 950, cursor: 'pointer' }}
+                                >DELETE</button>
+                             </td>
+                          </tr>
+                       ))
+                    )}
+                 </tbody>
+              </table>
+           </div>
         </div>
-        <div className="kpi-card" style={{ background: 'white', padding: '25px', borderRadius: '24px', border: '1px solid #e2e8f0', boxShadow: '0 4px 20px rgba(0,0,0,0.02)' }}>
-          <p style={{ fontSize: '11px', fontWeight: 950, color: '#94a3b8', letterSpacing: '1px', marginBottom: '15px' }}>COLLECTION EFFICIENCY</p>
-          <div style={{ fontSize: '28px', fontWeight: 950, color: '#0f52ba' }}>{liveStats.realizationRate}%</div>
-          <div style={{ marginTop: '10px', fontSize: '10px', color: '#0f52ba', fontWeight: 800 }}>BASED ON FILTERED SCOPE</div>
-        </div>
-        <div className="kpi-card" style={{ background: 'white', padding: '25px', borderRadius: '24px', border: '1px solid #e2e8f0', boxShadow: '0 4px 20px rgba(0,0,0,0.02)' }}>
-          <p style={{ fontSize: '11px', fontWeight: 950, color: '#94a3b8', letterSpacing: '1px', marginBottom: '15px' }}>AVG TICKET SIZE</p>
-          <div style={{ fontSize: '28px', fontWeight: 950, color: '#1a1a2e' }}>₹{liveStats.averageTicket.toLocaleString()}</div>
-          <div style={{ marginTop: '10px', fontSize: '10px', color: '#888', fontWeight: 600 }}>PAID INVOICES IN SCOPE</div>
-        </div>
-      </div>
+      )}
 
       {billingViewMode === 'ANALYTICS' && (
-        <div className="analytics-view">
-          {/* TEMPORAL MATRIX SECTION */}
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '30px', marginBottom: '40px' }}>
-              <div style={{ background: 'white', borderRadius: '24px', border: '1px solid #e2e8f0', padding: '30px', boxShadow: '0 4px 20px rgba(0,0,0,0.02)' }}>
-                  <h3 style={{ fontSize: '12px', fontWeight: 950, marginBottom: '20px', color: '#64748b', letterSpacing: '1px' }}>MONTHLY_PERFORMANCE_MATRIX</h3>
+        <div className="analytics-main" style={{ animation: 'fadeIn 0.3s' }}>
+          {/* ANALYTICS CONTROL BAR */}
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '30px', background: 'white', padding: '20px 30px', borderRadius: '24px', border: '1px solid #e2e8f0', boxShadow: '0 4px 20px rgba(0,0,0,0.02)' }}>
+              <div>
+                  <h3 style={{ fontSize: '14px', fontWeight: 950, color: '#1e293b' }}>FINANCIAL_TREND_ANALYSIS</h3>
+                  <p style={{ fontSize: '11px', color: '#94a3b8', fontWeight: 700 }}>Visualize performance across different temporal windows</p>
+              </div>
+              <div style={{ display: 'flex', gap: '10px', background: '#f8fafc', padding: '5px', borderRadius: '12px', border: '1px solid #f1f5f9' }}>
+                  {['DAILY', 'WEEKLY', 'MONTHLY', 'YEARLY'].map(p => (
+                      <button
+                          key={p}
+                          onClick={() => setSelectedPeriod(p)}
+                          style={{
+                              padding: '8px 16px',
+                              borderRadius: '8px',
+                              border: 'none',
+                              fontSize: '10px',
+                              fontWeight: 950,
+                              cursor: 'pointer',
+                              transition: 'all 0.2s',
+                              background: selectedPeriod === p ? '#0f52ba' : 'transparent',
+                              color: selectedPeriod === p ? 'white' : '#64748b',
+                              boxShadow: selectedPeriod === p ? '0 4px 12px rgba(15, 82, 186, 0.2)' : 'none'
+                          }}
+                      >{p}</button>
+                  ))}
+              </div>
+          </div>
+
+          {/* MAIN TREND MATRIX */}
+          <div style={{ background: 'white', borderRadius: '24px', border: '1px solid #e2e8f0', padding: '30px', boxShadow: '0 4px 20px rgba(0,0,0,0.02)', marginBottom: '40px' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '25px' }}>
+                  <h3 style={{ fontSize: '12px', fontWeight: 950, color: '#64748b', letterSpacing: '1px' }}>{selectedPeriod}_PERFORMANCE_MATRIX</h3>
+                  <div style={{ fontSize: '10px', fontWeight: 950, color: '#0f52ba' }}>
+                      RECORDS_DETECTED: {selectedPeriod === 'DAILY' ? (matrix.daily?.length || 0) : selectedPeriod === 'WEEKLY' ? (matrix.weekly?.length || 0) : selectedPeriod === 'MONTHLY' ? (matrix.monthly?.length || 0) : (matrix.yearly?.length || 0)}
+                  </div>
+              </div>
+              <div style={{ overflowX: 'auto' }}>
                   <table style={{ width: '100%', borderCollapse: 'collapse' }}>
                       <thead>
                           <tr style={{ textAlign: 'left', borderBottom: '1px solid #f1f5f9' }}>
-                              <th style={{ padding: '12px 5px', fontSize: '9px', fontWeight: 950, color: '#94a3b8' }}>MONTH</th>
-                              <th style={{ padding: '12px 5px', fontSize: '9px', fontWeight: 950, color: '#94a3b8' }}>INVOICED</th>
-                              <th style={{ padding: '12px 5px', fontSize: '9px', fontWeight: 950, color: '#94a3b8' }}>EXPENSES</th>
-                              <th style={{ padding: '12px 5px', fontSize: '9px', fontWeight: 950, color: '#0f52ba' }}>NET_MARGIN</th>
+                              <th style={{ padding: '15px 10px', fontSize: '9px', fontWeight: 950, color: '#94a3b8' }}>PERIOD</th>
+                              <th style={{ padding: '15px 10px', fontSize: '9px', fontWeight: 950, color: '#94a3b8' }}>INVOICED (GROSS)</th>
+                              <th style={{ padding: '15px 10px', fontSize: '9px', fontWeight: 950, color: '#94a3b8' }}>COLLECTED (CASH)</th>
+                              <th style={{ padding: '15px 10px', fontSize: '9px', fontWeight: 950, color: '#94a3b8' }}>EXPENSES</th>
+                              <th style={{ padding: '15px 10px', fontSize: '9px', fontWeight: 950, color: '#0f52ba' }}>NET_MARGIN</th>
+                              <th style={{ padding: '15px 10px', textAlign: 'right', fontSize: '9px', fontWeight: 950, color: '#94a3b8' }}>REALIZATION</th>
                           </tr>
                       </thead>
                       <tbody>
-                          {matrix.monthly.map((m, idx) => (
+                          {(selectedPeriod === 'DAILY' ? (matrix.daily || []) : selectedPeriod === 'WEEKLY' ? (matrix.weekly || []) : selectedPeriod === 'MONTHLY' ? (matrix.monthly || []) : (matrix.yearly || [])).map((m, idx) => (
                               <tr key={idx} style={{ borderBottom: '1px solid #f8fafc' }}>
-                                  <td style={{ padding: '12px 5px', fontSize: '11px', fontWeight: 900, color: '#1e293b' }}>{m.label}</td>
-                                  <td style={{ padding: '12px 5px', fontSize: '11px', fontWeight: 800 }}>₹{m.invoiced.toLocaleString()}</td>
-                                  <td style={{ padding: '12px 5px', fontSize: '11px', fontWeight: 800, color: '#dc2626' }}>₹{m.expenses.toLocaleString()}</td>
-                                  <td style={{ padding: '12px 5px', fontSize: '11px', fontWeight: 950, color: m.netProfit >= 0 ? '#0f52ba' : '#ef4444' }}>₹{m.netProfit.toLocaleString()}</td>
+                                  <td style={{ padding: '15px 10px', fontSize: '11px', fontWeight: 900, color: '#1e293b' }}>{m.label}</td>
+                                  <td style={{ padding: '15px 10px', fontSize: '11px', fontWeight: 800 }}>₹{(m.invoiced || 0).toLocaleString()}</td>
+                                  <td style={{ padding: '15px 10px', fontSize: '11px', fontWeight: 800, color: '#059669' }}>₹{(m.collected || 0).toLocaleString()}</td>
+                                  <td style={{ padding: '15px 10px', fontSize: '11px', fontWeight: 800, color: '#dc2626' }}>₹{(m.expenses || 0).toLocaleString()}</td>
+                                  <td style={{ padding: '15px 10px', fontSize: '11px', fontWeight: 950, color: (m.netProfit || 0) >= 0 ? '#0f52ba' : '#ef4444' }}>₹{(m.netProfit || 0).toLocaleString()}</td>
+                                  <td style={{ padding: '15px 10px', textAlign: 'right' }}>
+                                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: '8px' }}>
+                                          <span style={{ fontSize: '10px', fontWeight: 900 }}>{(m.realizationRate || 0)}%</span>
+                                          <div style={{ width: '40px', height: '4px', background: '#f1f5f9', borderRadius: '10px' }}>
+                                              <div style={{ width: `${(m.realizationRate || 0)}%`, height: '100%', background: (m.realizationRate || 0) > 80 ? '#059669' : (m.realizationRate || 0) > 50 ? '#d97706' : '#dc2626', borderRadius: '10px' }}></div>
+                                          </div>
+                                      </div>
+                                  </td>
                               </tr>
                           ))}
                       </tbody>
                   </table>
               </div>
+          </div>
 
-              <div style={{ background: 'white', borderRadius: '24px', border: '1px solid #e2e8f0', padding: '30px', boxShadow: '0 4px 20px rgba(0,0,0,0.02)' }}>
-                  <h3 style={{ fontSize: '12px', fontWeight: 950, marginBottom: '20px', color: '#64748b', letterSpacing: '1px' }}>DAILY_REVENUE_TREND (LATEST)</h3>
-                  <div style={{ maxHeight: '600px', overflowY: 'auto' }}>
-                      <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-                          <thead>
-                              <tr style={{ textAlign: 'left', borderBottom: '1px solid #f1f5f9' }}>
-                                  <th style={{ padding: '12px 5px', fontSize: '9px', fontWeight: 950, color: '#94a3b8' }}>DATE</th>
-                                  <th style={{ padding: '12px 5px', fontSize: '9px', fontWeight: 950, color: '#94a3b8' }}>INVOICED</th>
-                                  <th style={{ padding: '12px 5px', fontSize: '9px', fontWeight: 950, color: '#94a3b8' }}>EXPENSES</th>
-                                  <th style={{ padding: '12px 5px', fontSize: '9px', fontWeight: 950, color: '#0f52ba' }}>NET_MARGIN</th>
-                              </tr>
-                          </thead>
-                          <tbody>
-                              {matrix.daily.map((d, idx) => (
-                                  <tr key={idx} style={{ borderBottom: '1px solid #f8fafc' }}>
-                                      <td style={{ padding: '12px 5px', fontSize: '11px', fontWeight: 900, color: '#64748b' }}>{d.label}</td>
-                                      <td style={{ padding: '12px 5px', fontSize: '11px', fontWeight: 800 }}>₹{d.invoiced.toLocaleString()}</td>
-                                      <td style={{ padding: '12px 5px', fontSize: '11px', fontWeight: 800, color: '#dc2626' }}>₹{d.expenses.toLocaleString()}</td>
-                                      <td style={{ padding: '12px 5px', fontSize: '11px', fontWeight: 950, color: d.netProfit >= 0 ? '#0f52ba' : '#ef4444' }}>₹{d.netProfit.toLocaleString()}</td>
-                                  </tr>
-                              ))}
-                          </tbody>
-                      </table>
+          {/* MODALITY CONTRIBUTION SECTION */}
+          <div style={{ background: 'white', borderRadius: '32px', border: '1px solid #e2e8f0', padding: '40px', boxShadow: '0 20px 50px rgba(0,0,0,0.03)' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '35px' }}>
+                  <div>
+                      <h3 style={{ fontSize: '14px', fontWeight: 950, color: '#1e293b', letterSpacing: '1px' }}>MODALITY_REVENUE_CONTRIBUTION</h3>
+                      <p style={{ fontSize: '11px', color: '#94a3b8', fontWeight: 700, marginTop: '4px' }}>Strategic breakdown of income by acquisition modality</p>
+                  </div>
+                  <div style={{ padding: '10px 20px', background: '#f8fafc', borderRadius: '14px', border: '1px solid #f1f5f9', fontSize: '11px', fontWeight: 950, color: '#0f52ba' }}>
+                      TOTAL_ACTIVE_CHANNELS: {matrix.modalityBreakdown?.length || 0}
                   </div>
               </div>
-          </div>
-        </div>
-      )}
 
-      <div className="content-main" style={{ display: 'grid', gridTemplateColumns: '1fr', gap: '30px' }}>
-        {/* Ledger Section */}
-        <div style={{ background: 'white', borderRadius: '24px', border: '1px solid #e2e8f0', padding: '30px', boxShadow: '0 4px 20px rgba(0,0,0,0.02)' }}>
-           <h3 style={{ fontSize: '14px', fontWeight: 950, marginBottom: '25px', letterSpacing: '1px' }}>GLOBAL TRANSACTION LEDGER</h3>
-           <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-             <thead>
-               <tr style={{ textAlign: 'left', borderBottom: '1px solid #f1f5f9' }}>
-                 <th style={{ padding: '15px 10px', fontSize: '10px', fontWeight: 950, color: '#94a3b8', letterSpacing: '1px' }}>INVOICE_ID</th>
-                 <th style={{ padding: '15px 10px', fontSize: '10px', fontWeight: 950, color: '#94a3b8', letterSpacing: '1px' }}>PATIENT_ENTITY</th>
-                 <th style={{ padding: '15px 10px', fontSize: '10px', fontWeight: 950, color: '#94a3b8', letterSpacing: '1px' }}>TIMESTAMP</th>
-                 <th style={{ padding: '15px 10px', fontSize: '10px', fontWeight: 950, color: '#94a3b8', letterSpacing: '1px' }}>QUANTUM</th>
-                 <th style={{ padding: '15px 10px', fontSize: '10px', fontWeight: 950, color: '#e11d48', letterSpacing: '1px' }}>REFERRAL_CUT</th>
-                 <th style={{ padding: '15px 10px', fontSize: '10px', fontWeight: 950, color: '#94a3b8', letterSpacing: '1px' }}>STATUS</th>
-                 <th style={{ padding: '15px 10px', fontSize: '10px', fontWeight: 950, color: '#94a3b8', letterSpacing: '1px', textAlign: 'right' }}>ACTIONS</th>
-               </tr>
-             </thead>
-             <tbody>
-               {paginatedInvoices.map(inv => (
-                 <tr key={inv.invoiceId} style={{ borderBottom: '1px solid #f8fafc', transition: 'background 0.2s' }}>
-                   <td style={{ padding: '20px 10px', fontSize: '12px', fontWeight: 900, color: '#0f52ba', fontFamily: 'monospace' }}>{inv.displayId}</td>
-                   <td style={{ padding: '20px 10px', fontSize: '13px', fontWeight: 800, color: '#1e293b' }}>{inv.patientName.toUpperCase()}</td>
-                   <td style={{ padding: '20px 10px', fontSize: '12px', color: '#64748b', fontWeight: 600 }}>{new Date(inv.createdAt).toLocaleString()}</td>
-                   <td style={{ padding: '20px 10px', fontSize: '14px', fontWeight: 950, color: '#1a1a2e' }}>₹{inv.totalAmount.toLocaleString()}</td>
-                   <td style={{ padding: '20px 10px' }}>
-                       {inv.commissionAmount > 0 ? (
-                         <div style={{ display: 'flex', flexDirection: 'column' }}>
-                            <span style={{ fontSize: '13px', fontWeight: 950, color: '#e11d48' }}>₹{inv.commissionAmount.toLocaleString()}</span>
-                            <span style={{ fontSize: '8px', fontWeight: 800, color: '#e11d48', opacity: 0.7 }}>LOGGED_PAYOUT</span>
-                         </div>
-                       ) : (
-                         <span style={{ fontSize: '12px', color: '#cbd5e1', fontWeight: 700 }}>—</span>
-                       )}
-                   </td>
-                   <td style={{ padding: '20px 10px' }}>
-                      <span style={{ 
-                        padding: '6px 12px', borderRadius: '8px', fontSize: '9px', fontWeight: 950,
-                        background: inv.status === 'PAID' ? '#ecfdf5' : '#fff7ed',
-                        color: inv.status === 'PAID' ? '#059669' : '#ea580c'
-                      }}>
-                        {inv.status}
-                      </span>
-                   </td>
-                   <td style={{ padding: '20px 10px', textAlign: 'right', display: 'flex', gap: '10px', justifyContent: 'flex-end', alignItems: 'center' }}>
-                      <button 
-                        onClick={() => {
-                          setBillingViewMode('EXPENSES');
-                          setEditExpense({ 
-                            description: `Referral commission for ${inv.patientName} (${inv.displayId})`, 
-                            category: 'Marketing', 
-                            amount: 0, 
-                            taxAmount: 0,
-                            transactionDate: TODAY, 
-                            paymentMode: 'Cash', 
-                            referenceNumber: inv.displayId,
-                            vendorName: inv.referrerName || '',
-                            costCenter: 'Administration',
-                            status: 'Paid'
-                          }); 
-                          setIsExpenseDrawerOpen(true);
-                        }}
-                        style={{ padding: '8px 12px', borderRadius: '10px', border: 'none', background: '#fff1f2', color: '#e11d48', fontSize: '10px', fontWeight: 950, cursor: 'pointer', boxShadow: '0 2px 5px rgba(225,29,72,0.1)' }}
-                      >LOG CUT 💸</button>
-                      <button 
-                        onClick={() => { setSelectedInvoice(inv); setIsInvoiceDrawerOpen(true); }}
-                        style={{ padding: '8px 16px', borderRadius: '10px', border: '1px solid #e2e8f0', background: 'white', color: '#0f52ba', fontSize: '10px', fontWeight: 950, cursor: 'pointer' }}
-                      >VIEW_DETAILS</button>
-                      <button 
-                        onClick={() => handleDeleteInvoice(inv.invoiceId)}
-                        style={{ padding: '8px 12px', borderRadius: '10px', border: 'none', background: '#fee2e2', color: '#ef4444', fontSize: '10px', fontWeight: 950, cursor: 'pointer' }}
-                      >DELETE</button>
-                   </td>
-                 </tr>
-               ))}
-               {filteredInvoices.length === 0 && (
-                 <tr>
-                   <td colSpan="6" style={{ padding: '80px', textAlign: 'center', color: '#94a3b8', fontSize: '12px', fontWeight: 700 }}>NO TRANSACTIONS DETECTED IN ACTIVE LEDGER</td>
-                 </tr>
-               )}
-             </tbody>
-           </table>
-           {renderPagination()}
-         </div>
-      </div>
-      </>
-      )}
-
-      {billingViewMode === 'ANALYTICS' && (
-        <div className="analytics-view">
-          {/* TEMPORAL MATRIX SECTION */}
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '30px', marginBottom: '40px' }}>
-              <div style={{ background: 'white', borderRadius: '24px', border: '1px solid #e2e8f0', padding: '30px', boxShadow: '0 4px 20px rgba(0,0,0,0.02)' }}>
-                  <h3 style={{ fontSize: '12px', fontWeight: 950, marginBottom: '20px', color: '#64748b', letterSpacing: '1px' }}>MONTHLY_PERFORMANCE_MATRIX</h3>
+              <div style={{ overflowX: 'auto' }}>
                   <table style={{ width: '100%', borderCollapse: 'collapse' }}>
                       <thead>
-                          <tr style={{ textAlign: 'left', borderBottom: '1px solid #f1f5f9' }}>
-                              <th style={{ padding: '12px 5px', fontSize: '9px', fontWeight: 950, color: '#94a3b8' }}>MONTH</th>
-                              <th style={{ padding: '12px 5px', fontSize: '9px', fontWeight: 950, color: '#94a3b8' }}>INVOICED</th>
-                              <th style={{ padding: '12px 5px', fontSize: '9px', fontWeight: 950, color: '#94a3b8' }}>EXPENSES</th>
-                              <th style={{ padding: '12px 5px', fontSize: '9px', fontWeight: 950, color: '#0f52ba' }}>NET_MARGIN</th>
+                          <tr style={{ textAlign: 'left', borderBottom: '2px solid #f1f5f9' }}>
+                              <th style={{ padding: '20px 10px', fontSize: '10px', fontWeight: 950, color: '#94a3b8', letterSpacing: '1px' }}>MODALITY</th>
+                              <th style={{ padding: '20px 10px', fontSize: '10px', fontWeight: 950, color: '#94a3b8', letterSpacing: '1px' }}>DAILY_YIELD</th>
+                              <th style={{ padding: '20px 10px', fontSize: '10px', fontWeight: 950, color: '#94a3b8', letterSpacing: '1px' }}>MONTHLY_YIELD</th>
+                              <th style={{ padding: '20px 10px', fontSize: '10px', fontWeight: 950, color: '#94a3b8', letterSpacing: '1px' }}>YEARLY_YIELD</th>
+                              <th style={{ padding: '20px 10px', textAlign: 'right', fontSize: '10px', fontWeight: 950, color: '#0f52ba', letterSpacing: '1px' }}>CONTRIBUTION</th>
                           </tr>
                       </thead>
                       <tbody>
-                          {matrix.monthly.map((m, idx) => (
-                              <tr key={idx} style={{ borderBottom: '1px solid #f8fafc' }}>
-                                  <td style={{ padding: '12px 5px', fontSize: '11px', fontWeight: 900, color: '#1e293b' }}>{m.label}</td>
-                                  <td style={{ padding: '12px 5px', fontSize: '11px', fontWeight: 800 }}>₹{m.invoiced.toLocaleString()}</td>
-                                  <td style={{ padding: '12px 5px', fontSize: '11px', fontWeight: 800, color: '#dc2626' }}>₹{m.expenses.toLocaleString()}</td>
-                                  <td style={{ padding: '12px 5px', fontSize: '11px', fontWeight: 950, color: m.netProfit >= 0 ? '#0f52ba' : '#ef4444' }}>₹{m.netProfit.toLocaleString()}</td>
+                          {matrix.modalityBreakdown?.map((item, idx) => (
+                              <tr key={idx} style={{ borderBottom: '1px solid #f8fafc', transition: 'all 0.2s' }}>
+                                  <td style={{ padding: '25px 10px' }}>
+                                      <div style={{ display: 'flex', alignItems: 'center', gap: '15px' }}>
+                                          <div style={{ width: '36px', height: '36px', borderRadius: '12px', background: '#f0f3fd', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '14px' }}>
+                                              {item.modality === 'MRI' ? '🧠' : item.modality === 'CT' ? '🧬' : item.modality === 'X-RAY' ? '🦴' : '📡'}
+                                          </div>
+                                          <span style={{ fontSize: '13px', fontWeight: 950, color: '#1e293b' }}>{item.modality}</span>
+                                      </div>
+                                  </td>
+                                  <td style={{ padding: '25px 10px', fontSize: '12px', fontWeight: 800, color: '#1e293b' }}>₹{(item.dailyRevenue || 0).toLocaleString()}</td>
+                                  <td style={{ padding: '25px 10px', fontSize: '12px', fontWeight: 800, color: '#1e293b' }}>₹{(item.monthlyRevenue || 0).toLocaleString()}</td>
+                                  <td style={{ padding: '25px 10px', fontSize: '12px', fontWeight: 800, color: '#1e293b' }}>₹{(item.yearlyRevenue || 0).toLocaleString()}</td>
+                                  <td style={{ padding: '25px 10px', textAlign: 'right' }}>
+                                      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '8px' }}>
+                                          <span style={{ fontSize: '14px', fontWeight: 950, color: '#0f52ba' }}>{(item.contributionPercentage || 0)}%</span>
+                                          <div style={{ width: '120px', height: '6px', background: '#f1f5f9', borderRadius: '10px', overflow: 'hidden' }}>
+                                              <div style={{ width: `${(item.contributionPercentage || 0)}%`, height: '100%', background: 'linear-gradient(90deg, #0f52ba, #60a5fa)', borderRadius: '10px' }}></div>
+                                          </div>
+                                      </div>
+                                  </td>
                               </tr>
                           ))}
                       </tbody>
                   </table>
               </div>
-
-              <div style={{ background: 'white', borderRadius: '24px', border: '1px solid #e2e8f0', padding: '30px', boxShadow: '0 4px 20px rgba(0,0,0,0.02)' }}>
-                  <h3 style={{ fontSize: '12px', fontWeight: 950, marginBottom: '20px', color: '#64748b', letterSpacing: '1px' }}>DAILY_REVENUE_TREND (LATEST)</h3>
-                  <div style={{ maxHeight: '600px', overflowY: 'auto' }}>
-                      <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-                          <thead>
-                              <tr style={{ textAlign: 'left', borderBottom: '1px solid #f1f5f9' }}>
-                                  <th style={{ padding: '12px 5px', fontSize: '9px', fontWeight: 950, color: '#94a3b8' }}>DATE</th>
-                                  <th style={{ padding: '12px 5px', fontSize: '9px', fontWeight: 950, color: '#94a3b8' }}>INVOICED</th>
-                                  <th style={{ padding: '12px 5px', fontSize: '9px', fontWeight: 950, color: '#94a3b8' }}>EXPENSES</th>
-                                  <th style={{ padding: '12px 5px', fontSize: '9px', fontWeight: 950, color: '#0f52ba' }}>NET_MARGIN</th>
-                              </tr>
-                          </thead>
-                          <tbody>
-                              {matrix.daily.map((d, idx) => (
-                                  <tr key={idx} style={{ borderBottom: '1px solid #f8fafc' }}>
-                                      <td style={{ padding: '12px 5px', fontSize: '11px', fontWeight: 900, color: '#64748b' }}>{d.label}</td>
-                                      <td style={{ padding: '12px 5px', fontSize: '11px', fontWeight: 800 }}>₹{d.invoiced.toLocaleString()}</td>
-                                      <td style={{ padding: '12px 5px', fontSize: '11px', fontWeight: 800, color: '#dc2626' }}>₹{d.expenses.toLocaleString()}</td>
-                                      <td style={{ padding: '12px 5px', fontSize: '11px', fontWeight: 950, color: d.netProfit >= 0 ? '#0f52ba' : '#ef4444' }}>₹{d.netProfit.toLocaleString()}</td>
-                                  </tr>
-                              ))}
-                          </tbody>
-                      </table>
-                  </div>
-              </div>
           </div>
         </div>
-      )}
-      </>
       )}
 
       {isInvoiceDrawerOpen && renderInvoiceDrawer()}
       {isNewInvoiceDrawerOpen && renderNewInvoiceDrawer()}
       {isExportDrawerOpen && renderExportDrawer()}
       {isExpenseDrawerOpen && renderExpenseDrawer()}
+      {isPayoutDrawerOpen && renderPayoutDrawer()}
     </div>
   );
 }
