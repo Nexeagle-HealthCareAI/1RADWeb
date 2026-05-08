@@ -986,17 +986,43 @@ const AdvancedDicomViewer = ({
     
     console.log(`[TOOL SWITCH] Switching to: ${activeTool}`);
     
+    // Map UI tool names to actual Cornerstone tool names
+    const toolNameMap = {
+      'WindowLevelTool': WindowLevelTool.toolName,
+      'ZoomTool': ZoomTool.toolName,
+      'PanTool': PanTool.toolName,
+      'StackScrollTool': StackScrollTool.toolName,
+      'LengthTool': LengthTool.toolName,
+      'HeightTool': HeightTool.toolName,
+      'BidirectionalTool': BidirectionalTool.toolName,
+      'AngleTool': AngleTool.toolName,
+      'CobbAngleTool': CobbAngleTool.toolName,
+      'EllipticalROITool': EllipticalROITool.toolName,
+      'RectangleROITool': RectangleROITool.toolName,
+      'CircleROITool': CircleROITool.toolName,
+      'PlanarFreehandROITool': PlanarFreehandROITool.toolName,
+      'ProbeTool': ProbeTool.toolName,
+      'ArrowAnnotateTool': ArrowAnnotateTool.toolName,
+      'MagnifyTool': MagnifyTool.toolName,
+      'AdvancedMagnifyTool': AdvancedMagnifyTool.toolName
+    };
+    
+    const actualToolName = toolNameMap[activeTool] || activeTool;
+    console.log(`[TOOL MAPPING] ${activeTool} -> ${actualToolName}`);
+    
     // Get all tools that might be active with Primary mouse button
     const toolsToDeactivate = [
-      'WindowLevelTool', 'ZoomTool', 'PanTool',
-      'LengthTool', 'HeightTool', 'BidirectionalTool', 'AngleTool', 'CobbAngleTool',
-      'EllipticalROITool', 'RectangleROITool', 'CircleROITool', 'PlanarFreehandROITool',
-      'ProbeTool', 'ArrowAnnotateTool', 'MagnifyTool', 'AdvancedMagnifyTool'
+      WindowLevelTool.toolName, ZoomTool.toolName, PanTool.toolName,
+      LengthTool.toolName, HeightTool.toolName, BidirectionalTool.toolName, 
+      AngleTool.toolName, CobbAngleTool.toolName,
+      EllipticalROITool.toolName, RectangleROITool.toolName, CircleROITool.toolName, 
+      PlanarFreehandROITool.toolName, ProbeTool.toolName, ArrowAnnotateTool.toolName, 
+      MagnifyTool.toolName, AdvancedMagnifyTool.toolName
     ];
     
-    // Deactivate all tools except StackScroll (which uses wheel)
+    // Deactivate all tools except StackScroll (which uses wheel) and the target tool
     toolsToDeactivate.forEach(toolName => {
-      if (toolName !== activeTool && toolGroupRef.current.hasTool(toolName)) {
+      if (toolName !== actualToolName && toolGroupRef.current.hasTool(toolName)) {
         try {
           toolGroupRef.current.setToolPassive(toolName);
         } catch (e) {
@@ -1008,24 +1034,26 @@ const AdvancedDicomViewer = ({
     // Activate requested tool
     try {
       // First ensure the tool exists
-      if (!toolGroupRef.current.hasTool(activeTool)) {
-        console.error(`[TOOL ERROR] Tool ${activeTool} not found in tool group`);
+      if (!toolGroupRef.current.hasTool(actualToolName)) {
+        console.error(`[TOOL ERROR] Tool ${actualToolName} not found in tool group`);
         console.log('[TOOL ERROR] Available tools:', Object.keys(toolGroupRef.current._toolInstances || {}));
+        console.log('[TOOL ERROR] Available tool names:', toolsToDeactivate);
         return;
       }
       
       // Enable the tool (required for annotation tools)
-      toolGroupRef.current.setToolEnabled(activeTool);
+      toolGroupRef.current.setToolEnabled(actualToolName);
       
       // Activate with Primary mouse button
-      toolGroupRef.current.setToolActive(activeTool, {
+      toolGroupRef.current.setToolActive(actualToolName, {
         bindings: [{ mouseButton: toolsEnums.MouseBindings.Primary }]
       });
       
-      console.log(`[TOOL SUCCESS] Activated: ${activeTool}`);
+      console.log(`[TOOL SUCCESS] Activated: ${actualToolName} (from UI: ${activeTool})`);
       console.log(`[TOOL SUCCESS] Current active tool:`, toolGroupRef.current.getActivePrimaryMouseButtonTool());
     } catch (e) {
-      console.error(`[TOOL ERROR] Activation failed for ${activeTool}:`, e);
+      console.error(`[TOOL ERROR] Activation failed for ${actualToolName}:`, e);
+      console.error(`[TOOL ERROR] Full error:`, e.stack);
     }
   }, [activeTool]);
 
