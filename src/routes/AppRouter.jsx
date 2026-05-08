@@ -46,6 +46,16 @@ export default function AppRouter() {
       <Route path="/forgot-password" element={<ForgotPassword />} />
       <Route path="/access-denied" element={<AccessDenied />} />
 
+      {/* Full-screen DICOM Viewer - Outside AppLayout */}
+      <Route
+        path="/dicom-viewer"
+        element={
+          <ProtectedRoute allowedRoles={['admindoctor', 'admin', 'doctor', 'technician']}>
+            <DicomViewerPage />
+          </ProtectedRoute>
+        }
+      />
+
       {/* Protected Routes (Authenticated) */}
       <Route
         element={
@@ -107,14 +117,6 @@ export default function AppRouter() {
           element={
             <ProtectedRoute allowedRoles={['admindoctor', 'doctor']}>
               <ReportingPage />
-            </ProtectedRoute>
-          }
-        />
-        <Route
-          path="/dicom-viewer"
-          element={
-            <ProtectedRoute allowedRoles={['admindoctor', 'doctor', 'technician']}>
-              <DicomViewerPage />
             </ProtectedRoute>
           }
         />

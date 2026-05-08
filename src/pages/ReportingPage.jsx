@@ -94,14 +94,31 @@ const ReportingPage = () => {
   useEffect(() => {
     const handleResize = () => {
       const width = window.innerWidth;
-      const tablet = width < 1100;
+      const height = window.innerHeight;
+      const isTouchDevice = 'ontouchstart' in window || navigator.maxTouchPoints > 0;
+      const isIPad = /iPad|Macintosh/.test(navigator.userAgent) && 'ontouchstart' in document;
+      const isTabletSize = (width >= 768 && width <= 1366) || (height >= 768 && height <= 1366);
+      
+      const tablet = isTouchDevice && (isTabletSize || isIPad);
       setIsTablet(tablet);
+      
+      console.log('[REPORTING] Device detection:', {
+        width, height, isTouchDevice, isIPad, isTabletSize, tablet,
+        userAgent: navigator.userAgent
+      });
+      
       if (tablet && activeWorkspaceMode === 'split') {
         setActiveWorkspaceMode('editor'); // Default to editor on tablet
       }
     };
+    
+    handleResize();
     window.addEventListener('resize', handleResize);
-    return () => window.removeEventListener('resize', handleResize);
+    window.addEventListener('orientationchange', handleResize);
+    return () => {
+      window.removeEventListener('resize', handleResize);
+      window.removeEventListener('orientationchange', handleResize);
+    };
   }, [activeWorkspaceMode]);
 
 
@@ -1821,7 +1838,61 @@ const ReportingPage = () => {
           position: relative;
         }
 
-        @media (max-width: 1100px) {
+        @media (max-width: 1366px) and (orientation: landscape), 
+               (max-width: 1024px) and (orientation: portrait),
+               (pointer: coarse) {
+          .main-layout { flex-direction: column; }
+          .panel-center { 
+            width: 100% !important; 
+            height: ${activeWorkspaceMode === 'editor' ? '0' : '60vh'}; 
+            display: ${activeWorkspaceMode === 'editor' ? 'none' : 'flex'}; 
+            flex-direction: column; 
+          }
+          .panel-center > div:first-child { 
+            width: ${isTablet ? '240px' : '200px'} !important;
+            height: 100%;
+          }
+          .panel-right { 
+            width: 100% !important; 
+            height: ${activeWorkspaceMode === 'dicom' ? '0' : 'auto'}; 
+            display: ${activeWorkspaceMode === 'dicom' ? 'none' : 'flex'}; 
+            border-left: none; 
+            padding: 20px 15px; 
+          }
+          .resizer-handle { display: none; }
+          
+          /* Touch-friendly button sizes */
+          button {
+            min-height: 44px !important;
+            min-width: 44px !important;
+            touch-action: manipulation;
+          }
+          
+          /* Prevent zoom on input focus */
+          input, textarea, select {
+            font-size: 16px !important;
+          }
+        }
+
+        /* iPad specific optimizations */
+        @media only screen 
+          and (min-device-width: 768px) 
+          and (max-device-width: 1024px) 
+          and (-webkit-min-device-pixel-ratio: 1) {
+          
+          .panel-center > div:first-child { 
+            width: 280px !important;
+          }
+          
+          /* Larger touch targets for iPad */
+          button {
+            min-height: 48px !important;
+            padding: 12px !important;
+          }
+        }
+
+        /* iPhone and small tablet portrait */
+        @media (max-width: 768px) {
           .main-layout { flex-direction: column; }
           .panel-center { width: 100% !important; height: 50vh; display: ${activeWorkspaceMode === 'editor' ? 'none' : 'flex'}; flex-direction: column; }
           .panel-center > div:first-child { display: none; } /* Hide left toolbar on mobile */
@@ -2420,7 +2491,7 @@ const ReportingPage = () => {
         <div className="panel panel-center" style={{ display: 'flex' }}>
           {/* LEFT TOOLBAR - Attached to DICOM Viewer */}
           <div style={{
-            width: '200px',
+            width: isTablet ? '240px' : '200px',
             background: 'linear-gradient(180deg, #0f172a 0%, #1e293b 100%)',
             borderRight: '2px solid #334155',
             display: 'flex',
@@ -2429,68 +2500,93 @@ const ReportingPage = () => {
           }}>
             {/* Toolbar Header */}
             <div style={{
-              padding: '15px',
+              padding: isTablet ? '20px 15px' : '15px',
               borderBottom: '2px solid #334155',
               background: 'linear-gradient(135deg, #3b82f6, #8b5cf6)'
             }}>
               <div style={{
                 color: 'white',
-                fontSize: '12px',
+                fontSize: isTablet ? '14px' : '12px',
                 fontWeight: 900,
                 letterSpacing: '1px',
                 display: 'flex',
                 alignItems: 'center',
                 gap: '8px'
               }}>
-                <span style={{ fontSize: '16px' }}>🛠️</span>
+                <span style={{ fontSize: isTablet ? '20px' : '16px' }}>🛠️</span>
                 DICOM TOOLS
               </div>
+              {isTablet && (
+                <div style={{
+                  color: 'rgba(255,255,255,0.8)',
+                  fontSize: '10px',
+                  marginTop: '4px'
+                }}>
+                  Touch optimized for tablets
+                </div>
+              )}
             </div>
 
             {/* Essential Tools */}
-            <div style={{ padding: '15px', borderBottom: '1px solid #334155' }}>
+            <div style={{ padding: isTablet ? '20px 15px' : '15px', borderBottom: '1px solid #334155' }}>
               <div style={{ 
                 color: '#3b82f6', 
-                fontSize: '10px', 
+                fontSize: isTablet ? '12px' : '10px', 
                 fontWeight: 900, 
-                marginBottom: '10px',
+                marginBottom: isTablet ? '15px' : '10px',
                 letterSpacing: '1px'
               }}>
                 🎮 NAVIGATION
               </div>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+              <div style={{ display: 'grid', gridTemplateColumns: isTablet ? '1fr 1fr' : '1fr 1fr 1fr', gap: isTablet ? '8px' : '4px' }}>
                 {[
-                  { id: 'WindowLevelTool', icon: '☀️', label: 'Window/Level', shortcut: 'W' },
+                  { id: 'WindowLevelTool', icon: '☀️', label: 'W/L', shortcut: 'W' },
                   { id: 'ZoomTool', icon: '🔍', label: 'Zoom', shortcut: 'Z' },
-                  { id: 'PanTool', icon: '✋', label: 'Pan', shortcut: 'P' }
+                  { id: 'PanTool', icon: '✋', label: 'Pan', shortcut: 'P' },
+                  { id: 'StackScrollTool', icon: '📜', label: 'Scroll', shortcut: 'S' },
+                  { id: 'ResetTool', icon: '🔄', label: 'Reset', shortcut: 'ESC' },
+                  { id: 'HelpTool', icon: '❓', label: 'Help', shortcut: '?' }
                 ].map(t => (
                   <button 
                     key={t.id}
-                    onClick={() => setActiveTool(t.id)}
+                    onClick={() => {
+                      if (t.id === 'ResetTool') {
+                        setActiveTool('WindowLevelTool');
+                        setResetTrigger(prev => prev + 1);
+                      } else if (t.id === 'HelpTool') {
+                        // Show help modal or info
+                        alert('Touch gestures:\n• Pinch to zoom\n• Single finger to pan\n• Double tap to reset\n• Use toolbar for measurements');
+                      } else {
+                        setActiveTool(t.id);
+                      }
+                    }}
                     style={{ 
                       background: activeTool === t.id ? '#3b82f6' : 'rgba(255,255,255,0.05)', 
                       border: activeTool === t.id ? '2px solid #60a5fa' : '2px solid transparent',
                       color: activeTool === t.id ? 'white' : '#e2e8f0',
-                      padding: '8px 12px',
+                      padding: isTablet ? '12px 8px' : '6px 4px',
                       borderRadius: '6px',
-                      fontSize: '10px',
+                      fontSize: isTablet ? '10px' : '8px',
                       fontWeight: 900,
                       cursor: 'pointer',
                       display: 'flex',
+                      flexDirection: 'column',
                       alignItems: 'center',
-                      gap: '6px',
+                      gap: isTablet ? '6px' : '3px',
                       transition: 'all 0.2s ease',
                       width: '100%',
-                      textAlign: 'left'
+                      textAlign: 'center',
+                      minHeight: isTablet ? '60px' : '45px',
+                      touchAction: 'manipulation' // Optimize for touch
                     }}
                   >
-                    <span style={{ fontSize: '12px' }}>{t.icon}</span> 
-                    <span style={{ flex: 1 }}>{t.label}</span>
+                    <span style={{ fontSize: isTablet ? '16px' : '12px' }}>{t.icon}</span> 
+                    <span style={{ fontSize: isTablet ? '9px' : '7px', lineHeight: '1' }}>{t.label}</span>
                     <span style={{ 
-                      fontSize: '8px', 
+                      fontSize: isTablet ? '8px' : '6px', 
                       background: 'rgba(255,255,255,0.2)', 
-                      padding: '2px 4px', 
-                      borderRadius: '3px'
+                      padding: isTablet ? '2px 4px' : '1px 2px', 
+                      borderRadius: '2px'
                     }}>{t.shortcut}</span>
                   </button>
                 ))}
@@ -2498,22 +2594,24 @@ const ReportingPage = () => {
             </div>
 
             {/* Measurement Tools */}
-            <div style={{ padding: '15px', borderBottom: '1px solid #334155' }}>
+            <div style={{ padding: isTablet ? '20px 15px' : '15px', borderBottom: '1px solid #334155' }}>
               <div style={{ 
                 color: '#10b981', 
-                fontSize: '10px', 
+                fontSize: isTablet ? '12px' : '10px', 
                 fontWeight: 900, 
-                marginBottom: '10px',
+                marginBottom: isTablet ? '15px' : '10px',
                 letterSpacing: '1px'
               }}>
                 📏 MEASUREMENTS
               </div>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+              <div style={{ display: 'grid', gridTemplateColumns: isTablet ? '1fr 1fr' : '1fr 1fr 1fr', gap: isTablet ? '8px' : '4px' }}>
                 {[
                   { id: 'LengthTool', icon: '📏', label: 'Length', shortcut: 'L' },
                   { id: 'HeightTool', icon: '📐', label: 'Height', shortcut: 'H' },
-                  { id: 'BidirectionalTool', icon: '↔️', label: 'Bidirectional', shortcut: 'B' },
-                  { id: 'AngleTool', icon: '∠', label: 'Angle', shortcut: 'A' }
+                  { id: 'BidirectionalTool', icon: '↔️', label: 'Bidir', shortcut: 'B' },
+                  { id: 'AngleTool', icon: '∠', label: 'Angle', shortcut: 'A' },
+                  { id: 'CobbAngleTool', icon: '🦴', label: 'Cobb', shortcut: 'C' },
+                  { id: 'CircleROITool', icon: '🔵', label: 'Circle', shortcut: 'O' }
                 ].map(t => (
                   <button 
                     key={t.id}
@@ -2522,26 +2620,29 @@ const ReportingPage = () => {
                       background: activeTool === t.id ? '#10b981' : 'rgba(255,255,255,0.05)', 
                       border: activeTool === t.id ? '2px solid #34d399' : '2px solid transparent',
                       color: activeTool === t.id ? 'white' : '#e2e8f0',
-                      padding: '8px 12px',
+                      padding: isTablet ? '12px 8px' : '6px 4px',
                       borderRadius: '6px',
-                      fontSize: '10px',
+                      fontSize: isTablet ? '10px' : '8px',
                       fontWeight: 900,
                       cursor: 'pointer',
                       display: 'flex',
+                      flexDirection: 'column',
                       alignItems: 'center',
-                      gap: '6px',
+                      gap: isTablet ? '6px' : '3px',
                       transition: 'all 0.2s ease',
                       width: '100%',
-                      textAlign: 'left'
+                      textAlign: 'center',
+                      minHeight: isTablet ? '60px' : '45px',
+                      touchAction: 'manipulation'
                     }}
                   >
-                    <span style={{ fontSize: '12px' }}>{t.icon}</span> 
-                    <span style={{ flex: 1 }}>{t.label}</span>
+                    <span style={{ fontSize: isTablet ? '16px' : '12px' }}>{t.icon}</span> 
+                    <span style={{ fontSize: isTablet ? '9px' : '7px', lineHeight: '1' }}>{t.label}</span>
                     <span style={{ 
-                      fontSize: '8px', 
+                      fontSize: isTablet ? '8px' : '6px', 
                       background: 'rgba(255,255,255,0.2)', 
-                      padding: '2px 4px', 
-                      borderRadius: '3px'
+                      padding: isTablet ? '2px 4px' : '1px 2px', 
+                      borderRadius: '2px'
                     }}>{t.shortcut}</span>
                   </button>
                 ))}
@@ -2549,22 +2650,24 @@ const ReportingPage = () => {
             </div>
 
             {/* ROI Tools */}
-            <div style={{ padding: '15px', borderBottom: '1px solid #334155' }}>
+            <div style={{ padding: isTablet ? '20px 15px' : '15px', borderBottom: '1px solid #334155' }}>
               <div style={{ 
                 color: '#f59e0b', 
-                fontSize: '10px', 
+                fontSize: isTablet ? '12px' : '10px', 
                 fontWeight: 900, 
-                marginBottom: '10px',
+                marginBottom: isTablet ? '15px' : '10px',
                 letterSpacing: '1px'
               }}>
                 🎯 ROI ANALYSIS
               </div>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+              <div style={{ display: 'grid', gridTemplateColumns: isTablet ? '1fr 1fr' : '1fr 1fr 1fr', gap: isTablet ? '8px' : '4px' }}>
                 {[
-                  { id: 'EllipticalROITool', icon: '⭕', label: 'Ellipse ROI', shortcut: 'E' },
-                  { id: 'RectangleROITool', icon: '⬜', label: 'Rectangle ROI', shortcut: 'R' },
-                  { id: 'ProbeTool', icon: '🎯', label: 'HU Probe', shortcut: 'U' },
-                  { id: 'ArrowAnnotateTool', icon: '➡️', label: 'Arrow', shortcut: 'N' }
+                  { id: 'EllipticalROITool', icon: '⭕', label: 'Ellipse', shortcut: 'E' },
+                  { id: 'RectangleROITool', icon: '⬜', label: 'Rect', shortcut: 'R' },
+                  { id: 'PlanarFreehandROITool', icon: '✏️', label: 'Freehand', shortcut: 'F' },
+                  { id: 'ProbeTool', icon: '🎯', label: 'Probe', shortcut: 'U' },
+                  { id: 'ArrowAnnotateTool', icon: '➡️', label: 'Arrow', shortcut: 'N' },
+                  { id: 'AdvancedMagnifyTool', icon: '🔍', label: 'Magnify', shortcut: 'M' }
                 ].map(t => (
                   <button 
                     key={t.id}
@@ -2573,29 +2676,52 @@ const ReportingPage = () => {
                       background: activeTool === t.id ? '#f59e0b' : 'rgba(255,255,255,0.05)', 
                       border: activeTool === t.id ? '2px solid #fbbf24' : '2px solid transparent',
                       color: activeTool === t.id ? 'white' : '#e2e8f0',
-                      padding: '8px 12px',
+                      padding: isTablet ? '12px 8px' : '6px 4px',
                       borderRadius: '6px',
-                      fontSize: '10px',
+                      fontSize: isTablet ? '10px' : '8px',
                       fontWeight: 900,
                       cursor: 'pointer',
                       display: 'flex',
+                      flexDirection: 'column',
                       alignItems: 'center',
-                      gap: '6px',
+                      gap: isTablet ? '6px' : '3px',
                       transition: 'all 0.2s ease',
                       width: '100%',
-                      textAlign: 'left'
+                      textAlign: 'center',
+                      minHeight: isTablet ? '60px' : '45px',
+                      touchAction: 'manipulation'
                     }}
                   >
-                    <span style={{ fontSize: '12px' }}>{t.icon}</span> 
-                    <span style={{ flex: 1 }}>{t.label}</span>
+                    <span style={{ fontSize: isTablet ? '16px' : '12px' }}>{t.icon}</span> 
+                    <span style={{ fontSize: isTablet ? '9px' : '7px', lineHeight: '1' }}>{t.label}</span>
                     <span style={{ 
-                      fontSize: '8px', 
+                      fontSize: isTablet ? '8px' : '6px', 
                       background: 'rgba(255,255,255,0.2)', 
-                      padding: '2px 4px', 
-                      borderRadius: '3px'
+                      padding: isTablet ? '2px 4px' : '1px 2px', 
+                      borderRadius: '2px'
                     }}>{t.shortcut}</span>
                   </button>
                 ))}
+              </div>
+            </div>
+
+            {/* Advanced Tools Info */}
+            <div style={{ padding: '15px', background: 'rgba(59, 130, 246, 0.1)' }}>
+              <div style={{ 
+                color: '#3b82f6', 
+                fontSize: '9px', 
+                fontWeight: 900, 
+                marginBottom: '8px',
+                letterSpacing: '1px'
+              }}>
+                ⚡ QUICK ACCESS
+              </div>
+              <div style={{ fontSize: '8px', color: '#94a3b8', lineHeight: '1.4' }}>
+                <div style={{ marginBottom: '4px' }}>
+                  <strong style={{ color: '#e2e8f0' }}>All tools accessible via keyboard shortcuts</strong>
+                </div>
+                <div style={{ marginBottom: '2px' }}>• Press <kbd style={{ background: 'rgba(255,255,255,0.1)', padding: '1px 3px', borderRadius: '2px', fontSize: '7px' }}>ESC</kbd> to reset</div>
+                <div>• Press <kbd style={{ background: 'rgba(255,255,255,0.1)', padding: '1px 3px', borderRadius: '2px', fontSize: '7px' }}>?</kbd> for help</div>
               </div>
             </div>
 
@@ -2697,14 +2823,35 @@ const ReportingPage = () => {
                 {/* FULLSCREEN BUTTON */}
                 <button
                   onClick={() => {
+                    console.log('[FULL VIEW] Button clicked');
+                    console.log('[FULL VIEW] uploadedFiles:', uploadedFiles);
+                    console.log('[FULL VIEW] activeAssetIndex:', activeAssetIndex);
+                    console.log('[FULL VIEW] Current asset:', uploadedFiles[activeAssetIndex]);
+                    console.log('[FULL VIEW] activeAppointment:', activeAppointment);
+                    
                     if (uploadedFiles.length > 0 && uploadedFiles[activeAssetIndex]?.rawFiles) {
-                      navigate('/dicom-viewer', {
-                        state: {
-                          files: uploadedFiles[activeAssetIndex].rawFiles,
-                          seriesName: uploadedFiles[activeAssetIndex].name,
-                          appointmentData: activeAppointment
+                      const navigationState = {
+                        files: uploadedFiles[activeAssetIndex].rawFiles,
+                        seriesName: uploadedFiles[activeAssetIndex].name,
+                        appointmentData: {
+                          ...activeAppointment,
+                          appointmentId: appointmentId, // Ensure we have the appointment ID
+                          id: appointmentId
                         }
+                      };
+                      
+                      console.log('[FULL VIEW] Navigating to DICOM viewer with state:', navigationState);
+                      
+                      navigate('/dicom-viewer', {
+                        state: navigationState,
+                        replace: false // Don't replace history entry
                       });
+                    } else {
+                      console.error('[FULL VIEW] No DICOM files available');
+                      console.error('[FULL VIEW] uploadedFiles.length:', uploadedFiles.length);
+                      console.error('[FULL VIEW] activeAssetIndex:', activeAssetIndex);
+                      console.error('[FULL VIEW] rawFiles:', uploadedFiles[activeAssetIndex]?.rawFiles);
+                      alert('No DICOM files available for full-screen viewing. Please upload DICOM files first.');
                     }
                   }}
                   title="Open Full Screen DICOM Viewer"

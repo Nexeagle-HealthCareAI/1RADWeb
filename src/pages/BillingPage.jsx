@@ -52,6 +52,9 @@ export default function BillingPage() {
   const [editPayout, setEditPayout] = useState({ referrerId: '', referrerName: '', amount: 0, modality: 'MRI', remarks: '', invoiceId: '' });
   const [referralCommissions, setReferralCommissions] = useState([]);
   
+  const [startDate, setStartDate] = useState('');
+  const [endDate, setEndDate] = useState('');
+  
   const [currentPage, setCurrentPage] = useState(1);
   const itemsPerPage = 5;
 
@@ -322,16 +325,21 @@ export default function BillingPage() {
       // Status Filter
       if (statusFilter !== 'ALL' && inv.status !== statusFilter) return false;
 
-      // Time Filter
+      // Time Filter Logic
       const invDate = inv.createdAt ? new Date(inv.createdAt).toLocaleDateString('en-CA') : null;
       if (timeFilter === 'TODAY' && invDate !== today) return false;
       if (timeFilter === 'PAST' && invDate === today) return false;
+      if (timeFilter === 'CUSTOM') {
+          if (startDate && invDate < startDate) return false;
+          if (endDate && invDate > endDate) return false;
+      }
+      
       // Modality Filter
       if (modalityFilter !== 'ALL' && inv.modality !== modalityFilter) return false;
 
       return true;
     });
-  }, [invoices, searchTerm, timeFilter, statusFilter, modalityFilter]);
+  }, [invoices, searchTerm, timeFilter, statusFilter, modalityFilter, startDate, endDate]);
   const liveStats = useMemo(() => {
     const paidInvoices = filteredInvoices.filter(inv => inv.status === 'PAID');
     const pendingInvoices = filteredInvoices.filter(inv => inv.status === 'PENDING');
@@ -398,6 +406,48 @@ export default function BillingPage() {
 
     return [...operationalExpenses, ...referralCuts].sort((a, b) => new Date(b.date) - new Date(a.date));
   }, [expenses, combinedReferralCuts]);
+
+  const filteredOutflow = useMemo(() => {
+    const today = new Date().toLocaleDateString('en-CA');
+    
+    return globalOutflow.filter(exp => {
+        // Category Filter
+        if (expenseFilter === 'REFERRAL' && exp.category !== 'Referral') return false;
+
+        // Time Filter
+        const expDate = exp.date ? new Date(exp.date).toLocaleDateString('en-CA') : null;
+        if (timeFilter === 'TODAY' && expDate !== today) return false;
+        if (timeFilter === 'PAST' && expDate === today) return false;
+        if (timeFilter === 'CUSTOM') {
+            if (startDate && expDate < startDate) return false;
+            if (endDate && expDate > endDate) return false;
+        }
+
+        return true;
+    });
+  }, [globalOutflow, expenseFilter, timeFilter, startDate, endDate]);
+
+  const outflowStats = useMemo(() => {
+    const totalOutflow = filteredOutflow.reduce((sum, exp) => sum + exp.amount, 0);
+    const referralTotal = filteredOutflow.filter(e => e.category === 'Referral').reduce((sum, exp) => sum + exp.amount, 0);
+    const operationalTotal = filteredOutflow.filter(e => e.category !== 'Referral').reduce((sum, exp) => sum + exp.amount, 0);
+    
+    const today = new Date().toLocaleDateString('en-CA');
+    const todayOutflow = filteredOutflow
+      .filter(e => new Date(e.date).toLocaleDateString('en-CA') === today)
+      .reduce((sum, exp) => sum + exp.amount, 0);
+
+    const referralPercentage = totalOutflow > 0 ? Math.round((referralTotal / totalOutflow) * 100) : 0;
+
+    const categories = Array.from(new Set(filteredOutflow.map(e => e.category)));
+    const categoryBreakdown = categories.map(cat => {
+        const amount = filteredOutflow.filter(e => e.category === cat).reduce((sum, e) => sum + e.amount, 0);
+        const percentage = totalOutflow > 0 ? Math.round((amount / totalOutflow) * 100) : 0;
+        return { category: cat, amount, percentage };
+    }).sort((a, b) => b.amount - a.amount);
+
+    return { totalOutflow, referralTotal, operationalTotal, todayOutflow, referralPercentage, categoryBreakdown };
+  }, [filteredOutflow]);
 
   const totalPages = Math.ceil(filteredInvoices.length / itemsPerPage);
   const paginatedInvoices = filteredInvoices.slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage);
@@ -1269,103 +1319,159 @@ export default function BillingPage() {
 
       {billingViewMode === 'EXPENSES' && (
         <div className="expenses-main" style={{ display: 'grid', gridTemplateColumns: '1fr', gap: '30px', animation: 'fadeIn 0.3s' }}>
-           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '15px' }}>
-                <span style={{ fontSize: '10px', fontWeight: 950, color: '#64748b', letterSpacing: '1px' }}>EXPENSE_PROTOCOL:</span>
-                <div style={{ display: 'flex', background: '#f1f5f9', padding: '3px', borderRadius: '10px', border: '1px solid #e2e8f0' }}>
-                   {['ALL', 'REFERRAL CUTS'].map(f => (
-                     <button 
-                      key={f}
-                      onClick={() => setExpenseFilter(f === 'ALL' ? 'ALL' : 'REFERRAL')}
-                      style={{ 
-                        padding: '8px 16px', borderRadius: '8px', border: 'none', fontSize: '9px', fontWeight: 950,
-                        background: (f === 'ALL' && expenseFilter === 'ALL') || (f === 'REFERRAL CUTS' && expenseFilter === 'REFERRAL') ? '#dc2626' : 'transparent',
-                        color: (f === 'ALL' && expenseFilter === 'ALL') || (f === 'REFERRAL CUTS' && expenseFilter === 'REFERRAL') ? 'white' : '#64748b',
-                        cursor: 'pointer', transition: 'all 0.2s'
-                      }}
-                     >{f}</button>
-                   ))}
+           {/* EXPENSE KPI MATRIX */}
+           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '20px' }}>
+             <div className="kpi-card" style={{ background: '#fff1f2', padding: '25px', borderRadius: '24px', border: '1px solid #fecdd3', boxShadow: '0 4px 20px rgba(225,29,72,0.05)' }}>
+               <p style={{ fontSize: '11px', fontWeight: 950, color: '#e11d48', letterSpacing: '1px', marginBottom: '15px' }}>TOTAL EXPENDITURE</p>
+               <div style={{ fontSize: '28px', fontWeight: 950, color: '#881337' }}>₹{outflowStats.totalOutflow.toLocaleString()}</div>
+               <div style={{ marginTop: '10px', fontSize: '10px', color: '#e11d48', fontWeight: 800 }}>CUMULATIVE CASH OUTFLOW</div>
+             </div>
+             <div className="kpi-card" style={{ background: 'white', padding: '25px', borderRadius: '24px', border: '1px solid #e2e8f0', boxShadow: '0 4px 20px rgba(0,0,0,0.02)' }}>
+               <p style={{ fontSize: '11px', fontWeight: 950, color: '#94a3b8', letterSpacing: '1px', marginBottom: '15px' }}>OPERATIONAL COST</p>
+               <div style={{ fontSize: '28px', fontWeight: 950, color: '#1e293b' }}>₹{outflowStats.operationalTotal.toLocaleString()}</div>
+               <div style={{ marginTop: '10px', fontSize: '10px', color: '#64748b', fontWeight: 800 }}>UTILITIES & MAINTENANCE</div>
+             </div>
+             <div className="kpi-card" style={{ background: 'white', padding: '25px', borderRadius: '24px', border: '1px solid #e2e8f0', boxShadow: '0 4px 20px rgba(0,0,0,0.02)' }}>
+               <p style={{ fontSize: '11px', fontWeight: 950, color: '#94a3b8', letterSpacing: '1px', marginBottom: '15px' }}>STRATEGIC PAYOUTS</p>
+               <div style={{ fontSize: '28px', fontWeight: 950, color: '#e11d48' }}>₹{outflowStats.referralTotal.toLocaleString()}</div>
+               <div style={{ marginTop: '10px', fontSize: '10px', color: '#e11d48', fontWeight: 800 }}>{outflowStats.referralPercentage}% OF TOTAL SPEND</div>
+             </div>
+             <div className="kpi-card" style={{ background: '#f8fafc', padding: '25px', borderRadius: '24px', border: '1px solid #e2e8f0', boxShadow: '0 4px 20px rgba(0,0,0,0.02)' }}>
+               <p style={{ fontSize: '11px', fontWeight: 950, color: '#64748b', letterSpacing: '1px', marginBottom: '15px' }}>TODAY'S CASH BURN</p>
+               <div style={{ fontSize: '28px', fontWeight: 950, color: '#0f172a' }}>₹{outflowStats.todayOutflow.toLocaleString()}</div>
+               <div style={{ marginTop: '10px', fontSize: '10px', color: '#64748b', fontWeight: 800 }}>REAL-TIME OUTFLOW</div>
+             </div>
+           </div>
+
+           <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: '30px' }}>
+              <div style={{ background: 'white', borderRadius: '24px', border: '1px solid #e2e8f0', overflow: 'hidden', boxShadow: '0 4px 20px rgba(0,0,0,0.01)' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '20px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '15px' }}>
+                  <span style={{ fontSize: '10px', fontWeight: 950, color: '#64748b', letterSpacing: '1px' }}>TEMPORAL_SCOPE:</span>
+                  <div style={{ display: 'flex', background: '#f1f5f9', padding: '3px', borderRadius: '10px', border: '1px solid #e2e8f0' }}>
+                    {['TODAY', 'PAST', 'ALL', 'CUSTOM'].map(t => (
+                      <button 
+                        key={t}
+                        onClick={() => setTimeFilter(t)}
+                        style={{ 
+                          padding: '8px 16px', borderRadius: '8px', border: 'none', fontSize: '9px', fontWeight: 950,
+                          background: timeFilter === t ? '#dc2626' : 'transparent',
+                          color: timeFilter === t ? 'white' : '#64748b',
+                          cursor: 'pointer', transition: 'all 0.2s'
+                        }}
+                      >{t}</button>
+                    ))}
+                  </div>
                 </div>
+
+                {timeFilter === 'CUSTOM' && (
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '10px', animation: 'fadeIn 0.2s' }}>
+                    <input 
+                      type="date" value={startDate} onChange={e => setStartDate(e.target.value)}
+                      style={{ padding: '6px 12px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '11px', fontWeight: 700 }}
+                    />
+                    <span style={{ fontSize: '10px', fontWeight: 950, color: '#94a3b8' }}>TO</span>
+                    <input 
+                      type="date" value={endDate} onChange={e => setEndDate(e.target.value)}
+                      style={{ padding: '6px 12px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '11px', fontWeight: 700 }}
+                    />
+                  </div>
+                )}
               </div>
 
               <button 
                 onClick={() => { 
                   setEditExpense({ 
-                    description: '', 
-                    category: 'Maintenance', 
-                    amount: 0, 
-                    taxAmount: 0,
-                    transactionDate: TODAY, 
-                    paymentMode: 'Cash', 
-                    referenceNumber: '',
-                    vendorName: '',
-                    costCenter: 'Radiology',
-                    status: 'Paid'
+                    description: '', category: 'Maintenance', amount: 0, taxAmount: 0,
+                    transactionDate: TODAY, paymentMode: 'Cash', referenceNumber: '',
+                    vendorName: '', status: 'Paid'
                   }); 
                   setIsExpenseDrawerOpen(true); 
                 }}
-                style={{ 
-                  padding: '12px 24px', borderRadius: '12px', border: 'none', 
-                  background: '#dc2626', color: 'white', fontSize: '11px', fontWeight: 950, cursor: 'pointer',
-                  boxShadow: '0 8px 20px rgba(220, 38, 38, 0.2)'
-                }}
-              >
-                LOG OPERATIONAL EXPENSE 💸
-              </button>
-           </div>
-           
-           <div style={{ background: 'white', borderRadius: '24px', border: '1px solid #e2e8f0', overflow: 'hidden', boxShadow: '0 4px 20px rgba(0,0,0,0.01)' }}>
-              <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-                <thead style={{ background: '#f8fafc' }}>
-                  <tr style={{ borderBottom: '1px solid #f1f5f9' }}>
-                    <th style={{ padding: '20px 30px', textAlign: 'left', fontSize: '10px', fontWeight: 950, color: '#94a3b8', letterSpacing: '2px' }}>DATE</th>
-                    <th style={{ padding: '20px 30px', textAlign: 'left', fontSize: '10px', fontWeight: 950, color: '#94a3b8', letterSpacing: '2px' }}>DESCRIPTION</th>
-                    <th style={{ padding: '20px 30px', textAlign: 'left', fontSize: '10px', fontWeight: 950, color: '#94a3b8', letterSpacing: '2px' }}>CATEGORY</th>
-                    <th style={{ padding: '20px 30px', textAlign: 'right', fontSize: '10px', fontWeight: 950, color: '#94a3b8', letterSpacing: '2px' }}>AMOUNT</th>
-                    <th style={{ padding: '20px 30px', textAlign: 'right', fontSize: '10px', fontWeight: 950, color: '#94a3b8', letterSpacing: '2px' }}>ACTION</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {globalOutflow.filter(exp => {
-                    if (expenseFilter === 'REFERRAL') {
-                      return exp.category === 'Referral';
-                    }
-                    return true;
-                  }).map(exp => (
-                    <tr key={exp.id} style={{ borderBottom: '1px solid #f8fafc', transition: 'background 0.2s' }}>
-                      <td style={{ padding: '20px 30px', fontSize: '13px', fontWeight: 850, color: '#1e293b' }}>{new Date(exp.date).toLocaleDateString('en-US', { day: 'numeric', month: 'short', year: 'numeric' })}</td>
-                      <td style={{ padding: '20px 30px' }}>
-                        <div style={{ fontSize: '13px', fontWeight: 850, color: '#1e293b' }}>{exp.description}</div>
-                        <div style={{ fontSize: '9px', fontWeight: 900, color: '#94a3b8' }}>{exp.name.toUpperCase()}</div>
-                      </td>
-                      <td style={{ padding: '20px 30px' }}>
-                        <span style={{ 
-                          fontSize: '10px', fontWeight: 950, color: 'white', 
-                          background: exp.category === 'Referral' ? '#e11d48' : '#dc2626', 
-                          padding: '5px 12px', borderRadius: '8px' 
-                        }}>{exp.category.toUpperCase()}</span>
-                      </td>
-                      <td style={{ padding: '20px 30px', textAlign: 'right', fontSize: '14px', fontWeight: 950, color: '#dc2626' }}>₹{exp.amount.toLocaleString()}</td>
-                      <td style={{ padding: '20px 30px', textAlign: 'right' }}>
-                        {exp.type === 'OPERATIONAL' || exp.type === 'LEGACY' ? (
-                          <button 
-                            onClick={() => handleDeleteExpense(exp.id)}
-                            style={{ padding: '8px 16px', borderRadius: '10px', border: 'none', background: '#fee2e2', color: '#ef4444', fontSize: '10px', fontWeight: 950, cursor: 'pointer' }}
-                          >DELETE</button>
-                        ) : (
-                          <span style={{ fontSize: '10px', fontWeight: 950, color: '#94a3b8' }}>LOCKED</span>
-                        )}
-                      </td>
-                    </tr>
-                  ))}
-                  {globalOutflow.length === 0 && (
-                    <tr>
-                      <td colSpan="5" style={{ padding: '50px', textAlign: 'center', color: '#94a3b8', fontSize: '12px', fontWeight: 600 }}>No expenditure records found.</td>
-                    </tr>
-                  )}
-                </tbody>
-              </table>
+                style={{ padding: '10px 20px', borderRadius: '12px', border: 'none', background: '#dc2626', color: 'white', fontSize: '10px', fontWeight: 950, cursor: 'pointer' }}
+              >+ LOG OPERATIONAL EXPENSE</button>
             </div>
+                 <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                    <thead style={{ background: '#f8fafc' }}>
+                      <tr style={{ borderBottom: '1px solid #f1f5f9' }}>
+                        <th style={{ padding: '20px 30px', textAlign: 'left', fontSize: '10px', fontWeight: 950, color: '#94a3b8', letterSpacing: '2px' }}>DATE</th>
+                        <th style={{ padding: '20px 30px', textAlign: 'left', fontSize: '10px', fontWeight: 950, color: '#94a3b8', letterSpacing: '2px' }}>DESCRIPTION</th>
+                        <th style={{ padding: '20px 30px', textAlign: 'left', fontSize: '10px', fontWeight: 950, color: '#94a3b8', letterSpacing: '2px' }}>CATEGORY</th>
+                        <th style={{ padding: '20px 30px', textAlign: 'right', fontSize: '10px', fontWeight: 950, color: '#94a3b8', letterSpacing: '2px' }}>AMOUNT</th>
+                        <th style={{ padding: '20px 30px', textAlign: 'right', fontSize: '10px', fontWeight: 950, color: '#94a3b8', letterSpacing: '2px' }}>ACTION</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {filteredOutflow.map(exp => (
+                        <tr key={exp.id} style={{ borderBottom: '1px solid #f8fafc', transition: 'background 0.2s' }}>
+                          <td style={{ padding: '20px 30px', fontSize: '13px', fontWeight: 850, color: '#1e293b' }}>{new Date(exp.date).toLocaleDateString('en-US', { day: 'numeric', month: 'short', year: 'numeric' })}</td>
+                          <td style={{ padding: '20px 30px' }}>
+                            <div style={{ fontSize: '13px', fontWeight: 850, color: '#1e293b' }}>{exp.description}</div>
+                            <div style={{ fontSize: '9px', fontWeight: 900, color: '#94a3b8' }}>{exp.name.toUpperCase()}</div>
+                          </td>
+                          <td style={{ padding: '20px 30px' }}>
+                            <span style={{ 
+                              fontSize: '10px', fontWeight: 950, color: 'white', 
+                              background: exp.category === 'Referral' ? '#e11d48' : '#dc2626', 
+                              padding: '5px 12px', borderRadius: '8px' 
+                            }}>{exp.category.toUpperCase()}</span>
+                          </td>
+                          <td style={{ padding: '20px 30px', textAlign: 'right', fontSize: '14px', fontWeight: 950, color: '#dc2626' }}>₹{exp.amount.toLocaleString()}</td>
+                          <td style={{ padding: '20px 30px', textAlign: 'right' }}>
+                            {exp.type === 'OPERATIONAL' || exp.type === 'LEGACY' ? (
+                              <button 
+                                onClick={() => handleDeleteExpense(exp.id)}
+                                style={{ padding: '8px 16px', borderRadius: '10px', border: 'none', background: '#fee2e2', color: '#ef4444', fontSize: '10px', fontWeight: 950, cursor: 'pointer' }}
+                              >DELETE</button>
+                            ) : (
+                              <span style={{ fontSize: '10px', fontWeight: 950, color: '#94a3b8' }}>LOCKED</span>
+                            )}
+                          </td>
+                        </tr>
+                      ))}
+                      {globalOutflow.length === 0 && (
+                        <tr><td colSpan="5" style={{ padding: '50px', textAlign: 'center', color: '#94a3b8', fontSize: '12px', fontWeight: 600 }}>No expenditure records found.</td></tr>
+                      )}
+                    </tbody>
+                 </table>
+              </div>
+
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '30px' }}>
+                 <div style={{ background: 'white', borderRadius: '24px', border: '1px solid #e2e8f0', padding: '30px', boxShadow: '0 4px 20px rgba(0,0,0,0.01)' }}>
+                    <h3 style={{ fontSize: '12px', fontWeight: 950, color: '#1e293b', letterSpacing: '1px', marginBottom: '20px' }}>CATEGORY_DISTRIBUTION_MATRIX</h3>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+                       {outflowStats.categoryBreakdown.map(cat => (
+                          <div key={cat.category}>
+                             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+                                <span style={{ fontSize: '11px', fontWeight: 900, color: '#64748b' }}>{cat.category.toUpperCase()}</span>
+                                <span style={{ fontSize: '12px', fontWeight: 950, color: '#1e293b' }}>₹{cat.amount.toLocaleString()}</span>
+                             </div>
+                             <div style={{ height: '8px', background: '#f1f5f9', borderRadius: '10px', overflow: 'hidden' }}>
+                                <div style={{ width: `${cat.percentage}%`, height: '100%', background: cat.category === 'Referral' ? '#e11d48' : '#dc2626', borderRadius: '10px' }}></div>
+                             </div>
+                             <div style={{ textAlign: 'right', fontSize: '9px', fontWeight: 900, color: '#94a3b8', marginTop: '4px' }}>{cat.percentage}% OF TOTAL OUTFLOW</div>
+                          </div>
+                       ))}
+                    </div>
+                 </div>
+
+                 <div style={{ background: 'linear-gradient(135deg, #0f172a 0%, #1e293b 100%)', borderRadius: '24px', padding: '30px', color: 'white' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '20px' }}>
+                       <span style={{ fontSize: '24px' }}>📉</span>
+                       <h3 style={{ fontSize: '14px', fontWeight: 950, letterSpacing: '1px' }}>OUTFLOW_INTELLIGENCE</h3>
+                    </div>
+                    <p style={{ fontSize: '12px', color: '#94a3b8', lineHeight: '1.6', marginBottom: '20px' }}>
+                      Your strategic referral payouts account for <strong>{outflowStats.referralPercentage}%</strong> of the total center expenditure. 
+                      Operational costs are currently <strong>₹{outflowStats.operationalTotal.toLocaleString()}</strong>.
+                    </p>
+                    <div style={{ borderTop: '1px solid rgba(255,255,255,0.1)', paddingTop: '20px' }}>
+                       <div style={{ fontSize: '10px', fontWeight: 950, color: '#3b82f6', letterSpacing: '1px', marginBottom: '10px' }}>FISCAL_ADVISORY</div>
+                       <div style={{ fontSize: '11px', color: '#f8fafc', fontStyle: 'italic' }}>"Maintaining referral cuts below 25% of total revenue is recommended for optimal clinical margin."</div>
+                    </div>
+                 </div>
+              </div>
+           </div>
         </div>
       )}
 
@@ -1376,7 +1482,7 @@ export default function BillingPage() {
              <div style={{ display: 'flex', alignItems: 'center', gap: '15px' }}>
                 <span style={{ fontSize: '10px', fontWeight: 950, color: '#64748b', letterSpacing: '1px' }}>TEMPORAL_FILTER:</span>
                 <div style={{ display: 'flex', background: 'white', padding: '3px', borderRadius: '10px', border: '1px solid #e2e8f0' }}>
-                   {['TODAY', 'PAST', 'ALL'].map(t => (
+                   {['TODAY', 'PAST', 'ALL', 'CUSTOM'].map(t => (
                      <button 
                       key={t}
                       onClick={() => setTimeFilter(t)}
@@ -1389,6 +1495,18 @@ export default function BillingPage() {
                      >{t}</button>
                    ))}
                 </div>
+                {timeFilter === 'CUSTOM' && (
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', animation: 'fadeIn 0.2s' }}>
+                     <input 
+                       type="date" value={startDate} onChange={e => setStartDate(e.target.value)}
+                       style={{ padding: '6px 10px', borderRadius: '8px', border: '1px solid #e2e8f0', fontSize: '10px', fontWeight: 700 }}
+                     />
+                     <input 
+                       type="date" value={endDate} onChange={e => setEndDate(e.target.value)}
+                       style={{ padding: '6px 10px', borderRadius: '8px', border: '1px solid #e2e8f0', fontSize: '10px', fontWeight: 700 }}
+                     />
+                  </div>
+                )}
              </div>
 
              <div style={{ width: '1px', height: '30px', background: '#cbd5e1' }}></div>

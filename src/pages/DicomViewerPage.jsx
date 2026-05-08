@@ -26,11 +26,11 @@ const DicomViewerPage = () => {
   const { files, seriesName, appointmentData } = location.state || {};
 
   useEffect(() => {
-    if (!files || files.length === 0) {
-      navigate('/reporting');
-      return;
-    }
-  }, [files, navigate]);
+    console.log('[DICOM VIEWER] Component mounted with state:', location.state);
+    console.log('[DICOM VIEWER] Files:', files);
+    console.log('[DICOM VIEWER] Files length:', files?.length);
+    console.log('[DICOM VIEWER] Appointment data:', appointmentData);
+  }, [files, appointmentData]);
 
   // DICOM VIEWER KEYBOARD SHORTCUTS
   useEffect(() => {
@@ -284,7 +284,7 @@ const DicomViewerPage = () => {
               </div>
 
               {/* Category Tools */}
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '4px' }}>
                 {category.tools.map(tool => (
                   <button
                     key={tool.id}
@@ -297,21 +297,23 @@ const DicomViewerPage = () => {
                         ? `2px solid ${category.color}` 
                         : '2px solid transparent',
                       color: activeTool === tool.id ? 'white' : '#e2e8f0',
-                      padding: '12px 16px',
+                      padding: '8px 4px',
                       borderRadius: '8px',
                       cursor: 'pointer',
                       display: 'flex',
+                      flexDirection: 'column',
                       alignItems: 'center',
-                      gap: '12px',
+                      gap: '4px',
                       transition: 'all 0.2s ease',
-                      fontSize: '13px',
+                      fontSize: '10px',
                       fontWeight: 700,
                       width: '100%',
-                      textAlign: 'left',
+                      textAlign: 'center',
                       boxShadow: activeTool === tool.id 
                         ? `0 4px 12px ${category.color}40` 
                         : 'none',
-                      transform: activeTool === tool.id ? 'translateY(-1px)' : 'none'
+                      transform: activeTool === tool.id ? 'translateY(-1px)' : 'none',
+                      minHeight: '55px'
                     }}
                     onMouseEnter={(e) => {
                       if (activeTool !== tool.id) {
@@ -326,25 +328,18 @@ const DicomViewerPage = () => {
                       }
                     }}
                   >
-                    <span style={{ fontSize: '16px', minWidth: '20px' }}>{tool.icon}</span>
-                    <div style={{ flex: 1 }}>
-                      <div>{tool.label}</div>
+                    <span style={{ fontSize: '14px', minWidth: '16px' }}>{tool.icon}</span>
+                    <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '2px' }}>
+                      <div style={{ fontSize: '8px', lineHeight: '1.1', textAlign: 'center' }}>{tool.label}</div>
                       <div style={{
-                        fontSize: '10px',
+                        fontSize: '7px',
                         opacity: 0.7,
-                        marginTop: '2px'
+                        background: 'rgba(255,255,255,0.1)',
+                        padding: '1px 3px',
+                        borderRadius: '2px'
                       }}>
-                        Press {tool.shortcut}
+                        {tool.shortcut}
                       </div>
-                    </div>
-                    <div style={{
-                      background: 'rgba(255,255,255,0.2)',
-                      padding: '2px 6px',
-                      borderRadius: '4px',
-                      fontSize: '10px',
-                      fontWeight: 900
-                    }}>
-                      {tool.shortcut}
                     </div>
                   </button>
                 ))}
@@ -496,22 +491,48 @@ const DicomViewerPage = () => {
         <div style={{ textAlign: 'center' }}>
           <div style={{ fontSize: '48px', marginBottom: '20px' }}>⚠️</div>
           <h2>No DICOM Data Available</h2>
-          <button
-            onClick={() => navigate('/reporting')}
-            style={{
-              background: '#3b82f6',
-              color: 'white',
-              border: 'none',
-              padding: '12px 24px',
-              borderRadius: '8px',
-              fontSize: '14px',
-              fontWeight: 700,
-              cursor: 'pointer',
-              marginTop: '20px'
-            }}
-          >
-            Return to Reporting
-          </button>
+          <p style={{ marginBottom: '20px', color: '#94a3b8' }}>
+            No DICOM files were provided for viewing.
+          </p>
+          <div style={{ display: 'flex', gap: '10px', justifyContent: 'center' }}>
+            <button
+              onClick={() => {
+                const appointmentId = appointmentData?.appointmentId || appointmentData?.id;
+                if (appointmentId) {
+                  navigate(`/reporting/${appointmentId}`);
+                } else {
+                  navigate('/doctor-board');
+                }
+              }}
+              style={{
+                background: '#3b82f6',
+                color: 'white',
+                border: 'none',
+                padding: '12px 24px',
+                borderRadius: '8px',
+                fontSize: '14px',
+                fontWeight: 700,
+                cursor: 'pointer'
+              }}
+            >
+              Return to Reporting
+            </button>
+            <button
+              onClick={() => navigate('/doctor-board')}
+              style={{
+                background: '#6b7280',
+                color: 'white',
+                border: 'none',
+                padding: '12px 24px',
+                borderRadius: '8px',
+                fontSize: '14px',
+                fontWeight: 700,
+                cursor: 'pointer'
+              }}
+            >
+              Doctor Board
+            </button>
+          </div>
         </div>
       </div>
     );
@@ -543,7 +564,15 @@ const DicomViewerPage = () => {
         }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '15px' }}>
             <button
-              onClick={() => navigate(-1)}
+              onClick={() => {
+                // Navigate back to the specific reporting page if we have appointment data
+                const appointmentId = appointmentData?.appointmentId || appointmentData?.id;
+                if (appointmentId) {
+                  navigate(`/reporting/${appointmentId}`);
+                } else {
+                  navigate(-1); // Fallback to browser back
+                }
+              }}
               style={{
                 background: 'rgba(255,255,255,0.1)',
                 border: '1px solid rgba(255,255,255,0.2)',

@@ -151,11 +151,19 @@ async function initCornerstone() {
     AdvancedMagnifyTool
   ];
   
+  console.log('[DICOM] Registering tools globally...');
   tools.forEach(tool => {
     try {
       addTool(tool);
+      const toolName = tool.toolName || tool.name;
+      console.log(`[DICOM] ✅ Registered tool: ${toolName} (class: ${tool.name})`);
     } catch (e) {
-      // Ignore if tool is already registered
+      const toolName = tool.toolName || tool.name;
+      if (e.message && e.message.includes('already registered')) {
+        console.log(`[DICOM] ℹ️ Tool already registered: ${toolName}`);
+      } else {
+        console.error(`[DICOM] ❌ Failed to register tool: ${toolName}`, e);
+      }
     }
   });
 
@@ -389,13 +397,29 @@ const AdvancedDicomViewer = ({
   useEffect(() => {
     const checkDevice = () => {
       const width = window.innerWidth;
+      const height = window.innerHeight;
       const isTouchDevice = 'ontouchstart' in window || navigator.maxTouchPoints > 0;
-      setIsTablet(isTouchDevice && width >= 768 && width <= 1366);
+      const isIPad = /iPad|Macintosh/.test(navigator.userAgent) && 'ontouchstart' in document;
+      const isTabletSize = (width >= 768 && width <= 1366) || (height >= 768 && height <= 1366);
+      
+      setIsTablet(isTouchDevice && (isTabletSize || isIPad));
+      
+      // Log device info for debugging
+      console.log('[DICOM] Device detection:', {
+        width, height, isTouchDevice, isIPad, isTabletSize,
+        userAgent: navigator.userAgent,
+        maxTouchPoints: navigator.maxTouchPoints,
+        finalIsTablet: isTouchDevice && (isTabletSize || isIPad)
+      });
     };
     
     checkDevice();
     window.addEventListener('resize', checkDevice);
-    return () => window.removeEventListener('resize', checkDevice);
+    window.addEventListener('orientationchange', checkDevice);
+    return () => {
+      window.removeEventListener('resize', checkDevice);
+      window.removeEventListener('orientationchange', checkDevice);
+    };
   }, []);
 
   // --- FULLSCREEN MANAGEMENT ---
@@ -477,6 +501,9 @@ const AdvancedDicomViewer = ({
     const element = elementRef.current;
     let initialPinchDistance = 0;
     let isPinching = false;
+    let lastPanPosition = null;
+    let isPanning = false;
+    let touchStartTime = 0;
     
     const getTouchDistance = (touch1, touch2) => {
       const dx = touch1.clientX - touch2.clientX;
@@ -484,15 +511,33 @@ const AdvancedDicomViewer = ({
       return Math.sqrt(dx * dx + dy * dy);
     };
     
+    const getTouchCenter = (touch1, touch2) => {
+      return {
+        x: (touch1.clientX + touch2.clientX) / 2,
+        y: (touch1.clientY + touch2.clientY) / 2
+      };
+    };
+    
     const handleTouchStart = (e) => {
+      touchStartTime = Date.now();
+      
       if (e.touches.length === 2) {
-        // Pinch zoom gesture
+        // Two-finger gestures (pinch zoom)
         isPinching = true;
+        isPanning = false;
         initialPinchDistance = getTouchDistance(e.touches[0], e.touches[1]);
         e.preventDefault();
       } else if (e.touches.length === 1) {
-        // Single touch - check for double tap
-        const currentTime = new Date().getTime();
+        // Single finger gestures (pan or tap)
+        isPanning = true;
+        isPinching = false;
+        lastPanPosition = {
+          x: e.touches[0].clientX,
+          y: e.touches[0].clientY
+        };
+        
+        // Check for double tap
+        const currentTime = Date.now();
         const tapLength = currentTime - lastTouchTime;
         
         if (tapLength < 300 && tapLength > 0) {
@@ -501,9 +546,11 @@ const AdvancedDicomViewer = ({
             const viewport = renderingEngineRef.current.getViewport(viewportId);
             if (viewport) {
               viewport.resetCamera();
+              viewport.resetProperties();
               viewport.render();
             }
           }
+          e.preventDefault();
         }
         setLastTouchTime(currentTime);
       }
@@ -514,37 +561,125 @@ const AdvancedDicomViewer = ({
         // Pinch zoom
         const currentDistance = getTouchDistance(e.touches[0], e.touches[1]);
         const scaleFactor = currentDistance / initialPinchDistance;
+        const center = getTouchCenter(e.touches[0], e.touches[1]);
         
         if (renderingEngineRef.current) {
           const viewport = renderingEngineRef.current.getViewport(viewportId);
           if (viewport) {
             const camera = viewport.getCamera();
-            const newZoom = camera.parallelScale / scaleFactor;
-            viewport.setCamera({ parallelScale: newZoom });
+            const canvas = viewport.getCanvas();
+            const rect = canvas.getBoundingClientRect();
+            
+            // Convert screen coordinates to canvas coordinates
+            const canvasPoint = {
+              x: center.x - rect.left,
+              y: center.y - rect.top
+            };
+            
+            // Apply zoom with center point
+            const newZoom = Math.max(0.1, Math.min(10, camera.parallelScale / scaleFactor));
+            viewport.setCamera({ 
+              parallelScale: newZoom,
+              focalPoint: camera.focalPoint,
+              position: camera.position
+            });
             viewport.render();
           }
         }
         
         initialPinchDistance = currentDistance;
         e.preventDefault();
+      } else if (e.touches.length === 1 && isPanning && lastPanPosition) {
+        // Single finger pan (only if touch has moved significantly)
+        const touch = e.touches[0];
+        const deltaX = touch.clientX - lastPanPosition.x;
+        const deltaY = touch.clientY - lastPanPosition.y;
+        const distance = Math.sqrt(deltaX * deltaX + deltaY * deltaY);
+        
+        // Only start panning if finger has moved more than 10px (prevents accidental pans)
+        if (distance > 10) {
+          if (renderingEngineRef.current) {
+            const viewport = renderingEngineRef.current.getViewport(viewportId);
+            if (viewport) {
+              const camera = viewport.getCamera();
+              const canvas = viewport.getCanvas();
+              
+              // Calculate pan delta based on current zoom level
+              const panScale = camera.parallelScale / 1000;
+              const panDelta = {
+                x: -deltaX * panScale,
+                y: deltaY * panScale
+              };
+              
+              // Apply pan
+              const newFocalPoint = [
+                camera.focalPoint[0] + panDelta.x,
+                camera.focalPoint[1] + panDelta.y,
+                camera.focalPoint[2]
+              ];
+              
+              viewport.setCamera({ 
+                focalPoint: newFocalPoint,
+                position: [
+                  camera.position[0] + panDelta.x,
+                  camera.position[1] + panDelta.y,
+                  camera.position[2]
+                ]
+              });
+              viewport.render();
+            }
+          }
+          
+          lastPanPosition = {
+            x: touch.clientX,
+            y: touch.clientY
+          };
+          e.preventDefault();
+        }
       }
     };
     
     const handleTouchEnd = (e) => {
+      const touchDuration = Date.now() - touchStartTime;
+      
       if (e.touches.length < 2) {
         isPinching = false;
       }
+      
+      if (e.touches.length === 0) {
+        isPanning = false;
+        lastPanPosition = null;
+        
+        // Handle single tap for tool activation (if it was a quick tap, not a pan)
+        if (touchDuration < 200 && !isPinching) {
+          // This was likely a tap, let it through for tool interaction
+          // Don't prevent default to allow tool events
+        }
+      }
+    };
+    
+    // Prevent default touch behaviors that interfere with DICOM interaction
+    const handleTouchCancel = (e) => {
+      isPinching = false;
+      isPanning = false;
+      lastPanPosition = null;
     };
     
     // Add touch event listeners with passive: false to allow preventDefault
     element.addEventListener('touchstart', handleTouchStart, { passive: false });
     element.addEventListener('touchmove', handleTouchMove, { passive: false });
     element.addEventListener('touchend', handleTouchEnd, { passive: false });
+    element.addEventListener('touchcancel', handleTouchCancel, { passive: false });
+    
+    // Prevent context menu on long press
+    element.addEventListener('contextmenu', (e) => e.preventDefault());
     
     return () => {
       element.removeEventListener('touchstart', handleTouchStart);
       element.removeEventListener('touchmove', handleTouchMove);
       element.removeEventListener('touchend', handleTouchEnd);
+      element.removeEventListener('touchcancel', handleTouchCancel);
+      element.removeEventListener('contextmenu', (e) => e.preventDefault());
     };
   }, [isTablet, lastTouchTime, viewportId]);
 
@@ -866,9 +1001,12 @@ const AdvancedDicomViewer = ({
           EllipticalROITool, RectangleROITool, CircleROITool, 
           PlanarFreehandROITool, ProbeTool, MagnifyTool, AdvancedMagnifyTool
         ].forEach(t => {
-            if (!toolGroup.hasTool(t.toolName)) {
-               toolGroup.addTool(t.toolName);
-               console.log(`[DICOM] Added tool: ${t.toolName}`);
+            const toolName = t.toolName || t.name;
+            if (!toolGroup.hasTool(toolName)) {
+               toolGroup.addTool(toolName);
+               console.log(`[DICOM] Added tool: ${toolName} (class: ${t.name})`);
+            } else {
+               console.log(`[DICOM] Tool already exists: ${toolName}`);
             }
         });
 
@@ -876,30 +1014,40 @@ const AdvancedDicomViewer = ({
         toolGroup.addViewport(viewportId, engineId);
         
         // Enable all annotation/measurement tools (required before they can be activated)
-        [
-          LengthTool, HeightTool, BidirectionalTool, AngleTool, CobbAngleTool,
-          EllipticalROITool, RectangleROITool, CircleROITool, 
-          PlanarFreehandROITool, ProbeTool, ArrowAnnotateTool, MagnifyTool, AdvancedMagnifyTool
-        ].forEach(t => {
+        const measurementTools = [
+          'Length', 'Height', 'Bidirectional', 'Angle', 'CobbAngle',
+          'EllipticalROI', 'RectangleROI', 'CircleROI', 
+          'PlanarFreehandROI', 'Probe', 'ArrowAnnotate', 'Magnify', 'AdvancedMagnify'
+        ];
+        
+        measurementTools.forEach(toolName => {
           try {
-            toolGroup.setToolEnabled(t.toolName);
-            console.log(`[DICOM] Enabled tool: ${t.toolName}`);
+            if (toolGroup.hasTool(toolName)) {
+              toolGroup.setToolEnabled(toolName);
+              console.log(`[DICOM] Enabled tool: ${toolName}`);
+            } else {
+              console.warn(`[DICOM] Tool not found for enabling: ${toolName}`);
+            }
           } catch (e) {
-            console.error(`[DICOM] Failed to enable tool ${t.toolName}:`, e);
+            console.error(`[DICOM] Failed to enable tool ${toolName}:`, e);
           }
         });
         
         // Activate default navigation tool (WindowLevel) with Primary mouse button
-        toolGroup.setToolActive(WindowLevelTool.toolName, {
+        const windowLevelToolName = WindowLevelTool.toolName || 'WindowLevel';
+        toolGroup.setToolActive(windowLevelToolName, {
           bindings: [{ mouseButton: toolsEnums.MouseBindings.Primary }]
         });
         
         // Set other navigation tools to passive (will be activated when selected)
-        toolGroup.setToolPassive(ZoomTool.toolName);
-        toolGroup.setToolPassive(PanTool.toolName);
+        const zoomToolName = ZoomTool.toolName || 'Zoom';
+        const panToolName = PanTool.toolName || 'Pan';
+        toolGroup.setToolPassive(zoomToolName);
+        toolGroup.setToolPassive(panToolName);
         
         // StackScroll always active with wheel (doesn't conflict with Primary button)
-        toolGroup.setToolActive(StackScrollTool.toolName, {
+        const stackScrollToolName = StackScrollTool.toolName || 'StackScroll';
+        toolGroup.setToolActive(stackScrollToolName, {
           bindings: [
             { mouseButton: toolsEnums.MouseBindings.Wheel }
           ]
@@ -1014,23 +1162,23 @@ const AdvancedDicomViewer = ({
     
     // Map UI tool names to actual Cornerstone tool names
     const toolNameMap = {
-      'WindowLevelTool': WindowLevelTool.toolName,
-      'ZoomTool': ZoomTool.toolName,
-      'PanTool': PanTool.toolName,
-      'StackScrollTool': StackScrollTool.toolName,
-      'LengthTool': LengthTool.toolName,
-      'HeightTool': HeightTool.toolName,
-      'BidirectionalTool': BidirectionalTool.toolName,
-      'AngleTool': AngleTool.toolName,
-      'CobbAngleTool': CobbAngleTool.toolName,
-      'EllipticalROITool': EllipticalROITool.toolName,
-      'RectangleROITool': RectangleROITool.toolName,
-      'CircleROITool': CircleROITool.toolName,
-      'PlanarFreehandROITool': PlanarFreehandROITool.toolName,
-      'ProbeTool': ProbeTool.toolName,
-      'ArrowAnnotateTool': ArrowAnnotateTool.toolName,
-      'MagnifyTool': MagnifyTool.toolName,
-      'AdvancedMagnifyTool': AdvancedMagnifyTool.toolName
+      'WindowLevelTool': 'WindowLevel',
+      'ZoomTool': 'Zoom',
+      'PanTool': 'Pan',
+      'StackScrollTool': 'StackScroll',
+      'LengthTool': 'Length',
+      'HeightTool': 'Height',
+      'BidirectionalTool': 'Bidirectional',
+      'AngleTool': 'Angle',
+      'CobbAngleTool': 'CobbAngle',
+      'EllipticalROITool': 'EllipticalROI',
+      'RectangleROITool': 'RectangleROI',
+      'CircleROITool': 'CircleROI',
+      'PlanarFreehandROITool': 'PlanarFreehandROI',
+      'ProbeTool': 'Probe',
+      'ArrowAnnotateTool': 'ArrowAnnotate',
+      'MagnifyTool': 'Magnify',
+      'AdvancedMagnifyTool': 'AdvancedMagnify'
     };
     
     const actualToolName = toolNameMap[activeTool] || activeTool;
@@ -1038,12 +1186,12 @@ const AdvancedDicomViewer = ({
     
     // Get all tools that might be active with Primary mouse button
     const toolsToDeactivate = [
-      WindowLevelTool.toolName, ZoomTool.toolName, PanTool.toolName,
-      LengthTool.toolName, HeightTool.toolName, BidirectionalTool.toolName, 
-      AngleTool.toolName, CobbAngleTool.toolName,
-      EllipticalROITool.toolName, RectangleROITool.toolName, CircleROITool.toolName, 
-      PlanarFreehandROITool.toolName, ProbeTool.toolName, ArrowAnnotateTool.toolName, 
-      MagnifyTool.toolName, AdvancedMagnifyTool.toolName
+      'WindowLevel', 'Zoom', 'Pan',
+      'Length', 'Height', 'Bidirectional', 
+      'Angle', 'CobbAngle',
+      'EllipticalROI', 'RectangleROI', 'CircleROI', 
+      'PlanarFreehandROI', 'Probe', 'ArrowAnnotate', 
+      'Magnify', 'AdvancedMagnify'
     ];
     
     // Deactivate all tools except StackScroll (which uses wheel) and the target tool
@@ -1062,9 +1210,44 @@ const AdvancedDicomViewer = ({
       // First ensure the tool exists
       if (!toolGroupRef.current.hasTool(actualToolName)) {
         console.error(`[TOOL ERROR] Tool ${actualToolName} not found in tool group`);
-        console.log('[TOOL ERROR] Available tools:', Object.keys(toolGroupRef.current._toolInstances || {}));
-        console.log('[TOOL ERROR] Available tool names:', toolsToDeactivate);
-        return;
+        console.log('[TOOL ERROR] Available tools in group:', toolGroupRef.current.getToolNames ? toolGroupRef.current.getToolNames() : 'getToolNames not available');
+        console.log('[TOOL ERROR] Tool group instance keys:', Object.keys(toolGroupRef.current._toolInstances || {}));
+        
+        // Try to add the tool if it's missing
+        try {
+          const toolClass = {
+            'WindowLevel': WindowLevelTool,
+            'Zoom': ZoomTool,
+            'Pan': PanTool,
+            'StackScroll': StackScrollTool,
+            'Length': LengthTool,
+            'Height': HeightTool,
+            'Bidirectional': BidirectionalTool,
+            'Angle': AngleTool,
+            'CobbAngle': CobbAngleTool,
+            'EllipticalROI': EllipticalROITool,
+            'RectangleROI': RectangleROITool,
+            'CircleROI': CircleROITool,
+            'PlanarFreehandROI': PlanarFreehandROITool,
+            'Probe': ProbeTool,
+            'ArrowAnnotate': ArrowAnnotateTool,
+            'Magnify': MagnifyTool,
+            'AdvancedMagnify': AdvancedMagnifyTool
+          }[actualToolName];
+          
+          if (toolClass) {
+            console.log(`[TOOL RECOVERY] Adding missing tool: ${actualToolName}`);
+            toolGroupRef.current.addTool(actualToolName);
+          }
+        } catch (addErr) {
+          console.error(`[TOOL RECOVERY] Failed to add tool ${actualToolName}:`, addErr);
+        }
+        
+        // Check again after attempting to add
+        if (!toolGroupRef.current.hasTool(actualToolName)) {
+          console.error(`[TOOL ERROR] Tool ${actualToolName} still not available after recovery attempt`);
+          return;
+        }
       }
       
       // Enable the tool (required for annotation tools)
@@ -1076,10 +1259,27 @@ const AdvancedDicomViewer = ({
       });
       
       console.log(`[TOOL SUCCESS] Activated: ${actualToolName} (from UI: ${activeTool})`);
-      console.log(`[TOOL SUCCESS] Current active tool:`, toolGroupRef.current.getActivePrimaryMouseButtonTool());
+      
+      // Verify activation
+      const activeToolName = toolGroupRef.current.getActivePrimaryMouseButtonTool();
+      console.log(`[TOOL SUCCESS] Current active tool:`, activeToolName);
+      
+      if (activeToolName !== actualToolName) {
+        console.warn(`[TOOL WARNING] Expected ${actualToolName} but got ${activeToolName}`);
+      }
     } catch (e) {
       console.error(`[TOOL ERROR] Activation failed for ${actualToolName}:`, e);
       console.error(`[TOOL ERROR] Full error:`, e.stack);
+      
+      // Fallback to WindowLevel if tool activation fails
+      try {
+        console.log(`[TOOL FALLBACK] Falling back to WindowLevel tool`);
+        toolGroupRef.current.setToolActive('WindowLevel', {
+          bindings: [{ mouseButton: toolsEnums.MouseBindings.Primary }]
+        });
+      } catch (fallbackErr) {
+        console.error(`[TOOL FALLBACK] Even WindowLevel fallback failed:`, fallbackErr);
+      }
     }
   }, [activeTool]);
 
@@ -1458,15 +1658,36 @@ const AdvancedDicomViewer = ({
           display: 'flex',
           alignItems: 'center',
           gap: '10px',
-          pointerEvents: 'none'
+          pointerEvents: 'none',
+          animation: 'fadeInOut 6s ease-in-out infinite'
         }}>
           <span>👆 Double-tap: Reset</span>
           <span>•</span>
           <span>🤏 Pinch: Zoom</span>
           <span>•</span>
-          <span>👆 Swipe: Pan</span>
+          <span>👆 Pan: Single finger drag</span>
         </div>
       )}
+
+      <style jsx>{`
+        @keyframes fadeInOut {
+          0%, 20%, 80%, 100% { opacity: 0.8; }
+          40%, 60% { opacity: 0.4; }
+        }
+        
+        /* Touch optimizations */
+        canvas {
+          touch-action: none !important;
+          user-select: none;
+          -webkit-user-select: none;
+          -webkit-touch-callout: none;
+        }
+        
+        /* Prevent text selection during touch interactions */
+        * {
+          -webkit-tap-highlight-color: transparent;
+        }
+      `}</style>
 
       {/* ADVANCED WINDOWING PRESETS TOOLBAR */}
       {isReady && showWindowingPresets && (
