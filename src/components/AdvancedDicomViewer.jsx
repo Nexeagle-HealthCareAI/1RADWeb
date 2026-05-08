@@ -881,7 +881,12 @@ const AdvancedDicomViewer = ({
           EllipticalROITool, RectangleROITool, CircleROITool, 
           PlanarFreehandROITool, ProbeTool, ArrowAnnotateTool, MagnifyTool, AdvancedMagnifyTool
         ].forEach(t => {
-          toolGroup.setToolEnabled(t.toolName);
+          try {
+            toolGroup.setToolEnabled(t.toolName);
+            console.log(`[DICOM] Enabled tool: ${t.toolName}`);
+          } catch (e) {
+            console.error(`[DICOM] Failed to enable tool ${t.toolName}:`, e);
+          }
         });
         
         // Activate default navigation tool (WindowLevel) with Primary mouse button
@@ -898,6 +903,27 @@ const AdvancedDicomViewer = ({
           bindings: [
             { mouseButton: toolsEnums.MouseBindings.Wheel }
           ]
+        });
+        
+        // Debug: Log all available tools
+        console.log('[DICOM] All registered tools:', Object.keys(toolGroup._toolInstances || {}));
+        console.log('[DICOM] Tool name mappings:', {
+          WindowLevel: WindowLevelTool.toolName,
+          Zoom: ZoomTool.toolName,
+          Pan: PanTool.toolName,
+          Length: LengthTool.toolName,
+          Height: HeightTool.toolName,
+          Bidirectional: BidirectionalTool.toolName,
+          Angle: AngleTool.toolName,
+          CobbAngle: CobbAngleTool.toolName,
+          EllipticalROI: EllipticalROITool.toolName,
+          RectangleROI: RectangleROITool.toolName,
+          CircleROI: CircleROITool.toolName,
+          FreehandROI: PlanarFreehandROITool.toolName,
+          Probe: ProbeTool.toolName,
+          Arrow: ArrowAnnotateTool.toolName,
+          Magnify: MagnifyTool.toolName,
+          AdvancedMagnify: AdvancedMagnifyTool.toolName
         });
         
         // Start prefetching for smoother scrolling using the utility
