@@ -1,6 +1,6 @@
 import axios from 'axios';
 
-const BASE_URL = 'https://1radapi-bch4ere7a6cmgkap.centralindia-01.azurewebsites.net/api/v1';
+export const BASE_URL = 'https://1radapi-bch4ere7a6cmgkap.centralindia-01.azurewebsites.net/api/v1';
 
 const apiClient = axios.create({
   baseURL: BASE_URL,

@@ -2220,22 +2220,25 @@ const AdvancedDicomViewer = ({
       {/* ENHANCED STACK SCROLL HUD - Desktop & Tablet Compatible */}
       {isReady && files && files.length > 1 && (
         <div style={{ 
-          position: 'absolute', 
-          right: isTablet ? '20px' : '12px', 
+          position: 'fixed', // Changed from absolute to fixed for better tablet zoom handling
+          right: isTablet ? '15px' : '12px', 
           top: '50%', 
           transform: 'translateY(-50%)', 
-          height: isTablet ? '70%' : '80%', 
-          width: isTablet ? '40px' : '32px', 
+          height: isTablet ? '60%' : '80%', // Reduced height for tablets to avoid conflicts
+          width: isTablet ? '50px' : '32px', // Increased width for tablets for better touch targets
           display: 'flex', 
           flexDirection: 'column', 
           alignItems: 'center', 
-          zIndex: 100, 
-          background: 'rgba(15, 23, 42, 0.9)', 
+          zIndex: isTablet ? 9999 : 100, // Higher z-index for tablets to stay above zoom content
+          background: isTablet ? 'rgba(15, 23, 42, 0.95)' : 'rgba(15, 23, 42, 0.9)', // More opaque for tablets
           backdropFilter: 'blur(12px)', 
-          borderRadius: isTablet ? '20px' : '16px', 
-          padding: isTablet ? '25px 0' : '20px 0',
-          border: '2px solid rgba(59, 130, 246, 0.3)',
-          boxShadow: '0 8px 32px rgba(0,0,0,0.4)'
+          borderRadius: isTablet ? '25px' : '16px', 
+          padding: isTablet ? '20px 0' : '20px 0',
+          border: isTablet ? '3px solid rgba(59, 130, 246, 0.5)' : '2px solid rgba(59, 130, 246, 0.3)', // Thicker border for tablets
+          boxShadow: isTablet ? '0 12px 40px rgba(0,0,0,0.6)' : '0 8px 32px rgba(0,0,0,0.4)', // Stronger shadow for tablets
+          // Ensure it stays visible during zoom
+          pointerEvents: 'auto',
+          touchAction: 'manipulation'
         }}>
            {/* Slice Navigation Label */}
            <div style={{
@@ -2299,19 +2302,36 @@ const AdvancedDicomViewer = ({
                }}
                style={{ 
                  appearance: 'none', 
-                 width: isTablet ? '200px' : '180px', 
-                 height: isTablet ? '4px' : '2px', 
+                 width: isTablet ? '220px' : '180px', // Longer slider for tablets
+                 height: isTablet ? '6px' : '2px', // Thicker for easier touch
                  background: 'linear-gradient(to right, #0f52ba, #3b82f6)', 
-                 borderRadius: isTablet ? '4px' : '2px', 
+                 borderRadius: isTablet ? '6px' : '2px', 
                  transform: 'rotate(90deg)', 
-                 cursor: 'pointer',
+                 cursor: isTablet ? 'grab' : 'pointer',
                  pointerEvents: 'auto',
                  position: 'absolute',
                  top: '50%',
                  left: '50%',
-                 marginTop: isTablet ? '-2px' : '-1px',
-                 marginLeft: isTablet ? '-100px' : '-90px',
-                 touchAction: 'manipulation'
+                 marginTop: isTablet ? '-3px' : '-1px',
+                 marginLeft: isTablet ? '-110px' : '-90px',
+                 touchAction: 'manipulation',
+                 // Enhanced tablet-specific styling
+                 ...(isTablet && {
+                   WebkitAppearance: 'none',
+                   outline: 'none',
+                   border: 'none',
+                   boxShadow: '0 2px 8px rgba(59, 130, 246, 0.3)',
+                   // Custom thumb styling for tablets
+                   '&::-webkit-slider-thumb': {
+                     appearance: 'none',
+                     width: '20px',
+                     height: '20px',
+                     borderRadius: '50%',
+                     background: '#3b82f6',
+                     cursor: 'grab',
+                     boxShadow: '0 2px 6px rgba(0,0,0,0.3)'
+                   }
+                 })
                }} 
              />
            </div>

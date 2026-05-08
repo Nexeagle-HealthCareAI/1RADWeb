@@ -2,11 +2,6 @@ import React, { useState, useRef, useEffect, useMemo, useCallback } from 'react'
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import JSZip from 'jszip';
 import dicomParser from 'dicom-parser';
-import AdvancedDicomViewer from '../components/AdvancedDicomViewer';
-import apiClient from '../api/apiClient';
-import { DicomCache } from '../utils/DicomCache';
-import { dicomOptimizer } from '../utils/DicomPerformanceOptimizer';
-import { jwtDecode } from 'jwt-decode';
 
 const ReportingPage = () => {
   const navigate = useNavigate();
@@ -610,34 +605,32 @@ const ReportingPage = () => {
   const testAssetConnection = async (asset) => {
     try {
       console.log(`[DICOM_TEST] Testing connection to: ${asset.remoteUrl}`);
-      
-      // First try a HEAD request to check if the resource exists
-      const headResponse = await fetch(asset.remoteUrl, { 
-        method: 'HEAD',
-        credentials: 'same-origin'
-      });
-      
-      console.log(`[DICOM_TEST] HEAD response:`, {
-        status: headResponse.status,
-        statusText: headResponse.statusText,
-        ok: headResponse.ok,
-        headers: Object.fromEntries(headResponse.headers.entries())
-      });
-      
-      if (headResponse.ok) {
-        const contentLength = headResponse.headers.get('content-length');
-        const contentType = headResponse.headers.get('content-type');
-        
-        console.log(`[DICOM_TEST] Asset is accessible:`, {
-          size: contentLength ? `${(parseInt(contentLength) / (1024*1024)).toFixed(2)} MB` : 'Unknown',
-          type: contentType || 'Unknown'
-        });
-        
-        return { success: true, size: contentLength, type: contentType };
-      } else {
-        return { success: false, error: `HTTP ${headResponse.status}: ${headResponse.statusText}` };
+      const token = sessionStorage.getItem('1rad_token') || sessionStorage.getItem('1rad_initiation_token');
+      const proxyUrl = `${BASE_URL}/Study/proxy-asset?url=${encodeURIComponent(asset.remoteUrl)}`;
+
+      // Try direct first
+      try {
+        const headResponse = await fetch(asset.remoteUrl, { method: 'HEAD', mode: 'cors' });
+        if (headResponse.ok) {
+          console.log(`[DICOM_TEST] Direct access successful.`);
+          return { success: true, useProxy: false };
+        }
+      } catch (e) {
+        console.warn(`[DICOM_TEST] Direct access failed, trying secure proxy...`);
       }
-      
+
+      // Try proxy
+      const proxyResponse = await fetch(proxyUrl, { 
+        method: 'HEAD', 
+        headers: { 'Authorization': `Bearer ${token}` } 
+      });
+
+      if (proxyResponse.ok) {
+        console.log(`[DICOM_TEST] Secure proxy access successful.`);
+        return { success: true, useProxy: true, proxyUrl: proxyUrl };
+      }
+
+      return { success: false, error: "ACCESS_DENIED: Study unreachable via direct or secure proxy." };
     } catch (error) {
       console.error(`[DICOM_TEST] Connection test failed:`, error);
       return { success: false, error: error.message };
@@ -707,7 +700,10 @@ const ReportingPage = () => {
         throw new Error(`CONNECTION_TEST_FAILED: ${connectionTest.error}`);
       }
       
-      console.log(`[DICOM_LOAD] Connection test passed, proceeding with download...`);
+      console.log(`[DICOM_LOAD] Connection test passed, proceeding with download... (UseProxy: ${connectionTest.useProxy})`);
+      
+      const fetchUrl = connectionTest.useProxy ? connectionTest.proxyUrl : asset.remoteUrl;
+      const token = sessionStorage.getItem('1rad_token') || sessionStorage.getItem('1rad_initiation_token');
       
       // Check if URL is accessible with retry mechanism
       let response;
@@ -716,37 +712,27 @@ const ReportingPage = () => {
       
       while (retryCount <= maxRetries) {
         try {
-          console.log(`[DICOM_LOAD] Attempt ${retryCount + 1}/${maxRetries + 1} - Fetching: ${asset.remoteUrl}`);
+          console.log(`[DICOM_LOAD] Attempt ${retryCount + 1}/${maxRetries + 1} - Fetching: ${fetchUrl}`);
           
-          response = await fetch(asset.remoteUrl, {
+          response = await fetch(fetchUrl, {
             method: 'GET',
             headers: {
               'Accept': 'application/zip, application/octet-stream, */*',
+              ...(connectionTest.useProxy ? { 'Authorization': `Bearer ${token}` } : {})
             },
-            // Add credentials if needed for authenticated endpoints
-            credentials: 'same-origin'
-          });
-          
-          console.log(`[DICOM_LOAD] Fetch response (attempt ${retryCount + 1}):`, {
-            status: response.status,
-            statusText: response.statusText,
-            ok: response.ok,
-            headers: Object.fromEntries(response.headers.entries())
+            credentials: connectionTest.useProxy ? 'include' : 'same-origin'
           });
           
           if (response.ok) {
-            break; // Success, exit retry loop
+            break; 
           } else if (retryCount < maxRetries && (response.status >= 500 || response.status === 429)) {
-            // Retry on server errors or rate limiting
             console.warn(`[DICOM_LOAD] Retryable error ${response.status}, waiting before retry...`);
-            await new Promise(resolve => setTimeout(resolve, (retryCount + 1) * 1000)); // Exponential backoff
+            await new Promise(resolve => setTimeout(resolve, (retryCount + 1) * 1000));
             retryCount++;
             continue;
           } else {
-            // Non-retryable error, break and handle below
             break;
           }
-          
         } catch (fetchError) {
           console.error(`[DICOM_LOAD] Fetch error (attempt ${retryCount + 1}):`, fetchError);
           

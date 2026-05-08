@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useEffect, useCallback } from 'react';
-import apiClient from '../api/apiClient';
+import apiClient, { BASE_URL } from '../api/apiClient';
 import useAuth from '../auth/useAuth';
 import { ROLE_LABELS } from '../data/roles';
 import { Document, Page, pdfjs } from 'react-pdf';
@@ -1820,8 +1820,12 @@ export default function AdminBoard() {
               {/* ASSET REFERENCE LAYER (PDF or IMAGE) */}
               {prescriptionSettings.letterhead ? (
                 (() => {
-                  const letterheadUrl = prescriptionSettings.letterhead;
-                  console.log('[PRESCRIPTION_PREVIEW] Rendering letterhead:', letterheadUrl);
+                  const rawUrl = prescriptionSettings.letterhead;
+                  const letterheadUrl = (rawUrl && rawUrl.includes('blob.core.windows.net'))
+                    ? `${BASE_URL}/Study/proxy-asset?url=${encodeURIComponent(rawUrl)}`
+                    : rawUrl;
+                  
+                  console.log('[PRESCRIPTION_PREVIEW] Rendering letterhead (Proxied):', letterheadUrl);
                   
                   // Check if it's a PDF
                   const isPDF = letterheadUrl.toLowerCase().includes('.pdf') || 
