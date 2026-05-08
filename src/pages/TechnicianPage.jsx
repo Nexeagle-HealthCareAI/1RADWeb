@@ -231,8 +231,37 @@ export default function TechnicianPage() {
       console.log(`[TECH_LOAD] Cache MISS. Initializing optimized hydration for asset: ${asset.name}`);
       setProcessingStatus('Downloading study data...');
       
-      const response = await fetch(asset.remoteUrl);
-      if (!response.ok) throw new Error(`NETWORK_FAILURE: HTTP_${response.status} when fetching asset stream.`);
+      let response;
+      try {
+        response = await fetch(asset.remoteUrl);
+        if (!response.ok) throw new Error(`NETWORK_FAILURE: HTTP_${response.status} when fetching asset stream.`);
+      } catch (fetchError) {
+        // Check for CORS-specific errors and try API proxy fallback
+        if (fetchError.message.includes('CORS') || 
+            fetchError.message.includes('Access-Control-Allow-Origin') ||
+            (fetchError.name === 'TypeError' && fetchError.message.includes('Failed to fetch'))) {
+          
+          console.log(`[TECH_LOAD] CORS error detected, trying API proxy fallback...`);
+          try {
+            const proxyResponse = await apiClient.get(`/Study/proxy-dicom`, {
+              params: { url: asset.remoteUrl },
+              responseType: 'blob'
+            });
+            
+            if (proxyResponse.data) {
+              console.log(`[TECH_LOAD] ✅ API proxy successful`);
+              response = proxyResponse;
+            } else {
+              throw new Error(`CORS_ERROR: Cross-origin request blocked and API proxy failed. ${fetchError.message}`);
+            }
+          } catch (proxyError) {
+            console.warn(`[TECH_LOAD] API proxy failed:`, proxyError);
+            throw new Error(`CORS_ERROR: Cross-origin request blocked. The server needs to be configured to allow requests from this domain. ${fetchError.message}`);
+          }
+        } else {
+          throw fetchError;
+        }
+      }
 
       const blob = await response.blob();
       console.log(`[TECH_LOAD] Binary stream received. Size: ${(blob.size / (1024*1024)).toFixed(2)} MB. Starting optimized processing...`);
@@ -285,7 +314,19 @@ export default function TechnicianPage() {
     } catch (err) {
       console.error('[TECH_LOAD] Optimized hydration failure', err);
       setProcessingStatus(`Error: ${err.message}`);
-      alert(`ACQUISITION SIGNAL FAILURE: ${err.message}`);
+      
+      // Provide user-friendly error messages based on error type
+      let userMessage = 'ACQUISITION SIGNAL FAILURE: ';
+      
+      if (err.message.includes('CORS_ERROR')) {
+        userMessage += 'Server configuration issue detected. The DICOM storage server needs to allow cross-origin requests. Please contact your system administrator to configure CORS settings for the Azure Blob Storage.';
+      } else if (err.message.includes('NETWORK_ERROR') || err.message.includes('Failed to fetch')) {
+        userMessage += 'Unable to download study data. Please check your internet connection and try again.';
+      } else {
+        userMessage += err.message;
+      }
+      
+      alert(userMessage);
     } finally {
       setLoading(false);
       setProcessingStatus('');

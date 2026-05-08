@@ -393,6 +393,103 @@ const AdvancedDicomViewer = ({
   const [lastTouchTime, setLastTouchTime] = useState(0);
   const [showToolbar, setShowToolbar] = useState(true);
 
+  // --- DESKTOP KEYBOARD NAVIGATION FOR SLICE NAVIGATION ---
+  useEffect(() => {
+    if (!elementRef.current || !isReady || !files || files.length <= 1 || isTablet) return;
+    
+    const handleKeyNavigation = (e) => {
+      // Only handle if the DICOM viewer element has focus or is the target
+      if (!elementRef.current.contains(e.target) && e.target !== elementRef.current) return;
+      
+      let newIndex = currentImageIndex;
+      
+      switch (e.key) {
+        case 'ArrowUp':
+        case 'ArrowLeft':
+          e.preventDefault();
+          newIndex = Math.max(0, currentImageIndex - 1);
+          break;
+        case 'ArrowDown':
+        case 'ArrowRight':
+          e.preventDefault();
+          newIndex = Math.min(files.length - 1, currentImageIndex + 1);
+          break;
+        case 'Home':
+          e.preventDefault();
+          newIndex = 0;
+          break;
+        case 'End':
+          e.preventDefault();
+          newIndex = files.length - 1;
+          break;
+        case 'PageUp':
+          e.preventDefault();
+          newIndex = Math.max(0, currentImageIndex - 10);
+          break;
+        case 'PageDown':
+          e.preventDefault();
+          newIndex = Math.min(files.length - 1, currentImageIndex + 10);
+          break;
+        default:
+          return;
+      }
+      
+      if (newIndex !== currentImageIndex && renderingEngineRef.current) {
+        const viewport = renderingEngineRef.current.getViewport(viewportId);
+        if (viewport) {
+          console.log(`[DICOM] Keyboard slice navigation (${e.key}): ${newIndex + 1}/${files.length}`);
+          viewport.setImageIdIndex(newIndex);
+          setCurrentImageIndex(newIndex);
+          if (onSliceChange) onSliceChange(newIndex, files.length);
+        }
+      }
+    };
+    
+    // Add keyboard event listener to document
+    document.addEventListener('keydown', handleKeyNavigation);
+    
+    // Make the element focusable for keyboard events
+    elementRef.current.setAttribute('tabindex', '0');
+    
+    return () => {
+      document.removeEventListener('keydown', handleKeyNavigation);
+    };
+  }, [isReady, files, currentImageIndex, isTablet, viewportId, onSliceChange]);
+
+  // --- DESKTOP WHEEL EVENT FALLBACK FOR SLICE NAVIGATION ---
+  useEffect(() => {
+    if (!elementRef.current || !isReady || !files || files.length <= 1 || isTablet) return;
+    
+    const element = elementRef.current;
+    
+    const handleWheelSliceNavigation = (e) => {
+      // Only handle wheel events if no modifier keys are pressed (to avoid conflicts with zoom)
+      if (e.ctrlKey || e.shiftKey || e.altKey) return;
+      
+      e.preventDefault();
+      
+      const delta = e.deltaY > 0 ? 1 : -1;
+      const newIndex = Math.max(0, Math.min(files.length - 1, currentImageIndex + delta));
+      
+      if (newIndex !== currentImageIndex && renderingEngineRef.current) {
+        const viewport = renderingEngineRef.current.getViewport(viewportId);
+        if (viewport) {
+          console.log(`[DICOM] Manual wheel slice navigation: ${newIndex + 1}/${files.length}`);
+          viewport.setImageIdIndex(newIndex);
+          setCurrentImageIndex(newIndex);
+          if (onSliceChange) onSliceChange(newIndex, files.length);
+        }
+      }
+    };
+    
+    // Add wheel event listener with passive: false to allow preventDefault
+    element.addEventListener('wheel', handleWheelSliceNavigation, { passive: false });
+    
+    return () => {
+      element.removeEventListener('wheel', handleWheelSliceNavigation);
+    };
+  }, [isReady, files, currentImageIndex, isTablet, viewportId, onSliceChange]);
+
   // --- TABLET/MOBILE DETECTION ---
   useEffect(() => {
     const checkDevice = () => {
@@ -945,9 +1042,30 @@ const AdvancedDicomViewer = ({
                 
                 // Add listener for stack scroll index changes
                 elementRef.current.addEventListener(Enums.Events.STACK_NEW_IMAGE, (evt) => {
+                   console.log(`[DICOM] STACK_NEW_IMAGE event:`, evt.detail);
                    const index = evt.detail.imageIdIndex;
                    setCurrentImageIndex(index);
                    if (onSliceChange) onSliceChange(index, files.length);
+                   console.log(`[DICOM] Slice changed via event: ${index + 1}/${files.length}`);
+                });
+
+                // Add additional debugging for viewport events
+                elementRef.current.addEventListener('wheel', (evt) => {
+                  console.log(`[DICOM] Wheel event detected:`, {
+                    deltaY: evt.deltaY,
+                    ctrlKey: evt.ctrlKey,
+                    shiftKey: evt.shiftKey,
+                    currentIndex: currentImageIndex,
+                    totalFiles: files.length
+                  });
+                });
+
+                // Verify viewport stack data
+                const stackData = viewport.getStackData();
+                console.log(`[DICOM] Viewport stack data:`, {
+                  currentImageIdIndex: stackData.currentImageIdIndex,
+                  imageIds: stackData.imageIds?.length,
+                  numImages: stackData.numImages
                 });
 
                 // Use default DICOM VOI if available, otherwise fallback
@@ -1047,11 +1165,18 @@ const AdvancedDicomViewer = ({
         
         // StackScroll always active with wheel (doesn't conflict with Primary button)
         const stackScrollToolName = StackScrollTool.toolName || 'StackScroll';
-        toolGroup.setToolActive(stackScrollToolName, {
-          bindings: [
-            { mouseButton: toolsEnums.MouseBindings.Wheel }
-          ]
-        });
+        console.log(`[DICOM] Setting up StackScroll tool: ${stackScrollToolName}`);
+        
+        try {
+          toolGroup.setToolActive(stackScrollToolName, {
+            bindings: [
+              { mouseButton: toolsEnums.MouseBindings.Wheel }
+            ]
+          });
+          console.log(`[DICOM] ✅ StackScroll tool activated successfully`);
+        } catch (stackErr) {
+          console.error(`[DICOM] ❌ Failed to activate StackScroll tool:`, stackErr);
+        }
         
         // Debug: Log all available tools
         console.log('[DICOM] All registered tools:', Object.keys(toolGroup._toolInstances || {}));
@@ -1589,6 +1714,7 @@ const AdvancedDicomViewer = ({
   return (
     <div 
       ref={fullscreenContainerRef}
+      className="dicom-viewer"
       style={{ 
         width: '100%', 
         height: '100%', 
@@ -1679,14 +1805,14 @@ const AdvancedDicomViewer = ({
         </div>
       )}
 
-      <style jsx>{`
+      <style>{`
         @keyframes fadeInOut {
           0%, 15%, 85%, 100% { opacity: 0.9; }
           30%, 70% { opacity: 0.5; }
         }
         
         /* Touch optimizations */
-        canvas {
+        .dicom-viewer canvas {
           touch-action: none !important;
           user-select: none;
           -webkit-user-select: none;
@@ -1694,13 +1820,13 @@ const AdvancedDicomViewer = ({
         }
         
         /* Prevent text selection during touch interactions */
-        * {
+        .dicom-viewer * {
           -webkit-tap-highlight-color: transparent;
         }
         
         /* Tablet-specific enhancements */
         @media (pointer: coarse) {
-          button {
+          .dicom-viewer button {
             min-height: 44px !important;
             min-width: 44px !important;
           }
@@ -1710,7 +1836,7 @@ const AdvancedDicomViewer = ({
         @media only screen 
           and (min-device-width: 768px) 
           and (max-device-width: 1024px) {
-          button {
+          .dicom-viewer button {
             min-height: 48px !important;
             padding: 12px !important;
           }
@@ -2091,26 +2217,57 @@ const AdvancedDicomViewer = ({
         }}
       />
 
-      {/* TACTICAL STACK SCROLL HUD */}
+      {/* ENHANCED STACK SCROLL HUD - Desktop & Tablet Compatible */}
       {isReady && files && files.length > 1 && (
         <div style={{ 
           position: 'absolute', 
-          right: '12px', 
+          right: isTablet ? '20px' : '12px', 
           top: '50%', 
           transform: 'translateY(-50%)', 
-          height: '80%', 
-          width: '32px', 
+          height: isTablet ? '70%' : '80%', 
+          width: isTablet ? '40px' : '32px', 
           display: 'flex', 
           flexDirection: 'column', 
           alignItems: 'center', 
           zIndex: 100, 
-          background: 'rgba(15, 23, 42, 0.4)', 
-          backdropFilter: 'blur(10px)', 
-          borderRadius: '16px', 
-          padding: '20px 0',
-          border: '1px solid rgba(255,255,255,0.1)',
-          pointerEvents: 'none' 
+          background: 'rgba(15, 23, 42, 0.9)', 
+          backdropFilter: 'blur(12px)', 
+          borderRadius: isTablet ? '20px' : '16px', 
+          padding: isTablet ? '25px 0' : '20px 0',
+          border: '2px solid rgba(59, 130, 246, 0.3)',
+          boxShadow: '0 8px 32px rgba(0,0,0,0.4)'
         }}>
+           {/* Slice Navigation Label */}
+           <div style={{
+             color: '#3b82f6',
+             fontSize: isTablet ? '10px' : '8px',
+             fontWeight: 900,
+             marginBottom: '10px',
+             letterSpacing: '1px',
+             textAlign: 'center',
+             writingMode: 'vertical-rl',
+             textOrientation: 'mixed'
+           }}>
+             SLICES
+           </div>
+           
+           {/* Desktop Navigation Instructions */}
+           {!isTablet && (
+             <div style={{
+               color: '#64748b',
+               fontSize: '6px',
+               fontWeight: 600,
+               marginBottom: '8px',
+               letterSpacing: '0.5px',
+               textAlign: 'center',
+               writingMode: 'vertical-rl',
+               textOrientation: 'mixed',
+               opacity: 0.8
+             }}>
+               WHEEL • ARROWS • CLICK
+             </div>
+           )}
+           
            <div style={{ flex: 1, position: 'relative', width: '100%', display: 'flex', justifyContent: 'center' }}>
              <input 
                type="range" 
@@ -2119,41 +2276,140 @@ const AdvancedDicomViewer = ({
                value={currentImageIndex}
                onChange={(e) => {
                   const index = parseInt(e.target.value);
-                  const viewport = renderingEngineRef.current.getViewport(viewportId);
-                  if (viewport) viewport.setImageIdIndex(index);
+                  console.log(`[DICOM] Slider navigation: ${index + 1}/${files.length}`);
+                  
+                  const viewport = renderingEngineRef.current?.getViewport(viewportId);
+                  if (viewport) {
+                    try {
+                      viewport.setImageIdIndex(index);
+                      setCurrentImageIndex(index);
+                      if (onSliceChange) onSliceChange(index, files.length);
+                      console.log(`[DICOM] ✅ Slider slice navigation successful`);
+                    } catch (err) {
+                      console.error('[DICOM] ❌ Slider slice navigation failed:', err);
+                    }
+                  } else {
+                    console.warn('[DICOM] ⚠️ Viewport not available for slice navigation');
+                  }
+               }}
+               onInput={(e) => {
+                 // Real-time feedback during drag
+                 const index = parseInt(e.target.value);
+                 setCurrentImageIndex(index);
                }}
                style={{ 
                  appearance: 'none', 
-                 width: '180px', 
-                 height: '2px', 
+                 width: isTablet ? '200px' : '180px', 
+                 height: isTablet ? '4px' : '2px', 
                  background: 'linear-gradient(to right, #0f52ba, #3b82f6)', 
-                 borderRadius: '2px', 
+                 borderRadius: isTablet ? '4px' : '2px', 
                  transform: 'rotate(90deg)', 
                  cursor: 'pointer',
                  pointerEvents: 'auto',
                  position: 'absolute',
                  top: '50%',
                  left: '50%',
-                 marginTop: '-1px',
-                 marginLeft: '-90px'
+                 marginTop: isTablet ? '-2px' : '-1px',
+                 marginLeft: isTablet ? '-100px' : '-90px',
+                 touchAction: 'manipulation'
                }} 
              />
            </div>
            
+           {/* Current Slice Display */}
            <div style={{ 
              color: '#fff', 
-             fontSize: '10px', 
+             fontSize: isTablet ? '12px' : '10px', 
              fontWeight: 950, 
-             background: '#0f52ba', 
-             padding: '4px 8px', 
-             borderRadius: '6px', 
+             background: 'linear-gradient(135deg, #0f52ba, #3b82f6)', 
+             padding: isTablet ? '6px 10px' : '4px 8px', 
+             borderRadius: isTablet ? '8px' : '6px', 
              marginTop: '10px',
              boxShadow: '0 4px 10px rgba(15, 82, 186, 0.3)',
              pointerEvents: 'none',
-             letterSpacing: '0.5px'
+             letterSpacing: '0.5px',
+             textAlign: 'center',
+             minWidth: isTablet ? '50px' : '40px'
            }}>
               {currentImageIndex + 1} / {files.length}
            </div>
+           
+           {/* Navigation Buttons for Desktop */}
+           {!isTablet && (
+             <div style={{ 
+               display: 'flex', 
+               flexDirection: 'column', 
+               gap: '8px', 
+               marginTop: '10px' 
+             }}>
+               <button
+                 onClick={() => {
+                   const newIndex = Math.max(0, currentImageIndex - 1);
+                   console.log(`[DICOM] Previous button clicked: ${newIndex + 1}/${files.length}`);
+                   const viewport = renderingEngineRef.current?.getViewport(viewportId);
+                   if (viewport && newIndex !== currentImageIndex) {
+                     try {
+                       viewport.setImageIdIndex(newIndex);
+                       setCurrentImageIndex(newIndex);
+                       if (onSliceChange) onSliceChange(newIndex, files.length);
+                       console.log(`[DICOM] ✅ Previous slice navigation successful`);
+                     } catch (err) {
+                       console.error(`[DICOM] ❌ Previous slice navigation failed:`, err);
+                     }
+                   }
+                 }}
+                 disabled={currentImageIndex === 0}
+                 style={{
+                   background: currentImageIndex === 0 ? 'rgba(255,255,255,0.1)' : '#3b82f6',
+                   border: 'none',
+                   color: 'white',
+                   width: '24px',
+                   height: '24px',
+                   borderRadius: '4px',
+                   cursor: currentImageIndex === 0 ? 'not-allowed' : 'pointer',
+                   fontSize: '12px',
+                   display: 'flex',
+                   alignItems: 'center',
+                   justifyContent: 'center'
+                 }}
+               >
+                 ▲
+               </button>
+               <button
+                 onClick={() => {
+                   const newIndex = Math.min(files.length - 1, currentImageIndex + 1);
+                   console.log(`[DICOM] Next button clicked: ${newIndex + 1}/${files.length}`);
+                   const viewport = renderingEngineRef.current?.getViewport(viewportId);
+                   if (viewport && newIndex !== currentImageIndex) {
+                     try {
+                       viewport.setImageIdIndex(newIndex);
+                       setCurrentImageIndex(newIndex);
+                       if (onSliceChange) onSliceChange(newIndex, files.length);
+                       console.log(`[DICOM] ✅ Next slice navigation successful`);
+                     } catch (err) {
+                       console.error(`[DICOM] ❌ Next slice navigation failed:`, err);
+                     }
+                   }
+                 }}
+                 disabled={currentImageIndex === files.length - 1}
+                 style={{
+                   background: currentImageIndex === files.length - 1 ? 'rgba(255,255,255,0.1)' : '#3b82f6',
+                   border: 'none',
+                   color: 'white',
+                   width: '24px',
+                   height: '24px',
+                   borderRadius: '4px',
+                   cursor: currentImageIndex === files.length - 1 ? 'not-allowed' : 'pointer',
+                   fontSize: '12px',
+                   display: 'flex',
+                   alignItems: 'center',
+                   justifyContent: 'center'
+                 }}
+               >
+                 ▼
+               </button>
+             </div>
+           )}
         </div>
       )}
 

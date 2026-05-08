@@ -750,6 +750,35 @@ const ReportingPage = () => {
         } catch (fetchError) {
           console.error(`[DICOM_LOAD] Fetch error (attempt ${retryCount + 1}):`, fetchError);
           
+          // Check for CORS-specific errors
+          if (fetchError.message.includes('CORS') || 
+              fetchError.message.includes('Access-Control-Allow-Origin') ||
+              (fetchError.name === 'TypeError' && fetchError.message.includes('Failed to fetch'))) {
+            
+            // Try API proxy as fallback for CORS issues
+            if (retryCount === 0) {
+              console.log(`[DICOM_LOAD] CORS error detected, trying API proxy fallback...`);
+              try {
+                const proxyResponse = await apiClient.get(`/Study/proxy-dicom`, {
+                  params: { url: asset.remoteUrl },
+                  responseType: 'blob'
+                });
+                
+                if (proxyResponse.data) {
+                  console.log(`[DICOM_LOAD] ✅ API proxy successful`);
+                  response = proxyResponse;
+                  response.ok = true; // Axios doesn't use .ok property
+                  break;
+                }
+              } catch (proxyError) {
+                console.warn(`[DICOM_LOAD] API proxy failed:`, proxyError);
+                // Continue with original CORS error handling
+              }
+            }
+            
+            throw new Error(`CORS_ERROR: Cross-origin request blocked. The server needs to be configured to allow requests from this domain. ${fetchError.message}`);
+          }
+          
           if (retryCount < maxRetries) {
             console.warn(`[DICOM_LOAD] Network error, retrying in ${(retryCount + 1) * 1000}ms...`);
             await new Promise(resolve => setTimeout(resolve, (retryCount + 1) * 1000));
@@ -890,7 +919,9 @@ const ReportingPage = () => {
       // Provide user-friendly error messages based on error type
       let userMessage = 'DIAGNOSTIC SIGNAL FAILURE: ';
       
-      if (err.message.includes('NETWORK_ERROR') || err.message.includes('Failed to fetch')) {
+      if (err.message.includes('CORS_ERROR')) {
+        userMessage += 'Server configuration issue detected. The DICOM storage server needs to allow cross-origin requests. Please contact your system administrator to configure CORS settings for the Azure Blob Storage.';
+      } else if (err.message.includes('NETWORK_ERROR') || err.message.includes('Failed to fetch')) {
         userMessage += 'Unable to download study data. Please check your internet connection and try again.';
       } else if (err.message.includes('FILE_NOT_FOUND')) {
         userMessage += 'The study file is no longer available. It may have been moved or deleted.';
@@ -915,7 +946,35 @@ const ReportingPage = () => {
         }
       });
       
-      alert(userMessage);
+      // Enhanced error display with actionable guidance
+      const errorDetails = {
+        title: 'DIAGNOSTIC SIGNAL FAILURE',
+        message: userMessage,
+        technicalDetails: err.message,
+        suggestions: []
+      };
+      
+      if (err.message.includes('CORS_ERROR')) {
+        errorDetails.suggestions = [
+          '1. Contact your system administrator to configure CORS settings',
+          '2. Ensure Azure Blob Storage allows requests from this domain',
+          '3. Try accessing from the production environment instead of localhost'
+        ];
+      } else if (err.message.includes('NETWORK_ERROR')) {
+        errorDetails.suggestions = [
+          '1. Check your internet connection',
+          '2. Try refreshing the page',
+          '3. Contact IT support if the problem persists'
+        ];
+      }
+      
+      // Display comprehensive error information
+      const errorMessage = `${errorDetails.title}\n\n${errorDetails.message}\n\n` +
+        (errorDetails.suggestions.length > 0 ? 
+          `Suggested Actions:\n${errorDetails.suggestions.join('\n')}\n\n` : '') +
+        `Technical Details: ${errorDetails.technicalDetails}`;
+      
+      alert(errorMessage);
     } finally {
       setLoading(false);
       setProcessingStatus('');
