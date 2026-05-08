@@ -1644,35 +1644,45 @@ const AdvancedDicomViewer = ({
       {isTablet && isReady && !isFullscreen && (
         <div style={{
           position: 'absolute',
-          bottom: '15px',
+          bottom: '20px',
           left: '50%',
           transform: 'translateX(-50%)',
-          background: 'rgba(15, 23, 42, 0.9)',
-          backdropFilter: 'blur(10px)',
+          background: 'linear-gradient(135deg, rgba(15, 23, 42, 0.95), rgba(30, 41, 59, 0.95))',
+          backdropFilter: 'blur(12px)',
           color: 'white',
-          padding: '8px 16px',
-          borderRadius: '20px',
-          fontSize: '10px',
+          padding: '12px 20px',
+          borderRadius: '25px',
+          fontSize: '11px',
           zIndex: 100,
-          border: '1px solid rgba(255,255,255,0.1)',
+          border: '2px solid rgba(59, 130, 246, 0.3)',
           display: 'flex',
           alignItems: 'center',
-          gap: '10px',
+          gap: '12px',
           pointerEvents: 'none',
-          animation: 'fadeInOut 6s ease-in-out infinite'
+          animation: 'fadeInOut 8s ease-in-out infinite',
+          boxShadow: '0 8px 32px rgba(0,0,0,0.4)'
         }}>
-          <span>👆 Double-tap: Reset</span>
-          <span>•</span>
-          <span>🤏 Pinch: Zoom</span>
-          <span>•</span>
-          <span>👆 Pan: Single finger drag</span>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+            <span style={{ fontSize: '16px' }}>🤏</span>
+            <span>Pinch: Zoom</span>
+          </div>
+          <span style={{ color: 'rgba(255,255,255,0.5)' }}>•</span>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+            <span style={{ fontSize: '16px' }}>👆</span>
+            <span>Drag: Pan</span>
+          </div>
+          <span style={{ color: 'rgba(255,255,255,0.5)' }}>•</span>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+            <span style={{ fontSize: '16px' }}>👆👆</span>
+            <span>Double-tap: Reset</span>
+          </div>
         </div>
       )}
 
       <style jsx>{`
         @keyframes fadeInOut {
-          0%, 20%, 80%, 100% { opacity: 0.8; }
-          40%, 60% { opacity: 0.4; }
+          0%, 15%, 85%, 100% { opacity: 0.9; }
+          30%, 70% { opacity: 0.5; }
         }
         
         /* Touch optimizations */
@@ -1686,6 +1696,24 @@ const AdvancedDicomViewer = ({
         /* Prevent text selection during touch interactions */
         * {
           -webkit-tap-highlight-color: transparent;
+        }
+        
+        /* Tablet-specific enhancements */
+        @media (pointer: coarse) {
+          button {
+            min-height: 44px !important;
+            min-width: 44px !important;
+          }
+        }
+        
+        /* iPad specific */
+        @media only screen 
+          and (min-device-width: 768px) 
+          and (max-device-width: 1024px) {
+          button {
+            min-height: 48px !important;
+            padding: 12px !important;
+          }
         }
       `}</style>
 

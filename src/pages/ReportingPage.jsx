@@ -2053,19 +2053,21 @@ const ReportingPage = () => {
           position: relative;
         }
 
+        /* Tablet and iPad optimizations */
         @media (max-width: 1366px) and (orientation: landscape), 
                (max-width: 1024px) and (orientation: portrait),
                (pointer: coarse) {
           .main-layout { flex-direction: column; }
           .panel-center { 
             width: 100% !important; 
-            height: ${activeWorkspaceMode === 'editor' ? '0' : '60vh'}; 
+            height: ${activeWorkspaceMode === 'editor' ? '0' : '65vh'}; 
             display: ${activeWorkspaceMode === 'editor' ? 'none' : 'flex'}; 
             flex-direction: column; 
           }
           .panel-center > div:first-child { 
-            width: ${isTablet ? '240px' : '200px'} !important;
+            width: ${isTablet ? (window.innerWidth > 1024 ? '320px' : '280px') : '200px'} !important;
             height: 100%;
+            box-shadow: 4px 0 20px rgba(0,0,0,0.3);
           }
           .panel-right { 
             width: 100% !important; 
@@ -2087,22 +2089,56 @@ const ReportingPage = () => {
           input, textarea, select {
             font-size: 16px !important;
           }
+          
+          /* Enhanced touch targets for medical precision */
+          .dicom-tool-button {
+            min-height: 60px !important;
+            min-width: 60px !important;
+            padding: 12px !important;
+          }
         }
 
-        /* iPad specific optimizations */
+        /* iPad Pro and large tablet optimizations */
+        @media only screen 
+          and (min-device-width: 1024px) 
+          and (max-device-width: 1366px) 
+          and (-webkit-min-device-pixel-ratio: 2) {
+          
+          .panel-center > div:first-child { 
+            width: 350px !important;
+          }
+          
+          /* Extra large touch targets for iPad Pro */
+          button {
+            min-height: 52px !important;
+            padding: 16px !important;
+          }
+          
+          .dicom-tool-button {
+            min-height: 70px !important;
+            min-width: 70px !important;
+          }
+        }
+
+        /* Standard iPad optimizations */
         @media only screen 
           and (min-device-width: 768px) 
           and (max-device-width: 1024px) 
           and (-webkit-min-device-pixel-ratio: 1) {
           
           .panel-center > div:first-child { 
-            width: 280px !important;
+            width: 300px !important;
           }
           
           /* Larger touch targets for iPad */
           button {
             min-height: 48px !important;
-            padding: 12px !important;
+            padding: 14px !important;
+          }
+          
+          .dicom-tool-button {
+            min-height: 65px !important;
+            min-width: 65px !important;
           }
         }
 
@@ -2704,104 +2740,171 @@ const ReportingPage = () => {
 
         {/* CENTER PANEL: DICOM Viewer */}
         <div className="panel panel-center" style={{ display: 'flex' }}>
-          {/* LEFT TOOLBAR - Attached to DICOM Viewer */}
+          {/* LEFT TOOLBAR - Tablet Optimized */}
           <div style={{
-            width: isTablet ? '240px' : '200px',
+            width: isTablet ? (window.innerWidth > 1024 ? '320px' : '280px') : '200px',
             background: 'linear-gradient(180deg, #0f172a 0%, #1e293b 100%)',
             borderRight: '2px solid #334155',
             display: 'flex',
             flexDirection: 'column',
-            overflow: 'hidden'
+            overflow: 'hidden',
+            boxShadow: isTablet ? '4px 0 20px rgba(0,0,0,0.3)' : 'none'
           }}>
             {/* Toolbar Header */}
             <div style={{
-              padding: isTablet ? '20px 15px' : '15px',
+              padding: isTablet ? '25px 20px' : '15px',
               borderBottom: '2px solid #334155',
-              background: 'linear-gradient(135deg, #3b82f6, #8b5cf6)'
+              background: 'linear-gradient(135deg, #3b82f6, #8b5cf6)',
+              position: 'relative'
             }}>
               <div style={{
                 color: 'white',
-                fontSize: isTablet ? '14px' : '12px',
+                fontSize: isTablet ? '16px' : '12px',
                 fontWeight: 900,
                 letterSpacing: '1px',
                 display: 'flex',
                 alignItems: 'center',
-                gap: '8px'
+                gap: '10px'
               }}>
-                <span style={{ fontSize: isTablet ? '20px' : '16px' }}>🛠️</span>
+                <span style={{ fontSize: isTablet ? '24px' : '16px' }}>🛠️</span>
                 DICOM TOOLS
               </div>
               {isTablet && (
                 <div style={{
                   color: 'rgba(255,255,255,0.8)',
-                  fontSize: '10px',
-                  marginTop: '4px'
+                  fontSize: '11px',
+                  marginTop: '6px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '6px'
                 }}>
-                  Touch optimized for tablets
+                  <span>📱</span> Touch optimized interface
                 </div>
               )}
             </div>
 
+            {/* Quick Actions - Tablet Only */}
+            {isTablet && (
+              <div style={{ padding: '20px', borderBottom: '1px solid #334155', background: 'rgba(59, 130, 246, 0.1)' }}>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
+                  <button
+                    onClick={() => {
+                      setActiveTool('WindowLevelTool');
+                      setResetTrigger(prev => prev + 1);
+                    }}
+                    style={{
+                      background: 'linear-gradient(135deg, #10b981, #059669)',
+                      border: 'none',
+                      color: 'white',
+                      padding: '12px',
+                      borderRadius: '8px',
+                      fontSize: '12px',
+                      fontWeight: 900,
+                      cursor: 'pointer',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '8px',
+                      touchAction: 'manipulation',
+                      boxShadow: '0 4px 12px rgba(16, 185, 129, 0.3)'
+                    }}
+                  >
+                    <span style={{ fontSize: '16px' }}>🔄</span>
+                    RESET VIEW
+                  </button>
+                  <button
+                    onClick={() => {
+                      alert('Touch Gestures:\n\n🤏 Pinch to zoom in/out\n👆 Single finger to pan\n👆👆 Double tap to reset\n🖱️ Use toolbar for measurements\n\nKeyboard shortcuts available when connected to external keyboard.');
+                    }}
+                    style={{
+                      background: 'linear-gradient(135deg, #8b5cf6, #7c3aed)',
+                      border: 'none',
+                      color: 'white',
+                      padding: '12px',
+                      borderRadius: '8px',
+                      fontSize: '12px',
+                      fontWeight: 900,
+                      cursor: 'pointer',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '8px',
+                      touchAction: 'manipulation',
+                      boxShadow: '0 4px 12px rgba(139, 92, 246, 0.3)'
+                    }}
+                  >
+                    <span style={{ fontSize: '16px' }}>❓</span>
+                    HELP
+                  </button>
+                </div>
+              </div>
+            )}
+
             {/* Essential Tools */}
-            <div style={{ padding: isTablet ? '20px 15px' : '15px', borderBottom: '1px solid #334155' }}>
+            {/* Navigation Tools */}
+            <div style={{ padding: isTablet ? '25px 20px' : '15px', borderBottom: '1px solid #334155' }}>
               <div style={{ 
                 color: '#3b82f6', 
-                fontSize: isTablet ? '12px' : '10px', 
+                fontSize: isTablet ? '14px' : '10px', 
                 fontWeight: 900, 
-                marginBottom: isTablet ? '15px' : '10px',
-                letterSpacing: '1px'
+                marginBottom: isTablet ? '20px' : '10px',
+                letterSpacing: '1px',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '8px'
               }}>
-                🎮 NAVIGATION
+                <span style={{ fontSize: isTablet ? '18px' : '14px' }}>🎮</span>
+                NAVIGATION
               </div>
-              <div style={{ display: 'grid', gridTemplateColumns: isTablet ? '1fr 1fr' : '1fr 1fr 1fr', gap: isTablet ? '8px' : '4px' }}>
+              <div style={{ 
+                display: 'grid', 
+                gridTemplateColumns: isTablet ? '1fr 1fr' : '1fr 1fr 1fr', 
+                gap: isTablet ? '12px' : '4px' 
+              }}>
                 {[
-                  { id: 'WindowLevelTool', icon: '☀️', label: 'W/L', shortcut: 'W' },
-                  { id: 'ZoomTool', icon: '🔍', label: 'Zoom', shortcut: 'Z' },
-                  { id: 'PanTool', icon: '✋', label: 'Pan', shortcut: 'P' },
-                  { id: 'StackScrollTool', icon: '📜', label: 'Scroll', shortcut: 'S' },
-                  { id: 'ResetTool', icon: '🔄', label: 'Reset', shortcut: 'ESC' },
-                  { id: 'HelpTool', icon: '❓', label: 'Help', shortcut: '?' }
+                  { id: 'WindowLevelTool', icon: '☀️', label: 'Window/Level', shortcut: 'W', desc: 'Adjust brightness & contrast' },
+                  { id: 'ZoomTool', icon: '🔍', label: 'Zoom', shortcut: 'Z', desc: 'Magnify image' },
+                  { id: 'PanTool', icon: '✋', label: 'Pan', shortcut: 'P', desc: 'Move image around' },
+                  { id: 'StackScrollTool', icon: '📜', label: 'Scroll', shortcut: 'S', desc: 'Navigate slices' }
                 ].map(t => (
                   <button 
                     key={t.id}
-                    onClick={() => {
-                      if (t.id === 'ResetTool') {
-                        setActiveTool('WindowLevelTool');
-                        setResetTrigger(prev => prev + 1);
-                      } else if (t.id === 'HelpTool') {
-                        // Show help modal or info
-                        alert('Touch gestures:\n• Pinch to zoom\n• Single finger to pan\n• Double tap to reset\n• Use toolbar for measurements');
-                      } else {
-                        setActiveTool(t.id);
-                      }
-                    }}
+                    onClick={() => setActiveTool(t.id)}
                     style={{ 
-                      background: activeTool === t.id ? '#3b82f6' : 'rgba(255,255,255,0.05)', 
-                      border: activeTool === t.id ? '2px solid #60a5fa' : '2px solid transparent',
+                      background: activeTool === t.id 
+                        ? 'linear-gradient(135deg, #3b82f6, #2563eb)' 
+                        : 'rgba(255,255,255,0.05)', 
+                      border: activeTool === t.id ? '3px solid #60a5fa' : '3px solid transparent',
                       color: activeTool === t.id ? 'white' : '#e2e8f0',
-                      padding: isTablet ? '12px 8px' : '6px 4px',
-                      borderRadius: '6px',
-                      fontSize: isTablet ? '10px' : '8px',
+                      padding: isTablet ? '16px 12px' : '6px 4px',
+                      borderRadius: '10px',
+                      fontSize: isTablet ? '11px' : '8px',
                       fontWeight: 900,
                       cursor: 'pointer',
                       display: 'flex',
                       flexDirection: 'column',
                       alignItems: 'center',
-                      gap: isTablet ? '6px' : '3px',
-                      transition: 'all 0.2s ease',
+                      gap: isTablet ? '8px' : '3px',
+                      transition: 'all 0.3s ease',
                       width: '100%',
                       textAlign: 'center',
-                      minHeight: isTablet ? '60px' : '45px',
-                      touchAction: 'manipulation' // Optimize for touch
+                      minHeight: isTablet ? '80px' : '45px',
+                      touchAction: 'manipulation',
+                      boxShadow: activeTool === t.id 
+                        ? '0 6px 20px rgba(59, 130, 246, 0.4)' 
+                        : '0 2px 8px rgba(0,0,0,0.1)',
+                      transform: activeTool === t.id ? 'translateY(-2px)' : 'none'
                     }}
+                    title={isTablet ? t.desc : undefined}
                   >
-                    <span style={{ fontSize: isTablet ? '16px' : '12px' }}>{t.icon}</span> 
-                    <span style={{ fontSize: isTablet ? '9px' : '7px', lineHeight: '1' }}>{t.label}</span>
+                    <span style={{ fontSize: isTablet ? '20px' : '12px' }}>{t.icon}</span> 
+                    <span style={{ fontSize: isTablet ? '10px' : '7px', lineHeight: '1.2', textAlign: 'center' }}>
+                      {t.label}
+                    </span>
                     <span style={{ 
-                      fontSize: isTablet ? '8px' : '6px', 
+                      fontSize: isTablet ? '9px' : '6px', 
                       background: 'rgba(255,255,255,0.2)', 
-                      padding: isTablet ? '2px 4px' : '1px 2px', 
-                      borderRadius: '2px'
+                      padding: isTablet ? '3px 6px' : '1px 2px', 
+                      borderRadius: '4px',
+                      letterSpacing: '0.5px'
                     }}>{t.shortcut}</span>
                   </button>
                 ))}
@@ -2809,116 +2912,181 @@ const ReportingPage = () => {
             </div>
 
             {/* Measurement Tools */}
-            <div style={{ padding: isTablet ? '20px 15px' : '15px', borderBottom: '1px solid #334155' }}>
+            <div style={{ padding: isTablet ? '25px 20px' : '15px', borderBottom: '1px solid #334155' }}>
               <div style={{ 
                 color: '#10b981', 
-                fontSize: isTablet ? '12px' : '10px', 
+                fontSize: isTablet ? '14px' : '10px', 
                 fontWeight: 900, 
-                marginBottom: isTablet ? '15px' : '10px',
-                letterSpacing: '1px'
+                marginBottom: isTablet ? '20px' : '10px',
+                letterSpacing: '1px',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '8px'
               }}>
-                📏 MEASUREMENTS
+                <span style={{ fontSize: isTablet ? '18px' : '14px' }}>📏</span>
+                MEASUREMENTS
               </div>
-              <div style={{ display: 'grid', gridTemplateColumns: isTablet ? '1fr 1fr' : '1fr 1fr 1fr', gap: isTablet ? '8px' : '4px' }}>
+              <div style={{ 
+                display: 'grid', 
+                gridTemplateColumns: isTablet ? '1fr 1fr' : '1fr 1fr 1fr', 
+                gap: isTablet ? '12px' : '4px' 
+              }}>
                 {[
-                  { id: 'LengthTool', icon: '📏', label: 'Length', shortcut: 'L' },
-                  { id: 'HeightTool', icon: '📐', label: 'Height', shortcut: 'H' },
-                  { id: 'BidirectionalTool', icon: '↔️', label: 'Bidir', shortcut: 'B' },
-                  { id: 'AngleTool', icon: '∠', label: 'Angle', shortcut: 'A' },
-                  { id: 'CobbAngleTool', icon: '🦴', label: 'Cobb', shortcut: 'C' },
-                  { id: 'CircleROITool', icon: '🔵', label: 'Circle', shortcut: 'O' }
+                  { id: 'LengthTool', icon: '📏', label: 'Length', shortcut: 'L', desc: 'Measure distance' },
+                  { id: 'HeightTool', icon: '📐', label: 'Height', shortcut: 'H', desc: 'Measure height' },
+                  { id: 'BidirectionalTool', icon: '↔️', label: 'Bidirectional', shortcut: 'B', desc: 'RECIST measurement' },
+                  { id: 'AngleTool', icon: '∠', label: 'Angle', shortcut: 'A', desc: 'Measure angles' },
+                  { id: 'CobbAngleTool', icon: '🦴', label: 'Cobb Angle', shortcut: 'C', desc: 'Spine curvature' },
+                  { id: 'CircleROITool', icon: '🔵', label: 'Circle ROI', shortcut: 'O', desc: 'Circular region' }
                 ].map(t => (
                   <button 
                     key={t.id}
                     onClick={() => setActiveTool(t.id)}
                     style={{ 
-                      background: activeTool === t.id ? '#10b981' : 'rgba(255,255,255,0.05)', 
-                      border: activeTool === t.id ? '2px solid #34d399' : '2px solid transparent',
+                      background: activeTool === t.id 
+                        ? 'linear-gradient(135deg, #10b981, #059669)' 
+                        : 'rgba(255,255,255,0.05)', 
+                      border: activeTool === t.id ? '3px solid #34d399' : '3px solid transparent',
                       color: activeTool === t.id ? 'white' : '#e2e8f0',
-                      padding: isTablet ? '12px 8px' : '6px 4px',
-                      borderRadius: '6px',
-                      fontSize: isTablet ? '10px' : '8px',
+                      padding: isTablet ? '16px 12px' : '6px 4px',
+                      borderRadius: '10px',
+                      fontSize: isTablet ? '11px' : '8px',
                       fontWeight: 900,
                       cursor: 'pointer',
                       display: 'flex',
                       flexDirection: 'column',
                       alignItems: 'center',
-                      gap: isTablet ? '6px' : '3px',
-                      transition: 'all 0.2s ease',
+                      gap: isTablet ? '8px' : '3px',
+                      transition: 'all 0.3s ease',
                       width: '100%',
                       textAlign: 'center',
-                      minHeight: isTablet ? '60px' : '45px',
-                      touchAction: 'manipulation'
+                      minHeight: isTablet ? '80px' : '45px',
+                      touchAction: 'manipulation',
+                      boxShadow: activeTool === t.id 
+                        ? '0 6px 20px rgba(16, 185, 129, 0.4)' 
+                        : '0 2px 8px rgba(0,0,0,0.1)',
+                      transform: activeTool === t.id ? 'translateY(-2px)' : 'none'
                     }}
+                    title={isTablet ? t.desc : undefined}
                   >
-                    <span style={{ fontSize: isTablet ? '16px' : '12px' }}>{t.icon}</span> 
-                    <span style={{ fontSize: isTablet ? '9px' : '7px', lineHeight: '1' }}>{t.label}</span>
+                    <span style={{ fontSize: isTablet ? '20px' : '12px' }}>{t.icon}</span> 
+                    <span style={{ fontSize: isTablet ? '10px' : '7px', lineHeight: '1.2', textAlign: 'center' }}>
+                      {t.label}
+                    </span>
                     <span style={{ 
-                      fontSize: isTablet ? '8px' : '6px', 
+                      fontSize: isTablet ? '9px' : '6px', 
                       background: 'rgba(255,255,255,0.2)', 
-                      padding: isTablet ? '2px 4px' : '1px 2px', 
-                      borderRadius: '2px'
+                      padding: isTablet ? '3px 6px' : '1px 2px', 
+                      borderRadius: '4px',
+                      letterSpacing: '0.5px'
                     }}>{t.shortcut}</span>
                   </button>
                 ))}
               </div>
             </div>
 
-            {/* ROI Tools */}
-            <div style={{ padding: isTablet ? '20px 15px' : '15px', borderBottom: '1px solid #334155' }}>
+            {/* ROI Analysis Tools */}
+            <div style={{ padding: isTablet ? '25px 20px' : '15px', borderBottom: '1px solid #334155' }}>
               <div style={{ 
                 color: '#f59e0b', 
-                fontSize: isTablet ? '12px' : '10px', 
+                fontSize: isTablet ? '14px' : '10px', 
                 fontWeight: 900, 
-                marginBottom: isTablet ? '15px' : '10px',
-                letterSpacing: '1px'
+                marginBottom: isTablet ? '20px' : '10px',
+                letterSpacing: '1px',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '8px'
               }}>
-                🎯 ROI ANALYSIS
+                <span style={{ fontSize: isTablet ? '18px' : '14px' }}>🎯</span>
+                ROI ANALYSIS
               </div>
-              <div style={{ display: 'grid', gridTemplateColumns: isTablet ? '1fr 1fr' : '1fr 1fr 1fr', gap: isTablet ? '8px' : '4px' }}>
+              <div style={{ 
+                display: 'grid', 
+                gridTemplateColumns: isTablet ? '1fr 1fr' : '1fr 1fr 1fr', 
+                gap: isTablet ? '12px' : '4px' 
+              }}>
                 {[
-                  { id: 'EllipticalROITool', icon: '⭕', label: 'Ellipse', shortcut: 'E' },
-                  { id: 'RectangleROITool', icon: '⬜', label: 'Rect', shortcut: 'R' },
-                  { id: 'PlanarFreehandROITool', icon: '✏️', label: 'Freehand', shortcut: 'F' },
-                  { id: 'ProbeTool', icon: '🎯', label: 'Probe', shortcut: 'U' },
-                  { id: 'ArrowAnnotateTool', icon: '➡️', label: 'Arrow', shortcut: 'N' },
-                  { id: 'AdvancedMagnifyTool', icon: '🔍', label: 'Magnify', shortcut: 'M' }
+                  { id: 'EllipticalROITool', icon: '⭕', label: 'Ellipse ROI', shortcut: 'E', desc: 'Elliptical region' },
+                  { id: 'RectangleROITool', icon: '⬜', label: 'Rectangle ROI', shortcut: 'R', desc: 'Rectangular region' },
+                  { id: 'PlanarFreehandROITool', icon: '✏️', label: 'Freehand ROI', shortcut: 'F', desc: 'Custom shape' },
+                  { id: 'ProbeTool', icon: '🎯', label: 'HU Probe', shortcut: 'U', desc: 'Pixel values' },
+                  { id: 'ArrowAnnotateTool', icon: '➡️', label: 'Arrow', shortcut: 'N', desc: 'Point annotation' },
+                  { id: 'AdvancedMagnifyTool', icon: '🔍', label: 'Magnify', shortcut: 'M', desc: 'Magnification tool' }
                 ].map(t => (
                   <button 
                     key={t.id}
                     onClick={() => setActiveTool(t.id)}
                     style={{ 
-                      background: activeTool === t.id ? '#f59e0b' : 'rgba(255,255,255,0.05)', 
-                      border: activeTool === t.id ? '2px solid #fbbf24' : '2px solid transparent',
+                      background: activeTool === t.id 
+                        ? 'linear-gradient(135deg, #f59e0b, #d97706)' 
+                        : 'rgba(255,255,255,0.05)', 
+                      border: activeTool === t.id ? '3px solid #fbbf24' : '3px solid transparent',
                       color: activeTool === t.id ? 'white' : '#e2e8f0',
-                      padding: isTablet ? '12px 8px' : '6px 4px',
-                      borderRadius: '6px',
-                      fontSize: isTablet ? '10px' : '8px',
+                      padding: isTablet ? '16px 12px' : '6px 4px',
+                      borderRadius: '10px',
+                      fontSize: isTablet ? '11px' : '8px',
                       fontWeight: 900,
                       cursor: 'pointer',
                       display: 'flex',
                       flexDirection: 'column',
                       alignItems: 'center',
-                      gap: isTablet ? '6px' : '3px',
-                      transition: 'all 0.2s ease',
+                      gap: isTablet ? '8px' : '3px',
+                      transition: 'all 0.3s ease',
                       width: '100%',
                       textAlign: 'center',
-                      minHeight: isTablet ? '60px' : '45px',
-                      touchAction: 'manipulation'
+                      minHeight: isTablet ? '80px' : '45px',
+                      touchAction: 'manipulation',
+                      boxShadow: activeTool === t.id 
+                        ? '0 6px 20px rgba(245, 158, 11, 0.4)' 
+                        : '0 2px 8px rgba(0,0,0,0.1)',
+                      transform: activeTool === t.id ? 'translateY(-2px)' : 'none'
                     }}
+                    title={isTablet ? t.desc : undefined}
                   >
-                    <span style={{ fontSize: isTablet ? '16px' : '12px' }}>{t.icon}</span> 
-                    <span style={{ fontSize: isTablet ? '9px' : '7px', lineHeight: '1' }}>{t.label}</span>
+                    <span style={{ fontSize: isTablet ? '20px' : '12px' }}>{t.icon}</span> 
+                    <span style={{ fontSize: isTablet ? '10px' : '7px', lineHeight: '1.2', textAlign: 'center' }}>
+                      {t.label}
+                    </span>
                     <span style={{ 
-                      fontSize: isTablet ? '8px' : '6px', 
+                      fontSize: isTablet ? '9px' : '6px', 
                       background: 'rgba(255,255,255,0.2)', 
-                      padding: isTablet ? '2px 4px' : '1px 2px', 
-                      borderRadius: '2px'
+                      padding: isTablet ? '3px 6px' : '1px 2px', 
+                      borderRadius: '4px',
+                      letterSpacing: '0.5px'
                     }}>{t.shortcut}</span>
                   </button>
                 ))}
               </div>
             </div>
+
+            {/* Tablet Footer Info */}
+            {isTablet && (
+              <div style={{ 
+                padding: '20px', 
+                background: 'rgba(15, 23, 42, 0.8)',
+                marginTop: 'auto'
+              }}>
+                <div style={{ 
+                  color: '#94a3b8', 
+                  fontSize: '10px', 
+                  lineHeight: '1.4',
+                  textAlign: 'center'
+                }}>
+                  <div style={{ marginBottom: '8px', color: '#e2e8f0', fontWeight: 700 }}>
+                    📱 TABLET OPTIMIZED
+                  </div>
+                  <div style={{ marginBottom: '4px' }}>
+                    • Touch gestures for navigation
+                  </div>
+                  <div style={{ marginBottom: '4px' }}>
+                    • Large touch targets (WCAG AA)
+                  </div>
+                  <div>
+                    • Professional medical imaging
+                  </div>
+                </div>
+              </div>
+            )}
 
             {/* Advanced Tools Info */}
             <div style={{ padding: '15px', background: 'rgba(59, 130, 246, 0.1)' }}>
