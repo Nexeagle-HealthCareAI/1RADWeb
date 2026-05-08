@@ -15,6 +15,7 @@ import AdminBoard from '../pages/AdminBoard';
 import ViewerPage from '../pages/ViewerPage';
 import BillingPage from '../pages/BillingPage';
 import ReportingPage from '../pages/ReportingPage';
+import DicomViewerPage from '../pages/DicomViewerPage';
 
 function RootRedirect() {
   const { currentUser } = useAuth();
@@ -106,6 +107,14 @@ export default function AppRouter() {
           element={
             <ProtectedRoute allowedRoles={['admindoctor', 'doctor']}>
               <ReportingPage />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/dicom-viewer"
+          element={
+            <ProtectedRoute allowedRoles={['admindoctor', 'doctor', 'technician']}>
+              <DicomViewerPage />
             </ProtectedRoute>
           }
         />

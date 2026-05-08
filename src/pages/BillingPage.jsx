@@ -41,6 +41,7 @@ export default function BillingPage() {
   const [searchTerm, setSearchTerm] = useState('');
   const [timeFilter, setTimeFilter] = useState('TODAY'); // 'TODAY', 'PAST', 'ALL'
   const [statusFilter, setStatusFilter] = useState('ALL'); // 'ALL', 'PAID', 'PENDING'
+  const [modalityFilter, setModalityFilter] = useState('ALL'); // 'ALL', 'MRI', 'CT', 'X-RAY', etc.
   const [isExportDrawerOpen, setIsExportDrawerOpen] = useState(false);
   const [exportMode, setExportMode] = useState('ALL'); // 'ALL', 'RANGE'
   const [exportDates, setExportDates] = useState({ start: '', end: '' });
@@ -49,6 +50,7 @@ export default function BillingPage() {
   const [isPayoutDrawerOpen, setIsPayoutDrawerOpen] = useState(false);
   const [isSavingPayout, setIsSavingPayout] = useState(false);
   const [editPayout, setEditPayout] = useState({ referrerId: '', referrerName: '', amount: 0, modality: 'MRI', remarks: '', invoiceId: '' });
+  const [referralCommissions, setReferralCommissions] = useState([]);
   
   const [currentPage, setCurrentPage] = useState(1);
   const itemsPerPage = 5;
@@ -128,14 +130,32 @@ export default function BillingPage() {
     }
   }, []);
 
+  const fetchCommissions = useCallback(async () => {
+    try {
+      const res = await apiClient.get('/referrers/commissions');
+      setReferralCommissions(res.data);
+    } catch (err) {
+      console.error('[FINANCE] Commissions fetch failed', err);
+    }
+  }, []);
+
   useEffect(() => {
+    const handleResize = () => {
+      setIsMobile(window.innerWidth < 1024);
+      setWindowWidth(window.innerWidth);
+    };
+    window.addEventListener('resize', handleResize);
+
     fetchInvoices();
     fetchStats();
     fetchRegistry();
     fetchMatrix();
     fetchExpenses();
     fetchReferrers();
-  }, [fetchInvoices, fetchStats, fetchRegistry, fetchMatrix, fetchExpenses, fetchReferrers]);
+    fetchCommissions();
+
+    return () => window.removeEventListener('resize', handleResize);
+  }, [fetchInvoices, fetchStats, fetchRegistry, fetchMatrix, fetchExpenses, fetchReferrers, fetchCommissions]);
 
   const handleSaveExpense = async (e) => {
     e.preventDefault();
@@ -185,6 +205,7 @@ export default function BillingPage() {
         setIsPayoutDrawerOpen(false);
         fetchInvoices();
         fetchStats();
+        fetchCommissions();
         alert('PAYMENT LOGGED: Referral commission successfully recorded in strategic ledger.');
       }
     } catch (err) {
@@ -305,11 +326,12 @@ export default function BillingPage() {
       const invDate = inv.createdAt ? new Date(inv.createdAt).toLocaleDateString('en-CA') : null;
       if (timeFilter === 'TODAY' && invDate !== today) return false;
       if (timeFilter === 'PAST' && invDate === today) return false;
+      // Modality Filter
+      if (modalityFilter !== 'ALL' && inv.modality !== modalityFilter) return false;
 
       return true;
     });
-  }, [invoices, searchTerm, timeFilter, statusFilter]);
-
+  }, [invoices, searchTerm, timeFilter, statusFilter, modalityFilter]);
   const liveStats = useMemo(() => {
     const paidInvoices = filteredInvoices.filter(inv => inv.status === 'PAID');
     const pendingInvoices = filteredInvoices.filter(inv => inv.status === 'PENDING');
@@ -324,6 +346,58 @@ export default function BillingPage() {
 
     return { totalRevenue, pendingRevenue, pendingCount, realizationRate, averageTicket };
   }, [filteredInvoices]);
+  const combinedReferralCuts = useMemo(() => {
+    const legacyCuts = expenses.filter(e => e.category === 'Referral' || e.description.toLowerCase().includes('referral')).map(e => ({
+        id: e.id,
+        date: e.transactionDate,
+        name: e.vendorName || 'DIRECT',
+        description: e.description,
+        reference: e.referenceNumber,
+        amount: e.amount,
+        type: 'LEGACY'
+    }));
+    const strategicCuts = referralCommissions.map(c => ({
+        id: c.id,
+        date: c.transactionDate,
+        name: c.referrerName,
+        description: `Commission [${c.modality}] ${c.remarks ? `- ${c.remarks}` : ''}`,
+        reference: c.referenceNumber,
+        amount: c.amount,
+        type: 'STRATEGIC'
+    }));
+    return [...legacyCuts, ...strategicCuts].sort((a, b) => new Date(b.date) - new Date(a.date));
+  }, [expenses, referralCommissions]);
+
+  const todayReferralTotal = useMemo(() => {
+    const today = new Date().toLocaleDateString('en-CA');
+    return combinedReferralCuts
+      .filter(cut => new Date(cut.date).toLocaleDateString('en-CA') === today)
+      .reduce((sum, cut) => sum + cut.amount, 0);
+  }, [combinedReferralCuts]);
+
+  const globalOutflow = useMemo(() => {
+    const operationalExpenses = expenses.filter(e => e.category !== 'Referral' && !e.description.toLowerCase().includes('referral')).map(e => ({
+        id: e.id,
+        date: e.transactionDate,
+        name: e.vendorName || 'N/A',
+        description: e.description,
+        category: e.category,
+        amount: e.amount,
+        type: 'OPERATIONAL'
+    }));
+    
+    const referralCuts = combinedReferralCuts.map(c => ({
+        id: c.id,
+        date: c.date,
+        name: c.name,
+        description: c.description,
+        category: 'Referral',
+        amount: c.amount,
+        type: c.type
+    }));
+
+    return [...operationalExpenses, ...referralCuts].sort((a, b) => new Date(b.date) - new Date(a.date));
+  }, [expenses, combinedReferralCuts]);
 
   const totalPages = Math.ceil(filteredInvoices.length / itemsPerPage);
   const paginatedInvoices = filteredInvoices.slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage);
@@ -1252,30 +1326,41 @@ export default function BillingPage() {
                   </tr>
                 </thead>
                 <tbody>
-                  {expenses.filter(exp => {
+                  {globalOutflow.filter(exp => {
                     if (expenseFilter === 'REFERRAL') {
-                      return exp.category === 'Referral' || exp.category === 'Marketing' || exp.description.toLowerCase().includes('referral');
+                      return exp.category === 'Referral';
                     }
                     return true;
                   }).map(exp => (
                     <tr key={exp.id} style={{ borderBottom: '1px solid #f8fafc', transition: 'background 0.2s' }}>
-                      <td style={{ padding: '20px 30px', fontSize: '13px', fontWeight: 850, color: '#1e293b' }}>{new Date(exp.transactionDate).toLocaleDateString('en-US', { day: 'numeric', month: 'short', year: 'numeric' })}</td>
-                      <td style={{ padding: '20px 30px', fontSize: '13px', fontWeight: 850, color: '#1e293b' }}>{exp.description}</td>
+                      <td style={{ padding: '20px 30px', fontSize: '13px', fontWeight: 850, color: '#1e293b' }}>{new Date(exp.date).toLocaleDateString('en-US', { day: 'numeric', month: 'short', year: 'numeric' })}</td>
                       <td style={{ padding: '20px 30px' }}>
-                        <span style={{ fontSize: '10px', fontWeight: 950, color: 'white', background: exp.category === 'Referral' ? '#e11d48' : '#dc2626', padding: '5px 12px', borderRadius: '8px' }}>{exp.category.toUpperCase()}</span>
+                        <div style={{ fontSize: '13px', fontWeight: 850, color: '#1e293b' }}>{exp.description}</div>
+                        <div style={{ fontSize: '9px', fontWeight: 900, color: '#94a3b8' }}>{exp.name.toUpperCase()}</div>
+                      </td>
+                      <td style={{ padding: '20px 30px' }}>
+                        <span style={{ 
+                          fontSize: '10px', fontWeight: 950, color: 'white', 
+                          background: exp.category === 'Referral' ? '#e11d48' : '#dc2626', 
+                          padding: '5px 12px', borderRadius: '8px' 
+                        }}>{exp.category.toUpperCase()}</span>
                       </td>
                       <td style={{ padding: '20px 30px', textAlign: 'right', fontSize: '14px', fontWeight: 950, color: '#dc2626' }}>₹{exp.amount.toLocaleString()}</td>
                       <td style={{ padding: '20px 30px', textAlign: 'right' }}>
-                        <button 
-                          onClick={() => handleDeleteExpense(exp.id)}
-                          style={{ padding: '8px 16px', borderRadius: '10px', border: 'none', background: '#fee2e2', color: '#ef4444', fontSize: '10px', fontWeight: 950, cursor: 'pointer' }}
-                        >DELETE</button>
+                        {exp.type === 'OPERATIONAL' || exp.type === 'LEGACY' ? (
+                          <button 
+                            onClick={() => handleDeleteExpense(exp.id)}
+                            style={{ padding: '8px 16px', borderRadius: '10px', border: 'none', background: '#fee2e2', color: '#ef4444', fontSize: '10px', fontWeight: 950, cursor: 'pointer' }}
+                          >DELETE</button>
+                        ) : (
+                          <span style={{ fontSize: '10px', fontWeight: 950, color: '#94a3b8' }}>LOCKED</span>
+                        )}
                       </td>
                     </tr>
                   ))}
-                  {expenses.length === 0 && (
+                  {globalOutflow.length === 0 && (
                     <tr>
-                      <td colSpan="5" style={{ padding: '50px', textAlign: 'center', color: '#94a3b8', fontSize: '12px', fontWeight: 600 }}>No operational expenses found.</td>
+                      <td colSpan="5" style={{ padding: '50px', textAlign: 'center', color: '#94a3b8', fontSize: '12px', fontWeight: 600 }}>No expenditure records found.</td>
                     </tr>
                   )}
                 </tbody>
@@ -1326,6 +1411,26 @@ export default function BillingPage() {
                 </div>
              </div>
 
+             <div style={{ width: '1px', height: '30px', background: '#cbd5e1' }}></div>
+
+             <div style={{ display: 'flex', alignItems: 'center', gap: '15px' }}>
+                <span style={{ fontSize: '10px', fontWeight: 950, color: '#64748b', letterSpacing: '1px' }}>MODALITY_HUB:</span>
+                <div style={{ display: 'flex', background: 'white', padding: '3px', borderRadius: '10px', border: '1px solid #e2e8f0' }}>
+                   {['ALL', 'MRI', 'CT', 'X-RAY', 'USG'].map(m => (
+                     <button 
+                      key={m}
+                      onClick={() => setModalityFilter(m)}
+                      style={{ 
+                        padding: '8px 16px', borderRadius: '8px', border: 'none', fontSize: '9px', fontWeight: 950,
+                        background: modalityFilter === m ? '#0f52ba' : 'transparent',
+                        color: modalityFilter === m ? 'white' : '#64748b',
+                        cursor: 'pointer', transition: 'all 0.2s'
+                      }}
+                     >{m}</button>
+                   ))}
+                </div>
+             </div>
+
              {/* Stats Summary Bubble */}
              <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: '10px' }}>
                 <span style={{ fontSize: '10px', fontWeight: 950, color: '#94a3b8' }}>MATCHING_RECORDS:</span>
@@ -1334,7 +1439,12 @@ export default function BillingPage() {
           </div>
 
           {/* KPI HUD */}
-          <div className="kpi-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '25px', marginBottom: '40px' }}>
+          <div className="kpi-grid" style={{ 
+            display: 'grid', 
+            gridTemplateColumns: isMobile ? '1fr' : 'repeat(5, 1fr)', 
+            gap: '25px', 
+            marginBottom: '40px' 
+          }}>
             <div className="kpi-card" style={{ background: 'white', padding: '25px', borderRadius: '24px', border: '1px solid #e2e8f0', boxShadow: '0 4px 20px rgba(0,0,0,0.02)' }}>
               <p style={{ fontSize: '11px', fontWeight: 950, color: '#94a3b8', letterSpacing: '1px', marginBottom: '15px' }}>TOTAL REVENUE (PAID)</p>
               <div style={{ fontSize: '28px', fontWeight: 950, color: '#1a1a2e' }}>₹{liveStats.totalRevenue.toLocaleString()}</div>
@@ -1354,6 +1464,11 @@ export default function BillingPage() {
               <p style={{ fontSize: '11px', fontWeight: 950, color: '#94a3b8', letterSpacing: '1px', marginBottom: '15px' }}>AVG TICKET SIZE</p>
               <div style={{ fontSize: '28px', fontWeight: 950, color: '#1a1a2e' }}>₹{liveStats.averageTicket.toLocaleString()}</div>
               <div style={{ marginTop: '10px', fontSize: '10px', color: '#888', fontWeight: 600 }}>PAID INVOICES IN SCOPE</div>
+            </div>
+            <div className="kpi-card" style={{ background: '#fff1f2', padding: '25px', borderRadius: '24px', border: '1px solid #fecdd3', boxShadow: '0 4px 20px rgba(225,29,72,0.05)' }}>
+              <p style={{ fontSize: '11px', fontWeight: 950, color: '#e11d48', letterSpacing: '1px', marginBottom: '15px' }}>TODAY'S REFERRAL PAYOUTS</p>
+              <div style={{ fontSize: '28px', fontWeight: 950, color: '#881337' }}>₹{todayReferralTotal.toLocaleString()}</div>
+              <div style={{ marginTop: '10px', fontSize: '10px', color: '#e11d48', fontWeight: 800 }}>AGGREGATED STRATEGIC CUTS</div>
             </div>
           </div>
 
@@ -1455,7 +1570,7 @@ export default function BillingPage() {
               <div style={{ background: '#fff1f2', padding: '15px 25px', borderRadius: '16px', border: '1px solid #fecdd3', textAlign: 'right' }}>
                  <div style={{ fontSize: '10px', fontWeight: 950, color: '#e11d48', marginBottom: '5px' }}>TOTAL PAYOUTS</div>
                  <div style={{ fontSize: '24px', fontWeight: 950, color: '#881337' }}>
-                   ₹{expenses.filter(e => e.category === 'Referral' || e.description.toLowerCase().includes('referral')).reduce((sum, e) => sum + e.amount, 0).toLocaleString()}
+                   ₹{combinedReferralCuts.reduce((sum, cut) => sum + cut.amount, 0).toLocaleString()}
                  </div>
               </div>
            </div>
@@ -1473,27 +1588,31 @@ export default function BillingPage() {
                     </tr>
                  </thead>
                  <tbody>
-                    {expenses.filter(e => e.category === 'Referral' || e.description.toLowerCase().includes('referral')).length === 0 ? (
+                    {combinedReferralCuts.length === 0 ? (
                        <tr><td colSpan="6" style={{ padding: '100px', textAlign: 'center', color: '#94a3b8', fontSize: '12px', fontWeight: 700 }}>NO REFERRAL PAYOUTS DETECTED</td></tr>
                     ) : (
-                       expenses.filter(e => e.category === 'Referral' || e.description.toLowerCase().includes('referral')).map(e => (
-                          <tr key={e.id} style={{ borderBottom: '1px solid #f1f5f9' }}>
-                             <td style={{ padding: '20px 30px', fontSize: '12px', fontWeight: 800, color: '#1e293b' }}>{new Date(e.transactionDate).toLocaleDateString()}</td>
+                       combinedReferralCuts.map(cut => (
+                          <tr key={cut.id} style={{ borderBottom: '1px solid #f1f5f9' }}>
+                             <td style={{ padding: '20px 30px', fontSize: '12px', fontWeight: 800, color: '#1e293b' }}>{new Date(cut.date).toLocaleDateString()}</td>
                              <td style={{ padding: '20px 30px' }}>
-                                <div style={{ fontSize: '13px', fontWeight: 950, color: '#e11d48' }}>{(e.vendorName || 'DIRECT').toUpperCase()}</div>
+                                <div style={{ fontSize: '13px', fontWeight: 950, color: '#e11d48' }}>{(cut.name || 'DIRECT').toUpperCase()}</div>
                              </td>
-                             <td style={{ padding: '20px 30px', fontSize: '12px', fontWeight: 700, color: '#64748b' }}>{e.description}</td>
+                             <td style={{ padding: '20px 30px', fontSize: '12px', fontWeight: 700, color: '#64748b' }}>{cut.description}</td>
                              <td style={{ padding: '20px 30px' }}>
-                                <div style={{ padding: '4px 8px', background: '#f1f5f9', borderRadius: '6px', fontSize: '10px', fontWeight: 950, color: '#1e293b', display: 'inline-block', fontFamily: 'monospace' }}>{e.referenceNumber || 'N/A'}</div>
+                                <div style={{ padding: '4px 8px', background: '#f1f5f9', borderRadius: '6px', fontSize: '10px', fontWeight: 950, color: '#1e293b', display: 'inline-block', fontFamily: 'monospace' }}>{cut.reference || 'N/A'}</div>
                              </td>
                              <td style={{ padding: '20px 30px', textAlign: 'right' }}>
-                                <div style={{ fontSize: '16px', fontWeight: 950, color: '#e11d48' }}>₹{e.amount.toLocaleString()}</div>
+                                <div style={{ fontSize: '16px', fontWeight: 950, color: '#e11d48' }}>₹{cut.amount.toLocaleString()}</div>
                              </td>
                              <td style={{ padding: '20px 30px', textAlign: 'right' }}>
-                                <button 
-                                   onClick={() => handleDeleteExpense(e.id)}
-                                   style={{ padding: '8px 12px', borderRadius: '8px', border: 'none', background: '#fee2e2', color: '#ef4444', fontSize: '9px', fontWeight: 950, cursor: 'pointer' }}
-                                >DELETE</button>
+                                 {cut.type === 'LEGACY' ? (
+                                    <button 
+                                       onClick={() => handleDeleteExpense(cut.id)}
+                                       style={{ padding: '8px 12px', borderRadius: '8px', border: 'none', background: '#fee2e2', color: '#ef4444', fontSize: '9px', fontWeight: 950, cursor: 'pointer' }}
+                                    >DELETE</button>
+                                 ) : (
+                                    <span style={{ fontSize: '9px', fontWeight: 950, color: '#94a3b8', letterSpacing: '0.5px' }}>LOCKED</span>
+                                 )}
                              </td>
                           </tr>
                        ))

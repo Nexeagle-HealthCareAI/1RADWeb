@@ -1308,71 +1308,203 @@ const ReportingPage = () => {
     if (!showShortcutsHelp) return null;
     
     return (
-      <div className="overlay" style={{ zIndex: 10002 }} onClick={() => setShowShortcutsHelp(false)}>
-        <div className="modal" style={{ width: '700px', maxHeight: '80vh', overflow: 'auto' }} onClick={e => e.stopPropagation()}>
-          <div className="modal-header">
-            <span>🎯 DICOM Viewer Keyboard Shortcuts</span>
-            <button className="tool-btn" onClick={() => setShowShortcutsHelp(false)}>✕</button>
+      <div className="overlay" style={{ zIndex: 10002, background: 'rgba(15, 23, 42, 0.95)' }} onClick={() => setShowShortcutsHelp(false)}>
+        <div className="modal" style={{ 
+          width: '800px', 
+          maxHeight: '85vh', 
+          overflow: 'auto',
+          background: 'linear-gradient(135deg, #0f172a, #1e293b)',
+          border: '2px solid rgba(59, 130, 246, 0.3)',
+          boxShadow: '0 25px 50px rgba(0, 0, 0, 0.5)'
+        }} onClick={e => e.stopPropagation()}>
+          <div className="modal-header" style={{ 
+            background: 'linear-gradient(135deg, #3b82f6, #8b5cf6)', 
+            color: 'white',
+            padding: '20px 25px'
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+              <span style={{ fontSize: '24px' }}>⚡</span>
+              <span style={{ fontSize: '16px', fontWeight: 900, letterSpacing: '1px' }}>DICOM VIEWER KEYBOARD SHORTCUTS</span>
+            </div>
+            <button 
+              className="tool-btn" 
+              onClick={() => setShowShortcutsHelp(false)}
+              style={{ 
+                background: 'rgba(255,255,255,0.2)', 
+                color: 'white', 
+                border: '1px solid rgba(255,255,255,0.3)',
+                borderRadius: '6px',
+                width: '32px',
+                height: '32px'
+              }}
+            >✕</button>
           </div>
-          <div className="modal-body" style={{ padding: '20px' }}>
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '20px', fontSize: '12px' }}>
+          <div className="modal-body" style={{ padding: '25px', background: 'white' }}>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '25px', fontSize: '12px' }}>
               <div>
-                <h4 style={{ color: '#3b82f6', marginBottom: '10px', fontSize: '14px' }}>Navigation & Manipulation</h4>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                  <div><kbd>W</kbd> Window/Level</div>
-                  <div><kbd>Z</kbd> Zoom Tool</div>
-                  <div><kbd>P</kbd> Pan Tool</div>
-                  <div><kbd>S</kbd> Stack Scroll</div>
-                  <div><kbd>Space</kbd> Toggle Cine</div>
-                  <div><kbd>V</kbd> Toggle Sync</div>
+                <h4 style={{ color: '#3b82f6', marginBottom: '12px', fontSize: '14px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <span>🎮</span> Navigation & Manipulation
+                </h4>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <kbd style={{ minWidth: '24px' }}>W</kbd> 
+                    <span>Window/Level Tool</span>
+                  </div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <kbd style={{ minWidth: '24px' }}>Z</kbd> 
+                    <span>Zoom Tool</span>
+                  </div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <kbd style={{ minWidth: '24px' }}>P</kbd> 
+                    <span>Pan Tool</span>
+                  </div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <kbd style={{ minWidth: '24px' }}>S</kbd> 
+                    <span>Stack Scroll</span>
+                  </div>
                 </div>
               </div>
               
               <div>
-                <h4 style={{ color: '#10b981', marginBottom: '10px', fontSize: '14px' }}>Measurements</h4>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                  <div><kbd>L</kbd> Length Tool</div>
-                  <div><kbd>H</kbd> Height Tool</div>
-                  <div><kbd>B</kbd> Bidirectional (RECIST)</div>
-                  <div><kbd>A</kbd> Angle Tool</div>
-                  <div><kbd>C</kbd> Cobb Angle</div>
-                  <div><kbd>U</kbd> HU Probe</div>
+                <h4 style={{ color: '#10b981', marginBottom: '12px', fontSize: '14px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <span>📏</span> Measurements
+                </h4>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <kbd style={{ minWidth: '24px' }}>L</kbd> 
+                    <span>Length Tool</span>
+                  </div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <kbd style={{ minWidth: '24px' }}>H</kbd> 
+                    <span>Height Tool</span>
+                  </div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <kbd style={{ minWidth: '24px' }}>B</kbd> 
+                    <span>Bidirectional (RECIST)</span>
+                  </div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <kbd style={{ minWidth: '24px' }}>A</kbd> 
+                    <span>Angle Tool</span>
+                  </div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <kbd style={{ minWidth: '24px' }}>C</kbd> 
+                    <span>Cobb Angle</span>
+                  </div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <kbd style={{ minWidth: '24px' }}>U</kbd> 
+                    <span>HU Probe</span>
+                  </div>
                 </div>
               </div>
               
               <div>
-                <h4 style={{ color: '#f59e0b', marginBottom: '10px', fontSize: '14px' }}>ROI Analysis</h4>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                  <div><kbd>E</kbd> Elliptical ROI</div>
-                  <div><kbd>R</kbd> Rectangle ROI</div>
-                  <div><kbd>O</kbd> Circle ROI</div>
-                  <div><kbd>F</kbd> Freehand ROI</div>
-                  <div><kbd>N</kbd> Arrow Annotation</div>
-                  <div><kbd>M</kbd> Magnifier</div>
-                </div>
-              </div>
-              
-              <div>
-                <h4 style={{ color: '#8b5cf6', marginBottom: '10px', fontSize: '14px' }}>Image Controls</h4>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                  <div><kbd>I</kbd> Invert Colors</div>
-                  <div><kbd>X</kbd> Flip Horizontal</div>
-                  <div><kbd>Y</kbd> Flip Vertical</div>
-                  <div><kbd>T</kbd> Rotate 90°</div>
-                  <div><kbd>K</kbd> Mark Key Image</div>
-                  <div><kbd>Esc</kbd> Reset Viewport</div>
+                <h4 style={{ color: '#f59e0b', marginBottom: '12px', fontSize: '14px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <span>🎯</span> ROI Analysis
+                </h4>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <kbd style={{ minWidth: '24px' }}>E</kbd> 
+                    <span>Elliptical ROI</span>
+                  </div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <kbd style={{ minWidth: '24px' }}>R</kbd> 
+                    <span>Rectangle ROI</span>
+                  </div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <kbd style={{ minWidth: '24px' }}>O</kbd> 
+                    <span>Circle ROI</span>
+                  </div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <kbd style={{ minWidth: '24px' }}>F</kbd> 
+                    <span>Freehand ROI</span>
+                  </div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <kbd style={{ minWidth: '24px' }}>N</kbd> 
+                    <span>Arrow Annotation</span>
+                  </div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <kbd style={{ minWidth: '24px' }}>M</kbd> 
+                    <span>Magnifier</span>
+                  </div>
                 </div>
               </div>
             </div>
             
-            <div style={{ marginTop: '20px', padding: '15px', background: '#f8fafc', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
-              <h4 style={{ color: '#64748b', marginBottom: '8px', fontSize: '12px' }}>Additional Shortcuts</h4>
-              <div style={{ fontSize: '11px', color: '#64748b', display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                <div><kbd>Ctrl+1/2/3</kbd> Layout modes</div>
-                <div><kbd>↑/↓</kbd> Navigate series</div>
-                <div><kbd>Ctrl+S</kbd> Save report</div>
-                <div><kbd>Ctrl+Shift+S</kbd> Finalize report</div>
-                <div><kbd>Shift+?</kbd> Toggle this help</div>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '25px', marginTop: '25px', fontSize: '12px' }}>
+              <div>
+                <h4 style={{ color: '#8b5cf6', marginBottom: '12px', fontSize: '14px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <span>🎨</span> Image Controls
+                </h4>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <kbd style={{ minWidth: '24px' }}>I</kbd> 
+                    <span>Invert Colors</span>
+                  </div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <kbd style={{ minWidth: '24px' }}>X</kbd> 
+                    <span>Flip Horizontal</span>
+                  </div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <kbd style={{ minWidth: '24px' }}>Y</kbd> 
+                    <span>Flip Vertical</span>
+                  </div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <kbd style={{ minWidth: '24px' }}>T</kbd> 
+                    <span>Rotate 90°</span>
+                  </div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <kbd style={{ minWidth: '24px' }}>ESC</kbd> 
+                    <span>Reset View</span>
+                  </div>
+                </div>
+              </div>
+              
+              <div>
+                <h4 style={{ color: '#ef4444', marginBottom: '12px', fontSize: '14px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <span>⚡</span> Quick Actions
+                </h4>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <kbd style={{ minWidth: '24px' }}>Space</kbd> 
+                    <span>Toggle Cine</span>
+                  </div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <kbd style={{ minWidth: '24px' }}>K</kbd> 
+                    <span>Key Image</span>
+                  </div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <kbd style={{ minWidth: '24px' }}>V</kbd> 
+                    <span>Toggle Sync</span>
+                  </div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <kbd style={{ minWidth: '24px' }}>↑↓</kbd> 
+                    <span>Series Navigation</span>
+                  </div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <kbd style={{ minWidth: '24px' }}>?</kbd> 
+                    <span>Toggle Help</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+            
+            <div style={{ 
+              marginTop: '25px', 
+              padding: '20px', 
+              background: 'linear-gradient(135deg, rgba(59, 130, 246, 0.1), rgba(139, 92, 246, 0.1))', 
+              borderRadius: '12px', 
+              border: '2px solid rgba(59, 130, 246, 0.2)',
+              textAlign: 'center'
+            }}>
+              <div style={{ fontSize: '16px', fontWeight: 700, color: '#3b82f6', marginBottom: '10px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}>
+                <span>🎯</span> PRO TIP
+              </div>
+              <div style={{ fontSize: '13px', color: '#64748b', lineHeight: '1.6' }}>
+                <strong>All advanced measurement and ROI tools are accessible via keyboard shortcuts</strong> while the DICOM viewer is active. 
+                The toolbar shows only essential tools to keep the interface clean and maximize viewing space for optimal diagnosis.
+              </div>
+              <div style={{ fontSize: '12px', color: '#94a3b8', marginTop: '8px', fontStyle: 'italic' }}>
+                Press any shortcut key while viewing DICOM images to instantly activate the corresponding tool.
               </div>
             </div>
           </div>
@@ -1676,7 +1808,7 @@ const ReportingPage = () => {
           flex: 1;
           width: ${editorState === 'expanded' ? '0%' : (100 - editorWidth) + '%'};
           display: ${editorState === 'expanded' ? 'none' : 'flex'};
-          background: #0f172a; padding: 0; flex-direction: column; 
+          background: #0f172a; padding: 0; flex-direction: row; /* Changed to row for left toolbar */
           transition: width 0.4s cubic-bezier(0.4, 0, 0.2, 1);
         }
         .panel-right { 
@@ -1691,7 +1823,8 @@ const ReportingPage = () => {
 
         @media (max-width: 1100px) {
           .main-layout { flex-direction: column; }
-          .panel-center { width: 100% !important; height: 50vh; display: ${activeWorkspaceMode === 'editor' ? 'none' : 'flex'}; }
+          .panel-center { width: 100% !important; height: 50vh; display: ${activeWorkspaceMode === 'editor' ? 'none' : 'flex'}; flex-direction: column; }
+          .panel-center > div:first-child { display: none; } /* Hide left toolbar on mobile */
           .panel-right { width: 100% !important; height: ${activeWorkspaceMode === 'dicom' ? '0' : 'auto'}; display: ${activeWorkspaceMode === 'dicom' ? 'none' : 'flex'}; border-left: none; padding: 20px 15px; }
           .resizer-handle { display: none; }
         }
@@ -2284,319 +2417,317 @@ const ReportingPage = () => {
         {/* LEFT PANEL removed for cleaner workspace */}
 
         {/* CENTER PANEL: DICOM Viewer */}
-        <div className="panel panel-center">
-          <div className="viewer-header" style={{ height: '60px', background: '#0f172a', borderBottom: '1px solid #1e293b', display: 'flex', alignItems: 'center', padding: '0 15px', gap: '8px', flexWrap: 'wrap', overflowX: 'auto' }}>
-            {/* Navigation & Manipulation Tools */}
-            <div style={{ display: 'flex', gap: '6px', alignItems: 'center', paddingRight: '10px', borderRight: '1px solid #334155' }}>
-              {[
-                { id: 'WindowLevelTool', icon: '☀️', label: 'W/L', description: 'Window/Level' },
-                { id: 'ZoomTool', icon: '🔍', label: 'ZOOM', description: 'Zoom In/Out' },
-                { id: 'PanTool', icon: '✋', label: 'PAN', description: 'Pan Image' },
-                { id: 'StackScrollTool', icon: '📜', label: 'SCROLL', description: 'Stack Scroll' }
-              ].map(t => (
-                <button 
-                  key={t.id}
-                  onClick={() => setActiveTool(t.id)}
-                  title={t.description}
-                  style={{ 
-                    background: activeTool === t.id ? '#3b82f6' : 'rgba(255,255,255,0.05)', 
-                    border: 'none', 
-                    color: activeTool === t.id ? 'white' : '#94a3b8',
-                    padding: '8px 12px',
-                    borderRadius: '6px',
-                    fontSize: '9px',
-                    fontWeight: 950,
-                    cursor: 'pointer',
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '4px',
-                    transition: 'all 0.2s'
-                  }}
-                >
-                  <span>{t.icon}</span> {t.label}
-                </button>
-              ))}
+        <div className="panel panel-center" style={{ display: 'flex' }}>
+          {/* LEFT TOOLBAR - Attached to DICOM Viewer */}
+          <div style={{
+            width: '200px',
+            background: 'linear-gradient(180deg, #0f172a 0%, #1e293b 100%)',
+            borderRight: '2px solid #334155',
+            display: 'flex',
+            flexDirection: 'column',
+            overflow: 'hidden'
+          }}>
+            {/* Toolbar Header */}
+            <div style={{
+              padding: '15px',
+              borderBottom: '2px solid #334155',
+              background: 'linear-gradient(135deg, #3b82f6, #8b5cf6)'
+            }}>
+              <div style={{
+                color: 'white',
+                fontSize: '12px',
+                fontWeight: 900,
+                letterSpacing: '1px',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '8px'
+              }}>
+                <span style={{ fontSize: '16px' }}>🛠️</span>
+                DICOM TOOLS
+              </div>
+            </div>
+
+            {/* Essential Tools */}
+            <div style={{ padding: '15px', borderBottom: '1px solid #334155' }}>
+              <div style={{ 
+                color: '#3b82f6', 
+                fontSize: '10px', 
+                fontWeight: 900, 
+                marginBottom: '10px',
+                letterSpacing: '1px'
+              }}>
+                🎮 NAVIGATION
+              </div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                {[
+                  { id: 'WindowLevelTool', icon: '☀️', label: 'Window/Level', shortcut: 'W' },
+                  { id: 'ZoomTool', icon: '🔍', label: 'Zoom', shortcut: 'Z' },
+                  { id: 'PanTool', icon: '✋', label: 'Pan', shortcut: 'P' }
+                ].map(t => (
+                  <button 
+                    key={t.id}
+                    onClick={() => setActiveTool(t.id)}
+                    style={{ 
+                      background: activeTool === t.id ? '#3b82f6' : 'rgba(255,255,255,0.05)', 
+                      border: activeTool === t.id ? '2px solid #60a5fa' : '2px solid transparent',
+                      color: activeTool === t.id ? 'white' : '#e2e8f0',
+                      padding: '8px 12px',
+                      borderRadius: '6px',
+                      fontSize: '10px',
+                      fontWeight: 900,
+                      cursor: 'pointer',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '6px',
+                      transition: 'all 0.2s ease',
+                      width: '100%',
+                      textAlign: 'left'
+                    }}
+                  >
+                    <span style={{ fontSize: '12px' }}>{t.icon}</span> 
+                    <span style={{ flex: 1 }}>{t.label}</span>
+                    <span style={{ 
+                      fontSize: '8px', 
+                      background: 'rgba(255,255,255,0.2)', 
+                      padding: '2px 4px', 
+                      borderRadius: '3px'
+                    }}>{t.shortcut}</span>
+                  </button>
+                ))}
+              </div>
             </div>
 
             {/* Measurement Tools */}
-            <div style={{ display: 'flex', gap: '6px', alignItems: 'center', paddingRight: '10px', borderRight: '1px solid #334155' }}>
-              {[
-                { id: 'LengthTool', icon: '📏', label: 'LEN', description: 'Linear Measurement' },
-                { id: 'HeightTool', icon: '📐', label: 'HT', description: 'Height Measurement' },
-                { id: 'BidirectionalTool', icon: '↔️', label: 'RECIST', description: 'Bidirectional (RECIST)' },
-                { id: 'AngleTool', icon: '∠', label: 'ANG', description: 'Angle Measurement' }
-              ].map(t => (
-                <button 
-                  key={t.id}
-                  onClick={() => setActiveTool(t.id)}
-                  title={t.description}
-                  style={{ 
-                    background: activeTool === t.id ? '#10b981' : 'rgba(255,255,255,0.05)', 
-                    border: 'none', 
-                    color: activeTool === t.id ? 'white' : '#94a3b8',
-                    padding: '8px 12px',
-                    borderRadius: '6px',
-                    fontSize: '9px',
-                    fontWeight: 950,
-                    cursor: 'pointer',
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '4px',
-                    transition: 'all 0.2s'
-                  }}
-                >
-                  <span>{t.icon}</span> {t.label}
-                </button>
-              ))}
+            <div style={{ padding: '15px', borderBottom: '1px solid #334155' }}>
+              <div style={{ 
+                color: '#10b981', 
+                fontSize: '10px', 
+                fontWeight: 900, 
+                marginBottom: '10px',
+                letterSpacing: '1px'
+              }}>
+                📏 MEASUREMENTS
+              </div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                {[
+                  { id: 'LengthTool', icon: '📏', label: 'Length', shortcut: 'L' },
+                  { id: 'HeightTool', icon: '📐', label: 'Height', shortcut: 'H' },
+                  { id: 'BidirectionalTool', icon: '↔️', label: 'Bidirectional', shortcut: 'B' },
+                  { id: 'AngleTool', icon: '∠', label: 'Angle', shortcut: 'A' }
+                ].map(t => (
+                  <button 
+                    key={t.id}
+                    onClick={() => setActiveTool(t.id)}
+                    style={{ 
+                      background: activeTool === t.id ? '#10b981' : 'rgba(255,255,255,0.05)', 
+                      border: activeTool === t.id ? '2px solid #34d399' : '2px solid transparent',
+                      color: activeTool === t.id ? 'white' : '#e2e8f0',
+                      padding: '8px 12px',
+                      borderRadius: '6px',
+                      fontSize: '10px',
+                      fontWeight: 900,
+                      cursor: 'pointer',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '6px',
+                      transition: 'all 0.2s ease',
+                      width: '100%',
+                      textAlign: 'left'
+                    }}
+                  >
+                    <span style={{ fontSize: '12px' }}>{t.icon}</span> 
+                    <span style={{ flex: 1 }}>{t.label}</span>
+                    <span style={{ 
+                      fontSize: '8px', 
+                      background: 'rgba(255,255,255,0.2)', 
+                      padding: '2px 4px', 
+                      borderRadius: '3px'
+                    }}>{t.shortcut}</span>
+                  </button>
+                ))}
+              </div>
             </div>
 
             {/* ROI Tools */}
-            <div style={{ display: 'flex', gap: '6px', alignItems: 'center', paddingRight: '10px', borderRight: '1px solid #334155' }}>
-              {[
-                { id: 'EllipticalROITool', icon: '⭕', label: 'ELLIPSE', description: 'Elliptical ROI' },
-                { id: 'RectangleROITool', icon: '⬜', label: 'RECT', description: 'Rectangle ROI' },
-                { id: 'CircleROITool', icon: '🔵', label: 'CIRCLE', description: 'Circle ROI' },
-                { id: 'PlanarFreehandROITool', icon: '✏️', label: 'FREE', description: 'Freehand ROI' }
-              ].map(t => (
-                <button 
-                  key={t.id}
-                  onClick={() => setActiveTool(t.id)}
-                  title={t.description}
-                  style={{ 
-                    background: activeTool === t.id ? '#f59e0b' : 'rgba(255,255,255,0.05)', 
-                    border: 'none', 
-                    color: activeTool === t.id ? 'white' : '#94a3b8',
-                    padding: '8px 12px',
-                    borderRadius: '6px',
-                    fontSize: '9px',
-                    fontWeight: 950,
-                    cursor: 'pointer',
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '4px',
-                    transition: 'all 0.2s'
-                  }}
-                >
-                  <span>{t.icon}</span> {t.label}
-                </button>
-              ))}
+            <div style={{ padding: '15px', borderBottom: '1px solid #334155' }}>
+              <div style={{ 
+                color: '#f59e0b', 
+                fontSize: '10px', 
+                fontWeight: 900, 
+                marginBottom: '10px',
+                letterSpacing: '1px'
+              }}>
+                🎯 ROI ANALYSIS
+              </div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                {[
+                  { id: 'EllipticalROITool', icon: '⭕', label: 'Ellipse ROI', shortcut: 'E' },
+                  { id: 'RectangleROITool', icon: '⬜', label: 'Rectangle ROI', shortcut: 'R' },
+                  { id: 'ProbeTool', icon: '🎯', label: 'HU Probe', shortcut: 'U' },
+                  { id: 'ArrowAnnotateTool', icon: '➡️', label: 'Arrow', shortcut: 'N' }
+                ].map(t => (
+                  <button 
+                    key={t.id}
+                    onClick={() => setActiveTool(t.id)}
+                    style={{ 
+                      background: activeTool === t.id ? '#f59e0b' : 'rgba(255,255,255,0.05)', 
+                      border: activeTool === t.id ? '2px solid #fbbf24' : '2px solid transparent',
+                      color: activeTool === t.id ? 'white' : '#e2e8f0',
+                      padding: '8px 12px',
+                      borderRadius: '6px',
+                      fontSize: '10px',
+                      fontWeight: 900,
+                      cursor: 'pointer',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '6px',
+                      transition: 'all 0.2s ease',
+                      width: '100%',
+                      textAlign: 'left'
+                    }}
+                  >
+                    <span style={{ fontSize: '12px' }}>{t.icon}</span> 
+                    <span style={{ flex: 1 }}>{t.label}</span>
+                    <span style={{ 
+                      fontSize: '8px', 
+                      background: 'rgba(255,255,255,0.2)', 
+                      padding: '2px 4px', 
+                      borderRadius: '3px'
+                    }}>{t.shortcut}</span>
+                  </button>
+                ))}
+              </div>
             </div>
 
-            {/* Analysis Tools */}
-            <div style={{ display: 'flex', gap: '6px', alignItems: 'center', paddingRight: '10px', borderRight: '1px solid #334155' }}>
-              {[
-                { id: 'ProbeTool', icon: '🎯', label: 'HU', description: 'Hounsfield Units' },
-                { id: 'ArrowAnnotateTool', icon: '➡️', label: 'ARROW', description: 'Arrow Annotation' },
-                { id: 'AdvancedMagnifyTool', icon: '🔍', label: 'MAG', description: 'Magnifier' }
-              ].map(t => (
-                <button 
-                  key={t.id}
-                  onClick={() => setActiveTool(t.id)}
-                  title={t.description}
-                  style={{ 
-                    background: activeTool === t.id ? '#8b5cf6' : 'rgba(255,255,255,0.05)', 
-                    border: 'none', 
-                    color: activeTool === t.id ? 'white' : '#94a3b8',
-                    padding: '8px 12px',
-                    borderRadius: '6px',
-                    fontSize: '9px',
-                    fontWeight: 950,
-                    cursor: 'pointer',
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '4px',
-                    transition: 'all 0.2s'
-                  }}
-                >
-                  <span>{t.icon}</span> {t.label}
-                </button>
-              ))}
-            </div>
-
-            {/* Playback & View Controls */}
-            <div style={{ display: 'flex', gap: '6px', alignItems: 'center', paddingRight: '10px', borderRight: '1px solid #334155' }}>
-              <button 
-                onClick={() => setCineEnabled(!cineEnabled)} 
-                title="Toggle Cine Mode"
-                style={{ 
-                  background: cineEnabled ? '#ef4444' : 'rgba(255,255,255,0.05)', 
-                  border: 'none', 
-                  color: 'white', 
-                  padding: '8px 12px', 
-                  borderRadius: '6px', 
-                  fontSize: '9px', 
-                  fontWeight: 950, 
+            {/* Footer */}
+            <div style={{ marginTop: 'auto', padding: '15px' }}>
+              <button
+                onClick={() => setShowShortcutsHelp(true)}
+                style={{
+                  width: '100%',
+                  background: 'linear-gradient(135deg, rgba(139, 92, 246, 0.2), rgba(59, 130, 246, 0.2))',
+                  border: '1px solid rgba(139, 92, 246, 0.5)',
+                  color: '#c4b5fd',
+                  padding: '8px',
+                  borderRadius: '6px',
+                  fontSize: '10px',
+                  fontWeight: 900,
                   cursor: 'pointer',
                   display: 'flex',
                   alignItems: 'center',
-                  gap: '4px'
+                  justifyContent: 'center',
+                  gap: '6px'
                 }}
               >
-                🎬 {cineEnabled ? 'STOP' : 'CINE'}
-              </button>
-              <button 
-                onClick={() => setIsSyncEnabled(!isSyncEnabled)} 
-                title="Toggle Synchronization"
-                style={{ 
-                  background: isSyncEnabled ? '#06b6d4' : 'rgba(255,255,255,0.05)', 
-                  border: 'none', 
-                  color: 'white', 
-                  padding: '8px 12px', 
-                  borderRadius: '6px', 
-                  fontSize: '9px', 
-                  fontWeight: 950, 
-                  cursor: 'pointer',
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '4px'
-                }}
-              >
-                🔗 {isSyncEnabled ? 'SYNC' : 'ASYNC'}
-              </button>
-              <button 
-                onClick={toggleKeyImage} 
-                title="Mark as Key Image"
-                style={{ 
-                  background: keyImages.includes(`${activeAssetIndex}_${currentSlice}`) ? '#f59e0b' : 'rgba(255,255,255,0.05)', 
-                  border: 'none', 
-                  color: 'white', 
-                  padding: '8px 12px', 
-                  borderRadius: '6px', 
-                  fontSize: '9px', 
-                  fontWeight: 950, 
-                  cursor: 'pointer',
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '4px'
-                }}
-              >
-                ⭐ KEY
-              </button>
-            </div>
-
-            {/* Image Manipulation */}
-            <div style={{ display: 'flex', gap: '6px', alignItems: 'center', paddingRight: '10px', borderRight: '1px solid #334155' }}>
-              <button 
-                onClick={() => setViewportProps(prev => ({ ...prev, invert: !prev.invert }))} 
-                title="Invert Colors"
-                style={{ 
-                  background: viewportProps.invert ? '#64748b' : 'rgba(255,255,255,0.05)', 
-                  border: 'none', 
-                  color: 'white', 
-                  padding: '8px 12px', 
-                  borderRadius: '6px', 
-                  fontSize: '9px', 
-                  fontWeight: 950, 
-                  cursor: 'pointer'
-                }}
-              >
-                ⚫ INV
-              </button>
-              <button 
-                onClick={() => setViewportProps(prev => ({ ...prev, flipHorizontal: !prev.flipHorizontal }))} 
-                title="Flip Horizontal"
-                style={{ 
-                  background: viewportProps.flipHorizontal ? '#64748b' : 'rgba(255,255,255,0.05)', 
-                  border: 'none', 
-                  color: 'white', 
-                  padding: '8px 12px', 
-                  borderRadius: '6px', 
-                  fontSize: '9px', 
-                  fontWeight: 950, 
-                  cursor: 'pointer'
-                }}
-              >
-                ↔️ FLIP-H
-              </button>
-              <button 
-                onClick={() => setViewportProps(prev => ({ ...prev, flipVertical: !prev.flipVertical }))} 
-                title="Flip Vertical"
-                style={{ 
-                  background: viewportProps.flipVertical ? '#64748b' : 'rgba(255,255,255,0.05)', 
-                  border: 'none', 
-                  color: 'white', 
-                  padding: '8px 12px', 
-                  borderRadius: '6px', 
-                  fontSize: '9px', 
-                  fontWeight: 950, 
-                  cursor: 'pointer'
-                }}
-              >
-                ↕️ FLIP-V
-              </button>
-              <button 
-                onClick={() => setViewportProps(prev => ({ ...prev, rotation: (prev.rotation + 90) % 360 }))} 
-                title="Rotate 90°"
-                style={{ 
-                  background: 'rgba(255,255,255,0.05)', 
-                  border: 'none', 
-                  color: 'white', 
-                  padding: '8px 12px', 
-                  borderRadius: '6px', 
-                  fontSize: '9px', 
-                  fontWeight: 950, 
-                  cursor: 'pointer'
-                }}
-              >
-                🔄 ROT
-              </button>
-            </div>
-
-            {/* Layout & Reset */}
-            <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
-              <select 
-                value={layoutMode} 
-                onChange={e => setLayoutMode(e.target.value)}
-                title="Layout Mode"
-                style={{ 
-                  background: 'rgba(255,255,255,0.05)', 
-                  color: 'white', 
-                  border: '1px solid #334155', 
-                  padding: '8px 12px', 
-                  borderRadius: '6px', 
-                  fontSize: '9px', 
-                  fontWeight: 950, 
-                  outline: 'none',
-                  cursor: 'pointer'
-                }}
-              >
-                <option value="1x1" style={{ background: '#1e293b', color: 'white' }}>1×1 LAYOUT</option>
-                <option value="2x2" style={{ background: '#1e293b', color: 'white' }}>2×2 LAYOUT</option>
-              </select>
-              <button 
-                onClick={() => setResetTrigger(prev => prev + 1)} 
-                title="Reset Viewport"
-                style={{ 
-                  background: 'rgba(239, 68, 68, 0.2)', 
-                  border: '1px solid #ef4444', 
-                  color: '#ef4444', 
-                  padding: '8px 12px', 
-                  borderRadius: '6px', 
-                  fontSize: '9px', 
-                  fontWeight: 950, 
-                  cursor: 'pointer'
-                }}
-              >
-                🔄 RESET
-              </button>
-              <button 
-                onClick={() => setShowShortcutsHelp(true)} 
-                title="Keyboard Shortcuts (Shift+?)"
-                style={{ 
-                  background: 'rgba(139, 92, 246, 0.2)', 
-                  border: '1px solid #8b5cf6', 
-                  color: '#8b5cf6', 
-                  padding: '8px 12px', 
-                  borderRadius: '6px', 
-                  fontSize: '9px', 
-                  fontWeight: 950, 
-                  cursor: 'pointer'
-                }}
-              >
-                ❓ HELP
+                <span>❓</span> SHORTCUTS
               </button>
             </div>
           </div>
+
+          {/* MAIN VIEWER AREA */}
+          <div style={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
+            {/* Top Controls */}
+            <div style={{ 
+              height: '50px', 
+              background: '#1e293b', 
+              borderBottom: '1px solid #334155', 
+              display: 'flex', 
+              alignItems: 'center', 
+              padding: '0 15px', 
+              gap: '15px', 
+              justifyContent: 'space-between' 
+            }}>
+              {/* Active Tool Display */}
+              <div style={{
+                background: 'rgba(59, 130, 246, 0.2)',
+                border: '1px solid rgba(59, 130, 246, 0.5)',
+                padding: '6px 12px',
+                borderRadius: '6px',
+                fontSize: '11px',
+                fontWeight: 900,
+                color: '#60a5fa',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '6px'
+              }}>
+                <span>⚡</span> ACTIVE: {activeTool.replace('Tool', '').toUpperCase()}
+              </div>
+
+              {/* Controls */}
+              <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
+                <button 
+                  onClick={() => setCineEnabled(!cineEnabled)} 
+                  title="Toggle Cine Mode (Space)"
+                  style={{ 
+                    background: cineEnabled ? '#ef4444' : 'rgba(255,255,255,0.08)', 
+                    border: '2px solid ' + (cineEnabled ? '#f87171' : 'transparent'),
+                    color: 'white', 
+                    padding: '6px 10px', 
+                    borderRadius: '6px', 
+                    fontSize: '10px', 
+                    fontWeight: 900, 
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '4px'
+                  }}
+                >
+                  <span>🎬</span> CINE
+                </button>
+                
+                <select 
+                  value={layoutMode} 
+                  onChange={e => setLayoutMode(e.target.value)}
+                  style={{ 
+                    background: 'rgba(255,255,255,0.08)', 
+                    color: 'white', 
+                    border: '2px solid #334155', 
+                    padding: '6px 10px', 
+                    borderRadius: '6px', 
+                    fontSize: '10px', 
+                    fontWeight: 900, 
+                    outline: 'none',
+                    cursor: 'pointer'
+                  }}
+                >
+                  <option value="1x1" style={{ background: '#1e293b', color: 'white' }}>1×1</option>
+                  <option value="2x2" style={{ background: '#1e293b', color: 'white' }}>2×2</option>
+                </select>
+
+                {/* FULLSCREEN BUTTON */}
+                <button
+                  onClick={() => {
+                    if (uploadedFiles.length > 0 && uploadedFiles[activeAssetIndex]?.rawFiles) {
+                      navigate('/dicom-viewer', {
+                        state: {
+                          files: uploadedFiles[activeAssetIndex].rawFiles,
+                          seriesName: uploadedFiles[activeAssetIndex].name,
+                          appointmentData: activeAppointment
+                        }
+                      });
+                    }
+                  }}
+                  title="Open Full Screen DICOM Viewer"
+                  style={{
+                    background: 'linear-gradient(135deg, #10b981, #059669)',
+                    border: '2px solid #34d399',
+                    color: 'white',
+                    padding: '8px 12px',
+                    borderRadius: '6px',
+                    fontSize: '10px',
+                    fontWeight: 900,
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '6px',
+                    boxShadow: '0 4px 12px rgba(16, 185, 129, 0.3)'
+                  }}
+                >
+                  <span style={{ fontSize: '12px' }}>🔍</span>
+                  FULL VIEW
+                </button>
+              </div>
+            </div>
 
           <div style={{ flex: 1, background: '#000', position: 'relative', display: 'flex', gap: '2px', padding: '2px' }}>
             {/* PROGRESS OVERLAY */}
@@ -2761,21 +2892,64 @@ const ReportingPage = () => {
                         
                         {/* Enhanced Overlay Information */}
                         <div style={{ position: 'absolute', top: '15px', left: '15px', zIndex: 10, display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                          <div style={{ background: 'rgba(15, 23, 42, 0.8)', backdropFilter: 'blur(8px)', padding: '6px 12px', borderRadius: '8px', fontSize: '10px', color: '#e2e8f0', fontWeight: 900, letterSpacing: '1px', border: '1px solid rgba(255,255,255,0.1)' }}>
+                          <div style={{ background: 'rgba(15, 23, 42, 0.9)', backdropFilter: 'blur(8px)', padding: '8px 15px', borderRadius: '8px', fontSize: '11px', color: '#e2e8f0', fontWeight: 900, letterSpacing: '1px', border: '1px solid rgba(255,255,255,0.1)' }}>
                             {uploadedFiles[(activeAssetIndex + idx) % uploadedFiles.length]?.name?.toUpperCase() || 'SERIES'}
                           </div>
-                          <div style={{ background: 'rgba(59, 130, 246, 0.9)', padding: '4px 10px', borderRadius: '6px', fontSize: '11px', color: 'white', fontWeight: 900, width: 'fit-content' }}>
+                          <div style={{ background: 'rgba(59, 130, 246, 0.9)', padding: '6px 12px', borderRadius: '6px', fontSize: '12px', color: 'white', fontWeight: 900, width: 'fit-content' }}>
                             SLICE: {idx === 0 ? currentSlice : '?'} / {currentFiles?.length || 0}
                           </div>
                           {activeMetadata && idx === 0 && (
-                            <div style={{ background: 'rgba(16, 185, 129, 0.9)', padding: '3px 8px', borderRadius: '4px', fontSize: '9px', color: 'white', fontWeight: 900, width: 'fit-content' }}>
+                            <div style={{ background: 'rgba(16, 185, 129, 0.9)', padding: '4px 10px', borderRadius: '4px', fontSize: '10px', color: 'white', fontWeight: 900, width: 'fit-content' }}>
                               {activeMetadata.modality} • {activeMetadata.rows}x{activeMetadata.columns}
                             </div>
                           )}
                         </div>
 
-                        {/* Windowing Presets - Top Right */}
+                        {/* ACTIVE TOOL INDICATOR */}
                         <div style={{ position: 'absolute', top: '15px', right: '15px', zIndex: 10 }}>
+                          <div style={{ 
+                            background: 'rgba(59, 130, 246, 0.9)', 
+                            padding: '8px 15px', 
+                            borderRadius: '8px', 
+                            fontSize: '11px', 
+                            color: 'white', 
+                            fontWeight: 900,
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '8px',
+                            border: '2px solid rgba(255,255,255,0.2)'
+                          }}>
+                            <span style={{ fontSize: '14px' }}>
+                              {activeTool === 'WindowLevelTool' && '☀️'}
+                              {activeTool === 'ZoomTool' && '🔍'}
+                              {activeTool === 'PanTool' && '✋'}
+                              {activeTool === 'LengthTool' && '📏'}
+                              {activeTool === 'ArrowAnnotateTool' && '➡️'}
+                              {!['WindowLevelTool', 'ZoomTool', 'PanTool', 'LengthTool', 'ArrowAnnotateTool'].includes(activeTool) && '⚡'}
+                            </span>
+                            <span>
+                              {activeTool === 'WindowLevelTool' && 'WINDOW/LEVEL'}
+                              {activeTool === 'ZoomTool' && 'ZOOM'}
+                              {activeTool === 'PanTool' && 'PAN'}
+                              {activeTool === 'LengthTool' && 'MEASURE'}
+                              {activeTool === 'ArrowAnnotateTool' && 'ANNOTATE'}
+                              {activeTool === 'HeightTool' && 'HEIGHT'}
+                              {activeTool === 'BidirectionalTool' && 'BIDIRECTIONAL'}
+                              {activeTool === 'AngleTool' && 'ANGLE'}
+                              {activeTool === 'CobbAngleTool' && 'COBB ANGLE'}
+                              {activeTool === 'EllipticalROITool' && 'ELLIPSE ROI'}
+                              {activeTool === 'RectangleROITool' && 'RECTANGLE ROI'}
+                              {activeTool === 'CircleROITool' && 'CIRCLE ROI'}
+                              {activeTool === 'PlanarFreehandROITool' && 'FREEHAND ROI'}
+                              {activeTool === 'ProbeTool' && 'HU PROBE'}
+                              {activeTool === 'AdvancedMagnifyTool' && 'MAGNIFY'}
+                              {!['WindowLevelTool', 'ZoomTool', 'PanTool', 'LengthTool', 'ArrowAnnotateTool', 'HeightTool', 'BidirectionalTool', 'AngleTool', 'CobbAngleTool', 'EllipticalROITool', 'RectangleROITool', 'CircleROITool', 'PlanarFreehandROITool', 'ProbeTool', 'AdvancedMagnifyTool'].includes(activeTool) && 'ADVANCED TOOL'}
+                            </span>
+                          </div>
+                        </div>
+
+                        {/* Windowing Presets - Bottom Right */}
+                        <div style={{ position: 'absolute', bottom: '15px', right: '15px', zIndex: 10 }}>
                           <select 
                             onChange={(e) => {
                               // This would be handled by the AdvancedDicomViewer component
@@ -2784,12 +2958,13 @@ const ReportingPage = () => {
                             style={{ 
                               background: 'rgba(15, 23, 42, 0.9)', 
                               color: 'white', 
-                              border: '1px solid rgba(255,255,255,0.2)', 
-                              padding: '4px 8px', 
+                              border: '2px solid rgba(255,255,255,0.2)', 
+                              padding: '6px 12px', 
                               borderRadius: '6px', 
-                              fontSize: '9px', 
+                              fontSize: '10px', 
                               fontWeight: 900,
-                              outline: 'none'
+                              outline: 'none',
+                              cursor: 'pointer'
                             }}
                           >
                             <option value="Default">DEFAULT W/L</option>
@@ -2850,6 +3025,7 @@ const ReportingPage = () => {
                 })}
               </div>
             )}
+          </div>
           </div>
         </div>
 

@@ -868,6 +868,7 @@ const AdvancedDicomViewer = ({
         ].forEach(t => {
             if (!toolGroup.hasTool(t.toolName)) {
                toolGroup.addTool(t.toolName);
+               console.log(`[DICOM] Added tool: ${t.toolName}`);
             }
         });
 
