@@ -2339,20 +2339,104 @@ const AdvancedDicomViewer = ({
            {/* Current Slice Display */}
            <div style={{ 
              color: '#fff', 
-             fontSize: isTablet ? '12px' : '10px', 
+             fontSize: isTablet ? '14px' : '10px', // Larger text for tablets
              fontWeight: 950, 
              background: 'linear-gradient(135deg, #0f52ba, #3b82f6)', 
-             padding: isTablet ? '6px 10px' : '4px 8px', 
-             borderRadius: isTablet ? '8px' : '6px', 
+             padding: isTablet ? '8px 12px' : '4px 8px', // More padding for tablets
+             borderRadius: isTablet ? '10px' : '6px', 
              marginTop: '10px',
              boxShadow: '0 4px 10px rgba(15, 82, 186, 0.3)',
              pointerEvents: 'none',
              letterSpacing: '0.5px',
              textAlign: 'center',
-             minWidth: isTablet ? '50px' : '40px'
+             minWidth: isTablet ? '60px' : '40px' // Wider for tablets
            }}>
               {currentImageIndex + 1} / {files.length}
            </div>
+           
+           {/* Enhanced Navigation Buttons for Tablets */}
+           {isTablet && (
+             <div style={{ 
+               display: 'flex', 
+               flexDirection: 'column', 
+               gap: '12px', 
+               marginTop: '15px',
+               alignItems: 'center'
+             }}>
+               <button
+                 onClick={() => {
+                   const newIndex = Math.max(0, currentImageIndex - 1);
+                   console.log(`[DICOM] Tablet Previous button: ${newIndex + 1}/${files.length}`);
+                   const viewport = renderingEngineRef.current?.getViewport(viewportId);
+                   if (viewport && newIndex !== currentImageIndex) {
+                     try {
+                       viewport.setImageIdIndex(newIndex);
+                       setCurrentImageIndex(newIndex);
+                       if (onSliceChange) onSliceChange(newIndex, files.length);
+                       console.log(`[DICOM] ✅ Tablet previous navigation successful`);
+                     } catch (err) {
+                       console.error(`[DICOM] ❌ Tablet previous navigation failed:`, err);
+                     }
+                   }
+                 }}
+                 disabled={currentImageIndex === 0}
+                 style={{
+                   background: currentImageIndex === 0 ? 'rgba(255,255,255,0.1)' : '#3b82f6',
+                   border: 'none',
+                   color: 'white',
+                   width: '36px',
+                   height: '36px',
+                   borderRadius: '8px',
+                   cursor: currentImageIndex === 0 ? 'not-allowed' : 'pointer',
+                   fontSize: '16px',
+                   display: 'flex',
+                   alignItems: 'center',
+                   justifyContent: 'center',
+                   touchAction: 'manipulation',
+                   boxShadow: '0 2px 8px rgba(0,0,0,0.2)',
+                   transition: 'all 0.2s ease'
+                 }}
+               >
+                 ▲
+               </button>
+               <button
+                 onClick={() => {
+                   const newIndex = Math.min(files.length - 1, currentImageIndex + 1);
+                   console.log(`[DICOM] Tablet Next button: ${newIndex + 1}/${files.length}`);
+                   const viewport = renderingEngineRef.current?.getViewport(viewportId);
+                   if (viewport && newIndex !== currentImageIndex) {
+                     try {
+                       viewport.setImageIdIndex(newIndex);
+                       setCurrentImageIndex(newIndex);
+                       if (onSliceChange) onSliceChange(newIndex, files.length);
+                       console.log(`[DICOM] ✅ Tablet next navigation successful`);
+                     } catch (err) {
+                       console.error(`[DICOM] ❌ Tablet next navigation failed:`, err);
+                     }
+                   }
+                 }}
+                 disabled={currentImageIndex === files.length - 1}
+                 style={{
+                   background: currentImageIndex === files.length - 1 ? 'rgba(255,255,255,0.1)' : '#3b82f6',
+                   border: 'none',
+                   color: 'white',
+                   width: '36px',
+                   height: '36px',
+                   borderRadius: '8px',
+                   cursor: currentImageIndex === files.length - 1 ? 'not-allowed' : 'pointer',
+                   fontSize: '16px',
+                   display: 'flex',
+                   alignItems: 'center',
+                   justifyContent: 'center',
+                   touchAction: 'manipulation',
+                   boxShadow: '0 2px 8px rgba(0,0,0,0.2)',
+                   transition: 'all 0.2s ease'
+                 }}
+               >
+                 ▼
+               </button>
+             </div>
+           )}
            
            {/* Navigation Buttons for Desktop */}
            {!isTablet && (
