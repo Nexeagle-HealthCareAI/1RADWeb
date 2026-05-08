@@ -2517,6 +2517,32 @@ const AdvancedDicomViewer = ({
         </div>
       )}
 
+      {/* Floating Slice Indicator for Tablets During Zoom */}
+      {isTablet && isReady && files && files.length > 1 && (
+        <div style={{
+          position: 'fixed',
+          top: '20px',
+          left: '50%',
+          transform: 'translateX(-50%)',
+          zIndex: 10000,
+          background: 'rgba(15, 23, 42, 0.95)',
+          color: '#fff',
+          padding: '12px 20px',
+          borderRadius: '25px',
+          fontSize: '16px',
+          fontWeight: 'bold',
+          border: '2px solid rgba(59, 130, 246, 0.5)',
+          boxShadow: '0 8px 32px rgba(0,0,0,0.6)',
+          backdropFilter: 'blur(12px)',
+          pointerEvents: 'none',
+          letterSpacing: '1px',
+          textAlign: 'center',
+          minWidth: '120px'
+        }}>
+          SLICE {currentImageIndex + 1} / {files.length}
+        </div>
+      )}
+
       {/* SYNC INDICATOR */}
       {isReady && isSynced && (
         <div style={{ position: 'absolute', top: '15px', right: '15px', background: 'rgba(15, 82, 186, 0.9)', color: 'white', padding: '4px 10px', borderRadius: '6px', fontSize: '9px', fontWeight: 950, zIndex: 10, display: 'flex', alignItems: 'center', gap: '5px', boxShadow: '0 4px 10px rgba(0,0,0,0.3)', pointerEvents: 'none' }}>
