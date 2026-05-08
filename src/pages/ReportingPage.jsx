@@ -104,8 +104,22 @@ const ReportingPage = () => {
       
       console.log('[REPORTING] Device detection:', {
         width, height, isTouchDevice, isIPad, isTabletSize, tablet,
-        userAgent: navigator.userAgent
+        userAgent: navigator.userAgent,
+        maxTouchPoints: navigator.maxTouchPoints,
+        activeWorkspaceMode
       });
+      
+      // Force toolbar visibility on tablets
+      if (tablet) {
+        setTimeout(() => {
+          const toolbar = document.getElementById('dicom-toolbar');
+          if (toolbar) {
+            toolbar.style.display = 'flex';
+            toolbar.style.transform = 'translateX(0)';
+            console.log('[REPORTING] Toolbar forced visible on tablet');
+          }
+        }, 100);
+      }
       
       if (tablet && activeWorkspaceMode === 'split') {
         setActiveWorkspaceMode('editor'); // Default to editor on tablet
@@ -2053,7 +2067,7 @@ const ReportingPage = () => {
           position: relative;
         }
 
-        /* Tablet and iPad optimizations */
+        /* Tablet and iPad optimizations - Force toolbar visibility */
         @media (max-width: 1366px) and (orientation: landscape), 
                (max-width: 1024px) and (orientation: portrait),
                (pointer: coarse) {
@@ -2062,13 +2076,21 @@ const ReportingPage = () => {
             width: 100% !important; 
             height: ${activeWorkspaceMode === 'editor' ? '0' : '65vh'}; 
             display: ${activeWorkspaceMode === 'editor' ? 'none' : 'flex'}; 
-            flex-direction: column; 
+            flex-direction: row; /* Keep row to show toolbar */
           }
+          
+          /* CRITICAL: Force toolbar visibility on tablets */
+          #dicom-toolbar,
           .panel-center > div:first-child { 
             width: ${isTablet ? (window.innerWidth > 1024 ? '320px' : '280px') : '200px'} !important;
-            height: 100%;
-            box-shadow: 4px 0 20px rgba(0,0,0,0.3);
+            height: 100% !important;
+            box-shadow: 4px 0 20px rgba(0,0,0,0.3) !important;
+            display: flex !important; /* Force toolbar to show on tablets */
+            transform: translateX(0) !important; /* Force visible position */
+            position: relative !important;
+            z-index: 10 !important;
           }
+          
           .panel-right { 
             width: 100% !important; 
             height: ${activeWorkspaceMode === 'dicom' ? '0' : 'auto'}; 
@@ -2104,8 +2126,11 @@ const ReportingPage = () => {
           and (max-device-width: 1366px) 
           and (-webkit-min-device-pixel-ratio: 2) {
           
+          #dicom-toolbar,
           .panel-center > div:first-child { 
             width: 350px !important;
+            display: flex !important; /* Force toolbar to show on iPad Pro */
+            transform: translateX(0) !important;
           }
           
           /* Extra large touch targets for iPad Pro */
@@ -2126,8 +2151,11 @@ const ReportingPage = () => {
           and (max-device-width: 1024px) 
           and (-webkit-min-device-pixel-ratio: 1) {
           
+          #dicom-toolbar,
           .panel-center > div:first-child { 
             width: 300px !important;
+            display: flex !important; /* Force toolbar to show on iPad */
+            transform: translateX(0) !important;
           }
           
           /* Larger touch targets for iPad */
@@ -2142,11 +2170,11 @@ const ReportingPage = () => {
           }
         }
 
-        /* iPhone and small tablet portrait */
+        /* iPhone and small tablet portrait - Hide toolbar only on small screens */
         @media (max-width: 768px) {
           .main-layout { flex-direction: column; }
           .panel-center { width: 100% !important; height: 50vh; display: ${activeWorkspaceMode === 'editor' ? 'none' : 'flex'}; flex-direction: column; }
-          .panel-center > div:first-child { display: none; } /* Hide left toolbar on mobile */
+          .panel-center > div:first-child { display: none !important; } /* Hide left toolbar only on small mobile */
           .panel-right { width: 100% !important; height: ${activeWorkspaceMode === 'dicom' ? '0' : 'auto'}; display: ${activeWorkspaceMode === 'dicom' ? 'none' : 'flex'}; border-left: none; padding: 20px 15px; }
           .resizer-handle { display: none; }
         }
@@ -2741,15 +2769,57 @@ const ReportingPage = () => {
         {/* CENTER PANEL: DICOM Viewer */}
         <div className="panel panel-center" style={{ display: 'flex' }}>
           {/* LEFT TOOLBAR - Tablet Optimized */}
-          <div style={{
-            width: isTablet ? (window.innerWidth > 1024 ? '320px' : '280px') : '200px',
-            background: 'linear-gradient(180deg, #0f172a 0%, #1e293b 100%)',
-            borderRight: '2px solid #334155',
-            display: 'flex',
-            flexDirection: 'column',
-            overflow: 'hidden',
-            boxShadow: isTablet ? '4px 0 20px rgba(0,0,0,0.3)' : 'none'
-          }}>
+          <div 
+            id="dicom-toolbar"
+            style={{
+              width: isTablet ? (window.innerWidth > 1024 ? '320px' : '280px') : '200px',
+              background: 'linear-gradient(180deg, #0f172a 0%, #1e293b 100%)',
+              borderRight: '2px solid #334155',
+              display: 'flex',
+              flexDirection: 'column',
+              overflow: 'hidden',
+              boxShadow: isTablet ? '4px 0 20px rgba(0,0,0,0.3)' : 'none',
+              position: 'relative',
+              zIndex: 10,
+              transition: 'transform 0.3s ease',
+              transform: 'translateX(0)' // Default to visible on tablets
+            }}>
+
+            {/* Tablet Toolbar Toggle - Show on tablets only */}
+            {isTablet && (
+              <button
+                onClick={() => {
+                  const toolbar = document.getElementById('dicom-toolbar');
+                  if (toolbar.style.transform === 'translateX(-100%)') {
+                    toolbar.style.transform = 'translateX(0)';
+                  } else {
+                    toolbar.style.transform = 'translateX(-100%)';
+                  }
+                }}
+                style={{
+                  position: 'absolute',
+                  right: '-40px',
+                  top: '50%',
+                  transform: 'translateY(-50%)',
+                  background: 'linear-gradient(135deg, #3b82f6, #8b5cf6)',
+                  border: 'none',
+                  color: 'white',
+                  width: '40px',
+                  height: '80px',
+                  borderRadius: '0 8px 8px 0',
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  fontSize: '16px',
+                  zIndex: 20,
+                  boxShadow: '2px 0 10px rgba(0,0,0,0.3)',
+                  touchAction: 'manipulation'
+                }}
+              >
+                🛠️
+              </button>
+            )}
             {/* Toolbar Header */}
             <div style={{
               padding: isTablet ? '25px 20px' : '15px',
@@ -3260,6 +3330,52 @@ const ReportingPage = () => {
             </div>
 
           <div style={{ flex: 1, background: '#000', position: 'relative', display: 'flex', gap: '2px', padding: '2px' }}>
+            {/* Floating Toolbar Toggle for Tablets */}
+            {isTablet && (
+              <button
+                onClick={() => {
+                  const toolbar = document.getElementById('dicom-toolbar');
+                  if (toolbar) {
+                    if (toolbar.style.transform === 'translateX(-100%)') {
+                      toolbar.style.transform = 'translateX(0)';
+                      toolbar.style.transition = 'transform 0.3s ease';
+                    } else {
+                      toolbar.style.transform = 'translateX(-100%)';
+                      toolbar.style.transition = 'transform 0.3s ease';
+                    }
+                  }
+                }}
+                style={{
+                  position: 'absolute',
+                  top: '20px',
+                  left: '20px',
+                  background: 'linear-gradient(135deg, #3b82f6, #8b5cf6)',
+                  border: 'none',
+                  color: 'white',
+                  width: '60px',
+                  height: '60px',
+                  borderRadius: '50%',
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  fontSize: '24px',
+                  zIndex: 100,
+                  boxShadow: '0 4px 20px rgba(59, 130, 246, 0.4)',
+                  touchAction: 'manipulation',
+                  transition: 'all 0.3s ease'
+                }}
+                onMouseEnter={(e) => {
+                  e.target.style.transform = 'scale(1.1)';
+                }}
+                onMouseLeave={(e) => {
+                  e.target.style.transform = 'scale(1)';
+                }}
+                title="Toggle DICOM Tools"
+              >
+                🛠️
+              </button>
+            )}
             {/* PROGRESS OVERLAY */}
             {loading && (
               <div style={{
