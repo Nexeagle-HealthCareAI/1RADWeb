@@ -189,19 +189,44 @@ const ReportingPage = () => {
       
       if (assetRes.data && assetRes.data.length > 0) {
         console.info(`[1RAD] Found ${assetRes.data.length} existing study assets`);
-        const hydAssets = assetRes.data.map(asset => ({
-          id: asset.id,
-          name: asset.fileName,
-          type: asset.fileType.toUpperCase(),
-          remoteUrl: asset.blobUrl,
-          needsHydration: asset.fileType.toLowerCase() === 'zip',
-          rawFiles: []
-        }));
+        console.info(`[1RAD] Raw asset data:`, assetRes.data);
+        
+        const hydAssets = assetRes.data.map((asset, index) => {
+          // Validate asset data
+          if (!asset.blobUrl) {
+            console.error(`[1RAD] Asset ${index} missing blobUrl:`, asset);
+          }
+          if (!asset.fileName) {
+            console.warn(`[1RAD] Asset ${index} missing fileName:`, asset);
+          }
+          
+          return {
+            id: asset.id,
+            name: asset.fileName || `Asset ${index + 1}`,
+            type: (asset.fileType || 'unknown').toUpperCase(),
+            remoteUrl: asset.blobUrl,
+            needsHydration: (asset.fileType || '').toLowerCase() === 'zip',
+            rawFiles: [],
+            // Add debug info
+            originalAsset: asset
+          };
+        });
+        
+        console.info(`[1RAD] Processed assets:`, hydAssets);
         setUploadedFiles(hydAssets);
         
         // Auto-hydrate first asset if it's a ZIP
         if (hydAssets.length > 0 && hydAssets[0].needsHydration) {
           console.info(`[1RAD] Auto-hydrating first asset: ${hydAssets[0].name}`);
+          console.info(`[1RAD] Asset remoteUrl: ${hydAssets[0].remoteUrl}`);
+          
+          // Validate URL before attempting hydration
+          if (!hydAssets[0].remoteUrl) {
+            console.error(`[1RAD] Cannot hydrate asset - missing remoteUrl`);
+            alert('ASSET_ERROR: Study file URL is missing. Please contact support.');
+            return;
+          }
+          
           // Trigger hydration after state is set
           setTimeout(() => {
             setActiveAssetIndex(0);
@@ -568,6 +593,43 @@ const ReportingPage = () => {
     }
   };
 
+  const testAssetConnection = async (asset) => {
+    try {
+      console.log(`[DICOM_TEST] Testing connection to: ${asset.remoteUrl}`);
+      
+      // First try a HEAD request to check if the resource exists
+      const headResponse = await fetch(asset.remoteUrl, { 
+        method: 'HEAD',
+        credentials: 'same-origin'
+      });
+      
+      console.log(`[DICOM_TEST] HEAD response:`, {
+        status: headResponse.status,
+        statusText: headResponse.statusText,
+        ok: headResponse.ok,
+        headers: Object.fromEntries(headResponse.headers.entries())
+      });
+      
+      if (headResponse.ok) {
+        const contentLength = headResponse.headers.get('content-length');
+        const contentType = headResponse.headers.get('content-type');
+        
+        console.log(`[DICOM_TEST] Asset is accessible:`, {
+          size: contentLength ? `${(parseInt(contentLength) / (1024*1024)).toFixed(2)} MB` : 'Unknown',
+          type: contentType || 'Unknown'
+        });
+        
+        return { success: true, size: contentLength, type: contentType };
+      } else {
+        return { success: false, error: `HTTP ${headResponse.status}: ${headResponse.statusText}` };
+      }
+      
+    } catch (error) {
+      console.error(`[DICOM_TEST] Connection test failed:`, error);
+      return { success: false, error: error.message };
+    }
+  };
+
   const hydrateZipAsset = async (index) => {
     const asset = uploadedFiles[index];
     if (!asset || !asset.needsHydration || !asset.remoteUrl || asset.rawFiles?.length > 0) return;
@@ -578,7 +640,13 @@ const ReportingPage = () => {
     try {
       // TACTICAL CACHE CHECK
       console.log(`[DICOM_LOAD] Checking persistent cache for asset: ${asset.id}`);
-      const cachedData = await DicomCache.get(asset.id);
+      let cachedData;
+      try {
+        cachedData = await DicomCache.get(asset.id);
+      } catch (cacheError) {
+        console.warn(`[DICOM_LOAD] Cache retrieval failed (non-critical):`, cacheError);
+        cachedData = null;
+      }
       
       if (cachedData && cachedData.series?.length > 0) {
         console.log(`[DICOM_LOAD] Cache HIT for ${asset.id}. Restoring ${cachedData.series.length} series.`);
@@ -603,28 +671,141 @@ const ReportingPage = () => {
       }
 
       console.log(`[DICOM_LOAD] Cache MISS. Initializing optimized hydration for asset: ${asset.name}`);
+      console.log(`[DICOM_LOAD] Asset details:`, {
+        id: asset.id,
+        name: asset.name,
+        remoteUrl: asset.remoteUrl,
+        needsHydration: asset.needsHydration
+      });
+      
       setProcessingStatus('Downloading study data...');
       
-      const response = await fetch(asset.remoteUrl);
-      if (!response.ok) throw new Error(`NETWORK_FAILURE: HTTP_${response.status} when fetching asset stream.`);
+      // Validate URL before fetching
+      if (!asset.remoteUrl) {
+        throw new Error('MISSING_URL: Asset remote URL is not available. Please check the asset configuration.');
+      }
       
-      const blob = await response.blob();
-      console.log(`[DICOM_LOAD] Binary stream received. Size: ${(blob.size / (1024*1024)).toFixed(2)} MB. Starting optimized processing...`);
+      // Test connection first
+      console.log(`[DICOM_LOAD] Testing asset connectivity...`);
+      const connectionTest = await testAssetConnection(asset);
+      
+      if (!connectionTest.success) {
+        throw new Error(`CONNECTION_TEST_FAILED: ${connectionTest.error}`);
+      }
+      
+      console.log(`[DICOM_LOAD] Connection test passed, proceeding with download...`);
+      
+      // Check if URL is accessible with retry mechanism
+      let response;
+      let retryCount = 0;
+      const maxRetries = 3;
+      
+      while (retryCount <= maxRetries) {
+        try {
+          console.log(`[DICOM_LOAD] Attempt ${retryCount + 1}/${maxRetries + 1} - Fetching: ${asset.remoteUrl}`);
+          
+          response = await fetch(asset.remoteUrl, {
+            method: 'GET',
+            headers: {
+              'Accept': 'application/zip, application/octet-stream, */*',
+            },
+            // Add credentials if needed for authenticated endpoints
+            credentials: 'same-origin'
+          });
+          
+          console.log(`[DICOM_LOAD] Fetch response (attempt ${retryCount + 1}):`, {
+            status: response.status,
+            statusText: response.statusText,
+            ok: response.ok,
+            headers: Object.fromEntries(response.headers.entries())
+          });
+          
+          if (response.ok) {
+            break; // Success, exit retry loop
+          } else if (retryCount < maxRetries && (response.status >= 500 || response.status === 429)) {
+            // Retry on server errors or rate limiting
+            console.warn(`[DICOM_LOAD] Retryable error ${response.status}, waiting before retry...`);
+            await new Promise(resolve => setTimeout(resolve, (retryCount + 1) * 1000)); // Exponential backoff
+            retryCount++;
+            continue;
+          } else {
+            // Non-retryable error, break and handle below
+            break;
+          }
+          
+        } catch (fetchError) {
+          console.error(`[DICOM_LOAD] Fetch error (attempt ${retryCount + 1}):`, fetchError);
+          
+          if (retryCount < maxRetries) {
+            console.warn(`[DICOM_LOAD] Network error, retrying in ${(retryCount + 1) * 1000}ms...`);
+            await new Promise(resolve => setTimeout(resolve, (retryCount + 1) * 1000));
+            retryCount++;
+            continue;
+          } else {
+            throw new Error(`NETWORK_ERROR: Unable to download study data after ${maxRetries + 1} attempts. ${fetchError.message}`);
+          }
+        }
+      }
+      
+      if (!response.ok) {
+        const errorDetails = {
+          status: response.status,
+          statusText: response.statusText,
+          url: asset.remoteUrl
+        };
+        console.error(`[DICOM_LOAD] HTTP Error:`, errorDetails);
+        
+        if (response.status === 404) {
+          throw new Error(`FILE_NOT_FOUND: The study file is no longer available on the server (HTTP 404).`);
+        } else if (response.status === 403) {
+          throw new Error(`ACCESS_DENIED: You don't have permission to access this study file (HTTP 403).`);
+        } else if (response.status === 500) {
+          throw new Error(`SERVER_ERROR: The server encountered an error while retrieving the study (HTTP 500).`);
+        } else {
+          throw new Error(`HTTP_ERROR: Server returned ${response.status} ${response.statusText} when fetching study data.`);
+        }
+      }
+      
+      let blob;
+      try {
+        blob = await response.blob();
+        console.log(`[DICOM_LOAD] Binary stream received. Size: ${(blob.size / (1024*1024)).toFixed(2)} MB. Content-Type: ${blob.type}`);
+        
+        if (blob.size === 0) {
+          throw new Error('EMPTY_FILE: The downloaded study file is empty (0 bytes).');
+        }
+        
+      } catch (blobError) {
+        console.error(`[DICOM_LOAD] Blob conversion error:`, blobError);
+        throw new Error(`DATA_CONVERSION_ERROR: Failed to process downloaded study data. ${blobError.message}`);
+      }
       
       // Use optimized processor with progress tracking and corruption detection
-      const result = await dicomOptimizer.processZipFileOptimized(
-        blob,
-        (progress) => {
-          setLoadingProgress(progress);
-          const statusParts = [`${progress.stage}: ${progress.current}/${progress.total} files`];
-          if (progress.seriesCount) statusParts.push(`(${progress.seriesCount} series found)`);
-          if (progress.corruptedFiles > 0) statusParts.push(`⚠️ ${progress.corruptedFiles} corrupted`);
-          setProcessingStatus(statusParts.join(' '));
-        },
-        (seriesInfo) => {
-          console.log(`[DICOM_LOAD] New series discovered: ${seriesInfo.seriesDesc}`);
+      let result;
+      try {
+        console.log(`[DICOM_LOAD] Starting DICOM processing...`);
+        result = await dicomOptimizer.processZipFileOptimized(
+          blob,
+          (progress) => {
+            setLoadingProgress(progress);
+            const statusParts = [`${progress.stage}: ${progress.current}/${progress.total} files`];
+            if (progress.seriesCount) statusParts.push(`(${progress.seriesCount} series found)`);
+            if (progress.corruptedFiles > 0) statusParts.push(`⚠️ ${progress.corruptedFiles} corrupted`);
+            setProcessingStatus(statusParts.join(' '));
+          },
+          (seriesInfo) => {
+            console.log(`[DICOM_LOAD] New series discovered: ${seriesInfo.seriesDesc}`);
+          }
+        );
+        
+        if (!result || !result.series) {
+          throw new Error('PROCESSING_FAILED: DICOM processor returned invalid result.');
         }
-      );
+        
+      } catch (processingError) {
+        console.error(`[DICOM_LOAD] Processing error:`, processingError);
+        throw new Error(`DICOM_PROCESSING_ERROR: Failed to process study files. ${processingError.message}`);
+      }
 
       const classifiedAssets = result.series;
       const stats = result.stats;
@@ -663,13 +844,18 @@ const ReportingPage = () => {
 
       // TACTICAL CACHE STORAGE
       if (finalAssets.length > 0) {
-        setProcessingStatus('Caching for future use...');
-        const cachePayload = {
-          ...asset,
-          series: finalAssets.map(ca => ({ name: ca.name, rawFiles: ca.rawFiles, seriesUID: ca.seriesUID }))
-        };
-        await DicomCache.set(asset.id, cachePayload);
-        console.log(`[DICOM_LOAD] Asset ${asset.id} persisted to persistent cache.`);
+        try {
+          setProcessingStatus('Caching for future use...');
+          const cachePayload = {
+            ...asset,
+            series: finalAssets.map(ca => ({ name: ca.name, rawFiles: ca.rawFiles, seriesUID: ca.seriesUID }))
+          };
+          await DicomCache.set(asset.id, cachePayload);
+          console.log(`[DICOM_LOAD] Asset ${asset.id} persisted to persistent cache.`);
+        } catch (cacheError) {
+          console.warn(`[DICOM_LOAD] Cache storage failed (non-critical):`, cacheError);
+          // Don't throw error for cache failures, just log warning
+        }
       }
 
       setUploadedFiles(prev => {
@@ -686,7 +872,36 @@ const ReportingPage = () => {
     } catch (err) {
       console.error('[DICOM_LOAD] Optimized hydration failure', err);
       setProcessingStatus(`Error: ${err.message}`);
-      alert(`DIAGNOSTIC SIGNAL FAILURE: ${err.message}`);
+      
+      // Provide user-friendly error messages based on error type
+      let userMessage = 'DIAGNOSTIC SIGNAL FAILURE: ';
+      
+      if (err.message.includes('NETWORK_ERROR') || err.message.includes('Failed to fetch')) {
+        userMessage += 'Unable to download study data. Please check your internet connection and try again.';
+      } else if (err.message.includes('FILE_NOT_FOUND')) {
+        userMessage += 'The study file is no longer available. It may have been moved or deleted.';
+      } else if (err.message.includes('ACCESS_DENIED')) {
+        userMessage += 'Access denied. Please check your permissions or contact your administrator.';
+      } else if (err.message.includes('EMPTY_FILE')) {
+        userMessage += 'The study file appears to be empty or corrupted.';
+      } else if (err.message.includes('DICOM_PROCESSING_ERROR')) {
+        userMessage += 'Failed to process DICOM files. The study may contain unsupported formats.';
+      } else {
+        userMessage += err.message;
+      }
+      
+      // Show detailed error in console for debugging
+      console.error('[DICOM_LOAD] Full error details:', {
+        message: err.message,
+        stack: err.stack,
+        asset: {
+          id: asset?.id,
+          name: asset?.name,
+          remoteUrl: asset?.remoteUrl
+        }
+      });
+      
+      alert(userMessage);
     } finally {
       setLoading(false);
       setProcessingStatus('');

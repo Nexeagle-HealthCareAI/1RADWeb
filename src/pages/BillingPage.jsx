@@ -56,12 +56,11 @@ export default function BillingPage() {
   const [endDate, setEndDate] = useState('');
   
   const [currentPage, setCurrentPage] = useState(1);
-  const itemsPerPage = 5;
+  const itemsPerPage = 10;
 
   // --- SYNC & FETCH ---
   const [stats, setStats] = useState({ totalRevenue: 0, pendingCount: 0, realizationRate: 0, averageTicket: 0, pendingRevenue: 0 });
   const [matrix, setMatrix] = useState({ daily: [], weekly: [], monthly: [], yearly: [], modalityBreakdown: [] });
-  const [selectedPeriod, setSelectedPeriod] = useState('MONTHLY'); // 'DAILY', 'WEEKLY', 'MONTHLY', 'YEARLY'
   const [isSyncing, setIsSyncing] = useState(false);
 
   // Responsive layout detection
@@ -352,7 +351,9 @@ export default function BillingPage() {
     const realizationRate = totalBilled > 0 ? Math.round((totalRevenue / totalBilled) * 100) : 0;
     const averageTicket = paidInvoices.length > 0 ? Math.round(totalRevenue / paidInvoices.length) : 0;
 
-    return { totalRevenue, pendingRevenue, pendingCount, realizationRate, averageTicket };
+    const totalGross = filteredInvoices.reduce((sum, inv) => sum + (inv.totalAmount || 0), 0);
+
+    return { totalRevenue, pendingRevenue, pendingCount, realizationRate, averageTicket, totalGross };
   }, [filteredInvoices]);
   const combinedReferralCuts = useMemo(() => {
     const legacyCuts = expenses.filter(e => e.category === 'Referral' || e.description.toLowerCase().includes('referral')).map(e => ({
@@ -449,8 +450,28 @@ export default function BillingPage() {
     return { totalOutflow, referralTotal, operationalTotal, todayOutflow, referralPercentage, categoryBreakdown };
   }, [filteredOutflow]);
 
-  const totalPages = Math.ceil(filteredInvoices.length / itemsPerPage);
+  const filteredReferralCuts = useMemo(() => {
+    const today = new Date().toLocaleDateString('en-CA');
+    return combinedReferralCuts.filter(cut => {
+        const cutDate = cut.date ? new Date(cut.date).toLocaleDateString('en-CA') : null;
+        if (timeFilter === 'TODAY' && cutDate !== today) return false;
+        if (timeFilter === 'PAST' && cutDate === today) return false;
+        if (timeFilter === 'CUSTOM') {
+            if (startDate && cutDate < startDate) return false;
+            if (endDate && cutDate > endDate) return false;
+        }
+        return true;
+    });
+  }, [combinedReferralCuts, timeFilter, startDate, endDate]);
+
+  const totalPages = Math.ceil(
+    billingViewMode === 'INVOICES' ? filteredInvoices.length / itemsPerPage :
+    billingViewMode === 'REFERRAL_CUTS' ? filteredReferralCuts.length / itemsPerPage :
+    1
+  );
+
   const paginatedInvoices = filteredInvoices.slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage);
+  const paginatedReferralCuts = filteredReferralCuts.slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage);
 
   useEffect(() => {
     setCurrentPage(1);
@@ -1259,6 +1280,8 @@ export default function BillingPage() {
             <span style={{ opacity: 0.2 }}>|</span>
             <span style={{ cursor: 'pointer', opacity: billingViewMode === 'EXPENSES' ? 1 : 0.4, color: '#dc2626' }} onClick={() => setBillingViewMode('EXPENSES')}>EXPENSE LEDGER</span>
             <span style={{ opacity: 0.2 }}>|</span>
+            <span style={{ cursor: 'pointer', opacity: billingViewMode === 'REFERRAL_CUTS' ? 1 : 0.4, color: '#e11d48' }} onClick={() => setBillingViewMode('REFERRAL_CUTS')}>REFERRAL HUB 💸</span>
+            <span style={{ opacity: 0.2 }}>|</span>
             <span style={{ cursor: 'pointer', opacity: billingViewMode === 'ANALYTICS' ? 1 : 0.4, color: '#0f52ba' }} onClick={() => setBillingViewMode('ANALYTICS')}>ANALYTICS HUB 📊</span>
           </h1>
           <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
@@ -1685,10 +1708,41 @@ export default function BillingPage() {
                  <h3 style={{ fontSize: '18px', fontWeight: 950, color: '#1e293b' }}>REFERRAL PAYOUT LEDGER</h3>
                  <p style={{ fontSize: '11px', color: '#64748b', fontWeight: 600 }}>Tracking all commissions and cuts for clinical partners.</p>
               </div>
-              <div style={{ background: '#fff1f2', padding: '15px 25px', borderRadius: '16px', border: '1px solid #fecdd3', textAlign: 'right' }}>
-                 <div style={{ fontSize: '10px', fontWeight: 950, color: '#e11d48', marginBottom: '5px' }}>TOTAL PAYOUTS</div>
-                 <div style={{ fontSize: '24px', fontWeight: 950, color: '#881337' }}>
-                   ₹{combinedReferralCuts.reduce((sum, cut) => sum + cut.amount, 0).toLocaleString()}
+              
+              <div style={{ display: 'flex', alignItems: 'center', gap: '20px' }}>
+                 <div style={{ display: 'flex', background: '#f1f5f9', padding: '3px', borderRadius: '10px', border: '1px solid #e2e8f0' }}>
+                    {['TODAY', 'PAST', 'ALL', 'CUSTOM'].map(t => (
+                      <button 
+                        key={t}
+                        onClick={() => setTimeFilter(t)}
+                        style={{ 
+                          padding: '8px 16px', borderRadius: '8px', border: 'none', fontSize: '9px', fontWeight: 950,
+                          background: timeFilter === t ? '#e11d48' : 'transparent',
+                          color: timeFilter === t ? 'white' : '#64748b',
+                          cursor: 'pointer', transition: 'all 0.2s'
+                        }}
+                      >{t}</button>
+                    ))}
+                 </div>
+
+                 {timeFilter === 'CUSTOM' && (
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', animation: 'fadeIn 0.2s' }}>
+                     <input 
+                       type="date" value={startDate} onChange={e => setStartDate(e.target.value)}
+                       style={{ padding: '6px 10px', borderRadius: '8px', border: '1px solid #e2e8f0', fontSize: '10px', fontWeight: 700 }}
+                     />
+                     <input 
+                       type="date" value={endDate} onChange={e => setEndDate(e.target.value)}
+                       style={{ padding: '6px 10px', borderRadius: '8px', border: '1px solid #e2e8f0', fontSize: '10px', fontWeight: 700 }}
+                     />
+                  </div>
+                 )}
+
+                 <div style={{ background: '#fff1f2', padding: '15px 25px', borderRadius: '16px', border: '1px solid #fecdd3', textAlign: 'right' }}>
+                    <div style={{ fontSize: '10px', fontWeight: 950, color: '#e11d48', marginBottom: '5px' }}>TOTAL PAYOUTS</div>
+                    <div style={{ fontSize: '24px', fontWeight: 950, color: '#881337' }}>
+                      ₹{filteredReferralCuts.reduce((sum, cut) => sum + cut.amount, 0).toLocaleString()}
+                    </div>
                  </div>
               </div>
            </div>
@@ -1706,10 +1760,10 @@ export default function BillingPage() {
                     </tr>
                  </thead>
                  <tbody>
-                    {combinedReferralCuts.length === 0 ? (
+                    {filteredReferralCuts.length === 0 ? (
                        <tr><td colSpan="6" style={{ padding: '100px', textAlign: 'center', color: '#94a3b8', fontSize: '12px', fontWeight: 700 }}>NO REFERRAL PAYOUTS DETECTED</td></tr>
                     ) : (
-                       combinedReferralCuts.map(cut => (
+                       paginatedReferralCuts.map(cut => (
                           <tr key={cut.id} style={{ borderBottom: '1px solid #f1f5f9' }}>
                              <td style={{ padding: '20px 30px', fontSize: '12px', fontWeight: 800, color: '#1e293b' }}>{new Date(cut.date).toLocaleDateString()}</td>
                              <td style={{ padding: '20px 30px' }}>
@@ -1737,6 +1791,11 @@ export default function BillingPage() {
                     )}
                  </tbody>
               </table>
+              <div style={{ padding: '20px', borderTop: '1px solid #f1f5f9', display: 'flex', justifyContent: 'center' }}>
+                  {Array.from({ length: Math.ceil(filteredReferralCuts.length / itemsPerPage) }).map((_, i) => (
+                      <button key={i} onClick={() => setCurrentPage(i + 1)} style={{ padding: '5px 10px', margin: '0 2px', background: currentPage === i + 1 ? '#e11d48' : '#f1f5f9', color: currentPage === i + 1 ? 'white' : '#64748b', border: 'none', borderRadius: '4px', fontSize: '10px', fontWeight: 950, cursor: 'pointer' }}>{i + 1}</button>
+                  ))}
+              </div>
            </div>
         </div>
       )}
@@ -1745,72 +1804,69 @@ export default function BillingPage() {
         <div className="analytics-main" style={{ animation: 'fadeIn 0.3s' }}>
           {/* ANALYTICS CONTROL BAR */}
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '30px', background: 'white', padding: '20px 30px', borderRadius: '24px', border: '1px solid #e2e8f0', boxShadow: '0 4px 20px rgba(0,0,0,0.02)' }}>
-              <div>
-                  <h3 style={{ fontSize: '14px', fontWeight: 950, color: '#1e293b' }}>FINANCIAL_TREND_ANALYSIS</h3>
-                  <p style={{ fontSize: '11px', color: '#94a3b8', fontWeight: 700 }}>Visualize performance across different temporal windows</p>
-              </div>
-              <div style={{ display: 'flex', gap: '10px', background: '#f8fafc', padding: '5px', borderRadius: '12px', border: '1px solid #f1f5f9' }}>
-                  {['DAILY', 'WEEKLY', 'MONTHLY', 'YEARLY'].map(p => (
-                      <button
-                          key={p}
-                          onClick={() => setSelectedPeriod(p)}
-                          style={{
-                              padding: '8px 16px',
-                              borderRadius: '8px',
-                              border: 'none',
-                              fontSize: '10px',
-                              fontWeight: 950,
-                              cursor: 'pointer',
-                              transition: 'all 0.2s',
-                              background: selectedPeriod === p ? '#0f52ba' : 'transparent',
-                              color: selectedPeriod === p ? 'white' : '#64748b',
-                              boxShadow: selectedPeriod === p ? '0 4px 12px rgba(15, 82, 186, 0.2)' : 'none'
-                          }}
-                      >{p}</button>
-                  ))}
+              <div style={{ display: 'flex', alignItems: 'center', gap: '30px' }}>
+                  <div>
+                    <h3 style={{ fontSize: '14px', fontWeight: 950, color: '#1e293b' }}>FINANCIAL_TREND_ANALYSIS</h3>
+                    <p style={{ fontSize: '11px', color: '#94a3b8', fontWeight: 700 }}>Visualize performance across different temporal windows</p>
+                  </div>
+                  
+                  <div style={{ height: '30px', width: '1px', background: '#e2e8f0' }}></div>
+
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '15px' }}>
+                    <span style={{ fontSize: '10px', fontWeight: 950, color: '#64748b', letterSpacing: '1px' }}>GLOBAL_SCOPE:</span>
+                    <div style={{ display: 'flex', background: '#f1f5f9', padding: '3px', borderRadius: '10px', border: '1px solid #e2e8f0' }}>
+                        {['TODAY', 'PAST', 'ALL', 'CUSTOM'].map(t => (
+                          <button 
+                            key={t}
+                            onClick={() => setTimeFilter(t)}
+                            style={{ 
+                              padding: '8px 16px', borderRadius: '8px', border: 'none', fontSize: '9px', fontWeight: 950,
+                              background: timeFilter === t ? '#0f52ba' : 'transparent',
+                              color: timeFilter === t ? 'white' : '#64748b',
+                              cursor: 'pointer', transition: 'all 0.2s'
+                            }}
+                          >{t}</button>
+                        ))}
+                    </div>
+                    {timeFilter === 'CUSTOM' && (
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', animation: 'fadeIn 0.2s' }}>
+                        <input 
+                          type="date" value={startDate} onChange={e => setStartDate(e.target.value)}
+                          style={{ padding: '6px 10px', borderRadius: '8px', border: '1px solid #e2e8f0', fontSize: '10px', fontWeight: 700 }}
+                        />
+                        <input 
+                          type="date" value={endDate} onChange={e => setEndDate(e.target.value)}
+                          style={{ padding: '6px 10px', borderRadius: '8px', border: '1px solid #e2e8f0', fontSize: '10px', fontWeight: 700 }}
+                        />
+                      </div>
+                    )}
+                  </div>
               </div>
           </div>
 
-          {/* MAIN TREND MATRIX */}
-          <div style={{ background: 'white', borderRadius: '24px', border: '1px solid #e2e8f0', padding: '30px', boxShadow: '0 4px 20px rgba(0,0,0,0.02)', marginBottom: '40px' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '25px' }}>
-                  <h3 style={{ fontSize: '12px', fontWeight: 950, color: '#64748b', letterSpacing: '1px' }}>{selectedPeriod}_PERFORMANCE_MATRIX</h3>
-                  <div style={{ fontSize: '10px', fontWeight: 950, color: '#0f52ba' }}>
-                      RECORDS_DETECTED: {selectedPeriod === 'DAILY' ? (matrix.daily?.length || 0) : selectedPeriod === 'WEEKLY' ? (matrix.weekly?.length || 0) : selectedPeriod === 'MONTHLY' ? (matrix.monthly?.length || 0) : (matrix.yearly?.length || 0)}
-                  </div>
+          {/* LIVE SCOPE SUMMARY (DYNAMIC) */}
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '20px', marginBottom: '30px' }}>
+              <div style={{ background: 'white', padding: '25px', borderRadius: '24px', border: '1px solid #e2e8f0', boxShadow: '0 4px 20px rgba(0,0,0,0.02)' }}>
+                  <p style={{ fontSize: '10px', fontWeight: 950, color: '#94a3b8', letterSpacing: '1px', marginBottom: '15px' }}>SCOPE_GROSS_REVENUE</p>
+                  <div style={{ fontSize: '24px', fontWeight: 950, color: '#1a1a2e' }}>₹{(liveStats?.totalGross || 0).toLocaleString()}</div>
+                  <div style={{ marginTop: '10px', fontSize: '9px', color: '#64748b', fontWeight: 800 }}>AGGREGATE INVOICED VOLUME</div>
               </div>
-              <div style={{ overflowX: 'auto' }}>
-                  <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-                      <thead>
-                          <tr style={{ textAlign: 'left', borderBottom: '1px solid #f1f5f9' }}>
-                              <th style={{ padding: '15px 10px', fontSize: '9px', fontWeight: 950, color: '#94a3b8' }}>PERIOD</th>
-                              <th style={{ padding: '15px 10px', fontSize: '9px', fontWeight: 950, color: '#94a3b8' }}>INVOICED (GROSS)</th>
-                              <th style={{ padding: '15px 10px', fontSize: '9px', fontWeight: 950, color: '#94a3b8' }}>COLLECTED (CASH)</th>
-                              <th style={{ padding: '15px 10px', fontSize: '9px', fontWeight: 950, color: '#94a3b8' }}>EXPENSES</th>
-                              <th style={{ padding: '15px 10px', fontSize: '9px', fontWeight: 950, color: '#0f52ba' }}>NET_MARGIN</th>
-                              <th style={{ padding: '15px 10px', textAlign: 'right', fontSize: '9px', fontWeight: 950, color: '#94a3b8' }}>REALIZATION</th>
-                          </tr>
-                      </thead>
-                      <tbody>
-                          {(selectedPeriod === 'DAILY' ? (matrix.daily || []) : selectedPeriod === 'WEEKLY' ? (matrix.weekly || []) : selectedPeriod === 'MONTHLY' ? (matrix.monthly || []) : (matrix.yearly || [])).map((m, idx) => (
-                              <tr key={idx} style={{ borderBottom: '1px solid #f8fafc' }}>
-                                  <td style={{ padding: '15px 10px', fontSize: '11px', fontWeight: 900, color: '#1e293b' }}>{m.label}</td>
-                                  <td style={{ padding: '15px 10px', fontSize: '11px', fontWeight: 800 }}>₹{(m.invoiced || 0).toLocaleString()}</td>
-                                  <td style={{ padding: '15px 10px', fontSize: '11px', fontWeight: 800, color: '#059669' }}>₹{(m.collected || 0).toLocaleString()}</td>
-                                  <td style={{ padding: '15px 10px', fontSize: '11px', fontWeight: 800, color: '#dc2626' }}>₹{(m.expenses || 0).toLocaleString()}</td>
-                                  <td style={{ padding: '15px 10px', fontSize: '11px', fontWeight: 950, color: (m.netProfit || 0) >= 0 ? '#0f52ba' : '#ef4444' }}>₹{(m.netProfit || 0).toLocaleString()}</td>
-                                  <td style={{ padding: '15px 10px', textAlign: 'right' }}>
-                                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: '8px' }}>
-                                          <span style={{ fontSize: '10px', fontWeight: 900 }}>{(m.realizationRate || 0)}%</span>
-                                          <div style={{ width: '40px', height: '4px', background: '#f1f5f9', borderRadius: '10px' }}>
-                                              <div style={{ width: `${(m.realizationRate || 0)}%`, height: '100%', background: (m.realizationRate || 0) > 80 ? '#059669' : (m.realizationRate || 0) > 50 ? '#d97706' : '#dc2626', borderRadius: '10px' }}></div>
-                                          </div>
-                                      </div>
-                                  </td>
-                              </tr>
-                          ))}
-                      </tbody>
-                  </table>
+              <div style={{ background: 'white', padding: '25px', borderRadius: '24px', border: '1px solid #e2e8f0', boxShadow: '0 4px 20px rgba(0,0,0,0.02)' }}>
+                  <p style={{ fontSize: '10px', fontWeight: 950, color: '#94a3b8', letterSpacing: '1px', marginBottom: '15px' }}>SCOPE_CASH_COLLECTED</p>
+                  <div style={{ fontSize: '24px', fontWeight: 950, color: '#059669' }}>₹{(liveStats?.totalRevenue || 0).toLocaleString()}</div>
+                  <div style={{ marginTop: '10px', fontSize: '9px', color: '#059669', fontWeight: 800 }}>REALIZED LIQUIDITY</div>
+              </div>
+              <div style={{ background: 'white', padding: '25px', borderRadius: '24px', border: '1px solid #e2e8f0', boxShadow: '0 4px 20px rgba(0,0,0,0.02)' }}>
+                  <p style={{ fontSize: '10px', fontWeight: 950, color: '#94a3b8', letterSpacing: '1px', marginBottom: '15px' }}>SCOPE_TOTAL_EXPENSES</p>
+                  <div style={{ fontSize: '24px', fontWeight: 950, color: '#dc2626' }}>₹{(outflowStats?.totalOutflow || 0).toLocaleString()}</div>
+                  <div style={{ marginTop: '10px', fontSize: '9px', color: '#dc2626', fontWeight: 800 }}>OPERATIONAL & REFERRAL OUTFLOW</div>
+              </div>
+              <div style={{ background: 'linear-gradient(135deg, #0f172a 0%, #1e293b 100%)', padding: '25px', borderRadius: '24px', color: 'white', boxShadow: '0 10px 30px rgba(15, 23, 42, 0.2)' }}>
+                  <p style={{ fontSize: '10px', fontWeight: 950, color: 'rgba(255,255,255,0.5)', letterSpacing: '1px', marginBottom: '15px' }}>NET_SCOPE_MARGIN</p>
+                  <div style={{ fontSize: '24px', fontWeight: 950 }}>₹{((liveStats?.totalRevenue || 0) - (outflowStats?.totalOutflow || 0)).toLocaleString()}</div>
+                  <div style={{ marginTop: '10px', fontSize: '9px', color: (liveStats.totalRevenue - outflowStats.totalOutflow) >= 0 ? '#4ade80' : '#f87171', fontWeight: 800 }}>
+                      {((liveStats.totalRevenue - outflowStats.totalOutflow) / (liveStats.totalRevenue || 1) * 100).toFixed(1)}% NET MARGIN
+                  </div>
               </div>
           </div>
 
