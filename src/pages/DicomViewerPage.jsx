@@ -29,8 +29,18 @@ const DicomViewerPage = () => {
     console.log('[DICOM VIEWER] Component mounted with state:', location.state);
     console.log('[DICOM VIEWER] Files:', files);
     console.log('[DICOM VIEWER] Files length:', files?.length);
+    console.log('[DICOM VIEWER] Files is array:', Array.isArray(files));
+    console.log('[DICOM VIEWER] First file:', files?.[0]);
     console.log('[DICOM VIEWER] Appointment data:', appointmentData);
-  }, [files, appointmentData]);
+    
+    // Validate files
+    if (!files || !Array.isArray(files) || files.length === 0) {
+      console.error('[DICOM VIEWER] ❌ No files available!');
+      console.error('[DICOM VIEWER] Location state:', location.state);
+    } else {
+      console.log('[DICOM VIEWER] ✅ Files loaded successfully:', files.length, 'files');
+    }
+  }, [files, appointmentData, location.state]);
 
   // DICOM VIEWER KEYBOARD SHORTCUTS
   useEffect(() => {
@@ -538,6 +548,78 @@ const DicomViewerPage = () => {
     );
   }
 
+  // Show error if no files are available
+  if (!files || !Array.isArray(files) || files.length === 0) {
+    return (
+      <div style={{
+        height: '100vh',
+        width: '100vw',
+        background: '#0a0a0f',
+        display: 'flex',
+        flexDirection: 'column',
+        alignItems: 'center',
+        justifyContent: 'center',
+        color: 'white',
+        padding: '40px'
+      }}>
+        <div style={{ fontSize: '60px', marginBottom: '20px' }}>⚠️</div>
+        <div style={{ fontSize: '24px', fontWeight: 'bold', marginBottom: '10px', color: '#ef4444' }}>
+          NO DICOM FILES AVAILABLE
+        </div>
+        <div style={{ fontSize: '16px', color: '#94a3b8', marginBottom: '30px', textAlign: 'center', maxWidth: '600px' }}>
+          No DICOM files were passed to the viewer. This usually happens when:
+          <ul style={{ textAlign: 'left', marginTop: '15px', lineHeight: '1.8' }}>
+            <li>The DICOM files haven't been loaded yet</li>
+            <li>The navigation state was lost during page refresh</li>
+            <li>The files array is empty or invalid</li>
+          </ul>
+        </div>
+        <div style={{ display: 'flex', gap: '15px' }}>
+          <button
+            onClick={() => navigate(-1)}
+            style={{
+              background: '#3b82f6',
+              border: 'none',
+              color: 'white',
+              padding: '12px 24px',
+              borderRadius: '8px',
+              cursor: 'pointer',
+              fontSize: '14px',
+              fontWeight: 700
+            }}
+          >
+            ← GO BACK
+          </button>
+          <button
+            onClick={() => {
+              const appointmentId = appointmentData?.appointmentId || appointmentData?.id;
+              if (appointmentId) {
+                navigate(`/reporting/${appointmentId}`);
+              } else {
+                navigate('/');
+              }
+            }}
+            style={{
+              background: 'rgba(255,255,255,0.1)',
+              border: '1px solid rgba(255,255,255,0.2)',
+              color: 'white',
+              padding: '12px 24px',
+              borderRadius: '8px',
+              cursor: 'pointer',
+              fontSize: '14px',
+              fontWeight: 700
+            }}
+          >
+            RETURN TO REPORTING
+          </button>
+        </div>
+        <div style={{ marginTop: '30px', fontSize: '12px', color: '#64748b' }}>
+          Debug Info: files={files ? 'exists' : 'null'}, isArray={Array.isArray(files)}, length={files?.length || 0}
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div style={{
       height: '100vh',
@@ -591,12 +673,25 @@ const DicomViewerPage = () => {
                 {seriesName || 'DICOM VIEWER'}
               </div>
               <div style={{ fontSize: '11px', opacity: 0.7 }}>
-                Full Screen Diagnostic View
+                Full Screen Diagnostic View • {files?.length || 0} Slices
               </div>
             </div>
           </div>
 
           <div style={{ display: 'flex', alignItems: 'center', gap: '15px' }}>
+            {/* Slice Counter Display */}
+            <div style={{
+              background: 'linear-gradient(135deg, #0f52ba, #3b82f6)',
+              border: '2px solid rgba(59, 130, 246, 0.5)',
+              padding: '8px 16px',
+              borderRadius: '8px',
+              fontSize: '14px',
+              fontWeight: 900,
+              boxShadow: '0 4px 12px rgba(59, 130, 246, 0.3)'
+            }}>
+              SLICE: {currentSlice} / {files?.length || 0}
+            </div>
+
             {/* Active Tool Display */}
             <div style={{
               background: 'rgba(59, 130, 246, 0.2)',

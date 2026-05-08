@@ -99,12 +99,26 @@ export default function BillingPage() {
 
   const fetchMatrix = useCallback(async () => {
     try {
-      const res = await apiClient.get('/finance/matrix');
+      const today = new Date().toLocaleDateString('en-CA');
+      let finalStart = null;
+      let finalEnd = null;
+
+      if (timeFilter === 'TODAY') {
+        finalStart = today;
+        finalEnd = today;
+      } else if (timeFilter === 'CUSTOM') {
+        finalStart = startDate;
+        finalEnd = endDate;
+      }
+
+      const res = await apiClient.get('/finance/matrix', {
+        params: { startDate: finalStart, endDate: finalEnd }
+      });
       setMatrix(res.data);
     } catch (err) {
       console.error('[FINANCE] Matrix fetch failed', err);
     }
-  }, []);
+  }, [timeFilter, startDate, endDate]);
 
   const fetchPendingBillables = useCallback(async (patientId) => {
     try {
@@ -476,7 +490,7 @@ export default function BillingPage() {
 
   useEffect(() => {
     setCurrentPage(1);
-  }, [searchTerm, timeFilter, statusFilter]);
+  }, [searchTerm, timeFilter, statusFilter, modalityFilter, startDate, endDate]);
 
   // --- PATIENT LOOKUP ---
   const fetchPatients = useCallback(async (query) => {
@@ -578,31 +592,70 @@ export default function BillingPage() {
     }
   };
 
-  const handleSaveInvoice = () => {
-    const updated = invoices.map(inv => 
-      inv.invoiceId === selectedInvoice.invoiceId ? selectedInvoice : inv
-    );
-    saveInvoices(updated);
-    setIsInvoiceDrawerOpen(false);
+  const handleSaveInvoice = async () => {
+    try {
+      await apiClient.post(`/finance/invoices/${selectedInvoice.invoiceId}/discount`, {
+        discountAmount: selectedInvoice.discountAmount
+      });
+      fetchInvoices();
+      fetchStats();
+      setIsInvoiceDrawerOpen(false);
+      alert('INVOICE UPDATED: Discount applied successfully.');
+    } catch (err) {
+      console.error('[FINANCE] Discount application failed', err);
+      alert('PROTOCOL FAILURE: Could not update invoice discount.');
+    }
   };
 
   // --- RENDERERS ---
   const renderPagination = () => {
     if (totalPages <= 1) return null;
+    
+    // Calculate page range to show (e.g., max 5 pages)
+    const delta = 2;
+    const range = [];
+    for (let i = Math.max(2, currentPage - delta); i <= Math.min(totalPages - 1, currentPage + delta); i++) {
+        range.push(i);
+    }
+
+    if (currentPage - delta > 2) range.unshift('...');
+    if (currentPage + delta < totalPages - 1) range.push('...');
+
+    range.unshift(1);
+    if (totalPages > 1) range.push(totalPages);
+
     return (
-      <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '10px', marginTop: '25px', padding: '15px', borderTop: '1px solid #f1f5f9' }}>
+      <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '8px', marginTop: '30px', padding: '20px', borderTop: '1px solid #f1f5f9' }}>
         <button 
           onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
           disabled={currentPage === 1}
-          style={{ padding: '8px 15px', borderRadius: '8px', border: '1px solid #e2e8f0', background: 'white', fontSize: '11px', fontWeight: 900, cursor: currentPage === 1 ? 'not-allowed' : 'pointer', opacity: currentPage === 1 ? 0.5 : 1 }}
-        >PREVIOUS</button>
-        <div style={{ fontSize: '11px', fontWeight: 900, color: '#64748b' }}>
-          PAGE <span style={{ color: '#0f52ba' }}>{currentPage}</span> OF <span style={{ color: '#0f52ba' }}>{totalPages}</span>
+          style={{ padding: '8px 16px', borderRadius: '10px', border: '1px solid #e2e8f0', background: 'white', fontSize: '10px', fontWeight: 950, cursor: currentPage === 1 ? 'not-allowed' : 'pointer', opacity: currentPage === 1 ? 0.5 : 1, transition: 'all 0.2s' }}
+        >PREV</button>
+        
+        <div style={{ display: 'flex', gap: '5px' }}>
+            {range.map((p, idx) => (
+                <button
+                    key={idx}
+                    disabled={p === '...'}
+                    onClick={() => p !== '...' && setCurrentPage(p)}
+                    style={{
+                        width: '36px', height: '36px', borderRadius: '10px', border: '1px solid #e2e8f0',
+                        background: currentPage === p ? '#0f52ba' : 'white',
+                        color: currentPage === p ? 'white' : '#64748b',
+                        fontSize: '11px', fontWeight: 950, cursor: p === '...' ? 'default' : 'pointer',
+                        transition: 'all 0.2s',
+                        borderColor: currentPage === p ? '#0f52ba' : '#e2e8f0'
+                    }}
+                >
+                    {p}
+                </button>
+            ))}
         </div>
+
         <button 
           onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
           disabled={currentPage === totalPages}
-          style={{ padding: '8px 15px', borderRadius: '8px', border: '1px solid #e2e8f0', background: 'white', fontSize: '11px', fontWeight: 900, cursor: currentPage === totalPages ? 'not-allowed' : 'pointer', opacity: currentPage === totalPages ? 0.5 : 1 }}
+          style={{ padding: '8px 16px', borderRadius: '10px', border: '1px solid #e2e8f0', background: 'white', fontSize: '10px', fontWeight: 950, cursor: currentPage === totalPages ? 'not-allowed' : 'pointer', opacity: currentPage === totalPages ? 0.5 : 1, transition: 'all 0.2s' }}
         >NEXT</button>
       </div>
     );
@@ -670,21 +723,46 @@ export default function BillingPage() {
              </div>
 
              <div style={{ borderTop: '2px dashed #f1f5f9', paddingTop: '20px', marginBottom: '40px' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                   <span style={{ fontSize: '14px', fontWeight: 950, color: '#1a1a2e' }}>TOTAL PAYABLE QUANTUM</span>
+                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '12px' }}>
+                   <span style={{ fontSize: '11px', fontWeight: 950, color: '#94a3b8', letterSpacing: '1px' }}>GROSS_TOTAL</span>
+                   <span style={{ fontSize: '13px', fontWeight: 950, color: '#1e293b' }}>₹{(selectedInvoice.grossAmount || 0).toLocaleString()}</span>
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
+                   <span style={{ fontSize: '11px', fontWeight: 950, color: '#ef4444', letterSpacing: '1px' }}>DEDUCTION_REBATE</span>
+                   {isPaid ? (
+                     <span style={{ fontSize: '13px', fontWeight: 950, color: '#ef4444' }}>- ₹{(selectedInvoice.discountAmount || 0).toLocaleString()}</span>
+                   ) : (
+                     <input 
+                       type="number" 
+                       value={selectedInvoice.discountAmount} 
+                       onChange={e => {
+                         const disc = parseInt(e.target.value) || 0;
+                         const gross = selectedInvoice.grossAmount || 0;
+                         setSelectedInvoice({ 
+                           ...selectedInvoice, 
+                           discountAmount: disc,
+                           totalAmount: gross - disc
+                         });
+                       }}
+                       style={{ width: '100px', padding: '6px 12px', borderRadius: '10px', border: '1px solid #e2e8f0', fontSize: '12px', fontWeight: 950, textAlign: 'right', color: '#ef4444', outline: 'none' }}
+                     />
+                   )}
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '15px' }}>
+                   <span style={{ fontSize: '14px', fontWeight: 950, color: '#1a1a2e' }}>NET_PAYABLE_QUANTUM</span>
                    <span style={{ fontSize: '24px', fontWeight: 950, color: '#0f52ba' }}>₹{selectedInvoice.totalAmount.toLocaleString()}</span>
                 </div>
              </div>
 
              <div style={{ marginBottom: '30px', background: '#fff1f2', padding: '15px', borderRadius: '16px', border: '1px dashed #fecdd3', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                 <div>
-                  <div style={{ fontSize: '9px', fontWeight: 950, color: '#e11d48', letterSpacing: '1px', marginBottom: '4px' }}>REFERRAL PAYOUT PROTOCOL</div>
-                  <div style={{ fontSize: '12px', fontWeight: 950, color: '#881337' }}>
-                    {selectedInvoice.referrerName ? selectedInvoice.referrerName.toUpperCase() : 'NO SYSTEM REFERRER LINKED'}
-                  </div>
-                  <div style={{ fontSize: '9px', color: '#e11d48', opacity: 0.7, marginTop: '4px' }}>
-                     Log commission to deduct from net profit
-                  </div>
+                   <div style={{ fontSize: '9px', fontWeight: 950, color: '#e11d48', letterSpacing: '1px', marginBottom: '4px' }}>REFERRAL PAYOUT PROTOCOL</div>
+                   <div style={{ fontSize: '12px', fontWeight: 950, color: '#881337' }}>
+                     {selectedInvoice.referrerName ? selectedInvoice.referrerName.toUpperCase() : 'NO SYSTEM REFERRER LINKED'}
+                   </div>
+                   <div style={{ fontSize: '9px', color: '#e11d48', opacity: 0.7, marginTop: '4px' }}>
+                      Log commission to deduct from net profit
+                   </div>
                 </div>
                 <button 
                   onClick={() => {
@@ -1193,14 +1271,40 @@ export default function BillingPage() {
                         </div>
                       </div>
                     ))}
-                 </div>
-              </div>
+                  </div>
 
-              <button type="submit" disabled={!selectedPatient} style={{ width: '100%', padding: '18px', borderRadius: '16px', border: 'none', background: selectedPatient ? '#0f52ba' : '#cbd5e1', color: 'white', fontWeight: 950, cursor: selectedPatient ? 'pointer' : 'not-allowed', marginTop: '20px' }}>
-                 AUTHORIZE & DEPLOY INVOICE
-              </button>
-           </form>
-        </div>
+                  {/* FISCAL SUMMARY (DISCOUNT MODULE) */}
+                  <div style={{ marginTop: '25px', padding: '20px', background: '#f1f5f9', borderRadius: '18px', border: '1px solid #e2e8f0' }}>
+                     <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '12px' }}>
+                        <span style={{ fontSize: '10px', fontWeight: 950, color: '#64748b', letterSpacing: '1px' }}>GROSS_TOTAL</span>
+                        <span style={{ fontSize: '12px', fontWeight: 950, color: '#1e293b' }}>₹{newInvoiceData.items.reduce((sum, it) => sum + (it.amount * it.quantity), 0)}</span>
+                     </div>
+                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                           <span style={{ fontSize: '10px', fontWeight: 950, color: '#ef4444', letterSpacing: '1px' }}>DEDUCTION_DISCOUNT</span>
+                           <span style={{ fontSize: '8px', background: '#fee2e2', color: '#b91c1c', padding: '2px 6px', borderRadius: '4px', fontWeight: 900 }}>REBATE</span>
+                        </div>
+                        <input 
+                           type="number" 
+                           value={newInvoiceData.discountAmount} 
+                           onChange={e => setNewInvoiceData({ ...newInvoiceData, discountAmount: parseInt(e.target.value) || 0 })}
+                           style={{ width: '100px', padding: '6px 12px', borderRadius: '10px', border: '1px solid #cbd5e1', fontSize: '12px', fontWeight: 950, textAlign: 'right', color: '#ef4444', outline: 'none' }}
+                        />
+                     </div>
+                     <div style={{ borderTop: '2px dashed #cbd5e1', marginTop: '15px', paddingTop: '15px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                        <span style={{ fontSize: '11px', fontWeight: 950, color: '#0f52ba', letterSpacing: '2px' }}>NET_PAYABLE_AMOUNT</span>
+                        <span style={{ fontSize: '18px', fontWeight: 950, color: '#0f52ba' }}>
+                           ₹{Math.max(0, newInvoiceData.items.reduce((sum, it) => sum + (it.amount * it.quantity), 0) - (newInvoiceData.discountAmount || 0))}
+                        </span>
+                     </div>
+                  </div>
+               </div>
+
+               <button type="submit" disabled={!selectedPatient} style={{ width: '100%', padding: '18px', borderRadius: '16px', border: 'none', background: selectedPatient ? '#0f52ba' : '#cbd5e1', color: 'white', fontWeight: 950, cursor: selectedPatient ? 'pointer' : 'not-allowed', marginTop: '20px' }}>
+                  AUTHORIZE & DEPLOY INVOICE
+               </button>
+            </form>
+         </div>
       </div>
     </div>
   );
@@ -1344,7 +1448,7 @@ export default function BillingPage() {
 
       {billingViewMode === 'EXPENSES' && (
         <div className="expenses-main" style={{ display: 'grid', gridTemplateColumns: '1fr', gap: '30px', animation: 'fadeIn 0.3s' }}>
-           {/* EXPENSE KPI MATRIX */}
+           {/* KPI MATRIX */}
            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '20px' }}>
              <div className="kpi-card" style={{ background: '#fff1f2', padding: '25px', borderRadius: '24px', border: '1px solid #fecdd3', boxShadow: '0 4px 20px rgba(225,29,72,0.05)' }}>
                <p style={{ fontSize: '11px', fontWeight: 950, color: '#e11d48', letterSpacing: '1px', marginBottom: '15px' }}>TOTAL EXPENDITURE</p>
@@ -1624,7 +1728,9 @@ export default function BillingPage() {
                      <th style={{ padding: '15px 10px', fontSize: '10px', fontWeight: 950, color: '#94a3b8', letterSpacing: '1px' }}>INVOICE_ID</th>
                      <th style={{ padding: '15px 10px', fontSize: '10px', fontWeight: 950, color: '#94a3b8', letterSpacing: '1px' }}>PATIENT_ENTITY</th>
                      <th style={{ padding: '15px 10px', fontSize: '10px', fontWeight: 950, color: '#94a3b8', letterSpacing: '1px' }}>TIMESTAMP</th>
-                     <th style={{ padding: '15px 10px', fontSize: '10px', fontWeight: 950, color: '#94a3b8', letterSpacing: '1px' }}>QUANTUM</th>
+                     <th style={{ padding: '15px 10px', fontSize: '10px', fontWeight: 950, color: '#94a3b8', letterSpacing: '1px' }}>GROSS_TOTAL</th>
+                     <th style={{ padding: '15px 10px', fontSize: '10px', fontWeight: 950, color: '#ef4444', letterSpacing: '1px' }}>DISCOUNT</th>
+                     <th style={{ padding: '15px 10px', fontSize: '10px', fontWeight: 950, color: '#0f52ba', letterSpacing: '1px' }}>NET_PAYABLE</th>
                      <th style={{ padding: '15px 10px', fontSize: '10px', fontWeight: 950, color: '#e11d48', letterSpacing: '1px' }}>REFERRAL_CUT</th>
                      <th style={{ padding: '15px 10px', fontSize: '10px', fontWeight: 950, color: '#94a3b8', letterSpacing: '1px' }}>STATUS</th>
                      <th style={{ padding: '15px 10px', fontSize: '10px', fontWeight: 950, color: '#94a3b8', letterSpacing: '1px', textAlign: 'right' }}>ACTIONS</th>
@@ -1636,7 +1742,9 @@ export default function BillingPage() {
                        <td style={{ padding: '20px 10px', fontSize: '12px', fontWeight: 900, color: '#0f52ba', fontFamily: 'monospace' }}>{inv.displayId}</td>
                        <td style={{ padding: '20px 10px', fontSize: '13px', fontWeight: 800, color: '#1e293b' }}>{inv.patientName.toUpperCase()}</td>
                        <td style={{ padding: '20px 10px', fontSize: '12px', color: '#64748b', fontWeight: 600 }}>{new Date(inv.createdAt).toLocaleString()}</td>
-                       <td style={{ padding: '20px 10px', fontSize: '14px', fontWeight: 950, color: '#1a1a2e' }}>₹{inv.totalAmount.toLocaleString()}</td>
+                       <td style={{ padding: '20px 10px', fontSize: '13px', fontWeight: 700, color: '#64748b' }}>₹{(inv.grossAmount || 0).toLocaleString()}</td>
+                       <td style={{ padding: '20px 10px', fontSize: '13px', fontWeight: 950, color: '#ef4444' }}>{inv.discountAmount > 0 ? `-₹${inv.discountAmount.toLocaleString()}` : '—'}</td>
+                       <td style={{ padding: '20px 10px', fontSize: '14px', fontWeight: 950, color: '#0f52ba' }}>₹{inv.totalAmount.toLocaleString()}</td>
                        <td style={{ padding: '20px 10px' }}>
                            {inv.commissionAmount > 0 ? (
                              <div style={{ display: 'flex', flexDirection: 'column' }}>
@@ -1698,7 +1806,7 @@ export default function BillingPage() {
                  </tbody>
                </table>
                {renderPagination()}
-             </div>
+            </div>
           </div>
         </div>
       )}
@@ -1889,9 +1997,7 @@ export default function BillingPage() {
                       <thead>
                           <tr style={{ textAlign: 'left', borderBottom: '2px solid #f1f5f9' }}>
                               <th style={{ padding: '20px 10px', fontSize: '10px', fontWeight: 950, color: '#94a3b8', letterSpacing: '1px' }}>MODALITY</th>
-                              <th style={{ padding: '20px 10px', fontSize: '10px', fontWeight: 950, color: '#94a3b8', letterSpacing: '1px' }}>DAILY_YIELD</th>
-                              <th style={{ padding: '20px 10px', fontSize: '10px', fontWeight: 950, color: '#94a3b8', letterSpacing: '1px' }}>MONTHLY_YIELD</th>
-                              <th style={{ padding: '20px 10px', fontSize: '10px', fontWeight: 950, color: '#94a3b8', letterSpacing: '1px' }}>YEARLY_YIELD</th>
+                              <th style={{ padding: '20px 10px', fontSize: '10px', fontWeight: 950, color: '#0f52ba', letterSpacing: '1px' }}>PERIOD_YIELD (₹)</th>
                               <th style={{ padding: '20px 10px', textAlign: 'right', fontSize: '10px', fontWeight: 950, color: '#0f52ba', letterSpacing: '1px' }}>CONTRIBUTION</th>
                           </tr>
                       </thead>
@@ -1906,9 +2012,7 @@ export default function BillingPage() {
                                           <span style={{ fontSize: '13px', fontWeight: 950, color: '#1e293b' }}>{item.modality}</span>
                                       </div>
                                   </td>
-                                  <td style={{ padding: '25px 10px', fontSize: '12px', fontWeight: 800, color: '#1e293b' }}>₹{(item.dailyRevenue || 0).toLocaleString()}</td>
-                                  <td style={{ padding: '25px 10px', fontSize: '12px', fontWeight: 800, color: '#1e293b' }}>₹{(item.monthlyRevenue || 0).toLocaleString()}</td>
-                                  <td style={{ padding: '25px 10px', fontSize: '12px', fontWeight: 800, color: '#1e293b' }}>₹{(item.yearlyRevenue || 0).toLocaleString()}</td>
+                                  <td style={{ padding: '25px 10px', fontSize: '16px', fontWeight: 950, color: '#1e293b' }}>₹{(item.rangeRevenue || 0).toLocaleString()}</td>
                                   <td style={{ padding: '25px 10px', textAlign: 'right' }}>
                                       <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '8px' }}>
                                           <span style={{ fontSize: '14px', fontWeight: 950, color: '#0f52ba' }}>{(item.contributionPercentage || 0)}%</span>

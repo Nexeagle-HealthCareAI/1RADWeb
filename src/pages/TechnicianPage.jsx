@@ -273,7 +273,7 @@ export default function TechnicianPage() {
       console.log(`[TECH_LOAD] Binary stream received. Size: ${(blob.size / (1024*1024)).toFixed(2)} MB. Starting optimized processing...`);
       
       // Use optimized processor with progress tracking
-      const classifiedAssets = await dicomOptimizer.processZipFileOptimized(
+      const processingResult = await dicomOptimizer.processZipFileOptimized(
         blob,
         (progress) => {
           setLoadingProgress(progress);
@@ -283,6 +283,33 @@ export default function TechnicianPage() {
           console.log(`[TECH_LOAD] New series discovered: ${seriesInfo.seriesDesc}`);
         }
       );
+
+      console.log(`[TECH_LOAD] Processing result:`, {
+        type: typeof processingResult,
+        hasSeries: !!processingResult?.series,
+        seriesCount: processingResult?.series?.length,
+        stats: processingResult?.stats
+      });
+
+      // Extract series array from result
+      const classifiedAssets = processingResult?.series || [];
+
+      // Validate that classifiedAssets is an array
+      if (!Array.isArray(classifiedAssets)) {
+        console.error(`[TECH_LOAD] Invalid processing result - expected array, got:`, typeof classifiedAssets);
+        throw new Error(`PROCESSING_ERROR: DICOM processor returned invalid result (${typeof classifiedAssets} instead of array)`);
+      }
+
+      if (classifiedAssets.length === 0) {
+        console.warn(`[TECH_LOAD] No valid DICOM series found in the archive`);
+        
+        // Check if there were corrupted files
+        if (processingResult?.stats?.corruptedFiles > 0) {
+          throw new Error(`NO_DICOM_SERIES: Found ${processingResult.stats.corruptedFiles} corrupted files. No valid DICOM images could be extracted.`);
+        }
+        
+        throw new Error('NO_DICOM_SERIES: No valid DICOM image series found in the uploaded file');
+      }
 
       const finalAssets = classifiedAssets.map(series => ({
         ...asset,
@@ -294,6 +321,11 @@ export default function TechnicianPage() {
       }));
 
       console.log(`[TECH_LOAD] Optimized processing complete. Discovered ${finalAssets.length} valid diagnostic series.`);
+      
+      // Log processing statistics
+      if (processingResult?.stats) {
+        console.log(`[TECH_LOAD] Processing statistics:`, processingResult.stats);
+      }
 
       // TACTICAL CACHE STORAGE
       if (finalAssets.length > 0) {
@@ -328,9 +360,23 @@ export default function TechnicianPage() {
         userMessage += 'Server configuration issue detected. The DICOM storage server needs to allow cross-origin requests. Please contact your system administrator to configure CORS settings for the Azure Blob Storage.';
       } else if (err.message.includes('NETWORK_ERROR') || err.message.includes('Failed to fetch')) {
         userMessage += 'Unable to download study data. Please check your internet connection and try again.';
+      } else if (err.message.includes('PROCESSING_ERROR')) {
+        userMessage += 'Failed to process DICOM files. The file may be corrupted or in an unsupported format.';
+      } else if (err.message.includes('NO_DICOM_SERIES')) {
+        userMessage += 'No valid DICOM image series found in the uploaded file. Please verify the file contains valid DICOM images.';
       } else {
         userMessage += err.message;
       }
+      
+      console.error('[TECH_LOAD] Error details:', {
+        message: err.message,
+        stack: err.stack,
+        asset: {
+          id: asset?.id,
+          name: asset?.name,
+          remoteUrl: asset?.remoteUrl
+        }
+      });
       
       alert(userMessage);
     } finally {

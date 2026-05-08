@@ -574,7 +574,7 @@ const ReportingPage = () => {
       
       try {
         // Use optimized processor for ZIP files
-        const classifiedAssets = await dicomOptimizer.processZipFileOptimized(
+        const processingResult = await dicomOptimizer.processZipFileOptimized(
           file,
           (progress) => {
             setLoadingProgress(progress);
@@ -584,6 +584,13 @@ const ReportingPage = () => {
             console.log(`[REPORTING] New series discovered: ${seriesInfo.seriesDesc}`);
           }
         );
+        
+        // Extract series array from result
+        const classifiedAssets = processingResult?.series || [];
+        
+        if (!Array.isArray(classifiedAssets) || classifiedAssets.length === 0) {
+          throw new Error('NO_DICOM_SERIES: No valid DICOM image series found in the uploaded file');
+        }
         
         const assets = classifiedAssets.map(series => ({
           name: `${series.patientName} - ${series.seriesDesc}`,
@@ -595,6 +602,11 @@ const ReportingPage = () => {
         
         setUploadedFiles(assets);
         setIsDicomImage(true);
+        
+        // Log processing statistics
+        if (processingResult?.stats) {
+          console.log(`[REPORTING] Processing statistics:`, processingResult.stats);
+        }
       } catch (err) {
         console.error('Optimized ZIP load failed', err);
         setProcessingStatus(`Error: ${err.message}`);
@@ -610,25 +622,28 @@ const ReportingPage = () => {
   const testAssetConnection = async (asset) => {
     try {
       console.log(`[DICOM_TEST] Testing connection to: ${asset.remoteUrl}`);
-      const token = sessionStorage.getItem('1rad_token') || sessionStorage.getItem('1rad_initiation_token');
 
       // Try direct first
       try {
-        const headResponse = await fetch(asset.remoteUrl, { method: 'HEAD', mode: 'cors' });
+        const headResponse = await fetch(asset.remoteUrl, { 
+          method: 'HEAD', 
+          mode: 'cors',
+          cache: 'no-cache'
+        });
         if (headResponse.ok) {
           console.log(`[DICOM_TEST] ✅ Direct access successful.`);
           return { success: true, useProxy: false };
         }
       } catch (e) {
-        console.warn(`[DICOM_TEST] Direct access failed (likely CORS), trying secure proxy...`);
+        console.warn(`[DICOM_TEST] Direct HEAD failed (likely CORS):`, e.message);
       }
 
-      // Try proxy using apiClient (which handles auth automatically)
+      // Try proxy using apiClient (optional - if backend supports it)
       try {
+        console.log(`[DICOM_TEST] Attempting proxy test...`);
         const proxyResponse = await apiClient.get(`/Study/proxy-asset`, {
           params: { url: asset.remoteUrl },
           responseType: 'blob',
-          // Add a small timeout for the test
           timeout: 5000
         });
 
@@ -637,14 +652,33 @@ const ReportingPage = () => {
           return { success: true, useProxy: true };
         }
       } catch (proxyError) {
-        console.error(`[DICOM_TEST] Proxy test failed:`, proxyError);
-        return { success: false, error: `PROXY_ERROR: ${proxyError.message}` };
+        console.warn(`[DICOM_TEST] Proxy test failed:`, {
+          status: proxyError.response?.status,
+          statusText: proxyError.response?.statusText,
+          message: proxyError.message
+        });
+        
+        // If proxy returns 405, it means endpoint doesn't support this method
+        // This is not a critical error - we can still try direct download
+        if (proxyError.response?.status === 405) {
+          console.warn(`[DICOM_TEST] Proxy endpoint not available (405 Method Not Allowed)`);
+        }
       }
 
-      return { success: false, error: "ACCESS_DENIED: Study unreachable via direct or secure proxy." };
+      // Return success=false but don't throw - let the main download logic handle it
+      console.log(`[DICOM_TEST] Connection test inconclusive, will attempt direct download`);
+      return { 
+        success: false, 
+        useProxy: false,
+        error: "Connection test failed, but direct download will be attempted" 
+      };
     } catch (error) {
-      console.error(`[DICOM_TEST] Connection test failed:`, error);
-      return { success: false, error: error.message };
+      console.error(`[DICOM_TEST] Connection test error:`, error);
+      return { 
+        success: false, 
+        useProxy: false,
+        error: error.message 
+      };
     }
   };
 
@@ -703,17 +737,23 @@ const ReportingPage = () => {
         throw new Error('MISSING_URL: Asset remote URL is not available. Please check the asset configuration.');
       }
       
-      // Test connection first
+      // Test connection first (non-blocking - if it fails, we'll try direct anyway)
       console.log(`[DICOM_LOAD] Testing asset connectivity...`);
-      const connectionTest = await testAssetConnection(asset);
-      
-      if (!connectionTest.success) {
-        throw new Error(`CONNECTION_TEST_FAILED: ${connectionTest.error}`);
+      let useProxy = false;
+      try {
+        const connectionTest = await testAssetConnection(asset);
+        if (connectionTest.success) {
+          useProxy = connectionTest.useProxy;
+          console.log(`[DICOM_LOAD] ✅ Connection test passed (UseProxy: ${useProxy})`);
+        } else {
+          console.warn(`[DICOM_LOAD] ⚠️ Connection test failed, will attempt direct download anyway:`, connectionTest.error);
+        }
+      } catch (testError) {
+        console.warn(`[DICOM_LOAD] ⚠️ Connection test error, will attempt direct download anyway:`, testError);
       }
       
-      console.log(`[DICOM_LOAD] Connection test passed, proceeding with download... (UseProxy: ${connectionTest.useProxy})`);
+      console.log(`[DICOM_LOAD] Proceeding with download...`);
       
-      const fetchUrl = connectionTest.useProxy ? connectionTest.proxyUrl : asset.remoteUrl;
       const token = sessionStorage.getItem('1rad_token') || sessionStorage.getItem('1rad_initiation_token');
       
       // Check if URL is accessible with retry mechanism
@@ -723,15 +763,15 @@ const ReportingPage = () => {
       
       while (retryCount <= maxRetries) {
         try {
-          console.log(`[DICOM_LOAD] Attempt ${retryCount + 1}/${maxRetries + 1} - Fetching: ${fetchUrl}`);
+          console.log(`[DICOM_LOAD] Attempt ${retryCount + 1}/${maxRetries + 1} - Fetching: ${asset.remoteUrl}`);
           
-          response = await fetch(fetchUrl, {
+          response = await fetch(asset.remoteUrl, {
             method: 'GET',
             headers: {
               'Accept': 'application/zip, application/octet-stream, */*',
-              ...(connectionTest.useProxy ? { 'Authorization': `Bearer ${token}` } : {})
             },
-            credentials: connectionTest.useProxy ? 'include' : 'same-origin'
+            // Add credentials if needed for authenticated endpoints
+            credentials: 'same-origin'
           });
           
           if (response.ok) {
