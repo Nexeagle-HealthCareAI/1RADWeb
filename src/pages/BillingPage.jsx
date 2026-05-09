@@ -1728,9 +1728,9 @@ export default function BillingPage() {
                      <th style={{ padding: '15px 10px', fontSize: '10px', fontWeight: 950, color: '#94a3b8', letterSpacing: '1px' }}>INVOICE_ID</th>
                      <th style={{ padding: '15px 10px', fontSize: '10px', fontWeight: 950, color: '#94a3b8', letterSpacing: '1px' }}>PATIENT_ENTITY</th>
                      <th style={{ padding: '15px 10px', fontSize: '10px', fontWeight: 950, color: '#94a3b8', letterSpacing: '1px' }}>TIMESTAMP</th>
-                     <th style={{ padding: '15px 10px', fontSize: '10px', fontWeight: 950, color: '#94a3b8', letterSpacing: '1px' }}>GROSS_TOTAL</th>
-                     <th style={{ padding: '15px 10px', fontSize: '10px', fontWeight: 950, color: '#ef4444', letterSpacing: '1px' }}>DISCOUNT</th>
-                     <th style={{ padding: '15px 10px', fontSize: '10px', fontWeight: 950, color: '#0f52ba', letterSpacing: '1px' }}>NET_PAYABLE</th>
+                     <th style={{ padding: '15px 10px', fontSize: '10px', fontWeight: 950, color: '#1e293b', letterSpacing: '1px', background: '#f8fafc' }}>GROSS_TOTAL</th>
+                     <th style={{ padding: '15px 10px', fontSize: '10px', fontWeight: 950, color: '#ef4444', letterSpacing: '1px', background: '#fff1f2' }}>DISCOUNT</th>
+                     <th style={{ padding: '15px 10px', fontSize: '10px', fontWeight: 950, color: '#0f52ba', letterSpacing: '1px', background: '#f0f4ff' }}>NET_PAYABLE</th>
                      <th style={{ padding: '15px 10px', fontSize: '10px', fontWeight: 950, color: '#e11d48', letterSpacing: '1px' }}>REFERRAL_CUT</th>
                      <th style={{ padding: '15px 10px', fontSize: '10px', fontWeight: 950, color: '#94a3b8', letterSpacing: '1px' }}>STATUS</th>
                      <th style={{ padding: '15px 10px', fontSize: '10px', fontWeight: 950, color: '#94a3b8', letterSpacing: '1px', textAlign: 'right' }}>ACTIONS</th>
@@ -1742,9 +1742,9 @@ export default function BillingPage() {
                        <td style={{ padding: '20px 10px', fontSize: '12px', fontWeight: 900, color: '#0f52ba', fontFamily: 'monospace' }}>{inv.displayId}</td>
                        <td style={{ padding: '20px 10px', fontSize: '13px', fontWeight: 800, color: '#1e293b' }}>{inv.patientName.toUpperCase()}</td>
                        <td style={{ padding: '20px 10px', fontSize: '12px', color: '#64748b', fontWeight: 600 }}>{new Date(inv.createdAt).toLocaleString()}</td>
-                       <td style={{ padding: '20px 10px', fontSize: '13px', fontWeight: 700, color: '#64748b' }}>₹{(inv.grossAmount || 0).toLocaleString()}</td>
-                       <td style={{ padding: '20px 10px', fontSize: '13px', fontWeight: 950, color: '#ef4444' }}>{inv.discountAmount > 0 ? `-₹${inv.discountAmount.toLocaleString()}` : '—'}</td>
-                       <td style={{ padding: '20px 10px', fontSize: '14px', fontWeight: 950, color: '#0f52ba' }}>₹{inv.totalAmount.toLocaleString()}</td>
+                       <td style={{ padding: '20px 10px', fontSize: '13px', fontWeight: 700, color: '#64748b', background: '#f8fafc' }}>₹{(inv.grossAmount || 0).toLocaleString()}</td>
+                       <td style={{ padding: '20px 10px', fontSize: '13px', fontWeight: 950, color: '#ef4444', background: '#fff1f2' }}>{inv.discountAmount > 0 ? `-₹${inv.discountAmount.toLocaleString()}` : '—'}</td>
+                       <td style={{ padding: '20px 10px', fontSize: '14px', fontWeight: 950, color: '#0f52ba', background: '#f0f4ff' }}>₹{inv.totalAmount.toLocaleString()}</td>
                        <td style={{ padding: '20px 10px' }}>
                            {inv.commissionAmount > 0 ? (
                              <div style={{ display: 'flex', flexDirection: 'column' }}>
@@ -1800,7 +1800,7 @@ export default function BillingPage() {
                    ))}
                    {filteredInvoices.length === 0 && (
                      <tr>
-                       <td colSpan="7" style={{ padding: '80px', textAlign: 'center', color: '#94a3b8', fontSize: '12px', fontWeight: 700 }}>NO TRANSACTIONS DETECTED IN ACTIVE LEDGER</td>
+                       <td colSpan="9" style={{ padding: '80px', textAlign: 'center', color: '#94a3b8', fontSize: '12px', fontWeight: 700 }}>NO TRANSACTIONS DETECTED IN ACTIVE LEDGER</td>
                      </tr>
                    )}
                  </tbody>

@@ -1776,6 +1776,26 @@ const AdvancedDicomViewer = ({
         background: '#000' 
       }}
     >
+      {/* DEBUG: Files Info Display - Remove after testing */}
+      {files && (
+        <div style={{
+          position: 'fixed',
+          top: '10px',
+          left: '10px',
+          zIndex: 999999,
+          background: 'rgba(255, 0, 0, 0.9)',
+          color: 'white',
+          padding: '10px',
+          borderRadius: '5px',
+          fontSize: '12px',
+          fontWeight: 'bold',
+          border: '2px solid yellow',
+          pointerEvents: 'none'
+        }}>
+          FILES: {files.length} | READY: {isReady ? 'YES' : 'NO'} | INDEX: {currentImageIndex}
+        </div>
+      )}
+      
       <div ref={containerRef} style={{ width: '100%', height: '100%', position: 'relative', display: 'flex', flexDirection: 'column', background: '#000' }}>
       {!isReady && (
         <div style={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', zIndex: 10, background: '#000' }}>
@@ -1867,6 +1887,17 @@ const AdvancedDicomViewer = ({
         @keyframes fadeInOut {
           0%, 15%, 85%, 100% { opacity: 0.9; }
           30%, 70% { opacity: 0.5; }
+        }
+        
+        @keyframes pulse {
+          0%, 100% { 
+            transform: translateX(-50%) scale(1);
+            box-shadow: 0 8px 32px rgba(239, 68, 68, 0.6);
+          }
+          50% { 
+            transform: translateX(-50%) scale(1.05);
+            box-shadow: 0 12px 40px rgba(239, 68, 68, 0.8);
+          }
         }
         
         /* Touch optimizations */
@@ -2276,7 +2307,17 @@ const AdvancedDicomViewer = ({
       />
 
       {/* ENHANCED STACK SCROLL HUD - Desktop & Tablet Compatible */}
-      {isReady && files && files.length > 1 && (
+      {(() => {
+        const shouldShow = isReady && files && files.length > 1;
+        console.log('[DICOM HUD] Visibility check:', {
+          isReady,
+          hasFiles: !!files,
+          filesLength: files?.length,
+          shouldShow,
+          isTablet
+        });
+        return shouldShow;
+      })() && (
         <div style={{ 
           position: 'fixed', // Changed from absolute to fixed for better tablet zoom handling
           right: isTablet ? '15px' : '12px', 
@@ -2598,6 +2639,209 @@ const AdvancedDicomViewer = ({
           minWidth: '120px'
         }}>
           SLICE {currentImageIndex + 1} / {files.length}
+        </div>
+      )}
+
+      {/* CRITICAL: Always-Visible Slice Counter - Shows Immediately */}
+      {(() => {
+        console.log('[DICOM SLICE COUNTER] Rendering check:', {
+          hasFiles: !!files,
+          filesLength: files?.length,
+          isArray: Array.isArray(files),
+          currentIndex: currentImageIndex,
+          viewportId
+        });
+        return files && Array.isArray(files) && files.length > 1;
+      })() && (
+        <div style={{
+          position: 'fixed',
+          bottom: '30px',
+          left: '50%',
+          transform: 'translateX(-50%)',
+          zIndex: 99999, // Very high z-index to ensure visibility
+          background: 'linear-gradient(135deg, #ef4444, #dc2626)',
+          color: '#fff',
+          padding: '15px 30px',
+          borderRadius: '25px',
+          fontSize: '18px',
+          fontWeight: 'bold',
+          border: '3px solid #fca5a5',
+          boxShadow: '0 8px 32px rgba(239, 68, 68, 0.6)',
+          backdropFilter: 'blur(12px)',
+          pointerEvents: 'auto',
+          letterSpacing: '1px',
+          textAlign: 'center',
+          minWidth: '250px',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          gap: '15px',
+          animation: 'pulse 2s ease-in-out infinite'
+        }}>
+          <button
+            onClick={() => {
+              console.log('[SLICE NAV] Previous clicked, current:', currentImageIndex);
+              const newIndex = Math.max(0, currentImageIndex - 1);
+              if (renderingEngineRef.current && newIndex !== currentImageIndex) {
+                const viewport = renderingEngineRef.current.getViewport(viewportId);
+                if (viewport) {
+                  console.log('[SLICE NAV] Setting index to:', newIndex);
+                  viewport.setImageIdIndex(newIndex);
+                  setCurrentImageIndex(newIndex);
+                  if (onSliceChange) onSliceChange(newIndex, files.length);
+                }
+              }
+            }}
+            disabled={currentImageIndex === 0}
+            style={{
+              background: currentImageIndex === 0 ? 'rgba(255,255,255,0.2)' : 'rgba(255,255,255,0.4)',
+              border: '2px solid white',
+              color: 'white',
+              width: '40px',
+              height: '40px',
+              borderRadius: '50%',
+              cursor: currentImageIndex === 0 ? 'not-allowed' : 'pointer',
+              fontSize: '20px',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              fontWeight: 'bold',
+              opacity: currentImageIndex === 0 ? 0.5 : 1,
+              transition: 'all 0.2s'
+            }}
+          >
+            ◀
+          </button>
+          <span style={{ fontSize: '20px', fontWeight: '900' }}>
+            SLICE {currentImageIndex + 1} / {files.length}
+          </span>
+          <button
+            onClick={() => {
+              console.log('[SLICE NAV] Next clicked, current:', currentImageIndex);
+              const newIndex = Math.min(files.length - 1, currentImageIndex + 1);
+              if (renderingEngineRef.current && newIndex !== currentImageIndex) {
+                const viewport = renderingEngineRef.current.getViewport(viewportId);
+                if (viewport) {
+                  console.log('[SLICE NAV] Setting index to:', newIndex);
+                  viewport.setImageIdIndex(newIndex);
+                  setCurrentImageIndex(newIndex);
+                  if (onSliceChange) onSliceChange(newIndex, files.length);
+                }
+              }
+            }}
+            disabled={currentImageIndex === files.length - 1}
+            style={{
+              background: currentImageIndex === files.length - 1 ? 'rgba(255,255,255,0.2)' : 'rgba(255,255,255,0.4)',
+              border: '2px solid white',
+              color: 'white',
+              width: '40px',
+              height: '40px',
+              borderRadius: '50%',
+              cursor: currentImageIndex === files.length - 1 ? 'not-allowed' : 'pointer',
+              fontSize: '20px',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              fontWeight: 'bold',
+              opacity: currentImageIndex === files.length - 1 ? 0.5 : 1,
+              transition: 'all 0.2s'
+            }}
+          >
+            ▶
+          </button>
+        </div>
+      )}
+
+      {/* Original Always-Visible Slice Counter for Multi-Slice Series */}
+      {files && files.length > 1 && (
+        <div style={{
+          position: 'fixed',
+          bottom: '20px',
+          left: '50%',
+          transform: 'translateX(-50%)',
+          zIndex: 10000,
+          background: 'linear-gradient(135deg, rgba(15, 82, 186, 0.95), rgba(59, 130, 246, 0.95))',
+          color: '#fff',
+          padding: '10px 20px',
+          borderRadius: '20px',
+          fontSize: '14px',
+          fontWeight: 'bold',
+          border: '2px solid rgba(59, 130, 246, 0.6)',
+          boxShadow: '0 6px 24px rgba(59, 130, 246, 0.4)',
+          backdropFilter: 'blur(12px)',
+          pointerEvents: 'auto',
+          letterSpacing: '0.5px',
+          textAlign: 'center',
+          minWidth: '200px',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          gap: '12px'
+        }}>
+          <button
+            onClick={() => {
+              const newIndex = Math.max(0, currentImageIndex - 1);
+              if (renderingEngineRef.current && newIndex !== currentImageIndex) {
+                const viewport = renderingEngineRef.current.getViewport(viewportId);
+                if (viewport) {
+                  viewport.setImageIdIndex(newIndex);
+                  setCurrentImageIndex(newIndex);
+                  if (onSliceChange) onSliceChange(newIndex, files.length);
+                }
+              }
+            }}
+            disabled={currentImageIndex === 0}
+            style={{
+              background: currentImageIndex === 0 ? 'rgba(255,255,255,0.2)' : 'rgba(255,255,255,0.3)',
+              border: 'none',
+              color: 'white',
+              width: '32px',
+              height: '32px',
+              borderRadius: '50%',
+              cursor: currentImageIndex === 0 ? 'not-allowed' : 'pointer',
+              fontSize: '16px',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              fontWeight: 'bold',
+              opacity: currentImageIndex === 0 ? 0.5 : 1
+            }}
+          >
+            ◀
+          </button>
+          <span style={{ fontSize: '16px' }}>📊</span>
+          <span>SLICE {currentImageIndex + 1} / {files.length}</span>
+          <button
+            onClick={() => {
+              const newIndex = Math.min(files.length - 1, currentImageIndex + 1);
+              if (renderingEngineRef.current && newIndex !== currentImageIndex) {
+                const viewport = renderingEngineRef.current.getViewport(viewportId);
+                if (viewport) {
+                  viewport.setImageIdIndex(newIndex);
+                  setCurrentImageIndex(newIndex);
+                  if (onSliceChange) onSliceChange(newIndex, files.length);
+                }
+              }
+            }}
+            disabled={currentImageIndex === files.length - 1}
+            style={{
+              background: currentImageIndex === files.length - 1 ? 'rgba(255,255,255,0.2)' : 'rgba(255,255,255,0.3)',
+              border: 'none',
+              color: 'white',
+              width: '32px',
+              height: '32px',
+              borderRadius: '50%',
+              cursor: currentImageIndex === files.length - 1 ? 'not-allowed' : 'pointer',
+              fontSize: '16px',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              fontWeight: 'bold',
+              opacity: currentImageIndex === files.length - 1 ? 0.5 : 1
+            }}
+          >
+            ▶
+          </button>
         </div>
       )}
 
