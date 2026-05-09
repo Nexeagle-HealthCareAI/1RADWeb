@@ -252,6 +252,9 @@ const ReportingPage = () => {
       } else {
         console.info(`[1RAD] No existing study assets found`);
       }
+
+      // CACHE FOR OFFLINE USE
+      await nativeStorage.set(`1rad_cache_appointment_${appId}`, appointmentData);
       
       // CACHE FOR OFFLINE USE
       await nativeStorage.set(`1rad_cache_appointment_${appId}`, appointmentData);
