@@ -7,11 +7,14 @@ import apiClient, { BASE_URL } from '../api/apiClient';
 import { DicomCache } from '../utils/DicomCache';
 import { dicomOptimizer } from '../utils/DicomPerformanceOptimizer';
 import { jwtDecode } from 'jwt-decode';
+import useOffline from '../hooks/useOffline';
+import { nativeStorage } from '../hooks/useElectron';
 
 const ReportingPage = () => {
   const navigate = useNavigate();
   const params = useParams();
   const [searchParams] = useSearchParams();
+  const { isOnline, addToOutbox } = useOffline();
   const appointmentId = params.id || searchParams.get('id');
   const [activeTab, setActiveTab] = useState(localStorage.getItem('reporting_paradigm') || 'Structured');
   const [showKeywordDrawer, setShowKeywordDrawer] = useState(false);
@@ -249,6 +252,10 @@ const ReportingPage = () => {
       } else {
         console.info(`[1RAD] No existing study assets found`);
       }
+      
+      // CACHE FOR OFFLINE USE
+      await nativeStorage.set(`1rad_cache_appointment_${appId}`, appointmentData);
+      
       if (reportRes.data?.success && reportRes.data.data) {
         const r = reportRes.data.data;
         console.info(`[1RAD] Found Existing Report. Methodology: ${r.reportingMode || 'UNDEFINED'}`);
@@ -288,8 +295,28 @@ const ReportingPage = () => {
         setActiveTab(globalPref);
       }
     } catch (err) {
-      console.error('[REPORTING] Initialization failure', err);
-      setError("SYSTEM_INITIALIZATION_ERROR: A critical failure occurred while preparing the diagnostic workspace. " + (err.message || "Please check your connection."));
+      console.error('[REPORTING] Initialization failure, trying cache', err);
+      // Try to load from cache
+      const cachedAppointment = await nativeStorage.get(`1rad_cache_appointment_${appId}`);
+      if (cachedAppointment) {
+        setActiveAppointment(cachedAppointment);
+      }
+      
+      const draft = await nativeStorage.get(`1rad_draft_${appId}`);
+      if (draft) {
+        console.info('[1RAD] Reconstituting Workspace from Local Draft');
+        if (draft.findings?.startsWith('{')) {
+           try { setStructuredData(JSON.parse(draft.findings)); } catch(e) { setEditorText(draft.findings); }
+        } else {
+           setEditorText(draft.findings || '');
+        }
+        setImpression(draft.impression || '');
+        setAdvice(draft.advice || '');
+        setActiveTab(draft.activeTab || 'Structured');
+        setSelectedTemplateId(draft.selectedTemplateId);
+      } else {
+         setError("SYSTEM_INITIALIZATION_ERROR: A critical failure occurred while preparing the diagnostic workspace. " + (err.message || "Please check your connection."));
+      }
     } finally {
       setLoading(false);
     }
@@ -300,6 +327,26 @@ const ReportingPage = () => {
       fetchReportingContext(appointmentId);
     }
   }, [appointmentId, fetchReportingContext]);
+  
+  // --- OFFLINE AUTOSAVE ---
+  useEffect(() => {
+    if (!appointmentId || isFinalized) return;
+    
+    const autosaveTimer = setTimeout(async () => {
+       const draft = {
+         findings: activeTab === 'Structured' ? JSON.stringify(structuredData) : editorText,
+         impression,
+         advice,
+         activeTab,
+         selectedTemplateId,
+         timestamp: new Date().getTime()
+       };
+       console.log(`[REPORTING] Autosaving draft for ${appointmentId}...`);
+       await nativeStorage.set(`1rad_draft_${appointmentId}`, draft);
+    }, 2000); // Debounce for 2 seconds
+
+    return () => clearTimeout(autosaveTimer);
+  }, [editorText, structuredData, impression, advice, activeTab, selectedTemplateId, appointmentId, isFinalized]);
 
 
 
@@ -381,28 +428,51 @@ const ReportingPage = () => {
       alert('APPOINTMENT CONTEXT MISSING: Cannot save report.');
       return;
     }
+    
+    const payload = {
+      appointmentId: appointmentId,
+      templateId: selectedTemplateId,
+      findings: activeTab === 'Structured' ? JSON.stringify(structuredData) : editorText,
+      impression: impression || (activeTab === 'Structured' ? (structuredData['Impression'] || structuredData['IMPRESSION'] || '') : ''),
+      advice: advice || '',
+      isFinalized: finalizing,
+      reportingMode: activeTab
+    };
+
+    if (!isOnline) {
+      await addToOutbox('REPORT', payload);
+      alert(finalizing ? 'OFFLINE_MODE: Finalized report queued for sync.' : 'OFFLINE_MODE: Draft cached locally.');
+      if (finalizing) {
+        setIsFinalized(true);
+        navigate('/doctor-board');
+      }
+      return;
+    }
+
     setIsSaving(true);
     try {
-      const payload = {
-        appointmentId: appointmentId,
-        templateId: selectedTemplateId,
-        findings: activeTab === 'Structured' ? JSON.stringify(structuredData) : editorText,
-        impression: impression || (activeTab === 'Structured' ? (structuredData['Impression'] || structuredData['IMPRESSION'] || '') : ''),
-        advice: advice || '',
-        isFinalized: finalizing,
-        reportingMode: activeTab
-      };
-
       const res = await apiClient.post('/reporting/save', payload);
       if (res.data?.success) {
         alert(finalizing ? 'STRATEGIC DISPATCH COMPLETE: Report finalized.' : 'DRAFT PERSISTED: Changes saved.');
         if (finalizing) {
           setIsFinalized(true);
+          // Clear local draft on success
+          await nativeStorage.delete(`1rad_draft_${appointmentId}`);
           navigate('/doctor-board');
         }
       }
     } catch (err) {
-      alert(`SAVE FAILURE: ${err.response?.data?.error || err.message}`);
+      console.error('[REPORTING] Save failed', err);
+      if (!err.response) {
+         await addToOutbox('REPORT', payload);
+         alert('NETWORK_ERROR: Report saved to offline outbox.');
+         if (finalizing) {
+            setIsFinalized(true);
+            navigate('/doctor-board');
+         }
+      } else {
+         alert(`SAVE FAILURE: ${err.response?.data?.error || err.message}`);
+      }
     } finally {
       setIsSaving(false);
     }
@@ -554,6 +624,11 @@ const ReportingPage = () => {
       alert(`KEYWORD: "${macro.trigger || ''}" copied to clipboard.`);
       navigator.clipboard.writeText(textToInsert.replace(/<[^>]*>?/gm, ''));
     }
+  };
+
+  const onMeasurement = (measurement) => {
+    console.log('[1RAD] Clinical Measurement Recorded:', measurement);
+    // Future: Auto-populate findings if desired
   };
 
   // --- DICOM HANDLERS ---

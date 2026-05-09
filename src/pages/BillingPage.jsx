@@ -1,10 +1,13 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import useAuth from '../auth/useAuth';
 import apiClient from '../api/apiClient';
+import useOffline from '../hooks/useOffline';
+import { nativeStorage } from '../hooks/useElectron';
 import '../styles/BillingPage.css';
 
 export default function BillingPage() {
   const { activeCenter } = useAuth();
+  const { isOnline, addToOutbox, performSync } = useOffline();
   
   const TODAY = new Date().toISOString().split('T')[0];
 
@@ -74,8 +77,11 @@ export default function BillingPage() {
         params: { search: searchTerm, status: statusFilter }
       });
       setInvoices(res.data);
+      await nativeStorage.set('1rad_cache_invoices', res.data);
     } catch (err) {
-      console.error('[FINANCE] Invoice fetch failed', err);
+      console.error('[FINANCE] Invoice fetch failed, trying cache', err);
+      const cached = await nativeStorage.get('1rad_cache_invoices');
+      if (cached) setInvoices(cached);
     }
   }, [searchTerm, statusFilter]);
 
@@ -83,8 +89,11 @@ export default function BillingPage() {
     try {
       const res = await apiClient.get('/finance/stats');
       setStats(res.data);
+      await nativeStorage.set('1rad_cache_stats', res.data);
     } catch (err) {
-      console.error('[FINANCE] Stats fetch failed', err);
+      console.error('[FINANCE] Stats fetch failed, trying cache', err);
+      const cached = await nativeStorage.get('1rad_cache_stats');
+      if (cached) setStats(cached);
     }
   }, []);
 
@@ -92,8 +101,11 @@ export default function BillingPage() {
     try {
       const res = await apiClient.get('/finance/registry');
       setServiceRegistry(res.data);
+      await nativeStorage.set('1rad_cache_registry', res.data);
     } catch (err) {
-      console.error('[FINANCE] Registry fetch failed', err);
+      console.error('[FINANCE] Registry fetch failed, trying cache', err);
+      const cached = await nativeStorage.get('1rad_cache_registry');
+      if (cached) setServiceRegistry(cached);
     }
   }, []);
 
@@ -554,19 +566,34 @@ export default function BillingPage() {
   };
 
   const handleCollectPayment = async () => {
+    const payload = { 
+      invoiceId: selectedInvoice.invoiceId, 
+      amount: (selectedInvoice.totalAmount - (selectedInvoice.paidAmount || 0)), 
+      discountAmount: selectedInvoice.discountAmount,
+      paymentMethod 
+    };
+
     try {
-      await apiClient.post('/finance/payments', { 
-        invoiceId: selectedInvoice.invoiceId, 
-        amount: (selectedInvoice.totalAmount - (selectedInvoice.paidAmount || 0)), 
-        discountAmount: selectedInvoice.discountAmount,
-        paymentMethod 
-      });
+      if (!isOnline) {
+        await addToOutbox('PAYMENT', payload);
+        alert('OFFLINE MODE: Payment cached locally. Will sync when online.');
+        setIsInvoiceDrawerOpen(false);
+        return;
+      }
+
+      await apiClient.post('/finance/payments', payload);
       setIsInvoiceDrawerOpen(false);
       fetchInvoices();
       fetchStats();
       alert(`PAYMENT SUCCESS: Received ₹${selectedInvoice.balanceAmount} via ${paymentMethod}`);
     } catch (err) {
       console.error('[FINANCE] Payment failed', err);
+      // Optional: Add to outbox if it was a network error
+      if (!err.response) {
+         await addToOutbox('PAYMENT', payload);
+         alert('NETWORK ERROR: Record saved to offline queue.');
+         setIsInvoiceDrawerOpen(false);
+      }
     }
   };
 
@@ -577,18 +604,27 @@ export default function BillingPage() {
       return;
     }
     
+    const payload = {
+      patientId: selectedPatient.patientId,
+      appointmentId: newInvoiceData.items.find(it => it.appointmentId)?.appointmentId || null,
+      discountAmount: Number(newInvoiceData.discountAmount || 0),
+      items: newInvoiceData.items.map(it => ({
+        description: it.description,
+        amount: Number(it.amount),
+        quantity: Number(it.quantity)
+      }))
+    };
+
     try {
-      await apiClient.post('/finance/invoices', {
-        patientId: selectedPatient.patientId,
-        appointmentId: newInvoiceData.items.find(it => it.appointmentId)?.appointmentId || null,
-        discountAmount: Number(newInvoiceData.discountAmount || 0),
-        items: newInvoiceData.items.map(it => ({
-          description: it.description,
-          amount: Number(it.amount),
-          quantity: Number(it.quantity)
-        }))
-      });
-      
+      if (!isOnline) {
+        await addToOutbox('INVOICE', payload);
+        setIsNewInvoiceDrawerOpen(false);
+        setNewInvoiceData({ patientName: '', items: [{ description: '', amount: 0, quantity: 1 }], discountAmount: 0, paymentMethod: 'CASH' });
+        alert('OFFLINE MODE: Invoice cached locally. Will sync when online.');
+        return;
+      }
+
+      await apiClient.post('/finance/invoices', payload);
       setIsNewInvoiceDrawerOpen(false);
       setSelectedPatient(null);
       setPatientSearchQuery('');
@@ -598,8 +634,14 @@ export default function BillingPage() {
       alert('INVOICE GENERATED: Financial record successfully added to ledger.');
     } catch (err) {
       console.error('[FINANCE] Invoice creation failed', err);
-      const errorMsg = err.response?.data?.error || err.response?.data?.message || 'SYSTEM FAILURE: Failed to deploy invoice metadata.';
-      alert(errorMsg);
+      if (!err.response) {
+         await addToOutbox('INVOICE', payload);
+         alert('NETWORK ERROR: Invoice saved to offline queue.');
+         setIsNewInvoiceDrawerOpen(false);
+      } else {
+         const errorMsg = err.response?.data?.error || err.response?.data?.message || 'SYSTEM FAILURE: Failed to deploy invoice metadata.';
+         alert(errorMsg);
+      }
     }
   };
 

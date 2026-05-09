@@ -430,7 +430,7 @@ export default function TechnicianPage() {
       
       try {
         // Use optimized processor for local file uploads
-        const classifiedAssets = await dicomOptimizer.processZipFileOptimized(
+        const processingResult = await dicomOptimizer.processZipFileOptimized(
           file,
           (progress) => {
             setLoadingProgress(progress);
@@ -440,6 +440,33 @@ export default function TechnicianPage() {
             console.log(`[TECH] New series discovered: ${seriesInfo.seriesDesc}`);
           }
         );
+
+        console.log(`[TECH] Processing result:`, {
+          type: typeof processingResult,
+          hasSeries: !!processingResult?.series,
+          seriesCount: processingResult?.series?.length,
+          stats: processingResult?.stats
+        });
+
+        // Extract series array from result
+        const classifiedAssets = processingResult?.series || [];
+
+        // Validate that classifiedAssets is an array
+        if (!Array.isArray(classifiedAssets)) {
+          console.error(`[TECH] Invalid processing result - expected array, got:`, typeof classifiedAssets);
+          throw new Error(`PROCESSING_ERROR: DICOM processor returned invalid result (${typeof classifiedAssets} instead of array)`);
+        }
+
+        if (classifiedAssets.length === 0) {
+          console.warn(`[TECH] No valid DICOM series found in the archive`);
+          
+          // Check if there were corrupted files
+          if (processingResult?.stats?.corruptedFiles > 0) {
+            throw new Error(`NO_DICOM_SERIES: Found ${processingResult.stats.corruptedFiles} corrupted files. No valid DICOM images could be extracted.`);
+          }
+          
+          throw new Error('NO_DICOM_SERIES: No valid DICOM image series found in the uploaded file');
+        }
 
         // Background persist the zip file
         persistStudyAsset(file);
@@ -460,13 +487,37 @@ export default function TechnicianPage() {
           setUploadedFiles(prev => [...prev, ...newAssets]);
           setActiveAssetIndex(0); // Auto-focus first extracted asset stack
           setIsDicomImage(true);
+          
+          // Log processing statistics
+          if (processingResult?.stats) {
+            console.log(`[TECH] Processing statistics:`, processingResult.stats);
+            
+            // Show warning if corrupted files were found
+            if (processingResult.stats.corruptedFiles > 0) {
+              console.warn(`[TECH] ⚠️ Eliminated ${processingResult.stats.corruptedFiles} corrupted files from upload`);
+              setTimeout(() => {
+                alert(`Study loaded successfully!\n\n✅ Valid files: ${processingResult.stats.validFiles}\n⚠️ Corrupted files eliminated: ${processingResult.stats.corruptedFiles}\n\nCorrupted files have been automatically removed to ensure optimal viewing.`);
+              }, 500);
+            }
+          }
         } else {
           alert('No valid DICOM image series found in the ZIP archive.');
         }
       } catch (err) {
         console.error('[TECH] Optimized ZIP extraction failed', err);
         setProcessingStatus(`Error: ${err.message}`);
-        alert('Failed to extract ZIP archive: ' + err.message);
+        
+        // Provide user-friendly error messages
+        let userMessage = 'Failed to extract ZIP archive: ';
+        if (err.message.includes('NO_DICOM_SERIES')) {
+          userMessage = err.message;
+        } else if (err.message.includes('PROCESSING_ERROR')) {
+          userMessage += 'The DICOM processor encountered an error. Please verify the file format.';
+        } else {
+          userMessage += err.message;
+        }
+        
+        alert(userMessage);
       } finally {
         setLoading(false);
         setProcessingStatus('');

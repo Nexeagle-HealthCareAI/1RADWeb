@@ -6,6 +6,8 @@ import axios from 'axios';
 import { AuthContext } from '../auth/AuthContext';
 import PrescriptionModal from '../components/PrescriptionModal';
 import AdvancedDicomViewer from '../components/AdvancedDicomViewer';
+import useOffline from '../hooks/useOffline';
+import { nativeStorage } from '../hooks/useElectron';
 import '../styles/global.css';
 
 const MODALITY_ICONS = {
@@ -21,6 +23,7 @@ const TODAY = new Date().toLocaleDateString('en-CA');
 
 export default function DoctorBoard() {
   const { activeCenter } = useContext(AuthContext);
+  const { isOnline } = useOffline();
   const navigate = useNavigate();
   const [cases, setCases] = useState([]);
   const [loading, setLoading] = useState(false);
@@ -97,8 +100,11 @@ export default function DoctorBoard() {
         };
       });
       setCases(allCases);
+      await nativeStorage.set('1rad_cache_cases', allCases);
     } catch (err) {
-      console.error('[DOCTOR] Case fetch failed', err);
+      console.error('[DOCTOR] Case fetch failed, trying cache', err);
+      const cached = await nativeStorage.get('1rad_cache_cases');
+      if (cached) setCases(cached);
     } finally {
       setLoading(false);
     }

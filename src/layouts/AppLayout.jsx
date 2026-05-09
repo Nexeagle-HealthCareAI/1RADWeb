@@ -7,6 +7,8 @@ import '../styles/global.css';
 
 import TopNav from './TopNav';
 import SessionTimeoutModal from '../components/SessionTimeoutModal';
+import useOffline from '../hooks/useOffline';
+import apiClient from '../api/apiClient';
 
 
 export default function AppLayout() {
@@ -16,10 +18,20 @@ export default function AppLayout() {
   const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState(false);
   const pageContentRef = useRef(null);
 
+  const { isOnline, performSync, pendingCount } = useOffline();
+
   useEffect(() => {
     const timer = setInterval(() => setCurrentTime(new Date()), 60000); // Update every minute
     return () => clearInterval(timer);
   }, []);
+
+  // Global Auto-Sync Trigger
+  useEffect(() => {
+    if (isOnline && pendingCount > 0) {
+      console.log(`[SYNC_ENGINE] Network detected. Syncing ${pendingCount} records...`);
+      performSync(apiClient);
+    }
+  }, [isOnline, pendingCount, performSync]);
 
   // Reset scroll and close mobile sidebar on route change
   useEffect(() => {
