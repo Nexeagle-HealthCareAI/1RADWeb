@@ -547,7 +547,8 @@ export default function BillingPage() {
     try {
       await apiClient.post('/finance/payments', { 
         invoiceId: selectedInvoice.invoiceId, 
-        amount: selectedInvoice.balanceAmount, // Pay the remaining balance
+        amount: selectedInvoice.balanceAmount, 
+        discountAmount: selectedInvoice.discountAmount,
         paymentMethod 
       });
       setIsInvoiceDrawerOpen(false);
@@ -732,20 +733,39 @@ export default function BillingPage() {
                    {isPaid ? (
                      <span style={{ fontSize: '13px', fontWeight: 950, color: '#ef4444' }}>- ₹{(selectedInvoice.discountAmount || 0).toLocaleString()}</span>
                    ) : (
-                     <input 
-                       type="number" 
-                       value={selectedInvoice.discountAmount} 
-                       onChange={e => {
-                         const disc = parseInt(e.target.value) || 0;
-                         const gross = selectedInvoice.grossAmount || 0;
-                         setSelectedInvoice({ 
-                           ...selectedInvoice, 
-                           discountAmount: disc,
-                           totalAmount: gross - disc
-                         });
-                       }}
-                       style={{ width: '100px', padding: '6px 12px', borderRadius: '10px', border: '1px solid #e2e8f0', fontSize: '12px', fontWeight: 950, textAlign: 'right', color: '#ef4444', outline: 'none' }}
-                     />
+                     <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                        <div style={{ display: 'flex', gap: '4px' }}>
+                           {[5, 10, 25, 50].map(pct => (
+                             <button 
+                               key={pct}
+                               onClick={() => {
+                                 const gross = selectedInvoice.grossAmount || 0;
+                                 const disc = Math.round(gross * (pct / 100));
+                                 setSelectedInvoice({ 
+                                   ...selectedInvoice, 
+                                   discountAmount: disc,
+                                   totalAmount: gross - disc
+                                 });
+                               }}
+                               style={{ padding: '4px 8px', borderRadius: '6px', border: '1px solid #fecdd3', background: '#fff1f2', color: '#e11d48', fontSize: '8px', fontWeight: 950, cursor: 'pointer' }}
+                             >{pct}%</button>
+                           ))}
+                        </div>
+                        <input 
+                          type="number" 
+                          value={selectedInvoice.discountAmount} 
+                          onChange={e => {
+                            const disc = parseInt(e.target.value) || 0;
+                            const gross = selectedInvoice.grossAmount || 0;
+                            setSelectedInvoice({ 
+                              ...selectedInvoice, 
+                              discountAmount: disc,
+                              totalAmount: gross - disc
+                            });
+                          }}
+                          style={{ width: '80px', padding: '6px 12px', borderRadius: '10px', border: '1px solid #e2e8f0', fontSize: '12px', fontWeight: 950, textAlign: 'right', color: '#ef4444', outline: 'none' }}
+                        />
+                     </div>
                    )}
                 </div>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '15px' }}>
@@ -754,39 +774,6 @@ export default function BillingPage() {
                 </div>
              </div>
 
-             <div style={{ marginBottom: '30px', background: '#fff1f2', padding: '15px', borderRadius: '16px', border: '1px dashed #fecdd3', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <div>
-                   <div style={{ fontSize: '9px', fontWeight: 950, color: '#e11d48', letterSpacing: '1px', marginBottom: '4px' }}>REFERRAL PAYOUT PROTOCOL</div>
-                   <div style={{ fontSize: '12px', fontWeight: 950, color: '#881337' }}>
-                     {selectedInvoice.referrerName ? selectedInvoice.referrerName.toUpperCase() : 'NO SYSTEM REFERRER LINKED'}
-                   </div>
-                   <div style={{ fontSize: '9px', color: '#e11d48', opacity: 0.7, marginTop: '4px' }}>
-                      Log commission to deduct from net profit
-                   </div>
-                </div>
-                <button 
-                  onClick={() => {
-                    setBillingViewMode('EXPENSES');
-                    setIsInvoiceDrawerOpen(false);
-                    setEditExpense({ 
-                      description: `Referral commission for ${selectedInvoice.patientName} (${selectedInvoice.displayId})`, 
-                      category: 'Marketing', 
-                      amount: 0, 
-                      taxAmount: 0,
-                      transactionDate: TODAY, 
-                      paymentMode: 'Cash', 
-                      referenceNumber: selectedInvoice.displayId,
-                      vendorName: selectedInvoice.referrerName || '',
-                      costCenter: 'Administration',
-                      status: 'Paid'
-                    }); 
-                    setIsExpenseDrawerOpen(true);
-                  }}
-                  style={{ padding: '10px 18px', borderRadius: '10px', background: '#e11d48', color: 'white', border: 'none', fontSize: '10px', fontWeight: 950, cursor: 'pointer', boxShadow: '0 4px 10px rgba(225, 29, 72, 0.2)' }}
-                >
-                  LOG CUT PAYMENT 💸
-                </button>
-             </div>
 
              {!isPaid ? (
                <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
@@ -1284,12 +1271,27 @@ export default function BillingPage() {
                            <span style={{ fontSize: '10px', fontWeight: 950, color: '#ef4444', letterSpacing: '1px' }}>DEDUCTION_DISCOUNT</span>
                            <span style={{ fontSize: '8px', background: '#fee2e2', color: '#b91c1c', padding: '2px 6px', borderRadius: '4px', fontWeight: 900 }}>REBATE</span>
                         </div>
-                        <input 
-                           type="number" 
-                           value={newInvoiceData.discountAmount} 
-                           onChange={e => setNewInvoiceData({ ...newInvoiceData, discountAmount: parseInt(e.target.value) || 0 })}
-                           style={{ width: '100px', padding: '6px 12px', borderRadius: '10px', border: '1px solid #cbd5e1', fontSize: '12px', fontWeight: 950, textAlign: 'right', color: '#ef4444', outline: 'none' }}
-                        />
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                           <div style={{ display: 'flex', gap: '4px' }}>
+                              {[5, 10, 25, 50].map(pct => (
+                                <button 
+                                  key={pct}
+                                  type="button"
+                                  onClick={() => {
+                                    const gross = newInvoiceData.items.reduce((sum, it) => sum + (it.amount * it.quantity), 0);
+                                    setNewInvoiceData({ ...newInvoiceData, discountAmount: Math.round(gross * (pct / 100)) });
+                                  }}
+                                  style={{ padding: '4px 8px', borderRadius: '6px', border: '1px solid #fecdd3', background: '#fff1f2', color: '#e11d48', fontSize: '8px', fontWeight: 950, cursor: 'pointer' }}
+                                >{pct}%</button>
+                              ))}
+                           </div>
+                           <input 
+                              type="number" 
+                              value={newInvoiceData.discountAmount} 
+                              onChange={e => setNewInvoiceData({ ...newInvoiceData, discountAmount: parseInt(e.target.value) || 0 })}
+                              style={{ width: '80px', padding: '6px 12px', borderRadius: '10px', border: '1px solid #cbd5e1', fontSize: '12px', fontWeight: 950, textAlign: 'right', color: '#ef4444', outline: 'none' }}
+                           />
+                        </div>
                      </div>
                      <div style={{ borderTop: '2px dashed #cbd5e1', marginTop: '15px', paddingTop: '15px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                         <span style={{ fontSize: '11px', fontWeight: 950, color: '#0f52ba', letterSpacing: '2px' }}>NET_PAYABLE_AMOUNT</span>
