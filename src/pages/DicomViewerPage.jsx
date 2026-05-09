@@ -721,6 +721,21 @@ const DicomViewerPage = () => {
           </div>
 
           <div style={{ display: 'flex', alignItems: 'center', gap: '15px' }}>
+            {/* DEBUG: Show series data */}
+            <div style={{
+              background: 'rgba(255, 0, 0, 0.9)',
+              color: 'white',
+              padding: '10px',
+              borderRadius: '5px',
+              fontSize: '11px',
+              fontWeight: 'bold',
+              border: '2px solid yellow'
+            }}>
+              DEBUG: hasMultipleSeries={hasMultipleSeries ? 'YES' : 'NO'} | 
+              allSeries={allSeries ? `${allSeries.length} series` : 'NULL'} | 
+              activeIndex={activeSeriesIndex}
+            </div>
+            
             {/* Series Selector (if multiple series) */}
             {hasMultipleSeries && (
               <div style={{
@@ -737,7 +752,11 @@ const DicomViewerPage = () => {
                 <button
                   onClick={() => {
                     console.log('[SERIES NAV] Previous button clicked');
-                    setActiveSeriesIndex(prev => Math.max(0, prev - 1));
+                    console.log('[SERIES NAV] Current activeSeriesIndex:', activeSeriesIndex);
+                    console.log('[SERIES NAV] allSeries:', allSeries);
+                    const newIndex = Math.max(0, activeSeriesIndex - 1);
+                    console.log('[SERIES NAV] New index will be:', newIndex);
+                    setActiveSeriesIndex(newIndex);
                   }}
                   disabled={activeSeriesIndex === 0}
                   style={{
@@ -780,7 +799,11 @@ const DicomViewerPage = () => {
                 <button
                   onClick={() => {
                     console.log('[SERIES NAV] Next button clicked');
-                    setActiveSeriesIndex(prev => Math.min(allSeries.length - 1, prev + 1));
+                    console.log('[SERIES NAV] Current activeSeriesIndex:', activeSeriesIndex);
+                    console.log('[SERIES NAV] allSeries.length:', allSeries?.length);
+                    const newIndex = Math.min(allSeries.length - 1, activeSeriesIndex + 1);
+                    console.log('[SERIES NAV] New index will be:', newIndex);
+                    setActiveSeriesIndex(newIndex);
                   }}
                   disabled={activeSeriesIndex === allSeries.length - 1}
                   style={{

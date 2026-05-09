@@ -2387,7 +2387,7 @@ const AdvancedDicomViewer = ({
       {/* LEFT SIDE SERIES NAME PANEL */}
       {seriesName && isReady && (
         <div style={{
-          position: 'fixed',
+          position: 'absolute',
           left: '15px',
           top: '50%',
           transform: 'translateY(-50%)',
@@ -2467,7 +2467,7 @@ const AdvancedDicomViewer = ({
         return shouldShow;
       })() && (
         <div style={{ 
-          position: 'fixed', // Changed from absolute to fixed for better tablet zoom handling
+          position: 'absolute', // Changed to absolute to position relative to parent container
           right: isTablet ? '15px' : '12px', // RIGHT SIDE positioning
           top: '50%', 
           transform: 'translateY(-50%)', 
