@@ -21,26 +21,67 @@ const DicomViewerPage = () => {
   const [isSyncEnabled, setIsSyncEnabled] = useState(false);
   const [showShortcutsHelp, setShowShortcutsHelp] = useState(false);
   const [showLeftToolbar, setShowLeftToolbar] = useState(true);
+  
+  // Multi-series support
+  const [activeSeriesIndex, setActiveSeriesIndex] = useState(0);
 
-  // Get data from navigation state
-  const { files, seriesName, appointmentData } = location.state || {};
+  // Get data from navigation state - support both single and multi-series
+  const { files, seriesName, appointmentData, allSeries, activeSeriesIndex: initialSeriesIndex } = location.state || {};
+  
+  // Determine if we have multiple series
+  const hasMultipleSeries = allSeries && allSeries.length > 1;
+  const currentSeries = hasMultipleSeries ? allSeries[activeSeriesIndex] : null;
+  const currentFiles = hasMultipleSeries ? currentSeries?.files : files;
+  const currentSeriesName = hasMultipleSeries ? currentSeries?.name : seriesName;
+
+  // Reset slice counter when series changes
+  useEffect(() => {
+    setCurrentSlice(1);
+    console.log('[DICOM VIEWER] Series changed, resetting slice counter to 1');
+  }, [activeSeriesIndex]);
 
   useEffect(() => {
     console.log('[DICOM VIEWER] Component mounted with state:', location.state);
-    console.log('[DICOM VIEWER] Files:', files);
-    console.log('[DICOM VIEWER] Files length:', files?.length);
-    console.log('[DICOM VIEWER] Files is array:', Array.isArray(files));
-    console.log('[DICOM VIEWER] First file:', files?.[0]);
+    console.log('[DICOM VIEWER] Has multiple series:', hasMultipleSeries);
+    console.log('[DICOM VIEWER] Total series count:', allSeries?.length || 1);
+    console.log('[DICOM VIEWER] Active series index:', activeSeriesIndex);
+    console.log('[DICOM VIEWER] Current series:', currentSeries);
+    console.log('[DICOM VIEWER] Current files:', currentFiles);
+    console.log('[DICOM VIEWER] Files length:', currentFiles?.length);
+    console.log('[DICOM VIEWER] Files is array:', Array.isArray(currentFiles));
     console.log('[DICOM VIEWER] Appointment data:', appointmentData);
     
+    // CRITICAL DEBUG: Check if series navigation should be shown
+    console.log('[DICOM VIEWER] 🔍 SERIES NAVIGATION DEBUG:', {
+      hasMultipleSeries,
+      allSeriesExists: !!allSeries,
+      allSeriesLength: allSeries?.length,
+      allSeriesIsArray: Array.isArray(allSeries),
+      shouldShowNavigation: hasMultipleSeries,
+      allSeriesData: allSeries
+    });
+    
+    // Set initial series index if provided
+    if (initialSeriesIndex !== undefined && initialSeriesIndex >= 0) {
+      setActiveSeriesIndex(initialSeriesIndex);
+    }
+    
     // Validate files
-    if (!files || !Array.isArray(files) || files.length === 0) {
+    if (!currentFiles || !Array.isArray(currentFiles) || currentFiles.length === 0) {
       console.error('[DICOM VIEWER] ❌ No files available!');
       console.error('[DICOM VIEWER] Location state:', location.state);
     } else {
-      console.log('[DICOM VIEWER] ✅ Files loaded successfully:', files.length, 'files');
+      console.log('[DICOM VIEWER] ✅ Files loaded successfully:', currentFiles.length, 'files');
+      if (hasMultipleSeries) {
+        console.log('[DICOM VIEWER] 📊 Series breakdown:', allSeries.map((s, i) => ({
+          index: i,
+          name: s.name,
+          fileCount: s.files.length,
+          modality: s.modality
+        })));
+      }
     }
-  }, [files, appointmentData, location.state]);
+  }, [currentFiles, appointmentData, location.state, hasMultipleSeries, allSeries, activeSeriesIndex, currentSeries, initialSeriesIndex]);
 
   // DICOM VIEWER KEYBOARD SHORTCUTS
   useEffect(() => {
@@ -549,7 +590,7 @@ const DicomViewerPage = () => {
   }
 
   // Show error if no files are available
-  if (!files || !Array.isArray(files) || files.length === 0) {
+  if (!currentFiles || !Array.isArray(currentFiles) || currentFiles.length === 0) {
     return (
       <div style={{
         height: '100vh',
@@ -614,7 +655,7 @@ const DicomViewerPage = () => {
           </button>
         </div>
         <div style={{ marginTop: '30px', fontSize: '12px', color: '#64748b' }}>
-          Debug Info: files={files ? 'exists' : 'null'}, isArray={Array.isArray(files)}, length={files?.length || 0}
+          Debug Info: currentFiles={currentFiles ? 'exists' : 'null'}, isArray={Array.isArray(currentFiles)}, length={currentFiles?.length || 0}, hasMultipleSeries={hasMultipleSeries}, activeSeriesIndex={activeSeriesIndex}
         </div>
       </div>
     );
@@ -670,15 +711,124 @@ const DicomViewerPage = () => {
             </button>
             <div>
               <div style={{ fontSize: '16px', fontWeight: 900 }}>
-                {seriesName || 'DICOM VIEWER'}
+                {currentSeriesName || 'DICOM VIEWER'}
               </div>
               <div style={{ fontSize: '11px', opacity: 0.7 }}>
-                Full Screen Diagnostic View • {files?.length || 0} Slices
+                {hasMultipleSeries ? `Series ${activeSeriesIndex + 1} of ${allSeries.length} • ` : ''}
+                Full Screen Diagnostic View • {currentFiles?.length || 0} Slices
               </div>
             </div>
           </div>
 
           <div style={{ display: 'flex', alignItems: 'center', gap: '15px' }}>
+            {/* Series Selector (if multiple series) */}
+            {hasMultipleSeries && (
+              <div style={{
+                background: 'linear-gradient(135deg, #8b5cf6, #6366f1)',
+                border: '2px solid rgba(139, 92, 246, 0.5)',
+                padding: '10px 20px',
+                borderRadius: '10px',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '15px',
+                boxShadow: '0 4px 12px rgba(139, 92, 246, 0.5)',
+                minWidth: '250px'
+              }}>
+                <button
+                  onClick={() => {
+                    console.log('[SERIES NAV] Previous button clicked');
+                    setActiveSeriesIndex(prev => Math.max(0, prev - 1));
+                  }}
+                  disabled={activeSeriesIndex === 0}
+                  style={{
+                    background: activeSeriesIndex === 0 ? 'rgba(255,255,255,0.1)' : 'rgba(255,255,255,0.3)',
+                    border: '1px solid rgba(255,255,255,0.5)',
+                    color: 'white',
+                    padding: '6px 12px',
+                    borderRadius: '6px',
+                    cursor: activeSeriesIndex === 0 ? 'not-allowed' : 'pointer',
+                    fontSize: '14px',
+                    fontWeight: 900,
+                    opacity: activeSeriesIndex === 0 ? 0.5 : 1,
+                    transition: 'all 0.2s ease',
+                    minWidth: '40px'
+                  }}
+                  onMouseEnter={(e) => {
+                    if (activeSeriesIndex !== 0) {
+                      e.target.style.background = 'rgba(255,255,255,0.5)';
+                      e.target.style.transform = 'scale(1.05)';
+                    }
+                  }}
+                  onMouseLeave={(e) => {
+                    if (activeSeriesIndex !== 0) {
+                      e.target.style.background = 'rgba(255,255,255,0.3)';
+                      e.target.style.transform = 'scale(1)';
+                    }
+                  }}
+                >
+                  ◀
+                </button>
+                <div style={{ 
+                  fontSize: '14px', 
+                  fontWeight: 900, 
+                  minWidth: '140px', 
+                  textAlign: 'center',
+                  letterSpacing: '1px'
+                }}>
+                  SERIES {activeSeriesIndex + 1}/{allSeries.length}
+                </div>
+                <button
+                  onClick={() => {
+                    console.log('[SERIES NAV] Next button clicked');
+                    setActiveSeriesIndex(prev => Math.min(allSeries.length - 1, prev + 1));
+                  }}
+                  disabled={activeSeriesIndex === allSeries.length - 1}
+                  style={{
+                    background: activeSeriesIndex === allSeries.length - 1 ? 'rgba(255,255,255,0.1)' : 'rgba(255,255,255,0.3)',
+                    border: '1px solid rgba(255,255,255,0.5)',
+                    color: 'white',
+                    padding: '6px 12px',
+                    borderRadius: '6px',
+                    cursor: activeSeriesIndex === allSeries.length - 1 ? 'not-allowed' : 'pointer',
+                    fontSize: '14px',
+                    fontWeight: 900,
+                    opacity: activeSeriesIndex === allSeries.length - 1 ? 0.5 : 1,
+                    transition: 'all 0.2s ease',
+                    minWidth: '40px'
+                  }}
+                  onMouseEnter={(e) => {
+                    if (activeSeriesIndex !== allSeries.length - 1) {
+                      e.target.style.background = 'rgba(255,255,255,0.5)';
+                      e.target.style.transform = 'scale(1.05)';
+                    }
+                  }}
+                  onMouseLeave={(e) => {
+                    if (activeSeriesIndex !== allSeries.length - 1) {
+                      e.target.style.background = 'rgba(255,255,255,0.3)';
+                      e.target.style.transform = 'scale(1)';
+                    }
+                  }}
+                >
+                  ▶
+                </button>
+              </div>
+            )}
+            
+            {/* Debug indicator when no multiple series */}
+            {!hasMultipleSeries && allSeries && (
+              <div style={{
+                background: 'rgba(251, 191, 36, 0.2)',
+                border: '1px solid rgba(251, 191, 36, 0.5)',
+                padding: '8px 16px',
+                borderRadius: '8px',
+                fontSize: '11px',
+                fontWeight: 700,
+                color: '#fbbf24'
+              }}>
+                ⚠️ Single Series ({allSeries.length})
+              </div>
+            )}
+            
             {/* Slice Counter Display */}
             <div style={{
               background: 'linear-gradient(135deg, #0f52ba, #3b82f6)',
@@ -689,7 +839,7 @@ const DicomViewerPage = () => {
               fontWeight: 900,
               boxShadow: '0 4px 12px rgba(59, 130, 246, 0.3)'
             }}>
-              SLICE: {currentSlice} / {files?.length || 0}
+              SLICE: {currentSlice} / {currentFiles?.length || 0}
             </div>
 
             {/* Active Tool Display */}
@@ -746,7 +896,8 @@ const DicomViewerPage = () => {
         {/* DICOM Viewer */}
         <div style={{ flex: 1, position: 'relative' }}>
           <AdvancedDicomViewer
-            files={files}
+            files={currentFiles}
+            seriesName={currentSeriesName}
             activeTool={activeTool}
             isCine={cineEnabled}
             isSynced={isSyncEnabled}
@@ -764,6 +915,7 @@ const DicomViewerPage = () => {
             flipVertical={viewportProps.flipVertical}
             rotation={viewportProps.rotation}
             resetTrigger={resetTrigger}
+            key={`series-${activeSeriesIndex}`} // Force re-render when series changes
           />
 
           {/* Overlay Information */}
@@ -786,7 +938,7 @@ const DicomViewerPage = () => {
               fontWeight: 900,
               border: '1px solid rgba(255,255,255,0.1)'
             }}>
-              SLICE: {currentSlice} / {files?.length || 0}
+              SLICE: {currentSlice} / {currentFiles?.length || 0}
             </div>
             {activeMetadata && (
               <div style={{

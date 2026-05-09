@@ -256,9 +256,6 @@ const ReportingPage = () => {
       // CACHE FOR OFFLINE USE
       await nativeStorage.set(`1rad_cache_appointment_${appId}`, appointmentData);
       
-      // CACHE FOR OFFLINE USE
-      await nativeStorage.set(`1rad_cache_appointment_${appId}`, appointmentData);
-      
       if (reportRes.data?.success && reportRes.data.data) {
         const r = reportRes.data.data;
         console.info(`[1RAD] Found Existing Report. Methodology: ${r.reportingMode || 'UNDEFINED'}`);
@@ -3462,33 +3459,77 @@ const ReportingPage = () => {
                   onClick={() => {
                     console.log('[FULL VIEW] Button clicked');
                     console.log('[FULL VIEW] uploadedFiles:', uploadedFiles);
+                    console.log('[FULL VIEW] uploadedFiles.length:', uploadedFiles.length);
+                    console.log('[FULL VIEW] Total series count:', uploadedFiles.length);
                     console.log('[FULL VIEW] activeAssetIndex:', activeAssetIndex);
-                    console.log('[FULL VIEW] Current asset:', uploadedFiles[activeAssetIndex]);
                     console.log('[FULL VIEW] activeAppointment:', activeAppointment);
                     
-                    if (uploadedFiles.length > 0 && uploadedFiles[activeAssetIndex]?.rawFiles) {
+                    // Detailed logging of each series
+                    uploadedFiles.forEach((file, index) => {
+                      console.log(`[FULL VIEW] Series ${index + 1}:`, {
+                        name: file.name,
+                        hasRawFiles: !!file.rawFiles,
+                        rawFilesCount: file.rawFiles?.length || 0,
+                        seriesUID: file.seriesUID,
+                        modality: file.modality
+                      });
+                    });
+                    
+                    // Check if we have any files with rawFiles
+                    const validSeries = uploadedFiles.filter(file => file.rawFiles && file.rawFiles.length > 0);
+                    
+                    console.log('[FULL VIEW] Valid series count:', validSeries.length);
+                    console.log('[FULL VIEW] Valid series:', validSeries.map(s => s.name));
+                    
+                    if (validSeries.length > 0) {
+                      // Pass ALL series to the viewer, not just the active one
+                      const allSeries = validSeries.map(series => ({
+                        name: series.name,
+                        files: series.rawFiles,
+                        seriesUID: series.seriesUID,
+                        modality: series.modality
+                      }));
+                      
                       const navigationState = {
-                        files: uploadedFiles[activeAssetIndex].rawFiles,
-                        seriesName: uploadedFiles[activeAssetIndex].name,
+                        allSeries: allSeries, // Pass all series
+                        files: validSeries[0].rawFiles, // Default to first series for backward compatibility
+                        seriesName: `${validSeries.length} Series Available`,
+                        activeSeriesIndex: activeAssetIndex, // Remember which series was active
                         appointmentData: {
                           ...activeAppointment,
-                          appointmentId: appointmentId, // Ensure we have the appointment ID
+                          appointmentId: appointmentId,
                           id: appointmentId
                         }
                       };
                       
-                      console.log('[FULL VIEW] Navigating to DICOM viewer with state:', navigationState);
+                      console.log('[FULL VIEW] Navigating to DICOM viewer with ALL series:', {
+                        totalSeries: allSeries.length,
+                        seriesNames: allSeries.map(s => s.name),
+                        totalFiles: allSeries.reduce((sum, s) => sum + s.files.length, 0),
+                        navigationState: navigationState
+                      });
+                      
+                      console.log('[FULL VIEW] 🚀 Navigation state being passed:', JSON.stringify({
+                        allSeriesCount: navigationState.allSeries.length,
+                        filesCount: navigationState.files.length,
+                        seriesName: navigationState.seriesName,
+                        activeSeriesIndex: navigationState.activeSeriesIndex
+                      }, null, 2));
                       
                       navigate('/dicom-viewer', {
                         state: navigationState,
-                        replace: false // Don't replace history entry
+                        replace: false
                       });
                     } else {
                       console.error('[FULL VIEW] No DICOM files available');
                       console.error('[FULL VIEW] uploadedFiles.length:', uploadedFiles.length);
-                      console.error('[FULL VIEW] activeAssetIndex:', activeAssetIndex);
-                      console.error('[FULL VIEW] rawFiles:', uploadedFiles[activeAssetIndex]?.rawFiles);
-                      alert('No DICOM files available for full-screen viewing. Please upload DICOM files first.');
+                      console.error('[FULL VIEW] Valid series count:', validSeries.length);
+                      console.error('[FULL VIEW] Files with rawFiles:', uploadedFiles.map(f => ({
+                        name: f.name,
+                        hasRawFiles: !!f.rawFiles,
+                        rawFilesCount: f.rawFiles?.length || 0
+                      })));
+                      alert('No DICOM files available for full-screen viewing. Please ensure DICOM files are loaded first.');
                     }
                   }}
                   title="Open Full Screen DICOM Viewer"

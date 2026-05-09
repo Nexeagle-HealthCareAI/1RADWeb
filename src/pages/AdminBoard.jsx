@@ -3,6 +3,8 @@ import apiClient, { BASE_URL } from '../api/apiClient';
 import useAuth from '../auth/useAuth';
 import { ROLE_LABELS } from '../data/roles';
 import { Document, Page, pdfjs } from 'react-pdf';
+import useOffline from '../hooks/useOffline';
+import { nativeStorage } from '../hooks/useElectron';
 import '../styles/global.css';
 import '../styles/AdminBoard.css';
 
@@ -40,6 +42,7 @@ const SECTIONS_POOL = [
 
 export default function AdminBoard() {
   const { currentUser, logout, activeCenter, centers, switchCenter, refreshCenters, createCenter } = useAuth();
+  const { isOnline, addToOutbox } = useOffline();
   const [activeTab, setActiveTab] = useState('INTELLIGENCE');
   const [layouts, setLayouts] = useState(INITIAL_LAYOUTS);
   const [patients, setPatients] = useState([]);
@@ -100,9 +103,6 @@ export default function AdminBoard() {
   const [isExporting, setIsExporting] = useState(false);
   
   // Referral Payout State
-  const [isPayoutDrawerOpen, setIsPayoutDrawerOpen] = useState(false);
-  const [isSavingPayout, setIsSavingPayout] = useState(false);
-  const [editPayout, setEditPayout] = useState({ referrerId: '', referrerName: '', amount: 0, modality: 'MRI', remarks: '', referenceNumber: '' });
   const [showExportOverlay, setShowExportOverlay] = useState(false);
   const [exportParams, setExportParams] = useState({ start: TODAY, end: TODAY, allTime: false });
   const [loading, setLoading] = useState(false);
@@ -152,70 +152,61 @@ export default function AdminBoard() {
   const [pageOverflowBehavior, setPageOverflowBehavior] = useState('continue'); // 'continue', 'newPage', 'truncate'
 
   // Sync settings when doctor selection changes
+  const fetchDoctorProtocol = useCallback(async (docId) => {
+    if (!docId) {
+      setPrescriptionSettings({
+        headerMargin: 50, leftMargin: 20, rightMargin: 20, bottomMargin: 30,
+        fontSize: 14, fontColor: '#1e293b', fontFamily: 'Inter', letterhead: null,
+        letterheadFile: null
+      });
+      setActiveProtocolData(null);
+      return;
+    }
+
+    setIsProtocolLoading(true);
+    try {
+      const res = await apiClient.get(`/Prescription/${docId}`);
+      if (res.data?.success && res.data?.data) {
+        const data = res.data.data;
+        setActiveProtocolData(data);
+        const settings = {
+          headerMargin: Number(data.headerMargin) || 50,
+          leftMargin: Number(data.leftMargin) || 20,
+          rightMargin: Number(data.rightMargin) || 20,
+          bottomMargin: Number(data.bottomMargin) || 30,
+          fontSize: Number(data.fontSize) || 14,
+          fontColor: data.fontColor || '#1e293b',
+          fontFamily: data.fontFamily || 'Inter',
+          letterhead: data.letterheadBlobUrl || null,
+          letterheadFile: null
+        };
+        setPrescriptionSettings(settings);
+        await nativeStorage.set(`1rad_cache_prescription_${docId}`, { data, settings });
+      } else {
+        setActiveProtocolData(null);
+        setPrescriptionSettings({
+          headerMargin: 50, leftMargin: 20, rightMargin: 20, bottomMargin: 30,
+          fontSize: 14, fontColor: '#1e293b', fontFamily: 'Inter', letterhead: null,
+          letterheadFile: null
+        });
+      }
+    } catch (err) {
+      console.error("[PRESCRIPTION] Fetch failed, trying cache", err);
+      const cached = await nativeStorage.get(`1rad_cache_prescription_${docId}`);
+      if (cached) {
+        setActiveProtocolData(cached.data);
+        setPrescriptionSettings(cached.settings);
+      } else {
+        setActiveProtocolData(null);
+      }
+    } finally {
+      setIsProtocolLoading(false);
+    }
+  }, []);
+
   useEffect(() => {
-    const fetchDoctorProtocol = async () => {
-      if (!selectedPrescriptionDoctorId) {
-        setPrescriptionSettings({
-          headerMargin: 50, leftMargin: 20, rightMargin: 20, bottomMargin: 30,
-          fontSize: 14, fontColor: '#1e293b', fontFamily: 'Inter', letterhead: null,
-          letterheadFile: null
-        });
-        setActiveProtocolData(null);
-        return;
-      }
-
-      setIsProtocolLoading(true);
-      try {
-        const res = await apiClient.get(`/Prescription/${selectedPrescriptionDoctorId}`);
-        console.log('[PRESCRIPTION] API Response:', res.data);
-        
-        if (res.data?.success && res.data?.data) {
-          const data = res.data.data;
-          setActiveProtocolData(data);
-          
-          // Bind all API data to settings
-          setPrescriptionSettings({
-            headerMargin: Number(data.headerMargin) || 50,
-            leftMargin: Number(data.leftMargin) || 20,
-            rightMargin: Number(data.rightMargin) || 20,
-            bottomMargin: Number(data.bottomMargin) || 30,
-            fontSize: Number(data.fontSize) || 14,
-            fontColor: data.fontColor || '#1e293b',
-            fontFamily: data.fontFamily || 'Inter',
-            letterhead: data.letterheadBlobUrl || null,
-            letterheadFile: null
-          });
-          
-          console.log('[PRESCRIPTION] Settings updated:', {
-            margins: { header: data.headerMargin, left: data.leftMargin, right: data.rightMargin, bottom: data.bottomMargin },
-            font: { size: data.fontSize, color: data.fontColor, family: data.fontFamily },
-            letterhead: data.letterheadBlobUrl
-          });
-        } else {
-          setActiveProtocolData(null);
-          // Reset to defaults if no protocol found for this doctor
-          setPrescriptionSettings({
-            headerMargin: 50, leftMargin: 20, rightMargin: 20, bottomMargin: 30,
-            fontSize: 14, fontColor: '#1e293b', fontFamily: 'Inter', letterhead: null,
-            letterheadFile: null
-          });
-          console.log('[PRESCRIPTION] No protocol found for doctor, using defaults');
-        }
-      } catch (err) {
-        console.error("[PRESCRIPTION] Failed to fetch protocol:", err);
-        setActiveProtocolData(null);
-        setPrescriptionSettings({
-          headerMargin: 50, leftMargin: 20, rightMargin: 20, bottomMargin: 30,
-          fontSize: 14, fontColor: '#1e293b', fontFamily: 'Inter', letterhead: null,
-          letterheadFile: null
-        });
-      } finally {
-        setIsProtocolLoading(false);
-      }
-    };
-
-    fetchDoctorProtocol();
-  }, [selectedPrescriptionDoctorId]);
+    fetchDoctorProtocol(selectedPrescriptionDoctorId);
+  }, [selectedPrescriptionDoctorId, fetchDoctorProtocol]);
 
   const MOCK_REPORT_DATA = {
     patientName: "Johnathan Doe",
@@ -238,8 +229,11 @@ export default function AdminBoard() {
       setLoading(true);
       const res = await apiClient.get('/finance/matrix');
       setFinancialMatrix(res.data);
+      await nativeStorage.set('1rad_cache_finance_matrix', res.data);
     } catch (err) {
-      console.error('[FINANCE] Matrix fetch failed', err);
+      console.error('[FINANCE] Matrix fetch failed, trying cache', err);
+      const cached = await nativeStorage.get('1rad_cache_finance_matrix');
+      if (cached) setFinancialMatrix(cached);
     } finally {
       setLoading(false);
     }
@@ -249,8 +243,11 @@ export default function AdminBoard() {
     try {
       const res = await apiClient.get('/finance/registry');
       setServicePrices(res.data);
+      await nativeStorage.set('1rad_cache_prices', res.data);
     } catch (err) {
-      console.error('[FINANCE] Registry fetch failed', err);
+      console.error('[FINANCE] Registry fetch failed, trying cache', err);
+      const cached = await nativeStorage.get('1rad_cache_prices');
+      if (cached) setServicePrices(cached);
     }
   }, []);
 
@@ -258,8 +255,11 @@ export default function AdminBoard() {
     try {
       const res = await apiClient.get('/finance/expenses');
       setExpenses(res.data);
+      await nativeStorage.set('1rad_cache_expenses', res.data);
     } catch (err) {
-      console.error('[FINANCE] Expenses fetch failed', err);
+      console.error('[FINANCE] Expenses fetch failed, trying cache', err);
+      const cached = await nativeStorage.get('1rad_cache_expenses');
+      if (cached) setExpenses(cached);
     }
   }, []);
 
@@ -291,12 +291,12 @@ export default function AdminBoard() {
       setPersonnelLoading(true);
       const res = await apiClient.get('/personnel');
       // Map PersonnelDto to frontend state
-      const mapped = res.data.map(p => ({
+      const mapped = (res.data || []).map(p => ({
         id: p.userId,
-        name: p.fullName,
+        name: p.fullName || 'UNKNOWN_STAFF',
         email: p.email,
         mobile: p.mobile,
-        roles: p.roles.map(r => r.toLowerCase()),
+        roles: (p.roles || []).map(r => String(r).toLowerCase()),
         specialization: p.specialization,
         degree: p.degree,
         licenseNo: p.licenseNo,
@@ -304,8 +304,11 @@ export default function AdminBoard() {
         createdAt: p.createdAt
       }));
       setPersonnel(mapped);
+      await nativeStorage.set('1rad_cache_personnel', mapped);
     } catch (err) {
-      console.error('Personnel fetch failed', err);
+      console.error('Personnel fetch failed, trying cache', err);
+      const cached = await nativeStorage.get('1rad_cache_personnel');
+      if (cached) setPersonnel(cached);
     } finally {
       setPersonnelLoading(false);
     }
@@ -323,8 +326,11 @@ export default function AdminBoard() {
           };
       const res = await apiClient.get('/patients', { params });
       setPatientMasterList(res.data);
+      await nativeStorage.set(`1rad_cache_patient_master_${referralFilterMode}`, res.data);
     } catch (err) {
-      console.error('[PATIENT MASTER] Fetch failed', err);
+      console.error('[PATIENT MASTER] Fetch failed, trying cache', err);
+      const cached = await nativeStorage.get(`1rad_cache_patient_master_${referralFilterMode}`);
+      if (cached) setPatientMasterList(cached);
     } finally {
       setLoadingMaster(false);
     }
@@ -360,8 +366,7 @@ export default function AdminBoard() {
     try {
       setHospitalLoading(true);
       const res = await apiClient.get(`/hospitals/${hubId}`);
-      // Map Hub Metadata to frontend state
-      setHospitalData({
+      const data = {
         hospitalName: res.data.hospitalName || res.data.HospitalName || '',
         hospitalAddress: res.data.hospitalAddress || res.data.HospitalAddress || '',
         gstin: res.data.gstin || res.data.GSTIN || '',
@@ -369,10 +374,17 @@ export default function AdminBoard() {
         pan: res.data.pan || res.data.PAN || '',
         nabhNumber: res.data.nabhNumber || res.data.NABHNumber || '',
         isAutoBillingEnabled: res.data.isAutoBillingEnabled || res.data.IsAutoBillingEnabled || false
-      });
+      };
+      setHospitalData(data);
       setViewingHubId(hubId);
+      await nativeStorage.set(`1rad_cache_hospital_${hubId}`, data);
     } catch (err) {
-      console.error('[HOSPITAL] Fetch failed', err);
+      console.error('[HOSPITAL] Fetch failed, trying cache', err);
+      const cached = await nativeStorage.get(`1rad_cache_hospital_${hubId}`);
+      if (cached) {
+        setHospitalData(cached);
+        setViewingHubId(hubId);
+      }
     } finally {
       setHospitalLoading(false);
     }
@@ -402,15 +414,21 @@ export default function AdminBoard() {
         };
       });
       setMappedHospitals(mapped);
+      await nativeStorage.set('1rad_cache_hospitals_group', mapped);
     } catch (err) {
-      console.error('[HUB REGISTRY] Sync failed', err);
-      // Fallback: use basic center info if API fails
-      setMappedHospitals(centers.map(c => ({
-        hospitalId: c.id,
-        hospitalName: c.name,
-        hospitalAddress: 'Offline routing active.',
-        status: 'active'
-      })));
+      console.error('[HUB REGISTRY] Sync failed, trying cache', err);
+      const cached = await nativeStorage.get('1rad_cache_hospitals_group');
+      if (cached) {
+        setMappedHospitals(cached);
+      } else {
+        // Ultimate fallback: use basic center info if API and cache fail
+        setMappedHospitals(centers.map(c => ({
+          hospitalId: c.id,
+          hospitalName: c.name,
+          hospitalAddress: 'Offline routing active.',
+          status: 'active'
+        })));
+      }
     } finally {
       setHospitalLoading(false);
     }
@@ -427,8 +445,11 @@ export default function AdminBoard() {
           };
       const res = await apiClient.get('/referrers/intelligence', { params });
       setReferralIntelligence(res.data);
+      await nativeStorage.set(`1rad_cache_referral_intel_${referralFilterMode}`, res.data);
     } catch (err) {
-      console.error('[REFERRAL INTEL] Fetch failed', err);
+      console.error('[REFERRAL INTEL] Fetch failed, trying cache', err);
+      const cached = await nativeStorage.get(`1rad_cache_referral_intel_${referralFilterMode}`);
+      if (cached) setReferralIntelligence(cached);
     } finally {
       setReferralLoading(false);
     }
@@ -457,8 +478,11 @@ export default function AdminBoard() {
       setLoadingOutlook(true);
       const res = await apiClient.get('/intelligence/outlook', { params: { referenceDate: dateString || TODAY } });
       setOutlookData(res.data);
+      await nativeStorage.set(`1rad_cache_outlook_${dateString || TODAY}`, res.data);
     } catch (err) {
-      console.error('Tactical Insight Failure:', err);
+      console.error('Tactical Insight Failure, trying cache:', err);
+      const cached = await nativeStorage.get(`1rad_cache_outlook_${dateString || TODAY}`);
+      if (cached) setOutlookData(cached);
     } finally {
       setLoadingOutlook(false);
     }
@@ -521,9 +545,18 @@ export default function AdminBoard() {
 
   const handleDeployChain = async (e) => {
     e.preventDefault();
+    const payload = newChainData;
+
+    if (!isOnline) {
+      await addToOutbox('CHAIN_DEPLOY', payload);
+      alert('OFFLINE_MODE: Institutional expansion protocol queued for sync.');
+      setIsChainDrawerOpen(false);
+      return;
+    }
+
     try {
       setIsDeployingChain(true);
-      const res = await apiClient.post('/hospitals/chain', newChainData);
+      const res = await apiClient.post('/hospitals/chain', payload);
       
       if (res.data.success) {
         setIsChainDrawerOpen(false);
@@ -534,7 +567,13 @@ export default function AdminBoard() {
       }
     } catch (err) {
       console.error('Chain Deployment Failure:', err);
-      alert(err.response?.data?.message || 'DEPLOYMENT FAILURE: Institutional expansion protocol failed.');
+      if (!err.response) {
+        await addToOutbox('CHAIN_DEPLOY', payload);
+        alert('NETWORK_ERROR: Chain deployment added to offline outbox.');
+        setIsChainDrawerOpen(false);
+      } else {
+        alert(err.response?.data?.message || 'DEPLOYMENT FAILURE: Institutional expansion protocol failed.');
+      }
     } finally {
       setIsDeployingChain(false);
     }
@@ -555,19 +594,26 @@ export default function AdminBoard() {
     const targetHubId = viewingHubId || activeCenter?.id;
     if (!targetHubId) return;
 
+    const payload = {
+      hospitalName: hospitalData.hospitalName,
+      hospitalAddress: hospitalData.hospitalAddress,
+      gstin: hospitalData.gstin,
+      registrationNumber: hospitalData.registrationNumber,
+      pan: hospitalData.pan,
+      nabhNumber: hospitalData.nabhNumber
+    };
+
+    if (!isOnline) {
+      await addToOutbox('HOSPITAL_UPDATE', { id: targetHubId, ...payload });
+      alert('OFFLINE_MODE: Institutional node metadata queued for sync.');
+      setIsHospitalDrawerOpen(false);
+      return;
+    }
+
     try {
       setSavingHospital(true);
       setHospitalMessage({ type: '', text: '' });
       
-      const payload = {
-        hospitalName: hospitalData.hospitalName,
-        hospitalAddress: hospitalData.hospitalAddress,
-        gstin: hospitalData.gstin,
-        registrationNumber: hospitalData.registrationNumber,
-        pan: hospitalData.pan,
-        nabhNumber: hospitalData.nabhNumber
-      };
-
       await apiClient.put(`/hospitals/${targetHubId}`, payload);
       setHospitalMessage({ type: 'success', text: 'METADATA RE-SYNCED: Hub configuration updated successfully.' });
       
@@ -580,7 +626,14 @@ export default function AdminBoard() {
         setHospitalMessage({ type: '', text: '' });
       }, 2000);
     } catch (err) {
-      setHospitalMessage({ type: 'error', text: err.response?.data?.message || 'DEPLOYMENT FAILURE: Failed to update institutional node metadata.' });
+      console.error('[HOSPITAL] Save failed', err);
+      if (!err.response) {
+        await addToOutbox('HOSPITAL_UPDATE', { id: targetHubId, ...payload });
+        alert('NETWORK_ERROR: Hub configuration added to offline outbox.');
+        setIsHospitalDrawerOpen(false);
+      } else {
+        setHospitalMessage({ type: 'error', text: err.response?.data?.message || 'DEPLOYMENT FAILURE: Failed to update institutional node metadata.' });
+      }
     } finally {
       setSavingHospital(false);
     }
@@ -591,23 +644,36 @@ export default function AdminBoard() {
     const targetHubId = activeCenter?.id;
     if (!targetHubId) return;
 
-    try {
-      const payload = {
-        hospitalName: activeCenter.name,
-        hospitalAddress: activeCenter.address || 'Metadata synchronization active.',
-        gstin: activeCenter.gstin || '',
-        registrationNumber: activeCenter.registrationNumber || '',
-        pan: activeCenter.pan || '',
-        nabhNumber: activeCenter.nabhNumber || '',
-        isAutoBillingEnabled: newAutoBill
-      };
+    const payload = {
+      hospitalName: activeCenter.name,
+      hospitalAddress: activeCenter.address || 'Metadata synchronization active.',
+      gstin: activeCenter.gstin || '',
+      registrationNumber: activeCenter.registrationNumber || '',
+      pan: activeCenter.pan || '',
+      nabhNumber: activeCenter.nabhNumber || '',
+      isAutoBillingEnabled: newAutoBill
+    };
 
+    if (!isOnline) {
+      await addToOutbox('HOSPITAL_UPDATE', { id: targetHubId, ...payload });
+      alert(`OFFLINE_MODE: Billing protocol ${newAutoBill ? 'ENABLED' : 'DISABLED'} (Queued for sync).`);
+      setBillingSettings(prev => ({ ...prev, autoBill: newAutoBill }));
+      return;
+    }
+
+    try {
       await apiClient.put(`/hospitals/${targetHubId}`, payload);
       setBillingSettings(prev => ({ ...prev, autoBill: newAutoBill }));
       await refreshCenters();
     } catch (err) {
       console.error('[FINANCE] Protocol update failed', err);
-      alert('SYSTEM ERROR: Failed to persist billing protocol. Please check institutional connectivity.');
+      if (!err.response) {
+        await addToOutbox('HOSPITAL_UPDATE', { id: targetHubId, ...payload });
+        alert('NETWORK_ERROR: Billing protocol added to offline outbox.');
+        setBillingSettings(prev => ({ ...prev, autoBill: newAutoBill }));
+      } else {
+        alert('SYSTEM ERROR: Failed to persist billing protocol. Please check institutional connectivity.');
+      }
     }
   };
 
@@ -837,11 +903,25 @@ export default function AdminBoard() {
       return;
     }
     if (window.confirm('Are you sure you want to remove this staff member from the current hub?')) {
+      if (!isOnline) {
+        await addToOutbox('PERSONNEL_DELETE', { id });
+        alert('OFFLINE_MODE: Personnel decommissioning queued for sync.');
+        setPersonnel(prev => prev.filter(u => u.id !== id)); // Optimistic UI
+        return;
+      }
+
       try {
         await apiClient.delete(`/personnel/${id}`);
         fetchPersonnel();
       } catch (err) {
-        alert(err.response?.data?.message || 'Failed to remove personnel.');
+        console.error('[PERSONNEL] Delete failed', err);
+        if (!err.response) {
+          await addToOutbox('PERSONNEL_DELETE', { id });
+          alert('NETWORK_ERROR: Decommissioning added to offline outbox.');
+          setPersonnel(prev => prev.filter(u => u.id !== id)); // Optimistic UI
+        } else {
+          alert(err.response?.data?.message || 'Failed to remove personnel.');
+        }
       }
     }
   };
@@ -880,18 +960,26 @@ export default function AdminBoard() {
 
   const handleSaveUser = async (e) => {
     e.preventDefault();
-    try {
-      const payload = {
-        fullName: editUser.name,
-        email: editUser.email,
-        mobile: editUser.mobile,
-        password: editUser.password,
-        roleNames: editUser.roles, // Backend expects roleNames
-        specialization: editUser.specialization,
-        degree: editUser.degree,
-        licenseNo: editUser.licenseNo
-      };
+    const payload = {
+      fullName: editUser.name,
+      email: editUser.email,
+      mobile: editUser.mobile,
+      password: editUser.password,
+      roleNames: editUser.roles, // Backend expects roleNames
+      specialization: editUser.specialization,
+      degree: editUser.degree,
+      licenseNo: editUser.licenseNo
+    };
 
+    if (!isOnline) {
+      const type = editUser.id ? 'PERSONNEL_UPDATE' : 'PERSONNEL_CREATE';
+      await addToOutbox(type, { id: editUser.id, ...payload });
+      alert(`OFFLINE_MODE: Personnel ${editUser.id ? 'update' : 'registration'} queued for sync.`);
+      setIsUserDrawerOpen(false);
+      return;
+    }
+
+    try {
       if (editUser.id) {
         await apiClient.put(`/personnel/${editUser.id}`, payload);
       } else {
@@ -900,7 +988,15 @@ export default function AdminBoard() {
       setIsUserDrawerOpen(false);
       fetchPersonnel();
     } catch (err) {
-      alert(err.response?.data?.message || 'Failed to save staff record.');
+      console.error('[PERSONNEL] Save failed', err);
+      if (!err.response) {
+        const type = editUser.id ? 'PERSONNEL_UPDATE' : 'PERSONNEL_CREATE';
+        await addToOutbox(type, { id: editUser.id, ...payload });
+        alert('NETWORK_ERROR: Staff record added to offline outbox.');
+        setIsUserDrawerOpen(false);
+      } else {
+        alert(err.response?.data?.message || 'Failed to save staff record.');
+      }
     }
   };
 
@@ -1010,20 +1106,43 @@ export default function AdminBoard() {
   // --- PRICE MGMT ---
   const handleSavePrice = async (e) => {
     e.preventDefault();
+    const payload = editPrice;
+    
+    if (!isOnline) {
+      await addToOutbox('PRICE_UPDATE', payload);
+      alert('OFFLINE_MODE: Service price update queued for sync.');
+      setIsPriceDrawerOpen(false);
+      return;
+    }
+
     try {
-      await apiClient.post('/finance/registry', editPrice);
+      await apiClient.post('/finance/registry', payload);
       setIsPriceDrawerOpen(false);
       fetchServicePrices();
     } catch (err) {
       console.error('[FINANCE] Save failed', err);
+      if (!err.response) {
+        await addToOutbox('PRICE_UPDATE', payload);
+        alert('NETWORK_ERROR: Price update added to offline outbox.');
+        setIsPriceDrawerOpen(false);
+      }
     }
   };
 
   const handleSaveExpense = async (e) => {
     e.preventDefault();
+    const payload = editExpense;
+
+    if (!isOnline) {
+      await addToOutbox('EXPENSE', payload);
+      alert('OFFLINE_MODE: Operational expense queued for sync.');
+      setIsExpenseDrawerOpen(false);
+      return;
+    }
+
     try {
       setSavingExpense(true);
-      await apiClient.post('/finance/expense', editExpense);
+      await apiClient.post('/finance/expense', payload);
       setIsExpenseDrawerOpen(false);
       setEditExpense({ 
         description: '', 
@@ -1041,7 +1160,13 @@ export default function AdminBoard() {
       fetchExpenses(); // Refresh expense list
     } catch (err) {
       console.error('[FINANCE] Expense save failed', err);
-      alert('PROTOCOL FAILURE: Failed to record operational expense.');
+      if (!err.response) {
+        await addToOutbox('EXPENSE', payload);
+        alert('NETWORK_ERROR: Expense added to offline outbox.');
+        setIsExpenseDrawerOpen(false);
+      } else {
+        alert('PROTOCOL FAILURE: Failed to record operational expense.');
+      }
     } finally {
       setSavingExpense(false);
     }
@@ -1049,61 +1174,58 @@ export default function AdminBoard() {
 
   const handleDeleteExpense = async (id) => {
     if (!window.confirm('Are you sure you want to delete this operational expense?')) return;
+    
+    if (!isOnline) {
+      await addToOutbox('EXPENSE_DELETE', { id });
+      alert('OFFLINE_MODE: Operational expense deletion queued for sync.');
+      setExpenses(prev => prev.filter(e => e.id !== id)); // Optimistic UI
+      return;
+    }
+
     try {
       await apiClient.delete(`/finance/expenses/${id}`);
       fetchExpenses();
       fetchFinancialMatrix();
     } catch (err) {
       console.error('[FINANCE] Failed to delete expense', err);
-      alert('PROTOCOL FAILURE: Could not delete expense.');
+      if (!err.response) {
+        await addToOutbox('EXPENSE_DELETE', { id });
+        alert('NETWORK_ERROR: Deletion added to offline outbox.');
+        setExpenses(prev => prev.filter(e => e.id !== id)); // Optimistic UI
+      } else {
+        alert('PROTOCOL FAILURE: Could not delete expense.');
+      }
     }
   };
 
   const handleDeletePrice = async (id) => {
     if (window.confirm('Are you sure you want to delete this service charge?')) {
+      if (!isOnline) {
+        await addToOutbox('PRICE_DELETE', { id });
+        alert('OFFLINE_MODE: Service charge deletion queued for sync.');
+        setServicePrices(prev => prev.filter(p => p.id !== id)); // Optimistic UI
+        return;
+      }
+
       try {
         await apiClient.delete(`/finance/registry/${id}`);
         fetchServicePrices();
       } catch (err) {
         console.error('[FINANCE] Delete failed', err);
+        if (!err.response) {
+          await addToOutbox('PRICE_DELETE', { id });
+          alert('NETWORK_ERROR: Deletion added to offline outbox.');
+          setServicePrices(prev => prev.filter(p => p.id !== id)); // Optimistic UI
+        }
       }
     }
   };
 
-  const handleSavePayout = async (e) => {
-    e.preventDefault();
-    if (!editPayout.referrerId) {
-      alert("PROTOCOL ERROR: Referrer identity is missing. Please ensure a valid partner is selected.");
-      return;
-    }
-
-    try {
-      setIsSavingPayout(true);
-      const response = await apiClient.post('/referrers/commissions', {
-        referrerId: editPayout.referrerId,
-        amount: parseFloat(editPayout.amount),
-        modality: editPayout.modality,
-        referenceNumber: editPayout.referenceNumber,
-        remarks: editPayout.remarks
-      });
-
-      if (response.data?.commissionId) {
-        setIsPayoutDrawerOpen(false);
-        fetchReferralIntelligence();
-        alert('PAYMENT LOGGED: Financial commission recorded in strategic ledger.');
-      }
-    } catch (err) {
-      console.error('[PAYOUT] Transaction failure:', err);
-      alert('SYSTEM ERROR: Could not commit payout to global registry.');
-    } finally {
-      setIsSavingPayout(false);
-    }
-  };
 
   // --- RENDERERS ---
   const renderDocumentation = () => {
-    const doctors = personnel.filter(u => u.roles?.includes('doctor') || u.roles?.includes('admindoctor'));
-    const docId = selectedDocId || (doctors[0]?.id.toString());
+    const doctors = (personnel || []).filter(u => u?.roles?.includes('doctor') || u?.roles?.includes('admindoctor'));
+    const docId = selectedDocId || (doctors[0]?.id?.toString());
     const doc = personnel.find(u => u.id === docId);
 
     if (!doc) return <div style={{ padding: '40px', textAlign: 'center', color: '#888' }}>NO DOCTORS DETECTED ON ROSTER</div>;
@@ -1707,16 +1829,28 @@ export default function AdminBoard() {
             <button 
               disabled={!selectedPrescriptionDoctorId || isPrescriptionSaving}
               onClick={async () => {
+                const payload = {
+                  DoctorId: selectedPrescriptionDoctorId,
+                  HeaderMargin: prescriptionSettings.headerMargin,
+                  LeftMargin: prescriptionSettings.leftMargin,
+                  RightMargin: prescriptionSettings.rightMargin,
+                  BottomMargin: prescriptionSettings.bottomMargin,
+                  FontSize: prescriptionSettings.fontSize,
+                  FontColor: prescriptionSettings.fontColor,
+                  FontFamily: prescriptionSettings.fontFamily
+                };
+
+                // Note: File uploads in outbox require serialization or local path handling.
+                // For now, we queue the settings; files will need a live connection.
+                if (!isOnline) {
+                  await addToOutbox('PRESCRIPTION_UPDATE', payload);
+                  alert('OFFLINE_MODE: Prescription protocol settings queued for sync. (Note: Letterhead files require an active connection)');
+                  return;
+                }
+
                 setIsPrescriptionSaving(true);
                 const formData = new FormData();
-                formData.append('DoctorId', selectedPrescriptionDoctorId);
-                formData.append('HeaderMargin', prescriptionSettings.headerMargin);
-                formData.append('LeftMargin', prescriptionSettings.leftMargin);
-                formData.append('RightMargin', prescriptionSettings.rightMargin);
-                formData.append('BottomMargin', prescriptionSettings.bottomMargin);
-                formData.append('FontSize', prescriptionSettings.fontSize);
-                formData.append('FontColor', prescriptionSettings.fontColor);
-                formData.append('FontFamily', prescriptionSettings.fontFamily);
+                Object.entries(payload).forEach(([k, v]) => formData.append(k, v));
                 
                 if (prescriptionSettings.letterheadFile) {
                    formData.append('LetterheadFile', prescriptionSettings.letterheadFile);
@@ -1729,8 +1863,13 @@ export default function AdminBoard() {
                    const updated = response.data;
                    setPrescriptionSettings(prev => ({...prev, letterhead: updated.data?.letterheadBlobUrl, letterheadFile: null}));
                    alert("STRATEGIC PROTOCOL SYNCHRONIZED SUCCESSFULLY 📡");
+                   fetchDoctorProtocol(selectedPrescriptionDoctorId);
                 } catch (err) {
                    console.error("Sync failed:", err);
+                   if (!err.response) {
+                      await addToOutbox('PRESCRIPTION_UPDATE', payload);
+                      alert('NETWORK_ERROR: Settings added to offline outbox.');
+                   }
                 } finally {
                    setIsPrescriptionSaving(false);
                 }
@@ -2359,9 +2498,9 @@ export default function AdminBoard() {
               <span style={{ color: '#94a3b8', fontSize: '10px' }}>LOGGED DATE: {selectedDateFilter === TODAY ? 'TODAY' : selectedDateFilter}</span>
            </div>
            <div style={{ display: 'flex', gap: '10px' }}>
-              {topSources.map((s, i) => (
-                <div key={s.name} style={{ fontSize: '9px', fontWeight: 950, padding: '6px 12px', background: i === 0 ? '#eff6ff' : '#f8fafc', color: i === 0 ? '#2563eb' : '#64748b', borderRadius: '10px', border: '1px solid #e2e8f0' }}>
-                   {s.name.toUpperCase()} ({s.count})
+              {(topSources || []).map((s, i) => (
+                <div key={s.name || i} style={{ fontSize: '9px', fontWeight: 950, padding: '6px 12px', background: i === 0 ? '#eff6ff' : '#f8fafc', color: i === 0 ? '#2563eb' : '#64748b', borderRadius: '10px', border: '1px solid #e2e8f0' }}>
+                   {(s.name || 'Unknown').toUpperCase()} ({s.count || 0})
                 </div>
               ))}
            </div>
@@ -2369,53 +2508,53 @@ export default function AdminBoard() {
 
         {/* Level 1: Tactical Hero KPI Nodes */}
         <div className="summary-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: '20px', marginBottom: '30px' }}>
-          <div className="summary-card" style={{ background: 'linear-gradient(135deg, #0f52ba 0%, #061a40 100%)', padding: '20px', borderRadius: '24px', color: 'white', position: 'relative', overflow: 'hidden' }}>
-             <div style={{ position: 'absolute', top: '-10px', right: '-10px', fontSize: '80px', opacity: 0.05 }}>👤</div>
-             <span style={{ display: 'block', fontSize: '10px', fontWeight: 950, color: 'var(--tactical-cyan)', textTransform: 'uppercase', letterSpacing: '3px', marginBottom: '12px' }}>Universal Registry</span>
-             <div style={{ display: 'flex', alignItems: 'baseline', gap: '12px' }}>
-                <span style={{ fontSize: '32px', fontWeight: 950, letterSpacing: '-1.5px' }}>{kpis.universalRegistry}</span>
-                <span style={{ fontSize: '12px', fontWeight: 700, opacity: 0.6 }}>ENTITIES</span>
-             </div>
-             <div style={{ marginTop: '15px', fontSize: '8px', color: 'var(--tactical-cyan)', fontWeight: 900, background: 'rgba(255,255,255,0.1)', padding: '4px 10px', borderRadius: '20px', display: 'inline-block' }}>STRATEGIC RESOURCE POOL</div>
-          </div>
+           <div className="summary-card" style={{ background: 'linear-gradient(135deg, #0f52ba 0%, #061a40 100%)', padding: '20px', borderRadius: '24px', color: 'white', position: 'relative', overflow: 'hidden' }}>
+              <div style={{ position: 'absolute', top: '-10px', right: '-10px', fontSize: '80px', opacity: 0.05 }}>👤</div>
+              <span style={{ display: 'block', fontSize: '10px', fontWeight: 950, color: 'var(--tactical-cyan)', textTransform: 'uppercase', letterSpacing: '3px', marginBottom: '12px' }}>Universal Registry</span>
+              <div style={{ display: 'flex', alignItems: 'baseline', gap: '12px' }}>
+                 <span style={{ fontSize: '32px', fontWeight: 950, letterSpacing: '-1.5px' }}>{kpis?.universalRegistry || 0}</span>
+                 <span style={{ fontSize: '12px', fontWeight: 700, opacity: 0.6 }}>ENTITIES</span>
+              </div>
+              <div style={{ marginTop: '15px', fontSize: '8px', color: 'var(--tactical-cyan)', fontWeight: 900, background: 'rgba(255,255,255,0.1)', padding: '4px 10px', borderRadius: '20px', display: 'inline-block' }}>STRATEGIC RESOURCE POOL</div>
+           </div>
 
 
 
-          <div className="summary-card" style={{ background: 'white', border: '1px solid #e2e8f0', padding: '20px', borderRadius: '24px' }}>
-             <span style={{ display: 'block', fontSize: '10px', fontWeight: 950, color: '#64748b', textTransform: 'uppercase', letterSpacing: '3px', marginBottom: '12px' }}>Live Volume</span>
-             <div style={{ display: 'flex', alignItems: 'baseline', gap: '12px' }}>
-                <span style={{ fontSize: '32px', fontWeight: 950, color: '#1e293b', letterSpacing: '-1.5px' }}>{kpis.dailyMissions}</span>
-                <span style={{ fontSize: '12px', fontWeight: 700, color: '#0f52ba' }}>MISSIONS</span>
-             </div>
-             <div style={{ marginTop: '15px', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                <span style={{ fontSize: '10px', fontWeight: 950, color: '#2ecc71' }}>↑ {kpis.growthPercentage}%</span>
-                <span style={{ fontSize: '9px', fontWeight: 800, color: '#94a3b8' }}>OPERATIONAL GAIN</span>
-             </div>
-          </div>
+           <div className="summary-card" style={{ background: 'white', border: '1px solid #e2e8f0', padding: '20px', borderRadius: '24px' }}>
+              <span style={{ display: 'block', fontSize: '10px', fontWeight: 950, color: '#64748b', textTransform: 'uppercase', letterSpacing: '3px', marginBottom: '12px' }}>Live Volume</span>
+              <div style={{ display: 'flex', alignItems: 'baseline', gap: '12px' }}>
+                 <span style={{ fontSize: '32px', fontWeight: 950, color: '#1e293b', letterSpacing: '-1.5px' }}>{kpis?.dailyMissions || 0}</span>
+                 <span style={{ fontSize: '12px', fontWeight: 700, color: '#0f52ba' }}>MISSIONS</span>
+              </div>
+              <div style={{ marginTop: '15px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                 <span style={{ fontSize: '10px', fontWeight: 950, color: '#2ecc71' }}>↑ {kpis?.growthPercentage || 0}%</span>
+                 <span style={{ fontSize: '9px', fontWeight: 800, color: '#94a3b8' }}>OPERATIONAL GAIN</span>
+              </div>
+           </div>
 
-          <div className="summary-card" style={{ background: 'white', border: '1px solid #e2e8f0', padding: '20px', borderRadius: '24px' }}>
-             <span style={{ display: 'block', fontSize: '10px', fontWeight: 950, color: '#64748b', textTransform: 'uppercase', letterSpacing: '3px', marginBottom: '12px' }}>Financial Yield</span>
-             <div style={{ display: 'flex', alignItems: 'baseline', gap: '12px' }}>
-                <span style={{ fontSize: '20px', fontWeight: 950, color: '#059669' }}>₹</span>
-                <span style={{ fontSize: '32px', fontWeight: 950, color: '#1e293b', letterSpacing: '-1.5px' }}>{kpis.financialYield.toLocaleString()}</span>
-             </div>
-             <div style={{ marginTop: '15px', height: '6px', background: '#f1f5f9', borderRadius: '3px', overflow: 'hidden' }}>
-                <div style={{ width: '100%', height: '100%', background: '#059669', borderRadius: '3px' }}></div>
-             </div>
-             <div style={{ fontSize: '9px', fontWeight: 800, color: '#94a3b8', marginTop: '10px' }}>NOMINAL_SETTLEMENT: 100% REALIZED</div>
-          </div>
+           <div className="summary-card" style={{ background: 'white', border: '1px solid #e2e8f0', padding: '20px', borderRadius: '24px' }}>
+              <span style={{ display: 'block', fontSize: '10px', fontWeight: 950, color: '#64748b', textTransform: 'uppercase', letterSpacing: '3px', marginBottom: '12px' }}>Financial Yield</span>
+              <div style={{ display: 'flex', alignItems: 'baseline', gap: '12px' }}>
+                 <span style={{ fontSize: '20px', fontWeight: 950, color: '#059669' }}>₹</span>
+                 <span style={{ fontSize: '32px', fontWeight: 950, color: '#1e293b', letterSpacing: '-1.5px' }}>{(Number(kpis?.financialYield) || 0).toLocaleString()}</span>
+              </div>
+              <div style={{ marginTop: '15px', height: '6px', background: '#f1f5f9', borderRadius: '3px', overflow: 'hidden' }}>
+                 <div style={{ width: '100%', height: '100%', background: '#059669', borderRadius: '3px' }}></div>
+              </div>
+              <div style={{ fontSize: '9px', fontWeight: 800, color: '#94a3b8', marginTop: '10px' }}>NOMINAL_SETTLEMENT: 100% REALIZED</div>
+           </div>
 
-          <div className="summary-card" style={{ background: 'white', border: '1px solid #e2e8f0', padding: '20px', borderRadius: '24px' }}>
-             <span style={{ display: 'block', fontSize: '10px', fontWeight: 950, color: '#64748b', textTransform: 'uppercase', letterSpacing: '3px', marginBottom: '12px' }}>Command Latency</span>
-             <div style={{ display: 'flex', alignItems: 'baseline', gap: '12px' }}>
-                <span style={{ fontSize: '32px', fontWeight: 950, color: '#dc2626', letterSpacing: '-1.5px' }}>{kpis.averageLatencyMinutes}m</span>
-                <span style={{ fontSize: '12px', fontWeight: 700, color: '#94a3b8' }}>AVG</span>
-             </div>
-             <div style={{ display: 'flex', gap: '6px', marginTop: '15px' }}>
-                {[1,2,3,4,5,6].map(i => <div key={i} style={{ flex: 1, height: '6px', borderRadius: '3px', background: i <= 4 ? '#dc2626' : '#f1f5f9' }}></div>)}
-             </div>
-             <div style={{ fontSize: '9px', fontWeight: 800, color: '#dc2626', marginTop: '10px' }}>PEAK THROUGHPUT DETECTED</div>
-          </div>
+           <div className="summary-card" style={{ background: 'white', border: '1px solid #e2e8f0', padding: '20px', borderRadius: '24px' }}>
+              <span style={{ display: 'block', fontSize: '10px', fontWeight: 950, color: '#64748b', textTransform: 'uppercase', letterSpacing: '3px', marginBottom: '12px' }}>Command Latency</span>
+              <div style={{ display: 'flex', alignItems: 'baseline', gap: '12px' }}>
+                 <span style={{ fontSize: '32px', fontWeight: 950, color: '#dc2626', letterSpacing: '-1.5px' }}>{kpis?.averageLatencyMinutes || 0}m</span>
+                 <span style={{ fontSize: '12px', fontWeight: 700, color: '#94a3b8' }}>AVG</span>
+              </div>
+              <div style={{ display: 'flex', gap: '6px', marginTop: '15px' }}>
+                 {[1,2,3,4,5,6].map(i => <div key={i} style={{ flex: 1, height: '6px', borderRadius: '3px', background: i <= 4 ? '#dc2626' : '#f1f5f9' }}></div>)}
+              </div>
+              <div style={{ fontSize: '9px', fontWeight: 800, color: '#dc2626', marginTop: '10px' }}>PEAK THROUGHPUT DETECTED</div>
+           </div>
         </div>
 
         {/* Level 2: Clinical Modality & Peak Matrix */}
@@ -2432,7 +2571,7 @@ export default function AdminBoard() {
                     </div>
                  </div>
                  <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '15px' }}>
-                    {modalities.map(m => (
+                    {(modalities || []).map((m, idx) => (
                        <div key={m.label} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                           <span style={{ fontSize: '11px', fontWeight: 800, color: '#1e293b', display: 'flex', alignItems: 'center', gap: '10px' }}>
                              <div style={{ width: '10px', height: '10px', borderRadius: '3px', background: m.color }}></div>
@@ -2449,12 +2588,12 @@ export default function AdminBoard() {
            <div style={{ background: 'white', border: '1px solid #e2e8f0', padding: '30px', borderRadius: '24px' }}>
               <div style={{ fontSize: '10px', fontWeight: 950, color: '#64748b', textTransform: 'uppercase', letterSpacing: '2px', marginBottom: '30px' }}>Operational Peak Matrix (Daily)</div>
               <div style={{ display: 'flex', alignItems: 'flex-end', gap: '12px', height: '160px', paddingBottom: '10px', borderBottom: '1px solid #f1f5f9' }}>
-                {volumeTrends.map(day => (
-                  <div key={day.day} style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '12px' }}>
-                    <div style={{ width: '100%', height: `${(day.count / (Math.max(...volumeTrends.map(v => v.count)) || 1)) * 100}%`, background: day.isPeak ? '#dc2626' : '#0f52ba', borderRadius: '6px 6px 0 0', position: 'relative' }}>
-                       <div style={{ position: 'absolute', top: '-20px', width: '100%', textAlign: 'center', fontSize: '9px', fontWeight: 950, color: '#1e293b' }}>{day.count}</div>
+                 {(volumeTrends || []).map((day, idx) => (
+                  <div key={day.day || idx} style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '12px' }}>
+                    <div style={{ width: '100%', height: `${(day.count / (Math.max(...(volumeTrends || []).map(v => v.count)) || 1)) * 100}%`, background: day.isPeak ? '#dc2626' : '#0f52ba', borderRadius: '6px 6px 0 0', position: 'relative' }}>
+                       <div style={{ position: 'absolute', top: '-20px', width: '100%', textAlign: 'center', fontSize: '9px', fontWeight: 950, color: '#1e293b' }}>{day.count || 0}</div>
                     </div>
-                    <span style={{ fontSize: '10px', fontWeight: 800, color: '#94a3b8' }}>{day.day}</span>
+                    <span style={{ fontSize: '10px', fontWeight: 800, color: '#94a3b8' }}>{(day.day || 'N/A').toUpperCase()}</span>
                   </div>
                 ))}
               </div>
@@ -2467,30 +2606,30 @@ export default function AdminBoard() {
            <div style={{ background: 'white', border: '1px solid #e2e8f0', padding: '30px', borderRadius: '24px' }}>
               <div style={{ fontSize: '10px', fontWeight: 950, color: '#64748b', textTransform: 'uppercase', letterSpacing: '2px', marginBottom: '30px' }}>Gender Identity Matrix</div>
               <div style={{ display: 'flex', flexDirection: 'column', gap: '25px' }}>
-                 <div style={{ display: 'flex', alignItems: 'center', gap: '20px' }}>
-                    <div style={{ width: '50px', height: '50px', borderRadius: '50%', background: '#eff6ff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '24px' }}>♂️</div>
-                    <div style={{ flex: 1 }}>
-                       <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px' }}>
-                          <span style={{ fontSize: '11px', fontWeight: 950, color: '#1e293b' }}>MALE BIOLOGY</span>
-                          <span style={{ fontSize: '11px', fontWeight: 950, color: '#0f52ba' }}>{demographics.gender.male}</span>
-                       </div>
-                       <div style={{ height: '8px', background: '#f1f5f9', borderRadius: '4px', overflow: 'hidden' }}>
-                          <div style={{ width: `${(demographics.gender.male / (demographics.gender.male + demographics.gender.female + demographics.gender.other || 1)) * 100}%`, height: '100%', background: '#0f52ba' }}></div>
-                       </div>
-                    </div>
-                 </div>
-                 <div style={{ display: 'flex', alignItems: 'center', gap: '20px' }}>
-                    <div style={{ width: '50px', height: '50px', borderRadius: '50%', background: '#fdf2f8', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '24px' }}>♀️</div>
-                    <div style={{ flex: 1 }}>
-                       <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px' }}>
-                          <span style={{ fontSize: '11px', fontWeight: 950, color: '#1e293b' }}>FEMALE BIOLOGY</span>
-                          <span style={{ fontSize: '11px', fontWeight: 950, color: '#db2777' }}>{demographics.gender.female}</span>
-                       </div>
-                       <div style={{ height: '8px', background: '#f1f5f9', borderRadius: '4px', overflow: 'hidden' }}>
-                          <div style={{ width: `${(demographics.gender.female / (demographics.gender.male + demographics.gender.female + demographics.gender.other || 1)) * 100}%`, height: '100%', background: '#db2777' }}></div>
-                       </div>
-                    </div>
-                 </div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '20px' }}>
+                     <div style={{ width: '50px', height: '50px', borderRadius: '50%', background: '#eff6ff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '24px' }}>♂️</div>
+                     <div style={{ flex: 1 }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px' }}>
+                           <span style={{ fontSize: '11px', fontWeight: 950, color: '#1e293b' }}>MALE BIOLOGY</span>
+                           <span style={{ fontSize: '11px', fontWeight: 950, color: '#0f52ba' }}>{demographics?.gender?.male || 0}</span>
+                        </div>
+                        <div style={{ height: '8px', background: '#f1f5f9', borderRadius: '4px', overflow: 'hidden' }}>
+                           <div style={{ width: `${(demographics?.gender?.male / (demographics?.gender?.male + demographics?.gender?.female + demographics?.gender?.other || 1)) * 100}%`, height: '100%', background: '#0f52ba' }}></div>
+                        </div>
+                     </div>
+                  </div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '20px' }}>
+                     <div style={{ width: '50px', height: '50px', borderRadius: '50%', background: '#fdf2f8', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '24px' }}>♀️</div>
+                     <div style={{ flex: 1 }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px' }}>
+                           <span style={{ fontSize: '11px', fontWeight: 950, color: '#1e293b' }}>FEMALE BIOLOGY</span>
+                           <span style={{ fontSize: '11px', fontWeight: 950, color: '#db2777' }}>{demographics?.gender?.female || 0}</span>
+                        </div>
+                        <div style={{ height: '8px', background: '#f1f5f9', borderRadius: '4px', overflow: 'hidden' }}>
+                           <div style={{ width: `${(demographics?.gender?.female / (demographics?.gender?.male + demographics?.gender?.female + demographics?.gender?.other || 1)) * 100}%`, height: '100%', background: '#db2777' }}></div>
+                        </div>
+                     </div>
+                  </div>
               </div>
            </div>
 
@@ -2498,8 +2637,8 @@ export default function AdminBoard() {
            <div style={{ background: 'white', border: '1px solid #e2e8f0', padding: '30px', borderRadius: '24px' }}>
               <div style={{ fontSize: '10px', fontWeight: 950, color: '#64748b', textTransform: 'uppercase', letterSpacing: '2px', marginBottom: '30px' }}>Age Stratification Intel</div>
               <div style={{ display: 'flex', flexDirection: 'column', gap: '18px' }}>
-                 {demographics.ageGroups.map(tier => (
-                    <div key={tier.label}>
+                  {(demographics?.ageGroups || []).map((tier, idx) => (
+                     <div key={tier.label || idx}>
                        <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px' }}>
                           <span style={{ fontSize: '10px', fontWeight: 950, color: '#1e293b' }}>{tier.label.toUpperCase()}</span>
                           <span style={{ fontSize: '10px', fontWeight: 950, color: tier.color }}>{tier.percentage.toFixed(1)}%</span>
@@ -2517,103 +2656,7 @@ export default function AdminBoard() {
   };
 
   const renderFinance = () => {
-    const renderIntelligence = () => {
-      if (!financialMatrix) return null;
 
-      const items = financeTemporalMode === 'DAILY' ? financialMatrix.daily :
-                    financeTemporalMode === 'MONTHLY' ? financialMatrix.monthly : 
-                    financialMatrix.yearly;
-
-      return (
-        <div className="finance-intel-matrix fade-in">
-           {/* Modality Contribution HUD */}
-           <div style={{ background: 'white', padding: '30px', borderRadius: '24px', border: '1px solid #e2e8f0', marginBottom: '30px' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '30px' }}>
-                 <div>
-                    <div style={{ fontSize: '10px', fontWeight: 950, color: '#64748b', textTransform: 'uppercase', letterSpacing: '2px' }}>Modality Revenue Distribution</div>
-                    <div style={{ fontSize: '11px', color: '#94a3b8', fontWeight: 600, marginTop: '4px' }}>Strategic breakdown of fiscal yield by clinical domain.</div>
-                 </div>
-                 <div style={{ display: 'flex', background: '#f1f5f9', padding: '4px', borderRadius: '12px' }}>
-                    {['DAILY', 'MONTHLY', 'YEARLY'].map(mode => (
-                      <button 
-                        key={mode}
-                        onClick={() => setFinanceTemporalMode(mode)}
-                        style={{ 
-                          padding: '8px 16px', borderRadius: '8px', border: 'none', fontSize: '9px', fontWeight: 950,
-                          background: financeTemporalMode === mode ? 'white' : 'transparent',
-                          color: financeTemporalMode === mode ? '#0f52ba' : '#64748b',
-                          boxShadow: financeTemporalMode === mode ? '0 2px 8px rgba(0,0,0,0.05)' : 'none',
-                          cursor: 'pointer'
-                        }}
-                      >
-                        {mode}
-                      </button>
-                    ))}
-                 </div>
-              </div>
-
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '25px' }}>
-                 {financialMatrix.modalityBreakdown.map(m => {
-                   const revenue = financeTemporalMode === 'DAILY' ? m.dailyRevenue : 
-                                   financeTemporalMode === 'MONTHLY' ? m.monthlyRevenue : m.yearlyRevenue;
-                   
-                   return (
-                     <div key={m.modality} style={{ background: '#f8fafc', padding: '25px', borderRadius: '20px', border: '1px solid #f1f5f9' }}>
-                        <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '15px' }}>
-                           <span style={{ fontSize: '10px', fontWeight: 950, color: '#1e293b', background: 'white', padding: '4px 10px', borderRadius: '8px', border: '1px solid #edf2f7' }}>{m.modality}</span>
-                           <span style={{ fontSize: '10px', fontWeight: 950, color: '#059669' }}>{m.contributionPercentage}% SHARE</span>
-                        </div>
-                        <div style={{ fontSize: '24px', fontWeight: 950, color: '#1e293b' }}>
-                           ₹{revenue.toLocaleString()}
-                        </div>
-                        <div style={{ height: '4px', background: '#edf2f7', borderRadius: '2px', marginTop: '15px', overflow: 'hidden' }}>
-                           <div style={{ width: `${m.contributionPercentage}%`, height: '100%', background: '#0f52ba' }}></div>
-                        </div>
-                     </div>
-                   );
-                 })}
-              </div>
-           </div>
-
-           {/* Fiscal Temporal Log */}
-           <div style={{ background: 'white', borderRadius: '24px', border: '1px solid #e2e8f0', overflow: 'hidden' }}>
-              <div style={{ padding: '25px 30px', borderBottom: '1px solid #f8fafc', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                 <span style={{ fontSize: '10px', fontWeight: 950, color: '#64748b', textTransform: 'uppercase', letterSpacing: '2px' }}>Temporal Fiscal Matrix</span>
-              </div>
-              <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-                 <thead style={{ background: '#f8fafc' }}>
-                    <tr>
-                       <th style={{ padding: '15px 30px', textAlign: 'left', fontSize: '9px', fontWeight: 950, color: '#94a3b8' }}>PERIOD_LABEL</th>
-                       <th style={{ padding: '15px 30px', textAlign: 'right', fontSize: '9px', fontWeight: 950, color: '#94a3b8' }}>INVOICED_TOTAL</th>
-                       <th style={{ padding: '15px 30px', textAlign: 'right', fontSize: '9px', fontWeight: 950, color: '#94a3b8' }}>COLLECTED_FUNDS</th>
-                       <th style={{ padding: '15px 30px', textAlign: 'right', fontSize: '9px', fontWeight: 950, color: '#94a3b8' }}>OP_EXPENSES</th>
-                       <th style={{ padding: '15px 30px', textAlign: 'right', fontSize: '9px', fontWeight: 950, color: '#94a3b8' }}>NET_PROFIT</th>
-                       <th style={{ padding: '15px 30px', textAlign: 'center', fontSize: '9px', fontWeight: 950, color: '#94a3b8' }}>REALIZATION</th>
-                    </tr>
-                 </thead>
-                 <tbody>
-                    {items.map(item => (
-                       <tr key={item.label} style={{ borderBottom: '1px solid #f8fafc' }}>
-                          <td style={{ padding: '15px 30px', fontSize: '11px', fontWeight: 800, color: '#1e293b' }}>{item.label.toUpperCase()}</td>
-                          <td style={{ padding: '15px 30px', textAlign: 'right', fontSize: '12px', fontWeight: 950, color: '#1e293b' }}>₹{item.invoiced.toLocaleString()}</td>
-                          <td style={{ padding: '15px 30px', textAlign: 'right', fontSize: '12px', fontWeight: 950, color: '#059669' }}>₹{item.collected.toLocaleString()}</td>
-                          <td style={{ padding: '15px 30px', textAlign: 'right', fontSize: '12px', fontWeight: 950, color: '#64748b' }}>₹{item.expenses?.toLocaleString() || 0}</td>
-                          <td style={{ padding: '15px 30px', textAlign: 'right', fontSize: '12px', fontWeight: 950, color: item.netProfit >= 0 ? '#0f52ba' : '#dc2626' }}>
-                             ₹{item.netProfit?.toLocaleString() || 0}
-                          </td>
-                          <td style={{ padding: '15px 30px', textAlign: 'center' }}>
-                             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '10px' }}>
-                                <span style={{ fontSize: '10px', fontWeight: 950, color: '#1e293b' }}>{item.realizationRate}%</span>
-                             </div>
-                          </td>
-                       </tr>
-                    ))}
-                 </tbody>
-              </table>
-           </div>
-        </div>
-      );
-    };
 
     return (
       <div className="finance-view">
@@ -2621,23 +2664,11 @@ export default function AdminBoard() {
           <div>
             <h2 style={{ fontSize: '12px', fontWeight: 900, textTransform: 'uppercase', letterSpacing: '2px', color: '#0f52ba', marginBottom: '4px' }}>Financial Infrastructure</h2>
             <div style={{ display: 'flex', gap: '15px', alignItems: 'center', marginTop: '10px' }}>
-               <div style={{ display: 'flex', background: '#f1f5f9', padding: '3px', borderRadius: '10px', border: '1px solid #e2e8f0' }}>
-                  {['REGISTRY', 'INTEL', 'EXPENSES'].map(mode => (
-                    <button 
-                      key={mode}
-                      onClick={() => setFinanceViewMode(mode)}
-                      style={{ 
-                        padding: '6px 15px', borderRadius: '8px', border: 'none', fontSize: '9px', fontWeight: 950,
-                        background: financeViewMode === mode ? 'white' : 'transparent',
-                        color: financeViewMode === mode ? '#0f52ba' : '#64748b',
-                        boxShadow: financeViewMode === mode ? '0 2px 8px rgba(0,0,0,0.05)' : 'none',
-                        cursor: 'pointer'
-                      }}
-                    >
-                      {mode === 'REGISTRY' ? 'SERVICE REGISTRY' : mode === 'INTEL' ? 'FINANCIAL INTELLIGENCE' : 'OPERATIONAL EXPENSES'}
-                    </button>
-                  ))}
-               </div>
+             <div style={{ display: 'flex', gap: '15px', alignItems: 'center', marginTop: '10px' }}>
+                <div style={{ display: 'flex', background: '#f1f5f9', padding: '8px 20px', borderRadius: '10px', border: '1px solid #e2e8f0', fontSize: '10px', fontWeight: 950, color: '#0f52ba' }}>
+                   SERVICE REGISTRY PROTOCOL
+                </div>
+             </div>
             </div>
           </div>
           
@@ -2653,72 +2684,10 @@ export default function AdminBoard() {
               + ADD SERVICE CHARGE
             </button>
           )}
-          {financeViewMode === 'EXPENSES' && (
-            <button 
-              onClick={() => { 
-                setEditExpense({ 
-                  description: '', 
-                  category: 'Maintenance', 
-                  amount: 0, 
-                  taxAmount: 0,
-                  transactionDate: TODAY, 
-                  paymentMode: 'Cash', 
-                  referenceNumber: '',
-                  vendorName: '',
-                  costCenter: 'Radiology',
-                  status: 'Paid'
-                }); 
-                setIsExpenseDrawerOpen(true); 
-              }}
-              style={{ 
-                padding: '12px 24px', borderRadius: '12px', border: 'none', 
-                background: '#dc2626', color: 'white', fontSize: '11px', fontWeight: 950, cursor: 'pointer',
-                boxShadow: '0 8px 20px rgba(220, 38, 38, 0.2)'
-              }}
-            >
-              LOG OPERATIONAL EXPENSE 💸
-            </button>
-          )}
+
         </div>
 
-        {financeViewMode === 'INTEL' ? renderIntelligence() : financeViewMode === 'EXPENSES' ? (
-          <div style={{ background: 'white', borderRadius: '24px', border: '1px solid #e2e8f0', overflow: 'hidden', boxShadow: '0 4px 20px rgba(0,0,0,0.01)' }}>
-            <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-              <thead style={{ background: '#f8fafc' }}>
-                <tr style={{ borderBottom: '1px solid #f1f5f9' }}>
-                  <th style={{ padding: '20px 30px', textAlign: 'left', fontSize: '10px', fontWeight: 950, color: '#94a3b8', letterSpacing: '2px' }}>DATE</th>
-                  <th style={{ padding: '20px 30px', textAlign: 'left', fontSize: '10px', fontWeight: 950, color: '#94a3b8', letterSpacing: '2px' }}>DESCRIPTION</th>
-                  <th style={{ padding: '20px 30px', textAlign: 'left', fontSize: '10px', fontWeight: 950, color: '#94a3b8', letterSpacing: '2px' }}>CATEGORY</th>
-                  <th style={{ padding: '20px 30px', textAlign: 'right', fontSize: '10px', fontWeight: 950, color: '#94a3b8', letterSpacing: '2px' }}>AMOUNT</th>
-                  <th style={{ padding: '20px 30px', textAlign: 'right', fontSize: '10px', fontWeight: 950, color: '#94a3b8', letterSpacing: '2px' }}>ACTION</th>
-                </tr>
-              </thead>
-              <tbody>
-                {expenses.map(exp => (
-                  <tr key={exp.id} style={{ borderBottom: '1px solid #f8fafc', transition: 'background 0.2s' }}>
-                    <td style={{ padding: '20px 30px', fontSize: '13px', fontWeight: 850, color: '#1e293b' }}>{new Date(exp.transactionDate).toLocaleDateString('en-US', { day: 'numeric', month: 'short', year: 'numeric' })}</td>
-                    <td style={{ padding: '20px 30px', fontSize: '13px', fontWeight: 850, color: '#1e293b' }}>{exp.description}</td>
-                    <td style={{ padding: '20px 30px' }}>
-                      <span style={{ fontSize: '10px', fontWeight: 950, color: 'white', background: '#dc2626', padding: '5px 12px', borderRadius: '8px' }}>{exp.category}</span>
-                    </td>
-                    <td style={{ padding: '20px 30px', textAlign: 'right', fontSize: '14px', fontWeight: 950, color: '#dc2626' }}>₹{exp.amount.toLocaleString()}</td>
-                    <td style={{ padding: '20px 30px', textAlign: 'right' }}>
-                      <button 
-                        onClick={() => handleDeleteExpense(exp.id)}
-                        style={{ padding: '8px 16px', borderRadius: '10px', border: 'none', background: '#fee2e2', color: '#ef4444', fontSize: '10px', fontWeight: 950, cursor: 'pointer' }}
-                      >DELETE</button>
-                    </td>
-                  </tr>
-                ))}
-                {expenses.length === 0 && (
-                  <tr>
-                    <td colSpan="4" style={{ padding: '50px', textAlign: 'center', color: '#94a3b8', fontSize: '12px', fontWeight: 600 }}>No operational expenses found.</td>
-                  </tr>
-                )}
-              </tbody>
-            </table>
-          </div>
-        ) : (
+
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 350px', gap: '30px', alignItems: 'flex-start' }}>
             {/* Service Price Registry */}
             <div style={{ background: 'white', borderRadius: '24px', border: '1px solid #e2e8f0', overflow: 'hidden', boxShadow: '0 4px 20px rgba(0,0,0,0.01)' }}>
@@ -2732,13 +2701,13 @@ export default function AdminBoard() {
                   </tr>
                 </thead>
                 <tbody>
-                  {servicePrices.map(spec => (
-                    <tr key={spec.id} style={{ borderBottom: '1px solid #f8fafc', transition: 'background 0.2s' }}>
+                  {(servicePrices || []).map((spec, idx) => (
+                    <tr key={spec.id || idx} style={{ borderBottom: '1px solid #f8fafc', transition: 'background 0.2s' }}>
                       <td style={{ padding: '20px 30px' }}>
-                        <span style={{ fontSize: '10px', fontWeight: 950, color: 'white', background: '#334155', padding: '5px 12px', borderRadius: '8px' }}>{spec.modality}</span>
+                        <span style={{ fontSize: '10px', fontWeight: 950, color: 'white', background: '#334155', padding: '5px 12px', borderRadius: '8px' }}>{(spec.modality || 'OTHER').toUpperCase()}</span>
                       </td>
-                      <td style={{ padding: '20px 30px', fontSize: '13px', fontWeight: 850, color: '#1e293b' }}>{spec.serviceName.toUpperCase()}</td>
-                      <td style={{ padding: '20px 20px', fontSize: '14px', fontWeight: 950, color: '#0f52ba' }}>₹{spec.amount.toLocaleString()}</td>
+                      <td style={{ padding: '20px 30px', fontSize: '13px', fontWeight: 850, color: '#1e293b' }}>{(spec.serviceName || 'Unnamed Service').toUpperCase()}</td>
+                      <td style={{ padding: '20px 20px', fontSize: '14px', fontWeight: 950, color: '#0f52ba' }}>₹{(Number(spec.amount) || 0).toLocaleString()}</td>
                       <td style={{ padding: '20px 30px', textAlign: 'right' }}>
                          <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
                             <button onClick={() => { setEditPrice(spec); setIsPriceDrawerOpen(true); }} style={{ padding: '6px 12px', borderRadius: '8px', border: '1px solid #e2e8f0', background: 'white', cursor: 'pointer', fontSize: '10px', fontWeight: 800 }}>EDIT</button>
@@ -2747,7 +2716,7 @@ export default function AdminBoard() {
                       </td>
                     </tr>
                   ))}
-                  {servicePrices.length === 0 && (
+                  {(servicePrices || []).length === 0 && (
                     <tr>
                       <td colSpan="4" style={{ padding: '60px', textAlign: 'center', color: '#94a3b8', fontSize: '12px', fontWeight: 700 }}>NO SERVICE CHARGES CONFIGURED</td>
                     </tr>
@@ -3318,27 +3287,6 @@ export default function AdminBoard() {
                                 <div style={{ fontSize: '10px', fontWeight: 950, color: '#0f52ba', letterSpacing: '2px', marginBottom: '8px' }}>REFERRAL BRIEFING</div>
                                 <div style={{ fontSize: '22px', fontWeight: 950, color: '#1e293b', letterSpacing: '-0.5px' }}>{(selected.name || 'Anonymous').toUpperCase()}</div>
                              </div>
-                             <button 
-                               onClick={() => {
-                                 const refObj = referralIntelligence.find(ri => ri.name === selected.name);
-                                 setEditPayout({
-                                   referrerId: refObj?.referrerId || '',
-                                   referrerName: selected.name,
-                                   amount: 0,
-                                   modality: 'MRI',
-                                   remarks: ''
-                                 });
-                                 setIsPayoutDrawerOpen(true);
-                               }}
-                               style={{ 
-                                 padding: '12px 25px', borderRadius: '15px', background: '#0f52ba', color: 'white', 
-                                 fontSize: '11px', fontWeight: 950, border: 'none', cursor: 'pointer', 
-                                 boxShadow: '0 4px 15px rgba(15, 82, 186, 0.2)', transition: 'all 0.2s',
-                                 display: 'flex', alignItems: 'center', gap: '10px'
-                               }}
-                             >
-                               <span style={{ fontSize: '16px' }}>💸</span> RECORD PAYOUT
-                             </button>
                           </div>
 
                           <div style={{ padding: '30px' }}>
@@ -4299,7 +4247,7 @@ export default function AdminBoard() {
         </div>
       )}
 
-      {isPayoutDrawerOpen && renderPayoutDrawer()}
+
     </div>
   );
 
@@ -4366,72 +4314,5 @@ export default function AdminBoard() {
     );
   }
 
-  function renderPayoutDrawer() {
-    return (
-      <div className="drawer-overlay" onClick={() => setIsPayoutDrawerOpen(false)} style={{ backdropFilter: 'blur(8px)', background: 'rgba(10, 22, 40, 0.4)', zIndex: 10000 }}>
-        <div className="drawer-content" style={{ padding: 0, width: '450px', background: 'white' }} onClick={e => e.stopPropagation()}>
-          <div style={{ padding: '35px', background: 'linear-gradient(135deg, #0f52ba 0%, #061a40 100%)', color: 'white' }}>
-             <h2 style={{ fontSize: '11px', fontWeight: 950, color: '#38bdf8', letterSpacing: '3px', textTransform: 'uppercase', marginBottom: '8px' }}>Fiscal Disbursement</h2>
-             <div style={{ fontSize: '20px', fontWeight: 950, letterSpacing: '-1px' }}>RECORD REFERRAL PAYOUT</div>
-             <p style={{ fontSize: '10px', color: 'rgba(255,255,255,0.6)', marginTop: '10px', fontWeight: 600 }}>Logging financial commission for institutional partners.</p>
-          </div>
 
-          <div style={{ padding: '35px' }}>
-             <form onSubmit={handleSavePayout}>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '25px' }}>
-                   <div className="form-group">
-                      <label style={{ display: 'block', fontSize: '9px', fontWeight: 950, color: '#94a3b8', letterSpacing: '2px', marginBottom: '10px' }}>PARTNER_IDENTITY</label>
-                      <input 
-                         type="text" disabled 
-                         value={editPayout.referrerName?.toUpperCase()} 
-                         style={{ width: '100%', border: 'none', borderBottom: '2px solid #f0f0f0', fontSize: '16px', fontWeight: 950, padding: '10px 0', background: 'transparent', color: '#1e293b' }}
-                      />
-                   </div>
-
-                   <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px' }}>
-                      <div className="form-group">
-                         <label style={{ display: 'block', fontSize: '9px', fontWeight: 950, color: '#94a3b8', letterSpacing: '2px', marginBottom: '10px' }}>DISBURSEMENT_AMOUNT (₹)</label>
-                         <input 
-                            type="number" required 
-                            value={editPayout.amount} 
-                            onChange={e => setEditPayout({...editPayout, amount: e.target.value})}
-                            style={{ width: '100%', border: 'none', borderBottom: '2px solid #f0f0f0', fontSize: '20px', fontWeight: 950, padding: '10px 0', outline: 'none', color: '#0f52ba' }}
-                         />
-                      </div>
-                      <div className="form-group">
-                         <label style={{ display: 'block', fontSize: '9px', fontWeight: 950, color: '#94a3b8', letterSpacing: '2px', marginBottom: '10px' }}>CLINICAL_MODALITY</label>
-                         <select 
-                            value={editPayout.modality} 
-                            onChange={e => setEditPayout({...editPayout, modality: e.target.value})}
-                            style={{ width: '100%', padding: '12px', borderRadius: '12px', border: '1px solid #eee', fontSize: '12px', fontWeight: 700, background: 'white' }}
-                         >
-                            {['MRI', 'CT', 'X-RAY', 'ULTRASOUND', 'DEXA', 'MAMMOGRAPHY', 'LAB'].map(m => <option key={m} value={m}>{m}</option>)}
-                         </select>
-                      </div>
-                   </div>
-
-                   <div className="form-group">
-                      <label style={{ display: 'block', fontSize: '9px', fontWeight: 950, color: '#94a3b8', letterSpacing: '2px', marginBottom: '10px' }}>TRANSACTION_REMARKS</label>
-                      <textarea 
-                         rows="3"
-                         value={editPayout.remarks} 
-                         placeholder="e.g. Incentive for March Neurology cases..."
-                         onChange={e => setEditPayout({...editPayout, remarks: e.target.value})}
-                         style={{ width: '100%', padding: '14px', borderRadius: '12px', border: '1px solid #eee', fontSize: '12px', fontWeight: 700, resize: 'none' }}
-                      />
-                   </div>
-                </div>
-
-                <div style={{ marginTop: '40px', display: 'flex', gap: '15px' }}>
-                   <button type="button" onClick={() => setIsPayoutDrawerOpen(false)} style={{ flex: 1, padding: '16px', borderRadius: '16px', border: '1px solid #eee', fontSize: '11px', fontWeight: 950, cursor: 'pointer' }}>ABORT</button>
-                   <button type="submit" disabled={isSavingPayout} style={{ flex: 2, padding: '16px', borderRadius: '16px', border: 'none', background: '#0f52ba', color: 'white', fontSize: '11px', fontWeight: 950, cursor: 'pointer' }}>
-                     {isSavingPayout ? 'COMMITTING...' : 'CONFIRM PAYOUT →'}
-                   </button>
-                </div>
-             </form>
-          </div>
-        </div>
-      </div>
-    );
-  }
 }

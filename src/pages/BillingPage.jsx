@@ -53,7 +53,7 @@ export default function BillingPage() {
   // Referral Payout State
   const [isPayoutDrawerOpen, setIsPayoutDrawerOpen] = useState(false);
   const [isSavingPayout, setIsSavingPayout] = useState(false);
-  const [editPayout, setEditPayout] = useState({ referrerId: '', referrerName: '', amount: 0, modality: 'MRI', remarks: '', invoiceId: '' });
+  const [editPayout, setEditPayout] = useState({ commissionId: '', referrerId: '', referrerName: '', amount: 0, modality: 'MRI', remarks: '', invoiceId: '', status: 'UNPAID' });
   const [referralCommissions, setReferralCommissions] = useState([]);
   
   const [startDate, setStartDate] = useState('');
@@ -110,34 +110,43 @@ export default function BillingPage() {
   }, []);
 
   const fetchMatrix = useCallback(async () => {
+    const today = new Date().toLocaleDateString('en-CA');
+    let finalStart = null;
+    let finalEnd = null;
+
+    if (timeFilter === 'TODAY') {
+      finalStart = today;
+      finalEnd = today;
+    } else if (timeFilter === 'CUSTOM') {
+      finalStart = startDate;
+      finalEnd = endDate;
+    }
+
+    const cacheKey = `1rad_cache_matrix_${timeFilter}_${startDate}_${endDate}`;
+
     try {
-      const today = new Date().toLocaleDateString('en-CA');
-      let finalStart = null;
-      let finalEnd = null;
-
-      if (timeFilter === 'TODAY') {
-        finalStart = today;
-        finalEnd = today;
-      } else if (timeFilter === 'CUSTOM') {
-        finalStart = startDate;
-        finalEnd = endDate;
-      }
-
       const res = await apiClient.get('/finance/matrix', {
         params: { startDate: finalStart, endDate: finalEnd }
       });
       setMatrix(res.data);
+      await nativeStorage.set(cacheKey, res.data);
     } catch (err) {
-      console.error('[FINANCE] Matrix fetch failed', err);
+      console.error('[FINANCE] Matrix fetch failed, trying cache', err);
+      const cached = await nativeStorage.get(cacheKey);
+      if (cached) setMatrix(cached);
     }
   }, [timeFilter, startDate, endDate]);
 
   const fetchPendingBillables = useCallback(async (patientId) => {
+    if (!patientId) return;
     try {
       const res = await apiClient.get(`/finance/pending-billables/${patientId}`);
       setPendingServices(res.data);
+      await nativeStorage.set(`1rad_cache_pending_${patientId}`, res.data);
     } catch (err) {
-      console.error('[FINANCE] Pending billables fetch failed', err);
+      console.error('[FINANCE] Pending billables fetch failed, trying cache', err);
+      const cached = await nativeStorage.get(`1rad_cache_pending_${patientId}`);
+      if (cached) setPendingServices(cached);
     }
   }, []);
 
@@ -145,8 +154,11 @@ export default function BillingPage() {
     try {
       const res = await apiClient.get('/finance/expenses');
       setExpenses(res.data);
+      await nativeStorage.set('1rad_cache_expenses', res.data);
     } catch (err) {
-      console.error('[FINANCE] Expenses fetch failed', err);
+      console.error('[FINANCE] Expenses fetch failed, trying cache', err);
+      const cached = await nativeStorage.get('1rad_cache_expenses');
+      if (cached) setExpenses(cached);
     }
   }, []);
 
@@ -154,8 +166,11 @@ export default function BillingPage() {
     try {
       const res = await apiClient.get('/referrers');
       setReferrers(res.data);
+      await nativeStorage.set('1rad_cache_referrers', res.data);
     } catch (err) {
-      console.error('[FINANCE] Referrers fetch failed', err);
+      console.error('[FINANCE] Referrers fetch failed, trying cache', err);
+      const cached = await nativeStorage.get('1rad_cache_referrers');
+      if (cached) setReferrers(cached);
     }
   }, []);
 
@@ -163,8 +178,11 @@ export default function BillingPage() {
     try {
       const res = await apiClient.get('/referrers/commissions');
       setReferralCommissions(res.data);
+      await nativeStorage.set('1rad_cache_commissions', res.data);
     } catch (err) {
-      console.error('[FINANCE] Commissions fetch failed', err);
+      console.error('[FINANCE] Commissions fetch failed, trying cache', err);
+      const cached = await nativeStorage.get('1rad_cache_commissions');
+      if (cached) setReferralCommissions(cached);
     }
   }, []);
 
@@ -188,9 +206,18 @@ export default function BillingPage() {
 
   const handleSaveExpense = async (e) => {
     e.preventDefault();
+    const payload = editExpense;
+
+    if (!isOnline) {
+      await addToOutbox('EXPENSE', payload);
+      alert('OFFLINE_MODE: Operational expense queued for synchronization.');
+      setIsExpenseDrawerOpen(false);
+      return;
+    }
+
     try {
       setSavingExpense(true);
-      await apiClient.post('/finance/expense', editExpense);
+      await apiClient.post('/finance/expense', payload);
       setIsExpenseDrawerOpen(false);
       setEditExpense({ 
         description: '', 
@@ -207,7 +234,13 @@ export default function BillingPage() {
       fetchExpenses(); // Refresh expense list
     } catch (err) {
       console.error('[FINANCE] Expense save failed', err);
-      alert('PROTOCOL FAILURE: Failed to record operational expense.');
+      if (!err.response) {
+        await addToOutbox('EXPENSE', payload);
+        alert('NETWORK_ERROR: Record added to offline queue.');
+        setIsExpenseDrawerOpen(false);
+      } else {
+        alert('PROTOCOL FAILURE: Failed to record operational expense.');
+      }
     } finally {
       setSavingExpense(false);
     }
@@ -220,26 +253,53 @@ export default function BillingPage() {
       return;
     }
 
+    const payload = {
+      referrerId: editPayout.referrerId,
+      amount: parseFloat(editPayout.amount),
+      modality: editPayout.modality,
+      referenceNumber: editPayout.invoiceId,
+      remarks: editPayout.remarks,
+      status: editPayout.status || 'UNPAID'
+    };
+
+    if (!isOnline) {
+      await addToOutbox('PAYOUT', payload);
+      alert('OFFLINE_MODE: Referral payout queued for synchronization.');
+      setIsPayoutDrawerOpen(false);
+      return;
+    }
+
     try {
       setIsSavingPayout(true);
-      const response = await apiClient.post('/referrers/commissions', {
-        referrerId: editPayout.referrerId,
-        amount: parseFloat(editPayout.amount),
-        modality: editPayout.modality,
-        referenceNumber: editPayout.invoiceId,
-        remarks: editPayout.remarks
-      });
+      
+      let response;
+      if (editPayout.commissionId) {
+        // Update Mode
+        response = await apiClient.put(`/referrers/commissions/${editPayout.commissionId}`, {
+          ...payload,
+          commissionId: editPayout.commissionId
+        });
+      } else {
+        // Create Mode
+        response = await apiClient.post('/referrers/commissions', payload);
+      }
 
-      if (response.data?.commissionId) {
+      if (response.data) {
         setIsPayoutDrawerOpen(false);
         fetchInvoices();
         fetchStats();
         fetchCommissions();
-        alert('PAYMENT LOGGED: Referral commission successfully recorded in strategic ledger.');
+        alert(editPayout.commissionId ? 'RECORD UPDATED: Referral metadata successfully synchronized.' : 'PAYMENT LOGGED: Referral commission successfully recorded in strategic ledger.');
       }
     } catch (err) {
       console.error('[PAYOUT] Transaction failure:', err);
-      alert('SYSTEM ERROR: Could not commit payout to global registry.');
+      if (!err.response) {
+        await addToOutbox('PAYOUT', payload);
+        alert('NETWORK_ERROR: Payout added to offline queue.');
+        setIsPayoutDrawerOpen(false);
+      } else {
+        alert('SYSTEM ERROR: Could not commit payout to global registry.');
+      }
     } finally {
       setIsSavingPayout(false);
     }
@@ -247,24 +307,65 @@ export default function BillingPage() {
 
   const handleDeleteExpense = async (id) => {
     if (!window.confirm('Are you sure you want to delete this operational expense?')) return;
+    
+    if (!isOnline) {
+      await addToOutbox('EXPENSE_DELETE', { id });
+      alert('OFFLINE_MODE: Operational expense deletion queued.');
+      setExpenses(prev => prev.filter(e => e.id !== id)); // Optimistic UI
+      return;
+    }
+
     try {
       await apiClient.delete(`/finance/expenses/${id}`);
       fetchExpenses();
     } catch (err) {
       console.error('[FINANCE] Failed to delete expense', err);
-      alert('PROTOCOL FAILURE: Could not delete expense.');
+      if (!err.response) {
+        await addToOutbox('EXPENSE_DELETE', { id });
+        alert('NETWORK_ERROR: Deletion added to offline queue.');
+        setExpenses(prev => prev.filter(e => e.id !== id)); // Optimistic UI
+      } else {
+        alert('PROTOCOL FAILURE: Could not delete expense.');
+      }
+    }
+  };
+
+  const handleToggleCommissionStatus = async (id, currentStatus) => {
+    const nextStatus = currentStatus === 'PAID' ? 'UNPAID' : 'PAID';
+    try {
+      await apiClient.patch(`/referrers/commissions/${id}/status`, `"${nextStatus}"`, {
+        headers: { 'Content-Type': 'application/json' }
+      });
+      fetchCommissions();
+    } catch (err) {
+      console.error('[FINANCE] Status transition failed', err);
+      alert('CRITICAL ERROR: Failed to update commission status.');
     }
   };
 
   const handleDeleteInvoice = async (id) => {
     if (!window.confirm('Are you sure you want to delete this invoice? This action is irreversible.')) return;
+    
+    if (!isOnline) {
+      await addToOutbox('INVOICE_DELETE', { id });
+      alert('OFFLINE_MODE: Invoice deletion queued.');
+      setInvoices(prev => prev.filter(inv => inv.invoiceId !== id)); // Optimistic UI
+      return;
+    }
+
     try {
       await apiClient.delete(`/finance/invoices/${id}`);
       fetchInvoices();
       fetchStats();
     } catch (err) {
       console.error('[FINANCE] Failed to delete invoice', err);
-      alert('PROTOCOL FAILURE: Could not delete invoice.');
+      if (!err.response) {
+        await addToOutbox('INVOICE_DELETE', { id });
+        alert('NETWORK_ERROR: Deletion added to offline queue.');
+        setInvoices(prev => prev.filter(inv => inv.invoiceId !== id)); // Optimistic UI
+      } else {
+        alert('PROTOCOL FAILURE: Could not delete invoice.');
+      }
     }
   };
 
@@ -340,11 +441,13 @@ export default function BillingPage() {
 
   const filteredInvoices = useMemo(() => {
     const today = new Date().toLocaleDateString('en-CA');
+    const safeInvoices = invoices || [];
     
-    return invoices.filter(inv => {
+    return safeInvoices.filter(inv => {
+      if (!inv) return false;
       // Search Filter
-      const matchesSearch = inv.patientName.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                            (inv.displayId && inv.displayId.toLowerCase().includes(searchTerm.toLowerCase()));
+      const matchesSearch = String(inv.patientName || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
+                            (inv.displayId && String(inv.displayId).toLowerCase().includes(searchTerm.toLowerCase()));
       
       if (!matchesSearch) return false;
 
@@ -367,52 +470,71 @@ export default function BillingPage() {
     });
   }, [invoices, searchTerm, timeFilter, statusFilter, modalityFilter, startDate, endDate]);
   const liveStats = useMemo(() => {
-    const paidInvoices = filteredInvoices.filter(inv => inv.status === 'PAID');
-    const pendingInvoices = filteredInvoices.filter(inv => inv.status === 'PENDING');
+    const safeInvoices = filteredInvoices || [];
+    const paidInvoices = safeInvoices.filter(inv => inv?.status === 'PAID');
+    const pendingInvoices = safeInvoices.filter(inv => inv?.status === 'PENDING');
     
-    const totalRevenue = paidInvoices.reduce((sum, inv) => sum + (inv.totalAmount || 0), 0);
-    const pendingRevenue = pendingInvoices.reduce((sum, inv) => sum + (inv.totalAmount || 0), 0);
+    const totalRevenue = safeInvoices.reduce((sum, inv) => sum + (Number(inv?.grossAmount) || 0), 0);
+    const pendingRevenue = pendingInvoices.reduce((sum, inv) => sum + (Number(inv?.totalAmount) || 0) - (Number(inv?.paidAmount) || 0), 0);
     const pendingCount = pendingInvoices.length;
     
-    const totalBilled = totalRevenue + pendingRevenue;
+    const totalBilled = safeInvoices.reduce((sum, inv) => sum + (Number(inv?.totalAmount) || 0), 0);
     const realizationRate = totalBilled > 0 ? Math.round((totalRevenue / totalBilled) * 100) : 0;
     const averageTicket = paidInvoices.length > 0 ? Math.round(totalRevenue / paidInvoices.length) : 0;
 
-    const totalGross = filteredInvoices.reduce((sum, inv) => sum + (inv.totalAmount || 0), 0);
+    const totalGross = totalRevenue;
+    const totalDiscount = safeInvoices.reduce((sum, inv) => sum + (Number(inv?.discountAmount) || 0), 0);
+    const totalCommission = safeInvoices.reduce((sum, inv) => sum + (Number(inv?.commissionAmount) || 0), 0);
+    const netProfit = totalGross - totalDiscount - totalCommission;
 
-    return { totalRevenue, pendingRevenue, pendingCount, realizationRate, averageTicket, totalGross };
+    return { totalRevenue, pendingRevenue, pendingCount, realizationRate, averageTicket, totalGross, totalDiscount, totalCommission, netProfit };
   }, [filteredInvoices]);
   const combinedReferralCuts = useMemo(() => {
-    const legacyCuts = expenses.filter(e => e.category === 'Referral' || e.description.toLowerCase().includes('referral')).map(e => ({
+    const legacyCuts = expenses.filter(e => e && (e.category === 'Referral' || (e.description || '').toLowerCase().includes('referral'))).map(e => ({
         id: e.id,
         date: e.transactionDate,
         name: e.vendorName || 'DIRECT',
         description: e.description,
         reference: e.referenceNumber,
         amount: e.amount,
-        type: 'LEGACY'
+        type: 'LEGACY',
+        status: e.status?.toUpperCase() === 'PAID' ? 'PAID' : 'PAID' // Legacy expenses are usually paid
     }));
-    const strategicCuts = referralCommissions.map(c => ({
+    const strategicCuts = referralCommissions.filter(c => c).map(c => ({
         id: c.id,
         date: c.transactionDate,
         name: c.referrerName,
         description: `Commission [${c.modality}] ${c.remarks ? `- ${c.remarks}` : ''}`,
         reference: c.referenceNumber,
         amount: c.amount,
-        type: 'STRATEGIC'
+        type: 'STRATEGIC',
+        status: (c.status || 'UNPAID').toUpperCase(),
+        referrerId: c.referrerId,
+        modality: c.modality || 'MRI'
     }));
     return [...legacyCuts, ...strategicCuts].sort((a, b) => new Date(b.date) - new Date(a.date));
   }, [expenses, referralCommissions]);
 
+  const recordedPayouts = useMemo(() => {
+    return new Set(combinedReferralCuts.map(c => c.reference).filter(Boolean));
+  }, [combinedReferralCuts]);
+
   const todayReferralTotal = useMemo(() => {
     const today = new Date().toLocaleDateString('en-CA');
     return combinedReferralCuts
-      .filter(cut => new Date(cut.date).toLocaleDateString('en-CA') === today)
-      .reduce((sum, cut) => sum + cut.amount, 0);
+      .filter(cut => {
+        if (!cut.date) return false;
+        try {
+          return new Date(cut.date).toLocaleDateString('en-CA') === today;
+        } catch {
+          return false;
+        }
+      })
+      .reduce((sum, cut) => sum + (Number(cut.amount) || 0), 0);
   }, [combinedReferralCuts]);
 
   const globalOutflow = useMemo(() => {
-    const operationalExpenses = expenses.filter(e => e.category !== 'Referral' && !e.description.toLowerCase().includes('referral')).map(e => ({
+    const operationalExpenses = expenses.filter(e => e && e.category !== 'Referral' && !(e.description || '').toLowerCase().includes('referral')).map(e => ({
         id: e.id,
         date: e.transactionDate,
         name: e.vendorName || 'N/A',
@@ -439,6 +561,7 @@ export default function BillingPage() {
     const today = new Date().toLocaleDateString('en-CA');
     
     return globalOutflow.filter(exp => {
+        if (!exp) return false;
         // Category Filter
         if (expenseFilter === 'REFERRAL' && exp.category !== 'Referral') return false;
 
@@ -451,28 +574,37 @@ export default function BillingPage() {
             if (endDate && expDate > endDate) return false;
         }
 
+        // Modality Filter alignment
+        if (modalityFilter !== 'ALL') {
+            // Strategic cuts have an explicit modality field
+            if (exp.type === 'STRATEGIC' && exp.modality !== modalityFilter) return false;
+            // For legacy/operational, check description for modality tags [MRI], [CT], etc.
+            if (exp.type !== 'STRATEGIC' && !(exp.description || '').includes(`[${modalityFilter}]`)) return false;
+        }
+
         return true;
     });
-  }, [globalOutflow, expenseFilter, timeFilter, startDate, endDate]);
+  }, [globalOutflow, expenseFilter, timeFilter, startDate, endDate, modalityFilter]);
 
   const outflowStats = useMemo(() => {
-    const totalOutflow = filteredOutflow.reduce((sum, exp) => sum + exp.amount, 0);
-    const referralTotal = filteredOutflow.filter(e => e.category === 'Referral').reduce((sum, exp) => sum + exp.amount, 0);
-    const operationalTotal = filteredOutflow.filter(e => e.category !== 'Referral').reduce((sum, exp) => sum + exp.amount, 0);
+    const safeOutflow = filteredOutflow || [];
+    const totalOutflow = safeOutflow.reduce((sum, exp) => sum + (Number(exp?.amount) || 0), 0);
+    const referralTotal = safeOutflow.filter(e => e?.category === 'Referral').reduce((sum, exp) => sum + (Number(exp?.amount) || 0), 0);
+    const operationalTotal = safeOutflow.filter(e => e?.category !== 'Referral').reduce((sum, exp) => sum + (Number(exp?.amount) || 0), 0);
     
     const today = new Date().toLocaleDateString('en-CA');
-    const todayOutflow = filteredOutflow
-      .filter(e => new Date(e.date).toLocaleDateString('en-CA') === today)
-      .reduce((sum, exp) => sum + exp.amount, 0);
+    const todayOutflow = safeOutflow
+      .filter(e => e?.date && new Date(e.date).toLocaleDateString('en-CA') === today)
+      .reduce((sum, exp) => sum + (Number(exp?.amount) || 0), 0);
 
     const referralPercentage = totalOutflow > 0 ? Math.round((referralTotal / totalOutflow) * 100) : 0;
 
-    const categories = Array.from(new Set(filteredOutflow.map(e => e.category)));
+    const categories = Array.from(new Set(safeOutflow.map(e => e?.category || 'General')));
     const categoryBreakdown = categories.map(cat => {
-        const amount = filteredOutflow.filter(e => e.category === cat).reduce((sum, e) => sum + e.amount, 0);
+        const amount = safeOutflow.filter(e => e?.category === cat).reduce((sum, e) => sum + (Number(e?.amount) || 0), 0);
         const percentage = totalOutflow > 0 ? Math.round((amount / totalOutflow) * 100) : 0;
         return { category: cat, amount, percentage };
-    }).sort((a, b) => b.amount - a.amount);
+    });
 
     return { totalOutflow, referralTotal, operationalTotal, todayOutflow, referralPercentage, categoryBreakdown };
   }, [filteredOutflow]);
@@ -658,6 +790,236 @@ export default function BillingPage() {
       console.error('[FINANCE] Discount application failed', err);
       alert('PROTOCOL FAILURE: Could not update invoice discount.');
     }
+  };
+
+  const ghostPrint = (html) => {
+    const iframe = document.createElement('iframe');
+    iframe.style.position = 'fixed';
+    iframe.style.right = '0';
+    iframe.style.bottom = '0';
+    iframe.style.width = '0';
+    iframe.style.height = '0';
+    iframe.style.border = 'none';
+    document.body.appendChild(iframe);
+    iframe.contentDocument.write(html);
+    iframe.contentDocument.close();
+    
+    // In Electron, we need a slight delay for styles to load in the iframe
+    setTimeout(() => {
+      iframe.contentWindow.focus();
+      iframe.contentWindow.print();
+      setTimeout(() => {
+        document.body.removeChild(iframe);
+      }, 1000);
+    }, 500);
+  };
+
+  const handlePrintA4 = (invInput = null) => {
+    const inv = invInput || selectedInvoice;
+    if (!inv) return;
+    
+    const itemsHtml = (inv.items || []).map(it => `
+      <tr style="border-bottom: 1px solid #eee;">
+        <td style="padding: 12px 0;">${it.description}</td>
+        <td style="padding: 12px 0; text-align: center;">${it.quantity}</td>
+        <td style="padding: 12px 0; text-align: right;">₹${(it.amount || 0).toLocaleString()}</td>
+        <td style="padding: 12px 0; text-align: right; font-weight: bold;">₹${((it.amount || 0) * (it.quantity || 0)).toLocaleString()}</td>
+      </tr>
+    `).join('');
+
+    ghostPrint(`
+      <html>
+        <head>
+          <title>1Rad Invoice - ${inv.displayId}</title>
+          <style>
+            body { font-family: 'Inter', sans-serif; padding: 40px; color: #1e293b; }
+            .header { display: flex; justify-content: space-between; margin-bottom: 40px; border-bottom: 2px solid #0f52ba; padding-bottom: 20px; }
+            .hospital-info { font-weight: 900; }
+            .invoice-meta { text-align: right; }
+            .patient-box { background: #f8fafc; padding: 20px; border-radius: 12px; margin-bottom: 30px; border: 1px solid #e2e8f0; }
+            table { width: 100%; border-collapse: collapse; margin-bottom: 40px; }
+            th { text-align: left; font-size: 10px; text-transform: uppercase; color: #64748b; padding-bottom: 10px; border-bottom: 1px solid #e2e8f0; }
+            .totals { float: right; width: 300px; }
+            .total-row { display: flex; justify-content: space-between; padding: 8px 0; }
+            .grand-total { border-top: 2px solid #0f52ba; margin-top: 10px; padding-top: 10px; font-size: 20px; font-weight: 950; color: #0f52ba; }
+            @media print { .no-print { display: none; } }
+          </style>
+        </head>
+        <body>
+          <div class="header">
+            <div class="hospital-info">
+               <div style="font-size: 24px; color: #0f52ba;">${(activeCenter?.hospitalName || '1RAD DIAGNOSTIC HUB').toUpperCase()}</div>
+               <div style="font-size: 12px; color: #64748b; font-weight: 500; margin-top: 5px;">${activeCenter?.address || 'Strategic Healthcare Node'}</div>
+               <div style="font-size: 12px; color: #64748b; font-weight: 500;">Contact: ${activeCenter?.contactNo || '+91 XXXXXXXXXX'}</div>
+            </div>
+            <div class="invoice-meta">
+               <div style="font-size: 14px; font-weight: 950;">TAX INVOICE</div>
+               <div style="font-size: 11px; color: #64748b; margin-top: 5px;">ID: ${inv.displayId}</div>
+               <div style="font-size: 11px; color: #64748b;">DATE: ${new Date(inv.createdAt).toLocaleDateString()}</div>
+            </div>
+          </div>
+
+          <div class="patient-box">
+             <div style="font-size: 10px; font-weight: 950; color: #64748b; margin-bottom: 8px;">BILL_TO_PATIENT:</div>
+             <div style="font-size: 18px; font-weight: 950;">${(inv.patientName || 'UNKNOWN PATIENT').toUpperCase()}</div>
+             <div style="font-size: 12px; color: #64748b; margin-top: 5px;">Clinical Reference: ${inv.patientId || 'N/A'}</div>
+          </div>
+
+          <table>
+             <thead>
+                <tr>
+                   <th style="width: 50%;">SERVICE_DESCRIPTION</th>
+                   <th style="text-align: center;">QTY</th>
+                   <th style="text-align: right;">UNIT_PRICE</th>
+                   <th style="text-align: right;">SUBTOTAL</th>
+                </tr>
+             </thead>
+             <tbody>
+                ${itemsHtml}
+             </tbody>
+          </table>
+
+          <div class="totals">
+             <div class="total-row">
+                <span style="font-size: 12px; font-weight: 700;">GROSS_AGGREGATE</span>
+                <span style="font-size: 12px; font-weight: 700;">₹${(inv.grossAmount || 0).toLocaleString()}</span>
+             </div>
+             <div class="total-row" style="color: #ef4444;">
+                <span style="font-size: 12px; font-weight: 700;">DEDUCTION/DISCOUNT</span>
+                <span style="font-size: 12px; font-weight: 700;">- ₹${(inv.discountAmount || 0).toLocaleString()}</span>
+             </div>
+             <div class="total-row grand-total">
+                <span>NET_PAYABLE</span>
+                <span>₹${(inv.totalAmount || 0).toLocaleString()}</span>
+             </div>
+             <div style="margin-top: 20px; font-size: 11px; font-weight: 900; color: #10b981; text-align: right;">
+                STATUS: ${(inv.status || 'PAID').toUpperCase()}
+             </div>
+          </div>
+
+          <div style="margin-top: 150px; font-size: 10px; color: #94a3b8; text-align: center; border-top: 1px solid #f1f5f9; padding-top: 20px;">
+             This is a computer-generated diagnostic invoice. No physical signature required.<br/>
+             Powered by 1Rad Strategic Infrastructure
+          </div>
+        </body>
+      </html>
+    `);
+  };
+
+  const handlePrintThermal = (invInput = null) => {
+    const inv = invInput || selectedInvoice;
+    if (!inv) return;
+
+    const itemsHtml = (inv.items || []).map(it => `
+      <div style="display: flex; justify-content: space-between; font-size: 12px; margin-bottom: 5px;">
+        <span>${it.description} x${it.quantity}</span>
+        <span>₹${((it.amount || 0) * (it.quantity || 0)).toLocaleString()}</span>
+      </div>
+    `).join('');
+
+    ghostPrint(`
+      <html>
+        <head>
+          <title>Thermal Receipt</title>
+          <style>
+            body { font-family: 'monospace'; width: 72mm; padding: 10px; margin: 0; }
+            .center { text-align: center; }
+            .divider { border-top: 1px dashed #000; margin: 10px 0; }
+            .bold { font-weight: bold; }
+          </style>
+        </head>
+        <body>
+          <div class="center">
+            <div style="font-size: 16px; font-weight: bold;">${activeCenter?.hospitalName || '1RAD DIAGNOSTICS'}</div>
+            <div style="font-size: 10px;">${activeCenter?.address || ''}</div>
+            <div style="font-size: 10px;">Tel: ${activeCenter?.contactNo || ''}</div>
+          </div>
+          <div class="divider"></div>
+          <div style="font-size: 12px;">
+            <div>INV: ${inv.displayId || 'N/A'}</div>
+            <div>DATE: ${new Date().toLocaleDateString()}</div>
+            <div class="bold">PATIENT: ${(inv.patientName || 'N/A').toUpperCase()}</div>
+          </div>
+          <div class="divider"></div>
+          ${itemsHtml}
+          <div class="divider"></div>
+          <div style="display: flex; justify-content: space-between; font-weight: bold; font-size: 14px;">
+            <span>TOTAL</span>
+            <span>₹${(inv.totalAmount || 0).toLocaleString()}</span>
+          </div>
+          <div class="center" style="margin-top: 20px; font-size: 10px;">
+            THANK YOU FOR CHOOSING 1RAD
+          </div>
+        </body>
+      </html>
+    `);
+  };
+
+  const handlePrintReceipt = (invInput = null) => {
+    const inv = invInput || selectedInvoice;
+    if (!inv) return;
+    
+    ghostPrint(`
+      <html>
+        <head>
+          <title>Payment Receipt - ${inv.displayId}</title>
+          <style>
+            body { font-family: 'Inter', sans-serif; padding: 40px; color: #1e293b; line-height: 1.6; }
+            .receipt-container { max-width: 600px; margin: 0 auto; border: 2px solid #0f52ba; padding: 30px; border-radius: 20px; }
+            .header { text-align: center; border-bottom: 1px solid #e2e8f0; padding-bottom: 20px; margin-bottom: 20px; }
+            .row { display: flex; justify-content: space-between; margin-bottom: 10px; padding: 5px 0; }
+            .label { font-weight: 950; color: #64748b; font-size: 11px; text-transform: uppercase; }
+            .value { font-weight: 700; color: #1e293b; }
+            .amount-box { background: #f0f4ff; padding: 20px; border-radius: 12px; text-align: center; margin: 20px 0; border: 1px solid #dbeafe; }
+            .stamp { text-align: right; margin-top: 40px; font-weight: 950; color: #0f52ba; font-size: 14px; opacity: 0.5; text-transform: uppercase; }
+          </style>
+        </head>
+        <body>
+          <div class="receipt-container">
+            <div class="header">
+              <div style="font-size: 20px; font-weight: 950; color: #0f52ba;">${(activeCenter?.hospitalName || '1RAD DIAGNOSTICS').toUpperCase()}</div>
+              <div style="font-size: 12px; color: #64748b;">PAYMENT ACKNOWLEDGEMENT</div>
+            </div>
+
+            <div class="row">
+              <span class="label">Receipt No:</span>
+              <span class="value">REC/${inv.displayId}</span>
+            </div>
+            <div class="row">
+              <span class="label">Date:</span>
+              <span class="value">${new Date().toLocaleDateString()}</span>
+            </div>
+            <div class="row">
+              <span class="label">Patient Name:</span>
+              <span class="value">${(inv.patientName || 'UNKNOWN').toUpperCase()}</span>
+            </div>
+            <div class="row">
+              <span class="label">Invoice Ref:</span>
+              <span class="value">${inv.displayId}</span>
+            </div>
+            <div class="row">
+              <span class="label">Payment Mode:</span>
+              <span class="value">${inv.paymentMethod || 'CASH'}</span>
+            </div>
+
+            <div class="amount-box">
+              <div class="label">Amount Received</div>
+              <div style="font-size: 32px; font-weight: 950; color: #0f52ba; margin-top: 5px;">₹${(inv.totalAmount || 0).toLocaleString()}</div>
+              <div style="font-size: 10px; color: #64748b; font-weight: 700; margin-top: 5px;">FULLY PAID & SETTLED</div>
+            </div>
+
+            <div class="stamp">
+              Authorized Signatory<br/>
+              <span style="font-size: 10px;">(Computer Generated)</span>
+            </div>
+
+            <div style="margin-top: 30px; text-align: center; font-size: 10px; color: #94a3b8; border-top: 1px dashed #e2e8f0; padding-top: 15px;">
+              Thank you for choosing 1Rad Diagnostic Services.
+            </div>
+          </div>
+        </body>
+      </html>
+    `);
   };
 
   // --- RENDERERS ---
@@ -851,12 +1213,28 @@ export default function BillingPage() {
                   </div>
                </div>
              ) : (
-               <div style={{ background: '#f0fdf4', border: '1px solid #bcf0da', padding: '20px', borderRadius: '16px', textAlign: 'center' }}>
-                  <div style={{ fontSize: '24px', marginBottom: '10px' }}>✅</div>
-                  <div style={{ fontSize: '12px', fontWeight: 950, color: '#166534' }}>TRANSACTION SETTLED</div>
-                  <div style={{ fontSize: '10px', color: '#166534', opacity: 0.7, marginTop: '4px' }}>Processed on {new Date(selectedInvoice.createdAt).toLocaleString()}</div>
-               </div>
-             )}
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '15px' }}>
+                  <div style={{ background: '#f0fdf4', border: '1px solid #bcf0da', padding: '20px', borderRadius: '16px', textAlign: 'center' }}>
+                     <div style={{ fontSize: '24px', marginBottom: '10px' }}>✅</div>
+                     <div style={{ fontSize: '12px', fontWeight: 950, color: '#166534' }}>TRANSACTION SETTLED</div>
+                     <div style={{ fontSize: '10px', color: '#166534', opacity: 0.7, marginTop: '4px' }}>Processed on {new Date(selectedInvoice.createdAt).toLocaleString()}</div>
+                  </div>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '15px' }}>
+                     <button 
+                       onClick={handlePrintA4}
+                       style={{ padding: '16px', borderRadius: '16px', border: '1px solid #0f52ba', background: 'white', color: '#0f52ba', fontWeight: 950, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}
+                     >
+                       <span>📄</span> PRINT A4 INVOICE
+                     </button>
+                     <button 
+                       onClick={handlePrintThermal}
+                       style={{ padding: '16px', borderRadius: '16px', border: 'none', background: 'linear-gradient(135deg, #0f52ba, #061a40)', color: 'white', fontWeight: 950, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}
+                     >
+                       <span>📠</span> THERMAL RECEIPT
+                     </button>
+                  </div>
+                </div>
+              )}
           </div>
         </div>
       </div>
@@ -1366,8 +1744,10 @@ export default function BillingPage() {
       <div className="drawer-content" style={{ padding: 0, width: '450px', background: 'white' }} onClick={e => e.stopPropagation()}>
         <div style={{ padding: '35px', background: 'linear-gradient(135deg, #0f52ba 0%, #061a40 100%)', color: 'white' }}>
            <h2 style={{ fontSize: '11px', fontWeight: 950, color: '#38bdf8', letterSpacing: '3px', textTransform: 'uppercase', marginBottom: '8px' }}>Fiscal Disbursement</h2>
-           <div style={{ fontSize: '20px', fontWeight: 950, letterSpacing: '-1px' }}>RECORD REFERRAL PAYOUT</div>
-           <p style={{ fontSize: '10px', color: 'rgba(255,255,255,0.6)', marginTop: '10px', fontWeight: 600 }}>Logging financial commission for clinical partner based on mission ID: {editPayout.invoiceId}</p>
+           <div style={{ fontSize: '20px', fontWeight: 950, letterSpacing: '-1px' }}>{editPayout.commissionId ? 'REVISE REFERRAL RECORD' : 'RECORD REFERRAL PAYOUT'}</div>
+           <p style={{ fontSize: '10px', color: 'rgba(255,255,255,0.6)', marginTop: '10px', fontWeight: 600 }}>
+             {editPayout.commissionId ? `Modifying existing commission ID: ${editPayout.commissionId}` : `Logging financial commission for clinical partner based on mission ID: ${editPayout.invoiceId}`}
+           </p>
         </div>
 
         <div style={{ padding: '35px' }}>
@@ -1406,13 +1786,35 @@ export default function BillingPage() {
 
                  <div className="form-group">
                     <label style={{ display: 'block', fontSize: '9px', fontWeight: 950, color: '#94a3b8', letterSpacing: '2px', marginBottom: '10px' }}>TRANSACTION_REMARKS</label>
-                    <textarea 
-                       rows="3"
-                       value={editPayout.remarks} 
-                       placeholder="Incentive details..."
-                       onChange={e => setEditPayout({...editPayout, remarks: e.target.value})}
-                       style={{ width: '100%', padding: '14px', borderRadius: '12px', border: '1px solid #eee', fontSize: '12px', fontWeight: 700, resize: 'none' }}
-                    />
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px' }}>
+                    <div className="form-group">
+                       <label style={{ display: 'block', fontSize: '9px', fontWeight: 950, color: '#94a3b8', letterSpacing: '2px', marginBottom: '10px' }}>PAYMENT_STATUS</label>
+                       <div style={{ display: 'flex', background: '#f8fafc', padding: '5px', borderRadius: '12px', border: '1px solid #eee' }}>
+                          {['UNPAID', 'PAID'].map(s => (
+                            <button 
+                              key={s} type="button"
+                              onClick={() => setEditPayout({...editPayout, status: s})}
+                              style={{ 
+                                flex: 1, padding: '10px', borderRadius: '8px', border: 'none', fontSize: '10px', fontWeight: 950,
+                                background: editPayout.status === s ? (s === 'PAID' ? '#10b981' : '#e11d48') : 'transparent',
+                                color: editPayout.status === s ? 'white' : '#64748b',
+                                cursor: 'pointer', transition: 'all 0.2s'
+                              }}
+                            >{s}</button>
+                          ))}
+                       </div>
+                    </div>
+                    <div className="form-group">
+                       <label style={{ display: 'block', fontSize: '9px', fontWeight: 950, color: '#94a3b8', letterSpacing: '2px', marginBottom: '10px' }}>TRANSACTION_REMARKS</label>
+                       <input 
+                          type="text" 
+                          value={editPayout.remarks} 
+                          placeholder="Incentive details..."
+                          onChange={e => setEditPayout({...editPayout, remarks: e.target.value})}
+                          style={{ width: '100%', border: 'none', borderBottom: '2px solid #f0f0f0', fontSize: '12px', fontWeight: 700, padding: '10px 0', outline: 'none' }}
+                       />
+                    </div>
+                 </div>
                  </div>
               </div>
 
@@ -1586,19 +1988,19 @@ export default function BillingPage() {
                     <tbody>
                       {filteredOutflow.map(exp => (
                         <tr key={exp.id} style={{ borderBottom: '1px solid #f8fafc', transition: 'background 0.2s' }}>
-                          <td style={{ padding: '20px 30px', fontSize: '13px', fontWeight: 850, color: '#1e293b' }}>{new Date(exp.date).toLocaleDateString('en-US', { day: 'numeric', month: 'short', year: 'numeric' })}</td>
+                          <td style={{ padding: '20px 30px', fontSize: '13px', fontWeight: 850, color: '#1e293b' }}>{exp.date ? new Date(exp.date).toLocaleDateString('en-US', { day: 'numeric', month: 'short', year: 'numeric' }) : 'N/A'}</td>
                           <td style={{ padding: '20px 30px' }}>
                             <div style={{ fontSize: '13px', fontWeight: 850, color: '#1e293b' }}>{exp.description}</div>
-                            <div style={{ fontSize: '9px', fontWeight: 900, color: '#94a3b8' }}>{exp.name.toUpperCase()}</div>
+                            <div style={{ fontSize: '9px', fontWeight: 900, color: '#94a3b8' }}>{(exp.name || 'N/A').toUpperCase()}</div>
                           </td>
                           <td style={{ padding: '20px 30px' }}>
                             <span style={{ 
                               fontSize: '10px', fontWeight: 950, color: 'white', 
                               background: exp.category === 'Referral' ? '#e11d48' : '#dc2626', 
                               padding: '5px 12px', borderRadius: '8px' 
-                            }}>{exp.category.toUpperCase()}</span>
+                            }}>{(exp.category || 'General').toUpperCase()}</span>
                           </td>
-                          <td style={{ padding: '20px 30px', textAlign: 'right', fontSize: '14px', fontWeight: 950, color: '#dc2626' }}>₹{exp.amount.toLocaleString()}</td>
+                          <td style={{ padding: '20px 30px', textAlign: 'right', fontSize: '14px', fontWeight: 950, color: '#dc2626' }}>₹{(Number(exp.amount) || 0).toLocaleString()}</td>
                           <td style={{ padding: '20px 30px', textAlign: 'right' }}>
                             {exp.type === 'OPERATIONAL' || exp.type === 'LEGACY' ? (
                               <button 
@@ -1745,7 +2147,7 @@ export default function BillingPage() {
             marginBottom: '40px' 
           }}>
             <div className="kpi-card" style={{ background: 'white', padding: '25px', borderRadius: '24px', border: '1px solid #e2e8f0', boxShadow: '0 4px 20px rgba(0,0,0,0.02)' }}>
-              <p style={{ fontSize: '11px', fontWeight: 950, color: '#94a3b8', letterSpacing: '1px', marginBottom: '15px' }}>TOTAL REVENUE (PAID)</p>
+              <p style={{ fontSize: '11px', fontWeight: 950, color: '#94a3b8', letterSpacing: '1px', marginBottom: '15px' }}>TOTAL REVENUE</p>
               <div style={{ fontSize: '28px', fontWeight: 950, color: '#1a1a2e' }}>₹{liveStats.totalRevenue.toLocaleString()}</div>
               <div style={{ marginTop: '10px', fontSize: '10px', color: '#2ecc71', fontWeight: 800 }}>MATCHING CURRENT PROTOCOL</div>
             </div>
@@ -1754,20 +2156,20 @@ export default function BillingPage() {
               <div style={{ fontSize: '28px', fontWeight: 950, color: '#f39c12' }}>₹{liveStats.pendingRevenue.toLocaleString()}</div>
               <div style={{ marginTop: '10px', fontSize: '10px', color: '#f39c12', fontWeight: 800 }}>{liveStats.pendingCount} INVOICES OUTSTANDING</div>
             </div>
-            <div className="kpi-card" style={{ background: 'white', padding: '25px', borderRadius: '24px', border: '1px solid #e2e8f0', boxShadow: '0 4px 20px rgba(0,0,0,0.02)' }}>
-              <p style={{ fontSize: '11px', fontWeight: 950, color: '#94a3b8', letterSpacing: '1px', marginBottom: '15px' }}>COLLECTION EFFICIENCY</p>
-              <div style={{ fontSize: '28px', fontWeight: 950, color: '#0f52ba' }}>{liveStats.realizationRate}%</div>
-              <div style={{ marginTop: '10px', fontSize: '10px', color: '#0f52ba', fontWeight: 800 }}>BASED ON FILTERED SCOPE</div>
+            <div className="kpi-card" style={{ background: '#f0fdf4', padding: '25px', borderRadius: '24px', border: '1px solid #dcfce7', boxShadow: '0 4px 20px rgba(22,101,52,0.05)' }}>
+              <p style={{ fontSize: '11px', fontWeight: 950, color: '#166534', letterSpacing: '1px', marginBottom: '15px' }}>NET PROFIT (ESTIMATED)</p>
+              <div style={{ fontSize: '28px', fontWeight: 950, color: '#14532d' }}>₹{liveStats.netProfit.toLocaleString()}</div>
+              <div style={{ marginTop: '10px', fontSize: '10px', color: '#16a34a', fontWeight: 800 }}>BASED ON MISSIONS IN SCOPE</div>
             </div>
             <div className="kpi-card" style={{ background: 'white', padding: '25px', borderRadius: '24px', border: '1px solid #e2e8f0', boxShadow: '0 4px 20px rgba(0,0,0,0.02)' }}>
-              <p style={{ fontSize: '11px', fontWeight: 950, color: '#94a3b8', letterSpacing: '1px', marginBottom: '15px' }}>AVG TICKET SIZE</p>
-              <div style={{ fontSize: '28px', fontWeight: 950, color: '#1a1a2e' }}>₹{liveStats.averageTicket.toLocaleString()}</div>
-              <div style={{ marginTop: '10px', fontSize: '10px', color: '#888', fontWeight: 600 }}>PAID INVOICES IN SCOPE</div>
+              <p style={{ fontSize: '11px', fontWeight: 950, color: '#94a3b8', letterSpacing: '1px', marginBottom: '15px' }}>TOTAL DISCOUNTS</p>
+              <div style={{ fontSize: '28px', fontWeight: 950, color: '#ef4444' }}>₹{liveStats.totalDiscount.toLocaleString()}</div>
+              <div style={{ marginTop: '10px', fontSize: '10px', color: '#ef4444', fontWeight: 800 }}>AGGREGATED CONCESSIONS</div>
             </div>
             <div className="kpi-card" style={{ background: '#fff1f2', padding: '25px', borderRadius: '24px', border: '1px solid #fecdd3', boxShadow: '0 4px 20px rgba(225,29,72,0.05)' }}>
-              <p style={{ fontSize: '11px', fontWeight: 950, color: '#e11d48', letterSpacing: '1px', marginBottom: '15px' }}>TODAY'S REFERRAL PAYOUTS</p>
-              <div style={{ fontSize: '28px', fontWeight: 950, color: '#881337' }}>₹{todayReferralTotal.toLocaleString()}</div>
-              <div style={{ marginTop: '10px', fontSize: '10px', color: '#e11d48', fontWeight: 800 }}>AGGREGATED STRATEGIC CUTS</div>
+              <p style={{ fontSize: '11px', fontWeight: 950, color: '#e11d48', letterSpacing: '1px', marginBottom: '15px' }}>TOTAL REFERRAL CUTS</p>
+              <div style={{ fontSize: '28px', fontWeight: 950, color: '#881337' }}>₹{liveStats.totalCommission.toLocaleString()}</div>
+              <div style={{ marginTop: '10px', fontSize: '10px', color: '#e11d48', fontWeight: 800 }}>AGGREGATED STRATEGIC OUTFLOW</div>
             </div>
           </div>
 
@@ -1784,36 +2186,38 @@ export default function BillingPage() {
                      <th style={{ padding: '15px 10px', fontSize: '10px', fontWeight: 950, color: '#ef4444', letterSpacing: '1px', background: '#fff1f2' }}>DISCOUNT</th>
                      <th style={{ padding: '15px 10px', fontSize: '10px', fontWeight: 950, color: '#0f52ba', letterSpacing: '1px', background: '#f0f4ff' }}>NET_PAYABLE</th>
                      <th style={{ padding: '15px 10px', fontSize: '10px', fontWeight: 950, color: '#e11d48', letterSpacing: '1px' }}>REFERRAL_CUT</th>
+                     <th style={{ padding: '15px 10px', fontSize: '10px', fontWeight: 950, color: '#166534', letterSpacing: '1px', background: '#f0fdf4' }}>NET_INCOME</th>
                      <th style={{ padding: '15px 10px', fontSize: '10px', fontWeight: 950, color: '#94a3b8', letterSpacing: '1px' }}>STATUS</th>
-                     <th style={{ padding: '15px 10px', fontSize: '10px', fontWeight: 950, color: '#94a3b8', letterSpacing: '1px', textAlign: 'right' }}>ACTIONS</th>
+<th style={{ padding: '15px 10px', fontSize: '10px', fontWeight: 950, color: '#94a3b8', letterSpacing: '1px', textAlign: 'right' }}>ACTIONS</th>
                    </tr>
                  </thead>
                  <tbody>
                    {paginatedInvoices.map(inv => (
                      <tr key={inv.invoiceId} style={{ borderBottom: '1px solid #f8fafc', transition: 'background 0.2s' }}>
-                       <td style={{ padding: '20px 10px', fontSize: '12px', fontWeight: 900, color: '#0f52ba', fontFamily: 'monospace' }}>{inv.displayId}</td>
-                       <td style={{ padding: '20px 10px', fontSize: '13px', fontWeight: 800, color: '#1e293b' }}>{inv.patientName.toUpperCase()}</td>
-                       <td style={{ padding: '20px 10px', fontSize: '12px', color: '#64748b', fontWeight: 600 }}>{new Date(inv.createdAt).toLocaleString()}</td>
+                       <td style={{ padding: '20px 10px', fontSize: '12px', fontWeight: 900, color: '#0f52ba', fontFamily: 'monospace' }}>{inv?.displayId || 'N/A'}</td>
+                       <td style={{ padding: '20px 10px', fontSize: '13px', fontWeight: 800, color: '#1e293b' }}>{(inv?.patientName || 'UNKNOWN').toUpperCase()}</td>
+                       <td style={{ padding: '20px 10px', fontSize: '12px', color: '#64748b', fontWeight: 600 }}>{inv?.createdAt ? new Date(inv.createdAt).toLocaleString() : 'N/A'}</td>
                        <td style={{ padding: '20px 10px', fontSize: '13px', fontWeight: 700, color: '#64748b', background: '#f8fafc' }}>₹{(inv.grossAmount || 0).toLocaleString()}</td>
-                       <td style={{ padding: '20px 10px', fontSize: '13px', fontWeight: 950, color: '#ef4444', background: '#fff1f2' }}>{inv.discountAmount > 0 ? `-₹${inv.discountAmount.toLocaleString()}` : '—'}</td>
-                       <td style={{ padding: '20px 10px', fontSize: '14px', fontWeight: 950, color: '#0f52ba', background: '#f0f4ff' }}>₹{inv.totalAmount.toLocaleString()}</td>
+                       <td style={{ padding: '20px 10px', fontSize: '13px', fontWeight: 950, color: '#ef4444', background: '#fff1f2' }}>{(inv?.discountAmount || 0) > 0 ? `-₹${(inv.discountAmount || 0).toLocaleString()}` : '—'}</td>
+                       <td style={{ padding: '20px 10px', fontSize: '14px', fontWeight: 950, color: '#0f52ba', background: '#f0f4ff' }}>₹{(inv?.totalAmount || 0).toLocaleString()}</td>
                        <td style={{ padding: '20px 10px' }}>
-                           {inv.commissionAmount > 0 ? (
+                           {(Number(inv?.commissionAmount) || 0) > 0 ? (
                              <div style={{ display: 'flex', flexDirection: 'column' }}>
-                                <span style={{ fontSize: '13px', fontWeight: 950, color: '#e11d48' }}>₹{inv.commissionAmount.toLocaleString()}</span>
+                                <span style={{ fontSize: '13px', fontWeight: 950, color: '#e11d48' }}>₹{(Number(inv?.commissionAmount) || 0).toLocaleString()}</span>
                                 <span style={{ fontSize: '8px', fontWeight: 800, color: '#e11d48', opacity: 0.7 }}>LOGGED_PAYOUT</span>
                              </div>
                            ) : (
                              <span style={{ fontSize: '12px', color: '#cbd5e1', fontWeight: 700 }}>—</span>
                            )}
                        </td>
+                       <td style={{ padding: '20px 10px', fontSize: '14px', fontWeight: 950, color: '#166534', background: '#f0fdf4' }}>₹{(Number(inv?.totalAmount || 0) - (Number(inv?.commissionAmount) || 0)).toLocaleString()}</td>
                        <td style={{ padding: '20px 10px' }}>
                           <span style={{ 
                             padding: '6px 12px', borderRadius: '8px', fontSize: '9px', fontWeight: 950,
-                            background: inv.status === 'PAID' ? '#ecfdf5' : '#fff7ed',
-                            color: inv.status === 'PAID' ? '#059669' : '#ea580c'
+                            background: inv?.status === 'PAID' ? '#ecfdf5' : '#fff7ed',
+                            color: inv?.status === 'PAID' ? '#059669' : '#ea580c'
                           }}>
-                            {inv.status}
+                            {inv?.status || 'PENDING'}
                           </span>
                        </td>
                        <td style={{ padding: '20px 10px', textAlign: 'right', display: 'flex', gap: '10px', justifyContent: 'flex-end', alignItems: 'center' }}>
@@ -1823,30 +2227,55 @@ export default function BillingPage() {
                                // Multi-stage identity resolution
                                let refId = inv.referrerId;
                                if (!refId && inv.referrerName) {
-                                  const match = referrers.find(r => r.name?.toLowerCase() === inv.referrerName.toLowerCase());
+                                  const match = referrers.find(r => r.name?.toLowerCase() === (inv.referrerName || '').toLowerCase());
                                   if (match) refId = match.referrerId || match.id;
                                }
 
                                setEditPayout({
+                                 commissionId: '',
                                  referrerId: refId || '',
                                  referrerName: inv.referrerName || 'DIRECT',
                                  amount: cutAmount || 0,
                                  modality: inv.modality || 'MRI', 
                                  remarks: `Commission for Mission ${inv.displayId} (${inv.patientName})`,
-                                 invoiceId: inv.displayId
+                                 invoiceId: inv.displayId,
+                                 status: 'UNPAID'
                                });
                                setIsPayoutDrawerOpen(true);
                             }}
-                            style={{ padding: '8px 12px', borderRadius: '10px', border: 'none', background: '#fff1f2', color: '#e11d48', fontSize: '10px', fontWeight: 950, cursor: 'pointer', boxShadow: '0 2px 5px rgba(225,29,72,0.1)' }}
-                          >LOG CUT 💸</button>
+                             disabled={recordedPayouts.has(inv.displayId)}
+                             style={{ 
+                               padding: '8px 12px', borderRadius: '10px', border: 'none', 
+                               background: recordedPayouts.has(inv.displayId) ? '#f1f5f9' : '#fff1f2', 
+                               color: recordedPayouts.has(inv.displayId) ? '#94a3b8' : '#e11d48', 
+                               fontSize: '10px', fontWeight: 950, 
+                               cursor: recordedPayouts.has(inv.displayId) ? 'default' : 'pointer', 
+                               boxShadow: recordedPayouts.has(inv.displayId) ? 'none' : '0 2px 5px rgba(225,29,72,0.1)' 
+                             }} >{recordedPayouts.has(inv.displayId) ? 'PAID ✅' : 'CUT 💸'}</button>
+                           <button 
+                             onClick={() => handlePrintA4(inv)}
+                             title="Print A4 Invoice"
+                             style={{ padding: '8px', borderRadius: '8px', border: '1px solid #0f52ba', background: 'white', color: '#0f52ba', fontSize: '12px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                           >📄</button>
+                           <button 
+                             onClick={() => handlePrintThermal(inv)}
+                             title="Print Thermal Receipt"
+                             style={{ padding: '8px', borderRadius: '8px', border: 'none', background: '#0f52ba', color: 'white', fontSize: '12px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                           >📠</button>
+                           <button 
+                             onClick={() => handlePrintReceipt(inv)}
+                             title="Print Payment Receipt"
+                             style={{ padding: '8px', borderRadius: '8px', border: '1px solid #10b981', background: 'white', color: '#10b981', fontSize: '12px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                           >🧾</button>
+                           <div style={{ width: '1px', height: '20px', background: '#e2e8f0', margin: '0 5px' }}></div>
                           <button 
                             onClick={() => { setSelectedInvoice(inv); setIsInvoiceDrawerOpen(true); }}
                             style={{ padding: '8px 16px', borderRadius: '10px', border: '1px solid #e2e8f0', background: 'white', color: '#0f52ba', fontSize: '10px', fontWeight: 950, cursor: 'pointer' }}
-                          >VIEW_DETAILS</button>
+                          >PAYMENT</button>
                           <button 
                             onClick={() => handleDeleteInvoice(inv.invoiceId)}
                             style={{ padding: '8px 12px', borderRadius: '10px', border: 'none', background: '#fee2e2', color: '#ef4444', fontSize: '10px', fontWeight: 950, cursor: 'pointer' }}
-                          >DELETE</button>
+                          >DEL</button>
                        </td>
                      </tr>
                    ))}
@@ -1903,7 +2332,7 @@ export default function BillingPage() {
                  <div style={{ background: '#fff1f2', padding: '15px 25px', borderRadius: '16px', border: '1px solid #fecdd3', textAlign: 'right' }}>
                     <div style={{ fontSize: '10px', fontWeight: 950, color: '#e11d48', marginBottom: '5px' }}>TOTAL PAYOUTS</div>
                     <div style={{ fontSize: '24px', fontWeight: 950, color: '#881337' }}>
-                      ₹{filteredReferralCuts.reduce((sum, cut) => sum + cut.amount, 0).toLocaleString()}
+                      ₹{(filteredReferralCuts || []).reduce((sum, cut) => sum + (Number(cut?.amount) || 0), 0).toLocaleString()}
                     </div>
                  </div>
               </div>
@@ -1918,6 +2347,7 @@ export default function BillingPage() {
                        <th style={{ padding: '20px 30px', textAlign: 'left', fontSize: '10px', fontWeight: 950, color: '#e11d48', letterSpacing: '1px' }}>DESCRIPTION / MISSION</th>
                        <th style={{ padding: '20px 30px', textAlign: 'left', fontSize: '10px', fontWeight: 950, color: '#e11d48', letterSpacing: '1px' }}>REF_ID</th>
                        <th style={{ padding: '20px 30px', textAlign: 'right', fontSize: '10px', fontWeight: 950, color: '#e11d48', letterSpacing: '1px' }}>PAYOUT_AMOUNT</th>
+                       <th style={{ padding: '20px 30px', textAlign: 'center', fontSize: '10px', fontWeight: 950, color: '#e11d48', letterSpacing: '1px' }}>STATUS</th>
                        <th style={{ padding: '20px 30px', textAlign: 'right', fontSize: '10px', fontWeight: 950, color: '#e11d48', letterSpacing: '1px' }}>ACTION</th>
                     </tr>
                  </thead>
@@ -1926,17 +2356,32 @@ export default function BillingPage() {
                        <tr><td colSpan="6" style={{ padding: '100px', textAlign: 'center', color: '#94a3b8', fontSize: '12px', fontWeight: 700 }}>NO REFERRAL PAYOUTS DETECTED</td></tr>
                     ) : (
                        paginatedReferralCuts.map(cut => (
-                          <tr key={cut.id} style={{ borderBottom: '1px solid #f1f5f9' }}>
-                             <td style={{ padding: '20px 30px', fontSize: '12px', fontWeight: 800, color: '#1e293b' }}>{new Date(cut.date).toLocaleDateString()}</td>
+                          <tr key={cut?.id} style={{ borderBottom: '1px solid #f1f5f9' }}>
+                             <td style={{ padding: '20px 30px', fontSize: '12px', fontWeight: 800, color: '#1e293b' }}>{cut?.date ? new Date(cut.date).toLocaleDateString() : 'N/A'}</td>
                              <td style={{ padding: '20px 30px' }}>
-                                <div style={{ fontSize: '13px', fontWeight: 950, color: '#e11d48' }}>{(cut.name || 'DIRECT').toUpperCase()}</div>
+                                <div style={{ fontSize: '13px', fontWeight: 950, color: '#e11d48' }}>{(cut?.name || 'DIRECT').toUpperCase()}</div>
                              </td>
-                             <td style={{ padding: '20px 30px', fontSize: '12px', fontWeight: 700, color: '#64748b' }}>{cut.description}</td>
+                             <td style={{ padding: '20px 30px', fontSize: '12px', fontWeight: 700, color: '#64748b' }}>{cut?.description}</td>
                              <td style={{ padding: '20px 30px' }}>
-                                <div style={{ padding: '4px 8px', background: '#f1f5f9', borderRadius: '6px', fontSize: '10px', fontWeight: 950, color: '#1e293b', display: 'inline-block', fontFamily: 'monospace' }}>{cut.reference || 'N/A'}</div>
+                                <div style={{ padding: '4px 8px', background: '#f1f5f9', borderRadius: '6px', fontSize: '10px', fontWeight: 950, color: '#1e293b', display: 'inline-block', fontFamily: 'monospace' }}>{cut?.reference || 'N/A'}</div>
                              </td>
                              <td style={{ padding: '20px 30px', textAlign: 'right' }}>
-                                <div style={{ fontSize: '16px', fontWeight: 950, color: '#e11d48' }}>₹{cut.amount.toLocaleString()}</div>
+                                <div style={{ fontSize: '16px', fontWeight: 950, color: '#e11d48' }}>₹{(Number(cut?.amount) || 0).toLocaleString()}</div>
+                             </td>
+                             <td style={{ padding: '20px 30px', textAlign: 'center' }}>
+                                <button 
+                                  onClick={() => cut?.type === 'STRATEGIC' && handleToggleCommissionStatus(cut?.id, cut?.status)}
+                                  disabled={cut?.type === 'LEGACY'}
+                                  style={{ 
+                                    padding: '6px 12px', borderRadius: '8px', border: 'none', fontSize: '9px', fontWeight: 950,
+                                    background: cut?.status === 'PAID' ? '#dcfce7' : '#fee2e2',
+                                    color: cut?.status === 'PAID' ? '#166534' : '#991b1b',
+                                    cursor: cut?.type === 'STRATEGIC' ? 'pointer' : 'default',
+                                    boxShadow: 'inset 0 2px 4px rgba(0,0,0,0.05)'
+                                  }}
+                                >
+                                  {cut?.status || 'UNPAID'}
+                                </button>
                              </td>
                              <td style={{ padding: '20px 30px', textAlign: 'right' }}>
                                  {cut.type === 'LEGACY' ? (
@@ -1945,7 +2390,25 @@ export default function BillingPage() {
                                        style={{ padding: '8px 12px', borderRadius: '8px', border: 'none', background: '#fee2e2', color: '#ef4444', fontSize: '9px', fontWeight: 950, cursor: 'pointer' }}
                                     >DELETE</button>
                                  ) : (
-                                    <span style={{ fontSize: '9px', fontWeight: 950, color: '#94a3b8', letterSpacing: '0.5px' }}>LOCKED</span>
+                                    <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end', alignItems: 'center' }}>
+                                       <button 
+                                          onClick={() => {
+                                             setEditPayout({
+                                               commissionId: cut.id,
+                                               referrerId: cut.referrerId,
+                                               referrerName: cut.name,
+                                               amount: cut.amount,
+                                               modality: (cut.description || '').match(/\[(.*?)\]/)?.[1] || 'MRI',
+                                               remarks: (cut.description || '').includes(' - ') ? cut.description.split(' - ')[1] : '',
+                                               invoiceId: cut.reference,
+                                               status: cut.status
+                                             });
+                                             setIsPayoutDrawerOpen(true);
+                                          }}
+                                          style={{ padding: '6px 12px', borderRadius: '8px', border: 'none', background: '#f0f4ff', color: '#0f52ba', fontSize: '9px', fontWeight: 950, cursor: 'pointer' }}
+                                       >EDIT</button>
+                                       <span style={{ fontSize: '9px', fontWeight: 950, color: '#94a3b8', letterSpacing: '0.5px' }}>LOCKED</span>
+                                    </div>
                                  )}
                              </td>
                           </tr>
@@ -1962,7 +2425,7 @@ export default function BillingPage() {
         </div>
       )}
 
-      {billingViewMode === 'ANALYTICS' && (
+      {billingViewMode === 'ANALYTICS' && matrix && (
         <div className="analytics-main" style={{ animation: 'fadeIn 0.3s' }}>
           {/* ANALYTICS CONTROL BAR */}
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '30px', background: 'white', padding: '20px 30px', borderRadius: '24px', border: '1px solid #e2e8f0', boxShadow: '0 4px 20px rgba(0,0,0,0.02)' }}>
@@ -2040,7 +2503,7 @@ export default function BillingPage() {
                       <p style={{ fontSize: '11px', color: '#94a3b8', fontWeight: 700, marginTop: '4px' }}>Strategic breakdown of income by acquisition modality</p>
                   </div>
                   <div style={{ padding: '10px 20px', background: '#f8fafc', borderRadius: '14px', border: '1px solid #f1f5f9', fontSize: '11px', fontWeight: 950, color: '#0f52ba' }}>
-                      TOTAL_ACTIVE_CHANNELS: {matrix.modalityBreakdown?.length || 0}
+                      TOTAL_ACTIVE_CHANNELS: {matrix?.modalityBreakdown?.length || 0}
                   </div>
               </div>
 
@@ -2054,7 +2517,7 @@ export default function BillingPage() {
                           </tr>
                       </thead>
                       <tbody>
-                          {matrix.modalityBreakdown?.map((item, idx) => (
+                          {matrix?.modalityBreakdown?.filter(item => item).map((item, idx) => (
                               <tr key={idx} style={{ borderBottom: '1px solid #f8fafc', transition: 'all 0.2s' }}>
                                   <td style={{ padding: '25px 10px' }}>
                                       <div style={{ display: 'flex', alignItems: 'center', gap: '15px' }}>

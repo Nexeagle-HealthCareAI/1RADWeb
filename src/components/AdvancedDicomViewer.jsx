@@ -356,13 +356,16 @@ const AdvancedDicomViewer = ({
   onAnnotation = null,
   // Fullscreen props
   enableFullscreen = true,
-  onFullscreenChange = null
+  onFullscreenChange = null,
+  // Series name for display
+  seriesName = null
 }) => {
   const containerRef = useRef(null);
   const elementRef = useRef(null);
   const renderingEngineRef = useRef(null);
   const toolGroupRef = useRef(null);
   const fullscreenContainerRef = useRef(null);
+  const filesRef = useRef(null); // Keep files in ref to prevent garbage collection
   
   const uniqueId = useId().replace(/[^a-zA-Z0-9]/g, '');
   const engineId = `ENGINE_${uniqueId}`;
@@ -393,13 +396,26 @@ const AdvancedDicomViewer = ({
   const [lastTouchTime, setLastTouchTime] = useState(0);
   const [showToolbar, setShowToolbar] = useState(true);
 
+  // CRITICAL: Reset currentImageIndex when files change (e.g., switching series)
+  useEffect(() => {
+    console.log('[DICOM] Files prop changed, resetting currentImageIndex to 0');
+    console.log('[DICOM] New files count:', files?.length);
+    setCurrentImageIndex(0);
+    setIsReady(false); // Force re-initialization
+    
+    // Store files in ref to prevent garbage collection of Blob URLs
+    filesRef.current = files;
+  }, [files]);
+
   // --- DESKTOP KEYBOARD NAVIGATION FOR SLICE NAVIGATION ---
   useEffect(() => {
     if (!elementRef.current || !isReady || !files || files.length <= 1 || isTablet) return;
     
+    const element = elementRef.current;
+    
     const handleKeyNavigation = (e) => {
       // Only handle if the DICOM viewer element has focus or is the target
-      if (!elementRef.current.contains(e.target) && e.target !== elementRef.current) return;
+      if (!element.contains(e.target) && e.target !== element) return;
       
       let newIndex = currentImageIndex;
       
@@ -448,15 +464,23 @@ const AdvancedDicomViewer = ({
     // Add keyboard event listener to document
     document.addEventListener('keydown', handleKeyNavigation);
     
-    // Make the element focusable for keyboard events
-    elementRef.current.setAttribute('tabindex', '0');
+    // Make the element focusable and auto-focus it for keyboard events
+    element.setAttribute('tabindex', '0');
+    element.style.outline = 'none'; // Remove focus outline for cleaner look
+    
+    // Auto-focus the element when it's ready
+    setTimeout(() => {
+      element.focus();
+      console.log('[DICOM] Element focused for keyboard navigation');
+    }, 100);
     
     return () => {
       document.removeEventListener('keydown', handleKeyNavigation);
     };
   }, [isReady, files, currentImageIndex, isTablet, viewportId, onSliceChange]);
 
-  // --- DESKTOP WHEEL EVENT FALLBACK FOR SLICE NAVIGATION ---
+  // --- DESKTOP WHEEL EVENT FOR SLICE NAVIGATION ---
+  // Re-enabled: StackScroll tool alone wasn't working reliably
   useEffect(() => {
     if (!elementRef.current || !isReady || !files || files.length <= 1 || isTablet) return;
     
@@ -466,7 +490,8 @@ const AdvancedDicomViewer = ({
       // Only handle wheel events if no modifier keys are pressed (to avoid conflicts with zoom)
       if (e.ctrlKey || e.shiftKey || e.altKey) return;
       
-      e.preventDefault();
+      // Don't prevent default - let it bubble to StackScroll tool first
+      // e.preventDefault();
       
       const delta = e.deltaY > 0 ? 1 : -1;
       const newIndex = Math.max(0, Math.min(files.length - 1, currentImageIndex + delta));
@@ -474,16 +499,20 @@ const AdvancedDicomViewer = ({
       if (newIndex !== currentImageIndex && renderingEngineRef.current) {
         const viewport = renderingEngineRef.current.getViewport(viewportId);
         if (viewport) {
-          console.log(`[DICOM] Manual wheel slice navigation: ${newIndex + 1}/${files.length}`);
-          viewport.setImageIdIndex(newIndex);
-          setCurrentImageIndex(newIndex);
-          if (onSliceChange) onSliceChange(newIndex, files.length);
+          console.log(`[DICOM] Wheel slice navigation: ${newIndex + 1}/${files.length}`);
+          try {
+            viewport.setImageIdIndex(newIndex);
+            setCurrentImageIndex(newIndex);
+            if (onSliceChange) onSliceChange(newIndex, files.length);
+          } catch (err) {
+            console.error('[DICOM] Wheel navigation error:', err);
+          }
         }
       }
     };
     
-    // Add wheel event listener with passive: false to allow preventDefault
-    element.addEventListener('wheel', handleWheelSliceNavigation, { passive: false });
+    // Add wheel event listener - passive to allow smooth scrolling
+    element.addEventListener('wheel', handleWheelSliceNavigation, { passive: true });
     
     return () => {
       element.removeEventListener('wheel', handleWheelSliceNavigation);
@@ -868,16 +897,28 @@ const AdvancedDicomViewer = ({
   }, [isFullscreen]);
 
   useEffect(() => {
-    if (!files || files.length === 0) return;
+    if (!files || files.length === 0) {
+      console.log('[DICOM METADATA] No files provided, skipping metadata check');
+      return;
+    }
+
+    console.log('[DICOM METADATA] Starting metadata check for', files.length, 'files');
+    console.log('[DICOM METADATA] First file:', files[0]);
 
     const checkMetadata = async () => {
       try {
+        console.log('[DICOM METADATA] Reading first file arrayBuffer...');
         const arrayBuffer = await files[0].arrayBuffer();
+        console.log('[DICOM METADATA] ArrayBuffer size:', arrayBuffer.byteLength);
+        
         const byteArray = new Uint8Array(arrayBuffer);
+        console.log('[DICOM METADATA] Parsing DICOM...');
         const dataSet = dicomParser.parseDicom(byteArray);
+        console.log('[DICOM METADATA] DICOM parsed successfully');
 
         const pixelElement = dataSet.elements['x7fe00010'];
         if (!pixelElement) {
+          console.warn('[DICOM METADATA] No pixel data found in file');
           const seriesDesc = dataSet.string('x0008103e') || '';
           const contentLabel = dataSet.string('x00700080') || '';
           const textValue = dataSet.string('x0040a160') || '';
@@ -894,6 +935,8 @@ const AdvancedDicomViewer = ({
           return;
         }
 
+        console.log('[DICOM METADATA] Pixel data found, extracting metadata...');
+        
         // Extract only essential metadata for fast loading
         const meta = {
           patientName: dataSet.string('x00100010'),
@@ -912,13 +955,21 @@ const AdvancedDicomViewer = ({
           rescaleSlope: dataSet.string('x00281053')
         };
         
+        console.log('[DICOM METADATA] Metadata extracted:', meta);
         setMetadata(meta);
         if (onMetadata) onMetadata(meta);
 
+        console.log('[DICOM METADATA] ✅ Setting isReady = true');
         if (onImageStatus) onImageStatus(true);
         setIsReady(true);
       } catch (err) {
-        console.error('Advanced Viewer Parse Error:', err);
+        console.error('[DICOM METADATA] ❌ Parse Error:', err);
+        console.error('[DICOM METADATA] Error details:', {
+          message: err.message,
+          stack: err.stack,
+          fileName: files[0]?.name,
+          fileSize: files[0]?.size
+        });
         setError('DICOM PARSE ERROR: ' + err.message);
         if (onImageStatus) onImageStatus(false);
       }
@@ -1090,17 +1141,16 @@ const AdvancedDicomViewer = ({
                const canvas = viewport.getCanvas();
                 console.log(`[DICOM] Viewport type: ${viewport.type}, Canvas: ${canvas.width}x${canvas.height}`);
                 
-                // Add listener for stack scroll index changes
-                elementRef.current.addEventListener(Enums.Events.STACK_NEW_IMAGE, (evt) => {
+                // Store event handlers for cleanup
+                const stackNewImageHandler = (evt) => {
                    console.log(`[DICOM] STACK_NEW_IMAGE event:`, evt.detail);
                    const index = evt.detail.imageIdIndex;
                    setCurrentImageIndex(index);
                    if (onSliceChange) onSliceChange(index, files.length);
                    console.log(`[DICOM] Slice changed via event: ${index + 1}/${files.length}`);
-                });
-
-                // Add additional debugging for viewport events
-                elementRef.current.addEventListener('wheel', (evt) => {
+                };
+                
+                const wheelDebugHandler = (evt) => {
                   console.log(`[DICOM] Wheel event detected:`, {
                     deltaY: evt.deltaY,
                     ctrlKey: evt.ctrlKey,
@@ -1108,7 +1158,15 @@ const AdvancedDicomViewer = ({
                     currentIndex: currentImageIndex,
                     totalFiles: files.length
                   });
-                });
+                };
+                
+                // Add listeners for stack scroll index changes
+                elementRef.current.addEventListener(Enums.Events.STACK_NEW_IMAGE, stackNewImageHandler);
+                elementRef.current.addEventListener('wheel', wheelDebugHandler);
+                
+                // Store handlers for cleanup
+                renderingEngineRef.current._stackNewImageHandler = stackNewImageHandler;
+                renderingEngineRef.current._wheelDebugHandler = wheelDebugHandler;
 
                 // Verify viewport stack data
                 const stackData = viewport.getStackData();
@@ -1216,16 +1274,29 @@ const AdvancedDicomViewer = ({
         // StackScroll always active with wheel (doesn't conflict with Primary button)
         const stackScrollToolName = StackScrollTool.toolName || 'StackScroll';
         console.log(`[DICOM] Setting up StackScroll tool: ${stackScrollToolName}`);
+        console.log(`[DICOM] StackScrollTool class:`, StackScrollTool);
+        console.log(`[DICOM] Tool group has StackScroll:`, toolGroup.hasTool(stackScrollToolName));
         
         try {
+          // Ensure StackScroll is added to the tool group
+          if (!toolGroup.hasTool(stackScrollToolName)) {
+            console.warn(`[DICOM] StackScroll not in tool group, adding it now...`);
+            toolGroup.addTool(stackScrollToolName);
+          }
+          
           toolGroup.setToolActive(stackScrollToolName, {
             bindings: [
               { mouseButton: toolsEnums.MouseBindings.Wheel }
             ]
           });
-          console.log(`[DICOM] ✅ StackScroll tool activated successfully`);
+          console.log(`[DICOM] ✅ StackScroll tool activated successfully with Wheel binding`);
+          
+          // Verify the tool is actually active
+          const toolState = toolGroup.getToolConfiguration(stackScrollToolName);
+          console.log(`[DICOM] StackScroll tool state:`, toolState);
         } catch (stackErr) {
           console.error(`[DICOM] ❌ Failed to activate StackScroll tool:`, stackErr);
+          console.error(`[DICOM] Error stack:`, stackErr.stack);
         }
         
         // Debug: Log all available tools
@@ -1251,6 +1322,20 @@ const AdvancedDicomViewer = ({
         
         // Start prefetching for smoother scrolling using the utility
         utilities.stackPrefetch.enable(elementRef.current);
+        
+        // DEBUGGING: Expose references for console testing
+        if (typeof window !== 'undefined') {
+          window.cornerstoneEngine = renderingEngine;
+          window.cornerstoneToolGroup = toolGroup;
+          window.cornerstoneViewport = viewport;
+          window.cornerstoneElementRef = elementRef.current;
+          console.log('[DICOM] 🔍 Debug variables exposed to window:', {
+            cornerstoneEngine: !!window.cornerstoneEngine,
+            cornerstoneToolGroup: !!window.cornerstoneToolGroup,
+            cornerstoneViewport: !!window.cornerstoneViewport,
+            cornerstoneElementRef: !!window.cornerstoneElementRef
+          });
+        }
 
         // SYNC LOGIC - Check for existing synchronizers to avoid ID collisions
         if (isSynced) {
@@ -1294,6 +1379,16 @@ const AdvancedDicomViewer = ({
       }
       if (renderingEngineRef.current) {
         try {
+          // Remove event listeners if they exist
+          if (elementRef.current && renderingEngineRef.current._stackNewImageHandler) {
+            elementRef.current.removeEventListener(Enums.Events.STACK_NEW_IMAGE, renderingEngineRef.current._stackNewImageHandler);
+          }
+          if (elementRef.current && renderingEngineRef.current._wheelDebugHandler) {
+            elementRef.current.removeEventListener('wheel', renderingEngineRef.current._wheelDebugHandler);
+          }
+          if (renderingEngineRef.current._onImageLoadFailed && elementRef.current) {
+            elementRef.current.removeEventListener(Enums.Events.IMAGE_LOAD_FAILED, renderingEngineRef.current._onImageLoadFailed);
+          }
           if (renderingEngineRef.current._resizeObserver) {
             renderingEngineRef.current._resizeObserver.disconnect();
           }
@@ -2289,6 +2384,59 @@ const AdvancedDicomViewer = ({
         </div>
       )}
 
+      {/* LEFT SIDE SERIES NAME PANEL */}
+      {seriesName && isReady && (
+        <div style={{
+          position: 'fixed',
+          left: '15px',
+          top: '50%',
+          transform: 'translateY(-50%)',
+          zIndex: 100,
+          background: 'linear-gradient(135deg, rgba(15, 23, 42, 0.95), rgba(30, 41, 59, 0.95))',
+          backdropFilter: 'blur(12px)',
+          borderRadius: '16px',
+          padding: '20px 15px',
+          border: '2px solid rgba(59, 130, 246, 0.3)',
+          boxShadow: '0 8px 32px rgba(0,0,0,0.4)',
+          maxWidth: '200px',
+          pointerEvents: 'auto'
+        }}>
+          <div style={{
+            color: '#3b82f6',
+            fontSize: '10px',
+            fontWeight: 900,
+            marginBottom: '10px',
+            letterSpacing: '1px',
+            textAlign: 'center'
+          }}>
+            SERIES
+          </div>
+          <div style={{
+            color: '#fff',
+            fontSize: '12px',
+            fontWeight: 700,
+            textAlign: 'center',
+            lineHeight: '1.4',
+            wordBreak: 'break-word'
+          }}>
+            {seriesName}
+          </div>
+          {files && files.length > 0 && (
+            <div style={{
+              color: '#94a3b8',
+              fontSize: '10px',
+              fontWeight: 600,
+              marginTop: '10px',
+              textAlign: 'center',
+              paddingTop: '10px',
+              borderTop: '1px solid rgba(255,255,255,0.1)'
+            }}>
+              {files.length} {files.length === 1 ? 'Slice' : 'Slices'}
+            </div>
+          )}
+        </div>
+      )}
+
       {/* WEBGL CANVAS CONTAINER */}
       <div 
         ref={elementRef} 
@@ -2306,7 +2454,7 @@ const AdvancedDicomViewer = ({
         }}
       />
 
-      {/* ENHANCED STACK SCROLL HUD - Desktop & Tablet Compatible */}
+      {/* ENHANCED STACK SCROLL HUD - Desktop & Tablet Compatible - RIGHT SIDE */}
       {(() => {
         const shouldShow = isReady && files && files.length > 1;
         console.log('[DICOM HUD] Visibility check:', {
@@ -2320,7 +2468,7 @@ const AdvancedDicomViewer = ({
       })() && (
         <div style={{ 
           position: 'fixed', // Changed from absolute to fixed for better tablet zoom handling
-          right: isTablet ? '15px' : '12px', 
+          right: isTablet ? '15px' : '12px', // RIGHT SIDE positioning
           top: '50%', 
           transform: 'translateY(-50%)', 
           height: isTablet ? '60%' : '80%', // Reduced height for tablets to avoid conflicts
@@ -2642,208 +2790,7 @@ const AdvancedDicomViewer = ({
         </div>
       )}
 
-      {/* CRITICAL: Always-Visible Slice Counter - Shows Immediately */}
-      {(() => {
-        console.log('[DICOM SLICE COUNTER] Rendering check:', {
-          hasFiles: !!files,
-          filesLength: files?.length,
-          isArray: Array.isArray(files),
-          currentIndex: currentImageIndex,
-          viewportId
-        });
-        return files && Array.isArray(files) && files.length > 1;
-      })() && (
-        <div style={{
-          position: 'fixed',
-          bottom: '30px',
-          left: '50%',
-          transform: 'translateX(-50%)',
-          zIndex: 99999, // Very high z-index to ensure visibility
-          background: 'linear-gradient(135deg, #ef4444, #dc2626)',
-          color: '#fff',
-          padding: '15px 30px',
-          borderRadius: '25px',
-          fontSize: '18px',
-          fontWeight: 'bold',
-          border: '3px solid #fca5a5',
-          boxShadow: '0 8px 32px rgba(239, 68, 68, 0.6)',
-          backdropFilter: 'blur(12px)',
-          pointerEvents: 'auto',
-          letterSpacing: '1px',
-          textAlign: 'center',
-          minWidth: '250px',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          gap: '15px',
-          animation: 'pulse 2s ease-in-out infinite'
-        }}>
-          <button
-            onClick={() => {
-              console.log('[SLICE NAV] Previous clicked, current:', currentImageIndex);
-              const newIndex = Math.max(0, currentImageIndex - 1);
-              if (renderingEngineRef.current && newIndex !== currentImageIndex) {
-                const viewport = renderingEngineRef.current.getViewport(viewportId);
-                if (viewport) {
-                  console.log('[SLICE NAV] Setting index to:', newIndex);
-                  viewport.setImageIdIndex(newIndex);
-                  setCurrentImageIndex(newIndex);
-                  if (onSliceChange) onSliceChange(newIndex, files.length);
-                }
-              }
-            }}
-            disabled={currentImageIndex === 0}
-            style={{
-              background: currentImageIndex === 0 ? 'rgba(255,255,255,0.2)' : 'rgba(255,255,255,0.4)',
-              border: '2px solid white',
-              color: 'white',
-              width: '40px',
-              height: '40px',
-              borderRadius: '50%',
-              cursor: currentImageIndex === 0 ? 'not-allowed' : 'pointer',
-              fontSize: '20px',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              fontWeight: 'bold',
-              opacity: currentImageIndex === 0 ? 0.5 : 1,
-              transition: 'all 0.2s'
-            }}
-          >
-            ◀
-          </button>
-          <span style={{ fontSize: '20px', fontWeight: '900' }}>
-            SLICE {currentImageIndex + 1} / {files.length}
-          </span>
-          <button
-            onClick={() => {
-              console.log('[SLICE NAV] Next clicked, current:', currentImageIndex);
-              const newIndex = Math.min(files.length - 1, currentImageIndex + 1);
-              if (renderingEngineRef.current && newIndex !== currentImageIndex) {
-                const viewport = renderingEngineRef.current.getViewport(viewportId);
-                if (viewport) {
-                  console.log('[SLICE NAV] Setting index to:', newIndex);
-                  viewport.setImageIdIndex(newIndex);
-                  setCurrentImageIndex(newIndex);
-                  if (onSliceChange) onSliceChange(newIndex, files.length);
-                }
-              }
-            }}
-            disabled={currentImageIndex === files.length - 1}
-            style={{
-              background: currentImageIndex === files.length - 1 ? 'rgba(255,255,255,0.2)' : 'rgba(255,255,255,0.4)',
-              border: '2px solid white',
-              color: 'white',
-              width: '40px',
-              height: '40px',
-              borderRadius: '50%',
-              cursor: currentImageIndex === files.length - 1 ? 'not-allowed' : 'pointer',
-              fontSize: '20px',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              fontWeight: 'bold',
-              opacity: currentImageIndex === files.length - 1 ? 0.5 : 1,
-              transition: 'all 0.2s'
-            }}
-          >
-            ▶
-          </button>
-        </div>
-      )}
-
-      {/* Original Always-Visible Slice Counter for Multi-Slice Series */}
-      {files && files.length > 1 && (
-        <div style={{
-          position: 'fixed',
-          bottom: '20px',
-          left: '50%',
-          transform: 'translateX(-50%)',
-          zIndex: 10000,
-          background: 'linear-gradient(135deg, rgba(15, 82, 186, 0.95), rgba(59, 130, 246, 0.95))',
-          color: '#fff',
-          padding: '10px 20px',
-          borderRadius: '20px',
-          fontSize: '14px',
-          fontWeight: 'bold',
-          border: '2px solid rgba(59, 130, 246, 0.6)',
-          boxShadow: '0 6px 24px rgba(59, 130, 246, 0.4)',
-          backdropFilter: 'blur(12px)',
-          pointerEvents: 'auto',
-          letterSpacing: '0.5px',
-          textAlign: 'center',
-          minWidth: '200px',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          gap: '12px'
-        }}>
-          <button
-            onClick={() => {
-              const newIndex = Math.max(0, currentImageIndex - 1);
-              if (renderingEngineRef.current && newIndex !== currentImageIndex) {
-                const viewport = renderingEngineRef.current.getViewport(viewportId);
-                if (viewport) {
-                  viewport.setImageIdIndex(newIndex);
-                  setCurrentImageIndex(newIndex);
-                  if (onSliceChange) onSliceChange(newIndex, files.length);
-                }
-              }
-            }}
-            disabled={currentImageIndex === 0}
-            style={{
-              background: currentImageIndex === 0 ? 'rgba(255,255,255,0.2)' : 'rgba(255,255,255,0.3)',
-              border: 'none',
-              color: 'white',
-              width: '32px',
-              height: '32px',
-              borderRadius: '50%',
-              cursor: currentImageIndex === 0 ? 'not-allowed' : 'pointer',
-              fontSize: '16px',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              fontWeight: 'bold',
-              opacity: currentImageIndex === 0 ? 0.5 : 1
-            }}
-          >
-            ◀
-          </button>
-          <span style={{ fontSize: '16px' }}>📊</span>
-          <span>SLICE {currentImageIndex + 1} / {files.length}</span>
-          <button
-            onClick={() => {
-              const newIndex = Math.min(files.length - 1, currentImageIndex + 1);
-              if (renderingEngineRef.current && newIndex !== currentImageIndex) {
-                const viewport = renderingEngineRef.current.getViewport(viewportId);
-                if (viewport) {
-                  viewport.setImageIdIndex(newIndex);
-                  setCurrentImageIndex(newIndex);
-                  if (onSliceChange) onSliceChange(newIndex, files.length);
-                }
-              }
-            }}
-            disabled={currentImageIndex === files.length - 1}
-            style={{
-              background: currentImageIndex === files.length - 1 ? 'rgba(255,255,255,0.2)' : 'rgba(255,255,255,0.3)',
-              border: 'none',
-              color: 'white',
-              width: '32px',
-              height: '32px',
-              borderRadius: '50%',
-              cursor: currentImageIndex === files.length - 1 ? 'not-allowed' : 'pointer',
-              fontSize: '16px',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              fontWeight: 'bold',
-              opacity: currentImageIndex === files.length - 1 ? 0.5 : 1
-            }}
-          >
-            ▶
-          </button>
-        </div>
-      )}
+      {/* Bottom-center slice counter removed - using left-side navigation only */}
 
       {/* SYNC INDICATOR */}
       {isReady && isSynced && (

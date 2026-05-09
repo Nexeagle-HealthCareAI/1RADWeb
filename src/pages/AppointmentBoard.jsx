@@ -1,6 +1,8 @@
 import { useState, useMemo, useEffect, useCallback, useContext, useRef } from 'react';
 import apiClient from '../api/apiClient';
 import { AuthContext } from '../auth/AuthContext';
+import useOffline from '../hooks/useOffline';
+import { nativeStorage } from '../hooks/useElectron';
 import AppointmentCard from '../components/AppointmentCard';
 import '../styles/global.css';
 import '../styles/AppointmentBoard.css';
@@ -55,6 +57,7 @@ const MODALITY_ICONS = {
 
 export default function AppointmentBoard() {
   const { activeCenterId, activeCenter } = useContext(AuthContext);
+  const { isOnline, addToOutbox } = useOffline();
   const [activeTab, setActiveTab] = useState('TODAY'); // 'TODAY' or 'PAST'
   const [pastDateRange, setPastDateRange] = useState({ 
     start: TODAY, 
@@ -113,22 +116,24 @@ export default function AppointmentBoard() {
   // --- API SYNC ---
   const fetchAppointments = useCallback(async () => {
     setLoading(true);
-    try {
-      const params = {
-        search: searchQuery,
-        status: filters.status,
-      };
+    const params = {
+      search: searchQuery,
+      status: filters.status,
+    };
 
-      if (activeTab === 'TODAY') {
-        params.date = TODAY;
-      } else {
-        params.isArchive = true;
-        if (archiveFilterMode === 'RANGE') {
-          params.startDate = pastDateRange.start;
-          params.endDate = pastDateRange.end;
-        }
+    if (activeTab === 'TODAY') {
+      params.date = TODAY;
+    } else {
+      params.isArchive = true;
+      if (archiveFilterMode === 'RANGE') {
+        params.startDate = pastDateRange.start;
+        params.endDate = pastDateRange.end;
       }
+    }
 
+    const cacheKey = `1rad_cache_appointments_${activeTab}_${activeCenterId}`;
+
+    try {
       const response = await apiClient.get('/appointments', { params });
       let mappedData = response.data.map(a => ({
         ...a,
@@ -157,12 +162,17 @@ export default function AppointmentBoard() {
       });
 
       setAppointments(processedData);
+      await nativeStorage.set(cacheKey, processedData);
     } catch (error) {
       console.error('Failed to fetch appointments:', error);
+      const cached = await nativeStorage.get(cacheKey);
+      if (cached) {
+        setAppointments(cached);
+      }
     } finally {
       setLoading(false);
     }
-  }, [searchQuery, filters.status, activeTab, pastDateRange]);
+  }, [searchQuery, filters.status, activeTab, pastDateRange, activeCenterId]);
 
   const fetchPatients = useCallback(async (query) => {
     try {
@@ -222,8 +232,11 @@ export default function AppointmentBoard() {
     try {
       const res = await apiClient.get('/finance/registry');
       setServiceRegistry(res.data);
+      await nativeStorage.set('1rad_cache_service_registry', res.data);
     } catch (err) {
       console.error('[FINANCE] Registry fetch failed', err);
+      const cached = await nativeStorage.get('1rad_cache_service_registry');
+      if (cached) setServiceRegistry(cached);
     }
   }, []);
 
@@ -307,7 +320,6 @@ export default function AppointmentBoard() {
 
   // --- HANDLERS ---
   const handleAction = async (id, action) => {
-    // Find the real GUID for this display ID
     const app = appointments.find(a => a.id === id);
     if (!app) return;
 
@@ -317,6 +329,14 @@ export default function AppointmentBoard() {
     if (action === 'COMPLETE') newStatus = 'completed';
     if (action === 'CANCEL') newStatus = 'cancelled';
 
+    // Optimistic UI Update
+    setAppointments(prev => prev.map(a => a.id === id ? { ...a, status: newStatus } : a));
+
+    if (!isOnline) {
+      await addToOutbox('APPOINTMENT_STATUS', { id: app.appointmentId, status: newStatus });
+      return;
+    }
+
     try {
       await apiClient.patch(`/appointments/${app.appointmentId}/status`, `"${newStatus}"`, {
         headers: { 'Content-Type': 'application/json' }
@@ -324,6 +344,9 @@ export default function AppointmentBoard() {
       fetchAppointments();
     } catch (error) {
       console.error('Failed to update status:', error);
+      if (!error.response) {
+        await addToOutbox('APPOINTMENT_STATUS', { id: app.appointmentId, status: newStatus });
+      }
     }
   };
 
@@ -339,18 +362,28 @@ export default function AppointmentBoard() {
 
   const handleAddPatient = async (e) => {
     e.preventDefault();
+    const payload = {
+      fullName: newPatient.name,
+      mobile: newPatient.mobile,
+      age: newPatient.age,
+      gender: newPatient.gender,
+      village: newPatient.village,
+      district: newPatient.district,
+      address: newPatient.address,
+      sourceOfInfo: newPatient.sourceOfInfo
+    };
+
+    if (!isOnline) {
+      const tempId = `temp-${Date.now()}`;
+      await addToOutbox('PATIENT_CREATE', { ...payload, tempId });
+      alert('OFFLINE_MODE: Patient profile queued for synchronization.');
+      setNewBooking(prev => ({ ...prev, patientId: tempId }));
+      setIsAddPatientOpen(false);
+      return;
+    }
+
     try {
-      const response = await apiClient.post('/patients', {
-        fullName: newPatient.name,
-        mobile: newPatient.mobile,
-        age: newPatient.age,
-        gender: newPatient.gender,
-        village: newPatient.village,
-        district: newPatient.district,
-        address: newPatient.address,
-        sourceOfInfo: newPatient.sourceOfInfo
-      });
-      
+      const response = await apiClient.post('/patients', payload);
       const patientId = response.data.patientId;
       setIsAddPatientOpen(false);
       setNewPatient({ name: '', mobile: '', age: '', gender: 'Male', village: '', district: '', address: '', referredBy: '', sourceOfInfo: '' });
@@ -358,6 +391,12 @@ export default function AppointmentBoard() {
       fetchPatients('');
     } catch (error) {
       console.error('Failed to add patient:', error);
+      if (!error.response) {
+         const tempId = `temp-${Date.now()}`;
+         await addToOutbox('PATIENT_CREATE', { ...payload, tempId });
+         setNewBooking(prev => ({ ...prev, patientId: tempId }));
+         setIsAddPatientOpen(false);
+      }
     }
   };
 
@@ -371,19 +410,29 @@ export default function AppointmentBoard() {
       return;
     }
 
+    const payload = {
+      patientId: newBooking.patientId,
+      service: newBooking.service,
+      modality: newBooking.modality,
+      dateTime: new Date().toISOString(),
+      type: 'scheduled',
+      doctor: newBooking.doctor,
+      referredBy: newPatient.referredBy || '',
+      referredContact: referrers.find(r => r.name === newPatient.referredBy)?.contact || '',
+      referredAddress: referrers.find(r => r.name === newPatient.referredBy)?.address || '',
+      notes: newBooking.notes
+    };
+
+    if (!isOnline) {
+      await addToOutbox('APPOINTMENT_CREATE', payload);
+      alert('OFFLINE_MODE: Mission deployment queued for synchronization.');
+      setIsBookingOpen(false);
+      resetBooking();
+      return;
+    }
+
     try {
-      const appointmentRes = await apiClient.post('/appointments', {
-        patientId: newBooking.patientId,
-        service: newBooking.service,
-        modality: newBooking.modality,
-        dateTime: new Date().toISOString(),
-        type: 'scheduled',
-        doctor: newBooking.doctor,
-        referredBy: newPatient.referredBy || '',
-        referredContact: referrers.find(r => r.name === newPatient.referredBy)?.contact || '',
-        referredAddress: referrers.find(r => r.name === newPatient.referredBy)?.address || '',
-        notes: newBooking.notes
-      });
+      const appointmentRes = await apiClient.post('/appointments', payload);
 
       // --- AUTO-BILLING TRIGGER (API INTEGRATED) ---
       try {
@@ -394,7 +443,6 @@ export default function AppointmentBoard() {
           );
 
           if (matchedPrice) {
-            console.log('[AUTO-BILL] Initiating invoice for:', matchedPrice.serviceName);
             const invoicePayload = {
               patientId: newBooking.patientId,
               appointmentId: appointmentRes.data.appointmentId || appointmentRes.data.id,
@@ -404,30 +452,25 @@ export default function AppointmentBoard() {
                 quantity: 1
               }]
             };
-            
-            if (!invoicePayload.patientId || !invoicePayload.appointmentId) {
-              console.warn('[AUTO-BILL] Aborted: Missing IDs', invoicePayload);
-              return;
-            }
-
             await apiClient.post('/finance/invoices', invoicePayload);
-            console.log('[AUTO-BILL] Success: Invoice dispatched to backend.');
-          } else {
-             console.warn('[AUTO-BILL] Skipping: No matching price found in registry for', newBooking.service);
           }
         }
       } catch (err) {
-        console.error('[AUTO-BILL] Backend transmission failure:', err.response?.data || err.message);
-        // We don't alert here to avoid interrupting the main appointment success flow
+        console.error('[AUTO-BILL] Backend transmission failure:', err.message);
       }
-      // ----------------------------------------------
 
       setIsBookingOpen(false);
       resetBooking();
       fetchAppointments();
     } catch (error) {
       console.error('Failed to book appointment:', error);
-      alert('CRITICAL ERROR: Mission deployment failed. Check backend telemetry.');
+      if (!error.response) {
+        await addToOutbox('APPOINTMENT_CREATE', payload);
+        setIsBookingOpen(false);
+        resetBooking();
+      } else {
+        alert('CRITICAL ERROR: Mission deployment failed. Check backend telemetry.');
+      }
     }
   };
 
@@ -467,6 +510,227 @@ export default function AppointmentBoard() {
     } catch (error) {
       console.error('Failed to update appointment:', error);
       alert('ERROR: Failed to update appointment. Please try again.');
+    }
+  };
+
+  // ============================================================
+  //  INSTITUTIONAL PRINTING ENGINE (DESKTOP PARITY)
+  // ============================================================
+  const ghostPrint = (html) => {
+    const iframe = document.createElement('iframe');
+    iframe.style.position = 'fixed';
+    iframe.style.right = '0';
+    iframe.style.bottom = '0';
+    iframe.style.width = '0';
+    iframe.style.height = '0';
+    iframe.style.border = 'none';
+    document.body.appendChild(iframe);
+    iframe.contentDocument.write(html);
+    iframe.contentDocument.close();
+    
+    setTimeout(() => {
+      iframe.contentWindow.focus();
+      iframe.contentWindow.print();
+      setTimeout(() => {
+        document.body.removeChild(iframe);
+      }, 1000);
+    }, 500);
+  };
+
+  const handlePrintA4 = (inv) => {
+    if (!inv) return;
+    
+    const itemsHtml = (inv.items || []).map(it => `
+      <tr style="border-bottom: 1px solid #eee;">
+        <td style="padding: 12px 0;">${it.description}</td>
+        <td style="padding: 12px 0; text-align: center;">${it.quantity}</td>
+        <td style="padding: 12px 0; text-align: right;">₹${it.amount.toLocaleString()}</td>
+        <td style="padding: 12px 0; text-align: right; font-weight: bold;">₹${(it.amount * it.quantity).toLocaleString()}</td>
+      </tr>
+    `).join('');
+
+    ghostPrint(`
+      <html>
+        <head>
+          <title>1Rad Invoice - ${inv.displayId}</title>
+          <style>
+            body { font-family: 'Inter', sans-serif; padding: 40px; color: #1e293b; }
+            .header { display: flex; justify-content: space-between; margin-bottom: 40px; border-bottom: 2px solid #0f52ba; padding-bottom: 20px; }
+            .hospital-info { font-weight: 900; }
+            .invoice-meta { text-align: right; }
+            .patient-box { background: #f8fafc; padding: 20px; border-radius: 12px; margin-bottom: 30px; border: 1px solid #e2e8f0; }
+            table { width: 100%; border-collapse: collapse; margin-bottom: 40px; }
+            th { text-align: left; font-size: 10px; text-transform: uppercase; color: #64748b; padding-bottom: 10px; border-bottom: 1px solid #e2e8f0; }
+            .totals { float: right; width: 300px; }
+            .total-row { display: flex; justify-content: space-between; padding: 8px 0; }
+            .grand-total { border-top: 2px solid #0f52ba; margin-top: 10px; padding-top: 10px; font-size: 20px; font-weight: 950; color: #0f52ba; }
+          </style>
+        </head>
+        <body>
+          <div class="header">
+            <div class="hospital-info">
+               <div style="font-size: 24px; color: #0f52ba;">${(activeCenter?.hospitalName || '1RAD DIAGNOSTIC HUB').toUpperCase()}</div>
+               <div style="font-size: 12px; color: #64748b; font-weight: 500; margin-top: 5px;">${activeCenter?.address || 'Strategic Healthcare Node'}</div>
+               <div style="font-size: 12px; color: #64748b; font-weight: 500;">Contact: ${activeCenter?.contactNo || '+91 XXXXXXXXXX'}</div>
+            </div>
+            <div class="invoice-meta">
+               <div style="font-size: 14px; font-weight: 950;">TAX INVOICE</div>
+               <div style="font-size: 11px; color: #64748b; margin-top: 5px;">ID: ${inv.displayId}</div>
+               <div style="font-size: 11px; color: #64748b;">DATE: ${new Date(inv.createdAt).toLocaleDateString()}</div>
+            </div>
+          </div>
+          <div class="patient-box">
+             <div style="font-size: 10px; font-weight: 950; color: #64748b; margin-bottom: 8px;">BILL_TO_PATIENT:</div>
+             <div style="font-size: 18px; font-weight: 950;">${(inv.patientName || 'N/A').toUpperCase()}</div>
+             <div style="font-size: 12px; color: #64748b; margin-top: 5px;">Clinical Reference: ${inv.patientId || 'N/A'}</div>
+          </div>
+          <table>
+             <thead>
+                <tr>
+                   <th style="width: 50%;">SERVICE_DESCRIPTION</th>
+                   <th style="text-align: center;">QTY</th>
+                   <th style="text-align: right;">UNIT_PRICE</th>
+                   <th style="text-align: right;">SUBTOTAL</th>
+                </tr>
+             </thead>
+             <tbody>
+                ${itemsHtml}
+             </tbody>
+          </table>
+          <div class="totals">
+             <div class="total-row">
+                <span style="font-size: 12px; font-weight: 700;">GROSS_AGGREGATE</span>
+                <span style="font-size: 12px; font-weight: 700;">₹${(inv.grossAmount || 0).toLocaleString()}</span>
+             </div>
+             <div class="total-row" style="color: #ef4444;">
+                <span style="font-size: 12px; font-weight: 700;">DEDUCTION/DISCOUNT</span>
+                <span style="font-size: 12px; font-weight: 700;">- ₹${(inv.discountAmount || 0).toLocaleString()}</span>
+             </div>
+             <div class="total-row grand-total">
+                <span>NET_PAYABLE</span>
+                <span>₹${(inv.totalAmount || 0).toLocaleString()}</span>
+             </div>
+             <div style="margin-top: 20px; font-size: 11px; font-weight: 900; color: #10b981; text-align: right;">
+                STATUS: ${(inv.status || 'PAID').toUpperCase()}
+             </div>
+          </div>
+          <div style="margin-top: 150px; font-size: 10px; color: #94a3b8; text-align: center; border-top: 1px solid #f1f5f9; padding-top: 20px;">
+             This is a computer-generated diagnostic invoice. No physical signature required.<br/>
+             Powered by 1Rad Strategic Infrastructure
+          </div>
+        </body>
+      </html>
+    `);
+  };
+
+  const handlePrintThermal = (inv) => {
+    if (!inv) return;
+    
+    const itemsHtml = (inv.items || []).map(it => `
+      <div style="display: flex; justify-content: space-between; font-size: 12px; margin-bottom: 5px;">
+        <span>${it.description} x${it.quantity}</span>
+        <span>₹${((it.amount || 0) * (it.quantity || 0)).toLocaleString()}</span>
+      </div>
+    `).join('');
+
+    ghostPrint(`
+      <html>
+        <head>
+          <title>Receipt - ${inv.displayId}</title>
+          <style>
+            body { font-family: 'monospace'; padding: 10px; font-size: 12px; width: 72mm; }
+            .center { text-align: center; }
+            .divider { border-top: 1px dashed #000; margin: 10px 0; }
+          </style>
+        </head>
+        <body>
+          <div class="center" style="font-size: 16px; font-weight: bold;">${activeCenter?.hospitalName || '1RAD HUB'}</div>
+          <div class="center">${activeCenter?.address || ''}</div>
+          <div class="divider"></div>
+          <div style="font-weight: bold;">INV: ${inv.displayId}</div>
+          <div>DATE: ${new Date(inv.createdAt).toLocaleString()}</div>
+          <div class="divider"></div>
+          <div style="font-weight: bold;">PATIENT: ${inv.patientName.toUpperCase()}</div>
+          <div class="divider"></div>
+          ${itemsHtml}
+          <div class="divider"></div>
+          <div style="display: flex; justify-content: space-between; font-weight: bold;">
+            <span>TOTAL AMOUNT</span>
+            <span>₹${(inv.totalAmount || 0).toLocaleString()}</span>
+          </div>
+          <div class="divider"></div>
+          <div class="center" style="margin-top: 20px; font-size: 10px; font-weight: bold;">
+            THANK YOU FOR CHOOSING 1RAD
+          </div>
+        </body>
+      </html>
+    `);
+  };
+
+  const handlePrintReceipt = (inv) => {
+    if (!inv) return;
+    
+    ghostPrint(`
+      <html>
+        <head>
+          <title>Payment Receipt - ${inv.displayId}</title>
+          <style>
+            body { font-family: 'Inter', sans-serif; padding: 40px; color: #1e293b; line-height: 1.6; }
+            .receipt-container { max-width: 600px; margin: 0 auto; border: 2px solid #0f52ba; padding: 30px; border-radius: 20px; }
+            .header { text-align: center; border-bottom: 1px solid #e2e8f0; padding-bottom: 20px; margin-bottom: 20px; }
+            .row { display: flex; justify-content: space-between; margin-bottom: 10px; padding: 5px 0; }
+            .label { font-weight: 950; color: #64748b; font-size: 11px; text-transform: uppercase; }
+            .value { font-weight: 700; color: #1e293b; }
+            .amount-box { background: #f0f4ff; padding: 20px; border-radius: 12px; text-align: center; margin: 20px 0; border: 1px solid #dbeafe; }
+            .stamp { text-align: right; margin-top: 40px; font-weight: 950; color: #0f52ba; font-size: 14px; opacity: 0.5; text-transform: uppercase; }
+          </style>
+        </head>
+        <body>
+          <div class="receipt-container">
+            <div class="header">
+              <div style="font-size: 20px; font-weight: 950; color: #0f52ba;">${activeCenter?.hospitalName?.toUpperCase() || '1RAD DIAGNOSTICS'}</div>
+              <div style="font-size: 12px; color: #64748b;">PAYMENT ACKNOWLEDGEMENT</div>
+            </div>
+            <div class="row"><span class="label">Receipt No:</span><span class="value">REC/${inv.displayId}</span></div>
+            <div class="row"><span class="label">Date:</span><span class="value">${new Date().toLocaleDateString()}</span></div>
+            <div class="row"><span class="label">Patient Name:</span><span class="value">${inv.patientName.toUpperCase()}</span></div>
+            <div class="row"><span class="label">Invoice Ref:</span><span class="value">${inv.displayId}</span></div>
+            <div class="row"><span class="label">Payment Mode:</span><span class="value">${inv.paymentMethod || 'CASH'}</span></div>
+            <div class="amount-box">
+              <div class="label">Amount Received</div>
+              <div style="font-size: 32px; font-weight: 950; color: #0f52ba; margin-top: 5px;">₹${(inv.totalAmount || 0).toLocaleString()}</div>
+              <div style="font-size: 10px; color: #64748b; font-weight: 700; margin-top: 5px;">FULLY PAID & SETTLED</div>
+            </div>
+            <div class="stamp">Authorized Signatory<br/><span style="font-size: 10px;">(Computer Generated)</span></div>
+            <div style="margin-top: 30px; text-align: center; font-size: 10px; color: #94a3b8; border-top: 1px dashed #e2e8f0; padding-top: 15px;">
+              Thank you for choosing 1Rad Diagnostic Services.
+            </div>
+          </div>
+        </body>
+      </html>
+    `);
+  };
+
+  const handlePrintInstitutional = async (app, type) => {
+    try {
+      setLoading(true);
+      const res = await apiClient.get('/finance/invoices', { 
+        params: { appointmentId: app.appointmentId } 
+      });
+      const inv = res.data[0];
+      if (!inv) {
+        alert('MISSION ALERT: No financial records found for this deployment.');
+        return;
+      }
+      
+      if (type === 'A4') handlePrintA4(inv);
+      else if (type === 'THERMAL') handlePrintThermal(inv);
+      else if (type === 'RECEIPT') handlePrintReceipt(inv);
+    } catch (err) {
+      console.error('Print protocol failed', err);
+      alert('CRITICAL ERROR: Financial telemetry extraction failed.');
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -819,6 +1083,39 @@ export default function AppointmentBoard() {
             )}
 
             <button
+              onClick={(e) => { e.stopPropagation(); handlePrintInstitutional(app, 'A4'); }}
+              style={{
+                width: '28px', height: '28px', borderRadius: '8px',
+                background: 'white', border: '1px solid #0f52ba', cursor: 'pointer',
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                fontSize: '12px', color: '#0f52ba', transition: 'all 0.2s',
+              }}
+              title="Print A4 Invoice"
+            >📄</button>
+
+            <button
+              onClick={(e) => { e.stopPropagation(); handlePrintInstitutional(app, 'THERMAL'); }}
+              style={{
+                width: '28px', height: '28px', borderRadius: '8px',
+                background: '#0f52ba', border: 'none', cursor: 'pointer',
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                fontSize: '12px', color: 'white', transition: 'all 0.2s',
+              }}
+              title="Print Thermal Receipt"
+            >📠</button>
+
+            <button
+              onClick={(e) => { e.stopPropagation(); handlePrintInstitutional(app, 'RECEIPT'); }}
+              style={{
+                width: '28px', height: '28px', borderRadius: '8px',
+                background: 'white', border: '1px solid #10b981', cursor: 'pointer',
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                fontSize: '12px', color: '#10b981', transition: 'all 0.2s',
+              }}
+              title="Print Payment Receipt"
+            >🧾</button>
+
+            <button
               onClick={(e) => { e.stopPropagation(); setTokenPrintData(app); }}
               style={{
                 width: '28px', height: '28px', borderRadius: '8px',
@@ -828,13 +1125,12 @@ export default function AppointmentBoard() {
               }}
               title="Print Thermal Token"
             >
-              {'\u{1F5A8}\uFE0F'}
+              🎟️
             </button>
 
             <button
               onClick={(e) => { 
                 e.stopPropagation(); 
-                // Find doctor ID if possible, or pass the doctor name
                 setPrescriptionData(app);
                 setIsPrescriptionModalOpen(true);
               }}
@@ -846,7 +1142,7 @@ export default function AppointmentBoard() {
               }}
               title="Print Prescription"
             >
-              {'\u{1F4DC}'}
+              📜
             </button>
 
             {app.status !== 'cancelled' && app.status !== 'completed' && (
