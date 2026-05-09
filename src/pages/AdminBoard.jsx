@@ -2656,19 +2656,15 @@ export default function AdminBoard() {
   };
 
   const renderFinance = () => {
-
-
     return (
       <div className="finance-view">
         <div className="board-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '35px' }}>
           <div>
             <h2 style={{ fontSize: '12px', fontWeight: 900, textTransform: 'uppercase', letterSpacing: '2px', color: '#0f52ba', marginBottom: '4px' }}>Financial Infrastructure</h2>
             <div style={{ display: 'flex', gap: '15px', alignItems: 'center', marginTop: '10px' }}>
-             <div style={{ display: 'flex', gap: '15px', alignItems: 'center', marginTop: '10px' }}>
                 <div style={{ display: 'flex', background: '#f1f5f9', padding: '8px 20px', borderRadius: '10px', border: '1px solid #e2e8f0', fontSize: '10px', fontWeight: 950, color: '#0f52ba' }}>
                    SERVICE REGISTRY PROTOCOL
                 </div>
-             </div>
             </div>
           </div>
           
@@ -2767,7 +2763,6 @@ export default function AdminBoard() {
               </div>
             </div>
           </div>
-        )}
       </div>
     );
   };
