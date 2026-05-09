@@ -525,11 +525,22 @@ export default function BillingPage() {
     setIsInvoiceDrawerOpen(true);
   };
 
+  const recalculateInvoice = (inv) => {
+    const gross = inv.items.reduce((sum, it) => sum + (it.amount * it.quantity), 0);
+    const disc = inv.discountAmount || 0;
+    const net = gross - disc;
+    return {
+        ...inv,
+        grossAmount: gross,
+        totalAmount: net,
+        balanceAmount: net - (inv.paidAmount || 0)
+    };
+  };
+
   const handleUpdateItem = (index, field, value) => {
     const newItems = [...selectedInvoice.items];
     newItems[index] = { ...newItems[index], [field]: value };
-    const newTotal = newItems.reduce((sum, it) => sum + (it.amount * it.quantity), 0);
-    setSelectedInvoice({ ...selectedInvoice, items: newItems, totalAmount: newTotal });
+    setSelectedInvoice(recalculateInvoice({ ...selectedInvoice, items: newItems }));
   };
 
   const handleAddItem = () => {
@@ -539,15 +550,14 @@ export default function BillingPage() {
 
   const handleRemoveItem = (index) => {
     const newItems = selectedInvoice.items.filter((_, i) => i !== index);
-    const newTotal = newItems.reduce((sum, it) => sum + (it.amount * it.quantity), 0);
-    setSelectedInvoice({ ...selectedInvoice, items: newItems, totalAmount: newTotal });
+    setSelectedInvoice(recalculateInvoice({ ...selectedInvoice, items: newItems }));
   };
 
   const handleCollectPayment = async () => {
     try {
       await apiClient.post('/finance/payments', { 
         invoiceId: selectedInvoice.invoiceId, 
-        amount: selectedInvoice.balanceAmount, 
+        amount: (selectedInvoice.totalAmount - (selectedInvoice.paidAmount || 0)), 
         discountAmount: selectedInvoice.discountAmount,
         paymentMethod 
       });
@@ -741,11 +751,7 @@ export default function BillingPage() {
                                onClick={() => {
                                  const gross = selectedInvoice.grossAmount || 0;
                                  const disc = Math.round(gross * (pct / 100));
-                                 setSelectedInvoice({ 
-                                   ...selectedInvoice, 
-                                   discountAmount: disc,
-                                   totalAmount: gross - disc
-                                 });
+                                 setSelectedInvoice(recalculateInvoice({ ...selectedInvoice, discountAmount: disc }));
                                }}
                                style={{ padding: '4px 8px', borderRadius: '6px', border: '1px solid #fecdd3', background: '#fff1f2', color: '#e11d48', fontSize: '8px', fontWeight: 950, cursor: 'pointer' }}
                              >{pct}%</button>
@@ -757,10 +763,12 @@ export default function BillingPage() {
                           onChange={e => {
                             const disc = parseInt(e.target.value) || 0;
                             const gross = selectedInvoice.grossAmount || 0;
+                            const net = gross - disc;
                             setSelectedInvoice({ 
                               ...selectedInvoice, 
                               discountAmount: disc,
-                              totalAmount: gross - disc
+                              totalAmount: net,
+                              balanceAmount: net - (selectedInvoice.paidAmount || 0)
                             });
                           }}
                           style={{ width: '80px', padding: '6px 12px', borderRadius: '10px', border: '1px solid #e2e8f0', fontSize: '12px', fontWeight: 950, textAlign: 'right', color: '#ef4444', outline: 'none' }}
