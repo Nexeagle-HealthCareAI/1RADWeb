@@ -1871,26 +1871,6 @@ const AdvancedDicomViewer = ({
         background: '#000' 
       }}
     >
-      {/* DEBUG: Files Info Display - Remove after testing */}
-      {files && (
-        <div style={{
-          position: 'fixed',
-          top: '10px',
-          left: '10px',
-          zIndex: 999999,
-          background: 'rgba(255, 0, 0, 0.9)',
-          color: 'white',
-          padding: '10px',
-          borderRadius: '5px',
-          fontSize: '12px',
-          fontWeight: 'bold',
-          border: '2px solid yellow',
-          pointerEvents: 'none'
-        }}>
-          FILES: {files.length} | READY: {isReady ? 'YES' : 'NO'} | INDEX: {currentImageIndex}
-        </div>
-      )}
-      
       <div ref={containerRef} style={{ width: '100%', height: '100%', position: 'relative', display: 'flex', flexDirection: 'column', background: '#000' }}>
       {!isReady && (
         <div style={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', zIndex: 10, background: '#000' }}>
@@ -2379,59 +2359,6 @@ const AdvancedDicomViewer = ({
           {measurements.length > 10 && (
             <div style={{ fontSize: '8px', color: '#94a3b8', textAlign: 'center', marginTop: '6px', paddingTop: '6px', borderTop: '1px solid rgba(255,255,255,0.1)' }}>
               Showing last 10 of {measurements.length} measurements
-            </div>
-          )}
-        </div>
-      )}
-
-      {/* LEFT SIDE SERIES NAME PANEL */}
-      {seriesName && isReady && (
-        <div style={{
-          position: 'absolute',
-          left: '15px',
-          top: '50%',
-          transform: 'translateY(-50%)',
-          zIndex: 100,
-          background: 'linear-gradient(135deg, rgba(15, 23, 42, 0.95), rgba(30, 41, 59, 0.95))',
-          backdropFilter: 'blur(12px)',
-          borderRadius: '16px',
-          padding: '20px 15px',
-          border: '2px solid rgba(59, 130, 246, 0.3)',
-          boxShadow: '0 8px 32px rgba(0,0,0,0.4)',
-          maxWidth: '200px',
-          pointerEvents: 'auto'
-        }}>
-          <div style={{
-            color: '#3b82f6',
-            fontSize: '10px',
-            fontWeight: 900,
-            marginBottom: '10px',
-            letterSpacing: '1px',
-            textAlign: 'center'
-          }}>
-            SERIES
-          </div>
-          <div style={{
-            color: '#fff',
-            fontSize: '12px',
-            fontWeight: 700,
-            textAlign: 'center',
-            lineHeight: '1.4',
-            wordBreak: 'break-word'
-          }}>
-            {seriesName}
-          </div>
-          {files && files.length > 0 && (
-            <div style={{
-              color: '#94a3b8',
-              fontSize: '10px',
-              fontWeight: 600,
-              marginTop: '10px',
-              textAlign: 'center',
-              paddingTop: '10px',
-              borderTop: '1px solid rgba(255,255,255,0.1)'
-            }}>
-              {files.length} {files.length === 1 ? 'Slice' : 'Slices'}
             </div>
           )}
         </div>

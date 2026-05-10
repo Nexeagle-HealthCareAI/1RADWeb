@@ -3,12 +3,14 @@ import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import JSZip from 'jszip';
 import dicomParser from 'dicom-parser';
 import AdvancedDicomViewer from '../components/AdvancedDicomViewer';
+import NarrativeEditor from '../components/NarrativeEditor';
 import apiClient, { BASE_URL } from '../api/apiClient';
 import { DicomCache } from '../utils/DicomCache';
 import { dicomOptimizer } from '../utils/DicomPerformanceOptimizer';
 import { jwtDecode } from 'jwt-decode';
 import useOffline from '../hooks/useOffline';
 import { nativeStorage } from '../hooks/useElectron';
+import ReportPreviewModal from '../components/ReportPreviewModal';
 
 const ReportingPage = () => {
   const navigate = useNavigate();
@@ -93,6 +95,13 @@ const ReportingPage = () => {
   const [selectedTemplateId, setSelectedTemplateId] = useState(null);
   const [selectedKeywordId, setSelectedKeywordId] = useState(null);
   const [lastFocusedField, setLastFocusedField] = useState(null); // Track focused structured field
+
+  // --- PATIENT TIMELINE STATES ---
+  const [patientHistory, setPatientHistory] = useState([]);
+  const [loadingTimeline, setLoadingTimeline] = useState(false);
+  const [showTimeline, setShowTimeline] = useState(false);
+  const [expandedHistoryReport, setExpandedHistoryReport] = useState({}); // { [appointmentId]: { loading, data, error } }
+  const [expandedHistoryDicom, setExpandedHistoryDicom] = useState({}); // { [appointmentId]: true/false }
 
   useEffect(() => {
     const handleResize = () => {
@@ -255,6 +264,57 @@ const ReportingPage = () => {
 
       // CACHE FOR OFFLINE USE
       await nativeStorage.set(`1rad_cache_appointment_${appId}`, appointmentData);
+
+      // --- PATIENT TIMELINE FETCH ---
+      // Always show the timeline tab once a patient is loaded; empty state handles no-history case
+      setShowTimeline(true);
+      
+      try {
+        setLoadingTimeline(true);
+
+        if (appointmentData.patientName) {
+          // Fetch both regular and archive appointments matching patient name
+          const [todayRes, archiveRes] = await Promise.all([
+            apiClient.get('/appointments', { 
+              params: { search: appointmentData.patientName } 
+            }).catch(() => ({ data: [] })),
+            apiClient.get('/appointments', { 
+              params: { search: appointmentData.patientName, isArchive: true } 
+            }).catch(() => ({ data: [] }))
+          ]);
+
+          const allToday = Array.isArray(todayRes.data) ? todayRes.data : [];
+          const allArchive = Array.isArray(archiveRes.data) ? archiveRes.data : [];
+
+          // Merge & deduplicate by appointmentId
+          const seen = new Set();
+          const allHistory = [...allToday, ...allArchive].filter(a => {
+            const key = String(a.appointmentId);
+            if (seen.has(key)) return false;
+            seen.add(key);
+            return true;
+          });
+
+          // Filter: same patient, different appointment from current one
+          const pastStudies = allHistory.filter(a => {
+            const isSamePatient = 
+              String(a.patientId) === String(appointmentData.patientId) || 
+              a.patientName?.toLowerCase().trim() === appointmentData.patientName?.toLowerCase().trim();
+            const isDifferentAppointment = 
+              String(a.appointmentId) !== String(appointmentData.appointmentId) &&
+              a.displayId !== appId; // appId = the route param (displayId format)
+            return isSamePatient && isDifferentAppointment;
+          }).sort((a, b) => new Date(b.dateTime) - new Date(a.dateTime));
+
+          setPatientHistory(pastStudies);
+          console.info(`[1RAD TIMELINE] Found ${pastStudies.length} previous studies for patient "${appointmentData.patientName}".`);
+        }
+      } catch (timelineErr) {
+        console.warn('[1RAD TIMELINE] Could not load patient history:', timelineErr.message);
+      } finally {
+        setLoadingTimeline(false);
+      }
+
       
       if (reportRes.data?.success && reportRes.data.data) {
         const r = reportRes.data.data;
@@ -1248,218 +1308,7 @@ const ReportingPage = () => {
     setShowInlineSuggestion(false);
   };
 
-  const handlePreviewPrint = async () => {
-    console.log("[1RAD] handlePreviewPrint triggered. Active Appointment:", activeAppointment);
-    
-    // 1. Ensure we have the doctor context (Cascading resolution)
-    let doctorId = activeAppointment?.doctorId || activeAppointment?.doctorUserId || activeAppointment?.doctor?.userId;
-    
-    if (!doctorId) {
-      try {
-        const token = sessionStorage.getItem('1rad_token');
-        if (token) {
-          const decoded = jwtDecode(token);
-          doctorId = decoded.sub || decoded.nameid || decoded.UserId || decoded.id;
-        }
-      } catch (e) {}
-    }
-
-    if (doctorId) {
-      try {
-        console.info(`[1RAD] Attempting to fetch Branding Protocol for Doctor: ${doctorId}`);
-        const res = await apiClient.get(`/Prescription/${doctorId}`);
-        console.log("[1RAD] Prescription API Response:", res.data);
-        
-        if (res.data?.success) {
-          setProtocol(res.data.data);
-          console.info("[1RAD] Branding Protocol Refreshed. Letterhead URL:", res.data.data?.letterheadBlobUrl);
-        } else {
-          console.warn("[1RAD] API returned success:false or empty data", res.data);
-        }
-      } catch (err) {
-        console.error("[1RAD] Real-time Branding Sync failed critically:", err);
-      }
-    } else {
-      console.error("[1RAD] FAILED_TO_RESOLVE_DOCTOR_CONTEXT: No Doctor ID found in appointment record.");
-      // alert("REPORTING_CONTEXT_ERROR: Could not resolve doctor branding. Using default layout.");
-    }
-
-    // 2. Open the preview
-    setIsPreviewOpen(true);
-  };
-
-  const renderPreviewModal = () => {
-    if (!isPreviewOpen) return null;
-
-    let bodyContent = '';
-    // Use institutional font settings for content
-    const contentStyle = `font-size: ${protocol?.fontSize || 12}px; line-height: 1.6; color: ${protocol?.fontColor || '#1e293b'}; font-family: ${protocol?.fontFamily || 'inherit'};`;
-
-    if (activeTab === 'Structured') {
-      bodyContent = Object.entries(structuredData).map(([key, val]) => `
-        <div style="margin-bottom: 25px; page-break-inside: avoid;">
-          <div style="font-size: 10px; font-weight: 950; color: #64748b; text-transform: uppercase; margin-bottom: 6px; letter-spacing: 1.5px; border-bottom: 1px solid #f1f5f9; padding-bottom: 2px;">${key.replace(/_/g, ' ')}</div>
-          <div style="${contentStyle} white-space: pre-wrap;">${val}</div>
-        </div>
-      `).join('');
-    } else {
-      bodyContent = `<div style="${contentStyle}">${editorText}</div>`;
-    }
-
-    // Surgical Margin Resolution (mm to style)
-    const m = {
-      top: (protocol?.headerMargin || 40) + 'mm',
-      left: (protocol?.leftMargin || 20) + 'mm',
-      right: (protocol?.rightMargin || 20) + 'mm',
-      bottom: (protocol?.bottomMargin || 20) + 'mm'
-    };
-
-    return (
-      <div className="modal-overlay" style={{ background: 'rgba(10, 22, 40, 0.98)', zIndex: 10000, display: 'flex', alignItems: 'center', justifyContent: 'center', position: 'fixed', inset: 0, padding: '40px', backdropFilter: 'blur(10px)' }}>
-        <div style={{ width: '950px', height: '100%', background: '#f8fafc', borderRadius: '32px', display: 'flex', flexDirection: 'column', overflow: 'hidden', boxShadow: '0 40px 100px rgba(0,0,0,0.5)', border: '1px solid rgba(255,255,255,0.1)' }}>
-          <div style={{ padding: '25px 40px', background: '#0a1628', color: 'white', display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '20px' }}>
-               <div style={{ width: '40px', height: '40px', background: '#0f52ba', borderRadius: '12px', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '20px' }}>📄</div>
-               <div>
-                <h3 style={{ fontSize: '13px', fontWeight: 950, letterSpacing: '2px', margin: 0, color: '#60a5fa' }}>DIAGNOSTIC_REPORT_PREVIEW</h3>
-                <div style={{ fontSize: '10px', opacity: 0.6, marginTop: '2px' }}>Protocol: {protocol ? 'INSTITUTIONAL_READY' : 'DEFAULT_LAYOUT'} • Mode: {activeTab.toUpperCase()}</div>
-               </div>
-            </div>
-            <div style={{ display: 'flex', gap: '15px' }}>
-              <button className="btn btn-primary" style={{ background: '#0f52ba', border: 'none', padding: '12px 25px', borderRadius: '12px', fontWeight: 900 }} onClick={() => window.print()}>🖨️ PRINT_FINAL</button>
-              <button onClick={() => setIsPreviewOpen(false)} style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', color: '#94a3b8', padding: '12px 25px', borderRadius: '12px', cursor: 'pointer', fontWeight: 900 }}>CLOSE</button>
-            </div>
-          </div>
-          
-          <div style={{ flex: 1, padding: '40px', background: '#e2e8f0', overflowY: 'auto', display: 'flex', justifyContent: 'center' }}>
-            <div id="printable-report" style={{ 
-              width: '210mm', 
-              minHeight: '297mm', 
-              background: 'white', 
-              boxShadow: '0 30px 60px rgba(0,0,0,0.15)', 
-              color: protocol?.fontColor || '#1e293b',
-              fontFamily: protocol?.fontFamily || 'Arial, sans-serif',
-              position: 'relative',
-              overflow: 'hidden'
-            }}>
-              
-              {/* WATERMARK FOR NON-FINALIZED */}
-              {!isFinalized && (
-                <div style={{ position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%, -50%) rotate(-45deg)', fontSize: '120px', color: 'rgba(241, 245, 249, 0.4)', fontWeight: 950, pointerEvents: 'none', zIndex: 1, letterSpacing: '20px', whiteSpace: 'nowrap' }}>
-                   DRAFT_PREVIEW
-                </div>
-              )}
-
-                {/* Letterhead Layer (Z-Index 1: Foundation) */}
-                {protocol?.letterheadBlobUrl && (
-                  <div style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', zIndex: 1, pointerEvents: 'none' }}>
-                    { (protocol.letterheadBlobUrl.toLowerCase().includes('.pdf') || protocol.letterheadBlobUrl.includes('type=pdf')) ? (
-                      <iframe 
-                        src={`${protocol.letterheadBlobUrl}#toolbar=0&navpanes=0&scrollbar=0`}
-                        style={{ width: '100%', height: '100%', border: 'none' }}
-                        title="Institutional Letterhead"
-                      />
-                    ) : (
-                      <div style={{ 
-                        width: '100%', 
-                        height: '100%', 
-                        backgroundImage: `url(${protocol.letterheadBlobUrl})`,
-                        backgroundSize: '100% 100%',
-                        backgroundRepeat: 'no-repeat'
-                      }}></div>
-                    )
-                    }
-                  </div>
-                )}
-
-                {/* REPORT CONTENT OVERLAY */}
-                <div style={{ 
-                  position: 'relative',
-                  zIndex: 2,
-                  paddingTop: m.top, 
-                  paddingLeft: m.left, 
-                  paddingRight: m.right, 
-                  paddingBottom: m.bottom,
-                  boxSizing: 'border-box',
-                  minHeight: '297mm',
-                  display: 'flex',
-                  flexDirection: 'column'
-                }}>
-                  {/* Patient Information Matrix */}
-                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '0', background: '#fff', borderRadius: '4px', marginBottom: '35px', border: '1px solid #f1f5f9', fontSize: '11px' }}>
-                    <div style={{ padding: '10px', borderRight: '1px solid #f1f5f9', borderBottom: '1px solid #f1f5f9' }}><span style={{color: '#94a3b8', fontSize: '8px', fontWeight: 900}}>PATIENT NAME</span> <br/><strong style={{fontSize: '12px'}}>{activeAppointment?.patientName?.toUpperCase() || ''}</strong></div>
-                    <div style={{ padding: '10px', borderRight: '1px solid #f1f5f9', borderBottom: '1px solid #f1f5f9' }}><span style={{color: '#94a3b8', fontSize: '8px', fontWeight: 900}}>AGE / SEX</span> <br/><strong>{activeAppointment?.patientAge || ''} / {activeAppointment?.patientGender || ''}</strong></div>
-                    <div style={{ padding: '10px', borderBottom: '1px solid #f1f5f9' }}><span style={{color: '#94a3b8', fontSize: '8px', fontWeight: 900}}>PATIENT ID</span> <br/><strong>{activeAppointment?.patientIdentifier || ''}</strong></div>
-                    <div style={{ padding: '10px', borderRight: '1px solid #f1f5f9' }}><span style={{color: '#94a3b8', fontSize: '8px', fontWeight: 900}}>STUDY TYPE</span> <br/><strong>{activeAppointment?.service || ''}</strong></div>
-                    <div style={{ padding: '10px', borderRight: '1px solid #f1f5f9' }}><span style={{color: '#94a3b8', fontSize: '8px', fontWeight: 900}}>DATE</span> <br/><strong>{activeAppointment?.dateTime ? new Date(activeAppointment.dateTime).toLocaleDateString() : ''}</strong></div>
-                    <div style={{ padding: '10px' }}><span style={{color: '#94a3b8', fontSize: '8px', fontWeight: 900}}>REFERRED BY</span> <br/><strong>{activeAppointment?.referredBy || ''}</strong></div>
-                  </div>
-
-                  {/* Report Findings Matrix */}
-                  <div style={{ flex: 1 }}>
-                    <div style={{ fontSize: '10px', fontWeight: 950, color: protocol?.fontColor || '#0f52ba', marginBottom: '12px', letterSpacing: '1px', borderBottom: '1px solid rgba(15, 82, 186, 0.1)', paddingBottom: '4px' }}>CLINICAL FINDINGS:</div>
-                    <div dangerouslySetInnerHTML={{ __html: bodyContent }} />
-                    
-                    {/* Final Conclusion (Impression) */}
-                    {impression && (
-                      <div style={{ marginTop: '35px', background: 'rgba(15, 82, 186, 0.02)', padding: '15px 20px', borderRadius: '6px', borderLeft: `4px solid ${protocol?.fontColor || '#0f52ba'}` }}>
-                        <div style={{ fontSize: '10px', fontWeight: 950, color: protocol?.fontColor || '#0f52ba', marginBottom: '6px', letterSpacing: '1px' }}>IMPRESSION:</div>
-                        <div style={{ 
-                          fontSize: (protocol?.fontSize || 13) + 'px', 
-                          fontWeight: 900, 
-                          color: protocol?.fontColor || '#1e293b',
-                          lineHeight: '1.5'
-                        }}>
-                          {impression}
-                        </div>
-                      </div>
-                    )}
-                    
-                    {/* Clinical Advice */}
-                    {advice && (
-                      <div style={{ marginTop: '20px', paddingLeft: '20px' }}>
-                        <div style={{ fontSize: '10px', fontWeight: 950, color: '#64748b', marginBottom: '4px', letterSpacing: '1px' }}>ADVICE:</div>
-                        <div style={{ fontSize: '11px', color: '#475569', fontStyle: 'italic' }}>{advice}</div>
-                      </div>
-                    )}
-                  </div>
-
-                  {/* Professional Signatory Block */}
-                  <div style={{ marginTop: '60px', display: 'flex', justifyContent: 'flex-end' }}>
-                     <div style={{ textAlign: 'center' }}>
-                        <div style={{ width: '200px', borderBottom: `1px solid ${protocol?.fontColor || '#1e293b'}`, marginBottom: '10px', opacity: 0.3 }}></div>
-                        <div style={{ fontWeight: 950, fontSize: '12px', color: protocol?.fontColor || '#1e293b' }}>
-                          { (protocol?.doctor?.fullName || protocol?.doctor?.name || '').toUpperCase() }
-                        </div>
-                        <div style={{ fontSize: '10px', color: '#64748b', fontWeight: 700 }}>
-                          {protocol?.doctor?.specialization || ''}
-                        </div>
-                        <div style={{ fontSize: '9px', color: '#94a3b8', marginTop: '3px' }}>
-                           {protocol?.doctor?.degree} {protocol?.doctor?.licenseNo ? `• Reg No: ${protocol.doctor.licenseNo}` : ''}
-                        </div>
-                     </div>
-                  </div>
-
-                  {/* Audit & Compliance Footer */}
-                  <div style={{ marginTop: 'auto', paddingTop: '20px', fontSize: '8px', color: '#cbd5e1', textAlign: 'center', borderTop: '1px solid #f1f5f9', letterSpacing: '0.5px' }}>
-                     ID: {activeAppointment?.displayId || activeAppointment?.appointmentId} • Electronic Diagnostic Record • Verified
-                </div>
-              </div>
-            </div>
-          </div>
-          <style>{`
-            @media print {
-              body * { visibility: hidden; }
-              #printable-report, #printable-report * { visibility: visible; }
-              #printable-report { position: fixed; left: 0; top: 0; width: 100%; height: 100%; margin: 0; padding: 0; box-shadow: none; }
-              .modal-overlay { background: white !important; padding: 0 !important; }
-            }
-          `}</style>
-        </div>
-      </div>
-    );
-  };
-
+  const handlePreviewPrint = () => setIsPreviewOpen(true);
 
   const handleKeyDown = (e) => {
     if (e.key === 'Enter') {
@@ -2891,6 +2740,44 @@ const ReportingPage = () => {
                 fontWeight: 900, fontSize: '10px', cursor: 'pointer', transition: 'all 0.2s cubic-bezier(0.4, 0, 0.2, 1)'
               }}
             >NARRATIVE_FREEFLOW</button>
+            <button
+              onClick={() => setActiveTab('Patient Timeline')}
+              style={{
+                padding: '6px 15px', borderRadius: '7px', border: 'none',
+                background: activeTab === 'Patient Timeline' ? '#7c3aed' : 'transparent',
+                color: activeTab === 'Patient Timeline' ? 'white' : '#64748b',
+                fontWeight: 900, fontSize: '10px', cursor: 'pointer',
+                transition: 'all 0.2s cubic-bezier(0.4, 0, 0.2, 1)',
+                display: 'flex', alignItems: 'center', gap: '5px'
+              }}
+            >
+              🕒 TIMELINE
+              {patientHistory.length > 0 && (
+                <span style={{
+                  background: activeTab === 'Patient Timeline' ? 'rgba(255,255,255,0.3)' : '#ef4444',
+                  color: 'white',
+                  borderRadius: '99px',
+                  fontSize: '8px',
+                  fontWeight: 950,
+                  padding: '1px 5px',
+                  lineHeight: 1.4,
+                  minWidth: '16px',
+                  textAlign: 'center'
+                }}>
+                  {patientHistory.length}
+                </span>
+              )}
+              {loadingTimeline && (
+                <span style={{
+                  display: 'inline-block',
+                  width: '8px', height: '8px',
+                  border: '1.5px solid rgba(100,116,139,0.3)',
+                  borderTopColor: '#64748b',
+                  borderRadius: '50%',
+                  animation: 'spin 0.8s linear infinite'
+                }} />
+              )}
+            </button>
           </div>
 
           <div style={{ 
@@ -3490,11 +3377,14 @@ const ReportingPage = () => {
                         modality: series.modality
                       }));
                       
+                      const activeValidSeriesIndex = validSeries.findIndex(s => s.name === uploadedFiles[activeAssetIndex]?.name);
+                      
                       const navigationState = {
                         allSeries: allSeries, // Pass all series
                         files: validSeries[0].rawFiles, // Default to first series for backward compatibility
-                        seriesName: `${validSeries.length} Series Available`,
-                        activeSeriesIndex: activeAssetIndex, // Remember which series was active
+                        seriesName: uploadedFiles[activeAssetIndex]?.name || 'DICOM STUDY',
+                        activeSeriesIndex: activeValidSeriesIndex >= 0 ? activeValidSeriesIndex : 0, // Map to validSeries index
+                        layoutMode: layoutMode, // Preserve layout mode
                         appointmentData: {
                           ...activeAppointment,
                           appointmentId: appointmentId,
@@ -3911,6 +3801,34 @@ const ReportingPage = () => {
             <div className={`tab ${activeTab === 'Structured' || activeTab === 'Narrative Editor' ? 'active' : ''}`} style={{ fontSize: '10px', fontWeight: 950 }} onClick={() => setActiveTab(activeTab === 'Narrative Editor' ? 'Narrative Editor' : 'Structured')}>REPORT_WORKSPACE</div>
             <div className={`tab ${activeTab === 'Templates' ? 'active' : ''}`} style={{ fontSize: '10px', fontWeight: 950 }} onClick={() => setActiveTab('Templates')}>Templates</div>
             <div className={`tab ${activeTab === 'Keywords' ? 'active' : ''}`} style={{ fontSize: '10px', fontWeight: 950 }} onClick={() => setActiveTab('Keywords')}>Keywords</div>
+            {showTimeline && (
+              <div
+                className={`tab ${activeTab === 'Patient Timeline' ? 'active' : ''}`}
+                style={{
+                  fontSize: '10px',
+                  fontWeight: 950,
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '5px',
+                  position: 'relative'
+                }}
+                onClick={() => setActiveTab('Patient Timeline')}
+              >
+                🕒 TIMELINE
+                <span style={{
+                  background: '#ef4444',
+                  color: 'white',
+                  borderRadius: '99px',
+                  fontSize: '8px',
+                  fontWeight: 950,
+                  padding: '1px 5px',
+                  letterSpacing: '0.5px',
+                  lineHeight: 1.4
+                }}>
+                  {patientHistory.length}
+                </span>
+              </div>
+            )}
           </div>
 
           <div style={{ 
@@ -3976,208 +3894,45 @@ const ReportingPage = () => {
             {activeTab === 'Narrative Editor' && (
               <div style={{ display: 'flex', flexDirection: 'column', flex: 1, overflow: 'hidden' }}>
                 <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '12px', padding: '15px 20px', borderBottom: '1px solid #e2e8f0', background: '#fff', marginBottom: '10px' }}>
-                   <button className="btn btn-outline" style={{ padding: '10px 20px', fontSize: '12px' }} onClick={() => handleSaveReport(false)}>💾 Save Draft</button>
-                   <button className="btn btn-outline" style={{ padding: '10px 20px', fontSize: '12px' }} onClick={handlePreviewPrint}>👁️ Preview Narrative Report</button>
-                   <button className="btn btn-success" style={{ padding: '10px 25px', fontSize: '12px' }} onClick={() => handleSaveReport(true)}>Finalize & Sign</button>
+                  <button className="btn btn-outline" style={{ padding: '10px 20px', fontSize: '12px' }} onClick={() => handleSaveReport(false)}>💾 Save Draft</button>
+                  <button className="btn btn-outline" style={{ padding: '10px 20px', fontSize: '12px' }} onClick={handlePreviewPrint}>👁️ Preview Narrative Report</button>
+                  <button className="btn btn-success" style={{ padding: '10px 25px', fontSize: '12px' }} onClick={() => handleSaveReport(true)}>Finalize & Sign</button>
                 </div>
-                <div style={{ display: 'flex', gap: '20px', flex: 1, overflow: 'hidden' }}>
-                  <div className="editor-container" style={{ flex: 1 }}>
-                  <div className="editor-toolbar">
-                    <button className="tool-btn" title="Undo" onClick={undo}>↩️</button>
-                    <button className="tool-btn" title="Redo" onClick={redo}>↪️</button>
-                    <div style={{ width: '1px', height: '20px', background: '#e2e8f0', margin: '0 8px' }}></div>
-                    <select 
-                      className="tool-btn" 
-                      onChange={(e) => formatText(`fontName:${e.target.value}`)} 
-                      style={{ width: 'auto', padding: '0 8px', fontSize: '11px', fontWeight: 600 }}
-                    >
-                      <option value="Inter">Sans</option>
-                      <option value="Roboto">Roboto</option>
-                      <option value="Courier New">Mono</option>
-                      <option value="Times New Roman">Serif</option>
-                    </select>
-                    <select 
-                      className="tool-btn" 
-                      onChange={(e) => formatText(`fontSize:${e.target.value}`)} 
-                      style={{ width: 'auto', padding: '0 8px', fontSize: '11px', fontWeight: 600 }}
-                    >
-                      <option value="2">12px</option>
-                      <option value="1">9px</option>
-                      <option value="1">10px</option>
-                      <option value="3">14px</option>
-                      <option value="4">16px</option>
-                    </select>
-                    <div style={{ width: '1px', height: '20px', background: '#e2e8f0', margin: '0 8px' }}></div>
-                    <button className="tool-btn" style={{ fontWeight: '800', fontFamily: 'serif' }} onClick={() => formatText('bold')}>B</button>
-                    <button className="tool-btn" style={{ fontStyle: 'italic', fontFamily: 'serif' }} onClick={() => formatText('italic')}>I</button>
-                    <button className="tool-btn" style={{ textDecoration: 'underline', fontFamily: 'serif' }} onClick={() => formatText('underline')}>U</button>
-                    
-                    <div style={{ width: '1px', height: '20px', background: '#e2e8f0', margin: '0 8px' }}></div>
-                    
-                    {/* Color Presets */}
-                    {/* Robust Color & Highlight Dropdowns */}
-                    <div style={{ display: 'flex', gap: '4px', alignItems: 'center' }}>
-                      <select 
-                        className="tool-btn" 
-                        onChange={(e) => formatText(`color:${e.target.value}`)}
-                        style={{ width: 'auto', padding: '0 8px', fontSize: '11px', fontWeight: 600, color: '#1e293b' }}
-                      >
-                        <option value="#000">Color: Black</option>
-                        <option value="#ef4444" style={{ color: '#ef4444' }}>🔴 Critical Red</option>
-                        <option value="#f59e0b" style={{ color: '#f59e0b' }}>🟠 Warning Orange</option>
-                        <option value="#3b82f6" style={{ color: '#3b82f6' }}>🔵 Clinical Blue</option>
-                        <option value="#10b981" style={{ color: '#10b981' }}>🟢 Normal Green</option>
-                        <option value="#8b5cf6" style={{ color: '#8b5cf6' }}>🟣 Special Purple</option>
-                      </select>
-
-                      <select 
-                        className="tool-btn" 
-                        onChange={(e) => formatText(`hilite:${e.target.value}`)}
-                        style={{ width: 'auto', padding: '0 8px', fontSize: '11px', fontWeight: 600, color: '#1e293b' }}
-                      >
-                        <option value="transparent">Highlight: None</option>
-                        <option value="#fef3c7" style={{ background: '#fef3c7' }}>✍️ Yellow</option>
-                        <option value="#dcfce7" style={{ background: '#dcfce7' }}>✍️ Green</option>
-                        <option value="#dbeafe" style={{ background: '#dbeafe' }}>✍️ Blue</option>
-                        <option value="#fee2e2" style={{ background: '#fee2e2' }}>✍️ Red</option>
-                      </select>
-                      
-                      <button className="tool-btn" style={{ color: '#ef4444', marginLeft: '4px' }} title="Reset All Colors" onClick={() => { formatText('color:#000'); formatText('hilite:transparent'); }}>✕</button>
+                
+                <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '20px', padding: '20px' }}>
+                  {/* NEW TIPTAP EDITOR */}
+                  <NarrativeEditor
+                    content={editorText}
+                    onChange={(html) => setEditorText(html)}
+                    placeholder="Start typing your radiology report..."
+                    onSave={() => handleSaveReport(false)}
+                    keywordLibrary={keywordLibrary}
+                  />
+                  
+                  {/* Bottom Narrative Inputs (Impression & Advice) */}
+                  <div style={{ display: 'flex', gap: '20px' }}>
+                    <div style={{ flex: 1 }}>
+                      <label style={{ fontSize: '10px', fontWeight: 950, color: '#0f52ba', display: 'block', marginBottom: '8px' }}>CLINICAL IMPRESSION</label>
+                      <textarea 
+                        value={impression}
+                        onChange={(e) => setImpression(e.target.value)}
+                        placeholder="Enter final study impression..."
+                        style={{ width: '100%', padding: '12px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '13px', minHeight: '80px', outline: 'none' }}
+                      />
                     </div>
-                    <div style={{ width: '1px', height: '20px', background: '#e2e8f0', margin: '0 8px' }}></div>
-                    <button className="tool-btn" title="Insert Table" onClick={() => setShowTableModal(true)}>▦</button>
-                    <button className="tool-btn" title="Insert Image" onClick={() => fileInputRef.current.click()}>🖼️</button>
-                    <input 
-                      type="file" 
-                      ref={fileInputRef} 
-                      style={{ display: 'none' }} 
-                      accept="image/*" 
-                      onChange={handleImageUpload} 
-                    />
-                    <div style={{ width: '1px', height: '20px', background: '#e2e8f0', margin: '0 8px' }}></div>
-                    <div style={{ flex: 1 }}></div>
-                    <button 
-                      className="btn btn-outline" 
-                      onClick={toggleFullscreen}
-                      style={{ 
-                        fontSize: '11px', 
-                        padding: '4px 12px', 
-                        background: isFullscreen ? '#ef4444' : '#fff',
-                        color: isFullscreen ? '#fff' : '#475569',
-                        borderColor: isFullscreen ? '#ef4444' : '#cbd5e1'
-                      }}
-                    >
-                      {isFullscreen ? '✕ Exit Fullscreen' : '⛶ Fullscreen'}
-                    </button>
-                  </div>
-                  <div style={{ position: 'relative', flex: 1, display: 'flex', flexDirection: 'column', background: '#fff' }}>
-                    <div 
-                      ref={textareaRef}
-                      contentEditable="true"
-                      className="editor-textarea"
-                      onInput={handleEditorChange}
-                      onKeyDown={handleKeyDown}
-                      onBlur={() => setTimeout(() => setSelectedImg(null), 200)}
-                      style={{ height: 'calc(100vh - 450px)', minHeight: '300px' }}
-                    />
-
-                    {/* Bottom Narrative Inputs (Impression & Advice) */}
-                    <div style={{ padding: '20px', borderTop: '1px solid #e2e8f0', background: '#f8fafc', display: 'flex', gap: '20px' }}>
-                       <div style={{ flex: 1 }}>
-                          <label style={{ fontSize: '10px', fontWeight: 950, color: '#0f52ba', display: 'block', marginBottom: '8px' }}>CLINICAL IMPRESSION</label>
-                          <textarea 
-                            value={impression}
-                            onChange={(e) => setImpression(e.target.value)}
-                            placeholder="Enter final study impression..."
-                            style={{ width: '100%', padding: '12px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '13px', minHeight: '80px', outline: 'none' }}
-                          />
-                       </div>
-                       <div style={{ flex: 1 }}>
-                          <label style={{ fontSize: '10px', fontWeight: 950, color: '#64748b', display: 'block', marginBottom: '8px' }}>FOLLOW-UP ADVICE</label>
-                          <textarea 
-                            value={advice}
-                            onChange={(e) => setAdvice(e.target.value)}
-                            placeholder="Enter patient advice..."
-                            style={{ width: '100%', padding: '12px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '13px', minHeight: '80px', outline: 'none' }}
-                          />
-                       </div>
-                    </div>
-
-                    {selectedImg && (
-                      <div 
-                        style={{ 
-                          position: 'absolute', 
-                          top: imgToolbarPos.top, 
-                          left: imgToolbarPos.left, 
-                          zIndex: 50, 
-                          background: '#1e293b', 
-                          padding: '5px', 
-                          borderRadius: '8px', 
-                          display: 'flex', 
-                          gap: '5px',
-                          boxShadow: '0 10px 15px -3px rgba(0,0,0,0.1)'
-                        }}
-                      >
-                        <button onClick={() => resizeImg('25%')} style={{ background: 'none', border: 'none', color: '#fff', fontSize: '11px', fontWeight: 700, cursor: 'pointer', padding: '4px 8px' }}>S</button>
-                        <button onClick={() => resizeImg('50%')} style={{ background: 'none', border: 'none', color: '#fff', fontSize: '11px', fontWeight: 700, cursor: 'pointer', padding: '4px 8px' }}>M</button>
-                        <button onClick={() => resizeImg('75%')} style={{ background: 'none', border: 'none', color: '#fff', fontSize: '11px', fontWeight: 700, cursor: 'pointer', padding: '4px 8px' }}>L</button>
-                        <button onClick={() => resizeImg('100%')} style={{ background: 'none', border: 'none', color: '#fff', fontSize: '11px', fontWeight: 700, cursor: 'pointer', padding: '4px 8px' }}>FULL</button>
-                        <div style={{ width: '1px', height: '15px', background: '#475569', alignSelf: 'center' }}></div>
-                        <button onClick={deleteImg} style={{ background: 'none', border: 'none', color: '#f87171', fontSize: '11px', fontWeight: 700, cursor: 'pointer', padding: '4px 8px' }}>DEL</button>
-                      </div>
-                    )}
-                    {showSlashMenu && (
-                      <div className="inline-suggestion" style={{ top: cursorPos.top, left: cursorPos.left }}>
-                        <div className="suggestion-item" onClick={() => handleSlashCommand('table')}>
-                          <div className="sugg-header">
-                            <span className="sugg-keyword">/table</span>
-                            <span className="sugg-badge">INSERT</span>
-                          </div>
-                          <div className="sugg-preview">Insert a new measurement table</div>
-                        </div>
-                        <div className="suggestion-item" onClick={() => handleSlashCommand('diagram')}>
-                          <div className="sugg-header">
-                            <span className="sugg-keyword">/diagram</span>
-                            <span className="sugg-badge">INSERT</span>
-                          </div>
-                          <div className="sugg-preview">Insert anatomical marking diagram</div>
-                        </div>
-                        <div className="suggestion-item" onClick={() => setShowSlashMenu(false)}>
-                          <div className="sugg-header">
-                            <span className="sugg-keyword">/normal</span>
-                            <span className="sugg-badge">TEMPLATE</span>
-                          </div>
-                          <div className="sugg-preview">Apply normal study template</div>
-                        </div>
-                      </div>
-                    )}
-
-                    {showInlineSuggestion && (
-                      <div className="inline-suggestion" style={{ top: '40px', left: '40px' }}>
-                        <div className="suggestion-item active" onClick={handleSuggestionSelect}>
-                          <div className="sugg-header">
-                            <span className="sugg-keyword">gbstone</span>
-                            <span className="sugg-badge">★ USG / GB</span>
-                          </div>
-                          <div className="sugg-preview">Gall bladder shows echogenic calculi with pos...</div>
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                  <div style={{ padding: '10px 20px', background: '#f8fafc', borderTop: '1px solid #e2e8f0', display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '12px', color: '#64748b', borderRadius: '0 0 12px 12px' }}>
-                    <div style={{ display: 'flex', gap: '15px' }}>
-                       <span>{(editorText || '').replace(/<[^>]*>?/gm, '').split(/\s+/).filter(w => w.length > 0).length} words</span>
-                       <span>Auto-saved just now</span>
-                    </div>
-                    <div style={{ fontWeight: 600, color: '#0f172a' }}>
-                       SHORCUTS: <span style={{ background: '#e2e8f0', padding: '2px 4px', borderRadius: '3px' }}>Ctrl+S</span> Save | <span style={{ background: '#e2e8f0', padding: '2px 4px', borderRadius: '3px' }}>Ctrl+Enter</span> Finalize
+                    <div style={{ flex: 1 }}>
+                      <label style={{ fontSize: '10px', fontWeight: 950, color: '#64748b', display: 'block', marginBottom: '8px' }}>FOLLOW-UP ADVICE</label>
+                      <textarea 
+                        value={advice}
+                        onChange={(e) => setAdvice(e.target.value)}
+                        placeholder="Enter patient advice..."
+                        style={{ width: '100%', padding: '12px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '13px', minHeight: '80px', outline: 'none' }}
+                      />
                     </div>
                   </div>
-
                 </div>
               </div>
-            </div>
-          )}
+            )}
 
             {activeTab === 'Templates' && (
               <div style={{ display: 'flex', flexDirection: 'column', height: 'calc(100vh - 250px)', gap: '15px', padding: '10px' }}>
@@ -4713,12 +4468,379 @@ const ReportingPage = () => {
               </div>
             )}
 
-            <div style={{ marginTop: '20px', paddingTop: '15px', borderTop: '1px solid #e2e8f0', display: 'flex', justifyContent: 'flex-end', alignItems: 'center', gap: '15px' }}>
-              <div style={{ textAlign: 'right' }}>
-                <div style={{ fontWeight: 600, fontSize: '14px', color: '#0f172a' }}>Dr. Amit Sharma</div>
-                <div style={{ fontSize: '12px', color: '#64748b' }}>Consultant Radiologist</div>
+            {/* ============================================================ */}
+            {/* PATIENT TIMELINE TAB                                         */}
+            {/* ============================================================ */}
+            {activeTab === 'Patient Timeline' && (
+              <div style={{ display: 'flex', flexDirection: 'column', height: 'calc(100vh - 220px)', overflow: 'hidden' }}>
+                {/* Timeline Header */}
+                <div style={{
+                  background: 'linear-gradient(135deg, #0f172a, #1e293b)',
+                  padding: '20px 25px',
+                  borderRadius: '16px',
+                  marginBottom: '15px',
+                  border: '1px solid rgba(59, 130, 246, 0.2)',
+                  boxShadow: '0 4px 20px rgba(0,0,0,0.15)',
+                  flexShrink: 0
+                }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <div>
+                      <div style={{ color: '#94a3b8', fontSize: '9px', fontWeight: 950, letterSpacing: '2px', textTransform: 'uppercase', marginBottom: '6px' }}>PATIENT DIAGNOSTIC HISTORY</div>
+                      <div style={{ color: 'white', fontSize: '16px', fontWeight: 900, letterSpacing: '0.5px' }}>
+                        {activeAppointment?.patientName?.toUpperCase() || 'PATIENT'}
+                      </div>
+                      <div style={{ color: '#64748b', fontSize: '10px', fontWeight: 700, marginTop: '4px', display: 'flex', gap: '12px' }}>
+                        <span>ID: {activeAppointment?.patientIdentifier || 'N/A'}</span>
+                        <span>·</span>
+                        <span>{patientHistory.length} previous {patientHistory.length === 1 ? 'study' : 'studies'}</span>
+                      </div>
+                    </div>
+                    <div style={{
+                      background: 'rgba(59, 130, 246, 0.15)',
+                      border: '1px solid rgba(59, 130, 246, 0.3)',
+                      borderRadius: '12px',
+                      padding: '10px 18px',
+                      textAlign: 'center'
+                    }}>
+                      <div style={{ color: '#3b82f6', fontSize: '24px', fontWeight: 950, lineHeight: 1 }}>{patientHistory.length}</div>
+                      <div style={{ color: '#64748b', fontSize: '8px', fontWeight: 900, letterSpacing: '1px', marginTop: '4px' }}>STUDIES</div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Timeline Scroll Area */}
+                <div style={{ flex: 1, overflowY: 'auto', paddingRight: '4px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                  {loadingTimeline ? (
+                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', flex: 1, gap: '15px', color: '#64748b', padding: '60px 0' }}>
+                      <div style={{ width: '40px', height: '40px', border: '3px solid rgba(59, 130, 246, 0.2)', borderTopColor: '#3b82f6', borderRadius: '50%', animation: 'spin 1s linear infinite' }} />
+                      <div style={{ fontSize: '12px', fontWeight: 700 }}>Loading patient history...</div>
+                    </div>
+                  ) : patientHistory.length === 0 ? (
+                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', flex: 1, color: '#94a3b8', padding: '60px 0', gap: '15px' }}>
+                      <div style={{ fontSize: '48px' }}>📋</div>
+                      <div style={{ fontSize: '14px', fontWeight: 700 }}>No previous studies found</div>
+                      <div style={{ fontSize: '11px', textAlign: 'center', maxWidth: '250px' }}>This is the patient's first visit, or no historical records are available.</div>
+                    </div>
+                  ) : patientHistory.map((pastAppt, idx) => {
+                    const reportState = expandedHistoryReport[pastAppt.appointmentId];
+                    const isReportExpanded = !!reportState;
+                    const STATUS_COLOR = {
+                      reported: '#10b981',
+                      reporting: '#8b5cf6',
+                      completed: '#0f52ba',
+                      scanned: '#0f52ba',
+                      in_progress: '#f59e0b',
+                      confirmed: '#f59e0b',
+                      cancelled: '#ef4444',
+                      scheduled: '#64748b',
+                      booked: '#64748b'
+                    };
+                    const statusColor = STATUS_COLOR[pastAppt.status?.toLowerCase()] || '#64748b';
+                    const statusLabel = pastAppt.status?.toUpperCase() || 'UNKNOWN';
+                    const hasReport = ['reported', 'reporting'].includes(pastAppt.status?.toLowerCase());
+                    const hasDicom = pastAppt.status !== 'scheduled' && pastAppt.status !== 'booked';
+
+                    return (
+                      <div
+                        key={pastAppt.appointmentId || idx}
+                        style={{
+                          background: 'white',
+                          borderRadius: '16px',
+                          border: '1px solid #e2e8f0',
+                          overflow: 'hidden',
+                          boxShadow: '0 2px 8px rgba(0,0,0,0.04)',
+                          transition: 'box-shadow 0.2s ease',
+                          flexShrink: 0
+                        }}
+                      >
+                        {/* Card Top — Timeline Dot + Core Info */}
+                        <div style={{ display: 'flex', gap: '0', alignItems: 'stretch' }}>
+                          {/* Left accent + timeline */}
+                          <div style={{
+                            width: '5px',
+                            background: `linear-gradient(180deg, ${statusColor}, ${statusColor}88)`,
+                            flexShrink: 0
+                          }} />
+
+                          {/* Main card body */}
+                          <div style={{ flex: 1, padding: '16px 20px' }}>
+                            {/* Row 1: Date + Status badge */}
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                                <span style={{ fontSize: '18px' }}>📅</span>
+                                <div>
+                                  <div style={{ fontSize: '12px', fontWeight: 950, color: '#0f172a' }}>
+                                    {pastAppt.dateTime ? new Date(pastAppt.dateTime).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : 'Date N/A'}
+                                  </div>
+                                  <div style={{ fontSize: '9px', fontWeight: 700, color: '#94a3b8', marginTop: '2px' }}>
+                                    {pastAppt.dateTime ? new Date(pastAppt.dateTime).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' }) : ''}
+                                  </div>
+                                </div>
+                              </div>
+                              <span style={{
+                                background: `${statusColor}18`,
+                                color: statusColor,
+                                border: `1px solid ${statusColor}40`,
+                                borderRadius: '99px',
+                                padding: '3px 10px',
+                                fontSize: '8px',
+                                fontWeight: 950,
+                                letterSpacing: '1px'
+                              }}>
+                                {statusLabel}
+                              </span>
+                            </div>
+
+                            {/* Row 2: Modality + Service + Doctor */}
+                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '8px', marginBottom: '14px' }}>
+                              <div style={{ background: '#f8fafc', borderRadius: '8px', padding: '8px 10px' }}>
+                                <div style={{ color: '#94a3b8', fontSize: '7px', fontWeight: 950, letterSpacing: '1px', marginBottom: '3px' }}>MODALITY</div>
+                                <div style={{ color: '#0f172a', fontSize: '11px', fontWeight: 900 }}>{pastAppt.modality || 'N/A'}</div>
+                              </div>
+                              <div style={{ background: '#f8fafc', borderRadius: '8px', padding: '8px 10px' }}>
+                                <div style={{ color: '#94a3b8', fontSize: '7px', fontWeight: 950, letterSpacing: '1px', marginBottom: '3px' }}>STUDY</div>
+                                <div style={{ color: '#0f172a', fontSize: '10px', fontWeight: 900, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{pastAppt.service || 'N/A'}</div>
+                              </div>
+                              <div style={{ background: '#f8fafc', borderRadius: '8px', padding: '8px 10px' }}>
+                                <div style={{ color: '#94a3b8', fontSize: '7px', fontWeight: 950, letterSpacing: '1px', marginBottom: '3px' }}>DOCTOR</div>
+                                <div style={{ color: '#0f172a', fontSize: '10px', fontWeight: 900, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{pastAppt.doctor || 'N/A'}</div>
+                              </div>
+                            </div>
+
+                            {/* Row 3: Action Buttons */}
+                            <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                              {/* View Report Button */}
+                              {hasReport ? (
+                                <button
+                                  onClick={async () => {
+                                    if (isReportExpanded) {
+                                      // Collapse
+                                      setExpandedHistoryReport(prev => { const n = {...prev}; delete n[pastAppt.appointmentId]; return n; });
+                                      return;
+                                    }
+                                    // Fetch report lazily
+                                    setExpandedHistoryReport(prev => ({ ...prev, [pastAppt.appointmentId]: { loading: true, data: null, error: null } }));
+                                    try {
+                                      const res = await apiClient.get(`/reporting/report/${pastAppt.appointmentId}`);
+                                      const r = res.data?.data;
+                                      setExpandedHistoryReport(prev => ({ ...prev, [pastAppt.appointmentId]: { loading: false, data: r, error: null } }));
+                                    } catch (e) {
+                                      setExpandedHistoryReport(prev => ({ ...prev, [pastAppt.appointmentId]: { loading: false, data: null, error: 'Could not fetch report.' } }));
+                                    }
+                                  }}
+                                  style={{
+                                    background: isReportExpanded ? '#f0f4ff' : 'white',
+                                    border: `1.5px solid ${isReportExpanded ? '#0f52ba' : '#e2e8f0'}`,
+                                    color: isReportExpanded ? '#0f52ba' : '#475569',
+                                    borderRadius: '8px',
+                                    padding: '6px 12px',
+                                    fontSize: '10px',
+                                    fontWeight: 900,
+                                    cursor: 'pointer',
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    gap: '5px',
+                                    transition: 'all 0.2s ease'
+                                  }}
+                                >
+                                  📄 {isReportExpanded ? 'HIDE REPORT' : 'VIEW REPORT'}
+                                </button>
+                              ) : (
+                                <div style={{
+                                  background: '#f8fafc',
+                                  border: '1.5px solid #e2e8f0',
+                                  color: '#94a3b8',
+                                  borderRadius: '8px',
+                                  padding: '6px 12px',
+                                  fontSize: '10px',
+                                  fontWeight: 900,
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  gap: '5px'
+                                }}>
+                                  📄 NO REPORT
+                                </div>
+                              )}
+
+                              {/* Open DICOM Button */}
+                              {hasDicom ? (
+                                <button
+                                  onClick={async () => {
+                                    // Fetch assets for this past appointment then navigate
+                                    setExpandedHistoryDicom(prev => ({ ...prev, [pastAppt.appointmentId]: 'loading' }));
+                                    try {
+                                      const assetRes = await apiClient.get(`/Study/${pastAppt.appointmentId}/assets`).catch(() => ({ data: [] }));
+                                      const assets = assetRes.data || [];
+                                      const validAssets = assets.filter(a => a.blobUrl);
+                                      if (validAssets.length === 0) {
+                                        alert('No DICOM files found for this study.');
+                                        setExpandedHistoryDicom(prev => ({ ...prev, [pastAppt.appointmentId]: 'error' }));
+                                        return;
+                                      }
+                                      // Build series from assets — reuse existing DicomViewerPage flow
+                                      const allSeries = validAssets.map(asset => ({
+                                        name: asset.fileName || 'DICOM SERIES',
+                                        files: [], // Raw files not available from URL directly; user sees download prompt
+                                        blobUrl: asset.blobUrl,
+                                        modality: pastAppt.modality
+                                      }));
+                                      setExpandedHistoryDicom(prev => ({ ...prev, [pastAppt.appointmentId]: 'done' }));
+                                      navigate('/dicom-viewer', {
+                                        state: {
+                                          files: [], // Will be loaded in viewer
+                                          seriesName: `${pastAppt.service || pastAppt.modality} — ${new Date(pastAppt.dateTime).toLocaleDateString('en-IN')}`,
+                                          allSeries: allSeries,
+                                          activeSeriesIndex: 0,
+                                          appointmentData: {
+                                            ...pastAppt,
+                                            appointmentId: pastAppt.appointmentId,
+                                            patientName: activeAppointment?.patientName
+                                          }
+                                        }
+                                      });
+                                    } catch (e) {
+                                      setExpandedHistoryDicom(prev => ({ ...prev, [pastAppt.appointmentId]: 'error' }));
+                                      alert('Failed to load DICOM assets.');
+                                    }
+                                  }}
+                                  style={{
+                                    background: 'linear-gradient(135deg, #10b981, #059669)',
+                                    border: 'none',
+                                    color: 'white',
+                                    borderRadius: '8px',
+                                    padding: '6px 12px',
+                                    fontSize: '10px',
+                                    fontWeight: 900,
+                                    cursor: 'pointer',
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    gap: '5px',
+                                    boxShadow: '0 2px 8px rgba(16,185,129,0.3)',
+                                    opacity: expandedHistoryDicom[pastAppt.appointmentId] === 'loading' ? 0.7 : 1
+                                  }}
+                                >
+                                  {expandedHistoryDicom[pastAppt.appointmentId] === 'loading' ? (
+                                    <span style={{ display: 'inline-block', width: '10px', height: '10px', border: '2px solid rgba(255,255,255,0.3)', borderTopColor: 'white', borderRadius: '50%', animation: 'spin 0.8s linear infinite' }} />
+                                  ) : '🔍'}
+                                  OPEN DICOM →
+                                </button>
+                              ) : (
+                                <div style={{
+                                  background: '#f8fafc',
+                                  border: '1.5px solid #e2e8f0',
+                                  color: '#94a3b8',
+                                  borderRadius: '8px',
+                                  padding: '6px 12px',
+                                  fontSize: '10px',
+                                  fontWeight: 900,
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  gap: '5px'
+                                }}>
+                                  🔍 NO DICOM
+                                </div>
+                              )}
+
+                              {/* Referred by pill */}
+                              {pastAppt.referredBy && (
+                                <div style={{
+                                  background: '#fdf4ff',
+                                  border: '1px solid #e9d5ff',
+                                  color: '#7c3aed',
+                                  borderRadius: '8px',
+                                  padding: '6px 12px',
+                                  fontSize: '10px',
+                                  fontWeight: 900,
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  gap: '5px'
+                                }}>
+                                  👨‍⚕️ Ref: {pastAppt.referredBy}
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* Expanded Report Panel */}
+                        {isReportExpanded && (
+                          <div style={{
+                            borderTop: '1px solid #e2e8f0',
+                            background: '#f8fafc',
+                            padding: '18px 24px'
+                          }}>
+                            {reportState?.loading ? (
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '10px', color: '#64748b', fontSize: '12px', fontWeight: 700 }}>
+                                <div style={{ width: '16px', height: '16px', border: '2px solid rgba(59,130,246,0.2)', borderTopColor: '#3b82f6', borderRadius: '50%', animation: 'spin 0.8s linear infinite' }} />
+                                Loading report...
+                              </div>
+                            ) : reportState?.error ? (
+                              <div style={{ color: '#ef4444', fontSize: '12px', fontWeight: 700 }}>⚠️ {reportState.error}</div>
+                            ) : reportState?.data ? (
+                              <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+                                {/* Findings block */}
+                                {reportState.data.findings && (
+                                  <div>
+                                    <div style={{ fontSize: '9px', fontWeight: 950, color: '#0f52ba', textTransform: 'uppercase', letterSpacing: '1.5px', marginBottom: '8px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                      <span style={{ width: '3px', height: '12px', background: '#0f52ba', borderRadius: '2px', display: 'inline-block' }} />
+                                      CLINICAL FINDINGS
+                                    </div>
+                                    <div
+                                      style={{ fontSize: '11px', color: '#1e293b', lineHeight: '1.7', background: 'white', borderRadius: '8px', padding: '12px 14px', border: '1px solid #e2e8f0' }}
+                                      dangerouslySetInnerHTML={{
+                                        __html: (() => {
+                                          try { return Object.values(JSON.parse(reportState.data.findings)).join('<br/>'); }
+                                          catch { return reportState.data.findings || ''; }
+                                        })()
+                                      }}
+                                    />
+                                  </div>
+                                )}
+                                {/* Impression block */}
+                                {reportState.data.impression && (
+                                  <div>
+                                    <div style={{ fontSize: '9px', fontWeight: 950, color: '#10b981', textTransform: 'uppercase', letterSpacing: '1.5px', marginBottom: '8px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                      <span style={{ width: '3px', height: '12px', background: '#10b981', borderRadius: '2px', display: 'inline-block' }} />
+                                      IMPRESSION
+                                    </div>
+                                    <div style={{ fontSize: '12px', fontWeight: 900, color: '#0f172a', background: '#f0fdf4', borderRadius: '8px', padding: '12px 14px', border: '1px solid #bbf7d0', lineHeight: '1.6' }}>
+                                      {reportState.data.impression}
+                                    </div>
+                                  </div>
+                                )}
+                                {/* Advice block */}
+                                {reportState.data.advice && (
+                                  <div style={{ fontSize: '11px', color: '#64748b', fontStyle: 'italic', paddingLeft: '12px', borderLeft: '2px solid #e2e8f0' }}>
+                                    <strong>Advice:</strong> {reportState.data.advice}
+                                  </div>
+                                )}
+                                {/* Finalized stamp */}
+                                {reportState.data.isFinalized && (
+                                  <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+                                    <span style={{ background: '#ecfdf5', color: '#10b981', border: '1px solid #a7f3d0', borderRadius: '99px', padding: '4px 12px', fontSize: '9px', fontWeight: 950, letterSpacing: '1px' }}>✓ FINALIZED & SIGNED</span>
+                                  </div>
+                                )}
+                              </div>
+                            ) : (
+                              <div style={{ color: '#94a3b8', fontSize: '12px', fontWeight: 700 }}>No report data available.</div>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
               </div>
-            </div>
+            )}
+
+            {activeTab !== 'Patient Timeline' && (
+              <div style={{ marginTop: '20px', paddingTop: '15px', borderTop: '1px solid #e2e8f0', display: 'flex', justifyContent: 'flex-end', alignItems: 'center', gap: '15px' }}>
+                <div style={{ textAlign: 'right' }}>
+                  <div style={{ fontWeight: 600, fontSize: '14px', color: '#0f172a' }}>Dr. Amit Sharma</div>
+                  <div style={{ fontSize: '12px', color: '#64748b' }}>Consultant Radiologist</div>
+                </div>
+              </div>
+            )}
           </div>
         </div>
       </div>
@@ -4801,7 +4923,20 @@ const ReportingPage = () => {
         </div>
       )}
 
-      {renderPreviewModal()}
+      <ReportPreviewModal 
+        isOpen={isPreviewOpen} 
+        onClose={() => setIsPreviewOpen(false)}
+        doctorId={activeAppointment?.doctorId || activeAppointment?.doctorUserId || activeAppointment?.doctor?.userId || (() => { try { const token = sessionStorage.getItem('1rad_token'); if (token) { const d = jwtDecode(token); return d.sub || d.nameid || d.UserId || d.id; } } catch(e){} return null; })()}
+        patientData={activeAppointment}
+        reportContent={{
+          mode: activeTab,
+          text: editorText,
+          data: structuredData,
+          impression: impression,
+          advice: advice,
+          isFinalized: isFinalized
+        }}
+      />
       {renderShortcutsHelp()}
     </div>
   );

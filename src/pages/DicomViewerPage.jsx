@@ -9,7 +9,6 @@ const DicomViewerPage = () => {
   const [currentSlice, setCurrentSlice] = useState(1);
   const [activeMetadata, setActiveMetadata] = useState(null);
   const [cineEnabled, setCineEnabled] = useState(false);
-  const [layoutMode, setLayoutMode] = useState('1x1');
   const [viewportProps, setViewportProps] = useState({ 
     invert: false, 
     flipHorizontal: false, 
@@ -21,12 +20,15 @@ const DicomViewerPage = () => {
   const [isSyncEnabled, setIsSyncEnabled] = useState(false);
   const [showShortcutsHelp, setShowShortcutsHelp] = useState(false);
   const [showLeftToolbar, setShowLeftToolbar] = useState(true);
+  const [isTablet, setIsTablet] = useState(false);
   
-  // Multi-series support
-  const [activeSeriesIndex, setActiveSeriesIndex] = useState(0);
-
   // Get data from navigation state - support both single and multi-series
-  const { files, seriesName, appointmentData, allSeries, activeSeriesIndex: initialSeriesIndex } = location.state || {};
+  const { files, seriesName, appointmentData, allSeries, activeSeriesIndex: initialSeriesIndex, layoutMode: initialLayoutMode } = location.state || {};
+  
+  // Multi-series support - use local state, initialized from navigation state
+  const [activeSeriesIndex, setActiveSeriesIndex] = useState(initialSeriesIndex || 0);
+  
+  const [layoutMode, setLayoutMode] = useState(initialLayoutMode || '1x1');
   
   // Determine if we have multiple series
   const hasMultipleSeries = allSeries && allSeries.length > 1;
@@ -37,8 +39,44 @@ const DicomViewerPage = () => {
   // Reset slice counter when series changes
   useEffect(() => {
     setCurrentSlice(1);
+    setResetTrigger(prev => prev + 1); // Force re-render of viewer
     console.log('[DICOM VIEWER] Series changed, resetting slice counter to 1');
+    console.log('[DICOM VIEWER] New activeSeriesIndex:', activeSeriesIndex);
+    console.log('[DICOM VIEWER] Triggering viewer reset');
   }, [activeSeriesIndex]);
+
+  // Tablet/iPad detection
+  useEffect(() => {
+    const checkDevice = () => {
+      const width = window.innerWidth;
+      const height = window.innerHeight;
+      const isTouchDevice = 'ontouchstart' in window || navigator.maxTouchPoints > 0;
+      const isIPad = /iPad|Macintosh/.test(navigator.userAgent) && 'ontouchstart' in document;
+      const isTabletSize = (width >= 768 && width <= 1366) || (height >= 768 && height <= 1366);
+      
+      const tablet = isTouchDevice && (isTabletSize || isIPad);
+      setIsTablet(tablet);
+      
+      // Auto-hide left toolbar on tablets for more screen space
+      if (tablet) {
+        setShowLeftToolbar(false);
+      }
+      
+      console.log('[DICOM VIEWER] Device detection:', {
+        width, height, isTouchDevice, isIPad, isTabletSize, tablet,
+        userAgent: navigator.userAgent,
+        maxTouchPoints: navigator.maxTouchPoints
+      });
+    };
+    
+    checkDevice();
+    window.addEventListener('resize', checkDevice);
+    window.addEventListener('orientationchange', checkDevice);
+    return () => {
+      window.removeEventListener('resize', checkDevice);
+      window.removeEventListener('orientationchange', checkDevice);
+    };
+  }, []);
 
   useEffect(() => {
     console.log('[DICOM VIEWER] Component mounted with state:', location.state);
@@ -61,11 +99,6 @@ const DicomViewerPage = () => {
       allSeriesData: allSeries
     });
     
-    // Set initial series index if provided
-    if (initialSeriesIndex !== undefined && initialSeriesIndex >= 0) {
-      setActiveSeriesIndex(initialSeriesIndex);
-    }
-    
     // Validate files
     if (!currentFiles || !Array.isArray(currentFiles) || currentFiles.length === 0) {
       console.error('[DICOM VIEWER] ❌ No files available!');
@@ -81,7 +114,7 @@ const DicomViewerPage = () => {
         })));
       }
     }
-  }, [currentFiles, appointmentData, location.state, hasMultipleSeries, allSeries, activeSeriesIndex, currentSeries, initialSeriesIndex]);
+  }, [currentFiles, appointmentData, location.state, hasMultipleSeries, allSeries, activeSeriesIndex, currentSeries]);
 
   // DICOM VIEWER KEYBOARD SHORTCUTS
   useEffect(() => {
@@ -667,8 +700,146 @@ const DicomViewerPage = () => {
       width: '100vw',
       background: '#000',
       display: 'flex',
+      flexDirection: isTablet && hasMultipleSeries ? 'column' : 'row',
       overflow: 'hidden'
     }}>
+      {/* Left Series List Panel (if multiple series) */}
+      {hasMultipleSeries && (
+        <div style={{
+          width: isTablet ? '100%' : '280px',
+          maxWidth: isTablet ? '100%' : '280px',
+          height: isTablet ? 'auto' : '100%',
+          maxHeight: isTablet ? '30vh' : '100%',
+          background: 'linear-gradient(180deg, #0f172a 0%, #1e293b 100%)',
+          borderRight: isTablet ? 'none' : '2px solid #334155',
+          borderBottom: isTablet ? '2px solid #334155' : 'none',
+          display: 'flex',
+          flexDirection: isTablet ? 'row' : 'column',
+          overflow: 'hidden',
+          boxShadow: isTablet ? '0 4px 20px rgba(0, 0, 0, 0.3)' : '4px 0 20px rgba(0, 0, 0, 0.3)',
+          position: isTablet ? 'relative' : 'static',
+          zIndex: isTablet ? 100 : 'auto'
+        }}>
+          {/* Series List Header */}
+          <div style={{
+            padding: isTablet ? '15px 20px' : '20px',
+            borderBottom: isTablet ? 'none' : '2px solid #334155',
+            borderRight: isTablet ? '2px solid #334155' : 'none',
+            background: 'linear-gradient(135deg, #8b5cf6, #6366f1)',
+            minWidth: isTablet ? '200px' : 'auto',
+            display: 'flex',
+            flexDirection: 'column',
+            justifyContent: 'center'
+          }}>
+            <div style={{
+              color: 'white',
+              fontSize: isTablet ? '14px' : '16px',
+              fontWeight: 900,
+              letterSpacing: '1px',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '10px'
+            }}>
+              <span style={{ fontSize: isTablet ? '18px' : '20px' }}>📊</span>
+              ALL SERIES
+            </div>
+            <div style={{
+              color: 'rgba(255,255,255,0.8)',
+              fontSize: isTablet ? '10px' : '11px',
+              marginTop: '5px',
+              fontWeight: 600
+            }}>
+              {allSeries.length} Series Available
+            </div>
+          </div>
+
+          {/* Series List */}
+          <div style={{ 
+            flex: 1, 
+            overflowY: isTablet ? 'hidden' : 'auto',
+            overflowX: isTablet ? 'auto' : 'hidden',
+            padding: isTablet ? '15px' : '10px',
+            display: isTablet ? 'flex' : 'block',
+            gap: isTablet ? '10px' : '0',
+            WebkitOverflowScrolling: 'touch' // Smooth scrolling on iOS
+          }}>
+            {allSeries.map((series, index) => (
+              <button
+                key={index}
+                onClick={() => {
+                  console.log('[SERIES LIST] Clicked series:', index, series.name);
+                  setActiveSeriesIndex(index);
+                }}
+                style={{
+                  width: isTablet ? '200px' : '100%',
+                  minWidth: isTablet ? '200px' : 'auto',
+                  flexShrink: isTablet ? 0 : 'auto',
+                  background: activeSeriesIndex === index 
+                    ? 'linear-gradient(135deg, #8b5cf6, #6366f1)' 
+                    : 'rgba(255,255,255,0.05)',
+                  border: activeSeriesIndex === index 
+                    ? '2px solid #8b5cf6' 
+                    : '2px solid transparent',
+                  color: activeSeriesIndex === index ? 'white' : '#e2e8f0',
+                  padding: isTablet ? '16px 14px' : '12px',
+                  borderRadius: '8px',
+                  cursor: 'pointer',
+                  marginBottom: isTablet ? '0' : '8px',
+                  textAlign: 'left',
+                  transition: 'all 0.2s ease',
+                  boxShadow: activeSeriesIndex === index 
+                    ? '0 4px 12px rgba(139, 92, 246, 0.4)' 
+                    : 'none',
+                  transform: activeSeriesIndex === index ? (isTablet ? 'translateY(-2px)' : 'translateX(4px)') : 'none',
+                  touchAction: 'manipulation', // Better touch response
+                  WebkitTapHighlightColor: 'transparent' // Remove tap highlight on iOS
+                }}
+                onTouchStart={(e) => {
+                  // Immediate visual feedback on touch
+                  if (activeSeriesIndex !== index) {
+                    e.currentTarget.style.background = 'rgba(255,255,255,0.15)';
+                  }
+                }}
+                onTouchEnd={(e) => {
+                  if (activeSeriesIndex !== index) {
+                    e.currentTarget.style.background = 'rgba(255,255,255,0.05)';
+                  }
+                }}
+              >
+                <div style={{
+                  fontSize: isTablet ? '11px' : '12px',
+                  fontWeight: 900,
+                  marginBottom: '4px',
+                  color: activeSeriesIndex === index ? '#fff' : '#8b5cf6'
+                }}>
+                  SERIES {index + 1}
+                </div>
+                <div style={{
+                  fontSize: isTablet ? '9px' : '10px',
+                  fontWeight: 600,
+                  marginBottom: '4px',
+                  lineHeight: '1.3',
+                  wordBreak: 'break-word'
+                }}>
+                  {series.name}
+                </div>
+                <div style={{
+                  fontSize: isTablet ? '8px' : '9px',
+                  opacity: 0.7,
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '8px',
+                  flexWrap: 'wrap'
+                }}>
+                  <span>📁 {series.files?.length || 0} slices</span>
+                  {series.modality && <span>• {series.modality}</span>}
+                </div>
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+      
       {/* Left Toolbar */}
       {renderLeftToolbar()}
 
@@ -676,16 +847,18 @@ const DicomViewerPage = () => {
       <div style={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
         {/* Top Header */}
         <div style={{
-          height: '60px',
+          height: isTablet ? '70px' : '60px',
           background: 'linear-gradient(135deg, #0f172a, #1e293b)',
           borderBottom: '2px solid #334155',
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'space-between',
-          padding: '0 20px',
-          color: 'white'
+          padding: isTablet ? '0 15px' : '0 20px',
+          color: 'white',
+          flexWrap: isTablet ? 'nowrap' : 'wrap',
+          gap: isTablet ? '10px' : '0'
         }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '15px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: isTablet ? '10px' : '15px' }}>
             <button
               onClick={() => {
                 // Navigate back to the specific reporting page if we have appointment data
@@ -700,202 +873,83 @@ const DicomViewerPage = () => {
                 background: 'rgba(255,255,255,0.1)',
                 border: '1px solid rgba(255,255,255,0.2)',
                 color: 'white',
-                padding: '8px 16px',
+                padding: isTablet ? '10px 18px' : '8px 16px',
                 borderRadius: '6px',
                 cursor: 'pointer',
-                fontSize: '12px',
-                fontWeight: 700
+                fontSize: isTablet ? '13px' : '12px',
+                fontWeight: 700,
+                touchAction: 'manipulation',
+                WebkitTapHighlightColor: 'transparent'
               }}
             >
               ← BACK
             </button>
             <div>
-              <div style={{ fontSize: '16px', fontWeight: 900 }}>
-                {currentSeriesName || 'DICOM VIEWER'}
+              <div style={{ fontSize: isTablet ? '15px' : '16px', fontWeight: 900 }}>
+                DICOM VIEWER
               </div>
-              <div style={{ fontSize: '11px', opacity: 0.7 }}>
-                {hasMultipleSeries ? `Series ${activeSeriesIndex + 1} of ${allSeries.length} • ` : ''}
-                Full Screen Diagnostic View • {currentFiles?.length || 0} Slices
+              <div style={{ fontSize: isTablet ? '10px' : '11px', opacity: 0.7 }}>
+                {hasMultipleSeries ? `${allSeries.length} Series • ` : ''}
+                {currentFiles?.length || 0} Slices
               </div>
             </div>
           </div>
 
-          <div style={{ display: 'flex', alignItems: 'center', gap: '15px' }}>
-            {/* DEBUG: Show series data */}
-            <div style={{
-              background: 'rgba(255, 0, 0, 0.9)',
-              color: 'white',
-              padding: '10px',
-              borderRadius: '5px',
-              fontSize: '11px',
-              fontWeight: 'bold',
-              border: '2px solid yellow'
-            }}>
-              DEBUG: hasMultipleSeries={hasMultipleSeries ? 'YES' : 'NO'} | 
-              allSeries={allSeries ? `${allSeries.length} series` : 'NULL'} | 
-              activeIndex={activeSeriesIndex}
-            </div>
-            
-            {/* Series Selector (if multiple series) */}
-            {hasMultipleSeries && (
+          <div style={{ 
+            display: 'flex', 
+            alignItems: 'center', 
+            gap: isTablet ? '8px' : '15px', 
+            flexWrap: 'wrap',
+            justifyContent: 'flex-end'
+          }}>
+            {/* Slice Counter Display */}
+            {!isTablet && (
               <div style={{
-                background: 'linear-gradient(135deg, #8b5cf6, #6366f1)',
-                border: '2px solid rgba(139, 92, 246, 0.5)',
-                padding: '10px 20px',
-                borderRadius: '10px',
-                display: 'flex',
-                alignItems: 'center',
-                gap: '15px',
-                boxShadow: '0 4px 12px rgba(139, 92, 246, 0.5)',
-                minWidth: '250px'
-              }}>
-                <button
-                  onClick={() => {
-                    console.log('[SERIES NAV] Previous button clicked');
-                    console.log('[SERIES NAV] Current activeSeriesIndex:', activeSeriesIndex);
-                    console.log('[SERIES NAV] allSeries:', allSeries);
-                    const newIndex = Math.max(0, activeSeriesIndex - 1);
-                    console.log('[SERIES NAV] New index will be:', newIndex);
-                    setActiveSeriesIndex(newIndex);
-                  }}
-                  disabled={activeSeriesIndex === 0}
-                  style={{
-                    background: activeSeriesIndex === 0 ? 'rgba(255,255,255,0.1)' : 'rgba(255,255,255,0.3)',
-                    border: '1px solid rgba(255,255,255,0.5)',
-                    color: 'white',
-                    padding: '6px 12px',
-                    borderRadius: '6px',
-                    cursor: activeSeriesIndex === 0 ? 'not-allowed' : 'pointer',
-                    fontSize: '14px',
-                    fontWeight: 900,
-                    opacity: activeSeriesIndex === 0 ? 0.5 : 1,
-                    transition: 'all 0.2s ease',
-                    minWidth: '40px'
-                  }}
-                  onMouseEnter={(e) => {
-                    if (activeSeriesIndex !== 0) {
-                      e.target.style.background = 'rgba(255,255,255,0.5)';
-                      e.target.style.transform = 'scale(1.05)';
-                    }
-                  }}
-                  onMouseLeave={(e) => {
-                    if (activeSeriesIndex !== 0) {
-                      e.target.style.background = 'rgba(255,255,255,0.3)';
-                      e.target.style.transform = 'scale(1)';
-                    }
-                  }}
-                >
-                  ◀
-                </button>
-                <div style={{ 
-                  fontSize: '14px', 
-                  fontWeight: 900, 
-                  minWidth: '140px', 
-                  textAlign: 'center',
-                  letterSpacing: '1px'
-                }}>
-                  SERIES {activeSeriesIndex + 1}/{allSeries.length}
-                </div>
-                <button
-                  onClick={() => {
-                    console.log('[SERIES NAV] Next button clicked');
-                    console.log('[SERIES NAV] Current activeSeriesIndex:', activeSeriesIndex);
-                    console.log('[SERIES NAV] allSeries.length:', allSeries?.length);
-                    const newIndex = Math.min(allSeries.length - 1, activeSeriesIndex + 1);
-                    console.log('[SERIES NAV] New index will be:', newIndex);
-                    setActiveSeriesIndex(newIndex);
-                  }}
-                  disabled={activeSeriesIndex === allSeries.length - 1}
-                  style={{
-                    background: activeSeriesIndex === allSeries.length - 1 ? 'rgba(255,255,255,0.1)' : 'rgba(255,255,255,0.3)',
-                    border: '1px solid rgba(255,255,255,0.5)',
-                    color: 'white',
-                    padding: '6px 12px',
-                    borderRadius: '6px',
-                    cursor: activeSeriesIndex === allSeries.length - 1 ? 'not-allowed' : 'pointer',
-                    fontSize: '14px',
-                    fontWeight: 900,
-                    opacity: activeSeriesIndex === allSeries.length - 1 ? 0.5 : 1,
-                    transition: 'all 0.2s ease',
-                    minWidth: '40px'
-                  }}
-                  onMouseEnter={(e) => {
-                    if (activeSeriesIndex !== allSeries.length - 1) {
-                      e.target.style.background = 'rgba(255,255,255,0.5)';
-                      e.target.style.transform = 'scale(1.05)';
-                    }
-                  }}
-                  onMouseLeave={(e) => {
-                    if (activeSeriesIndex !== allSeries.length - 1) {
-                      e.target.style.background = 'rgba(255,255,255,0.3)';
-                      e.target.style.transform = 'scale(1)';
-                    }
-                  }}
-                >
-                  ▶
-                </button>
-              </div>
-            )}
-            
-            {/* Debug indicator when no multiple series */}
-            {!hasMultipleSeries && allSeries && (
-              <div style={{
-                background: 'rgba(251, 191, 36, 0.2)',
-                border: '1px solid rgba(251, 191, 36, 0.5)',
+                background: 'linear-gradient(135deg, #0f52ba, #3b82f6)',
+                border: '2px solid rgba(59, 130, 246, 0.5)',
                 padding: '8px 16px',
                 borderRadius: '8px',
-                fontSize: '11px',
-                fontWeight: 700,
-                color: '#fbbf24'
+                fontSize: '14px',
+                fontWeight: 900,
+                boxShadow: '0 4px 12px rgba(59, 130, 246, 0.3)'
               }}>
-                ⚠️ Single Series ({allSeries.length})
+                SLICE: {currentSlice} / {currentFiles?.length || 0}
               </div>
             )}
-            
-            {/* Slice Counter Display */}
-            <div style={{
-              background: 'linear-gradient(135deg, #0f52ba, #3b82f6)',
-              border: '2px solid rgba(59, 130, 246, 0.5)',
-              padding: '8px 16px',
-              borderRadius: '8px',
-              fontSize: '14px',
-              fontWeight: 900,
-              boxShadow: '0 4px 12px rgba(59, 130, 246, 0.3)'
-            }}>
-              SLICE: {currentSlice} / {currentFiles?.length || 0}
-            </div>
 
-            {/* Active Tool Display */}
+            {/* Active Tool Display - Compact on tablet */}
             <div style={{
               background: 'rgba(59, 130, 246, 0.2)',
               border: '1px solid rgba(59, 130, 246, 0.5)',
-              padding: '8px 16px',
-              borderRadius: '8px',
-              fontSize: '12px',
+              padding: isTablet ? '6px 12px' : '8px 16px',
+              borderRadius: '6px',
+              fontSize: isTablet ? '10px' : '12px',
               fontWeight: 900
             }}>
-              ACTIVE: {activeTool.replace('Tool', '').toUpperCase()}
+              {isTablet ? activeTool.replace('Tool', '').substring(0, 8) : `ACTIVE: ${activeTool.replace('Tool', '').toUpperCase()}`}
             </div>
 
-            {/* Layout Controls */}
-            <select
-              value={layoutMode}
-              onChange={e => setLayoutMode(e.target.value)}
-              style={{
-                background: 'rgba(255,255,255,0.1)',
-                color: 'white',
-                border: '1px solid rgba(255,255,255,0.2)',
-                padding: '8px 12px',
-                borderRadius: '6px',
-                fontSize: '12px',
-                fontWeight: 700,
-                outline: 'none',
-                cursor: 'pointer'
-              }}
-            >
-              <option value="1x1" style={{ background: '#1e293b' }}>1×1 LAYOUT</option>
-              <option value="2x2" style={{ background: '#1e293b' }}>2×2 LAYOUT</option>
-            </select>
+            {/* Layout Controls - Hidden on tablet in single view */}
+            {!isTablet && (
+              <select
+                value={layoutMode}
+                onChange={e => setLayoutMode(e.target.value)}
+                style={{
+                  background: 'rgba(255,255,255,0.1)',
+                  color: 'white',
+                  border: '1px solid rgba(255,255,255,0.2)',
+                  padding: '8px 12px',
+                  borderRadius: '6px',
+                  fontSize: '12px',
+                  fontWeight: 700,
+                  outline: 'none',
+                  cursor: 'pointer'
+                }}
+              >
+                <option value="1x1" style={{ background: '#1e293b' }}>1×1 LAYOUT</option>
+                <option value="2x2" style={{ background: '#1e293b' }}>2×2 LAYOUT</option>
+              </select>
+            )}
 
             {/* Toolbar Toggle */}
             <button
@@ -904,78 +958,124 @@ const DicomViewerPage = () => {
                 background: showLeftToolbar ? '#10b981' : 'rgba(255,255,255,0.1)',
                 border: '1px solid ' + (showLeftToolbar ? '#10b981' : 'rgba(255,255,255,0.2)'),
                 color: 'white',
-                padding: '8px 12px',
+                padding: isTablet ? '8px 14px' : '8px 12px',
                 borderRadius: '6px',
                 cursor: 'pointer',
-                fontSize: '12px',
-                fontWeight: 700
+                fontSize: isTablet ? '11px' : '12px',
+                fontWeight: 700,
+                touchAction: 'manipulation',
+                WebkitTapHighlightColor: 'transparent'
               }}
             >
-              {showLeftToolbar ? '🛠️ HIDE TOOLS' : '🛠️ SHOW TOOLS'}
+              {showLeftToolbar ? '🛠️ HIDE' : '🛠️ TOOLS'}
             </button>
           </div>
         </div>
 
-        {/* DICOM Viewer */}
-        <div style={{ flex: 1, position: 'relative' }}>
-          <AdvancedDicomViewer
-            files={currentFiles}
-            seriesName={currentSeriesName}
-            activeTool={activeTool}
-            isCine={cineEnabled}
-            isSynced={isSyncEnabled}
-            keyImages={keyImages}
-            onKeyImageToggle={toggleKeyImage}
-            onSliceChange={(index, total) => setCurrentSlice(index + 1)}
-            enableFullscreen={false} // Disable since we're already fullscreen
-            showMetadata={true}
-            showMeasurements={true}
-            showWindowingPresets={true}
-            enableAdvancedTools={true}
-            onMetadata={setActiveMetadata}
-            invert={viewportProps.invert}
-            flipHorizontal={viewportProps.flipHorizontal}
-            flipVertical={viewportProps.flipVertical}
-            rotation={viewportProps.rotation}
-            resetTrigger={resetTrigger}
-            key={`series-${activeSeriesIndex}`} // Force re-render when series changes
-          />
+        {/* DICOM Viewer Area */}
+        <div style={{ 
+          flex: 1, 
+          display: 'grid', 
+          gridTemplateColumns: layoutMode === '2x2' ? '1fr 1fr' : '1fr', 
+          gridTemplateRows: layoutMode === '2x2' ? '1fr 1fr' : '1fr', 
+          gap: '2px',
+          background: '#111',
+          position: 'relative'
+        }}>
+          {[...Array(layoutMode === '2x2' ? 4 : 1)].map((_, idx) => {
+            // In multi-view, we show different series in each viewport
+            const seriesIndex = (activeSeriesIndex + idx) % (allSeries?.length || 1);
+            const displayFiles = hasMultipleSeries ? allSeries[seriesIndex]?.files : currentFiles;
+            const displayName = hasMultipleSeries ? allSeries[seriesIndex]?.name : currentSeriesName;
+            
+            return (
+              <div key={`viewport-${idx}`} style={{ position: 'relative', overflow: 'hidden' }}>
+                <AdvancedDicomViewer
+                  files={displayFiles}
+                  seriesName={displayName}
+                  activeTool={activeTool}
+                  isCine={cineEnabled}
+                  isSynced={isSyncEnabled}
+                  keyImages={keyImages}
+                  onKeyImageToggle={toggleKeyImage}
+                  onSliceChange={(index, total) => {
+                    if (idx === 0) setCurrentSlice(index + 1);
+                  }}
+                  enableFullscreen={false}
+                  showMetadata={true}
+                  showMeasurements={true}
+                  showWindowingPresets={true}
+                  enableAdvancedTools={true}
+                  onMetadata={(meta) => {
+                    if (idx === 0) setActiveMetadata(meta);
+                  }}
+                  invert={viewportProps.invert}
+                  flipHorizontal={viewportProps.flipHorizontal}
+                  flipVertical={viewportProps.flipVertical}
+                  rotation={viewportProps.rotation}
+                  resetTrigger={resetTrigger}
+                  key={`active-${activeSeriesIndex}-series-${seriesIndex}-viewport-${idx}-reset-${resetTrigger}`}
+                />
 
-          {/* Overlay Information */}
-          <div style={{
-            position: 'absolute',
-            top: '20px',
-            left: '20px',
-            zIndex: 10,
-            display: 'flex',
-            flexDirection: 'column',
-            gap: '10px'
-          }}>
-            <div style={{
-              background: 'rgba(15, 23, 42, 0.9)',
-              backdropFilter: 'blur(8px)',
-              padding: '10px 16px',
-              borderRadius: '8px',
-              fontSize: '12px',
-              color: '#e2e8f0',
-              fontWeight: 900,
-              border: '1px solid rgba(255,255,255,0.1)'
-            }}>
-              SLICE: {currentSlice} / {currentFiles?.length || 0}
-            </div>
-            {activeMetadata && (
-              <div style={{
-                background: 'rgba(16, 185, 129, 0.9)',
-                padding: '6px 12px',
-                borderRadius: '6px',
-                fontSize: '11px',
-                color: 'white',
-                fontWeight: 900
-              }}>
-                {activeMetadata.modality} • {activeMetadata.rows}x{activeMetadata.columns}
+                {/* Overlay Information for this viewport */}
+                <div style={{
+                  position: 'absolute',
+                  top: isTablet ? '10px' : '20px',
+                  left: isTablet ? '10px' : '20px',
+                  zIndex: 10,
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: isTablet ? '6px' : '10px'
+                }}>
+                  {idx === 0 && (
+                    <div style={{
+                      background: 'rgba(15, 23, 42, 0.9)',
+                      backdropFilter: 'blur(8px)',
+                      padding: isTablet ? '8px 12px' : '10px 16px',
+                      borderRadius: isTablet ? '6px' : '8px',
+                      fontSize: isTablet ? '10px' : '11px',
+                      color: '#3b82f6',
+                      fontWeight: 950,
+                      letterSpacing: isTablet ? '1px' : '1.5px',
+                      border: '1px solid rgba(59, 130, 246, 0.3)',
+                      textTransform: 'uppercase',
+                      boxShadow: '0 4px 15px rgba(0,0,0,0.5)'
+                    }}>
+                      {appointmentData?.patientName || 'ANONYMOUS STUDY'}
+                    </div>
+                  )}
+                  {!isTablet && (
+                    <div style={{
+                      background: 'rgba(15, 23, 42, 0.9)',
+                      backdropFilter: 'blur(8px)',
+                      padding: '10px 16px',
+                      borderRadius: '8px',
+                      fontSize: '11px',
+                      color: '#94a3b8',
+                      fontWeight: 900,
+                      letterSpacing: '1px',
+                      border: '1px solid rgba(255,255,255,0.1)',
+                      textTransform: 'uppercase'
+                    }}>
+                      {displayName || 'SERIES'}
+                    </div>
+                  )}
+                  <div style={{
+                    background: 'rgba(59, 130, 246, 0.9)',
+                    backdropFilter: 'blur(8px)',
+                    padding: isTablet ? '8px 12px' : '10px 16px',
+                    borderRadius: isTablet ? '6px' : '8px',
+                    fontSize: isTablet ? '11px' : '12px',
+                    color: '#fff',
+                    fontWeight: 900,
+                    boxShadow: '0 4px 12px rgba(59, 130, 246, 0.3)'
+                  }}>
+                    SLICE: {idx === 0 ? currentSlice : '?'} / {displayFiles?.length || 0}
+                  </div>
+                </div>
               </div>
-            )}
-          </div>
+            );
+          })}
         </div>
       </div>
 
