@@ -1,11 +1,12 @@
 /* ==========================================================================
-   BillingPage - Responsive Layout (Quick Win Approach)
+   BillingPage - Responsive Layout
    ========================================================================== */
 
 .billing-page {
   padding: 40px;
   background: #f8fafc;
   min-height: 100vh;
+  box-sizing: border-box;
 }
 
 /* ==========================================================================
@@ -41,7 +42,9 @@
   }
 
   .board-header h1 {
-    font-size: 20px !important;
+    font-size: 18px !important;
+    flex-wrap: wrap;
+    gap: 8px !important;
   }
 
   .board-header-actions {
@@ -91,6 +94,17 @@
   border: 1px solid #e2e8f0;
   align-items: center;
   flex-wrap: wrap;
+}
+
+/* Prevent iOS zoom on date inputs inside filter matrix */
+.filter-matrix input[type="date"] {
+  font-size: max(10px, 16px);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .filter-matrix input[type="date"] {
+    font-size: 10px;
+  }
 }
 
 /* Mobile: Stack filters vertically */
@@ -161,6 +175,7 @@
   border: 1px solid #e2e8f0;
   box-shadow: 0 4px 20px rgba(0, 0, 0, 0.02);
   transition: all 0.2s ease;
+  box-sizing: border-box;
 }
 
 .kpi-card:hover {
@@ -204,6 +219,140 @@
 }
 
 /* ==========================================================================
+   Invoices Main Section
+   ========================================================================== */
+
+.invoices-main {
+  animation: fadeIn 0.3s;
+}
+
+/* ==========================================================================
+   Expenses Main Section - Responsive
+   ========================================================================== */
+
+.expenses-main {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 30px;
+  animation: fadeIn 0.3s;
+}
+
+/* Expenses KPI grid — 4 columns on desktop */
+.expenses-main > div:first-child {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 20px;
+}
+
+/* Expenses 2-column layout (table + sidebar) */
+.expenses-main > div:nth-child(2) {
+  display: grid;
+  grid-template-columns: 2fr 1fr;
+  gap: 30px;
+}
+
+/* Mobile: Stack everything */
+@media (max-width: 639px) {
+  .expenses-main {
+    gap: 20px;
+  }
+
+  .expenses-main > div:first-child {
+    grid-template-columns: 1fr;
+    gap: 16px;
+  }
+
+  .expenses-main > div:nth-child(2) {
+    grid-template-columns: 1fr;
+    gap: 20px;
+  }
+}
+
+/* Tablet: 2-column KPI, stack main layout */
+@media (min-width: 640px) and (max-width: 1023px) {
+  .expenses-main > div:first-child {
+    grid-template-columns: repeat(2, 1fr);
+    gap: 16px;
+  }
+
+  .expenses-main > div:nth-child(2) {
+    grid-template-columns: 1fr;
+    gap: 24px;
+  }
+}
+
+/* ==========================================================================
+   Referral Cuts Main Section - Responsive
+   ========================================================================== */
+
+.referral-cuts-main {
+  animation: fadeIn 0.3s;
+}
+
+/* Referral cuts header — flex row on desktop */
+.referral-cuts-main > div:first-child {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 25px;
+  gap: 20px;
+  flex-wrap: wrap;
+}
+
+/* Right side controls group */
+.referral-cuts-main > div:first-child > div:last-child {
+  display: flex;
+  align-items: center;
+  gap: 20px;
+  flex-wrap: wrap;
+}
+
+/* Mobile: Stack referral cuts header */
+@media (max-width: 639px) {
+  .referral-cuts-main > div:first-child {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 16px;
+    margin-bottom: 20px;
+  }
+
+  .referral-cuts-main > div:first-child > div:last-child {
+    width: 100%;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 12px;
+  }
+
+  /* Time filter buttons — full width */
+  .referral-cuts-main > div:first-child > div:last-child > div:first-child {
+    width: 100%;
+  }
+
+  .referral-cuts-main > div:first-child > div:last-child > div:first-child button {
+    flex: 1;
+  }
+
+  /* Total payout box — full width */
+  .referral-cuts-main > div:first-child > div:last-child > div:last-child {
+    width: 100%;
+    text-align: left !important;
+  }
+}
+
+/* Tablet: Wrap referral cuts header */
+@media (min-width: 640px) and (max-width: 1023px) {
+  .referral-cuts-main > div:first-child {
+    flex-wrap: wrap;
+    gap: 16px;
+  }
+
+  .referral-cuts-main > div:first-child > div:last-child {
+    flex-wrap: wrap;
+    gap: 12px;
+  }
+}
+
+/* ==========================================================================
    Transaction Ledger Table - Responsive Horizontal Scroll
    ========================================================================== */
 
@@ -221,6 +370,7 @@
   box-shadow: 0 4px 20px rgba(0, 0, 0, 0.02);
   overflow-x: auto;
   -webkit-overflow-scrolling: touch;
+  box-sizing: border-box;
 }
 
 .content-main table {
@@ -326,13 +476,14 @@
   border-radius: 16px;
   max-height: 90vh;
   overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
   width: 100%;
   max-width: 600px;
   box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
   padding: 0;
 }
 
-/* Mobile: Full screen drawer */
+/* Mobile: Full screen drawer from bottom */
 @media (max-width: 639px) {
   .drawer-overlay {
     padding: 0;
@@ -374,11 +525,11 @@
     padding: 24px 20px !important;
   }
 
-  /* Form inputs */
+  /* Form inputs — font-size >= 16px prevents iOS auto-zoom */
   .drawer-content input,
   .drawer-content select,
   .drawer-content textarea {
-    font-size: 14px !important; /* Prevent iOS zoom */
+    font-size: 16px !important;
   }
 
   /* Buttons in drawer */
@@ -386,7 +537,7 @@
     min-height: 44px;
   }
 
-  /* Button groups */
+  /* Button groups at bottom of drawer */
   .drawer-content > div:last-child > div:last-child {
     flex-direction: column !important;
     gap: 12px !important;
@@ -394,6 +545,18 @@
 
   .drawer-content > div:last-child > div:last-child button {
     width: 100% !important;
+  }
+
+  /* 2-column grids inside drawers → single column */
+  .drawer-content [style*="grid-template-columns: 1fr 1fr"],
+  .drawer-content [style*="gridTemplateColumns: '1fr 1fr'"],
+  .drawer-content [style*="gridTemplateColumns: \"1fr 1fr\""] {
+    grid-template-columns: 1fr !important;
+  }
+
+  /* Discount % buttons — wrap on small screens */
+  .drawer-content [style*="display: 'flex'"][style*="gap: '4px'"] {
+    flex-wrap: wrap;
   }
 }
 
@@ -437,7 +600,8 @@
 
   .search-input-wrapper input {
     padding: 12px 15px 12px 40px;
-    font-size: 12px;
+    /* Prevent iOS zoom */
+    font-size: 16px;
   }
 }
 
@@ -451,15 +615,6 @@ button {
 
 button:active {
   transform: scale(0.98);
-}
-
-/* Mobile: Touch-friendly buttons */
-@media (max-width: 639px) {
-  button {
-    min-height: 44px;
-    padding: 12px 16px !important;
-    font-size: 11px !important;
-  }
 }
 
 /* ==========================================================================
@@ -479,6 +634,7 @@ button:active {
   margin-top: 8px;
   max-height: 250px;
   overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
 }
 
 .patient-search-result-item {
@@ -592,7 +748,7 @@ button:active {
   }
 
   .line-item input {
-    font-size: 13px;
+    font-size: 16px; /* Prevent iOS zoom */
     min-width: 0;
   }
 
@@ -721,7 +877,7 @@ button:active {
 
   .date-range-grid input {
     padding: 12px;
-    font-size: 14px; /* Prevent iOS zoom */
+    font-size: 16px; /* Prevent iOS zoom */
   }
 }
 
@@ -807,14 +963,37 @@ button:active {
 @media (hover: none) and (pointer: coarse) {
   button {
     min-height: 44px;
-    min-width: 44px;
+    -webkit-tap-highlight-color: transparent;
   }
 
   input,
   select,
   textarea {
     min-height: 44px;
-    font-size: 16px; /* Prevent iOS zoom */
+    /* Prevent iOS auto-zoom on focus */
+    font-size: 16px;
+  }
+
+  /* Selects need appearance reset for consistent iOS rendering */
+  select {
+    -webkit-appearance: none;
+    -moz-appearance: none;
+    appearance: none;
+  }
+}
+
+/* ==========================================================================
+   Animations
+   ========================================================================== */
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
   }
 }
 
@@ -839,4 +1018,3 @@ button:active {
     min-width: 100%;
   }
 }
-

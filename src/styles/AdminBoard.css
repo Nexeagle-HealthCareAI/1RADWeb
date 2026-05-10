@@ -1,5 +1,6 @@
 /* ==========================================================================
-   AdminBoard - Responsive Layout (Quick Win Approach)
+   AdminBoard - Mobile & Tablet Compatibility
+   No visual or functional changes — layout compatibility only
    ========================================================================== */
 
 .admin-board-container {
@@ -718,3 +719,560 @@
   }
 }
 
+
+/* ==========================================================================
+   Page Wrapper & Hero Header
+   ========================================================================== */
+
+.board-padding {
+  padding: 30px;
+  box-sizing: border-box;
+}
+
+@media (max-width: 639px) {
+  .board-padding {
+    padding: 16px;
+  }
+}
+
+@media (min-width: 640px) and (max-width: 1023px) {
+  .board-padding {
+    padding: 20px;
+  }
+}
+
+/* Hero header — flex row on desktop, stack on mobile */
+.board-hero-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-end;
+  gap: 20px;
+  margin-bottom: 30px;
+  flex-wrap: wrap;
+}
+
+@media (max-width: 639px) {
+  .board-hero-header {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 16px;
+    margin-bottom: 20px;
+  }
+
+  .board-hero-header h1 {
+    font-size: 20px !important;
+    letter-spacing: -0.5px !important;
+  }
+}
+
+/* ==========================================================================
+   Tab Navigation — admin-tab (inline style, not admin-tab-btn)
+   ========================================================================== */
+
+/* The tab bar uses className="admin-tabs" with inline flex.
+   On mobile, allow horizontal scroll and hide scrollbar. */
+.admin-tabs {
+  overflow-x: auto !important;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+  flex-wrap: nowrap !important;
+}
+
+.admin-tabs::-webkit-scrollbar {
+  display: none;
+}
+
+/* Individual tab buttons use className="admin-tab" (not admin-tab-btn) */
+.admin-tab {
+  flex-shrink: 0 !important;
+  white-space: nowrap;
+  -webkit-tap-highlight-color: transparent;
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+@media (max-width: 639px) {
+  .admin-tab {
+    padding: 10px 12px !important;
+    font-size: 9px !important;
+    flex: 0 0 auto !important;
+  }
+}
+
+@media (min-width: 640px) and (max-width: 1023px) {
+  .admin-tab {
+    padding: 12px 10px !important;
+    font-size: 10px !important;
+    flex: 0 0 auto !important;
+  }
+}
+
+/* ==========================================================================
+   INTELLIGENCE TAB — renderAnalytics
+   ========================================================================== */
+
+.analytics-view {
+  animation: fadeIn 0.3s ease;
+}
+
+/* Intelligence header bar — flex row, wrap on mobile */
+.analytics-view > div:first-child {
+  flex-wrap: wrap !important;
+  gap: 12px !important;
+}
+
+/* Top sources chips — wrap on mobile */
+.analytics-view > div:first-child > div:last-child {
+  flex-wrap: wrap !important;
+  gap: 6px !important;
+}
+
+/* KPI cards — summary-grid already uses auto-fit, just ensure mobile single col */
+@media (max-width: 639px) {
+  .analytics-view .summary-grid {
+    grid-template-columns: 1fr !important;
+    gap: 12px !important;
+  }
+
+  .analytics-view .summary-card {
+    padding: 16px !important;
+  }
+
+  /* Level 2 & 3 grids */
+  .analytics-view > div:nth-child(3),
+  .analytics-view > div:nth-child(4) {
+    grid-template-columns: 1fr !important;
+    gap: 16px !important;
+  }
+}
+
+@media (min-width: 640px) and (max-width: 1023px) {
+  .analytics-view .summary-grid {
+    grid-template-columns: repeat(2, 1fr) !important;
+    gap: 16px !important;
+  }
+
+  .analytics-view > div:nth-child(3),
+  .analytics-view > div:nth-child(4) {
+    grid-template-columns: 1fr !important;
+    gap: 20px !important;
+  }
+}
+
+/* ==========================================================================
+   REFERRAL INTEL TAB — renderReferralIntel
+   ========================================================================== */
+
+/* The referral intel view has complex inline layouts.
+   We target the outer container and key sub-sections. */
+
+/* View mode switcher row — wrap on mobile */
+.referral-intel-header {
+  flex-wrap: wrap !important;
+  gap: 12px !important;
+}
+
+/* Matrix/Log/Roster/Patients view mode buttons — scroll on mobile */
+@media (max-width: 639px) {
+  /* The view mode toggle bar */
+  .referral-view-toggle {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+    flex-wrap: nowrap !important;
+  }
+
+  .referral-view-toggle::-webkit-scrollbar {
+    display: none;
+  }
+}
+
+/* Referral matrix: 2-column layout (list + detail) → stack on mobile/tablet */
+@media (max-width: 1023px) {
+  /* The main 2-column split inside referral intel */
+  .referral-matrix-layout {
+    flex-direction: column !important;
+    gap: 20px !important;
+  }
+
+  .referral-matrix-layout > div:first-child {
+    width: 100% !important;
+    max-height: 300px !important;
+  }
+
+  .referral-matrix-layout > div:last-child {
+    width: 100% !important;
+  }
+}
+
+/* Temporal matrix table — horizontal scroll */
+.referral-temporal-table {
+  overflow-x: auto !important;
+  -webkit-overflow-scrolling: touch;
+}
+
+.referral-temporal-table table {
+  min-width: 600px;
+}
+
+/* Date range inputs — prevent iOS zoom */
+@media (hover: none) and (pointer: coarse) {
+  .referral-date-input {
+    font-size: 16px !important;
+    min-height: 44px !important;
+  }
+}
+
+/* ==========================================================================
+   PERSONNEL TAB — renderUserManagement
+   ========================================================================== */
+
+/* Personnel header — stack on mobile */
+@media (max-width: 639px) {
+  .users-view .board-header {
+    flex-direction: column !important;
+    align-items: flex-start !important;
+    gap: 16px !important;
+  }
+
+  .users-view .board-header > div:last-child {
+    width: 100% !important;
+    flex-direction: column !important;
+    gap: 10px !important;
+  }
+
+  .users-view .board-header > div:last-child > div {
+    width: 100% !important;
+  }
+
+  .users-view .board-header > div:last-child > div input {
+    width: 100% !important;
+  }
+
+  .users-view .board-header > div:last-child > button {
+    width: 100% !important;
+  }
+}
+
+/* Personnel grid — auto-fill already responsive, just tighten on mobile */
+@media (max-width: 639px) {
+  .personnel-grid {
+    grid-template-columns: 1fr !important;
+    gap: 16px !important;
+  }
+
+  .personnel-card {
+    padding: 20px !important;
+  }
+
+  /* Action buttons row — wrap on very small screens */
+  .personnel-card > div:last-child > div:last-child {
+    flex-wrap: wrap !important;
+    gap: 6px !important;
+  }
+}
+
+@media (min-width: 640px) and (max-width: 1023px) {
+  .personnel-grid {
+    grid-template-columns: repeat(2, 1fr) !important;
+    gap: 20px !important;
+  }
+}
+
+/* ==========================================================================
+   HOSPITAL TAB — renderHospitalSettings
+   ========================================================================== */
+
+/* Hub registry header — stack on mobile */
+@media (max-width: 639px) {
+  .hospital-settings-view .board-header {
+    flex-direction: column !important;
+    align-items: flex-start !important;
+    gap: 12px !important;
+  }
+
+  .hospital-settings-view .board-header > button {
+    width: 100% !important;
+  }
+}
+
+/* Hub detail view — identity card */
+@media (max-width: 639px) {
+  /* Identity card flex row → stack */
+  .hospital-settings-view > div:nth-child(2) > div:first-child > div:last-child > div:first-child {
+    flex-direction: column !important;
+    gap: 20px !important;
+  }
+
+  /* Compliance nodes grid → single column */
+  .hospital-settings-view > div:nth-child(2) > div:last-child {
+    grid-template-columns: 1fr !important;
+    gap: 12px !important;
+  }
+}
+
+/* Solo nodes grid — auto-fill already responsive */
+@media (max-width: 639px) {
+  .solo-nodes-block > div:last-child {
+    grid-template-columns: 1fr !important;
+    gap: 16px !important;
+  }
+}
+
+/* Chain topology — backbone line hidden on mobile */
+@media (max-width: 639px) {
+  .tactical-chain-block > div:last-child {
+    padding-left: 0 !important;
+  }
+
+  /* Hide the vertical backbone line */
+  .tactical-chain-block > div:last-child > div:first-child {
+    display: none !important;
+  }
+
+  /* Hub cards in chain — remove horizontal link */
+  .tactical-chain-block > div:last-child > div > div:first-child {
+    display: none !important;
+  }
+}
+
+/* ==========================================================================
+   FINANCE TAB — renderFinance
+   ========================================================================== */
+
+/* Finance header — stack on mobile */
+@media (max-width: 639px) {
+  .finance-view .board-header {
+    flex-direction: column !important;
+    align-items: flex-start !important;
+    gap: 12px !important;
+  }
+
+  .finance-view .board-header > button {
+    width: 100% !important;
+  }
+}
+
+/* Finance main layout: `1fr 350px` → stack on mobile/tablet */
+.finance-view > div:nth-child(2) {
+  display: grid;
+  grid-template-columns: 1fr 350px;
+  gap: 30px;
+  align-items: flex-start;
+}
+
+@media (max-width: 1023px) {
+  .finance-view > div:nth-child(2) {
+    grid-template-columns: 1fr !important;
+    gap: 20px !important;
+  }
+}
+
+/* Service price table — horizontal scroll */
+.finance-view > div:nth-child(2) > div:first-child {
+  overflow-x: auto !important;
+  -webkit-overflow-scrolling: touch;
+}
+
+.finance-view > div:nth-child(2) > div:first-child table {
+  min-width: 500px;
+}
+
+/* ==========================================================================
+   PRESCRIPTION TAB — renderPrescriptionArchitect
+   ========================================================================== */
+
+/* Prescription architect: sidebar + canvas → stack on tablet/mobile */
+.prescription-architect {
+  display: flex;
+  gap: 30px;
+  height: calc(100vh - 200px);
+}
+
+@media (max-width: 1023px) {
+  .prescription-architect {
+    flex-direction: column !important;
+    height: auto !important;
+    gap: 20px !important;
+  }
+
+  /* Control sidebar — full width */
+  .prescription-architect > div:first-child {
+    width: 100% !important;
+    max-height: none !important;
+  }
+
+  /* Canvas — full width, fixed height */
+  .prescription-architect > div:last-child {
+    flex: none !important;
+    height: 600px !important;
+    padding: 30px !important;
+    border-radius: 20px !important;
+  }
+
+  /* A4 preview — scale down to fit */
+  .prescription-page-preview {
+    transform: scale(0.5) !important;
+    transform-origin: top center !important;
+  }
+}
+
+@media (max-width: 639px) {
+  .prescription-architect > div:last-child {
+    height: 450px !important;
+    padding: 20px !important;
+  }
+
+  .prescription-page-preview {
+    transform: scale(0.35) !important;
+    transform-origin: top center !important;
+  }
+
+  /* Studio HUD — hide on mobile */
+  .prescription-architect > div:last-child > div:first-child {
+    display: none !important;
+  }
+
+  /* Control sidebar sliders — touch-friendly */
+  .prescription-architect > div:first-child input[type="range"] {
+    height: 20px !important;
+    cursor: pointer;
+  }
+
+  /* Doctor select — prevent iOS zoom */
+  .prescription-architect > div:first-child select {
+    font-size: 16px !important;
+  }
+}
+
+/* ==========================================================================
+   Drawers — all tabs
+   ========================================================================== */
+
+/* Drawers use className="drawer-overlay" and "drawer-content".
+   The existing CSS handles mobile full-screen.
+   Add iOS-specific fixes here. */
+
+@media (max-width: 639px) {
+  .drawer-content {
+    -webkit-overflow-scrolling: touch;
+  }
+
+  /* All form inputs in drawers — prevent iOS zoom */
+  .drawer-content input,
+  .drawer-content select,
+  .drawer-content textarea {
+    font-size: 16px !important;
+  }
+
+  /* 2-column grids in drawers → single column */
+  .drawer-content [style*="grid-template-columns: 1fr 1fr"],
+  .drawer-content [style*="gridTemplateColumns: '1fr 1fr'"] {
+    grid-template-columns: 1fr !important;
+  }
+
+  /* Hospital drawer compliance grid */
+  .drawer-content [style*="grid-template-columns: '1fr 1fr'"] {
+    grid-template-columns: 1fr !important;
+  }
+}
+
+/* ==========================================================================
+   Touch-friendly overrides — all tabs
+   ========================================================================== */
+
+@media (hover: none) and (pointer: coarse) {
+  /* All interactive elements */
+  .admin-tab,
+  .admin-tab-btn,
+  .btn-primary,
+  .btn-secondary,
+  .btn-logout {
+    min-height: 44px;
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  /* Form inputs — prevent iOS zoom */
+  input[type="text"],
+  input[type="number"],
+  input[type="email"],
+  input[type="password"],
+  input[type="date"],
+  select,
+  textarea {
+    font-size: 16px;
+    min-height: 44px;
+  }
+
+  /* Select — consistent iOS rendering */
+  select {
+    -webkit-appearance: none;
+    -moz-appearance: none;
+    appearance: none;
+  }
+
+  /* Range inputs — larger touch area */
+  input[type="range"] {
+    height: 20px;
+    cursor: pointer;
+  }
+}
+
+/* ==========================================================================
+   Animations
+   ========================================================================== */
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.fade-in {
+  animation: fadeIn 0.3s ease;
+}
+
+/* ==========================================================================
+   Pulse loader
+   ========================================================================== */
+
+.pulse-loader {
+  width: 40px;
+  height: 40px;
+  border: 4px solid rgba(15, 82, 186, 0.1);
+  border-top-color: #0f52ba;
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+/* ==========================================================================
+   Print styles
+   ========================================================================== */
+
+@media print {
+  .admin-tabs,
+  .filter-bar,
+  .board-header-actions,
+  .drawer-overlay {
+    display: none !important;
+  }
+
+  .table-container {
+    border: none;
+    overflow: visible;
+  }
+
+  .data-table {
+    min-width: 100%;
+  }
+}

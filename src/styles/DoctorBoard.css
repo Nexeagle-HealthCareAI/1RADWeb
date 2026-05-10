@@ -1,0 +1,473 @@
+/* ==========================================================================
+   DoctorBoard - Mobile & Tablet Compatibility
+   No visual or functional changes — layout compatibility only
+   ========================================================================== */
+
+/* ==========================================================================
+   Board View Container
+   ========================================================================== */
+
+.board-view-container {
+  background: #fcfdfe;
+  min-height: 100vh;
+  box-sizing: border-box;
+}
+
+/* ==========================================================================
+   Board Header — title + view toggle tabs
+   ========================================================================== */
+
+.board-view-container .board-header {
+  padding: 15px 40px;
+  background: white;
+  border-bottom: 1px solid #f1f5f9;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 15px;
+  gap: 16px;
+  flex-wrap: wrap;
+  box-sizing: border-box;
+}
+
+/* Mobile: Stack header vertically */
+@media (max-width: 639px) {
+  .board-view-container .board-header {
+    padding: 12px 16px;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 12px;
+  }
+
+  .board-view-container .board-header h1 {
+    font-size: 18px !important;
+    letter-spacing: -0.5px !important;
+  }
+
+  .board-view-container .board-header > div:first-child p {
+    margin-left: 0 !important;
+    font-size: 9px !important;
+  }
+}
+
+/* Tablet */
+@media (min-width: 640px) and (max-width: 1023px) {
+  .board-view-container .board-header {
+    padding: 12px 20px;
+  }
+}
+
+/* ==========================================================================
+   View Toggle Tabs (Active Worklist / Clinical Archive)
+   ========================================================================== */
+
+.board-view-container .admin-tabs {
+  overflow-x: auto !important;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+  flex-wrap: nowrap !important;
+}
+
+.board-view-container .admin-tabs::-webkit-scrollbar {
+  display: none;
+}
+
+@media (max-width: 639px) {
+  .board-view-container .admin-tabs {
+    width: 100% !important;
+  }
+
+  .board-view-container .admin-tabs button {
+    flex: 1 !important;
+    padding: 10px 12px !important;
+    font-size: 9px !important;
+  }
+}
+
+/* ==========================================================================
+   Board Padding (main content area)
+   ========================================================================== */
+
+.board-padding {
+  padding: 15px 40px;
+  box-sizing: border-box;
+}
+
+@media (max-width: 639px) {
+  .board-padding {
+    padding: 12px 16px;
+  }
+}
+
+@media (min-width: 640px) and (max-width: 1023px) {
+  .board-padding {
+    padding: 12px 20px;
+  }
+}
+
+/* ==========================================================================
+   Stats Cards Grid — inline repeat(4, 1fr)
+   ========================================================================== */
+
+/* The stats grids use inline gridTemplateColumns: 'repeat(4, 1fr)'.
+   We override via the board-padding context. */
+
+.board-padding > div:first-child {
+  display: grid !important;
+  grid-template-columns: repeat(4, 1fr) !important;
+  gap: 15px;
+  margin-bottom: 20px;
+}
+
+/* Mobile: 2 columns */
+@media (max-width: 639px) {
+  .board-padding > div:first-child {
+    grid-template-columns: repeat(2, 1fr) !important;
+    gap: 10px !important;
+    margin-bottom: 16px !important;
+  }
+
+  .board-padding > div:first-child .summary-card {
+    padding: 12px !important;
+  }
+
+  .board-padding > div:first-child .summary-card > span {
+    font-size: 8px !important;
+    letter-spacing: 1px !important;
+  }
+
+  .board-padding > div:first-child .summary-card > div > span:first-child {
+    font-size: 22px !important;
+  }
+}
+
+/* Tablet: 2 columns */
+@media (min-width: 640px) and (max-width: 1023px) {
+  .board-padding > div:first-child {
+    grid-template-columns: repeat(2, 1fr) !important;
+    gap: 12px !important;
+  }
+}
+
+/* ==========================================================================
+   Filter / Search Bar
+   ========================================================================== */
+
+/* The filter bar uses inline flex with flexWrap: 'wrap' already.
+   We add mobile-specific overrides. */
+
+@media (max-width: 639px) {
+  /* Search group — full width */
+  .board-padding > div:nth-child(2) > div:first-child {
+    flex: 1 1 100% !important;
+    min-width: 0 !important;
+  }
+
+  /* Archive date range group — full width */
+  .board-padding > div:nth-child(2) > div:nth-child(2) {
+    flex: 1 1 100% !important;
+    flex-wrap: wrap !important;
+    gap: 8px !important;
+  }
+
+  /* Date inputs — prevent iOS zoom */
+  .board-padding > div:nth-child(2) input[type="date"] {
+    font-size: 16px !important;
+    flex: 1 !important;
+    min-width: 0 !important;
+  }
+
+  /* Select dropdowns — full width on mobile */
+  .board-padding > div:nth-child(2) select {
+    flex: 1 1 calc(50% - 8px) !important;
+    min-width: 0 !important;
+    font-size: 11px !important;
+    -webkit-appearance: none;
+    -moz-appearance: none;
+    appearance: none;
+  }
+
+  /* Re-sync button — full width */
+  .board-padding > div:nth-child(2) .gamified-btn {
+    flex: 1 1 100% !important;
+    justify-content: center !important;
+  }
+}
+
+@media (min-width: 640px) and (max-width: 1023px) {
+  .board-padding > div:nth-child(2) select {
+    min-width: 120px !important;
+  }
+}
+
+/* ==========================================================================
+   View Mode Toggle (GRID_VIEW / CARD_VIEW) — desktop only
+   ========================================================================== */
+
+/* Already hidden on tablet via isTablet state — no CSS needed */
+
+/* ==========================================================================
+   Worklist Table — horizontal scroll on mobile/tablet
+   ========================================================================== */
+
+/* The table container is the 3rd child of board-padding */
+.board-padding > div:nth-child(3) {
+  overflow-x: auto !important;
+  -webkit-overflow-scrolling: touch;
+}
+
+.board-padding > div:nth-child(3) table {
+  min-width: 900px; /* Prevent collapse */
+}
+
+@media (max-width: 639px) {
+  .board-padding > div:nth-child(3) table {
+    min-width: 800px;
+  }
+
+  .board-padding > div:nth-child(3) th {
+    padding: 12px 10px !important;
+    font-size: 9px !important;
+  }
+
+  .board-padding > div:nth-child(3) td {
+    padding: 12px 10px !important;
+    font-size: 11px !important;
+  }
+
+  /* Action buttons in table — smaller on mobile */
+  .board-padding > div:nth-child(3) td:last-child > div {
+    gap: 5px !important;
+  }
+
+  .board-padding > div:nth-child(3) td:last-child button {
+    padding: 6px 10px !important;
+    font-size: 9px !important;
+  }
+}
+
+/* ==========================================================================
+   Archive Pagination
+   ========================================================================== */
+
+@media (max-width: 639px) {
+  /* Pagination footer */
+  .board-padding > div:nth-child(3) > div:last-child {
+    flex-direction: column !important;
+    gap: 12px !important;
+    padding: 12px 16px !important;
+    align-items: flex-start !important;
+  }
+
+  .board-padding > div:nth-child(3) > div:last-child > div:last-child {
+    width: 100% !important;
+    justify-content: space-between !important;
+  }
+
+  .board-padding > div:nth-child(3) > div:last-child button {
+    flex: 1 !important;
+    justify-content: center !important;
+  }
+}
+
+/* ==========================================================================
+   Card View Grid
+   ========================================================================== */
+
+/* Card view uses inline gridTemplateColumns: isTablet ? '1fr' : 'repeat(auto-fill, minmax(350px, 1fr))'
+   The isTablet state already handles this — just ensure cards don't overflow */
+
+@media (max-width: 639px) {
+  /* Card grid padding */
+  .board-padding > div:nth-child(3) > div[style*="padding: '20px'"] {
+    padding: 12px !important;
+    gap: 12px !important;
+  }
+
+  /* Individual case cards */
+  .board-padding > div:nth-child(3) > div > div {
+    padding: 16px !important;
+  }
+}
+
+/* ==========================================================================
+   Preview Modal (Report Print Preview)
+   ========================================================================== */
+
+#preview-modal-overlay {
+  padding: 0 !important;
+}
+
+#preview-modal-container {
+  width: 100% !important;
+  max-width: 1000px;
+  height: 100vh !important;
+  border-radius: 0 !important;
+}
+
+@media (min-width: 640px) {
+  #preview-modal-overlay {
+    padding: 20px !important;
+  }
+
+  #preview-modal-container {
+    height: 95vh !important;
+    border-radius: 24px !important;
+  }
+}
+
+/* Preview toolbar — stack on mobile */
+@media (max-width: 639px) {
+  #preview-toolbar {
+    padding: 12px 16px !important;
+    flex-wrap: wrap !important;
+    gap: 10px !important;
+  }
+
+  #preview-toolbar > div:first-child {
+    gap: 10px !important;
+  }
+
+  #preview-toolbar > div:first-child > div:first-child {
+    width: 36px !important;
+    height: 36px !important;
+    font-size: 16px !important;
+  }
+
+  #preview-toolbar h3 {
+    font-size: 11px !important;
+  }
+
+  #preview-toolbar > div:last-child {
+    width: 100% !important;
+    gap: 8px !important;
+  }
+
+  #preview-toolbar > div:last-child button {
+    flex: 1 !important;
+    padding: 10px 12px !important;
+    font-size: 10px !important;
+    justify-content: center !important;
+  }
+
+  /* A4 preview — scale down to fit mobile screen */
+  #printable-report {
+    transform: scale(0.38) !important;
+    transform-origin: top center !important;
+  }
+
+  #preview-scroll-container {
+    padding: 20px 0 !important;
+    align-items: center !important;
+  }
+}
+
+@media (min-width: 640px) and (max-width: 1023px) {
+  #preview-toolbar {
+    padding: 16px 24px !important;
+  }
+
+  /* A4 preview — scale down for tablet */
+  #printable-report {
+    transform: scale(0.6) !important;
+    transform-origin: top center !important;
+  }
+
+  #preview-scroll-container {
+    padding: 30px 0 !important;
+  }
+}
+
+/* ==========================================================================
+   Token Print Modal
+   ========================================================================== */
+
+@media (max-width: 639px) {
+  /* Token modal container */
+  .modal-overlay > div[style*="400px"] {
+    width: calc(100% - 32px) !important;
+    max-width: 400px !important;
+  }
+
+  /* Token modal header */
+  .modal-overlay > div > div:first-child {
+    padding: 14px 16px !important;
+  }
+
+  /* Token modal footer buttons */
+  .modal-overlay > div > div:last-child {
+    padding: 14px 16px !important;
+    gap: 8px !important;
+  }
+
+  .modal-overlay > div > div:last-child button {
+    padding: 12px !important;
+    font-size: 11px !important;
+  }
+}
+
+/* ==========================================================================
+   Touch-friendly overrides
+   ========================================================================== */
+
+@media (hover: none) and (pointer: coarse) {
+  /* Select dropdowns — consistent iOS rendering */
+  .board-padding select {
+    -webkit-appearance: none;
+    -moz-appearance: none;
+    appearance: none;
+    min-height: 44px;
+    font-size: 16px; /* Prevent iOS zoom */
+  }
+
+  /* Search input */
+  .board-padding input[type="text"] {
+    font-size: 16px; /* Prevent iOS zoom */
+    min-height: 44px;
+  }
+
+  /* Date inputs */
+  .board-padding input[type="date"] {
+    font-size: 16px; /* Prevent iOS zoom */
+    min-height: 44px;
+  }
+
+  /* Action buttons — minimum touch target */
+  .board-padding button {
+    min-height: 44px;
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  /* Icon buttons — ensure 44px */
+  .icon-btn {
+    width: 44px !important;
+    height: 44px !important;
+  }
+
+  /* Summary cards — no hover transform on touch */
+  .summary-card:hover {
+    transform: none !important;
+  }
+}
+
+/* ==========================================================================
+   Print styles
+   ========================================================================== */
+
+@media print {
+  .board-view-container .board-header,
+  .board-padding > div:first-child,
+  .board-padding > div:nth-child(2),
+  #preview-toolbar {
+    display: none !important;
+  }
+
+  .board-padding > div:nth-child(3) {
+    overflow: visible !important;
+  }
+
+  .board-padding > div:nth-child(3) table {
+    min-width: 100% !important;
+  }
+}

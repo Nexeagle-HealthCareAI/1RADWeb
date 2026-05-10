@@ -9,6 +9,7 @@ import AdvancedDicomViewer from '../components/AdvancedDicomViewer';
 import useOffline from '../hooks/useOffline';
 import { nativeStorage } from '../hooks/useElectron';
 import '../styles/global.css';
+import '../styles/DoctorBoard.css';
 
 const MODALITY_ICONS = {
   'X-RAY': '🩻',
@@ -60,6 +61,15 @@ export default function DoctorBoard() {
   const [archiveFilterMode, setArchiveFilterMode] = useState('ALL'); // 'ALL' or 'RANGE'
   const [archiveDateRange, setArchiveDateRange] = useState({ start: TODAY, end: TODAY });
   const itemsPerPage = 5;
+  const [sortConfig, setSortConfig] = useState({ key: 'dateTime', direction: 'asc' });
+
+  const handleSort = (key) => {
+    let direction = 'asc';
+    if (sortConfig.key === key && sortConfig.direction === 'asc') {
+      direction = 'desc';
+    }
+    setSortConfig({ key, direction });
+  };
 
   useEffect(() => {
     const handleResize = () => {
@@ -138,7 +148,7 @@ export default function DoctorBoard() {
       const matchesStatus = filters.clinicalStatus === 'ALL' || status === filters.clinicalStatus.toLowerCase();
 
       if (view === 'QUEUE') {
-        return matchesSearch && matchesModality && matchesPriority && matchesStatus && c.isToday && ['scheduled', 'confirmed', 'in_progress', 'scanned', 'reporting', 'booked'].includes(status);
+        return matchesSearch && matchesModality && matchesPriority && matchesStatus && c.isToday && ['scheduled', 'confirmed', 'in_progress', 'scanned', 'reporting', 'booked', 'reported', 'completed'].includes(status);
       } else {
         const studyDate = c.dateTime ? c.dateTime.split('T')[0] : null;
         const matchesDate = archiveFilterMode === 'ALL' || (studyDate && studyDate >= archiveDateRange.start && studyDate <= archiveDateRange.end);
@@ -147,11 +157,34 @@ export default function DoctorBoard() {
     });
   }, [cases, search, filters, view, TODAY, archiveFilterMode, archiveDateRange]);
 
+  const sortedCases = useMemo(() => {
+    const sortableItems = [...filteredCases];
+    if (sortConfig.key !== null) {
+      sortableItems.sort((a, b) => {
+        let aValue = a[sortConfig.key];
+        let bValue = b[sortConfig.key];
+
+        if (sortConfig.key === 'dateTime') {
+          aValue = new Date(aValue || 0).getTime();
+          bValue = new Date(bValue || 0).getTime();
+        } else if (typeof aValue === 'string') {
+          aValue = aValue.toLowerCase();
+          bValue = (bValue || '').toLowerCase();
+        }
+
+        if (aValue < bValue) return sortConfig.direction === 'asc' ? -1 : 1;
+        if (aValue > bValue) return sortConfig.direction === 'asc' ? 1 : -1;
+        return 0;
+      });
+    }
+    return sortableItems;
+  }, [filteredCases, sortConfig]);
+
   const paginatedCases = useMemo(() => {
-    if (view === 'QUEUE') return filteredCases;
+    if (view === 'QUEUE') return sortedCases;
     const start = (archivePage - 1) * itemsPerPage;
-    return filteredCases.slice(start, start + itemsPerPage);
-  }, [filteredCases, view, archivePage]);
+    return sortedCases.slice(start, start + itemsPerPage);
+  }, [sortedCases, view, archivePage]);
 
   const totalPages = Math.ceil(filteredCases.length / itemsPerPage);
 
@@ -162,7 +195,7 @@ export default function DoctorBoard() {
   const stats = {
     pendingReports: cases.filter(c => c.isToday && ['scanned', 'reporting'].includes(c.status?.toLowerCase())).length,
     drafts: cases.filter(c => c.isToday && c.status?.toLowerCase() === 'reporting').length,
-    finalizedToday: cases.filter(c => c.status?.toLowerCase() === 'reported' && c.isToday).length,
+    finalizedToday: cases.filter(c => ['reported', 'completed'].includes(c.status?.toLowerCase()) && c.isToday).length,
     upcoming: cases.filter(c => c.isToday && ['scheduled', 'confirmed', 'in_progress', 'booked'].includes(c.status?.toLowerCase())).length,
     archiveTotal: cases.filter(c => !c.isToday || c.status?.toLowerCase() === 'reported').length,
     archiveFinalized: cases.filter(c => c.status?.toLowerCase() === 'reported').length,
@@ -206,13 +239,15 @@ export default function DoctorBoard() {
 
       // 2. Prepare Report Content (Archive View)
       // Fetch from API since we're now using separate reporting page
-      const reportRes = await apiClient.get(`/Reporting/mission/${c.id || c.appointmentId}`).catch(() => null);
-      if (reportRes?.data) {
+      const reportRes = await apiClient.get(`/Reporting/report/${c.id || c.appointmentId}`).catch(() => null);
+      const r = (reportRes?.data?.success && reportRes?.data?.data) ? reportRes.data.data : reportRes?.data;
+      
+      if (r) {
         setCurrentReport({
-          findings: reportRes.data.findings || '',
-          impression: reportRes.data.impression || '',
-          advice: reportRes.data.advice || '',
-          technique: reportRes.data.technique || ''
+          findings: r.findings || '',
+          impression: r.impression || '',
+          advice: r.advice || '',
+          technique: r.technique || ''
         });
       } else {
         setCurrentReport({
@@ -554,6 +589,7 @@ export default function DoctorBoard() {
                 <option value="SCANNED">📡 READY FOR REPORT</option>
                 <option value="REPORTING">📝 IN DRAFTING</option>
                 <option value="IN_PROGRESS">⚡ IN ACQUISITION</option>
+                <option value="REPORTED">✅ FINALIZED TODAY</option>
               </>
             ) : (
               <>
@@ -579,11 +615,24 @@ export default function DoctorBoard() {
           <table style={{ width: '100%', borderCollapse: 'collapse' }}>
             <thead style={{ background: '#f8fafc', borderBottom: '1px solid #e2e8f0' }}>
               <tr>
-                <th style={{ padding: '20px', textAlign: 'left', fontSize: '11px', fontWeight: 950, color: '#64748b', letterSpacing: '1px' }}>PATIENT NODE</th>
-                <th style={{ padding: '20px', textAlign: 'left', fontSize: '11px', fontWeight: 950, color: '#64748b', letterSpacing: '1px' }}>STUDY ARCHITECTURE</th>
-                <th style={{ padding: '20px', textAlign: 'left', fontSize: '11px', fontWeight: 950, color: '#64748b', letterSpacing: '1px' }}>MISSION DATE</th>
-                <th style={{ padding: '20px', textAlign: 'left', fontSize: '11px', fontWeight: 950, color: '#64748b', letterSpacing: '1px' }}>SCANNING CONTEXT</th>
-                <th style={{ padding: '20px', textAlign: 'left', fontSize: '11px', fontWeight: 950, color: '#64748b', letterSpacing: '1px' }}>PHASE</th>
+                <th onClick={() => handleSort('patientName')} style={{ padding: '20px', textAlign: 'left', fontSize: '11px', fontWeight: 950, color: '#64748b', letterSpacing: '1px', cursor: 'pointer' }}>
+                  PATIENT NODE {sortConfig.key === 'patientName' ? (sortConfig.direction === 'asc' ? '🔼' : '🔽') : '↕️'}
+                </th>
+                <th onClick={() => handleSort('tokenNo')} style={{ padding: '20px', textAlign: 'left', fontSize: '11px', fontWeight: 950, color: '#64748b', letterSpacing: '1px', cursor: 'pointer' }}>
+                  TOKEN {sortConfig.key === 'tokenNo' ? (sortConfig.direction === 'asc' ? '🔼' : '🔽') : '↕️'}
+                </th>
+                <th onClick={() => handleSort('service')} style={{ padding: '20px', textAlign: 'left', fontSize: '11px', fontWeight: 950, color: '#64748b', letterSpacing: '1px', cursor: 'pointer' }}>
+                  STUDY ARCHITECTURE {sortConfig.key === 'service' ? (sortConfig.direction === 'asc' ? '🔼' : '🔽') : '↕️'}
+                </th>
+                <th onClick={() => handleSort('dateTime')} style={{ padding: '20px', textAlign: 'left', fontSize: '11px', fontWeight: 950, color: '#64748b', letterSpacing: '1px', cursor: 'pointer' }}>
+                  MISSION DATE {sortConfig.key === 'dateTime' ? (sortConfig.direction === 'asc' ? '🔼' : '🔽') : '↕️'}
+                </th>
+                <th onClick={() => handleSort('status')} style={{ padding: '20px', textAlign: 'left', fontSize: '11px', fontWeight: 950, color: '#64748b', letterSpacing: '1px', cursor: 'pointer' }}>
+                  SCANNING CONTEXT {sortConfig.key === 'status' ? (sortConfig.direction === 'asc' ? '🔼' : '🔽') : '↕️'}
+                </th>
+                <th onClick={() => handleSort('status')} style={{ padding: '20px', textAlign: 'left', fontSize: '11px', fontWeight: 950, color: '#64748b', letterSpacing: '1px', cursor: 'pointer' }}>
+                  PHASE {sortConfig.key === 'status' ? (sortConfig.direction === 'asc' ? '🔼' : '🔽') : '↕️'}
+                </th>
                 <th style={{ padding: '20px', textAlign: 'right', fontSize: '11px', fontWeight: 950, color: '#64748b', letterSpacing: '1px' }}>OPERATIONS</th>
               </tr>
             </thead>
@@ -591,7 +640,7 @@ export default function DoctorBoard() {
               {paginatedCases.map(c => {
                 const status = c.status?.toLowerCase();
                 const isReady = ['scanned', 'reporting'].includes(status);
-                const isActive = ['scheduled', 'confirmed', 'in_progress', 'scanned', 'reporting', 'booked'].includes(status) && c.isToday;
+                const isActive = ['scheduled', 'confirmed', 'in_progress', 'scanned', 'reporting', 'booked', 'reported', 'completed'].includes(status) && c.isToday;
                 const isScanning = ['confirmed', 'in_progress'].includes(status);
                 const isExpected = ['scheduled', 'booked'].includes(status) && c.isToday;
                 
@@ -604,6 +653,17 @@ export default function DoctorBoard() {
                              <div style={{ fontWeight: 800, color: '#1e293b', fontSize: '14px' }}>{c.patientName.toUpperCase()}</div>
                              <div style={{ fontSize: '10px', color: '#94a3b8', fontWeight: 700 }}>{c.id} | {c.patientGender || 'M'} | {c.patientAge || '45'}Y</div>
                           </div>
+                       </div>
+                    </td>
+                    <td style={{ padding: '20px' }}>
+                       <div style={{ 
+                         width: '45px', height: '45px', borderRadius: '12px', 
+                         background: '#f0f7ff', border: '1px solid #dbeafe', 
+                         display: 'flex', alignItems: 'center', justifyContent: 'center',
+                         fontSize: '18px', fontWeight: 950, color: '#0f52ba',
+                         boxShadow: '0 4px 10px rgba(15, 82, 186, 0.1)'
+                       }}>
+                          {c.tokenNo || '-'}
                        </div>
                     </td>
                     <td style={{ padding: '20px' }}>
@@ -632,11 +692,11 @@ export default function DoctorBoard() {
                     <td style={{ padding: '20px' }}>
                       <span style={{ 
                         padding: '6px 12px', borderRadius: '10px', fontSize: '9px', fontWeight: 950,
-                        background: isReady ? '#e9f7ef' : isScanning ? '#fef3c7' : isExpected ? '#f0f7ff' : '#f8fafc',
-                        color: isReady ? '#27ae60' : isScanning ? '#d97706' : isExpected ? '#0f52ba' : '#64748b',
-                        border: `1px solid ${isReady ? '#c3e6cb' : isScanning ? '#fcd34d' : isExpected ? '#dbeafe' : '#e2e8f0'}`,
+                        background: status === 'reported' ? '#f0fdf4' : isReady ? '#e9f7ef' : isScanning ? '#fef3c7' : isExpected ? '#f0f7ff' : '#f8fafc',
+                        color: status === 'reported' ? '#166534' : isReady ? '#27ae60' : isScanning ? '#d97706' : isExpected ? '#0f52ba' : '#64748b',
+                        border: `1px solid ${status === 'reported' ? '#bbf7d0' : isReady ? '#c3e6cb' : isScanning ? '#fcd34d' : isExpected ? '#dbeafe' : '#e2e8f0'}`,
                         textTransform: 'uppercase'
-                      }}>{status === 'scanned' ? '📡 READY' : status === 'confirmed' ? '⚡ ARRIVED' : status === 'in_progress' ? '🌀 SCANNING' : status === 'scheduled' ? '📅 EXPECTED' : status === 'reported' ? '✅ REPORTED' : status.toUpperCase()}</span>
+                      }}>{status === 'scanned' ? '📡 READY' : status === 'confirmed' ? '⚡ ARRIVED' : status === 'in_progress' ? '🌀 SCANNING' : status === 'scheduled' ? '📅 EXPECTED' : status === 'reported' ? '✅ FINALIZED' : status === 'completed' ? '🏁 ARCHIVED' : status.toUpperCase()}</span>
                     </td>
                     <td style={{ padding: '20px', textAlign: 'right' }}>
                       <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
@@ -665,7 +725,7 @@ export default function DoctorBoard() {
                           style={{ padding: '10px 20px', fontSize: '11px', borderRadius: '12px', opacity: (isActive || view === 'HISTORY') ? 1 : 0.4, cursor: (isActive || view === 'HISTORY') ? 'pointer' : 'not-allowed' }} 
                           onClick={() => handleOpenWorkspace(c)}
                         >
-                          {isReady ? 'EXECUTE REPORTER' : 'PRE-TRIAGE REPORT'}
+                          {status === 'reported' ? 'REVIEW REPORT' : isReady ? 'EXECUTE REPORTER' : 'PRE-TRIAGE REPORT'}
                         </button>
                       </div>
                     </td>
@@ -713,13 +773,13 @@ export default function DoctorBoard() {
                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
                           <div>
                              <div style={{ fontSize: '14px', fontWeight: 950, color: '#1e293b' }}>{c.patientName?.toUpperCase()}</div>
-                             <div style={{ fontSize: '10px', color: '#64748b', fontWeight: 800, marginTop: '4px' }}>UHID: {c.patientIdentifier || 'UH-XXX'}</div>
+                             <div style={{ fontSize: '10px', color: '#64748b', fontWeight: 800, marginTop: '4px' }}>UHID: {c.patientIdentifier || 'UH-XXX'} | TOKEN: <span style={{ color: '#0f52ba' }}>{c.tokenNo || '-'}</span></div>
                           </div>
-                          <span style={{ 
+                           <span style={{ 
                             padding: '6px 12px', borderRadius: '8px', fontSize: '10px', fontWeight: 950,
-                            background: isReady ? '#ecfdf5' : isScanning ? '#fff7ed' : isExpected ? '#eff6ff' : '#f8fafc',
-                            color: isReady ? '#27ae60' : isScanning ? '#d97706' : isExpected ? '#0f52ba' : '#64748b'
-                          }}>{status.toUpperCase()}</span>
+                            background: status === 'reported' ? '#f0fdf4' : isReady ? '#ecfdf5' : isScanning ? '#fff7ed' : isExpected ? '#eff6ff' : '#f8fafc',
+                            color: status === 'reported' ? '#166534' : isReady ? '#27ae60' : isScanning ? '#d97706' : isExpected ? '#0f52ba' : '#64748b'
+                          }}>{status === 'reported' ? '✅ FINALIZED' : status.toUpperCase()}</span>
                        </div>
                        
                        <div style={{ background: '#f8fafc', padding: '12px', borderRadius: '12px', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
@@ -761,8 +821,8 @@ export default function DoctorBoard() {
                           <button 
                             className="btn btn-primary"
                             onClick={() => handleOpenWorkspace(c)}
-                            style={{ flex: 1, padding: '12px', borderRadius: '10px', fontSize: '11px', fontWeight: 950, background: '#0f52ba', border: 'none', color: 'white', cursor: 'pointer' }}
-                          >EXECUTE_REPORTER</button>
+                            style={{ flex: 1, padding: '12px', borderRadius: '10px', fontSize: '11px', fontWeight: 950, background: status === 'reported' ? '#16a34a' : '#0f52ba', border: 'none', color: 'white', cursor: 'pointer' }}
+                          >{status === 'reported' ? 'REVIEW REPORT' : 'EXECUTE_REPORTER'}</button>
                        </div>
                     </div>
                   );

@@ -8,6 +8,7 @@ import PrescriptionModal from '../components/PrescriptionModal';
 import { DicomCache } from '../utils/DicomCache';
 import { dicomOptimizer } from '../utils/DicomPerformanceOptimizer';
 import '../styles/global.css';
+import '../styles/TechnicianPage.css';
 
 const MODALITY_ICONS = {
   'X-RAY': '🩻',
@@ -51,6 +52,15 @@ export default function TechnicianPage() {
   const [archiveFilterMode, setArchiveFilterMode] = useState('ALL'); // 'ALL' or 'RANGE'
   const [archiveDateRange, setArchiveDateRange] = useState({ start: TODAY, end: TODAY });
   const itemsPerPage = 5;
+  const [sortConfig, setSortConfig] = useState({ key: 'dateTime', direction: 'asc' });
+
+  const handleSort = (key) => {
+    let direction = 'asc';
+    if (sortConfig.key === key && sortConfig.direction === 'asc') {
+      direction = 'desc';
+    }
+    setSortConfig({ key, direction });
+  };
   
   // New Workspace state
   const [activeTool, setActiveTool] = useState('WindowLevel');
@@ -130,7 +140,7 @@ export default function TechnicianPage() {
       const matchesStatus = filters.clinicalStatus === 'ALL' || status === filters.clinicalStatus.toLowerCase();
 
       if (hubTab === 'ACTIVE') {
-        return matchesSearch && matchesModality && matchesPriority && matchesStatus && s.isToday && ['scheduled', 'confirmed', 'in_progress', 'booked', 'scanned', 'reporting'].includes(status);
+        return matchesSearch && matchesModality && matchesPriority && matchesStatus && s.isToday && ['scheduled', 'confirmed', 'in_progress', 'booked', 'scanned', 'reporting', 'reported', 'completed'].includes(status);
       } else {
         const studyDate = s.dateTime ? s.dateTime.split('T')[0] : null;
         const matchesDate = archiveFilterMode === 'ALL' || (studyDate && studyDate >= archiveDateRange.start && studyDate <= archiveDateRange.end);
@@ -139,11 +149,34 @@ export default function TechnicianPage() {
     });
   }, [studies, searchQuery, filters, hubTab, TODAY, archiveFilterMode, archiveDateRange]);
 
+  const sortedStudies = useMemo(() => {
+    const sortableItems = [...filteredStudies];
+    if (sortConfig.key !== null) {
+      sortableItems.sort((a, b) => {
+        let aValue = a[sortConfig.key];
+        let bValue = b[sortConfig.key];
+
+        if (sortConfig.key === 'dateTime') {
+          aValue = new Date(aValue || 0).getTime();
+          bValue = new Date(bValue || 0).getTime();
+        } else if (typeof aValue === 'string') {
+          aValue = aValue.toLowerCase();
+          bValue = (bValue || '').toLowerCase();
+        }
+
+        if (aValue < bValue) return sortConfig.direction === 'asc' ? -1 : 1;
+        if (aValue > bValue) return sortConfig.direction === 'asc' ? 1 : -1;
+        return 0;
+      });
+    }
+    return sortableItems;
+  }, [filteredStudies, sortConfig]);
+
   const paginatedStudies = useMemo(() => {
-    if (hubTab === 'ACTIVE') return filteredStudies;
+    if (hubTab === 'ACTIVE') return sortedStudies;
     const start = (archivePage - 1) * itemsPerPage;
-    return filteredStudies.slice(start, start + itemsPerPage);
-  }, [filteredStudies, hubTab, archivePage]);
+    return sortedStudies.slice(start, start + itemsPerPage);
+  }, [sortedStudies, hubTab, archivePage]);
 
   const totalPages = Math.ceil(filteredStudies.length / itemsPerPage);
 
@@ -152,7 +185,7 @@ export default function TechnicianPage() {
   }, [searchQuery, filters, hubTab, archiveFilterMode, archiveDateRange]);
 
   const stats = {
-    total: studies.filter(s => s.isToday && ['scheduled', 'confirmed', 'in_progress', 'booked', 'scanned', 'reporting'].includes(s.status?.toLowerCase())).length,
+    total: studies.filter(s => s.isToday && ['scheduled', 'confirmed', 'in_progress', 'booked', 'scanned', 'reporting', 'reported', 'completed'].includes(s.status?.toLowerCase())).length,
     inProgress: studies.filter(s => s.isToday && s.status?.toLowerCase() === 'in_progress').length,
     pending: studies.filter(s => s.isToday && s.status?.toLowerCase() === 'confirmed').length,
     expected: studies.filter(s => s.isToday && ['scheduled', 'booked'].includes(s.status?.toLowerCase())).length,
@@ -762,6 +795,8 @@ export default function TechnicianPage() {
                 <option value="IN_PROGRESS">⚡ IN SCANNING</option>
                 <option value="SCANNED">✅ READY FOR DOC</option>
                 <option value="REPORTING">📝 UNDER REVIEW</option>
+                <option value="REPORTED">📄 FINALIZED</option>
+                <option value="COMPLETED">✅ ARCHIVED</option>
               </>
             ) : (
               <>
@@ -778,11 +813,24 @@ export default function TechnicianPage() {
           <table style={{ width: '100%', borderCollapse: 'collapse' }}>
             <thead style={{ background: '#f8fafc', borderBottom: '1px solid #e2e8f0' }}>
               <tr>
-                <th style={{ padding: '20px', textAlign: 'left', fontSize: '10px', fontWeight: 950, color: '#64748b', letterSpacing: '1px' }}>SUBJECT</th>
-                <th style={{ padding: '20px', textAlign: 'left', fontSize: '10px', fontWeight: 950, color: '#64748b', letterSpacing: '1px' }}>MISSION TARGET</th>
-                <th style={{ padding: '20px', textAlign: 'left', fontSize: '10px', fontWeight: 950, color: '#64748b', letterSpacing: '1px' }}>MISSION DATE</th>
-                <th style={{ padding: '20px', textAlign: 'left', fontSize: '10px', fontWeight: 950, color: '#64748b', letterSpacing: '1px' }}>MODALITY</th>
-                <th style={{ padding: '20px', textAlign: 'left', fontSize: '10px', fontWeight: 950, color: '#64748b', letterSpacing: '1px' }}>STATUS</th>
+                <th onClick={() => handleSort('patientName')} style={{ padding: '20px', textAlign: 'left', fontSize: '10px', fontWeight: 950, color: '#64748b', letterSpacing: '1px', cursor: 'pointer' }}>
+                  SUBJECT {sortConfig.key === 'patientName' ? (sortConfig.direction === 'asc' ? '🔼' : '🔽') : '↕️'}
+                </th>
+                <th onClick={() => handleSort('tokenNo')} style={{ padding: '20px', textAlign: 'left', fontSize: '10px', fontWeight: 950, color: '#64748b', letterSpacing: '1px', cursor: 'pointer' }}>
+                  TOKEN {sortConfig.key === 'tokenNo' ? (sortConfig.direction === 'asc' ? '🔼' : '🔽') : '↕️'}
+                </th>
+                <th onClick={() => handleSort('service')} style={{ padding: '20px', textAlign: 'left', fontSize: '10px', fontWeight: 950, color: '#64748b', letterSpacing: '1px', cursor: 'pointer' }}>
+                  MISSION TARGET {sortConfig.key === 'service' ? (sortConfig.direction === 'asc' ? '🔼' : '🔽') : '↕️'}
+                </th>
+                <th onClick={() => handleSort('dateTime')} style={{ padding: '20px', textAlign: 'left', fontSize: '10px', fontWeight: 950, color: '#64748b', letterSpacing: '1px', cursor: 'pointer' }}>
+                  MISSION DATE {sortConfig.key === 'dateTime' ? (sortConfig.direction === 'asc' ? '🔼' : '🔽') : '↕️'}
+                </th>
+                <th onClick={() => handleSort('modality')} style={{ padding: '20px', textAlign: 'left', fontSize: '10px', fontWeight: 950, color: '#64748b', letterSpacing: '1px', cursor: 'pointer' }}>
+                  MODALITY {sortConfig.key === 'modality' ? (sortConfig.direction === 'asc' ? '🔼' : '🔽') : '↕️'}
+                </th>
+                <th onClick={() => handleSort('status')} style={{ padding: '20px', textAlign: 'left', fontSize: '10px', fontWeight: 950, color: '#64748b', letterSpacing: '1px', cursor: 'pointer' }}>
+                  STATUS {sortConfig.key === 'status' ? (sortConfig.direction === 'asc' ? '🔼' : '🔽') : '↕️'}
+                </th>
                 <th style={{ padding: '20px', textAlign: 'right', fontSize: '10px', fontWeight: 950, color: '#64748b', letterSpacing: '1px' }}>{hubTab === 'ACTIVE' ? 'WORKSPACE' : 'ACTIONS'}</th>
               </tr>
             </thead>
@@ -790,9 +838,9 @@ export default function TechnicianPage() {
               {paginatedStudies.map(study => {
                 const priority = PRIORITY_META[study.priority] || PRIORITY_META.ROUTINE;
                 const status = study.status?.toLowerCase();
-                const isArrived = ['confirmed', 'in_progress', 'scanned', 'reporting'].includes(status);
+                const isArrived = ['confirmed', 'in_progress', 'scanned', 'reporting', 'reported', 'completed'].includes(status);
                 const isExpected = ['scheduled', 'booked'].includes(status) && study.isToday;
-                const isDone = ['scanned', 'reporting'].includes(status);
+                const isDone = ['scanned', 'reporting', 'reported', 'completed'].includes(status);
                 
                 return (
                   <tr key={study.appointmentId} style={{ borderBottom: '1px solid #f1f5f9' }}>
@@ -805,6 +853,16 @@ export default function TechnicianPage() {
                              <div style={{ fontWeight: 800, color: '#1e293b', fontSize: '12px' }}>{study.patientName.toUpperCase()}</div>
                              <div style={{ fontSize: '9px', color: '#94a3b8', fontWeight: 700 }}>{study.id} | {study.patientGender} | {study.patientAge}Y</div>
                           </div>
+                       </div>
+                    </td>
+                    <td style={{ padding: '8px 15px' }}>
+                       <div style={{ 
+                         width: '38px', height: '38px', borderRadius: '10px', 
+                         background: '#f0f7ff', border: '1px solid #dbeafe', 
+                         display: 'flex', alignItems: 'center', justifyContent: 'center',
+                         fontSize: '15px', fontWeight: 950, color: '#0f52ba'
+                       }}>
+                          {study.tokenNo || '-'}
                        </div>
                     </td>
                     <td style={{ padding: '8px 15px' }}>
@@ -828,12 +886,12 @@ export default function TechnicianPage() {
                     <td style={{ padding: '8px 15px' }}>
                       <span style={{ 
                         padding: '4px 8px', borderRadius: '8px', fontSize: '9px', fontWeight: 950,
-                        background: isDone ? '#f0fdf4' : isArrived && !isDone ? '#e9f7ef' : isExpected ? '#f0f7ff' : '#f8fafc',
-                        color: isDone ? '#16a34a' : isArrived && !isDone ? '#27ae60' : isExpected ? '#0f52ba' : '#64748b',
-                        border: `1px solid ${isDone ? '#bbf7d0' : isArrived && !isDone ? '#c3e6cb' : isExpected ? '#dbeafe' : '#e2e8f0'}`,
+                        background: (status === 'reported' || status === 'completed') ? '#f0fdf4' : isDone ? '#ecfdf5' : isArrived && !isDone ? '#f0f7ff' : isExpected ? '#fefce8' : '#f8fafc',
+                        color: (status === 'reported' || status === 'completed') ? '#166534' : isDone ? '#059669' : isArrived && !isDone ? '#0f52ba' : isExpected ? '#854d0e' : '#64748b',
+                        border: `1px solid ${(status === 'reported' || status === 'completed') ? '#bbf7d0' : isDone ? '#6ee7b7' : isArrived && !isDone ? '#dbeafe' : isExpected ? '#fef08a' : '#e2e8f0'}`,
                         textTransform: 'uppercase'
                       }}>
-                        {status === 'confirmed' ? '📡 ARRIVED' : status === 'in_progress' ? '⚡ SCANNING' : status === 'scanned' ? '✅ READY' : status === 'reporting' ? '📝 REPORTING' : status === 'scheduled' ? '📅 EXPECTED' : status.toUpperCase()}
+                        {status === 'confirmed' ? '📡 ARRIVED' : status === 'in_progress' ? '⚡ SCANNING' : status === 'scanned' ? '✅ READY' : status === 'reporting' ? '📝 REPORTING' : status === 'reported' ? '📄 FINALIZED' : status === 'completed' ? '✅ ARCHIVED' : status === 'scheduled' ? '📅 EXPECTED' : status.toUpperCase()}
                       </span>
                     </td>
                     <td style={{ padding: '8px 15px', textAlign: 'right' }}>
@@ -859,16 +917,11 @@ export default function TechnicianPage() {
                           >📜</button>
                           <button 
                             className="gamified-btn" 
-                            disabled={!isArrived && !isExpected}
-                            style={{ 
-                              padding: '10px 20px', borderRadius: '12px', fontSize: '11px', 
-                              opacity: (isArrived || isExpected) ? 1 : 0.4, 
-                              cursor: (isArrived || isExpected) ? 'pointer' : 'not-allowed', 
-                              background: isDone ? '#1e293b' : '#0f52ba' 
-                            }} 
+                            disabled={!study.isToday && hubTab !== 'ARCHIVE'}
+                            style={{ padding: '8px 20px', fontSize: '10px', borderRadius: '12px', opacity: (study.isToday || hubTab === 'ARCHIVE') ? 1 : 0.4, background: (status === 'reported' || status === 'completed') ? '#16a34a' : '' }} 
                             onClick={() => handleOpenWorkspace(study)}
                           >
-                            {isDone ? 'REVIEW DATA' : 'ENTER WORKSPACE'}
+                             {(status === 'reported' || status === 'completed') ? 'REVIEW MISSION' : isDone ? 'RE-UPLOAD ASSETS' : 'INITIATE SCAN →'}
                           </button>
                         </div>
                       ) : (

@@ -102,6 +102,11 @@ const ReportingPage = () => {
   const [showTimeline, setShowTimeline] = useState(false);
   const [expandedHistoryReport, setExpandedHistoryReport] = useState({}); // { [appointmentId]: { loading, data, error } }
   const [expandedHistoryDicom, setExpandedHistoryDicom] = useState({}); // { [appointmentId]: true/false }
+  
+  // --- AUTOSAVE SYSTEM ---
+  const [lastSaved, setLastSaved] = useState(null);
+  const [saveStatus, setSaveStatus] = useState('IDLE'); // 'IDLE', 'DIRTY', 'SAVING', 'SUCCESS'
+  const [isCloudSyncing, setIsCloudSyncing] = useState(false);
 
   useEffect(() => {
     const handleResize = () => {
@@ -146,6 +151,71 @@ const ReportingPage = () => {
       window.removeEventListener('orientationchange', handleResize);
     };
   }, [activeWorkspaceMode]);
+
+  // 1. LOCAL AUTOSAVE: Immediate persistence to nativeStorage/localStorage
+  useEffect(() => {
+    if (!appointmentId || isFinalized) return;
+    
+    const draft = {
+      appointmentId,
+      templateId: selectedTemplateId,
+      findings: activeTab === 'Structured' ? JSON.stringify(structuredData) : editorText,
+      impression,
+      advice,
+      reportingMode: activeTab,
+      timestamp: new Date().toISOString()
+    };
+
+    const timer = setTimeout(async () => {
+      try {
+        await nativeStorage.set(`1rad_draft_${appointmentId}`, draft);
+        if (saveStatus === 'IDLE' || saveStatus === 'SUCCESS') {
+          setSaveStatus('DIRTY');
+        }
+        console.info(`[AUTOSAVE] Local draft cached for ${appointmentId}`);
+      } catch (e) {
+        console.warn('[AUTOSAVE] Local cache failed', e);
+      }
+    }, 1500); // 1.5s debounce
+
+    return () => clearTimeout(timer);
+  }, [editorText, structuredData, impression, advice, activeTab, appointmentId, isFinalized, selectedTemplateId]);
+
+  // 2. CLOUD AUTOSAVE: Background API sync every 45 seconds if dirty
+  useEffect(() => {
+    if (saveStatus !== 'DIRTY' || !appointmentId || isFinalized || !isOnline || isCloudSyncing) return;
+
+    const cloudTimer = setTimeout(async () => {
+      console.info(`[AUTOSAVE] Triggering background cloud sync...`);
+      setIsCloudSyncing(true);
+      setSaveStatus('SAVING');
+      try {
+        const payload = {
+          appointmentId,
+          templateId: selectedTemplateId,
+          findings: activeTab === 'Structured' ? JSON.stringify(structuredData) : editorText,
+          impression: impression || (activeTab === 'Structured' ? (structuredData['Impression'] || structuredData['IMPRESSION'] || '') : ''),
+          advice: advice || '',
+          reportingMode: activeTab,
+          isFinalized: false
+        };
+        const res = await apiClient.post('/reporting/save', payload);
+        if (res.data?.success) {
+          setLastSaved(new Date().toLocaleTimeString());
+          setSaveStatus('SUCCESS');
+        } else {
+          setSaveStatus('DIRTY');
+        }
+      } catch (err) {
+        console.warn('[AUTOSAVE] Cloud sync failed, will retry later.', err);
+        setSaveStatus('DIRTY');
+      } finally {
+        setIsCloudSyncing(false);
+      }
+    }, 45000); // 45s cloud sync interval
+
+    return () => clearTimeout(cloudTimer);
+  }, [saveStatus, editorText, structuredData, impression, advice, activeTab, appointmentId, isFinalized, isOnline, selectedTemplateId, isCloudSyncing]);
 
 
 
@@ -193,7 +263,7 @@ const ReportingPage = () => {
         apiClient.get('/reporting/templates'),
         apiClient.get('/reporting/keywords'),
         doctorId ? apiClient.get(`/Prescription/${doctorId}`).catch(() => null) : Promise.resolve(null),
-        apiClient.get(`/reporting/report/${appId}`).catch(() => ({ data: { success: false } })),
+        apiClient.get(`/Reporting/report/${appId}`).catch(() => ({ data: { success: false } })),
         apiClient.get(`/Study/${appId}/assets`).catch(() => ({ data: [] }))
       ]);
 
@@ -316,8 +386,11 @@ const ReportingPage = () => {
       }
 
       
-      if (reportRes.data?.success && reportRes.data.data) {
-        const r = reportRes.data.data;
+      // 3. Resolve Report Data (Handle both nested and flat structures)
+      const reportBody = reportRes.data;
+      const r = (reportBody?.success && reportBody?.data) ? reportBody.data : reportBody;
+
+      if (r && (r.findings !== undefined || r.impression !== undefined)) {
         console.info(`[1RAD] Found Existing Report. Methodology: ${r.reportingMode || 'UNDEFINED'}`);
 
         // 1. Restore Findings Content
@@ -343,7 +416,7 @@ const ReportingPage = () => {
         setImpression(r.impression || '');
         setAdvice(r.advice || '');
         setIsFinalized(r.isFinalized);
-        if (r.templateId) setSelectedTemplateId(r.templateId);
+        if (r.templateId) setSelectedTemplateId(String(r.templateId));
       } else {
         // FALLBACK: New Case. Use Global Preference from Doctor Profile
         const globalPref = protRes?.data?.data?.doctor?.preferredReportingMode || 
@@ -3836,14 +3909,36 @@ const ReportingPage = () => {
             flexDirection: 'column', flex: 1, paddingRight: '5px',
             animation: 'fadeIn 0.4s ease'
           }}>
+        {/* Shared Header: Metadata & Status */}
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '15px', padding: '0 20px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '20px' }}>
+             <div style={{ padding: '6px 12px', background: '#f0f7ff', borderRadius: '10px', border: '1px solid #dbeafe' }}>
+                <div style={{ fontSize: '9px', fontWeight: 950, color: '#0f52ba', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Workstation Status</div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginTop: '1px' }}>
+                  <div style={{ width: '6px', height: '6px', borderRadius: '50%', background: isOnline ? '#10b981' : '#f59e0b' }}></div>
+                  <span style={{ fontSize: '10px', fontWeight: 800, color: '#1e293b' }}>{isOnline ? 'CLOUD_CONNECTED' : 'OFFLINE_CACHE_ACTIVE'}</span>
+                </div>
+             </div>
+             
+             <div style={{ padding: '6px 12px', background: saveStatus === 'SAVING' ? '#fffbeb' : '#f8fafc', borderRadius: '10px', border: `1px solid ${saveStatus === 'SAVING' ? '#fde68a' : '#e2e8f0'}`, transition: 'all 0.3s' }}>
+                <div style={{ fontSize: '9px', fontWeight: 950, color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Cloud Intelligence</div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginTop: '1px' }}>
+                  <span style={{ fontSize: '10px', fontWeight: 800, color: saveStatus === 'SAVING' ? '#d97706' : '#1e293b' }}>
+                    {saveStatus === 'SAVING' ? '📡 SYNCING...' : saveStatus === 'SUCCESS' ? `✅ SAVED AT ${lastSaved}` : saveStatus === 'DIRTY' ? '📝 PENDING SYNC' : '💤 MONITORING'}
+                  </span>
+                </div>
+             </div>
+          </div>
+          
+          <div style={{ display: 'flex', gap: '12px' }}>
+             <button className="btn btn-outline" style={{ padding: '8px 16px', fontSize: '11px' }} onClick={() => handleSaveReport(false)}>💾 Save Draft</button>
+             <button className="btn btn-outline" style={{ padding: '8px 16px', fontSize: '11px' }} onClick={handlePreviewPrint}>👁️ Preview Report</button>
+             <button className="btn btn-success" style={{ padding: '8px 20px', fontSize: '11px' }} onClick={() => handleSaveReport(true)}>Finalize & Sign</button>
+          </div>
+        </div>
+
             {activeTab === 'Structured' && (
               <div style={{ display: 'flex', flexDirection: 'column', flex: 1 }}>
-                <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '12px', padding: '15px 20px', borderBottom: '1px solid #e2e8f0', background: '#fff', marginBottom: '10px' }}>
-                   <button className="btn btn-outline" style={{ padding: '10px 20px', fontSize: '12px' }} onClick={() => handleSaveReport(false)}>💾 Save Draft</button>
-                   <button className="btn btn-outline" style={{ padding: '10px 20px', fontSize: '12px' }} onClick={handlePreviewPrint}>👁️ Preview Structured Report</button>
-                   <button className="btn btn-success" style={{ padding: '10px 25px', fontSize: '12px' }} onClick={() => handleSaveReport(true)}>Finalize & Sign</button>
-                </div>
-
                 <div className="struct-container" style={{ flex: 1, overflowY: 'auto' }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px', padding: '15px', background: '#f8fafc', borderRadius: '10px', border: '1px solid #e2e8f0' }}>
                     <div style={{ flex: 1 }}>
@@ -3852,7 +3947,7 @@ const ReportingPage = () => {
                         className="template-selector" 
                         value={selectedTemplateId || ''} 
                         onChange={(e) => {
-                          const tpl = templates.find(t => t.id === e.target.value);
+                          const tpl = templates.find(t => String(t.id) === String(e.target.value));
                           if (tpl) {
                             setSelectedTemplateId(tpl.id);
                             // Parse content and apply to structuredData
@@ -3878,7 +3973,7 @@ const ReportingPage = () => {
                   </div>
                     {selectedTemplateId ? (
                       <div className="structured-form" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: '25px' }}>
-                        {renderDynamicFields(templates.find(t => t.id === selectedTemplateId))}
+                        {renderDynamicFields(templates.find(t => String(t.id) === String(selectedTemplateId)))}
                       </div>
                     ) : (
                       <div style={{ textAlign: 'center', padding: '100px 0', color: '#94a3b8' }}>
@@ -3893,12 +3988,6 @@ const ReportingPage = () => {
 
             {activeTab === 'Narrative Editor' && (
               <div style={{ display: 'flex', flexDirection: 'column', flex: 1, overflow: 'hidden' }}>
-                <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '12px', padding: '15px 20px', borderBottom: '1px solid #e2e8f0', background: '#fff', marginBottom: '10px' }}>
-                  <button className="btn btn-outline" style={{ padding: '10px 20px', fontSize: '12px' }} onClick={() => handleSaveReport(false)}>💾 Save Draft</button>
-                  <button className="btn btn-outline" style={{ padding: '10px 20px', fontSize: '12px' }} onClick={handlePreviewPrint}>👁️ Preview Narrative Report</button>
-                  <button className="btn btn-success" style={{ padding: '10px 25px', fontSize: '12px' }} onClick={() => handleSaveReport(true)}>Finalize & Sign</button>
-                </div>
-                
                 <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '20px', padding: '20px' }}>
                   {/* NEW TIPTAP EDITOR */}
                   <NarrativeEditor
@@ -4621,8 +4710,8 @@ const ReportingPage = () => {
                                     // Fetch report lazily
                                     setExpandedHistoryReport(prev => ({ ...prev, [pastAppt.appointmentId]: { loading: true, data: null, error: null } }));
                                     try {
-                                      const res = await apiClient.get(`/reporting/report/${pastAppt.appointmentId}`);
-                                      const r = res.data?.data;
+                                      const res = await apiClient.get(`/Reporting/report/${pastAppt.appointmentId}`);
+                                      const r = (res.data?.success && res.data?.data) ? res.data.data : res.data;
                                       setExpandedHistoryReport(prev => ({ ...prev, [pastAppt.appointmentId]: { loading: false, data: r, error: null } }));
                                     } catch (e) {
                                       setExpandedHistoryReport(prev => ({ ...prev, [pastAppt.appointmentId]: { loading: false, data: null, error: 'Could not fetch report.' } }));
@@ -4848,13 +4937,12 @@ const ReportingPage = () => {
       {/* --- MODALS & DRAWERS --- */}
 
       {/* Insert Table Modal */}
-      {/* Insert Table Modal */}
       {showTableModal && (
         <div className="overlay" style={{ zIndex: 10001 }} onClick={() => { setShowTableModal(false); setShowTableBuilder(false); }}>
           <div className="modal" style={{ width: '600px' }} onClick={e => e.stopPropagation()}>
             <div className="modal-header">
-              <span>{showTableBuilder ? 'ΓÜÖ∩╕Å Table Configuration' : 'Γûª Insert Measurement Table'}</span>
-              <button className="tool-btn" onClick={() => { setShowTableModal(false); setShowTableBuilder(false); }}>Γ£ò</button>
+              <span>{showTableBuilder ? '⚙️ Table Configuration' : '📊 Insert Measurement Table'}</span>
+              <button className="tool-btn" onClick={() => { setShowTableModal(false); setShowTableBuilder(false); }}>✕</button>
             </div>
             <div className="modal-body">
               {!showTableBuilder ? (
@@ -4863,7 +4951,7 @@ const ReportingPage = () => {
                   <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
                     {tablePresets.map(preset => (
                       <div key={preset.id} className="preset-card" onClick={() => insertTable(preset)} style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                        <div style={{ fontSize: '20px' }}>Γûª</div>
+                        <div style={{ fontSize: '20px' }}>📊</div>
                         <div>
                           <div style={{ fontSize: '14px', fontWeight: 700 }}>{preset.name}</div>
                           <div style={{ fontSize: '10px', color: '#64748b', marginTop: '4px' }}>{preset.columns.length} columns</div>
@@ -4907,7 +4995,7 @@ const ReportingPage = () => {
                             setNewTable({...newTable, columns: newCols});
                           }}
                           style={{ background: '#fecaca', color: '#dc2626' }}
-                        >Γ£ò</button>
+                        >✕</button>
                       </div>
                     ))}
                     <button className="btn btn-outline" style={{ width: '100%', fontSize: '12px' }} onClick={() => setNewTable({...newTable, columns: [...newTable.columns, '']})}>+ Add Column</button>
@@ -4926,7 +5014,7 @@ const ReportingPage = () => {
       <ReportPreviewModal 
         isOpen={isPreviewOpen} 
         onClose={() => setIsPreviewOpen(false)}
-        doctorId={activeAppointment?.doctorId || activeAppointment?.doctorUserId || activeAppointment?.doctor?.userId || (() => { try { const token = sessionStorage.getItem('1rad_token'); if (token) { const d = jwtDecode(token); return d.sub || d.nameid || d.UserId || d.id; } } catch(e){} return null; })()}
+        doctorId={activeAppointment?.doctorId || activeAppointment?.doctorUserId || activeAppointment?.doctor?.userId || sessionStorage.getItem('1rad_doctor_id')}
         patientData={activeAppointment}
         reportContent={{
           mode: activeTab,

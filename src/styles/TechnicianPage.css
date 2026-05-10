@@ -1,0 +1,478 @@
+/* ==========================================================================
+   TechnicianPage - Mobile & Tablet Compatibility
+   No visual or functional changes — layout compatibility only
+   ========================================================================== */
+
+/* ==========================================================================
+   Queue View Container
+   ========================================================================== */
+
+.board-view-container {
+  background: #fcfdfe;
+  min-height: 100vh;
+  box-sizing: border-box;
+}
+
+/* ==========================================================================
+   Board Header - Responsive
+   ========================================================================== */
+
+/* .board-header is shared with global.css — override only what's needed */
+.board-view-container .board-header {
+  padding: 12px 30px;
+  background: white;
+  border-bottom: 1px solid #f1f5f9;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 10px;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
+/* Mobile: Stack header vertically */
+@media (max-width: 639px) {
+  .board-view-container .board-header {
+    padding: 12px 16px;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 12px;
+  }
+
+  .board-view-container .board-header h1 {
+    font-size: 18px !important;
+    letter-spacing: -0.5px !important;
+  }
+
+  .board-view-container .board-header > div:first-child p {
+    margin-left: 0 !important;
+    font-size: 9px !important;
+  }
+}
+
+/* Tablet: Wrap if needed */
+@media (min-width: 640px) and (max-width: 1023px) {
+  .board-view-container .board-header {
+    padding: 12px 20px;
+  }
+}
+
+/* ==========================================================================
+   Admin Tabs (Active / Archive toggle)
+   ========================================================================== */
+
+.admin-tabs {
+  display: flex;
+  gap: 10px;
+}
+
+@media (max-width: 639px) {
+  .admin-tabs {
+    width: 100%;
+  }
+
+  .admin-tabs button {
+    flex: 1;
+    padding: 10px 12px !important;
+    font-size: 9px !important;
+  }
+}
+
+/* ==========================================================================
+   Board Padding (main content area)
+   ========================================================================== */
+
+.board-padding {
+  padding: 15px 30px;
+}
+
+@media (max-width: 639px) {
+  .board-padding {
+    padding: 12px 16px;
+  }
+}
+
+@media (min-width: 640px) and (max-width: 1023px) {
+  .board-padding {
+    padding: 12px 20px;
+  }
+}
+
+/* ==========================================================================
+   Stats Cards Grid (4-column inline grid)
+   ========================================================================== */
+
+/* The stats grids use inline style gridTemplateColumns: 'repeat(4, 1fr)'
+   We override via a wrapper class applied to the board-padding context */
+
+.board-padding > div:first-child {
+  display: grid !important;
+  grid-template-columns: repeat(4, 1fr) !important;
+  gap: 10px;
+  margin-bottom: 15px;
+}
+
+/* Mobile: 2 columns */
+@media (max-width: 639px) {
+  .board-padding > div:first-child {
+    grid-template-columns: repeat(2, 1fr) !important;
+    gap: 8px !important;
+  }
+
+  .summary-card {
+    padding: 8px 10px !important;
+  }
+
+  .summary-card span {
+    font-size: 8px !important;
+    letter-spacing: 1px !important;
+  }
+
+  .summary-card > div {
+    gap: 4px !important;
+  }
+
+  .summary-card > div > span:first-child {
+    font-size: 20px !important;
+  }
+}
+
+/* Tablet: 4 columns still fit, just tighter */
+@media (min-width: 640px) and (max-width: 1023px) {
+  .board-padding > div:first-child {
+    grid-template-columns: repeat(2, 1fr) !important;
+    gap: 10px !important;
+  }
+}
+
+/* ==========================================================================
+   Filter / Search Bar
+   ========================================================================== */
+
+/* The filter bar uses inline flex with flexWrap: 'wrap' already.
+   We add mobile-specific overrides for inputs and selects. */
+
+.board-padding > div:nth-child(2) {
+  /* Filter bar container */
+}
+
+@media (max-width: 639px) {
+  /* Search input group */
+  .board-padding > div:nth-child(2) > div:first-child {
+    flex: 1 1 100% !important;
+    min-width: 0 !important;
+  }
+
+  /* Archive date range group */
+  .board-padding > div:nth-child(2) > div:nth-child(2) {
+    flex: 1 1 100% !important;
+    flex-wrap: wrap !important;
+    gap: 8px !important;
+  }
+
+  /* Date inputs inside archive filter */
+  .board-padding > div:nth-child(2) input[type="date"] {
+    font-size: 16px !important; /* Prevent iOS zoom */
+    flex: 1 !important;
+    min-width: 0 !important;
+  }
+
+  /* Select dropdowns */
+  .board-padding > div:nth-child(2) select {
+    flex: 1 1 calc(50% - 8px) !important;
+    min-width: 0 !important;
+    font-size: 11px !important;
+    /* Consistent iOS rendering */
+    -webkit-appearance: none;
+    -moz-appearance: none;
+    appearance: none;
+  }
+
+  /* Re-sync button */
+  .board-padding > div:nth-child(2) .gamified-btn {
+    flex: 1 1 100% !important;
+    justify-content: center !important;
+  }
+}
+
+@media (min-width: 640px) and (max-width: 1023px) {
+  .board-padding > div:nth-child(2) select {
+    min-width: 120px !important;
+  }
+}
+
+/* ==========================================================================
+   Worklist Table - Horizontal Scroll on Mobile/Tablet
+   ========================================================================== */
+
+.board-padding > div:nth-child(3) {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+.board-padding > div:nth-child(3) table {
+  min-width: 900px; /* Prevent collapse */
+}
+
+@media (max-width: 639px) {
+  .board-padding > div:nth-child(3) table {
+    min-width: 800px;
+  }
+
+  .board-padding > div:nth-child(3) th {
+    padding: 12px 10px !important;
+    font-size: 9px !important;
+  }
+
+  .board-padding > div:nth-child(3) td {
+    padding: 6px 10px !important;
+  }
+
+  /* Action buttons in table — smaller on mobile */
+  .board-padding > div:nth-child(3) td:last-child button {
+    padding: 8px 10px !important;
+    font-size: 9px !important;
+  }
+}
+
+/* ==========================================================================
+   Archive Pagination
+   ========================================================================== */
+
+@media (max-width: 639px) {
+  /* Pagination footer */
+  .board-padding > div:nth-child(3) > div:last-child {
+    flex-direction: column !important;
+    gap: 12px !important;
+    padding: 12px 16px !important;
+    align-items: flex-start !important;
+  }
+
+  .board-padding > div:nth-child(3) > div:last-child > div:last-child {
+    width: 100% !important;
+    justify-content: space-between !important;
+  }
+
+  .board-padding > div:nth-child(3) > div:last-child button {
+    flex: 1 !important;
+    justify-content: center !important;
+  }
+}
+
+/* ==========================================================================
+   Workspace View - Toolbar
+   ========================================================================== */
+
+.workspace-view {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  background: #f8fafc;
+  overflow: hidden;
+}
+
+/* Top toolbar — horizontal scroll on very small screens */
+.workspace-view > div:first-child {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  /* Hide scrollbar visually */
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+  flex-shrink: 0;
+}
+
+.workspace-view > div:first-child::-webkit-scrollbar {
+  display: none;
+}
+
+/* Toolbar buttons — touch-friendly minimum size */
+@media (hover: none) and (pointer: coarse) {
+  .toolbar-btn {
+    min-width: 36px !important;
+    min-height: 36px !important;
+  }
+
+  /* DEPLOY STUDY button */
+  .workspace-view > div:first-child .gamified-btn {
+    padding: 8px 16px !important;
+    font-size: 10px !important;
+    white-space: nowrap;
+  }
+}
+
+/* ==========================================================================
+   Workspace View - Main Body (sidebar + viewport)
+   ========================================================================== */
+
+/* The main body uses inline flex with gap: 10px and padding: 10px.
+   On tablet, we collapse the left sidebar. */
+
+@media (max-width: 1023px) {
+  /* Main body flex container */
+  .workspace-view > div:nth-child(2) {
+    flex-direction: column !important;
+    padding: 8px !important;
+    gap: 8px !important;
+    overflow-y: auto !important;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  /* Left sidebar — horizontal strip on tablet/mobile */
+  .workspace-view > div:nth-child(2) > div:first-child {
+    width: 100% !important;
+    height: auto !important;
+    flex-direction: row !important;
+    flex-wrap: nowrap !important;
+    overflow-x: auto !important;
+    -webkit-overflow-scrolling: touch;
+    padding: 10px !important;
+    gap: 10px !important;
+    /* Hide scrollbar */
+    scrollbar-width: none;
+    -ms-overflow-style: none;
+  }
+
+  .workspace-view > div:nth-child(2) > div:first-child::-webkit-scrollbar {
+    display: none;
+  }
+
+  /* Series label — hide on mobile to save space */
+  .workspace-view > div:nth-child(2) > div:first-child > label:first-child {
+    display: none;
+  }
+
+  /* Patient info card — compact */
+  .workspace-view > div:nth-child(2) > div:first-child > div:first-of-type {
+    min-width: 160px !important;
+    flex-shrink: 0 !important;
+  }
+
+  /* Series list — horizontal scroll */
+  .workspace-view > div:nth-child(2) > div:first-child > div:nth-child(3) {
+    display: flex !important;
+    flex-direction: row !important;
+    gap: 8px !important;
+    overflow-x: auto !important;
+    flex: 1 !important;
+    min-width: 0 !important;
+  }
+
+  /* Individual series items — fixed width in horizontal mode */
+  .workspace-view > div:nth-child(2) > div:first-child > div:nth-child(3) > div {
+    min-width: 140px !important;
+    flex-shrink: 0 !important;
+    margin-bottom: 0 !important;
+  }
+
+  /* Tech notes textarea — hide on mobile to save space */
+  .workspace-view > div:nth-child(2) > div:first-child > div:last-child {
+    display: none;
+  }
+
+  /* Center viewport — full width */
+  .workspace-view > div:nth-child(2) > div:nth-child(2) {
+    flex: 1 !important;
+    min-height: 400px !important;
+  }
+}
+
+/* ==========================================================================
+   Print Modal - Responsive
+   ========================================================================== */
+
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 10000;
+}
+
+@media (max-width: 639px) {
+  /* Print modal container */
+  .modal-overlay > div:first-child {
+    width: 100% !important;
+    height: 100% !important;
+    border-radius: 0 !important;
+  }
+
+  /* Print modal header */
+  .modal-overlay > div:first-child > div:first-child {
+    padding: 16px !important;
+    flex-wrap: wrap !important;
+    gap: 10px !important;
+  }
+
+  .modal-overlay > div:first-child > div:first-child > div:last-child {
+    width: 100% !important;
+    justify-content: space-between !important;
+  }
+}
+
+/* ==========================================================================
+   Token Print Modal - Responsive
+   ========================================================================== */
+
+@media (max-width: 639px) {
+  /* Token modal container */
+  .modal-overlay > div[style*="400px"] {
+    width: calc(100% - 32px) !important;
+    max-width: 400px !important;
+  }
+}
+
+/* ==========================================================================
+   Touch-friendly overrides
+   ========================================================================== */
+
+@media (hover: none) and (pointer: coarse) {
+  /* Select dropdowns — consistent iOS rendering */
+  .board-padding select {
+    -webkit-appearance: none;
+    -moz-appearance: none;
+    appearance: none;
+    min-height: 44px;
+    font-size: 16px; /* Prevent iOS zoom */
+  }
+
+  /* Search input */
+  .board-padding input[type="text"] {
+    font-size: 16px; /* Prevent iOS zoom */
+    min-height: 44px;
+  }
+
+  /* Date inputs */
+  .board-padding input[type="date"] {
+    font-size: 16px; /* Prevent iOS zoom */
+    min-height: 44px;
+  }
+
+  /* Remove tap highlight */
+  .summary-card,
+  .admin-tabs button,
+  .gamified-btn,
+  .toolbar-btn {
+    -webkit-tap-highlight-color: transparent;
+  }
+}
+
+/* ==========================================================================
+   Print styles
+   ========================================================================== */
+
+@media print {
+  .board-view-container .board-header,
+  .board-padding > div:nth-child(2),
+  .board-padding > div:first-child {
+    display: none !important;
+  }
+
+  .board-padding > div:nth-child(3) {
+    overflow: visible !important;
+  }
+
+  .board-padding > div:nth-child(3) table {
+    min-width: 100% !important;
+  }
+}

@@ -6,6 +6,7 @@
   width: 100%;
   max-width: 100%;
   padding: 16px;
+  box-sizing: border-box;
 }
 
 /* ==========================================================================
@@ -53,6 +54,7 @@
   border: 1px solid #dee2e6;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.03);
   transition: all 0.2s ease;
+  box-sizing: border-box;
 }
 
 .intel-card:hover {
@@ -79,7 +81,7 @@
 }
 
 .filter-search-group {
-  flex: 1 1 100%;
+  flex: 1 1 auto;
   display: flex;
   align-items: center;
   gap: 10px;
@@ -88,16 +90,25 @@
   border-radius: 12px;
   padding: 10px 16px;
   min-width: 0;
+  box-sizing: border-box;
 }
 
 .filter-search-group input {
   border: none;
   outline: none;
   background: transparent;
-  font-size: 13px;
   font-weight: 600;
   width: 100%;
   color: #333;
+  /* font-size >= 16px prevents iOS auto-zoom on focus */
+  font-size: 16px;
+}
+
+/* Restore smaller size on non-touch screens */
+@media (hover: hover) and (pointer: fine) {
+  .filter-search-group input {
+    font-size: 13px;
+  }
 }
 
 .filter-search-group input::placeholder {
@@ -115,18 +126,27 @@
   background: white;
   border: 1px solid #dee2e6;
   border-radius: 12px;
-  padding: 10px 16px;
+  padding: 10px 32px 10px 16px;
   font-size: 12px;
   font-weight: 700;
   color: #555;
   cursor: pointer;
   transition: all 0.2s;
   min-width: 140px;
+  /* Consistent cross-browser appearance, especially iOS Safari */
+  -webkit-appearance: none;
+  -moz-appearance: none;
+  appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath d='M1 1l5 5 5-5' stroke='%23555' stroke-width='1.5' fill='none' stroke-linecap='round'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 12px center;
+  box-sizing: border-box;
 }
 
 .filter-select:hover {
   border-color: #0f52ba;
-  background: #f8f9fa;
+  background-color: #f8f9fa;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath d='M1 1l5 5 5-5' stroke='%230f52ba' stroke-width='1.5' fill='none' stroke-linecap='round'/%3E%3C/svg%3E");
 }
 
 .filter-select:focus {
@@ -143,17 +163,28 @@
   border-radius: 12px;
   padding: 10px 16px;
   flex: 1 1 auto;
-  min-width: 280px;
+  /* No min-width at base — let media queries set it */
+  min-width: 0;
+  box-sizing: border-box;
 }
 
 .filter-date-range input {
   border: none;
   background: transparent;
   outline: none;
-  font-size: 12px;
   font-weight: 700;
   color: #333;
   flex: 1;
+  min-width: 0;
+  /* font-size >= 16px prevents iOS auto-zoom on focus */
+  font-size: 16px;
+}
+
+/* Restore smaller size on non-touch screens */
+@media (hover: hover) and (pointer: fine) {
+  .filter-date-range input {
+    font-size: 12px;
+  }
 }
 
 .filter-reset-btn {
@@ -170,6 +201,7 @@
   color: #e74c3c;
   transition: all 0.2s;
   white-space: nowrap;
+  min-height: 40px;
 }
 
 .filter-reset-btn:active {
@@ -188,10 +220,6 @@
     padding: 10px 12px;
   }
 
-  .filter-search-group input {
-    font-size: 14px;
-  }
-
   .filter-select-group {
     flex: 1 1 100%;
     gap: 8px;
@@ -200,19 +228,14 @@
   .filter-select {
     flex: 1 1 calc(50% - 4px);
     min-width: 0;
-    padding: 10px 12px;
+    padding: 10px 28px 10px 12px;
     font-size: 12px;
   }
 
   .filter-date-range {
     flex: 1 1 100%;
-    min-width: 0;
     padding: 10px 12px;
     gap: 6px;
-  }
-
-  .filter-date-range input {
-    font-size: 12px;
   }
 
   .filter-reset-btn {
@@ -472,6 +495,13 @@
   border-bottom: 2px solid #eee;
   overflow-x: auto;
   -webkit-overflow-scrolling: touch;
+  /* Hide scrollbar visually while keeping scroll functionality */
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+.tab-navigation::-webkit-scrollbar {
+  display: none;
 }
 
 .tab-btn {
@@ -487,6 +517,9 @@
   white-space: nowrap;
   position: relative;
   bottom: -2px;
+  /* Prevent text selection on double-tap */
+  -webkit-user-select: none;
+  user-select: none;
 }
 
 .tab-btn:hover {
@@ -526,6 +559,8 @@
   max-height: 90vh;
   overflow-y: auto;
   animation: slideUp 0.3s ease-out;
+  /* Smooth momentum scrolling on iOS */
+  -webkit-overflow-scrolling: touch;
 }
 
 @keyframes slideUp {
@@ -564,11 +599,18 @@
   cursor: pointer;
   color: #666;
   padding: 0;
-  width: 32px;
-  height: 32px;
+  /* Meets 44×44px minimum touch target (WCAG 2.5.5) */
+  width: 44px;
+  height: 44px;
   display: flex;
   align-items: center;
   justify-content: center;
+  border-radius: 8px;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.booking-drawer-close:active {
+  background: #f1f5f9;
 }
 
 .booking-drawer-content {
@@ -677,7 +719,7 @@
   }
 
   .filter-select {
-    padding: 12px 14px;
+    padding: 12px 32px 12px 14px;
     min-height: 44px;
   }
 
@@ -689,6 +731,18 @@
   .pagination-btn {
     min-height: 44px;
     min-width: 44px;
+  }
+
+  .filter-reset-btn {
+    min-height: 44px;
+  }
+
+  /* Remove tap highlight on interactive elements */
+  .filter-select,
+  .filter-reset-btn,
+  .tab-btn,
+  .pagination-btn {
+    -webkit-tap-highlight-color: transparent;
   }
 }
 

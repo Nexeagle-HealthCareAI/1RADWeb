@@ -92,6 +92,16 @@ const NarrativeEditor = ({
     clear: () => editor?.commands.clearContent(),
   }));
 
+  // Synchronize content prop with editor
+  React.useEffect(() => {
+    if (editor && content !== undefined && content !== editor.getHTML()) {
+      // If editor is not focused, or it is empty (initial load), update content
+      if (!editor.isFocused || editor.isEmpty) {
+        editor.commands.setContent(content, false);
+      }
+    }
+  }, [content, editor]);
+
   // Handle Ctrl+S for save
   React.useEffect(() => {
     const handleKeyDown = (e) => {
