@@ -140,7 +140,9 @@ export default function AdminBoard() {
     fontSize: 14,
     fontColor: '#1e293b',
     fontFamily: 'Inter',
-    letterhead: null
+    fontFamily: 'Inter',
+    letterhead: null,
+    overflowBackgroundMode: 'REUSE' // 'REUSE' or 'BLANK'
   });
   const [isPrescriptionSaving, setIsPrescriptionSaving] = useState(false);
   const [isProtocolLoading, setIsProtocolLoading] = useState(false);
@@ -178,6 +180,7 @@ export default function AdminBoard() {
           fontColor: data.fontColor || '#1e293b',
           fontFamily: data.fontFamily || 'Inter',
           letterhead: data.letterheadBlobUrl || null,
+          overflowBackgroundMode: data.overflowBackgroundMode || 'REUSE',
           letterheadFile: null
         };
         setPrescriptionSettings(settings);
@@ -1764,6 +1767,56 @@ export default function AdminBoard() {
                   </div>
                 )}
 
+                {/* Overflow Page Behavior (New) */}
+                <div style={{ 
+                  background: '#f0f9ff', 
+                  padding: '20px', 
+                  borderRadius: '18px', 
+                  border: '1px solid #bae6fd'
+                }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '15px' }}>
+                    <span style={{ fontSize: '18px' }}>📑</span>
+                    <div>
+                      <span style={{ fontSize: '11px', fontWeight: 950, color: '#0369a1', letterSpacing: '1px', display: 'block' }}>
+                        OVERFLOW PAGES
+                      </span>
+                      <span style={{ fontSize: '8px', color: '#64748b', fontWeight: 700 }}>Choose what happens after the first sheet fills up.</span>
+                    </div>
+                  </div>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                    {[
+                      { value: 'REUSE', label: 'Reuse uploaded layout', desc: 'Every extra page reuses the imported background.' },
+                      { value: 'BLANK', label: 'Use blank page', desc: 'Subsequent pages will be rendered without the letterhead.' }
+                    ].map(option => (
+                      <label key={option.value} style={{ 
+                        display: 'flex', 
+                        alignItems: 'center', 
+                        gap: '12px', 
+                        cursor: 'pointer',
+                        padding: '12px',
+                        borderRadius: '12px',
+                        background: prescriptionSettings.overflowBackgroundMode === option.value ? 'white' : 'transparent',
+                        border: `1px solid ${prescriptionSettings.overflowBackgroundMode === option.value ? '#0369a1' : 'transparent'}`,
+                        transition: 'all 0.2s',
+                        boxShadow: prescriptionSettings.overflowBackgroundMode === option.value ? '0 4px 12px rgba(3, 105, 161, 0.1)' : 'none'
+                      }}>
+                        <input 
+                          type="radio" 
+                          name="overflowBackground" 
+                          value={option.value}
+                          checked={prescriptionSettings.overflowBackgroundMode === option.value}
+                          onChange={(e) => setPrescriptionSettings({...prescriptionSettings, overflowBackgroundMode: e.target.value})}
+                          style={{ margin: 0 }}
+                        />
+                        <div>
+                          <div style={{ fontSize: '10px', fontWeight: 950, color: '#1e293b' }}>{option.label}</div>
+                          <div style={{ fontSize: '8px', color: '#64748b', marginTop: '2px' }}>{option.desc}</div>
+                        </div>
+                      </label>
+                    ))}
+                  </div>
+                </div>
+
                 <div style={{ display: 'grid', gridTemplateColumns: '1.5fr 1fr', gap: '15px' }}>
                   <div>
                     <label style={{ fontSize: '10px', fontWeight: 950, color: '#1e293b', display: 'block', marginBottom: '8px' }}>FONT SYSTEM</label>
@@ -1837,7 +1890,8 @@ export default function AdminBoard() {
                   BottomMargin: prescriptionSettings.bottomMargin,
                   FontSize: prescriptionSettings.fontSize,
                   FontColor: prescriptionSettings.fontColor,
-                  FontFamily: prescriptionSettings.fontFamily
+                  FontFamily: prescriptionSettings.fontFamily,
+                  OverflowBackgroundMode: prescriptionSettings.overflowBackgroundMode
                 };
 
                 // Note: File uploads in outbox require serialization or local path handling.

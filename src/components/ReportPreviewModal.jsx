@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import apiClient from '../api/apiClient';
+import apiClient, { BASE_URL } from '../api/apiClient';
 
 const ReportPreviewModal = ({ 
   isOpen, 
@@ -64,11 +64,20 @@ const ReportPreviewModal = ({
 
   let bodyContent = '';
 
-  const resolvedAssetUrl = protocol?.letterheadBlobUrl 
-    ? (protocol.letterheadBlobUrl.startsWith('http') 
-        ? protocol.letterheadBlobUrl 
-        : `https://1radapi-bch4ere7a6cmgkap.centralindia-01.azurewebsites.net${protocol.letterheadBlobUrl}`)
-    : null;
+  const resolvedAssetUrl = useMemo(() => {
+    if (!protocol?.letterheadBlobUrl) return null;
+    
+    let url = protocol.letterheadBlobUrl.startsWith('http') 
+      ? protocol.letterheadBlobUrl 
+      : `${BASE_URL}${protocol.letterheadBlobUrl}`;
+
+    // Apply Strategic Proxy for Azure Blobs (Matching AdminBoard logic)
+    if (url.includes('blob.core.windows.net')) {
+      return `${BASE_URL}/Study/proxy-asset?url=${encodeURIComponent(url)}`;
+    }
+    
+    return url;
+  }, [protocol?.letterheadBlobUrl]);
 
   if (!isPlain) {
     console.log(`[ReportPreview] Resolved Asset URL: ${resolvedAssetUrl}`);
@@ -134,7 +143,7 @@ const ReportPreviewModal = ({
 
             {/* Letterhead Layer (Synchronized with PrescriptionModal Layout) */}
             {resolvedAssetUrl && (
-              <div style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, zIndex: 1, pointerEvents: 'none' }}>
+              <div className="letterhead-container" style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, zIndex: 1, pointerEvents: 'none' }}>
                 { (resolvedAssetUrl?.toLowerCase().includes('.pdf') || resolvedAssetUrl?.includes('type=pdf')) ? (
                   <embed 
                     src={`${resolvedAssetUrl}#toolbar=0&navpanes=0&scrollbar=0`}
@@ -235,10 +244,48 @@ const ReportPreviewModal = ({
       </div>
       <style>{`
         @media print {
-          body * { visibility: hidden; }
-          #printable-report, #printable-report * { visibility: visible; }
-          #printable-report { position: fixed; left: 0; top: 0; width: 100%; height: 100%; margin: 0; padding: 0; box-shadow: none; }
-          .modal-overlay { background: white !important; padding: 0 !important; }
+          @page {
+            size: A4;
+            margin: 0;
+          }
+          body {
+            margin: 0;
+            padding: 0;
+            background: white !important;
+            visibility: hidden;
+          }
+          #printable-report, #printable-report * {
+            visibility: visible;
+          }
+          #printable-report {
+            position: absolute !important;
+            left: 0 !important;
+            top: 0 !important;
+            width: 210mm !important;
+            min-height: 297mm !important;
+            margin: 0 !important;
+            padding: 0 !important;
+            box-shadow: none !important;
+            overflow: visible !important;
+          }
+          .letterhead-container {
+            position: ${protocol?.overflowBackgroundMode === 'REUSE' ? 'fixed' : 'absolute'} !important;
+            top: 0 !important;
+            left: 0 !important;
+            right: 0 !important;
+            bottom: ${protocol?.overflowBackgroundMode === 'REUSE' ? 'auto' : '0'} !important;
+            height: 297mm !important;
+            width: 210mm !important;
+            z-index: 1 !important;
+            pointer-events: none !important;
+            display: block !important;
+          }
+          .modal-overlay { 
+            background: white !important; 
+            padding: 0 !important;
+            position: static !important;
+            display: block !important;
+          }
         }
       `}</style>
     </div>
