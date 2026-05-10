@@ -5014,6 +5014,7 @@ const ReportingPage = () => {
       <ReportPreviewModal 
         isOpen={isPreviewOpen} 
         onClose={() => setIsPreviewOpen(false)}
+        appointmentId={appointmentId}
         doctorId={activeAppointment?.doctorId || activeAppointment?.doctorUserId || activeAppointment?.doctor?.userId || sessionStorage.getItem('1rad_doctor_id')}
         patientData={activeAppointment}
         reportContent={{

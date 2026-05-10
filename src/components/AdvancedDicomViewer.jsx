@@ -392,6 +392,7 @@ const AdvancedDicomViewer = ({
   // Fullscreen and tablet support states
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [isTablet, setIsTablet] = useState(false);
+  const [isMobile, setIsMobile] = useState(false);
   const [touchStartDistance, setTouchStartDistance] = useState(0);
   const [lastTouchTime, setLastTouchTime] = useState(0);
   const [showToolbar, setShowToolbar] = useState(true);
@@ -529,6 +530,7 @@ const AdvancedDicomViewer = ({
       const isTabletSize = (width >= 768 && width <= 1366) || (height >= 768 && height <= 1366);
       
       setIsTablet(isTouchDevice && (isTabletSize || isIPad));
+      setIsMobile(isTouchDevice && width < 768);
       
       // Log device info for debugging
       console.log('[DICOM] Device detection:', {
@@ -1912,8 +1914,8 @@ const AdvancedDicomViewer = ({
       )}
 
       {/* TABLET GESTURE HINT */}
-      {isTablet && isReady && !isFullscreen && (
-        <div style={{
+      {(isTablet || isMobile) && isReady && !isFullscreen && (
+        <div className="dicom-viewer-gesture-hint" style={{
           position: 'absolute',
           bottom: '20px',
           left: '50%',
@@ -2005,16 +2007,121 @@ const AdvancedDicomViewer = ({
             padding: 12px !important;
           }
         }
+
+        /* ============================================================
+           MOBILE (phones < 768px) — layout & overflow fixes
+           No visual or functional changes — compatibility only
+           ============================================================ */
+
+        @media (max-width: 767px) {
+          /* Windowing presets toolbar — wrap and constrain width */
+          .dicom-viewer-presets {
+            max-width: calc(100vw - 30px) !important;
+            flex-wrap: wrap !important;
+            gap: 4px !important;
+            padding: 6px !important;
+          }
+
+          /* Metadata overlay — constrain to viewport width */
+          .dicom-viewer-metadata {
+            max-width: calc(100vw - 30px) !important;
+            font-size: 9px !important;
+          }
+
+          /* Measurements panel — constrain width */
+          .dicom-viewer-measurements {
+            min-width: 0 !important;
+            max-width: calc(100vw - 30px) !important;
+            width: calc(100vw - 30px) !important;
+          }
+
+          /* Canvas container — allow shorter height on phones */
+          .dicom-viewer [style*="minHeight: '400px'"],
+          .dicom-viewer [style*="min-height: 400px"] {
+            min-height: 250px !important;
+          }
+
+          /* Gesture hint — show on mobile too (overrides isTablet check via CSS) */
+          .dicom-viewer-gesture-hint {
+            display: flex !important;
+            font-size: 9px !important;
+            padding: 8px 12px !important;
+            gap: 6px !important;
+          }
+
+          /* Floating slice indicator — smaller on phones */
+          .dicom-viewer-slice-indicator {
+            font-size: 12px !important;
+            padding: 8px 14px !important;
+            min-width: 90px !important;
+          }
+
+          /* Fullscreen button — smaller on phones */
+          .dicom-viewer-fullscreen-btn {
+            padding: 8px !important;
+            font-size: 14px !important;
+          }
+
+          /* Key image button — smaller on phones */
+          .dicom-viewer-key-image-btn {
+            padding: 8px 10px !important;
+            font-size: 10px !important;
+          }
+
+          /* Pixel probe display — constrain width */
+          .dicom-viewer-probe {
+            max-width: calc(50vw) !important;
+            font-size: 9px !important;
+          }
+
+          /* Image stats — constrain width */
+          .dicom-viewer-stats {
+            max-width: calc(50vw) !important;
+            font-size: 8px !important;
+          }
+
+          /* Slice HUD — narrower on phones */
+          .dicom-viewer-slice-hud {
+            width: 36px !important;
+            right: 8px !important;
+          }
+
+          /* All overlay buttons — minimum 44px touch target */
+          .dicom-viewer button {
+            min-height: 44px !important;
+            min-width: 44px !important;
+            -webkit-tap-highlight-color: transparent;
+          }
+        }
+
+        /* Landscape phone — reduce heights to fit viewport */
+        @media (max-width: 767px) and (orientation: landscape) {
+          .dicom-viewer [style*="minHeight: '400px'"],
+          .dicom-viewer [style*="min-height: 400px"] {
+            min-height: 180px !important;
+          }
+
+          /* Hide gesture hint in landscape to save space */
+          .dicom-viewer-gesture-hint {
+            display: none !important;
+          }
+
+          /* Compact metadata overlay in landscape */
+          .dicom-viewer-metadata {
+            font-size: 8px !important;
+            padding: 6px 8px !important;
+          }
+        }
       `}</style>
 
       {/* ADVANCED WINDOWING PRESETS TOOLBAR */}
       {isReady && showWindowingPresets && (
-        <div style={{
+        <div className="dicom-viewer-presets" style={{
           position: 'absolute',
           top: '15px',
           left: '15px',
           display: 'flex',
-          flexWrap: isTablet ? 'wrap' : 'nowrap',
+          flexWrap: isTablet || isMobile ? 'wrap' : 'nowrap',
           gap: '5px',
           zIndex: 100,
           background: 'rgba(15, 23, 42, 0.9)',
@@ -2022,7 +2129,7 @@ const AdvancedDicomViewer = ({
           padding: isTablet ? '10px' : '8px',
           borderRadius: '12px',
           border: '1px solid rgba(255,255,255,0.1)',
-          maxWidth: isTablet ? '90%' : 'auto',
+          maxWidth: isTablet || isMobile ? '90%' : 'auto',
           opacity: showToolbar ? 1 : (isFullscreen ? 0 : 1),
           transition: 'opacity 0.3s'
         }}>
@@ -2051,7 +2158,7 @@ const AdvancedDicomViewer = ({
 
       {/* ENHANCED METADATA OVERLAY - Responsive for tablets */}
       {isReady && showMetadata && metadata && (
-        <div style={{
+        <div className="dicom-viewer-metadata" style={{
           position: 'absolute',
           top: isFullscreen ? '70px' : '15px',
           right: '15px',
@@ -2151,7 +2258,7 @@ const AdvancedDicomViewer = ({
 
       {/* PIXEL PROBE DISPLAY */}
       {pixelData && (
-        <div style={{
+        <div className="dicom-viewer-probe" style={{
           position: 'absolute',
           bottom: '80px',
           left: '15px',
@@ -2176,7 +2283,7 @@ const AdvancedDicomViewer = ({
 
       {/* IMAGE STATISTICS PANEL - Only show if calculated */}
       {imageStatistics && showMetadata && (
-        <div style={{
+        <div className="dicom-viewer-stats" style={{
           position: 'absolute',
           bottom: '15px',
           right: '15px',
@@ -2242,7 +2349,7 @@ const AdvancedDicomViewer = ({
 
       {/* MEASUREMENTS PANEL */}
       {measurements.length > 0 && showMeasurements && (
-        <div style={{
+        <div className="dicom-viewer-measurements" style={{
           position: 'absolute',
           top: '80px',
           left: '15px',
@@ -2393,13 +2500,13 @@ const AdvancedDicomViewer = ({
         });
         return shouldShow;
       })() && (
-        <div style={{ 
+        <div className="dicom-viewer-slice-hud" style={{ 
           position: 'absolute', // Changed to absolute to position relative to parent container
-          right: isTablet ? '15px' : '12px', // RIGHT SIDE positioning
+          right: isTablet ? '15px' : isMobile ? '8px' : '12px', // RIGHT SIDE positioning
           top: '50%', 
           transform: 'translateY(-50%)', 
-          height: isTablet ? '60%' : '80%', // Reduced height for tablets to avoid conflicts
-          width: isTablet ? '50px' : '32px', // Increased width for tablets for better touch targets
+          height: isTablet ? '60%' : isMobile ? '70%' : '80%',
+          width: isTablet ? '50px' : isMobile ? '36px' : '32px',
           display: 'flex', 
           flexDirection: 'column', 
           alignItems: 'center', 
@@ -2692,8 +2799,8 @@ const AdvancedDicomViewer = ({
       )}
 
       {/* Floating Slice Indicator for Tablets During Zoom */}
-      {isTablet && isReady && files && files.length > 1 && (
-        <div style={{
+      {(isTablet || isMobile) && isReady && files && files.length > 1 && (
+        <div className="dicom-viewer-slice-indicator" style={{
           position: 'fixed',
           top: '20px',
           left: '50%',
@@ -2728,7 +2835,7 @@ const AdvancedDicomViewer = ({
 
       {/* KEY IMAGE TOGGLE */}
       {isReady && onKeyImageToggle && (
-        <button 
+        <button className="dicom-viewer-key-image-btn"
           onClick={() => {
             const viewport = renderingEngineRef.current.getViewport(viewportId);
             const imageId = viewport.getCurrentImageId();

@@ -4,41 +4,76 @@ import apiClient from '../api/apiClient';
 const ReportPreviewModal = ({ 
   isOpen, 
   onClose, 
-  doctorId, 
+  doctorId,
+  appointmentId, // NEW: For direct report fetching
   patientData, 
   reportContent 
 }) => {
   const [protocol, setProtocol] = useState(null);
   const [loadingProtocol, setLoadingProtocol] = useState(false);
+  const [savedMetadata, setSavedMetadata] = useState(null);
+  const [fullAppointment, setFullAppointment] = useState(patientData); // Start with props, enrich later
 
   useEffect(() => {
-    if (isOpen && doctorId) {
-      const fetchProtocol = async () => {
+    if (isOpen) {
+      const targetDoctorId = doctorId || patientData?.doctorId || patientData?.doctorUserId || sessionStorage.getItem('1rad_doctor_id');
+      console.log(`[ReportPreview] Syncing branding. Target Doctor: ${targetDoctorId || 'CURRENT_USER'}`);
+      
+      const fetchData = async () => {
         setLoadingProtocol(true);
         try {
-          console.info(`[ReportPreview] Fetching Branding Protocol for Doctor: ${doctorId}`);
-          const res = await apiClient.get(`/Prescription/${doctorId}`);
+          // 1. Fetch Branding & Signatory Profile (Authoritative Fallback)
+          const brandingUrl = targetDoctorId ? `/Prescription/${targetDoctorId}` : `/Prescription/me`;
+          const res = await apiClient.get(brandingUrl);
           if (res.data?.success) {
+            console.info("[ReportPreview] Branding Data Received:", res.data.data);
             setProtocol(res.data.data);
           }
+
+          // 2. Fetch Full Appointment Context (Enrich patientData)
+          if (appointmentId) {
+            console.info(`[ReportPreview] Synchronizing Context for Appointment: ${appointmentId}`);
+            const appRes = await apiClient.get(`/appointments/${appointmentId}`); 
+            if (appRes.data?.success) setFullAppointment(appRes.data.data);
+
+            // 3. Fetch Saved Report Metadata (Finalization dates, etc.)
+            const reportRes = await apiClient.get(`/Reporting/report/${appointmentId}`);
+            if (reportRes.data?.success) setSavedMetadata(reportRes.data.data);
+          }
         } catch (err) {
-          console.error("[ReportPreview] Branding Sync failed:", err);
+          console.warn("[ReportPreview] Context sync partially failed:", err.message);
         } finally {
           setLoadingProtocol(false);
         }
       };
-      fetchProtocol();
+      fetchData();
     }
-  }, [isOpen, doctorId]);
+  }, [isOpen, doctorId, appointmentId, patientData]);
 
   if (!isOpen) return null;
 
   // Extract content
   const { mode, text, data, impression, advice, isFinalized } = reportContent;
 
+  const isPlain = !protocol?.letterheadBlobUrl;
+  console.log(`[ReportPreview] Scenario Mode: ${isPlain ? 'PLAIN_HEADER' : 'LETTERHEAD_BINDING'}`);
+  
+  // Per User: "Form 14 size" interpreted as 14px base font for letterhead-bound reports
+  const baseFontSize = isPlain ? (protocol?.fontSize || 12) : 14;
+  const contentStyle = `font-size: ${baseFontSize}px; line-height: 1.6; color: ${protocol?.fontColor || '#1e293b'}; font-family: ${protocol?.fontFamily || 'inherit'};`;
+
   let bodyContent = '';
-  // Use institutional font settings for content
-  const contentStyle = `font-size: ${protocol?.fontSize || 12}px; line-height: 1.6; color: ${protocol?.fontColor || '#1e293b'}; font-family: ${protocol?.fontFamily || 'inherit'};`;
+
+  const resolvedAssetUrl = protocol?.letterheadBlobUrl 
+    ? (protocol.letterheadBlobUrl.startsWith('http') 
+        ? protocol.letterheadBlobUrl 
+        : `https://1radapi-bch4ere7a6cmgkap.centralindia-01.azurewebsites.net${protocol.letterheadBlobUrl}`)
+    : null;
+
+  if (!isPlain) {
+    console.log(`[ReportPreview] Resolved Asset URL: ${resolvedAssetUrl}`);
+    console.log(`[ReportPreview] Asset Type: ${resolvedAssetUrl?.toLowerCase().includes('.pdf') ? 'PDF_DOCUMENT' : 'IMAGE_ASSET'}`);
+  }
 
   if (mode === 'Structured' && data) {
     bodyContent = Object.entries(data).map(([key, val]) => `
@@ -53,7 +88,7 @@ const ReportPreviewModal = ({
 
   // Surgical Margin Resolution (mm to style)
   const m = {
-    top: (protocol?.headerMargin || 40) + 'mm',
+    top: isPlain ? '15mm' : (protocol?.headerMargin || 45) + 'mm',
     left: (protocol?.leftMargin || 20) + 'mm',
     right: (protocol?.rightMargin || 20) + 'mm',
     bottom: (protocol?.bottomMargin || 20) + 'mm'
@@ -97,25 +132,46 @@ const ReportPreviewModal = ({
               </div>
             )}
 
-            {/* Letterhead Layer (Z-Index 1: Foundation) */}
-            {protocol?.letterheadBlobUrl && (
-              <div style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', zIndex: 1, pointerEvents: 'none' }}>
-                { (protocol.letterheadBlobUrl.toLowerCase().includes('.pdf') || protocol.letterheadBlobUrl.includes('type=pdf')) ? (
-                  <iframe 
-                    src={`${protocol.letterheadBlobUrl}#toolbar=0&navpanes=0&scrollbar=0`}
+            {/* Letterhead Layer (Synchronized with PrescriptionModal Layout) */}
+            {resolvedAssetUrl && (
+              <div style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, zIndex: 1, pointerEvents: 'none' }}>
+                { (resolvedAssetUrl?.toLowerCase().includes('.pdf') || resolvedAssetUrl?.includes('type=pdf')) ? (
+                  <embed 
+                    src={`${resolvedAssetUrl}#toolbar=0&navpanes=0&scrollbar=0`}
+                    type="application/pdf"
                     style={{ width: '100%', height: '100%', border: 'none' }}
-                    title="Institutional Letterhead"
                   />
                 ) : (
-                  <div style={{ 
-                    width: '100%', 
-                    height: '100%', 
-                    backgroundImage: `url(${protocol.letterheadBlobUrl})`,
-                    backgroundSize: '100% 100%',
-                    backgroundRepeat: 'no-repeat'
-                  }}></div>
+                  <img 
+                    src={resolvedAssetUrl}
+                    style={{ width: '100%', height: '100%', objectFit: 'fill', display: 'block' }}
+                    alt="Letterhead"
+                    onError={(e) => { 
+                      e.target.style.opacity = 0; 
+                      e.target.style.height = 0;
+                      console.warn("[ReportPreview] Letterhead asset failed to load:", resolvedAssetUrl); 
+                    }}
+                  />
                 )
                 }
+              </div>
+            )}
+
+            {/* Plain Header (Scenario 1: Fallback if no asset) */}
+            {isPlain && (
+              <div style={{ 
+                position: 'absolute', top: '10mm', left: '20mm', right: '20mm', 
+                borderBottom: '2px solid #0f52ba', paddingBottom: '10px', 
+                display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end'
+              }}>
+                <div>
+                  <div style={{ fontSize: '18px', fontWeight: 950, color: '#0f52ba' }}>{fullAppointment?.hospitalName || 'DIAGNOSTIC CENTRE'}</div>
+                  <div style={{ fontSize: '9px', color: '#64748b' }}>{fullAppointment?.hospitalAddress || 'Digital Medical Report'}</div>
+                </div>
+                <div style={{ textAlign: 'right' }}>
+                   <div style={{ fontSize: '10px', fontWeight: 700 }}>24/7 SUPPORT</div>
+                   <div style={{ fontSize: '9px', color: '#64748b' }}>{fullAppointment?.hospitalPhone || ''}</div>
+                </div>
               </div>
             )}
 
@@ -134,17 +190,19 @@ const ReportPreviewModal = ({
             }}>
               {/* Patient Information Matrix */}
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '0', background: '#fff', borderRadius: '4px', marginBottom: '35px', border: '1px solid #f1f5f9', fontSize: '11px' }}>
-                <div style={{ padding: '10px', borderRight: '1px solid #f1f5f9', borderBottom: '1px solid #f1f5f9' }}><span style={{color: '#94a3b8', fontSize: '8px', fontWeight: 900}}>PATIENT NAME</span> <br/><strong style={{fontSize: '12px'}}>{patientData?.patientName?.toUpperCase() || ''}</strong></div>
-                <div style={{ padding: '10px', borderRight: '1px solid #f1f5f9', borderBottom: '1px solid #f1f5f9' }}><span style={{color: '#94a3b8', fontSize: '8px', fontWeight: 900}}>AGE / SEX</span> <br/><strong>{patientData?.patientAge || ''} / {patientData?.patientGender || ''}</strong></div>
-                <div style={{ padding: '10px', borderBottom: '1px solid #f1f5f9' }}><span style={{color: '#94a3b8', fontSize: '8px', fontWeight: 900}}>PATIENT ID</span> <br/><strong>{patientData?.patientIdentifier || ''}</strong></div>
-                <div style={{ padding: '10px', borderRight: '1px solid #f1f5f9' }}><span style={{color: '#94a3b8', fontSize: '8px', fontWeight: 900}}>STUDY TYPE</span> <br/><strong>{patientData?.service || ''}</strong></div>
-                <div style={{ padding: '10px', borderRight: '1px solid #f1f5f9' }}><span style={{color: '#94a3b8', fontSize: '8px', fontWeight: 900}}>DATE</span> <br/><strong>{patientData?.dateTime ? new Date(patientData.dateTime).toLocaleDateString() : ''}</strong></div>
-                <div style={{ padding: '10px' }}><span style={{color: '#94a3b8', fontSize: '8px', fontWeight: 900}}>REFERRED BY</span> <br/><strong>{patientData?.referredBy || ''}</strong></div>
+                <div style={{ padding: '10px', borderRight: '1px solid #f1f5f9', borderBottom: '1px solid #f1f5f9' }}><span style={{color: '#94a3b8', fontSize: '8px', fontWeight: 900}}>PATIENT NAME</span> <br/><strong style={{fontSize: '12px'}}>{fullAppointment?.patientName?.toUpperCase() || ''}</strong></div>
+                <div style={{ padding: '10px', borderRight: '1px solid #f1f5f9', borderBottom: '1px solid #f1f5f9' }}><span style={{color: '#94a3b8', fontSize: '8px', fontWeight: 900}}>AGE / SEX</span> <br/><strong>{fullAppointment?.patientAge || ''} / {fullAppointment?.patientGender || ''}</strong></div>
+                <div style={{ padding: '10px', borderBottom: '1px solid #f1f5f9' }}><span style={{color: '#94a3b8', fontSize: '8px', fontWeight: 900}}>PATIENT ID</span> <br/><strong>{fullAppointment?.patientIdentifier || ''}</strong></div>
+                <div style={{ padding: '10px', borderRight: '1px solid #f1f5f9' }}><span style={{color: '#94a3b8', fontSize: '8px', fontWeight: 900}}>STUDY TYPE</span> <br/><strong>{fullAppointment?.service || fullAppointment?.modality || ''}</strong></div>
+                <div style={{ padding: '10px', borderRight: '1px solid #f1f5f9' }}><span style={{color: '#94a3b8', fontSize: '8px', fontWeight: 900}}>REPORT DATE</span> <br/><strong>{savedMetadata?.finalizedAt ? new Date(savedMetadata.finalizedAt).toLocaleDateString() : new Date().toLocaleDateString()}</strong></div>
+                <div style={{ padding: '10px' }}><span style={{color: '#94a3b8', fontSize: '8px', fontWeight: 900}}>REFERRED BY</span> <br/><strong>{fullAppointment?.referredBy || 'Self'}</strong></div>
               </div>
 
               {/* Report Findings Matrix */}
               <div style={{ flex: 1 }}>
-                <div style={{ fontSize: '10px', fontWeight: 950, color: protocol?.fontColor || '#0f52ba', marginBottom: '12px', letterSpacing: '1px', borderBottom: '1px solid rgba(15, 82, 186, 0.1)', paddingBottom: '4px' }}>CLINICAL FINDINGS:</div>
+                {mode !== 'Narrative Editor' && (
+                  <div style={{ fontSize: '10px', fontWeight: 950, color: protocol?.fontColor || '#0f52ba', marginBottom: '12px', letterSpacing: '1px', borderBottom: '1px solid rgba(15, 82, 186, 0.1)', paddingBottom: '4px' }}>CLINICAL FINDINGS:</div>
+                )}
                 <div dangerouslySetInnerHTML={{ __html: bodyContent }} />
                 
                 {/* Final Conclusion (Impression) */}
@@ -171,25 +229,6 @@ const ReportPreviewModal = ({
                 )}
               </div>
 
-              {/* Professional Signatory Block */}
-              <div style={{ marginTop: '60px', display: 'flex', justifyContent: 'flex-end' }}>
-                 <div style={{ textAlign: 'center' }}>
-                    <div style={{ width: '200px', borderBottom: `1px solid ${protocol?.fontColor || '#1e293b'}`, marginBottom: '10px', opacity: 0.3 }}></div>
-                    <div style={{ fontWeight: 950, fontSize: '12px', color: protocol?.fontColor || '#1e293b' }}>
-                      { (protocol?.doctor?.fullName || protocol?.doctor?.name || '').toUpperCase() }
-                    </div>
-                    <div style={{ fontSize: '10px', color: '#64748b', fontWeight: 700 }}>
-                      {protocol?.doctor?.specialization || ''}
-                    </div>
-                    <div style={{ fontSize: '9px', color: '#94a3b8', marginTop: '3px' }}>
-                       {protocol?.doctor?.degree} {protocol?.doctor?.licenseNo ? `• Reg No: ${protocol.doctor.licenseNo}` : ''}
-                    </div>
-                 </div>
-              </div>
-
-              {/* Audit & Compliance Footer */}
-              <div style={{ marginTop: 'auto', paddingTop: '20px', fontSize: '8px', color: '#cbd5e1', textAlign: 'center', borderTop: '1px solid #f1f5f9', letterSpacing: '0.5px' }}>
-                 ID: {patientData?.displayId || patientData?.appointmentId} • Electronic Diagnostic Record • Verified
             </div>
           </div>
         </div>
@@ -203,7 +242,6 @@ const ReportPreviewModal = ({
         }
       `}</style>
     </div>
-  </div>
   );
 };
 
