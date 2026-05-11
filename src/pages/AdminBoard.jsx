@@ -2,14 +2,12 @@ import React, { useState, useMemo, useEffect, useCallback } from 'react';
 import apiClient, { BASE_URL } from '../api/apiClient';
 import useAuth from '../auth/useAuth';
 import { ROLE_LABELS } from '../data/roles';
-import { Document, Page, pdfjs } from 'react-pdf';
 import useOffline from '../hooks/useOffline';
 import { nativeStorage } from '../hooks/useElectron';
 import '../styles/global.css';
 import '../styles/AdminBoard.css';
+import PrescriptionPreview from '../components/PrescriptionPreview';
 
-// Configure PDF.js worker - use local worker file
-pdfjs.GlobalWorkerOptions.workerSrc = '/pdf.worker.min.mjs';
 
 // --- HELPERS ---
 const getISODate = (offset = 0) => {
@@ -140,7 +138,6 @@ export default function AdminBoard() {
     fontSize: 14,
     fontColor: '#1e293b',
     fontFamily: 'Inter',
-    fontFamily: 'Inter',
     letterhead: null,
     overflowBackgroundMode: 'REUSE' // 'REUSE' or 'BLANK'
   });
@@ -151,7 +148,6 @@ export default function AdminBoard() {
   const [numPdfPages, setNumPdfPages] = useState(null);
   const [pdfError, setPdfError] = useState(null);
   const [isTestMode, setIsTestMode] = useState(false);
-  const [pageOverflowBehavior, setPageOverflowBehavior] = useState('continue'); // 'continue', 'newPage', 'truncate'
 
   // Sync settings when doctor selection changes
   const fetchDoctorProtocol = useCallback(async (docId) => {
@@ -159,7 +155,7 @@ export default function AdminBoard() {
       setPrescriptionSettings({
         headerMargin: 50, leftMargin: 20, rightMargin: 20, bottomMargin: 30,
         fontSize: 14, fontColor: '#1e293b', fontFamily: 'Inter', letterhead: null,
-        letterheadFile: null
+        letterheadFile: null, overflowBackgroundMode: 'REUSE'
       });
       setActiveProtocolData(null);
       return;
@@ -190,7 +186,7 @@ export default function AdminBoard() {
         setPrescriptionSettings({
           headerMargin: 50, leftMargin: 20, rightMargin: 20, bottomMargin: 30,
           fontSize: 14, fontColor: '#1e293b', fontFamily: 'Inter', letterhead: null,
-          letterheadFile: null
+          letterheadFile: null, overflowBackgroundMode: 'REUSE'
         });
       }
     } catch (err) {
@@ -211,21 +207,6 @@ export default function AdminBoard() {
     fetchDoctorProtocol(selectedPrescriptionDoctorId);
   }, [selectedPrescriptionDoctorId, fetchDoctorProtocol]);
 
-  const MOCK_REPORT_DATA = {
-    patientName: "Johnathan Doe",
-    age: "45Y",
-    gender: "Male",
-    modality: "MRI BRAIN",
-    date: new Date().toLocaleDateString(),
-    accession: "1RAD-2024-00129",
-    findings: [
-      "The ventricular system and subarachnoid spaces appear normal for the patient's age.",
-      "No evidence of acute intracranial hemorrhage, mass effect or midline shift.",
-      "The major intracranial vascular flow voids are preserved.",
-      "No suspicious signal abnormalities are noted within the brain parenchyma."
-    ],
-    impression: "No significant intracranial abnormality detected. Clinically correlation is advised."
-  };
 
   const fetchFinancialMatrix = useCallback(async () => {
     try {
@@ -1719,53 +1700,6 @@ export default function AdminBoard() {
                   </div>
                 </div>
 
-                {/* Page Overflow Behavior - Only show when test mode is active */}
-                {isTestMode && (
-                  <div style={{ 
-                    background: '#fff7ed', 
-                    padding: '20px', 
-                    borderRadius: '18px', 
-                    border: '2px solid #fed7aa'
-                  }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '15px' }}>
-                      <span style={{ fontSize: '18px' }}>📄</span>
-                      <span style={{ fontSize: '11px', fontWeight: 950, color: '#ea580c', letterSpacing: '1px' }}>
-                        PAGE OVERFLOW BEHAVIOR
-                      </span>
-                    </div>
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-                      {[
-                        { value: 'continue', label: 'Continue on Same Page', desc: 'Content flows beyond page boundaries' },
-                        { value: 'newPage', label: 'Start New Page', desc: 'Overflow content moves to next page' },
-                        { value: 'truncate', label: 'Truncate Content', desc: 'Cut off content that exceeds page' }
-                      ].map(option => (
-                        <label key={option.value} style={{ 
-                          display: 'flex', 
-                          alignItems: 'center', 
-                          gap: '12px', 
-                          cursor: 'pointer',
-                          padding: '10px',
-                          borderRadius: '10px',
-                          background: pageOverflowBehavior === option.value ? '#fed7aa' : 'transparent',
-                          transition: 'all 0.2s'
-                        }}>
-                          <input 
-                            type="radio" 
-                            name="pageOverflow" 
-                            value={option.value}
-                            checked={pageOverflowBehavior === option.value}
-                            onChange={(e) => setPageOverflowBehavior(e.target.value)}
-                            style={{ margin: 0 }}
-                          />
-                          <div>
-                            <div style={{ fontSize: '10px', fontWeight: 950, color: '#1e293b' }}>{option.label}</div>
-                            <div style={{ fontSize: '8px', color: '#64748b' }}>{option.desc}</div>
-                          </div>
-                        </label>
-                      ))}
-                    </div>
-                  </div>
-                )}
 
                 {/* Overflow Page Behavior (New) */}
                 <div style={{ 
@@ -1941,589 +1875,12 @@ export default function AdminBoard() {
           </div>
         </div>
 
-        {/* LIVE A4 STUDIO CANVAS */}
-        <div style={{ 
-          flex: 1, 
-          background: '#0f172a', 
-          borderRadius: '30px', 
-          display: 'flex', 
-          justifyContent: 'center', 
-          padding: '60px', 
-          overflowY: 'auto',
-          position: 'relative',
-          boxShadow: 'inset 0 0 100px rgba(0,0,0,0.5)'
-        }}>
-           {/* Studio HUD */}
-           <div style={{ position: 'absolute', top: '25px', left: '35px', display: 'flex', alignItems: 'center', gap: '15px', zIndex: 100 }}>
-              <div style={{ background: 'rgba(255,255,255,0.1)', padding: '6px 12px', borderRadius: '8px', border: '1px solid rgba(255,255,255,0.1)' }}>
-                <span style={{ fontSize: '9px', fontWeight: 950, color: '#94a3b8', letterSpacing: '1px' }}>MODE: </span>
-                <span style={{ fontSize: '9px', fontWeight: 950, color: '#fff' }}>
-                  {isTestMode ? `TEST_${pageOverflowBehavior.toUpperCase()}` : 'LIVE_SIMULATION'}
-                </span>
-              </div>
-              <div style={{ background: 'rgba(255,255,255,0.1)', padding: '6px 12px', borderRadius: '8px', border: '1px solid rgba(255,255,255,0.1)' }}>
-                <span style={{ fontSize: '9px', fontWeight: 950, color: '#94a3b8', letterSpacing: '1px' }}>RESOLUTION: </span>
-                <span style={{ fontSize: '9px', fontWeight: 950, color: '#fff' }}>300 DPI (A4)</span>
-              </div>
-              {prescriptionSettings.letterhead && (
-                <div style={{ background: 'rgba(46, 204, 113, 0.2)', padding: '6px 12px', borderRadius: '8px', border: '1px solid rgba(46, 204, 113, 0.3)' }}>
-                  <span style={{ fontSize: '9px', fontWeight: 950, color: '#2ecc71', letterSpacing: '1px' }}>PDF: </span>
-                  <span style={{ fontSize: '9px', fontWeight: 950, color: '#fff' }}>
-                    {numPdfPages ? `RENDERED (${numPdfPages} ${numPdfPages === 1 ? 'PAGE' : 'PAGES'})` : 'LOADING...'}
-                  </span>
-                </div>
-              )}
-           </div>
-
-           {isProtocolLoading && (
-              <div style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(15, 23, 42, 0.8)', zIndex: 10, display: 'flex', alignItems: 'center', justifyContent: 'center', borderRadius: '30px', flexDirection: 'column', gap: '20px' }}>
-                <div className="pulse-loader"></div>
-                <div style={{ color: 'white', fontSize: '12px', fontWeight: 950, letterSpacing: '2px' }}>LOADING PROTOCOL DATA...</div>
-              </div>
-           )}
-
-           {isPrescriptionSaving && (
-             <div style={{ 
-               position: 'absolute', top: 0, left: 0, right: 0, height: '100%', 
-               background: 'rgba(15, 82, 186, 0.1)', zIndex: 100, pointerEvents: 'none',
-               overflow: 'hidden'
-             }}>
-                <div style={{ 
-                  height: '4px', background: '#2ecc71', width: '100%', 
-                  boxShadow: '0 0 20px #2ecc71', animation: 'scanLine 2s infinite ease-in-out',
-                  position: 'absolute'
-                }}></div>
-             </div>
-           )}
-
-           <div className="prescription-page-preview" style={{ 
-              width: '210mm', 
-              height: '297mm', 
-              background: 'white', 
-              boxShadow: '0 40px 100px rgba(0,0,0,0.6), 0 0 0 1px rgba(0,0,0,0.05)',
-              borderRadius: '2px',
-              position: 'relative',
-              transform: `scale(${previewScale})`,
-              transformOrigin: 'top center',
-              transition: 'transform 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275)',
-              overflow: 'hidden',
-              flexShrink: 0,
-              zIndex: 1
-            }}>
-              {/* ASSET REFERENCE LAYER (PDF or IMAGE) */}
-              {prescriptionSettings.letterhead ? (
-                (() => {
-                  const rawUrl = prescriptionSettings.letterhead;
-                  const letterheadUrl = (rawUrl && rawUrl.includes('blob.core.windows.net'))
-                    ? `${BASE_URL}/Study/proxy-asset?url=${encodeURIComponent(rawUrl)}`
-                    : rawUrl;
-                  
-                  console.log('[PRESCRIPTION_PREVIEW] Rendering letterhead (Proxied):', letterheadUrl);
-                  
-                  // Check if it's a PDF
-                  const isPDF = letterheadUrl.toLowerCase().includes('.pdf') || 
-                                (prescriptionSettings.letterheadFile && prescriptionSettings.letterheadFile.type === 'application/pdf') ||
-                                letterheadUrl.includes('.blob.core.windows.net') ||
-                                (letterheadUrl.startsWith('blob:') && prescriptionSettings.letterheadFile?.type === 'application/pdf');
-
-                  console.log('[PRESCRIPTION_PREVIEW] Is PDF?', isPDF);
-
-                  if (isPDF) {
-                    console.log('[PRESCRIPTION_PREVIEW] Rendering PDF with react-pdf:', letterheadUrl);
-                    
-                    return (
-                      <div style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', zIndex: 1, background: 'white', overflow: 'hidden' }}>
-                        <Document
-                          file={letterheadUrl}
-                          onLoadSuccess={({ numPages }) => {
-                            console.log('[PRESCRIPTION_PREVIEW] PDF loaded successfully. Pages:', numPages);
-                            setNumPdfPages(numPages);
-                            setPdfError(null);
-                          }}
-                          onLoadError={(error) => {
-                            console.error('[PRESCRIPTION_PREVIEW] PDF load error:', error);
-                            setPdfError(error.message);
-                          }}
-                          loading={
-                            <div style={{ 
-                              width: '100%', 
-                              height: '100%', 
-                              display: 'flex', 
-                              alignItems: 'center', 
-                              justifyContent: 'center',
-                              background: 'white'
-                            }}>
-                              <div style={{ textAlign: 'center' }}>
-                                <div className="pulse-loader" style={{ margin: '0 auto 20px' }}></div>
-                                <div style={{ fontSize: '12px', fontWeight: 950, color: '#0f52ba', letterSpacing: '2px' }}>
-                                  LOADING PDF...
-                                </div>
-                              </div>
-                            </div>
-                          }
-                          error={
-                            <div style={{ 
-                              width: '100%', 
-                              height: '100%', 
-                              display: 'flex', 
-                              flexDirection: 'column',
-                              alignItems: 'center', 
-                              justifyContent: 'center',
-                              background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
-                              color: 'white',
-                              padding: '40px',
-                              textAlign: 'center'
-                            }}>
-                              <div style={{ fontSize: '64px', marginBottom: '20px' }}>📄</div>
-                              <h3 style={{ fontSize: '18px', fontWeight: 950, marginBottom: '10px', letterSpacing: '1px' }}>
-                                PRESCRIPTION LETTERHEAD LOADED
-                              </h3>
-                              <p style={{ fontSize: '12px', opacity: 0.9, marginBottom: '10px', maxWidth: '400px' }}>
-                                {pdfError || 'Unable to render PDF inline. Click below to open in a new tab.'}
-                              </p>
-                              <a 
-                                href={letterheadUrl} 
-                                target="_blank" 
-                                rel="noopener noreferrer"
-                                style={{ 
-                                  padding: '16px 32px', 
-                                  background: 'white', 
-                                  color: '#667eea', 
-                                  borderRadius: '12px', 
-                                  textDecoration: 'none', 
-                                  fontWeight: 950, 
-                                  fontSize: '13px',
-                                  boxShadow: '0 10px 30px rgba(0,0,0,0.2)',
-                                  display: 'inline-block',
-                                  marginTop: '20px',
-                                  transition: 'transform 0.2s'
-                                }}
-                                onMouseOver={(e) => e.target.style.transform = 'scale(1.05)'}
-                                onMouseOut={(e) => e.target.style.transform = 'scale(1)'}
-                              >
-                                🔗 OPEN LETTERHEAD PDF
-                              </a>
-                            </div>
-                          }
-                        >
-                          <Page 
-                            pageNumber={1} 
-                            width={794} // A4 width in pixels at 96 DPI (210mm)
-                            renderTextLayer={false}
-                            renderAnnotationLayer={false}
-                          />
-                        </Document>
-                      </div>
-                    );
-                  } else {
-                    // For images
-                    console.log('[PRESCRIPTION_PREVIEW] Rendering image');
-                    return (
-                      <img 
-                        key={letterheadUrl}
-                        src={letterheadUrl} 
-                        alt="Letterhead Asset"
-                        style={{ 
-                          position: 'absolute', 
-                          top: 0, 
-                          left: 0, 
-                          width: '100%', 
-                          height: '100%', 
-                          objectFit: 'fill', 
-                          pointerEvents: 'none', 
-                          zIndex: 1 
-                        }}
-                        onLoad={() => console.log('[PRESCRIPTION_PREVIEW] Image loaded successfully')}
-                        onError={(e) => console.error('[PRESCRIPTION_PREVIEW] Image load error:', e)}
-                      />
-                    );
-                  }
-                })()
-              ) : (
-                <div style={{ 
-                  position: 'absolute', 
-                  top: 0, 
-                  left: 0, 
-                  width: '100%', 
-                  height: '100%', 
-                  display: 'flex', 
-                  alignItems: 'center', 
-                  justifyContent: 'center',
-                  background: '#f8fafc',
-                  zIndex: 1
-                }}>
-                  <div style={{ textAlign: 'center', color: '#94a3b8' }}>
-                    <div style={{ fontSize: '48px', marginBottom: '15px' }}>📄</div>
-                    <div style={{ fontSize: '11px', fontWeight: 950, letterSpacing: '2px' }}>NO LETTERHEAD CONFIGURED</div>
-                    <div style={{ fontSize: '9px', marginTop: '5px' }}>Upload a PDF or image to preview</div>
-                  </div>
-                </div>
-              )}
-
-              {/* Geometric Indicators (Hover only) */}
-              <div className="geometric-overlay" style={{ 
-                position: 'absolute', top: 0, left: 0, right: 0, height: `${prescriptionSettings.headerMargin}mm`, 
-                background: 'rgba(15, 82, 186, 0.05)', borderBottom: '2px dashed rgba(15, 82, 186, 0.2)',
-                display: 'flex', alignItems: 'center', justifyContent: 'center',
-                zIndex: 10, pointerEvents: 'none', transition: 'opacity 0.3s'
-              }}>
-                <span style={{ fontSize: '12px', color: '#0f52ba', fontWeight: 950, letterSpacing: '4px', textShadow: '0 0 10px white' }}>HEADER_SAFE_ZONE</span>
-              </div>
-
-              <div className="geometric-overlay" style={{ 
-                position: 'absolute', top: 0, bottom: 0, left: 0, width: `${prescriptionSettings.leftMargin}mm`, 
-                background: 'rgba(15, 82, 186, 0.02)', borderRight: '1px dashed rgba(15, 82, 186, 0.1)',
-                zIndex: 10, pointerEvents: 'none'
-              }}></div>
-              
-              <div className="geometric-overlay" style={{ 
-                position: 'absolute', top: 0, bottom: 0, right: 0, width: `${prescriptionSettings.rightMargin}mm`, 
-                background: 'rgba(15, 82, 186, 0.02)', borderLeft: '1px dashed rgba(15, 82, 186, 0.1)',
-                zIndex: 10, pointerEvents: 'none'
-              }}></div>
-              
-              {/* DIAGNOSTIC TEXT LAYER - Only show when NO letterhead is configured */}
-              {!prescriptionSettings.letterhead && (
-                <div style={{ 
-                  position: 'relative',
-                  zIndex: 2,
-                  fontFamily: prescriptionSettings.fontFamily, 
-                  fontSize: `${prescriptionSettings.fontSize}px`, 
-                  color: prescriptionSettings.fontColor,
-                  lineHeight: '1.6',
-                  animation: 'fadeIn 0.8s ease',
-                  padding: `${prescriptionSettings.headerMargin}mm ${prescriptionSettings.rightMargin}mm ${prescriptionSettings.bottomMargin}mm ${prescriptionSettings.leftMargin}mm`,
-                  boxSizing: 'border-box',
-                  minHeight: '297mm'
-                }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '40px', borderBottom: `2px solid ${prescriptionSettings.fontColor}20`, paddingBottom: '15px' }}>
-                     <div style={{ fontWeight: 950, fontSize: '1.2em' }}>DIAGNOSTIC REPORT</div>
-                     <div style={{ fontSize: '0.7em', textAlign: 'right', opacity: 0.6 }}>
-                        DATE: {MOCK_REPORT_DATA.date}<br/>
-                        REF: {MOCK_REPORT_DATA.accession}
-                     </div>
-                  </div>
-
-                  <div style={{ marginBottom: '20px', display: 'flex', gap: '30px' }}>
-                     <div><span style={{ fontWeight: 800, fontSize: '0.7em', opacity: 0.5 }}>PATIENT:</span> <span style={{ fontWeight: 700 }}>{MOCK_REPORT_DATA.patientName.toUpperCase()}</span></div>
-                     <div><span style={{ fontWeight: 800, fontSize: '0.7em', opacity: 0.5 }}>AGE/SEX:</span> <span style={{ fontWeight: 700 }}>{MOCK_REPORT_DATA.age} / {MOCK_REPORT_DATA.gender}</span></div>
-                  </div>
-
-                  <div style={{ marginBottom: '30px' }}>
-                     <div style={{ fontWeight: 900, textTransform: 'uppercase', fontSize: '0.9em', color: '#0f52ba', marginBottom: '15px' }}>CLINICAL FINDINGS</div>
-                     <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-                        {MOCK_REPORT_DATA.findings.map((f, i) => <p key={i} style={{ margin: 0 }}>• {f}</p>)}
-                     </div>
-                  </div>
-
-                  <div style={{ background: `${prescriptionSettings.fontColor}05`, padding: '20px', borderRadius: '8px', border: `1px solid ${prescriptionSettings.fontColor}10` }}>
-                     <div style={{ fontWeight: 900, fontSize: '0.9em', marginBottom: '8px', color: '#0f52ba' }}>IMPRESSION:</div>
-                     <p style={{ fontSize: '1em', margin: 0, fontWeight: 700 }}>{MOCK_REPORT_DATA.impression}</p>
-                  </div>
-
-                  {/* Simulated Signature */}
-                  <div style={{ marginTop: '80px', textAlign: 'right' }}>
-                     <div style={{ display: 'inline-block', textAlign: 'center' }}>
-                        <div style={{ width: '200px', borderBottom: `1px solid ${prescriptionSettings.fontColor}`, marginBottom: '10px', opacity: 0.5 }}></div>
-                        <div style={{ fontWeight: 950, fontSize: '1.1em' }}>
-                          {activeProtocolData?.doctor?.fullName?.toUpperCase() || 'CONSULTANT_NAME'}
-                        </div>
-                        <div style={{ fontSize: '0.8em', fontWeight: 700, opacity: 0.7, marginTop: '2px' }}>
-                          {activeProtocolData?.doctor?.degree || 'QUALIFICATIONS'}
-                        </div>
-                        <div style={{ fontSize: '0.75em', fontWeight: 600, opacity: 0.6 }}>
-                          {activeProtocolData?.doctor?.specialization || 'SPECIALIZATION'}
-                        </div>
-                        {activeProtocolData?.doctor?.licenseNo && (
-                          <div style={{ fontSize: '0.7em', opacity: 0.5, marginTop: '4px', fontFamily: 'monospace' }}>
-                            REG_NO: {activeProtocolData.doctor.licenseNo}
-                          </div>
-                        )}
-                     </div>
-                  </div>
-                </div>
-              )}
-
-              {/* TEST MODE OVERLAY - Shows comprehensive mock prescription data on top of letterhead */}
-              {isTestMode && prescriptionSettings.letterhead && (
-                <div style={{ 
-                  position: 'absolute',
-                  top: 0,
-                  left: 0,
-                  width: '100%',
-                  height: pageOverflowBehavior === 'truncate' ? '100%' : 'auto',
-                  minHeight: pageOverflowBehavior === 'newPage' ? '297mm' : 'auto',
-                  zIndex: 3,
-                  fontFamily: prescriptionSettings.fontFamily, 
-                  fontSize: `${prescriptionSettings.fontSize}px`, 
-                  color: prescriptionSettings.fontColor,
-                  lineHeight: '1.6',
-                  padding: `${prescriptionSettings.headerMargin}mm ${prescriptionSettings.rightMargin}mm ${prescriptionSettings.bottomMargin}mm ${prescriptionSettings.leftMargin}mm`,
-                  boxSizing: 'border-box',
-                  pointerEvents: 'none',
-                  overflow: pageOverflowBehavior === 'truncate' ? 'hidden' : 'visible'
-                }}>
-                  {/* Test Mode Badge */}
-                  <div style={{ 
-                    position: 'absolute', 
-                    top: '10px', 
-                    right: '10px', 
-                    background: 'rgba(102, 126, 234, 0.95)', 
-                    color: 'white', 
-                    padding: '8px 16px', 
-                    borderRadius: '8px',
-                    fontSize: '10px',
-                    fontWeight: 950,
-                    letterSpacing: '1px',
-                    boxShadow: '0 4px 12px rgba(102, 126, 234, 0.4)',
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '6px',
-                    zIndex: 10
-                  }}>
-                    <span>🧪</span> TEST MODE - {pageOverflowBehavior.toUpperCase()}
-                  </div>
-
-                  {/* Mock Prescription Content */}
-                  <div style={{ marginTop: '20px' }}>
-                    <div style={{ fontSize: '1.4em', fontWeight: 950, marginBottom: '25px', textAlign: 'center' }}>
-                      PRESCRIPTION
-                    </div>
-
-                    {/* Patient Info */}
-                    <div style={{ marginBottom: '25px', padding: '20px', background: 'rgba(255,255,255,0.95)', borderRadius: '12px', boxShadow: '0 2px 8px rgba(0,0,0,0.1)' }}>
-                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '15px', fontSize: '0.95em' }}>
-                        <div><strong>Patient:</strong> Mrs. Sarah Elizabeth Johnson</div>
-                        <div><strong>Age/Sex:</strong> 34 Years / Female</div>
-                        <div><strong>Date:</strong> {new Date().toLocaleDateString()}</div>
-                        <div><strong>Ref:</strong> RX-2026-{Math.floor(Math.random() * 10000)}</div>
-                        <div><strong>Phone:</strong> +91 98765 43210</div>
-                        <div><strong>Weight:</strong> 65 kg</div>
-                        <div><strong>BP:</strong> 120/80 mmHg</div>
-                        <div><strong>Allergies:</strong> Penicillin, Sulfa drugs</div>
-                      </div>
-                    </div>
-
-                    {/* Chief Complaints */}
-                    <div style={{ marginBottom: '20px' }}>
-                      <div style={{ fontSize: '0.9em', fontWeight: 900, marginBottom: '10px', opacity: 0.7, textTransform: 'uppercase' }}>Chief Complaints:</div>
-                      <div style={{ fontSize: '1em', fontWeight: 600, padding: '12px', background: 'rgba(255,255,255,0.9)', borderRadius: '8px' }}>
-                        • Persistent cough with yellowish sputum for 5 days<br/>
-                        • Mild fever (100-101°F) especially in evenings<br/>
-                        • Chest discomfort and shortness of breath on exertion<br/>
-                        • Fatigue and reduced appetite
-                      </div>
-                    </div>
-
-                    {/* Clinical Findings */}
-                    <div style={{ marginBottom: '20px' }}>
-                      <div style={{ fontSize: '0.9em', fontWeight: 900, marginBottom: '10px', opacity: 0.7, textTransform: 'uppercase' }}>Clinical Examination:</div>
-                      <div style={{ fontSize: '0.95em', padding: '15px', background: 'rgba(255,255,255,0.9)', borderRadius: '8px' }}>
-                        <strong>General:</strong> Patient appears mildly distressed, afebrile at time of examination<br/>
-                        <strong>Respiratory:</strong> Bilateral wheeze present, mild intercostal retractions<br/>
-                        <strong>Cardiovascular:</strong> S1S2 heard, no murmurs detected<br/>
-                        <strong>Abdomen:</strong> Soft, non-tender, bowel sounds normal
-                      </div>
-                    </div>
-
-                    {/* Diagnosis */}
-                    <div style={{ marginBottom: '25px' }}>
-                      <div style={{ fontSize: '0.9em', fontWeight: 900, marginBottom: '10px', opacity: 0.7, textTransform: 'uppercase' }}>Primary Diagnosis:</div>
-                      <div style={{ fontSize: '1.1em', fontWeight: 800, padding: '15px', background: 'rgba(255, 243, 224, 0.95)', borderRadius: '8px', borderLeft: `4px solid ${prescriptionSettings.fontColor}` }}>
-                        Acute Bronchitis with mild respiratory distress secondary to viral infection
-                      </div>
-                    </div>
-
-                    {/* Medications */}
-                    <div style={{ marginBottom: '30px' }}>
-                      <div style={{ fontSize: '0.9em', fontWeight: 900, marginBottom: '15px', opacity: 0.7, textTransform: 'uppercase' }}>Prescribed Medications:</div>
-                      <div style={{ display: 'flex', flexDirection: 'column', gap: '15px' }}>
-                        {[
-                          { 
-                            name: 'Tab. Azithromycin 500mg', 
-                            dosage: '1 tablet once daily after meals', 
-                            duration: '3 days',
-                            instructions: 'Complete the full course even if symptoms improve'
-                          },
-                          { 
-                            name: 'Syp. Salbutamol 2mg/5ml', 
-                            dosage: '2 teaspoons (10ml) three times daily', 
-                            duration: '7 days',
-                            instructions: 'Take 30 minutes before meals, shake well before use'
-                          },
-                          { 
-                            name: 'Tab. Paracetamol 650mg', 
-                            dosage: 'SOS for fever >100°F', 
-                            duration: 'As needed',
-                            instructions: 'Maximum 4 tablets in 24 hours, maintain 6-hour gap'
-                          },
-                          { 
-                            name: 'Tab. Cetirizine 10mg', 
-                            dosage: '1 tablet at bedtime', 
-                            duration: '5 days',
-                            instructions: 'May cause drowsiness, avoid driving after taking'
-                          },
-                          { 
-                            name: 'Syp. Dextromethorphan 15mg/5ml', 
-                            dosage: '1 teaspoon twice daily', 
-                            duration: '5 days',
-                            instructions: 'For dry cough, take after meals'
-                          },
-                          { 
-                            name: 'Tab. Vitamin C 500mg', 
-                            dosage: '1 tablet twice daily after meals', 
-                            duration: '10 days',
-                            instructions: 'Helps boost immunity and recovery'
-                          }
-                        ].map((med, i) => (
-                          <div key={i} style={{ padding: '18px', background: 'rgba(255,255,255,0.95)', borderRadius: '10px', borderLeft: `4px solid ${prescriptionSettings.fontColor}`, boxShadow: '0 2px 4px rgba(0,0,0,0.05)' }}>
-                            <div style={{ fontWeight: 900, fontSize: '1.05em', marginBottom: '8px', color: prescriptionSettings.fontColor }}>{i + 1}. {med.name}</div>
-                            <div style={{ fontSize: '0.9em', marginBottom: '6px' }}>
-                              <span style={{ fontWeight: 800, color: '#dc2626' }}>Dosage:</span> {med.dosage}
-                            </div>
-                            <div style={{ fontSize: '0.9em', marginBottom: '6px' }}>
-                              <span style={{ fontWeight: 800, color: '#059669' }}>Duration:</span> {med.duration}
-                            </div>
-                            <div style={{ fontSize: '0.85em', fontStyle: 'italic', color: '#64748b' }}>
-                              <span style={{ fontWeight: 700 }}>Note:</span> {med.instructions}
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-
-                    {/* Investigations */}
-                    <div style={{ marginBottom: '25px' }}>
-                      <div style={{ fontSize: '0.9em', fontWeight: 900, marginBottom: '12px', opacity: 0.7, textTransform: 'uppercase' }}>Recommended Investigations:</div>
-                      <div style={{ padding: '15px', background: 'rgba(255,255,255,0.9)', borderRadius: '8px' }}>
-                        <div style={{ fontSize: '0.9em', lineHeight: '1.8' }}>
-                          • Complete Blood Count (CBC) with ESR<br/>
-                          • Chest X-ray (PA view) if symptoms persist beyond 7 days<br/>
-                          • Sputum culture and sensitivity (if purulent sputum continues)<br/>
-                          • Pulmonary function test if breathing difficulty worsens
-                        </div>
-                      </div>
-                    </div>
-
-                    {/* Detailed Instructions */}
-                    <div style={{ marginBottom: '25px' }}>
-                      <div style={{ fontSize: '0.9em', fontWeight: 900, marginBottom: '12px', opacity: 0.7, textTransform: 'uppercase' }}>Patient Instructions & Lifestyle Modifications:</div>
-                      <div style={{ padding: '18px', background: 'rgba(255,255,255,0.95)', borderRadius: '10px' }}>
-                        <div style={{ fontSize: '0.9em', lineHeight: '1.7' }}>
-                          <strong>Immediate Care:</strong><br/>
-                          • Take all medications as prescribed, do not skip doses<br/>
-                          • Drink warm water frequently (8-10 glasses per day)<br/>
-                          • Use steam inhalation 2-3 times daily for 10-15 minutes<br/>
-                          • Gargle with warm salt water twice daily<br/><br/>
-                          
-                          <strong>Dietary Recommendations:</strong><br/>
-                          • Consume warm, light, easily digestible foods<br/>
-                          • Include vitamin C rich fruits (oranges, lemons, amla)<br/>
-                          • Avoid cold beverages, ice cream, and dairy products temporarily<br/>
-                          • Honey with warm water can soothe throat irritation<br/><br/>
-                          
-                          <strong>Activity & Rest:</strong><br/>
-                          • Take adequate rest, avoid strenuous physical activities<br/>
-                          • Sleep with head slightly elevated using extra pillows<br/>
-                          • Avoid exposure to dust, smoke, and strong odors<br/>
-                          • Use a humidifier or keep a bowl of water in the room<br/><br/>
-                          
-                          <strong>Precautions:</strong><br/>
-                          • Avoid smoking and passive smoking completely<br/>
-                          • Wear a mask when going out in polluted areas<br/>
-                          • Maintain hand hygiene to prevent secondary infections<br/>
-                          • Isolate from family members to prevent spread
-                        </div>
-                      </div>
-                    </div>
-
-                    {/* Follow-up Instructions */}
-                    <div style={{ marginBottom: '25px' }}>
-                      <div style={{ fontSize: '0.9em', fontWeight: 900, marginBottom: '12px', opacity: 0.7, textTransform: 'uppercase' }}>Follow-up Schedule:</div>
-                      <div style={{ padding: '15px', background: 'rgba(254, 242, 242, 0.95)', borderRadius: '8px', border: '1px solid #fca5a5' }}>
-                        <div style={{ fontSize: '0.9em', lineHeight: '1.6' }}>
-                          <strong>Next Visit:</strong> After 5 days or earlier if symptoms worsen<br/>
-                          <strong>Emergency Contact:</strong> Return immediately if you experience:<br/>
-                          • High fever &gt;102°F persisting despite medication<br/>
-                          • Severe breathing difficulty or chest pain<br/>
-                          • Blood in sputum or persistent vomiting<br/>
-                          • Worsening of symptoms after 48 hours of treatment
-                        </div>
-                      </div>
-                    </div>
-
-                    {/* Doctor's Notes */}
-                    <div style={{ marginBottom: '30px' }}>
-                      <div style={{ fontSize: '0.9em', fontWeight: 900, marginBottom: '10px', opacity: 0.7, textTransform: 'uppercase' }}>Doctor's Notes:</div>
-                      <div style={{ fontSize: '0.85em', fontStyle: 'italic', padding: '12px', background: 'rgba(255,255,255,0.9)', borderRadius: '8px', color: '#64748b' }}>
-                        Patient counseled about the viral nature of the condition and expected recovery timeline of 7-10 days. 
-                        Emphasized importance of medication compliance and lifestyle modifications. 
-                        Advised to monitor symptoms closely and return for follow-up as scheduled.
-                      </div>
-                    </div>
-
-                    {/* Signature */}
-                    <div style={{ marginTop: '40px', textAlign: 'right' }}>
-                      <div style={{ display: 'inline-block', textAlign: 'center', background: 'rgba(255,255,255,0.95)', padding: '20px 30px', borderRadius: '12px', boxShadow: '0 4px 12px rgba(0,0,0,0.1)' }}>
-                        <div style={{ width: '200px', borderBottom: `3px solid ${prescriptionSettings.fontColor}`, marginBottom: '12px' }}></div>
-                        <div style={{ fontWeight: 950, fontSize: '1.1em', marginBottom: '4px' }}>
-                          {activeProtocolData?.doctor?.fullName?.toUpperCase() || 'DR. CONSULTANT NAME'}
-                        </div>
-                        <div style={{ fontSize: '0.85em', fontWeight: 700, opacity: 0.8, marginBottom: '2px' }}>
-                          {activeProtocolData?.doctor?.degree || 'MBBS, MD (Internal Medicine)'}
-                        </div>
-                        <div style={{ fontSize: '0.8em', opacity: 0.7, marginBottom: '8px' }}>
-                          {activeProtocolData?.doctor?.specialization || 'Consultant Physician & Pulmonologist'}
-                        </div>
-                        {activeProtocolData?.doctor?.licenseNo && (
-                          <div style={{ fontSize: '0.75em', opacity: 0.6, fontFamily: 'monospace', background: 'rgba(0,0,0,0.05)', padding: '4px 8px', borderRadius: '4px' }}>
-                            Medical Registration: {activeProtocolData.doctor.licenseNo}
-                          </div>
-                        )}
-                        <div style={{ fontSize: '0.7em', opacity: 0.5, marginTop: '8px' }}>
-                          Date: {new Date().toLocaleDateString()} | Time: {new Date().toLocaleTimeString()}
-                        </div>
-                      </div>
-                    </div>
-
-                    {/* Page Break Indicator for New Page Mode */}
-                    {pageOverflowBehavior === 'newPage' && (
-                      <div style={{ 
-                        marginTop: '40px', 
-                        padding: '20px', 
-                        background: 'rgba(59, 130, 246, 0.1)', 
-                        border: '2px dashed #3b82f6', 
-                        borderRadius: '12px',
-                        textAlign: 'center',
-                        fontSize: '0.9em',
-                        fontWeight: 700,
-                        color: '#1e40af'
-                      }}>
-                        📄 PAGE BREAK - Additional content would continue on next page
-                      </div>
-                    )}
-                  </div>
-                </div>
-              )}
-           </div>
-        </div>
-
-        <style>{`
-          @keyframes scanLine {
-            0% { top: 0; }
-            100% { top: 100%; }
-          }
-          @keyframes fadeIn {
-            from { opacity: 0; transform: translateY(10px); }
-            to { opacity: 1; transform: translateY(0); }
-          }
-          .prescription-page-preview .geometric-overlay {
-            opacity: 0;
-          }
-          .prescription-page-preview:hover .geometric-overlay {
-            opacity: 1;
-          }
-        `}</style>
+        <PrescriptionPreview 
+          prescriptionSettings={prescriptionSettings}
+          activeProtocolData={activeProtocolData}
+          isTestMode={isTestMode}
+          previewScale={previewScale}
+        />
       </div>
     );
   };
@@ -2740,7 +2097,7 @@ export default function AdminBoard() {
 
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 350px', gap: '30px', alignItems: 'flex-start' }}>
             {/* Service Price Registry */}
-            <div style={{ background: 'white', borderRadius: '24px', border: '1px solid #e2e8f0', overflow: 'hidden', boxShadow: '0 4px 20px rgba(0,0,0,0.01)' }}>
+            <div style={{ background: 'white', borderRadius: '24px', border: '1px solid #e2e8f0', overflow: isTestMode ? 'visible' : 'hidden', boxShadow: '0 4px 20px rgba(0,0,0,0.01)' }}>
               <table style={{ width: '100%', borderCollapse: 'collapse' }}>
                 <thead style={{ background: '#f8fafc' }}>
                   <tr style={{ borderBottom: '1px solid #f1f5f9' }}>
@@ -3330,7 +2687,7 @@ export default function AdminBoard() {
                       const percentage = totalPatientsCount > 0 ? (selected.patients.length / totalPatientsCount) * 100 : 0;
 
                       return (
-                        <div style={{ background: 'white', borderRadius: '30px', border: '1px solid #e2e8f0', overflow: 'hidden', boxShadow: '0 10px 40px rgba(0,0,0,0.02)' }}>
+                        <div style={{ background: 'white', borderRadius: '30px', border: '1px solid #e2e8f0', overflow: isTestMode ? 'visible' : 'hidden', boxShadow: '0 10px 40px rgba(0,0,0,0.02)' }}>
                           <div style={{ padding: '35px 40px', borderBottom: '1px solid #f1f5f9', display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: '#fcfdfe' }}>
                              <div>
                                 <div style={{ fontSize: '10px', fontWeight: 950, color: '#0f52ba', letterSpacing: '2px', marginBottom: '8px' }}>REFERRAL BRIEFING</div>
@@ -3397,7 +2754,7 @@ export default function AdminBoard() {
               </div>
             ) : (
               /* Global Referral Matrix View */
-              <div style={{ background: 'white', borderRadius: '24px', border: '1px solid #e2e8f0', overflow: 'hidden', boxShadow: '0 4px 20px rgba(0,0,0,0.01)', padding: '30px' }}>
+              <div style={{ background: 'white', borderRadius: '24px', border: '1px solid #e2e8f0', overflow: isTestMode ? 'visible' : 'hidden', boxShadow: '0 4px 20px rgba(0,0,0,0.01)', padding: '30px' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '25px', flexWrap: 'wrap', gap: '15px' }}>
                   <div>
                     <h3 style={{ fontSize: '18px', fontWeight: 900, color: '#1e293b', margin: 0 }}>REFERRAL CASE LEDGER</h3>
@@ -3641,7 +2998,7 @@ export default function AdminBoard() {
           return (
             <div key={u.id} className="personnel-card" style={{ 
               background: 'white', borderRadius: '24px', border: '1px solid #eee', 
-              padding: '30px', position: 'relative', overflow: 'hidden',
+              padding: '30px', position: 'relative', overflow: isTestMode ? 'visible' : 'hidden',
               boxShadow: '0 4px 20px rgba(0,0,0,0.02)', transition: 'all 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275)',
               cursor: 'default'
             }}>
@@ -3771,7 +3128,7 @@ export default function AdminBoard() {
             <div className={isSwitchingNode ? "pulse-loader-mini" : "tactical-node-active"} style={{ width: '10px', height: '10px', borderRadius: '50%', background: isSwitchingNode ? '#f39c12' : '#2ecc71', boxShadow: isSwitchingNode ? '0 0 10px rgba(243, 156, 18, 0.4)' : '0 0 10px rgba(46, 204, 113, 0.4)' }}></div>
             <div className="hub-identity" style={{ textAlign: 'left', overflow: 'hidden' }}>
               <div className="hub-label" style={{ fontSize: '7px', fontWeight: 950, color: isSwitchingNode ? '#f39c12' : '#aaa', letterSpacing: '1px', textTransform: 'uppercase' }}>{isSwitchingNode ? 'RECONFIGURING HUB...' : 'DEPLOYED HUB'}</div>
-              <div className="hub-name" style={{ fontSize: '13px', fontWeight: 950, color: '#1a1a2e', whiteSpace: 'nowrap', textOverflow: 'ellipsis', overflow: 'hidden', maxWidth: '180px', opacity: isSwitchingNode ? 0.5 : 1 }}>{activeCenter?.name?.toUpperCase()}</div>
+              <div className="hub-name" style={{ fontSize: '13px', fontWeight: 950, color: '#1a1a2e', whiteSpace: 'nowrap', textOverflow: 'ellipsis', overflow: isTestMode ? 'visible' : 'hidden', maxWidth: '180px', opacity: isSwitchingNode ? 0.5 : 1 }}>{activeCenter?.name?.toUpperCase()}</div>
             </div>
             <div style={{ fontSize: '10px', color: '#888', transition: 'transform 0.3s', transform: isSwitcherOpen ? 'rotate(180deg)' : 'rotate(0deg)' }}>
                 ▼
@@ -3865,7 +3222,7 @@ export default function AdminBoard() {
       </div>
       
       {/* Hub Controller Navigation */}
-      <div className="admin-tabs" style={{ 
+      <div className="admin-tabs flex-stack-mobile" style={{ 
         background: 'rgba(15, 82, 186, 0.03)', 
         backdropFilter: 'blur(10px)',
         padding: '6px', 
@@ -3873,7 +3230,9 @@ export default function AdminBoard() {
         border: '1px solid rgba(15, 82, 186, 0.1)', 
         marginBottom: '40px', 
         display: 'flex',
-        boxShadow: '0 4px 20px rgba(0,0,0,0.03)'
+        overflowX: 'auto', // Allow horizontal scroll for tabs on narrow tablets
+        boxShadow: '0 4px 20px rgba(0,0,0,0.03)',
+        scrollbarWidth: 'none' // Hide scrollbar for cleaner look
       }}>
         {['INTELLIGENCE', 'REFERRAL INTEL', 'PERSONNEL', 'HOSPITAL', 'FINANCE', 'PRESCRIPTION'].map(tab => (
           <button 

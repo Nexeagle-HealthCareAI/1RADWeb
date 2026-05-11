@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import apiClient, { BASE_URL } from '../api/apiClient';
 
 const ReportPreviewModal = ({ 
@@ -50,19 +50,6 @@ const ReportPreviewModal = ({
     }
   }, [isOpen, doctorId, appointmentId, patientData]);
 
-  if (!isOpen) return null;
-
-  // Extract content
-  const { mode, text, data, impression, advice, isFinalized } = reportContent;
-
-  const isPlain = !protocol?.letterheadBlobUrl;
-  console.log(`[ReportPreview] Scenario Mode: ${isPlain ? 'PLAIN_HEADER' : 'LETTERHEAD_BINDING'}`);
-  
-  // Per User: "Form 14 size" interpreted as 14px base font for letterhead-bound reports
-  const baseFontSize = isPlain ? (protocol?.fontSize || 12) : 14;
-  const contentStyle = `font-size: ${baseFontSize}px; line-height: 1.6; color: ${protocol?.fontColor || '#1e293b'}; font-family: ${protocol?.fontFamily || 'inherit'};`;
-
-  let bodyContent = '';
 
   const resolvedAssetUrl = useMemo(() => {
     if (!protocol?.letterheadBlobUrl) return null;
@@ -78,6 +65,21 @@ const ReportPreviewModal = ({
     
     return url;
   }, [protocol?.letterheadBlobUrl]);
+
+  if (!isOpen) return null;
+
+  // Extract content
+  const { mode, text, data, impression, advice, isFinalized } = reportContent;
+
+  const isPlain = !protocol?.letterheadBlobUrl;
+  console.log(`[ReportPreview] Scenario Mode: ${isPlain ? 'PLAIN_HEADER' : 'LETTERHEAD_BINDING'}`);
+  
+  // Per User: "Form 14 size" interpreted as 14px base font for letterhead-bound reports
+  const baseFontSize = isPlain ? (protocol?.fontSize || 12) : 14;
+  const contentStyle = `font-size: ${baseFontSize}px; line-height: 1.6; color: ${protocol?.fontColor || '#1e293b'}; font-family: ${protocol?.fontFamily || 'inherit'};`;
+
+  let bodyContent = '';
+
 
   if (!isPlain) {
     console.log(`[ReportPreview] Resolved Asset URL: ${resolvedAssetUrl}`);

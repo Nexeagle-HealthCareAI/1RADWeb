@@ -241,7 +241,7 @@ async function initCornerstone() {
         }
         
         const fastFailTimeout = new Promise((_, reject) => 
-          setTimeout(() => reject(new Error('FAST_FAIL')), 3000)
+          setTimeout(() => reject(new Error('FAST_FAIL')), 10000) // Increased from 3s to 10s for reliability
         );
 
         Promise.race([
@@ -256,10 +256,16 @@ async function initCornerstone() {
           },
           async (error) => {
             if (error.message === 'FAST_FAIL') {
-               console.warn(`[DICOM] Path A/B timed out (3s), escalating to Path C (Manual)`);
+               console.warn(`[DICOM] Path A/B timed out (10s), escalating to Path C (Manual)`);
                try {
                  const blobUrl = imageId.replace('wadouri:', '');
-                 const response = await fetch(blobUrl);
+                 const response = await fetch(blobUrl).catch(err => {
+                   if (err.name === 'TypeError' || err.message.includes('fetch')) {
+                     console.warn(`[DICOM] Blob fetch failed (likely revoked during cleanup): ${blobUrl}`);
+                     throw new Error("BLOB_REVOKED");
+                   }
+                   throw err;
+                 });
                  const arrayBuffer = await response.arrayBuffer();
                  const byteArray = new Uint8Array(arrayBuffer);
                  const dataSet = dicomParser.parseDicom(byteArray);
@@ -1409,14 +1415,20 @@ const AdvancedDicomViewer = ({
       }
 
       if (imageIds.length > 0) {
-        imageIds.forEach(id => {
-          try {
-            const blobUrl = id.replace('wadouri:', '');
-            if (blobUrl.startsWith('blob:')) {
-              URL.revokeObjectURL(blobUrl);
-            }
-          } catch (e) {}
-        });
+        // TACTICAL: Use a delayed revocation to prevent race conditions with 
+        // Cornerstone's background loaders and prefetchers.
+        const idsToRevoke = [...imageIds];
+        setTimeout(() => {
+          idsToRevoke.forEach(id => {
+            try {
+              const blobUrl = id.replace('wadouri:', '');
+              if (blobUrl.startsWith('blob:')) {
+                URL.revokeObjectURL(blobUrl);
+              }
+            } catch (e) {}
+          });
+          console.log(`[DICOM] Cleanup: Revoked ${idsToRevoke.length} blob URLs after delay`);
+        }, 5000); // 5 second buffer for pending fetches
       }
     };
   }, [isReady, files, engineId, viewportId, toolGroupId]);

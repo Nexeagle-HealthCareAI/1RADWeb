@@ -2241,29 +2241,6 @@ button, a, input[type="button"], input[type="submit"] {
 }
 
 @media (max-width: 1024px) {
-  /* Forced Slim Sidebar for Tablets */
-  .sidebar {
-    width: 80px !important;
-  }
-  
-  .sidebar .nav-label, 
-  .sidebar .brand, 
-  .sidebar .brand-subtitle, 
-  .sidebar .player-stats,
-  .sidebar .sidebar-footer .nav-label {
-    display: none !important;
-  }
-  
-  .sidebar .nav-item {
-    justify-content: center !important;
-    padding: 12px !important;
-  }
-
-  .sidebar .nav-icon {
-    margin-right: 0 !important;
-    font-size: 20px !important;
-  }
-
   .board-padding {
     padding: 80px 30px 30px 30px !important;
   }
@@ -2309,11 +2286,13 @@ button, a, input[type="button"], input[type="submit"] {
     border-radius: 0 !important;
     box-shadow: none !important;
   }
-}
 
-@media (max-width: 768px) {
   .mobile-header {
     display: flex !important;
+  }
+
+  .top-nav {
+    display: none !important;
   }
 
   .sidebar {
@@ -2324,6 +2303,7 @@ button, a, input[type="button"], input[type="submit"] {
     transform: translateX(-280px);
     width: 280px !important;
     box-shadow: 10px 0 30px rgba(0,0,0,0.3);
+    z-index: 2000;
   }
 
   .sidebar.mobile-open {
@@ -2348,7 +2328,8 @@ button, a, input[type="button"], input[type="submit"] {
   }
 
   .main-content {
-    padding-top: 60px; /* Space for mobile header */
+    padding-top: 60px !important; /* Space for mobile header */
+    width: 100% !important;
   }
 
   .board-padding {
