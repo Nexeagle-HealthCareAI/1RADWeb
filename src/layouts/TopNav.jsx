@@ -127,7 +127,7 @@ export default function TopNav({ currentTime }) {
                 <span style={{ fontSize: '14px' }}>{isOnline ? '🌐' : '📡'}</span>
               </div>
               <div style={{ display: 'flex', flexDirection: 'column' }}>
-                <span style={{ fontSize: '9px', fontWeight: 950, color: isOnline ? '#10b981' : '#ef4444', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                <span style={{ fontSize: '9px', fontWeight: 950, color: '#10b981', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
                   {isSyncing ? 'Syncing...' : isOnline ? 'Online' : 'Offline'}
                 </span>
                 <span style={{ fontSize: '10px', fontWeight: 700, color: '#64748b' }}>
@@ -135,33 +135,6 @@ export default function TopNav({ currentTime }) {
                 </span>
               </div>
             </div>
-
-            {/* Subscription Access */}
-            {canSeeSubscription && (
-              <div 
-                className="nav-button-hover"
-                onClick={() => navigate('/subscription')}
-                style={{ 
-                  display: 'flex', alignItems: 'center', gap: '10px', cursor: 'pointer',
-                  padding: '4px 12px', borderRadius: '10px', transition: 'all 0.2s'
-                }}
-              >
-                <div style={{ 
-                  width: '32px', height: '32px', borderRadius: '8px', 
-                  background: subscription?.isActive ? '#eff6ff' : '#f8fafc',
-                  display: 'flex', alignItems: 'center', justifyContent: 'center',
-                  border: `1px solid ${subscription?.isActive ? '#dbeafe' : '#e2e8f0'}`
-                }}>
-                  <span style={{ fontSize: '14px' }}>💎</span>
-                </div>
-                <div style={{ display: 'flex', flexDirection: 'column' }}>
-                  <span style={{ fontSize: '9px', fontWeight: 950, color: '#0f52ba', textTransform: 'uppercase', letterSpacing: '0.5px' }}>License</span>
-                  <span style={{ fontSize: '10px', fontWeight: 700, color: '#64748b' }}>
-                    {subscription?.planName || 'Standard'}
-                  </span>
-                </div>
-              </div>
-            )}
           </div>
         </div>
 

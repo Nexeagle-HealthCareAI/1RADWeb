@@ -501,15 +501,6 @@ export default function AdminBoard() {
     }
   }, [activeTab, selectedDateFilter, fetchStrategicOutlook]);
 
-  // Initial Subscription Check
-  const [showPlanSelection, setShowPlanSelection] = useState(false);
-  useEffect(() => {
-    if (subscription === null || (subscription && !subscription.isActive && !subscription.isTrial)) {
-      setShowPlanSelection(true);
-    } else {
-      setShowPlanSelection(false);
-    }
-  }, [subscription]);
 
 
 
@@ -3784,59 +3775,6 @@ export default function AdminBoard() {
         </div>
       )}
 
-      {/* Initial Subscription Protocol Modal */}
-      {showPlanSelection && (
-        <div style={{ position: 'fixed', inset: 0, background: 'rgba(10,22,40,0.9)', zIndex: 20000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '20px', backdropFilter: 'blur(10px)' }}>
-          <div style={{ background: 'white', borderRadius: '32px', width: '100%', maxWidth: '1000px', overflow: 'hidden', boxShadow: '0 50px 100px rgba(0,0,0,0.4)', animation: 'modalAppear 0.5s cubic-bezier(0.16, 1, 0.3, 1)' }}>
-            <div style={{ background: 'linear-gradient(135deg, #0a1628 0%, #0f52ba 100%)', padding: '40px', textAlign: 'center', color: 'white' }}>
-              <div style={{ fontSize: '10px', fontWeight: 950, color: '#00f2fe', letterSpacing: '4px', textTransform: 'uppercase', marginBottom: '12px' }}>Protocol Initialization Required</div>
-              <h2 style={{ fontSize: '28px', fontWeight: 950, letterSpacing: '-1px', margin: 0 }}>Choose Your Operational Plan</h2>
-              <p style={{ fontSize: '14px', opacity: 0.7, marginTop: '10px', maxWidth: '500px', marginInline: 'auto' }}>Select a licensing model to activate your clinical hub and begin mission processing.</p>
-            </div>
-
-            <div style={{ padding: '40px', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '30px', background: '#f8fafc' }}>
-              {/* Starter Trial */}
-              <div style={{ background: 'white', padding: '30px', borderRadius: '24px', border: '1px solid #e2e8f0', display: 'flex', flexDirection: 'column' }}>
-                <div style={{ fontSize: '24px', marginBottom: '15px' }}>⏳</div>
-                <h3 style={{ fontSize: '20px', fontWeight: 950, color: '#1e293b', margin: '0 0 10px' }}>Starter Trial</h3>
-                <p style={{ fontSize: '13px', color: '#64748b', fontWeight: 600, flex: 1 }}>Explore every feature of NexEgale with zero commitment for 15 days.</p>
-                <div style={{ margin: '20px 0', padding: '15px', background: '#f1f5f9', borderRadius: '12px' }}>
-                  <div style={{ fontSize: '24px', fontWeight: 950, color: '#1e293b' }}>₹0</div>
-                  <div style={{ fontSize: '11px', color: '#94a3b8', fontWeight: 700 }}>15 Days Free</div>
-                </div>
-                <button 
-                  onClick={() => navigate('/subscription')}
-                  style={{ width: '100%', padding: '16px', borderRadius: '14px', border: '1.5px solid #e2e8f0', background: 'white', color: '#1e293b', fontWeight: 950, cursor: 'pointer' }}
-                >
-                  Start Free Trial →
-                </button>
-              </div>
-
-              {/* Professional */}
-              <div style={{ background: 'white', padding: '30px', borderRadius: '24px', border: '2px solid #0f52ba', display: 'flex', flexDirection: 'column', position: 'relative', boxShadow: '0 20px 40px rgba(15,82,186,0.1)' }}>
-                <div style={{ position: 'absolute', top: '20px', right: '20px', background: '#0f52ba', color: 'white', fontSize: '10px', fontWeight: 950, padding: '5px 12px', borderRadius: '20px' }}>RECOMMENDED</div>
-                <div style={{ fontSize: '24px', marginBottom: '15px' }}>🚀</div>
-                <h3 style={{ fontSize: '20px', fontWeight: 950, color: '#1e293b', margin: '0 0 10px' }}>Professional</h3>
-                <p style={{ fontSize: '13px', color: '#64748b', fontWeight: 600, flex: 1 }}>Built for high-volume radiology centres and diagnostic labs.</p>
-                <div style={{ margin: '20px 0', padding: '15px', background: '#eff6ff', borderRadius: '12px' }}>
-                  <div style={{ fontSize: '24px', fontWeight: 950, color: '#0f52ba' }}>₹4,999</div>
-                  <div style={{ fontSize: '11px', color: '#0f52ba', fontWeight: 700 }}>Per month / center</div>
-                </div>
-                <button 
-                  onClick={() => navigate('/subscription')}
-                  style={{ width: '100%', padding: '16px', borderRadius: '14px', border: 'none', background: 'linear-gradient(135deg, #0f52ba, #1e40af)', color: 'white', fontWeight: 950, cursor: 'pointer', boxShadow: '0 10px 20px rgba(15,82,186,0.3)' }}
-                >
-                  Activate Professional →
-                </button>
-              </div>
-            </div>
-            
-            <div style={{ padding: '20px', textAlign: 'center', borderTop: '1px solid #f1f5f9', background: 'white' }}>
-              <button onClick={() => logout()} style={{ background: 'none', border: 'none', color: '#94a3b8', fontSize: '12px', fontWeight: 700, cursor: 'pointer', textDecoration: 'underline' }}>Sign out and return later</button>
-            </div>
-          </div>
-        </div>
-      )}
 
     </div>
   );

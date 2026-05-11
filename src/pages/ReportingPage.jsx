@@ -2814,11 +2814,11 @@ const ReportingPage = () => {
               }}
             >NARRATIVE_FREEFLOW</button>
             <button
-              onClick={() => setActiveTab('Patient Timeline')}
+              onClick={() => navigate(`/patient-timeline/${appointmentId}`, { state: { patient: activeAppointment, returnPath: `/reporting/${appointmentId}` } })}
               style={{
                 padding: '6px 15px', borderRadius: '7px', border: 'none',
-                background: activeTab === 'Patient Timeline' ? '#7c3aed' : 'transparent',
-                color: activeTab === 'Patient Timeline' ? 'white' : '#64748b',
+                background: 'transparent',
+                color: '#64748b',
                 fontWeight: 900, fontSize: '10px', cursor: 'pointer',
                 transition: 'all 0.2s cubic-bezier(0.4, 0, 0.2, 1)',
                 display: 'flex', alignItems: 'center', gap: '5px'
@@ -2826,29 +2826,12 @@ const ReportingPage = () => {
             >
               🕒 TIMELINE
               {patientHistory.length > 0 && (
-                <span style={{
-                  background: activeTab === 'Patient Timeline' ? 'rgba(255,255,255,0.3)' : '#ef4444',
-                  color: 'white',
-                  borderRadius: '99px',
-                  fontSize: '8px',
-                  fontWeight: 950,
-                  padding: '1px 5px',
-                  lineHeight: 1.4,
-                  minWidth: '16px',
-                  textAlign: 'center'
-                }}>
+                <span style={{ background: '#ef4444', color: 'white', borderRadius: '99px', fontSize: '8px', fontWeight: 950, padding: '1px 5px', lineHeight: 1.4, minWidth: '16px', textAlign: 'center' }}>
                   {patientHistory.length}
                 </span>
               )}
               {loadingTimeline && (
-                <span style={{
-                  display: 'inline-block',
-                  width: '8px', height: '8px',
-                  border: '1.5px solid rgba(100,116,139,0.3)',
-                  borderTopColor: '#64748b',
-                  borderRadius: '50%',
-                  animation: 'spin 0.8s linear infinite'
-                }} />
+                <span style={{ display: 'inline-block', width: '8px', height: '8px', border: '1.5px solid rgba(100,116,139,0.3)', borderTopColor: '#64748b', borderRadius: '50%', animation: 'spin 0.8s linear infinite' }} />
               )}
             </button>
           </div>
@@ -3885,21 +3868,14 @@ const ReportingPage = () => {
                   gap: '5px',
                   position: 'relative'
                 }}
-                onClick={() => setActiveTab('Patient Timeline')}
+                onClick={() => navigate(`/patient-timeline/${appointmentId}`, { state: { patient: activeAppointment, returnPath: `/reporting/${appointmentId}` } })}
               >
                 🕒 TIMELINE
-                <span style={{
-                  background: '#ef4444',
-                  color: 'white',
-                  borderRadius: '99px',
-                  fontSize: '8px',
-                  fontWeight: 950,
-                  padding: '1px 5px',
-                  letterSpacing: '0.5px',
-                  lineHeight: 1.4
-                }}>
-                  {patientHistory.length}
-                </span>
+                {patientHistory.length > 0 && (
+                  <span style={{ background: '#ef4444', color: 'white', borderRadius: '99px', fontSize: '8px', fontWeight: 950, padding: '1px 5px', letterSpacing: '0.5px', lineHeight: 1.4 }}>
+                    {patientHistory.length}
+                  </span>
+                )}
               </div>
             )}
           </div>
