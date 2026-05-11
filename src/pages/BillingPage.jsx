@@ -1215,8 +1215,7 @@ export default function BillingPage() {
              ) : (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '15px' }}>
                   <div style={{ background: '#f0fdf4', border: '1px solid #bcf0da', padding: '20px', borderRadius: '16px', textAlign: 'center' }}>
-                     <div style={{ fontSize: '24px', marginBottom: '10px' }}>✅</div>
-                     <div style={{ fontSize: '12px', fontWeight: 950, color: '#166534' }}>TRANSACTION SETTLED</div>
+                     <div style={{ fontSize: '12px', fontWeight: 950, color: '#166534', textTransform: 'uppercase', letterSpacing: '1px' }}>SUCCESS: TRANSACTION SETTLED</div>
                      <div style={{ fontSize: '10px', color: '#166534', opacity: 0.7, marginTop: '4px' }}>Processed on {new Date(selectedInvoice.createdAt).toLocaleString()}</div>
                   </div>
                   <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '15px' }}>
@@ -1224,13 +1223,13 @@ export default function BillingPage() {
                        onClick={handlePrintA4}
                        style={{ padding: '16px', borderRadius: '16px', border: '1px solid #0f52ba', background: 'white', color: '#0f52ba', fontWeight: 950, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}
                      >
-                       <span>📄</span> PRINT A4 INVOICE
+                       PRINT A4 INVOICE
                      </button>
                      <button 
                        onClick={handlePrintThermal}
                        style={{ padding: '16px', borderRadius: '16px', border: 'none', background: 'linear-gradient(135deg, #0f52ba, #061a40)', color: 'white', fontWeight: 950, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}
                      >
-                       <span>📠</span> THERMAL RECEIPT
+                       THERMAL RECEIPT
                      </button>
                   </div>
                 </div>
@@ -1269,9 +1268,9 @@ export default function BillingPage() {
                        background: exportMode === 'ALL' ? '#f0fdf4' : 'white', textAlign: 'center', cursor: 'pointer'
                      }}
                    >
-                     <div style={{ fontSize: '24px', marginBottom: '8px' }}>📊</div>
+                     
                      <div style={{ fontSize: '11px', fontWeight: 950, color: exportMode === 'ALL' ? '#059669' : '#64748b' }}>FULL LEDGER</div>
-                     <div style={{ fontSize: '8px', color: '#94a3b8', marginTop: '4px' }}>ALL RECOREDS (SLOW)</div>
+                     <div style={{ fontSize: '8px', color: '#94a3b8', marginTop: '4px' }}>ALL RECORDS (SLOW)</div>
                    </button>
                    <button 
                      onClick={() => setExportMode('RANGE')}
@@ -1280,7 +1279,7 @@ export default function BillingPage() {
                        background: exportMode === 'RANGE' ? '#f0fdf4' : 'white', textAlign: 'center', cursor: 'pointer'
                      }}
                    >
-                     <div style={{ fontSize: '24px', marginBottom: '8px' }}>📅</div>
+                     
                      <div style={{ fontSize: '11px', fontWeight: 950, color: exportMode === 'RANGE' ? '#059669' : '#64748b' }}>TEMPORAL RANGE</div>
                      <div style={{ fontSize: '8px', color: '#94a3b8', marginTop: '4px' }}>CUSTOM DATE WINDOW</div>
                    </button>
@@ -1313,7 +1312,7 @@ export default function BillingPage() {
              <div style={{ background: '#f8fafc', padding: '20px', borderRadius: '16px', border: '1px solid #f1f5f9', marginBottom: '40px' }}>
                 <div style={{ fontSize: '9px', fontWeight: 950, color: '#64748b', letterSpacing: '1px', marginBottom: '10px' }}>REVENUE_EXTRACTION_DETAILS</div>
                 <div style={{ display: 'flex', gap: '15px' }}>
-                   <div style={{ fontSize: '20px' }}>🛰️</div>
+                   
                    <div>
                       <div style={{ fontSize: '11px', fontWeight: 950, color: '#1e293b' }}>Format: Microsoft Excel (.xlsx)</div>
                       <div style={{ fontSize: '10px', color: '#64748b', marginTop: '2px' }}>Includes full audit trail and line-item manifest.</div>
@@ -1508,7 +1507,7 @@ export default function BillingPage() {
                  {!selectedPatient ? (
                    <>
                     <div style={{ position: 'relative' }}>
-                      <span style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', opacity: 0.5 }}>🔍</span>
+
                       <input 
                           type="text"
                           value={patientSearchQuery}
@@ -1840,9 +1839,9 @@ export default function BillingPage() {
             <span style={{ opacity: 0.2 }}>|</span>
             <span style={{ cursor: 'pointer', opacity: billingViewMode === 'EXPENSES' ? 1 : 0.4, color: '#dc2626' }} onClick={() => setBillingViewMode('EXPENSES')}>EXPENSE LEDGER</span>
             <span style={{ opacity: 0.2 }}>|</span>
-            <span style={{ cursor: 'pointer', opacity: billingViewMode === 'REFERRAL_CUTS' ? 1 : 0.4, color: '#e11d48' }} onClick={() => setBillingViewMode('REFERRAL_CUTS')}>REFERRAL HUB 💸</span>
+            <span style={{ cursor: 'pointer', opacity: billingViewMode === 'REFERRAL_CUTS' ? 1 : 0.4, color: '#e11d48' }} onClick={() => setBillingViewMode('REFERRAL_CUTS')}>REFERRAL HUB</span>
             <span style={{ opacity: 0.2 }}>|</span>
-            <span style={{ cursor: 'pointer', opacity: billingViewMode === 'ANALYTICS' ? 1 : 0.4, color: '#0f52ba' }} onClick={() => setBillingViewMode('ANALYTICS')}>ANALYTICS HUB 📊</span>
+            <span style={{ cursor: 'pointer', opacity: billingViewMode === 'ANALYTICS' ? 1 : 0.4, color: '#0f52ba' }} onClick={() => setBillingViewMode('ANALYTICS')}>ANALYTICS HUB</span>
           </h1>
           <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
             <span style={{ 
@@ -1858,7 +1857,6 @@ export default function BillingPage() {
         </div>
         <div style={{ display: 'flex', gap: '15px' }}>
            <div style={{ position: 'relative' }}>
-              <span style={{ position: 'absolute', left: '15px', top: '50%', transform: 'translateY(-50%)', opacity: 0.4 }}>🔍</span>
               <input 
                 type="text" 
                 placeholder="SEARCH INVOICES / PATIENTS..." 
@@ -1876,7 +1874,7 @@ export default function BillingPage() {
                  boxShadow: '0 8px 20px rgba(16, 185, 129, 0.2)'
                }}
              >
-               ⚡ EXPORT FISCAL DATA
+               EXPORT FISCAL DATA
              </button>
              {localStorage.getItem('1rad_invoices') && (
                <button 
@@ -1887,14 +1885,14 @@ export default function BillingPage() {
                    background: '#f8fafc', color: '#0f52ba', fontSize: '11px', fontWeight: 950, cursor: 'pointer',
                  }}
                >
-                 {isSyncing ? 'SYNCING...' : '🔄 SYNC LOCAL'}
+                 {isSyncing ? 'SYNCING...' : 'SYNC LOCAL'}
                </button>
              )}
              <button 
                onClick={() => setIsNewInvoiceDrawerOpen(true)}
                style={{ padding: '12px 24px', borderRadius: '12px', border: 'none', background: '#0f52ba', color: 'white', fontWeight: 800, fontSize: '11px', cursor: 'pointer', boxShadow: '0 8px 20px rgba(15, 82, 186, 0.2)' }}
              >
-               + NEW MANUAL INVOICE
+               NEW MANUAL INVOICE
              </button>
           </div>
         </div>
@@ -2040,10 +2038,7 @@ export default function BillingPage() {
                  </div>
 
                  <div style={{ background: 'linear-gradient(135deg, #0f172a 0%, #1e293b 100%)', borderRadius: '24px', padding: '30px', color: 'white' }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '20px' }}>
-                       <span style={{ fontSize: '24px' }}>📉</span>
-                       <h3 style={{ fontSize: '14px', fontWeight: 950, letterSpacing: '1px' }}>OUTFLOW_INTELLIGENCE</h3>
-                    </div>
+                     <h3 style={{ fontSize: '14px', fontWeight: 950, letterSpacing: '1px' }}>OUTFLOW_INTELLIGENCE</h3>
                     <p style={{ fontSize: '12px', color: '#94a3b8', lineHeight: '1.6', marginBottom: '20px' }}>
                       Your strategic referral payouts account for <strong>{outflowStats.referralPercentage}%</strong> of the total center expenditure. 
                       Operational costs are currently <strong>₹{outflowStats.operationalTotal.toLocaleString()}</strong>.
@@ -2251,22 +2246,22 @@ export default function BillingPage() {
                                fontSize: '10px', fontWeight: 950, 
                                cursor: recordedPayouts.has(inv.displayId) ? 'default' : 'pointer', 
                                boxShadow: recordedPayouts.has(inv.displayId) ? 'none' : '0 2px 5px rgba(225,29,72,0.1)' 
-                             }} >{recordedPayouts.has(inv.displayId) ? 'PAID ✅' : 'CUT 💸'}</button>
+                             }} >{recordedPayouts.has(inv.displayId) ? 'SETTLED' : 'RECORD PAYOUT'}</button>
                            <button 
                              onClick={() => handlePrintA4(inv)}
                              title="Print A4 Invoice"
-                             style={{ padding: '8px', borderRadius: '8px', border: '1px solid #0f52ba', background: 'white', color: '#0f52ba', fontSize: '12px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
-                           >📄</button>
+                             style={{ padding: '8px 12px', borderRadius: '8px', border: '1px solid #0f52ba', background: 'white', color: '#0f52ba', fontSize: '9px', fontWeight: 950, cursor: 'pointer' }}
+                           >A4</button>
                            <button 
                              onClick={() => handlePrintThermal(inv)}
                              title="Print Thermal Receipt"
-                             style={{ padding: '8px', borderRadius: '8px', border: 'none', background: '#0f52ba', color: 'white', fontSize: '12px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
-                           >📠</button>
+                             style={{ padding: '8px 12px', borderRadius: '8px', border: 'none', background: '#0f52ba', color: 'white', fontSize: '9px', fontWeight: 950, cursor: 'pointer' }}
+                           >SLIP</button>
                            <button 
                              onClick={() => handlePrintReceipt(inv)}
                              title="Print Payment Receipt"
-                             style={{ padding: '8px', borderRadius: '8px', border: '1px solid #10b981', background: 'white', color: '#10b981', fontSize: '12px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
-                           >🧾</button>
+                             style={{ padding: '8px 12px', borderRadius: '8px', border: '1px solid #10b981', background: 'white', color: '#10b981', fontSize: '9px', fontWeight: 950, cursor: 'pointer' }}
+                           >RCPT</button>
                            <div style={{ width: '1px', height: '20px', background: '#e2e8f0', margin: '0 5px' }}></div>
                           <button 
                             onClick={() => { setSelectedInvoice(inv); setIsInvoiceDrawerOpen(true); }}
@@ -2521,9 +2516,9 @@ export default function BillingPage() {
                               <tr key={idx} style={{ borderBottom: '1px solid #f8fafc', transition: 'all 0.2s' }}>
                                   <td style={{ padding: '25px 10px' }}>
                                       <div style={{ display: 'flex', alignItems: 'center', gap: '15px' }}>
-                                          <div style={{ width: '36px', height: '36px', borderRadius: '12px', background: '#f0f3fd', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '14px' }}>
-                                              {item.modality === 'MRI' ? '🧠' : item.modality === 'CT' ? '🧬' : item.modality === 'X-RAY' ? '🦴' : '📡'}
-                                          </div>
+                                           <div style={{ width: '36px', height: '36px', borderRadius: '12px', background: '#f0f3fd', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '10px', fontWeight: 950, color: '#0f52ba' }}>
+                                               {item.modality.slice(0, 2)}
+                                           </div>
                                           <span style={{ fontSize: '13px', fontWeight: 950, color: '#1e293b' }}>{item.modality}</span>
                                       </div>
                                   </td>

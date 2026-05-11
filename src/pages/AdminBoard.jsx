@@ -1043,7 +1043,7 @@ export default function AdminBoard() {
          </div>
          <div style={{ display: 'flex', gap: '15px' }}>
             <div className="search-input-group" style={{ width: '300px' }}>
-               <span className="search-icon">🔍</span>
+
                <input 
                   type="text" 
                   placeholder="Universal Search..." 
@@ -1248,7 +1248,7 @@ export default function AdminBoard() {
         </div>
 
         <div style={{ padding: '40px', background: '#f8f9fa', borderRadius: '12px', border: '1px dashed #ccc', textAlign: 'center', color: '#888' }}>
-             <div style={{ fontSize: '24px', marginBottom: '10px' }}>📁</div>
+             <div style={{ fontSize: '10px', fontWeight: 900, color: '#0f52ba', opacity: 0.1, marginBottom: '10px' }}>REPOSITORY</div>
              <div style={{ fontSize: '12px', fontWeight: 900 }}>REPORTING PROTOCOLS DEACTIVATED</div>
              <div style={{ fontSize: '10px' }}>Protocol branding and template management has been moved to the core configuration bay.</div>
           </div>
@@ -1293,7 +1293,7 @@ export default function AdminBoard() {
                    display: 'flex', alignItems: 'center', justifyContent: 'center',
                    fontSize: '32px', boxShadow: '0 10px 25px rgba(15, 82, 186, 0.2)'
                  }}>
-                    {subscription?.isTrial ? '⏳' : '💎'}
+                    <div style={{ fontSize: '10px', fontWeight: 950, color: 'white' }}>{subscription?.isTrial ? 'TRIAL' : 'PREMIUM'}</div>
                  </div>
                  <div>
                     <div style={{ fontSize: '24px', fontWeight: 950, color: '#1e293b', letterSpacing: '-1px' }}>
@@ -1360,9 +1360,9 @@ export default function AdminBoard() {
             <div style={{ display: 'flex', gap: '20px', alignItems: 'center' }}>
                <button 
                  onClick={() => setViewingHubId(null)}
-                 style={{ width: '40px', height: '40px', borderRadius: '12px', border: '1px solid #eee', background: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', fontSize: '18px' }}
+                 style={{ width: 'auto', height: '40px', borderRadius: '12px', border: '1px solid #eee', background: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', fontSize: '10px', fontWeight: 950, padding: '0 15px' }}
                >
-                 ←
+                 BACK
                </button>
                <div>
                  <h2 style={{ fontSize: '12px', fontWeight: 900, textTransform: 'uppercase', letterSpacing: '2px', color: '#0f52ba', marginBottom: '4px' }}>Hub Configuration</h2>
@@ -1378,7 +1378,7 @@ export default function AdminBoard() {
                 boxShadow: '0 8px 20px rgba(15, 82, 186, 0.2)'
               }}
             >
-              EDIT CONFIGURATION ⚙️
+              EDIT CONFIGURATION
             </button>
           </div>
 
@@ -1386,12 +1386,12 @@ export default function AdminBoard() {
             <div style={{ background: 'white', padding: '40px', borderRadius: '24px', border: '1px solid #eee', boxShadow: '0 10px 40px rgba(0,0,0,0.02)', position: 'relative', overflow: 'hidden' }}>
               <div style={{ position: 'absolute', top: 0, right: 0, width: '150px', height: '150px', background: 'linear-gradient(135deg, transparent 50%, rgba(15, 82, 186, 0.03) 50%)', borderRadius: '0 24px 0 0' }}></div>
               <div style={{ display: 'flex', gap: '40px' }}>
-                <div style={{ width: '120px', height: '120px', background: '#f8fbfc', borderRadius: '20px', border: '1px solid #edf2f7', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '48px' }}>🏥</div>
+                <div style={{ width: '120px', height: '120px', background: '#f8fbfc', borderRadius: '20px', border: '1px solid #edf2f7', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '10px', fontWeight: 950, color: '#0f52ba' }}>HUB_IMAGE</div>
                 <div style={{ flex: 1 }}>
                   <span style={{ fontSize: '10px', fontWeight: 950, color: '#0f52ba', letterSpacing: '3px', textTransform: 'uppercase' }}>INSTITUTIONAL_IDENTITY</span>
                   <h1 style={{ fontSize: '32px', fontWeight: 950, color: '#1a1a2e', marginTop: '8px', marginBottom: '4px' }}>{(hospitalData.hospitalName || 'UNCONFIGURED_HUB').toUpperCase()}</h1>
                   <p style={{ fontSize: '14px', color: '#64748b', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '8px' }}>
-                    <span>📍</span> {hospitalData.hospitalAddress || 'Address not synchronized.'}
+                    <span>ADR:</span> {hospitalData.hospitalAddress || 'Address not synchronized.'}
                   </p>
                 </div>
               </div>
@@ -1405,7 +1405,7 @@ export default function AdminBoard() {
                 { label: 'QUALITY ACCREDIT', value: hospitalData.nabhNumber, icon: '🏆' }
               ].map(item => (
                 <div key={item.label} style={{ background: 'white', padding: '25px', borderRadius: '20px', border: '1px solid #eee', display: 'flex', alignItems: 'center', gap: '20px' }}>
-                  <div style={{ width: '45px', height: '45px', borderRadius: '12px', background: '#f8fafc', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '20px' }}>{item.icon}</div>
+                  <div style={{ width: '45px', height: '45px', borderRadius: '12px', background: '#f8fafc', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '10px', fontWeight: 950, color: '#94a3b8' }}>{item.label.slice(0, 3)}</div>
                   <div>
                     <div style={{ fontSize: '9px', fontWeight: 950, color: '#94a3b8', letterSpacing: '1px' }}>{item.label}</div>
                     <div style={{ fontSize: '15px', fontWeight: 800, color: '#1e293b', marginTop: '2px' }}>{item.value || 'NOT_SYNCHRONIZED'}</div>
@@ -1504,7 +1504,7 @@ export default function AdminBoard() {
                                      border: '3px solid white'
                                    }}></div>
                                    
-                                   <div style={{ width: '45px', height: '45px', borderRadius: '14px', background: isActive ? '#f0f7ff' : '#f8fafc', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '18px' }}>🏢</div>
+                                   <div style={{ width: '45px', height: '45px', borderRadius: '14px', background: isActive ? '#f0f7ff' : '#f8fafc', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '10px', fontWeight: 950, color: isActive ? '#0f52ba' : '#64748b' }}>HUB</div>
                                    <div>
                                       <h4 style={{ fontSize: '15px', fontWeight: 950, color: '#1a1a2e', marginBottom: '4px' }}>{hub.hospitalName.toUpperCase()}</h4>
                                       <div style={{ fontSize: '10px', color: '#64748b', fontWeight: 700 }}>NODE_IDENTITY: {hub.hospitalId.split('-')[0].toUpperCase()}</div>
@@ -1559,7 +1559,7 @@ export default function AdminBoard() {
                                }}
                              >
                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '20px' }}>
-                                  <div style={{ width: '50px', height: '50px', borderRadius: '14px', background: '#f8fafc', border: '1px solid #e0efff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '20px' }}>🏙️</div>
+                                  <div style={{ width: '50px', height: '50px', borderRadius: '14px', background: '#f8fafc', border: '1px solid #e0efff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '10px', fontWeight: 950, color: '#0f52ba' }}>NODE</div>
                                   <div style={{ width: '10px', height: '10px', borderRadius: '50%', background: isActive ? '#0f52ba' : '#cbd5e1' }}></div>
                                </div>
                                <h3 style={{ fontSize: '18px', fontWeight: 950, color: '#1a1a2e', marginBottom: '8px' }}>{hub.hospitalName.toUpperCase()}</h3>
@@ -1721,11 +1721,11 @@ export default function AdminBoard() {
               
               <div style={{ display: 'grid', gap: '25px' }}>
                 {[
-                  { id: 'headerMargin', label: 'HEADER GAP', icon: '🔝', min: 8, max: 150 },
-                  { id: 'leftMargin', label: 'LEFT GUTTER', icon: '⬅️', min: 8, max: 100 },
-                  { id: 'rightMargin', label: 'RIGHT GUTTER', icon: '➡️', min: 8, max: 100 },
-                  { id: 'bottomMargin', label: 'FOOTER GAP', icon: '⬇️', min: 8, max: 100 },
-                  { id: 'fontSize', label: 'FONT SIZE', icon: '🔡', min: 8, max: 32 }
+                  { id: 'headerMargin', label: 'HEADER GAP', icon: 'TOP', min: 8, max: 150 },
+                  { id: 'leftMargin', label: 'LEFT GUTTER', icon: 'LEFT', min: 8, max: 100 },
+                  { id: 'rightMargin', label: 'RIGHT GUTTER', icon: 'RIGHT', min: 8, max: 100 },
+                  { id: 'bottomMargin', label: 'FOOTER GAP', icon: 'BOTTOM', min: 8, max: 100 },
+                  { id: 'fontSize', label: 'FONT SIZE', icon: 'TEXT', min: 8, max: 32 }
                 ].map(m => (
                   <div key={m.id}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '10px', alignItems: 'center' }}>
@@ -1778,7 +1778,6 @@ export default function AdminBoard() {
                 }} onClick={() => setIsTestMode(!isTestMode)}>
                   <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '8px' }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                      <span style={{ fontSize: '20px' }}>🧪</span>
                       <span style={{ fontSize: '11px', fontWeight: 950, color: isTestMode ? 'white' : '#1e293b', letterSpacing: '1px' }}>
                         TEST MODE
                       </span>
@@ -1818,7 +1817,6 @@ export default function AdminBoard() {
                   border: '1px solid #bae6fd'
                 }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '15px' }}>
-                    <span style={{ fontSize: '18px' }}>📑</span>
                     <div>
                       <span style={{ fontSize: '11px', fontWeight: 950, color: '#0369a1', letterSpacing: '1px', display: 'block' }}>
                         OVERFLOW PAGES
@@ -1893,7 +1891,7 @@ export default function AdminBoard() {
                     border: '2px dashed #e2e8f0', padding: '20px', borderRadius: '18px', textAlign: 'center',
                     background: '#f8fafc', transition: 'all 0.2s', cursor: 'pointer'
                   }} onClick={() => document.getElementById('letterhead-upload').click()}>
-                    <div style={{ fontSize: '20px', marginBottom: '8px' }}>📑</div>
+                    <div style={{ fontSize: '10px', fontWeight: 950, color: '#0f52ba', marginBottom: '8px' }}>ARCHIVE</div>
                     <div style={{ fontSize: '10px', fontWeight: 950, color: '#0f52ba' }}>UPLOAD REFERENCE PDF</div>
                     <div style={{ fontSize: '9px', color: '#94a3b8', marginTop: '4px' }}>Supports PDF, JPG, PNG</div>
                     <input 
@@ -2013,7 +2011,6 @@ export default function AdminBoard() {
         {/* Intelligence Header: Real-time Flux Search */}
         <div style={{ background: 'white', padding: '20px 30px', borderRadius: '24px', border: '1px solid #e2e8f0', marginBottom: '30px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
            <div style={{ display: 'flex', alignItems: 'center', gap: '15px', fontSize: '13px', fontWeight: 950, color: '#1e293b' }}>
-              <span style={{ color: '#0f52ba' }}>📡</span>
               <span>Regional Source Outlook</span>
               <span style={{ color: '#94a3b8', fontSize: '10px' }}>LOGGED DATE: {selectedDateFilter === TODAY ? 'TODAY' : selectedDateFilter}</span>
            </div>
@@ -3499,7 +3496,7 @@ export default function AdminBoard() {
                                  onClick={() => setShowPasswords(!showPasswords)}
                                  style={{ position: 'absolute', right: 0, bottom: '10px', background: 'none', border: 'none', cursor: 'pointer', fontSize: '12px', opacity: 0.5 }}
                                >
-                                 {showPasswords ? '👁️‍🗨️' : '👁️'}
+                                 {showPasswords ? 'HIDE' : 'SHOW'}
                                </button>
                            </div>
                            <div className="form-group" style={{ flex: 1 }}>
@@ -3516,11 +3513,11 @@ export default function AdminBoard() {
                            
                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
                               {[
-                                { id: 'doctor', label: 'Doctor', icon: '🩺', desc: 'Precision Reporting', color: 'var(--tactical-cyan)' },
-                                { id: 'technician', label: 'Technician', icon: '🛠️', desc: 'Ops & Acquisition', color: '#f39c12' },
-                                { id: 'receptionist', label: 'Receptionist', icon: '📅', desc: 'Patient Dispatch', color: '#e84393' },
-                                { id: 'admin', label: 'Admin', icon: '🔑', desc: 'Governance Control', color: '#0f52ba' },
-                                ...(currentUser.roles?.[0] === 'admindoctor' ? [{ id: 'admindoctor', label: 'AdminDoctor', icon: '🔱', desc: 'Master Authority', color: 'var(--tactical-indigo)' }] : [])
+                                { id: 'doctor', label: 'Doctor', desc: 'Precision Reporting', color: 'var(--tactical-cyan)' },
+                                { id: 'technician', label: 'Technician', desc: 'Ops & Acquisition', color: '#f39c12' },
+                                { id: 'receptionist', label: 'Receptionist', desc: 'Patient Dispatch', color: '#e84393' },
+                                { id: 'admin', label: 'Admin', desc: 'Governance Control', color: '#0f52ba' },
+                                ...(currentUser.roles?.[0] === 'admindoctor' ? [{ id: 'admindoctor', label: 'AdminDoctor', desc: 'Master Authority', color: 'var(--tactical-indigo)' }] : [])
                               ].map(role => {
                                 const isSelected = editUser.roles.includes(role.id);
                                 return (
@@ -3558,7 +3555,7 @@ export default function AdminBoard() {
                                       <div style={{ fontSize: '12px', fontWeight: 950, color: isSelected ? role.color : '#1a1a2e' }}>{role.label.toUpperCase()}</div>
                                       <div style={{ fontSize: '8px', color: '#aaa', fontWeight: 700 }}>{role.desc.toUpperCase()}</div>
                                     </div>
-                                    {isSelected && <div style={{ color: role.color, fontSize: '10px' }}>✓</div>}
+                                    {isSelected && <div style={{ color: role.color, fontSize: '10px' }}>[x]</div>}
                                   </div>
                                 );
                               })}
@@ -3575,7 +3572,6 @@ export default function AdminBoard() {
                             display: 'flex',
                             gap: '12px'
                           }}>
-                             <span style={{ fontSize: '18px' }}>📋</span>
                              <div style={{ fontSize: '10px', color: '#0f52ba', fontWeight: 800, lineHeight: 1.4 }}>
                                 CLINICAL ACTIVATION DETECTED: <br/>
                                 <span style={{ opacity: 0.7 }}>Phase 2 will initiate clinical credential syncing for reporting authorization.</span>
@@ -3596,7 +3592,6 @@ export default function AdminBoard() {
                           position: 'relative',
                           overflow: 'hidden'
                         }}>
-                          <div style={{ position: 'absolute', top: 0, right: 0, padding: '10px', opacity: 0.1, fontSize: '40px' }}>🩺</div>
                           <p style={{ fontSize: '10px', fontWeight: 950, color: '#0f52ba', letterSpacing: '2px', marginBottom: '8px' }}>CLINICAL REGISTRY</p>
                           <p style={{ fontSize: '12px', color: '#64748b', fontWeight: 600, lineHeight: 1.5 }}>Authorized clinical reporting requires verified professional credentials and licensing data.</p>
                         </div>
@@ -3705,7 +3700,7 @@ export default function AdminBoard() {
                                   <span>{s.name}</span>
                                   {isCustom && <span style={{ fontSize: '7px', color: '#0f52ba', display: 'block', fontWeight: 900 }}>CUSTOM</span>}
                                </div>
-                               <button className={`builder-btn ${isActive ? 'active' : ''}`} onClick={() => toggleSection(s.id)}>{isActive ? '👁️' : '🕶️'}</button>
+                               <button className={`builder-btn ${isActive ? 'active' : ''}`} onClick={() => toggleSection(s.id)}>{isActive ? 'ON' : 'OFF'}</button>
                             </div>
                           );
                        })}
@@ -3727,7 +3722,7 @@ export default function AdminBoard() {
             <button onClick={() => setImportResult(null)} style={{ position: 'absolute', top: '20px', right: '20px', background: 'none', border: 'none', fontSize: '20px', cursor: 'pointer', opacity: 0.5 }}>✕</button>
             
             <div style={{ textAlign: 'center', marginBottom: '25px' }}>
-              <div style={{ width: '60px', height: '60px', borderRadius: '50%', background: '#e9f7ef', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '30px', margin: '0 auto 15px' }}>🛡️</div>
+              <div style={{ width: '60px', height: '60px', borderRadius: '50%', background: '#e9f7ef', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '10px', fontWeight: 950, color: '#2ecc71', margin: '0 auto 15px', border: '1px solid #2ecc7130' }}>OK</div>
               <h3 style={{ fontSize: '16px', fontWeight: 950, color: '#1e293b' }}>IMPORT RECONNAISSANCE REPORT</h3>
               <p style={{ fontSize: '11px', color: '#888', fontWeight: 700, marginTop: '4px' }}>Data synchronization cycle completed.</p>
             </div>

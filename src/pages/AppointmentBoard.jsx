@@ -6,9 +6,6 @@ import { nativeStorage } from '../hooks/useElectron';
 import AppointmentCard from '../components/AppointmentCard';
 import '../styles/global.css';
 import '../styles/AppointmentBoard.css';
-import AdvancedDicomViewer from '../components/AdvancedDicomViewer';
-import JSZip from 'jszip';
-import dicomParser from 'dicom-parser';
 import ReportPreviewModal from '../components/ReportPreviewModal';
 
 // --- CONSTANTS ---
@@ -30,29 +27,29 @@ const INFORMATION_SOURCES = [
 ];
 
 const STATUS_META = {
-  scheduled:   { icon: '\u{1F4CB}', label: 'EXPECTED', color: '#64748b', bg: '#f1f5f9', glow: 'rgba(100,116,139,0.1)' },
-  booked:      { icon: '\u{1F4CB}', label: 'EXPECTED', color: '#64748b', bg: '#f1f5f9', glow: 'rgba(100,116,139,0.1)' },
-  confirmed:   { icon: '\u26A1', label: 'ARRIVED', color: '#10b981', bg: '#ecfdf5', glow: 'rgba(16,185,129,0.15)' },
-  in_progress: { icon: '\u{1F300}', label: 'SCANNING', color: '#f59e0b', bg: '#fffbeb', glow: 'rgba(245,158,11,0.15)' },
-  completed:   { icon: '\u{1FA7B}', label: 'SCANNED', color: '#0f52ba', bg: '#f0f4ff', glow: 'rgba(15,82,186,0.15)' },
-  scanned:     { icon: '\u{1FA7B}', label: 'SCANNED', color: '#0f52ba', bg: '#f0f4ff', glow: 'rgba(15,82,186,0.15)' },
-  reporting:   { icon: '\u{1F50E}', label: 'REPORTING', color: '#8b5cf6', bg: '#f5f3ff', glow: 'rgba(139,92,246,0.15)' },
-  reported:    { icon: '\u{1F4DC}', label: 'REPORTED', color: '#059669', bg: '#ecfdf5', glow: 'rgba(5,150,105,0.15)' },
-  cancelled:   { icon: '\u26D4', label: 'CANCELLED', color: '#ef4444', bg: '#fef2f2', glow: 'rgba(239,68,68,0.15)' },
-  unknown:     { icon: '\u2753', label: 'UNKNOWN', color: '#94a3b8', bg: '#f8fafc', glow: 'rgba(148,163,184,0.1)' }
+  scheduled:   { label: 'EXPECTED', color: '#64748b', bg: '#f1f5f9', glow: 'rgba(100,116,139,0.1)' },
+  booked:      { label: 'EXPECTED', color: '#64748b', bg: '#f1f5f9', glow: 'rgba(100,116,139,0.1)' },
+  confirmed:   { label: 'ARRIVED', color: '#10b981', bg: '#ecfdf5', glow: 'rgba(16,185,129,0.15)' },
+  in_progress: { label: 'SCANNING', color: '#f59e0b', bg: '#fffbeb', glow: 'rgba(245,158,11,0.15)' },
+  completed:   { label: 'SCANNED', color: '#0f52ba', bg: '#f0f4ff', glow: 'rgba(15,82,186,0.15)' },
+  scanned:     { label: 'SCANNED', color: '#0f52ba', bg: '#f0f4ff', glow: 'rgba(15,82,186,0.15)' },
+  reporting:   { label: 'REPORTING', color: '#8b5cf6', bg: '#f5f3ff', glow: 'rgba(139,92,246,0.15)' },
+  reported:    { label: 'REPORTED', color: '#059669', bg: '#ecfdf5', glow: 'rgba(5,150,105,0.15)' },
+  cancelled:   { label: 'CANCELLED', color: '#ef4444', bg: '#fef2f2', glow: 'rgba(239,68,68,0.15)' },
+  unknown:     { label: 'UNKNOWN', color: '#94a3b8', bg: '#f8fafc', glow: 'rgba(148,163,184,0.1)' }
 };
 
 const MODALITY_ICONS = {
-  'X-RAY': '\u{1FA7B}', 
-  'MRI': '\u{1F9E0}', 
-  'CT': '\u{1F300}', 
-  'ULTRASOUND': '\u{1F930}', 
-  'DEXA': '\u{1F9B4}',
-  'ANGIOGRAPHY': '\u{1FAC0}',
-  'MAMMOGRAPHY': '\u{1F380}',
-  'PET-CT': '\u2622',
-  'NUCLEAR MEDICINE': '\u{1F52C}',
-  'FLUOROSCOPY': '\u1F4FA'
+  'X-RAY': 'XR', 
+  'MRI': 'MR', 
+  'CT': 'CT', 
+  'ULTRASOUND': 'US', 
+  'DEXA': 'DX',
+  'ANGIOGRAPHY': 'AG',
+  'MAMMOGRAPHY': 'MG',
+  'PET-CT': 'PET',
+  'NUCLEAR MEDICINE': 'NM',
+  'FLUOROSCOPY': 'FL'
 };
 
 export default function AppointmentBoard() {
@@ -72,9 +69,7 @@ export default function AppointmentBoard() {
   const [drawerSearchQuery, setDrawerSearchQuery] = useState('');
   const [filters, setFilters] = useState({ date: TODAY, status: 'ALL', modality: 'ALL', doctor: 'ALL' });
   const [expandedRow, setExpandedRow] = useState(null);
-  const [uploadedFiles, setUploadedFiles] = useState({}); // { appointmentId: [files] }
-  const [isDicomImage, setIsDicomImage] = useState(false);
-  const [activeTool, setActiveTool] = useState('WindowLevel');
+
 
   const [isBookingOpen, setIsBookingOpen] = useState(false);
   const [isAddPatientOpen, setIsAddPatientOpen] = useState(false);
@@ -84,6 +79,7 @@ export default function AppointmentBoard() {
   const [previewAppointment, setPreviewAppointment] = useState(null);
   const [previewReport, setPreviewReport] = useState({ mode: 'Narrative Editor', text: '', impression: '', isFinalized: false });
   const [tokenPrintData, setTokenPrintData] = useState(null);
+  const [printDropdownId, setPrintDropdownId] = useState(null);
 
   const [bookingStep, setBookingStep] = useState(1);
   const [currentPage, setCurrentPage] = useState(1);
@@ -106,6 +102,12 @@ export default function AppointmentBoard() {
   // Responsive layout detection
   const [isMobile, setIsMobile] = useState(window.innerWidth < 1024);
   const [windowWidth, setWindowWidth] = useState(window.innerWidth);
+
+  useEffect(() => {
+    const handleClickOutside = () => setPrintDropdownId(null);
+    window.addEventListener('click', handleClickOutside);
+    return () => window.removeEventListener('click', handleClickOutside);
+  }, []);
 
   useEffect(() => {
     if (drawerBodyRef.current) {
@@ -848,7 +850,7 @@ export default function AppointmentBoard() {
           border: '1px solid #dee2e6', position: 'relative', overflow: 'hidden',
           boxShadow: '0 4px 15px rgba(0,0,0,0.02)'
         }}>
-          <div style={{ position: 'absolute', top: '-5px', right: '-5px', fontSize: '60px', opacity: 0.04, lineHeight: 1 }}>{'\u2705'}</div>
+          <div style={{ position: 'absolute', top: '10px', right: '15px', fontSize: '9px', fontWeight: 950, color: '#10b981', opacity: 0.1 }}>OK</div>
           <div style={{ fontSize: '9px', fontWeight: 900, textTransform: 'uppercase', letterSpacing: '1.5px', color: '#64748b', marginBottom: '8px' }}>Completed Operations</div>
           <div style={{ display: 'flex', alignItems: 'baseline', gap: '6px' }}>
             <span style={{ fontSize: '32px', fontWeight: 950, color: '#10b981', lineHeight: 1 }}>{stats.completed}</span>
@@ -870,7 +872,6 @@ export default function AppointmentBoard() {
     <div className="filter-bar-responsive">
       {/* Search Group */}
       <div className="filter-search-group">
-        <span style={{ fontSize: '16px', opacity: 0.4 }}>🔍</span>
         <input
           type="text"
           placeholder="Search patient, mobile, or ID..."
@@ -999,33 +1000,7 @@ export default function AppointmentBoard() {
     );
   };
 
-  const handleFileChange = async (e, appId) => {
-    const file = e.target.files[0];
-    if (!file) return;
 
-    const isZip = file.name.toLowerCase().endsWith('.zip') || file.type === 'application/zip' || file.type === 'application/x-zip-compressed';
-    
-    if (isZip) {
-      try {
-        const zip = await JSZip.loadAsync(file);
-        const seriesFiles = [];
-
-        for (const fileName of Object.keys(zip.files)) {
-          const zipFile = zip.files[fileName];
-          if (!zipFile.dir && !fileName.includes('__MACOSX')) {
-            const content = await zipFile.async('arraybuffer');
-            const dcmFile = new File([content], fileName.split('/').pop(), { type: 'application/dicom' });
-            seriesFiles.push(dcmFile);
-          }
-        }
-        setUploadedFiles(prev => ({ ...prev, [appId]: seriesFiles }));
-      } catch (err) {
-        console.error('Zip parse failed', err);
-      }
-    } else {
-      setUploadedFiles(prev => ({ ...prev, [appId]: [file] }));
-    }
-  };
 
   // ============================================================
   //  APPOINTMENT TABLE ROW
@@ -1038,138 +1013,97 @@ export default function AppointmentBoard() {
     const patient = patients.find(p => p.id === app.patientId);
 
     return (
-      <div key={app.appointmentId} style={{ marginBottom: '10px' }}>
+      <div key={app.appointmentId} className="mission-row-wrapper" style={{ marginBottom: '12px' }}>
         <div
           onClick={() => setExpandedRow(isExpanded ? null : app.appointmentId)}
+          className={`mission-row-container ${isExpanded ? 'expanded' : ''}`}
           style={{
             display: 'grid',
-            gridTemplateColumns: '0.6fr 0.6fr 1.8fr 1.8fr 0.8fr 1fr 1.6fr',
+            gridTemplateColumns: '85px 85px 2fr 1.2fr 140px 1fr 210px',
             alignItems: 'center',
-            padding: '16px 22px',
+            padding: '18px 24px',
             background: isExpanded ? '#fafbff' : 'white',
-            borderRadius: isExpanded ? '14px 14px 0 0' : '14px',
-            border: `1px solid ${isExpanded ? '#c5d5f0' : '#eee'}`,
-            borderBottom: isExpanded ? '1px dashed #dde5f5' : `1px solid ${isExpanded ? '#c5d5f0' : '#eee'}`,
+            borderRadius: isExpanded ? '16px 16px 0 0' : '16px',
+            border: `1px solid ${isExpanded ? '#c5d5f0' : '#eef2f6'}`,
+            borderBottom: isExpanded ? '1px dashed #dde5f5' : `1px solid ${isExpanded ? '#c5d5f0' : '#eef2f6'}`,
             cursor: 'pointer',
-            transition: 'all 0.2s ease',
+            transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
             position: 'relative',
-            overflow: 'hidden',
+            boxShadow: isExpanded ? '0 10px 30px rgba(15, 82, 186, 0.05)' : '0 2px 4px rgba(0,0,0,0.02)',
           }}
         >
-          <div style={{ position: 'absolute', left: 0, top: 0, bottom: 0, width: '4px', background: meta.color, borderRadius: '4px 0 0 4px' }} />
+          <div style={{ position: 'absolute', left: 0, top: '15%', bottom: '15%', width: '4px', background: meta.color, borderRadius: '0 4px 4px 0' }} />
 
+          {/* ID Column */}
           <div style={{ display: 'flex', flexDirection: 'column' }}>
-            <div style={{ fontSize: '11px', fontWeight: 900, color: '#0f52ba', fontFamily: 'monospace' }}>{app.ptid || '\u2014'}</div>
-            <div style={{ fontSize: '9px', fontWeight: 700, color: '#ccc' }}>{app.id}</div>
+            <div style={{ fontSize: '10px', fontWeight: 950, color: '#0f52ba', fontFamily: 'monospace', letterSpacing: '0.5px' }}>{app.ptid || '\u2014'}</div>
+            <div style={{ fontSize: '8px', fontWeight: 800, color: '#94a3b8', marginTop: '2px' }}>{app.id.split('-').pop()}</div>
           </div>
 
+          {/* Token Column */}
           <div style={{ display: 'flex', flexDirection: 'column' }}>
-            <div style={{ fontSize: '14px', fontWeight: 950, color: '#1a1a2e' }}>
+            <div style={{ fontSize: '16px', fontWeight: 950, color: '#1a1a2e', letterSpacing: '-0.5px' }}>
               #{app.tokenNo || (app.id.includes('-') ? app.id.split('-')[1] : app.id)}
             </div>
-            <div style={{ fontSize: '8px', fontWeight: 900, color: '#abb8c3', textTransform: 'uppercase' }}>TOKEN</div>
+            <div style={{ fontSize: '7px', fontWeight: 900, color: '#abb8c3', textTransform: 'uppercase', letterSpacing: '1px' }}>TOKEN_NO</div>
           </div>
 
+          {/* Patient Column */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+            <div style={{ width: '36px', height: '36px', borderRadius: '12px', background: '#f0f4ff', color: '#0f52ba', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 900, fontSize: '14px', border: '1px solid #dbeafe' }}>{app.patientName.charAt(0)}</div>
+            <div style={{ display: 'flex', flexDirection: 'column' }}>
+              <div style={{ fontWeight: 850, color: '#1e293b', fontSize: '14px', letterSpacing: '-0.2px' }}>{app.patientName.toUpperCase()}</div>
+              <div style={{ fontSize: '10px', color: '#64748b', fontWeight: 700, marginTop: '2px' }}>{app.mobile} {'\u00B7'} {app.patientAge}Y {app.patientGender.toUpperCase()}</div>
+            </div>
+          </div>
+
+          {/* Referral Column */}
           <div style={{ display: 'flex', flexDirection: 'column' }}>
-            <div style={{ fontWeight: 800, color: '#1a1a2e', fontSize: '13px' }}>{app.patientName}</div>
-            <div style={{ fontSize: '10px', color: '#888', fontWeight: 600 }}>{app.mobile} {'\u00B7'} {app.patientAge}y {app.patientGender}</div>
+            <div style={{ fontSize: '11px', color: '#0f52ba', fontWeight: 900 }}>{app.referredBy || 'DIRECT_WALKIN'}</div>
+            <div style={{ fontSize: '9px', color: '#94a3b8', fontWeight: 700, marginTop: '2px' }}>{app.referredContact !== 'N/A' ? app.referredContact : 'NO_REF_CONTACT'}</div>
           </div>
 
+          {/* Status Column */}
+          <div>
+            <div style={{
+              display: 'inline-flex', alignItems: 'center', gap: '6px',
+              padding: '6px 12px', borderRadius: '10px',
+              background: meta.bg, border: `1px solid ${meta.color}30`,
+              transition: 'all 0.2s'
+            }}>
+              <span style={{ fontSize: '10px' }}>{meta.icon}</span>
+              <span style={{ fontSize: '9px', fontWeight: 950, color: meta.color, textTransform: 'uppercase', letterSpacing: '0.5px' }}>{meta.label}</span>
+            </div>
+          </div>
+
+          {/* Specialist Column */}
           <div style={{ display: 'flex', flexDirection: 'column' }}>
-            <div style={{ fontSize: '12px', color: '#0f52ba', fontWeight: 800 }}>{app.referredBy || 'Self'}</div>
-            <div style={{ fontSize: '11px', color: '#888', fontWeight: 600 }}>{app.referredContact !== 'N/A' ? app.referredContact : ''}</div>
+            <div style={{ fontWeight: 850, color: '#334155', fontSize: '11px' }}>{app.doctor.toUpperCase()}</div>
+            <div style={{ fontSize: '8px', fontWeight: 900, color: '#94a3b8', marginTop: '2px', textTransform: 'uppercase' }}>SPECIALIST</div>
           </div>
 
-          <div style={{
-            display: 'inline-flex', alignItems: 'center', gap: '5px',
-            padding: '4px 8px', borderRadius: '20px',
-            background: meta.bg, border: `1px solid ${meta.color}20`,
-            justifySelf: 'start'
-          }}>
-            <span style={{ fontSize: '10px' }}>{meta.icon}</span>
-            <span style={{ fontSize: '8px', fontWeight: 950, color: meta.color, textTransform: 'uppercase' }}>{meta.label}</span>
-          </div>
-
-          <div style={{ fontWeight: 700, color: '#333', fontSize: '11px' }}>{app.doctor}</div>
-
-          <div style={{ display: 'flex', alignItems: 'center', gap: '6px', justifySelf: 'end' }}>
-            {next && (
+          {/* Actions Column */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', justifySelf: 'end' }}>
+            {/* Edit and Cancel actions remain in the row for quick management */}
+            {app.status !== 'cancelled' && app.status !== 'completed' && (
               <button
-                onClick={(e) => { e.stopPropagation(); handleAction(app.id, next.action); }}
-                style={{
-                  display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '5px',
-                  padding: '6px 10px', borderRadius: '8px',
-                  background: next.color, border: 'none', cursor: 'pointer',
-                  fontSize: '9px', fontWeight: 950, color: 'white',
-                  boxShadow: `0 3px 8px ${next.color}30`, transition: 'all 0.2s',
-                  width: '90px'
+                onClick={(e) => { 
+                  e.stopPropagation(); 
+                  setEditingAppointment(app); 
+                  setIsEditingOpen(true); 
                 }}
+                className="action-icon-btn edit"
+                style={{
+                  width: '34px', height: '34px', borderRadius: '10px',
+                  background: '#f8fafc', border: '1.5px solid #e2e8f0', cursor: 'pointer',
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  fontSize: '14px', color: '#64748b', transition: 'all 0.2s',
+                }}
+                title="Edit Appointment"
               >
-                {next.icon} {next.label}
+                {'\u270F\uFE0F'}
               </button>
             )}
-
-            <button
-              onClick={(e) => { e.stopPropagation(); handlePrintInstitutional(app, 'A4'); }}
-              style={{
-                width: '28px', height: '28px', borderRadius: '8px',
-                background: 'white', border: '1px solid #0f52ba', cursor: 'pointer',
-                display: 'flex', alignItems: 'center', justifyContent: 'center',
-                fontSize: '12px', color: '#0f52ba', transition: 'all 0.2s',
-              }}
-              title="Print A4 Invoice"
-            >📄</button>
-
-            <button
-              onClick={(e) => { e.stopPropagation(); handlePrintInstitutional(app, 'THERMAL'); }}
-              style={{
-                width: '28px', height: '28px', borderRadius: '8px',
-                background: '#0f52ba', border: 'none', cursor: 'pointer',
-                display: 'flex', alignItems: 'center', justifyContent: 'center',
-                fontSize: '12px', color: 'white', transition: 'all 0.2s',
-              }}
-              title="Print Thermal Receipt"
-            >📠</button>
-
-            <button
-              onClick={(e) => { e.stopPropagation(); handlePrintInstitutional(app, 'RECEIPT'); }}
-              style={{
-                width: '28px', height: '28px', borderRadius: '8px',
-                background: 'white', border: '1px solid #10b981', cursor: 'pointer',
-                display: 'flex', alignItems: 'center', justifyContent: 'center',
-                fontSize: '12px', color: '#10b981', transition: 'all 0.2s',
-              }}
-              title="Print Payment Receipt"
-            >🧾</button>
-
-            <button
-              onClick={(e) => { e.stopPropagation(); setTokenPrintData(app); }}
-              style={{
-                width: '28px', height: '28px', borderRadius: '8px',
-                background: '#e8f0fe', border: '1px solid #c5d5f0', cursor: 'pointer',
-                display: 'flex', alignItems: 'center', justifyContent: 'center',
-                fontSize: '12px', color: '#0f52ba', transition: 'all 0.2s',
-              }}
-              title="Print Thermal Token"
-            >
-              🎟️
-            </button>
-
-            <button
-              onClick={(e) => { 
-                e.stopPropagation(); 
-                handlePreviewPrint(app);
-              }}
-              style={{
-                width: '28px', height: '28px', borderRadius: '8px',
-                background: '#fef3c7', border: '1px solid #fde68a', cursor: 'pointer',
-                display: 'flex', alignItems: 'center', justifyContent: 'center',
-                fontSize: '12px', color: '#d97706', transition: 'all 0.2s',
-              }}
-              title="Print Prescription"
-            >
-              📜
-            </button>
 
             {app.status !== 'cancelled' && app.status !== 'completed' && (
               <button
@@ -1178,11 +1112,12 @@ export default function AppointmentBoard() {
                   setEditingAppointment(app); 
                   setIsEditingOpen(true); 
                 }}
+                className="action-icon-btn edit"
                 style={{
-                  width: '28px', height: '28px', borderRadius: '8px',
-                  background: '#fff9e6', border: '1px solid #ffd966', cursor: 'pointer',
+                  width: '34px', height: '34px', borderRadius: '10px',
+                  background: '#f8fafc', border: '1.5px solid #e2e8f0', cursor: 'pointer',
                   display: 'flex', alignItems: 'center', justifyContent: 'center',
-                  fontSize: '12px', color: '#f39c12', transition: 'all 0.2s',
+                  fontSize: '14px', color: '#64748b', transition: 'all 0.2s',
                 }}
                 title="Edit Appointment"
               >
@@ -1198,19 +1133,19 @@ export default function AppointmentBoard() {
                     handleAction(app.id, 'CANCEL');
                   }
                 }}
+                className="action-icon-btn cancel"
                 style={{
-                  width: '28px', height: '28px', borderRadius: '8px',
-                  background: '#fff5f5', border: '1px solid #fecaca', cursor: 'pointer',
+                  width: '34px', height: '34px', borderRadius: '10px',
+                  background: '#fef2f2', border: '1.5px solid #fee2e2', cursor: 'pointer',
                   display: 'flex', alignItems: 'center', justifyContent: 'center',
-                  fontSize: '12px', color: '#e74c3c', transition: 'all 0.2s',
+                  fontSize: '14px', color: '#ef4444', transition: 'all 0.2s',
                 }}
                 title="Cancel Appointment"
               >
                 {'\u2715'}
               </button>
             )}
-
-            <div style={{ marginLeft: '4px', transition: 'transform 0.2s', transform: `rotate(${isExpanded ? 180 : 0}deg)`, fontSize: '10px', color: '#ccc' }}>{'\u25BC'}</div>
+            <div style={{ marginLeft: '8px', transition: 'transform 0.3s', transform: `rotate(${isExpanded ? 180 : 0}deg)`, fontSize: '12px', color: isExpanded ? '#0f52ba' : '#cbd5e1', fontWeight: 900 }}>{'\u25BC'}</div>
           </div>
         </div>
 
@@ -1221,128 +1156,69 @@ export default function AppointmentBoard() {
             padding: '20px 22px',
           }}>
             <div style={{ display: 'flex', gap: '24px', alignItems: 'flex-start', flexWrap: 'wrap' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flex: '0 0 auto' }}>
-                {['scheduled','confirmed','in_progress','scanned','reporting','reported'].map((s, i) => {
-                  const sMeta = STATUS_META[s];
-                  const reached = statusIndex >= i;
-                  const isCurrent = s === app.status;
-                  return (
-                    <div key={s} style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                      <div style={{
-                        width: isCurrent ? '32px' : '24px', height: isCurrent ? '32px' : '24px',
-                        borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center',
-                        background: reached ? sMeta.color : '#eee',
-                        color: reached ? 'white' : '#ccc',
-                        fontSize: isCurrent ? '14px' : '10px', fontWeight: 900,
-                        transition: 'all 0.3s', boxShadow: isCurrent ? `0 0 12px ${sMeta.glow}` : 'none',
-                      }}>
-                        {reached ? sMeta.icon : (i + 1)}
-                      </div>
-                      {i < 5 && (
-                        <div style={{
-                          width: '24px', height: '2px',
-                          background: statusIndex > i ? sMeta.color : '#eee',
-                          borderRadius: '1px',
-                        }} />
-                      )}
-                    </div>
-                  );
-                })}
-              </div>
 
-              <div style={{ flex: 1, minWidth: '400px', background: 'white', borderRadius: '16px', border: '1px solid #e2e8f0', padding: '20px', boxShadow: '0 4px 15px rgba(0,0,0,0.05)' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '15px' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                    <span style={{ fontSize: '18px' }}>{'\u{1F50E}'}</span>
-                    <h3 style={{ fontSize: '14px', fontWeight: 900, margin: 0, color: '#0f52ba' }}>DIAGNOSTIC WORKSPACE</h3>
-                  </div>
-                  
-                  <div style={{ display: 'flex', gap: '6px' }}>
-                    {['WindowLevel', 'Zoom', 'Pan', 'Length'].map(tool => (
-                      <button 
-                        key={tool}
-                        onClick={() => setActiveTool(tool)}
-                        style={{
-                          padding: '6px 12px', borderRadius: '8px', border: 'none',
-                          background: activeTool === tool ? '#0f52ba' : '#f1f5f9',
-                          color: activeTool === tool ? 'white' : '#64748b',
-                          fontSize: '10px', fontWeight: 800, cursor: 'pointer',
-                          transition: 'all 0.2s'
-                        }}
-                      >
-                        {tool.toUpperCase()}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-
-                <div style={{ height: '450px', background: '#0a0a0f', borderRadius: '12px', overflow: 'hidden', position: 'relative', border: '1px solid #0f52ba30' }}>
-                  {uploadedFiles[app.appointmentId] ? (
-                    <AdvancedDicomViewer 
-                      files={uploadedFiles[app.appointmentId]} 
-                      activeTool={activeTool}
-                      onImageStatus={setIsDicomImage}
-                    />
-                  ) : (
-                    <div style={{ height: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', color: '#64748b' }}>
-                      <div style={{ fontSize: '40px', marginBottom: '15px', opacity: 0.5 }}>{'\u{1F4E5}'}</div>
-                      <p style={{ fontSize: '12px', fontWeight: 800, margin: 0 }}>NO MISSION ASSETS LOADED</p>
-                      <p style={{ fontSize: '10px', opacity: 0.6, marginTop: '5px' }}>Drag & Drop studies or click upload to begin review</p>
-                      <label style={{ 
-                        marginTop: '20px', padding: '10px 24px', background: '#0f52ba', color: 'white', 
-                        borderRadius: '12px', fontSize: '11px', fontWeight: 900, cursor: 'pointer',
-                        boxShadow: '0 5px 15px rgba(15, 82, 186, 0.2)'
-                      }}>
-                        LOAD STUDY ASSETS
-                        <input type="file" hidden multiple onChange={(e) => handleFileChange(e, app.appointmentId)} />
-                      </label>
-                    </div>
-                  )}
-                </div>
-
-                <div style={{ marginTop: '15px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                  <div style={{ fontSize: '10px', color: '#94a3b8', fontWeight: 700 }}>
-                    ENGINE: CORNERSTONE3D v4.x {'\u00B7'} ACCELERATED WEBGL
-                  </div>
-                  <button 
-                    onClick={() => window.location.href = `/reporting?id=${app.id}`}
-                    style={{ 
-                      padding: '10px 20px', background: '#ecfdf5', color: '#059669', 
-                      border: '1px solid #10b981', borderRadius: '10px', 
-                      fontSize: '11px', fontWeight: 900, cursor: 'pointer' 
-                    }}
-                  >
-                    GO TO NARRATIVE EDITOR {'\u2192'}
-                  </button>
-                </div>
-              </div>
 
               {patient && (
-                <div style={{ flex: '0 0 300px', display: 'flex', flexDirection: 'column', gap: '20px' }}>
-                  <div style={{ background: '#f8fafc', padding: '18px', borderRadius: '16px', border: '1px solid #e2e8f0' }}>
-                    <div style={{ fontSize: '10px', fontWeight: 950, color: '#0f52ba', letterSpacing: '1px', marginBottom: '15px' }}>CLINICAL INTEL</div>
+                <div style={{ flex: 1, display: 'flex', gap: '24px', flexWrap: 'wrap' }}>
+                  <div style={{ flex: '1 1 350px', background: 'white', padding: '24px', borderRadius: '16px', border: '1px solid #e2e8f0', boxShadow: '0 4px 15px rgba(0,0,0,0.03)' }}>
+                    <div style={{ fontSize: '11px', fontWeight: 950, color: '#0f52ba', letterSpacing: '1.5px', marginBottom: '20px', textTransform: 'uppercase', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                       <span style={{ fontSize: '18px' }}>📋</span> CLINICAL INTELLIGENCE
+                    </div>
                     
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                      <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                        <span style={{ fontSize: '10px', color: '#64748b', fontWeight: 700 }}>STUDY MODALITY</span>
-                        <span style={{ fontSize: '11px', fontWeight: 900, color: '#1a1a2e' }}>{app.modality}</span>
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '20px' }}>
+                      <div style={{ background: '#f8fafc', padding: '15px', borderRadius: '12px', border: '1px solid #f1f5f9' }}>
+                        <div style={{ fontSize: '10px', color: '#64748b', fontWeight: 800, marginBottom: '5px' }}>STUDY MODALITY</div>
+                        <div style={{ fontSize: '14px', fontWeight: 950, color: '#1a1a2e' }}>{app.modality}</div>
                       </div>
-                      <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                        <span style={{ fontSize: '10px', color: '#64748b', fontWeight: 700 }}>PROCEDURE</span>
-                        <span style={{ fontSize: '11px', fontWeight: 900, color: '#1a1a2e' }}>{app.service}</span>
+                      <div style={{ background: '#f8fafc', padding: '15px', borderRadius: '12px', border: '1px solid #f1f5f9' }}>
+                        <div style={{ fontSize: '10px', color: '#64748b', fontWeight: 800, marginBottom: '5px' }}>PROCEDURE / SERVICE</div>
+                        <div style={{ fontSize: '14px', fontWeight: 950, color: '#1a1a2e' }}>{app.service}</div>
                       </div>
-                      <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                        <span style={{ fontSize: '10px', color: '#64748b', fontWeight: 700 }}>GENDER / AGE</span>
-                        <span style={{ fontSize: '11px', fontWeight: 900, color: '#1a1a2e' }}>{app.patientGender} / {app.patientAge}Y</span>
+                      <div style={{ background: '#f8fafc', padding: '15px', borderRadius: '12px', border: '1px solid #f1f5f9' }}>
+                        <div style={{ fontSize: '10px', color: '#64748b', fontWeight: 800, marginBottom: '5px' }}>GENDER / AGE</div>
+                        <div style={{ fontSize: '14px', fontWeight: 950, color: '#1a1a2e' }}>{app.patientGender} / {app.patientAge}Y</div>
                       </div>
                     </div>
                   </div>
 
-                  <div style={{ background: '#fffbeb', padding: '18px', borderRadius: '16px', border: '1px solid #fde68a' }}>
-                    <div style={{ fontSize: '10px', fontWeight: 950, color: '#b45309', letterSpacing: '1px', marginBottom: '10px' }}>PHYSICIAN NOTES</div>
-                    <p style={{ fontSize: '12px', color: '#92400e', fontWeight: 600, margin: 0, lineHeight: '1.5' }}>
-                      {app.notes || 'No clinical notes provided for this mission.'}
+                  <div style={{ flex: '1 1 350px', background: '#fffbeb', padding: '24px', borderRadius: '16px', border: '1px solid #fde68a', boxShadow: '0 4px 15px rgba(245,158,11,0.05)' }}>
+                    <div style={{ fontSize: '11px', fontWeight: 950, color: '#b45309', letterSpacing: '1.5px', marginBottom: '15px', textTransform: 'uppercase', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                       <span style={{ fontSize: '18px' }}>📝</span> PHYSICIAN OBSERVATIONS
+                    </div>
+                    <p style={{ fontSize: '13px', color: '#92400e', fontWeight: 600, margin: 0, lineHeight: '1.6', background: 'rgba(255,255,255,0.4)', padding: '15px', borderRadius: '10px' }}>
+                      {app.notes || 'No clinical observations or critical notes provided for this mission.'}
                     </p>
+                  </div>
+                  <div style={{ flex: '1 1 100%', background: '#f8fafc', padding: '24px', borderRadius: '16px', border: '1px solid #e2e8f0', marginTop: '12px' }}>
+                    <div style={{ fontSize: '11px', fontWeight: 950, color: '#1e293b', letterSpacing: '1.5px', marginBottom: '20px', textTransform: 'uppercase', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                       <span style={{ fontSize: '18px' }}>🖨️</span> REPORTING & PRINTING SUITE
+                    </div>
+                    <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap' }}>
+                      <button
+                        onClick={(e) => { e.stopPropagation(); setTokenPrintData(app); }}
+                        style={{ padding: '12px 24px', background: 'white', border: '1.5px solid #0f52ba', borderRadius: '12px', fontSize: '11px', fontWeight: 950, color: '#0f52ba', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '10px' }}
+                      >
+                        PRINT THERMAL SLIP
+                      </button>
+                      <button 
+                        onClick={(e) => { e.stopPropagation(); handlePrintInstitutional(app, 'RECEIPT'); }}
+                        style={{ padding: '12px 24px', background: 'white', border: '1.5px solid #10b981', borderRadius: '12px', fontSize: '11px', fontWeight: 950, color: '#10b981', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '10px' }}
+                      >
+                        PAYMENT RECEIPT
+                      </button>
+                      <button 
+                        onClick={(e) => { e.stopPropagation(); handlePrintInstitutional(app, 'A4'); }}
+                        style={{ padding: '12px 24px', background: 'white', border: '1.5px solid #6366f1', borderRadius: '12px', fontSize: '11px', fontWeight: 950, color: '#6366f1', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '10px' }}
+                      >
+                        CLINICAL INVOICE (A4)
+                      </button>
+                      <button 
+                        onClick={(e) => { e.stopPropagation(); handlePreviewPrint(app); }}
+                        style={{ padding: '12px 24px', background: '#fffbeb', border: '1.5px solid #f59e0b', borderRadius: '12px', fontSize: '11px', fontWeight: 950, color: '#b45309', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '10px' }}
+                      >
+                        PRESCRIPTION
+                      </button>
+                    </div>
                   </div>
                 </div>
               )}
@@ -2099,7 +1975,6 @@ export default function AppointmentBoard() {
       <div style={{ marginBottom: '32px', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', flexWrap: 'wrap', gap: '20px' }}>
         <div>
           <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '6px' }}>
-            <span style={{ fontSize: '24px' }}>{'\u{1F4E1}'}</span>
             <h1 style={{ fontSize: '22px', fontWeight: 900, color: '#0a1628', letterSpacing: '-0.5px', margin: 0 }}>MISSION SCHEDULER</h1>
           </div>
           <p style={{ fontSize: '12px', color: '#888', fontWeight: 600, marginLeft: '36px' }}>
@@ -2113,49 +1988,40 @@ export default function AppointmentBoard() {
             </span>
           </p>
         </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '24px' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '20px', flex: 1, justifyContent: 'flex-end' }}>
           <button
             className="gamified-btn"
             style={{ 
-              padding: '16px 40px', 
-              fontSize: '14px', 
+              padding: '12px 32px', 
+              fontSize: '13px', 
               fontWeight: 950, 
-              borderRadius: '16px', 
+              borderRadius: '14px', 
               letterSpacing: '1px',
-              boxShadow: '0 8px 25px rgba(15, 82, 186, 0.3)',
-              transform: 'scale(1.05)',
-              transition: 'all 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275)'
-            }}
-            onMouseEnter={e => {
-              e.currentTarget.style.transform = 'scale(1.1)';
-              e.currentTarget.style.boxShadow = '0 12px 30px rgba(15, 82, 186, 0.5)';
-            }}
-            onMouseLeave={e => {
-              e.currentTarget.style.transform = 'scale(1.05)';
-              e.currentTarget.style.boxShadow = '0 8px 25px rgba(15, 82, 186, 0.3)';
+              boxShadow: '0 8px 25px rgba(15, 82, 186, 0.2)',
             }}
             onClick={() => { resetBooking(); setIsBookingOpen(true); }}
           >
-            + NEW MISSION
+            NEW MISSION
           </button>
-          
+
+          <div style={{ display: 'flex', background: 'white', padding: '4px', borderRadius: '12px', border: '1px solid #eef2f6', boxShadow: '0 2px 8px rgba(0,0,0,0.02)', marginLeft: '10px' }}>
+            <button 
+              onClick={() => setActiveTab('TODAY')}
+              style={{ padding: '10px 24px', borderRadius: '10px', border: 'none', fontSize: '11px', fontWeight: 950, background: activeTab === 'TODAY' ? '#0f52ba' : 'transparent', color: activeTab === 'TODAY' ? 'white' : '#64748b', cursor: 'pointer', transition: 'all 0.3s', textTransform: 'uppercase', letterSpacing: '0.5px' }}
+            >
+              TODAY'S MISSIONS
+            </button>
+            <button 
+              onClick={() => setActiveTab('PAST')}
+              style={{ padding: '10px 24px', borderRadius: '10px', border: 'none', fontSize: '11px', fontWeight: 950, background: activeTab === 'PAST' ? '#0f52ba' : 'transparent', color: activeTab === 'PAST' ? 'white' : '#64748b', cursor: 'pointer', transition: 'all 0.3s', textTransform: 'uppercase', letterSpacing: '0.5px' }}
+            >
+              MISSION ARCHIVE
+            </button>
+          </div>
         </div>
       </div>
 
-      <div style={{ display: 'flex', background: 'white', padding: '5px', borderRadius: '12px', border: '1px solid #eee', width: 'fit-content', marginBottom: '25px', boxShadow: '0 2px 10px rgba(0,0,0,0.02)' }}>
-        <button 
-          onClick={() => setActiveTab('TODAY')}
-          style={{ padding: '8px 25px', borderRadius: '8px', border: 'none', fontSize: '11px', fontWeight: 900, background: activeTab === 'TODAY' ? '#0f52ba' : 'transparent', color: activeTab === 'TODAY' ? 'white' : '#888', cursor: 'pointer', transition: 'all 0.3s', display: 'flex', alignItems: 'center', gap: '8px' }}
-        >
-          <span style={{ fontSize: '14px' }}>📅</span> TODAY'S MISSIONS
-        </button>
-        <button 
-          onClick={() => setActiveTab('PAST')}
-          style={{ padding: '8px 25px', borderRadius: '8px', border: 'none', fontSize: '11px', fontWeight: 900, background: activeTab === 'PAST' ? '#0f52ba' : 'transparent', color: activeTab === 'PAST' ? 'white' : '#888', cursor: 'pointer', transition: 'all 0.3s', display: 'flex', alignItems: 'center', gap: '8px' }}
-        >
-          <span style={{ fontSize: '14px' }}>📜</span> MISSION ARCHIVE
-        </button>
-      </div>
+
 
       {renderIntelCards()}
       {renderFilterBar()}
@@ -2172,7 +2038,7 @@ export default function AppointmentBoard() {
         {!isMobile && (
           <div style={{
             display: 'grid',
-            gridTemplateColumns: '0.6fr 0.6fr 1.8fr 1.8fr 0.8fr 1fr 1.6fr',
+            gridTemplateColumns: '85px 85px 2fr 1.2fr 140px 1fr 210px',
             padding: '0 22px 10px',
             fontSize: '9px', fontWeight: 800, color: '#aaa',
             textTransform: 'uppercase', letterSpacing: '1px',

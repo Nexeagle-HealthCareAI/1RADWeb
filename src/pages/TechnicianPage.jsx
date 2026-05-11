@@ -11,18 +11,18 @@ import '../styles/global.css';
 import '../styles/TechnicianPage.css';
 
 const MODALITY_ICONS = {
-  'X-RAY': '🩻',
-  'MRI': '🧠',
-  'CT': '🌀',
-  'ULTRASOUND': '🤰',
-  'DEXA': '🦴',
-  'MAMMOGRAPHY': '🎀'
+  'X-RAY': 'XR',
+  'MRI': 'MR',
+  'CT': 'CT',
+  'ULTRASOUND': 'US',
+  'DEXA': 'DX',
+  'MAMMOGRAPHY': 'MG'
 };
 
 const PRIORITY_META = {
-  'STAT': { color: '#ef4444', label: '⚡ EMERGENCY', bg: '#fee2e2' },
-  'URGENT': { color: '#f59e0b', label: '⚠️ URGENT', bg: '#fef3c7' },
-  'ROUTINE': { color: '#3b82f6', label: '📋 ROUTINE', bg: '#dbeafe' }
+  'STAT': { color: '#ef4444', label: 'EMERGENCY', bg: '#fee2e2' },
+  'URGENT': { color: '#f59e0b', label: 'URGENT', bg: '#fef3c7' },
+  'ROUTINE': { color: '#3b82f6', label: 'ROUTINE', bg: '#dbeafe' }
 };
 
 const TODAY = new Date().toLocaleDateString('en-CA'); // YYYY-MM-DD format in local time
@@ -71,7 +71,7 @@ export default function TechnicianPage() {
   const [screenshotData, setScreenshotData] = useState(null);
   const [keyImages, setKeyImages] = useState([]);
   const [isSyncEnabled, setIsSyncEnabled] = useState(false);
-  const [tokenPrintData, setTokenPrintData] = useState(null);
+
 
 
   // New state for progressive loading
@@ -526,9 +526,9 @@ export default function TechnicianPage() {
             
             // Show warning if corrupted files were found
             if (processingResult.stats.corruptedFiles > 0) {
-              console.warn(`[TECH] ⚠️ Eliminated ${processingResult.stats.corruptedFiles} corrupted files from upload`);
+              console.warn(`[TECH] WARNING: Eliminated ${processingResult.stats.corruptedFiles} corrupted files from upload`);
               setTimeout(() => {
-                alert(`Study loaded successfully!\n\n✅ Valid files: ${processingResult.stats.validFiles}\n⚠️ Corrupted files eliminated: ${processingResult.stats.corruptedFiles}\n\nCorrupted files have been automatically removed to ensure optimal viewing.`);
+                alert(`Study loaded successfully!\n\nSUCCESS: Valid files: ${processingResult.stats.validFiles}\nWARNING: Corrupted files eliminated: ${processingResult.stats.corruptedFiles}\n\nCorrupted files have been automatically removed to ensure optimal viewing.`);
               }, 500);
             }
           }
@@ -605,7 +605,6 @@ export default function TechnicianPage() {
       <div className="board-header" style={{ padding: '12px 30px', background: 'white', borderBottom: '1px solid #f1f5f9', display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
         <div>
            <div style={{ display: 'flex', alignItems: 'center', gap: '15px', marginBottom: '5px' }}>
-              <span style={{ fontSize: '24px' }}>🛰️</span>
               <h1 style={{ fontSize: '24px', fontWeight: 950, color: '#1a1a2e', letterSpacing: '-1px', margin: 0 }}>SCANNING BAY COMMAND</h1>
            </div>
            <p style={{ fontSize: '10px', color: '#64748b', fontWeight: 900, marginLeft: '45px', textTransform: 'uppercase', letterSpacing: '2px' }}>Clinical Acquisition & Worklist Dispatch</p>
@@ -711,7 +710,6 @@ export default function TechnicianPage() {
         <div style={{ background: 'white', padding: '15px 20px', borderRadius: '16px', border: '1px solid #e2e8f0', marginBottom: '20px', display: 'flex', gap: '15px', alignItems: 'center', boxShadow: '0 4px 20px rgba(0,0,0,0.02)', flexWrap: 'wrap' }}>
           <div style={{ position: 'relative', flex: 1, minWidth: '200px', display: 'flex', gap: '10px', alignItems: 'center' }}>
             <div style={{ position: 'relative', flex: 1 }}>
-              <span style={{ position: 'absolute', left: '15px', top: '50%', transform: 'translateY(-50%)', opacity: 0.5 }}>🔍</span>
               <input 
                 type="text" 
                 placeholder={hubTab === 'ACTIVE' ? "SCAN BARCODE OR SEARCH MISSIONS..." : "SEARCH HISTORICAL ARCHIVE..."}
@@ -733,7 +731,7 @@ export default function TechnicianPage() {
               style={{ padding: '12px 15px', borderRadius: '10px', background: '#f8fafc', border: '1px solid #e2e8f0', cursor: 'pointer', fontSize: '14px', display: 'flex', alignItems: 'center', gap: '8px', fontWeight: 900 }}
               title="Open Mobile Scanner"
             >
-              📷 <span style={{ fontSize: '10px' }}>SCAN</span>
+               <span style={{ fontSize: '10px' }}>SCAN</span>
             </button>
             <input 
               id="mobile-scanner-trigger" 
@@ -780,17 +778,17 @@ export default function TechnicianPage() {
             <option value="ALL">PHASE: ALL</option>
             {hubTab === 'ACTIVE' ? (
               <>
-                <option value="CONFIRMED">📡 AWAITING SCAN</option>
-                <option value="IN_PROGRESS">⚡ IN SCANNING</option>
-                <option value="SCANNED">✅ READY FOR DOC</option>
-                <option value="REPORTING">📝 UNDER REVIEW</option>
-                <option value="REPORTED">📄 FINALIZED</option>
-                <option value="COMPLETED">✅ ARCHIVED</option>
+                <option value="CONFIRMED">AWAITING SCAN</option>
+                <option value="IN_PROGRESS">IN SCANNING</option>
+                <option value="SCANNED">READY FOR DOC</option>
+                <option value="REPORTING">UNDER REVIEW</option>
+                <option value="REPORTED">FINALIZED</option>
+                <option value="COMPLETED">ARCHIVED</option>
               </>
             ) : (
               <>
-                <option value="REPORTED">📄 FINALIZED</option>
-                <option value="COMPLETED">✅ COMPLETED</option>
+                <option value="REPORTED">FINALIZED</option>
+                <option value="COMPLETED">COMPLETED</option>
               </>
             )}
           </select>
@@ -803,22 +801,22 @@ export default function TechnicianPage() {
             <thead style={{ background: '#f8fafc', borderBottom: '1px solid #e2e8f0' }}>
               <tr>
                 <th onClick={() => handleSort('patientName')} style={{ padding: '20px', textAlign: 'left', fontSize: '10px', fontWeight: 950, color: '#64748b', letterSpacing: '1px', cursor: 'pointer' }}>
-                  SUBJECT {sortConfig.key === 'patientName' ? (sortConfig.direction === 'asc' ? '🔼' : '🔽') : '↕️'}
+                  SUBJECT
                 </th>
                 <th onClick={() => handleSort('tokenNo')} style={{ padding: '20px', textAlign: 'left', fontSize: '10px', fontWeight: 950, color: '#64748b', letterSpacing: '1px', cursor: 'pointer' }}>
-                  TOKEN {sortConfig.key === 'tokenNo' ? (sortConfig.direction === 'asc' ? '🔼' : '🔽') : '↕️'}
+                  TOKEN
                 </th>
                 <th onClick={() => handleSort('service')} style={{ padding: '20px', textAlign: 'left', fontSize: '10px', fontWeight: 950, color: '#64748b', letterSpacing: '1px', cursor: 'pointer' }}>
-                  MISSION TARGET {sortConfig.key === 'service' ? (sortConfig.direction === 'asc' ? '🔼' : '🔽') : '↕️'}
+                  MISSION TARGET
                 </th>
                 <th onClick={() => handleSort('dateTime')} style={{ padding: '20px', textAlign: 'left', fontSize: '10px', fontWeight: 950, color: '#64748b', letterSpacing: '1px', cursor: 'pointer' }}>
-                  MISSION DATE {sortConfig.key === 'dateTime' ? (sortConfig.direction === 'asc' ? '🔼' : '🔽') : '↕️'}
+                  MISSION DATE
                 </th>
                 <th onClick={() => handleSort('modality')} style={{ padding: '20px', textAlign: 'left', fontSize: '10px', fontWeight: 950, color: '#64748b', letterSpacing: '1px', cursor: 'pointer' }}>
-                  MODALITY {sortConfig.key === 'modality' ? (sortConfig.direction === 'asc' ? '🔼' : '🔽') : '↕️'}
+                  MODALITY
                 </th>
                 <th onClick={() => handleSort('status')} style={{ padding: '20px', textAlign: 'left', fontSize: '10px', fontWeight: 950, color: '#64748b', letterSpacing: '1px', cursor: 'pointer' }}>
-                  STATUS {sortConfig.key === 'status' ? (sortConfig.direction === 'asc' ? '🔼' : '🔽') : '↕️'}
+                  STATUS {sortConfig.key === 'status' ? (sortConfig.direction === 'asc' ? 'UP' : 'DOWN') : 'SORT'}
                 </th>
                 <th style={{ padding: '20px', textAlign: 'right', fontSize: '10px', fontWeight: 950, color: '#64748b', letterSpacing: '1px' }}>{hubTab === 'ACTIVE' ? 'WORKSPACE' : 'ACTIONS'}</th>
               </tr>
@@ -868,7 +866,9 @@ export default function TechnicianPage() {
                     </td>
                     <td style={{ padding: '8px 15px' }}>
                        <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                          <span style={{ fontSize: '16px' }}>{MODALITY_ICONS[study.modality] || '📑'}</span>
+                          <div style={{ width: '28px', height: '28px', borderRadius: '8px', background: '#f0f3fd', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '9px', fontWeight: 950, color: '#0f52ba', border: '1px solid #dbeafe' }}>
+                             {study.modality.slice(0, 2)}
+                          </div>
                           <span style={{ fontSize: '10px', fontWeight: 950, color: '#1e293b' }}>{study.modality}</span>
                        </div>
                     </td>
@@ -880,21 +880,13 @@ export default function TechnicianPage() {
                         border: `1px solid ${(status === 'reported' || status === 'completed') ? '#bbf7d0' : isDone ? '#6ee7b7' : isArrived && !isDone ? '#dbeafe' : isExpected ? '#fef08a' : '#e2e8f0'}`,
                         textTransform: 'uppercase'
                       }}>
-                        {status === 'confirmed' ? '📡 ARRIVED' : status === 'in_progress' ? '⚡ SCANNING' : status === 'scanned' ? '✅ READY' : status === 'reporting' ? '📝 REPORTING' : status === 'reported' ? '📄 FINALIZED' : status === 'completed' ? '✅ ARCHIVED' : status === 'scheduled' ? '📅 EXPECTED' : status.toUpperCase()}
+                        {status === 'confirmed' ? 'ARRIVED' : status === 'in_progress' ? 'SCANNING' : status === 'scanned' ? 'READY' : status === 'reporting' ? 'REPORTING' : status === 'reported' ? 'FINALIZED' : status === 'completed' ? 'ARCHIVED' : status === 'scheduled' ? 'EXPECTED' : status.toUpperCase()}
                       </span>
                     </td>
                     <td style={{ padding: '8px 15px', textAlign: 'right' }}>
                       {hubTab === 'ACTIVE' ? (
                         <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
-                          <button 
-                            onClick={(e) => { e.stopPropagation(); setTokenPrintData(study); }}
-                            style={{ 
-                              padding: '10px', borderRadius: '12px', background: '#f0f7ff', color: '#0f52ba', 
-                              border: '1px solid #dbeafe', cursor: 'pointer', display: 'flex', 
-                              alignItems: 'center', justifyContent: 'center' 
-                            }}
-                            title="Print Token Slip"
-                          >🎟️</button>
+
                           <button 
                             onClick={(e) => { e.stopPropagation(); handlePreviewPrint(study); }}
                             style={{ 
@@ -903,7 +895,7 @@ export default function TechnicianPage() {
                               alignItems: 'center', justifyContent: 'center' 
                             }}
                             title="Print Prescription"
-                          >📜</button>
+                          >RX</button>
                           <button 
                             className="gamified-btn" 
                             disabled={!study.isToday && hubTab !== 'ARCHIVE'}
@@ -915,21 +907,17 @@ export default function TechnicianPage() {
                         </div>
                       ) : (
                         <div style={{ display: 'flex', gap: '10px', justifyContent: 'flex-end' }}>
-                          <button 
-                            onClick={() => setTokenPrintData(study)}
-                            style={{ padding: '10px', borderRadius: '12px', border: '1px solid #dbeafe', background: '#f0f7ff', cursor: 'pointer' }}
-                            title="Print Token Slip"
-                          >🎟️</button>
+
                           <button 
                             onClick={() => handlePreviewPrint(study)}
                             style={{ padding: '10px', borderRadius: '12px', border: '1px solid #fde68a', background: '#fef3c7', cursor: 'pointer' }}
                             title="Print Prescription"
-                          >📜</button>
+                          >RX</button>
                           <button 
                             onClick={() => handlePreviewPrint(study)}
                             style={{ padding: '10px', borderRadius: '12px', border: '1px solid #e2e8f0', background: 'white', cursor: 'pointer' }}
                             title="Print Dispatch"
-                          >🖨️</button>
+                          >PTR</button>
                           <button 
                             className="gamified-btn" 
                             style={{ padding: '10px 20px', borderRadius: '12px', fontSize: '11px' }} 
@@ -1017,7 +1005,6 @@ export default function TechnicianPage() {
             height: '30px'
           }}
         >
-          <span style={{ fontSize: '14px' }}>📦</span> 
           <span>IMPORT</span>
         </button>
         <input id="tech-study-up" type="file" style={{ display: 'none' }} accept=".dcm,.zip" onChange={handleFileChange} />
@@ -1026,21 +1013,21 @@ export default function TechnicianPage() {
 
         {/* VIEWER TOOLS */}
         {[
-          { id: 'WindowLevel', icon: '☀️', label: 'W/L' },
-          { id: 'Zoom', icon: '🔍', label: 'Zoom' },
-          { id: 'Pan', icon: '✋', label: 'Pan' },
-          { id: 'StackScroll', icon: '📜', label: 'Scroll' },
-          { id: 'Length', icon: '📏', label: 'Length' },
-          { id: 'Angle', icon: '📐', label: 'Angle' },
-          { id: 'ArrowAnnotate', icon: '↗️', label: 'Annotate' }
+          { id: 'WindowLevel', label: 'W/L' },
+          { id: 'Zoom', label: 'Zoom' },
+          { id: 'Pan', label: 'Pan' },
+          { id: 'StackScroll', label: 'Scroll' },
+          { id: 'Length', label: 'Length' },
+          { id: 'Angle', label: 'Angle' },
+          { id: 'ArrowAnnotate', label: 'Annotate' }
         ].map(t => (
           <button 
             key={t.id}
             onClick={() => setActiveTool(t.id)}
             className={`toolbar-btn light ${activeTool === t.id ? 'active' : ''}`}
             title={t.label}
-            style={{ width: '28px', height: '28px', fontSize: '11px', padding: 0 }}
-          >{t.icon}</button>
+            style={{ width: 'auto', height: '28px', fontSize: '8px', padding: '0 8px', fontWeight: 950 }}
+          >{t.label.toUpperCase()}</button>
         ))}
 
         <div style={{ width: '1px', height: '24px', background: '#e2e8f0', margin: '0 8px' }}></div>
@@ -1068,9 +1055,9 @@ export default function TechnicianPage() {
         </select>
         
         <div style={{ width: '1px', height: '24px', background: '#e2e8f0', margin: '0 8px' }}></div>
-        <button onClick={() => toggleKeyImage()} className={`toolbar-btn light ${keyImages.includes(`${activeAssetIndex}_${currentSlice}`) ? 'active' : ''}`} title="Mark Key Image" style={{ width: '32px', height: '32px', fontSize: '13px' }}>⭐</button>
-        <button onClick={() => setScreenshotData(true)} className="toolbar-btn light" title="Export Screenshot" style={{ width: '32px', height: '32px', fontSize: '13px' }}>📸</button>
-        <button onClick={() => { setResetTrigger(t => t + 1); setViewportProps({ invert: false, flipHorizontal: false, flipVertical: false, rotation: 0 }); }} className="toolbar-btn light" title="Reset Viewer" style={{ width: '32px', height: '32px', fontSize: '13px' }}>🔄</button>
+        <button onClick={() => toggleKeyImage()} className={`toolbar-btn light ${keyImages.includes(`${activeAssetIndex}_${currentSlice}`) ? 'active' : ''}`} title="Mark Key Image" style={{ width: 'auto', height: '32px', fontSize: '9px', fontWeight: 950, padding: '0 10px' }}>KEY</button>
+        <button onClick={() => setScreenshotData(true)} className="toolbar-btn light" title="Export Screenshot" style={{ width: 'auto', height: '32px', fontSize: '9px', fontWeight: 950, padding: '0 10px' }}>CAP</button>
+        <button onClick={() => { setResetTrigger(t => t + 1); setViewportProps({ invert: false, flipHorizontal: false, flipVertical: false, rotation: 0 }); }} className="toolbar-btn light" title="Reset Viewer" style={{ width: 'auto', height: '32px', fontSize: '9px', fontWeight: 950, padding: '0 10px' }}>RESET</button>
         
         <div style={{ width: '1px', height: '30px', background: '#e2e8f0', margin: '0 10px' }}></div>
         
@@ -1284,7 +1271,9 @@ export default function TechnicianPage() {
                     boxShadow: 'inset 0 4px 10px rgba(0,0,0,0.02)',
                     fontSize: '80px'
                   }}>
-                    {MODALITY_ICONS[activeStudy?.modality] || '🖥️'}
+                    <div style={{ fontSize: '32px', fontWeight: 950, color: '#0f52ba', opacity: 0.2 }}>
+                      {activeStudy?.modality.slice(0, 2)}
+                    </div>
                   </div>
                   
                   <div style={{ textAlign: 'center', zIndex: 1 }}>
@@ -1344,90 +1333,21 @@ export default function TechnicianPage() {
           color: white;
           box-shadow: 0 4px 12px rgba(15, 82, 186, 0.2);
         }
-        .dicom-loader {
-          width: 40px;
-          height: 40px;
-          border: 3px solid rgba(15, 82, 186, 0.1);
-          border-top: 3px solid #0f52ba;
-          border-radius   const renderTokenModal = () => {
-    if (!tokenPrintData) return null;
-    return (
-      <div className="modal-overlay" style={{ background: 'rgba(0,0,0,0.85)', zIndex: 10000, display: 'flex', alignItems: 'center', justifyContent: 'center', position: 'fixed', inset: 0 }}>
-        <div style={{ width: '400px', background: 'white', borderRadius: '16px', overflow: 'hidden', boxShadow: '0 20px 60px rgba(0,0,0,0.5)' }}>
-          <div style={{ padding: '20px', background: '#0a1628', color: 'white', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <span style={{ fontSize: '12px', fontWeight: 900, letterSpacing: '1px' }}>THERMAL PREVIEW (80mm)</span>
-            <button onClick={() => setTokenPrintData(null)} style={{ background: 'none', border: 'none', color: 'white', fontSize: '18px', cursor: 'pointer' }}>✕</button>
-          </div>
-          <div style={{ padding: '20px', display: 'flex', justifyContent: 'center', background: '#f1f5f9' }}>
-            <div id="thermal-token" style={{ width: '80mm', background: 'white', padding: '6mm 5mm', boxShadow: '0 5px 15px rgba(0,0,0,0.1)', color: 'black', fontFamily: "'Courier New', Courier, monospace", textAlign: 'center', lineHeight: '1.2' }}>
-              <div style={{ borderBottom: '2px solid #000', paddingBottom: '6px', marginBottom: '8px' }}>
-                <div style={{ fontSize: '16px', fontWeight: 900, textTransform: 'uppercase' }}>{activeCenter?.name || '1RAD HUB'}</div>
-                <div style={{ fontSize: '8px', fontWeight: 700, marginTop: '2px' }}>DIAGNOSTIC COMMAND CENTER</div>
-              </div>
-              <div style={{ marginBottom: '10px' }}>
-                <div style={{ fontSize: '9px', fontWeight: 800 }}>TOKEN NO.</div>
-                <div style={{ fontSize: '38px', fontWeight: 950, margin: '2px 0' }}>{tokenPrintData.tokenNo || tokenPrintData.id}</div>
-              </div>
-              <div style={{ borderTop: '1px dashed #000', borderBottom: '1px dashed #000', padding: '8px 0', margin: '8px 0', textAlign: 'left' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '4px' }}>
-                  <span style={{ fontSize: '8px', fontWeight: 700 }}>PATIENT ID:</span>
-                  <span style={{ fontSize: '10px', fontWeight: 900 }}>{tokenPrintData.patientIdentifier || tokenPrintData.ptid || tokenPrintData.patientId}</span>
-                </div>
-                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '6px' }}>
-                  <span style={{ fontSize: '8px', fontWeight: 700 }}>NAME:</span>
-                  <span style={{ fontSize: '11px', fontWeight: 950 }}>{tokenPrintData.patientName.toUpperCase()}</span>
-                </div>
-                <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                  <span style={{ fontSize: '8px', fontWeight: 700 }}>DATE:</span>
-                  <span style={{ fontSize: '10px', fontWeight: 900 }}>{new Date(tokenPrintData.dateTime).toLocaleDateString()}</span>
-                </div>
-              </div>
-              <div style={{ marginTop: '8px', textAlign: 'left' }}>
-                <div style={{ fontSize: '9px', fontWeight: 800, color: '#333' }}>MODALITY: {tokenPrintData.modality}</div>
-                <div style={{ fontSize: '12px', fontWeight: 950, marginTop: '2px', borderLeft: '3px solid black', paddingLeft: '8px' }}>{tokenPrintData.service}</div>
-              </div>
-
-              <div style={{ marginTop: '12px', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '10px' }}>
-                <div style={{ textAlign: 'center' }}>
-                  <img 
-                    src={`https://barcode.tec-it.com/barcode.ashx?data=${encodeURIComponent(tokenPrintData.patientIdentifier || tokenPrintData.id)}&code=Code128&translate-esc=on`} 
-                    alt="Barcode" 
-                    crossOrigin="anonymous"
-                    style={{ width: '60mm', height: '12mm', objectFit: 'contain', background: 'white' }} 
-                  />
-                </div>
-                
-                <div style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '8px', background: '#f8fafc', borderRadius: '12px', border: '1px solid #e2e8f0', width: '65mm' }}>
-                  <img 
-                    src={`https://api.qrserver.com/v1/create-qr-code/?size=100x100&data=${encodeURIComponent(`${window.location.origin}/track/${tokenPrintData.appointmentId || tokenPrintData.id}`)}`} 
-                    alt="QR" 
-                    crossOrigin="anonymous"
-                    style={{ width: '14mm', height: '14mm' }} 
-                  />
-                  <div style={{ textAlign: 'left' }}>
-                    <div style={{ fontSize: '9px', fontWeight: 950, color: '#0f52ba' }}>LIVE STATUS</div>
-                    <div style={{ fontSize: '7px', fontWeight: 700, color: '#64748b' }}>SCAN TO TRACK YOUR JOURNEY</div>
-                  </div>
-                </div>
-              </div>
-
-              <div style={{ marginTop: '10px', fontSize: '8px', fontWeight: 700, color: '#94a3b8' }}>PRINTED: {new Date().toLocaleTimeString()}</div>
-            </div>
-          </div>
-          <div style={{ padding: '20px', display: 'flex', gap: '10px' }}>
-            <button className="gamified-btn" style={{ flex: 1, padding: '14px' }} onClick={() => window.print()}>CONFIRM PRINT</button>
-            <button style={{ flex: 1, background: '#f1f5f9', border: '1px solid #dee2e6', borderRadius: '12px', fontSize: '12px', fontWeight: 800, cursor: 'pointer' }} onClick={() => setTokenPrintData(null)}>DISCARD</button>
-          </div>
-        </div>
-        <style>{`@media print { body * { visibility: hidden !important; } #thermal-token, #thermal-token * { visibility: visible !important; } #thermal-token { position: absolute; left: 0; top: 0; width: 80mm; box-shadow: none !important; margin: 0; padding: 3mm 0; } }`}</style>
-      </div>
-    );
-  };
+          border-radius: 50%;
+          animation: spin 1s linear infinite;
+        }
+        @keyframes spin {
+          0% { transform: rotate(0deg); }
+          100% { transform: rotate(360deg); }
+        }
+      `}</style>
+    </div>
+  );
 
   return (
     <div className="page-wrapper" style={{ padding: 0, background: currentView === 'QUEUE' ? '#fcfdfe' : '#f8fafc' }}>
       {currentView === 'QUEUE' ? renderQueue() : renderWorkspace()}
-      {renderTokenModal()}
+
       
       <ReportPreviewModal 
         isOpen={isPreviewOpen}
