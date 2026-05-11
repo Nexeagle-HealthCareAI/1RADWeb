@@ -10,6 +10,147 @@
 }
 
 /* ==========================================================================
+   Page Header - Responsive
+   ========================================================================== */
+
+.appt-page-top {
+  padding-top: 40px;
+}
+
+@media (max-width: 639px) {
+  .appt-page-top {
+    padding-top: 20px;
+  }
+}
+
+.appt-page-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-end;
+  flex-wrap: wrap;
+  gap: 16px;
+  margin-bottom: 28px;
+}
+
+@media (max-width: 639px) {
+  .appt-page-header {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 14px;
+    margin-bottom: 20px;
+  }
+}
+
+.appt-page-title-block {
+  flex: 1 1 auto;
+}
+
+.appt-page-title {
+  font-size: 22px;
+  font-weight: 900;
+  color: #0a1628;
+  letter-spacing: -0.5px;
+  margin: 0 0 6px;
+}
+
+@media (max-width: 639px) {
+  .appt-page-title {
+    font-size: 18px;
+  }
+}
+
+.appt-page-subtitle {
+  font-size: 12px;
+  color: #888;
+  font-weight: 600;
+  margin: 0;
+}
+
+@media (max-width: 639px) {
+  .appt-page-subtitle {
+    font-size: 11px;
+  }
+}
+
+.appt-page-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-shrink: 0;
+}
+
+@media (max-width: 639px) {
+  .appt-page-actions {
+    width: 100%;
+    gap: 10px;
+  }
+}
+
+.appt-new-mission-btn {
+  padding: 12px 28px;
+  font-size: 12px;
+  font-weight: 950;
+  border-radius: 12px;
+  letter-spacing: 0.5px;
+  box-shadow: 0 8px 25px rgba(15, 82, 186, 0.2);
+  white-space: nowrap;
+}
+
+@media (max-width: 639px) {
+  .appt-new-mission-btn {
+    flex: 1;
+    padding: 12px 16px;
+    font-size: 12px;
+  }
+}
+
+.appt-tab-toggle {
+  display: flex;
+  background: white;
+  padding: 4px;
+  border-radius: 12px;
+  border: 1px solid #eef2f6;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.02);
+  flex-shrink: 0;
+}
+
+@media (max-width: 639px) {
+  .appt-tab-toggle {
+    flex: 1;
+  }
+}
+
+.appt-tab-btn {
+  padding: 9px 18px;
+  border-radius: 10px;
+  border: none;
+  font-size: 11px;
+  font-weight: 950;
+  background: transparent;
+  color: #64748b;
+  cursor: pointer;
+  transition: all 0.25s;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  white-space: nowrap;
+}
+
+@media (max-width: 639px) {
+  .appt-tab-btn {
+    flex: 1;
+    padding: 9px 10px;
+    font-size: 10px;
+    text-align: center;
+  }
+}
+
+.appt-tab-btn.active {
+  background: #0f52ba;
+  color: white;
+  box-shadow: 0 4px 12px rgba(15, 82, 186, 0.25);
+}
+
+/* ==========================================================================
    Intel Cards Grid - Responsive
    ========================================================================== */
 

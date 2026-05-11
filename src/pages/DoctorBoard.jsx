@@ -1,11 +1,8 @@
-import { useState, useMemo, useEffect, useCallback, useRef, useContext } from 'react';
+import { useState, useMemo, useEffect, useCallback, useContext } from 'react';
 import { useNavigate } from 'react-router-dom';
-import dicomParser from 'dicom-parser';
 import apiClient from '../api/apiClient';
-import axios from 'axios';
 import { AuthContext } from '../auth/AuthContext';
 import ReportPreviewModal from '../components/ReportPreviewModal';
-import AdvancedDicomViewer from '../components/AdvancedDicomViewer';
 import useOffline from '../hooks/useOffline';
 import { nativeStorage } from '../hooks/useElectron';
 import '../styles/global.css';
@@ -205,23 +202,25 @@ export default function DoctorBoard() {
       setPreviewAppointment(c);
       
       // Attempt to fetch existing report for this appointment
-      const reportRes = await apiClient.get(`/Reporting/report/${c.id || c.appointmentId}`).catch(() => null);
-      if (reportRes?.data?.success && reportRes.data.data) {
-        const r = reportRes.data.data;
+      const reportRes = await apiClient.get(`/Reporting/mission/${c.appointmentId || c.id}`).catch(() => null);
+      const body = reportRes?.data;
+      const r = (body?.success && body?.data) ? body.data : body;
+
+      if (r && (r.findings !== undefined || r.impression !== undefined)) {
         setPreviewReport({
-          mode: r.mode || 'Narrative Editor',
+          mode: r.reportingMode || r.mode || 'Narrative Editor',
           text: r.findings || '',
           data: r.structuredData,
-          impression: r.impression,
-          advice: r.advice,
+          impression: r.impression || '',
+          advice: r.advice || '',
           isFinalized: r.isFinalized || c.status?.toLowerCase() === 'reported'
         });
       } else {
-        // Fallback for blank prescription/preview
         setPreviewReport({
           mode: 'Narrative Editor',
           text: '',
           impression: '',
+          advice: '',
           isFinalized: false
         });
       }
@@ -356,7 +355,7 @@ export default function DoctorBoard() {
                 style={{ 
                   width: '100%', padding: '12px 12px 12px 45px', borderRadius: '10px', 
                   border: search.startsWith('ID:') ? '2px solid #0f52ba' : '1px solid #e2e8f0', 
-                  fontSize: '12px', fontWeight: 700, outline: 'none',
+                  fontSize: '16px', fontWeight: 700, outline: 'none',
                   background: search.startsWith('ID:') ? '#f0f7ff' : 'white'
                 }} 
               />

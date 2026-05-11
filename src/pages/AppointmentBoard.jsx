@@ -775,10 +775,7 @@ export default function AppointmentBoard() {
     const progressCount = stats.inProgress;
     
     return (
-      <div style={{
-        display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))',
-        gap: '15px', marginBottom: '20px',
-      }}>
+      <div className="intel-cards-grid">
         {/* Card: Total Missions */}
         <div style={{
           background: 'linear-gradient(135deg, #0a1628 0%, #1e293b 100%)',
@@ -1972,13 +1969,12 @@ export default function AppointmentBoard() {
   //  MAIN RENDER
   // ============================================================
   return (
-    <div className="page-wrapper board-padding" style={{ paddingTop: '40px' }}>
-      <div style={{ marginBottom: '32px', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', flexWrap: 'wrap', gap: '20px' }}>
-        <div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '6px' }}>
-            <h1 style={{ fontSize: '22px', fontWeight: 900, color: '#0a1628', letterSpacing: '-0.5px', margin: 0 }}>MISSION SCHEDULER</h1>
-          </div>
-          <p style={{ fontSize: '12px', color: '#888', fontWeight: 600, marginLeft: '36px' }}>
+    <div className="page-wrapper board-padding appt-page-top">
+      {/* \u2500\u2500 Page Header \u2500\u2500 */}
+      <div className="appt-page-header">
+        <div className="appt-page-title-block">
+          <h1 className="appt-page-title">MISSION SCHEDULER</h1>
+          <p className="appt-page-subtitle">
             Patient Intake & Appointment Command
             <span style={{
               display: 'inline-flex', alignItems: 'center', gap: '4px',
@@ -1989,34 +1985,27 @@ export default function AppointmentBoard() {
             </span>
           </p>
         </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '20px', flex: 1, justifyContent: 'flex-end' }}>
+
+        <div className="appt-page-actions">
           <button
-            className="gamified-btn"
-            style={{ 
-              padding: '12px 32px', 
-              fontSize: '13px', 
-              fontWeight: 950, 
-              borderRadius: '14px', 
-              letterSpacing: '1px',
-              boxShadow: '0 8px 25px rgba(15, 82, 186, 0.2)',
-            }}
+            className="gamified-btn appt-new-mission-btn"
             onClick={() => { resetBooking(); setIsBookingOpen(true); }}
           >
-            NEW MISSION
+            + NEW MISSION
           </button>
 
-          <div style={{ display: 'flex', background: 'white', padding: '4px', borderRadius: '12px', border: '1px solid #eef2f6', boxShadow: '0 2px 8px rgba(0,0,0,0.02)' }}>
+          <div className="appt-tab-toggle">
             <button
               onClick={() => setActiveTab('TODAY')}
-              style={{ padding: '10px 20px', borderRadius: '10px', border: 'none', fontSize: '11px', fontWeight: 950, background: activeTab === 'TODAY' ? '#0f52ba' : 'transparent', color: activeTab === 'TODAY' ? 'white' : '#64748b', cursor: 'pointer', transition: 'all 0.3s', textTransform: 'uppercase', letterSpacing: '0.5px', whiteSpace: 'nowrap' }}
+              className={`appt-tab-btn ${activeTab === 'TODAY' ? 'active' : ''}`}
             >
-              TODAY'S MISSIONS
+              {isMobile ? 'TODAY' : "TODAY'S MISSIONS"}
             </button>
             <button
               onClick={() => setActiveTab('PAST')}
-              style={{ padding: '10px 20px', borderRadius: '10px', border: 'none', fontSize: '11px', fontWeight: 950, background: activeTab === 'PAST' ? '#0f52ba' : 'transparent', color: activeTab === 'PAST' ? 'white' : '#64748b', cursor: 'pointer', transition: 'all 0.3s', textTransform: 'uppercase', letterSpacing: '0.5px', whiteSpace: 'nowrap' }}
+              className={`appt-tab-btn ${activeTab === 'PAST' ? 'active' : ''}`}
             >
-              MISSION ARCHIVE
+              {isMobile ? 'ARCHIVE' : 'MISSION ARCHIVE'}
             </button>
           </div>
         </div>
