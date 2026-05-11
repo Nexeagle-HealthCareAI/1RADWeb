@@ -4,7 +4,7 @@ import dicomParser from 'dicom-parser';
 import apiClient from '../api/apiClient';
 import axios from 'axios';
 import { AuthContext } from '../auth/AuthContext';
-import PrescriptionModal from '../components/PrescriptionModal';
+import ReportPreviewModal from '../components/ReportPreviewModal';
 import AdvancedDicomViewer from '../components/AdvancedDicomViewer';
 import useOffline from '../hooks/useOffline';
 import { nativeStorage } from '../hooks/useElectron';
@@ -31,24 +31,9 @@ export default function DoctorBoard() {
   const [view, setView] = useState('QUEUE'); // 'QUEUE' or 'HISTORY'
   
   const [isPreviewOpen, setIsPreviewOpen] = useState(false);
-  const [currentSlice, setCurrentSlice] = useState(1);
-  const [printModalData, setPrintModalData] = useState(null);
-  const [currentReport, setCurrentReport] = useState({ findings: '', impression: '', advice: '', technique: '' });
+  const [previewAppointment, setPreviewAppointment] = useState(null);
+  const [previewReport, setPreviewReport] = useState({ mode: 'Narrative Editor', text: '', impression: '', isFinalized: false });
   
-  const [protocol, setProtocol] = useState({
-    fontFamily: 'Inter, sans-serif',
-    fontSize: 12,
-    fontColor: '#1e293b',
-    headerMargin: 40,
-    leftMargin: 20,
-    rightMargin: 20,
-    bottomMargin: 20,
-    letterheadBlobUrl: '',
-    localLetterheadUrl: ''
-  });
-  
-  const [isPrescriptionModalOpen, setIsPrescriptionModalOpen] = useState(false);
-  const [prescriptionData, setPrescriptionData] = useState(null);
   const [tokenPrintData, setTokenPrintData] = useState(null);
 
   // Filters
@@ -216,196 +201,40 @@ export default function DoctorBoard() {
 
   const handlePreviewPrint = async (c) => {
     try {
-      const docId = c.doctorId || localStorage.getItem('doctorId') || localStorage.getItem('UserId');
-      if (!docId || docId === 'null') {
-        console.warn('[1RAD] No Doctor ID found for branding resolution');
-      }
-
-      // 1. Fetch Protocol
-      const brandingRes = docId && docId !== 'null' ? await apiClient.get(`/Prescription/${docId}`).catch(() => ({ data: { success: false } })) : { data: { success: false } };
-      const d = brandingRes.data?.data || {};
-
-      const newProtocol = {
-        fontFamily: d.fontFamily || 'Inter, sans-serif',
-        fontSize: d.fontSize || 12,
-        fontColor: d.fontColor || '#1e293b',
-        headerMargin: d.headerMargin || 40,
-        leftMargin: d.leftMargin || 20,
-        rightMargin: d.rightMargin || 20,
-        bottomMargin: d.bottomMargin || 20,
-        letterheadBlobUrl: d.letterheadBlobUrl || '',
-        localLetterheadUrl: ''
-      };
-
-      // 2. Prepare Report Content (Archive View)
-      // Fetch from API since we're now using separate reporting page
-      const reportRes = await apiClient.get(`/Reporting/report/${c.id || c.appointmentId}`).catch(() => null);
-      const r = (reportRes?.data?.success && reportRes?.data?.data) ? reportRes.data.data : reportRes?.data;
+      setLoading(true);
+      setPreviewAppointment(c);
       
-      if (r) {
-        setCurrentReport({
-          findings: r.findings || '',
-          impression: r.impression || '',
-          advice: r.advice || '',
-          technique: r.technique || ''
+      // Attempt to fetch existing report for this appointment
+      const reportRes = await apiClient.get(`/Reporting/report/${c.id || c.appointmentId}`).catch(() => null);
+      if (reportRes?.data?.success && reportRes.data.data) {
+        const r = reportRes.data.data;
+        setPreviewReport({
+          mode: r.mode || 'Narrative Editor',
+          text: r.findings || '',
+          data: r.structuredData,
+          impression: r.impression,
+          advice: r.advice,
+          isFinalized: r.isFinalized || c.status?.toLowerCase() === 'reported'
         });
       } else {
-        setCurrentReport({
-          findings: '',
+        // Fallback for blank prescription/preview
+        setPreviewReport({
+          mode: 'Narrative Editor',
+          text: '',
           impression: '',
-          advice: '',
-          technique: ''
+          isFinalized: false
         });
       }
-
-      // 3. PDF Hydration
-      if (newProtocol.letterheadBlobUrl && newProtocol.letterheadBlobUrl.toLowerCase().includes('.pdf')) {
-        try {
-          const blobRes = await axios.get(newProtocol.letterheadBlobUrl, { responseType: 'blob' });
-          newProtocol.localLetterheadUrl = URL.createObjectURL(blobRes.data);
-        } catch (err) { console.error(err); }
-      }
-
-      setProtocol(newProtocol);
-      setPrintModalData(c);
+      
       setIsPreviewOpen(true);
     } catch (err) {
-      console.error('[1RAD] Preview Prep Failed', err);
-      setPrintModalData(c);
-      setIsPreviewOpen(true);
+      console.error('[DOCTOR] Preview preparation failed', err);
+    } finally {
+      setLoading(false);
     }
   };
 
-  const renderPreviewModal = () => {
-    if (!isPreviewOpen || !printModalData) return null;
-    const hasLetterhead = !!protocol?.letterheadBlobUrl;
 
-    return (
-      <div id="preview-modal-overlay" className="modal-overlay" style={{ background: 'rgba(10, 22, 40, 0.98)', zIndex: 10000, display: 'flex', alignItems: 'center', justifyContent: 'center', position: 'fixed', inset: 0, padding: '20px', backdropFilter: 'blur(15px)' }}>
-        <div id="preview-modal-container" style={{ width: '1000px', height: '95vh', background: '#f1f5f9', borderRadius: '24px', display: 'flex', flexDirection: 'column', overflow: 'hidden', boxShadow: '0 50px 100px rgba(0,0,0,0.6)', border: '1px solid rgba(255,255,255,0.1)' }}>
-          {/* Preview Toolbar */}
-          <div id="preview-toolbar" style={{ padding: '20px 40px', background: '#0a1628', color: 'white', display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '20px' }}>
-               <div style={{ width: '42px', height: '42px', background: 'linear-gradient(135deg, #0f52ba, #1e40af)', borderRadius: '14px', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '20px', boxShadow: '0 8px 16px rgba(15, 82, 186, 0.3)' }}>📄</div>
-               <div>
-                <h3 style={{ fontSize: '14px', fontWeight: 900, letterSpacing: '2px', margin: 0, color: '#60a5fa' }}>DIAGNOSTIC_REPORT_PREVIEW</h3>
-                <div style={{ fontSize: '10px', opacity: 0.6, marginTop: '2px', textTransform: 'uppercase' }}>
-                  {hasLetterhead ? '⚡ INSTITUTIONAL_BRANDING_ACTIVE' : '⚪ PLAIN_PAPER_MODE'}
-                </div>
-               </div>
-            </div>
-            <div style={{ display: 'flex', gap: '15px' }}>
-                <button 
-                  onClick={() => {
-                    const printWindow = window.open('', '_blank');
-                    const reportContent = document.querySelector('#printable-report').innerHTML;
-                    const styles = Array.from(document.querySelectorAll('style, link[rel="stylesheet"]')).map(s => s.outerHTML).join('\n');
-                    
-                    const letterheadHtml = hasLetterhead ? `
-                      <div style="position: absolute; top:0; left:0; width:100%; height:100%; z-index:-1;">
-                        ${protocol.letterheadBlobUrl.toLowerCase().includes('.pdf') ? 
-                          `<iframe src="${protocol.localLetterheadUrl || protocol.letterheadBlobUrl}" style="width:100%; height:100%; border:none;"></iframe>` : 
-                          `<img src="${protocol.letterheadBlobUrl}" style="width:100%; height:100%; object-fit:fill;">`
-                        }
-                      </div>
-                    ` : '';
-
-                    printWindow.document.write(`
-                      <html>
-                        <head>
-                          <title>Diagnostic Report</title>
-                          ${styles}
-                          <style>
-                            @page { size: A4; margin: 0; }
-                            body { margin: 0; padding: 0; background: white !important; }
-                            #print-container { width: 210mm; min-height: 297mm; position: relative; margin: 0 auto; background: white; }
-                            #print-container > div:first-child { display: none; }
-                          </style>
-                        </head>
-                        <body>
-                          <div id="print-container">${letterheadHtml}<div style="position: relative; z-index: 10;">${reportContent}</div></div>
-                          <script>window.onload = () => { setTimeout(() => { window.print(); window.close(); }, 1000); };</script>
-                        </body>
-                      </html>
-                    `);
-                    printWindow.document.close();
-                  }}
-                  style={{ padding: '12px 30px', borderRadius: '14px', background: 'linear-gradient(135deg, #0f52ba, #1e40af)', color: 'white', border: 'none', fontWeight: 900, fontSize: '12px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '10px', boxShadow: '0 8px 20px rgba(15, 82, 186, 0.4)' }}
-                >
-                  <span style={{ fontSize: '18px' }}>🖨️</span> PRINT FINAL REPORT
-                </button>
-              <button onClick={() => setIsPreviewOpen(false)} style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', color: '#94a3b8', padding: '12px 25px', borderRadius: '12px', cursor: 'pointer', fontWeight: 900 }}>CLOSE</button>
-            </div>
-          </div>
-          
-          <div id="preview-scroll-container" style={{ flex: 1, padding: '50px 0', background: '#1e293b', overflowY: 'auto', display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
-            <div id="printable-report" style={{ 
-              width: '210mm', minHeight: '297mm', background: 'white', 
-              color: protocol?.fontColor || '#1e293b', fontFamily: protocol?.fontFamily || 'Arial, sans-serif',
-              position: 'relative', overflow: 'hidden', boxShadow: '0 0 50px rgba(0,0,0,0.5)'
-            }}>
-                {/* Letterhead Foundation Layer */}
-                {hasLetterhead && (
-                  <div style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', zIndex: 1, pointerEvents: 'none' }}>
-                    { (protocol.letterheadBlobUrl.toLowerCase().includes('.pdf')) ? (
-                      <iframe 
-                        src={protocol.localLetterheadUrl ? `${protocol.localLetterheadUrl}#toolbar=0&navpanes=0&scrollbar=0&view=FitH` : `${protocol.letterheadBlobUrl}#toolbar=0&navpanes=0&scrollbar=0&view=FitH`}
-                        style={{ width: '100%', height: '100%', border: 'none', display: 'block', overflow: 'hidden' }}
-                        scrolling="no"
-                        title="Institutional Letterhead"
-                      />
-                    ) : (
-                      <img src={protocol.letterheadBlobUrl} alt="Letterhead" style={{ width: '100%', height: '100%', objectFit: 'fill' }} />
-                    )}
-                  </div>
-                )}
-
-                {/* Content Overlay */}
-                <div style={{ 
-                  position: 'relative', zIndex: 5, boxSizing: 'border-box', minHeight: '297mm', display: 'flex', flexDirection: 'column',
-                  paddingTop: `${protocol?.headerMargin || 50}mm`, 
-                  paddingLeft: `${protocol?.leftMargin || 20}mm`, 
-                  paddingRight: `${protocol?.rightMargin || 20}mm`, 
-                  paddingBottom: `${protocol?.bottomMargin || 30}mm`,
-                }}>
-                    <div style={{ borderBottom: `2px solid ${protocol?.fontColor || '#0f52ba'}`, paddingBottom: '15px', marginBottom: '25px', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end' }}>
-                       <div>
-                          <div style={{ fontSize: '10px', fontWeight: 900, color: '#64748b', textTransform: 'uppercase', letterSpacing: '1px' }}>Patient Name</div>
-                          <div style={{ fontSize: '18px', fontWeight: 950, color: '#1a1a2e' }}>{printModalData.patientName.toUpperCase()}</div>
-                       </div>
-                       <div style={{ textAlign: 'right' }}>
-                          <div style={{ fontSize: '10px', fontWeight: 900, color: '#64748b', textTransform: 'uppercase', letterSpacing: '1px' }}>Study Mission</div>
-                          <div style={{ fontSize: '14px', fontWeight: 900, color: '#0f52ba' }}>{printModalData.modality} // {printModalData.service}</div>
-                       </div>
-                    </div>
-
-                    <div style={{ flex: 1 }}>
-                      <div style={{ marginBottom: '30px' }}>
-                        <div style={{ fontSize: '9pt', fontWeight: 900, color: protocol?.fontColor || '#0f52ba', marginBottom: '10px', letterSpacing: '1px', textTransform: 'uppercase' }}>Clinical Findings:</div>
-                        <div style={{ fontSize: (protocol?.fontSize || 11) + 'pt', lineHeight: '1.6', color: '#334155', whiteSpace: 'pre-wrap' }}>{currentReport.findings}</div>
-                      </div>
-                      
-                      <div style={{ marginTop: '40px', background: '#f8fafc', padding: '20px', borderRadius: '8px', border: '1px solid #e2e8f0', borderLeft: `6px solid ${protocol?.fontColor || '#0f52ba'}`, pageBreakInside: 'avoid' }}>
-                        <div style={{ fontSize: '9pt', fontWeight: 900, color: protocol?.fontColor || '#0f52ba', marginBottom: '8px', letterSpacing: '1px', textTransform: 'uppercase' }}>Impression:</div>
-                        <div style={{ fontSize: (protocol?.fontSize || 11) + 'pt', fontWeight: 800, color: '#0f172a', lineHeight: '1.4', whiteSpace: 'pre-wrap' }}>{currentReport.impression}</div>
-                      </div>
-                    </div>
-                </div>
-            </div>
-          </div>
-          <style>{`
-            #preview-scroll-container::-webkit-scrollbar { width: 0px; background: transparent; }
-            @media print {
-              body * { visibility: hidden !important; }
-              #printable-report, #printable-report * { visibility: visible !important; }
-              #printable-report { position: fixed !important; left: 0 !important; top: 0 !important; width: 210mm !important; height: 297mm !important; margin: 0 !important; padding: 0 !important; border: none !important; box-shadow: none !important; background: white !important; z-index: 100000 !important; overflow: hidden !important; }
-              * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; box-sizing: border-box !important; }
-            }
-          `}</style>
-        </div>
-      </div>
-    );
-  };
 
   const renderQueue = () => (
     <div className="board-view-container" style={{ background: '#fcfdfe', minHeight: '100vh' }}>
@@ -710,7 +539,7 @@ export default function DoctorBoard() {
                            title="Print Token Slip"
                          >🎟️</button>
                          <button 
-                           onClick={(e) => { e.stopPropagation(); setPrescriptionData(c); setIsPrescriptionModalOpen(true); }}
+                           onClick={(e) => { e.stopPropagation(); handlePreviewPrint(c); }}
                           style={{ 
                             width: '38px', height: '38px', borderRadius: '12px', background: '#fef3c7', color: '#d97706', 
                             border: '1px solid #fde68a', cursor: 'pointer', display: 'flex', 
@@ -829,17 +658,7 @@ export default function DoctorBoard() {
                })}
                {filteredCases.length === 0 && !loading && (
                  <div style={{ gridColumn: '1/-1', textAlign: 'center', padding: '60px', color: '#94a3b8', fontStyle: 'italic' }}>
-                    [ NO DIAGNOSTIC MISSIONS IN THIS FREQUENCY ]
-                 </div>
-               )}
-            </div>
-          )}
-        </div>
-      </div>
-    </div>
-  );
-
-   const renderTokenModal = () => {
+                    [ NO DIAGNOSTIC    const renderTokenModal = () => {
     if (!tokenPrintData) return null;
     return (
       <div className="modal-overlay" style={{ background: 'rgba(0,0,0,0.85)', zIndex: 10000, display: 'flex', alignItems: 'center', justifyContent: 'center', position: 'fixed', inset: 0 }}>
@@ -848,63 +667,60 @@ export default function DoctorBoard() {
             <span style={{ fontSize: '12px', fontWeight: 900, letterSpacing: '1px' }}>THERMAL PREVIEW (80mm)</span>
             <button onClick={() => setTokenPrintData(null)} style={{ background: 'none', border: 'none', color: 'white', fontSize: '18px', cursor: 'pointer' }}>✕</button>
           </div>
-          <div style={{ padding: '30px', display: 'flex', justifyContent: 'center', background: '#f1f5f9' }}>
-            <div id="thermal-token" style={{ width: '80mm', minHeight: '120mm', background: 'white', padding: '12mm 5mm', boxShadow: '0 5px 15px rgba(0,0,0,0.1)', color: 'black', fontFamily: "'Courier New', Courier, monospace", textAlign: 'center', lineHeight: '1.2' }}>
-              <div style={{ borderBottom: '2px solid #000', paddingBottom: '8px', marginBottom: '12px' }}>
-                <div style={{ fontSize: '18px', fontWeight: 900, textTransform: 'uppercase' }}>{activeCenter?.name || '1RAD HUB'}</div>
-                <div style={{ fontSize: '9px', fontWeight: 700, marginTop: '2px' }}>DIAGNOSTIC COMMAND CENTER</div>
+          <div style={{ padding: '20px', display: 'flex', justifyContent: 'center', background: '#f1f5f9' }}>
+            <div id="thermal-token" style={{ width: '80mm', background: 'white', padding: '6mm 5mm', boxShadow: '0 5px 15px rgba(0,0,0,0.1)', color: 'black', fontFamily: "'Courier New', Courier, monospace", textAlign: 'center', lineHeight: '1.2' }}>
+              <div style={{ borderBottom: '2px solid #000', paddingBottom: '6px', marginBottom: '8px' }}>
+                <div style={{ fontSize: '16px', fontWeight: 900, textTransform: 'uppercase' }}>{activeCenter?.name || '1RAD HUB'}</div>
+                <div style={{ fontSize: '8px', fontWeight: 700, marginTop: '2px' }}>DIAGNOSTIC COMMAND CENTER</div>
               </div>
-              <div style={{ marginBottom: '15px' }}>
-                <div style={{ fontSize: '10px', fontWeight: 800 }}>TOKEN NO.</div>
-                <div style={{ fontSize: '42px', fontWeight: 950, margin: '2px 0' }}>{tokenPrintData.tokenNo || tokenPrintData.id}</div>
+              <div style={{ marginBottom: '10px' }}>
+                <div style={{ fontSize: '9px', fontWeight: 800 }}>TOKEN NO.</div>
+                <div style={{ fontSize: '38px', fontWeight: 950, margin: '2px 0' }}>{tokenPrintData.tokenNo || tokenPrintData.id}</div>
               </div>
-              <div style={{ borderTop: '1px dashed #000', borderBottom: '1px dashed #000', padding: '10px 0', margin: '10px 0', textAlign: 'left' }}>
+              <div style={{ borderTop: '1px dashed #000', borderBottom: '1px dashed #000', padding: '8px 0', margin: '8px 0', textAlign: 'left' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '4px' }}>
-                  <span style={{ fontSize: '9px', fontWeight: 700 }}>PATIENT ID:</span>
-                  <span style={{ fontSize: '11px', fontWeight: 900 }}>{tokenPrintData.patientIdentifier || tokenPrintData.ptid || tokenPrintData.patientId}</span>
+                  <span style={{ fontSize: '8px', fontWeight: 700 }}>PATIENT ID:</span>
+                  <span style={{ fontSize: '10px', fontWeight: 900 }}>{tokenPrintData.patientIdentifier || tokenPrintData.ptid || tokenPrintData.patientId}</span>
                 </div>
-                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px' }}>
-                  <span style={{ fontSize: '9px', fontWeight: 700 }}>NAME:</span>
-                  <span style={{ fontSize: '12px', fontWeight: 950 }}>{tokenPrintData.patientName.toUpperCase()}</span>
+                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '6px' }}>
+                  <span style={{ fontSize: '8px', fontWeight: 700 }}>NAME:</span>
+                  <span style={{ fontSize: '11px', fontWeight: 950 }}>{tokenPrintData.patientName.toUpperCase()}</span>
                 </div>
                 <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                  <span style={{ fontSize: '9px', fontWeight: 700 }}>DATE:</span>
-                  <span style={{ fontSize: '11px', fontWeight: 900 }}>{new Date(tokenPrintData.dateTime).toLocaleDateString()}</span>
+                  <span style={{ fontSize: '8px', fontWeight: 700 }}>DATE:</span>
+                  <span style={{ fontSize: '10px', fontWeight: 900 }}>{new Date(tokenPrintData.dateTime).toLocaleDateString()}</span>
                 </div>
               </div>
-              <div style={{ marginTop: '12px', textAlign: 'left' }}>
-                <div style={{ fontSize: '10px', fontWeight: 800, color: '#333' }}>MODALITY: {tokenPrintData.modality}</div>
-                <div style={{ fontSize: '14px', fontWeight: 950, marginTop: '2px', borderLeft: '3px solid black', paddingLeft: '8px' }}>{tokenPrintData.service}</div>
+              <div style={{ marginTop: '8px', textAlign: 'left' }}>
+                <div style={{ fontSize: '9px', fontWeight: 800, color: '#333' }}>MODALITY: {tokenPrintData.modality}</div>
+                <div style={{ fontSize: '12px', fontWeight: 950, marginTop: '2px', borderLeft: '3px solid black', paddingLeft: '8px' }}>{tokenPrintData.service}</div>
               </div>
 
-              <div style={{ marginTop: '20px', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '15px' }}>
-                {/* 1D Barcode for Hardware Scanners */}
+              <div style={{ marginTop: '12px', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '10px' }}>
                 <div style={{ textAlign: 'center' }}>
                   <img 
                     src={`https://barcode.tec-it.com/barcode.ashx?data=${encodeURIComponent(tokenPrintData.patientIdentifier || tokenPrintData.ptid || tokenPrintData.id)}&code=Code128&translate-esc=on`} 
-                    alt="Patient Barcode" 
+                    alt="Barcode" 
                     crossOrigin="anonymous"
-                    style={{ width: '65mm', height: '14mm', objectFit: 'contain', background: 'white', padding: '2mm' }} 
+                    style={{ width: '60mm', height: '12mm', objectFit: 'contain', background: 'white' }} 
                   />
-                  <div style={{ fontSize: '7px', fontWeight: 900, color: '#64748b', marginTop: '4px', letterSpacing: '2px' }}>FOR OFFICIAL USE ONLY</div>
                 </div>
                 
-                {/* QR Code for Mobile Scanning */}
-                <div style={{ display: 'flex', alignItems: 'center', gap: '15px', padding: '12px', background: '#f8fafc', borderRadius: '16px', border: '1px solid #e2e8f0', width: '70mm' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '8px', background: '#f8fafc', borderRadius: '12px', border: '1px solid #e2e8f0', width: '65mm' }}>
                   <img 
                     src={`https://api.qrserver.com/v1/create-qr-code/?size=100x100&data=${encodeURIComponent(`${window.location.origin}/track/${tokenPrintData.appointmentId || tokenPrintData.id}`)}`} 
-                    alt="" 
+                    alt="QR" 
                     crossOrigin="anonymous"
-                    style={{ width: '18mm', height: '18mm' }} 
+                    style={{ width: '14mm', height: '14mm' }} 
                   />
                   <div style={{ textAlign: 'left' }}>
-                    <div style={{ fontSize: '10px', fontWeight: 950, color: '#0f52ba' }}>LIVE STATUS</div>
-                    <div style={{ fontSize: '8px', fontWeight: 700, color: '#64748b', marginTop: '2px' }}>SCAN TO TRACK YOUR<br/>DIAGNOSTIC JOURNEY</div>
+                    <div style={{ fontSize: '9px', fontWeight: 950, color: '#0f52ba' }}>LIVE STATUS</div>
+                    <div style={{ fontSize: '7px', fontWeight: 700, color: '#64748b' }}>SCAN TO TRACK YOUR JOURNEY</div>
                   </div>
                 </div>
               </div>
 
-              <div style={{ marginTop: '15px', fontSize: '9px', fontWeight: 700 }}>PRINTED: {new Date().toLocaleTimeString()}</div>
+              <div style={{ marginTop: '10px', fontSize: '8px', fontWeight: 700, color: '#94a3b8' }}>PRINTED: {new Date().toLocaleTimeString()}</div>
             </div>
           </div>
           <div style={{ padding: '20px', display: 'flex', gap: '10px' }}>
@@ -912,7 +728,7 @@ export default function DoctorBoard() {
             <button style={{ flex: 1, background: '#f1f5f9', border: '1px solid #dee2e6', borderRadius: '12px', fontSize: '12px', fontWeight: 800, cursor: 'pointer' }} onClick={() => setTokenPrintData(null)}>DISCARD</button>
           </div>
         </div>
-        <style>{`@media print { body * { visibility: hidden !important; } #thermal-token, #thermal-token * { visibility: visible !important; } #thermal-token { position: absolute; left: 0; top: 0; width: 80mm; box-shadow: none !important; margin: 0; padding: 5mm; } }`}</style>
+        <style>{`@media print { body * { visibility: hidden !important; } #thermal-token, #thermal-token * { visibility: visible !important; } #thermal-token { position: absolute; left: 0; top: 0; width: 80mm; box-shadow: none !important; margin: 0; padding: 3mm 0; } }`}</style>
       </div>
     );
   };
@@ -920,15 +736,15 @@ export default function DoctorBoard() {
   return (
     <div className="page-wrapper" style={{ padding: 0, background: '#fcfdfe' }}>
       {renderQueue()}
-      {renderPreviewModal()}
       {renderTokenModal()}
       
-      <PrescriptionModal 
-        isOpen={isPrescriptionModalOpen}
-        onClose={() => setIsPrescriptionModalOpen(false)}
-        doctorId={prescriptionData?.doctorId}
-        doctorName={prescriptionData?.doctor}
-        patientData={prescriptionData}
+      <ReportPreviewModal 
+        isOpen={isPreviewOpen}
+        onClose={() => setIsPreviewOpen(false)}
+        doctorId={previewAppointment?.doctorId}
+        appointmentId={previewAppointment?.appointmentId || previewAppointment?.id}
+        patientData={previewAppointment}
+        reportContent={previewReport}
       />
       <style>{`
         .gamified-btn { background: #0f52ba; color: white; border: none; font-weight: 950; cursor: pointer; transition: all 0.2s; box-shadow: 0 4px 15px rgba(15, 82, 186, 0.2); }

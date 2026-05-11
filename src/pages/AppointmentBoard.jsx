@@ -9,7 +9,7 @@ import '../styles/AppointmentBoard.css';
 import AdvancedDicomViewer from '../components/AdvancedDicomViewer';
 import JSZip from 'jszip';
 import dicomParser from 'dicom-parser';
-import PrescriptionModal from '../components/PrescriptionModal';
+import ReportPreviewModal from '../components/ReportPreviewModal';
 
 // --- CONSTANTS ---
 
@@ -80,10 +80,10 @@ export default function AppointmentBoard() {
   const [isAddPatientOpen, setIsAddPatientOpen] = useState(false);
   const [isEditingOpen, setIsEditingOpen] = useState(false);
   const [editingAppointment, setEditingAppointment] = useState(null);
-  const [printModalData, setPrintModalData] = useState(null);
+  const [isPreviewOpen, setIsPreviewOpen] = useState(false);
+  const [previewAppointment, setPreviewAppointment] = useState(null);
+  const [previewReport, setPreviewReport] = useState({ mode: 'Narrative Editor', text: '', impression: '', isFinalized: false });
   const [tokenPrintData, setTokenPrintData] = useState(null);
-  const [isPrescriptionModalOpen, setIsPrescriptionModalOpen] = useState(false);
-  const [prescriptionData, setPrescriptionData] = useState(null);
 
   const [bookingStep, setBookingStep] = useState(1);
   const [currentPage, setCurrentPage] = useState(1);
@@ -480,6 +480,33 @@ export default function AppointmentBoard() {
     setNewPatient({ name: '', mobile: '', age: '', gender: 'Male', village: '', district: '', address: '', referredBy: '', sourceOfInfo: '' });
     setReferrerSearchValue('');
     setDrawerSearchQuery('');
+  };
+
+  const handlePreviewPrint = async (c) => {
+    try {
+      setLoading(true);
+      setPreviewAppointment(c);
+      
+      const reportRes = await apiClient.get(`/Reporting/report/${c.id || c.appointmentId}`).catch(() => null);
+      if (reportRes?.data?.success && reportRes.data.data) {
+        const r = reportRes.data.data;
+        setPreviewReport({
+          mode: r.mode || 'Narrative Editor',
+          text: r.findings || '',
+          data: r.structuredData,
+          impression: r.impression,
+          advice: r.advice,
+          isFinalized: r.isFinalized || c.status?.toLowerCase() === 'reported' || c.status?.toLowerCase() === 'completed'
+        });
+      } else {
+        setPreviewReport({ mode: 'Narrative Editor', text: '', impression: '', isFinalized: false });
+      }
+      setIsPreviewOpen(true);
+    } catch (err) {
+      console.error('[APPOINTMENT] Preview preparation failed', err);
+    } finally {
+      setLoading(false);
+    }
   };
 
   const handleEditAppointment = async () => {
@@ -1131,8 +1158,7 @@ export default function AppointmentBoard() {
             <button
               onClick={(e) => { 
                 e.stopPropagation(); 
-                setPrescriptionData(app);
-                setIsPrescriptionModalOpen(true);
+                handlePreviewPrint(app);
               }}
               style={{
                 width: '28px', height: '28px', borderRadius: '8px',
@@ -1993,123 +2019,74 @@ export default function AppointmentBoard() {
   const renderTokenModal = () => {
     if (!tokenPrintData) return null;
     return (
-      <div className="modal-overlay" style={{ background: 'rgba(0,0,0,0.85)', zIndex: 3001 }}>
+      <div className="modal-overlay" style={{ background: 'rgba(0,0,0,0.85)', zIndex: 10000, display: 'flex', alignItems: 'center', justifyContent: 'center', position: 'fixed', inset: 0 }}>
         <div style={{ width: '400px', background: 'white', borderRadius: '16px', overflow: 'hidden', boxShadow: '0 20px 60px rgba(0,0,0,0.5)' }}>
           <div style={{ padding: '20px', background: '#0a1628', color: 'white', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
             <span style={{ fontSize: '12px', fontWeight: 900, letterSpacing: '1px' }}>THERMAL PREVIEW (80mm)</span>
-            <button onClick={() => setTokenPrintData(null)} style={{ background: 'none', border: 'none', color: 'white', fontSize: '18px', cursor: 'pointer' }}>{'\u2715'}</button>
+            <button onClick={() => setTokenPrintData(null)} style={{ background: 'none', border: 'none', color: 'white', fontSize: '18px', cursor: 'pointer' }}>✕</button>
           </div>
-          
-          <div style={{ padding: '30px', display: 'flex', justifyContent: 'center', background: '#f1f5f9' }}>
-            <div id="thermal-token" style={{ 
-              width: '80mm', minHeight: '120mm', background: 'white', padding: '12mm 5mm', 
-              boxShadow: '0 5px 15px rgba(0,0,0,0.1)', color: 'black', 
-              fontFamily: "'Courier New', Courier, monospace", textAlign: 'center',
-              lineHeight: '1.2'
-            }}>
-              {/* 1. Hospital Name */}
-              <div style={{ borderBottom: '2px solid #000', paddingBottom: '8px', marginBottom: '12px' }}>
-                <div style={{ fontSize: '18px', fontWeight: 900, textTransform: 'uppercase' }}>{activeCenter?.name || '1RAD HUB'}</div>
-                <div style={{ fontSize: '9px', fontWeight: 700, marginTop: '2px' }}>DIAGNOSTIC COMMAND CENTER</div>
+          <div style={{ padding: '20px', display: 'flex', justifyContent: 'center', background: '#f1f5f9' }}>
+            <div id="thermal-token" style={{ width: '80mm', background: 'white', padding: '6mm 5mm', boxShadow: '0 5px 15px rgba(0,0,0,0.1)', color: 'black', fontFamily: "'Courier New', Courier, monospace", textAlign: 'center', lineHeight: '1.2' }}>
+              <div style={{ borderBottom: '2px solid #000', paddingBottom: '6px', marginBottom: '8px' }}>
+                <div style={{ fontSize: '16px', fontWeight: 900, textTransform: 'uppercase' }}>{activeCenter?.name || '1RAD HUB'}</div>
+                <div style={{ fontSize: '8px', fontWeight: 700, marginTop: '2px' }}>DIAGNOSTIC COMMAND CENTER</div>
               </div>
-              
-              {/* 2. Token Number */}
-              <div style={{ marginBottom: '15px' }}>
-                <div style={{ fontSize: '10px', fontWeight: 800 }}>TOKEN NO.</div>
-                <div style={{ fontSize: '42px', fontWeight: 950, margin: '2px 0' }}>
-                  {tokenPrintData.tokenNo || (tokenPrintData.id.includes('-') ? tokenPrintData.id.split('-')[1] : tokenPrintData.id)}
-                </div>
+              <div style={{ marginBottom: '10px' }}>
+                <div style={{ fontSize: '9px', fontWeight: 800 }}>TOKEN NO.</div>
+                <div style={{ fontSize: '38px', fontWeight: 950, margin: '2px 0' }}>{tokenPrintData.tokenNo || tokenPrintData.id}</div>
               </div>
-
-              <div style={{ borderTop: '1px dashed #000', borderBottom: '1px dashed #000', padding: '10px 0', margin: '10px 0', textAlign: 'left' }}>
-                {/* 3. Patient ID */}
+              <div style={{ borderTop: '1px dashed #000', borderBottom: '1px dashed #000', padding: '8px 0', margin: '8px 0', textAlign: 'left' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '4px' }}>
-                  <span style={{ fontSize: '9px', fontWeight: 700 }}>PATIENT ID:</span>
-                  <span style={{ fontSize: '11px', fontWeight: 900 }}>{tokenPrintData.ptid || tokenPrintData.patientId}</span>
+                  <span style={{ fontSize: '8px', fontWeight: 700 }}>PATIENT ID:</span>
+                  <span style={{ fontSize: '10px', fontWeight: 900 }}>{tokenPrintData.patientIdentifier || tokenPrintData.ptid || tokenPrintData.patientId}</span>
                 </div>
-                
-                {/* 4. Patient Name */}
-                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px' }}>
-                  <span style={{ fontSize: '9px', fontWeight: 700 }}>NAME:</span>
-                  <span style={{ fontSize: '12px', fontWeight: 950 }}>{tokenPrintData.patientName.toUpperCase()}</span>
+                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '6px' }}>
+                  <span style={{ fontSize: '8px', fontWeight: 700 }}>NAME:</span>
+                  <span style={{ fontSize: '11px', fontWeight: 950 }}>{tokenPrintData.patientName.toUpperCase()}</span>
                 </div>
-
-                {/* 5. Date of Appointment */}
                 <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                  <span style={{ fontSize: '9px', fontWeight: 700 }}>DATE:</span>
-                  <span style={{ fontSize: '11px', fontWeight: 900 }}>{new Date(tokenPrintData.dateTime).toLocaleDateString()}</span>
+                  <span style={{ fontSize: '8px', fontWeight: 700 }}>DATE:</span>
+                  <span style={{ fontSize: '10px', fontWeight: 900 }}>{new Date(tokenPrintData.dateTime).toLocaleDateString()}</span>
                 </div>
+              </div>
+              <div style={{ marginTop: '8px', textAlign: 'left' }}>
+                <div style={{ fontSize: '9px', fontWeight: 800, color: '#333' }}>MODALITY: {tokenPrintData.modality}</div>
+                <div style={{ fontSize: '12px', fontWeight: 950, marginTop: '2px', borderLeft: '3px solid black', paddingLeft: '8px' }}>{tokenPrintData.service}</div>
               </div>
 
-              {/* 6. Modality & Name */}
-              <div style={{ marginTop: '12px', textAlign: 'left' }}>
-                <div style={{ fontSize: '10px', fontWeight: 800, color: '#333' }}>MODALITY: {tokenPrintData.modality}</div>
-                <div style={{ fontSize: '14px', fontWeight: 950, marginTop: '2px', borderLeft: '3px solid black', paddingLeft: '8px' }}>
-                  {tokenPrintData.service}
-                </div>
-              </div>
-              
-              <div style={{ marginTop: '20px', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '15px' }}>
-                {/* 1D Barcode for Hardware Scanners */}
+              <div style={{ marginTop: '12px', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '10px' }}>
                 <div style={{ textAlign: 'center' }}>
                   <img 
-                    src={`https://barcodeapi.org/api/128/${encodeURIComponent(tokenPrintData.ptid || tokenPrintData.patientId)}`} 
-                    alt="" 
-                    style={{ width: '65mm', height: '12mm', objectFit: 'contain' }} 
+                    src={`https://barcode.tec-it.com/barcode.ashx?data=${encodeURIComponent(tokenPrintData.ptid || tokenPrintData.patientId || tokenPrintData.id)}&code=Code128&translate-esc=on`} 
+                    alt="Barcode" 
+                    crossOrigin="anonymous"
+                    style={{ width: '60mm', height: '12mm', objectFit: 'contain', background: 'white' }} 
                   />
-                  <div style={{ fontSize: '7px', fontWeight: 900, color: '#64748b', marginTop: '4px', letterSpacing: '2px' }}>FOR OFFICIAL USE ONLY</div>
                 </div>
                 
-                {/* QR Code for Mobile Scanning */}
-                <div style={{ display: 'flex', alignItems: 'center', gap: '15px', padding: '12px', background: '#f8fafc', borderRadius: '16px', border: '1px solid #e2e8f0', width: '70mm' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '8px', background: '#f8fafc', borderRadius: '12px', border: '1px solid #e2e8f0', width: '65mm' }}>
                   <img 
                     src={`https://api.qrserver.com/v1/create-qr-code/?size=100x100&data=${encodeURIComponent(`${window.location.origin}/track/${tokenPrintData.appointmentId || tokenPrintData.id}`)}`} 
-                    alt="" 
-                    style={{ width: '18mm', height: '18mm' }} 
+                    alt="QR" 
+                    crossOrigin="anonymous"
+                    style={{ width: '14mm', height: '14mm' }} 
                   />
                   <div style={{ textAlign: 'left' }}>
-                    <div style={{ fontSize: '10px', fontWeight: 950, color: '#0f52ba' }}>LIVE STATUS</div>
-                    <div style={{ fontSize: '8px', fontWeight: 700, color: '#64748b', marginTop: '2px' }}>SCAN TO TRACK YOUR<br/>DIAGNOSTIC JOURNEY</div>
+                    <div style={{ fontSize: '9px', fontWeight: 950, color: '#0f52ba' }}>LIVE STATUS</div>
+                    <div style={{ fontSize: '7px', fontWeight: 700, color: '#64748b' }}>SCAN TO TRACK YOUR JOURNEY</div>
                   </div>
                 </div>
               </div>
 
-              <div style={{ marginTop: '15px', fontSize: '9px', fontWeight: 700 }}>
-                PRINTED: {new Date().toLocaleTimeString()}
-              </div>
-              
-              <div style={{ marginTop: '15px', borderTop: '2px dashed #000', paddingTop: '10px', fontSize: '10px', fontWeight: 950 }}>
-                PLEASE WAIT FOR YOUR TURN
-              </div>
+              <div style={{ marginTop: '10px', fontSize: '8px', fontWeight: 700, color: '#94a3b8' }}>PRINTED: {new Date().toLocaleTimeString()}</div>
             </div>
           </div>
-
           <div style={{ padding: '20px', display: 'flex', gap: '10px' }}>
-            <button 
-              className="gamified-btn" 
-              style={{ flex: 1, padding: '14px' }}
-              onClick={() => window.print()}
-            >
-              CONFIRM PRINT
-            </button>
-            <button 
-              style={{ flex: 1, background: '#f1f5f9', border: '1px solid #dee2e6', borderRadius: '12px', fontSize: '12px', fontWeight: 800, cursor: 'pointer' }}
-              onClick={() => setTokenPrintData(null)}
-            >
-              DISCARD
-            </button>
+            <button className="gamified-btn" style={{ flex: 1, padding: '14px' }} onClick={() => window.print()}>CONFIRM PRINT</button>
+            <button style={{ flex: 1, background: '#f1f5f9', border: '1px solid #dee2e6', borderRadius: '12px', fontSize: '12px', fontWeight: 800, cursor: 'pointer' }} onClick={() => setTokenPrintData(null)}>DISCARD</button>
           </div>
         </div>
-        <style>{`
-          @media print {
-            body * { visibility: hidden; }
-            #thermal-token, #thermal-token * { visibility: visible; }
-            #thermal-token { 
-              position: absolute; left: 0; top: 0; width: 80mm; 
-              box-shadow: none !important; margin: 0; padding: 5mm;
-            }
-          }
-        `}</style>
+        <style>{`@media print { body * { visibility: hidden !important; } #thermal-token, #thermal-token * { visibility: visible !important; } #thermal-token { position: absolute; left: 0; top: 0; width: 80mm; box-shadow: none !important; margin: 0; padding: 3mm 0; } }`}</style>
       </div>
     );
   };
@@ -2261,12 +2238,13 @@ export default function AppointmentBoard() {
       {renderEditModal()}
       {renderTokenModal()}
       
-      <PrescriptionModal 
-        isOpen={isPrescriptionModalOpen}
-        onClose={() => setIsPrescriptionModalOpen(false)}
-        doctorId={prescriptionData?.doctorId}
-        doctorName={prescriptionData?.doctor}
-        patientData={prescriptionData}
+      <ReportPreviewModal 
+        isOpen={isPreviewOpen}
+        onClose={() => setIsPreviewOpen(false)}
+        doctorId={previewAppointment?.doctorId}
+        appointmentId={previewAppointment?.appointmentId || previewAppointment?.id}
+        patientData={previewAppointment}
+        reportContent={previewReport}
       />
     </div>
   );

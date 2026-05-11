@@ -4,7 +4,7 @@ import dicomParser from 'dicom-parser';
 import apiClient from '../api/apiClient';
 import { AuthContext } from '../auth/AuthContext';
 import AdvancedDicomViewer from '../components/AdvancedDicomViewer';
-import PrescriptionModal from '../components/PrescriptionModal';
+import ReportPreviewModal from '../components/ReportPreviewModal';
 import { DicomCache } from '../utils/DicomCache';
 import { dicomOptimizer } from '../utils/DicomPerformanceOptimizer';
 import '../styles/global.css';
@@ -42,10 +42,9 @@ export default function TechnicianPage() {
   // Workspace specific states
   const [uploadedFiles, setUploadedFiles] = useState([]);
   const [techNotes, setTechNotes] = useState('');
-  const [currentSlice, setCurrentSlice] = useState(1);
-  const [printModalData, setPrintModalData] = useState(null);
-  const [isPrescriptionModalOpen, setIsPrescriptionModalOpen] = useState(false);
-  const [prescriptionData, setPrescriptionData] = useState(null);
+  const [isPreviewOpen, setIsPreviewOpen] = useState(false);
+  const [previewAppointment, setPreviewAppointment] = useState(null);
+  const [previewReport, setPreviewReport] = useState({ mode: 'Narrative Editor', text: '', impression: '', isFinalized: false });
 
   // Pagination & Archive Filtering
   const [archivePage, setArchivePage] = useState(1);
@@ -574,41 +573,31 @@ export default function TechnicianPage() {
   };
 
   // --- RENDER VIEWS ---
-  const renderPrintModal = () => {
-    if (!printModalData) return null;
-    return (
-      <div className="modal-overlay" style={{ background: 'rgba(15, 23, 42, 0.98)', zIndex: 10000 }}>
-         <div style={{ width: '900px', height: '94vh', background: 'white', borderRadius: '20px', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
-            <div style={{ padding: '20px 40px', background: '#0a1628', color: 'white', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-               <div>
-                  <h3 style={{ fontSize: '12px', fontWeight: 950, letterSpacing: '2px', margin: 0 }}>CLINICAL DISPATCH PREVIEW</h3>
-                  <p style={{ fontSize: '9px', opacity: 0.6, margin: '4px 0 0' }}>VERIFIED MISSION DATA | DISPATCH_READY</p>
-               </div>
-               <div style={{ display: 'flex', gap: '15px' }}>
-                  <button className="gamified-btn" style={{ padding: '10px 30px' }} onClick={() => window.print()}>PRINT MISSION</button>
-                  <button onClick={() => setPrintModalData(null)} style={{ background: 'transparent', border: '1px solid rgba(255,255,255,0.2)', color: 'white', padding: '10px 20px', borderRadius: '10px', cursor: 'pointer' }}>CLOSE</button>
-               </div>
-            </div>
-            <div style={{ flex: 1, padding: '50px', background: '#f1f5f9', display: 'flex', justifyContent: 'center', overflowY: 'auto' }}>
-               <div id="printable-dispatch" style={{ width: '210mm', minHeight: '297mm', background: 'white', padding: '25mm', color: '#1e293b', boxShadow: '0 0 50px rgba(0,0,0,0.1)' }}>
-                  <div style={{ borderBottom: '4px solid #0f52ba', paddingBottom: '25px', marginBottom: '35px', display: 'flex', justifyContent: 'space-between' }}>
-                    <h1 style={{ fontWeight: 950, color: '#0f52ba' }}>1RAD DISPATCH</h1>
-                    <div style={{ textAlign: 'right' }}>
-                        <div style={{ fontSize: '10px', fontWeight: 950, color: '#94a3b8' }}>MISSION_ID</div>
-                        <div style={{ fontSize: '16px', fontWeight: 900 }}>{printModalData.id}</div>
-                    </div>
-                  </div>
-                  <div style={{ marginBottom: '40px' }}>
-                    <h3 style={{ fontSize: '12px', fontWeight: 950, color: '#64748b', textTransform: 'uppercase', marginBottom: '15px' }}>Subject Identity</h3>
-                    <div style={{ fontSize: '20px', fontWeight: 950 }}>{printModalData.patientName.toUpperCase()}</div>
-                    <div style={{ fontSize: '14px', color: '#64748b' }}>MODALITY: {printModalData.modality} | SERVICE: {printModalData.service}</div>
-                  </div>
-               </div>
-            </div>
-         </div>
-         <style>{`@media print { body * { visibility: hidden; } #printable-dispatch, #printable-dispatch * { visibility: visible; } #printable-dispatch { position: absolute; left: 0; top: 0; width: 100%; } }`}</style>
-      </div>
-    );
+  const handlePreviewPrint = async (c) => {
+    try {
+      setLoading(true);
+      setPreviewAppointment(c);
+      
+      const reportRes = await apiClient.get(`/Reporting/report/${c.id || c.appointmentId}`).catch(() => null);
+      if (reportRes?.data?.success && reportRes.data.data) {
+        const r = reportRes.data.data;
+        setPreviewReport({
+          mode: r.mode || 'Narrative Editor',
+          text: r.findings || '',
+          data: r.structuredData,
+          impression: r.impression,
+          advice: r.advice,
+          isFinalized: r.isFinalized || c.status?.toLowerCase() === 'reported' || c.status?.toLowerCase() === 'completed'
+        });
+      } else {
+        setPreviewReport({ mode: 'Narrative Editor', text: '', impression: '', isFinalized: false });
+      }
+      setIsPreviewOpen(true);
+    } catch (err) {
+      console.error('[TECH] Preview prep failed', err);
+    } finally {
+      setLoading(false);
+    }
   };
 
   const renderQueue = () => (
@@ -907,7 +896,7 @@ export default function TechnicianPage() {
                             title="Print Token Slip"
                           >🎟️</button>
                           <button 
-                            onClick={(e) => { e.stopPropagation(); setPrescriptionData(study); setIsPrescriptionModalOpen(true); }}
+                            onClick={(e) => { e.stopPropagation(); handlePreviewPrint(study); }}
                             style={{ 
                               padding: '10px', borderRadius: '12px', background: '#fef3c7', color: '#d97706', 
                               border: '1px solid #fde68a', cursor: 'pointer', display: 'flex', 
@@ -932,12 +921,12 @@ export default function TechnicianPage() {
                             title="Print Token Slip"
                           >🎟️</button>
                           <button 
-                            onClick={() => { setPrescriptionData(study); setIsPrescriptionModalOpen(true); }}
+                            onClick={() => handlePreviewPrint(study)}
                             style={{ padding: '10px', borderRadius: '12px', border: '1px solid #fde68a', background: '#fef3c7', cursor: 'pointer' }}
                             title="Print Prescription"
                           >📜</button>
                           <button 
-                            onClick={() => setPrintModalData(study)}
+                            onClick={() => handlePreviewPrint(study)}
                             style={{ padding: '10px', borderRadius: '12px', border: '1px solid #e2e8f0', background: 'white', cursor: 'pointer' }}
                             title="Print Dispatch"
                           >🖨️</button>
@@ -1360,18 +1349,7 @@ export default function TechnicianPage() {
           height: 40px;
           border: 3px solid rgba(15, 82, 186, 0.1);
           border-top: 3px solid #0f52ba;
-          border-radius: 50%;
-          animation: spin 1s linear infinite;
-        }
-        @keyframes spin {
-          0% { transform: rotate(0deg); }
-          100% { transform: rotate(360deg); }
-        }
-      `}</style>
-    </div>
-  );
-
-  const renderTokenModal = () => {
+          border-radius   const renderTokenModal = () => {
     if (!tokenPrintData) return null;
     return (
       <div className="modal-overlay" style={{ background: 'rgba(0,0,0,0.85)', zIndex: 10000, display: 'flex', alignItems: 'center', justifyContent: 'center', position: 'fixed', inset: 0 }}>
@@ -1380,61 +1358,60 @@ export default function TechnicianPage() {
             <span style={{ fontSize: '12px', fontWeight: 900, letterSpacing: '1px' }}>THERMAL PREVIEW (80mm)</span>
             <button onClick={() => setTokenPrintData(null)} style={{ background: 'none', border: 'none', color: 'white', fontSize: '18px', cursor: 'pointer' }}>✕</button>
           </div>
-          <div style={{ padding: '30px', display: 'flex', justifyContent: 'center', background: '#f1f5f9' }}>
-            <div id="thermal-token" style={{ width: '80mm', minHeight: '120mm', background: 'white', padding: '12mm 5mm', boxShadow: '0 5px 15px rgba(0,0,0,0.1)', color: 'black', fontFamily: "'Courier New', Courier, monospace", textAlign: 'center', lineHeight: '1.2' }}>
-              <div style={{ borderBottom: '2px solid #000', paddingBottom: '8px', marginBottom: '12px' }}>
-                <div style={{ fontSize: '18px', fontWeight: 900, textTransform: 'uppercase' }}>{activeCenter?.name || '1RAD HUB'}</div>
-                <div style={{ fontSize: '9px', fontWeight: 700, marginTop: '2px' }}>DIAGNOSTIC COMMAND CENTER</div>
+          <div style={{ padding: '20px', display: 'flex', justifyContent: 'center', background: '#f1f5f9' }}>
+            <div id="thermal-token" style={{ width: '80mm', background: 'white', padding: '6mm 5mm', boxShadow: '0 5px 15px rgba(0,0,0,0.1)', color: 'black', fontFamily: "'Courier New', Courier, monospace", textAlign: 'center', lineHeight: '1.2' }}>
+              <div style={{ borderBottom: '2px solid #000', paddingBottom: '6px', marginBottom: '8px' }}>
+                <div style={{ fontSize: '16px', fontWeight: 900, textTransform: 'uppercase' }}>{activeCenter?.name || '1RAD HUB'}</div>
+                <div style={{ fontSize: '8px', fontWeight: 700, marginTop: '2px' }}>DIAGNOSTIC COMMAND CENTER</div>
               </div>
-              <div style={{ marginBottom: '15px' }}>
-                <div style={{ fontSize: '10px', fontWeight: 800 }}>TOKEN NO.</div>
-                <div style={{ fontSize: '42px', fontWeight: 950, margin: '2px 0' }}>{tokenPrintData.tokenNo || tokenPrintData.id}</div>
+              <div style={{ marginBottom: '10px' }}>
+                <div style={{ fontSize: '9px', fontWeight: 800 }}>TOKEN NO.</div>
+                <div style={{ fontSize: '38px', fontWeight: 950, margin: '2px 0' }}>{tokenPrintData.tokenNo || tokenPrintData.id}</div>
               </div>
-              <div style={{ borderTop: '1px dashed #000', borderBottom: '1px dashed #000', padding: '10px 0', margin: '10px 0', textAlign: 'left' }}>
+              <div style={{ borderTop: '1px dashed #000', borderBottom: '1px dashed #000', padding: '8px 0', margin: '8px 0', textAlign: 'left' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '4px' }}>
-                  <span style={{ fontSize: '9px', fontWeight: 700 }}>PATIENT ID:</span>
-                  <span style={{ fontSize: '11px', fontWeight: 900 }}>{tokenPrintData.patientIdentifier || tokenPrintData.ptid || tokenPrintData.patientId}</span>
+                  <span style={{ fontSize: '8px', fontWeight: 700 }}>PATIENT ID:</span>
+                  <span style={{ fontSize: '10px', fontWeight: 900 }}>{tokenPrintData.patientIdentifier || tokenPrintData.ptid || tokenPrintData.patientId}</span>
                 </div>
-                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px' }}>
-                  <span style={{ fontSize: '9px', fontWeight: 700 }}>NAME:</span>
-                  <span style={{ fontSize: '12px', fontWeight: 950 }}>{tokenPrintData.patientName.toUpperCase()}</span>
+                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '6px' }}>
+                  <span style={{ fontSize: '8px', fontWeight: 700 }}>NAME:</span>
+                  <span style={{ fontSize: '11px', fontWeight: 950 }}>{tokenPrintData.patientName.toUpperCase()}</span>
                 </div>
                 <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                  <span style={{ fontSize: '9px', fontWeight: 700 }}>DATE:</span>
-                  <span style={{ fontSize: '11px', fontWeight: 900 }}>{new Date(tokenPrintData.dateTime).toLocaleDateString()}</span>
+                  <span style={{ fontSize: '8px', fontWeight: 700 }}>DATE:</span>
+                  <span style={{ fontSize: '10px', fontWeight: 900 }}>{new Date(tokenPrintData.dateTime).toLocaleDateString()}</span>
                 </div>
               </div>
-              <div style={{ marginTop: '12px', textAlign: 'left' }}>
-                <div style={{ fontSize: '10px', fontWeight: 800, color: '#333' }}>MODALITY: {tokenPrintData.modality}</div>
-                <div style={{ fontSize: '14px', fontWeight: 950, marginTop: '2px', borderLeft: '3px solid black', paddingLeft: '8px' }}>{tokenPrintData.service}</div>
+              <div style={{ marginTop: '8px', textAlign: 'left' }}>
+                <div style={{ fontSize: '9px', fontWeight: 800, color: '#333' }}>MODALITY: {tokenPrintData.modality}</div>
+                <div style={{ fontSize: '12px', fontWeight: 950, marginTop: '2px', borderLeft: '3px solid black', paddingLeft: '8px' }}>{tokenPrintData.service}</div>
               </div>
-              
-              <div style={{ marginTop: '20px', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '15px' }}>
-                {/* 1D Barcode for Hardware Scanners */}
+
+              <div style={{ marginTop: '12px', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '10px' }}>
                 <div style={{ textAlign: 'center' }}>
                   <img 
-                    src={`https://barcodeapi.org/api/128/${encodeURIComponent(tokenPrintData.patientIdentifier || tokenPrintData.id)}`} 
-                    alt="" 
-                    style={{ width: '65mm', height: '12mm', objectFit: 'contain' }} 
+                    src={`https://barcode.tec-it.com/barcode.ashx?data=${encodeURIComponent(tokenPrintData.patientIdentifier || tokenPrintData.id)}&code=Code128&translate-esc=on`} 
+                    alt="Barcode" 
+                    crossOrigin="anonymous"
+                    style={{ width: '60mm', height: '12mm', objectFit: 'contain', background: 'white' }} 
                   />
-                  <div style={{ fontSize: '7px', fontWeight: 900, color: '#64748b', marginTop: '4px', letterSpacing: '2px' }}>FOR OFFICIAL USE ONLY</div>
                 </div>
                 
-                {/* QR Code for Mobile Scanning */}
-                <div style={{ display: 'flex', alignItems: 'center', gap: '15px', padding: '12px', background: '#f8fafc', borderRadius: '16px', border: '1px solid #e2e8f0', width: '70mm' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '8px', background: '#f8fafc', borderRadius: '12px', border: '1px solid #e2e8f0', width: '65mm' }}>
                   <img 
                     src={`https://api.qrserver.com/v1/create-qr-code/?size=100x100&data=${encodeURIComponent(`${window.location.origin}/track/${tokenPrintData.appointmentId || tokenPrintData.id}`)}`} 
-                    alt="" 
-                    style={{ width: '18mm', height: '18mm' }} 
+                    alt="QR" 
+                    crossOrigin="anonymous"
+                    style={{ width: '14mm', height: '14mm' }} 
                   />
                   <div style={{ textAlign: 'left' }}>
-                    <div style={{ fontSize: '10px', fontWeight: 950, color: '#0f52ba' }}>LIVE STATUS</div>
-                    <div style={{ fontSize: '8px', fontWeight: 700, color: '#64748b', marginTop: '2px' }}>SCAN TO TRACK YOUR<br/>DIAGNOSTIC JOURNEY</div>
+                    <div style={{ fontSize: '9px', fontWeight: 950, color: '#0f52ba' }}>LIVE STATUS</div>
+                    <div style={{ fontSize: '7px', fontWeight: 700, color: '#64748b' }}>SCAN TO TRACK YOUR JOURNEY</div>
                   </div>
                 </div>
               </div>
 
-              <div style={{ marginTop: '15px', fontSize: '9px', fontWeight: 700 }}>PRINTED: {new Date().toLocaleTimeString()}</div>
+              <div style={{ marginTop: '10px', fontSize: '8px', fontWeight: 700, color: '#94a3b8' }}>PRINTED: {new Date().toLocaleTimeString()}</div>
             </div>
           </div>
           <div style={{ padding: '20px', display: 'flex', gap: '10px' }}>
@@ -1442,7 +1419,7 @@ export default function TechnicianPage() {
             <button style={{ flex: 1, background: '#f1f5f9', border: '1px solid #dee2e6', borderRadius: '12px', fontSize: '12px', fontWeight: 800, cursor: 'pointer' }} onClick={() => setTokenPrintData(null)}>DISCARD</button>
           </div>
         </div>
-        <style>{`@media print { body * { visibility: hidden !important; } #thermal-token, #thermal-token * { visibility: visible !important; } #thermal-token { position: absolute; left: 0; top: 0; width: 80mm; box-shadow: none !important; margin: 0; padding: 5mm; } }`}</style>
+        <style>{`@media print { body * { visibility: hidden !important; } #thermal-token, #thermal-token * { visibility: visible !important; } #thermal-token { position: absolute; left: 0; top: 0; width: 80mm; box-shadow: none !important; margin: 0; padding: 3mm 0; } }`}</style>
       </div>
     );
   };
@@ -1450,15 +1427,15 @@ export default function TechnicianPage() {
   return (
     <div className="page-wrapper" style={{ padding: 0, background: currentView === 'QUEUE' ? '#fcfdfe' : '#f8fafc' }}>
       {currentView === 'QUEUE' ? renderQueue() : renderWorkspace()}
-      {renderPrintModal()}
       {renderTokenModal()}
       
-      <PrescriptionModal 
-        isOpen={isPrescriptionModalOpen}
-        onClose={() => setIsPrescriptionModalOpen(false)}
-        doctorId={prescriptionData?.doctorId}
-        doctorName={prescriptionData?.doctor}
-        patientData={prescriptionData}
+      <ReportPreviewModal 
+        isOpen={isPreviewOpen}
+        onClose={() => setIsPreviewOpen(false)}
+        doctorId={previewAppointment?.doctorId}
+        appointmentId={previewAppointment?.appointmentId || previewAppointment?.id}
+        patientData={previewAppointment}
+        reportContent={previewReport}
       />
       <style>{`
         .gamified-btn {

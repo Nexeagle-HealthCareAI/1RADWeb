@@ -41,11 +41,16 @@ const ReportPreviewModal = ({
           if (appointmentId) {
             console.info(`[ReportPreview] Synchronizing Context for Appointment: ${appointmentId}`);
             const appRes = await apiClient.get(`/appointments/${appointmentId}`); 
-            if (appRes.data?.success) setFullAppointment(appRes.data.data);
+            // Handle both wrapped {success, data} and direct object responses
+            const appData = appRes.data?.data || appRes.data;
+            if (appData && typeof appData === 'object') {
+              setFullAppointment(appData);
+            }
 
             // 3. Fetch Saved Report Metadata (Finalization dates, etc.)
             const reportRes = await apiClient.get(`/Reporting/report/${appointmentId}`);
-            if (reportRes.data?.success) setSavedMetadata(reportRes.data.data);
+            const reportData = reportRes.data?.data || reportRes.data;
+            if (reportData) setSavedMetadata(reportData);
           }
         } catch (err) {
           console.warn("[ReportPreview] Context sync partially failed:", err.message);
@@ -310,12 +315,12 @@ const ReportPreviewModal = ({
                   <div style={{ display: 'flex', gap: '30px', alignItems: 'center', background: '#f8fafc', padding: '8px 15px', borderRadius: '6px' }}>
                     <div>
                       <span style={{ color: '#64748b', fontSize: '9px', fontWeight: 900 }}>PATIENT ID:</span>
-                      <strong style={{ marginLeft: '8px', fontSize: '12px' }}>{fullAppointment?.patientIdentifier || '--'}</strong>
+                      <strong style={{ marginLeft: '8px', fontSize: '12px' }}>{fullAppointment?.patientIdentifier || fullAppointment?.ptid || fullAppointment?.id || '--'}</strong>
                     </div>
                     <div style={{ width: '1px', height: '12px', background: '#cbd5e1' }}></div>
                     <div>
                       <span style={{ color: '#64748b', fontSize: '9px', fontWeight: 900 }}>AGE / SEX:</span>
-                      <strong style={{ marginLeft: '8px', fontSize: '12px' }}>{fullAppointment?.patientAge || '--'} / {fullAppointment?.patientGender || '--'}</strong>
+                      <strong style={{ marginLeft: '8px', fontSize: '12px' }}>{fullAppointment?.patientAge || fullAppointment?.age || '--'} / {fullAppointment?.patientGender || fullAppointment?.gender || '--'}</strong>
                     </div>
                     <div style={{ width: '1px', height: '12px', background: '#cbd5e1' }}></div>
                     <div>
