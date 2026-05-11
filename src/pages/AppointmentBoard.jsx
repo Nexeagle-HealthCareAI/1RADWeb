@@ -942,13 +942,13 @@ export default function AppointmentBoard() {
       {/* Reset Button */}
       {(filters.status !== 'ALL' || filters.modality !== 'ALL' || filters.doctor !== 'ALL' || searchQuery || activeTab !== 'TODAY') && (
         <button
-          onClick={() => { 
-            setFilters({ date: TODAY, status: 'ALL', modality: 'ALL', doctor: 'ALL' }); 
-            setSearchQuery(''); 
+          onClick={() => {
+            setFilters({ date: TODAY, status: 'ALL', modality: 'ALL', doctor: 'ALL' });
+            setSearchQuery('');
             setActiveTab('TODAY');
-            setPastDateRange({ 
-              start: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0], 
-              end: new Date(Date.now() - 1 * 24 * 60 * 60 * 1000).toISOString().split('T')[0] 
+            setPastDateRange({
+              start: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
+              end: new Date(Date.now() - 1 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]
             });
           }}
           className="filter-reset-btn"
@@ -956,6 +956,7 @@ export default function AppointmentBoard() {
           ✕ RESET
         </button>
       )}
+
     </div>
   );
 
@@ -2004,16 +2005,16 @@ export default function AppointmentBoard() {
             NEW MISSION
           </button>
 
-          <div style={{ display: 'flex', background: 'white', padding: '4px', borderRadius: '12px', border: '1px solid #eef2f6', boxShadow: '0 2px 8px rgba(0,0,0,0.02)', marginLeft: '10px' }}>
-            <button 
+          <div style={{ display: 'flex', background: 'white', padding: '4px', borderRadius: '12px', border: '1px solid #eef2f6', boxShadow: '0 2px 8px rgba(0,0,0,0.02)' }}>
+            <button
               onClick={() => setActiveTab('TODAY')}
-              style={{ padding: '10px 24px', borderRadius: '10px', border: 'none', fontSize: '11px', fontWeight: 950, background: activeTab === 'TODAY' ? '#0f52ba' : 'transparent', color: activeTab === 'TODAY' ? 'white' : '#64748b', cursor: 'pointer', transition: 'all 0.3s', textTransform: 'uppercase', letterSpacing: '0.5px' }}
+              style={{ padding: '10px 20px', borderRadius: '10px', border: 'none', fontSize: '11px', fontWeight: 950, background: activeTab === 'TODAY' ? '#0f52ba' : 'transparent', color: activeTab === 'TODAY' ? 'white' : '#64748b', cursor: 'pointer', transition: 'all 0.3s', textTransform: 'uppercase', letterSpacing: '0.5px', whiteSpace: 'nowrap' }}
             >
               TODAY'S MISSIONS
             </button>
-            <button 
+            <button
               onClick={() => setActiveTab('PAST')}
-              style={{ padding: '10px 24px', borderRadius: '10px', border: 'none', fontSize: '11px', fontWeight: 950, background: activeTab === 'PAST' ? '#0f52ba' : 'transparent', color: activeTab === 'PAST' ? 'white' : '#64748b', cursor: 'pointer', transition: 'all 0.3s', textTransform: 'uppercase', letterSpacing: '0.5px' }}
+              style={{ padding: '10px 20px', borderRadius: '10px', border: 'none', fontSize: '11px', fontWeight: 950, background: activeTab === 'PAST' ? '#0f52ba' : 'transparent', color: activeTab === 'PAST' ? 'white' : '#64748b', cursor: 'pointer', transition: 'all 0.3s', textTransform: 'uppercase', letterSpacing: '0.5px', whiteSpace: 'nowrap' }}
             >
               MISSION ARCHIVE
             </button>

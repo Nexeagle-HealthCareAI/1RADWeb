@@ -41,6 +41,7 @@ export default function TechnicianPage() {
   
   // Workspace specific states
   const [uploadedFiles, setUploadedFiles] = useState([]);
+  const [currentSlice, setCurrentSlice] = useState(1);
   const [techNotes, setTechNotes] = useState('');
   const [isPreviewOpen, setIsPreviewOpen] = useState(false);
   const [previewAppointment, setPreviewAppointment] = useState(null);

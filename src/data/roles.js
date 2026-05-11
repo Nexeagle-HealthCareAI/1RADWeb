@@ -6,7 +6,7 @@ export const ROLES = {
   RECEPTIONIST: 'receptionist',
   TECHNICIAN: 'technician',
   DOCTOR: 'doctor',
-  ACCOUNTANT: 'accountant'
+  ACCOUNTANT: 'accountant',
 };
 
 export const ROLE_LABELS = {
@@ -15,7 +15,7 @@ export const ROLE_LABELS = {
   receptionist: 'Intake Coordinator',
   technician: 'Imaging Specialist',
   doctor: 'Diagnostic Consultant',
-  accountant: 'Financial Comptroller'
+  accountant: 'Financial Comptroller',
 };
 
 // Default landing route for each role
@@ -59,5 +59,11 @@ export const NAV_ITEMS = [
     route: '/doctor-board',
     icon: '👨‍⚕️',
     allowedRoles: ['admindoctor', 'doctor'],
+  },
+  {
+    label: 'SUBSCRIPTION',
+    route: '/subscription',
+    icon: '🔑',
+    allowedRoles: ['admindoctor', 'admin'],
   },
 ];

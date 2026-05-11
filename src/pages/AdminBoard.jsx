@@ -1,4 +1,5 @@
 import React, { useState, useMemo, useEffect, useCallback } from 'react';
+import { useNavigate } from 'react-router-dom';
 import apiClient, { BASE_URL } from '../api/apiClient';
 import useAuth from '../auth/useAuth';
 import { ROLE_LABELS } from '../data/roles';
@@ -41,6 +42,7 @@ const SECTIONS_POOL = [
 export default function AdminBoard() {
   const { currentUser, logout, activeCenter, centers, switchCenter, refreshCenters, createCenter, subscription, refreshSubscription } = useAuth();
   const { isOnline, addToOutbox } = useOffline();
+  const navigate = useNavigate();
   const [activeTab, setActiveTab] = useState('INTELLIGENCE');
   const [layouts, setLayouts] = useState(INITIAL_LAYOUTS);
   const [patients, setPatients] = useState([]);
@@ -1270,7 +1272,7 @@ export default function AdminBoard() {
           </div>
           
           <button 
-            onClick={() => setActiveTab('SUBSCRIPTION_PLAN_PAGE')} // This could redirect or open another view
+            onClick={() => navigate('/subscription')}
             style={{ 
               padding: '12px 24px', borderRadius: '12px', border: 'none', 
               background: '#0f52ba', color: 'white', fontSize: '11px', fontWeight: 950, cursor: 'pointer',
@@ -3340,7 +3342,7 @@ export default function AdminBoard() {
         boxShadow: '0 4px 20px rgba(0,0,0,0.03)',
         scrollbarWidth: 'none' // Hide scrollbar for cleaner look
       }}>
-        {['INTELLIGENCE', 'REFERRAL INTEL', 'PERSONNEL', 'HOSPITAL', 'FINANCE', 'PRESCRIPTION'].map(tab => (
+        {['INTELLIGENCE', 'REFERRAL INTEL', 'PERSONNEL', 'HOSPITAL', 'FINANCE', 'PRESCRIPTION', 'SUBSCRIPTION'].map(tab => (
           <button 
             key={tab}
             className={`admin-tab ${activeTab === tab ? 'active' : ''}`} 
@@ -3372,6 +3374,7 @@ export default function AdminBoard() {
       {activeTab === 'HOSPITAL' && renderHospitalSettings()}
       {activeTab === 'FINANCE' && renderFinance()}
       {activeTab === 'PRESCRIPTION' && renderPrescriptionArchitect()}
+      {activeTab === 'SUBSCRIPTION' && renderSubscription()}
 
       {isHospitalDrawerOpen && renderHospitalSettingsDrawer()}
       {isPriceDrawerOpen && renderPriceDrawer()}
@@ -3513,11 +3516,12 @@ export default function AdminBoard() {
                            
                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
                               {[
-                                { id: 'doctor', label: 'Doctor', desc: 'Precision Reporting', color: 'var(--tactical-cyan)' },
-                                { id: 'technician', label: 'Technician', desc: 'Ops & Acquisition', color: '#f39c12' },
-                                { id: 'receptionist', label: 'Receptionist', desc: 'Patient Dispatch', color: '#e84393' },
-                                { id: 'admin', label: 'Admin', desc: 'Governance Control', color: '#0f52ba' },
-                                ...(currentUser.roles?.[0] === 'admindoctor' ? [{ id: 'admindoctor', label: 'AdminDoctor', desc: 'Master Authority', color: 'var(--tactical-indigo)' }] : [])
+                                { id: 'doctor',       label: 'Doctor',       desc: 'Precision Reporting',  color: '#0891b2', icon: '👨‍⚕️' },
+                                { id: 'technician',   label: 'Technician',   desc: 'Ops & Acquisition',    color: '#f39c12', icon: '🩻'  },
+                                { id: 'receptionist', label: 'Receptionist', desc: 'Patient Dispatch',      color: '#e84393', icon: '📋'  },
+                                { id: 'admin',        label: 'Admin',        desc: 'Governance Control',    color: '#0f52ba', icon: '🏢'  },
+                                { id: 'accountant',   label: 'Accountant',   desc: 'Financial Comptroller', color: '#059669', icon: '📊'  },
+                                ...(currentUser.roles?.[0] === 'admindoctor' ? [{ id: 'admindoctor', label: 'AdminDoctor', desc: 'Master Authority', color: '#6366f1', icon: '⭐' }] : [])
                               ].map(role => {
                                 const isSelected = editUser.roles.includes(role.id);
                                 return (
