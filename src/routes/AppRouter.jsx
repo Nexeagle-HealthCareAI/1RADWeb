@@ -16,6 +16,7 @@ import ViewerPage from '../pages/ViewerPage';
 import BillingPage from '../pages/BillingPage';
 import ReportingPage from '../pages/ReportingPage';
 import DicomViewerPage from '../pages/DicomViewerPage';
+import SubscriptionPage from '../pages/SubscriptionPage';
 
 function RootRedirect() {
   const { currentUser } = useAuth();
@@ -117,6 +118,14 @@ export default function AppRouter() {
           element={
             <ProtectedRoute allowedRoles={['admindoctor', 'doctor']}>
               <ReportingPage />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/subscription"
+          element={
+            <ProtectedRoute allowedRoles={['admindoctor', 'admin']}>
+              <SubscriptionPage />
             </ProtectedRoute>
           }
         />

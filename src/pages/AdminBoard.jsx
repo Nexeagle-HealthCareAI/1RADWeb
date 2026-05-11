@@ -39,7 +39,7 @@ const SECTIONS_POOL = [
 ];
 
 export default function AdminBoard() {
-  const { currentUser, logout, activeCenter, centers, switchCenter, refreshCenters, createCenter } = useAuth();
+  const { currentUser, logout, activeCenter, centers, switchCenter, refreshCenters, createCenter, subscription, refreshSubscription } = useAuth();
   const { isOnline, addToOutbox } = useOffline();
   const [activeTab, setActiveTab] = useState('INTELLIGENCE');
   const [layouts, setLayouts] = useState(INITIAL_LAYOUTS);
@@ -455,7 +455,10 @@ export default function AdminBoard() {
       fetchFinancialMatrix();
       fetchExpenses();
     }
-  }, [activeTab, fetchPersonnel, fetchReferralIntelligence, fetchPatientMasterList, fetchMappedHospitals, fetchServicePrices, fetchExpenses, referralViewMode]);
+    if (activeTab === 'SUBSCRIPTION') {
+      refreshSubscription();
+    }
+  }, [activeTab, fetchPersonnel, fetchReferralIntelligence, fetchPatientMasterList, fetchMappedHospitals, fetchServicePrices, fetchExpenses, referralViewMode, refreshSubscription]);
 
   const fetchStrategicOutlook = useCallback(async (dateString) => {
     try {
@@ -682,14 +685,6 @@ export default function AdminBoard() {
     return () => window.removeEventListener('resize', handleResize);
   }, []);
 
-  // --- DERIVED DATA ---
-  const [subscription, setSubscription] = useState({ 
-    tier: 'PROFESSIONAL', 
-    limit: 5000, 
-    active: true, 
-    nextBilling: '2024-05-15',
-    licenseKey: 'ERAD-9X2V-88KL-QPTX'
-  });
 
   const [systemProtocols, setSystemProtocols] = useState({ 
     aiAssisted: true, 
@@ -1242,6 +1237,102 @@ export default function AdminBoard() {
         </>
       );
     };
+
+  const renderSubscription = () => {
+    return (
+      <div className="subscription-view">
+        <div className="board-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '35px' }}>
+          <div>
+            <h2 style={{ fontSize: '12px', fontWeight: 900, textTransform: 'uppercase', letterSpacing: '2px', color: '#0f52ba', marginBottom: '4px' }}>Subscription Protocol</h2>
+            <div style={{ display: 'flex', gap: '15px', alignItems: 'center', marginTop: '10px' }}>
+                <div style={{ display: 'flex', background: '#f1f5f9', padding: '8px 20px', borderRadius: '10px', border: '1px solid #e2e8f0', fontSize: '10px', fontWeight: 950, color: '#0f52ba' }}>
+                   LICENSING & ENTITLEMENTS
+                </div>
+            </div>
+          </div>
+          
+          <button 
+            onClick={() => setActiveTab('SUBSCRIPTION_PLAN_PAGE')} // This could redirect or open another view
+            style={{ 
+              padding: '12px 24px', borderRadius: '12px', border: 'none', 
+              background: '#0f52ba', color: 'white', fontSize: '11px', fontWeight: 950, cursor: 'pointer',
+              boxShadow: '0 8px 20px rgba(15, 82, 186, 0.2)'
+            }}
+          >
+            UPGRADE PROTOCOL →
+          </button>
+        </div>
+
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(400px, 1fr))', gap: '30px' }}>
+           {/* Active Plan Status */}
+           <div style={{ background: 'white', border: '1px solid #e2e8f0', padding: '30px', borderRadius: '24px', boxShadow: '0 4px 20px rgba(0,0,0,0.02)' }}>
+              <div style={{ fontSize: '10px', fontWeight: 950, color: '#64748b', textTransform: 'uppercase', letterSpacing: '2px', marginBottom: '30px' }}>Active Intelligence Tier</div>
+              
+              <div style={{ display: 'flex', alignItems: 'center', gap: '25px', marginBottom: '40px' }}>
+                 <div style={{ 
+                   width: '80px', height: '80px', borderRadius: '24px', 
+                   background: 'linear-gradient(135deg, #0f52ba 0%, #061a40 100%)',
+                   display: 'flex', alignItems: 'center', justifyContent: 'center',
+                   fontSize: '32px', boxShadow: '0 10px 25px rgba(15, 82, 186, 0.2)'
+                 }}>
+                    {subscription?.isTrial ? '⏳' : '💎'}
+                 </div>
+                 <div>
+                    <div style={{ fontSize: '24px', fontWeight: 950, color: '#1e293b', letterSpacing: '-1px' }}>
+                      {subscription?.planName?.toUpperCase() || 'UNKNOWN_TIER'}
+                    </div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '4px' }}>
+                       <div style={{ width: '8px', height: '8px', borderRadius: '50%', background: subscription?.isActive ? '#2ecc71' : '#e74c3c' }}></div>
+                       <span style={{ fontSize: '11px', fontWeight: 800, color: '#64748b' }}>
+                         STATUS: {subscription?.status?.toUpperCase() || 'INACTIVE'}
+                       </span>
+                    </div>
+                 </div>
+              </div>
+
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '15px' }}>
+                 <div style={{ padding: '20px', background: '#f8fafc', borderRadius: '20px', border: '1px solid #edf2f7' }}>
+                    <div style={{ fontSize: '9px', fontWeight: 950, color: '#94a3b8', letterSpacing: '1px', marginBottom: '8px' }}>EXPIRATION_DATE</div>
+                    <div style={{ fontSize: '14px', fontWeight: 900, color: '#1e293b' }}>
+                      {subscription?.endDate ? new Date(subscription.endDate).toLocaleDateString() : 'N/A'}
+                    </div>
+                 </div>
+                 <div style={{ padding: '20px', background: '#f8fafc', borderRadius: '20px', border: '1px solid #edf2f7' }}>
+                    <div style={{ fontSize: '9px', fontWeight: 950, color: '#94a3b8', letterSpacing: '1px', marginBottom: '8px' }}>REMAINING_WINDOW</div>
+                    <div style={{ fontSize: '14px', fontWeight: 900, color: (subscription?.daysRemaining < 5) ? '#e74c3c' : '#0f52ba' }}>
+                      {subscription?.daysRemaining || 0} DAYS
+                    </div>
+                 </div>
+              </div>
+           </div>
+
+           {/* Surcharge Metrics */}
+           <div style={{ background: 'white', border: '1px solid #e2e8f0', padding: '30px', borderRadius: '24px', boxShadow: '0 4px 20px rgba(0,0,0,0.02)' }}>
+              <div style={{ fontSize: '10px', fontWeight: 950, color: '#64748b', textTransform: 'uppercase', letterSpacing: '2px', marginBottom: '30px' }}>Doctor Surcharge Ledger</div>
+              
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '15px 0', borderBottom: '1px solid #f1f5f9' }}>
+                    <span style={{ fontSize: '12px', fontWeight: 800, color: '#64748b' }}>Active Specialist Count</span>
+                    <span style={{ fontSize: '16px', fontWeight: 950, color: '#1e293b' }}>{subscription?.doctorCount || 0}</span>
+                 </div>
+                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '15px 0', borderBottom: '1px solid #f1f5f9' }}>
+                    <span style={{ fontSize: '12px', fontWeight: 800, color: '#64748b' }}>Included Base Seats</span>
+                    <span style={{ fontSize: '16px', fontWeight: 950, color: '#1e293b' }}>1</span>
+                 </div>
+                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '15px 0', borderBottom: '1px solid #f1f5f9' }}>
+                    <span style={{ fontSize: '12px', fontWeight: 800, color: '#64748b' }}>Additional Seats Surcharge</span>
+                    <span style={{ fontSize: '16px', fontWeight: 950, color: '#0f52ba' }}>₹{subscription?.additionalDoctorSurcharge?.toLocaleString() || '0'}</span>
+                 </div>
+                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '20px 0', marginTop: '10px' }}>
+                    <span style={{ fontSize: '13px', fontWeight: 950, color: '#1e293b' }}>Total Protocol Overhead</span>
+                    <span style={{ fontSize: '20px', fontWeight: 950, color: '#1e293b' }}>₹{((subscription?.totalBasePrice || 0) + (subscription?.additionalDoctorSurcharge || 0)).toLocaleString()}</span>
+                 </div>
+              </div>
+           </div>
+        </div>
+      </div>
+    );
+  };
 
   const renderHospitalSettings = () => {
     if (viewingHubId) {
@@ -3234,7 +3325,7 @@ export default function AdminBoard() {
         boxShadow: '0 4px 20px rgba(0,0,0,0.03)',
         scrollbarWidth: 'none' // Hide scrollbar for cleaner look
       }}>
-        {['INTELLIGENCE', 'REFERRAL INTEL', 'PERSONNEL', 'HOSPITAL', 'FINANCE', 'PRESCRIPTION'].map(tab => (
+        {['INTELLIGENCE', 'REFERRAL INTEL', 'PERSONNEL', 'HOSPITAL', 'FINANCE', 'PRESCRIPTION', 'SUBSCRIPTION'].map(tab => (
           <button 
             key={tab}
             className={`admin-tab ${activeTab === tab ? 'active' : ''}`} 
@@ -3266,6 +3357,7 @@ export default function AdminBoard() {
       {activeTab === 'HOSPITAL' && renderHospitalSettings()}
       {activeTab === 'FINANCE' && renderFinance()}
       {activeTab === 'PRESCRIPTION' && renderPrescriptionArchitect()}
+      {activeTab === 'SUBSCRIPTION' && renderSubscription()}
 
       {isHospitalDrawerOpen && renderHospitalSettingsDrawer()}
       {isPriceDrawerOpen && renderPriceDrawer()}

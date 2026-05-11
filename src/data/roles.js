@@ -59,5 +59,11 @@ export const NAV_ITEMS = [
     route: '/doctor-board',
     icon: '👨‍⚕️',
     allowedRoles: ['admindoctor', 'doctor'],
+  },
+  {
+    label: 'SUBSCRIPTION',
+    route: '/subscription',
+    icon: '⚡',
+    allowedRoles: ['admindoctor', 'admin'],
   }
 ];

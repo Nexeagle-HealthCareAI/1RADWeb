@@ -29,6 +29,8 @@ export function AuthProvider({ children }) {
   const COUNTDOWN_START = 60; // 1 minute warning countdown
   const lastActivityRef = useRef(Date.now());
 
+  const [subscription, setSubscription] = useState(null);
+
 
   // Sync users and centers to localStorage whenever they change
   useEffect(() => {
@@ -144,12 +146,23 @@ export function AuthProvider({ children }) {
     }
   }, [centers.length]);
 
+  const refreshSubscription = useCallback(async () => {
+    if (!currentUser) return;
+    try {
+      const resp = await apiClient.get('/subscriptions/status');
+      setSubscription(resp.data);
+    } catch (err) {
+      console.error('[AUTH] Subscription sync failure', err);
+    }
+  }, [currentUser]);
+
   // Synchronize Hub Discovery: Automatically refresh centers list when session starts
   useEffect(() => {
     if (currentUser?.id) {
       refreshCenters();
+      refreshSubscription();
     }
-  }, [currentUser?.id, refreshCenters]);
+  }, [currentUser?.id, refreshCenters, refreshSubscription]);
 
   const login = useCallback(async (identifier, password) => {
     try {
@@ -499,7 +512,9 @@ export function AuthProvider({ children }) {
       resetPassword,
       showTimeoutModal,
       timeoutCountdown,
-      resetIdleTimer
+      resetIdleTimer,
+      subscription,
+      refreshSubscription
     }}>
       {children}
     </AuthContext.Provider>
