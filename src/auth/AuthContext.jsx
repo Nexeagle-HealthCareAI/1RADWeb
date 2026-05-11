@@ -149,10 +149,15 @@ export function AuthProvider({ children }) {
   const refreshSubscription = useCallback(async () => {
     if (!currentUser) return;
     try {
-      const resp = await apiClient.get('/subscriptions/status');
+      // Tactical: Use relative path to BASE_URL to ensure api/v1 prefix is preserved
+      const resp = await apiClient.get('subscriptions/status');
       setSubscription(resp.data);
     } catch (err) {
-      console.error('[AUTH] Subscription sync failure', err);
+      if (err.response?.status === 404) {
+        console.warn('[AUTH] Subscription endpoint not found. Ensure backend is deployed with SubscriptionsController.');
+      } else {
+        console.error('[AUTH] Subscription sync failure', err);
+      }
     }
   }, [currentUser]);
 
