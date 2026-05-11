@@ -1,6 +1,5 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ROLE_HOME } from '../data/roles';
 import useAuth from '../auth/useAuth';
 import useOffline from '../hooks/useOffline';
 import '../styles/global.css';
@@ -15,7 +14,7 @@ export default function TopNav({ currentTime }) {
   const { isOnline, isSyncing, pendingCount } = useOffline();
 
   const formattedTime = currentTime.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-  const formattedDate = currentTime.toLocaleDateString([], { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' });
+  const formattedDate = currentTime.toLocaleDateString([], { weekday: 'short', day: 'numeric', month: 'short' });
 
   const roles = currentUser.roles || [];
   const canSeeSubscription = roles.includes('admindoctor') || roles.includes('admin');
@@ -25,102 +24,177 @@ export default function TopNav({ currentTime }) {
 
   return (
     <>
-      {/* Expiry Warning Banner */}
+      <style>{`
+        @keyframes pulse-ring {
+          0% { transform: scale(0.33); opacity: 0; }
+          80%, 100% { opacity: 0; }
+        }
+        @keyframes pulse-dot {
+          0% { transform: scale(0.8); }
+          50% { transform: scale(1); }
+          100% { transform: scale(0.8); }
+        }
+        .nav-button-hover:hover {
+          background: rgba(15, 82, 186, 0.05) !important;
+          transform: translateY(-1px);
+        }
+        .nav-button-hover:active {
+          transform: translateY(0);
+        }
+      `}</style>
+
+      {/* Expiry Warning Banner - Modern Streamlined Design */}
       {showBanner && (
         <div style={{
-          background: isExpired
-            ? 'linear-gradient(90deg, #dc2626, #b91c1c)'
-            : daysLeft <= 3
-            ? 'linear-gradient(90deg, #d97706, #b45309)'
-            : 'linear-gradient(90deg, #0f52ba, #1e40af)',
-          padding: '10px 30px',
-          display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-          zIndex: 1001, position: 'sticky', top: 0,
+          background: isExpired ? '#dc2626' : '#0f172a',
+          padding: '8px 30px',
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          zIndex: 1001, position: 'relative',
+          borderBottom: '1px solid rgba(255,255,255,0.1)'
         }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-            <span style={{ fontSize: '16px' }}>{isExpired ? '🚨' : '⚠️'}</span>
-            <span style={{ fontSize: '12px', fontWeight: 800, color: 'white' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '15px' }}>
+            <div style={{ 
+              background: isExpired ? 'rgba(255,255,255,0.2)' : '#0f52ba', 
+              padding: '2px 8px', borderRadius: '4px', fontSize: '9px', fontWeight: 950, color: 'white', letterSpacing: '1px'
+            }}>
+              {isExpired ? 'CRITICAL' : 'NOTICE'}
+            </div>
+            <span style={{ fontSize: '11px', fontWeight: 700, color: 'white', letterSpacing: '0.3px' }}>
               {isExpired
-                ? 'Your subscription has expired. Access may be restricted.'
-                : `Your subscription expires in ${daysLeft} day${daysLeft === 1 ? '' : 's'}. Upgrade to avoid interruption.`}
+                ? 'SUBSCRIPTION EXPIRED: Access to clinical modules is now restricted.'
+                : `Subscription protocol ending in ${daysLeft} days. Renew to maintain operational continuity.`}
             </span>
-          </div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
             <button
               onClick={() => navigate('/subscription')}
-              style={{ background: 'rgba(255,255,255,0.2)', border: '1px solid rgba(255,255,255,0.4)', borderRadius: '8px', padding: '6px 16px', color: 'white', fontSize: '11px', fontWeight: 950, cursor: 'pointer', letterSpacing: '0.5px' }}
+              style={{ background: 'white', border: 'none', borderRadius: '6px', padding: '4px 12px', color: isExpired ? '#dc2626' : '#0f172a', fontSize: '10px', fontWeight: 950, cursor: 'pointer', transition: 'all 0.2s' }}
             >
-              UPGRADE NOW
-            </button>
-            <button
-              onClick={() => setBannerDismissed(true)}
-              style={{ background: 'none', border: 'none', color: 'rgba(255,255,255,0.7)', fontSize: '16px', cursor: 'pointer', padding: '0 4px' }}
-            >
-              ✕
+              RESOLVE NOW →
             </button>
           </div>
+          <button
+            onClick={() => setBannerDismissed(true)}
+            style={{ position: 'absolute', right: '20px', background: 'none', border: 'none', color: 'rgba(255,255,255,0.5)', fontSize: '14px', cursor: 'pointer' }}
+          >
+            ✕
+          </button>
         </div>
       )}
 
-      <header className="top-nav" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', height: '60px', padding: '0 30px', background: 'white', borderBottom: '1px solid #eee', position: 'sticky', top: showBanner ? '40px' : 0, zIndex: 1000 }}>
-        {/* Welcome & Status HUD */}
-        <div className="status-hud" style={{ display: 'flex', gap: '30px', alignItems: 'center' }}>
-          <div style={{ display: 'flex', flexDirection: 'column' }}>
-            <span style={{ fontSize: '9px', fontWeight: 950, color: '#0f52ba', letterSpacing: '2px', textTransform: 'uppercase' }}>Active Institution</span>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-              <div style={{ width: '8px', height: '8px', borderRadius: '50%', background: isOnline ? '#2ecc71' : '#94a3b8', boxShadow: isOnline ? '0 0 10px rgba(46, 204, 113, 0.4)' : 'none' }}></div>
-              <span style={{ fontSize: '15px', fontWeight: 950, color: '#1a1a2e', letterSpacing: '-0.5px' }}>
-                {activeCenter?.name?.toUpperCase() || 'OFFLINE_NODE'}
+      <header style={{ 
+        display: 'flex', justifyContent: 'space-between', alignItems: 'center', 
+        height: '64px', padding: '0 40px', 
+        background: 'rgba(255, 255, 255, 0.8)', 
+        backdropFilter: 'blur(12px)',
+        borderBottom: '1px solid #eef2f6', 
+        position: 'sticky', top: 0, zIndex: 1000,
+        boxShadow: '0 4px 20px rgba(0,0,0,0.02)'
+      }}>
+        
+        <div style={{ display: 'flex', alignItems: 'center', gap: '40px' }}>
+          {/* Institutional Node Identifier */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: '15px' }}>
+            <div style={{ 
+              width: '40px', height: '40px', borderRadius: '12px', 
+              background: 'linear-gradient(135deg, #0f52ba 0%, #1e40af 100%)',
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              boxShadow: '0 8px 16px rgba(15, 82, 186, 0.2)'
+            }}>
+              <span style={{ color: 'white', fontWeight: 950, fontSize: '16px' }}>{activeCenter?.name?.charAt(0) || 'H'}</span>
+            </div>
+            <div style={{ display: 'flex', flexDirection: 'column' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                <span style={{ fontSize: '9px', fontWeight: 950, color: '#94a3b8', letterSpacing: '1.5px', textTransform: 'uppercase' }}>Current Terminal</span>
+                {isOnline && <div style={{ width: '6px', height: '6px', borderRadius: '50%', background: '#10b981', boxShadow: '0 0 8px #10b981' }} />}
+              </div>
+              <span style={{ fontSize: '14px', fontWeight: 950, color: '#1e293b', letterSpacing: '-0.3px' }}>
+                {activeCenter?.name || 'INITIALIZING_NODE...'}
               </span>
             </div>
           </div>
 
-          {/* Sync Status HUD */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: '8px 15px', background: isOnline ? '#f0fdf4' : '#fef2f2', borderRadius: '12px', border: '1px solid', borderColor: isOnline ? '#bcf0da' : '#fecdd3' }}>
-            <div style={{ position: 'relative' }}>
-              <span style={{ fontSize: '18px' }}>{isOnline ? '☁️' : '📡'}</span>
-              {isSyncing && (
-                <div style={{ position: 'absolute', top: '-2px', right: '-2px', width: '8px', height: '8px', background: '#0f52ba', borderRadius: '50%', animation: 'pulse 1s infinite' }}></div>
-              )}
-            </div>
-            <div>
-              <div style={{ fontSize: '9px', fontWeight: 950, color: isOnline ? '#166534' : '#991b1b', textTransform: 'uppercase' }}>
-                {isSyncing ? 'Synchronizing...' : isOnline ? 'Cloud Linked' : 'Offline Mode'}
-              </div>
-              <div style={{ fontSize: '10px', fontWeight: 800, color: isOnline ? '#15803d' : '#ef4444' }}>
-                {pendingCount > 0 ? `${pendingCount} Records Pending` : 'All Data Synced'}
-              </div>
-            </div>
-          </div>
+          <div style={{ width: '1px', height: '24px', background: '#e2e8f0' }} />
 
-          {/* Subscription pill — only for admins */}
-          {canSeeSubscription && subscription && (
-            <button
-              onClick={() => navigate('/subscription')}
-              style={{
-                display: 'flex', alignItems: 'center', gap: '6px',
-                background: subscription.isActive ? '#f0fdf4' : '#fef2f2',
-                border: `1px solid ${subscription.isActive ? '#bbf7d0' : '#fecdd3'}`,
-                borderRadius: '10px', padding: '6px 12px', cursor: 'pointer',
-              }}
-            >
-              <div style={{ width: '6px', height: '6px', borderRadius: '50%', background: subscription.isActive ? '#16a34a' : '#dc2626', flexShrink: 0 }} />
-              <span style={{ fontSize: '9px', fontWeight: 950, color: subscription.isActive ? '#166534' : '#b91c1c', textTransform: 'uppercase', letterSpacing: '1px' }}>
-                {subscription.isTrial ? 'TRIAL' : subscription.planName || 'PLAN'}
-              </span>
-              {daysLeft !== null && daysLeft <= 30 && (
-                <span style={{ fontSize: '9px', fontWeight: 800, color: daysLeft <= 7 ? '#dc2626' : '#64748b' }}>
-                  · {daysLeft}d left
+          {/* Tactical Status Indicators */}
+          <div style={{ display: 'flex', gap: '24px' }}>
+            {/* Sync Hub */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+              <div style={{ 
+                width: '32px', height: '32px', borderRadius: '8px', 
+                background: isOnline ? '#f0fdf4' : '#fef2f2',
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                border: `1px solid ${isOnline ? '#dcfce7' : '#fee2e2'}`
+              }}>
+                <span style={{ fontSize: '14px' }}>{isOnline ? '🌐' : '📡'}</span>
+              </div>
+              <div style={{ display: 'flex', flexDirection: 'column' }}>
+                <span style={{ fontSize: '9px', fontWeight: 950, color: isOnline ? '#10b981' : '#ef4444', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                  {isSyncing ? 'Syncing...' : isOnline ? 'Online' : 'Offline'}
                 </span>
-              )}
-            </button>
-          )}
+                <span style={{ fontSize: '10px', fontWeight: 700, color: '#64748b' }}>
+                  {pendingCount > 0 ? `${pendingCount} Pending` : 'Encrypted'}
+                </span>
+              </div>
+            </div>
+
+            {/* Subscription Access */}
+            {canSeeSubscription && (
+              <div 
+                className="nav-button-hover"
+                onClick={() => navigate('/subscription')}
+                style={{ 
+                  display: 'flex', alignItems: 'center', gap: '10px', cursor: 'pointer',
+                  padding: '4px 12px', borderRadius: '10px', transition: 'all 0.2s'
+                }}
+              >
+                <div style={{ 
+                  width: '32px', height: '32px', borderRadius: '8px', 
+                  background: subscription?.isActive ? '#eff6ff' : '#f8fafc',
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  border: `1px solid ${subscription?.isActive ? '#dbeafe' : '#e2e8f0'}`
+                }}>
+                  <span style={{ fontSize: '14px' }}>💎</span>
+                </div>
+                <div style={{ display: 'flex', flexDirection: 'column' }}>
+                  <span style={{ fontSize: '9px', fontWeight: 950, color: '#0f52ba', textTransform: 'uppercase', letterSpacing: '0.5px' }}>License</span>
+                  <span style={{ fontSize: '10px', fontWeight: 700, color: '#64748b' }}>
+                    {subscription?.planName || 'Standard'}
+                  </span>
+                </div>
+              </div>
+            )}
+          </div>
         </div>
 
-        {/* Temporal HUD */}
-        <div className="temporal-hud" style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '2px' }}>
-          <div className="time-display" style={{ fontSize: '14px', fontWeight: 950, color: '#1a1a2e', letterSpacing: '-0.5px' }}>{formattedTime}</div>
-          <div className="date-display hide-mobile" style={{ fontSize: '8px', fontWeight: 800, color: '#aaa', textTransform: 'uppercase', letterSpacing: '1px' }}>{formattedDate}</div>
+        {/* Temporal / User HUD */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: '25px' }}>
+          <div style={{ textAlign: 'right' }}>
+            <div style={{ fontSize: '16px', fontWeight: 950, color: '#1e293b', letterSpacing: '-0.5px', lineHeight: 1, marginBottom: '2px' }}>
+              {formattedTime}
+            </div>
+            <div style={{ fontSize: '9px', fontWeight: 800, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '1px' }}>
+              {formattedDate}
+            </div>
+          </div>
+          
+          <div style={{ width: '1px', height: '32px', background: '#e2e8f0' }} />
+          
+          <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+            <div style={{ textAlign: 'right', display: 'flex', flexDirection: 'column' }}>
+              <span style={{ fontSize: '12px', fontWeight: 950, color: '#1e293b' }}>{currentUser?.name || 'USER'}</span>
+              <span style={{ fontSize: '9px', fontWeight: 950, color: '#0f52ba', textTransform: 'uppercase', letterSpacing: '1px' }}>
+                {roles[0]?.replace('admin', 'CHIEF ')}
+              </span>
+            </div>
+            <div style={{ 
+              width: '36px', height: '36px', borderRadius: '50%', 
+              background: '#f1f5f9', border: '2px solid white',
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              boxShadow: '0 2px 8px rgba(0,0,0,0.05)',
+              fontSize: '16px'
+            }}>
+              👤
+            </div>
+          </div>
         </div>
       </header>
     </>

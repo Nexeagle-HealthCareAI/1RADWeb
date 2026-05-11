@@ -504,8 +504,10 @@ export default function AdminBoard() {
   // Initial Subscription Check
   const [showPlanSelection, setShowPlanSelection] = useState(false);
   useEffect(() => {
-    if (subscription && !subscription.isActive && !subscription.isTrial) {
+    if (subscription === null || (subscription && !subscription.isActive && !subscription.isTrial)) {
       setShowPlanSelection(true);
+    } else {
+      setShowPlanSelection(false);
     }
   }, [subscription]);
 

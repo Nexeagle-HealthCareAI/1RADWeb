@@ -219,6 +219,52 @@ const ReportingPage = () => {
 
 
 
+  // --- TIMELINE FETCH (standalone so refresh button can call it) ---
+  const fetchPatientTimeline = useCallback(async (appointmentData, currentAppId) => {
+    if (!appointmentData) return;
+    setLoadingTimeline(true);
+    try {
+      const patientId = appointmentData.patientId || appointmentData.patientIdentifier;
+      const searchQuery = patientId
+        ? String(patientId)
+        : (appointmentData.patientName || '');
+
+      if (!searchQuery) return;
+
+      const [todayRes, archiveRes] = await Promise.all([
+        apiClient.get('/appointments', { params: { search: searchQuery } }).catch(() => ({ data: [] })),
+        apiClient.get('/appointments', { params: { search: searchQuery, isArchive: true } }).catch(() => ({ data: [] })),
+      ]);
+
+      const seen = new Set();
+      const merged = [...(Array.isArray(todayRes.data) ? todayRes.data : []), ...(Array.isArray(archiveRes.data) ? archiveRes.data : [])]
+        .filter(a => {
+          const key = String(a.appointmentId);
+          if (seen.has(key)) return false;
+          seen.add(key);
+          return true;
+        });
+
+      const past = merged
+        .filter(a => {
+          const samePatient =
+            (patientId && (String(a.patientId) === String(patientId) || String(a.patientIdentifier) === String(patientId))) ||
+            a.patientName?.toLowerCase().trim() === appointmentData.patientName?.toLowerCase().trim();
+          const different =
+            String(a.appointmentId) !== String(appointmentData.appointmentId) &&
+            a.displayId !== currentAppId;
+          return samePatient && different;
+        })
+        .sort((a, b) => new Date(b.dateTime) - new Date(a.dateTime));
+
+      setPatientHistory(past);
+    } catch (err) {
+      console.warn('[TIMELINE] Fetch failed:', err.message);
+    } finally {
+      setLoadingTimeline(false);
+    }
+  }, []);
+
   // --- DATA FETCHING ---
   const fetchReportingContext = useCallback(async (appId) => {
     setLoading(true);
@@ -336,54 +382,8 @@ const ReportingPage = () => {
       await nativeStorage.set(`1rad_cache_appointment_${appId}`, appointmentData);
 
       // --- PATIENT TIMELINE FETCH ---
-      // Always show the timeline tab once a patient is loaded; empty state handles no-history case
       setShowTimeline(true);
-      
-      try {
-        setLoadingTimeline(true);
-
-        if (appointmentData.patientName) {
-          // Fetch both regular and archive appointments matching patient name
-          const [todayRes, archiveRes] = await Promise.all([
-            apiClient.get('/appointments', { 
-              params: { search: appointmentData.patientName } 
-            }).catch(() => ({ data: [] })),
-            apiClient.get('/appointments', { 
-              params: { search: appointmentData.patientName, isArchive: true } 
-            }).catch(() => ({ data: [] }))
-          ]);
-
-          const allToday = Array.isArray(todayRes.data) ? todayRes.data : [];
-          const allArchive = Array.isArray(archiveRes.data) ? archiveRes.data : [];
-
-          // Merge & deduplicate by appointmentId
-          const seen = new Set();
-          const allHistory = [...allToday, ...allArchive].filter(a => {
-            const key = String(a.appointmentId);
-            if (seen.has(key)) return false;
-            seen.add(key);
-            return true;
-          });
-
-          // Filter: same patient, different appointment from current one
-          const pastStudies = allHistory.filter(a => {
-            const isSamePatient = 
-              String(a.patientId) === String(appointmentData.patientId) || 
-              a.patientName?.toLowerCase().trim() === appointmentData.patientName?.toLowerCase().trim();
-            const isDifferentAppointment = 
-              String(a.appointmentId) !== String(appointmentData.appointmentId) &&
-              a.displayId !== appId; // appId = the route param (displayId format)
-            return isSamePatient && isDifferentAppointment;
-          }).sort((a, b) => new Date(b.dateTime) - new Date(a.dateTime));
-
-          setPatientHistory(pastStudies);
-          console.info(`[1RAD TIMELINE] Found ${pastStudies.length} previous studies for patient "${appointmentData.patientName}".`);
-        }
-      } catch (timelineErr) {
-        console.warn('[1RAD TIMELINE] Could not load patient history:', timelineErr.message);
-      } finally {
-        setLoadingTimeline(false);
-      }
+      fetchPatientTimeline(appointmentData, appId);
 
       
       // 3. Resolve Report Data (Handle both nested and flat structures)
@@ -4558,369 +4558,281 @@ const ReportingPage = () => {
             )}
 
             {/* ============================================================ */}
+            {/* ============================================================ */}
             {/* PATIENT TIMELINE TAB                                         */}
             {/* ============================================================ */}
-            {activeTab === 'Patient Timeline' && (
-              <div style={{ display: 'flex', flexDirection: 'column', height: 'calc(100vh - 220px)', overflow: 'hidden' }}>
-                {/* Timeline Header */}
-                <div style={{
-                  background: 'linear-gradient(135deg, #0f172a, #1e293b)',
-                  padding: '20px 25px',
-                  borderRadius: '16px',
-                  marginBottom: '15px',
-                  border: '1px solid rgba(59, 130, 246, 0.2)',
-                  boxShadow: '0 4px 20px rgba(0,0,0,0.15)',
-                  flexShrink: 0
-                }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                    <div>
-                      <div style={{ color: '#94a3b8', fontSize: '9px', fontWeight: 950, letterSpacing: '2px', textTransform: 'uppercase', marginBottom: '6px' }}>PATIENT DIAGNOSTIC HISTORY</div>
-                      <div style={{ color: 'white', fontSize: '16px', fontWeight: 900, letterSpacing: '0.5px' }}>
-                        {activeAppointment?.patientName?.toUpperCase() || 'PATIENT'}
+            {activeTab === 'Patient Timeline' && (() => {
+              const STATUS_COLOR = {
+                reported: '#10b981', reporting: '#8b5cf6', completed: '#0f52ba',
+                scanned: '#0f52ba', in_progress: '#f59e0b', confirmed: '#f59e0b',
+                cancelled: '#ef4444', scheduled: '#64748b', booked: '#64748b'
+              };
+
+              return (
+                <div style={{ display: 'flex', flexDirection: 'column', height: 'calc(100vh - 220px)', overflow: 'hidden' }}>
+
+                  {/* ── Header ── */}
+                  <div style={{ background: 'linear-gradient(135deg, #0f172a, #1e293b)', padding: '18px 20px', borderRadius: '14px', marginBottom: '14px', border: '1px solid rgba(59,130,246,0.2)', flexShrink: 0 }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '12px' }}>
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ color: '#94a3b8', fontSize: '8px', fontWeight: 950, letterSpacing: '2px', textTransform: 'uppercase', marginBottom: '4px' }}>DIAGNOSTIC HISTORY</div>
+                        <div style={{ color: 'white', fontSize: '15px', fontWeight: 950, letterSpacing: '-0.3px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                          {activeAppointment?.patientName?.toUpperCase() || 'PATIENT'}
+                        </div>
+                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '10px', marginTop: '8px' }}>
+                          {[
+                            { label: 'ID', value: activeAppointment?.patientIdentifier || activeAppointment?.patientId || 'N/A' },
+                            { label: 'AGE', value: activeAppointment?.patientAge ? `${activeAppointment.patientAge}Y` : 'N/A' },
+                            { label: 'SEX', value: activeAppointment?.patientGender || 'N/A' },
+                            { label: 'STUDIES', value: patientHistory.length },
+                          ].map(({ label, value }) => (
+                            <div key={label} style={{ background: 'rgba(255,255,255,0.06)', borderRadius: '8px', padding: '5px 10px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                              <span style={{ color: '#64748b', fontSize: '8px', fontWeight: 950, letterSpacing: '1px' }}>{label}</span>
+                              <span style={{ color: 'white', fontSize: '10px', fontWeight: 900 }}>{value}</span>
+                            </div>
+                          ))}
+                        </div>
                       </div>
-                      <div style={{ color: '#64748b', fontSize: '10px', fontWeight: 700, marginTop: '4px', display: 'flex', gap: '12px' }}>
-                        <span>ID: {activeAppointment?.patientIdentifier || 'N/A'}</span>
-                        <span>·</span>
-                        <span>{patientHistory.length} previous {patientHistory.length === 1 ? 'study' : 'studies'}</span>
-                      </div>
-                    </div>
-                    <div style={{
-                      background: 'rgba(59, 130, 246, 0.15)',
-                      border: '1px solid rgba(59, 130, 246, 0.3)',
-                      borderRadius: '12px',
-                      padding: '10px 18px',
-                      textAlign: 'center'
-                    }}>
-                      <div style={{ color: '#3b82f6', fontSize: '24px', fontWeight: 950, lineHeight: 1 }}>{patientHistory.length}</div>
-                      <div style={{ color: '#64748b', fontSize: '8px', fontWeight: 900, letterSpacing: '1px', marginTop: '4px' }}>STUDIES</div>
+                      <button
+                        onClick={() => fetchPatientTimeline(activeAppointment, appointmentId)}
+                        disabled={loadingTimeline}
+                        title="Refresh history"
+                        style={{ background: 'rgba(59,130,246,0.15)', border: '1px solid rgba(59,130,246,0.3)', borderRadius: '10px', padding: '8px 12px', color: '#3b82f6', cursor: 'pointer', fontSize: '14px', flexShrink: 0, opacity: loadingTimeline ? 0.5 : 1 }}
+                      >
+                        <span style={{ display: 'inline-block', animation: loadingTimeline ? 'spin 0.8s linear infinite' : 'none' }}>↻</span>
+                      </button>
                     </div>
                   </div>
-                </div>
 
-                {/* Timeline Scroll Area */}
-                <div style={{ flex: 1, overflowY: 'auto', paddingRight: '4px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                  {loadingTimeline ? (
-                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', flex: 1, gap: '15px', color: '#64748b', padding: '60px 0' }}>
-                      <div style={{ width: '40px', height: '40px', border: '3px solid rgba(59, 130, 246, 0.2)', borderTopColor: '#3b82f6', borderRadius: '50%', animation: 'spin 1s linear infinite' }} />
-                      <div style={{ fontSize: '12px', fontWeight: 700 }}>Loading patient history...</div>
-                    </div>
-                  ) : patientHistory.length === 0 ? (
-                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', flex: 1, color: '#94a3b8', padding: '60px 0', gap: '15px' }}>
-                      <div style={{ fontSize: '48px' }}>📋</div>
-                      <div style={{ fontSize: '14px', fontWeight: 700 }}>No previous studies found</div>
-                      <div style={{ fontSize: '11px', textAlign: 'center', maxWidth: '250px' }}>This is the patient's first visit, or no historical records are available.</div>
-                    </div>
-                  ) : patientHistory.map((pastAppt, idx) => {
-                    const reportState = expandedHistoryReport[pastAppt.appointmentId];
-                    const isReportExpanded = !!reportState;
-                    const STATUS_COLOR = {
-                      reported: '#10b981',
-                      reporting: '#8b5cf6',
-                      completed: '#0f52ba',
-                      scanned: '#0f52ba',
-                      in_progress: '#f59e0b',
-                      confirmed: '#f59e0b',
-                      cancelled: '#ef4444',
-                      scheduled: '#64748b',
-                      booked: '#64748b'
-                    };
-                    const statusColor = STATUS_COLOR[pastAppt.status?.toLowerCase()] || '#64748b';
-                    const statusLabel = pastAppt.status?.toUpperCase() || 'UNKNOWN';
-                    const hasReport = ['reported', 'reporting'].includes(pastAppt.status?.toLowerCase());
-                    const hasDicom = pastAppt.status !== 'scheduled' && pastAppt.status !== 'booked';
+                  {/* ── Cards ── */}
+                  <div style={{ flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '10px', paddingRight: '2px' }}>
+                    {loadingTimeline ? (
+                      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', flex: 1, gap: '12px', color: '#64748b', padding: '50px 0' }}>
+                        <div style={{ width: '36px', height: '36px', border: '3px solid rgba(59,130,246,0.2)', borderTopColor: '#3b82f6', borderRadius: '50%', animation: 'spin 1s linear infinite' }} />
+                        <div style={{ fontSize: '11px', fontWeight: 700 }}>Loading patient history...</div>
+                      </div>
+                    ) : patientHistory.length === 0 ? (
+                      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', flex: 1, color: '#94a3b8', padding: '50px 0', gap: '12px' }}>
+                        <div style={{ fontSize: '40px' }}>📋</div>
+                        <div style={{ fontSize: '13px', fontWeight: 800, color: '#475569' }}>No previous studies</div>
+                        <div style={{ fontSize: '10px', textAlign: 'center', maxWidth: '220px', lineHeight: '1.5' }}>First visit or no historical records available in the system.</div>
+                      </div>
+                    ) : patientHistory.map((pastAppt, idx) => {
+                      const reportState = expandedHistoryReport[pastAppt.appointmentId];
+                      const isReportExpanded = !!reportState;
+                      const statusColor = STATUS_COLOR[pastAppt.status?.toLowerCase()] || '#64748b';
+                      const hasReport = ['reported', 'reporting', 'completed'].includes(pastAppt.status?.toLowerCase());
+                      const dicomState = expandedHistoryDicom[pastAppt.appointmentId];
 
-                    return (
-                      <div
-                        key={pastAppt.appointmentId || idx}
-                        style={{
-                          background: 'white',
-                          borderRadius: '16px',
-                          border: '1px solid #e2e8f0',
-                          overflow: 'hidden',
-                          boxShadow: '0 2px 8px rgba(0,0,0,0.04)',
-                          transition: 'box-shadow 0.2s ease',
-                          flexShrink: 0
-                        }}
-                      >
-                        {/* Card Top — Timeline Dot + Core Info */}
-                        <div style={{ display: 'flex', gap: '0', alignItems: 'stretch' }}>
-                          {/* Left accent + timeline */}
-                          <div style={{
-                            width: '5px',
-                            background: `linear-gradient(180deg, ${statusColor}, ${statusColor}88)`,
-                            flexShrink: 0
-                          }} />
+                      return (
+                        <div key={pastAppt.appointmentId || idx} style={{ background: 'white', borderRadius: '14px', border: '1px solid #e8edf2', overflow: 'hidden', flexShrink: 0, boxShadow: '0 1px 6px rgba(0,0,0,0.04)' }}>
 
-                          {/* Main card body */}
-                          <div style={{ flex: 1, padding: '16px 20px' }}>
-                            {/* Row 1: Date + Status badge */}
-                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
-                              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                                <span style={{ fontSize: '18px' }}>📅</span>
+                          {/* Left accent bar + body */}
+                          <div style={{ display: 'flex', alignItems: 'stretch' }}>
+                            <div style={{ width: '4px', background: `linear-gradient(180deg, ${statusColor}, ${statusColor}55)`, flexShrink: 0 }} />
+
+                            <div style={{ flex: 1, padding: '14px 16px' }}>
+                              {/* Row 1: Date + status badge */}
+                              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
                                 <div>
                                   <div style={{ fontSize: '12px', fontWeight: 950, color: '#0f172a' }}>
                                     {pastAppt.dateTime ? new Date(pastAppt.dateTime).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : 'Date N/A'}
                                   </div>
-                                  <div style={{ fontSize: '9px', fontWeight: 700, color: '#94a3b8', marginTop: '2px' }}>
+                                  <div style={{ fontSize: '9px', fontWeight: 700, color: '#94a3b8', marginTop: '1px' }}>
                                     {pastAppt.dateTime ? new Date(pastAppt.dateTime).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' }) : ''}
+                                    {pastAppt.referredBy && <span style={{ marginLeft: '8px', color: '#7c3aed' }}>· Ref: {pastAppt.referredBy}</span>}
                                   </div>
                                 </div>
+                                <span style={{ background: `${statusColor}18`, color: statusColor, border: `1px solid ${statusColor}35`, borderRadius: '99px', padding: '3px 9px', fontSize: '8px', fontWeight: 950, letterSpacing: '0.5px', textTransform: 'uppercase' }}>
+                                  {pastAppt.status || 'UNKNOWN'}
+                                </span>
                               </div>
-                              <span style={{
-                                background: `${statusColor}18`,
-                                color: statusColor,
-                                border: `1px solid ${statusColor}40`,
-                                borderRadius: '99px',
-                                padding: '3px 10px',
-                                fontSize: '8px',
-                                fontWeight: 950,
-                                letterSpacing: '1px'
-                              }}>
-                                {statusLabel}
-                              </span>
-                            </div>
 
-                            {/* Row 2: Modality + Service + Doctor */}
-                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '8px', marginBottom: '14px' }}>
-                              <div style={{ background: '#f8fafc', borderRadius: '8px', padding: '8px 10px' }}>
-                                <div style={{ color: '#94a3b8', fontSize: '7px', fontWeight: 950, letterSpacing: '1px', marginBottom: '3px' }}>MODALITY</div>
-                                <div style={{ color: '#0f172a', fontSize: '11px', fontWeight: 900 }}>{pastAppt.modality || 'N/A'}</div>
+                              {/* Row 2: Study info chips */}
+                              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '6px', marginBottom: '12px' }}>
+                                {[
+                                  { label: 'MODALITY', value: pastAppt.modality || 'N/A' },
+                                  { label: 'STUDY', value: pastAppt.service || 'N/A' },
+                                  { label: 'DOCTOR', value: pastAppt.doctor || 'N/A' },
+                                ].map(({ label, value }) => (
+                                  <div key={label} style={{ background: '#f8fafc', borderRadius: '8px', padding: '7px 9px', border: '1px solid #f1f5f9' }}>
+                                    <div style={{ color: '#94a3b8', fontSize: '7px', fontWeight: 950, letterSpacing: '1px', marginBottom: '2px' }}>{label}</div>
+                                    <div style={{ color: '#0f172a', fontSize: '10px', fontWeight: 900, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{value}</div>
+                                  </div>
+                                ))}
                               </div>
-                              <div style={{ background: '#f8fafc', borderRadius: '8px', padding: '8px 10px' }}>
-                                <div style={{ color: '#94a3b8', fontSize: '7px', fontWeight: 950, letterSpacing: '1px', marginBottom: '3px' }}>STUDY</div>
-                                <div style={{ color: '#0f172a', fontSize: '10px', fontWeight: 900, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{pastAppt.service || 'N/A'}</div>
-                              </div>
-                              <div style={{ background: '#f8fafc', borderRadius: '8px', padding: '8px 10px' }}>
-                                <div style={{ color: '#94a3b8', fontSize: '7px', fontWeight: 950, letterSpacing: '1px', marginBottom: '3px' }}>DOCTOR</div>
-                                <div style={{ color: '#0f172a', fontSize: '10px', fontWeight: 900, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{pastAppt.doctor || 'N/A'}</div>
-                              </div>
-                            </div>
 
-                            {/* Row 3: Action Buttons */}
-                            <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
-                              {/* View Report Button */}
-                              {hasReport ? (
+                              {/* Row 3: Tech notes (if any) */}
+                              {pastAppt.technicianComments && (
+                                <div style={{ fontSize: '10px', color: '#64748b', fontStyle: 'italic', padding: '7px 10px', background: '#fffbeb', borderRadius: '8px', border: '1px solid #fef3c7', marginBottom: '10px' }}>
+                                  🔧 {pastAppt.technicianComments}
+                                </div>
+                              )}
+
+                              {/* Row 4: Actions */}
+                              <div style={{ display: 'flex', gap: '7px', flexWrap: 'wrap' }}>
+                                {/* View/Hide Report */}
                                 <button
+                                  disabled={!hasReport}
                                   onClick={async () => {
+                                    if (!hasReport) return;
                                     if (isReportExpanded) {
-                                      // Collapse
                                       setExpandedHistoryReport(prev => { const n = {...prev}; delete n[pastAppt.appointmentId]; return n; });
                                       return;
                                     }
-                                    // Fetch report lazily
                                     setExpandedHistoryReport(prev => ({ ...prev, [pastAppt.appointmentId]: { loading: true, data: null, error: null } }));
                                     try {
-                                      const res = await apiClient.get(`/Reporting/report/${pastAppt.appointmentId}`);
-                                      const r = (res.data?.success && res.data?.data) ? res.data.data : res.data;
+                                      const res = await apiClient.get(`/Reporting/mission/${pastAppt.appointmentId}`);
+                                      const body = res.data;
+                                      const r = (body?.success && body?.data) ? body.data : body;
                                       setExpandedHistoryReport(prev => ({ ...prev, [pastAppt.appointmentId]: { loading: false, data: r, error: null } }));
-                                    } catch (e) {
+                                    } catch {
                                       setExpandedHistoryReport(prev => ({ ...prev, [pastAppt.appointmentId]: { loading: false, data: null, error: 'Could not fetch report.' } }));
                                     }
                                   }}
                                   style={{
-                                    background: isReportExpanded ? '#f0f4ff' : 'white',
-                                    border: `1.5px solid ${isReportExpanded ? '#0f52ba' : '#e2e8f0'}`,
-                                    color: isReportExpanded ? '#0f52ba' : '#475569',
-                                    borderRadius: '8px',
-                                    padding: '6px 12px',
-                                    fontSize: '10px',
-                                    fontWeight: 900,
-                                    cursor: 'pointer',
-                                    display: 'flex',
-                                    alignItems: 'center',
-                                    gap: '5px',
-                                    transition: 'all 0.2s ease'
+                                    background: isReportExpanded ? '#eff6ff' : hasReport ? 'white' : '#f8fafc',
+                                    border: `1.5px solid ${isReportExpanded ? '#0f52ba' : hasReport ? '#e2e8f0' : '#f1f5f9'}`,
+                                    color: isReportExpanded ? '#0f52ba' : hasReport ? '#475569' : '#cbd5e1',
+                                    borderRadius: '8px', padding: '6px 11px', fontSize: '10px', fontWeight: 900,
+                                    cursor: hasReport ? 'pointer' : 'default', display: 'flex', alignItems: 'center', gap: '4px'
                                   }}
                                 >
-                                  📄 {isReportExpanded ? 'HIDE REPORT' : 'VIEW REPORT'}
+                                  📄 {isReportExpanded ? 'HIDE' : hasReport ? 'VIEW REPORT' : 'NO REPORT'}
                                 </button>
-                              ) : (
-                                <div style={{
-                                  background: '#f8fafc',
-                                  border: '1.5px solid #e2e8f0',
-                                  color: '#94a3b8',
-                                  borderRadius: '8px',
-                                  padding: '6px 12px',
-                                  fontSize: '10px',
-                                  fontWeight: 900,
-                                  display: 'flex',
-                                  alignItems: 'center',
-                                  gap: '5px'
-                                }}>
-                                  📄 NO REPORT
-                                </div>
-                              )}
 
-                              {/* Open DICOM Button */}
-                              {hasDicom ? (
+                                {/* Open DICOM */}
                                 <button
                                   onClick={async () => {
-                                    // Fetch assets for this past appointment then navigate
+                                    if (dicomState === 'loading') return;
                                     setExpandedHistoryDicom(prev => ({ ...prev, [pastAppt.appointmentId]: 'loading' }));
                                     try {
                                       const assetRes = await apiClient.get(`/Study/${pastAppt.appointmentId}/assets`).catch(() => ({ data: [] }));
-                                      const assets = assetRes.data || [];
-                                      const validAssets = assets.filter(a => a.blobUrl);
+                                      const validAssets = (assetRes.data || []).filter(a => a.blobUrl);
                                       if (validAssets.length === 0) {
-                                        alert('No DICOM files found for this study.');
-                                        setExpandedHistoryDicom(prev => ({ ...prev, [pastAppt.appointmentId]: 'error' }));
+                                        setExpandedHistoryDicom(prev => ({ ...prev, [pastAppt.appointmentId]: 'none' }));
                                         return;
                                       }
-                                      // Build series from assets — reuse existing DicomViewerPage flow
-                                      const allSeries = validAssets.map(asset => ({
-                                        name: asset.fileName || 'DICOM SERIES',
-                                        files: [], // Raw files not available from URL directly; user sees download prompt
-                                        blobUrl: asset.blobUrl,
-                                        modality: pastAppt.modality
-                                      }));
                                       setExpandedHistoryDicom(prev => ({ ...prev, [pastAppt.appointmentId]: 'done' }));
                                       navigate('/dicom-viewer', {
                                         state: {
-                                          files: [], // Will be loaded in viewer
+                                          files: [],
                                           seriesName: `${pastAppt.service || pastAppt.modality} — ${new Date(pastAppt.dateTime).toLocaleDateString('en-IN')}`,
-                                          allSeries: allSeries,
+                                          allSeries: validAssets.map(a => ({ name: a.fileName || 'DICOM SERIES', files: [], blobUrl: a.blobUrl, modality: pastAppt.modality })),
                                           activeSeriesIndex: 0,
-                                          appointmentData: {
-                                            ...pastAppt,
-                                            appointmentId: pastAppt.appointmentId,
-                                            patientName: activeAppointment?.patientName
-                                          }
+                                          appointmentData: { ...pastAppt, patientName: activeAppointment?.patientName }
                                         }
                                       });
-                                    } catch (e) {
+                                    } catch {
                                       setExpandedHistoryDicom(prev => ({ ...prev, [pastAppt.appointmentId]: 'error' }));
-                                      alert('Failed to load DICOM assets.');
                                     }
                                   }}
                                   style={{
-                                    background: 'linear-gradient(135deg, #10b981, #059669)',
-                                    border: 'none',
-                                    color: 'white',
-                                    borderRadius: '8px',
-                                    padding: '6px 12px',
-                                    fontSize: '10px',
-                                    fontWeight: 900,
-                                    cursor: 'pointer',
-                                    display: 'flex',
-                                    alignItems: 'center',
-                                    gap: '5px',
-                                    boxShadow: '0 2px 8px rgba(16,185,129,0.3)',
-                                    opacity: expandedHistoryDicom[pastAppt.appointmentId] === 'loading' ? 0.7 : 1
+                                    background: dicomState === 'none' ? '#f8fafc' : 'linear-gradient(135deg, #10b981, #059669)',
+                                    border: dicomState === 'none' ? '1.5px solid #f1f5f9' : 'none',
+                                    color: dicomState === 'none' ? '#cbd5e1' : 'white',
+                                    borderRadius: '8px', padding: '6px 11px', fontSize: '10px', fontWeight: 900,
+                                    cursor: dicomState === 'loading' ? 'wait' : 'pointer', display: 'flex', alignItems: 'center', gap: '4px',
+                                    boxShadow: dicomState === 'none' ? 'none' : '0 2px 6px rgba(16,185,129,0.25)',
+                                    opacity: dicomState === 'loading' ? 0.7 : 1
                                   }}
                                 >
-                                  {expandedHistoryDicom[pastAppt.appointmentId] === 'loading' ? (
-                                    <span style={{ display: 'inline-block', width: '10px', height: '10px', border: '2px solid rgba(255,255,255,0.3)', borderTopColor: 'white', borderRadius: '50%', animation: 'spin 0.8s linear infinite' }} />
-                                  ) : '🔍'}
-                                  OPEN DICOM →
+                                  {dicomState === 'loading'
+                                    ? <span style={{ display: 'inline-block', width: '10px', height: '10px', border: '2px solid rgba(255,255,255,0.3)', borderTopColor: 'white', borderRadius: '50%', animation: 'spin 0.8s linear infinite' }} />
+                                    : '🔍'}
+                                  {dicomState === 'none' ? 'NO DICOM' : 'OPEN DICOM'}
                                 </button>
-                              ) : (
-                                <div style={{
-                                  background: '#f8fafc',
-                                  border: '1.5px solid #e2e8f0',
-                                  color: '#94a3b8',
-                                  borderRadius: '8px',
-                                  padding: '6px 12px',
-                                  fontSize: '10px',
-                                  fontWeight: 900,
-                                  display: 'flex',
-                                  alignItems: 'center',
-                                  gap: '5px'
-                                }}>
-                                  🔍 NO DICOM
-                                </div>
-                              )}
-
-                              {/* Referred by pill */}
-                              {pastAppt.referredBy && (
-                                <div style={{
-                                  background: '#fdf4ff',
-                                  border: '1px solid #e9d5ff',
-                                  color: '#7c3aed',
-                                  borderRadius: '8px',
-                                  padding: '6px 12px',
-                                  fontSize: '10px',
-                                  fontWeight: 900,
-                                  display: 'flex',
-                                  alignItems: 'center',
-                                  gap: '5px'
-                                }}>
-                                  👨‍⚕️ Ref: {pastAppt.referredBy}
-                                </div>
-                              )}
+                              </div>
                             </div>
                           </div>
-                        </div>
 
-                        {/* Expanded Report Panel */}
-                        {isReportExpanded && (
-                          <div style={{
-                            borderTop: '1px solid #e2e8f0',
-                            background: '#f8fafc',
-                            padding: '18px 24px'
-                          }}>
-                            {reportState?.loading ? (
-                              <div style={{ display: 'flex', alignItems: 'center', gap: '10px', color: '#64748b', fontSize: '12px', fontWeight: 700 }}>
-                                <div style={{ width: '16px', height: '16px', border: '2px solid rgba(59,130,246,0.2)', borderTopColor: '#3b82f6', borderRadius: '50%', animation: 'spin 0.8s linear infinite' }} />
-                                Loading report...
-                              </div>
-                            ) : reportState?.error ? (
-                              <div style={{ color: '#ef4444', fontSize: '12px', fontWeight: 700 }}>⚠️ {reportState.error}</div>
-                            ) : reportState?.data ? (
-                              <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
-                                {/* Findings block */}
-                                {reportState.data.findings && (
-                                  <div>
-                                    <div style={{ fontSize: '9px', fontWeight: 950, color: '#0f52ba', textTransform: 'uppercase', letterSpacing: '1.5px', marginBottom: '8px', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                                      <span style={{ width: '3px', height: '12px', background: '#0f52ba', borderRadius: '2px', display: 'inline-block' }} />
-                                      CLINICAL FINDINGS
+                          {/* ── Expanded Report Panel ── */}
+                          {isReportExpanded && (
+                            <div style={{ borderTop: '1px solid #e8edf2', background: '#f8fafc', padding: '16px 20px' }}>
+                              {reportState?.loading ? (
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '10px', color: '#64748b', fontSize: '11px', fontWeight: 700 }}>
+                                  <div style={{ width: '14px', height: '14px', border: '2px solid rgba(59,130,246,0.2)', borderTopColor: '#3b82f6', borderRadius: '50%', animation: 'spin 0.8s linear infinite' }} />
+                                  Loading report...
+                                </div>
+                              ) : reportState?.error ? (
+                                <div style={{ color: '#ef4444', fontSize: '11px', fontWeight: 700 }}>⚠️ {reportState.error}</div>
+                              ) : reportState?.data ? (
+                                <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+
+                                  {/* Findings */}
+                                  {reportState.data.findings && (
+                                    <div>
+                                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '7px' }}>
+                                        <div style={{ fontSize: '8px', fontWeight: 950, color: '#0f52ba', textTransform: 'uppercase', letterSpacing: '1.5px', display: 'flex', alignItems: 'center', gap: '5px' }}>
+                                          <span style={{ width: '3px', height: '10px', background: '#0f52ba', borderRadius: '2px', display: 'inline-block' }} /> FINDINGS
+                                        </div>
+                                        <button
+                                          onClick={() => {
+                                            const text = (() => { try { return Object.values(JSON.parse(reportState.data.findings)).join('\n'); } catch { return reportState.data.findings || ''; } })();
+                                            insertContent(text);
+                                          }}
+                                          title="Import into current report"
+                                          style={{ background: '#eff6ff', border: '1px solid #bfdbfe', borderRadius: '6px', color: '#0f52ba', fontSize: '9px', fontWeight: 950, padding: '3px 8px', cursor: 'pointer' }}
+                                        >
+                                          + IMPORT
+                                        </button>
+                                      </div>
+                                      <div
+                                        style={{ fontSize: '11px', color: '#1e293b', lineHeight: '1.7', background: 'white', borderRadius: '8px', padding: '10px 12px', border: '1px solid #e2e8f0', maxHeight: '120px', overflowY: 'auto' }}
+                                        dangerouslySetInnerHTML={{
+                                          __html: (() => { try { return Object.values(JSON.parse(reportState.data.findings)).join('<br/>'); } catch { return reportState.data.findings || ''; } })()
+                                        }}
+                                      />
                                     </div>
-                                    <div
-                                      style={{ fontSize: '11px', color: '#1e293b', lineHeight: '1.7', background: 'white', borderRadius: '8px', padding: '12px 14px', border: '1px solid #e2e8f0' }}
-                                      dangerouslySetInnerHTML={{
-                                        __html: (() => {
-                                          try { return Object.values(JSON.parse(reportState.data.findings)).join('<br/>'); }
-                                          catch { return reportState.data.findings || ''; }
-                                        })()
-                                      }}
-                                    />
-                                  </div>
-                                )}
-                                {/* Impression block */}
-                                {reportState.data.impression && (
-                                  <div>
-                                    <div style={{ fontSize: '9px', fontWeight: 950, color: '#10b981', textTransform: 'uppercase', letterSpacing: '1.5px', marginBottom: '8px', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                                      <span style={{ width: '3px', height: '12px', background: '#10b981', borderRadius: '2px', display: 'inline-block' }} />
-                                      IMPRESSION
+                                  )}
+
+                                  {/* Impression */}
+                                  {reportState.data.impression && (
+                                    <div>
+                                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '7px' }}>
+                                        <div style={{ fontSize: '8px', fontWeight: 950, color: '#10b981', textTransform: 'uppercase', letterSpacing: '1.5px', display: 'flex', alignItems: 'center', gap: '5px' }}>
+                                          <span style={{ width: '3px', height: '10px', background: '#10b981', borderRadius: '2px', display: 'inline-block' }} /> IMPRESSION
+                                        </div>
+                                        <button
+                                          onClick={() => insertContent(reportState.data.impression)}
+                                          title="Import impression into current report"
+                                          style={{ background: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: '6px', color: '#16a34a', fontSize: '9px', fontWeight: 950, padding: '3px 8px', cursor: 'pointer' }}
+                                        >
+                                          + IMPORT
+                                        </button>
+                                      </div>
+                                      <div style={{ fontSize: '11px', fontWeight: 800, color: '#0f172a', background: '#f0fdf4', borderRadius: '8px', padding: '10px 12px', border: '1px solid #bbf7d0', lineHeight: '1.6' }}>
+                                        {reportState.data.impression}
+                                      </div>
                                     </div>
-                                    <div style={{ fontSize: '12px', fontWeight: 900, color: '#0f172a', background: '#f0fdf4', borderRadius: '8px', padding: '12px 14px', border: '1px solid #bbf7d0', lineHeight: '1.6' }}>
-                                      {reportState.data.impression}
+                                  )}
+
+                                  {/* Advice */}
+                                  {reportState.data.advice && (
+                                    <div style={{ fontSize: '10px', color: '#64748b', fontStyle: 'italic', paddingLeft: '10px', borderLeft: '2px solid #e2e8f0' }}>
+                                      <strong>Advice:</strong> {reportState.data.advice}
                                     </div>
-                                  </div>
-                                )}
-                                {/* Advice block */}
-                                {reportState.data.advice && (
-                                  <div style={{ fontSize: '11px', color: '#64748b', fontStyle: 'italic', paddingLeft: '12px', borderLeft: '2px solid #e2e8f0' }}>
-                                    <strong>Advice:</strong> {reportState.data.advice}
-                                  </div>
-                                )}
-                                {/* Finalized stamp */}
-                                {reportState.data.isFinalized && (
-                                  <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
-                                    <span style={{ background: '#ecfdf5', color: '#10b981', border: '1px solid #a7f3d0', borderRadius: '99px', padding: '4px 12px', fontSize: '9px', fontWeight: 950, letterSpacing: '1px' }}>✓ FINALIZED & SIGNED</span>
-                                  </div>
-                                )}
-                              </div>
-                            ) : (
-                              <div style={{ color: '#94a3b8', fontSize: '12px', fontWeight: 700 }}>No report data available.</div>
-                            )}
-                          </div>
-                        )}
-                      </div>
-                    );
-                  })}
+                                  )}
+
+                                  {/* Finalized stamp */}
+                                  {reportState.data.isFinalized && (
+                                    <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+                                      <span style={{ background: '#ecfdf5', color: '#10b981', border: '1px solid #a7f3d0', borderRadius: '99px', padding: '3px 10px', fontSize: '8px', fontWeight: 950, letterSpacing: '1px' }}>✓ FINALIZED & SIGNED</span>
+                                    </div>
+                                  )}
+                                </div>
+                              ) : (
+                                <div style={{ color: '#94a3b8', fontSize: '11px', fontWeight: 700 }}>No report data available.</div>
+                              )}
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
                 </div>
-              </div>
-            )}
+              );
+            })()}
 
             {activeTab !== 'Patient Timeline' && (
               <div style={{ marginTop: '20px', paddingTop: '15px', borderTop: '1px solid #e2e8f0', display: 'flex', justifyContent: 'flex-end', alignItems: 'center', gap: '15px' }}>
