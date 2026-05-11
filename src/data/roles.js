@@ -66,4 +66,10 @@ export const NAV_ITEMS = [
     icon: '🔑',
     allowedRoles: ['admindoctor', 'admin'],
   },
+  {
+    label: 'DICOM BRIDGE',
+    route: '/dicom-bridge',
+    icon: '🔗',
+    allowedRoles: ['admindoctor', 'admin'],
+  },
 ];

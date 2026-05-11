@@ -18,6 +18,7 @@ import ReportingPage from '../pages/ReportingPage';
 import DicomViewerPage from '../pages/DicomViewerPage';
 import SubscriptionPage from '../pages/SubscriptionPage';
 import PatientTimelinePage from '../pages/PatientTimelinePage';
+import DicomBridgePage from '../pages/DicomBridgePage';
 
 function RootRedirect() {
   const { currentUser } = useAuth();
@@ -127,6 +128,14 @@ export default function AppRouter() {
           element={
             <ProtectedRoute allowedRoles={['admindoctor', 'admin']}>
               <SubscriptionPage />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/dicom-bridge"
+          element={
+            <ProtectedRoute allowedRoles={['admindoctor', 'admin']}>
+              <DicomBridgePage />
             </ProtectedRoute>
           }
         />
