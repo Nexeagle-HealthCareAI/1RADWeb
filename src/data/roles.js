@@ -60,10 +60,4 @@ export const NAV_ITEMS = [
     icon: '👨‍⚕️',
     allowedRoles: ['admindoctor', 'doctor'],
   },
-  {
-    label: 'SUBSCRIPTION',
-    route: '/subscription',
-    icon: '⚡',
-    allowedRoles: ['admindoctor', 'admin'],
-  }
 ];

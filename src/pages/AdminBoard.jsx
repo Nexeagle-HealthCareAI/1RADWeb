@@ -439,26 +439,44 @@ export default function AdminBoard() {
     }
   }, [referralRange, referralFilterMode]);
 
+  // --- DOMAIN SYNCHRONIZATION ---
+  
+  // Personnel & Prescription
   useEffect(() => {
     if (activeTab === 'PERSONNEL' || activeTab === 'PRESCRIPTION') {
       fetchPersonnel();
     }
+  }, [activeTab, fetchPersonnel]);
+
+  // Referral Intelligence
+  useEffect(() => {
     if (activeTab === 'REFERRAL INTEL') {
       fetchReferralIntelligence();
-      if (referralViewMode === 'PATIENTS') fetchPatientMasterList();
     }
+  }, [activeTab, fetchReferralIntelligence]);
+
+  // Patient Master List
+  useEffect(() => {
+    if (activeTab === 'REFERRAL INTEL' && referralViewMode === 'PATIENTS') {
+      fetchPatientMasterList();
+    }
+  }, [activeTab, referralViewMode, fetchPatientMasterList]);
+
+  // Hospital Infrastructure
+  useEffect(() => {
     if (activeTab === 'HOSPITAL') {
       fetchMappedHospitals();
     }
+  }, [activeTab, fetchMappedHospitals]);
+
+  // Financial Ledger
+  useEffect(() => {
     if (activeTab === 'FINANCE') {
       fetchServicePrices();
       fetchFinancialMatrix();
       fetchExpenses();
     }
-    if (activeTab === 'SUBSCRIPTION') {
-      refreshSubscription();
-    }
-  }, [activeTab, fetchPersonnel, fetchReferralIntelligence, fetchPatientMasterList, fetchMappedHospitals, fetchServicePrices, fetchExpenses, referralViewMode, refreshSubscription]);
+  }, [activeTab, fetchServicePrices, fetchFinancialMatrix, fetchExpenses]);
 
   const fetchStrategicOutlook = useCallback(async (dateString) => {
     try {
@@ -3325,7 +3343,7 @@ export default function AdminBoard() {
         boxShadow: '0 4px 20px rgba(0,0,0,0.03)',
         scrollbarWidth: 'none' // Hide scrollbar for cleaner look
       }}>
-        {['INTELLIGENCE', 'REFERRAL INTEL', 'PERSONNEL', 'HOSPITAL', 'FINANCE', 'PRESCRIPTION', 'SUBSCRIPTION'].map(tab => (
+        {['INTELLIGENCE', 'REFERRAL INTEL', 'PERSONNEL', 'HOSPITAL', 'FINANCE', 'PRESCRIPTION'].map(tab => (
           <button 
             key={tab}
             className={`admin-tab ${activeTab === tab ? 'active' : ''}`} 
@@ -3357,7 +3375,6 @@ export default function AdminBoard() {
       {activeTab === 'HOSPITAL' && renderHospitalSettings()}
       {activeTab === 'FINANCE' && renderFinance()}
       {activeTab === 'PRESCRIPTION' && renderPrescriptionArchitect()}
-      {activeTab === 'SUBSCRIPTION' && renderSubscription()}
 
       {isHospitalDrawerOpen && renderHospitalSettingsDrawer()}
       {isPriceDrawerOpen && renderPriceDrawer()}

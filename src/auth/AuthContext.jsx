@@ -132,11 +132,22 @@ export function AuthProvider({ children }) {
       }).filter(Boolean);
 
       if (mappedCenters.length > 0) {
-        setCenters(mappedCenters);
-        setCurrentUser(prev => prev ? {
-          ...prev,
-          roles: [...new Set([...(prev.roles || []), ...allRoles])]
-        } : null);
+        // Optimization: Only update if content changed
+        const hasCenterChanges = JSON.stringify(mappedCenters) !== JSON.stringify(centers);
+        if (hasCenterChanges) {
+          setCenters(mappedCenters);
+        }
+
+        const newRoles = [...new Set([...(currentUser?.roles || []), ...allRoles])].sort();
+        const oldRoles = [...(currentUser?.roles || [])].sort();
+        const hasRoleChanges = JSON.stringify(newRoles) !== JSON.stringify(oldRoles);
+
+        if (hasRoleChanges) {
+          setCurrentUser(prev => prev ? {
+            ...prev,
+            roles: newRoles
+          } : null);
+        }
       }
 
       return { success: true, centers: mappedCenters };
@@ -144,7 +155,7 @@ export function AuthProvider({ children }) {
       console.error('[AUTH] Hub refresh failure', err);
       return { success: false, error: 'Failed to synchronize institutional hubs.' };
     }
-  }, [centers.length]);
+  }, []); // Stable callback
 
   const refreshSubscription = useCallback(async () => {
     if (!currentUser) return;
@@ -159,7 +170,7 @@ export function AuthProvider({ children }) {
         console.error('[AUTH] Subscription sync failure', err);
       }
     }
-  }, [currentUser]);
+  }, [currentUser?.id]); // Depend on ID, not object reference
 
   // Synchronize Hub Discovery: Automatically refresh centers list when session starts
   useEffect(() => {
