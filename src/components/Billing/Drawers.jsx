@@ -20,6 +20,9 @@ export const InvoiceDrawer = ({
   const [centreDisc, setCentreDisc] = React.useState(0);
   const [referrerDisc, setReferrerDisc] = React.useState(0);
   const [deduction, setDeduction] = React.useState(0);
+  const [isAdjusting, setIsAdjusting] = React.useState(false);
+  const [adjustAmount, setAdjustAmount] = React.useState(0);
+
 
   if (!selectedInvoice) return null;
 
@@ -229,7 +232,7 @@ export const InvoiceDrawer = ({
                          ))}
                       </div>
                    </div>
-                   <button onClick={() => handleCollectPayment(centreDisc, referrerDisc, deduction)} style={{ width: '100%', padding: '12px', borderRadius: '12px', border: 'none', background: '#0f52ba', color: 'white', fontWeight: 950, fontSize: '10px', cursor: 'pointer', boxShadow: '0 4px 12px rgba(15,82,186,0.2)' }}>COMMIT SETTLEMENT</button>
+                   <button onClick={() => handleCollectPayment(centreDisc, referrerDisc, deduction, netSettlement)} style={{ width: '100%', padding: '12px', borderRadius: '12px', border: 'none', background: '#0f52ba', color: 'white', fontWeight: 950, fontSize: '10px', cursor: 'pointer', boxShadow: '0 4px 12px rgba(15,82,186,0.2)' }}>COMMIT SETTLEMENT</button>
                    <button onClick={handleSaveInvoice} style={{ width: '100%', padding: '10px', borderRadius: '12px', border: '1px solid #e2e8f0', fontWeight: 800, fontSize: '9px', cursor: 'pointer', background: 'white' }}>SAVE AS DRAFT</button>
 
                 </div>

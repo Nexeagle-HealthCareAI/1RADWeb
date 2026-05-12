@@ -838,16 +838,19 @@ export default function BillingPage() {
     setSelectedInvoice(recalculateInvoice({ ...selectedInvoice, items: newItems }));
   };
 
-  const handleCollectPayment = async (centreDiscount = 0, referrerDiscount = 0, deduction = 0) => {
+  const handleCollectPayment = async (centreDiscount = 0, referrerDiscount = 0, deduction = 0, netAmount = 0) => {
     try {
       const payload = {
         invoiceId: selectedInvoice.id,
-        amount: selectedInvoice.totalAmount,
+        amount: netAmount || selectedInvoice.totalAmount,
         centreDiscount,
         referrerDiscount,
         deduction,
         paymentMethod: paymentMethod
       };
+      
+      console.log('[FINANCE] Committing settlement:', payload);
+
 
 
       
