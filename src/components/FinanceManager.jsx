@@ -30,6 +30,50 @@ const FinanceManager = ({
   TODAY
 }) => {
   const [financeViewMode, setFinanceViewMode] = useState('REGISTRY'); // 'REGISTRY', 'EXPENSES', 'LEDGER'
+  
+  // --- REGISTRY STATE MGMT ---
+  const [regModalityFilter, setRegModalityFilter] = useState('ALL');
+  const [regSortConfig, setRegSortConfig] = useState({ key: 'modality', direction: 'asc' });
+  const [regCurrentPage, setRegCurrentPage] = useState(1);
+  const ITEMS_PER_PAGE = 5;
+
+  const handleRegSort = (key) => {
+    setRegSortConfig(prev => ({
+      key,
+      direction: prev.key === key && prev.direction === 'asc' ? 'desc' : 'asc'
+    }));
+  };
+
+  const getFilteredAndSortedRegistry = () => {
+    let list = [...(servicePrices || [])];
+    
+    // 1. Filter
+    if (regModalityFilter !== 'ALL') {
+      list = list.filter(item => item.modality === regModalityFilter);
+    }
+
+    // 2. Sort
+    list.sort((a, b) => {
+      let valA = a[regSortConfig.key];
+      let valB = b[regSortConfig.key];
+      
+      if (typeof valA === 'string') valA = valA.toLowerCase();
+      if (typeof valB === 'string') valB = valB.toLowerCase();
+      
+      if (valA < valB) return regSortConfig.direction === 'asc' ? -1 : 1;
+      if (valA > valB) return regSortConfig.direction === 'asc' ? 1 : -1;
+      return 0;
+    });
+
+    return list;
+  };
+
+  const processedRegistry = getFilteredAndSortedRegistry();
+  const totalPages = Math.ceil(processedRegistry.length / ITEMS_PER_PAGE);
+  const paginatedRegistry = processedRegistry.slice(
+    (regCurrentPage - 1) * ITEMS_PER_PAGE,
+    regCurrentPage * ITEMS_PER_PAGE
+  );
 
   const getStatusConfig = (status) => {
     const s = status?.toUpperCase() || 'UNKNOWN';
@@ -96,7 +140,7 @@ const FinanceManager = ({
           <button 
             onClick={() => { 
               setEditPrice({ 
-                modality: 'X-RAY', 
+                modality: '', 
                 serviceName: '', 
                 amount: 0, 
                 referralCutType: 'PERCENTAGE', 
@@ -137,38 +181,60 @@ const FinanceManager = ({
       </div>
 
       {financeViewMode === 'REGISTRY' && (
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 350px', gap: '30px', alignItems: 'flex-start' }}>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 260px', gap: '30px', alignItems: 'flex-start' }}>
           {/* Service Price Registry */}
           <div style={{ background: 'white', borderRadius: '24px', border: '1px solid #e2e8f0', overflow: 'hidden', boxShadow: '0 4px 20px rgba(0,0,0,0.01)' }}>
+            <div style={{ padding: '20px 30px', background: '#f8fafc', borderBottom: '1px solid #f1f5f9', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+               <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
+                  <label style={{ fontSize: '9px', fontWeight: 950, color: '#64748b' }}>FILTER_MODALITY:</label>
+                  <select 
+                    value={regModalityFilter}
+                    onChange={e => { setRegModalityFilter(e.target.value); setRegCurrentPage(1); }}
+                    style={{ padding: '6px 12px', borderRadius: '8px', border: '1px solid #e2e8f0', fontSize: '10px', fontWeight: 800, color: '#0f52ba', outline: 'none' }}
+                  >
+                    <option value="ALL">ALL_MODALITIES</option>
+                    {['X-RAY', 'MRI', 'CT', 'ULTRASOUND', 'DEXA', 'MAMMOGRAPHY', 'PET-CT'].map(m => <option key={m} value={m}>{m}</option>)}
+                  </select>
+               </div>
+               <div style={{ fontSize: '9px', fontWeight: 950, color: '#94a3b8' }}>TOTAL_ENTRIES: {processedRegistry.length}</div>
+            </div>
             <table style={{ width: '100%', borderCollapse: 'collapse' }}>
               <thead style={{ background: '#f8fafc' }}>
                 <tr style={{ borderBottom: '1px solid #f1f5f9' }}>
-                  <th style={{ padding: '20px 30px', textAlign: 'left', fontSize: '10px', fontWeight: 950, color: '#94a3b8', letterSpacing: '2px' }}>MODALITY</th>
-                  <th style={{ padding: '20px 30px', textAlign: 'left', fontSize: '10px', fontWeight: 950, color: '#94a3b8', letterSpacing: '2px' }}>SERVICE_NAME</th>
-                  <th style={{ padding: '20px 20px', textAlign: 'left', fontSize: '10px', fontWeight: 950, color: '#94a3b8', letterSpacing: '2px' }}>STANDARD_CHARGE</th>
-                  <th style={{ padding: '20px 20px', textAlign: 'left', fontSize: '10px', fontWeight: 950, color: '#94a3b8', letterSpacing: '2px' }}>REFERRAL_CUT</th>
+                  <th onClick={() => handleRegSort('modality')} style={{ padding: '20px 30px', textAlign: 'left', fontSize: '10px', fontWeight: 950, color: '#94a3b8', letterSpacing: '2px', cursor: 'pointer' }}>
+                    MODALITY {regSortConfig.key === 'modality' ? (regSortConfig.direction === 'asc' ? '↑' : '↓') : '↕'}
+                  </th>
+                  <th onClick={() => handleRegSort('serviceName')} style={{ padding: '20px 30px', textAlign: 'left', fontSize: '10px', fontWeight: 950, color: '#94a3b8', letterSpacing: '2px', cursor: 'pointer' }}>
+                    SERVICE_NAME {regSortConfig.key === 'serviceName' ? (regSortConfig.direction === 'asc' ? '↑' : '↓') : '↕'}
+                  </th>
+                  <th onClick={() => handleRegSort('amount')} style={{ padding: '20px 20px', textAlign: 'left', fontSize: '10px', fontWeight: 950, color: '#94a3b8', letterSpacing: '2px', cursor: 'pointer' }}>
+                    CHARGE {regSortConfig.key === 'amount' ? (regSortConfig.direction === 'asc' ? '↑' : '↓') : '↕'}
+                  </th>
+                  <th onClick={() => handleRegSort('referralCutValue')} style={{ padding: '20px 20px', textAlign: 'left', fontSize: '10px', fontWeight: 950, color: '#94a3b8', letterSpacing: '2px', cursor: 'pointer' }}>
+                    REF_CUT {regSortConfig.key === 'referralCutValue' ? (regSortConfig.direction === 'asc' ? '↑' : '↓') : '↕'}
+                  </th>
                   <th style={{ padding: '20px 30px', textAlign: 'right', fontSize: '10px', fontWeight: 950, color: '#94a3b8', letterSpacing: '2px' }}>ACTIONS</th>
                 </tr>
               </thead>
               <tbody>
-                {(servicePrices || []).map((spec, idx) => (
+                {paginatedRegistry.map((spec, idx) => (
                   <tr key={spec.id || idx} style={{ borderBottom: '1px solid #f8fafc', transition: 'background 0.2s' }}>
-                    <td style={{ padding: '20px 30px' }}>
-                      <span style={{ fontSize: '10px', fontWeight: 950, color: 'white', background: '#334155', padding: '5px 12px', borderRadius: '8px' }}>{(spec.modality || 'OTHER').toUpperCase()}</span>
+                    <td style={{ padding: '15px 30px' }}>
+                      <span style={{ fontSize: '9px', fontWeight: 950, color: 'white', background: '#334155', padding: '4px 10px', borderRadius: '6px' }}>{(spec.modality || 'OTHER').toUpperCase()}</span>
                     </td>
-                    <td style={{ padding: '20px 30px', fontSize: '13px', fontWeight: 850, color: '#1e293b' }}>{(spec.serviceName || 'Unnamed Service').toUpperCase()}</td>
-                    <td style={{ padding: '20px 20px', fontSize: '14px', fontWeight: 950, color: '#0f52ba' }}>₹{(Number(spec.amount) || 0).toLocaleString()}</td>
-                    <td style={{ padding: '20px 20px' }}>
+                    <td style={{ padding: '15px 30px', fontSize: '12px', fontWeight: 850, color: '#1e293b' }}>{(spec.serviceName || 'Unnamed Service').toUpperCase()}</td>
+                    <td style={{ padding: '15px 20px', fontSize: '13px', fontWeight: 950, color: '#0f52ba' }}>₹{(Number(spec.amount) || 0).toLocaleString()}</td>
+                    <td style={{ padding: '15px 20px' }}>
                        {spec.referralCutValue > 0 ? (
-                         <span style={{ fontSize: '12px', fontWeight: 950, color: '#059669', background: '#ecfdf5', padding: '4px 10px', borderRadius: '6px' }}>
+                         <span style={{ fontSize: '11px', fontWeight: 950, color: '#059669', background: '#ecfdf5', padding: '3px 8px', borderRadius: '4px' }}>
                            ₹{(spec.referralCutValue || 0).toLocaleString()}
                          </span>
                        ) : (
-                         <span style={{ fontSize: '11px', color: '#94a3b8', fontWeight: 700 }}>N/A</span>
+                         <span style={{ fontSize: '10px', color: '#94a3b8', fontWeight: 700 }}>N/A</span>
                        )}
                     </td>
-                    <td style={{ padding: '20px 30px', textAlign: 'right' }}>
-                       <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
+                    <td style={{ padding: '15px 30px', textAlign: 'right' }}>
+                       <div style={{ display: 'flex', gap: '6px', justifyContent: 'flex-end' }}>
                           <button 
                             onClick={() => { 
                               setEditPrice({
@@ -178,26 +244,45 @@ const FinanceManager = ({
                               }); 
                               setIsPriceDrawerOpen(true); 
                             }} 
-                            style={{ padding: '6px 12px', borderRadius: '8px', border: '1px solid #e2e8f0', background: 'white', cursor: 'pointer', fontSize: '10px', fontWeight: 800 }}
+                            style={{ padding: '4px 8px', borderRadius: '6px', border: '1px solid #e2e8f0', background: 'white', cursor: 'pointer', fontSize: '9px', fontWeight: 800 }}
                           >
                             EDIT
                           </button>
-                          <button onClick={() => handleDeletePrice(spec.id)} style={{ padding: '6px 12px', borderRadius: '8px', border: '1px solid #fee2e2', background: '#fef2f2', color: '#dc2626', cursor: 'pointer', fontSize: '10px', fontWeight: 800 }}>DELETE</button>
+                          <button onClick={() => handleDeletePrice(spec.id)} style={{ padding: '4px 8px', borderRadius: '6px', border: '1px solid #fee2e2', background: '#fef2f2', color: '#dc2626', cursor: 'pointer', fontSize: '9px', fontWeight: 800 }}>DEL</button>
                        </div>
                     </td>
                   </tr>
                 ))}
-                {(servicePrices || []).length === 0 && (
+                {paginatedRegistry.length === 0 && (
                   <tr>
-                    <td colSpan="4" style={{ padding: '60px', textAlign: 'center', color: '#94a3b8', fontSize: '12px', fontWeight: 700 }}>NO SERVICE CHARGES CONFIGURED</td>
+                    <td colSpan="5" style={{ padding: '60px', textAlign: 'center', color: '#94a3b8', fontSize: '11px', fontWeight: 700 }}>NO MATCHING RECORDS FOUND</td>
                   </tr>
                 )}
               </tbody>
             </table>
+            
+            {totalPages > 1 && (
+              <div style={{ padding: '15px 30px', background: '#f8fafc', borderTop: '1px solid #f1f5f9', display: 'flex', justifyContent: 'center', gap: '8px' }}>
+                 {[...Array(totalPages)].map((_, i) => (
+                   <button 
+                     key={i} 
+                     onClick={() => setRegCurrentPage(i + 1)}
+                     style={{ 
+                       width: '28px', height: '28px', borderRadius: '6px', border: '1px solid #e2e8f0', 
+                       fontSize: '10px', fontWeight: 950, cursor: 'pointer',
+                       background: regCurrentPage === i + 1 ? '#0f52ba' : 'white',
+                       color: regCurrentPage === i + 1 ? 'white' : '#64748b'
+                     }}
+                   >
+                     {i + 1}
+                   </button>
+                 ))}
+              </div>
+            )}
           </div>
 
           {/* Billing Protocol Settings */}
-          <div style={{ background: 'white', border: '1px solid #e2e8f0', padding: '30px', borderRadius: '24px', boxShadow: '0 4px 20px rgba(0,0,0,0.02)' }}>
+          <div style={{ background: 'white', border: '1px solid #e2e8f0', padding: '25px', borderRadius: '24px', boxShadow: '0 4px 20px rgba(0,0,0,0.02)' }}>
             <div style={{ fontSize: '10px', fontWeight: 950, color: '#64748b', textTransform: 'uppercase', letterSpacing: '2px', marginBottom: '30px' }}>Global Billing Protocol</div>
             
             <div style={{ display: 'flex', flexDirection: 'column', gap: '25px' }}>
