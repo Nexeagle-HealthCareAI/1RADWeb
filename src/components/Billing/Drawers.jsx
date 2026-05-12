@@ -281,18 +281,18 @@ export const NewInvoiceDrawer = ({
                                       amount: s.amount || 0, 
                                       quantity: 1, 
                                       appointmentId: s.appointmentId,
-                                      referralCutType: s.referralCutType || 'PERCENTAGE',
                                       referralCutValue: s.referralCutValue || 0
                                     };
+
                                   } else {
                                     newItems.push({ 
                                       description: s.service, 
                                       amount: s.amount || 0, 
                                       quantity: 1, 
                                       appointmentId: s.appointmentId,
-                                      referralCutType: s.referralCutType || 'PERCENTAGE',
                                       referralCutValue: s.referralCutValue || 0
                                     });
+
                                   }
                                   setNewInvoiceData({ ...newInvoiceData, items: newItems });
                                 setPendingServices(prev => prev.filter((_, i) => i !== idx));
@@ -323,17 +323,17 @@ export const NewInvoiceDrawer = ({
                                   description: s.serviceName, 
                                   amount: s.amount, 
                                   quantity: 1,
-                                  referralCutType: s.referralCutType || 'PERCENTAGE',
                                   referralCutValue: s.referralCutValue || 0
                                 };
+
                               } else {
                                 newItems.push({ 
                                   description: s.serviceName, 
                                   amount: s.amount, 
                                   quantity: 1,
-                                  referralCutType: s.referralCutType || 'PERCENTAGE',
                                   referralCutValue: s.referralCutValue || 0
                                 });
+
                               }
                               setNewInvoiceData({ ...newInvoiceData, items: newItems });
                            }}
@@ -380,9 +380,9 @@ export const NewInvoiceDrawer = ({
                                           const items = [...newInvoiceData.items];
                                           items[idx].description = s.serviceName;
                                           items[idx].amount = s.amount;
-                                          items[idx].referralCutType = s.referralCutType || 'PERCENTAGE';
                                           items[idx].referralCutValue = s.referralCutValue || 0;
                                           setNewInvoiceData({ ...newInvoiceData, items });
+
                                        }}
                                        style={{ padding: '10px', fontSize: '10px', fontWeight: 800, cursor: 'pointer', borderBottom: '1px solid #f8fafc' }}
                                      >

@@ -476,9 +476,9 @@ export default function AppointmentBoard() {
       referredAddress: referrers.find(r => r.name === newPatient.referredBy)?.address || '',
       notes: newBooking.notes,
       amount: newBooking.amount,
-      referralCutType: newBooking.referralCutType,
       referralCutValue: newBooking.referralCutValue
     };
+
 
     if (!isOnline) {
       await addToOutbox('APPOINTMENT_CREATE', payload);
@@ -516,9 +516,9 @@ export default function AppointmentBoard() {
       date: getTodayString(), 
       doctor: '', 
       notes: '',
-      referralCutType: 'PERCENTAGE',
       referralCutValue: 0
     });
+
     setNewPatient({ name: '', mobile: '', age: '', gender: 'Male', village: '', district: '', address: '', referredBy: '', sourceOfInfo: '' });
     setReferrerSearchValue('');
     setDrawerSearchQuery('');
@@ -565,6 +565,7 @@ export default function AppointmentBoard() {
 
     try {
       await apiClient.put(`/appointments/${editingAppointment.appointmentId}`, {
+        appointmentId: editingAppointment.appointmentId,
         patientId: editingAppointment.patientId,
         service: editingAppointment.service,
         modality: editingAppointment.modality,
@@ -573,12 +574,13 @@ export default function AppointmentBoard() {
         notes: editingAppointment.notes,
         referredBy: editingAppointment.referredBy || '',
         referralCutValue: editingAppointment.referralCutValue || 0,
-        referralCutType: editingAppointment.referralCutType || 'PERCENTAGE',
         patientName: editingAppointment.patientName,
         mobile: editingAppointment.mobile,
         patientAge: editingAppointment.patientAge,
         amount: editingAppointment.amount || 0
       });
+
+
 
       setIsEditingOpen(false);
       setEditingAppointment(null);
@@ -588,6 +590,52 @@ export default function AppointmentBoard() {
       alert('ERROR: Failed to update appointment. Please try again.');
     }
   };
+
+  const handleAddReferrer = async (e) => {
+    e.preventDefault();
+    
+    // Validation Logic
+    const cleanContact = newReferrer.contact.replace(/[\s\-\+\(\)]/g, '');
+    const contactRegex = /^[0-9]{10,15}$/;
+    
+    if (!newReferrer.name || newReferrer.name.trim().length < 3) {
+      alert('VALIDATION ERROR: Referrer name must be at least 3 characters.');
+      return;
+    }
+    
+    if (!cleanContact || !contactRegex.test(cleanContact)) {
+      alert('VALIDATION ERROR: Please provide a valid numeric contact number (10-15 digits).');
+      return;
+    }
+
+    try {
+      const response = await apiClient.post('/referrers', {
+        name: newReferrer.name,
+        contact: cleanContact,
+        address: newReferrer.address
+      });
+      
+      const savedReferrer = response.data;
+      
+      // Update local state
+      setReferrers(prev => [...prev, savedReferrer]);
+      
+      // Select the newly added referrer in both possible contexts
+      setNewPatient(prev => ({ ...prev, referredBy: savedReferrer.name }));
+      if (editingAppointment) {
+        setEditingAppointment(prev => ({ ...prev, referredBy: savedReferrer.name }));
+      }
+      
+      // Close modal and reset
+      setIsAddingReferrer(false);
+      setNewReferrer({ name: '', contact: '', address: '' });
+      
+    } catch (error) {
+      console.error('Failed to add referrer:', error);
+      alert('ERROR: Could not save referrer. Please verify your connection and try again.');
+    }
+  };
+
 
   // ============================================================
   //  INSTITUTIONAL PRINTING ENGINE (DESKTOP PARITY)
@@ -1594,7 +1642,7 @@ export default function AppointmentBoard() {
                   {MODALITIES.map(m => (
                     <div key={m} className={`modality-card ${newBooking.modality === m ? 'active' : ''}`} 
                       style={{ padding: '12px 8px', minHeight: 'auto' }}
-                      onClick={() => setNewBooking({...newBooking, modality: m})}
+                      onClick={() => setNewBooking({...newBooking, modality: m, service: '', amount: 0, referralCutValue: 0})}
                     >
                       <span className="modality-icon" style={{ fontSize: '14px', fontWeight: 900, marginBottom: '4px', color: newBooking.modality === m ? 'white' : '#0f52ba' }}>{MODALITY_ICONS[m] || 'MOD'}</span>
                       <span className="modality-name" style={{ fontSize: '9px' }}>{m}</span>
@@ -1617,9 +1665,9 @@ export default function AppointmentBoard() {
                         setNewBooking(prev => ({
                           ...prev,
                           amount: match.amount,
-                          referralCutValue: match.referralCutValue || 0,
-                          referralCutType: match.referralCutType || 'PERCENTAGE'
+                          referralCutValue: match.referralCutValue || 0
                         }));
+
                       }
 
                     }} 
@@ -1650,9 +1698,9 @@ export default function AppointmentBoard() {
                               ...newBooking, 
                               service: s.serviceName,
                               amount: s.amount,
-                              referralCutValue: s.referralCutValue || 0,
-                              referralCutType: s.referralCutType || 'PERCENTAGE'
+                              referralCutValue: s.referralCutValue || 0
                             })}
+
 
                             style={{ padding: '12px 15px', borderBottom: '1px solid #f8fafc', cursor: 'pointer', transition: 'background 0.2s' }}
                             onMouseOver={e => e.currentTarget.style.background = '#f0f4ff'}
@@ -1660,11 +1708,12 @@ export default function AppointmentBoard() {
                           >
                              <div style={{ fontSize: '12px', fontWeight: 800, color: '#1e293b' }}>{s.serviceName}</div>
                              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '2px' }}>
-                               <div style={{ fontSize: '10px', color: '#0f52ba', fontWeight: 950 }}>₹{s.amount.toLocaleString()}</div>
+                               <div style={{ fontSize: '10px', color: '#0f52ba', fontWeight: 950 }}>₹{(s.amount || 0).toLocaleString()}</div>
                                {s.referralCutValue > 0 && (
                                  <div style={{ fontSize: '9px', color: '#e67e22', fontWeight: 900, background: '#fff7ed', padding: '2px 6px', borderRadius: '4px', border: '1px solid #ffedd5' }}>
-                                   INCENTIVE: ₹{s.referralCutValue.toLocaleString()}
+                                   INCENTIVE: ₹{(s.referralCutValue || 0).toLocaleString()}
                                  </div>
+
                                )}
                              </div>
                           </div>
@@ -1686,6 +1735,7 @@ export default function AppointmentBoard() {
                     <div style={{ fontSize: '10px', fontWeight: 800, color: '#0f52ba', marginTop: '6px', display: 'flex', alignItems: 'center', gap: '4px' }}>
                       <span style={{ opacity: 0.6 }}>SYSTEM REFERRAL CUT:</span>
                       <span>₹{newBooking.referralCutValue}</span>
+
                     </div>
                   )}
                 </div>
@@ -1811,11 +1861,12 @@ export default function AppointmentBoard() {
                       <div style={{ fontWeight: 800, fontSize: '11px', color: '#1a1a2e', display: 'flex', justifyContent: 'space-between' }}>
                         <span>{newBooking.service || '\u2014'}</span>
                         <div style={{ textAlign: 'right' }}>
-                          <div style={{ color: '#0f52ba' }}>₹{newBooking.amount.toLocaleString()}</div>
+                          <div style={{ color: '#0f52ba' }}>₹{(newBooking.amount || 0).toLocaleString()}</div>
                           {newBooking.referralCutValue > 0 && (
                             <div style={{ fontSize: '8px', color: '#e67e22', fontWeight: 900, marginTop: '2px' }}>
-                              REFERRAL CUT: ₹{newBooking.referralCutValue.toLocaleString()}
+                              REFERRAL CUT: ₹{(newBooking.referralCutValue || 0).toLocaleString()}
                             </div>
+
                           )}
                         </div>
                       </div>
@@ -1969,7 +2020,7 @@ export default function AppointmentBoard() {
               <select 
                 style={{ fontSize: '13px', padding: '11px', height: '44px', width: '100%', borderRadius: '10px', border: '1px solid #e2e8f0' }} 
                 value={editingAppointment.modality || 'X-RAY'} 
-                onChange={e => setEditingAppointment({...editingAppointment, modality: e.target.value})}
+                onChange={e => setEditingAppointment({...editingAppointment, modality: e.target.value, service: '', amount: 0, referralCutValue: 0})}
               >
                 {MODALITIES.map(m => <option key={m} value={m}>{m}</option>)}
               </select>
@@ -1992,9 +2043,9 @@ export default function AppointmentBoard() {
                     setEditingAppointment(prev => ({
                       ...prev,
                       amount: match.amount,
-                      referralCutValue: match.referralCutValue || 0,
-                      referralCutType: match.referralCutType || 'PERCENTAGE'
+                      referralCutValue: match.referralCutValue || 0
                     }));
+
                   }
 
                 }} 
@@ -2021,9 +2072,9 @@ export default function AppointmentBoard() {
                           ...editingAppointment, 
                           service: s.serviceName,
                           amount: s.amount,
-                          referralCutValue: s.referralCutValue || 0,
-                          referralCutType: s.referralCutType || 'PERCENTAGE'
+                          referralCutValue: s.referralCutValue || 0
                         })}
+
 
                         style={{ padding: '10px 15px', borderBottom: '1px solid #f8fafc', cursor: 'pointer' }}
                         onMouseOver={e => e.currentTarget.style.background = '#f0f4ff'}
@@ -2031,11 +2082,12 @@ export default function AppointmentBoard() {
                       >
                          <div style={{ fontSize: '12px', fontWeight: 800 }}>{s.serviceName}</div>
                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '2px' }}>
-                           <div style={{ fontSize: '10px', color: '#0f52ba', fontWeight: 950 }}>₹{s.amount.toLocaleString()}</div>
+                           <div style={{ fontSize: '10px', color: '#0f52ba', fontWeight: 950 }}>₹{(s.amount || 0).toLocaleString()}</div>
                            {s.referralCutValue > 0 && (
                              <div style={{ fontSize: '9px', color: '#e67e22', fontWeight: 900, background: '#fff7ed', padding: '2px 6px', borderRadius: '4px', border: '1px solid #ffedd5' }}>
-                               INCENTIVE: ₹{s.referralCutValue.toLocaleString()}
+                               INCENTIVE: ₹{(s.referralCutValue || 0).toLocaleString()}
                              </div>
+
                            )}
                          </div>
                       </div>
@@ -2056,9 +2108,11 @@ export default function AppointmentBoard() {
               {editingAppointment.referralCutValue > 0 && (
                 <div style={{ fontSize: '10px', fontWeight: 800, color: '#0f52ba', marginTop: '6px' }}>
                   <span style={{ opacity: 0.6 }}>SYSTEM REFERRAL CUT: </span>
-                  ₹{editingAppointment.referralCutValue}
+                  ₹{(editingAppointment.referralCutValue || 0).toLocaleString()}
                 </div>
               )}
+
+
             </div>
 
             {/* Doctor */}

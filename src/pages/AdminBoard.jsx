@@ -120,10 +120,10 @@ export default function AdminBoard() {
     modality: 'X-RAY', 
     serviceName: '', 
     amount: 0, 
-    referralCutType: 'PERCENTAGE', 
     referralCutValue: 0,
     referralCutInput: 0
   });
+
 
   // Expense Mgmt State
   const [isExpenseDrawerOpen, setIsExpenseDrawerOpen] = useState(false);
