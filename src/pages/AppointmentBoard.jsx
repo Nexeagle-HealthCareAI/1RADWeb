@@ -11,7 +11,10 @@ import ReportPreviewModal from '../components/ReportPreviewModal';
 // --- CONSTANTS ---
 
 const MODALITIES = ['X-RAY', 'MRI', 'CT', 'ULTRASOUND', 'DEXA', 'ANGIOGRAPHY', 'MAMMOGRAPHY', 'PET-CT', 'NUCLEAR MEDICINE', 'FLUOROSCOPY'];
-const TODAY = new Date().toLocaleDateString('en-CA'); // YYYY-MM-DD local format
+// TODAY is now calculated dynamically within the component if needed, 
+// but we'll keep a base constant for initial state.
+const getTodayString = () => new Date().toLocaleDateString('en-CA');
+const TODAY = getTodayString();
 
 // --- CONSTANTS ---
 
@@ -84,7 +87,14 @@ export default function AppointmentBoard() {
   const [bookingStep, setBookingStep] = useState(1);
   const [currentPage, setCurrentPage] = useState(1);
   const listTopRef = useRef(null);
-  const [newBooking, setNewBooking] = useState({ patientId: '', service: '', modality: 'X-RAY', date: TODAY, time: '09:00', doctor: '', notes: '' });
+  const [newBooking, setNewBooking] = useState({ 
+    patientId: '', 
+    service: '', 
+    modality: 'X-RAY', 
+    date: getTodayString(), 
+    doctor: '', 
+    notes: '' 
+  });
 
   const [newPatient, setNewPatient] = useState({ 
     name: '', mobile: '', age: '', gender: 'Male', 
@@ -124,7 +134,10 @@ export default function AppointmentBoard() {
     };
 
     if (activeTab === 'TODAY') {
-      params.date = TODAY;
+      params.date = getTodayString();
+    } else if (activeTab === 'FUTURE') {
+      params.isArchive = true;
+      params.startDate = new Date(Date.now() + 86400000).toISOString().split('T')[0];
     } else {
       params.isArchive = true;
       if (archiveFilterMode === 'RANGE') {
@@ -149,7 +162,7 @@ export default function AppointmentBoard() {
       const sortedData = mappedData.sort((a, b) => {
         const timeA = new Date(a.dateTime || 0).getTime();
         const timeB = new Date(b.dateTime || 0).getTime();
-        return timeA - timeB;
+        return timeB - timeA;
       });
       
       const dailyCounters = {};
@@ -266,16 +279,18 @@ export default function AppointmentBoard() {
       // Date filtering (Defensive)
       const appDate = app.date || (app.dateTime ? app.dateTime.split('T')[0] : null);
       
+      const currentToday = getTodayString();
       if (activeTab === 'TODAY') {
-        if (appDate !== TODAY) return false;
+        if (appDate !== currentToday) return false;
+      } else if (activeTab === 'FUTURE') {
+        if (!appDate || appDate <= currentToday) return false;
       } else {
         // Archive mode filtering
+        if (appDate >= currentToday && activeTab === 'PAST') return false;
         if (archiveFilterMode === 'RANGE') {
           if (!appDate) return false;
           if (appDate < pastDateRange.start || appDate > pastDateRange.end) return false;
         }
-        // In 'ALL' mode, we show everything that is not today (or all history)
-        // Usually archive implies historical data.
       }
 
       const matchesSearch = app.patientName.toLowerCase().includes(searchQuery.toLowerCase()) || 
@@ -321,15 +336,16 @@ export default function AppointmentBoard() {
   const activeRate = stats.total > 0 ? Math.round(((stats.total - stats.cancelled) / stats.total) * 100) : 0;
 
   // --- HANDLERS ---
-  const handleAction = async (id, action) => {
+  const handleAction = async (id, actionOrStatus) => {
     const app = appointments.find(a => a.id === id);
     if (!app) return;
 
     let newStatus = '';
-    if (action === 'CONFIRM') newStatus = 'confirmed';
-    if (action === 'START') newStatus = 'in_progress';
-    if (action === 'COMPLETE') newStatus = 'completed';
-    if (action === 'CANCEL') newStatus = 'cancelled';
+    if (actionOrStatus === 'CONFIRM') newStatus = 'confirmed';
+    else if (actionOrStatus === 'START') newStatus = 'in_progress';
+    else if (actionOrStatus === 'COMPLETE') newStatus = 'completed';
+    else if (actionOrStatus === 'CANCEL') newStatus = 'cancelled';
+    else newStatus = actionOrStatus.toLowerCase(); // Direct status update
 
     // Optimistic UI Update
     setAppointments(prev => prev.map(a => a.id === id ? { ...a, status: newStatus } : a));
@@ -354,10 +370,12 @@ export default function AppointmentBoard() {
 
   const getNextAction = (status) => {
     switch (status) {
-      case 'scheduled': return { action: 'CONFIRM', label: 'MARK ARRIVED', icon: '\u26A1', color: '#10b981' };
-      case 'booked':    return { action: 'CONFIRM', label: 'MARK ARRIVED', icon: '\u26A1', color: '#10b981' };
-      case 'confirmed': return { action: 'START', label: 'BEGIN SCAN', icon: '\u{1F300}', color: '#f59e0b' };
-      case 'in_progress': return { action: 'COMPLETE', label: 'FINALIZE SCAN', icon: '\u{1FA7B}', color: '#0f52ba' };
+      case 'scheduled':   return { action: 'CONFIRM', label: 'MARK ARRIVED', color: '#10b981' };
+      case 'booked':      return { action: 'CONFIRM', label: 'MARK ARRIVED', color: '#10b981' };
+      case 'confirmed':   return { action: 'START', label: 'BEGIN SCAN', color: '#f59e0b' };
+      case 'in_progress': return { action: 'COMPLETE', label: 'FINALIZE SCAN', color: '#0f52ba' };
+      case 'completed':   
+      case 'scanned':     return { action: 'REPORTING', label: 'START REPORT', color: '#8b5cf6' };
       default: return null;
     }
   };
@@ -403,12 +421,28 @@ export default function AppointmentBoard() {
   };
 
   const handleBookAppointment = async () => {
-    if (!newBooking.service) {
-      alert('WARNING: Service/Procedure details are missing. Field is mandatory for deployment.');
+    // 1. Validate Patient Identity
+    if (!newBooking.patientId) {
+      alert('DEPLOYMENT HALTED: Mission target (Patient) is not identified. Please select or add a patient in Phase 1.');
+      setBookingStep(1);
       return;
     }
+
+    // 2. Validate Service/Procedure
+    if (!newBooking.service || newBooking.service.trim() === '') {
+      alert('DEPLOYMENT HALTED: Clinical Service/Procedure is missing. This field is mandatory for billing and reporting.');
+      return;
+    }
+
+    // 3. Validate Specialist
     if (!newBooking.doctor) {
-      alert('WARNING: No Lead Specialist assigned. Mission cannot proceed without a supervisor.');
+      alert('DEPLOYMENT HALTED: No Lead Specialist assigned. Every mission requires a supervising physician.');
+      return;
+    }
+
+    // 4. Validate Date (Safety Check)
+    if (!newBooking.date) {
+      alert('DEPLOYMENT HALTED: Mission timeline is undefined. Please select a valid date.');
       return;
     }
 
@@ -416,7 +450,7 @@ export default function AppointmentBoard() {
       patientId: newBooking.patientId,
       service: newBooking.service,
       modality: newBooking.modality,
-      dateTime: new Date().toISOString(),
+      dateTime: new Date(`${newBooking.date}T12:00:00`).toISOString(),
       type: 'scheduled',
       doctor: newBooking.doctor,
       referredBy: newPatient.referredBy || '',
@@ -478,7 +512,14 @@ export default function AppointmentBoard() {
 
   const resetBooking = () => {
     setBookingStep(1);
-    setNewBooking({ patientId: '', service: '', modality: 'X-RAY', doctor: '', notes: '' });
+    setNewBooking({ 
+      patientId: '', 
+      service: '', 
+      modality: 'X-RAY', 
+      date: getTodayString(), 
+      doctor: '', 
+      notes: '' 
+    });
     setNewPatient({ name: '', mobile: '', age: '', gender: 'Male', village: '', district: '', address: '', referredBy: '', sourceOfInfo: '' });
     setReferrerSearchValue('');
     setDrawerSearchQuery('');
@@ -782,7 +823,7 @@ export default function AppointmentBoard() {
           borderRadius: '16px', padding: '16px', color: 'white', position: 'relative', overflow: 'hidden',
           boxShadow: '0 8px 25px rgba(0,0,0,0.12)', border: '1px solid rgba(255,255,255,0.05)'
         }}>
-          <div style={{ position: 'absolute', top: '-5px', right: '-5px', fontSize: '60px', opacity: 0.05, lineHeight: 1 }}>{'\u{1F4E1}'}</div>
+          <div style={{ position: 'absolute', top: '10px', right: '15px', fontSize: '9px', fontWeight: 950, color: 'white', opacity: 0.1 }}>SIGNAL_OK</div>
           <div style={{ fontSize: '9px', fontWeight: 900, textTransform: 'uppercase', letterSpacing: '1.5px', opacity: 0.7, marginBottom: '8px' }}>Total Missions</div>
           <div style={{ display: 'flex', alignItems: 'baseline', gap: '6px' }}>
             <div style={{ fontSize: '32px', fontWeight: 950, lineHeight: 1 }}>{stats.total}</div>
@@ -802,7 +843,7 @@ export default function AppointmentBoard() {
           border: '1px solid #dee2e6', position: 'relative', overflow: 'hidden',
           boxShadow: '0 4px 15px rgba(0,0,0,0.02)'
         }}>
-          <div style={{ position: 'absolute', top: '-5px', right: '-5px', fontSize: '60px', opacity: 0.04, lineHeight: 1 }}>{'\u{1F6EB}'}</div>
+          <div style={{ position: 'absolute', top: '10px', right: '15px', fontSize: '9px', fontWeight: 950, color: '#0f52ba', opacity: 0.1 }}>READY_INTEL</div>
           <div style={{ fontSize: '9px', fontWeight: 900, textTransform: 'uppercase', letterSpacing: '1.5px', color: '#64748b', marginBottom: '8px' }}>Ready for Deployment</div>
           <div style={{ display: 'flex', alignItems: 'baseline', gap: '6px' }}>
             <span style={{ fontSize: '32px', fontWeight: 950, color: '#0f52ba', lineHeight: 1 }}>{readyCount}</span>
@@ -827,7 +868,7 @@ export default function AppointmentBoard() {
           border: '1px solid #dee2e6', position: 'relative', overflow: 'hidden',
           boxShadow: '0 4px 15px rgba(0,0,0,0.02)'
         }}>
-          <div style={{ position: 'absolute', top: '-5px', right: '-5px', fontSize: '60px', opacity: 0.04, lineHeight: 1 }}>{'\u26A1'}</div>
+          <div style={{ position: 'absolute', top: '10px', right: '15px', fontSize: '9px', fontWeight: 950, color: '#f39c12', opacity: 0.1 }}>ACTIVE_SCAN</div>
           <div style={{ fontSize: '9px', fontWeight: 900, textTransform: 'uppercase', letterSpacing: '1.5px', color: '#64748b', marginBottom: '8px' }}>Mission in Progress</div>
           <div style={{ display: 'flex', alignItems: 'baseline', gap: '6px' }}>
             <span style={{ fontSize: '32px', fontWeight: 950, color: '#f39c12', lineHeight: 1 }}>{progressCount}</span>
@@ -1017,7 +1058,7 @@ export default function AppointmentBoard() {
           className={`mission-row-container ${isExpanded ? 'expanded' : ''}`}
           style={{
             display: 'grid',
-            gridTemplateColumns: '85px 85px 2fr 1.2fr 140px 1fr 210px',
+            gridTemplateColumns: '80px 70px 2.2fr 1.2fr 110px 140px 1.2fr 210px',
             alignItems: 'center',
             padding: '18px 24px',
             background: isExpanded ? '#fafbff' : 'white',
@@ -1061,17 +1102,36 @@ export default function AppointmentBoard() {
             <div style={{ fontSize: '9px', color: '#94a3b8', fontWeight: 700, marginTop: '2px' }}>{app.referredContact !== 'N/A' ? app.referredContact : 'NO_REF_CONTACT'}</div>
           </div>
 
-          {/* Status Column */}
-          <div>
-            <div style={{
-              display: 'inline-flex', alignItems: 'center', gap: '6px',
-              padding: '6px 12px', borderRadius: '10px',
-              background: meta.bg, border: `1px solid ${meta.color}30`,
-              transition: 'all 0.2s'
-            }}>
-              <span style={{ fontSize: '10px' }}>{meta.icon}</span>
-              <span style={{ fontSize: '9px', fontWeight: 950, color: meta.color, textTransform: 'uppercase', letterSpacing: '0.5px' }}>{meta.label}</span>
+          {/* Date Column */}
+          <div style={{ display: 'flex', flexDirection: 'column' }}>
+            <div style={{ fontSize: '11px', fontWeight: 850, color: '#1e293b' }}>
+              {(() => {
+                const d = app.dateTime ? new Date(app.dateTime) : (app.date ? new Date(app.date) : null);
+                if (!d || isNaN(d.getTime())) return '\u2014';
+                return `${d.getDate()} ${d.toLocaleString('en-GB', { month: 'short' }).toUpperCase()}, ${d.getFullYear()}`;
+              })()}
             </div>
+            <div style={{ fontSize: '7px', fontWeight: 900, color: '#abb8c3', textTransform: 'uppercase', letterSpacing: '1px', marginTop: '2px' }}>MISSION_DATE</div>
+          </div>
+
+          {/* Status Column */}
+          <div onClick={(e) => e.stopPropagation()}>
+            <select
+              value={app.status}
+              onChange={(e) => handleAction(app.id, e.target.value)}
+              style={{
+                display: 'inline-flex', alignItems: 'center', gap: '6px',
+                padding: '6px 12px', borderRadius: '10px',
+                background: meta.bg, border: `1px solid ${meta.color}30`,
+                color: meta.color, fontSize: '9px', fontWeight: 950,
+                textTransform: 'uppercase', letterSpacing: '0.5px',
+                cursor: 'pointer', appearance: 'none', outline: 'none'
+              }}
+            >
+              {Object.keys(STATUS_META).map(s => (
+                <option key={s} value={s}>{STATUS_META[s].label}</option>
+              ))}
+            </select>
           </div>
 
           {/* Specialist Column */}
@@ -1081,69 +1141,79 @@ export default function AppointmentBoard() {
           </div>
 
           {/* Actions Column */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', justifySelf: 'end' }}>
-            {/* Edit and Cancel actions remain in the row for quick management */}
-            {app.status !== 'cancelled' && app.status !== 'completed' && (
+          <div style={{ display: 'flex', alignItems: 'center', gap: '4px', justifySelf: 'end' }}>
+            
+            {/* Next Status Action */}
+            {next && (
               <button
-                onClick={(e) => { 
-                  e.stopPropagation(); 
-                  setEditingAppointment(app); 
-                  setIsEditingOpen(true); 
+                onClick={(e) => { e.stopPropagation(); handleAction(app.id, next.action); }}
+                style={{ 
+                  padding: '3px 6px', borderRadius: '6px', 
+                  background: next.color, color: 'white', 
+                  border: 'none', cursor: 'pointer', 
+                  fontSize: '7.5px', fontWeight: 950, 
+                  letterSpacing: '0.3px', transition: 'all 0.2s',
+                  boxShadow: `0 4px 10px ${next.color}30`,
+                  textTransform: 'uppercase'
                 }}
-                className="action-icon-btn edit"
-                style={{
-                  width: '34px', height: '34px', borderRadius: '10px',
-                  background: '#f8fafc', border: '1.5px solid #e2e8f0', cursor: 'pointer',
-                  display: 'flex', alignItems: 'center', justifyContent: 'center',
-                  fontSize: '14px', color: '#64748b', transition: 'all 0.2s',
-                }}
-                title="Edit Appointment"
               >
-                {'\u270F\uFE0F'}
+                {next.label}
               </button>
             )}
 
+            {/* Token Print */}
+            <button
+              onClick={(e) => { e.stopPropagation(); setTokenPrintData(app); }}
+              style={{ 
+                padding: '3px 6px', borderRadius: '6px', 
+                background: '#f1f5f9', border: '1px solid #cbd5e1', 
+                cursor: 'pointer', display: 'flex', alignItems: 'center', 
+                justifyContent: 'center', fontSize: '7.5px', fontWeight: 950, 
+                color: '#0f52ba', transition: 'all 0.2s' 
+              }}
+              title="Print Token Slip"
+            >
+              TOKEN
+            </button>
+
+            {/* Prescription / Report Preview */}
+            <button
+              onClick={(e) => { e.stopPropagation(); handlePreviewPrint(app); }}
+              style={{ 
+                padding: '3px 6px', borderRadius: '6px', 
+                background: '#fffbeb', border: '1px solid #fde68a', 
+                cursor: 'pointer', display: 'flex', alignItems: 'center', 
+                justifyContent: 'center', fontSize: '7.5px', fontWeight: 950, 
+                color: '#b45309', transition: 'all 0.2s' 
+              }}
+              title="Print Prescription"
+            >
+              PRESCRIPTION
+            </button>
+
+            {/* Edit */}
             {app.status !== 'cancelled' && app.status !== 'completed' && (
               <button
-                onClick={(e) => { 
-                  e.stopPropagation(); 
-                  setEditingAppointment(app); 
-                  setIsEditingOpen(true); 
-                }}
-                className="action-icon-btn edit"
-                style={{
-                  width: '34px', height: '34px', borderRadius: '10px',
-                  background: '#f8fafc', border: '1.5px solid #e2e8f0', cursor: 'pointer',
-                  display: 'flex', alignItems: 'center', justifyContent: 'center',
-                  fontSize: '14px', color: '#64748b', transition: 'all 0.2s',
-                }}
+                onClick={(e) => { e.stopPropagation(); setEditingAppointment(app); setIsEditingOpen(true); }}
+                style={{ padding: '3px 6px', borderRadius: '6px', background: '#f8fafc', border: '1.5px solid #e2e8f0', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '7.5px', fontWeight: 950, color: '#475569', transition: 'all 0.2s' }}
                 title="Edit Appointment"
               >
-                {'\u270F\uFE0F'}
+                EDIT
               </button>
             )}
 
+            {/* Cancel */}
             {app.status !== 'cancelled' && app.status !== 'completed' && (
               <button
-                onClick={(e) => { 
-                  e.stopPropagation(); 
-                  if (confirm(`Are you sure you want to cancel appointment ${app.id}?\n\nPatient: ${app.patientName}\nThis action cannot be undone.`)) {
-                    handleAction(app.id, 'CANCEL');
-                  }
-                }}
-                className="action-icon-btn cancel"
-                style={{
-                  width: '34px', height: '34px', borderRadius: '10px',
-                  background: '#fef2f2', border: '1.5px solid #fee2e2', cursor: 'pointer',
-                  display: 'flex', alignItems: 'center', justifyContent: 'center',
-                  fontSize: '14px', color: '#ef4444', transition: 'all 0.2s',
-                }}
+                onClick={(e) => { e.stopPropagation(); if (confirm(`Cancel appointment for ${app.patientName}?`)) handleAction(app.id, 'CANCEL'); }}
+                style={{ width: '34px', height: '34px', borderRadius: '10px', background: '#fef2f2', border: '1.5px solid #fecaca', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '14px', color: '#ef4444', transition: 'all 0.2s' }}
                 title="Cancel Appointment"
               >
-                {'\u2715'}
+                ✕
               </button>
             )}
-            <div style={{ marginLeft: '8px', transition: 'transform 0.3s', transform: `rotate(${isExpanded ? 180 : 0}deg)`, fontSize: '12px', color: isExpanded ? '#0f52ba' : '#cbd5e1', fontWeight: 900 }}>{'\u25BC'}</div>
+
+            <div style={{ marginLeft: '4px', transition: 'transform 0.3s', transform: `rotate(${isExpanded ? 180 : 0}deg)`, fontSize: '12px', color: isExpanded ? '#0f52ba' : '#cbd5e1', fontWeight: 900 }}>▾</div>
           </div>
         </div>
 
@@ -1160,7 +1230,7 @@ export default function AppointmentBoard() {
                 <div style={{ flex: 1, display: 'flex', gap: '24px', flexWrap: 'wrap' }}>
                   <div style={{ flex: '1 1 350px', background: 'white', padding: '24px', borderRadius: '16px', border: '1px solid #e2e8f0', boxShadow: '0 4px 15px rgba(0,0,0,0.03)' }}>
                     <div style={{ fontSize: '11px', fontWeight: 950, color: '#0f52ba', letterSpacing: '1.5px', marginBottom: '20px', textTransform: 'uppercase', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                       <span style={{ fontSize: '18px' }}>📋</span> CLINICAL INTELLIGENCE
+                       CLINICAL INTELLIGENCE
                     </div>
                     
                     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '20px' }}>
@@ -1181,7 +1251,7 @@ export default function AppointmentBoard() {
 
                   <div style={{ flex: '1 1 350px', background: '#fffbeb', padding: '24px', borderRadius: '16px', border: '1px solid #fde68a', boxShadow: '0 4px 15px rgba(245,158,11,0.05)' }}>
                     <div style={{ fontSize: '11px', fontWeight: 950, color: '#b45309', letterSpacing: '1.5px', marginBottom: '15px', textTransform: 'uppercase', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                       <span style={{ fontSize: '18px' }}>📝</span> PHYSICIAN OBSERVATIONS
+                       PHYSICIAN OBSERVATIONS
                     </div>
                     <p style={{ fontSize: '13px', color: '#92400e', fontWeight: 600, margin: 0, lineHeight: '1.6', background: 'rgba(255,255,255,0.4)', padding: '15px', borderRadius: '10px' }}>
                       {app.notes || 'No clinical observations or critical notes provided for this mission.'}
@@ -1189,7 +1259,7 @@ export default function AppointmentBoard() {
                   </div>
                   <div style={{ flex: '1 1 100%', background: '#f8fafc', padding: '24px', borderRadius: '16px', border: '1px solid #e2e8f0', marginTop: '12px' }}>
                     <div style={{ fontSize: '11px', fontWeight: 950, color: '#1e293b', letterSpacing: '1.5px', marginBottom: '20px', textTransform: 'uppercase', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                       <span style={{ fontSize: '18px' }}>🖨️</span> REPORTING & PRINTING SUITE
+                       REPORTING & PRINTING SUITE
                     </div>
                     <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap' }}>
                       <button
@@ -1244,12 +1314,11 @@ export default function AppointmentBoard() {
           <div className="drawer-header" style={{ background: 'linear-gradient(135deg, #0a1628 0%, #0f52ba 100%)', color: 'white', padding: '28px 30px', border: 'none' }}>
             <div style={{ display: 'flex', flexDirection: 'column' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '4px' }}>
-                <span style={{ fontSize: '20px' }}>{isStep1 ? '\u{1F3AF}' : '\u{1F680}'}</span>
                 <h2 style={{ fontSize: '18px', fontWeight: 900, margin: 0 }}>NEW MISSION</h2>
               </div>
               <p style={{ fontSize: '11px', opacity: 0.7, textTransform: 'uppercase', letterSpacing: '1px' }}>Phase {bookingStep}: {isStep1 ? 'Target Identity' : 'Mission Configuration'}</p>
             </div>
-            <button className="btn-close" style={{ color: 'white', fontSize: '28px' }} onClick={() => setIsBookingOpen(false)}>&times;</button>
+            <button className="btn-close" style={{ color: 'white', fontSize: '28px' }} onClick={() => setIsBookingOpen(false)}>✕</button>
           </div>
 
           <div style={{ padding: '0 30px', marginTop: '20px' }}>
@@ -1270,8 +1339,7 @@ export default function AppointmentBoard() {
                 <div style={{ background: '#f8f9fa', padding: '18px', borderRadius: '14px', border: '1px solid #eee' }}>
                   <label style={{ fontSize: '10px', color: '#0f52ba', fontWeight: 800, marginBottom: '10px', display: 'block', letterSpacing: '1px' }}>SEARCH PATIENT DATABASE</label>
                   <div className="search-input-group" style={{ width: '100%' }}>
-                    <span className="search-icon">{'\u{1F50D}'}</span>
-                    <input type="text" placeholder="Name or mobile number..." value={drawerSearchQuery} onChange={(e) => setDrawerSearchQuery(e.target.value)} autoFocus />
+                    <input type="text" placeholder="Search patient database..." value={drawerSearchQuery} onChange={(e) => setDrawerSearchQuery(e.target.value)} autoFocus style={{ paddingLeft: '15px' }} />
                   </div>
 
                   {drawerSearchQuery && (
@@ -1313,7 +1381,7 @@ export default function AppointmentBoard() {
                                <span style={{ color: '#0f52ba', fontWeight: 800 }}>{p.patientIdentifier || p.id}</span> {'\u00B7'} {p.mobile} {'\u00B7'} {p.age}y {p.gender}
                              </div>
                           </div>
-                          {newBooking.patientId === p.id && <span style={{ color: '#0f52ba', fontWeight: 900 }}>{'\u2714'}</span>}
+                          {newBooking.patientId === p.id && <span style={{ color: '#0f52ba', fontWeight: 900, fontSize: '10px' }}>SELECTED</span>}
                         </div>
                       ))}
                       {!patients.some(p => 
@@ -1407,7 +1475,6 @@ export default function AppointmentBoard() {
                       <div style={{ position: 'relative' }}>
                         <div style={{ display: 'flex', gap: '8px' }}>
                           <div className="search-input-group" style={{ flex: 1, margin: 0 }}>
-                            <span className="search-icon">{'\u{1F50D}'}</span>
                             <input 
                               type="text" 
                               placeholder="Search saved referrers..." 
@@ -1416,7 +1483,7 @@ export default function AppointmentBoard() {
                                 setReferrerSearchValue(e.target.value);
                                 setNewPatient(prev => ({ ...prev, referredBy: e.target.value }));
                               }} 
-                              style={{ fontSize: '13px' }}
+                              style={{ fontSize: '13px', paddingLeft: '15px' }}
                             />
                           </div>
                           <button 
@@ -1545,10 +1612,8 @@ export default function AppointmentBoard() {
                     marginTop: '20px'
                   }}>
                     <div>
-                      <div style={{ fontSize: '9px', color: '#0f52ba', fontWeight: 800, letterSpacing: '1px' }}>SELECTED PATIENT</div>
-                      <div style={{ fontWeight: 800, color: '#0a1628', fontSize: '15px', marginTop: '2px' }}>{patients.find(p => p.id === newBooking.patientId)?.name}</div>
+                      <div style={{ fontSize: '9px', color: '#0f52ba', fontWeight: 900, background: 'white', padding: '4px 8px', borderRadius: '6px', border: '1px solid #0f52ba' }}>MATCHED</div>
                     </div>
-                    <span style={{ fontSize: '22px' }}>{'\u{1F3AF}'}</span>
                   </div>
                 )}
 
@@ -1610,7 +1675,7 @@ export default function AppointmentBoard() {
                       style={{ padding: '12px 8px', minHeight: 'auto' }}
                       onClick={() => setNewBooking({...newBooking, modality: m})}
                     >
-                      <span className="modality-icon" style={{ fontSize: '18px', marginBottom: '4px' }}>{MODALITY_ICONS[m] || '\u{1F4CC}'}</span>
+                      <span className="modality-icon" style={{ fontSize: '14px', fontWeight: 900, marginBottom: '4px', color: newBooking.modality === m ? 'white' : '#0f52ba' }}>{MODALITY_ICONS[m] || 'MOD'}</span>
                       <span className="modality-name" style={{ fontSize: '9px' }}>{m}</span>
                     </div>
                   ))}
@@ -1660,6 +1725,84 @@ export default function AppointmentBoard() {
                   )}
                 </div>
 
+                <div style={{ marginTop: '16px' }}>
+                  <label style={{ fontSize: '9px', fontWeight: 800, letterSpacing: '0.5px', color: '#888', display: 'block', marginBottom: '10px' }}>MISSION DATE <span style={{ color: '#e74c3c' }}>*</span></label>
+                  <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', marginBottom: '12px' }}>
+                    {[0, 1, 2, 3, 4, 5, 6].map(offset => {
+                      const d = new Date();
+                      d.setDate(d.getDate() + offset);
+                      const dateStr = d.toLocaleDateString('en-CA');
+                      const label = offset === 0 ? 'TODAY' : offset === 1 ? 'TOMORROW' : d.toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric' }).toUpperCase();
+                      const isActive = newBooking.date === dateStr;
+                      return (
+                        <button
+                          key={dateStr}
+                          onClick={() => setNewBooking({...newBooking, date: dateStr})}
+                          style={{
+                            padding: '8px 14px',
+                            borderRadius: '10px',
+                            fontSize: '10px',
+                            fontWeight: 900,
+                            border: '1px solid',
+                            borderColor: isActive ? '#0f52ba' : '#e2e8f0',
+                            background: isActive ? '#0f52ba' : 'white',
+                            color: isActive ? 'white' : '#64748b',
+                            cursor: 'pointer',
+                            transition: 'all 0.2s',
+                            boxShadow: isActive ? '0 4px 12px rgba(15, 82, 186, 0.2)' : 'none'
+                          }}
+                        >
+                          {label}
+                        </button>
+                      );
+                    })}
+                    <div style={{ position: 'relative' }}>
+                      <button
+                        onClick={() => document.getElementById('custom-date-trigger').showPicker()}
+                        style={{
+                          padding: '8px 14px',
+                          borderRadius: '10px',
+                          fontSize: '10px',
+                          fontWeight: 900,
+                          border: '1px solid #e2e8f0',
+                          background: 'white',
+                          color: '#64748b',
+                          cursor: 'pointer'
+                        }}
+                      >
+                        CUSTOM...
+                      </button>
+                      <input 
+                        id="custom-date-trigger"
+                        type="date" 
+                        style={{ position: 'absolute', opacity: 0, pointerEvents: 'none', top: 0, left: 0, width: 1, height: 1 }}
+                        value={newBooking.date}
+                        min={getTodayString()}
+                        onChange={e => setNewBooking({...newBooking, date: e.target.value})}
+                      />
+                    </div>
+                  </div>
+                  
+                  {/* Show specific custom date if selected and not in quick chips */}
+                  {![0, 1, 2, 3, 4, 5, 6].some(offset => {
+                    const d = new Date();
+                    d.setDate(d.getDate() + offset);
+                    return d.toLocaleDateString('en-CA') === newBooking.date;
+                  }) && (
+                    <div style={{ 
+                      display: 'flex', alignItems: 'center', gap: '8px', 
+                      background: '#f8fafc', padding: '8px 12px', borderRadius: '10px', 
+                      border: '1px solid #e2e8f0', width: 'fit-content'
+                    }}>
+                      <span style={{ fontSize: '9px', fontWeight: 950, color: '#0f52ba' }}>SELECTED: {newBooking.date}</span>
+                      <button 
+                        onClick={() => setNewBooking({...newBooking, date: getTodayString()})}
+                        style={{ border: 'none', background: 'none', color: '#ef4444', fontSize: '10px', fontWeight: 900, cursor: 'pointer' }}
+                      >RESET</button>
+                    </div>
+                  )}
+                </div>
+
                 <div style={{ marginTop: '16px', marginBottom: '8px' }}>
                   <label style={{ fontSize: '9px', fontWeight: 800, letterSpacing: '0.5px', color: '#888', display: 'block', marginBottom: '10px' }}>3. ASSIGN LEAD SPECIALIST <span style={{ color: '#e74c3c' }}>*</span></label>
                   <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '10px' }}>
@@ -1679,7 +1822,7 @@ export default function AppointmentBoard() {
                         <div style={{ textAlign: 'left' }}>
                           <div style={{ fontWeight: 800, fontSize: '11px', color: newBooking.doctor === d ? 'white' : '#1a1a2e' }}>{d}</div>
                         </div>
-                        {newBooking.doctor === d && <span style={{ position: 'absolute', top: '8px', right: '8px', fontSize: '10px' }}>{'\u2714'}</span>}
+                        {newBooking.doctor === d && <span style={{ position: 'absolute', top: '8px', right: '8px', fontSize: '9px', fontWeight: 950, color: 'white' }}>SELECTED</span>}
                       </div>
                     ))}
                   </div>
@@ -1708,13 +1851,21 @@ export default function AppointmentBoard() {
                       </div>
                     </div>
                     <div><span style={{ fontSize: '8px', color: '#888', fontWeight: 700 }}>SPECIALIST</span><div style={{ fontWeight: 800, fontSize: '11px', color: '#1a1a2e' }}>{newBooking.doctor || 'Unassigned'}</div></div>
+                    <div><span style={{ fontSize: '8px', color: '#888', fontWeight: 700 }}>SCHEDULED DATE</span><div style={{ fontWeight: 800, fontSize: '11px', color: '#0f52ba' }}>{newBooking.date}</div></div>
                   </div>
                 </div>
 
                 <div className="drawer-footer" style={{ marginTop: '16px' }}>
                   <button className="btn-logout" style={{ padding: '12px 20px', borderRadius: '10px', fontWeight: 800, fontSize: '12px' }} onClick={() => setBookingStep(1)}>{'\u2190'} Back</button>
-                  <button className="gamified-btn" style={{ flex: 1, padding: '12px', borderRadius: '10px', fontSize: '13px' }} disabled={!newBooking.patientId || !newBooking.service || !newBooking.doctor} onClick={handleBookAppointment}>
-                    {'\u{1F680}'} DEPLOY MISSION
+                  <button 
+                    className="gamified-btn" 
+                    style={{ 
+                      flex: 1, padding: '12px', borderRadius: '10px', fontSize: '13px',
+                      opacity: (!newBooking.patientId || !newBooking.service || !newBooking.doctor) ? 0.7 : 1
+                    }} 
+                    onClick={handleBookAppointment}
+                  >
+                    DEPLOY MISSION
                   </button>
                 </div>
               </div>
@@ -1729,15 +1880,15 @@ export default function AppointmentBoard() {
         <div className="drawer-content" onClick={e => e.stopPropagation()}>
           <div className="drawer-header">
             <h2>Add New Patient</h2>
-            <button className="btn-close" onClick={() => setIsAddPatientOpen(false)}>&times;</button>
+            <button className="btn-close" onClick={() => setIsAddPatientOpen(false)}>✕</button>
           </div>
           <div className="drawer-body">
             <form onSubmit={handleAddPatient}>
               <div className="form-group"><label>Full Name</label><input type="text" required value={newPatient.name} onChange={e => setNewPatient({...newPatient, name: e.target.value})} /></div>
               <div className="form-group"><label>Mobile Number</label><input type="tel" required value={newPatient.mobile} onChange={e => setNewPatient({...newPatient, mobile: e.target.value})} /></div>
               {duplicatePatient && (
-                <div className="duplicate-info">
-                  <h4>{'\u26A0\uFE0F'} Duplicate Found!</h4>
+                <div className="duplicate-info" style={{ background: '#fef2f2', border: '1px solid #fecaca', padding: '15px', borderRadius: '12px', marginTop: '10px' }}>
+                  <h4 style={{ color: '#b91c1c', margin: '0 0 5px 0', fontSize: '14px', fontWeight: 900 }}>DUPLICATE FOUND</h4>
                   <p>Patient <strong>{duplicatePatient.name}</strong> exists with this mobile.</p>
                   <div style={{ marginTop: '10px', display: 'flex', gap: '8px' }}>
                     <button type="button" className="btn-primary" style={{ fontSize: '12px' }} onClick={() => { setNewBooking({...newBooking, patientId: duplicatePatient.id}); setIsAddPatientOpen(false); }}>Use Existing</button>
@@ -1776,14 +1927,13 @@ export default function AppointmentBoard() {
           <div className="drawer-header" style={{ background: 'linear-gradient(135deg, #f39c12 0%, #e67e22 100%)', color: 'white', padding: '28px 30px', border: 'none' }}>
             <div style={{ display: 'flex', flexDirection: 'column' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '4px' }}>
-                <span style={{ fontSize: '20px' }}>{'\u270F\uFE0F'}</span>
                 <h2 style={{ fontSize: '18px', fontWeight: 900, margin: 0 }}>EDIT APPOINTMENT</h2>
               </div>
               <p style={{ fontSize: '11px', opacity: 0.7, textTransform: 'uppercase', letterSpacing: '1px' }}>
                 Appointment ID: {editingAppointment.id}
               </p>
             </div>
-            <button className="btn-close" style={{ color: 'white', fontSize: '28px' }} onClick={() => setIsEditingOpen(false)}>&times;</button>
+            <button className="btn-close" style={{ color: 'white', fontSize: '28px' }} onClick={() => setIsEditingOpen(false)}>✕</button>
           </div>
 
           <div className="drawer-body" style={{ padding: '30px' }}>
@@ -1862,7 +2012,7 @@ export default function AppointmentBoard() {
               >
                 CANCEL
               </button>
-              <button
+                <button
                 onClick={handleEditAppointment}
                 style={{
                   flex: 2,
@@ -1878,7 +2028,7 @@ export default function AppointmentBoard() {
                   transition: 'all 0.2s'
                 }}
               >
-                {'\u{1F4BE}'} SAVE CHANGES
+                SAVE CHANGES
               </button>
             </div>
           </div>
@@ -1929,15 +2079,6 @@ export default function AppointmentBoard() {
               </div>
 
               <div style={{ marginTop: '12px', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '10px' }}>
-                <div style={{ textAlign: 'center' }}>
-                  <img 
-                    src={`https://barcode.tec-it.com/barcode.ashx?data=${encodeURIComponent(tokenPrintData.ptid || tokenPrintData.patientId || tokenPrintData.id)}&code=Code128&translate-esc=on`} 
-                    alt="Barcode" 
-                    crossOrigin="anonymous"
-                    style={{ width: '60mm', height: '12mm', objectFit: 'contain', background: 'white' }} 
-                  />
-                </div>
-                
                 <div style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '8px', background: '#f8fafc', borderRadius: '12px', border: '1px solid #e2e8f0', width: '65mm' }}>
                   <img 
                     src={`https://api.qrserver.com/v1/create-qr-code/?size=100x100&data=${encodeURIComponent(`${window.location.origin}/track/${tokenPrintData.appointmentId || tokenPrintData.id}`)}`} 
@@ -1981,7 +2122,7 @@ export default function AppointmentBoard() {
               marginLeft: '12px', padding: '2px 10px', borderRadius: '10px',
               background: '#e9f7ef', fontSize: '10px', fontWeight: 800, color: '#2ecc71',
             }}>
-              {'\u25CF'} LIVE
+              LIVE
             </span>
           </p>
         </div>
@@ -2000,6 +2141,12 @@ export default function AppointmentBoard() {
               className={`appt-tab-btn ${activeTab === 'TODAY' ? 'active' : ''}`}
             >
               {isMobile ? 'TODAY' : "TODAY'S MISSIONS"}
+            </button>
+            <button
+              onClick={() => setActiveTab('FUTURE')}
+              className={`appt-tab-btn ${activeTab === 'FUTURE' ? 'active' : ''}`}
+            >
+              {isMobile ? 'FUTURE' : 'FUTURE MISSIONS'}
             </button>
             <button
               onClick={() => setActiveTab('PAST')}
@@ -2028,7 +2175,7 @@ export default function AppointmentBoard() {
         {!isMobile && (
           <div style={{
             display: 'grid',
-            gridTemplateColumns: '85px 85px 2fr 1.2fr 140px 1fr 210px',
+            gridTemplateColumns: '80px 70px 2.2fr 1.2fr 110px 140px 1.2fr 210px',
             padding: '0 22px 10px',
             fontSize: '9px', fontWeight: 800, color: '#aaa',
             textTransform: 'uppercase', letterSpacing: '1px',
@@ -2037,6 +2184,7 @@ export default function AppointmentBoard() {
             <span>Token</span>
             <span>Patient Details</span>
             <span>Referred By</span>
+            <span>Date</span>
             <span>Status</span>
             <span>Specialist</span>
             <span style={{ textAlign: 'right', paddingRight: '20px' }}>Tactical Actions</span>
@@ -2047,13 +2195,11 @@ export default function AppointmentBoard() {
         <div className="appointments-list-container">
           {loading ? (
             <div className="empty-state">
-              <div className="empty-state-icon">⏳</div>
-              <div className="empty-state-title">Loading Missions...</div>
+              <div className="empty-state-title">LOADING MISSIONS...</div>
             </div>
           ) : paginatedAppointments.length === 0 ? (
             <div className="empty-state">
-              <div className="empty-state-icon">🎯</div>
-              <div className="empty-state-title">No Missions Found</div>
+              <div className="empty-state-title">NO MISSIONS FOUND</div>
               <div className="empty-state-text">
                 {searchQuery ? 'Try adjusting your search criteria' : 'No appointments scheduled'}
               </div>
@@ -2069,6 +2215,7 @@ export default function AppointmentBoard() {
                   getNextAction={getNextAction}
                   onAction={handleAction}
                   onPrint={(app) => setTokenPrintData(app)}
+                  onPrescription={(app) => handlePreviewPrint(app)}
                   onCancel={(id) => handleAction(id, 'CANCEL')}
                   patients={patients}
                 />

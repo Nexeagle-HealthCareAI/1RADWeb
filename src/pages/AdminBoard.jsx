@@ -8,6 +8,7 @@ import { nativeStorage } from '../hooks/useElectron';
 import '../styles/global.css';
 import '../styles/AdminBoard.css';
 import PrescriptionPreview from '../components/PrescriptionPreview';
+import FinanceManager from '../components/FinanceManager';
 
 
 // --- HELPERS ---
@@ -111,11 +112,8 @@ export default function AdminBoard() {
   const [isMobile, setIsMobile] = useState(window.innerWidth < 1024);
   const [windowWidth, setWindowWidth] = useState(window.innerWidth);
 
-  // Financial Registry State
   const [servicePrices, setServicePrices] = useState([]);
   const [financialMatrix, setFinancialMatrix] = useState(null);
-  const [financeViewMode, setFinanceViewMode] = useState('REGISTRY'); // 'REGISTRY' or 'INTEL'
-  const [financeTemporalMode, setFinanceTemporalMode] = useState('MONTHLY');
   const [billingSettings, setBillingSettings] = useState({ autoBill: false, currency: '₹' });
   const [isPriceDrawerOpen, setIsPriceDrawerOpen] = useState(false);
   const [editPrice, setEditPrice] = useState({ modality: 'X-RAY', serviceName: '', amount: 0 });
@@ -2186,306 +2184,7 @@ export default function AdminBoard() {
     );
   };
 
-  const renderFinance = () => {
-    return (
-      <div className="finance-view">
-        <div className="board-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '35px' }}>
-          <div>
-            <h2 style={{ fontSize: '12px', fontWeight: 900, textTransform: 'uppercase', letterSpacing: '2px', color: '#0f52ba', marginBottom: '4px' }}>Financial Infrastructure</h2>
-            <div style={{ display: 'flex', gap: '15px', alignItems: 'center', marginTop: '10px' }}>
-                <div style={{ display: 'flex', background: '#f1f5f9', padding: '8px 20px', borderRadius: '10px', border: '1px solid #e2e8f0', fontSize: '10px', fontWeight: 950, color: '#0f52ba' }}>
-                   SERVICE REGISTRY PROTOCOL
-                </div>
-            </div>
-          </div>
-          
-          {financeViewMode === 'REGISTRY' && (
-            <button 
-              onClick={() => { setEditPrice({ modality: 'X-RAY', serviceName: '', amount: 0 }); setIsPriceDrawerOpen(true); }}
-              style={{ 
-                padding: '12px 24px', borderRadius: '12px', border: 'none', 
-                background: '#0f52ba', color: 'white', fontSize: '11px', fontWeight: 950, cursor: 'pointer',
-                boxShadow: '0 8px 20px rgba(15, 82, 186, 0.2)'
-              }}
-            >
-              + ADD SERVICE CHARGE
-            </button>
-          )}
 
-        </div>
-
-
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 350px', gap: '30px', alignItems: 'flex-start' }}>
-            {/* Service Price Registry */}
-            <div style={{ background: 'white', borderRadius: '24px', border: '1px solid #e2e8f0', overflow: isTestMode ? 'visible' : 'hidden', boxShadow: '0 4px 20px rgba(0,0,0,0.01)' }}>
-              <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-                <thead style={{ background: '#f8fafc' }}>
-                  <tr style={{ borderBottom: '1px solid #f1f5f9' }}>
-                    <th style={{ padding: '20px 30px', textAlign: 'left', fontSize: '10px', fontWeight: 950, color: '#94a3b8', letterSpacing: '2px' }}>MODALITY</th>
-                    <th style={{ padding: '20px 30px', textAlign: 'left', fontSize: '10px', fontWeight: 950, color: '#94a3b8', letterSpacing: '2px' }}>SERVICE_NAME</th>
-                    <th style={{ padding: '20px 20px', textAlign: 'left', fontSize: '10px', fontWeight: 950, color: '#94a3b8', letterSpacing: '2px' }}>STANDARD_CHARGE</th>
-                    <th style={{ padding: '20px 30px', textAlign: 'right', fontSize: '10px', fontWeight: 950, color: '#94a3b8', letterSpacing: '2px' }}>ACTIONS</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {(servicePrices || []).map((spec, idx) => (
-                    <tr key={spec.id || idx} style={{ borderBottom: '1px solid #f8fafc', transition: 'background 0.2s' }}>
-                      <td style={{ padding: '20px 30px' }}>
-                        <span style={{ fontSize: '10px', fontWeight: 950, color: 'white', background: '#334155', padding: '5px 12px', borderRadius: '8px' }}>{(spec.modality || 'OTHER').toUpperCase()}</span>
-                      </td>
-                      <td style={{ padding: '20px 30px', fontSize: '13px', fontWeight: 850, color: '#1e293b' }}>{(spec.serviceName || 'Unnamed Service').toUpperCase()}</td>
-                      <td style={{ padding: '20px 20px', fontSize: '14px', fontWeight: 950, color: '#0f52ba' }}>₹{(Number(spec.amount) || 0).toLocaleString()}</td>
-                      <td style={{ padding: '20px 30px', textAlign: 'right' }}>
-                         <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
-                            <button onClick={() => { setEditPrice(spec); setIsPriceDrawerOpen(true); }} style={{ padding: '6px 12px', borderRadius: '8px', border: '1px solid #e2e8f0', background: 'white', cursor: 'pointer', fontSize: '10px', fontWeight: 800 }}>EDIT</button>
-                            <button onClick={() => handleDeletePrice(spec.id)} style={{ padding: '6px 12px', borderRadius: '8px', border: '1px solid #fee2e2', background: '#fef2f2', color: '#dc2626', cursor: 'pointer', fontSize: '10px', fontWeight: 800 }}>DELETE</button>
-                         </div>
-                      </td>
-                    </tr>
-                  ))}
-                  {(servicePrices || []).length === 0 && (
-                    <tr>
-                      <td colSpan="4" style={{ padding: '60px', textAlign: 'center', color: '#94a3b8', fontSize: '12px', fontWeight: 700 }}>NO SERVICE CHARGES CONFIGURED</td>
-                    </tr>
-                  )}
-                </tbody>
-              </table>
-            </div>
-
-            {/* Billing Protocol Settings */}
-            <div style={{ background: 'white', border: '1px solid #e2e8f0', padding: '30px', borderRadius: '24px', boxShadow: '0 4px 20px rgba(0,0,0,0.02)' }}>
-              <div style={{ fontSize: '10px', fontWeight: 950, color: '#64748b', textTransform: 'uppercase', letterSpacing: '2px', marginBottom: '30px' }}>Global Billing Protocol</div>
-              
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '25px' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                   <div>
-                      <div style={{ fontSize: '12px', fontWeight: 850, color: '#1e293b' }}>Auto-Generate Billing</div>
-                      <div style={{ fontSize: '10px', color: '#94a3b8', fontWeight: 600 }}>Create invoice on mission deployment</div>
-                   </div>
-                   <div 
-                      onClick={handleToggleAutoBill}
-                      style={{ 
-                        width: '44px', height: '24px', background: billingSettings.autoBill ? '#0f52ba' : '#cbd5e1', 
-                        borderRadius: '12px', cursor: 'pointer', position: 'relative', transition: 'all 0.3s' 
-                      }}
-                   >
-                      <div style={{ 
-                        position: 'absolute', top: '2px', left: billingSettings.autoBill ? '22px' : '2px', 
-                        width: '20px', height: '20px', background: 'white', borderRadius: '50%', transition: 'all 0.3s' 
-                      }}></div>
-                   </div>
-                </div>
-
-                <div style={{ borderTop: '1px solid #f1f5f9', paddingTop: '25px' }}>
-                   <div style={{ fontSize: '10px', fontWeight: 950, color: '#0f52ba', letterSpacing: '1px', marginBottom: '15px' }}>CURRENCY SYMBOL</div>
-                   <input 
-                      type="text" 
-                      value={billingSettings.currency} 
-                      onChange={e => setBillingSettings(prev => ({ ...prev, currency: e.target.value }))}
-                      style={{ width: '100%', padding: '12px', borderRadius: '12px', border: '1px solid #e2e8f0', fontSize: '12px', fontWeight: 800 }}
-                   />
-                </div>
-
-                <div style={{ background: '#f8fafc', padding: '20px', borderRadius: '16px', border: '1px solid #edf2f7', marginTop: '10px' }}>
-                   <p style={{ fontSize: '10px', color: '#64748b', fontWeight: 700, lineHeight: 1.5 }}>
-                     <strong>NOTE:</strong> Automated billing will only trigger if the specific service booked has a matching charge entry in the registry on the left.
-                   </p>
-                </div>
-              </div>
-            </div>
-          </div>
-      </div>
-    );
-  };
-
-  const renderPriceDrawer = () => (
-    <div className="drawer-overlay" onClick={() => setIsPriceDrawerOpen(false)} style={{ backdropFilter: 'blur(8px)', background: 'rgba(10, 22, 40, 0.4)', zIndex: 10000 }}>
-      <div className="drawer-content" style={{ padding: 0, width: '450px', background: 'white' }} onClick={e => e.stopPropagation()}>
-        <div style={{ padding: '35px', background: 'linear-gradient(135deg, #0f52ba 0%, #061a40 100%)', color: 'white' }}>
-           <h2 style={{ fontSize: '11px', fontWeight: 950, color: 'var(--tactical-cyan)', letterSpacing: '3px', textTransform: 'uppercase', marginBottom: '8px' }}>Financial Protocol</h2>
-           <div style={{ fontSize: '20px', fontWeight: 950, letterSpacing: '-1px' }}>{editPrice.id ? 'CONFIG_SERVICE_CHARGE' : 'INIT_NEW_CHARGE'}</div>
-        </div>
-
-        <div style={{ padding: '35px' }}>
-           <form onSubmit={handleSavePrice}>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '25px' }}>
-                <div className="form-group">
-                   <label style={{ display: 'block', fontSize: '9px', fontWeight: 950, color: '#94a3b8', letterSpacing: '2px', marginBottom: '10px' }}>MODALITY_BRANCH</label>
-                   <select 
-                      value={editPrice.modality} 
-                      onChange={e => setEditPrice({...editPrice, modality: e.target.value})}
-                      style={{ width: '100%', padding: '14px', borderRadius: '12px', border: '1px solid #eee', fontSize: '12px', fontWeight: 700, background: 'white' }}
-                   >
-                     {['X-RAY', 'MRI', 'CT', 'ULTRASOUND', 'DEXA', 'MAMMOGRAPHY', 'PET-CT'].map(m => <option key={m} value={m}>{m}</option>)}
-                   </select>
-                </div>
-
-                <div className="form-group">
-                   <label style={{ display: 'block', fontSize: '9px', fontWeight: 950, color: '#94a3b8', letterSpacing: '2px', marginBottom: '10px' }}>SERVICE_DESCRIPTOR</label>
-                   <input 
-                      type="text" required 
-                      value={editPrice.serviceName} 
-                      placeholder="e.g. MRI BRAIN WITH CONTRAST"
-                      onChange={e => setEditPrice({...editPrice, serviceName: e.target.value})}
-                      style={{ width: '100%', border: 'none', borderBottom: '2px solid #f0f0f0', fontSize: '16px', fontWeight: 800, padding: '10px 0', outline: 'none' }}
-                   />
-                </div>
-
-                <div className="form-group">
-                   <label style={{ display: 'block', fontSize: '9px', fontWeight: 950, color: '#94a3b8', letterSpacing: '2px', marginBottom: '10px' }}>STANDARD_FINANCIAL_UNIT (₹)</label>
-                   <input 
-                      type="number" required 
-                      value={editPrice.amount} 
-                      onChange={e => setEditPrice({...editPrice, amount: parseFloat(e.target.value)})}
-                      style={{ width: '100%', border: 'none', borderBottom: '2px solid #f0f0f0', fontSize: '24px', fontWeight: 950, padding: '10px 0', outline: 'none', color: '#0f52ba' }}
-                   />
-                </div>
-              </div>
-
-              <div style={{ marginTop: '40px', display: 'flex', gap: '15px' }}>
-                 <button type="button" onClick={() => setIsPriceDrawerOpen(false)} style={{ flex: 1, padding: '16px', borderRadius: '16px', border: '1px solid #eee', fontSize: '11px', fontWeight: 950, cursor: 'pointer' }}>ABORT</button>
-                 <button type="submit" style={{ flex: 2, padding: '16px', borderRadius: '16px', border: 'none', background: '#0f52ba', color: 'white', fontSize: '11px', fontWeight: 950, cursor: 'pointer' }}>SAVE PROTOCOL →</button>
-              </div>
-           </form>
-        </div>
-      </div>
-    </div>
-  );
-
-  const renderExpenseDrawer = () => (
-    <div className="drawer-overlay" onClick={() => setIsExpenseDrawerOpen(false)} style={{ backdropFilter: 'blur(8px)', background: 'rgba(10, 22, 40, 0.4)', zIndex: 10000 }}>
-      <div className="drawer-content" style={{ padding: 0, width: '500px', background: 'white' }} onClick={e => e.stopPropagation()}>
-        <div style={{ padding: '35px', background: 'linear-gradient(135deg, #1e293b 0%, #0f172a 100%)', color: 'white' }}>
-           <h2 style={{ fontSize: '11px', fontWeight: 950, color: '#38bdf8', letterSpacing: '3px', textTransform: 'uppercase', marginBottom: '8px' }}>Strategic Fiscal Ledger</h2>
-           <div style={{ fontSize: '20px', fontWeight: 950, letterSpacing: '-1px' }}>INSTITUTIONAL_DEBIT_PROTOCOL</div>
-        </div>
-
-        <div style={{ padding: '35px', maxHeight: 'calc(100vh - 120px)', overflowY: 'auto' }}>
-           <form onSubmit={handleSaveExpense}>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '25px' }}>
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px' }}>
-                   <div className="form-group">
-                      <label style={{ display: 'block', fontSize: '9px', fontWeight: 950, color: '#94a3b8', letterSpacing: '2px', marginBottom: '10px' }}>TRANSACTION_DATE</label>
-                      <input 
-                         type="date" required 
-                         value={editExpense.transactionDate} 
-                         onChange={e => setEditExpense({...editExpense, transactionDate: e.target.value})}
-                         style={{ width: '100%', border: 'none', borderBottom: '2px solid #f0f0f0', fontSize: '14px', fontWeight: 700, padding: '10px 0', outline: 'none' }}
-                      />
-                   </div>
-                   <div className="form-group">
-                      <label style={{ display: 'block', fontSize: '9px', fontWeight: 950, color: '#94a3b8', letterSpacing: '2px', marginBottom: '10px' }}>APPROVAL_STATUS</label>
-                      <select 
-                         value={editExpense.status} 
-                         onChange={e => setEditExpense({...editExpense, status: e.target.value})}
-                         style={{ width: '100%', padding: '10px', borderRadius: '10px', border: '1px solid #eee', fontSize: '12px', fontWeight: 700, background: '#f8fafc' }}
-                      >
-                         {['Draft', 'Pending', 'Approved', 'Paid'].map(s => <option key={s} value={s}>{s}</option>)}
-                      </select>
-                   </div>
-                </div>
-
-                <div className="form-group">
-                   <label style={{ display: 'block', fontSize: '9px', fontWeight: 950, color: '#94a3b8', letterSpacing: '2px', marginBottom: '10px' }}>VENDOR / PAYEE IDENTITY</label>
-                   <input 
-                      type="text" required 
-                      value={editExpense.vendorName} 
-                      placeholder="e.g. Reliance Energy or Global Reagents Ltd"
-                      onChange={e => setEditExpense({...editExpense, vendorName: e.target.value})}
-                      style={{ width: '100%', border: 'none', borderBottom: '2px solid #f0f0f0', fontSize: '15px', fontWeight: 800, padding: '10px 0', outline: 'none' }}
-                   />
-                </div>
-
-                <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 0.8fr', gap: '20px' }}>
-                   <div className="form-group">
-                      <label style={{ display: 'block', fontSize: '9px', fontWeight: 950, color: '#94a3b8', letterSpacing: '2px', marginBottom: '10px' }}>EXPENSE_CATEGORY</label>
-                      <select 
-                         value={editExpense.category} 
-                         onChange={e => setEditExpense({...editExpense, category: e.target.value})}
-                         style={{ width: '100%', padding: '14px', borderRadius: '12px', border: '1px solid #eee', fontSize: '12px', fontWeight: 700, background: 'white' }}
-                      >
-                        {['Maintenance', 'Staff Salary', 'Utilities', 'Reagents', 'Marketing', 'Rent', 'Consumables', 'Other'].map(m => <option key={m} value={m}>{m}</option>)}
-                      </select>
-                   </div>
-                   <div className="form-group">
-                      <label style={{ display: 'block', fontSize: '9px', fontWeight: 950, color: '#94a3b8', letterSpacing: '2px', marginBottom: '10px' }}>COST_CENTER</label>
-                      <select 
-                         value={editExpense.costCenter} 
-                         onChange={e => setEditExpense({...editExpense, costCenter: e.target.value})}
-                         style={{ width: '100%', padding: '14px', borderRadius: '12px', border: '1px solid #eee', fontSize: '12px', fontWeight: 700, background: 'white' }}
-                      >
-                        {['Radiology', 'Laboratory', 'Pharmacy', 'OPD', 'Administration', 'Logistics'].map(c => <option key={c} value={c}>{c}</option>)}
-                      </select>
-                   </div>
-                </div>
-
-                <div className="form-group">
-                   <label style={{ display: 'block', fontSize: '9px', fontWeight: 950, color: '#94a3b8', letterSpacing: '2px', marginBottom: '10px' }}>DESCRIPTION_LOG</label>
-                   <input 
-                      type="text" required 
-                      value={editExpense.description} 
-                      placeholder="Detailed breakdown of the expenditure..."
-                      onChange={e => setEditExpense({...editExpense, description: e.target.value})}
-                      style={{ width: '100%', border: 'none', borderBottom: '2px solid #f0f0f0', fontSize: '14px', fontWeight: 700, padding: '10px 0', outline: 'none' }}
-                   />
-                </div>
-
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px' }}>
-                   <div className="form-group">
-                      <label style={{ display: 'block', fontSize: '9px', fontWeight: 950, color: '#94a3b8', letterSpacing: '2px', marginBottom: '10px' }}>BASE_AMOUNT (₹)</label>
-                      <input 
-                         type="number" required 
-                         value={editExpense.amount} 
-                         onChange={e => setEditExpense({...editExpense, amount: parseFloat(e.target.value)})}
-                         style={{ width: '100%', border: 'none', borderBottom: '2px solid #f0f0f0', fontSize: '18px', fontWeight: 950, padding: '10px 0', outline: 'none', color: '#1e293b' }}
-                      />
-                   </div>
-                   <div className="form-group">
-                      <label style={{ display: 'block', fontSize: '9px', fontWeight: 950, color: '#94a3b8', letterSpacing: '2px', marginBottom: '10px' }}>TAX_GST (₹)</label>
-                      <input 
-                         type="number" 
-                         value={editExpense.taxAmount} 
-                         onChange={e => setEditExpense({...editExpense, taxAmount: parseFloat(e.target.value)})}
-                         style={{ width: '100%', border: 'none', borderBottom: '2px solid #f0f0f0', fontSize: '18px', fontWeight: 950, padding: '10px 0', outline: 'none', color: '#64748b' }}
-                      />
-                   </div>
-                </div>
-
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px' }}>
-                   <div className="form-group">
-                      <label style={{ display: 'block', fontSize: '9px', fontWeight: 950, color: '#94a3b8', letterSpacing: '2px', marginBottom: '10px' }}>PAYMENT_MODE</label>
-                      <select 
-                         value={editExpense.paymentMode} 
-                         onChange={e => setEditExpense({...editExpense, paymentMode: e.target.value})}
-                         style={{ width: '100%', padding: '10px', borderRadius: '10px', border: '1px solid #eee', fontSize: '12px', fontWeight: 700, background: 'white' }}
-                      >
-                         {['Cash', 'UPI', 'Bank Transfer', 'Cheque'].map(m => <option key={m} value={m}>{m}</option>)}
-                      </select>
-                   </div>
-                   <div className="form-group">
-                      <label style={{ display: 'block', fontSize: '9px', fontWeight: 950, color: '#94a3b8', letterSpacing: '2px', marginBottom: '10px' }}>REFERENCE_NO</label>
-                      <input 
-                         type="text" 
-                         value={editExpense.referenceNumber} 
-                         placeholder="TXN / BILL ID"
-                         onChange={e => setEditExpense({...editExpense, referenceNumber: e.target.value})}
-                         style={{ width: '100%', border: 'none', borderBottom: '2px solid #f0f0f0', fontSize: '13px', fontWeight: 700, padding: '8px 0', outline: 'none' }}
-                      />
-                   </div>
-                </div>
-              </div>
-
-              <div style={{ marginTop: '40px', display: 'flex', gap: '15px' }}>
-                 <button type="button" onClick={() => setIsExpenseDrawerOpen(false)} style={{ flex: 1, padding: '16px', borderRadius: '16px', border: '1px solid #eee', fontSize: '11px', fontWeight: 950, cursor: 'pointer' }}>CANCEL</button>
-                 <button type="submit" disabled={savingExpense} style={{ flex: 2, padding: '16px', borderRadius: '16px', border: 'none', background: '#0f172a', color: 'white', fontSize: '11px', fontWeight: 950, cursor: 'pointer' }}>
-                   {savingExpense ? 'RECORDING...' : 'COMMIT TO LEDGER →'}
-                 </button>
-              </div>
-           </form>
-        </div>
-      </div>
-    </div>
-  );
 
   const renderReferralIntel = () => {
 
@@ -3384,14 +3083,41 @@ export default function AdminBoard() {
       {activeTab === 'REFERRAL INTEL' && renderReferralIntel()}
       {activeTab === 'PERSONNEL' && renderUserManagement()}
       {activeTab === 'HOSPITAL' && renderHospitalSettings()}
-      {activeTab === 'FINANCE' && renderFinance()}
+      {activeTab === 'FINANCE' && (
+        <FinanceManager 
+          servicePrices={servicePrices}
+          fetchServicePrices={fetchServicePrices}
+          financialMatrix={financialMatrix}
+          fetchFinancialMatrix={fetchFinancialMatrix}
+          expenses={expenses}
+          fetchExpenses={fetchExpenses}
+          billingSettings={billingSettings}
+          setBillingSettings={setBillingSettings}
+          handleToggleAutoBill={handleToggleAutoBill}
+          isOnline={isOnline}
+          activeCenter={activeCenter}
+          isPriceDrawerOpen={isPriceDrawerOpen}
+          setIsPriceDrawerOpen={setIsPriceDrawerOpen}
+          editPrice={editPrice}
+          setEditPrice={setEditPrice}
+          handleSavePrice={handleSavePrice}
+          handleDeletePrice={handleDeletePrice}
+          isExpenseDrawerOpen={isExpenseDrawerOpen}
+          setIsExpenseDrawerOpen={setIsExpenseDrawerOpen}
+          editExpense={editExpense}
+          setEditExpense={setEditExpense}
+          handleSaveExpense={handleSaveExpense}
+          handleDeleteExpense={handleDeleteExpense}
+          savingExpense={savingExpense}
+          isTestMode={isTestMode}
+          TODAY={TODAY}
+        />
+      )}
       {activeTab === 'PRESCRIPTION' && renderPrescriptionArchitect()}
       {activeTab === 'SUBSCRIPTION' && renderSubscription()}
 
       {isHospitalDrawerOpen && renderHospitalSettingsDrawer()}
-      {isPriceDrawerOpen && renderPriceDrawer()}
       {isChainDrawerOpen && renderChainDrawer()}
-      {isExpenseDrawerOpen && renderExpenseDrawer()}
 
       {/* Personnel Roster Drawer: Redesigned Tactical HUD */}
       {isUserDrawerOpen && (

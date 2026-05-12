@@ -12,6 +12,7 @@ export default function AppointmentCard({
   getNextAction,
   onAction,
   onPrint,
+  onPrescription,
   onCancel,
   patients
 }) {
@@ -82,9 +83,19 @@ export default function AppointmentCard({
         <button
           className="action-btn action-btn-secondary"
           onClick={() => onPrint(appointment)}
-          title="Print Token"
+          title="Print Token Slip"
+          style={{ fontSize: '10px', fontWeight: 800, padding: '0 12px' }}
         >
-          🖨️
+          TOKEN
+        </button>
+
+        <button
+          className="action-btn action-btn-secondary"
+          onClick={() => onPrescription && onPrescription(appointment)}
+          title="Print Prescription"
+          style={{ background: '#fffbeb', borderColor: '#fde68a', fontSize: '10px', fontWeight: 800, padding: '0 12px', color: '#b45309' }}
+        >
+          PRESCRIPTION
         </button>
 
         {appointment.status !== 'CANCELLED' && appointment.status !== 'COMPLETED' && (
@@ -92,6 +103,7 @@ export default function AppointmentCard({
             className="action-btn action-btn-danger"
             onClick={() => onCancel(appointment.id)}
             title="Cancel"
+            style={{ width: '40px' }}
           >
             ✕
           </button>
