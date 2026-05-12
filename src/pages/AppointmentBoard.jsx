@@ -30,6 +30,7 @@ const INFORMATION_SOURCES = [
 ];
 
 const STATUS_META = {
+  future:      { label: 'FUTURE', color: '#6366f1', bg: '#eef2ff', glow: 'rgba(99,102,241,0.1)' },
   scheduled:   { label: 'EXPECTED', color: '#64748b', bg: '#f1f5f9', glow: 'rgba(100,116,139,0.1)' },
   booked:      { label: 'EXPECTED', color: '#64748b', bg: '#f1f5f9', glow: 'rgba(100,116,139,0.1)' },
   confirmed:   { label: 'ARRIVED', color: '#10b981', bg: '#ecfdf5', glow: 'rgba(16,185,129,0.15)' },
@@ -93,7 +94,9 @@ export default function AppointmentBoard() {
     modality: 'X-RAY', 
     date: getTodayString(), 
     doctor: '', 
-    notes: '' 
+    notes: '',
+    amount: 0,
+    referralCutValue: 0
   });
 
   const [newPatient, setNewPatient] = useState({ 
@@ -103,7 +106,7 @@ export default function AppointmentBoard() {
   const [duplicatePatient, setDuplicatePatient] = useState(null);
 
   const [referrers, setReferrers] = useState([]);
-  const [isAddingNewReferrer, setIsAddingNewReferrer] = useState(false);
+  const [isAddingReferrer, setIsAddingReferrer] = useState(false);
   const [newReferrer, setNewReferrer] = useState({ name: '', contact: '', address: '' });
   const [referrerSearchValue, setReferrerSearchValue] = useState('');
   const [serviceRegistry, setServiceRegistry] = useState([]);
@@ -150,13 +153,17 @@ export default function AppointmentBoard() {
 
     try {
       const response = await apiClient.get('/appointments', { params });
-      let mappedData = response.data.map(a => ({
-        ...a,
-        id: a.displayId,
-        appointmentId: a.appointmentId,
-        ptid: a.patientIdentifier,
-        status: a.status ? a.status.toLowerCase() : 'scheduled'
-      }));
+      let mappedData = response.data.map(a => {
+        const appDate = a.date || (a.dateTime ? a.dateTime.split('T')[0] : null);
+        const isFuture = appDate && appDate > getTodayString();
+        return {
+          ...a,
+          id: a.displayId,
+          appointmentId: a.appointmentId,
+          ptid: a.patientIdentifier,
+          status: isFuture ? 'future' : (a.status ? a.status.toLowerCase() : 'scheduled')
+        };
+      });
 
       // Sort by absolute dateTime to ensure strict chronological order (time-based)
       const sortedData = mappedData.sort((a, b) => {
@@ -231,11 +238,21 @@ export default function AppointmentBoard() {
     }
   }, []);
 
+  const fetchServiceRegistry = useCallback(async () => {
+    try {
+      const response = await apiClient.get('/finance/registry');
+      setServiceRegistry(response.data);
+    } catch (error) {
+      console.error('Failed to fetch service registry:', error);
+    }
+  }, []);
+
   useEffect(() => {
     fetchAppointments();
+    fetchServiceRegistry();
     const interval = setInterval(fetchAppointments, 30000); // 30s Real-time Heartbeat
     return () => clearInterval(interval);
-  }, [fetchAppointments, activeCenterId, activeTab]);
+  }, [fetchAppointments, fetchServiceRegistry, activeCenterId, activeTab]);
 
   useEffect(() => {
     if (drawerSearchQuery.length > 2) {
@@ -326,7 +343,7 @@ export default function AppointmentBoard() {
 
   const stats = {
     total: filteredAppointments.length,
-    scheduled: filteredAppointments.filter(a => a.status === 'scheduled').length,
+    scheduled: filteredAppointments.filter(a => a.status === 'scheduled' || a.status === 'future').length,
     confirmed: filteredAppointments.filter(a => a.status === 'confirmed').length,
     inProgress: filteredAppointments.filter(a => a.status === 'in_progress').length,
     completed: filteredAppointments.filter(a => a.status === 'completed').length,
@@ -370,6 +387,7 @@ export default function AppointmentBoard() {
 
   const getNextAction = (status) => {
     switch (status) {
+      case 'future':      return null;
       case 'scheduled':   return { action: 'CONFIRM', label: 'MARK ARRIVED', color: '#10b981' };
       case 'booked':      return { action: 'CONFIRM', label: 'MARK ARRIVED', color: '#10b981' };
       case 'confirmed':   return { action: 'START', label: 'BEGIN SCAN', color: '#f59e0b' };
@@ -456,7 +474,10 @@ export default function AppointmentBoard() {
       referredBy: newPatient.referredBy || '',
       referredContact: referrers.find(r => r.name === newPatient.referredBy)?.contact || '',
       referredAddress: referrers.find(r => r.name === newPatient.referredBy)?.address || '',
-      notes: newBooking.notes
+      notes: newBooking.notes,
+      amount: newBooking.amount,
+      referralCutType: newBooking.referralCutType,
+      referralCutValue: newBooking.referralCutValue
     };
 
     if (!isOnline) {
@@ -468,37 +489,13 @@ export default function AppointmentBoard() {
     }
 
     try {
-      const appointmentRes = await apiClient.post('/appointments', payload);
-
-      // --- AUTO-BILLING TRIGGER (API INTEGRATED) ---
-      try {
-        if (activeCenter?.isAutoBillingEnabled) {
-          const matchedPrice = serviceRegistry.find(p => 
-            p.modality === newBooking.modality && 
-            p.serviceName.toLowerCase() === newBooking.service.toLowerCase()
-          );
-
-          if (matchedPrice) {
-            const invoicePayload = {
-              patientId: newBooking.patientId,
-              appointmentId: appointmentRes.data.appointmentId || appointmentRes.data.id,
-              items: [{
-                description: matchedPrice.serviceName,
-                amount: parseFloat(matchedPrice.amount),
-                quantity: 1
-              }]
-            };
-            await apiClient.post('/finance/invoices', invoicePayload);
-          }
-        }
-      } catch (err) {
-        console.error('[AUTO-BILL] Backend transmission failure:', err.message);
-      }
-
+      await apiClient.post('/appointments', payload);
+      
       setIsBookingOpen(false);
       resetBooking();
       fetchAppointments();
     } catch (error) {
+
       console.error('Failed to book appointment:', error);
       if (!error.response) {
         await addToOutbox('APPOINTMENT_CREATE', payload);
@@ -518,7 +515,9 @@ export default function AppointmentBoard() {
       modality: 'X-RAY', 
       date: getTodayString(), 
       doctor: '', 
-      notes: '' 
+      notes: '',
+      referralCutType: 'PERCENTAGE',
+      referralCutValue: 0
     });
     setNewPatient({ name: '', mobile: '', age: '', gender: 'Male', village: '', district: '', address: '', referredBy: '', sourceOfInfo: '' });
     setReferrerSearchValue('');
@@ -571,7 +570,14 @@ export default function AppointmentBoard() {
         modality: editingAppointment.modality,
         dateTime: editingAppointment.dateTime,
         doctor: editingAppointment.doctor,
-        notes: editingAppointment.notes
+        notes: editingAppointment.notes,
+        referredBy: editingAppointment.referredBy || '',
+        referralCutValue: editingAppointment.referralCutValue || 0,
+        referralCutType: editingAppointment.referralCutType || 'PERCENTAGE',
+        patientName: editingAppointment.patientName,
+        mobile: editingAppointment.mobile,
+        patientAge: editingAppointment.patientAge,
+        amount: editingAppointment.amount || 0
       });
 
       setIsEditingOpen(false);
@@ -1119,13 +1125,16 @@ export default function AppointmentBoard() {
             <select
               value={app.status}
               onChange={(e) => handleAction(app.id, e.target.value)}
+              disabled={app.status === 'future'}
               style={{
                 display: 'inline-flex', alignItems: 'center', gap: '6px',
                 padding: '6px 12px', borderRadius: '10px',
                 background: meta.bg, border: `1px solid ${meta.color}30`,
                 color: meta.color, fontSize: '9px', fontWeight: 950,
                 textTransform: 'uppercase', letterSpacing: '0.5px',
-                cursor: 'pointer', appearance: 'none', outline: 'none'
+                cursor: app.status === 'future' ? 'not-allowed' : 'pointer', 
+                appearance: 'none', outline: 'none',
+                opacity: app.status === 'future' ? 0.7 : 1
               }}
             >
               {Object.keys(STATUS_META).map(s => (
@@ -1466,141 +1475,53 @@ export default function AppointmentBoard() {
                   </div>
                 </div>
 
-                {/* REFERRED BY SECTION (MOVED TO BOTTOM) */}
-                <div className="form-group" style={{ marginTop: '10px', borderTop: '1px dashed #dde5f5', paddingTop: '16px' }}>
-                  <label style={{ fontSize: '10px', fontWeight: 800, color: '#0f52ba', letterSpacing: '0.5px', marginBottom: '8px', display: 'block' }}>MISSION SOURCE (REFERRED BY)</label>
-                  
-                  {!isAddingNewReferrer ? (
-                    <>
-                      <div style={{ position: 'relative' }}>
-                        <div style={{ display: 'flex', gap: '8px' }}>
-                          <div className="search-input-group" style={{ flex: 1, margin: 0 }}>
-                            <input 
-                              type="text" 
-                              placeholder="Search saved referrers..." 
-                              value={referrerSearchValue} 
-                              onChange={(e) => {
-                                setReferrerSearchValue(e.target.value);
-                                setNewPatient(prev => ({ ...prev, referredBy: e.target.value }));
-                              }} 
-                              style={{ fontSize: '13px', paddingLeft: '15px' }}
-                            />
-                          </div>
-                          <button 
-                            type="button"
-                            onClick={() => setIsAddingNewReferrer(true)}
-                            style={{ 
-                              background: '#e8f0fe', color: '#0f52ba', border: '1px solid #c5d5f0', 
-                              borderRadius: '10px', padding: '0 15px', fontSize: '11px', fontWeight: 800,
-                              cursor: 'pointer'
-                            }}
-                          >
-                            + NEW
-                          </button>
-                        </div>
-                        
-                        {referrerSearchValue && !referrers.find(r => r.name === referrerSearchValue) && (
+                <div className="form-group" style={{ marginTop: '10px', position: 'relative' }}>
+                    <label style={{ fontSize: '9px', fontWeight: 800, letterSpacing: '0.5px', color: '#888' }}>Referred By</label>
+                    <div style={{ display: 'flex', gap: '8px' }}>
+                      <div style={{ flex: 1, position: 'relative' }}>
+                        <input 
+                          type="text" 
+                          placeholder="Search or type referrer name..."
+                          value={newPatient.referredBy} 
+                          onChange={e => {
+                            const val = e.target.value;
+                            setNewPatient({...newPatient, referredBy: val});
+                            fetchReferrers(val);
+                          }} 
+                        />
+                        {newPatient.referredBy && referrers.length > 0 && !referrers.some(r => r.name === newPatient.referredBy) && (
                           <div style={{ 
                             position: 'absolute', top: '100%', left: 0, right: 0, 
-                            background: 'white', border: '1px solid #dee2e6', borderRadius: '10px',
-                            marginTop: '4px', boxShadow: '0 10px 25px rgba(0,0,0,0.1)', zIndex: 10,
-                            maxHeight: '150px', overflowY: 'auto'
+                            background: 'white', border: '1px solid #e2e8f0', borderRadius: '10px', 
+                            boxShadow: '0 10px 30px rgba(0,0,0,0.1)', zIndex: 100, 
+                            maxHeight: '150px', overflowY: 'auto', marginTop: '4px' 
                           }}>
-                            {referrers.filter(r => r.name.toLowerCase().includes(referrerSearchValue.toLowerCase())).map(r => (
+                            {referrers.map(r => (
                               <div 
-                                key={r.referrerId}
+                                key={r.referrerId || r.id}
                                 onClick={() => {
-                                  setNewPatient(prev => ({ ...prev, referredBy: r.name, referrerId: r.referrerId }));
-                                  setReferrerSearchValue(r.name);
+                                  setNewPatient({...newPatient, referredBy: r.name});
+                                  setReferrers([]);
                                 }}
-                                style={{ padding: '10px 15px', fontSize: '12px', cursor: 'pointer', borderBottom: '1px solid #f8f9fa' }}
-                                onMouseEnter={e => e.currentTarget.style.background = '#f0f4ff'}
-                                onMouseLeave={e => e.currentTarget.style.background = 'white'}
+                                style={{ padding: '10px 15px', borderBottom: '1px solid #f8fafc', cursor: 'pointer', fontSize: '12px' }}
+                                onMouseOver={e => e.currentTarget.style.background = '#f0f4ff'}
+                                onMouseOut={e => e.currentTarget.style.background = 'white'}
                               >
-                                <div style={{ fontWeight: 700 }}>{r.name}</div>
-                                <div style={{ fontSize: '10px', color: '#888' }}>{r.contact} {r.address && '\u00B7'} {r.address}</div>
+                                <strong>{r.name}</strong>
+                                <span style={{ marginLeft: '8px', color: '#888', fontSize: '10px' }}>{r.contact}</span>
                               </div>
                             ))}
                           </div>
                         )}
                       </div>
-
-                      {/* SELECTED REFERRER HUD DETAIL */}
-                      {referrerSearchValue && referrers.find(r => r.name === referrerSearchValue) && (
-                        <div style={{ 
-                          marginTop: '12px', 
-                          padding: '12px 16px', 
-                          background: 'rgba(15, 82, 186, 0.05)', 
-                          borderRadius: '12px',
-                          border: '1px solid rgba(15, 82, 186, 0.1)',
-                          display: 'flex',
-                          alignItems: 'center',
-                          gap: '12px',
-                          animation: 'slideUp 0.3s ease'
-                        }}>
-                          <div style={{ 
-                            width: '32px', height: '32px', borderRadius: '50%', background: '#0f52ba', 
-                            display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white',
-                            fontSize: '14px', fontWeight: 900
-                          }}>
-                            {referrerSearchValue.charAt(0).toUpperCase()}
-                          </div>
-                          <div style={{ flex: 1, minWidth: 0 }}>
-                            <div style={{ fontSize: '9px', fontWeight: 950, color: '#0f52ba', letterSpacing: '1px' }}>SELECTED SPECIALIST</div>
-                            <div style={{ fontSize: '12px', fontWeight: 800, color: '#1a1a2e', whiteSpace: 'nowrap', textOverflow: 'ellipsis', overflow: 'hidden' }}>{referrerSearchValue}</div>
-                            <div style={{ fontSize: '10px', color: '#64748b', marginTop: '2px', display: 'flex', gap: '8px' }}>
-                              <span>{referrers.find(r => r.name === referrerSearchValue)?.contact || 'No Contact'}</span>
-                              <span style={{ opacity: 0.3 }}>|</span>
-                              <span style={{ whiteSpace: 'nowrap', textOverflow: 'ellipsis', overflow: 'hidden' }}>{referrers.find(r => r.name === referrerSearchValue)?.address || 'No Address Data'}</span>
-                            </div>
-                          </div>
-                          <button 
-                            type="button"
-                            onClick={() => {
-                              setReferrerSearchValue('');
-                              setNewPatient(prev => ({ ...prev, referredBy: '', referrerId: null }));
-                            }}
-                            style={{ background: 'none', border: 'none', color: '#e74c3c', fontSize: '18px', cursor: 'pointer', padding: '0 5px', fontWeight: 800 }}
-                          >
-                            &times;
-                          </button>
-                        </div>
-                      )}
-                    </>
-                  ) : (
-                    <div style={{ background: '#f8f9fa', padding: '15px', borderRadius: '12px', border: '1.5px solid #0f52ba30' }}>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
-                        <span style={{ fontSize: '11px', fontWeight: 900, color: '#0f52ba' }}>NEW REFERRER DATA</span>
-                        <button type="button" onClick={() => setIsAddingNewReferrer(false)} style={{ border: 'none', background: 'none', color: '#e74c3c', fontSize: '10px', fontWeight: 800 }}>CANCEL</button>
-                      </div>
-                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', marginBottom: '10px' }}>
-                        <input type="text" placeholder="Name" style={{ fontSize: '12px', padding: '8px 10px', borderRadius: '8px' }} value={newReferrer.name} onChange={e => setNewReferrer(prev => ({ ...prev, name: e.target.value }))} />
-                        <input type="text" placeholder="Contact" style={{ fontSize: '12px', padding: '8px 10px', borderRadius: '8px' }} value={newReferrer.contact} onChange={e => setNewReferrer(prev => ({ ...prev, contact: e.target.value }))} />
-                      </div>
-                      <input type="text" placeholder="Address" style={{ width: '100%', fontSize: '12px', padding: '8px 10px', borderRadius: '8px' }} value={newReferrer.address} onChange={e => setNewReferrer(prev => ({ ...prev, address: e.target.value }))} />
                       <button 
                         type="button" 
-                        disabled={!newReferrer.name.trim() || !newReferrer.contact.trim()}
-                        onClick={async () => { 
-                          if(newReferrer.name.trim()){ 
-                            try {
-                              const res = await apiClient.post('/referrers', newReferrer);
-                              fetchReferrers('');
-                              setNewPatient({...newPatient, referredBy: newReferrer.name, referrerId: res.data.referrerId}); 
-                              setReferrerSearchValue(newReferrer.name);
-                              setIsAddingNewReferrer(false);
-                              setNewReferrer({ name: '', contact: '', address: '' });
-                            } catch (error) {
-                              console.error('Failed to save referrer:', error);
-                            }
-                          } 
-                        }} 
-                        style={{ marginTop: '10px', width: '100%', background: '#0f52ba', color: 'white', border: 'none', padding: '8px', borderRadius: '8px', fontSize: '11px', fontWeight: 800 }}
+                        onClick={() => setIsAddingReferrer(true)}
+                        style={{ padding: '0 12px', borderRadius: '8px', border: '1px dashed #cbd5e1', background: '#f8fafc', color: '#0f52ba', fontSize: '18px', fontWeight: 700, cursor: 'pointer' }}
                       >
-                        SAVE & AUTO-SELECT REFERRER
+                        +
                       </button>
                     </div>
-                  )}
                 </div>
 
                 {newBooking.patientId && (
@@ -1688,7 +1609,20 @@ export default function AppointmentBoard() {
                     required 
                     placeholder="e.g. Chest X-Ray with Lateral" 
                     value={newBooking.service} 
-                    onChange={e => setNewBooking({...newBooking, service: e.target.value})} 
+                    onChange={e => {
+                      const val = e.target.value;
+                      setNewBooking(prev => ({ ...prev, service: val }));
+                      const match = serviceRegistry.find(s => s.modality === newBooking.modality && s.serviceName.toLowerCase() === val.toLowerCase());
+                      if (match) {
+                        setNewBooking(prev => ({
+                          ...prev,
+                          amount: match.amount,
+                          referralCutValue: match.referralCutValue || 0,
+                          referralCutType: match.referralCutType || 'PERCENTAGE'
+                        }));
+                      }
+
+                    }} 
                     style={{ fontSize: '13px', padding: '10px' }} 
                   />
 
@@ -1712,15 +1646,46 @@ export default function AppointmentBoard() {
                         .map(s => (
                           <div 
                             key={s.id}
-                            onClick={() => setNewBooking({...newBooking, service: s.serviceName})}
+                            onClick={() => setNewBooking({
+                              ...newBooking, 
+                              service: s.serviceName,
+                              amount: s.amount,
+                              referralCutValue: s.referralCutValue || 0,
+                              referralCutType: s.referralCutType || 'PERCENTAGE'
+                            })}
+
                             style={{ padding: '12px 15px', borderBottom: '1px solid #f8fafc', cursor: 'pointer', transition: 'background 0.2s' }}
                             onMouseOver={e => e.currentTarget.style.background = '#f0f4ff'}
                             onMouseOut={e => e.currentTarget.style.background = 'white'}
                           >
                              <div style={{ fontSize: '12px', fontWeight: 800, color: '#1e293b' }}>{s.serviceName}</div>
-                             <div style={{ fontSize: '10px', color: '#0f52ba', fontWeight: 950, marginTop: '2px' }}>₹{s.amount.toLocaleString()}</div>
+                             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '2px' }}>
+                               <div style={{ fontSize: '10px', color: '#0f52ba', fontWeight: 950 }}>₹{s.amount.toLocaleString()}</div>
+                               {s.referralCutValue > 0 && (
+                                 <div style={{ fontSize: '9px', color: '#e67e22', fontWeight: 900, background: '#fff7ed', padding: '2px 6px', borderRadius: '4px', border: '1px solid #ffedd5' }}>
+                                   INCENTIVE: ₹{s.referralCutValue.toLocaleString()}
+                                 </div>
+                               )}
+                             </div>
                           </div>
                         ))}
+                </div>
+              )}
+            </div>
+
+                <div className="form-group" style={{ marginTop: '16px' }}>
+                  <label style={{ fontSize: '9px', fontWeight: 800, letterSpacing: '0.5px', color: '#888' }}>3. SERVICE AMOUNT (₹)</label>
+                  <input 
+                    type="number" 
+                    placeholder="e.g. 500" 
+                    value={newBooking.amount || ''} 
+                    onChange={e => setNewBooking({...newBooking, amount: parseFloat(e.target.value) || 0})} 
+                    style={{ fontSize: '13px', padding: '10px' }} 
+                  />
+                  {newBooking.referralCutValue > 0 && (
+                    <div style={{ fontSize: '10px', fontWeight: 800, color: '#0f52ba', marginTop: '6px', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                      <span style={{ opacity: 0.6 }}>SYSTEM REFERRAL CUT:</span>
+                      <span>₹{newBooking.referralCutValue}</span>
                     </div>
                   )}
                 </div>
@@ -1845,9 +1810,14 @@ export default function AppointmentBoard() {
                       <span style={{ fontSize: '8px', color: '#888', fontWeight: 700 }}>SERVICE & BILLING</span>
                       <div style={{ fontWeight: 800, fontSize: '11px', color: '#1a1a2e', display: 'flex', justifyContent: 'space-between' }}>
                         <span>{newBooking.service || '\u2014'}</span>
-                        {serviceRegistry.find(s => s.modality === newBooking.modality && s.serviceName.toLowerCase() === newBooking.service.toLowerCase()) && (
-                          <span style={{ color: '#0f52ba' }}>₹{serviceRegistry.find(s => s.modality === newBooking.modality && s.serviceName.toLowerCase() === newBooking.service.toLowerCase()).amount.toLocaleString()}</span>
-                        )}
+                        <div style={{ textAlign: 'right' }}>
+                          <div style={{ color: '#0f52ba' }}>₹{newBooking.amount.toLocaleString()}</div>
+                          {newBooking.referralCutValue > 0 && (
+                            <div style={{ fontSize: '8px', color: '#e67e22', fontWeight: 900, marginTop: '2px' }}>
+                              REFERRAL CUT: ₹{newBooking.referralCutValue.toLocaleString()}
+                            </div>
+                          )}
+                        </div>
                       </div>
                     </div>
                     <div><span style={{ fontSize: '8px', color: '#888', fontWeight: 700 }}>SPECIALIST</span><div style={{ fontWeight: 800, fontSize: '11px', color: '#1a1a2e' }}>{newBooking.doctor || 'Unassigned'}</div></div>
@@ -1937,23 +1907,59 @@ export default function AppointmentBoard() {
           </div>
 
           <div className="drawer-body" style={{ padding: '30px' }}>
-            {/* Patient Info (Read-only) */}
-            <div style={{ background: '#f8f9fa', padding: '18px', borderRadius: '14px', border: '1px solid #eee', marginBottom: '20px' }}>
-              <label style={{ fontSize: '10px', color: '#0f52ba', fontWeight: 800, marginBottom: '10px', display: 'block', letterSpacing: '1px' }}>PATIENT INFORMATION</label>
-              <div style={{ fontSize: '14px', fontWeight: 700, color: '#1a1a2e', marginBottom: '4px' }}>{editingAppointment.patientName}</div>
-              <div style={{ fontSize: '12px', color: '#888' }}>{editingAppointment.mobile} • {editingAppointment.patientAge}y {editingAppointment.patientGender}</div>
+            {/* Patient Identity (Editable) */}
+            <div style={{ background: '#f8f9fa', padding: '20px', borderRadius: '16px', border: '1px solid #e2e8f0', marginBottom: '24px' }}>
+              <label style={{ fontSize: '10px', color: '#0f52ba', fontWeight: 800, marginBottom: '15px', display: 'block', letterSpacing: '1px' }}>PATIENT IDENTITY</label>
+              
+              <div className="form-group" style={{ marginBottom: '12px' }}>
+                <label style={{ fontSize: '9px', fontWeight: 700, color: '#64748b' }}>FULL NAME</label>
+                <input 
+                  type="text" 
+                  style={{ fontSize: '13px', padding: '10px', width: '100%', borderRadius: '10px', border: '1px solid #cbd5e1' }}
+                  value={editingAppointment.patientName || ''}
+                  onChange={e => setEditingAppointment({...editingAppointment, patientName: e.target.value})}
+                />
+              </div>
+
+              <div style={{ display: 'grid', gridTemplateColumns: '1.5fr 1fr', gap: '12px' }}>
+                <div className="form-group">
+                  <label style={{ fontSize: '9px', fontWeight: 700, color: '#64748b' }}>MOBILE</label>
+                  <input 
+                    type="tel" 
+                    style={{ fontSize: '13px', padding: '10px', width: '100%', borderRadius: '10px', border: '1px solid #cbd5e1' }}
+                    value={editingAppointment.mobile || ''}
+                    onChange={e => setEditingAppointment({...editingAppointment, mobile: e.target.value})}
+                  />
+                </div>
+                <div className="form-group">
+                  <label style={{ fontSize: '9px', fontWeight: 700, color: '#64748b' }}>AGE (Y)</label>
+                  <input 
+                    type="text" 
+                    style={{ fontSize: '13px', padding: '10px', width: '100%', borderRadius: '10px', border: '1px solid #cbd5e1' }}
+                    value={editingAppointment.patientAge || ''}
+                    onChange={e => setEditingAppointment({...editingAppointment, patientAge: e.target.value})}
+                  />
+                </div>
+              </div>
             </div>
 
-            {/* Service/Procedure */}
+            {/* Mission Date */}
             <div className="form-group" style={{ marginBottom: '16px' }}>
-              <label style={{ fontSize: '10px', fontWeight: 700 }}>SERVICE / PROCEDURE <span style={{ color: '#e74c3c' }}>*</span></label>
+              <label style={{ fontSize: '10px', fontWeight: 700 }}>MISSION DATE <span style={{ color: '#e74c3c' }}>*</span></label>
               <input 
-                type="text" 
+                type="date" 
                 required 
-                placeholder="e.g. Chest X-Ray with Lateral" 
-                style={{ fontSize: '13px', padding: '11px 12px', width: '100%' }} 
-                value={editingAppointment.service || ''} 
-                onChange={e => setEditingAppointment({...editingAppointment, service: e.target.value})} 
+                style={{ fontSize: '13px', padding: '11px 12px', width: '100%', borderRadius: '10px', border: '1px solid #e2e8f0' }} 
+                value={editingAppointment.dateTime ? editingAppointment.dateTime.split('T')[0] : (editingAppointment.date || '')} 
+                onChange={e => {
+                  const newDate = e.target.value;
+                  const currentTime = editingAppointment.dateTime ? editingAppointment.dateTime.split('T')[1] : '12:00:00Z';
+                  setEditingAppointment({
+                    ...editingAppointment, 
+                    dateTime: `${newDate}T${currentTime}`,
+                    date: newDate
+                  });
+                }} 
               />
             </div>
 
@@ -1961,7 +1967,7 @@ export default function AppointmentBoard() {
             <div className="form-group" style={{ marginBottom: '16px' }}>
               <label style={{ fontSize: '10px', fontWeight: 700 }}>MODALITY</label>
               <select 
-                style={{ fontSize: '13px', padding: '11px', height: '44px', width: '100%' }} 
+                style={{ fontSize: '13px', padding: '11px', height: '44px', width: '100%', borderRadius: '10px', border: '1px solid #e2e8f0' }} 
                 value={editingAppointment.modality || 'X-RAY'} 
                 onChange={e => setEditingAppointment({...editingAppointment, modality: e.target.value})}
               >
@@ -1969,17 +1975,154 @@ export default function AppointmentBoard() {
               </select>
             </div>
 
+            {/* Service/Procedure */}
+            <div className="form-group" style={{ marginBottom: '16px', position: 'relative' }}>
+              <label style={{ fontSize: '10px', fontWeight: 700 }}>SERVICE / PROCEDURE <span style={{ color: '#e74c3c' }}>*</span></label>
+              <input 
+                type="text" 
+                required 
+                placeholder="e.g. Chest X-Ray with Lateral" 
+                style={{ fontSize: '13px', padding: '11px 12px', width: '100%', borderRadius: '10px', border: '1px solid #e2e8f0' }} 
+                value={editingAppointment.service || ''} 
+                onChange={e => {
+                  const val = e.target.value;
+                  setEditingAppointment(prev => ({ ...prev, service: val }));
+                  const match = serviceRegistry.find(s => s.modality === editingAppointment.modality && s.serviceName.toLowerCase() === val.toLowerCase());
+                  if (match) {
+                    setEditingAppointment(prev => ({
+                      ...prev,
+                      amount: match.amount,
+                      referralCutValue: match.referralCutValue || 0,
+                      referralCutType: match.referralCutType || 'PERCENTAGE'
+                    }));
+                  }
+
+                }} 
+              />
+
+              {/* Service Suggestions in Edit Mode */}
+              {editingAppointment.service?.length > 0 && serviceRegistry.some(s => 
+                s.modality === editingAppointment.modality && 
+                s.serviceName.toLowerCase().includes(editingAppointment.service.toLowerCase()) && 
+                s.serviceName !== editingAppointment.service
+              ) && (
+                <div style={{ 
+                  position: 'absolute', top: '100%', left: 0, right: 0, 
+                  background: 'white', border: '1px solid #e2e8f0', borderRadius: '12px', 
+                  boxShadow: '0 10px 30px rgba(0,0,0,0.1)', zIndex: 100, 
+                  maxHeight: '150px', overflowY: 'auto', marginTop: '4px' 
+                }}>
+                  {serviceRegistry
+                    .filter(s => s.modality === editingAppointment.modality && s.serviceName.toLowerCase().includes(editingAppointment.service.toLowerCase()))
+                    .map(s => (
+                      <div 
+                        key={s.id}
+                        onClick={() => setEditingAppointment({
+                          ...editingAppointment, 
+                          service: s.serviceName,
+                          amount: s.amount,
+                          referralCutValue: s.referralCutValue || 0,
+                          referralCutType: s.referralCutType || 'PERCENTAGE'
+                        })}
+
+                        style={{ padding: '10px 15px', borderBottom: '1px solid #f8fafc', cursor: 'pointer' }}
+                        onMouseOver={e => e.currentTarget.style.background = '#f0f4ff'}
+                        onMouseOut={e => e.currentTarget.style.background = 'white'}
+                      >
+                         <div style={{ fontSize: '12px', fontWeight: 800 }}>{s.serviceName}</div>
+                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '2px' }}>
+                           <div style={{ fontSize: '10px', color: '#0f52ba', fontWeight: 950 }}>₹{s.amount.toLocaleString()}</div>
+                           {s.referralCutValue > 0 && (
+                             <div style={{ fontSize: '9px', color: '#e67e22', fontWeight: 900, background: '#fff7ed', padding: '2px 6px', borderRadius: '4px', border: '1px solid #ffedd5' }}>
+                               INCENTIVE: ₹{s.referralCutValue.toLocaleString()}
+                             </div>
+                           )}
+                         </div>
+                      </div>
+                    ))}
+                </div>
+              )}
+            </div>
+
+            {/* Service Amount */}
+            <div className="form-group" style={{ marginBottom: '16px' }}>
+              <label style={{ fontSize: '10px', fontWeight: 700 }}>SERVICE AMOUNT (₹)</label>
+              <input 
+                type="number" 
+                style={{ fontSize: '13px', padding: '11px 12px', width: '100%', borderRadius: '10px', border: '1px solid #e2e8f0' }} 
+                value={editingAppointment.amount || 0} 
+                onChange={e => setEditingAppointment({...editingAppointment, amount: parseFloat(e.target.value) || 0})}
+              />
+              {editingAppointment.referralCutValue > 0 && (
+                <div style={{ fontSize: '10px', fontWeight: 800, color: '#0f52ba', marginTop: '6px' }}>
+                  <span style={{ opacity: 0.6 }}>SYSTEM REFERRAL CUT: </span>
+                  ₹{editingAppointment.referralCutValue}
+                </div>
+              )}
+            </div>
+
             {/* Doctor */}
             <div className="form-group" style={{ marginBottom: '16px' }}>
               <label style={{ fontSize: '10px', fontWeight: 700 }}>LEAD SPECIALIST <span style={{ color: '#e74c3c' }}>*</span></label>
               <select 
-                style={{ fontSize: '13px', padding: '11px', height: '44px', width: '100%' }} 
+                style={{ fontSize: '13px', padding: '11px', height: '44px', width: '100%', borderRadius: '10px', border: '1px solid #e2e8f0' }} 
                 value={editingAppointment.doctor || ''} 
                 onChange={e => setEditingAppointment({...editingAppointment, doctor: e.target.value})}
               >
                 <option value="">Select Specialist...</option>
                 {doctors.map(d => <option key={d} value={d}>{d}</option>)}
               </select>
+            </div>
+
+            {/* Referrer */}
+            <div className="form-group" style={{ marginBottom: '16px' }}>
+              <label style={{ fontSize: '10px', fontWeight: 700 }}>REFERRED BY</label>
+              <div style={{ display: 'flex', gap: '8px' }}>
+                <div style={{ flex: 1, position: 'relative' }}>
+                  <input 
+                    type="text" 
+                    placeholder="Search referrers..."
+                    style={{ fontSize: '13px', padding: '11px 12px', width: '100%', borderRadius: '10px', border: '1px solid #e2e8f0' }} 
+                    value={editingAppointment.referredBy || ''} 
+                    onChange={e => {
+                      const val = e.target.value;
+                      setEditingAppointment({...editingAppointment, referredBy: val});
+                      fetchReferrers(val);
+                    }} 
+                  />
+                  {editingAppointment.referredBy && referrers.length > 0 && !referrers.some(r => r.name === editingAppointment.referredBy) && (
+                    <div style={{ 
+                      position: 'absolute', top: '100%', left: 0, right: 0, 
+                      background: 'white', border: '1px solid #e2e8f0', borderRadius: '10px', 
+                      boxShadow: '0 10px 30px rgba(0,0,0,0.1)', zIndex: 100, 
+                      maxHeight: '150px', overflowY: 'auto', marginTop: '4px' 
+                    }}>
+                      {referrers.map(r => (
+                        <div 
+                          key={r.referrerId || r.id}
+                          onClick={() => {
+                            setEditingAppointment({...editingAppointment, referredBy: r.name});
+                            setReferrers([]);
+                          }}
+                          style={{ padding: '10px 15px', borderBottom: '1px solid #f8fafc', cursor: 'pointer', fontSize: '12px' }}
+                          onMouseOver={e => e.currentTarget.style.background = '#f0f4ff'}
+                          onMouseOut={e => e.currentTarget.style.background = 'white'}
+                        >
+                          <strong>{r.name}</strong>
+                          <span style={{ marginLeft: '8px', color: '#888', fontSize: '10px' }}>{r.contact}</span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+                <button 
+                  type="button" 
+                  onClick={() => setIsAddingReferrer(true)}
+                  style={{ padding: '0 15px', borderRadius: '10px', border: '1px dashed #cbd5e1', background: '#f8fafc', color: '#0f52ba', fontSize: '20px', fontWeight: 700, cursor: 'pointer' }}
+                >
+                  +
+                </button>
+              </div>
             </div>
 
             {/* Notes */}
@@ -2240,6 +2383,55 @@ export default function AppointmentBoard() {
       {renderDrawer()}
       {renderEditModal()}
       {renderTokenModal()}
+
+      {/* Add New Referrer Modal */}
+      {isAddingReferrer && (
+        <div className="modal-overlay" style={{ background: 'rgba(0,0,0,0.7)', zIndex: 11000, display: 'flex', alignItems: 'center', justifyContent: 'center', position: 'fixed', inset: 0 }}>
+          <div style={{ width: '400px', background: 'white', borderRadius: '16px', overflow: 'hidden', boxShadow: '0 20px 60px rgba(0,0,0,0.3)' }}>
+            <div style={{ padding: '20px', background: '#0f52ba', color: 'white', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <span style={{ fontSize: '14px', fontWeight: 900, letterSpacing: '1px' }}>ADD NEW REFERRER</span>
+              <button onClick={() => setIsAddingReferrer(false)} style={{ background: 'none', border: 'none', color: 'white', fontSize: '18px', cursor: 'pointer' }}>✕</button>
+            </div>
+            <form onSubmit={handleAddReferrer} style={{ padding: '25px' }}>
+              <div className="form-group" style={{ marginBottom: '15px' }}>
+                <label style={{ fontSize: '10px', fontWeight: 800, color: '#64748b' }}>FULL NAME</label>
+                <input 
+                  type="text" 
+                  required 
+                  placeholder="e.g. Dr. John Doe"
+                  style={{ width: '100%', padding: '10px', borderRadius: '8px', border: '1px solid #cbd5e1' }}
+                  value={newReferrer.name}
+                  onChange={e => setNewReferrer({...newReferrer, name: e.target.value})}
+                />
+              </div>
+              <div className="form-group" style={{ marginBottom: '15px' }}>
+                <label style={{ fontSize: '10px', fontWeight: 800, color: '#64748b' }}>CONTACT NUMBER</label>
+                <input 
+                  type="tel" 
+                  placeholder="e.g. 9876543210"
+                  style={{ width: '100%', padding: '10px', borderRadius: '8px', border: '1px solid #cbd5e1' }}
+                  value={newReferrer.contact}
+                  onChange={e => setNewReferrer({...newReferrer, contact: e.target.value})}
+                />
+              </div>
+              <div className="form-group" style={{ marginBottom: '20px' }}>
+                <label style={{ fontSize: '10px', fontWeight: 800, color: '#64748b' }}>ADDRESS / CLINIC</label>
+                <input 
+                  type="text" 
+                  placeholder="City, Area"
+                  style={{ width: '100%', padding: '10px', borderRadius: '8px', border: '1px solid #cbd5e1' }}
+                  value={newReferrer.address}
+                  onChange={e => setNewReferrer({...newReferrer, address: e.target.value})}
+                />
+              </div>
+              <div style={{ display: 'flex', gap: '10px' }}>
+                <button type="button" onClick={() => setIsAddingReferrer(false)} style={{ flex: 1, padding: '12px', borderRadius: '10px', border: '1px solid #dee2e6', background: 'white', fontWeight: 800, cursor: 'pointer' }}>CANCEL</button>
+                <button type="submit" className="gamified-btn" style={{ flex: 2, padding: '12px' }}>SAVE REFERRER</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
       
       <ReportPreviewModal 
         isOpen={isPreviewOpen}

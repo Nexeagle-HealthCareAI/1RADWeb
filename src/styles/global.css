@@ -1472,7 +1472,7 @@ button, a, input[type="button"], input[type="submit"] {
 }
 
 .drawer-content {
-  width: 50vw !important;
+  width: 65vw !important;
   max-width: none !important;
   height: 100%;
   background: white;
