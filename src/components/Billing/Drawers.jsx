@@ -160,13 +160,17 @@ export const InvoiceDrawer = ({
                                {[10, 25, 50, 100].map(p => (
                                  <button 
                                    key={p} type="button"
-                                   onClick={() => setReferrerDisc(Math.round((selectedInvoice.grossAmount || 0) * (p / 100)))}
+                                   onClick={() => setReferrerDisc(Math.round((selectedInvoice.commissionAmount || 0) * (p / 100)))}
                                    style={{ padding: '2px 4px', fontSize: '7px', fontWeight: 950, border: '1px solid #eee', borderRadius: '4px', background: '#f8fafc', cursor: 'pointer' }}
                                  >{p}%</button>
                                ))}
                             </div>
-                            <div style={{ fontSize: '7px', color: '#94a3b8', fontWeight: 800, marginTop: '2px' }}>LIMIT: ₹{selectedInvoice.commissionAmount || 0}</div>
+
+                            <div style={{ fontSize: '7px', color: (selectedInvoice.commissionAmount - referrerDisc) < 0 ? '#ef4444' : '#94a3b8', fontWeight: 800, marginTop: '2px' }}>
+                               AVAILABLE: ₹{Math.max(0, (selectedInvoice.commissionAmount || 0) - referrerDisc)}
+                            </div>
                          </div>
+
                          <div style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
                             <span style={{ fontSize: '10px', fontWeight: 950, color: '#e11d48' }}>₹</span>
                             <input 
