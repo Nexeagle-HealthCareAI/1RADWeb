@@ -297,9 +297,10 @@ export default function BillingPage() {
     try {
       await apiClient.put(`/finance/expenses/${id}/status`, { status: newStatus });
       fetchExpenses();
+      fetchStats();
     } catch (err) {
-      console.error('[FINANCE] Failed to toggle expense status', err);
-      alert('PROTOCOL FAILURE: Could not synchronize expense status.');
+      console.error('[FINANCE] Status transition failed', err);
+      alert('PROTOCOL FAILURE: Could not update expense status.');
     }
   };
 
@@ -388,15 +389,16 @@ export default function BillingPage() {
   };
 
   const handleToggleCommissionStatus = async (id, currentStatus) => {
-    const nextStatus = currentStatus === 'PAID' ? 'UNPAID' : 'PAID';
+    const newStatus = currentStatus === 'PAID' ? 'UNPAID' : 'PAID';
     try {
-      await apiClient.patch(`/referrers/commissions/${id}/status`, `"${nextStatus}"`, {
+      await apiClient.patch(`/referrers/commissions/${id}/status`, `"${newStatus}"`, {
         headers: { 'Content-Type': 'application/json' }
       });
       fetchCommissions();
+      fetchStats();
     } catch (err) {
-      console.error('[FINANCE] Status transition failed', err);
-      alert('CRITICAL ERROR: Failed to update commission status.');
+      console.error('[FINANCE] Commission transition failed', err);
+      alert('PROTOCOL FAILURE: Could not update commission status.');
     }
   };
 
@@ -1216,7 +1218,9 @@ export default function BillingPage() {
     `);
   };
 
+
   return (
+
     <div className="billing-page" style={{ padding: '40px', background: '#f8fafc', minHeight: '100vh' }}>
       {/* Header Section */}
       <div className="board-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '40px' }}>

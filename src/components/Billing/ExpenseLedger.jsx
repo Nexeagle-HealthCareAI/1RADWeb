@@ -30,7 +30,58 @@ const ExpenseLedger = ({
 
   return (
     <div className="expenses-main" style={{ display: 'grid', gridTemplateColumns: '1fr', gap: '30px', animation: 'fadeIn 0.3s' }}>
+        <div style={{ background: 'white', borderRadius: '24px', border: '1px solid #e2e8f0', overflow: 'hidden', boxShadow: '0 4px 20px rgba(0,0,0,0.01)' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '20px 30px', background: '#f8fafc', borderBottom: '1px solid #f1f5f9' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '20px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '15px' }}>
+                <span style={{ fontSize: '10px', fontWeight: 950, color: '#64748b', letterSpacing: '1px' }}>TEMPORAL_SCOPE:</span>
+                <div style={{ display: 'flex', background: '#f1f5f9', padding: '3px', borderRadius: '10px', border: '1px solid #e2e8f0' }}>
+                  {['TODAY', 'PAST', 'ALL', 'CUSTOM'].map(t => (
+                    <button 
+                      key={t}
+                      onClick={() => setTimeFilter(t)}
+                      style={{ 
+                        padding: '8px 16px', borderRadius: '8px', border: 'none', fontSize: '9px', fontWeight: 950,
+                        background: timeFilter === t ? '#dc2626' : 'transparent',
+                        color: timeFilter === t ? 'white' : '#64748b',
+                        cursor: 'pointer', transition: 'all 0.2s'
+                      }}
+                    >{t}</button>
+                  ))}
+                </div>
+              </div>
+
+              {timeFilter === 'CUSTOM' && (
+                <div style={{ display: 'flex', alignItems: 'center', gap: '10px', animation: 'fadeIn 0.2s' }}>
+                  <input 
+                    type="date" value={startDate} onChange={e => setStartDate(e.target.value)}
+                    style={{ padding: '6px 12px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '11px', fontWeight: 700 }}
+                  />
+                  <span style={{ fontSize: '10px', fontWeight: 950, color: '#94a3b8' }}>TO</span>
+                  <input 
+                    type="date" value={endDate} onChange={e => setEndDate(e.target.value)}
+                    style={{ padding: '6px 12px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '11px', fontWeight: 700 }}
+                  />
+                </div>
+              )}
+            </div>
+
+            <button 
+              onClick={() => { 
+                setEditExpense({ 
+                  description: '', category: 'Maintenance', amount: 0, taxAmount: 0,
+                  transactionDate: TODAY, paymentMode: 'Cash', referenceNumber: '',
+                  vendorName: '', status: 'Paid'
+                }); 
+                setIsExpenseDrawerOpen(true); 
+              }}
+              style={{ padding: '10px 20px', borderRadius: '12px', border: 'none', background: '#dc2626', color: 'white', fontSize: '10px', fontWeight: 950, cursor: 'pointer' }}
+            >+ LOG OPERATIONAL EXPENSE</button>
+          </div>
+        </div>
+
        {/* KPI MATRIX (ENHANCED) */}
+
        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: '20px' }}>
 
           <div className="kpi-card" style={{ background: '#fff1f2', padding: '20px', borderRadius: '24px', border: '1px solid #fecdd3', boxShadow: '0 4px 20px rgba(225,29,72,0.05)' }}>
@@ -74,64 +125,19 @@ const ExpenseLedger = ({
 
        </div>
 
-       <div style={{ background: 'white', borderRadius: '24px', border: '1px solid #e2e8f0', overflow: 'hidden', boxShadow: '0 4px 20px rgba(0,0,0,0.01)' }}>
+        <div style={{ background: 'white', borderRadius: '24px', border: '1px solid #e2e8f0', overflow: 'hidden', boxShadow: '0 4px 20px rgba(0,0,0,0.01)' }}>
 
+             {Math.ceil((filteredOutflow || []).length / itemsPerPage) > 1 && (
+               <div style={{ padding: '15px 30px', borderBottom: '1px solid #f1f5f9', display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: '#fff' }}>
+                  <div style={{ fontSize: '10px', fontWeight: 950, color: '#94a3b8', letterSpacing: '1px' }}>LEDGER_PAGES:</div>
+                  <div style={{ display: 'flex', gap: '5px' }}>
+                     {Array.from({ length: Math.ceil((filteredOutflow || []).length / itemsPerPage) }).map((_, i) => (
+                         <button key={i} onClick={() => setCurrentPage(i + 1)} style={{ padding: '6px 12px', background: currentPage === i + 1 ? '#dc2626' : '#f1f5f9', color: currentPage === i + 1 ? 'white' : '#64748b', border: 'none', borderRadius: '8px', fontSize: '10px', fontWeight: 950, cursor: 'pointer', transition: 'all 0.2s' }}>{i + 1}</button>
+                     ))}
+                  </div>
+               </div>
+             )}
 
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '20px 30px', background: '#f8fafc', borderBottom: '1px solid #f1f5f9' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '20px' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '15px' }}>
-              <span style={{ fontSize: '10px', fontWeight: 950, color: '#64748b', letterSpacing: '1px' }}>TEMPORAL_SCOPE:</span>
-              <div style={{ display: 'flex', background: '#f1f5f9', padding: '3px', borderRadius: '10px', border: '1px solid #e2e8f0' }}>
-                {['TODAY', 'PAST', 'ALL', 'CUSTOM'].map(t => (
-                  <button 
-                    key={t}
-                    onClick={() => setTimeFilter(t)}
-                    style={{ 
-                      padding: '8px 16px', borderRadius: '8px', border: 'none', fontSize: '9px', fontWeight: 950,
-                      background: timeFilter === t ? '#dc2626' : 'transparent',
-                      color: timeFilter === t ? 'white' : '#64748b',
-                      cursor: 'pointer', transition: 'all 0.2s'
-                    }}
-                  >{t}</button>
-                ))}
-              </div>
-            </div>
-
-            {timeFilter === 'CUSTOM' && (
-              <div style={{ display: 'flex', alignItems: 'center', gap: '10px', animation: 'fadeIn 0.2s' }}>
-                <input 
-                  type="date" value={startDate} onChange={e => setStartDate(e.target.value)}
-                  style={{ padding: '6px 12px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '11px', fontWeight: 700 }}
-                />
-                <span style={{ fontSize: '10px', fontWeight: 950, color: '#94a3b8' }}>TO</span>
-                <input 
-                  type="date" value={endDate} onChange={e => setEndDate(e.target.value)}
-                  style={{ padding: '6px 12px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '11px', fontWeight: 700 }}
-                />
-              </div>
-            )}
-          </div>
-
-          <button 
-            onClick={() => { 
-              setEditExpense({ 
-                description: '', category: 'Maintenance', amount: 0, taxAmount: 0,
-                transactionDate: TODAY, paymentMode: 'Cash', referenceNumber: '',
-                vendorName: '', status: 'Paid'
-              }); 
-              setIsExpenseDrawerOpen(true); 
-            }}
-            style={{ padding: '10px 20px', borderRadius: '12px', border: 'none', background: '#dc2626', color: 'white', fontSize: '10px', fontWeight: 950, cursor: 'pointer' }}
-          >+ LOG OPERATIONAL EXPENSE</button>
-        </div>
-             <div style={{ padding: '15px 30px', borderBottom: '1px solid #f1f5f9', display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: '#fff' }}>
-                <div style={{ fontSize: '10px', fontWeight: 950, color: '#94a3b8', letterSpacing: '1px' }}>NAVIGATING_TRANSACTIONS:</div>
-                <div style={{ display: 'flex', gap: '5px' }}>
-                   {Array.from({ length: Math.ceil((filteredOutflow || []).length / itemsPerPage) }).map((_, i) => (
-                       <button key={i} onClick={() => setCurrentPage(i + 1)} style={{ padding: '6px 12px', background: currentPage === i + 1 ? '#dc2626' : '#f1f5f9', color: currentPage === i + 1 ? 'white' : '#64748b', border: 'none', borderRadius: '8px', fontSize: '10px', fontWeight: 950, cursor: 'pointer', transition: 'all 0.2s' }}>{i + 1}</button>
-                   ))}
-                </div>
-             </div>
              <table style={{ width: '100%', borderCollapse: 'collapse' }}>
 
                 <thead style={{ background: '#f8fafc' }}>
@@ -175,16 +181,33 @@ const ExpenseLedger = ({
                            <span style={{ fontSize: '9px', fontWeight: 950, color: '#10b981' }}>PAID</span>
                          )}
                       </td>
-                      <td style={{ padding: '20px 30px', textAlign: 'right' }}>
-                         {exp.type === 'OPERATIONAL' || exp.type === 'LEGACY' ? (
-                           <button 
-                             onClick={() => handleDeleteExpense(exp.id)}
-                             style={{ padding: '8px 16px', borderRadius: '10px', border: 'none', background: '#fee2e2', color: '#ef4444', fontSize: '10px', fontWeight: 950, cursor: 'pointer' }}
-                           >DELETE</button>
-                         ) : (
-                           <span style={{ fontSize: '10px', fontWeight: 950, color: '#94a3b8' }}>LOCKED</span>
-                         )}
-                      </td>
+                       <td style={{ padding: '20px 30px', textAlign: 'right' }}>
+                          {exp.type === 'OPERATIONAL' || exp.type === 'LEGACY' ? (
+                            <div style={{ display: 'flex', gap: '10px', justifyContent: 'flex-end', alignItems: 'center' }}>
+                               <button 
+                                 onClick={() => {
+                                   setEditExpense({ 
+                                     id: exp.id,
+                                     description: exp.description,
+                                     category: exp.category,
+                                     amount: exp.amount,
+                                     transactionDate: exp.date,
+                                     vendorName: exp.name,
+                                     status: exp.status
+                                   });
+                                   setIsExpenseDrawerOpen(true);
+                                 }}
+                                 style={{ padding: '8px 16px', borderRadius: '10px', border: 'none', background: '#f0f4ff', color: '#0f52ba', fontSize: '10px', fontWeight: 950, cursor: 'pointer' }}
+                               >EDIT</button>
+                               <button 
+                                 onClick={() => handleDeleteExpense(exp.id)}
+                                 style={{ padding: '8px 16px', borderRadius: '10px', border: 'none', background: '#fee2e2', color: '#ef4444', fontSize: '10px', fontWeight: 950, cursor: 'pointer' }}
+                               >DELETE</button>
+                            </div>
+                          ) : (
+                            <span style={{ fontSize: '10px', fontWeight: 950, color: '#94a3b8' }}>LOCKED (STRATEGIC)</span>
+                          )}
+                       </td>
 
                     </tr>
                   ))}
