@@ -163,6 +163,101 @@ export default function AdminBoard() {
   const [editingPatient, setEditingPatient] = useState(null);
   const [isSavingPatient, setIsSavingPatient] = useState(false);
   const [isTestMode, setIsTestMode] = useState(false);
+  const [selectedLedgerRows, setSelectedLedgerRows] = useState([]);
+  const toggleLedgerSelection = (id) => {
+    setSelectedLedgerRows(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]);
+  };
+
+  const handleExportLedger = (type) => {
+    const selectedData = referralIntelligence.flatMap(r => r.patients).filter(p => selectedLedgerRows.includes(p.appointmentId || p.patientId));
+    if (selectedData.length === 0) return;
+
+    if (type === 'EXCEL') {
+        let csv = "REFERRAL_ID,PATIENT,CONTACT,MODALITY,SERVICE,COMMISSION,STATUS,DATE\n";
+        selectedData.forEach(p => {
+            csv += `${p.patientIdentifier || 'N/A'},${p.name},${p.mobile},${p.modality},${p.service},${p.commissionAmount},${p.status},${p.registrationDate}\n`;
+        });
+        const blob = new Blob([csv], { type: 'text/csv' });
+        const url = window.URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `Referral_Ledger_${new Date().toISOString().slice(0,10)}.csv`;
+        a.click();
+    } else if (type === 'WHATSAPP') {
+        let msg = `*REFERRAL CASE LEDGER REPORT*\n\n`;
+        selectedData.forEach((p, i) => {
+            msg += `${i+1}. *${p.name.toUpperCase()}* (${p.modality})\n   ID: ${p.patientIdentifier || 'N/A'}\n   Service: ${p.service}\n   Payout: ₹${p.commissionAmount}\n   Status: ${p.status}\n\n`;
+        });
+        window.open(`https://wa.me/?text=${encodeURIComponent(msg)}`, '_blank');
+    }
+  };
+
+  const isAllLedgerSelected = (patients) => {
+    return patients.length > 0 && patients.every(p => selectedLedgerRows.includes(p.appointmentId || p.patientId));
+  };
+  const toggleAllLedger = (patients) => {
+    if (isAllLedgerSelected(patients)) {
+      const ids = patients.map(p => p.appointmentId || p.patientId);
+      setSelectedLedgerRows(prev => prev.filter(id => !ids.includes(id)));
+    } else {
+      const ids = patients.map(p => p.appointmentId || p.patientId);
+      setSelectedLedgerRows(prev => [...new Set([...prev, ...ids])]);
+    }
+  };
+
+  const handleExportMatrix = () => {
+    if (!temporalMatrixData) return;
+    
+    // Headers with quotes to prevent breakage
+    const headers = ["REFERRING SOURCE", ...temporalMatrixData.cols, "TOTAL PULL"];
+    let csv = headers.map(h => `"${h}"`).join(",") + "\n";
+
+    // Row data
+    temporalMatrixData.rows.forEach(row => {
+      const rowData = [
+        `"${row.name || 'ANONYMOUS'}"`,
+        ...temporalMatrixData.cols.map(c => row.counts[c] || 0),
+        row.total
+      ];
+      csv += rowData.join(",") + "\n";
+    });
+
+    // Grand Totals Row
+    if (temporalMatrixData.rows.length > 0) {
+      const colTotals = temporalMatrixData.cols.map(c => 
+        temporalMatrixData.rows.reduce((sum, r) => sum + (r.counts[c] || 0), 0)
+      );
+      const grandTotal = temporalMatrixData.rows.reduce((sum, r) => sum + r.total, 0);
+      
+      const footerData = [
+        `"GRAND TOTAL"`,
+        ...colTotals,
+        grandTotal
+      ];
+      csv += footerData.join(",") + "\n";
+    }
+    
+    const blob = new Blob([csv], { type: 'text/csv' });
+    const url = window.URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `Referral_Matrix_${matrixPeriod}_${matrixDateStr}_${new Date().toISOString().slice(0,10)}.csv`;
+    a.click();
+  };
+
+  const handleExportRoster = () => {
+    if (!referralAggregated) return;
+    let csv = "RANK,REFERRAL SOURCE,CONTACT,ADDRESS,TOTAL MISSIONS,PAID COMMISSION,UNPAID COMMISSION,TOTAL REVENUE\n";
+    referralAggregated.forEach((s, i) => {
+      csv += `${i+1},"${s.name}","${s.contact}","${s.address || ''}",${s.patients.length},${s.paidCommission || 0},${s.unpaidCommission || 0},${s.totalRevenue || 0}\n`;
+    });
+    const blob = new Blob([csv], { type: 'text/csv' });
+    const url = window.URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `Partner_Network_${new Date().toISOString().slice(0,10)}.csv`;
+    a.click();
+  };
 
   // Sync settings when doctor selection changes
   const fetchDoctorProtocol = useCallback(async (docId) => {
@@ -2566,6 +2661,15 @@ export default function AdminBoard() {
               </div>
             ) : referralViewMode === 'ROSTER' ? (
               <div style={{ background: 'white', borderRadius: '24px', border: '1px solid #e2e8f0', overflow: 'hidden' }}>
+                <div style={{ padding: '25px 30px', borderBottom: '1px solid #e2e8f0', display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: '#fcfdfe' }}>
+                   <div style={{ fontSize: '12px', fontWeight: 950, color: '#1e293b', letterSpacing: '1px' }}>PARTNER NETWORK ROSTER</div>
+                   <button 
+                     onClick={handleExportRoster}
+                     style={{ padding: '8px 16px', borderRadius: '12px', background: '#f0f3fd', border: '1px solid #0f52ba30', color: '#0f52ba', fontSize: '10px', fontWeight: 950, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '8px' }}
+                   >
+                     📥 DOWNLOAD PARTNER ROSTER (CSV)
+                   </button>
+                </div>
                 <table style={{ width: '100%', borderCollapse: 'collapse' }}>
                   <thead style={{ background: '#f8fafc', borderBottom: '1px solid #e2e8f0' }}>
                     <tr>
@@ -2603,6 +2707,17 @@ export default function AdminBoard() {
                             <div style={{ fontSize: '16px', fontWeight: 950, color: '#0f52ba' }}>{s.patients.length}</div>
                             <div style={{ fontSize: '9px', fontWeight: 800, color: '#94a3b8', letterSpacing: '0.5px' }}>UNITS</div>
                           </td>
+                          <td style={{ padding: '20px 30px', textAlign: 'right' }}>
+                              <button 
+                                onClick={() => {
+                                   setEditingReferrer(s);
+                                   setIsReferrerEditDrawerOpen(true);
+                                }}
+                                style={{ padding: '6px 12px', borderRadius: '8px', border: '1px solid #e2e8f0', background: 'white', color: '#0f52ba', fontSize: '9px', fontWeight: 950, cursor: 'pointer' }}
+                              >
+                                EDIT
+                              </button>
+                           </td>
                         </tr>
                       ))
                     )}
@@ -2700,12 +2815,49 @@ export default function AdminBoard() {
                           </div>
 
                           <div style={{ padding: '30px' }}>
+                             {/* Referral Case Table Selection Hub */}
+                             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '15px' }}>
+                                <div style={{ fontSize: '10px', fontWeight: 950, color: '#64748b', letterSpacing: '2px' }}>
+                                   {selectedLedgerRows.length > 0 ? `${selectedLedgerRows.length} RECORDS SELECTED` : 'MISSION REGISTRY'}
+                                </div>
+                                {selectedLedgerRows.length > 0 && (
+                                   <div style={{ display: 'flex', gap: '10px' }}>
+                                      <button 
+                                        onClick={() => handleExportLedger('EXCEL')}
+                                        style={{ padding: '6px 12px', borderRadius: '8px', border: '1px solid #10b981', background: '#ecfdf5', color: '#059669', fontSize: '9px', fontWeight: 950, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px' }}
+                                      >
+                                        📥 DOWNLOAD EXCEL
+                                      </button>
+                                      <button 
+                                        onClick={() => handleExportLedger('WHATSAPP')}
+                                        style={{ padding: '6px 12px', borderRadius: '8px', border: '1px solid #25d366', background: '#e8faf0', color: '#128c7e', fontSize: '9px', fontWeight: 950, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px' }}
+                                      >
+                                        💬 SHARE ON WHATSAPP
+                                      </button>
+                                      <button 
+                                        onClick={() => setSelectedLedgerRows([])}
+                                        style={{ padding: '6px 12px', borderRadius: '8px', border: '1px solid #e2e8f0', background: 'white', color: '#64748b', fontSize: '9px', fontWeight: 950, cursor: 'pointer' }}
+                                      >
+                                        RESET
+                                      </button>
+                                   </div>
+                                )}
+                             </div>
+
                              {/* Referral Case Table */}
                              <div style={{ borderRadius: '20px', border: '1px solid #f1f5f9', overflow: 'hidden' }}>
                                 <table style={{ width: '100%', borderCollapse: 'collapse' }}>
                                   <thead style={{ background: '#fcfdfe' }}>
                                     <tr style={{ borderBottom: '1px solid #f1f5f9' }}>
-                                      <th style={{ padding: '15px 25px', textAlign: 'left', fontSize: '9px', fontWeight: 950, color: '#94a3b8', letterSpacing: '1px' }}>REFERRAL_ID</th>
+                                      <th style={{ padding: '15px 25px', textAlign: 'left', width: '40px' }}>
+                                         <input 
+                                           type="checkbox" 
+                                           checked={isAllLedgerSelected(selected.patients)} 
+                                           onChange={() => toggleAllLedger(selected.patients)} 
+                                           style={{ cursor: 'pointer' }}
+                                         />
+                                      </th>
+                                      <th style={{ padding: '15px 15px', textAlign: 'left', fontSize: '9px', fontWeight: 950, color: '#94a3b8', letterSpacing: '1px' }}>ID</th>
                                       <th style={{ padding: '15px 25px', textAlign: 'left', fontSize: '9px', fontWeight: 950, color: '#94a3b8', letterSpacing: '1px' }}>TARGET_IDENTITY</th>
                                       <th style={{ padding: '15px 25px', textAlign: 'left', fontSize: '9px', fontWeight: 950, color: '#94a3b8', letterSpacing: '1px' }}>CONTACT / SOURCE</th>
                                       <th style={{ padding: '15px 25px', textAlign: 'left', fontSize: '9px', fontWeight: 950, color: '#94a3b8', letterSpacing: '1px' }}>CLINICAL PACKAGE</th>
@@ -2715,36 +2867,48 @@ export default function AdminBoard() {
                                     </tr>
                                   </thead>
                                   <tbody>
-                                    {selected.patients.map(p => (
-                                      <tr key={p.patientId} style={{ borderBottom: '1px solid #f8fafc' }}>
-                                        <td style={{ padding: '15px 25px', fontSize: '11px', fontWeight: 950, color: '#0f52ba', fontFamily: 'monospace' }}>{p.patientIdentifier || 'UNSET'}</td>
-                                        <td style={{ padding: '15px 25px' }}>
-                                           <div style={{ fontSize: '13px', fontWeight: 850, color: '#1e293b' }}>{(p.name || 'Unknown').toUpperCase()}</div>
-                                           <div style={{ fontSize: '10px', color: '#94a3b8', fontWeight: 700 }}>{p.age}Y • {(p.gender || 'U').toUpperCase()}</div>
-                                        </td>
-                                        <td style={{ padding: '15px 25px' }}>
-                                           <div style={{ fontSize: '11px', fontWeight: 800, color: '#1e293b' }}>{p.mobile}</div>
-                                           <div style={{ fontSize: '9px', color: '#0f52ba', fontWeight: 950, textTransform: 'uppercase' }}>{p.sourceOfInfo || 'DIRECT'}</div>
-                                        </td>
-                                        <td style={{ padding: '15px 25px' }}>
-                                           <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
-                                              <span style={{ fontSize: '9px', color: 'white', background: '#334155', padding: '2px 8px', borderRadius: '4px', fontWeight: 950 }}>{p.modality}</span>
-                                              <span style={{ fontSize: '9px', color: '#475569', border: '1px solid #e2e8f0', padding: '1px 6px', borderRadius: '4px', fontWeight: 850 }}>{p.service}</span>
-                                           </div>
-                                        </td>
-                                        <td style={{ padding: '15px 25px' }}>
-                                           <div style={{ fontSize: '11px', fontWeight: 950, color: '#1e293b' }}>₹{(p.commissionAmount || 0).toLocaleString()}</div>
-                                           <div style={{ fontSize: '8px', fontWeight: 800, color: p.commissionStatus === 'Paid' ? '#059669' : '#dc2626' }}>{(p.commissionStatus || 'Unpaid').toUpperCase()}</div>
-                                        </td>
-                                        <td style={{ padding: '15px 25px' }}>
-                                           {(() => {
-                                              const cfg = getStatusConfig(p.status);
-                                              return <span style={{ fontSize: '8px', fontWeight: 950, padding: '3px 8px', borderRadius: '6px', background: cfg.bg, color: cfg.color }}>{cfg.label}</span>
-                                           })()}
-                                        </td>
-                                        <td style={{ padding: '15px 25px', fontSize: '11px', color: '#94a3b8', textAlign: 'right', fontWeight: 900 }}>{p.registrationDate}</td>
-                                      </tr>
-                                    ))}
+                                    {selected.patients.map(p => {
+                                      const rowId = p.appointmentId || p.patientId;
+                                      const isSelected = selectedLedgerRows.includes(rowId);
+                                      return (
+                                        <tr key={rowId} style={{ borderBottom: '1px solid #f8fafc', background: isSelected ? '#f0f7ff' : 'transparent', transition: 'all 0.2s' }}>
+                                          <td style={{ padding: '15px 25px' }}>
+                                             <input 
+                                               type="checkbox" 
+                                               checked={isSelected} 
+                                               onChange={() => toggleLedgerSelection(rowId)} 
+                                               style={{ cursor: 'pointer' }}
+                                             />
+                                          </td>
+                                          <td style={{ padding: '15px 15px', fontSize: '11px', fontWeight: 950, color: '#0f52ba', fontFamily: 'monospace' }}>{p.patientIdentifier || 'UNSET'}</td>
+                                          <td style={{ padding: '15px 25px' }}>
+                                             <div style={{ fontSize: '13px', fontWeight: 850, color: '#1e293b' }}>{(p.name || 'Unknown').toUpperCase()}</div>
+                                             <div style={{ fontSize: '10px', color: '#94a3b8', fontWeight: 700 }}>{p.age}Y • {(p.gender || 'U').toUpperCase()}</div>
+                                          </td>
+                                          <td style={{ padding: '15px 25px' }}>
+                                             <div style={{ fontSize: '11px', fontWeight: 800, color: '#1e293b' }}>{p.mobile}</div>
+                                             <div style={{ fontSize: '9px', color: '#0f52ba', fontWeight: 950, textTransform: 'uppercase' }}>{p.sourceOfInfo || 'DIRECT'}</div>
+                                          </td>
+                                          <td style={{ padding: '15px 25px' }}>
+                                             <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
+                                                <span style={{ fontSize: '9px', color: 'white', background: '#334155', padding: '2px 8px', borderRadius: '4px', fontWeight: 950 }}>{p.modality}</span>
+                                                <span style={{ fontSize: '9px', color: '#475569', border: '1px solid #e2e8f0', padding: '1px 6px', borderRadius: '4px', fontWeight: 850 }}>{p.service}</span>
+                                             </div>
+                                          </td>
+                                          <td style={{ padding: '15px 25px' }}>
+                                             <div style={{ fontSize: '11px', fontWeight: 950, color: '#1e293b' }}>₹{(p.commissionAmount || 0).toLocaleString()}</div>
+                                             <div style={{ fontSize: '8px', fontWeight: 800, color: p.commissionStatus === 'Paid' ? '#059669' : '#dc2626' }}>{(p.commissionStatus || 'Unpaid').toUpperCase()}</div>
+                                          </td>
+                                          <td style={{ padding: '15px 25px' }}>
+                                             {(() => {
+                                                const cfg = getStatusConfig(p.status);
+                                                return <span style={{ fontSize: '8px', fontWeight: 950, padding: '3px 8px', borderRadius: '6px', background: cfg.bg, color: cfg.color }}>{cfg.label}</span>
+                                             })()}
+                                          </td>
+                                          <td style={{ padding: '15px 25px', fontSize: '11px', color: '#94a3b8', textAlign: 'right', fontWeight: 900 }}>{p.registrationDate}</td>
+                                        </tr>
+                                      );
+                                    })}
                                   </tbody>
                                 </table>
                              </div>
@@ -2767,9 +2931,17 @@ export default function AdminBoard() {
                  {/* 1. Tactical Matrix Grid */}
                  <div style={{ background: 'white', borderRadius: '24px', border: '1px solid #e2e8f0', overflow: isTestMode ? 'visible' : 'hidden', boxShadow: '0 4px 20px rgba(0,0,0,0.01)', padding: '30px' }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '25px', flexWrap: 'wrap', gap: '15px' }}>
-                       <div>
-                         <h3 style={{ fontSize: '18px', fontWeight: 900, color: '#1e293b', margin: 0 }}>SOURCE ANALYTICS MATRIX</h3>
-                         <p style={{ fontSize: '12px', color: '#64748b', marginTop: '4px' }}>Temporal volume density across diagnostic network</p>
+                       <div style={{ display: 'flex', alignItems: 'center', gap: '20px' }}>
+                         <div>
+                           <h3 style={{ fontSize: '18px', fontWeight: 900, color: '#1e293b', margin: 0 }}>SOURCE ANALYTICS MATRIX</h3>
+                           <p style={{ fontSize: '12px', color: '#64748b', marginTop: '4px' }}>Temporal volume density across diagnostic network</p>
+                         </div>
+                         <button 
+                           onClick={handleExportMatrix}
+                           style={{ padding: '8px 16px', borderRadius: '12px', background: '#f0f3fd', border: '1px solid #0f52ba30', color: '#0f52ba', fontSize: '10px', fontWeight: 950, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '8px' }}
+                         >
+                           📥 DOWNLOAD MATRIX (CSV)
+                         </button>
                        </div>
                        <div style={{ display: 'flex', gap: '15px', alignItems: 'center' }}>
                          {matrixPeriod === 'DAY' && (
