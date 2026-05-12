@@ -23,7 +23,6 @@ const ReferralHub = ({
   setReferrerFilter
 }) => {
   const referralStats = React.useMemo(() => {
-
     const cuts = filteredReferralCuts || [];
     return {
       total: cuts.reduce((sum, c) => sum + (Number(c?.amount) || 0), 0),
@@ -65,7 +64,6 @@ const ReferralHub = ({
              </div>
 
              <div style={{ display: 'flex', background: '#f1f5f9', padding: '3px', borderRadius: '10px', border: '1px solid #e2e8f0' }}>
-
                 {['TODAY', 'PAST', 'ALL', 'CUSTOM'].map(t => (
                   <button 
                     key={t}
@@ -115,14 +113,14 @@ const ReferralHub = ({
           </div>
        </div>
 
-
        <div style={{ background: 'white', borderRadius: '24px', border: '1px solid #e2e8f0', overflow: 'hidden' }}>
           <table style={{ width: '100%', borderCollapse: 'collapse' }}>
              <thead style={{ background: '#fff1f2' }}>
                 <tr>
                    <th onClick={() => handleSort('date')} style={{ cursor: 'pointer', padding: '20px 30px', textAlign: 'left', fontSize: '10px', fontWeight: 950, color: '#e11d48', letterSpacing: '1px' }}>PAYOUT_DATE {getSortIcon('date')}</th>
-                   <th onClick={() => handleSort('name')} style={{ cursor: 'pointer', padding: '20px 30px', textAlign: 'left', fontSize: '10px', fontWeight: 950, color: '#e11d48', letterSpacing: '1px' }}>PARTNER (REFERRER) {getSortIcon('name')}</th>
-                   <th onClick={() => handleSort('description')} style={{ cursor: 'pointer', padding: '20px 30px', textAlign: 'left', fontSize: '10px', fontWeight: 950, color: '#e11d48', letterSpacing: '1px' }}>DESCRIPTION / MISSION {getSortIcon('description')}</th>
+                   <th onClick={() => handleSort('name')} style={{ cursor: 'pointer', padding: '20px 30px', textAlign: 'left', fontSize: '10px', fontWeight: 950, color: '#e11d48', letterSpacing: '1px' }}>PARTNER {getSortIcon('name')}</th>
+                   <th style={{ padding: '20px 30px', textAlign: 'left', fontSize: '10px', fontWeight: 950, color: '#e11d48', letterSpacing: '1px' }}>PATIENT</th>
+                   <th style={{ padding: '20px 30px', textAlign: 'left', fontSize: '10px', fontWeight: 950, color: '#e11d48', letterSpacing: '1px' }}>STUDY</th>
                    <th style={{ padding: '20px 30px', textAlign: 'left', fontSize: '10px', fontWeight: 950, color: '#e11d48', letterSpacing: '1px' }}>REF_ID</th>
                    <th onClick={() => handleSort('amount')} style={{ cursor: 'pointer', padding: '20px 30px', textAlign: 'right', fontSize: '10px', fontWeight: 950, color: '#e11d48', letterSpacing: '1px' }}>PAYOUT_AMOUNT {getSortIcon('amount')}</th>
                    <th style={{ padding: '20px 30px', textAlign: 'center', fontSize: '10px', fontWeight: 950, color: '#e11d48', letterSpacing: '1px' }}>STATUS</th>
@@ -131,7 +129,7 @@ const ReferralHub = ({
              </thead>
              <tbody>
                 {filteredReferralCuts.length === 0 ? (
-                   <tr><td colSpan="7" style={{ padding: '100px', textAlign: 'center', color: '#94a3b8', fontSize: '12px', fontWeight: 700 }}>NO REFERRAL PAYOUTS DETECTED</td></tr>
+                   <tr><td colSpan="8" style={{ padding: '100px', textAlign: 'center', color: '#94a3b8', fontSize: '12px', fontWeight: 700 }}>NO REFERRAL PAYOUTS DETECTED</td></tr>
                 ) : (
                    paginatedReferralCuts.map(cut => (
                       <tr key={cut?.id} style={{ borderBottom: '1px solid #f1f5f9' }}>
@@ -139,7 +137,11 @@ const ReferralHub = ({
                          <td style={{ padding: '20px 30px' }}>
                             <div style={{ fontSize: '13px', fontWeight: 950, color: '#e11d48' }}>{(cut?.name || 'DIRECT').toUpperCase()}</div>
                          </td>
-                         <td style={{ padding: '20px 30px', fontSize: '12px', fontWeight: 700, color: '#64748b' }}>{cut?.description}</td>
+                         <td style={{ padding: '20px 30px', fontSize: '12px', fontWeight: 850, color: '#1e293b' }}>{(cut?.patientName || 'N/A').toUpperCase()}</td>
+                         <td style={{ padding: '20px 30px' }}>
+                            <div style={{ fontSize: '11px', fontWeight: 950, color: '#0f52ba' }}>{(cut?.modality || 'MRI').toUpperCase()}</div>
+                            {cut?.description && <div style={{ fontSize: '9px', color: '#94a3b8', marginTop: '2px' }}>{cut.description}</div>}
+                         </td>
                          <td style={{ padding: '20px 30px' }}>
                             <div style={{ padding: '4px 8px', background: '#f1f5f9', borderRadius: '6px', fontSize: '10px', fontWeight: 950, color: '#1e293b', display: 'inline-block', fontFamily: 'monospace' }}>{cut?.reference || 'N/A'}</div>
                          </td>
@@ -176,7 +178,7 @@ const ReferralHub = ({
                                            referrerId: cut.referrerId,
                                            referrerName: cut.name,
                                            amount: cut.amount,
-                                           modality: (cut.description || '').match(/\[(.*?)\]/)?.[1] || 'MRI',
+                                           modality: cut.modality || 'MRI',
                                            remarks: (cut.description || '').includes(' - ') ? cut.description.split(' - ')[1] : '',
                                            invoiceId: cut.reference,
                                            status: cut.status

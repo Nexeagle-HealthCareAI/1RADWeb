@@ -291,6 +291,17 @@ export default function BillingPage() {
       setSavingExpense(false);
     }
   };
+  
+  const handleToggleExpenseStatus = async (id, currentStatus) => {
+    const newStatus = currentStatus === 'PAID' ? 'UNPAID' : 'PAID';
+    try {
+      await apiClient.put(`/finance/expenses/${id}/status`, { status: newStatus });
+      fetchExpenses();
+    } catch (err) {
+      console.error('[FINANCE] Failed to toggle expense status', err);
+      alert('PROTOCOL FAILURE: Could not synchronize expense status.');
+    }
+  };
 
   const handleSavePayout = async (e) => {
     e.preventDefault();
@@ -597,8 +608,10 @@ export default function BillingPage() {
         type: 'STRATEGIC',
         status: (c.status || 'UNPAID').toUpperCase(),
         referrerId: c.referrerId,
-        modality: c.modality || 'MRI'
+        modality: c.modality || 'MRI',
+        patientName: c.patientName || 'N/A'
     }));
+
     return [...legacyCuts, ...strategicCuts].sort((a, b) => new Date(b.date) - new Date(a.date));
   }, [expenses, referralCommissions]);
 
@@ -628,7 +641,8 @@ export default function BillingPage() {
         description: e.description,
         category: e.category,
         amount: e.amount,
-        type: 'OPERATIONAL'
+        type: 'OPERATIONAL',
+        status: e.status?.toUpperCase() || 'PAID'
     }));
     
     const referralCuts = combinedReferralCuts.map(c => ({
@@ -638,8 +652,11 @@ export default function BillingPage() {
         description: c.description,
         category: 'Referral',
         amount: c.amount,
-        type: c.type
+        type: c.type,
+        status: c.status,
+        modality: c.modality
     }));
+
 
     return [...operationalExpenses, ...referralCuts].sort((a, b) => {
         if (!sortConfig.key) return new Date(b.date) - new Date(a.date);
@@ -1289,7 +1306,9 @@ export default function BillingPage() {
           sortConfig={sortConfig}
           handleSort={handleSort}
           TODAY={TODAY}
+          handleToggleExpenseStatus={handleToggleExpenseStatus}
         />
+
       )}
 
       {billingViewMode === 'INVOICES' && (
