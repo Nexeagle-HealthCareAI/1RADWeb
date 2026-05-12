@@ -797,7 +797,8 @@ export default function AdminBoard() {
         modalities,
         totalCommission: ref.totalCommission,
         paidCommission: ref.paidCommission,
-        unpaidCommission: ref.unpaidCommission
+        unpaidCommission: ref.unpaidCommission,
+        totalRevenue: ref.totalRevenue
       };
     });
 
@@ -2213,6 +2214,7 @@ export default function AdminBoard() {
     const totalPayout = referralAggregated.reduce((acc, curr) => acc + (curr.totalCommission || 0), 0);
     const paidPayout = referralAggregated.reduce((acc, curr) => acc + (curr.paidCommission || 0), 0);
     const unpaidPayout = totalPayout - paidPayout;
+    const totalRevenue = referralAggregated.reduce((acc, curr) => acc + (curr.totalRevenue || 0), 0);
 
     const topModality = (() => {
        const counts = {};
@@ -2269,7 +2271,7 @@ export default function AdminBoard() {
 
            <div style={{ background: 'white', padding: '25px', borderRadius: '24px', border: '1px solid #e2e8f0' }}>
               <span style={{ fontSize: '9px', fontWeight: 950, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '2px', display: 'block', marginBottom: '10px' }}>Revenue Integrity</span>
-              <div style={{ fontSize: '24px', fontWeight: 950, color: '#1e293b' }}>₹{(referralAggregated.reduce((acc, r) => acc + r.patients.reduce((pa, p) => pa + (p.totalAmount || 0), 0), 0) / (totalMissions || 1)).toLocaleString(undefined, { maximumFractionDigits: 0 })}</div>
+              <div style={{ fontSize: '24px', fontWeight: 950, color: '#1e293b' }}>₹{(totalRevenue / (totalMissions || 1)).toLocaleString(undefined, { maximumFractionDigits: 0 })}</div>
               <div style={{ fontSize: '10px', fontWeight: 700, color: '#dc2626', marginTop: '5px' }}>AVG REVENUE PER MISSION</div>
            </div>
         </div>
@@ -2602,6 +2604,9 @@ export default function AdminBoard() {
                                       {selected.patients.length} MISSIONS
                                    </div>
                                    <div style={{ padding: '4px 10px', background: '#ecfdf5', borderRadius: '6px', fontSize: '9px', fontWeight: 950, color: '#059669' }}>
+                                      ₹{(selected.totalRevenue || 0).toLocaleString()} YIELD
+                                   </div>
+                                   <div style={{ padding: '4px 10px', background: '#eff6ff', borderRadius: '6px', fontSize: '9px', fontWeight: 950, color: '#2563eb' }}>
                                       ₹{(selected.paidCommission || 0).toLocaleString()} PAID
                                    </div>
                                    <div style={{ padding: '4px 10px', background: '#fef2f2', borderRadius: '6px', fontSize: '9px', fontWeight: 950, color: '#dc2626' }}>
@@ -2686,61 +2691,178 @@ export default function AdminBoard() {
                 </div>
               </div>
             ) : referralViewMode === 'LOG' ? (
-              /* High-Fidelity Referral Case Ledger */
-              <div style={{ background: 'white', borderRadius: '24px', border: '1px solid #e2e8f0', overflow: isTestMode ? 'visible' : 'hidden', boxShadow: '0 4px 20px rgba(0,0,0,0.01)', padding: '30px' }}>
-                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '25px' }}>
-                    <div>
-                       <h3 style={{ fontSize: '18px', fontWeight: 900, color: '#1e293b', margin: 0 }}>REFERRAL CASE LEDGER</h3>
-                       <p style={{ fontSize: '12px', color: '#64748b', marginTop: '4px' }}>Chronological audit of clinical missions</p>
+              /* Unified Referral Intelligence: Matrix + Case Ledger */
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '30px' }}>
+                 {/* 1. Tactical Matrix Grid */}
+                 <div style={{ background: 'white', borderRadius: '24px', border: '1px solid #e2e8f0', overflow: isTestMode ? 'visible' : 'hidden', boxShadow: '0 4px 20px rgba(0,0,0,0.01)', padding: '30px' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '25px', flexWrap: 'wrap', gap: '15px' }}>
+                       <div>
+                         <h3 style={{ fontSize: '18px', fontWeight: 900, color: '#1e293b', margin: 0 }}>SOURCE ANALYTICS MATRIX</h3>
+                         <p style={{ fontSize: '12px', color: '#64748b', marginTop: '4px' }}>Temporal volume density across diagnostic network</p>
+                       </div>
+                       <div style={{ display: 'flex', gap: '15px', alignItems: 'center' }}>
+                         {matrixPeriod === 'DAY' && (
+                           <input 
+                             type="date"
+                             value={matrixDateStr}
+                             onChange={(e) => e.target.value && setMatrixDateStr(e.target.value)}
+                             style={{ padding: '8px 16px', borderRadius: '8px', border: '1px solid #e2e8f0', fontSize: '12px', fontWeight: 800, color: '#1e293b', outline: 'none', background: '#f8fafc' }}
+                           />
+                         )}
+                         {matrixPeriod === 'WEEK' && (
+                           <>
+                             <input 
+                               type="month"
+                               value={matrixDateStr.substring(0,7)}
+                               onChange={(e) => e.target.value && setMatrixDateStr(e.target.value + '-01')}
+                               style={{ padding: '8px 16px', borderRadius: '8px', border: '1px solid #e2e8f0', fontSize: '12px', fontWeight: 800, color: '#1e293b', outline: 'none', background: '#f8fafc' }}
+                             />
+                             <select
+                               value={matrixWeekIndex}
+                               onChange={(e) => setMatrixWeekIndex(parseInt(e.target.value))}
+                               style={{ padding: '8px 16px', borderRadius: '8px', border: '1px solid #e2e8f0', fontSize: '12px', fontWeight: 800, color: '#1e293b', outline: 'none', background: '#f8fafc' }}
+                             >
+                               <option value={1}>Week 1 (1st - 7th)</option>
+                               <option value={2}>Week 2 (8th - 14th)</option>
+                               <option value={3}>Week 3 (15th - 21st)</option>
+                               <option value={4}>Week 4 (22nd - End)</option>
+                             </select>
+                           </>
+                         )}
+                         {matrixPeriod === 'MONTH' && (
+                           <input 
+                             type="month"
+                             value={matrixDateStr.substring(0,7)}
+                             onChange={(e) => e.target.value && setMatrixDateStr(e.target.value + '-01')}
+                             style={{ padding: '8px 16px', borderRadius: '8px', border: '1px solid #e2e8f0', fontSize: '12px', fontWeight: 800, color: '#1e293b', outline: 'none', background: '#f8fafc' }}
+                           />
+                         )}
+                         {matrixPeriod === 'YEAR' && (
+                           <input 
+                             type="number"
+                             min="2000"
+                             max="2100"
+                             step="1"
+                             value={matrixDateStr.substring(0,4)}
+                             onChange={(e) => e.target.value && setMatrixDateStr(`${e.target.value}-01-01`)}
+                             style={{ padding: '8px 16px', borderRadius: '8px', border: '1px solid #e2e8f0', fontSize: '12px', fontWeight: 800, color: '#1e293b', outline: 'none', background: '#f8fafc', width: '90px' }}
+                           />
+                         )}
+                         <div style={{ display: 'flex', gap: '5px', background: '#f8fafc', padding: '6px', borderRadius: '12px', border: '1px solid #f1f5f9' }}>
+                           {['DAY', 'WEEK', 'MONTH', 'YEAR'].map(p => (
+                             <button
+                               key={p}
+                               onClick={() => setMatrixPeriod(p)}
+                               style={{
+                                 padding: '8px 16px',
+                                 borderRadius: '8px',
+                                 border: 'none',
+                                 fontSize: '9px',
+                                 fontWeight: 950,
+                                 background: matrixPeriod === p ? 'white' : 'transparent',
+                                 color: matrixPeriod === p ? '#0f52ba' : '#64748b',
+                                 boxShadow: matrixPeriod === p ? '0 2px 8px rgba(0,0,0,0.05)' : 'none',
+                                 cursor: 'pointer',
+                                 transition: 'all 0.2s'
+                               }}
+                             >
+                               {p}
+                             </button>
+                           ))}
+                         </div>
+                       </div>
                     </div>
-                    <div style={{ display: 'flex', gap: '15px' }}>
-                       <input 
-                         type="text" 
-                         placeholder="Search mission ledger..." 
-                         value={referralLogSearch}
-                         onChange={(e) => setReferralLogSearch(e.target.value)}
-                         style={{ padding: '8px 15px', borderRadius: '8px', border: '1px solid #e2e8f0', fontSize: '12px', outline: 'none', width: '250px' }}
-                       />
-                    </div>
+
+                    {temporalMatrixData?.rows.length > 0 ? (
+                       <div style={{ overflowX: 'auto', borderRadius: '16px', border: '1px solid #f1f5f9' }}>
+                         <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                           <thead>
+                             <tr>
+                               <th style={{ padding: '15px 20px', textAlign: 'left', fontSize: '11px', fontWeight: 900, color: '#94a3b8', borderBottom: '2px solid #f1f5f9', background: '#fcfdfe', position: 'sticky', left: 0, zIndex: 10, minWidth: '200px' }}>REFERRING SOURCE</th>
+                               {temporalMatrixData?.cols.map(c => (
+                                 <th key={c} style={{ padding: '15px 20px', textAlign: 'center', fontSize: '11px', fontWeight: 900, color: '#94a3b8', borderBottom: '2px solid #f1f5f9', background: '#fcfdfe', whiteSpace: 'nowrap' }}>
+                                   {c.toUpperCase()}
+                                 </th>
+                               ))}
+                               <th style={{ padding: '15px 20px', textAlign: 'center', fontSize: '11px', fontWeight: 900, color: '#0f52ba', borderBottom: '2px solid #f1f5f9', background: '#fcfdfe', whiteSpace: 'nowrap' }}>TOTAL PULL</th>
+                             </tr>
+                           </thead>
+                           <tbody>
+                             {temporalMatrixData?.rows.map((row) => (
+                               <tr key={row.name} style={{ borderBottom: '1px solid #f8fafc' }}>
+                                 <td style={{ padding: '15px 20px', position: 'sticky', left: 0, background: 'white', zIndex: 5, borderRight: '1px solid #f1f5f9' }}>
+                                   <div style={{ fontSize: '13px', fontWeight: 850, color: '#1e293b' }}>{(row.name || 'ANONYMOUS').toUpperCase()}</div>
+                                   <div style={{ fontSize: '10px', fontWeight: 700, color: '#94a3b8' }}>{row.contact || 'No Contact Info'}</div>
+                                 </td>
+                                 {temporalMatrixData?.cols.map(c => {
+                                   const count = row.counts[c] || 0;
+                                   return (
+                                     <td key={c} style={{ padding: '15px 20px', textAlign: 'center' }}>
+                                       {count > 0 ? (
+                                         <div style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', background: '#f0fdf4', color: '#16a34a', width: '28px', height: '28px', borderRadius: '8px', fontSize: '12px', fontWeight: 900 }}>
+                                           {count}
+                                         </div>
+                                       ) : (
+                                         <div style={{ color: '#ef4444', fontSize: '14px', fontWeight: 900, opacity: 0.3 }}>✗</div>
+                                       )}
+                                     </td>
+                                   );
+                                 })}
+                                 <td style={{ padding: '15px 20px', textAlign: 'center' }}>
+                                   <div style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', background: '#eff6ff', color: '#0f52ba', width: '32px', height: '32px', borderRadius: '10px', fontSize: '13px', fontWeight: 900 }}>
+                                     {row.total}
+                                   </div>
+                                 </td>
+                               </tr>
+                             ))}
+                           </tbody>
+                         </table>
+                       </div>
+                    ) : (
+                       <div style={{ padding: '40px', textAlign: 'center', color: '#94a3b8', fontSize: '12px', fontWeight: 700 }}>No temporal density markers detected in this period.</div>
+                    )}
                  </div>
 
-                 <div style={{ borderRadius: '20px', border: '1px solid #f1f5f9', overflow: 'hidden' }}>
-                    <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-                       <thead style={{ background: '#fcfdfe' }}>
-                          <tr style={{ borderBottom: '2px solid #f1f5f9' }}>
-                             <th style={{ padding: '15px 20px', textAlign: 'left', fontSize: '9px', fontWeight: 950, color: '#94a3b8', letterSpacing: '1px' }}>REFERRING_SOURCE</th>
-                             <th style={{ padding: '15px 20px', textAlign: 'left', fontSize: '9px', fontWeight: 950, color: '#94a3b8', letterSpacing: '1px' }}>PATIENT_IDENTITY</th>
-                             <th style={{ padding: '15px 20px', textAlign: 'left', fontSize: '9px', fontWeight: 950, color: '#94a3b8', letterSpacing: '1px' }}>CLINICAL_PACKAGE</th>
-                             <th style={{ padding: '15px 20px', textAlign: 'left', fontSize: '9px', fontWeight: 950, color: '#94a3b8', letterSpacing: '1px' }}>COMMISSION</th>
-                             <th style={{ padding: '15px 20px', textAlign: 'right', fontSize: '9px', fontWeight: 950, color: '#94a3b8', letterSpacing: '1px' }}>DATE</th>
-                          </tr>
-                       </thead>
-                       <tbody>
-                          {temporalPatients.map(p => (
-                             <tr key={p.appointmentId || p.patientId} style={{ borderBottom: '1px solid #f8fafc' }}>
-                                <td style={{ padding: '15px 20px' }}>
-                                   <div style={{ fontSize: '12px', fontWeight: 950, color: '#0f52ba' }}>{(p.referredBy || 'Anonymous').toUpperCase()}</div>
-                                   <div style={{ fontSize: '9px', color: '#94a3b8', fontWeight: 700 }}>{p.sourceContact}</div>
-                                </td>
-                                <td style={{ padding: '15px 20px' }}>
-                                   <div style={{ fontSize: '13px', fontWeight: 850, color: '#1e293b' }}>{(p.name || 'Unknown').toUpperCase()}</div>
-                                   <div style={{ fontSize: '10px', color: '#94a3b8', fontWeight: 700 }}>{p.patientIdentifier} • {p.age}Y</div>
-                                </td>
-                                <td style={{ padding: '15px 20px' }}>
-                                   <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
-                                      <span style={{ fontSize: '8px', color: 'white', background: '#334155', padding: '2px 6px', borderRadius: '4px', fontWeight: 950 }}>{p.modality}</span>
-                                      <span style={{ fontSize: '9px', color: '#475569', fontWeight: 800 }}>{p.service}</span>
-                                   </div>
-                                </td>
-                                <td style={{ padding: '15px 20px' }}>
-                                   <div style={{ fontSize: '11px', fontWeight: 950, color: '#1e293b' }}>₹{(p.commissionAmount || 0).toLocaleString()}</div>
-                                   <div style={{ fontSize: '8px', fontWeight: 800, color: p.commissionStatus === 'Paid' ? '#059669' : '#dc2626' }}>{(p.commissionStatus || 'Unpaid').toUpperCase()}</div>
-                                </td>
-                                <td style={{ padding: '15px 20px', textAlign: 'right', fontSize: '11px', fontWeight: 900, color: '#94a3b8' }}>{p.registrationDate}</td>
+                 {/* 2. Detailed Mission Ledger */}
+                 <div style={{ background: 'white', borderRadius: '24px', border: '1px solid #e2e8f0', overflow: isTestMode ? 'visible' : 'hidden', boxShadow: '0 4px 20px rgba(0,0,0,0.01)', padding: '30px' }}>
+                    <div style={{ borderRadius: '20px', border: '1px solid #f1f5f9', overflow: 'hidden' }}>
+                       <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                          <thead style={{ background: '#fcfdfe' }}>
+                             <tr style={{ borderBottom: '2px solid #f1f5f9' }}>
+                                <th style={{ padding: '15px 20px', textAlign: 'left', fontSize: '9px', fontWeight: 950, color: '#94a3b8', letterSpacing: '1px' }}>REFERRING_SOURCE</th>
+                                <th style={{ padding: '15px 20px', textAlign: 'left', fontSize: '9px', fontWeight: 950, color: '#94a3b8', letterSpacing: '1px' }}>PATIENT_IDENTITY</th>
+                                <th style={{ padding: '15px 20px', textAlign: 'left', fontSize: '9px', fontWeight: 950, color: '#94a3b8', letterSpacing: '1px' }}>CLINICAL_PACKAGE</th>
+                                <th style={{ padding: '15px 20px', textAlign: 'left', fontSize: '9px', fontWeight: 950, color: '#94a3b8', letterSpacing: '1px' }}>COMMISSION</th>
+                                <th style={{ padding: '15px 20px', textAlign: 'right', fontSize: '9px', fontWeight: 950, color: '#94a3b8', letterSpacing: '1px' }}>DATE</th>
                              </tr>
-                          ))}
-                       </tbody>
-                    </table>
+                          </thead>
+                          <tbody>
+                             {temporalPatients.map(p => (
+                                <tr key={p.appointmentId || p.patientId} style={{ borderBottom: '1px solid #f8fafc' }}>
+                                   <td style={{ padding: '15px 20px' }}>
+                                      <div style={{ fontSize: '12px', fontWeight: 950, color: '#0f52ba' }}>{(p.referredBy || 'Anonymous').toUpperCase()}</div>
+                                      <div style={{ fontSize: '9px', color: '#94a3b8', fontWeight: 700 }}>{p.sourceContact}</div>
+                                   </td>
+                                   <td style={{ padding: '15px 20px' }}>
+                                      <div style={{ fontSize: '13px', fontWeight: 850, color: '#1e293b' }}>{(p.name || 'Unknown').toUpperCase()}</div>
+                                      <div style={{ fontSize: '10px', color: '#94a3b8', fontWeight: 700 }}>{p.patientIdentifier} • {p.age}Y • ₹{(p.totalAmount || 0).toLocaleString()}</div>
+                                   </td>
+                                   <td style={{ padding: '15px 20px' }}>
+                                      <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
+                                         <span style={{ fontSize: '8px', color: 'white', background: '#334155', padding: '2px 6px', borderRadius: '4px', fontWeight: 950 }}>{p.modality}</span>
+                                         <span style={{ fontSize: '9px', color: '#475569', fontWeight: 800 }}>{p.service}</span>
+                                      </div>
+                                   </td>
+                                   <td style={{ padding: '15px 20px' }}>
+                                      <div style={{ fontSize: '11px', fontWeight: 950, color: '#1e293b' }}>₹{(p.commissionAmount || 0).toLocaleString()}</div>
+                                      <div style={{ fontSize: '8px', fontWeight: 800, color: p.commissionStatus === 'Paid' ? '#059669' : '#dc2626' }}>{(p.commissionStatus || 'Unpaid').toUpperCase()}</div>
+                                   </td>
+                                   <td style={{ padding: '15px 20px', textAlign: 'right', fontSize: '11px', fontWeight: 900, color: '#94a3b8' }}>{p.registrationDate}</td>
+                                </tr>
+                             ))}
+                          </tbody>
+                       </table>
+                    </div>
                  </div>
               </div>
             ) : (
