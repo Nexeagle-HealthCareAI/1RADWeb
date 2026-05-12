@@ -2613,25 +2613,7 @@ export default function AdminBoard() {
               <div style={{ display: 'grid', gridTemplateColumns: '350px 1fr', gap: '30px', alignItems: 'flex-start' }}>
                 {/* Master Pane: Intelligence Roster */}
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '15px' }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '5px' }}>
-                     <div style={{ fontSize: '10px', fontWeight: 950, color: '#94a3b8', letterSpacing: '2px' }}>INTELLIGENCE ROSTER</div>
-                     <div style={{ display: 'flex', gap: '6px' }}>
-                        {['missions', 'yield', 'pending', 'name'].map(k => (
-                          <button 
-                            key={k}
-                            onClick={() => setReferralSort(prev => ({ key: k, direction: prev.key === k ? (prev.direction === 'desc' ? 'asc' : 'desc') : 'desc' }))}
-                            style={{ 
-                              padding: '4px 8px', borderRadius: '6px', border: '1px solid #e2e8f0', fontSize: '7px', fontWeight: 950,
-                              background: referralSort.key === k ? '#1e293b' : 'white',
-                              color: referralSort.key === k ? 'white' : '#64748b',
-                              cursor: 'pointer', transition: 'all 0.2s'
-                            }}
-                          >
-                             {k.toUpperCase()}
-                          </button>
-                        ))}
-                     </div>
-                  </div>
+                  <div style={{ fontSize: '10px', fontWeight: 950, color: '#94a3b8', letterSpacing: '2px', marginBottom: '5px' }}>INTELLIGENCE ROSTER</div>
                   {referralAggregated.map((s, i) => {
                     const isSelected = expandedReferrer === s.name;
                     return (
@@ -2689,11 +2671,17 @@ export default function AdminBoard() {
                                    <div style={{ padding: '4px 10px', background: '#ecfdf5', borderRadius: '6px', fontSize: '9px', fontWeight: 950, color: '#059669' }}>
                                       ₹{(selected.totalRevenue || 0).toLocaleString()} YIELD
                                    </div>
+                                   <div style={{ padding: '4px 10px', background: '#fffbeb', border: '1px solid #fde68a', borderRadius: '6px', fontSize: '9px', fontWeight: 950, color: '#d97706' }}>
+                                      ₹{(selected.totalDiscount || 0).toLocaleString()} DISCOUNT
+                                   </div>
                                    <div style={{ padding: '4px 10px', background: '#eff6ff', borderRadius: '6px', fontSize: '9px', fontWeight: 950, color: '#2563eb' }}>
                                       ₹{(selected.paidCommission || 0).toLocaleString()} PAID
                                    </div>
                                    <div style={{ padding: '4px 10px', background: '#fef2f2', borderRadius: '6px', fontSize: '9px', fontWeight: 950, color: '#dc2626' }}>
                                       ₹{(selected.unpaidCommission || 0).toLocaleString()} PENDING
+                                   </div>
+                                   <div style={{ padding: '4px 10px', background: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: '6px', fontSize: '9px', fontWeight: 950, color: '#16a34a' }}>
+                                      ₹{(selected.netProfit || 0).toLocaleString()} NET PROFIT
                                    </div>
                                 </div>
                              </div>
