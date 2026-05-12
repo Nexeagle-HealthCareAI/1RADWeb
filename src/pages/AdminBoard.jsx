@@ -102,6 +102,7 @@ export default function AdminBoard() {
   const [outlookData, setOutlookData] = useState(null);
   const [loadingOutlook, setLoadingOutlook] = useState(false);
   const [isExporting, setIsExporting] = useState(false);
+  const [referralSort, setReferralSort] = useState({ key: 'missions', direction: 'desc' });
   
   // Referral Payout State
   const [showExportOverlay, setShowExportOverlay] = useState(false);
@@ -793,17 +794,32 @@ export default function AdminBoard() {
         contact: ref.contact,
         address: ref.address,
         patients: ref.patients,
-        modalities
+        modalities,
+        totalCommission: ref.totalCommission,
+        paidCommission: ref.paidCommission,
+        unpaidCommission: ref.unpaidCommission
       };
     });
 
-    if (!referralMatrixSearch) return mapped.sort((a, b) => b.patients.length - a.patients.length);
+    let final = [...mapped];
+    
+    // Sort logic
+    final.sort((a, b) => {
+      let valA, valB;
+      if (referralSort.key === 'missions') { valA = a.patients.length; valB = b.patients.length; }
+      else if (referralSort.key === 'yield') { valA = a.totalCommission; valB = b.totalCommission; }
+      else if (referralSort.key === 'pending') { valA = a.unpaidCommission; valB = b.unpaidCommission; }
+      else { valA = a.name; valB = b.name; }
+
+      if (referralSort.direction === 'asc') return valA > valB ? 1 : -1;
+      return valA < valB ? 1 : -1;
+    });
+
+    if (!referralMatrixSearch) return final;
 
     const searchLow = referralMatrixSearch.toLowerCase();
-    return mapped
-      .filter(ref => ref.name.toLowerCase().includes(searchLow))
-      .sort((a, b) => b.patients.length - a.patients.length);
-  }, [referralIntelligence, referralViewMode, referralMatrixSearch]);
+    return final.filter(ref => ref.name.toLowerCase().includes(searchLow));
+  }, [referralIntelligence, referralViewMode, referralMatrixSearch, referralSort]);
 
   // Auto-select first referrer in Matrix mode
   useEffect(() => {
@@ -2191,14 +2207,73 @@ export default function AdminBoard() {
     );
   };
 
-
-
   const renderReferralIntel = () => {
-
     const totalPatientsCount = temporalPatients.length;
+    const totalMissions = referralAggregated.reduce((acc, curr) => acc + curr.patients.length, 0);
+    const totalPayout = referralAggregated.reduce((acc, curr) => acc + (curr.totalCommission || 0), 0);
+    const paidPayout = referralAggregated.reduce((acc, curr) => acc + (curr.paidCommission || 0), 0);
+    const unpaidPayout = totalPayout - paidPayout;
+
+    const topModality = (() => {
+       const counts = {};
+       referralAggregated.forEach(r => {
+          Object.entries(r.modalities).forEach(([mod, count]) => {
+             counts[mod] = (counts[mod] || 0) + count;
+          });
+       });
+       const sorted = Object.entries(counts).sort((a, b) => b[1] - a[1]);
+       return sorted.length > 0 ? sorted[0][0] : 'N/A';
+    })();
 
     return (
-      <div className="referral-intel-view">
+      <div className="referral-intel-view fade-in">
+        {/* Level 0: Referral Instinct Dashboard */}
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '20px', marginBottom: '40px' }}>
+           <div style={{ background: 'linear-gradient(135deg, #0f52ba 0%, #061a40 100%)', padding: '25px', borderRadius: '24px', color: 'white', position: 'relative', overflow: 'hidden' }}>
+              <div style={{ position: 'absolute', right: '-10px', top: '-10px', fontSize: '60px', opacity: 0.1 }}>📈</div>
+              <span style={{ fontSize: '9px', fontWeight: 950, color: 'var(--tactical-cyan)', textTransform: 'uppercase', letterSpacing: '2px', display: 'block', marginBottom: '10px' }}>Strategic Velocity</span>
+              <div style={{ fontSize: '28px', fontWeight: 950 }}>{totalMissions}</div>
+              <div style={{ fontSize: '10px', fontWeight: 700, color: 'var(--tactical-cyan)', marginTop: '5px' }}>TOTAL MISSIONS DETECTED</div>
+           </div>
+           
+           <div style={{ background: 'white', padding: '25px', borderRadius: '24px', border: '1px solid #e2e8f0' }}>
+              <span style={{ fontSize: '9px', fontWeight: 950, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '2px', display: 'block', marginBottom: '10px' }}>Network Payout</span>
+              <div style={{ fontSize: '24px', fontWeight: 950, color: '#1e293b' }}>₹{totalPayout.toLocaleString()}</div>
+              <div style={{ display: 'flex', gap: '10px', marginTop: '8px' }}>
+                 <div style={{ fontSize: '9px', fontWeight: 900, color: '#059669' }}>PAID: ₹{paidPayout.toLocaleString()}</div>
+                 <div style={{ fontSize: '9px', fontWeight: 900, color: '#dc2626' }}>UNPAID: ₹{unpaidPayout.toLocaleString()}</div>
+              </div>
+           </div>
+
+           <div style={{ background: 'white', padding: '25px', borderRadius: '24px', border: '1px solid #e2e8f0', display: 'flex', flexDirection: 'column', justifyContent: 'space-between' }}>
+              <div>
+                <span style={{ fontSize: '9px', fontWeight: 950, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '2px', display: 'block', marginBottom: '10px' }}>Tactical Sort Engine</span>
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
+                   {['missions', 'yield', 'pending', 'name'].map(k => (
+                      <button 
+                        key={k}
+                        onClick={() => setReferralSort(prev => ({ key: k, direction: prev.key === k ? (prev.direction === 'desc' ? 'asc' : 'desc') : 'desc' }))}
+                        style={{ 
+                          padding: '6px 12px', borderRadius: '8px', border: '1px solid #e2e8f0', fontSize: '8px', fontWeight: 950,
+                          background: referralSort.key === k ? '#1e293b' : 'white',
+                          color: referralSort.key === k ? 'white' : '#64748b',
+                          cursor: 'pointer', transition: 'all 0.2s'
+                        }}
+                      >
+                         {k.toUpperCase()} {referralSort.key === k && (referralSort.direction === 'desc' ? '↓' : '↑')}
+                      </button>
+                   ))}
+                </div>
+              </div>
+           </div>
+
+           <div style={{ background: 'white', padding: '25px', borderRadius: '24px', border: '1px solid #e2e8f0' }}>
+              <span style={{ fontSize: '9px', fontWeight: 950, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '2px', display: 'block', marginBottom: '10px' }}>Revenue Integrity</span>
+              <div style={{ fontSize: '24px', fontWeight: 950, color: '#1e293b' }}>₹{(referralAggregated.reduce((acc, r) => acc + r.patients.reduce((pa, p) => pa + (p.totalAmount || 0), 0), 0) / (totalMissions || 1)).toLocaleString(undefined, { maximumFractionDigits: 0 })}</div>
+              <div style={{ fontSize: '10px', fontWeight: 700, color: '#dc2626', marginTop: '5px' }}>AVG REVENUE PER MISSION</div>
+           </div>
+        </div>
+
         {/* Level 1: Tactical Control Deck */}
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', marginBottom: '40px' }}>
           <div>
@@ -2491,6 +2566,10 @@ export default function AdminBoard() {
                              <div>
                                 <div style={{ fontSize: '12px', fontWeight: 950, color: isSelected ? '#0f52ba' : '#1e293b' }}>{(s.name || 'Anonymous').toUpperCase()}</div>
                                 <div style={{ fontSize: '9px', color: '#94a3b8', fontWeight: 800 }}>RANK #{i + 1} • {s.patients.length} UNITS</div>
+                                 <div style={{ display: 'flex', gap: '8px', marginTop: '5px' }}>
+                                    <div style={{ fontSize: '8px', fontWeight: 950, color: '#059669' }}>₹{(s.paidCommission || 0).toLocaleString()} PAID</div>
+                                    <div style={{ fontSize: '8px', fontWeight: 950, color: '#dc2626' }}>₹{(s.unpaidCommission || 0).toLocaleString()} PENDING</div>
+                                 </div>
                                 <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', marginTop: '4px' }}>
                                    <div style={{ fontSize: '10px', color: '#64748b', fontWeight: 850 }}>{s.contact}</div>
                                    <div style={{ fontSize: '9px', color: '#94a3b8', fontWeight: 700, textTransform: 'uppercase' }}>{s.address}</div>
@@ -2518,6 +2597,29 @@ export default function AdminBoard() {
                              <div>
                                 <div style={{ fontSize: '10px', fontWeight: 950, color: '#0f52ba', letterSpacing: '2px', marginBottom: '8px' }}>REFERRAL BRIEFING</div>
                                 <div style={{ fontSize: '22px', fontWeight: 950, color: '#1e293b', letterSpacing: '-0.5px' }}>{(selected.name || 'Anonymous').toUpperCase()}</div>
+                                <div style={{ display: 'flex', gap: '15px', marginTop: '12px' }}>
+                                   <div style={{ padding: '4px 10px', background: '#eff6ff', borderRadius: '6px', fontSize: '9px', fontWeight: 950, color: '#2563eb' }}>
+                                      {selected.patients.length} MISSIONS
+                                   </div>
+                                   <div style={{ padding: '4px 10px', background: '#ecfdf5', borderRadius: '6px', fontSize: '9px', fontWeight: 950, color: '#059669' }}>
+                                      ₹{(selected.paidCommission || 0).toLocaleString()} PAID
+                                   </div>
+                                   <div style={{ padding: '4px 10px', background: '#fef2f2', borderRadius: '6px', fontSize: '9px', fontWeight: 950, color: '#dc2626' }}>
+                                      ₹{(selected.unpaidCommission || 0).toLocaleString()} PENDING
+                                   </div>
+                                </div>
+                             </div>
+                             <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', justifyContent: 'flex-end', maxWidth: '300px' }}>
+                                <div style={{ textAlign: 'center', minWidth: '80px', padding: '8px', border: '1px solid #e2e8f0', borderRadius: '12px', background: '#f8fafc' }}>
+                                   <div style={{ fontSize: '10px', fontWeight: 950, color: '#0f52ba' }}>₹{(selected.totalCommission || 0).toLocaleString()}</div>
+                                   <div style={{ fontSize: '8px', fontWeight: 800, color: '#94a3b8' }}>TOTAL PAYOUT</div>
+                                </div>
+                                {Object.entries(selected.modalities).map(([mod, count]) => (
+                                   <div key={mod} style={{ textAlign: 'center', minWidth: '60px', padding: '8px', border: '1px solid #e2e8f0', borderRadius: '12px', background: 'white' }}>
+                                      <div style={{ fontSize: '10px', fontWeight: 950, color: '#1e293b' }}>{count}</div>
+                                      <div style={{ fontSize: '8px', fontWeight: 800, color: '#94a3b8' }}>{mod}</div>
+                                   </div>
+                                ))}
                              </div>
                           </div>
 
@@ -2531,6 +2633,7 @@ export default function AdminBoard() {
                                       <th style={{ padding: '15px 25px', textAlign: 'left', fontSize: '9px', fontWeight: 950, color: '#94a3b8', letterSpacing: '1px' }}>TARGET_IDENTITY</th>
                                       <th style={{ padding: '15px 25px', textAlign: 'left', fontSize: '9px', fontWeight: 950, color: '#94a3b8', letterSpacing: '1px' }}>CONTACT / SOURCE</th>
                                       <th style={{ padding: '15px 25px', textAlign: 'left', fontSize: '9px', fontWeight: 950, color: '#94a3b8', letterSpacing: '1px' }}>CLINICAL PACKAGE</th>
+                                      <th style={{ padding: '15px 25px', textAlign: 'left', fontSize: '9px', fontWeight: 950, color: '#94a3b8', letterSpacing: '1px' }}>COMMISSION</th>
                                       <th style={{ padding: '15px 25px', textAlign: 'left', fontSize: '9px', fontWeight: 950, color: '#94a3b8', letterSpacing: '1px' }}>STATUS</th>
                                       <th style={{ padding: '15px 25px', textAlign: 'right', fontSize: '9px', fontWeight: 950, color: '#94a3b8', letterSpacing: '1px' }}>DATE</th>
                                     </tr>
@@ -2552,6 +2655,10 @@ export default function AdminBoard() {
                                               <span style={{ fontSize: '9px', color: 'white', background: '#334155', padding: '2px 8px', borderRadius: '4px', fontWeight: 950 }}>{p.modality}</span>
                                               <span style={{ fontSize: '9px', color: '#475569', border: '1px solid #e2e8f0', padding: '1px 6px', borderRadius: '4px', fontWeight: 850 }}>{p.service}</span>
                                            </div>
+                                        </td>
+                                        <td style={{ padding: '15px 25px' }}>
+                                           <div style={{ fontSize: '11px', fontWeight: 950, color: '#1e293b' }}>₹{(p.commissionAmount || 0).toLocaleString()}</div>
+                                           <div style={{ fontSize: '8px', fontWeight: 800, color: p.commissionStatus === 'Paid' ? '#059669' : '#dc2626' }}>{(p.commissionStatus || 'Unpaid').toUpperCase()}</div>
                                         </td>
                                         <td style={{ padding: '15px 25px' }}>
                                            {(() => {

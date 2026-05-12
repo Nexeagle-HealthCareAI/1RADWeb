@@ -292,7 +292,61 @@ export default function BillingPage() {
     }
   };
   
+  const handlePrintThermal = (invInput = null) => {
+    const inv = invInput || selectedInvoice;
+    if (!inv) return;
+
+    const itemsHtml = (inv.items || []).map(it => `
+      <div style="display: flex; justify-content: space-between; font-size: 12px; margin-bottom: 5px; font-family: monospace;">
+        <span>${it.description.substring(0, 20)} x${it.quantity}</span>
+        <span>₹${((it.amount || 0) * (it.quantity || 0)).toLocaleString()}</span>
+      </div>
+    `).join('');
+
+    ghostPrint(`
+      <html>
+        <head>
+          <title>Thermal Receipt</title>
+          <style>
+            body { font-family: 'monospace'; width: 72mm; padding: 10px; margin: 0; color: #000; }
+            .center { text-align: center; }
+            .divider { border-top: 1px dashed #000; margin: 10px 0; }
+            .bold { font-weight: bold; }
+            .header-text { font-size: 16px; font-weight: bold; margin-bottom: 2px; }
+            .sub-text { font-size: 10px; }
+          </style>
+        </head>
+        <body>
+          <div class="center">
+            <div class="header-text">${(activeCenter?.hospitalName || '1RAD DIAGNOSTICS').toUpperCase()}</div>
+            <div class="sub-text">${activeCenter?.address || ''}</div>
+            <div class="sub-text">TEL: ${activeCenter?.contactNo || ''}</div>
+          </div>
+          <div class="divider"></div>
+          <div style="font-size: 11px;">
+            <div>INV: ${inv.displayId}</div>
+            <div>DATE: ${new Date().toLocaleDateString()}</div>
+            <div class="bold">PAT: ${(inv.patientName || 'N/A').toUpperCase()}</div>
+          </div>
+          <div class="divider"></div>
+          ${itemsHtml}
+          <div class="divider"></div>
+          <div style="display: flex; justify-content: space-between; font-weight: bold; font-size: 14px;">
+            <span>TOTAL</span>
+            <span>₹${(inv.totalAmount || 0).toLocaleString()}</span>
+          </div>
+          <div class="divider"></div>
+          <div class="center" style="margin-top: 15px; font-size: 10px; font-weight: bold;">
+            THANK YOU FOR CHOOSING 1RAD<br/>
+            DIGITAL REPORT AT 1RAD.HEALTH
+          </div>
+        </body>
+      </html>
+    `);
+  };
+
   const handleToggleExpenseStatus = async (id, currentStatus) => {
+
     const newStatus = currentStatus === 'PAID' ? 'UNPAID' : 'PAID';
     try {
       await apiClient.put(`/finance/expenses/${id}/status`, { status: newStatus });
@@ -1015,136 +1069,138 @@ export default function BillingPage() {
     if (!inv) return;
     
     const itemsHtml = (inv.items || []).map(it => `
-      <tr style="border-bottom: 1px solid #eee;">
-        <td style="padding: 12px 0;">${it.description}</td>
-        <td style="padding: 12px 0; text-align: center;">${it.quantity}</td>
-        <td style="padding: 12px 0; text-align: right;">₹${(it.amount || 0).toLocaleString()}</td>
-        <td style="padding: 12px 0; text-align: right; font-weight: bold;">₹${((it.amount || 0) * (it.quantity || 0)).toLocaleString()}</td>
+      <tr style="border-bottom: 1px solid #f1f5f9;">
+        <td style="padding: 14px 0; font-size: 11px; font-weight: 600; color: #1e293b;">${it.description.toUpperCase()}</td>
+        <td style="padding: 14px 0; text-align: center; font-size: 11px; font-weight: 500; color: #64748b;">${it.quantity}</td>
+        <td style="padding: 14px 0; text-align: right; font-size: 11px; font-weight: 500; color: #64748b;">₹${(it.amount || 0).toLocaleString()}</td>
+        <td style="padding: 14px 0; text-align: right; font-size: 11px; font-weight: 700; color: #0f52ba;">₹${((it.amount || 0) * (it.quantity || 0)).toLocaleString()}</td>
       </tr>
     `).join('');
 
     ghostPrint(`
       <html>
         <head>
-          <title>1Rad Invoice - ${inv.displayId}</title>
+          <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
           <style>
-            body { font-family: 'Inter', sans-serif; padding: 40px; color: #1e293b; }
-            .header { display: flex; justify-content: space-between; margin-bottom: 40px; border-bottom: 2px solid #0f52ba; padding-bottom: 20px; }
-            .hospital-info { font-weight: 900; }
+            @page { size: A4; margin: 0; }
+            body { font-family: 'Inter', sans-serif; margin: 0; padding: 0; color: #1e293b; background: #fff; }
+            .container { padding: 50px; }
+            .header { display: flex; justify-content: space-between; align-items: flex-start; border-bottom: 4px solid #0f52ba; padding-bottom: 30px; margin-bottom: 40px; }
+            .hospital-logo { width: 60px; height: 60px; background: #0f52ba; border-radius: 12px; display: flex; align-items: center; justify-content: center; color: white; font-weight: 900; font-size: 24px; margin-bottom: 15px; }
+            .hospital-info h1 { font-size: 22px; font-weight: 900; color: #0f52ba; margin: 0; letter-spacing: -0.5px; }
+            .hospital-info p { font-size: 11px; color: #64748b; margin: 4px 0; font-weight: 500; }
             .invoice-meta { text-align: right; }
-            .patient-box { background: #f8fafc; padding: 20px; border-radius: 12px; margin-bottom: 30px; border: 1px solid #e2e8f0; }
+            .invoice-title { font-size: 32px; font-weight: 900; color: #e2e8f0; margin-bottom: 10px; text-transform: uppercase; letter-spacing: 2px; }
+            .meta-grid { display: grid; grid-template-columns: auto auto; gap: 8px 20px; font-size: 11px; }
+            .meta-label { font-weight: 800; color: #94a3b8; text-transform: uppercase; }
+            .meta-value { font-weight: 700; color: #1e293b; }
+            
+            .billing-matrix { display: grid; grid-template-columns: 1fr 1fr; gap: 40px; margin-bottom: 40px; }
+            .billing-box { background: #f8fafc; padding: 25px; border-radius: 16px; border: 1px solid #e2e8f0; }
+            .box-title { font-size: 10px; font-weight: 900; color: #94a3b8; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 15px; border-bottom: 1px solid #e2e8f0; padding-bottom: 8px; }
+            .patient-name { font-size: 18px; font-weight: 900; color: #0f52ba; margin-bottom: 5px; }
+            .patient-meta { font-size: 11px; color: #64748b; font-weight: 500; margin: 3px 0; }
+
             table { width: 100%; border-collapse: collapse; margin-bottom: 40px; }
-            th { text-align: left; font-size: 10px; text-transform: uppercase; color: #64748b; padding-bottom: 10px; border-bottom: 1px solid #e2e8f0; }
-            .totals { float: right; width: 300px; }
-            .total-row { display: flex; justify-content: space-between; padding: 8px 0; }
-            .grand-total { border-top: 2px solid #0f52ba; margin-top: 10px; padding-top: 10px; font-size: 20px; font-weight: 950; color: #0f52ba; }
-            @media print { .no-print { display: none; } }
+            th { text-align: left; font-size: 10px; font-weight: 900; color: #94a3b8; text-transform: uppercase; padding-bottom: 15px; border-bottom: 2px solid #f1f5f9; }
+            
+            .summary-section { display: flex; justify-content: flex-end; margin-bottom: 60px; }
+            .summary-table { width: 300px; }
+            .summary-row { display: flex; justify-content: space-between; padding: 10px 0; border-bottom: 1px solid #f1f5f9; }
+            .summary-label { font-size: 11px; font-weight: 700; color: #64748b; }
+            .summary-value { font-size: 12px; font-weight: 800; color: #1e293b; }
+            .grand-total { border-top: 2px solid #0f52ba; margin-top: 10px; padding-top: 15px; color: #0f52ba; }
+            .total-amount { font-size: 24px; font-weight: 900; }
+
+            .footer { position: fixed; bottom: 50px; left: 50px; right: 50px; display: flex; justify-content: space-between; align-items: flex-end; }
+            .qr-placeholder { width: 80px; height: 80px; border: 1px solid #e2e8f0; border-radius: 12px; background: #f8fafc; display: flex; align-items: center; justify-content: center; font-size: 8px; color: #cbd5e1; text-align: center; padding: 5px; }
+            .signature-box { text-align: right; }
+            .signature-line { width: 200px; border-top: 1px solid #1e293b; margin-top: 60px; margin-bottom: 10px; }
+            .signature-label { font-size: 11px; font-weight: 800; color: #1e293b; text-transform: uppercase; }
+            
+            .status-stamp { position: absolute; top: 150px; left: 50%; transform: translateX(-50%) rotate(-15deg); font-size: 80px; font-weight: 900; color: rgba(16, 185, 129, 0.1); border: 10px solid rgba(16, 185, 129, 0.1); padding: 10px 40px; border-radius: 20px; pointer-events: none; text-transform: uppercase; }
           </style>
         </head>
         <body>
-          <div class="header">
-            <div class="hospital-info">
-               <div style="font-size: 24px; color: #0f52ba;">${(activeCenter?.hospitalName || '1RAD DIAGNOSTIC HUB').toUpperCase()}</div>
-               <div style="font-size: 12px; color: #64748b; font-weight: 500; margin-top: 5px;">${activeCenter?.address || 'Strategic Healthcare Node'}</div>
-               <div style="font-size: 12px; color: #64748b; font-weight: 500;">Contact: ${activeCenter?.contactNo || '+91 XXXXXXXXXX'}</div>
+          <div class="container">
+            <div class="status-stamp">${(inv.status || 'PAID')}</div>
+            
+            <div class="header">
+              <div class="hospital-info">
+                <div class="hospital-logo">1R</div>
+                <h1>${(activeCenter?.hospitalName || '1RAD STRATEGIC DIAGNOSTICS').toUpperCase()}</h1>
+                <p>${activeCenter?.address || 'Strategic Healthcare Node, Global District'}</p>
+                <p>CONTACT: ${activeCenter?.contactNo || '+91 XXXXXXXXXX'} | EMAIL: contact@1rad.health</p>
+              </div>
+              <div class="invoice-meta">
+                <div class="invoice-title">Tax Invoice</div>
+                <div class="meta-grid">
+                  <span class="meta-label">Invoice ID:</span><span class="meta-value">${inv.displayId}</span>
+                  <span class="meta-label">Date:</span><span class="meta-value">${new Date(inv.createdAt).toLocaleDateString('en-GB', { day: '2-digit', month: 'long', year: 'numeric' })}</span>
+                  <span class="meta-label">Modality:</span><span class="meta-value">${inv.modality || 'MRI'}</span>
+                </div>
+              </div>
             </div>
-            <div class="invoice-meta">
-               <div style="font-size: 14px; font-weight: 950;">TAX INVOICE</div>
-               <div style="font-size: 11px; color: #64748b; margin-top: 5px;">ID: ${inv.displayId}</div>
-               <div style="font-size: 11px; color: #64748b;">DATE: ${new Date(inv.createdAt).toLocaleDateString()}</div>
+
+            <div class="billing-matrix">
+              <div class="billing-box">
+                <div class="box-title">Bill To Patient</div>
+                <div class="patient-name">${(inv.patientName || 'UNKNOWN PATIENT').toUpperCase()}</div>
+                <p class="patient-meta">Patient ID: ${inv.patientId || 'N/A'}</p>
+                <p class="patient-meta">Ref. No: ${inv.referenceNumber || 'N/A'}</p>
+              </div>
+              <div class="billing-box">
+                <div class="box-title">Center Policy</div>
+                <p class="patient-meta" style="font-weight: 600; color: #1e293b;">• Final diagnostic results follow settlement.</p>
+                <p class="patient-meta">• Valid for clinical review for 30 days.</p>
+                <p class="patient-meta">• Digital copy available via 1Rad Portal.</p>
+              </div>
             </div>
-          </div>
 
-          <div class="patient-box">
-             <div style="font-size: 10px; font-weight: 950; color: #64748b; margin-bottom: 8px;">BILL_TO_PATIENT:</div>
-             <div style="font-size: 18px; font-weight: 950;">${(inv.patientName || 'UNKNOWN PATIENT').toUpperCase()}</div>
-             <div style="font-size: 12px; color: #64748b; margin-top: 5px;">Clinical Reference: ${inv.patientId || 'N/A'}</div>
-          </div>
-
-          <table>
-             <thead>
+            <table>
+              <thead>
                 <tr>
-                   <th style="width: 50%;">SERVICE_DESCRIPTION</th>
-                   <th style="text-align: center;">QTY</th>
-                   <th style="text-align: right;">UNIT_PRICE</th>
-                   <th style="text-align: right;">SUBTOTAL</th>
+                  <th style="width: 50%;">Service Description</th>
+                  <th style="text-align: center;">Qty</th>
+                  <th style="text-align: right;">Unit Price</th>
+                  <th style="text-align: right;">Subtotal</th>
                 </tr>
-             </thead>
-             <tbody>
+              </thead>
+              <tbody>
                 ${itemsHtml}
-             </tbody>
-          </table>
+              </tbody>
+            </table>
 
-          <div class="totals">
-             <div class="total-row">
-                <span style="font-size: 12px; font-weight: 700;">GROSS_AGGREGATE</span>
-                <span style="font-size: 12px; font-weight: 700;">₹${(inv.grossAmount || 0).toLocaleString()}</span>
-             </div>
-             <div class="total-row" style="color: #ef4444;">
-                <span style="font-size: 12px; font-weight: 700;">DEDUCTION/DISCOUNT</span>
-                <span style="font-size: 12px; font-weight: 700;">- ₹${(inv.discountAmount || 0).toLocaleString()}</span>
-             </div>
-             <div class="total-row grand-total">
-                <span>NET_PAYABLE</span>
-                <span>₹${(inv.totalAmount || 0).toLocaleString()}</span>
-             </div>
-             <div style="margin-top: 20px; font-size: 11px; font-weight: 900; color: #10b981; text-align: right;">
-                STATUS: ${(inv.status || 'PAID').toUpperCase()}
-             </div>
-          </div>
+            <div class="summary-section">
+              <div class="summary-table">
+                <div class="summary-row">
+                  <span class="summary-label">Gross Aggregate</span>
+                  <span class="summary-value">₹${(inv.grossAmount || 0).toLocaleString()}</span>
+                </div>
+                <div class="summary-row" style="color: #ef4444;">
+                  <span class="summary-label">Institutional Discount</span>
+                  <span class="summary-value">- ₹${(inv.discountAmount || 0).toLocaleString()}</span>
+                </div>
+                <div class="summary-row grand-total">
+                  <span class="summary-label" style="color: #0f52ba;">NET PAYABLE</span>
+                  <span class="summary-value total-amount">₹${(inv.totalAmount || 0).toLocaleString()}</span>
+                </div>
+                <div style="margin-top: 15px; font-size: 9px; font-weight: 800; color: #10b981; text-align: right; text-transform: uppercase;">
+                  Transaction Status: ${(inv.status || 'PAID')}
+                </div>
+              </div>
+            </div>
 
-          <div style="margin-top: 150px; font-size: 10px; color: #94a3b8; text-align: center; border-top: 1px solid #f1f5f9; padding-top: 20px;">
-             This is a computer-generated diagnostic invoice. No physical signature required.<br/>
-             Powered by 1Rad Strategic Infrastructure
-          </div>
-        </body>
-      </html>
-    `);
-  };
-
-  const handlePrintThermal = (invInput = null) => {
-    const inv = invInput || selectedInvoice;
-    if (!inv) return;
-
-    const itemsHtml = (inv.items || []).map(it => `
-      <div style="display: flex; justify-content: space-between; font-size: 12px; margin-bottom: 5px;">
-        <span>${it.description} x${it.quantity}</span>
-        <span>₹${((it.amount || 0) * (it.quantity || 0)).toLocaleString()}</span>
-      </div>
-    `).join('');
-
-    ghostPrint(`
-      <html>
-        <head>
-          <title>Thermal Receipt</title>
-          <style>
-            body { font-family: 'monospace'; width: 72mm; padding: 10px; margin: 0; }
-            .center { text-align: center; }
-            .divider { border-top: 1px dashed #000; margin: 10px 0; }
-            .bold { font-weight: bold; }
-          </style>
-        </head>
-        <body>
-          <div class="center">
-            <div style="font-size: 16px; font-weight: bold;">${activeCenter?.hospitalName || '1RAD DIAGNOSTICS'}</div>
-            <div style="font-size: 10px;">${activeCenter?.address || ''}</div>
-            <div style="font-size: 10px;">Tel: ${activeCenter?.contactNo || ''}</div>
-          </div>
-          <div class="divider"></div>
-          <div style="font-size: 12px;">
-            <div>INV: ${inv.displayId || 'N/A'}</div>
-            <div>DATE: ${new Date().toLocaleDateString()}</div>
-            <div class="bold">PATIENT: ${(inv.patientName || 'N/A').toUpperCase()}</div>
-          </div>
-          <div class="divider"></div>
-          ${itemsHtml}
-          <div class="divider"></div>
-          <div style="display: flex; justify-content: space-between; font-weight: bold; font-size: 14px;">
-            <span>TOTAL</span>
-            <span>₹${(inv.totalAmount || 0).toLocaleString()}</span>
-          </div>
-          <div class="center" style="margin-top: 20px; font-size: 10px;">
-            THANK YOU FOR CHOOSING 1RAD
+            <div class="footer">
+              <div class="qr-placeholder">
+                QR AUTHENTICATION<br/>SCAN TO VERIFY
+              </div>
+              <div class="signature-box">
+                <div class="signature-line"></div>
+                <div class="signature-label">Authorized Signatory</div>
+                <div style="font-size: 9px; color: #94a3b8; margin-top: 4px;">1Rad Strategic Finance Unit</div>
+              </div>
+            </div>
           </div>
         </body>
       </html>
@@ -1158,66 +1214,77 @@ export default function BillingPage() {
     ghostPrint(`
       <html>
         <head>
-          <title>Payment Receipt - ${inv.displayId}</title>
+          <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
           <style>
-            body { font-family: 'Inter', sans-serif; padding: 40px; color: #1e293b; line-height: 1.6; }
-            .receipt-container { max-width: 600px; margin: 0 auto; border: 2px solid #0f52ba; padding: 30px; border-radius: 20px; }
-            .header { text-align: center; border-bottom: 1px solid #e2e8f0; padding-bottom: 20px; margin-bottom: 20px; }
-            .row { display: flex; justify-content: space-between; margin-bottom: 10px; padding: 5px 0; }
-            .label { font-weight: 950; color: #64748b; font-size: 11px; text-transform: uppercase; }
-            .value { font-weight: 700; color: #1e293b; }
-            .amount-box { background: #f0f4ff; padding: 20px; border-radius: 12px; text-align: center; margin: 20px 0; border: 1px solid #dbeafe; }
-            .stamp { text-align: right; margin-top: 40px; font-weight: 950; color: #0f52ba; font-size: 14px; opacity: 0.5; text-transform: uppercase; }
+            @page { size: A5 landscape; margin: 0; }
+            body { font-family: 'Inter', sans-serif; margin: 0; padding: 40px; color: #1e293b; }
+            .receipt-shell { border: 2px solid #0f52ba; border-radius: 24px; padding: 30px; position: relative; overflow: hidden; height: 100%; }
+            .receipt-header { display: flex; justify-content: space-between; border-bottom: 1px solid #e2e8f0; padding-bottom: 20px; margin-bottom: 20px; }
+            .hospital-brand { font-size: 18px; font-weight: 900; color: #0f52ba; }
+            .receipt-title { font-size: 12px; font-weight: 900; color: #94a3b8; text-transform: uppercase; letter-spacing: 2px; }
+            
+            .content-row { display: flex; margin-bottom: 15px; align-items: baseline; }
+            .label { font-size: 10px; font-weight: 900; color: #94a3b8; text-transform: uppercase; min-width: 150px; }
+            .value { font-size: 14px; font-weight: 700; color: #1e293b; border-bottom: 1px dashed #cbd5e1; flex-grow: 1; padding-bottom: 2px; }
+            
+            .payment-card { background: #f0f4ff; border-radius: 16px; padding: 20px; display: flex; justify-content: space-between; align-items: center; margin-top: 30px; border: 1px solid #dbeafe; }
+            .amount-label { font-size: 10px; font-weight: 950; color: #0f52ba; text-transform: uppercase; }
+            .amount-value { font-size: 28px; font-weight: 950; color: #0f52ba; }
+            
+            .watermark { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%) rotate(-15deg); font-size: 100px; font-weight: 900; color: rgba(15, 82, 186, 0.03); z-index: -1; text-transform: uppercase; }
+            .seal { position: absolute; bottom: 30px; right: 30px; width: 100px; height: 100px; border: 2px dashed rgba(15, 82, 186, 0.2); border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 8px; font-weight: 900; color: rgba(15, 82, 186, 0.2); text-align: center; padding: 10px; }
           </style>
         </head>
         <body>
-          <div class="receipt-container">
-            <div class="header">
-              <div style="font-size: 20px; font-weight: 950; color: #0f52ba;">${(activeCenter?.hospitalName || '1RAD DIAGNOSTICS').toUpperCase()}</div>
-              <div style="font-size: 12px; color: #64748b;">PAYMENT ACKNOWLEDGEMENT</div>
+          <div class="receipt-shell">
+            <div class="watermark">OFFICIAL</div>
+            <div class="receipt-header">
+              <div class="hospital-brand">${(activeCenter?.hospitalName || '1RAD DIAGNOSTICS').toUpperCase()}</div>
+              <div class="receipt-title">Payment Acknowledgement</div>
             </div>
 
-            <div class="row">
-              <span class="label">Receipt No:</span>
-              <span class="value">REC/${inv.displayId}</span>
+            <div class="content-row">
+              <span class="label">Received With Thanks From:</span>
+              <span class="value">${(inv.patientName || 'VALUED PATIENT').toUpperCase()}</span>
             </div>
-            <div class="row">
-              <span class="label">Date:</span>
-              <span class="value">${new Date().toLocaleDateString()}</span>
-            </div>
-            <div class="row">
-              <span class="label">Patient Name:</span>
-              <span class="value">${(inv.patientName || 'UNKNOWN').toUpperCase()}</span>
-            </div>
-            <div class="row">
-              <span class="label">Invoice Ref:</span>
+            <div class="content-row">
+              <span class="label">Reference Invoice:</span>
               <span class="value">${inv.displayId}</span>
             </div>
-            <div class="row">
-              <span class="label">Payment Mode:</span>
-              <span class="value">${inv.paymentMethod || 'CASH'}</span>
+            <div class="content-row">
+              <span class="label">Date of Settlement:</span>
+              <span class="value">${new Date().toLocaleDateString('en-GB', { day: '2-digit', month: 'long', year: 'numeric' })}</span>
+            </div>
+            <div class="content-row">
+              <span class="label">Payment Instrument:</span>
+              <span class="value">${inv.paymentMethod || 'CASH'} / ID: ${inv.invoiceId.substring(0, 8).toUpperCase()}</span>
             </div>
 
-            <div class="amount-box">
-              <div class="label">Amount Received</div>
-              <div style="font-size: 32px; font-weight: 950; color: #0f52ba; margin-top: 5px;">₹${(inv.totalAmount || 0).toLocaleString()}</div>
-              <div style="font-size: 10px; color: #64748b; font-weight: 700; margin-top: 5px;">FULLY PAID & SETTLED</div>
+            <div class="payment-card">
+              <div>
+                <div class="amount-label">Aggregate Amount Received</div>
+                <div style="font-size: 10px; color: #64748b; font-weight: 600;">(In Words: RUPEES ${(inv.totalAmount || 0).toLocaleString()} ONLY)</div>
+              </div>
+              <div class="amount-value">₹${(inv.totalAmount || 0).toLocaleString()}</div>
             </div>
 
-            <div class="stamp">
-              Authorized Signatory<br/>
-              <span style="font-size: 10px;">(Computer Generated)</span>
-            </div>
-
-            <div style="margin-top: 30px; text-align: center; font-size: 10px; color: #94a3b8; border-top: 1px dashed #e2e8f0; padding-top: 15px;">
-              THANK YOU FOR CHOOSING 1RAD STRATEGIC DIAGNOSTICS<br/>
-              Receipt generated on: ${new Date().toLocaleString()}
+            <div class="seal">OFFICIAL<br/>COLLECTION<br/>STAMP</div>
+            
+            <div style="margin-top: 40px; display: flex; justify-content: space-between; align-items: flex-end;">
+               <div style="font-size: 9px; color: #94a3b8; font-weight: 700;">
+                 SYSTEM GENERATED RECEIPT<br/>
+                 NO PHYSICAL SIGNATURE REQUIRED
+               </div>
+               <div style="text-align: right;">
+                 <div style="font-size: 11px; font-weight: 900; color: #1e293b; border-top: 1px solid #1e293b; padding-top: 5px; width: 180px;">AUTHORIZED CASHIER</div>
+               </div>
             </div>
           </div>
         </body>
       </html>
     `);
   };
+
 
 
   return (
