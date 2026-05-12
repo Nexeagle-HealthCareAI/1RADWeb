@@ -2822,48 +2822,6 @@ export default function AdminBoard() {
                        <div style={{ padding: '40px', textAlign: 'center', color: '#94a3b8', fontSize: '12px', fontWeight: 700 }}>No temporal density markers detected in this period.</div>
                     )}
                  </div>
-
-                 {/* 2. Detailed Mission Ledger */}
-                 <div style={{ background: 'white', borderRadius: '24px', border: '1px solid #e2e8f0', overflow: isTestMode ? 'visible' : 'hidden', boxShadow: '0 4px 20px rgba(0,0,0,0.01)', padding: '30px' }}>
-                    <div style={{ borderRadius: '20px', border: '1px solid #f1f5f9', overflow: 'hidden' }}>
-                       <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-                          <thead style={{ background: '#fcfdfe' }}>
-                             <tr style={{ borderBottom: '2px solid #f1f5f9' }}>
-                                <th style={{ padding: '15px 20px', textAlign: 'left', fontSize: '9px', fontWeight: 950, color: '#94a3b8', letterSpacing: '1px' }}>REFERRING_SOURCE</th>
-                                <th style={{ padding: '15px 20px', textAlign: 'left', fontSize: '9px', fontWeight: 950, color: '#94a3b8', letterSpacing: '1px' }}>PATIENT_IDENTITY</th>
-                                <th style={{ padding: '15px 20px', textAlign: 'left', fontSize: '9px', fontWeight: 950, color: '#94a3b8', letterSpacing: '1px' }}>CLINICAL_PACKAGE</th>
-                                <th style={{ padding: '15px 20px', textAlign: 'left', fontSize: '9px', fontWeight: 950, color: '#94a3b8', letterSpacing: '1px' }}>COMMISSION</th>
-                                <th style={{ padding: '15px 20px', textAlign: 'right', fontSize: '9px', fontWeight: 950, color: '#94a3b8', letterSpacing: '1px' }}>DATE</th>
-                             </tr>
-                          </thead>
-                          <tbody>
-                             {temporalPatients.map(p => (
-                                <tr key={p.appointmentId || p.patientId} style={{ borderBottom: '1px solid #f8fafc' }}>
-                                   <td style={{ padding: '15px 20px' }}>
-                                      <div style={{ fontSize: '12px', fontWeight: 950, color: '#0f52ba' }}>{(p.referredBy || 'Anonymous').toUpperCase()}</div>
-                                      <div style={{ fontSize: '9px', color: '#94a3b8', fontWeight: 700 }}>{p.sourceContact}</div>
-                                   </td>
-                                   <td style={{ padding: '15px 20px' }}>
-                                      <div style={{ fontSize: '13px', fontWeight: 850, color: '#1e293b' }}>{(p.name || 'Unknown').toUpperCase()}</div>
-                                      <div style={{ fontSize: '10px', color: '#94a3b8', fontWeight: 700 }}>{p.patientIdentifier} • {p.age}Y • ₹{(p.totalAmount || 0).toLocaleString()}</div>
-                                   </td>
-                                   <td style={{ padding: '15px 20px' }}>
-                                      <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
-                                         <span style={{ fontSize: '8px', color: 'white', background: '#334155', padding: '2px 6px', borderRadius: '4px', fontWeight: 950 }}>{p.modality}</span>
-                                         <span style={{ fontSize: '9px', color: '#475569', fontWeight: 800 }}>{p.service}</span>
-                                      </div>
-                                   </td>
-                                   <td style={{ padding: '15px 20px' }}>
-                                      <div style={{ fontSize: '11px', fontWeight: 950, color: '#1e293b' }}>₹{(p.commissionAmount || 0).toLocaleString()}</div>
-                                      <div style={{ fontSize: '8px', fontWeight: 800, color: p.commissionStatus === 'Paid' ? '#059669' : '#dc2626' }}>{(p.commissionStatus || 'Unpaid').toUpperCase()}</div>
-                                   </td>
-                                   <td style={{ padding: '15px 20px', textAlign: 'right', fontSize: '11px', fontWeight: 900, color: '#94a3b8' }}>{p.registrationDate}</td>
-                                </tr>
-                             ))}
-                          </tbody>
-                       </table>
-                    </div>
-                 </div>
               </div>
             ) : (
               /* Global Referral Matrix View */
