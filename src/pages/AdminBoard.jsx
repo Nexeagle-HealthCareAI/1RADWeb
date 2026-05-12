@@ -116,7 +116,14 @@ export default function AdminBoard() {
   const [financialMatrix, setFinancialMatrix] = useState(null);
   const [billingSettings, setBillingSettings] = useState({ autoBill: false, currency: '₹' });
   const [isPriceDrawerOpen, setIsPriceDrawerOpen] = useState(false);
-  const [editPrice, setEditPrice] = useState({ modality: 'X-RAY', serviceName: '', amount: 0 });
+  const [editPrice, setEditPrice] = useState({ 
+    modality: 'X-RAY', 
+    serviceName: '', 
+    amount: 0, 
+    referralCutType: 'PERCENTAGE', 
+    referralCutValue: 0,
+    referralCutInput: 0
+  });
 
   // Expense Mgmt State
   const [isExpenseDrawerOpen, setIsExpenseDrawerOpen] = useState(false);

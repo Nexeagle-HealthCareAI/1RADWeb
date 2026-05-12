@@ -94,7 +94,17 @@ const FinanceManager = ({
         
         {financeViewMode === 'REGISTRY' && (
           <button 
-            onClick={() => { setEditPrice({ modality: 'X-RAY', serviceName: '', amount: 0 }); setIsPriceDrawerOpen(true); }}
+            onClick={() => { 
+              setEditPrice({ 
+                modality: 'X-RAY', 
+                serviceName: '', 
+                amount: 0, 
+                referralCutType: 'PERCENTAGE', 
+                referralCutValue: 0,
+                referralCutInput: 0
+              }); 
+              setIsPriceDrawerOpen(true); 
+            }}
             style={{ 
               padding: '12px 24px', borderRadius: '12px', border: 'none', 
               background: '#0f52ba', color: 'white', fontSize: '11px', fontWeight: 950, cursor: 'pointer',
@@ -136,6 +146,7 @@ const FinanceManager = ({
                   <th style={{ padding: '20px 30px', textAlign: 'left', fontSize: '10px', fontWeight: 950, color: '#94a3b8', letterSpacing: '2px' }}>MODALITY</th>
                   <th style={{ padding: '20px 30px', textAlign: 'left', fontSize: '10px', fontWeight: 950, color: '#94a3b8', letterSpacing: '2px' }}>SERVICE_NAME</th>
                   <th style={{ padding: '20px 20px', textAlign: 'left', fontSize: '10px', fontWeight: 950, color: '#94a3b8', letterSpacing: '2px' }}>STANDARD_CHARGE</th>
+                  <th style={{ padding: '20px 20px', textAlign: 'left', fontSize: '10px', fontWeight: 950, color: '#94a3b8', letterSpacing: '2px' }}>REFERRAL_CUT</th>
                   <th style={{ padding: '20px 30px', textAlign: 'right', fontSize: '10px', fontWeight: 950, color: '#94a3b8', letterSpacing: '2px' }}>ACTIONS</th>
                 </tr>
               </thead>
@@ -147,9 +158,30 @@ const FinanceManager = ({
                     </td>
                     <td style={{ padding: '20px 30px', fontSize: '13px', fontWeight: 850, color: '#1e293b' }}>{(spec.serviceName || 'Unnamed Service').toUpperCase()}</td>
                     <td style={{ padding: '20px 20px', fontSize: '14px', fontWeight: 950, color: '#0f52ba' }}>₹{(Number(spec.amount) || 0).toLocaleString()}</td>
+                    <td style={{ padding: '20px 20px' }}>
+                       {spec.referralCutValue > 0 ? (
+                         <span style={{ fontSize: '12px', fontWeight: 950, color: '#059669', background: '#ecfdf5', padding: '4px 10px', borderRadius: '6px' }}>
+                           ₹{(spec.referralCutValue || 0).toLocaleString()}
+                         </span>
+                       ) : (
+                         <span style={{ fontSize: '11px', color: '#94a3b8', fontWeight: 700 }}>N/A</span>
+                       )}
+                    </td>
                     <td style={{ padding: '20px 30px', textAlign: 'right' }}>
                        <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
-                          <button onClick={() => { setEditPrice(spec); setIsPriceDrawerOpen(true); }} style={{ padding: '6px 12px', borderRadius: '8px', border: '1px solid #e2e8f0', background: 'white', cursor: 'pointer', fontSize: '10px', fontWeight: 800 }}>EDIT</button>
+                          <button 
+                            onClick={() => { 
+                              setEditPrice({
+                                ...spec,
+                                referralCutType: 'FIXED',
+                                referralCutInput: spec.referralCutValue || 0
+                              }); 
+                              setIsPriceDrawerOpen(true); 
+                            }} 
+                            style={{ padding: '6px 12px', borderRadius: '8px', border: '1px solid #e2e8f0', background: 'white', cursor: 'pointer', fontSize: '10px', fontWeight: 800 }}
+                          >
+                            EDIT
+                          </button>
                           <button onClick={() => handleDeletePrice(spec.id)} style={{ padding: '6px 12px', borderRadius: '8px', border: '1px solid #fee2e2', background: '#fef2f2', color: '#dc2626', cursor: 'pointer', fontSize: '10px', fontWeight: 800 }}>DELETE</button>
                        </div>
                     </td>
@@ -288,51 +320,134 @@ const FinanceManager = ({
       {/* --- DRAWERS --- */}
       {isPriceDrawerOpen && (
         <div className="drawer-overlay" onClick={() => setIsPriceDrawerOpen(false)} style={{ backdropFilter: 'blur(8px)', background: 'rgba(10, 22, 40, 0.4)', zIndex: 10000 }}>
-          <div className="drawer-content" style={{ padding: 0, width: '450px', background: 'white' }} onClick={e => e.stopPropagation()}>
-            <div style={{ padding: '35px', background: 'linear-gradient(135deg, #0f52ba 0%, #061a40 100%)', color: 'white' }}>
-               <h2 style={{ fontSize: '11px', fontWeight: 950, color: 'var(--tactical-cyan)', letterSpacing: '3px', textTransform: 'uppercase', marginBottom: '8px' }}>Financial Protocol</h2>
-               <div style={{ fontSize: '20px', fontWeight: 950, letterSpacing: '-1px' }}>{editPrice.id ? 'CONFIG_SERVICE_CHARGE' : 'INIT_NEW_CHARGE'}</div>
+          <div className="drawer-content" style={{ padding: 0, width: '750px', background: 'white' }} onClick={e => e.stopPropagation()}>
+            <div style={{ padding: '30px', background: 'linear-gradient(135deg, #0f52ba 0%, #061a40 100%)', color: 'white' }}>
+               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <div>
+                     <h2 style={{ fontSize: '10px', fontWeight: 950, color: 'var(--tactical-cyan)', letterSpacing: '3px', textTransform: 'uppercase', marginBottom: '4px' }}>Financial Infrastructure</h2>
+                     <div style={{ fontSize: '18px', fontWeight: 950, letterSpacing: '-0.5px' }}>{editPrice.id ? 'CONFIG_SERVICE_CHARGE' : 'INIT_NEW_CHARGE'}</div>
+                  </div>
+                  <button onClick={() => setIsPriceDrawerOpen(false)} style={{ background: 'rgba(255,255,255,0.1)', border: 'none', color: 'white', width: '32px', height: '32px', borderRadius: '50%', cursor: 'pointer', fontSize: '18px' }}>&times;</button>
+               </div>
             </div>
 
-            <div style={{ padding: '35px' }}>
+            <div style={{ padding: '30px' }}>
                <form onSubmit={handleSavePrice}>
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '25px' }}>
-                    <div className="form-group">
-                       <label style={{ display: 'block', fontSize: '9px', fontWeight: 950, color: '#94a3b8', letterSpacing: '2px', marginBottom: '10px' }}>MODALITY_BRANCH</label>
-                       <select 
-                          value={editPrice.modality} 
-                          onChange={e => setEditPrice({...editPrice, modality: e.target.value})}
-                          style={{ width: '100%', padding: '14px', borderRadius: '12px', border: '1px solid #eee', fontSize: '12px', fontWeight: 700, background: 'white' }}
-                       >
-                         {['X-RAY', 'MRI', 'CT', 'ULTRASOUND', 'DEXA', 'MAMMOGRAPHY', 'PET-CT'].map(m => <option key={m} value={m}>{m}</option>)}
-                       </select>
-                    </div>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '40px', alignItems: 'flex-start' }}>
+                     
+                     {/* Left Column: Core Parameters */}
+                     <div style={{ display: 'flex', flexDirection: 'column', gap: '25px' }}>
+                        <div className="form-group">
+                           <label style={{ display: 'block', fontSize: '9px', fontWeight: 950, color: '#94a3b8', letterSpacing: '2px', marginBottom: '10px' }}>MODALITY_BRANCH (1)</label>
+                           <select 
+                              value={editPrice.modality} 
+                              onChange={e => setEditPrice({...editPrice, modality: e.target.value})}
+                              style={{ width: '100%', padding: '12px', borderRadius: '12px', border: '1px solid #eee', fontSize: '12px', fontWeight: 700, background: 'white' }}
+                           >
+                             <option value="">SELECT_MODALITY</option>
+                             {['X-RAY', 'MRI', 'CT', 'ULTRASOUND', 'DEXA', 'MAMMOGRAPHY', 'PET-CT'].map(m => <option key={m} value={m}>{m}</option>)}
+                           </select>
+                        </div>
 
-                    <div className="form-group">
-                       <label style={{ display: 'block', fontSize: '9px', fontWeight: 950, color: '#94a3b8', letterSpacing: '2px', marginBottom: '10px' }}>SERVICE_DESCRIPTOR</label>
-                       <input 
-                          type="text" required 
-                          value={editPrice.serviceName} 
-                          placeholder="e.g. MRI BRAIN WITH CONTRAST"
-                          onChange={e => setEditPrice({...editPrice, serviceName: e.target.value})}
-                          style={{ width: '100%', border: 'none', borderBottom: '2px solid #f0f0f0', fontSize: '16px', fontWeight: 800, padding: '10px 0', outline: 'none' }}
-                       />
-                    </div>
+                        <div className="form-group" style={{ opacity: editPrice.modality ? 1 : 0.5, pointerEvents: editPrice.modality ? 'auto' : 'none', transition: 'all 0.3s' }}>
+                           <label style={{ display: 'block', fontSize: '9px', fontWeight: 950, color: '#94a3b8', letterSpacing: '2px', marginBottom: '10px' }}>SERVICE_DESCRIPTOR (2)</label>
+                           <input 
+                              type="text" required 
+                              value={editPrice.serviceName} 
+                              placeholder={editPrice.modality ? "e.g. BRAIN_SCAN" : "SELECT_MODALITY_FIRST"}
+                              onChange={e => setEditPrice({...editPrice, serviceName: e.target.value})}
+                              style={{ width: '100%', border: 'none', borderBottom: '2px solid #f0f0f0', fontSize: '15px', fontWeight: 800, padding: '10px 0', outline: 'none' }}
+                           />
+                        </div>
 
-                    <div className="form-group">
-                       <label style={{ display: 'block', fontSize: '9px', fontWeight: 950, color: '#94a3b8', letterSpacing: '2px', marginBottom: '10px' }}>STANDARD_FINANCIAL_UNIT (₹)</label>
-                       <input 
-                          type="number" required 
-                          value={editPrice.amount} 
-                          onChange={e => setEditPrice({...editPrice, amount: parseFloat(e.target.value)})}
-                          style={{ width: '100%', border: 'none', borderBottom: '2px solid #f0f0f0', fontSize: '24px', fontWeight: 950, padding: '10px 0', outline: 'none', color: '#0f52ba' }}
-                       />
-                    </div>
+                        <div className="form-group" style={{ opacity: editPrice.serviceName ? 1 : 0.5, pointerEvents: editPrice.serviceName ? 'auto' : 'none', transition: 'all 0.3s' }}>
+                           <label style={{ display: 'block', fontSize: '9px', fontWeight: 950, color: '#94a3b8', letterSpacing: '2px', marginBottom: '10px' }}>STANDARD_FINANCIAL_UNIT (3)</label>
+                           <input 
+                              type="number" required 
+                              value={editPrice.amount || ''} 
+                              placeholder={editPrice.serviceName ? "Enter price" : "ENTER_DESCRIPTOR_FIRST"}
+                              onChange={e => setEditPrice({...editPrice, amount: parseFloat(e.target.value) || 0})}
+                              style={{ width: '100%', border: 'none', borderBottom: '2px solid #f0f0f0', fontSize: '20px', fontWeight: 950, padding: '10px 0', outline: 'none', color: '#0f52ba' }}
+                           />
+                        </div>
+                     </div>
+
+                   {/* Right Column: Incentive Protocol (Synchronized) */}
+                   <div style={{ 
+                      background: editPrice.amount > 0 ? '#f8fafc' : '#f1f5f9', 
+                      padding: '25px', 
+                      borderRadius: '20px', 
+                      border: '1px solid #f1f5f9',
+                      position: 'relative',
+                      opacity: editPrice.amount > 0 ? 1 : 0.6,
+                      pointerEvents: editPrice.amount > 0 ? 'auto' : 'none',
+                      transition: 'all 0.3s'
+                   }}>
+                      {editPrice.amount <= 0 && (
+                        <div style={{ position: 'absolute', top: '10px', right: '15px', fontSize: '8px', fontWeight: 900, color: '#f59e0b', background: '#fffbeb', padding: '4px 8px', borderRadius: '6px', border: '1px solid #fef3c7' }}>
+                           (4)_OPTIONAL_PROTOCOL
+                        </div>
+                      )}
+                      
+                      <label style={{ display: 'block', fontSize: '9px', fontWeight: 950, color: '#0f52ba', letterSpacing: '2px', marginBottom: '20px' }}>REFERRAL_INCENTIVE_PROTOCOL</label>
+                      
+                      <div style={{ marginBottom: '25px' }}>
+                         <input 
+                           type="range" min="0" max="100" step="0.5"
+                           value={editPrice.referralCutInput || 0}
+                           onChange={e => {
+                             const pct = parseFloat(e.target.value);
+                             const calculated = (editPrice.amount * pct) / 100;
+                             setEditPrice({...editPrice, referralCutInput: pct, referralCutValue: calculated});
+                           }}
+                           style={{ width: '100%', height: '6px', background: '#e2e8f0', borderRadius: '3px', accentColor: '#0f52ba', cursor: 'pointer' }}
+                         />
+                      </div>
+
+                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '15px' }}>
+                         <div className="form-group">
+                            <label style={{ display: 'block', fontSize: '8px', fontWeight: 900, color: '#94a3b8', marginBottom: '8px' }}>PERCENT (%)</label>
+                            <input 
+                               type="number" 
+                               value={editPrice.referralCutInput}
+                               placeholder="0"
+                               onChange={e => {
+                                 const val = e.target.value === '' ? '' : parseFloat(e.target.value);
+                                 const num = parseFloat(val) || 0;
+                                 const calculated = (editPrice.amount * num) / 100;
+                                 setEditPrice({...editPrice, referralCutInput: val, referralCutValue: calculated});
+                               }}
+                               style={{ width: '100%', border: 'none', borderBottom: '1px solid #cbd5e1', fontSize: '14px', fontWeight: 800, padding: '8px 0', outline: 'none', background: 'transparent' }}
+                            />
+                         </div>
+
+                         <div className="form-group">
+                            <label style={{ display: 'block', fontSize: '8px', fontWeight: 900, color: '#94a3b8', marginBottom: '8px' }}>AMOUNT (₹)</label>
+                            <input 
+                               type="number" 
+                               value={editPrice.referralCutValue} 
+                               placeholder="0"
+                               onChange={e => {
+                                 const val = e.target.value === '' ? '' : parseFloat(e.target.value);
+                                 const num = parseFloat(val) || 0;
+                                 const calculatedPct = editPrice.amount > 0 ? (num / editPrice.amount) * 100 : 0;
+                                 setEditPrice({...editPrice, referralCutValue: val, referralCutInput: calculatedPct.toFixed(2)});
+                               }}
+                               style={{ width: '100%', border: 'none', borderBottom: '1px solid #cbd5e1', fontSize: '14px', fontWeight: 800, padding: '8px 0', outline: 'none', color: '#0f52ba', background: 'transparent' }}
+                            />
+                         </div>
+                      </div>
+                      
+                      <div style={{ fontSize: '9px', color: '#0f52ba', marginTop: '20px', fontWeight: 900, background: 'white', padding: '10px 15px', borderRadius: '10px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', border: '1px solid #e2e8f0' }}>
+                         <span>COMMIT_VALUE</span>
+                         <span style={{ fontSize: '12px' }}>₹{(editPrice.referralCutValue || 0).toLocaleString()}</span>
+                      </div>
+                   </div>
                   </div>
 
-                  <div style={{ marginTop: '40px', display: 'flex', gap: '15px' }}>
-                     <button type="button" onClick={() => setIsPriceDrawerOpen(false)} style={{ flex: 1, padding: '16px', borderRadius: '16px', border: '1px solid #eee', fontSize: '11px', fontWeight: 950, cursor: 'pointer' }}>ABORT</button>
-                     <button type="submit" style={{ flex: 2, padding: '16px', borderRadius: '16px', border: 'none', background: '#0f52ba', color: 'white', fontSize: '11px', fontWeight: 950, cursor: 'pointer' }}>SAVE PROTOCOL →</button>
+                  <div style={{ marginTop: '35px', display: 'flex', gap: '15px', justifyContent: 'flex-end' }}>
+                     <button type="button" onClick={() => setIsPriceDrawerOpen(false)} style={{ width: '120px', padding: '14px', borderRadius: '12px', border: '1px solid #eee', fontSize: '11px', fontWeight: 950, cursor: 'pointer' }}>ABORT</button>
+                     <button type="submit" style={{ width: '240px', padding: '14px', borderRadius: '12px', border: 'none', background: '#0f52ba', color: 'white', fontSize: '11px', fontWeight: 950, cursor: 'pointer', boxShadow: '0 8px 20px rgba(15, 82, 186, 0.2)' }}>SAVE FINANCIAL PROTOCOL →</button>
                   </div>
                </form>
             </div>
