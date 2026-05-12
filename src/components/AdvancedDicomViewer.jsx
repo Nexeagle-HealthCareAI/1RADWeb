@@ -40,20 +40,20 @@ import dicomParser from 'dicom-parser';
 // ADVANCED DICOM VIEWER CONFIGURATION
 // ============================================
 const DICOM_CONFIG = {
-  // Set to false to disable web workers (may help with timeout issues)
-  USE_WEB_WORKERS: false, // Changed to false by default for reliability
+  // Set to true to enable web workers for 2-4x faster decoding
+  USE_WEB_WORKERS: true, 
   
-  // Maximum number of web workers (1 is safest, higher may cause timeouts)
-  MAX_WEB_WORKERS: 0,
+  // Maximum number of web workers based on CPU cores
+  MAX_WEB_WORKERS: Math.min(navigator.hardwareConcurrency || 4, 8),
   
   // Timeout for initial image load (milliseconds)
-  INITIAL_LOAD_TIMEOUT: 300000, // 300 seconds
+  INITIAL_LOAD_TIMEOUT: 600000, // 600 seconds for very large/compressed files
   
   // Timeout for retry without workers (milliseconds)
-  RETRY_TIMEOUT: 120000, // 120 seconds
+  RETRY_TIMEOUT: 300000, // 300 seconds
   
   // Enable detailed console logging
-  DEBUG_LOGGING: true
+  DEBUG_LOGGING: false // Reduced for performance
 };
 
 // Advanced windowing presets for different anatomies
@@ -110,10 +110,11 @@ async function initCornerstone() {
   }
 
   const config = {
-    maxWebWorkers: 0,
-    startWebWorkersOnDemand: false,
+    maxWebWorkers: DICOM_CONFIG.USE_WEB_WORKERS ? DICOM_CONFIG.MAX_WEB_WORKERS : 0,
+    startWebWorkersOnDemand: true,
     decodeConfig: {
       usePDFJS: false,
+      strict: false,
     }
   };
   
@@ -364,7 +365,9 @@ const AdvancedDicomViewer = ({
   enableFullscreen = true,
   onFullscreenChange = null,
   // Series name for display
-  seriesName = null
+  seriesName = null,
+  // Pre-parsed metadata to skip redundant parsing
+  preParsedMetadata = null
 }) => {
   const containerRef = useRef(null);
   const elementRef = useRef(null);
@@ -905,12 +908,18 @@ const AdvancedDicomViewer = ({
   }, [isFullscreen]);
 
   useEffect(() => {
-    if (!files || files.length === 0) {
-      console.log('[DICOM METADATA] No files provided, skipping metadata check');
+    console.log('[DICOM METADATA] Starting metadata check for', files.length, 'files');
+    
+    // OPTIMIZATION: Use pre-parsed metadata if available
+    if (preParsedMetadata) {
+      console.log('[DICOM METADATA] Using pre-parsed metadata');
+      setMetadata(preParsedMetadata);
+      if (onMetadata) onMetadata(preParsedMetadata);
+      setIsReady(true);
+      if (onImageStatus) onImageStatus(true);
       return;
     }
 
-    console.log('[DICOM METADATA] Starting metadata check for', files.length, 'files');
     console.log('[DICOM METADATA] First file:', files[0]);
 
     const checkMetadata = async () => {
@@ -1329,7 +1338,12 @@ const AdvancedDicomViewer = ({
         });
         
         // Start prefetching for smoother scrolling using the utility
-        utilities.stackPrefetch.enable(elementRef.current);
+        // OPTIMIZATION: Configure prefetch for higher performance
+        utilities.stackPrefetch.enable(elementRef.current, {
+          maxImagesToPrefetch: 50, // Increase from default
+          preserveOrder: false,
+          displaySetId: viewportId
+        });
         
         // DEBUGGING: Expose references for console testing
         if (typeof window !== 'undefined') {

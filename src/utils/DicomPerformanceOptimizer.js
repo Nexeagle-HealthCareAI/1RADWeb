@@ -523,6 +523,7 @@ export class DicomPerformanceOptimizer {
             seriesDesc: metadata.seriesDesc,
             patientName: metadata.patientName,
             modality: metadata.modality,
+            metadata: metadata, // Store full metadata object
             files: []
           };
           

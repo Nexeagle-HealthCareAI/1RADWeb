@@ -247,6 +247,10 @@ export default function TechnicianPage() {
           ...asset,
           name: s.name,
           rawFiles: s.rawFiles,
+          seriesUID: s.seriesUID,
+          modality: s.modality || asset.modality,
+          patientName: s.patientName || asset.patientName,
+          metadata: s.metadata,
           needsHydration: false
         }));
 
@@ -350,7 +354,13 @@ export default function TechnicianPage() {
         rawFiles: series.files,
         needsHydration: false,
         seriesUID: series.seriesUID,
-        modality: series.modality
+        modality: series.modality,
+        metadata: series.metadata || {
+          patientName: series.patientName,
+          modality: series.modality,
+          seriesDescription: series.seriesDesc,
+          studyDate: series.studyDate
+        }
       }));
 
       console.log(`[TECH_LOAD] Optimized processing complete. Discovered ${finalAssets.length} valid diagnostic series.`);
@@ -365,7 +375,15 @@ export default function TechnicianPage() {
         setProcessingStatus('Caching for future use...');
         const cachePayload = {
           ...asset,
-          series: finalAssets.map(ca => ({ name: ca.name, rawFiles: ca.rawFiles, seriesUID: ca.seriesUID }))
+          series: finalAssets.map(ca => ({ 
+            name: ca.name, 
+            rawFiles: ca.rawFiles, 
+            seriesUID: ca.seriesUID,
+            modality: ca.modality,
+            patientName: ca.patientName,
+            seriesDesc: ca.seriesDesc,
+            metadata: ca.metadata
+          }))
         };
         await DicomCache.set(asset.id, cachePayload);
         console.log(`[TECH_LOAD] Asset ${asset.id} persisted to persistent cache.`);
@@ -513,7 +531,13 @@ export default function TechnicianPage() {
           isZip: false,
           rawFiles: series.files,
           seriesUID: series.seriesUID,
-          modality: series.modality
+          modality: series.modality,
+          metadata: series.metadata || {
+            patientName: series.patientName,
+            modality: series.modality,
+            seriesDescription: series.seriesDesc,
+            studyDate: series.studyDate
+          }
         }));
 
         if (newAssets.length > 0) {
@@ -1209,6 +1233,7 @@ export default function TechnicianPage() {
                         engineId={`tech-engine-${idx}`}
                         viewportId={`tech-viewport-${idx}`}
                         files={uploadedFiles[(activeAssetIndex + idx) % uploadedFiles.length]?.rawFiles} 
+                        preParsedMetadata={uploadedFiles[(activeAssetIndex + idx) % uploadedFiles.length]?.metadata}
                         onMetadata={idx === 0 ? setActiveMetadata : null}
                         isSynced={isSyncEnabled}
                         onKeyImageToggle={toggleKeyImage}

@@ -916,6 +916,10 @@ const ReportingPage = () => {
           ...asset,
           name: s.name,
           rawFiles: s.rawFiles, // Blobs are automatically handled by IndexedDB
+          seriesUID: s.seriesUID,
+          modality: s.modality || asset.modality,
+          patientName: s.patientName || asset.patientName,
+          metadata: s.metadata,
           needsHydration: false
         }));
 
@@ -1131,6 +1135,12 @@ const ReportingPage = () => {
         needsHydration: false,
         seriesUID: series.seriesUID,
         modality: series.modality,
+        metadata: series.metadata || {
+          patientName: series.patientName,
+          modality: series.modality,
+          seriesDescription: series.seriesDesc,
+          studyDate: series.studyDate
+        },
         stats: {
           totalFiles: stats.totalFiles,
           validFiles: stats.validFiles,
@@ -1146,7 +1156,15 @@ const ReportingPage = () => {
           setProcessingStatus('Caching for future use...');
           const cachePayload = {
             ...asset,
-            series: finalAssets.map(ca => ({ name: ca.name, rawFiles: ca.rawFiles, seriesUID: ca.seriesUID }))
+            series: finalAssets.map(ca => ({ 
+              name: ca.name, 
+              rawFiles: ca.rawFiles, 
+              seriesUID: ca.seriesUID,
+              modality: ca.modality,
+              patientName: ca.patientName,
+              seriesDesc: ca.seriesDesc,
+              metadata: ca.metadata
+            }))
           };
           await DicomCache.set(asset.id, cachePayload);
           console.log(`[DICOM_LOAD] Asset ${asset.id} persisted to persistent cache.`);
@@ -3675,6 +3693,7 @@ const ReportingPage = () => {
                         <AdvancedDicomViewer 
                           key={`${activeAssetIndex}_${idx}_${resetTrigger}`} 
                           files={currentFiles || []} 
+                          preParsedMetadata={uploadedFiles[(activeAssetIndex + idx) % uploadedFiles.length]?.metadata}
                           activeTool={activeTool}
                           isCine={cineEnabled}
                           isSynced={isSyncEnabled}
