@@ -820,7 +820,7 @@ export default function AdminBoard() {
     const allPatients = referralIntelligence.flatMap(ref => 
       ref.patients.map(p => ({
         ...p,
-        referredBy: ref.name,
+        referredBy: p.referrerName || ref.name,
         sourceContact: ref.contact,
         sourceAddress: ref.address,
         registered: p.registrationDate // Alias for consistency
@@ -2290,7 +2290,7 @@ export default function AdminBoard() {
     return (
       <div className="referral-intel-view fade-in">
         {/* Level 0: Referral Instinct Dashboard */}
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '20px', marginBottom: '40px' }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '20px', marginBottom: '40px' }}>
            <div style={{ background: 'linear-gradient(135deg, #0f52ba 0%, #061a40 100%)', padding: '25px', borderRadius: '24px', color: 'white', position: 'relative', overflow: 'hidden' }}>
               <div style={{ position: 'absolute', right: '-10px', top: '-10px', fontSize: '60px', opacity: 0.1 }}>📈</div>
               <span style={{ fontSize: '9px', fontWeight: 950, color: 'var(--tactical-cyan)', textTransform: 'uppercase', letterSpacing: '2px', display: 'block', marginBottom: '10px' }}>Strategic Velocity</span>
@@ -2304,28 +2304,6 @@ export default function AdminBoard() {
               <div style={{ display: 'flex', gap: '10px', marginTop: '8px' }}>
                  <div style={{ fontSize: '9px', fontWeight: 900, color: '#059669' }}>PAID: ₹{paidPayout.toLocaleString()}</div>
                  <div style={{ fontSize: '9px', fontWeight: 900, color: '#dc2626' }}>UNPAID: ₹{unpaidPayout.toLocaleString()}</div>
-              </div>
-           </div>
-
-           <div style={{ background: 'white', padding: '25px', borderRadius: '24px', border: '1px solid #e2e8f0', display: 'flex', flexDirection: 'column', justifyContent: 'space-between' }}>
-              <div>
-                <span style={{ fontSize: '9px', fontWeight: 950, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '2px', display: 'block', marginBottom: '10px' }}>Tactical Sort Engine</span>
-                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
-                   {['missions', 'yield', 'pending', 'name'].map(k => (
-                      <button 
-                        key={k}
-                        onClick={() => setReferralSort(prev => ({ key: k, direction: prev.key === k ? (prev.direction === 'desc' ? 'asc' : 'desc') : 'desc' }))}
-                        style={{ 
-                          padding: '6px 12px', borderRadius: '8px', border: '1px solid #e2e8f0', fontSize: '8px', fontWeight: 950,
-                          background: referralSort.key === k ? '#1e293b' : 'white',
-                          color: referralSort.key === k ? 'white' : '#64748b',
-                          cursor: 'pointer', transition: 'all 0.2s'
-                        }}
-                      >
-                         {k.toUpperCase()} {referralSort.key === k && (referralSort.direction === 'desc' ? '↓' : '↑')}
-                      </button>
-                   ))}
-                </div>
               </div>
            </div>
 
@@ -2635,7 +2613,25 @@ export default function AdminBoard() {
               <div style={{ display: 'grid', gridTemplateColumns: '350px 1fr', gap: '30px', alignItems: 'flex-start' }}>
                 {/* Master Pane: Intelligence Roster */}
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '15px' }}>
-                  <div style={{ fontSize: '10px', fontWeight: 950, color: '#94a3b8', letterSpacing: '2px', marginBottom: '5px' }}>INTELLIGENCE ROSTER</div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '5px' }}>
+                     <div style={{ fontSize: '10px', fontWeight: 950, color: '#94a3b8', letterSpacing: '2px' }}>INTELLIGENCE ROSTER</div>
+                     <div style={{ display: 'flex', gap: '6px' }}>
+                        {['missions', 'yield', 'pending', 'name'].map(k => (
+                          <button 
+                            key={k}
+                            onClick={() => setReferralSort(prev => ({ key: k, direction: prev.key === k ? (prev.direction === 'desc' ? 'asc' : 'desc') : 'desc' }))}
+                            style={{ 
+                              padding: '4px 8px', borderRadius: '6px', border: '1px solid #e2e8f0', fontSize: '7px', fontWeight: 950,
+                              background: referralSort.key === k ? '#1e293b' : 'white',
+                              color: referralSort.key === k ? 'white' : '#64748b',
+                              cursor: 'pointer', transition: 'all 0.2s'
+                            }}
+                          >
+                             {k.toUpperCase()}
+                          </button>
+                        ))}
+                     </div>
+                  </div>
                   {referralAggregated.map((s, i) => {
                     const isSelected = expandedReferrer === s.name;
                     return (
