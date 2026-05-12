@@ -332,15 +332,15 @@ const RevenueHub = ({
                              });
                              setIsPayoutDrawerOpen(true);
                           }}
-                           disabled={recordedPayouts.has(inv.displayId)}
                            style={{ 
                              padding: '8px 12px', borderRadius: '10px', border: 'none', 
-                             background: recordedPayouts.has(inv.displayId) ? '#f1f5f9' : '#fff1f2', 
-                             color: recordedPayouts.has(inv.displayId) ? '#94a3b8' : '#e11d48', 
+                             background: '#fff1f2', 
+                             color: '#e11d48', 
                              fontSize: '10px', fontWeight: 950, 
-                             cursor: recordedPayouts.has(inv.displayId) ? 'default' : 'pointer', 
-                             boxShadow: recordedPayouts.has(inv.displayId) ? 'none' : '0 2px 5px rgba(225,29,72,0.1)' 
-                           }} >{recordedPayouts.has(inv.displayId) ? 'SETTLED' : 'RECORD PAYOUT'}</button>
+                             cursor: 'pointer', 
+                             boxShadow: '0 2px 5px rgba(225,29,72,0.1)' 
+                           }} >UPDATE PAYOUT</button>
+
                          <button 
                            onClick={() => handlePrintA4(inv)}
                            title="Print A4 Invoice"
