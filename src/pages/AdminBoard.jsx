@@ -155,6 +155,13 @@ export default function AdminBoard() {
   const [previewScale, setPreviewScale] = useState(0.8); // 80% default scale to fit screen
   const [numPdfPages, setNumPdfPages] = useState(null);
   const [pdfError, setPdfError] = useState(null);
+  const [isReferrerEditDrawerOpen, setIsReferrerEditDrawerOpen] = useState(false);
+  const [editingReferrer, setEditingReferrer] = useState(null);
+  const [isSavingReferrer, setIsSavingReferrer] = useState(false);
+
+  const [isPatientEditDrawerOpen, setIsPatientEditDrawerOpen] = useState(false);
+  const [editingPatient, setEditingPatient] = useState(null);
+  const [isSavingPatient, setIsSavingPatient] = useState(false);
   const [isTestMode, setIsTestMode] = useState(false);
 
   // Sync settings when doctor selection changes
@@ -446,6 +453,61 @@ export default function AdminBoard() {
       setReferralLoading(false);
     }
   }, [referralRange, referralFilterMode]);
+
+  const handleUpdateReferrer = async (e) => {
+    e.preventDefault();
+    if (!editingReferrer) return;
+
+    try {
+      setIsSavingReferrer(true);
+      await apiClient.put(`/referrers/${editingReferrer.referrerId}`, {
+        referrerId: editingReferrer.referrerId,
+        name: editingReferrer.name,
+        contact: editingReferrer.contact,
+        address: editingReferrer.address
+      });
+      
+      // Refresh data
+      fetchReferralIntelligence();
+      setIsReferrerEditDrawerOpen(false);
+      setEditingReferrer(null);
+    } catch (err) {
+      console.error('[REFERRER] Update failed', err);
+      alert('PROTOCOL FAILURE: Could not synchronize partner metadata.');
+    } finally {
+      setIsSavingReferrer(false);
+    }
+  };
+
+  const handleUpdatePatient = async (e) => {
+    e.preventDefault();
+    if (!editingPatient) return;
+
+    try {
+      setIsSavingPatient(true);
+      await apiClient.put(`/patients/${editingPatient.patientId}`, {
+        patientId: editingPatient.patientId,
+        fullName: editingPatient.fullName,
+        mobile: editingPatient.mobile,
+        age: editingPatient.age,
+        gender: editingPatient.gender,
+        village: editingPatient.village,
+        district: editingPatient.district,
+        address: editingPatient.address,
+        sourceOfInfo: editingPatient.sourceOfInfo
+      });
+      
+      // Refresh data
+      fetchReferralIntelligence();
+      setIsPatientEditDrawerOpen(false);
+      setEditingPatient(null);
+    } catch (err) {
+      console.error('[PATIENT] Update failed', err);
+      alert('PROTOCOL FAILURE: Could not synchronize Master Patient Index.');
+    } finally {
+      setIsSavingPatient(false);
+    }
+  };
 
   // --- DOMAIN SYNCHRONIZATION ---
   
@@ -778,8 +840,6 @@ export default function AdminBoard() {
   }, [referralIntelligence, referralLogSearch, referralViewMode]);
 
   const referralAggregated = useMemo(() => {
-    if (referralViewMode !== 'MATRIX' && referralViewMode !== 'ROSTER' ) return [];
-    
     // Map the backend intelligence DTOs to the frontend's expected Matrix structure
     const mapped = referralIntelligence.map(ref => {
       // Calculate modality breakdown for each referrer
@@ -2464,14 +2524,15 @@ export default function AdminBoard() {
                       <th style={{ padding: '20px 30px', textAlign: 'left', fontSize: '10px', fontWeight: 950, color: '#94a3b8', letterSpacing: '1px' }}>CONTACT NODE</th>
                       <th style={{ padding: '20px 30px', textAlign: 'left', fontSize: '10px', fontWeight: 950, color: '#94a3b8', letterSpacing: '1px' }}>AGE / GENDER</th>
                       <th style={{ padding: '20px 30px', textAlign: 'right', fontSize: '10px', fontWeight: 950, color: '#94a3b8', letterSpacing: '1px' }}>REG DATE</th>
+                      <th style={{ padding: '20px 30px', textAlign: 'right', fontSize: '10px', fontWeight: 950, color: '#94a3b8', letterSpacing: '1px' }}>ACTIONS</th>
                     </tr>
                   </thead>
                   <tbody>
                     {loadingMaster ? (
-                       <tr><td colSpan="6" style={{ padding: '60px', textAlign: 'center' }}><div className="pulse-loader" style={{ margin: '0 auto' }}></div></td></tr>
+                       <tr><td colSpan="7" style={{ padding: '60px', textAlign: 'center' }}><div className="pulse-loader" style={{ margin: '0 auto' }}></div></td></tr>
                     ) : patientMasterList.length === 0 ? (
                       <tr>
-                        <td colSpan="6" style={{ padding: '60px', textAlign: 'center', color: '#94a3b8', fontSize: '12px', fontWeight: 700 }}>NO REGISTERED PATIENTS FOUND FOR THIS PERIOD</td>
+                        <td colSpan="7" style={{ padding: '60px', textAlign: 'center', color: '#94a3b8', fontSize: '12px', fontWeight: 700 }}>NO REGISTERED PATIENTS FOUND FOR THIS PERIOD</td>
                       </tr>
                     ) : (
                       patientMasterList.map((p, i) => (
@@ -2494,6 +2555,31 @@ export default function AdminBoard() {
                           <td style={{ padding: '20px 30px', textAlign: 'right' }}>
                             <div style={{ fontSize: '11px', fontWeight: 900, color: '#0f52ba' }}>{new Date(p.registeredAt).toLocaleDateString()}</div>
                           </td>
+                          <td style={{ padding: '20px 30px', textAlign: 'right' }}>
+                             <button 
+                               onClick={() => {
+                                 setEditingPatient({
+                                   patientId: p.patientId,
+                                   fullName: p.fullName,
+                                   mobile: p.mobile,
+                                   age: p.age,
+                                   gender: p.gender,
+                                   village: p.village,
+                                   district: p.district,
+                                   address: p.address,
+                                   sourceOfInfo: p.sourceOfInfo
+                                 });
+                                 setIsPatientEditDrawerOpen(true);
+                               }}
+                               style={{ 
+                                 padding: '4px 10px', background: '#f8fafc', border: '1px solid #e2e8f0', 
+                                 borderRadius: '6px', fontSize: '9px', fontWeight: 950, color: '#0f52ba', 
+                                 cursor: 'pointer', transition: 'all 0.2s' 
+                                }}
+                             >
+                               EDIT
+                             </button>
+                          </td>
                         </tr>
                       ))
                     )}
@@ -2510,12 +2596,13 @@ export default function AdminBoard() {
                       <th style={{ padding: '20px 30px', textAlign: 'left', fontSize: '10px', fontWeight: 950, color: '#94a3b8', letterSpacing: '1px' }}>CONTACT NODE</th>
                       <th style={{ padding: '20px 30px', textAlign: 'left', fontSize: '10px', fontWeight: 950, color: '#94a3b8', letterSpacing: '1px' }}>ADDRESS / SECTOR</th>
                       <th style={{ padding: '20px 30px', textAlign: 'right', fontSize: '10px', fontWeight: 950, color: '#94a3b8', letterSpacing: '1px' }}>TOTAL MISSIONS</th>
+                      <th style={{ padding: '20px 30px', textAlign: 'right', fontSize: '10px', fontWeight: 950, color: '#94a3b8', letterSpacing: '1px' }}>ACTIONS</th>
                     </tr>
                   </thead>
                   <tbody>
                     {referralAggregated.length === 0 ? (
                       <tr>
-                        <td colSpan="4" style={{ padding: '60px', textAlign: 'center', color: '#94a3b8', fontSize: '12px', fontWeight: 700 }}>NO RECONNAISSANCE DATA AVAILABLE FOR THIS PERIOD</td>
+                        <td colSpan="6" style={{ padding: '60px', textAlign: 'center', color: '#94a3b8', fontSize: '12px', fontWeight: 700 }}>NO RECONNAISSANCE DATA AVAILABLE FOR THIS PERIOD</td>
                       </tr>
                     ) : (
                       referralAggregated
@@ -3174,6 +3261,188 @@ export default function AdminBoard() {
     </div>
   );
 
+  const renderReferrerEditDrawer = () => (
+    <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, zIndex: 2000, display: 'flex', justifyContent: 'flex-end' }}>
+      <div 
+        style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.4)', backdropFilter: 'blur(4px)' }} 
+        onClick={() => setIsReferrerEditDrawerOpen(false)}
+      />
+      <div style={{ 
+        width: '450px', background: 'white', height: '100%', position: 'relative', zIndex: 10,
+        boxShadow: '-20px 0 60px rgba(0,0,0,0.1)', display: 'flex', flexDirection: 'column'
+      }}>
+        <div style={{ padding: '35px 40px', borderBottom: '1px solid #f1f5f9', background: '#fcfdfe' }}>
+          <div style={{ fontSize: '10px', fontWeight: 950, color: '#0f52ba', letterSpacing: '3px', marginBottom: '8px' }}>PARTNER RECONFIGURATION</div>
+          <h2 style={{ fontSize: '20px', fontWeight: 950, color: '#1e293b', margin: 0 }}>EDIT PARTNER DETAILS</h2>
+        </div>
+
+        <form onSubmit={handleUpdateReferrer} style={{ padding: '40px', flex: 1, overflowY: 'auto' }}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '25px' }}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+              <label style={{ fontSize: '9px', fontWeight: 950, color: '#94a3b8', letterSpacing: '1px' }}>PARTNER NAME</label>
+              <input 
+                type="text"
+                required
+                value={editingReferrer?.name || ''}
+                onChange={e => setEditingReferrer(prev => ({ ...prev, name: e.target.value }))}
+                style={{ width: '100%', padding: '15px', borderRadius: '12px', border: '1px solid #e2e8f0', fontSize: '13px', fontWeight: 800, color: '#1e293b', outline: 'none' }}
+              />
+            </div>
+
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+              <label style={{ fontSize: '9px', fontWeight: 950, color: '#94a3b8', letterSpacing: '1px' }}>CONTACT IDENTIFIER</label>
+              <input 
+                type="text"
+                required
+                value={editingReferrer?.contact || ''}
+                onChange={e => setEditingReferrer(prev => ({ ...prev, contact: e.target.value }))}
+                style={{ width: '100%', padding: '15px', borderRadius: '12px', border: '1px solid #e2e8f0', fontSize: '13px', fontWeight: 800, color: '#1e293b', outline: 'none' }}
+              />
+            </div>
+
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+              <label style={{ fontSize: '9px', fontWeight: 950, color: '#94a3b8', letterSpacing: '1px' }}>CLINICAL SECTOR / ADDRESS</label>
+              <textarea 
+                required
+                value={editingReferrer?.address || ''}
+                onChange={e => setEditingReferrer(prev => ({ ...prev, address: e.target.value }))}
+                style={{ width: '100%', padding: '15px', borderRadius: '12px', border: '1px solid #e2e8f0', fontSize: '13px', fontWeight: 800, color: '#1e293b', outline: 'none', minHeight: '100px', resize: 'vertical' }}
+              />
+            </div>
+          </div>
+
+          <div style={{ marginTop: '50px', display: 'flex', gap: '15px' }}>
+             <button 
+               type="submit" 
+               disabled={isSavingReferrer}
+               style={{ flex: 1, padding: '16px', borderRadius: '14px', background: '#0f52ba', color: 'white', fontWeight: 950, fontSize: '11px', border: 'none', cursor: 'pointer', letterSpacing: '1px' }}
+             >
+               {isSavingReferrer ? 'SYNCHRONIZING...' : 'UPDATE PARTNER METADATA'}
+             </button>
+             <button 
+               type="button"
+               onClick={() => setIsReferrerEditDrawerOpen(false)}
+               style={{ padding: '16px 25px', borderRadius: '14px', background: '#f8fafc', color: '#64748b', fontWeight: 950, fontSize: '11px', border: '1px solid #e2e8f0', cursor: 'pointer' }}
+             >
+               CANCEL
+             </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+
+  const renderPatientEditDrawer = () => (
+    <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, zIndex: 2000, display: 'flex', justifyContent: 'flex-end' }}>
+      <div 
+        style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.4)', backdropFilter: 'blur(4px)' }} 
+        onClick={() => setIsPatientEditDrawerOpen(false)}
+      />
+      <div style={{ 
+        width: '500px', background: 'white', height: '100%', position: 'relative', zIndex: 10,
+        boxShadow: '-20px 0 60px rgba(0,0,0,0.1)', display: 'flex', flexDirection: 'column'
+      }}>
+        <div style={{ padding: '35px 40px', borderBottom: '1px solid #f1f5f9', background: '#fcfdfe' }}>
+          <div style={{ fontSize: '10px', fontWeight: 950, color: '#0f52ba', letterSpacing: '3px', marginBottom: '8px' }}>MASTER PATIENT INDEX</div>
+          <h2 style={{ fontSize: '20px', fontWeight: 950, color: '#1e293b', margin: 0 }}>EDIT PATIENT DEMOGRAPHICS</h2>
+        </div>
+
+        <form onSubmit={handleUpdatePatient} style={{ padding: '40px', flex: 1, overflowY: 'auto' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '25px' }}>
+            <div style={{ gridColumn: 'span 2', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+              <label style={{ fontSize: '9px', fontWeight: 950, color: '#94a3b8', letterSpacing: '1px' }}>FULL NAME</label>
+              <input 
+                type="text" required
+                value={editingPatient?.fullName || ''}
+                onChange={e => setEditingPatient(prev => ({ ...prev, fullName: e.target.value }))}
+                style={{ width: '100%', padding: '15px', borderRadius: '12px', border: '1px solid #e2e8f0', fontSize: '13px', fontWeight: 800, color: '#1e293b', outline: 'none' }}
+              />
+            </div>
+
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+              <label style={{ fontSize: '9px', fontWeight: 950, color: '#94a3b8', letterSpacing: '1px' }}>MOBILE IDENTIFIER</label>
+              <input 
+                type="text" required
+                value={editingPatient?.mobile || ''}
+                onChange={e => setEditingPatient(prev => ({ ...prev, mobile: e.target.value }))}
+                style={{ width: '100%', padding: '15px', borderRadius: '12px', border: '1px solid #e2e8f0', fontSize: '13px', fontWeight: 800, color: '#1e293b', outline: 'none' }}
+              />
+            </div>
+
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+              <label style={{ fontSize: '9px', fontWeight: 950, color: '#94a3b8', letterSpacing: '1px' }}>AGE / BIOLOGICAL YEARS</label>
+              <input 
+                type="text" required
+                value={editingPatient?.age || ''}
+                onChange={e => setEditingPatient(prev => ({ ...prev, age: e.target.value }))}
+                style={{ width: '100%', padding: '15px', borderRadius: '12px', border: '1px solid #e2e8f0', fontSize: '13px', fontWeight: 800, color: '#1e293b', outline: 'none' }}
+              />
+            </div>
+
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+              <label style={{ fontSize: '9px', fontWeight: 950, color: '#94a3b8', letterSpacing: '1px' }}>GENDER</label>
+              <select 
+                value={editingPatient?.gender || ''}
+                onChange={e => setEditingPatient(prev => ({ ...prev, gender: e.target.value }))}
+                style={{ width: '100%', padding: '15px', borderRadius: '12px', border: '1px solid #e2e8f0', fontSize: '13px', fontWeight: 800, color: '#1e293b', outline: 'none' }}
+              >
+                <option value="Male">Male</option>
+                <option value="Female">Female</option>
+                <option value="Other">Other</option>
+              </select>
+            </div>
+
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+              <label style={{ fontSize: '9px', fontWeight: 950, color: '#94a3b8', letterSpacing: '1px' }}>VILLAGE / LOCALITY</label>
+              <input 
+                type="text"
+                value={editingPatient?.village || ''}
+                onChange={e => setEditingPatient(prev => ({ ...prev, village: e.target.value }))}
+                style={{ width: '100%', padding: '15px', borderRadius: '12px', border: '1px solid #e2e8f0', fontSize: '13px', fontWeight: 800, color: '#1e293b', outline: 'none' }}
+              />
+            </div>
+
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+              <label style={{ fontSize: '9px', fontWeight: 950, color: '#94a3b8', letterSpacing: '1px' }}>DISTRICT / ZONE</label>
+              <input 
+                type="text"
+                value={editingPatient?.district || ''}
+                onChange={e => setEditingPatient(prev => ({ ...prev, district: e.target.value }))}
+                style={{ width: '100%', padding: '15px', borderRadius: '12px', border: '1px solid #e2e8f0', fontSize: '13px', fontWeight: 800, color: '#1e293b', outline: 'none' }}
+              />
+            </div>
+
+            <div style={{ gridColumn: 'span 2', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+              <label style={{ fontSize: '9px', fontWeight: 950, color: '#94a3b8', letterSpacing: '1px' }}>PHYSICAL ADDRESS</label>
+              <textarea 
+                value={editingPatient?.address || ''}
+                onChange={e => setEditingPatient(prev => ({ ...prev, address: e.target.value }))}
+                style={{ width: '100%', padding: '15px', borderRadius: '12px', border: '1px solid #e2e8f0', fontSize: '13px', fontWeight: 800, color: '#1e293b', outline: 'none', minHeight: '80px' }}
+              />
+            </div>
+          </div>
+
+          <div style={{ marginTop: '50px', display: 'flex', gap: '15px' }}>
+             <button 
+               type="submit" 
+               disabled={isSavingPatient}
+               style={{ flex: 1, padding: '16px', borderRadius: '14px', background: '#0f52ba', color: 'white', fontWeight: 950, fontSize: '11px', border: 'none', cursor: 'pointer', letterSpacing: '1px' }}
+             >
+               {isSavingPatient ? 'SYNCHRONIZING...' : 'UPDATE PATIENT INDEX'}
+             </button>
+             <button 
+               type="button"
+               onClick={() => setIsPatientEditDrawerOpen(false)}
+               style={{ padding: '16px 25px', borderRadius: '14px', background: '#f8fafc', color: '#64748b', fontWeight: 950, fontSize: '11px', border: '1px solid #e2e8f0', cursor: 'pointer' }}
+             >
+               CANCEL
+             </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+
   return (
     <div className="page-wrapper board-padding" style={{ paddingTop: '30px' }}>
       <div className="board-hero-header flex-stack-mobile" style={{ marginBottom: '30px', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', gap: '20px' }}>
@@ -3370,6 +3639,8 @@ export default function AdminBoard() {
 
       {isHospitalDrawerOpen && renderHospitalSettingsDrawer()}
       {isChainDrawerOpen && renderChainDrawer()}
+      {isReferrerEditDrawerOpen && renderReferrerEditDrawer()}
+      {isPatientEditDrawerOpen && renderPatientEditDrawer()}
 
       {/* Personnel Roster Drawer: Redesigned Tactical HUD */}
       {isUserDrawerOpen && (
