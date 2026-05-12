@@ -838,15 +838,19 @@ export default function BillingPage() {
     setSelectedInvoice(recalculateInvoice({ ...selectedInvoice, items: newItems }));
   };
 
-  const handleCollectPayment = async () => {
-    const payload = { 
-      invoiceId: selectedInvoice.invoiceId, 
-      amount: (selectedInvoice.totalAmount - (selectedInvoice.paidAmount || 0)), 
-      discountAmount: selectedInvoice.discountAmount,
-      paymentMethod 
-    };
-
+  const handleCollectPayment = async (centreDiscount = 0, referrerDiscount = 0, deduction = 0) => {
     try {
+      const payload = {
+        invoiceId: selectedInvoice.id,
+        amount: selectedInvoice.totalAmount,
+        centreDiscount,
+        referrerDiscount,
+        deduction,
+        paymentMethod: paymentMethod
+      };
+
+
+      
       if (!isOnline) {
         await addToOutbox('PAYMENT', payload);
         alert('OFFLINE MODE: Payment cached locally. Will sync when online.');
@@ -935,6 +939,23 @@ export default function BillingPage() {
       alert('PROTOCOL FAILURE: Could not update invoice discount.');
     }
   };
+
+  const handleApplyAdjustment = async (invoiceId, amount) => {
+    try {
+      await apiClient.post('/finance/adjust', { 
+        invoiceId, 
+        extraDiscount: amount 
+      });
+      fetchInvoices();
+      fetchStats();
+      setIsInvoiceDrawerOpen(false);
+      alert(`ADJUSTMENT SUCCESS: Applied ₹${amount} concession.`);
+    } catch (err) {
+      console.error('[FINANCE] Adjustment failed', err);
+      alert('ADJUSTMENT FAILURE: ' + (err.response?.data?.message || 'Internal Error'));
+    }
+  };
+
 
   const ghostPrint = (html) => {
     const iframe = document.createElement('iframe');
@@ -1352,7 +1373,9 @@ export default function BillingPage() {
           handleCollectPayment={handleCollectPayment}
           handlePrintA4={handlePrintA4}
           handlePrintThermal={handlePrintThermal}
+          onApplyAdjustment={handleApplyAdjustment}
         />
+
       )}
       {isNewInvoiceDrawerOpen && (
         <NewInvoiceDrawer 

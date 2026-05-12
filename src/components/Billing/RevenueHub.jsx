@@ -311,7 +311,8 @@ const RevenueHub = ({
                      <td style={{ padding: '20px 10px', textAlign: 'right', display: 'flex', gap: '10px', justifyContent: 'flex-end', alignItems: 'center' }}>
                         <button 
                           onClick={() => {
-                             const cutAmount = Math.round((inv.totalAmount || 0) * 0.2);
+                             const cutAmount = inv.commissionAmount || 0;
+
                              // Multi-stage identity resolution
                              let refId = inv.referrerId;
                              if (!refId && inv.referrerName) {
@@ -359,7 +360,11 @@ const RevenueHub = ({
                         <button 
                           onClick={() => { setSelectedInvoice(inv); setIsInvoiceDrawerOpen(true); }}
                           style={{ padding: '8px 16px', borderRadius: '10px', border: '1px solid #e2e8f0', background: 'white', color: '#0f52ba', fontSize: '10px', fontWeight: 950, cursor: 'pointer' }}
-                        >PAYMENT</button>
+                        >{inv.status === 'PAID' ? 'VIEW' : 'PAYMENT'}</button>
+
+
+
+
                         <button 
                           onClick={() => handleDeleteInvoice(inv.invoiceId)}
                           style={{ padding: '8px 12px', borderRadius: '10px', border: 'none', background: '#fee2e2', color: '#ef4444', fontSize: '10px', fontWeight: 950, cursor: 'pointer' }}

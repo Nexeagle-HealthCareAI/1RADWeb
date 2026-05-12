@@ -14,161 +14,232 @@ export const InvoiceDrawer = ({
   handleSaveInvoice,
   handleCollectPayment,
   handlePrintA4,
-  handlePrintThermal
+  handlePrintThermal,
+  onApplyAdjustment
 }) => {
+  const [centreDisc, setCentreDisc] = React.useState(0);
+  const [referrerDisc, setReferrerDisc] = React.useState(0);
+  const [deduction, setDeduction] = React.useState(0);
+
   if (!selectedInvoice) return null;
+
+  const totalDeductions = centreDisc + referrerDisc + deduction;
+  const netSettlement = (selectedInvoice.grossAmount || 0) - totalDeductions;
+
 
   return (
     <div className="drawer-overlay" onClick={() => setIsInvoiceDrawerOpen(false)} style={{ backdropFilter: 'blur(8px)', background: 'rgba(10, 22, 40, 0.4)', zIndex: 10000 }}>
-      <div className="drawer-content" style={{ padding: 0, width: '600px', background: 'white' }} onClick={e => e.stopPropagation()}>
-        <div style={{ padding: '35px', background: isPaid ? '#10b981' : 'linear-gradient(135deg, #0f52ba 0%, #061a40 100%)', color: 'white' }}>
-           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-              <div>
-                 <h2 style={{ fontSize: '11px', fontWeight: 950, color: 'rgba(255,255,255,0.7)', letterSpacing: '3px', textTransform: 'uppercase', marginBottom: '8px' }}>Financial Clearance</h2>
-                 <div style={{ fontSize: '24px', fontWeight: 950, letterSpacing: '-1px' }}>{selectedInvoice.displayId}</div>
+      <div className="drawer-content" style={{ padding: 0, width: '700px', background: 'white', borderRadius: '24px', overflow: 'hidden', maxHeight: '95vh', display: 'flex', flexDirection: 'column' }} onClick={e => e.stopPropagation()}>
+        {/* Header - More Compact */}
+        <div style={{ padding: '20px 25px', background: isPaid ? '#10b981' : 'linear-gradient(135deg, #0f52ba 0%, #061a40 100%)', color: 'white', flexShrink: 0 }}>
+
+           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <div style={{ display: 'flex', gap: '20px', alignItems: 'center' }}>
+                 <div>
+                    <h2 style={{ fontSize: '9px', fontWeight: 950, color: 'rgba(255,255,255,0.7)', letterSpacing: '2px', textTransform: 'uppercase', marginBottom: '2px' }}>FISCAL_NODE</h2>
+                    <div style={{ fontSize: '18px', fontWeight: 950, letterSpacing: '-0.5px' }}>{selectedInvoice.displayId}</div>
+                 </div>
+                 <div style={{ height: '30px', width: '1px', background: 'rgba(255,255,255,0.2)' }}></div>
+                 <div>
+                    <h2 style={{ fontSize: '9px', fontWeight: 950, color: 'rgba(255,255,255,0.7)', letterSpacing: '2px', textTransform: 'uppercase', marginBottom: '2px' }}>PATIENT_IDENTITY</h2>
+                    <div style={{ fontSize: '15px', fontWeight: 950 }}>{selectedInvoice.patientName?.toUpperCase()}</div>
+                 </div>
               </div>
               <div style={{ display: 'flex', gap: '15px', alignItems: 'center' }}>
-                 <div style={{ padding: '8px 15px', background: 'rgba(255,255,255,0.2)', borderRadius: '10px', fontSize: '10px', fontWeight: 950 }}>
+                 <div style={{ padding: '6px 12px', background: 'rgba(255,255,255,0.2)', borderRadius: '8px', fontSize: '9px', fontWeight: 950, letterSpacing: '1px' }}>
                     {selectedInvoice.status}
                  </div>
                  <button 
                    onClick={() => setIsInvoiceDrawerOpen(false)}
-                   style={{ background: 'none', border: 'none', color: 'white', fontSize: '24px', cursor: 'pointer', opacity: 0.7, padding: '5px' }}
+                   style={{ background: 'none', border: 'none', color: 'white', fontSize: '20px', cursor: 'pointer', opacity: 0.7 }}
                  >✕</button>
               </div>
            </div>
         </div>
 
-        <div style={{ padding: '35px' }}>
-           <div style={{ marginBottom: '30px' }}>
-              <span style={{ fontSize: '10px', fontWeight: 950, color: '#94a3b8', letterSpacing: '1px' }}>PATIENT_IDENTITY</span>
-              <div style={{ fontSize: '18px', fontWeight: 900, color: '#1a1a2e', marginTop: '4px' }}>{selectedInvoice.patientName.toUpperCase()}</div>
-           </div>
+        <div style={{ padding: '25px', display: 'grid', gridTemplateColumns: '1fr 2fr', gap: '30px', overflowY: 'auto', flex: 1 }}>
 
-           <div style={{ marginBottom: '30px' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '15px' }}>
-                 <span style={{ fontSize: '10px', fontWeight: 950, color: '#94a3b8', letterSpacing: '1px' }}>LINE_ITEMS_MANIFEST</span>
-                 {!isPaid && <button onClick={handleAddItem} style={{ color: '#0f52ba', border: 'none', background: 'none', fontSize: '10px', fontWeight: 950, cursor: 'pointer' }}>+ ADD CUSTOM ITEM</button>}
+           {/* Left Column: Items and Adjustments */}
+           <div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
+                 <span style={{ fontSize: '9px', fontWeight: 950, color: '#94a3b8', letterSpacing: '1px' }}>LINE_ITEMS_MANIFEST</span>
+                 {!isPaid && <button onClick={handleAddItem} style={{ color: '#0f52ba', border: 'none', background: 'none', fontSize: '9px', fontWeight: 950, cursor: 'pointer' }}>+ ADD_ITEM</button>}
               </div>
               
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '15px' }}>
-                 {selectedInvoice.items.map((item, idx) => (
-                   <div key={idx} style={{ display: 'flex', gap: '10px', alignItems: 'center', background: '#f8fafc', padding: '12px', borderRadius: '12px', border: '1px solid #f1f5f9' }}>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', maxHeight: '200px', overflowY: 'auto', paddingRight: '5px' }}>
+                 {selectedInvoice.items?.map((item, idx) => (
+                   <div key={idx} style={{ display: 'flex', gap: '10px', alignItems: 'center', background: '#f8fafc', padding: '10px', borderRadius: '10px', border: '1px solid #f1f5f9' }}>
                       <input 
                         disabled={isPaid}
                         type="text" value={item.description} 
                         onChange={e => handleUpdateItem(idx, 'description', e.target.value)}
                         placeholder="Description"
-                        style={{ flex: 2, background: 'transparent', border: 'none', borderBottom: isPaid ? 'none' : '1px solid #ddd', fontSize: '12px', fontWeight: 700 }}
+                        style={{ flex: 1, background: 'transparent', border: 'none', borderBottom: isPaid ? 'none' : '1px solid #ddd', fontSize: '11px', fontWeight: 700 }}
                       />
-                      <input 
-                        disabled={isPaid}
-                        type="number" value={item.amount} 
-                        onChange={e => handleUpdateItem(idx, 'amount', parseInt(e.target.value) || 0)}
-                        style={{ flex: 1, background: 'transparent', border: 'none', borderBottom: isPaid ? 'none' : '1px solid #ddd', fontSize: '12px', fontWeight: 950, textAlign: 'right' }}
-                      />
-                      {!isPaid && <button onClick={() => handleRemoveItem(idx)} style={{ color: '#ef4444', border: 'none', background: 'none', cursor: 'pointer' }}>✕</button>}
+                      <div style={{ fontSize: '11px', fontWeight: 950, color: '#0f52ba', display: 'flex', alignItems: 'center' }}>
+                         ₹<input 
+                           disabled={isPaid}
+                           type="number" value={item.amount} 
+                           onChange={e => handleUpdateItem(idx, 'amount', parseInt(e.target.value) || 0)}
+                           style={{ width: '60px', background: 'transparent', border: 'none', borderBottom: isPaid ? 'none' : '1px solid #ddd', fontSize: '11px', fontWeight: 950, textAlign: 'right', marginLeft: '4px' }}
+                         />
+                      </div>
+                      {!isPaid && <button onClick={() => handleRemoveItem(idx)} style={{ color: '#ef4444', border: 'none', background: 'none', cursor: 'pointer', fontSize: '12px' }}>✕</button>}
                    </div>
                  ))}
               </div>
+
+              {isPaid && (
+                <div style={{ 
+                  marginTop: '15px', padding: '16px', background: 'linear-gradient(145deg, #fffafa, #fff5f5)', 
+                  borderRadius: '16px', border: '1px solid #fecaca', boxShadow: '0 4px 12px rgba(225, 29, 72, 0.03)'
+                }}>
+                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <div>
+                         <span style={{ fontSize: '9px', fontWeight: 950, color: '#e11d48', letterSpacing: '1.5px', textTransform: 'uppercase' }}>CONCESSION_OVERRIDE_PROTOCOL</span>
+                         <div style={{ fontSize: '10px', color: '#9f1239', fontWeight: 700, marginTop: '2px', opacity: 0.6 }}>DIRECT_CENTRE_DEBIT_MODE</div>
+                      </div>
+
+                      {!isAdjusting ? (
+                        <button onClick={() => setIsAdjusting(true)} style={{ padding: '8px 16px', borderRadius: '10px', border: 'none', background: '#e11d48', color: 'white', fontSize: '9px', fontWeight: 950, cursor: 'pointer', boxShadow: '0 4px 10px rgba(225, 29, 72, 0.2)' }}>INIT_ADJUSTMENT</button>
+                      ) : (
+                        <div style={{ display: 'flex', gap: '10px', alignItems: 'center', background: 'white', padding: '4px', borderRadius: '12px', border: '1px solid #fecaca' }}>
+                           <div style={{ display: 'flex', alignItems: 'center', paddingLeft: '10px' }}>
+                              <span style={{ fontSize: '12px', fontWeight: 950, color: '#e11d48' }}>₹</span>
+                              <input 
+                                type="number" autoFocus placeholder="0" value={adjustAmount || ''}
+                                onChange={e => setAdjustAmount(parseFloat(e.target.value) || 0)}
+                                style={{ width: '70px', padding: '8px 4px', border: 'none', fontSize: '14px', fontWeight: 950, color: '#1a1a2e', outline: 'none', fontFamily: 'monospace' }}
+                              />
+                           </div>
+                           <button onClick={() => { if (adjustAmount > 0 && onApplyAdjustment) { onApplyAdjustment(selectedInvoice.invoiceId, adjustAmount); setIsAdjusting(false); } }} style={{ padding: '8px 16px', borderRadius: '8px', border: 'none', background: '#e11d48', color: 'white', fontSize: '9px', fontWeight: 950, cursor: 'pointer' }}>COMMIT_REBATE</button>
+                           <button onClick={() => setIsAdjusting(false)} style={{ width: '28px', height: '28px', borderRadius: '8px', border: 'none', background: '#f1f5f9', color: '#64748b', cursor: 'pointer', fontSize: '12px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>✕</button>
+                        </div>
+                      )}
+                   </div>
+                </div>
+              )}
            </div>
 
-           <div style={{ borderTop: '2px dashed #f1f5f9', paddingTop: '20px', marginBottom: '40px' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '12px' }}>
-                 <span style={{ fontSize: '11px', fontWeight: 950, color: '#94a3b8', letterSpacing: '1px' }}>GROSS_TOTAL</span>
-                 <span style={{ fontSize: '13px', fontWeight: 950, color: '#1e293b' }}>₹{(selectedInvoice.grossAmount || 0).toLocaleString()}</span>
-              </div>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
-                 <span style={{ fontSize: '11px', fontWeight: 950, color: '#ef4444', letterSpacing: '1px' }}>DEDUCTION_REBATE</span>
-                 {isPaid ? (
-                   <span style={{ fontSize: '13px', fontWeight: 950, color: '#ef4444' }}>- ₹{(selectedInvoice.discountAmount || 0).toLocaleString()}</span>
-                 ) : (
-                   <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                      <div style={{ display: 'flex', gap: '4px' }}>
-                         {[5, 10, 25, 50].map(pct => (
-                           <button 
-                             key={pct}
-                             onClick={() => {
-                               const gross = selectedInvoice.grossAmount || 0;
-                               const disc = Math.round(gross * (pct / 100));
-                               setSelectedInvoice(recalculateInvoice({ ...selectedInvoice, discountAmount: disc }));
-                             }}
-                             style={{ padding: '4px 8px', borderRadius: '6px', border: '1px solid #fecdd3', background: '#fff1f2', color: '#e11d48', fontSize: '8px', fontWeight: 950, cursor: 'pointer' }}
-                           >{pct}%</button>
-                         ))}
+           {/* Right Column: Financial Summary & Actions */}
+           <div style={{ background: '#f8fafc', padding: '20px', borderRadius: '20px', border: '1px solid #edf2f7' }}>
+              <div style={{ marginBottom: '20px' }}>
+                 {/* Financial Summary & Actions */}
+
+
+
+
+                 {!isPaid && (
+                   <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', marginBottom: '15px', padding: '12px', background: '#fff', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                         <div>
+                            <span style={{ fontSize: '8px', fontWeight: 950, color: '#64748b' }}>CONCESSION: CENTRE</span>
+                            <div style={{ display: 'flex', gap: '3px', marginTop: '4px' }}>
+                               {[10, 25, 50, 100].map(p => (
+                                 <button 
+                                   key={p} type="button"
+                                   onClick={() => setCentreDisc(Math.round((selectedInvoice.grossAmount || 0) * (p / 100)))}
+                                   style={{ padding: '2px 4px', fontSize: '7px', fontWeight: 950, border: '1px solid #eee', borderRadius: '4px', background: '#f8fafc', cursor: 'pointer' }}
+                                 >{p}%</button>
+                               ))}
+                            </div>
+                         </div>
+                         <div style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
+                            <span style={{ fontSize: '10px', fontWeight: 950, color: '#ef4444' }}>₹</span>
+                            <input 
+                              type="number" value={centreDisc} onChange={e => setCentreDisc(parseInt(e.target.value) || 0)}
+                              style={{ width: '70px', padding: '4px', border: '1px solid #f1f5f9', borderRadius: '6px', fontSize: '11px', fontWeight: 950, textAlign: 'right', color: '#ef4444' }}
+                            />
+                         </div>
                       </div>
-                      <input 
-                        type="number" 
-                        value={selectedInvoice.discountAmount} 
-                        onChange={e => {
-                          const disc = parseInt(e.target.value) || 0;
-                          const gross = selectedInvoice.grossAmount || 0;
-                          const net = gross - disc;
-                          setSelectedInvoice({ 
-                            ...selectedInvoice, 
-                            discountAmount: disc,
-                            totalAmount: net,
-                            balanceAmount: net - (selectedInvoice.paidAmount || 0)
-                          });
-                        }}
-                        style={{ width: '80px', padding: '6px 12px', borderRadius: '10px', border: '1px solid #e2e8f0', fontSize: '12px', fontWeight: 950, textAlign: 'right', color: '#ef4444', outline: 'none' }}
-                      />
+                      
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', opacity: (selectedInvoice.commissionAmount || 0) > 0 ? 1 : 0.5, pointerEvents: (selectedInvoice.commissionAmount || 0) > 0 ? 'auto' : 'none' }}>
+                         <div>
+                            <span style={{ fontSize: '8px', fontWeight: 950, color: '#64748b' }}>CONCESSION: REFERRAL</span>
+                            <div style={{ display: 'flex', gap: '3px', marginTop: '4px' }}>
+                               {[10, 25, 50, 100].map(p => (
+                                 <button 
+                                   key={p} type="button"
+                                   onClick={() => setReferrerDisc(Math.round((selectedInvoice.grossAmount || 0) * (p / 100)))}
+                                   style={{ padding: '2px 4px', fontSize: '7px', fontWeight: 950, border: '1px solid #eee', borderRadius: '4px', background: '#f8fafc', cursor: 'pointer' }}
+                                 >{p}%</button>
+                               ))}
+                            </div>
+                            <div style={{ fontSize: '7px', color: '#94a3b8', fontWeight: 800, marginTop: '2px' }}>LIMIT: ₹{selectedInvoice.commissionAmount || 0}</div>
+                         </div>
+                         <div style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
+                            <span style={{ fontSize: '10px', fontWeight: 950, color: '#e11d48' }}>₹</span>
+                            <input 
+                              type="number" value={referrerDisc} 
+                              max={selectedInvoice.commissionAmount || 0}
+                              onChange={e => {
+                                const val = parseInt(e.target.value) || 0;
+                                const limit = selectedInvoice.commissionAmount || 0;
+                                setReferrerDisc(val > limit ? limit : val);
+                              }}
+                              style={{ width: '70px', padding: '4px', border: '1px solid #f1f5f9', borderRadius: '6px', fontSize: '11px', fontWeight: 950, textAlign: 'right', color: '#e11d48' }}
+                            />
+                         </div>
+                      </div>
+
+
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                         <span style={{ fontSize: '8px', fontWeight: 950, color: '#64748b' }}>INSTITUTIONAL DEDUCTION</span>
+                         <div style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
+                            <span style={{ fontSize: '10px', fontWeight: 950, color: '#64748b' }}>₹</span>
+                            <input 
+                              type="number" value={deduction} onChange={e => setDeduction(parseInt(e.target.value) || 0)}
+                              style={{ width: '70px', padding: '4px', border: '1px solid #f1f5f9', borderRadius: '6px', fontSize: '11px', fontWeight: 950, textAlign: 'right', color: '#1e293b' }}
+                            />
+                         </div>
+                      </div>
                    </div>
                  )}
-              </div>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '15px' }}>
-                 <span style={{ fontSize: '14px', fontWeight: 950, color: '#1a1a2e' }}>NET_PAYABLE_QUANTUM</span>
-                 <span style={{ fontSize: '24px', fontWeight: 950, color: '#0f52ba' }}>₹{selectedInvoice.totalAmount.toLocaleString()}</span>
-              </div>
-           </div>
 
-           {!isPaid ? (
-             <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
-                <div>
-                   <span style={{ fontSize: '10px', fontWeight: 950, color: '#94a3b8', letterSpacing: '1px', marginBottom: '10px', display: 'block' }}>PAYMENT_PROTOCOL</span>
-                   <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '10px' }}>
-                      {['CASH', 'UPI', 'CARD'].map(m => (
-                        <button 
-                          key={m} 
-                          onClick={() => setPaymentMethod(m)}
-                          style={{ 
-                            padding: '12px', borderRadius: '12px', border: paymentMethod === m ? '2px solid #0f52ba' : '1px solid #e2e8f0',
-                            background: paymentMethod === m ? '#f0f4ff' : 'white', color: paymentMethod === m ? '#0f52ba' : '#64748b',
-                            fontSize: '10px', fontWeight: 950, cursor: 'pointer'
-                          }}
-                        >
-                          {m}
-                        </button>
-                      ))}
-                   </div>
-                </div>
-                <div style={{ display: 'flex', gap: '15px', marginTop: '10px' }}>
-                   <button onClick={handleSaveInvoice} style={{ flex: 1, padding: '16px', borderRadius: '16px', border: '1px solid #eee', fontWeight: 800, cursor: 'pointer' }}>SAVE CHANGES</button>
-                   <button onClick={handleCollectPayment} style={{ flex: 2, padding: '16px', borderRadius: '16px', border: 'none', background: '#0f52ba', color: 'white', fontWeight: 950, cursor: 'pointer' }}>PROCESS PAYMENT & CLOSE</button>
-                </div>
-             </div>
-           ) : (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '15px' }}>
-                <div style={{ background: '#f0fdf4', border: '1px solid #bcf0da', padding: '20px', borderRadius: '16px', textAlign: 'center' }}>
-                   <div style={{ fontSize: '12px', fontWeight: 950, color: '#166534', textTransform: 'uppercase', letterSpacing: '1px' }}>SUCCESS: TRANSACTION SETTLED</div>
-                   <div style={{ fontSize: '10px', color: '#166534', opacity: 0.7, marginTop: '4px' }}>Processed on {new Date(selectedInvoice.createdAt).toLocaleString()}</div>
-                </div>
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '15px' }}>
-                   <button 
-                     onClick={() => handlePrintA4(selectedInvoice)}
-                     style={{ padding: '16px', borderRadius: '16px', border: '1px solid #0f52ba', background: 'white', color: '#0f52ba', fontWeight: 950, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}
-                   >
-                     PRINT A4 INVOICE
-                   </button>
-                   <button 
-                     onClick={() => handlePrintThermal(selectedInvoice)}
-                     style={{ padding: '16px', borderRadius: '16px', border: 'none', background: 'linear-gradient(135deg, #0f52ba, #061a40)', color: 'white', fontWeight: 950, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}
-                   >
-                     THERMAL RECEIPT
-                   </button>
-                </div>
+                 <div style={{ marginBottom: '12px' }}>
+                    <div style={{ fontSize: '9px', fontWeight: 950, color: '#ef4444', letterSpacing: '1px', marginBottom: '4px' }}>TOTAL_DEDUCTIONS</div>
+                    <div style={{ fontSize: '11px', fontWeight: 950, color: '#ef4444' }}>- ₹{(isPaid ? selectedInvoice.discountAmount : totalDeductions).toLocaleString()}</div>
+                 </div>
+
+
+                 <div style={{ borderTop: '1px solid #e2e8f0', paddingTop: '12px', marginTop: '12px' }}>
+                    <div style={{ fontSize: '9px', fontWeight: 950, color: '#0f52ba', letterSpacing: '1px', marginBottom: '4px' }}>NET_SETTLEMENT</div>
+                    <div style={{ fontSize: '24px', fontWeight: 950, color: '#0f52ba' }}>₹{(isPaid ? selectedInvoice.totalAmount : netSettlement).toLocaleString()}</div>
+                 </div>
               </div>
-            )}
+
+              {!isPaid ? (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '15px' }}>
+                   <div>
+                      <span style={{ fontSize: '9px', fontWeight: 950, color: '#94a3b8', letterSpacing: '1px', marginBottom: '8px', display: 'block' }}>PROTOCOL</span>
+                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '6px' }}>
+                         {['CASH', 'UPI', 'CARD'].map(m => (
+                           <button 
+                             key={m} onClick={() => setPaymentMethod(m)}
+                             style={{ 
+                               padding: '8px', borderRadius: '10px', border: paymentMethod === m ? '2px solid #0f52ba' : '1px solid #e2e8f0',
+                               background: paymentMethod === m ? '#f0f4ff' : 'white', color: paymentMethod === m ? '#0f52ba' : '#64748b',
+                               fontSize: '9px', fontWeight: 950, cursor: 'pointer'
+                             }}
+                           >{m}</button>
+                         ))}
+                      </div>
+                   </div>
+                   <button onClick={() => handleCollectPayment(centreDisc, referrerDisc, deduction)} style={{ width: '100%', padding: '12px', borderRadius: '12px', border: 'none', background: '#0f52ba', color: 'white', fontWeight: 950, fontSize: '10px', cursor: 'pointer', boxShadow: '0 4px 12px rgba(15,82,186,0.2)' }}>COMMIT SETTLEMENT</button>
+                   <button onClick={handleSaveInvoice} style={{ width: '100%', padding: '10px', borderRadius: '12px', border: '1px solid #e2e8f0', fontWeight: 800, fontSize: '9px', cursor: 'pointer', background: 'white' }}>SAVE AS DRAFT</button>
+
+                </div>
+
+              ) : (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                   <div style={{ background: '#ecfdf5', padding: '12px', borderRadius: '12px', textAlign: 'center', border: '1px solid #d1fae5' }}>
+                      <div style={{ fontSize: '9px', fontWeight: 950, color: '#059669', textTransform: 'uppercase' }}>SETTLED</div>
+                   </div>
+                   <button onClick={() => handlePrintA4(selectedInvoice)} style={{ width: '100%', padding: '12px', borderRadius: '12px', border: '1.5px solid #0f52ba', background: 'white', color: '#0f52ba', fontWeight: 950, fontSize: '10px', cursor: 'pointer' }}>PRINT A4 INVOICE</button>
+                   <button onClick={() => handlePrintThermal(selectedInvoice)} style={{ width: '100%', padding: '12px', borderRadius: '12px', border: 'none', background: 'linear-gradient(135deg, #0f52ba, #061a40)', color: 'white', fontWeight: 950, fontSize: '10px', cursor: 'pointer' }}>THERMAL SLIP</button>
+                </div>
+              )}
+           </div>
         </div>
       </div>
     </div>
@@ -283,7 +354,6 @@ export const NewInvoiceDrawer = ({
                                       appointmentId: s.appointmentId,
                                       referralCutValue: s.referralCutValue || 0
                                     };
-
                                   } else {
                                     newItems.push({ 
                                       description: s.service, 
@@ -292,7 +362,6 @@ export const NewInvoiceDrawer = ({
                                       appointmentId: s.appointmentId,
                                       referralCutValue: s.referralCutValue || 0
                                     });
-
                                   }
                                   setNewInvoiceData({ ...newInvoiceData, items: newItems });
                                 setPendingServices(prev => prev.filter((_, i) => i !== idx));
@@ -325,7 +394,6 @@ export const NewInvoiceDrawer = ({
                                   quantity: 1,
                                   referralCutValue: s.referralCutValue || 0
                                 };
-
                               } else {
                                 newItems.push({ 
                                   description: s.serviceName, 
@@ -333,7 +401,6 @@ export const NewInvoiceDrawer = ({
                                   quantity: 1,
                                   referralCutValue: s.referralCutValue || 0
                                 });
-
                               }
                               setNewInvoiceData({ ...newInvoiceData, items: newItems });
                            }}
@@ -355,63 +422,62 @@ export const NewInvoiceDrawer = ({
                      <button type="button" onClick={() => setNewInvoiceData({ ...newInvoiceData, items: [...newInvoiceData.items, { description: '', amount: 0, quantity: 1 }] })} style={{ color: '#0f52ba', border: 'none', background: 'none', fontSize: '10px', fontWeight: 950, cursor: 'pointer' }}>+ ADD LINE</button>
                   </div>
                  
-                 <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                    {newInvoiceData.items.map((item, idx) => (
-                      <div key={idx} style={{ background: '#f8fafc', padding: '15px', borderRadius: '16px', border: '1px solid #f1f5f9' }}>
-                        <div style={{ display: 'flex', gap: '10px', alignItems: 'center', marginBottom: '10px' }}>
-                           <div style={{ flex: 3, position: 'relative' }}>
-                              <label style={{ fontSize: '8px', fontWeight: 950, color: '#94a3b8', display: 'block', marginBottom: '5px' }}>SERVICE_DEFINITION</label>
-                              <input 
-                                type="text" required placeholder="Select or type service..." value={item.description}
-                                onChange={e => {
-                                  const items = [...newInvoiceData.items];
-                                  items[idx].description = e.target.value;
-                                  setNewInvoiceData({ ...newInvoiceData, items });
-                                }}
-                                style={{ width: '100%', padding: '10px', borderRadius: '10px', border: '1px solid #eee', fontSize: '11px', fontWeight: 700 }}
-                              />
-                              
-                              {item.description.length > 0 && serviceRegistry.some(s => s.serviceName.toLowerCase().includes(item.description.toLowerCase()) && s.serviceName !== item.description) && (
-                                <div style={{ position: 'absolute', top: '100%', left: 0, right: 0, background: 'white', border: '1px solid #e2e8f0', borderRadius: '8px', boxShadow: '0 4px 15px rgba(0,0,0,0.05)', zIndex: 100, maxHeight: '150px', overflowY: 'auto' }}>
-                                   {serviceRegistry.filter(s => s.serviceName.toLowerCase().includes(item.description.toLowerCase())).map(s => (
-                                     <div 
-                                       key={s.id}
-                                       onClick={() => {
-                                          const items = [...newInvoiceData.items];
-                                          items[idx].description = s.serviceName;
-                                          items[idx].amount = s.amount;
-                                          items[idx].referralCutValue = s.referralCutValue || 0;
-                                          setNewInvoiceData({ ...newInvoiceData, items });
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                     {newInvoiceData.items.map((item, idx) => (
+                       <div key={idx} style={{ background: '#f8fafc', padding: '15px', borderRadius: '16px', border: '1px solid #f1f5f9' }}>
+                         <div style={{ display: 'flex', gap: '10px', alignItems: 'center', marginBottom: '10px' }}>
+                            <div style={{ flex: 3, position: 'relative' }}>
+                               <label style={{ fontSize: '8px', fontWeight: 950, color: '#94a3b8', display: 'block', marginBottom: '5px' }}>SERVICE_DEFINITION</label>
+                               <input 
+                                 type="text" required placeholder="Select or type service..." value={item.description}
+                                 onChange={e => {
+                                   const items = [...newInvoiceData.items];
+                                   items[idx].description = e.target.value;
+                                   setNewInvoiceData({ ...newInvoiceData, items });
+                                 }}
+                                 style={{ width: '100%', padding: '10px', borderRadius: '10px', border: '1px solid #eee', fontSize: '11px', fontWeight: 700 }}
+                               />
+                               
+                               {item.description.length > 0 && serviceRegistry.some(s => s.serviceName.toLowerCase().includes(item.description.toLowerCase()) && s.serviceName !== item.description) && (
+                                 <div style={{ position: 'absolute', top: '100%', left: 0, right: 0, background: 'white', border: '1px solid #e2e8f0', borderRadius: '8px', boxShadow: '0 4px 15px rgba(0,0,0,0.05)', zIndex: 100, maxHeight: '150px', overflowY: 'auto' }}>
+                                    {serviceRegistry.filter(s => s.serviceName.toLowerCase().includes(item.description.toLowerCase())).map(s => (
+                                      <div 
+                                        key={s.id}
+                                        onClick={() => {
+                                           const items = [...newInvoiceData.items];
+                                           items[idx].description = s.serviceName;
+                                           items[idx].amount = s.amount;
+                                           items[idx].referralCutValue = s.referralCutValue || 0;
+                                           setNewInvoiceData({ ...newInvoiceData, items });
+                                        }}
+                                        style={{ padding: '10px', fontSize: '10px', fontWeight: 800, cursor: 'pointer', borderBottom: '1px solid #f8fafc' }}
+                                      >
+                                        {s.modality}: {s.serviceName} (₹{s.amount})
+                                      </div>
+                                    ))}
+                                 </div>
+                               )}
+                            </div>
 
-                                       }}
-                                       style={{ padding: '10px', fontSize: '10px', fontWeight: 800, cursor: 'pointer', borderBottom: '1px solid #f8fafc' }}
-                                     >
-                                       {s.modality}: {s.serviceName} (₹{s.amount})
-                                     </div>
-                                   ))}
-                                </div>
-                              )}
-                           </div>
+                            <div style={{ flex: 1 }}>
+                               <label style={{ fontSize: '8px', fontWeight: 950, color: '#94a3b8', display: 'block', marginBottom: '5px' }}>AMOUNT</label>
+                               <input 
+                                 type="number" required placeholder="₹" value={item.amount}
+                                 onChange={e => {
+                                   const items = [...newInvoiceData.items];
+                                   items[idx].amount = parseInt(e.target.value) || 0;
+                                   setNewInvoiceData({ ...newInvoiceData, items });
+                                 }}
+                                 style={{ width: '100%', padding: '10px', borderRadius: '10px', border: '1px solid #eee', fontSize: '11px', fontWeight: 950, textAlign: 'right' }}
+                               />
+                            </div>
 
-                           <div style={{ flex: 1 }}>
-                              <label style={{ fontSize: '8px', fontWeight: 950, color: '#94a3b8', display: 'block', marginBottom: '5px' }}>AMOUNT</label>
-                              <input 
-                                type="number" required placeholder="₹" value={item.amount}
-                                onChange={e => {
-                                  const items = [...newInvoiceData.items];
-                                  items[idx].amount = parseInt(e.target.value) || 0;
-                                  setNewInvoiceData({ ...newInvoiceData, items });
-                                }}
-                                style={{ width: '100%', padding: '10px', borderRadius: '10px', border: '1px solid #eee', fontSize: '11px', fontWeight: 950, textAlign: 'right' }}
-                              />
-                           </div>
-
-                           {newInvoiceData.items.length > 1 && (
-                             <button type="button" onClick={() => setNewInvoiceData({ ...newInvoiceData, items: newInvoiceData.items.filter((_, i) => i !== idx) })} style={{ color: '#ef4444', border: 'none', background: 'none', cursor: 'pointer', marginTop: '15px' }}>✕</button>
-                           )}
-                        </div>
-                      </div>
-                    ))}
+                            {newInvoiceData.items.length > 1 && (
+                              <button type="button" onClick={() => setNewInvoiceData({ ...newInvoiceData, items: newInvoiceData.items.filter((_, i) => i !== idx) })} style={{ color: '#ef4444', border: 'none', background: 'none', cursor: 'pointer', marginTop: '15px' }}>✕</button>
+                            )}
+                         </div>
+                       </div>
+                     ))}
                   </div>
 
                   <div style={{ marginTop: '25px', padding: '20px', background: '#f1f5f9', borderRadius: '18px', border: '1px solid #e2e8f0' }}>
@@ -438,10 +504,10 @@ export const NewInvoiceDrawer = ({
                               ))}
                            </div>
                            <input 
-                              type="number" 
-                              value={newInvoiceData.discountAmount} 
-                              onChange={e => setNewInvoiceData({ ...newInvoiceData, discountAmount: parseInt(e.target.value) || 0 })}
-                              style={{ width: '80px', padding: '6px 12px', borderRadius: '10px', border: '1px solid #cbd5e1', fontSize: '12px', fontWeight: 950, textAlign: 'right', color: '#ef4444', outline: 'none' }}
+                               type="number" 
+                               value={newInvoiceData.discountAmount} 
+                               onChange={e => setNewInvoiceData({ ...newInvoiceData, discountAmount: parseInt(e.target.value) || 0 })}
+                               style={{ width: '80px', padding: '6px 12px', borderRadius: '10px', border: '1px solid #cbd5e1', fontSize: '12px', fontWeight: 950, textAlign: 'right', color: '#ef4444', outline: 'none' }}
                            />
                         </div>
                      </div>
