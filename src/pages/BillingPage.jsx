@@ -300,7 +300,8 @@ export default function BillingPage() {
       fetchStats();
     } catch (err) {
       console.error('[FINANCE] Status transition failed', err);
-      alert('PROTOCOL FAILURE: Could not update expense status.');
+      const errorMsg = err.response?.data?.message || err.response?.data?.error || 'Could not synchronize expense status.';
+      alert(`PROTOCOL FAILURE: ${errorMsg}`);
     }
   };
 
