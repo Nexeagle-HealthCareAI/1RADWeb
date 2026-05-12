@@ -27,13 +27,19 @@ export default function Sidebar({ isMobileOpen, onMobileClose }) {
     <aside id="tactical-sidebar" className={`sidebar gamified-sidebar ${isCollapsed ? 'collapsed' : ''} ${isMobileOpen ? 'mobile-open' : ''}`} style={{ transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)' }}>
       <div className="sidebar-header" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '20px' }}>
         <div className="brand-info" style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-          <div className="logo-icon-container" style={{ width: '32px', height: '32px' }}>
-            <img 
-              src="/Logo.png" 
-              alt="NexEgale Logo" 
-              className="brand-logo-img"
-              style={{ width: '100%', height: '100%', objectFit: 'contain' }}
-            />
+          <div className="logo-icon-container" style={{ 
+            width: '32px', height: '32px', 
+            background: 'linear-gradient(135deg, #00f2fe 0%, #0f52ba 100%)',
+            borderRadius: '8px',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            boxShadow: '0 0 15px rgba(0, 242, 254, 0.3)',
+            color: 'white',
+            fontWeight: 950,
+            fontSize: '14px'
+          }}>
+            1R
           </div>
           <div className="brand-text-wrapper hide-on-collapsed" style={{ display: isCollapsed ? 'none' : 'flex', flexDirection: 'column' }}>
             <h2 className="brand" style={{ fontSize: '20px', fontWeight: 900, color: 'white', margin: 0, letterSpacing: '-0.5px' }}>

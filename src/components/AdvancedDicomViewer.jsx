@@ -4,7 +4,8 @@ import {
   Enums,
   cache,
   init as csInit,
-  imageLoader // Added core imageLoader for manual registration
+  imageLoader, // Added core imageLoader for manual registration
+  requestPoolManager
 } from '@cornerstonejs/core';
 import {
   init as csToolsInit,
@@ -109,18 +110,35 @@ async function initCornerstone() {
     console.warn("[DICOM] wadouri registration failed:", regErr);
   }
 
+  // Initialize global cache to a high-performance threshold (1GB)
+  // This prevents frequent evictions and re-decoding of slices during fast scrolling
+  cache.setMaxCacheSize(1024 * 1024 * 1000); 
+
   const config = {
     maxWebWorkers: DICOM_CONFIG.USE_WEB_WORKERS ? DICOM_CONFIG.MAX_WEB_WORKERS : 0,
     startWebWorkersOnDemand: true,
     decodeConfig: {
       usePDFJS: false,
       strict: false,
+    },
+    taskConfiguration: {
+      decodeTask: {
+        initializeCodecsOnStartup: true, // Speed up first decode
+        strict: false,
+      }
     }
   };
   
   try {
     await cornerstoneDICOMImageLoader.init(config);
     console.log("[DICOM] Loader initialized successfully");
+    
+    // Configure request pool for maximum diagnostic throughput
+    requestPoolManager.maxRequestsPerOrigin = {
+      interaction: 100, // High priority for what the user is currently seeing
+      thumbnail: 10,
+      prefetch: 30      // Generous background loading
+    };
   } catch (initErr) {
     console.error("[DICOM] Loader initialization failed:", initErr);
   }
@@ -242,7 +260,7 @@ async function initCornerstone() {
         }
         
         const fastFailTimeout = new Promise((_, reject) => 
-          setTimeout(() => reject(new Error('FAST_FAIL')), 20000) // Increased from 10s to 20s for reliability
+          setTimeout(() => reject(new Error('FAST_FAIL')), 8000) // Reduced from 20s to 8s for faster recovery
         );
 
         Promise.race([
@@ -490,44 +508,21 @@ const AdvancedDicomViewer = ({
   }, [isReady, files, currentImageIndex, isTablet, viewportId, onSliceChange]);
 
   // --- DESKTOP WHEEL EVENT FOR SLICE NAVIGATION ---
-  // Re-enabled: StackScroll tool alone wasn't working reliably
+  // DISABLED: Custom wheel listener was fighting with the StackScroll tool
+  // The StackScroll tool is now the primary handler for wheel navigation
+  // this prevents jitter and double-processing of wheel events.
   useEffect(() => {
     if (!elementRef.current || !isReady || !files || files.length <= 1 || isTablet) return;
     
+    // Explicitly focus the element to ensure wheel events are captured correctly
     const element = elementRef.current;
-    
-    const handleWheelSliceNavigation = (e) => {
-      // Only handle wheel events if no modifier keys are pressed (to avoid conflicts with zoom)
-      if (e.ctrlKey || e.shiftKey || e.altKey) return;
-      
-      // Don't prevent default - let it bubble to StackScroll tool first
-      // e.preventDefault();
-      
-      const delta = e.deltaY > 0 ? 1 : -1;
-      const newIndex = Math.max(0, Math.min(files.length - 1, currentImageIndex + delta));
-      
-      if (newIndex !== currentImageIndex && renderingEngineRef.current) {
-        const viewport = renderingEngineRef.current.getViewport(viewportId);
-        if (viewport) {
-          console.log(`[DICOM] Wheel slice navigation: ${newIndex + 1}/${files.length}`);
-          try {
-            viewport.setImageIdIndex(newIndex);
-            setCurrentImageIndex(newIndex);
-            if (onSliceChange) onSliceChange(newIndex, files.length);
-          } catch (err) {
-            console.error('[DICOM] Wheel navigation error:', err);
-          }
-        }
-      }
-    };
-    
-    // Add wheel event listener - passive to allow smooth scrolling
-    element.addEventListener('wheel', handleWheelSliceNavigation, { passive: true });
+    const handleInitialFocus = () => element.focus();
+    element.addEventListener('mouseenter', handleInitialFocus);
     
     return () => {
-      element.removeEventListener('wheel', handleWheelSliceNavigation);
+      element.removeEventListener('mouseenter', handleInitialFocus);
     };
-  }, [isReady, files, currentImageIndex, isTablet, viewportId, onSliceChange]);
+  }, [isReady, files, isTablet]);
 
   // --- TABLET/MOBILE DETECTION ---
   useEffect(() => {
@@ -1338,9 +1333,9 @@ const AdvancedDicomViewer = ({
         });
         
         // Start prefetching for smoother scrolling using the utility
-        // OPTIMIZATION: Configure prefetch for higher performance
+        // OPTIMIZATION: Configure prefetch for higher performance (Turbo-charge)
         utilities.stackPrefetch.enable(elementRef.current, {
-          maxImagesToPrefetch: 50, // Increase from default
+          maxImagesToPrefetch: 100, // Increased from 50 to 100 for smoother high-speed scrolling
           preserveOrder: false,
           displaySetId: viewportId
         });

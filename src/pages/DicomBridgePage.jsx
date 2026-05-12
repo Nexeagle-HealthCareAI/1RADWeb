@@ -62,13 +62,13 @@ export default function DicomBridgePage() {
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', flexWrap: 'wrap', gap: '20px' }}>
           <div>
             <div style={{ fontSize: '10px', fontWeight: 950, color: 'rgba(255,255,255,0.4)', letterSpacing: '3px', textTransform: 'uppercase', marginBottom: '8px' }}>
-              NEXEGALE / DICOM BRIDGE
+              1RAD / DICOM BRIDGE
             </div>
             <h1 style={{ fontSize: '28px', fontWeight: 950, color: 'white', letterSpacing: '-1px', margin: '0 0 10px' }}>
               DICOM Bridge Monitor
             </h1>
             <p style={{ fontSize: '12px', color: 'rgba(255,255,255,0.5)', fontWeight: 600, margin: 0 }}>
-              Orthanc → NexEgale automatic upload pipeline
+              Orthanc → 1Rad automatic upload pipeline
             </p>
           </div>
 

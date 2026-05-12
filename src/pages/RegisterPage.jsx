@@ -193,11 +193,23 @@ export default function RegisterPage() {
       <RadiologyWorkflowBG />
       <div className="immersive-brand">
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-start', marginBottom: '5px' }}>
-          <div className="immersive-logo" style={{ background: 'transparent', boxShadow: 'none', height: '28px', width: 'auto', marginRight: '12px', display: 'flex', alignItems: 'center' }}>
-            <img src="/Logo.png" alt="NexEgale" style={{ height: '100%', width: 'auto', objectFit: 'contain' }} />
+          <div className="immersive-logo" style={{ 
+            background: 'linear-gradient(135deg, #00f2fe 0%, #0f52ba 100%)',
+            boxShadow: '0 0 20px rgba(0, 242, 254, 0.4)', 
+            height: '32px', width: '32px', 
+            marginRight: '15px', 
+            display: 'flex', 
+            alignItems: 'center',
+            justifyContent: 'center',
+            borderRadius: '8px',
+            color: 'white',
+            fontWeight: 950,
+            fontSize: '14px'
+          }}>
+            1R
           </div>
-          <div className="immersive-logo-text" style={{ fontSize: '24px', fontWeight: 950, color: 'white', letterSpacing: '2px', lineHeight: 1 }}>
-            NEX<span style={{ color: '#00f2fe' }}>EGALE</span>
+          <div className="immersive-logo-text" style={{ fontSize: '26px', fontWeight: 950, color: 'white', letterSpacing: '3px', lineHeight: 1 }}>
+            1<span style={{ color: '#00f2fe' }}>RAD</span>
           </div>
         </div>
         <div className="immersive-tagline">1Rad Infrastructure Setup</div>
