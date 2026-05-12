@@ -70,7 +70,9 @@ export default function BillingPage() {
   const [isSavingPayout, setIsSavingPayout] = useState(false);
   const [editPayout, setEditPayout] = useState({ commissionId: '', referrerId: '', referrerName: '', amount: 0, modality: 'MRI', remarks: '', invoiceId: '', status: 'UNPAID' });
   const [referralCommissions, setReferralCommissions] = useState([]);
+  const [referrerFilter, setReferrerFilter] = useState('ALL'); // 'ALL' or referrerId
   const [appointments, setAppointments] = useState([]);
+
 
   
   const [startDate, setStartDate] = useState('');
@@ -719,6 +721,11 @@ export default function BillingPage() {
             if (cut.type !== 'STRATEGIC' && !(cut.description || '').includes(`[${modalityFilter}]`)) return false;
         }
 
+        // Partner (Referrer) Filter
+        if (referrerFilter !== 'ALL') {
+            if (cut.referrerId !== referrerFilter) return false;
+        }
+
         return true;
     }).sort((a, b) => {
         if (!sortConfig.key) return new Date(b.date) - new Date(a.date);
@@ -728,7 +735,8 @@ export default function BillingPage() {
         if (valA > valB) return sortConfig.direction === 'ASC' ? 1 : -1;
         return 0;
     });
-  }, [combinedReferralCuts, timeFilter, startDate, endDate, modalityFilter, sortConfig]);
+  }, [combinedReferralCuts, timeFilter, startDate, endDate, modalityFilter, referrerFilter, sortConfig]);
+
 
   const totalPages = Math.ceil(
     billingViewMode === 'INVOICES' ? (timeFilter === 'FUTURE' ? (futureAppointments || []).length : (filteredInvoices || []).length) / itemsPerPage :
@@ -841,7 +849,7 @@ export default function BillingPage() {
   const handleCollectPayment = async (centreDiscount = 0, referrerDiscount = 0, deduction = 0, netAmount = 0) => {
     try {
       const payload = {
-        invoiceId: selectedInvoice.id,
+        invoiceId: selectedInvoice.invoiceId,
         amount: netAmount || selectedInvoice.totalAmount,
         centreDiscount,
         referrerDiscount,
@@ -1342,7 +1350,11 @@ export default function BillingPage() {
           itemsPerPage={itemsPerPage}
           sortConfig={sortConfig}
           handleSort={handleSort}
+          referrers={referrers}
+          referrerFilter={referrerFilter}
+          setReferrerFilter={setReferrerFilter}
         />
+
       )}
 
       {billingViewMode === 'ANALYTICS' && matrix && (

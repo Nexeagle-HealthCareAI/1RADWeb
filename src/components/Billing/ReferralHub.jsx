@@ -17,8 +17,22 @@ const ReferralHub = ({
   setCurrentPage,
   itemsPerPage,
   sortConfig,
-  handleSort
+  handleSort,
+  referrers,
+  referrerFilter,
+  setReferrerFilter
 }) => {
+  const referralStats = React.useMemo(() => {
+
+    const cuts = filteredReferralCuts || [];
+    return {
+      total: cuts.reduce((sum, c) => sum + (Number(c?.amount) || 0), 0),
+      paid: cuts.filter(c => c.status === 'PAID').reduce((sum, c) => sum + (Number(c?.amount) || 0), 0),
+      unpaid: cuts.filter(c => c.status !== 'PAID').reduce((sum, c) => sum + (Number(c?.amount) || 0), 0),
+      count: cuts.length
+    };
+  }, [filteredReferralCuts]);
+
   const getSortIcon = (key) => {
     if (sortConfig.key !== key) return '↕';
     return sortConfig.direction === 'ASC' ? '↑' : '↓';
@@ -26,14 +40,32 @@ const ReferralHub = ({
 
   return (
     <div className="referral-cuts-main" style={{ animation: 'fadeIn 0.3s' }}>
-       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '25px' }}>
+       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '35px' }}>
           <div>
-             <h3 style={{ fontSize: '18px', fontWeight: 950, color: '#1e293b' }}>REFERRAL PAYOUT LEDGER</h3>
-             <p style={{ fontSize: '11px', color: '#64748b', fontWeight: 600 }}>Tracking all commissions and cuts for clinical partners.</p>
+             <h3 style={{ fontSize: '20px', fontWeight: 950, color: '#1e293b', letterSpacing: '-0.5px' }}>REFERRAL PAYOUT COMMAND CENTER</h3>
+             <p style={{ fontSize: '11px', color: '#64748b', fontWeight: 600 }}>Real-time telemetry for partner-side clinical concessions.</p>
           </div>
           
           <div style={{ display: 'flex', alignItems: 'center', gap: '20px' }}>
+             <div style={{ position: 'relative' }}>
+                <label style={{ position: 'absolute', top: '-15px', left: '0', fontSize: '8px', fontWeight: 950, color: '#94a3b8', letterSpacing: '1px' }}>PARTNER_IDENTITY</label>
+                <select 
+                  value={referrerFilter} 
+                  onChange={e => setReferrerFilter(e.target.value)}
+                  style={{ 
+                    padding: '8px 12px', borderRadius: '10px', border: '1px solid #e2e8f0', fontSize: '10px', fontWeight: 800, 
+                    background: 'white', color: '#1e293b', minWidth: '180px', outline: 'none' 
+                  }}
+                >
+                  <option value="ALL">ALL PARTNERS (GLOBAL)</option>
+                  {(referrers || []).map(ref => (
+                    <option key={ref.referrerId} value={ref.referrerId}>{ref.name?.toUpperCase()}</option>
+                  ))}
+                </select>
+             </div>
+
              <div style={{ display: 'flex', background: '#f1f5f9', padding: '3px', borderRadius: '10px', border: '1px solid #e2e8f0' }}>
+
                 {['TODAY', 'PAST', 'ALL', 'CUSTOM'].map(t => (
                   <button 
                     key={t}
@@ -60,15 +92,29 @@ const ReferralHub = ({
                  />
               </div>
              )}
-
-             <div style={{ background: '#fff1f2', padding: '15px 25px', borderRadius: '16px', border: '1px solid #fecdd3', textAlign: 'right' }}>
-                <div style={{ fontSize: '10px', fontWeight: 950, color: '#e11d48', marginBottom: '5px' }}>TOTAL PAYOUTS</div>
-                <div style={{ fontSize: '24px', fontWeight: 950, color: '#881337' }}>
-                  ₹{(filteredReferralCuts || []).reduce((sum, cut) => sum + (Number(cut?.amount) || 0), 0).toLocaleString()}
-                </div>
-             </div>
           </div>
        </div>
+
+       <div className="referral-kpi-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '25px', marginBottom: '40px' }}>
+          <div style={{ background: 'white', padding: '25px', borderRadius: '24px', border: '1px solid #e2e8f0', boxShadow: '0 4px 20px rgba(0,0,0,0.02)' }}>
+             <div style={{ fontSize: '10px', fontWeight: 950, color: '#94a3b8', letterSpacing: '1px', marginBottom: '10px' }}>GROSS_STRATEGIC_OUTFLOW</div>
+             <div style={{ fontSize: '28px', fontWeight: 950, color: '#1e293b' }}>₹{referralStats.total.toLocaleString()}</div>
+             <div style={{ fontSize: '9px', fontWeight: 800, color: '#64748b', marginTop: '8px' }}>AGGREGATE COMMISSION VOLUME</div>
+          </div>
+          
+          <div style={{ background: '#f0fdf4', padding: '25px', borderRadius: '24px', border: '1px solid #dcfce7', boxShadow: '0 4px 20px rgba(22,101,52,0.05)' }}>
+             <div style={{ fontSize: '10px', fontWeight: 950, color: '#166534', letterSpacing: '1px', marginBottom: '10px' }}>SETTLED_DISBURSEMENTS</div>
+             <div style={{ fontSize: '28px', fontWeight: 950, color: '#14532d' }}>₹{referralStats.paid.toLocaleString()}</div>
+             <div style={{ fontSize: '9px', fontWeight: 800, color: '#16a34a', marginTop: '8px' }}>SUCCESSFULLY TRANSFERRED</div>
+          </div>
+
+          <div style={{ background: '#fff1f2', padding: '25px', borderRadius: '24px', border: '1px solid #fecdd3', boxShadow: '0 4px 20px rgba(225,29,72,0.05)' }}>
+             <div style={{ fontSize: '10px', fontWeight: 950, color: '#e11d48', letterSpacing: '1px', marginBottom: '10px' }}>OUTSTANDING_OBLIGATIONS</div>
+             <div style={{ fontSize: '28px', fontWeight: 950, color: '#881337' }}>₹{referralStats.unpaid.toLocaleString()}</div>
+             <div style={{ fontSize: '9px', fontWeight: 800, color: '#e11d48', marginTop: '8px' }}>PENDING FISCAL CLEARANCE</div>
+          </div>
+       </div>
+
 
        <div style={{ background: 'white', borderRadius: '24px', border: '1px solid #e2e8f0', overflow: 'hidden' }}>
           <table style={{ width: '100%', borderCollapse: 'collapse' }}>
@@ -138,7 +184,7 @@ const ReferralHub = ({
                                          setIsPayoutDrawerOpen(true);
                                       }}
                                       style={{ padding: '6px 12px', borderRadius: '8px', border: 'none', background: '#f0f4ff', color: '#0f52ba', fontSize: '9px', fontWeight: 950, cursor: 'pointer' }}
-                                   >EDIT</button>
+                                   >UPDATE PAYOUT</button>
                                    <span style={{ fontSize: '9px', fontWeight: 950, color: '#94a3b8', letterSpacing: '0.5px' }}>LOCKED</span>
                                 </div>
                              )}
