@@ -13,6 +13,7 @@ export default function AppointmentCard({
   onAction,
   onPrint,
   onPrescription,
+  onEdit,
   onCancel,
   patients
 }) {
@@ -98,15 +99,26 @@ export default function AppointmentCard({
           PRESCRIPTION
         </button>
 
-        {appointment.status !== 'CANCELLED' && appointment.status !== 'COMPLETED' && (
-          <button
-            className="action-btn action-btn-danger"
-            onClick={() => onCancel(appointment.id)}
-            title="Cancel"
-            style={{ width: '40px' }}
-          >
-            ✕
-          </button>
+        {appointment.status !== 'cancelled' && appointment.status !== 'completed' && (
+          <>
+            <button
+              className="action-btn action-btn-secondary"
+              onClick={() => onEdit && onEdit(appointment)}
+              title="Edit Appointment"
+              style={{ fontSize: '10px', fontWeight: 800, padding: '0 12px' }}
+            >
+              EDIT
+            </button>
+
+            <button
+              className="action-btn action-btn-danger"
+              onClick={() => onCancel(appointment.id)}
+              title="Cancel"
+              style={{ width: '40px' }}
+            >
+              ✕
+            </button>
+          </>
         )}
       </div>
     </div>

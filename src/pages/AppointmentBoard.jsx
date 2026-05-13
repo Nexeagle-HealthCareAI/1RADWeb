@@ -2444,6 +2444,7 @@ export default function AppointmentBoard() {
                   onAction={handleAction}
                   onPrint={(app) => setTokenPrintData(app)}
                   onPrescription={(app) => handlePreviewPrint(app)}
+                  onEdit={(app) => { setEditingAppointment(app); setIsEditingOpen(true); }}
                   onCancel={(id) => handleAction(id, 'CANCEL')}
                   patients={patients}
                 />
