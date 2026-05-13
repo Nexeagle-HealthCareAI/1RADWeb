@@ -110,6 +110,7 @@ export default function AppointmentBoard() {
   const [newReferrer, setNewReferrer] = useState({ name: '', contact: '', address: '' });
   const [referrerSearchValue, setReferrerSearchValue] = useState('');
   const [serviceRegistry, setServiceRegistry] = useState([]);
+  const [showBookingValidation, setShowBookingValidation] = useState(false);
   const drawerBodyRef = useRef(null);
 
   // Responsive layout detection
@@ -522,6 +523,7 @@ export default function AppointmentBoard() {
     setNewPatient({ name: '', mobile: '', age: '', gender: 'Male', village: '', district: '', address: '', referredBy: '', sourceOfInfo: '' });
     setReferrerSearchValue('');
     setDrawerSearchQuery('');
+    setShowBookingValidation(false);
   };
 
   const handlePreviewPrint = async (c) => {
@@ -1456,10 +1458,22 @@ export default function AppointmentBoard() {
                 <div style={{ background: 'white', padding: '22px', borderRadius: '14px', border: '2px dashed #dde5f5' }}>
                   <label style={{ fontSize: '10px', color: '#0f52ba', fontWeight: 800, marginBottom: '18px', display: 'block', letterSpacing: '1px' }}>ENTER MISSION TARGET DETAILS</label>
                   
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
+                  <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: '16px' }}>
                     <div className="form-group" style={{ marginBottom: '8px' }}>
                       <label style={{ fontSize: '10px', fontWeight: 700 }}>FULL NAME <span style={{ color: '#e74c3c' }}>*</span></label>
-                      <input type="text" required placeholder="e.g. Michael Thorne" style={{ fontSize: '13px', padding: '11px 12px' }} value={newPatient.name} onChange={e => { setNewPatient({...newPatient, name: e.target.value}); setNewBooking({...newBooking, patientId: ''}); }} />
+                      <input 
+                        type="text" 
+                        required 
+                        placeholder="e.g. Michael Thorne" 
+                        style={{ 
+                          fontSize: '13px', 
+                          padding: '11px 12px',
+                          border: showBookingValidation && !newPatient.name.trim() ? '1.5px solid #e74c3c' : '1.5px solid #dee2e6',
+                          background: showBookingValidation && !newPatient.name.trim() ? '#fff5f5' : 'white'
+                        }} 
+                        value={newPatient.name} 
+                        onChange={e => { setNewPatient({...newPatient, name: e.target.value}); setNewBooking({...newBooking, patientId: ''}); }} 
+                      />
                     </div>
                     <div className="form-group" style={{ marginBottom: '8px' }}>
                       <label style={{ fontSize: '10px', fontWeight: 700 }}>MOBILE <span style={{ color: '#e74c3c' }}>*</span></label>
@@ -1470,8 +1484,9 @@ export default function AppointmentBoard() {
                         style={{ 
                           fontSize: '13px', 
                           padding: '11px 12px',
-                          borderColor: newPatient.mobile.length > 0 && !isMobileValid ? '#e74c3c' : '#dee2e6',
-                          boxShadow: newPatient.mobile.length > 0 && !isMobileValid ? '0 0 0 1px #e74c3c' : 'none'
+                          borderColor: (newPatient.mobile.length > 0 && !isMobileValid) || (showBookingValidation && !isMobileValid) ? '#e74c3c' : '#dee2e6',
+                          background: (showBookingValidation && !isMobileValid) ? '#fff5f5' : 'white',
+                          boxShadow: (newPatient.mobile.length > 0 && !isMobileValid) || (showBookingValidation && !isMobileValid) ? '0 0 0 1px #e74c3c' : 'none'
                         }} 
                         value={newPatient.mobile} 
                         onChange={e => { 
@@ -1489,7 +1504,19 @@ export default function AppointmentBoard() {
                     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
                       <div className="form-group" style={{ marginBottom: '8px' }}>
                         <label style={{ fontSize: '10px', fontWeight: 700 }}>AGE <span style={{ color: '#e74c3c' }}>*</span></label>
-                        <input type="text" required placeholder="25" style={{ fontSize: '13px', padding: '11px 12px' }} value={newPatient.age} onChange={e => setNewPatient({...newPatient, age: e.target.value})} />
+                        <input 
+                          type="text" 
+                          required 
+                          placeholder="25" 
+                          style={{ 
+                            fontSize: '13px', 
+                            padding: '11px 12px',
+                            border: showBookingValidation && !newPatient.age.trim() ? '1.5px solid #e74c3c' : '1.5px solid #dee2e6',
+                            background: showBookingValidation && !newPatient.age.trim() ? '#fff5f5' : 'white'
+                          }} 
+                          value={newPatient.age} 
+                          onChange={e => setNewPatient({...newPatient, age: e.target.value})} 
+                        />
                       </div>
                       <div className="form-group" style={{ marginBottom: '8px' }}>
                         <label style={{ fontSize: '10px', fontWeight: 700, color: '#64748b' }}>GENDER</label>
@@ -1591,11 +1618,16 @@ export default function AppointmentBoard() {
                     className="gamified-btn" 
                     style={{ 
                       width: '100%', padding: '16px', borderRadius: '12px', fontSize: '13px',
-                      opacity: isNewPatientIncomplete ? 0.6 : 1,
-                      cursor: isNewPatientIncomplete ? 'not-allowed' : 'pointer'
+                      background: isNewPatientIncomplete && showBookingValidation ? '#94a3b8' : 'linear-gradient(90deg, #0f52ba, #00f2fe)',
+                      boxShadow: isNewPatientIncomplete && showBookingValidation ? 'none' : '0 10px 20px rgba(15, 82, 186, 0.2)',
                     }} 
-                    disabled={isNewPatientIncomplete} 
                     onClick={async () => {
+                      if (isNewPatientIncomplete) {
+                        setShowBookingValidation(true);
+                        // Optional: trigger a subtle haptic or visual shake
+                        return;
+                      }
+
                       if (!newBooking.patientId && newPatient.name && newPatient.mobile) {
                         try {
                           const response = await apiClient.post('/patients', {
@@ -1623,6 +1655,7 @@ export default function AppointmentBoard() {
                       // Final Safety Check before advancing
                       setTimeout(() => {
                         setBookingStep(2);
+                        setShowBookingValidation(false);
                       }, 100);
                     }}
                   >

@@ -1483,6 +1483,22 @@ button, a, input[type="button"], input[type="submit"] {
   animation: slideLeft 0.3s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
+/* Mobile Compatibility */
+@media (max-width: 639px) {
+  .drawer-overlay {
+    align-items: flex-end;
+  }
+  .drawer-content {
+    width: 100% !important;
+    height: 90%;
+    border-radius: 20px 20px 0 0;
+    padding: var(--spacing-lg);
+    animation: slideUp 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  }
+}
+
+@keyframes slideUp { from { transform: translateY(100%); } to { transform: translateY(0); } }
+
 .drawer-header {
   display: flex;
   justify-content: space-between;
