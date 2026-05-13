@@ -30,17 +30,17 @@ const INFORMATION_SOURCES = [
 ];
 
 const STATUS_META = {
-  future:      { label: 'FUTURE', color: '#6366f1', bg: '#eef2ff', glow: 'rgba(99,102,241,0.1)' },
-  scheduled:   { label: 'EXPECTED', color: '#64748b', bg: '#f1f5f9', glow: 'rgba(100,116,139,0.1)' },
-  booked:      { label: 'EXPECTED', color: '#64748b', bg: '#f1f5f9', glow: 'rgba(100,116,139,0.1)' },
-  confirmed:   { label: 'ARRIVED', color: '#10b981', bg: '#ecfdf5', glow: 'rgba(16,185,129,0.15)' },
-  in_progress: { label: 'SCANNING', color: '#f59e0b', bg: '#fffbeb', glow: 'rgba(245,158,11,0.15)' },
-  completed:   { label: 'SCANNED', color: '#0f52ba', bg: '#f0f4ff', glow: 'rgba(15,82,186,0.15)' },
-  scanned:     { label: 'SCANNED', color: '#0f52ba', bg: '#f0f4ff', glow: 'rgba(15,82,186,0.15)' },
-  reporting:   { label: 'REPORTING', color: '#8b5cf6', bg: '#f5f3ff', glow: 'rgba(139,92,246,0.15)' },
-  reported:    { label: 'REPORTED', color: '#059669', bg: '#ecfdf5', glow: 'rgba(5,150,105,0.15)' },
-  cancelled:   { label: 'CANCELLED', color: '#ef4444', bg: '#fef2f2', glow: 'rgba(239,68,68,0.15)' },
-  unknown:     { label: 'UNKNOWN', color: '#94a3b8', bg: '#f8fafc', glow: 'rgba(148,163,184,0.1)' }
+  future:      { label: 'FUTURE', color: '#6366f1', bg: '#eef2ff', glow: 'rgba(99,102,241,0.1)', icon: '\u23F3' },
+  scheduled:   { label: 'EXPECTED', color: '#64748b', bg: '#f1f5f9', glow: 'rgba(100,116,139,0.1)', icon: '\u231B' },
+  booked:      { label: 'EXPECTED', color: '#64748b', bg: '#f1f5f9', glow: 'rgba(100,116,139,0.1)', icon: '\u231B' },
+  confirmed:   { label: 'ARRIVED', color: '#10b981', bg: '#ecfdf5', glow: 'rgba(16,185,129,0.15)', icon: '\u2705' },
+  in_progress: { label: 'SCANNING', color: '#f59e0b', bg: '#fffbeb', glow: 'rgba(245,158,11,0.15)', icon: '\u2699\uFE0F' },
+  completed:   { label: 'SCANNED', color: '#0f52ba', bg: '#f0f4ff', glow: 'rgba(15,82,186,0.15)', icon: '\u2705' },
+  scanned:     { label: 'SCANNED', color: '#0f52ba', bg: '#f0f4ff', glow: 'rgba(15,82,186,0.15)', icon: '\u2705' },
+  reporting:   { label: 'REPORTING', color: '#8b5cf6', bg: '#f5f3ff', glow: 'rgba(139,92,246,0.15)', icon: '\u270F\uFE0F' },
+  reported:    { label: 'REPORTED', color: '#059669', bg: '#ecfdf5', glow: 'rgba(5,150,105,0.15)', icon: '\uD83D\uDCC4' },
+  cancelled:   { label: 'CANCELLED', color: '#ef4444', bg: '#fef2f2', glow: 'rgba(239,68,68,0.15)', icon: '\u274C' },
+  unknown:     { label: 'UNKNOWN', color: '#94a3b8', bg: '#f8fafc', glow: 'rgba(148,163,184,0.1)', icon: '\u2753' }
 };
 
 const MODALITY_ICONS = {
@@ -121,6 +121,15 @@ export default function AppointmentBoard() {
     const handleClickOutside = () => setPrintDropdownId(null);
     window.addEventListener('click', handleClickOutside);
     return () => window.removeEventListener('click', handleClickOutside);
+  }, []);
+
+  useEffect(() => {
+    const handleResize = () => {
+      setIsMobile(window.innerWidth < 1024);
+      setWindowWidth(window.innerWidth);
+    };
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
   }, []);
 
   useEffect(() => {
@@ -279,17 +288,6 @@ export default function AppointmentBoard() {
     fetchRegistry();
   }, [fetchReferrers, fetchDoctors, fetchRegistry, activeCenterId]);
 
-  // Handle window resize for responsive layout
-  useEffect(() => {
-    const handleResize = () => {
-      const newWidth = window.innerWidth;
-      setWindowWidth(newWidth);
-      setIsMobile(newWidth < 1024);
-    };
-
-    window.addEventListener('resize', handleResize);
-    return () => window.removeEventListener('resize', handleResize);
-  }, []);
 
   // --- DERIVED ---
   const filteredAppointments = useMemo(() => {
@@ -389,12 +387,12 @@ export default function AppointmentBoard() {
   const getNextAction = (status) => {
     switch (status) {
       case 'future':      return null;
-      case 'scheduled':   return { action: 'CONFIRM', label: 'MARK ARRIVED', color: '#10b981' };
-      case 'booked':      return { action: 'CONFIRM', label: 'MARK ARRIVED', color: '#10b981' };
-      case 'confirmed':   return { action: 'START', label: 'BEGIN SCAN', color: '#f59e0b' };
-      case 'in_progress': return { action: 'COMPLETE', label: 'FINALIZE SCAN', color: '#0f52ba' };
+      case 'scheduled':   return { action: 'CONFIRM', label: 'ARRIVED', color: '#10b981', icon: '\u2705' };
+      case 'booked':      return { action: 'CONFIRM', label: 'ARRIVED', color: '#10b981', icon: '\u2705' };
+      case 'confirmed':   return { action: 'START', label: 'SCAN', color: '#f59e0b', icon: '\u25B6\uFE0F' };
+      case 'in_progress': return { action: 'COMPLETE', label: 'FINISH', color: '#0f52ba', icon: '\u2705' };
       case 'completed':   
-      case 'scanned':     return { action: 'REPORTING', label: 'START REPORT', color: '#8b5cf6' };
+      case 'scanned':     return { action: 'REPORTING', label: 'REPORT', color: '#8b5cf6', icon: '\u270F\uFE0F' };
       default: return null;
     }
   };
