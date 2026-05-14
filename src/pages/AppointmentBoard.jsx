@@ -1,4 +1,5 @@
 import { useState, useMemo, useEffect, useCallback, useContext, useRef } from 'react';
+import { useNavigate } from 'react-router-dom';
 import apiClient from '../api/apiClient';
 import { AuthContext } from '../auth/AuthContext';
 import useOffline from '../hooks/useOffline';
@@ -57,6 +58,7 @@ const MODALITY_ICONS = {
 };
 
 export default function AppointmentBoard() {
+  const navigate = useNavigate();
   const { activeCenterId, activeCenter } = useContext(AuthContext);
   const { isOnline, addToOutbox } = useOffline();
   const [activeTab, setActiveTab] = useState('TODAY'); // 'TODAY' or 'PAST'
@@ -166,12 +168,13 @@ export default function AppointmentBoard() {
       let mappedData = response.data.map(a => {
         const appDate = a.date || (a.dateTime ? a.dateTime.split('T')[0] : null);
         const isFuture = appDate && appDate > getTodayString();
+        const currentStatus = a.status ? a.status.toLowerCase() : 'scheduled';
         return {
           ...a,
           id: a.displayId,
           appointmentId: a.appointmentId,
           ptid: a.patientIdentifier,
-          status: isFuture ? 'future' : (a.status ? a.status.toLowerCase() : 'scheduled')
+          status: isFuture ? 'future' : (currentStatus === 'future' ? 'scheduled' : currentStatus)
         };
       });
 
@@ -361,6 +364,10 @@ export default function AppointmentBoard() {
     else if (actionOrStatus === 'START') newStatus = 'in_progress';
     else if (actionOrStatus === 'COMPLETE') newStatus = 'completed';
     else if (actionOrStatus === 'CANCEL') newStatus = 'cancelled';
+    else if (actionOrStatus === 'REPORTING') {
+      navigate(`/reporting/${app.appointmentId}`);
+      return;
+    }
     else newStatus = actionOrStatus.toLowerCase(); // Direct status update
 
     // Optimistic UI Update
@@ -1168,27 +1175,20 @@ export default function AppointmentBoard() {
             <div style={{ fontSize: '7px', fontWeight: 900, color: '#abb8c3', textTransform: 'uppercase', letterSpacing: '1px', marginTop: '2px' }}>MISSION_DATE</div>
           </div>
 
-          {/* Status Column */}
           <div onClick={(e) => e.stopPropagation()}>
-            <select
-              value={app.status}
-              onChange={(e) => handleAction(app.id, e.target.value)}
-              disabled={app.status === 'future'}
+            <div
               style={{
                 display: 'inline-flex', alignItems: 'center', gap: '6px',
                 padding: '6px 12px', borderRadius: '10px',
                 background: meta.bg, border: `1px solid ${meta.color}30`,
                 color: meta.color, fontSize: '9px', fontWeight: 950,
                 textTransform: 'uppercase', letterSpacing: '0.5px',
-                cursor: app.status === 'future' ? 'not-allowed' : 'pointer', 
-                appearance: 'none', outline: 'none',
-                opacity: app.status === 'future' ? 0.7 : 1
+                cursor: 'default'
               }}
             >
-              {Object.keys(STATUS_META).map(s => (
-                <option key={s} value={s}>{STATUS_META[s].label}</option>
-              ))}
-            </select>
+              <span style={{ fontSize: '10px' }}>{meta.icon}</span>
+              <span>{meta.label}</span>
+            </div>
           </div>
 
           {/* Specialist Column */}
