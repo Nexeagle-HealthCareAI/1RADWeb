@@ -18,7 +18,6 @@ const ReportingPage = () => {
   const [searchParams] = useSearchParams();
   const { isOnline, addToOutbox } = useOffline();
   const appointmentId = params.id || searchParams.get('id');
-  const [activeTab, setActiveTab] = useState(localStorage.getItem('reporting_paradigm') || 'Structured');
   const [showKeywordDrawer, setShowKeywordDrawer] = useState(false);
   const [showTableModal, setShowTableModal] = useState(false);
   const [editorText, setEditorText] = useState('');
@@ -68,9 +67,7 @@ const ReportingPage = () => {
   const [impression, setImpression] = useState('');
   const [advice, setAdvice] = useState('');
   const [isFinalized, setIsFinalized] = useState(false);
-  const [structuredData, setStructuredData] = useState({});
   const [selectedTemplateId, setSelectedTemplateId] = useState(null);
-  const [lastFocusedField, setLastFocusedField] = useState(null); // Track focused structured field
 
   // --- PATIENT TIMELINE STATES ---
   const [patientHistory, setPatientHistory] = useState([]);
@@ -135,10 +132,10 @@ const ReportingPage = () => {
     const draft = {
       appointmentId,
       templateId: selectedTemplateId,
-      findings: activeTab === 'Structured' ? JSON.stringify(structuredData) : editorText,
+      findings: editorText,
       impression,
       advice,
-      reportingMode: activeTab,
+      reportingMode: 'Narrative',
       timestamp: new Date().toISOString()
     };
 
@@ -155,7 +152,7 @@ const ReportingPage = () => {
     }, 1500); // 1.5s debounce
 
     return () => clearTimeout(timer);
-  }, [editorText, structuredData, impression, advice, activeTab, appointmentId, isFinalized, selectedTemplateId]);
+  }, [editorText, impression, advice, appointmentId, isFinalized, selectedTemplateId]);
 
   // 2. CLOUD AUTOSAVE: Background API sync every 45 seconds if dirty
   useEffect(() => {
@@ -169,10 +166,10 @@ const ReportingPage = () => {
         const payload = {
           appointmentId,
           templateId: selectedTemplateId,
-          findings: activeTab === 'Structured' ? JSON.stringify(structuredData) : editorText,
-          impression: impression || (activeTab === 'Structured' ? (structuredData['Impression'] || structuredData['IMPRESSION'] || '') : ''),
+          findings: editorText,
+          impression: impression || '',
           advice: advice || '',
-          reportingMode: activeTab,
+          reportingMode: 'Narrative',
           isFinalized: false
         };
         const res = await apiClient.post('/reporting/save', payload);
@@ -191,7 +188,7 @@ const ReportingPage = () => {
     }, 45000); // 45s cloud sync interval
 
     return () => clearTimeout(cloudTimer);
-  }, [saveStatus, editorText, structuredData, impression, advice, activeTab, appointmentId, isFinalized, isOnline, selectedTemplateId, isCloudSyncing]);
+  }, [saveStatus, editorText, impression, advice, appointmentId, isFinalized, isOnline, selectedTemplateId, isCloudSyncing]);
 
 
 
@@ -367,41 +364,18 @@ const ReportingPage = () => {
       const r = (reportBody?.success && reportBody?.data) ? reportBody.data : reportBody;
 
       if (r && (r.findings !== undefined || r.impression !== undefined)) {
-        console.info(`[1RAD] Found Existing Report. Methodology: ${r.reportingMode || 'UNDEFINED'}`);
+        console.info(`[1RAD] Found Existing Report.`);
 
         // 1. Restore Findings Content
-        if (r.findings && (r.findings.startsWith('{') || r.findings.startsWith('['))) {
-          try {
-            const parsed = JSON.parse(r.findings);
-            setStructuredData(parsed);
-            // Proactive fallback: If findings are JSON but mode is null, force Structured
-            if (!r.reportingMode) r.reportingMode = 'Structured';
-          } catch (e) {
-            console.error("Findings Parse Error:", e);
-            setEditorText(r.findings);
-          }
-        } else {
-          setEditorText(r.findings || '');
-        }
-        
-        // 2. Restore Reporting Paradigm (Backend takes priority)
-        const finalMode = r.reportingMode || (r.findings?.startsWith('{') ? 'Structured' : 'Narrative Editor');
-        console.info(`[1RAD] Reconstituting Workspace Paradigm: ${finalMode}`);
-        setActiveTab(finalMode);
+        setEditorText(r.findings || '');
         
         setImpression(r.impression || '');
         setAdvice(r.advice || '');
         setIsFinalized(r.isFinalized);
         if (r.templateId) setSelectedTemplateId(String(r.templateId));
       } else {
-        // FALLBACK: New Case. Use Global Preference from Doctor Profile
-        const globalPref = protRes?.data?.data?.doctor?.preferredReportingMode || 
-                           protRes?.data?.data?.preferredReportingMode || 
-                           localStorage.getItem('reporting_paradigm') || 
-                           'Structured';
-        
-        console.info(`[1RAD] New Case Detected. Applying Global Preference: ${globalPref}`);
-        setActiveTab(globalPref);
+        // FALLBACK: New Case.
+        console.info(`[1RAD] New Case Detected.`);
       }
     } catch (err) {
       console.error('[REPORTING] Initialization failure, trying cache', err);
@@ -414,14 +388,9 @@ const ReportingPage = () => {
       const draft = await nativeStorage.get(`1rad_draft_${appId}`);
       if (draft) {
         console.info('[1RAD] Reconstituting Workspace from Local Draft');
-        if (draft.findings?.startsWith('{')) {
-           try { setStructuredData(JSON.parse(draft.findings)); } catch(e) { setEditorText(draft.findings); }
-        } else {
-           setEditorText(draft.findings || '');
-        }
+        setEditorText(draft.findings || '');
         setImpression(draft.impression || '');
         setAdvice(draft.advice || '');
-        setActiveTab(draft.activeTab || 'Structured');
         setSelectedTemplateId(draft.selectedTemplateId);
       } else {
          setError("SYSTEM_INITIALIZATION_ERROR: A critical failure occurred while preparing the diagnostic workspace. " + (err.message || "Please check your connection."));
@@ -443,10 +412,9 @@ const ReportingPage = () => {
     
     const autosaveTimer = setTimeout(async () => {
        const draft = {
-         findings: activeTab === 'Structured' ? JSON.stringify(structuredData) : editorText,
+         findings: editorText,
          impression,
          advice,
-         activeTab,
          selectedTemplateId,
          timestamp: new Date().getTime()
        };
@@ -455,83 +423,10 @@ const ReportingPage = () => {
     }, 2000); // Debounce for 2 seconds
 
     return () => clearTimeout(autosaveTimer);
-  }, [editorText, structuredData, impression, advice, activeTab, selectedTemplateId, appointmentId, isFinalized]);
+  }, [editorText, impression, advice, selectedTemplateId, appointmentId, isFinalized]);
 
 
 
-  const handleStructuredChange = (fieldId, value) => {
-    setStructuredData(prev => ({ ...prev, [fieldId]: value }));
-  };
-
-  const handleStructuredKeyDown = (e, fieldId) => {
-    if (e.key === 'Enter') {
-      const value = e.target.value;
-      const cursorSlot = e.target.selectionStart;
-      const textBefore = value.substring(0, cursorSlot);
-      
-      // Look for the last word (separated by space or newline)
-      const words = textBefore.split(/[\s\n]+/);
-      const lastWord = words[words.length - 1].trim().toLowerCase();
-      
-      if (lastWord) {
-        const macro = keywordLibrary.find(k => k.trigger.toLowerCase() === lastWord);
-        
-        if (macro) {
-          e.preventDefault();
-          const replacement = macro.replacementText.replace(/<[^>]*>?/gm, ''); // Strip HTML for textarea
-          
-          // Calculate where the last word started
-          const lastWordStart = textBefore.lastIndexOf(lastWord);
-          if (lastWordStart !== -1) {
-            const newValue = value.substring(0, lastWordStart) + replacement + value.substring(cursorSlot);
-            handleStructuredChange(fieldId, newValue);
-            
-            // Tactical: Reset cursor after state update
-            setTimeout(() => {
-              e.target.selectionStart = e.target.selectionEnd = lastWordStart + replacement.length;
-            }, 0);
-          }
-        }
-      }
-    }
-  };
-
-  const renderDynamicFields = (template) => {
-    if (!template) return null;
-    try {
-      // Handle both casing possibilities from the API
-      const rawContent = template.content || template.Content || '[]';
-      const sections = JSON.parse(rawContent);
-      
-      return (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '20px', gridColumn: '1 / -1' }}>
-          {sections.map((section, idx) => (
-            <div key={section.id || idx} className="struct-section">
-              <div className="struct-header">
-                <span>{section.title?.toUpperCase() || 'CLINICAL_FINDINGS'}</span>
-                <span className={`status-indicator ${structuredData[section.title] ? '' : 'status-empty'}`}></span>
-              </div>
-              <textarea 
-                className="struct-textarea"
-                placeholder={`Enter observations for ${section.title || 'this section'}...`}
-                value={structuredData[section.title] || ''}
-                onFocus={() => setLastFocusedField(section.title)}
-                onKeyDown={(e) => handleStructuredKeyDown(e, section.title)}
-                onChange={(e) => handleStructuredChange(section.title, e.target.value)}
-                style={{ minHeight: '100px' }}
-              />
-            </div>
-          ))}
-        </div>
-      );
-    } catch (e) {
-      console.error('[STRUCTURED] Schema Parse Error:', e);
-      return <div style={{ color: '#ef4444', fontSize: '12px', padding: '20px', background: '#fef2f2', borderRadius: '12px', border: '1px solid #fee2e2' }}>
-        [ CONFIGURATION ERROR: Invalid Template Schema ]
-        <div style={{ fontSize: '10px', marginTop: '5px', opacity: 0.7 }}>Ensure your protocol content is valid JSON.</div>
-      </div>;
-    }
-  };
   const handleSaveReport = async (finalizing = false) => {
     if (!appointmentId) {
       alert('APPOINTMENT CONTEXT MISSING: Cannot save report.');
@@ -541,11 +436,11 @@ const ReportingPage = () => {
     const payload = {
       appointmentId: appointmentId,
       templateId: selectedTemplateId,
-      findings: activeTab === 'Structured' ? JSON.stringify(structuredData) : editorText,
-      impression: impression || (activeTab === 'Structured' ? (structuredData['Impression'] || structuredData['IMPRESSION'] || '') : ''),
+      findings: editorText,
+      impression: impression || '',
       advice: advice || '',
       isFinalized: finalizing,
-      reportingMode: activeTab
+      reportingMode: 'Narrative'
     };
 
     if (!isOnline) {
@@ -587,58 +482,26 @@ const ReportingPage = () => {
     }
   };
 
-  const handleTabChange = async (tab) => {
-    setActiveTab(tab);
-    localStorage.setItem('reporting_paradigm', tab);
-    
-    // Global Synchronization: Update user's backend preference
-    try {
-      await apiClient.patch('/personnel/preferences', {
-        preferenceKey: 'ReportingMode',
-        preferenceValue: tab
-      });
-      console.info(`[1RAD] Global Preference Saved: ${tab}`);
-    } catch (err) {
-      console.warn('[1RAD] Global Preference Sync Failed:', err);
-    }
-  };
+
 
 
 
   const handleApplyTemplate = (template) => {
     setSelectedTemplateId(template.id);
-    setActiveTab('Structured');
-    try {
-      const rawContent = template.content || template.Content || '[]';
-      const sections = JSON.parse(rawContent);
-      const initialData = {};
-      sections.forEach(s => {
-        initialData[s.title] = s.content || '';
-      });
-      setStructuredData(initialData);
-    } catch (e) {
-      setEditorText(template.content || template.Content || '');
-      setActiveTab('Narrative Editor');
-    }
+    setEditorText(template.content || template.Content || '');
   };
 
   const handleApplyKeyword = (macro) => {
     const textToInsert = macro.replacementText || '';
+    insertContent(textToInsert);
     
-    if (activeTab === 'Narrative Editor') {
-      insertContent(textToInsert);
-    } else if (activeTab === 'Structured') {
-      if (lastFocusedField) {
-        setStructuredData(prev => ({
-          ...prev,
-          [lastFocusedField]: (prev[lastFocusedField] ? prev[lastFocusedField] + '\n' : '') + textToInsert.replace(/<[^>]*>?/gm, '')
-        }));
-      } else {
-        alert('Please focus a clinical section (click in a textarea) before applying a keyword.');
-      }
-    } else {
-      alert(`KEYWORD: "${macro.trigger || ''}" copied to clipboard.`);
-      navigator.clipboard.writeText(textToInsert.replace(/<[^>]*>?/gm, ''));
+    // Also copy plain text version to clipboard for tactical versatility
+    try {
+      const plainText = textToInsert.replace(/<[^>]*>?/gm, '');
+      navigator.clipboard.writeText(plainText);
+      console.info(`[1RAD] Macro "${macro.trigger}" inserted and copied to clipboard.`);
+    } catch (err) {
+      console.warn('[1RAD] Clipboard fallback failed:', err);
     }
   };
 
@@ -2659,45 +2522,27 @@ const ReportingPage = () => {
           </div>
         </div>
         <div className="header-right" style={{ display: 'flex', alignItems: 'center', gap: '20px' }}>
-          {/* COMPACT PARADIGM SWITCH */}
+          {/* COMPACT TIMELINE LINK */}
           <div style={{ display: 'flex', background: '#f1f5f9', padding: '3px', borderRadius: '10px', border: '1px solid #e2e8f0' }}>
-            <button 
-              onClick={() => handleTabChange('Structured')}
-              style={{ 
-                padding: '6px 15px', borderRadius: '7px', border: 'none',
-                background: activeTab === 'Structured' ? '#0f52ba' : 'transparent',
-                color: activeTab === 'Structured' ? 'white' : '#64748b',
-                fontWeight: 900, fontSize: '10px', cursor: 'pointer', transition: 'all 0.2s cubic-bezier(0.4, 0, 0.2, 1)'
-              }}
-            >STRUCTURED_BLUEPRINT</button>
-            <button 
-              onClick={() => handleTabChange('Narrative Editor')}
-              style={{ 
-                padding: '6px 15px', borderRadius: '7px', border: 'none',
-                background: activeTab === 'Narrative Editor' ? '#0f52ba' : 'transparent',
-                color: activeTab === 'Narrative Editor' ? 'white' : '#64748b',
-                fontWeight: 900, fontSize: '10px', cursor: 'pointer', transition: 'all 0.2s cubic-bezier(0.4, 0, 0.2, 1)'
-              }}
-            >NARRATIVE_FREEFLOW</button>
             <button
               onClick={() => navigate(`/patient-timeline/${appointmentId}`, { state: { patient: activeAppointment, returnPath: `/reporting/${appointmentId}` } })}
               style={{
                 padding: '6px 15px', borderRadius: '7px', border: 'none',
-                background: 'transparent',
-                color: '#64748b',
+                background: '#0f52ba',
+                color: 'white',
                 fontWeight: 900, fontSize: '10px', cursor: 'pointer',
                 transition: 'all 0.2s cubic-bezier(0.4, 0, 0.2, 1)',
                 display: 'flex', alignItems: 'center', gap: '5px'
               }}
             >
-              🕒 TIMELINE
+              🕒 PATIENT_HISTORY
               {patientHistory.length > 0 && (
                 <span style={{ background: '#ef4444', color: 'white', borderRadius: '99px', fontSize: '8px', fontWeight: 950, padding: '1px 5px', lineHeight: 1.4, minWidth: '16px', textAlign: 'center' }}>
                   {patientHistory.length}
                 </span>
               )}
               {loadingTimeline && (
-                <span style={{ display: 'inline-block', width: '8px', height: '8px', border: '1.5px solid rgba(100,116,139,0.3)', borderTopColor: '#64748b', borderRadius: '50%', animation: 'spin 0.8s linear infinite' }} />
+                <span style={{ display: 'inline-block', width: '8px', height: '8px', border: '1.5px solid rgba(255,255,255,0.3)', borderTopColor: 'white', borderRadius: '50%', animation: 'spin 0.8s linear infinite' }} />
               )}
             </button>
           </div>
@@ -3721,10 +3566,10 @@ const ReportingPage = () => {
             marginTop: '0px', marginBottom: '10px', borderBottom: '1px solid #f1f5f9', display: editorState === 'collapsed' ? 'none' : 'flex',
             justifyContent: 'center', gap: '20px'
           }}>
-            <div className={`tab ${activeTab === 'Structured' || activeTab === 'Narrative Editor' ? 'active' : ''}`} style={{ fontSize: '10px', fontWeight: 950 }} onClick={() => setActiveTab(activeTab === 'Narrative Editor' ? 'Narrative Editor' : 'Structured')}>REPORT_WORKSPACE</div>
+            <div className="tab active" style={{ fontSize: '10px', fontWeight: 950 }}>REPORT_WORKSPACE</div>
             {showTimeline && (
               <div
-                className={`tab ${activeTab === 'Patient Timeline' ? 'active' : ''}`}
+                className="tab"
                 style={{
                   fontSize: '10px',
                   fontWeight: 950,
@@ -3778,379 +3623,84 @@ const ReportingPage = () => {
           </div>
         </div>
 
-            {activeTab === 'Structured' && (
-              <div style={{ display: 'flex', flexDirection: 'column', flex: 1 }}>
-                <div className="struct-container" style={{ flex: 1, overflowY: 'auto' }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px', padding: '15px', background: '#f8fafc', borderRadius: '10px', border: '1px solid #e2e8f0' }}>
-                    <div style={{ flex: 1 }}>
-                      <label style={{ fontSize: '10px', fontWeight: 950, color: '#94a3b8', textTransform: 'uppercase', display: 'block', marginBottom: '8px', letterSpacing: '1px' }}>Active Template</label>
-                      <select 
-                        className="template-selector" 
-                        value={selectedTemplateId || ''} 
-                        onChange={(e) => {
-                          const tpl = templates.find(t => String(t.id) === String(e.target.value));
-                          if (tpl) {
-                            setSelectedTemplateId(tpl.id);
-                            // Parse content and apply to structuredData
-                            try {
-                               const sections = JSON.parse(tpl.content || '[]');
-                               const data = {};
-                               sections.forEach(s => {
-                                 data[s.title] = s.content;
-                               });
-                               setStructuredData(data);
-                            } catch (e) {
-                               console.error('Template parse error:', e);
-                            }
-                          }
-                        }}
-                      >
-                        <option value="">Select Clinical Template...</option>
-                        {templates.map(tpl => (
-                          <option key={tpl.id} value={tpl.id}>{tpl.name}</option>
-                        ))}
-                      </select>
-                    </div>
-                  </div>
-                    {selectedTemplateId ? (
-                      <div className="structured-form" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: '25px' }}>
-                        {renderDynamicFields(templates.find(t => String(t.id) === String(selectedTemplateId)))}
-                      </div>
-                    ) : (
-                      <div style={{ textAlign: 'center', padding: '100px 0', color: '#94a3b8' }}>
-                        <div style={{ fontSize: '48px', marginBottom: '20px' }}>📑</div>
-                        <h3 style={{ fontSize: '18px', fontWeight: 600 }}>No Protocol Selected</h3>
-                        <p>Choose a clinical template from the dropdown above to begin structured entry.</p>
-                      </div>
-                    )}
-                  </div>
-                </div>
-            )}
 
-            {activeTab === 'Narrative Editor' && (
-              <div style={{ display: 'flex', flexDirection: 'column', flex: 1, overflow: 'hidden' }}>
-                <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '20px', padding: '20px' }}>
-                  {/* NEW TIPTAP EDITOR */}
-                  <NarrativeEditor
-                    content={editorText}
-                    onChange={(html) => setEditorText(html)}
-                    placeholder="Start typing your radiology report..."
-                    onSave={() => handleSaveReport(false)}
-                    keywordLibrary={keywordLibrary}
-                  />
-                  
-                  {/* Bottom Narrative Inputs (Impression & Advice) */}
-                  <div style={{ display: 'flex', gap: '20px' }}>
-                    <div style={{ flex: 1 }}>
-                      <label style={{ fontSize: '10px', fontWeight: 950, color: '#0f52ba', display: 'block', marginBottom: '8px' }}>CLINICAL IMPRESSION</label>
-                      <textarea 
-                        value={impression}
-                        onChange={(e) => setImpression(e.target.value)}
-                        placeholder="Enter final study impression..."
-                        style={{ width: '100%', padding: '12px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '13px', minHeight: '80px', outline: 'none' }}
-                      />
-                    </div>
-                    <div style={{ flex: 1 }}>
-                      <label style={{ fontSize: '10px', fontWeight: 950, color: '#64748b', display: 'block', marginBottom: '8px' }}>FOLLOW-UP ADVICE</label>
-                      <textarea 
-                        value={advice}
-                        onChange={(e) => setAdvice(e.target.value)}
-                        placeholder="Enter patient advice..."
-                        style={{ width: '100%', padding: '12px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '13px', minHeight: '80px', outline: 'none' }}
-                      />
-                    </div>
+
+            <div style={{ display: 'flex', flexDirection: 'column', flex: 1, overflow: 'auto' }}>
+              {/* STICKY PROTOCOL SELECTOR */}
+              <div style={{ 
+                position: 'sticky', top: 0, zIndex: 10, 
+                padding: '10px 20px', background: 'white', 
+                borderBottom: '1px solid #f1f5f9',
+                backdropFilter: 'blur(8px)',
+                backgroundColor: 'rgba(255, 255, 255, 0.9)'
+              }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px 15px', background: '#f8fafc', borderRadius: '10px', border: '1px solid #e2e8f0' }}>
+                  <div style={{ flex: 1 }}>
+                    <label style={{ fontSize: '10px', fontWeight: 950, color: '#94a3b8', textTransform: 'uppercase', display: 'block', marginBottom: '8px', letterSpacing: '1px' }}>Active Clinical Protocol</label>
+                    <select 
+                      className="template-selector" 
+                      value={selectedTemplateId || ''} 
+                      onChange={(e) => {
+                        const tpl = templates.find(t => String(t.id) === String(e.target.value));
+                        if (tpl) {
+                          setSelectedTemplateId(tpl.id);
+                          setEditorText(tpl.content || '');
+                        }
+                      }}
+                      style={{ width: '100%', padding: '8px', borderRadius: '6px', border: '1px solid #cbd5e1', outline: 'none' }}
+                    >
+                      <option value="">Select Protocol Template...</option>
+                      {templates.map(tpl => (
+                        <option key={tpl.id} value={tpl.id}>{tpl.name}</option>
+                      ))}
+                    </select>
                   </div>
                 </div>
               </div>
-            )}
 
-
-
-            {/* ============================================================ */}
-            {/* ============================================================ */}
-            {/* PATIENT TIMELINE TAB                                         */}
-            {/* ============================================================ */}
-            {activeTab === 'Patient Timeline' && (() => {
-              const STATUS_COLOR = {
-                reported: '#10b981', reporting: '#8b5cf6', completed: '#0f52ba',
-                scanned: '#0f52ba', in_progress: '#f59e0b', confirmed: '#f59e0b',
-                cancelled: '#ef4444', scheduled: '#64748b', booked: '#64748b'
-              };
-
-              return (
-                <div style={{ display: 'flex', flexDirection: 'column', height: 'calc(100vh - 220px)', overflow: 'hidden' }}>
-
-                  {/* ── Header ── */}
-                  <div style={{ background: 'linear-gradient(135deg, #0f172a, #1e293b)', padding: '18px 20px', borderRadius: '14px', marginBottom: '14px', border: '1px solid rgba(59,130,246,0.2)', flexShrink: 0 }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '12px' }}>
-                      <div style={{ flex: 1, minWidth: 0 }}>
-                        <div style={{ color: '#94a3b8', fontSize: '8px', fontWeight: 950, letterSpacing: '2px', textTransform: 'uppercase', marginBottom: '4px' }}>DIAGNOSTIC HISTORY</div>
-                        <div style={{ color: 'white', fontSize: '15px', fontWeight: 950, letterSpacing: '-0.3px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                          {activeAppointment?.patientName?.toUpperCase() || 'PATIENT'}
-                        </div>
-                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '10px', marginTop: '8px' }}>
-                          {[
-                            { label: 'ID', value: activeAppointment?.patientIdentifier || activeAppointment?.patientId || 'N/A' },
-                            { label: 'AGE', value: activeAppointment?.patientAge ? `${activeAppointment.patientAge}Y` : 'N/A' },
-                            { label: 'SEX', value: activeAppointment?.patientGender || 'N/A' },
-                            { label: 'STUDIES', value: patientHistory.length },
-                          ].map(({ label, value }) => (
-                            <div key={label} style={{ background: 'rgba(255,255,255,0.06)', borderRadius: '8px', padding: '5px 10px', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                              <span style={{ color: '#64748b', fontSize: '8px', fontWeight: 950, letterSpacing: '1px' }}>{label}</span>
-                              <span style={{ color: 'white', fontSize: '10px', fontWeight: 900 }}>{value}</span>
-                            </div>
-                          ))}
-                        </div>
-                      </div>
-                      <button
-                        onClick={() => fetchPatientTimeline(activeAppointment, appointmentId)}
-                        disabled={loadingTimeline}
-                        title="Refresh history"
-                        style={{ background: 'rgba(59,130,246,0.15)', border: '1px solid rgba(59,130,246,0.3)', borderRadius: '10px', padding: '8px 12px', color: '#3b82f6', cursor: 'pointer', fontSize: '14px', flexShrink: 0, opacity: loadingTimeline ? 0.5 : 1 }}
-                      >
-                        <span style={{ display: 'inline-block', animation: loadingTimeline ? 'spin 0.8s linear infinite' : 'none' }}>↻</span>
-                      </button>
-                    </div>
+              <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '20px', padding: '20px', paddingTop: '10px' }}>
+                {/* NEW TIPTAP EDITOR */}
+                <NarrativeEditor
+                  content={editorText}
+                  onChange={(html) => setEditorText(html)}
+                  placeholder="Start typing your radiology report..."
+                  onSave={() => handleSaveReport(false)}
+                  keywordLibrary={keywordLibrary}
+                />
+                
+                {/* Bottom Narrative Inputs (Impression & Advice) */}
+                <div style={{ display: 'flex', gap: '20px' }}>
+                  <div style={{ flex: 1 }}>
+                    <label style={{ fontSize: '10px', fontWeight: 950, color: '#0f52ba', display: 'block', marginBottom: '8px' }}>CLINICAL IMPRESSION</label>
+                    <textarea 
+                      value={impression}
+                      onChange={(e) => setImpression(e.target.value)}
+                      placeholder="Enter final study impression..."
+                      style={{ width: '100%', padding: '12px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '13px', minHeight: '80px', outline: 'none' }}
+                    />
                   </div>
-
-                  {/* ── Cards ── */}
-                  <div style={{ flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '10px', paddingRight: '2px' }}>
-                    {loadingTimeline ? (
-                      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', flex: 1, gap: '12px', color: '#64748b', padding: '50px 0' }}>
-                        <div style={{ width: '36px', height: '36px', border: '3px solid rgba(59,130,246,0.2)', borderTopColor: '#3b82f6', borderRadius: '50%', animation: 'spin 1s linear infinite' }} />
-                        <div style={{ fontSize: '11px', fontWeight: 700 }}>Loading patient history...</div>
-                      </div>
-                    ) : patientHistory.length === 0 ? (
-                      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', flex: 1, color: '#94a3b8', padding: '50px 0', gap: '12px' }}>
-                        <div style={{ fontSize: '40px' }}>📋</div>
-                        <div style={{ fontSize: '13px', fontWeight: 800, color: '#475569' }}>No previous studies</div>
-                        <div style={{ fontSize: '10px', textAlign: 'center', maxWidth: '220px', lineHeight: '1.5' }}>First visit or no historical records available in the system.</div>
-                      </div>
-                    ) : patientHistory.map((pastAppt, idx) => {
-                      const reportState = expandedHistoryReport[pastAppt.appointmentId];
-                      const isReportExpanded = !!reportState;
-                      const statusColor = STATUS_COLOR[pastAppt.status?.toLowerCase()] || '#64748b';
-                      const hasReport = ['reported', 'reporting', 'completed'].includes(pastAppt.status?.toLowerCase());
-                      const dicomState = expandedHistoryDicom[pastAppt.appointmentId];
-
-                      return (
-                        <div key={pastAppt.appointmentId || idx} style={{ background: 'white', borderRadius: '14px', border: '1px solid #e8edf2', overflow: 'hidden', flexShrink: 0, boxShadow: '0 1px 6px rgba(0,0,0,0.04)' }}>
-
-                          {/* Left accent bar + body */}
-                          <div style={{ display: 'flex', alignItems: 'stretch' }}>
-                            <div style={{ width: '4px', background: `linear-gradient(180deg, ${statusColor}, ${statusColor}55)`, flexShrink: 0 }} />
-
-                            <div style={{ flex: 1, padding: '14px 16px' }}>
-                              {/* Row 1: Date + status badge */}
-                              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
-                                <div>
-                                  <div style={{ fontSize: '12px', fontWeight: 950, color: '#0f172a' }}>
-                                    {pastAppt.dateTime ? new Date(pastAppt.dateTime).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : 'Date N/A'}
-                                  </div>
-                                  <div style={{ fontSize: '9px', fontWeight: 700, color: '#94a3b8', marginTop: '1px' }}>
-                                    {pastAppt.dateTime ? new Date(pastAppt.dateTime).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' }) : ''}
-                                    {pastAppt.referredBy && <span style={{ marginLeft: '8px', color: '#7c3aed' }}>· Ref: {pastAppt.referredBy}</span>}
-                                  </div>
-                                </div>
-                                <span style={{ background: `${statusColor}18`, color: statusColor, border: `1px solid ${statusColor}35`, borderRadius: '99px', padding: '3px 9px', fontSize: '8px', fontWeight: 950, letterSpacing: '0.5px', textTransform: 'uppercase' }}>
-                                  {pastAppt.status || 'UNKNOWN'}
-                                </span>
-                              </div>
-
-                              {/* Row 2: Study info chips */}
-                              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '6px', marginBottom: '12px' }}>
-                                {[
-                                  { label: 'MODALITY', value: pastAppt.modality || 'N/A' },
-                                  { label: 'STUDY', value: pastAppt.service || 'N/A' },
-                                  { label: 'DOCTOR', value: pastAppt.doctor || 'N/A' },
-                                ].map(({ label, value }) => (
-                                  <div key={label} style={{ background: '#f8fafc', borderRadius: '8px', padding: '7px 9px', border: '1px solid #f1f5f9' }}>
-                                    <div style={{ color: '#94a3b8', fontSize: '7px', fontWeight: 950, letterSpacing: '1px', marginBottom: '2px' }}>{label}</div>
-                                    <div style={{ color: '#0f172a', fontSize: '10px', fontWeight: 900, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{value}</div>
-                                  </div>
-                                ))}
-                              </div>
-
-                              {/* Row 3: Tech notes (if any) */}
-                              {pastAppt.technicianComments && (
-                                <div style={{ fontSize: '10px', color: '#64748b', fontStyle: 'italic', padding: '7px 10px', background: '#fffbeb', borderRadius: '8px', border: '1px solid #fef3c7', marginBottom: '10px' }}>
-                                  🔧 {pastAppt.technicianComments}
-                                </div>
-                              )}
-
-                              {/* Row 4: Actions */}
-                              <div style={{ display: 'flex', gap: '7px', flexWrap: 'wrap' }}>
-                                {/* View/Hide Report */}
-                                <button
-                                  disabled={!hasReport}
-                                  onClick={async () => {
-                                    if (!hasReport) return;
-                                    if (isReportExpanded) {
-                                      setExpandedHistoryReport(prev => { const n = {...prev}; delete n[pastAppt.appointmentId]; return n; });
-                                      return;
-                                    }
-                                    setExpandedHistoryReport(prev => ({ ...prev, [pastAppt.appointmentId]: { loading: true, data: null, error: null } }));
-                                    try {
-                                      const res = await apiClient.get(`/Reporting/mission/${pastAppt.appointmentId}`);
-                                      const body = res.data;
-                                      const r = (body?.success && body?.data) ? body.data : body;
-                                      setExpandedHistoryReport(prev => ({ ...prev, [pastAppt.appointmentId]: { loading: false, data: r, error: null } }));
-                                    } catch {
-                                      setExpandedHistoryReport(prev => ({ ...prev, [pastAppt.appointmentId]: { loading: false, data: null, error: 'Could not fetch report.' } }));
-                                    }
-                                  }}
-                                  style={{
-                                    background: isReportExpanded ? '#eff6ff' : hasReport ? 'white' : '#f8fafc',
-                                    border: `1.5px solid ${isReportExpanded ? '#0f52ba' : hasReport ? '#e2e8f0' : '#f1f5f9'}`,
-                                    color: isReportExpanded ? '#0f52ba' : hasReport ? '#475569' : '#cbd5e1',
-                                    borderRadius: '8px', padding: '6px 11px', fontSize: '10px', fontWeight: 900,
-                                    cursor: hasReport ? 'pointer' : 'default', display: 'flex', alignItems: 'center', gap: '4px'
-                                  }}
-                                >
-                                  📄 {isReportExpanded ? 'HIDE' : hasReport ? 'VIEW REPORT' : 'NO REPORT'}
-                                </button>
-
-                                {/* Open DICOM */}
-                                <button
-                                  onClick={async () => {
-                                    if (dicomState === 'loading') return;
-                                    setExpandedHistoryDicom(prev => ({ ...prev, [pastAppt.appointmentId]: 'loading' }));
-                                    try {
-                                      const assetRes = await apiClient.get(`/Study/${pastAppt.appointmentId}/assets`).catch(() => ({ data: [] }));
-                                      const validAssets = (assetRes.data || []).filter(a => a.blobUrl);
-                                      if (validAssets.length === 0) {
-                                        setExpandedHistoryDicom(prev => ({ ...prev, [pastAppt.appointmentId]: 'none' }));
-                                        return;
-                                      }
-                                      setExpandedHistoryDicom(prev => ({ ...prev, [pastAppt.appointmentId]: 'done' }));
-                                      navigate('/dicom-viewer', {
-                                        state: {
-                                          files: [],
-                                          seriesName: `${pastAppt.service || pastAppt.modality} — ${new Date(pastAppt.dateTime).toLocaleDateString('en-IN')}`,
-                                          allSeries: validAssets.map(a => ({ name: a.fileName || 'DICOM SERIES', files: [], blobUrl: a.blobUrl, modality: pastAppt.modality })),
-                                          activeSeriesIndex: 0,
-                                          appointmentData: { ...pastAppt, patientName: activeAppointment?.patientName }
-                                        }
-                                      });
-                                    } catch {
-                                      setExpandedHistoryDicom(prev => ({ ...prev, [pastAppt.appointmentId]: 'error' }));
-                                    }
-                                  }}
-                                  style={{
-                                    background: dicomState === 'none' ? '#f8fafc' : 'linear-gradient(135deg, #10b981, #059669)',
-                                    border: dicomState === 'none' ? '1.5px solid #f1f5f9' : 'none',
-                                    color: dicomState === 'none' ? '#cbd5e1' : 'white',
-                                    borderRadius: '8px', padding: '6px 11px', fontSize: '10px', fontWeight: 900,
-                                    cursor: dicomState === 'loading' ? 'wait' : 'pointer', display: 'flex', alignItems: 'center', gap: '4px',
-                                    boxShadow: dicomState === 'none' ? 'none' : '0 2px 6px rgba(16,185,129,0.25)',
-                                    opacity: dicomState === 'loading' ? 0.7 : 1
-                                  }}
-                                >
-                                  {dicomState === 'loading'
-                                    ? <span style={{ display: 'inline-block', width: '10px', height: '10px', border: '2px solid rgba(255,255,255,0.3)', borderTopColor: 'white', borderRadius: '50%', animation: 'spin 0.8s linear infinite' }} />
-                                    : '🔍'}
-                                  {dicomState === 'none' ? 'NO DICOM' : 'OPEN DICOM'}
-                                </button>
-                              </div>
-                            </div>
-                          </div>
-
-                          {/* ── Expanded Report Panel ── */}
-                          {isReportExpanded && (
-                            <div style={{ borderTop: '1px solid #e8edf2', background: '#f8fafc', padding: '16px 20px' }}>
-                              {reportState?.loading ? (
-                                <div style={{ display: 'flex', alignItems: 'center', gap: '10px', color: '#64748b', fontSize: '11px', fontWeight: 700 }}>
-                                  <div style={{ width: '14px', height: '14px', border: '2px solid rgba(59,130,246,0.2)', borderTopColor: '#3b82f6', borderRadius: '50%', animation: 'spin 0.8s linear infinite' }} />
-                                  Loading report...
-                                </div>
-                              ) : reportState?.error ? (
-                                <div style={{ color: '#ef4444', fontSize: '11px', fontWeight: 700 }}>⚠️ {reportState.error}</div>
-                              ) : reportState?.data ? (
-                                <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-
-                                  {/* Findings */}
-                                  {reportState.data.findings && (
-                                    <div>
-                                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '7px' }}>
-                                        <div style={{ fontSize: '8px', fontWeight: 950, color: '#0f52ba', textTransform: 'uppercase', letterSpacing: '1.5px', display: 'flex', alignItems: 'center', gap: '5px' }}>
-                                          <span style={{ width: '3px', height: '10px', background: '#0f52ba', borderRadius: '2px', display: 'inline-block' }} /> FINDINGS
-                                        </div>
-                                        <button
-                                          onClick={() => {
-                                            const text = (() => { try { return Object.values(JSON.parse(reportState.data.findings)).join('\n'); } catch { return reportState.data.findings || ''; } })();
-                                            insertContent(text);
-                                          }}
-                                          title="Import into current report"
-                                          style={{ background: '#eff6ff', border: '1px solid #bfdbfe', borderRadius: '6px', color: '#0f52ba', fontSize: '9px', fontWeight: 950, padding: '3px 8px', cursor: 'pointer' }}
-                                        >
-                                          + IMPORT
-                                        </button>
-                                      </div>
-                                      <div
-                                        style={{ fontSize: '11px', color: '#1e293b', lineHeight: '1.7', background: 'white', borderRadius: '8px', padding: '10px 12px', border: '1px solid #e2e8f0', maxHeight: '120px', overflowY: 'auto' }}
-                                        dangerouslySetInnerHTML={{
-                                          __html: (() => { try { return Object.values(JSON.parse(reportState.data.findings)).join('<br/>'); } catch { return reportState.data.findings || ''; } })()
-                                        }}
-                                      />
-                                    </div>
-                                  )}
-
-                                  {/* Impression */}
-                                  {reportState.data.impression && (
-                                    <div>
-                                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '7px' }}>
-                                        <div style={{ fontSize: '8px', fontWeight: 950, color: '#10b981', textTransform: 'uppercase', letterSpacing: '1.5px', display: 'flex', alignItems: 'center', gap: '5px' }}>
-                                          <span style={{ width: '3px', height: '10px', background: '#10b981', borderRadius: '2px', display: 'inline-block' }} /> IMPRESSION
-                                        </div>
-                                        <button
-                                          onClick={() => insertContent(reportState.data.impression)}
-                                          title="Import impression into current report"
-                                          style={{ background: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: '6px', color: '#16a34a', fontSize: '9px', fontWeight: 950, padding: '3px 8px', cursor: 'pointer' }}
-                                        >
-                                          + IMPORT
-                                        </button>
-                                      </div>
-                                      <div style={{ fontSize: '11px', fontWeight: 800, color: '#0f172a', background: '#f0fdf4', borderRadius: '8px', padding: '10px 12px', border: '1px solid #bbf7d0', lineHeight: '1.6' }}>
-                                        {reportState.data.impression}
-                                      </div>
-                                    </div>
-                                  )}
-
-                                  {/* Advice */}
-                                  {reportState.data.advice && (
-                                    <div style={{ fontSize: '10px', color: '#64748b', fontStyle: 'italic', paddingLeft: '10px', borderLeft: '2px solid #e2e8f0' }}>
-                                      <strong>Advice:</strong> {reportState.data.advice}
-                                    </div>
-                                  )}
-
-                                  {/* Finalized stamp */}
-                                  {reportState.data.isFinalized && (
-                                    <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
-                                      <span style={{ background: '#ecfdf5', color: '#10b981', border: '1px solid #a7f3d0', borderRadius: '99px', padding: '3px 10px', fontSize: '8px', fontWeight: 950, letterSpacing: '1px' }}>✓ FINALIZED & SIGNED</span>
-                                    </div>
-                                  )}
-                                </div>
-                              ) : (
-                                <div style={{ color: '#94a3b8', fontSize: '11px', fontWeight: 700 }}>No report data available.</div>
-                              )}
-                            </div>
-                          )}
-                        </div>
-                      );
-                    })}
+                  <div style={{ flex: 1 }}>
+                    <label style={{ fontSize: '10px', fontWeight: 950, color: '#64748b', display: 'block', marginBottom: '8px' }}>FOLLOW-UP ADVICE</label>
+                    <textarea 
+                      value={advice}
+                      onChange={(e) => setAdvice(e.target.value)}
+                      placeholder="Enter patient advice..."
+                      style={{ width: '100%', padding: '12px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '13px', minHeight: '80px', outline: 'none' }}
+                    />
                   </div>
-                </div>
-              );
-            })()}
-
-            {activeTab !== 'Patient Timeline' && (
-              <div style={{ marginTop: '20px', paddingTop: '15px', borderTop: '1px solid #e2e8f0', display: 'flex', justifyContent: 'flex-end', alignItems: 'center', gap: '15px' }}>
-                <div style={{ textAlign: 'right' }}>
-                  <div style={{ fontWeight: 600, fontSize: '14px', color: '#0f172a' }}>Dr. Amit Sharma</div>
-                  <div style={{ fontSize: '12px', color: '#64748b' }}>Consultant Radiologist</div>
                 </div>
               </div>
-            )}
+            </div>
+
+
+
+            {/* Signature Block */}
+            <div style={{ marginTop: '20px', paddingTop: '15px', borderTop: '1px solid #e2e8f0', display: 'flex', justifyContent: 'flex-end', alignItems: 'center', gap: '15px' }}>
+              <div style={{ textAlign: 'right' }}>
+                <div style={{ fontWeight: 600, fontSize: '14px', color: '#0f172a' }}>{protocol?.hospital?.name || 'Authorized Diagnostic Center'}</div>
+                <div style={{ fontSize: '12px', color: '#64748b' }}>Digital Medical Record Signature</div>
+              </div>
+            </div>
           </div>
         </div>
       </div>
@@ -4239,9 +3789,9 @@ const ReportingPage = () => {
         doctorId={activeAppointment?.doctorId || activeAppointment?.doctorUserId || activeAppointment?.doctor?.userId || sessionStorage.getItem('1rad_doctor_id')}
         patientData={activeAppointment}
         reportContent={{
-          mode: activeTab,
+          mode: 'Narrative',
           text: editorText,
-          data: structuredData,
+          data: {},
           impression: impression,
           advice: advice,
           isFinalized: isFinalized

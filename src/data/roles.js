@@ -31,51 +31,43 @@ export const ROLE_HOME = {
 // Sidebar navigation items with strict RBAC
 export const NAV_ITEMS = [
   {
-    label: 'CLINICAL REGISTRY',
+    label: 'Configuration',
     route: '/configuration',
-    icon: '📚',
     allowedRoles: ['admindoctor', 'admin'],
   },
   {
-    label: 'COMMAND CENTER',
+    label: 'Dashboard',
     route: '/admin-board',
-    icon: '🏢',
     allowedRoles: ['admindoctor', 'admin'],
   },
   {
-    label: 'MISSION SCHEDULER',
+    label: 'Appointments',
     route: '/appointment-board',
-    icon: '📡',
     allowedRoles: ['admindoctor', 'admin', 'receptionist'],
   },
   {
-    label: 'FINANCIAL HUB',
+    label: 'Billing',
     route: '/billing',
-    icon: '💳',
     allowedRoles: ['admindoctor', 'admin', 'accountant'],
   },
   {
-    label: 'SCANNING BAY',
+    label: 'Imaging',
     route: '/technician',
-    icon: '🩻',
     allowedRoles: ['admindoctor', 'admin', 'technician'],
   },
   {
-    label: 'DOCTOR BOARD',
+    label: 'Reporting',
     route: '/doctor-board',
-    icon: '👨‍⚕️',
     allowedRoles: ['admindoctor', 'doctor'],
   },
   {
-    label: 'SUBSCRIPTION',
+    label: 'Subscription',
     route: '/subscription',
-    icon: '🔑',
     allowedRoles: ['admindoctor', 'admin'],
   },
   {
-    label: 'DICOM BRIDGE',
+    label: 'DICOM Bridge',
     route: '/dicom-bridge',
-    icon: '🔗',
     allowedRoles: ['admindoctor', 'admin'],
   },
 ];
