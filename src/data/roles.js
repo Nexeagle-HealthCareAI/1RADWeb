@@ -31,6 +31,12 @@ export const ROLE_HOME = {
 // Sidebar navigation items with strict RBAC
 export const NAV_ITEMS = [
   {
+    label: 'CLINICAL REGISTRY',
+    route: '/configuration',
+    icon: '📚',
+    allowedRoles: ['admindoctor', 'admin'],
+  },
+  {
     label: 'COMMAND CENTER',
     route: '/admin-board',
     icon: '🏢',
