@@ -374,8 +374,20 @@ const ReportingPage = () => {
         setIsFinalized(r.isFinalized);
         if (r.templateId) setSelectedTemplateId(String(r.templateId));
       } else {
-        // FALLBACK: New Case.
-        console.info(`[1RAD] New Case Detected.`);
+        // FALLBACK: New Case. Attempt auto-matching template with service name.
+        console.info(`[1RAD] New Case Detected. Searching for default protocol for service: ${appointmentData.service}`);
+        
+        if (templRes.data?.success && appointmentData.service) {
+          const serviceMatch = templRes.data.data.find(t => 
+            t.name?.toLowerCase().trim() === appointmentData.service.toLowerCase().trim()
+          );
+          
+          if (serviceMatch) {
+            console.info(`[1RAD] Intelligent Match Found: ${serviceMatch.name}`);
+            setSelectedTemplateId(String(serviceMatch.id));
+            setEditorText(serviceMatch.content || '');
+          }
+        }
       }
     } catch (err) {
       console.error('[REPORTING] Initialization failure, trying cache', err);

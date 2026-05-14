@@ -1,4 +1,4 @@
-import { useState, useRef } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { NavLink, useNavigate, useLocation } from 'react-router-dom';
 import useAuth from '../auth/useAuth';
 import { NAV_ITEMS, ROLE_LABELS } from '../data/roles';
@@ -6,225 +6,208 @@ import '../styles/global.css';
 
 // ── Design tokens ─────────────────────────────────────────────────────────────
 const T = {
-  bg: '#0d1117',
-  bgHover: 'rgba(255,255,255,0.05)',
-  bgActive: 'rgba(255,255,255,0.08)',
-  border: 'rgba(255,255,255,0.07)',
-  accent: '#3b82f6',
-  textPrimary: 'rgba(255,255,255,0.90)',
-  textSecondary: 'rgba(255,255,255,0.42)',
-  textMuted: 'rgba(255,255,255,0.22)',
+  bg: '#0a1628',
+  surface: 'rgba(255,255,255,0.05)',
+  hover: 'rgba(255,255,255,0.07)',
+  active: 'rgba(96,165,250,0.16)',
+  activeBorder: '#60a5fa',
+  border: 'rgba(255,255,255,0.09)',
+  borderStrong: '#1e3a5f',
+  accent: '#60a5fa',
+  accentDim: 'rgba(96,165,250,0.14)',
+  textHigh: 'rgba(255,255,255,0.92)',
+  textMid: 'rgba(255,255,255,0.50)',
+  textLow: 'rgba(255,255,255,0.25)',
   danger: '#f87171',
-  dangerHover: 'rgba(248,113,113,0.10)',
+  dangerBg: 'rgba(248,113,113,0.10)',
+  wExpanded: 228,
+  wCollapsed: 60,
+  wMobile: 280,
 };
 
-// ── Route → SVG icon (16×16 viewBox, fill="currentColor") ────────────────────
-const ROUTE_ICONS = {
-  '/configuration': (
-    <>
-      <path d="M8 4.754a3.246 3.246 0 1 0 0 6.492 3.246 3.246 0 0 0 0-6.492zM5.754 8a2.246 2.246 0 1 1 4.492 0 2.246 2.246 0 0 1-4.492 0z"/>
-      <path d="M9.796 1.343c-.527-1.79-3.065-1.79-3.592 0l-.094.319a.873.873 0 0 1-1.255.52l-.292-.16c-1.64-.892-3.433.902-2.54 2.541l.159.292a.873.873 0 0 1-.52 1.255l-.319.094c-1.79.527-1.79 3.065 0 3.592l.319.094a.873.873 0 0 1 .52 1.255l-.16.292c-.892 1.64.901 3.434 2.541 2.54l.292-.159a.873.873 0 0 1 1.255.52l.094.319c.527 1.79 3.065 1.79 3.592 0l.094-.319a.873.873 0 0 1 1.255-.52l.292.16c1.64.892 3.433-.902 2.54-2.541l-.159-.292a.873.873 0 0 1 .52-1.255l.319-.094c1.79-.527 1.79-3.065 0-3.592l-.319-.094a.873.873 0 0 1-.52-1.255l.16-.292c.892-1.64-.901-3.433-2.541-2.54l-.292.159a.873.873 0 0 1-1.255-.52l-.094-.319z"/>
-    </>
-  ),
-  '/admin-board': (
-    <path d="M1 2.5A1.5 1.5 0 0 1 2.5 1h3A1.5 1.5 0 0 1 7 2.5v3A1.5 1.5 0 0 1 5.5 7h-3A1.5 1.5 0 0 1 1 5.5v-3zm8 0A1.5 1.5 0 0 1 10.5 1h3A1.5 1.5 0 0 1 15 2.5v3A1.5 1.5 0 0 1 13.5 7h-3A1.5 1.5 0 0 1 9 5.5v-3zm-8 8A1.5 1.5 0 0 1 2.5 9h3A1.5 1.5 0 0 1 7 10.5v3A1.5 1.5 0 0 1 5.5 15h-3A1.5 1.5 0 0 1 1 13.5v-3zm8 0A1.5 1.5 0 0 1 10.5 9h3a1.5 1.5 0 0 1 1.5 1.5v3a1.5 1.5 0 0 1-1.5 1.5h-3A1.5 1.5 0 0 1 9 13.5v-3z"/>
-  ),
-  '/appointment-board': (
-    <>
-      <path d="M14 0H2a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V2a2 2 0 0 0-2-2zM1 3.857C1 3.384 1.448 3 2 3h12c.552 0 1 .384 1 .857v10.286c0 .473-.448.857-1 .857H2c-.552 0-1-.384-1-.857V3.857z"/>
-      <path d="M6.5 7a1 1 0 1 0 0-2 1 1 0 0 0 0 2zm3 0a1 1 0 1 0 0-2 1 1 0 0 0 0 2zm3 0a1 1 0 1 0 0-2 1 1 0 0 0 0 2zm-9 3a1 1 0 1 0 0-2 1 1 0 0 0 0 2zm3 0a1 1 0 1 0 0-2 1 1 0 0 0 0 2zm3 0a1 1 0 1 0 0-2 1 1 0 0 0 0 2zm3 0a1 1 0 1 0 0-2 1 1 0 0 0 0 2zm-9 3a1 1 0 1 0 0-2 1 1 0 0 0 0 2zm3 0a1 1 0 1 0 0-2 1 1 0 0 0 0 2zm3 0a1 1 0 1 0 0-2 1 1 0 0 0 0 2z"/>
-    </>
-  ),
-  '/billing': (
-    <path d="M0 4a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H2a2 2 0 0 1-2-2V4zm2-1a1 1 0 0 0-1 1v1h14V4a1 1 0 0 0-1-1H2zm13 4H1v5a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V7zM2 10h2v1H2v-1zm0 2h2v1H2v-1zm4-2h6v1H6v-1z"/>
-  ),
-  '/technician': (
-    <>
-      <path d="M6.002 5.5a1.5 1.5 0 1 1-3 0 1.5 1.5 0 0 1 3 0z"/>
-      <path d="M2.002 1a2 2 0 0 0-2 2v10a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V3a2 2 0 0 0-2-2h-12zm12 1a1 1 0 0 1 1 1v6.5l-3.777-1.947a.5.5 0 0 0-.577.093l-3.71 3.71-2.66-1.772a.5.5 0 0 0-.63.062L1.002 12V3a1 1 0 0 1 1-1h12z"/>
-    </>
-  ),
-  '/doctor-board': (
-    <>
-      <path d="M5.5 7a.5.5 0 0 0 0 1h5a.5.5 0 0 0 0-1h-5zM5 9.5a.5.5 0 0 1 .5-.5h5a.5.5 0 0 1 0 1h-5a.5.5 0 0 1-.5-.5zm0 2a.5.5 0 0 1 .5-.5h2a.5.5 0 0 1 0 1h-2a.5.5 0 0 1-.5-.5z"/>
-      <path d="M9.5 0H4a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h8a2 2 0 0 0 2-2V4.5L9.5 0zm0 1v2A1.5 1.5 0 0 0 11 4.5h2V14a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V2a1 1 0 0 1 1-1h5.5z"/>
-    </>
-  ),
-  '/subscription': (
-    <>
-      <path d="M0 8a4 4 0 0 1 7.465-2H14a.5.5 0 0 1 .354.146l1.5 1.5a.5.5 0 0 1 0 .708l-1.5 1.5a.5.5 0 0 1-.708 0L13 9.207l-.646.647a.5.5 0 0 1-.708 0L11 9.207l-.646.647a.5.5 0 0 1-.708 0L9 9.207l-.646.647A.5.5 0 0 1 8 10h-.535A4 4 0 0 1 0 8zm4-3a3 3 0 1 0 2.712 4.285A.5.5 0 0 1 7.163 9h.63l.853-.854a.5.5 0 0 1 .708 0l.646.647.646-.647a.5.5 0 0 1 .708 0l.646.647.646-.647a.5.5 0 0 1 .708 0l.646.647.793-.793-1-1h-6.63a.5.5 0 0 1-.451-.285A3 3 0 0 0 4 5z"/>
-      <path d="M4 8a1 1 0 1 1-2 0 1 1 0 0 1 2 0z"/>
-    </>
-  ),
-  '/dicom-bridge': (
-    <>
-      <path d="M4.715 6.542 3.343 7.914a3 3 0 1 0 4.243 4.243l1.828-1.829A3 3 0 0 0 8.586 5.5L8 6.086a1.002 1.002 0 0 0-.154.199 2 2 0 0 1 .861 3.337L6.88 11.45a2 2 0 1 1-2.83-2.83l.793-.792a4.018 4.018 0 0 1-.128-1.287z"/>
-      <path d="M6.586 4.672A3 3 0 0 0 7.414 9.5l.823-.823a2 2 0 0 1-.451-2.587l1.328-1.372a2 2 0 1 1 2.83 2.83l-.793.792c.112.42.155.855.128 1.287l1.372-1.372a3 3 0 1 0-4.242-4.243z"/>
-    </>
-  ),
+// ── Route → SVG icon ──────────────────────────────────────────────────────────
+const ICONS = {
+  '/configuration': <>
+    <path d="M8 4.754a3.246 3.246 0 1 0 0 6.492 3.246 3.246 0 0 0 0-6.492zM5.754 8a2.246 2.246 0 1 1 4.492 0 2.246 2.246 0 0 1-4.492 0z"/>
+    <path d="M9.796 1.343c-.527-1.79-3.065-1.79-3.592 0l-.094.319a.873.873 0 0 1-1.255.52l-.292-.16c-1.64-.892-3.433.902-2.54 2.541l.159.292a.873.873 0 0 1-.52 1.255l-.319.094c-1.79.527-1.79 3.065 0 3.592l.319.094a.873.873 0 0 1 .52 1.255l-.16.292c-.892 1.64.901 3.434 2.541 2.54l.292-.159a.873.873 0 0 1 1.255.52l.094.319c.527 1.79 3.065 1.79 3.592 0l.094-.319a.873.873 0 0 1 1.255-.52l.292.16c1.64.892 3.433-.902 2.54-2.541l-.159-.292a.873.873 0 0 1 .52-1.255l.319-.094c1.79-.527 1.79-3.065 0-3.592l-.319-.094a.873.873 0 0 1-.52-1.255l.16-.292c.892-1.64-.901-3.433-2.541-2.54l-.292.159a.873.873 0 0 1-1.255-.52l-.094-.319z"/>
+  </>,
+  '/admin-board': <path d="M1 2.5A1.5 1.5 0 0 1 2.5 1h3A1.5 1.5 0 0 1 7 2.5v3A1.5 1.5 0 0 1 5.5 7h-3A1.5 1.5 0 0 1 1 5.5v-3zm8 0A1.5 1.5 0 0 1 10.5 1h3A1.5 1.5 0 0 1 15 2.5v3A1.5 1.5 0 0 1 13.5 7h-3A1.5 1.5 0 0 1 9 5.5v-3zm-8 8A1.5 1.5 0 0 1 2.5 9h3A1.5 1.5 0 0 1 7 10.5v3A1.5 1.5 0 0 1 5.5 15h-3A1.5 1.5 0 0 1 1 13.5v-3zm8 0A1.5 1.5 0 0 1 10.5 9h3a1.5 1.5 0 0 1 1.5 1.5v3a1.5 1.5 0 0 1-1.5 1.5h-3A1.5 1.5 0 0 1 9 13.5v-3z"/>,
+  '/appointment-board': <>
+    <path d="M14 0H2a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V2a2 2 0 0 0-2-2zM1 3.857C1 3.384 1.448 3 2 3h12c.552 0 1 .384 1 .857v10.286c0 .473-.448.857-1 .857H2c-.552 0-1-.384-1-.857V3.857z"/>
+    <path d="M6.5 7a1 1 0 1 0 0-2 1 1 0 0 0 0 2zm3 0a1 1 0 1 0 0-2 1 1 0 0 0 0 2zm3 0a1 1 0 1 0 0-2 1 1 0 0 0 0 2zm-9 3a1 1 0 1 0 0-2 1 1 0 0 0 0 2zm3 0a1 1 0 1 0 0-2 1 1 0 0 0 0 2zm3 0a1 1 0 1 0 0-2 1 1 0 0 0 0 2zm3 0a1 1 0 1 0 0-2 1 1 0 0 0 0 2zm-9 3a1 1 0 1 0 0-2 1 1 0 0 0 0 2zm3 0a1 1 0 1 0 0-2 1 1 0 0 0 0 2zm3 0a1 1 0 1 0 0-2 1 1 0 0 0 0 2z"/>
+  </>,
+  '/billing': <path d="M0 4a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H2a2 2 0 0 1-2-2V4zm2-1a1 1 0 0 0-1 1v1h14V4a1 1 0 0 0-1-1H2zm13 4H1v5a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V7zM2 10h2v1H2v-1zm0 2h2v1H2v-1zm4-2h6v1H6v-1z"/>,
+  '/technician': <>
+    <path d="M6.002 5.5a1.5 1.5 0 1 1-3 0 1.5 1.5 0 0 1 3 0z"/>
+    <path d="M2.002 1a2 2 0 0 0-2 2v10a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V3a2 2 0 0 0-2-2h-12zm12 1a1 1 0 0 1 1 1v6.5l-3.777-1.947a.5.5 0 0 0-.577.093l-3.71 3.71-2.66-1.772a.5.5 0 0 0-.63.062L1.002 12V3a1 1 0 0 1 1-1h12z"/>
+  </>,
+  '/doctor-board': <>
+    <path d="M5.5 7a.5.5 0 0 0 0 1h5a.5.5 0 0 0 0-1h-5zM5 9.5a.5.5 0 0 1 .5-.5h5a.5.5 0 0 1 0 1h-5a.5.5 0 0 1-.5-.5zm0 2a.5.5 0 0 1 .5-.5h2a.5.5 0 0 1 0 1h-2a.5.5 0 0 1-.5-.5z"/>
+    <path d="M9.5 0H4a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h8a2 2 0 0 0 2-2V4.5L9.5 0zm0 1v2A1.5 1.5 0 0 0 11 4.5h2V14a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V2a1 1 0 0 1 1-1h5.5z"/>
+  </>,
+  '/subscription': <>
+    <path d="M0 8a4 4 0 0 1 7.465-2H14a.5.5 0 0 1 .354.146l1.5 1.5a.5.5 0 0 1 0 .708l-1.5 1.5a.5.5 0 0 1-.708 0L13 9.207l-.646.647a.5.5 0 0 1-.708 0L11 9.207l-.646.647a.5.5 0 0 1-.708 0L9 9.207l-.646.647A.5.5 0 0 1 8 10h-.535A4 4 0 0 1 0 8zm4-3a3 3 0 1 0 2.712 4.285A.5.5 0 0 1 7.163 9h.63l.853-.854a.5.5 0 0 1 .708 0l.646.647.646-.647a.5.5 0 0 1 .708 0l.646.647.646-.647a.5.5 0 0 1 .708 0l.646.647.793-.793-1-1h-6.63a.5.5 0 0 1-.451-.285A3 3 0 0 0 4 5z"/>
+    <path d="M4 8a1 1 0 1 1-2 0 1 1 0 0 1 2 0z"/>
+  </>,
+  '/dicom-bridge': <>
+    <path d="M4.715 6.542 3.343 7.914a3 3 0 1 0 4.243 4.243l1.828-1.829A3 3 0 0 0 8.586 5.5L8 6.086a1.002 1.002 0 0 0-.154.199 2 2 0 0 1 .861 3.337L6.88 11.45a2 2 0 1 1-2.83-2.83l.793-.792a4.018 4.018 0 0 1-.128-1.287z"/>
+    <path d="M6.586 4.672A3 3 0 0 0 7.414 9.5l.823-.823a2 2 0 0 1-.451-2.587l1.328-1.372a2 2 0 1 1 2.83 2.83l-.793.792c.112.42.155.855.128 1.287l1.372-1.372a3 3 0 1 0-4.242-4.243z"/>
+  </>,
 };
 
-const NavIcon = ({ route, size = 15 }) => (
-  <svg
-    width={size} height={size}
-    viewBox="0 0 16 16"
-    fill="currentColor"
-    style={{ display: 'block', flexShrink: 0 }}
-  >
-    {ROUTE_ICONS[route] ?? <circle cx="8" cy="8" r="4"/>}
+const NavIcon = ({ route, color = 'currentColor', size = 15 }) => (
+  <svg width={size} height={size} viewBox="0 0 16 16" fill={color}
+    style={{ display: 'block', flexShrink: 0 }}>
+    {ICONS[route] ?? <circle cx="8" cy="8" r="5"/>}
   </svg>
 );
 
-// ── Floating tooltip (appears to the right when sidebar is collapsed) ─────────
-function CollapsedTooltip({ label, visible, anchorRef }) {
-  const [pos, setPos] = useState({ top: 0 });
-
+// ── Tooltip (collapsed desktop only) ─────────────────────────────────────────
+function Tooltip({ label, anchorRef, visible }) {
   if (!visible || !anchorRef.current) return null;
-
-  const rect = anchorRef.current.getBoundingClientRect();
-  const top = rect.top + rect.height / 2;
-
+  const { top, height } = anchorRef.current.getBoundingClientRect();
   return (
-    <div
-      style={{
-        position: 'fixed',
-        left: '74px',
-        top,
-        transform: 'translateY(-50%)',
-        pointerEvents: 'none',
-        zIndex: 9999,
-        display: 'flex',
-        alignItems: 'center',
-        gap: '6px',
-      }}
-    >
-      {/* Arrow */}
+    <div style={{
+      position: 'fixed', left: T.wCollapsed + 10,
+      top: top + height / 2, transform: 'translateY(-50%)',
+      zIndex: 9999, pointerEvents: 'none',
+      display: 'flex', alignItems: 'center',
+    }}>
+      <div style={{ width: 0, height: 0, borderTop: '5px solid transparent', borderBottom: '5px solid transparent', borderRight: '6px solid #112240' }} />
       <div style={{
-        width: 0, height: 0,
-        borderTop: '5px solid transparent',
-        borderBottom: '5px solid transparent',
-        borderRight: '6px solid #1e2530',
-      }} />
-      {/* Label bubble */}
-      <div style={{
-        background: '#1e2530',
-        color: 'rgba(255,255,255,0.90)',
-        padding: '5px 11px',
-        borderRadius: '6px',
-        fontSize: '12px',
-        fontWeight: 500,
-        whiteSpace: 'nowrap',
-        border: '1px solid rgba(255,255,255,0.08)',
-        boxShadow: '0 4px 14px rgba(0,0,0,0.4)',
+        background: '#112240', color: T.textHigh,
+        padding: '6px 12px', borderRadius: '7px',
+        fontSize: '12px', fontWeight: 500, whiteSpace: 'nowrap',
+        border: `1px solid ${T.borderStrong}`,
+        boxShadow: '0 8px 24px rgba(0,0,0,0.5)',
         fontFamily: '"Segoe UI", system-ui, sans-serif',
-        letterSpacing: '0.1px',
-      }}>
-        {label}
-      </div>
+      }}>{label}</div>
     </div>
   );
 }
 
-// ── Nav item ──────────────────────────────────────────────────────────────────
-function NavItem({ item, isCollapsed, onMobileClose }) {
+// ── Nav row ───────────────────────────────────────────────────────────────────
+function NavRow({ item, collapsed, isMobile, onClose }) {
   const location = useLocation();
-  const [hovered, setHovered] = useState(false);
-  const ref = useRef(null);
+  const [hov, setHov] = useState(false);
+  const rowRef = useRef(null);
 
   const isActive = location.pathname === item.route ||
     (item.route !== '/' && location.pathname.startsWith(item.route + '/'));
   const isUpcoming = !!item.isUpcoming;
+  const showCollapsed = collapsed && !isMobile;
+
+  const iconColor = isActive ? T.accent : hov ? T.textHigh : T.textMid;
 
   return (
-    <>
+    <div ref={rowRef} style={{ position: 'relative' }}>
       <NavLink
-        ref={ref}
         to={isUpcoming ? '#' : item.route}
-        onClick={e => {
-          if (isUpcoming) e.preventDefault();
-          if (onMobileClose) onMobileClose();
-        }}
-        onMouseEnter={() => setHovered(true)}
-        onMouseLeave={() => setHovered(false)}
+        onClick={e => { if (isUpcoming) e.preventDefault(); else onClose?.(); }}
+        onMouseEnter={() => setHov(true)}
+        onMouseLeave={() => setHov(false)}
         style={{
-          display: 'flex',
-          alignItems: 'center',
-          gap: '10px',
-          padding: isCollapsed ? '10px 0' : '8px 10px',
-          justifyContent: isCollapsed ? 'center' : 'flex-start',
-          borderRadius: '7px',
+          display: 'flex', alignItems: 'center',
+          gap: showCollapsed ? 0 : '11px',
+          padding: showCollapsed ? '10px 0' : '9px 12px',
+          justifyContent: showCollapsed ? 'center' : 'flex-start',
+          borderRadius: '9px',
           textDecoration: 'none',
-          color: isActive ? T.textPrimary : hovered ? T.textPrimary : T.textSecondary,
-          background: isActive ? T.bgActive : hovered ? T.bgHover : 'transparent',
-          borderLeft: !isCollapsed
-            ? `2px solid ${isActive ? T.accent : 'transparent'}`
-            : '2px solid transparent',
-          opacity: isUpcoming ? 0.38 : 1,
-          transition: 'background 0.12s, color 0.12s',
-          fontFamily: '"Segoe UI", system-ui, sans-serif',
+          background: isActive ? T.active : hov ? T.hover : 'transparent',
+          boxShadow: isActive && !showCollapsed ? `inset 2px 0 0 ${T.activeBorder}` : 'none',
+          opacity: isUpcoming ? 0.4 : 1,
           cursor: isUpcoming ? 'default' : 'pointer',
-          position: 'relative',
-          marginLeft: isCollapsed ? 0 : '-2px',
+          transition: 'background 0.13s, box-shadow 0.13s',
           outline: 'none',
+          fontFamily: '"Segoe UI", system-ui, sans-serif',
         }}
       >
-        {/* Icon — always shown */}
-        <NavIcon route={item.route} size={15} />
+        <NavIcon route={item.route} color={iconColor} size={15} />
 
-        {/* Label — only when expanded */}
-        {!isCollapsed && (
+        {/* Sliding label */}
+        <div style={{
+          overflow: 'hidden',
+          maxWidth: showCollapsed ? 0 : '200px',
+          opacity: showCollapsed ? 0 : 1,
+          transition: 'max-width 0.22s cubic-bezier(0.4,0,0.2,1), opacity 0.17s ease',
+          display: 'flex', alignItems: 'center', gap: '7px',
+          flex: 1, whiteSpace: 'nowrap',
+        }}>
           <span style={{
-            fontSize: '13px',
-            fontWeight: isActive ? 500 : 400,
-            flex: 1,
-            lineHeight: 1.3,
-          }}>
-            {item.label}
-          </span>
-        )}
+            fontSize: '13.5px', fontWeight: isActive ? 500 : 400,
+            color: isActive ? T.textHigh : hov ? T.textHigh : T.textMid,
+            transition: 'color 0.13s', letterSpacing: '0.01em',
+          }}>{item.label}</span>
+          {isUpcoming && (
+            <span style={{
+              fontSize: '9px', fontWeight: 700, letterSpacing: '0.4px',
+              background: T.accentDim, color: T.accent,
+              padding: '2px 6px', borderRadius: '4px', flexShrink: 0,
+            }}>SOON</span>
+          )}
+        </div>
 
-        {/* Active accent dot for collapsed */}
-        {isActive && isCollapsed && (
+        {/* Active dot — collapsed desktop */}
+        {isActive && showCollapsed && (
           <div style={{
-            position: 'absolute',
-            left: 0,
-            top: '50%',
-            transform: 'translateY(-50%)',
-            width: '2px',
-            height: '18px',
-            background: T.accent,
-            borderRadius: '0 2px 2px 0',
+            position: 'absolute', left: 0, top: '50%', transform: 'translateY(-50%)',
+            width: '2px', height: '18px',
+            background: T.activeBorder, borderRadius: '0 2px 2px 0',
           }} />
-        )}
-
-        {/* Coming-soon badge */}
-        {isUpcoming && !isCollapsed && (
-          <span style={{
-            fontSize: '9px', fontWeight: 700, letterSpacing: '0.4px',
-            background: 'rgba(59,130,246,0.14)', color: '#60a5fa',
-            padding: '2px 5px', borderRadius: '3px',
-          }}>SOON</span>
         )}
       </NavLink>
 
-      {/* Tooltip (collapsed only) */}
-      {isCollapsed && (
-        <CollapsedTooltip
-          label={item.label}
-          visible={hovered}
-          anchorRef={ref}
-        />
-      )}
-    </>
+      {showCollapsed && <Tooltip label={item.label} anchorRef={rowRef} visible={hov} />}
+    </div>
   );
 }
 
-// ── Sidebar ───────────────────────────────────────────────────────────────────
+// ── Hamburger / X icon ────────────────────────────────────────────────────────
+const HamburgerIcon = () => (
+  <svg width="17" height="17" viewBox="0 0 24 24" fill="none"
+    stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+    <line x1="3" y1="7"  x2="21" y2="7"/>
+    <line x1="3" y1="12" x2="21" y2="12"/>
+    <line x1="3" y1="17" x2="21" y2="17"/>
+  </svg>
+);
+
+const CloseIcon = ({ size = 15 }) => (
+  <svg width={size} height={size} viewBox="0 0 24 24" fill="none"
+    stroke="currentColor" strokeWidth="2.2" strokeLinecap="round">
+    <line x1="4" y1="4" x2="20" y2="20"/>
+    <line x1="20" y1="4" x2="4"  y2="20"/>
+  </svg>
+);
+
+// ── Sign-out icon ─────────────────────────────────────────────────────────────
+const SignOutIcon = () => (
+  <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor" style={{ flexShrink: 0 }}>
+    <path fillRule="evenodd" d="M10 12.5a.5.5 0 0 1-.5.5h-8a.5.5 0 0 1-.5-.5v-9a.5.5 0 0 1 .5-.5h8a.5.5 0 0 1 .5.5v2a.5.5 0 0 0 1 0v-2A1.5 1.5 0 0 0 9.5 2h-8A1.5 1.5 0 0 0 0 3.5v9A1.5 1.5 0 0 0 1.5 14h8a1.5 1.5 0 0 0 1.5-1.5v-2a.5.5 0 0 0-1 0v2z"/>
+    <path fillRule="evenodd" d="M15.854 8.354a.5.5 0 0 0 0-.708l-3-3a.5.5 0 0 0-.708.708L14.293 7.5H5.5a.5.5 0 0 0 0 1h8.793l-2.147 2.146a.5.5 0 0 0 .708.708l3-3z"/>
+  </svg>
+);
+
+// ── Main Sidebar ──────────────────────────────────────────────────────────────
 export default function Sidebar({ isMobileOpen, onMobileClose }) {
   const { currentUser, logout } = useAuth();
-  const [isCollapsed, setIsCollapsed] = useState(false);
-  const [signOutHovered, setSignOutHovered] = useState(false);
+  const [collapsed, setCollapsed] = useState(false);
+  const [soHov, setSoHov] = useState(false);
+  const [toggleHov, setToggleHov] = useState(false);
+  const [viewW, setViewW] = useState(window.innerWidth);
   const navigate = useNavigate();
+
+  useEffect(() => {
+    const onResize = () => setViewW(window.innerWidth);
+    window.addEventListener('resize', onResize);
+    return () => window.removeEventListener('resize', onResize);
+  }, []);
+
+  const isMobile = viewW < 640;
+  const isTablet = viewW >= 640 && viewW < 1024;
+
+  // On mobile/tablet the sidebar is a full drawer — collapsed rail is desktop-only
+  const showCollapsed = collapsed && !isMobile && !isTablet;
 
   if (!currentUser) return null;
 
@@ -232,206 +215,241 @@ export default function Sidebar({ isMobileOpen, onMobileClose }) {
   const primaryRole = userRoles[0] || '';
   const roleLabel = ROLE_LABELS[primaryRole] || primaryRole;
   const displayName =
-    currentUser.name ||
-    currentUser.username ||
-    currentUser.email?.split('@')[0] ||
-    'User';
-  const avatarInitial = displayName.slice(0, 1).toUpperCase();
+    currentUser.name || currentUser.username ||
+    currentUser.email?.split('@')[0] || 'User';
+  const initial = displayName.slice(0, 1).toUpperCase();
 
-  const allowedNavItems = NAV_ITEMS.filter(item =>
-    item.allowedRoles.some(role => userRoles.includes(role))
+  const navItems = NAV_ITEMS.filter(item =>
+    item.allowedRoles.some(r => userRoles.includes(r))
   );
 
-  const handleLogout = () => {
-    logout();
-    navigate('/login');
-  };
+  const handleLogout = () => { logout(); navigate('/login'); };
 
-  const w = isCollapsed ? '60px' : '216px';
+  // Width: mobile = full drawer handled by CSS, desktop = variable
+  const sidebarW = isMobile
+    ? T.wMobile
+    : isTablet
+    ? T.wExpanded
+    : showCollapsed ? T.wCollapsed : T.wExpanded;
+
+  const FF = '"Segoe UI", system-ui, sans-serif';
 
   return (
     <aside
       id="tactical-sidebar"
-      className={`sidebar ${isCollapsed ? 'collapsed' : ''} ${isMobileOpen ? 'mobile-open' : ''}`}
+      className={`sidebar ${showCollapsed ? 'collapsed' : ''} ${isMobileOpen ? 'mobile-open' : ''}`}
       style={{
-        width: w, minWidth: w,
-        background: T.bg,
-        display: 'flex', flexDirection: 'column',
+        width: sidebarW, minWidth: sidebarW,
         height: '100vh',
-        borderRight: `1px solid ${T.border}`,
-        transition: 'width 0.22s cubic-bezier(0.4,0,0.2,1), min-width 0.22s cubic-bezier(0.4,0,0.2,1)',
-        overflow: 'hidden',
-        flexShrink: 0,
-        position: 'relative',
+        background: T.bg,
+        borderRight: `1px solid ${T.borderStrong}`,
+        display: 'flex', flexDirection: 'column',
+        overflow: 'hidden', flexShrink: 0,
+        transition: 'width 0.24s cubic-bezier(0.4,0,0.2,1), min-width 0.24s cubic-bezier(0.4,0,0.2,1)',
+        // On mobile, CSS class handles position:fixed + transform
+        zIndex: isMobile ? 1100 : 'auto',
       }}
     >
-      {/* ── Header ── */}
+
+      {/* ══ HEADER ══ */}
       <div style={{
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: isCollapsed ? 'center' : 'space-between',
-        padding: isCollapsed ? '18px 0' : '16px 14px',
+        height: '60px', flexShrink: 0,
         borderBottom: `1px solid ${T.border}`,
-        flexShrink: 0,
-        minHeight: '56px',
+        display: 'flex', alignItems: 'center',
+        justifyContent: showCollapsed ? 'center' : 'space-between',
+        padding: showCollapsed ? '0 10px' : '0 14px',
+        gap: '10px', overflow: 'hidden',
+        transition: 'padding 0.22s cubic-bezier(0.4,0,0.2,1)',
       }}>
-        {!isCollapsed && (
-          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+
+        {/* Brand block */}
+        <div style={{
+          display: 'flex', alignItems: 'center', gap: '10px',
+          overflow: 'hidden', flexShrink: 1,
+          maxWidth: showCollapsed ? 0 : '200px',
+          opacity: showCollapsed ? 0 : 1,
+          transition: 'max-width 0.24s cubic-bezier(0.4,0,0.2,1), opacity 0.18s ease',
+          whiteSpace: 'nowrap',
+        }}>
+          {/* Logo */}
+          <img
+            src="/Logo.png"
+            alt="NexEagle"
+            style={{
+              width: '32px', height: '32px',
+              objectFit: 'contain', flexShrink: 0,
+              borderRadius: '6px',
+            }}
+          />
+          {/* Wordmark */}
+          <div style={{ display: 'flex', flexDirection: 'column', lineHeight: 1.2 }}>
             <span style={{
-              fontSize: '14px', fontWeight: 700,
-              color: T.textPrimary, letterSpacing: '-0.2px',
-              fontFamily: '"Segoe UI", system-ui, sans-serif',
+              fontSize: '13.5px', fontWeight: 700,
+              color: T.textHigh, letterSpacing: '-0.2px', fontFamily: FF,
+            }}>NexEagle</span>
+            <span style={{
+              fontSize: '10px', fontWeight: 600,
+              color: T.accent, letterSpacing: '0.3px', fontFamily: FF,
             }}>1Rad</span>
-            <span style={{
-              fontSize: '9px', fontWeight: 700,
-              color: T.accent,
-              background: 'rgba(59,130,246,0.12)',
-              padding: '2px 6px', borderRadius: '4px',
-              letterSpacing: '0.4px',
-            }}>PRO</span>
           </div>
+        </div>
+
+        {/* Collapsed: show small logo only */}
+        {showCollapsed && (
+          <img
+            src="/Logo.png"
+            alt="NexEagle"
+            style={{ width: '28px', height: '28px', objectFit: 'contain', borderRadius: '5px', flexShrink: 0 }}
+          />
         )}
 
-        {/* Collapse toggle */}
-        <button
-          className="hide-mobile"
-          onClick={() => setIsCollapsed(v => !v)}
-          title={isCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
-          style={{
-            background: 'transparent', border: 'none',
-            color: T.textMuted, cursor: 'pointer',
-            width: '28px', height: '28px',
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
-            borderRadius: '6px', transition: 'background 0.12s, color 0.12s',
-          }}
-          onMouseEnter={e => { e.currentTarget.style.background = T.bgHover; e.currentTarget.style.color = T.textPrimary; }}
-          onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = T.textMuted; }}
-        >
-          {isCollapsed ? (
-            <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor">
-              <path d="M4 8a.5.5 0 0 1 .5-.5h5.793L8.146 5.354a.5.5 0 1 1 .708-.708l3 3a.5.5 0 0 1 0 .708l-3 3a.5.5 0 0 1-.708-.708L10.293 8.5H4.5A.5.5 0 0 1 4 8z"/>
-            </svg>
-          ) : (
-            <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor">
-              <path d="M12 8a.5.5 0 0 1-.5.5H5.707l2.147 2.146a.5.5 0 0 1-.708.708l-3-3a.5.5 0 0 1 0-.708l3-3a.5.5 0 0 1 .708.708L5.707 7.5H11.5a.5.5 0 0 1 .5.5z"/>
-            </svg>
-          )}
-        </button>
+        {/* Toggle button — desktop */}
+        {!isMobile && (
+          <button
+            onClick={() => setCollapsed(v => !v)}
+            onMouseEnter={() => setToggleHov(true)}
+            onMouseLeave={() => setToggleHov(false)}
+            title={collapsed ? 'Open sidebar' : 'Close sidebar'}
+            style={{
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              width: '32px', height: '32px', flexShrink: 0,
+              border: 'none', borderRadius: '8px',
+              background: toggleHov ? T.hover : 'transparent',
+              color: toggleHov ? T.textHigh : T.textMid,
+              cursor: 'pointer', transition: 'background 0.13s, color 0.13s',
+            }}
+          >
+            {showCollapsed ? <HamburgerIcon /> : <CloseIcon />}
+          </button>
+        )}
+
+        {/* Close button — mobile */}
+        {isMobile && (
+          <button
+            onClick={onMobileClose}
+            style={{
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              width: '32px', height: '32px', flexShrink: 0,
+              border: 'none', borderRadius: '8px',
+              background: 'transparent', color: T.textMid,
+              cursor: 'pointer',
+            }}
+          >
+            <CloseIcon />
+          </button>
+        )}
       </div>
 
-      {/* ── Nav ── */}
+      {/* ══ NAV ══ */}
       <nav style={{
         flex: 1, overflowY: 'auto', overflowX: 'hidden',
-        padding: isCollapsed ? '8px 8px' : '8px 10px',
+        padding: showCollapsed ? '10px 8px' : '10px 10px',
         display: 'flex', flexDirection: 'column', gap: '2px',
         scrollbarWidth: 'none',
+        transition: 'padding 0.22s cubic-bezier(0.4,0,0.2,1)',
       }}>
         {/* Section label */}
-        {!isCollapsed && (
+        <div style={{
+          overflow: 'hidden',
+          maxHeight: showCollapsed ? 0 : '28px',
+          opacity: showCollapsed ? 0 : 1,
+          transition: 'max-height 0.22s cubic-bezier(0.4,0,0.2,1), opacity 0.16s ease',
+        }}>
           <div style={{
-            fontSize: '10px', fontWeight: 600, letterSpacing: '0.7px',
-            color: T.textMuted, textTransform: 'uppercase',
-            padding: '10px 10px 5px',
-            fontFamily: '"Segoe UI", system-ui, sans-serif',
-            userSelect: 'none',
+            fontSize: '10px', fontWeight: 600, letterSpacing: '0.8px',
+            color: T.textLow, textTransform: 'uppercase',
+            padding: '4px 10px 6px', userSelect: 'none', fontFamily: FF,
           }}>Navigation</div>
-        )}
+        </div>
 
-        {allowedNavItems.map(item => (
-          <NavItem
+        {navItems.map(item => (
+          <NavRow
             key={item.route}
             item={item}
-            isCollapsed={isCollapsed}
-            onMobileClose={onMobileClose}
+            collapsed={showCollapsed}
+            isMobile={isMobile}
+            onClose={isMobile ? onMobileClose : undefined}
           />
         ))}
       </nav>
 
-      {/* ── Footer: user card + sign out ── */}
+      {/* ══ FOOTER ══ */}
       <div style={{
         borderTop: `1px solid ${T.border}`,
-        padding: isCollapsed ? '10px 8px' : '10px 10px',
-        flexShrink: 0,
-        display: 'flex', flexDirection: 'column', gap: '3px',
+        padding: showCollapsed ? '10px 8px' : '10px 10px',
+        flexShrink: 0, display: 'flex', flexDirection: 'column', gap: '3px',
+        transition: 'padding 0.22s cubic-bezier(0.4,0,0.2,1)',
       }}>
-        {/* User card */}
-        {!isCollapsed ? (
-          <div style={{
-            display: 'flex', alignItems: 'center', gap: '10px',
-            padding: '8px 10px', borderRadius: '7px',
-            background: T.bgHover, marginBottom: '3px',
-          }}>
-            <div style={{
-              width: '30px', height: '30px', borderRadius: '8px',
-              background: 'linear-gradient(135deg, #3b82f6, #1d4ed8)',
-              display: 'flex', alignItems: 'center', justifyContent: 'center',
-              fontSize: '12px', fontWeight: 700, color: 'white',
-              flexShrink: 0, fontFamily: '"Segoe UI", sans-serif',
-              letterSpacing: '0.5px',
-            }}>
-              {avatarInitial}
-            </div>
-            <div style={{ minWidth: 0, flex: 1 }}>
-              <div style={{
-                fontSize: '12px', fontWeight: 600, color: T.textPrimary,
-                whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
-                fontFamily: '"Segoe UI", sans-serif',
-              }}>
-                {displayName}
-              </div>
-              <div style={{
-                fontSize: '10px', color: T.textMuted,
-                whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
-                fontFamily: '"Segoe UI", sans-serif', marginTop: '1px',
-              }}>
-                {roleLabel}
-              </div>
-            </div>
-          </div>
-        ) : (
-          /* Collapsed: just avatar */
-          <div style={{
-            display: 'flex', justifyContent: 'center',
-            marginBottom: '3px', padding: '4px 0',
-          }}>
-            <div style={{
-              width: '30px', height: '30px', borderRadius: '8px',
-              background: 'linear-gradient(135deg, #3b82f6, #1d4ed8)',
-              display: 'flex', alignItems: 'center', justifyContent: 'center',
-              fontSize: '12px', fontWeight: 700, color: 'white',
-              fontFamily: '"Segoe UI", sans-serif',
-            }}>
-              {avatarInitial}
-            </div>
-          </div>
-        )}
 
-        {/* Sign out button */}
+        {/* User card */}
+        <div style={{
+          display: 'flex', alignItems: 'center',
+          gap: showCollapsed ? 0 : '10px',
+          padding: showCollapsed ? '5px 0' : '8px 10px',
+          borderRadius: '9px',
+          background: showCollapsed ? 'transparent' : T.surface,
+          justifyContent: showCollapsed ? 'center' : 'flex-start',
+          marginBottom: '3px',
+          overflow: 'hidden',
+          transition: 'padding 0.22s, background 0.22s',
+        }}>
+          {/* Avatar */}
+          <div style={{
+            width: '32px', height: '32px', borderRadius: '8px', flexShrink: 0,
+            background: 'linear-gradient(135deg, #3b82f6 0%, #1e40af 100%)',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            fontSize: '13px', fontWeight: 700, color: 'white',
+            fontFamily: FF, letterSpacing: '0.3px',
+            boxShadow: '0 2px 8px rgba(59,130,246,0.3)',
+          }}>
+            {initial}
+          </div>
+
+          {/* Name + role */}
+          <div style={{
+            minWidth: 0, flex: 1, overflow: 'hidden',
+            maxWidth: showCollapsed ? 0 : '200px',
+            opacity: showCollapsed ? 0 : 1,
+            transition: 'max-width 0.24s cubic-bezier(0.4,0,0.2,1), opacity 0.18s ease',
+            whiteSpace: 'nowrap',
+          }}>
+            <div style={{ fontSize: '12px', fontWeight: 600, color: T.textHigh, fontFamily: FF, overflow: 'hidden', textOverflow: 'ellipsis' }}>
+              {displayName}
+            </div>
+            <div style={{ fontSize: '10px', color: T.textLow, fontFamily: FF, marginTop: '1px', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+              {roleLabel}
+            </div>
+          </div>
+        </div>
+
+        {/* Sign out */}
         <button
-          onClick={() => { handleLogout(); if (onMobileClose) onMobileClose(); }}
-          onMouseEnter={() => setSignOutHovered(true)}
-          onMouseLeave={() => setSignOutHovered(false)}
-          title={isCollapsed ? 'Sign out' : undefined}
+          onClick={() => { handleLogout(); onMobileClose?.(); }}
+          onMouseEnter={() => setSoHov(true)}
+          onMouseLeave={() => setSoHov(false)}
+          title={showCollapsed ? 'Sign out' : undefined}
           style={{
             width: '100%', display: 'flex', alignItems: 'center',
-            justifyContent: isCollapsed ? 'center' : 'flex-start',
-            gap: '9px',
-            padding: isCollapsed ? '9px 0' : '8px 10px',
-            borderRadius: '7px', border: 'none',
-            background: signOutHovered ? T.dangerHover : 'transparent',
+            justifyContent: showCollapsed ? 'center' : 'flex-start',
+            gap: '10px',
+            padding: showCollapsed ? '9px 0' : '8px 10px',
+            borderRadius: '9px', border: 'none',
+            background: soHov ? T.dangerBg : 'transparent',
             color: T.danger, cursor: 'pointer',
-            transition: 'background 0.12s',
-            fontFamily: '"Segoe UI", system-ui, sans-serif',
+            transition: 'background 0.13s, padding 0.22s',
+            fontFamily: FF,
           }}
         >
-          {/* Sign-out icon */}
-          <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor" style={{ flexShrink: 0 }}>
-            <path fillRule="evenodd" d="M10 12.5a.5.5 0 0 1-.5.5h-8a.5.5 0 0 1-.5-.5v-9a.5.5 0 0 1 .5-.5h8a.5.5 0 0 1 .5.5v2a.5.5 0 0 0 1 0v-2A1.5 1.5 0 0 0 9.5 2h-8A1.5 1.5 0 0 0 0 3.5v9A1.5 1.5 0 0 0 1.5 14h8a1.5 1.5 0 0 0 1.5-1.5v-2a.5.5 0 0 0-1 0v2z"/>
-            <path fillRule="evenodd" d="M15.854 8.354a.5.5 0 0 0 0-.708l-3-3a.5.5 0 0 0-.708.708L14.293 7.5H5.5a.5.5 0 0 0 0 1h8.793l-2.147 2.146a.5.5 0 0 0 .708.708l3-3z"/>
-          </svg>
-          {!isCollapsed && (
+          <SignOutIcon />
+          <div style={{
+            overflow: 'hidden',
+            maxWidth: showCollapsed ? 0 : '150px',
+            opacity: showCollapsed ? 0 : 1,
+            transition: 'max-width 0.24s cubic-bezier(0.4,0,0.2,1), opacity 0.18s ease',
+            whiteSpace: 'nowrap',
+          }}>
             <span style={{ fontSize: '13px', fontWeight: 400 }}>Sign out</span>
-          )}
+          </div>
         </button>
       </div>
     </aside>
