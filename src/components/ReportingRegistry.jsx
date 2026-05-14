@@ -28,8 +28,18 @@ const ReportingRegistry = ({
 
   const macroTextareaRef = React.useRef(null);
 
+  const [windowWidth, setWindowWidth] = useState(window.innerWidth);
+  const [isMobile, setIsMobile] = useState(window.innerWidth < 1024);
+
   useEffect(() => {
     fetchRegistry();
+    const handleResize = () => {
+      const width = window.innerWidth;
+      setWindowWidth(width);
+      setIsMobile(width < 1024);
+    };
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
   }, [hospitalId, doctorId]);
 
   const fetchRegistry = async () => {
@@ -44,8 +54,6 @@ const ReportingRegistry = ({
       console.error('[REGISTRY] Fetch failed', err);
     }
   };
-
-
 
   const handleSaveTemplate = async () => {
     if (!editTemplate.name) return alert('NAME REQUIRED');
@@ -145,10 +153,21 @@ const ReportingRegistry = ({
     <div className="reporting-registry" style={{ display: 'flex', flexDirection: 'column', height: '100%', gap: '0' }}>
       {/* PROFESSIONAL TAB NAV */}
       <div style={{ 
-        display: 'flex', justifyContent: 'space-between', alignItems: 'center', 
-        padding: '0 40px', background: 'white', borderBottom: '1px solid #e2e8f0', flexShrink: 0 
+        display: 'flex', 
+        flexDirection: isMobile ? 'column' : 'row',
+        justifyContent: 'space-between', 
+        alignItems: isMobile ? 'stretch' : 'center', 
+        padding: isMobile ? '20px' : '0 40px', 
+        background: 'white', 
+        borderBottom: '1px solid #e2e8f0', 
+        flexShrink: 0,
+        gap: isMobile ? '15px' : '0'
       }}>
-        <div style={{ display: 'flex', gap: '30px' }}>
+        <div style={{ 
+          display: 'flex', 
+          gap: isMobile ? '15px' : '30px',
+          justifyContent: isMobile ? 'center' : 'flex-start'
+        }}>
           {['Templates', 'Keywords'].map(tab => (
             <button 
               key={tab} 
@@ -158,7 +177,8 @@ const ReportingRegistry = ({
                 borderBottom: activeTab === tab ? '3px solid #0f52ba' : '3px solid transparent',
                 color: activeTab === tab ? '#0f52ba' : '#94a3b8',
                 fontWeight: 950, fontSize: '11px', letterSpacing: '1px', cursor: 'pointer',
-                transition: 'all 0.3s ease', opacity: activeTab === tab ? 1 : 0.7
+                transition: 'all 0.3s ease', opacity: activeTab === tab ? 1 : 0.7,
+                flex: isMobile ? 1 : 'none'
               }}
             >
               {tab.toUpperCase()} REGISTRY
@@ -177,10 +197,11 @@ const ReportingRegistry = ({
             }
           }}
           style={{ 
-            padding: '10px 24px', borderRadius: '12px', border: 'none', 
+            padding: '12px 24px', borderRadius: '12px', border: 'none', 
             background: 'linear-gradient(135deg, #0f52ba 0%, #061a40 100%)', color: 'white', 
             fontSize: '10px', fontWeight: 950, cursor: 'pointer',
-            boxShadow: '0 8px 20px rgba(15, 82, 186, 0.2)'
+            boxShadow: '0 8px 20px rgba(15, 82, 186, 0.2)',
+            width: isMobile ? '100%' : 'auto'
           }}
         >
           {activeTab === 'Templates' ? '+ CREATE NEW TEMPLATE' : '+ REGISTER NEW MACRO'}

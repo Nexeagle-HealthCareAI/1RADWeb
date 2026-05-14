@@ -14,8 +14,16 @@ const KeywordManager = ({
   formatMacroText,
   macroTextareaRef
 }) => {
+  const [isMobile, setIsMobile] = useState(window.innerWidth < 1024);
+
+  useEffect(() => {
+    const handleResize = () => setIsMobile(window.innerWidth < 1024);
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
+
   const [page, setPage] = useState(1);
-  const itemsPerPage = 8;
+  const itemsPerPage = isMobile ? 6 : 8;
   const [sortConfig, setSortConfig] = useState({ key: 'category', direction: 'asc' });
 
   const filteredKeywords = useMemo(() => {
@@ -58,12 +66,21 @@ const KeywordManager = ({
   };
 
   return (
-    <div className="keyword-manager fade-in" style={{ padding: '20px', height: '100%', display: 'flex', flexDirection: 'column', gap: '25px' }}>
+    <div className="keyword-manager fade-in" style={{ padding: isMobile ? '10px' : '20px', height: '100%', display: 'flex', flexDirection: 'column', gap: isMobile ? '15px' : '25px' }}>
       <div className="board-header" style={{ display: 'none' }}>
       </div>
 
-      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', background: 'white', borderRadius: '24px', border: '1px solid #e2e8f0', overflow: 'hidden', boxShadow: '0 4px 20px rgba(0,0,0,0.01)' }}>
-        <div style={{ padding: '20px 30px', background: '#f8fafc', borderBottom: '1px solid #f1f5f9', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', background: 'white', borderRadius: isMobile ? '16px' : '24px', border: '1px solid #e2e8f0', overflow: 'hidden', boxShadow: '0 4px 20px rgba(0,0,0,0.01)' }}>
+        <div style={{ 
+          padding: isMobile ? '15px' : '20px 30px', 
+          background: '#f8fafc', 
+          borderBottom: '1px solid #f1f5f9', 
+          display: 'flex', 
+          flexDirection: isMobile ? 'column' : 'row',
+          justifyContent: 'space-between', 
+          alignItems: isMobile ? 'stretch' : 'center',
+          gap: '15px'
+        }}>
           <div style={{ display: 'flex', gap: '15px', alignItems: 'center' }}>
             <label style={{ fontSize: '9px', fontWeight: 950, color: '#64748b' }}>SEARCH_MACROS:</label>
             <input 
@@ -71,14 +88,14 @@ const KeywordManager = ({
               value={keywordSearch}
               onChange={e => setKeywordSearch(e.target.value)}
               placeholder="Search by trigger or content..."
-              style={{ padding: '8px 15px', borderRadius: '10px', border: '1px solid #e2e8f0', fontSize: '11px', fontWeight: 700, outline: 'none', width: '300px' }}
+              style={{ flex: 1, padding: '8px 15px', borderRadius: '10px', border: '1px solid #e2e8f0', fontSize: '11px', fontWeight: 700, outline: 'none', width: isMobile ? '100%' : '300px' }}
             />
           </div>
-          <div style={{ fontSize: '9px', fontWeight: 950, color: '#94a3b8' }}>TOTAL_ENTRIES: {filteredKeywords.length}</div>
+          <div style={{ fontSize: '9px', fontWeight: 950, color: '#94a3b8', textAlign: isMobile ? 'center' : 'right' }}>TOTAL_ENTRIES: {filteredKeywords.length}</div>
         </div>
 
-        <div style={{ flex: 1, overflowY: 'auto' }}>
-          <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+        <div style={{ flex: 1, overflowX: 'auto' }}>
+          <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: isMobile ? '600px' : 'auto' }}>
             <thead style={{ background: '#f8fafc', position: 'sticky', top: 0, zIndex: 10 }}>
                 <tr>
                   <th 
@@ -142,7 +159,7 @@ const KeywordManager = ({
                         onClick={() => handleDeleteKeyword(k.id)} 
                         style={{ padding: '6px 12px', borderRadius: '8px', border: '1px solid #fee2e2', background: '#fef2f2', color: '#dc2626', cursor: 'pointer', fontSize: '10px', fontWeight: 800 }}
                       >
-                        DELETE
+                        DEL
                       </button>
                     </div>
                   </td>
@@ -169,24 +186,26 @@ const KeywordManager = ({
         }} onClick={() => setSelectedKeywordId(null)}>
           
           <div style={{ 
-            width: '600px', background: 'white', borderRadius: '32px', 
+            width: isMobile ? '100%' : '600px', 
+            height: isMobile ? '100%' : 'auto',
+            background: 'white', borderRadius: isMobile ? 0 : '32px', 
             display: 'flex', flexDirection: 'column', boxShadow: '0 25px 50px -12px rgba(0,0,0,0.5)',
             animation: 'modalPopUp 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275)',
-            maxHeight: '90vh', overflow: 'hidden'
+            maxHeight: isMobile ? '100%' : '90vh', overflow: 'hidden'
           }} onClick={e => e.stopPropagation()}>
             
-            <div style={{ padding: '30px', background: 'linear-gradient(135deg, #0f52ba 0%, #061a40 100%)', color: 'white' }}>
+            <div style={{ padding: isMobile ? '20px' : '30px', background: 'linear-gradient(135deg, #0f52ba 0%, #061a40 100%)', color: 'white' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                 <div>
                   <h3 style={{ fontSize: '9px', fontWeight: 950, color: '#00f2fe', letterSpacing: '2px', textTransform: 'uppercase', marginBottom: '4px' }}>Macro Architect</h3>
-                  <div style={{ fontSize: '18px', fontWeight: 950, letterSpacing: '-0.5px' }}>{selectedKeywordId === 'new' ? 'INIT_NEW_SHORTCUT' : 'MODIFY_CORE_MACRO'}</div>
+                  <div style={{ fontSize: isMobile ? '16px' : '18px', fontWeight: 950, letterSpacing: '-0.5px' }}>{selectedKeywordId === 'new' ? 'INIT_NEW_SHORTCUT' : 'MODIFY_CORE_MACRO'}</div>
                 </div>
                 <button onClick={() => setSelectedKeywordId(null)} style={{ background: 'rgba(255,255,255,0.1)', border: 'none', color: 'white', width: '36px', height: '36px', borderRadius: '50%', cursor: 'pointer', fontSize: '20px' }}>&times;</button>
               </div>
             </div>
 
-            <div style={{ padding: '30px', overflowY: 'auto' }}>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '25px', marginBottom: '25px' }}>
+            <div style={{ padding: isMobile ? '20px' : '30px', overflowY: 'auto', flex: 1 }}>
+              <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: isMobile ? '20px' : '25px', marginBottom: '25px' }}>
                 <div>
                   <label style={{ display: 'block', fontSize: '9px', fontWeight: 950, color: '#94a3b8', letterSpacing: '2px', marginBottom: '10px' }}>MACRO_TYPE / ORGAN</label>
                   <input 
@@ -240,13 +259,13 @@ const KeywordManager = ({
                   onInput={(e) => setNewMacro({...newMacro, replacementText: e.currentTarget.innerHTML})}
                   dangerouslySetInnerHTML={{ __html: newMacro.replacementText }}
                   style={{ 
-                    minHeight: '200px', padding: '20px', borderRadius: '20px', border: '1px solid #e2e8f0', 
+                    minHeight: isMobile ? '150px' : '200px', padding: '20px', borderRadius: '20px', border: '1px solid #e2e8f0', 
                     background: '#f8fafc', outline: 'none', fontSize: '15px', lineHeight: '1.6', color: '#1e293b'
                   }}
                 />
               </div>
 
-              <div style={{ marginTop: '35px', display: 'flex', gap: '15px' }}>
+              <div style={{ marginTop: '35px', display: 'flex', flexDirection: isMobile ? 'column-reverse' : 'row', gap: '15px' }}>
                 <button onClick={() => setSelectedKeywordId(null)} style={{ flex: 1, padding: '15px', borderRadius: '16px', border: '1px solid #eee', fontSize: '11px', fontWeight: 950, cursor: 'pointer' }}>ABORT</button>
                 <button 
                   disabled={isKeywordSaving} 

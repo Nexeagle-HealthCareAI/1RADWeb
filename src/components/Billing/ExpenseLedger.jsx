@@ -1,6 +1,7 @@
 import React from 'react';
 
 const ExpenseLedger = ({
+  isMobile,
   outflowStats,
   filteredOutflow,
   paginatedOutflow,
@@ -30,12 +31,29 @@ const ExpenseLedger = ({
 
   return (
     <div className="expenses-main" style={{ display: 'grid', gridTemplateColumns: '1fr', gap: '30px', animation: 'fadeIn 0.3s' }}>
-        <div style={{ background: 'white', borderRadius: '24px', border: '1px solid #e2e8f0', overflow: 'hidden', boxShadow: '0 4px 20px rgba(0,0,0,0.01)' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '20px 30px', background: '#f8fafc', borderBottom: '1px solid #f1f5f9' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '20px' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '15px' }}>
+        <div style={{ background: 'white', borderRadius: isMobile ? '16px' : '24px', border: '1px solid #e2e8f0', overflow: 'hidden', boxShadow: '0 4px 20px rgba(0,0,0,0.01)' }}>
+          <div style={{ 
+            display: 'flex', 
+            flexDirection: isMobile ? 'column' : 'row', 
+            justifyContent: 'space-between', 
+            alignItems: isMobile ? 'stretch' : 'center', 
+            padding: isMobile ? '20px' : '20px 30px', 
+            background: '#f8fafc', 
+            borderBottom: '1px solid #f1f5f9',
+            gap: isMobile ? '20px' : '0'
+          }}>
+            <div style={{ display: 'flex', flexDirection: isMobile ? 'column' : 'row', alignItems: isMobile ? 'flex-start' : 'center', gap: isMobile ? '15px' : '20px' }}>
+              <div style={{ display: 'flex', flexDirection: isMobile ? 'column' : 'row', alignItems: isMobile ? 'flex-start' : 'center', gap: isMobile ? '8px' : '15px' }}>
                 <span style={{ fontSize: '10px', fontWeight: 950, color: '#64748b', letterSpacing: '1px' }}>TEMPORAL_SCOPE:</span>
-                <div style={{ display: 'flex', background: '#f1f5f9', padding: '3px', borderRadius: '10px', border: '1px solid #e2e8f0' }}>
+                <div style={{ 
+                  display: 'flex', 
+                  background: '#f1f5f9', 
+                  padding: '3px', 
+                  borderRadius: '10px', 
+                  border: '1px solid #e2e8f0',
+                  overflowX: 'auto',
+                  width: isMobile ? '100%' : 'auto'
+                }}>
                   {['TODAY', 'PAST', 'ALL', 'CUSTOM'].map(t => (
                     <button 
                       key={t}
@@ -44,7 +62,9 @@ const ExpenseLedger = ({
                         padding: '8px 16px', borderRadius: '8px', border: 'none', fontSize: '9px', fontWeight: 950,
                         background: timeFilter === t ? '#dc2626' : 'transparent',
                         color: timeFilter === t ? 'white' : '#64748b',
-                        cursor: 'pointer', transition: 'all 0.2s'
+                        cursor: 'pointer', transition: 'all 0.2s',
+                        flex: isMobile ? 1 : 'none',
+                        whiteSpace: 'nowrap'
                       }}
                     >{t}</button>
                   ))}
@@ -52,15 +72,14 @@ const ExpenseLedger = ({
               </div>
 
               {timeFilter === 'CUSTOM' && (
-                <div style={{ display: 'flex', alignItems: 'center', gap: '10px', animation: 'fadeIn 0.2s' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', animation: 'fadeIn 0.2s', width: isMobile ? '100%' : 'auto' }}>
                   <input 
                     type="date" value={startDate} onChange={e => setStartDate(e.target.value)}
-                    style={{ padding: '6px 12px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '11px', fontWeight: 700 }}
+                    style={{ flex: 1, padding: '6px 10px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '11px', fontWeight: 700 }}
                   />
-                  <span style={{ fontSize: '10px', fontWeight: 950, color: '#94a3b8' }}>TO</span>
                   <input 
                     type="date" value={endDate} onChange={e => setEndDate(e.target.value)}
-                    style={{ padding: '6px 12px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '11px', fontWeight: 700 }}
+                    style={{ flex: 1, padding: '6px 10px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '11px', fontWeight: 700 }}
                   />
                 </div>
               )}
@@ -75,63 +94,47 @@ const ExpenseLedger = ({
                 }); 
                 setIsExpenseDrawerOpen(true); 
               }}
-              style={{ padding: '10px 20px', borderRadius: '12px', border: 'none', background: '#dc2626', color: 'white', fontSize: '10px', fontWeight: 950, cursor: 'pointer' }}
-            >+ LOG OPERATIONAL EXPENSE</button>
+              style={{ padding: '12px 20px', borderRadius: '12px', border: 'none', background: '#dc2626', color: 'white', fontSize: '10px', fontWeight: 950, cursor: 'pointer' }}
+            >+ LOG EXPENSE</button>
           </div>
         </div>
 
-       {/* KPI MATRIX (ENHANCED) */}
+       {/* KPI MATRIX */}
 
-       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: '20px' }}>
+       <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : 'repeat(5, 1fr)', gap: isMobile ? '15px' : '20px' }}>
 
           <div className="kpi-card" style={{ background: '#fff1f2', padding: '20px', borderRadius: '24px', border: '1px solid #fecdd3', boxShadow: '0 4px 20px rgba(225,29,72,0.05)' }}>
             <p style={{ fontSize: '9px', fontWeight: 950, color: '#e11d48', letterSpacing: '1px', marginBottom: '10px' }}>TOTAL EXPENDITURE</p>
-            <div style={{ fontSize: '22px', fontWeight: 950, color: '#881337' }}>₹{outflowStats.totalOutflow.toLocaleString()}</div>
-            <div style={{ marginTop: '8px', fontSize: '9px', color: '#e11d48', fontWeight: 800 }}>CUMULATIVE CASH OUTFLOW</div>
+            <div style={{ fontSize: isMobile ? '24px' : '22px', fontWeight: 950, color: '#881337' }}>₹{outflowStats.totalOutflow.toLocaleString()}</div>
           </div>
           <div className="kpi-card" style={{ background: 'white', padding: '20px', borderRadius: '24px', border: '1px solid #e2e8f0', boxShadow: '0 4px 20px rgba(0,0,0,0.02)' }}>
             <p style={{ fontSize: '9px', fontWeight: 950, color: '#94a3b8', letterSpacing: '1px', marginBottom: '10px' }}>OPERATIONAL COST</p>
-            <div style={{ fontSize: '22px', fontWeight: 950, color: '#1e293b' }}>₹{outflowStats.operationalTotal.toLocaleString()}</div>
-            <div style={{ marginTop: '8px', fontSize: '9px', color: '#64748b', fontWeight: 800 }}>UTILITIES & MAINTENANCE</div>
+            <div style={{ fontSize: isMobile ? '24px' : '22px', fontWeight: 950, color: '#1e293b' }}>₹{outflowStats.operationalTotal.toLocaleString()}</div>
           </div>
           <div className="kpi-card" style={{ background: 'white', padding: '20px', borderRadius: '24px', border: '1px solid #e2e8f0', boxShadow: '0 4px 20px rgba(0,0,0,0.02)' }}>
             <p style={{ fontSize: '9px', fontWeight: 950, color: '#94a3b8', letterSpacing: '1px', marginBottom: '10px' }}>STRATEGIC PAYOUTS</p>
-            <div style={{ fontSize: '22px', fontWeight: 950, color: '#e11d48' }}>₹{outflowStats.referralTotal.toLocaleString()}</div>
-            <div style={{ marginTop: '8px', fontSize: '9px', color: '#e11d48', fontWeight: 800 }}>{outflowStats.referralPercentage}% OF TOTAL SPEND</div>
+            <div style={{ fontSize: isMobile ? '24px' : '22px', fontWeight: 950, color: '#e11d48' }}>₹{outflowStats.referralTotal.toLocaleString()}</div>
           </div>
           <div className="kpi-card" style={{ background: '#f8fafc', padding: '20px', borderRadius: '24px', border: '1px solid #e2e8f0', boxShadow: '0 4px 20px rgba(0,0,0,0.02)' }}>
-            <p style={{ fontSize: '9px', fontWeight: 950, color: '#64748b', letterSpacing: '1px', marginBottom: '10px' }}>TODAY'S CASH BURN</p>
-            <div style={{ fontSize: '22px', fontWeight: 950, color: '#0f172a' }}>₹{outflowStats.todayOutflow.toLocaleString()}</div>
-            <div style={{ marginTop: '8px', fontSize: '9px', color: '#64748b', fontWeight: 800 }}>REAL-TIME OUTFLOW</div>
+            <p style={{ fontSize: '9px', fontWeight: 950, color: '#64748b', letterSpacing: '1px', marginBottom: '10px' }}>TODAY'S BURN</p>
+            <div style={{ fontSize: isMobile ? '24px' : '22px', fontWeight: 950, color: '#0f172a' }}>₹{outflowStats.todayOutflow.toLocaleString()}</div>
           </div>
 
-          {/* Elevated Distribution Matrix */}
           <div className="kpi-card" style={{ background: 'white', padding: '20px', borderRadius: '24px', border: '1px solid #e2e8f0', boxShadow: '0 4px 20px rgba(0,0,0,0.02)', display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
-             <h3 style={{ fontSize: '9px', fontWeight: 950, color: '#94a3b8', letterSpacing: '1.5px', marginBottom: '12px' }}>CATEGORY_DISTRIBUTION_MATRIX</h3>
+             <h3 style={{ fontSize: '9px', fontWeight: 950, color: '#94a3b8', letterSpacing: '1.5px', marginBottom: '12px' }}>DISTRIBUTION</h3>
              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', maxHeight: '60px', overflowY: 'auto', paddingRight: '5px' }}>
                 {outflowStats.categoryBreakdown.map(cat => (
                    <div key={cat.category} style={{ marginBottom: '4px' }}>
                       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '2px' }}>
                          <span style={{ fontSize: '8px', fontWeight: 900, color: '#64748b' }}>{cat.category.toUpperCase()}</span>
-                         <span style={{ fontSize: '9px', fontWeight: 950, color: '#1e293b' }}>₹{cat.amount.toLocaleString()} ({cat.percentage}%)</span>
-                      </div>
-                      <div style={{ height: '4px', background: '#f1f5f9', borderRadius: '10px', overflow: 'hidden' }}>
-                         <div style={{ width: `${cat.percentage}%`, height: '100%', background: cat.category === 'Referral' ? '#e11d48' : '#3b82f6', borderRadius: '10px' }}></div>
+                         <span style={{ fontSize: '9px', fontWeight: 950, color: '#1e293b' }}>₹{cat.amount.toLocaleString()}</span>
                       </div>
                    </div>
                 ))}
              </div>
           </div>
-
        </div>
 
-        <div style={{ background: 'white', borderRadius: '24px', border: '1px solid #e2e8f0', overflow: 'hidden', boxShadow: '0 4px 20px rgba(0,0,0,0.01)' }}>
-
-             {Math.ceil((filteredOutflow || []).length / itemsPerPage) > 1 && (
-               <div style={{ padding: '15px 30px', borderBottom: '1px solid #f1f5f9', display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: '#fff' }}>
-                  <div style={{ fontSize: '10px', fontWeight: 950, color: '#94a3b8', letterSpacing: '1px' }}>LEDGER_PAGES:</div>
-                  <div style={{ display: 'flex', gap: '5px' }}>
-                     {Array.from({ length: Math.ceil((filteredOutflow || []).length / itemsPerPage) }).map((_, i) => (
                          <button key={i} onClick={() => setCurrentPage(i + 1)} style={{ padding: '6px 12px', background: currentPage === i + 1 ? '#dc2626' : '#f1f5f9', color: currentPage === i + 1 ? 'white' : '#64748b', border: 'none', borderRadius: '8px', fontSize: '10px', fontWeight: 950, cursor: 'pointer', transition: 'all 0.2s' }}>{i + 1}</button>
                      ))}
                   </div>

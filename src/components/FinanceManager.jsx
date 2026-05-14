@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import apiClient from '../api/apiClient';
 
 const FinanceManager = ({ 
+  isMobile,
   servicePrices, 
   fetchServicePrices, 
   financialMatrix, 
@@ -94,7 +95,10 @@ const FinanceManager = ({
         padding: '6px',
         background: '#f1f5f9',
         borderRadius: '16px',
-        width: 'fit-content'
+        width: isMobile ? '100%' : 'fit-content',
+        overflowX: isMobile ? 'auto' : 'visible',
+        scrollbarWidth: 'none',
+        msOverflowStyle: 'none'
       }}>
         {[
           { id: 'REGISTRY', label: 'SERVICE REGISTRY' },
@@ -114,7 +118,8 @@ const FinanceManager = ({
               background: financeViewMode === tab.id ? 'white' : 'transparent',
               color: financeViewMode === tab.id ? '#0f52ba' : '#64748b',
               boxShadow: financeViewMode === tab.id ? '0 4px 12px rgba(0,0,0,0.05)' : 'none',
-              transition: 'all 0.2s'
+              transition: 'all 0.2s',
+              whiteSpace: 'nowrap'
             }}
           >
             {tab.label}
@@ -122,7 +127,14 @@ const FinanceManager = ({
         ))}
       </div>
 
-      <div className="board-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '35px' }}>
+      <div className="board-header" style={{ 
+        display: 'flex', 
+        flexDirection: isMobile ? 'column' : 'row',
+        justifyContent: 'space-between', 
+        alignItems: isMobile ? 'flex-start' : 'center', 
+        marginBottom: '35px',
+        gap: '20px'
+      }}>
         <div>
           <h2 style={{ fontSize: '12px', fontWeight: 900, textTransform: 'uppercase', letterSpacing: '2px', color: '#0f52ba', marginBottom: '4px' }}>
             {financeViewMode === 'REGISTRY' ? 'Financial Infrastructure' : 
@@ -150,7 +162,8 @@ const FinanceManager = ({
               setIsPriceDrawerOpen(true); 
             }}
             style={{ 
-              padding: '12px 24px', borderRadius: '12px', border: 'none', 
+              width: isMobile ? '100%' : 'auto',
+              padding: '14px 24px', borderRadius: '12px', border: 'none', 
               background: '#0f52ba', color: 'white', fontSize: '11px', fontWeight: 950, cursor: 'pointer',
               boxShadow: '0 8px 20px rgba(15, 82, 186, 0.2)'
             }}
@@ -170,7 +183,8 @@ const FinanceManager = ({
               setIsExpenseDrawerOpen(true); 
             }}
             style={{ 
-              padding: '12px 24px', borderRadius: '12px', border: 'none', 
+              width: isMobile ? '100%' : 'auto',
+              padding: '14px 24px', borderRadius: '12px', border: 'none', 
               background: '#1e293b', color: 'white', fontSize: '11px', fontWeight: 950, cursor: 'pointer',
               boxShadow: '0 8px 20px rgba(30, 41, 59, 0.2)'
             }}
@@ -181,7 +195,7 @@ const FinanceManager = ({
       </div>
 
       {financeViewMode === 'REGISTRY' && (
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 260px', gap: '30px', alignItems: 'flex-start' }}>
+        <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 260px', gap: '30px', alignItems: 'flex-start' }}>
           {/* Service Price Registry */}
           <div style={{ background: 'white', borderRadius: '24px', border: '1px solid #e2e8f0', overflow: 'hidden', boxShadow: '0 4px 20px rgba(0,0,0,0.01)' }}>
             <div style={{ padding: '20px 30px', background: '#f8fafc', borderBottom: '1px solid #f1f5f9', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
@@ -198,68 +212,70 @@ const FinanceManager = ({
                </div>
                <div style={{ fontSize: '9px', fontWeight: 950, color: '#94a3b8' }}>TOTAL_ENTRIES: {processedRegistry.length}</div>
             </div>
-            <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-              <thead style={{ background: '#f8fafc' }}>
-                <tr style={{ borderBottom: '1px solid #f1f5f9' }}>
-                  <th onClick={() => handleRegSort('modality')} style={{ padding: '20px 30px', textAlign: 'left', fontSize: '10px', fontWeight: 950, color: '#94a3b8', letterSpacing: '2px', cursor: 'pointer' }}>
-                    MODALITY {regSortConfig.key === 'modality' ? (regSortConfig.direction === 'asc' ? '↑' : '↓') : '↕'}
-                  </th>
-                  <th onClick={() => handleRegSort('serviceName')} style={{ padding: '20px 30px', textAlign: 'left', fontSize: '10px', fontWeight: 950, color: '#94a3b8', letterSpacing: '2px', cursor: 'pointer' }}>
-                    SERVICE_NAME {regSortConfig.key === 'serviceName' ? (regSortConfig.direction === 'asc' ? '↑' : '↓') : '↕'}
-                  </th>
-                  <th onClick={() => handleRegSort('amount')} style={{ padding: '20px 20px', textAlign: 'left', fontSize: '10px', fontWeight: 950, color: '#94a3b8', letterSpacing: '2px', cursor: 'pointer' }}>
-                    CHARGE {regSortConfig.key === 'amount' ? (regSortConfig.direction === 'asc' ? '↑' : '↓') : '↕'}
-                  </th>
-                  <th onClick={() => handleRegSort('referralCutValue')} style={{ padding: '20px 20px', textAlign: 'left', fontSize: '10px', fontWeight: 950, color: '#94a3b8', letterSpacing: '2px', cursor: 'pointer' }}>
-                    REF_CUT {regSortConfig.key === 'referralCutValue' ? (regSortConfig.direction === 'asc' ? '↑' : '↓') : '↕'}
-                  </th>
-                  <th style={{ padding: '20px 30px', textAlign: 'right', fontSize: '10px', fontWeight: 950, color: '#94a3b8', letterSpacing: '2px' }}>ACTIONS</th>
-                </tr>
-              </thead>
-              <tbody>
-                {paginatedRegistry.map((spec, idx) => (
-                  <tr key={spec.id || idx} style={{ borderBottom: '1px solid #f8fafc', transition: 'background 0.2s' }}>
-                    <td style={{ padding: '15px 30px' }}>
-                      <span style={{ fontSize: '9px', fontWeight: 950, color: 'white', background: '#334155', padding: '4px 10px', borderRadius: '6px' }}>{(spec.modality || 'OTHER').toUpperCase()}</span>
-                    </td>
-                    <td style={{ padding: '15px 30px', fontSize: '12px', fontWeight: 850, color: '#1e293b' }}>{(spec.serviceName || 'Unnamed Service').toUpperCase()}</td>
-                    <td style={{ padding: '15px 20px', fontSize: '13px', fontWeight: 950, color: '#0f52ba' }}>₹{(Number(spec.amount) || 0).toLocaleString()}</td>
-                    <td style={{ padding: '15px 20px' }}>
-                       {spec.referralCutValue > 0 ? (
-                         <span style={{ fontSize: '11px', fontWeight: 950, color: '#059669', background: '#ecfdf5', padding: '3px 8px', borderRadius: '4px' }}>
-                           ₹{(spec.referralCutValue || 0).toLocaleString()}
-                         </span>
-                       ) : (
-                         <span style={{ fontSize: '10px', color: '#94a3b8', fontWeight: 700 }}>N/A</span>
-                       )}
-                    </td>
-                    <td style={{ padding: '15px 30px', textAlign: 'right' }}>
-                       <div style={{ display: 'flex', gap: '6px', justifyContent: 'flex-end' }}>
-                          <button 
-                            onClick={() => { 
-                              setEditPrice({
-                                ...spec,
-                                referralCutType: 'FIXED',
-                                referralCutInput: spec.referralCutValue || 0
-                              }); 
-                              setIsPriceDrawerOpen(true); 
-                            }} 
-                            style={{ padding: '4px 8px', borderRadius: '6px', border: '1px solid #e2e8f0', background: 'white', cursor: 'pointer', fontSize: '9px', fontWeight: 800 }}
-                          >
-                            EDIT
-                          </button>
-                          <button onClick={() => handleDeletePrice(spec.id)} style={{ padding: '4px 8px', borderRadius: '6px', border: '1px solid #fee2e2', background: '#fef2f2', color: '#dc2626', cursor: 'pointer', fontSize: '9px', fontWeight: 800 }}>DEL</button>
-                       </div>
-                    </td>
+            <div style={{ overflowX: 'auto', WebkitOverflowScrolling: 'touch' }}>
+              <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: '600px' }}>
+                <thead style={{ background: '#f8fafc' }}>
+                  <tr style={{ borderBottom: '1px solid #f1f5f9' }}>
+                    <th onClick={() => handleRegSort('modality')} style={{ padding: '20px 30px', textAlign: 'left', fontSize: '10px', fontWeight: 950, color: '#94a3b8', letterSpacing: '2px', cursor: 'pointer' }}>
+                      MODALITY {regSortConfig.key === 'modality' ? (regSortConfig.direction === 'asc' ? '↑' : '↓') : '↕'}
+                    </th>
+                    <th onClick={() => handleRegSort('serviceName')} style={{ padding: '20px 30px', textAlign: 'left', fontSize: '10px', fontWeight: 950, color: '#94a3b8', letterSpacing: '2px', cursor: 'pointer' }}>
+                      SERVICE_NAME {regSortConfig.key === 'serviceName' ? (regSortConfig.direction === 'asc' ? '↑' : '↓') : '↕'}
+                    </th>
+                    <th onClick={() => handleRegSort('amount')} style={{ padding: '20px 20px', textAlign: 'left', fontSize: '10px', fontWeight: 950, color: '#94a3b8', letterSpacing: '2px', cursor: 'pointer' }}>
+                      CHARGE {regSortConfig.key === 'amount' ? (regSortConfig.direction === 'asc' ? '↑' : '↓') : '↕'}
+                    </th>
+                    <th onClick={() => handleRegSort('referralCutValue')} style={{ padding: '20px 20px', textAlign: 'left', fontSize: '10px', fontWeight: 950, color: '#94a3b8', letterSpacing: '2px', cursor: 'pointer' }}>
+                      REF_CUT {regSortConfig.key === 'referralCutValue' ? (regSortConfig.direction === 'asc' ? '↑' : '↓') : '↕'}
+                    </th>
+                    <th style={{ padding: '20px 30px', textAlign: 'right', fontSize: '10px', fontWeight: 950, color: '#94a3b8', letterSpacing: '2px' }}>ACTIONS</th>
                   </tr>
-                ))}
-                {paginatedRegistry.length === 0 && (
-                  <tr>
-                    <td colSpan="5" style={{ padding: '60px', textAlign: 'center', color: '#94a3b8', fontSize: '11px', fontWeight: 700 }}>NO MATCHING RECORDS FOUND</td>
-                  </tr>
-                )}
-              </tbody>
-            </table>
+                </thead>
+                <tbody>
+                  {paginatedRegistry.map((spec, idx) => (
+                    <tr key={spec.id || idx} style={{ borderBottom: '1px solid #f8fafc', transition: 'background 0.2s' }}>
+                      <td style={{ padding: '15px 30px' }}>
+                        <span style={{ fontSize: '9px', fontWeight: 950, color: 'white', background: '#334155', padding: '4px 10px', borderRadius: '6px' }}>{(spec.modality || 'OTHER').toUpperCase()}</span>
+                      </td>
+                      <td style={{ padding: '15px 30px', fontSize: '12px', fontWeight: 850, color: '#1e293b' }}>{(spec.serviceName || 'Unnamed Service').toUpperCase()}</td>
+                      <td style={{ padding: '15px 20px', fontSize: '13px', fontWeight: 950, color: '#0f52ba' }}>₹{(Number(spec.amount) || 0).toLocaleString()}</td>
+                      <td style={{ padding: '15px 20px' }}>
+                         {spec.referralCutValue > 0 ? (
+                           <span style={{ fontSize: '11px', fontWeight: 950, color: '#059669', background: '#ecfdf5', padding: '3px 8px', borderRadius: '4px' }}>
+                             ₹{(spec.referralCutValue || 0).toLocaleString()}
+                           </span>
+                         ) : (
+                           <span style={{ fontSize: '10px', color: '#94a3b8', fontWeight: 700 }}>N/A</span>
+                         )}
+                      </td>
+                      <td style={{ padding: '15px 30px', textAlign: 'right' }}>
+                         <div style={{ display: 'flex', gap: '6px', justifyContent: 'flex-end' }}>
+                            <button 
+                              onClick={() => { 
+                                setEditPrice({
+                                  ...spec,
+                                  referralCutType: 'FIXED',
+                                  referralCutInput: spec.referralCutValue || 0
+                                }); 
+                                setIsPriceDrawerOpen(true); 
+                              }} 
+                              style={{ padding: '4px 8px', borderRadius: '6px', border: '1px solid #e2e8f0', background: 'white', cursor: 'pointer', fontSize: '9px', fontWeight: 800 }}
+                            >
+                              EDIT
+                            </button>
+                            <button onClick={() => handleDeletePrice(spec.id)} style={{ padding: '4px 8px', borderRadius: '6px', border: '1px solid #fee2e2', background: '#fef2f2', color: '#dc2626', cursor: 'pointer', fontSize: '9px', fontWeight: 800 }}>DEL</button>
+                         </div>
+                      </td>
+                    </tr>
+                  ))}
+                  {paginatedRegistry.length === 0 && (
+                    <tr>
+                      <td colSpan="5" style={{ padding: '60px', textAlign: 'center', color: '#94a3b8', fontSize: '11px', fontWeight: 700 }}>NO MATCHING RECORDS FOUND</td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
             
             {totalPages > 1 && (
               <div style={{ padding: '15px 30px', background: '#f8fafc', borderTop: '1px solid #f1f5f9', display: 'flex', justifyContent: 'center', gap: '8px' }}>
@@ -327,45 +343,47 @@ const FinanceManager = ({
 
       {financeViewMode === 'EXPENSES' && (
         <div style={{ background: 'white', borderRadius: '24px', border: '1px solid #e2e8f0', overflow: 'hidden', boxShadow: '0 4px 20px rgba(0,0,0,0.01)' }}>
-          <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-            <thead style={{ background: '#f8fafc' }}>
-              <tr style={{ borderBottom: '1px solid #f1f5f9' }}>
-                <th style={{ padding: '20px 30px', textAlign: 'left', fontSize: '10px', fontWeight: 950, color: '#94a3b8', letterSpacing: '2px' }}>DATE</th>
-                <th style={{ padding: '20px 30px', textAlign: 'left', fontSize: '10px', fontWeight: 950, color: '#94a3b8', letterSpacing: '2px' }}>PAYEE / VENDOR</th>
-                <th style={{ padding: '20px 30px', textAlign: 'left', fontSize: '10px', fontWeight: 950, color: '#94a3b8', letterSpacing: '2px' }}>CATEGORY</th>
-                <th style={{ padding: '20px 30px', textAlign: 'left', fontSize: '10px', fontWeight: 950, color: '#94a3b8', letterSpacing: '2px' }}>AMOUNT</th>
-                <th style={{ padding: '20px 30px', textAlign: 'left', fontSize: '10px', fontWeight: 950, color: '#94a3b8', letterSpacing: '2px' }}>STATUS</th>
-                <th style={{ padding: '20px 30px', textAlign: 'right', fontSize: '10px', fontWeight: 950, color: '#94a3b8', letterSpacing: '2px' }}>ACTIONS</th>
-              </tr>
-            </thead>
-            <tbody>
-              {(expenses || []).map((exp, idx) => {
-                const status = getStatusConfig(exp.status);
-                return (
-                  <tr key={exp.id || idx} style={{ borderBottom: '1px solid #f8fafc', transition: 'background 0.2s' }}>
-                    <td style={{ padding: '20px 30px', fontSize: '12px', fontWeight: 800, color: '#64748b' }}>{new Date(exp.transactionDate).toLocaleDateString()}</td>
-                    <td style={{ padding: '20px 30px' }}>
-                       <div style={{ fontSize: '13px', fontWeight: 850, color: '#1e293b' }}>{exp.vendorName?.toUpperCase()}</div>
-                       <div style={{ fontSize: '9px', color: '#94a3b8', marginTop: '2px', fontWeight: 700 }}>{exp.description}</div>
-                    </td>
-                    <td style={{ padding: '20px 30px' }}>
-                       <span style={{ fontSize: '9px', fontWeight: 950, color: '#475569', background: '#f1f5f9', padding: '4px 10px', borderRadius: '6px' }}>{exp.category?.toUpperCase()}</span>
-                    </td>
-                    <td style={{ padding: '20px 30px', fontSize: '14px', fontWeight: 950, color: '#dc2626' }}>₹{(Number(exp.amount) + (Number(exp.taxAmount) || 0)).toLocaleString()}</td>
-                    <td style={{ padding: '20px 30px' }}>
-                       <span style={{ fontSize: '9px', fontWeight: 950, color: status.color, background: status.bg, padding: '4px 10px', borderRadius: '6px' }}>{status.label}</span>
-                    </td>
-                    <td style={{ padding: '20px 30px', textAlign: 'right' }}>
-                       <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
-                          <button onClick={() => { setEditExpense(exp); setIsExpenseDrawerOpen(true); }} style={{ padding: '6px 12px', borderRadius: '8px', border: '1px solid #e2e8f0', background: 'white', cursor: 'pointer', fontSize: '10px', fontWeight: 800 }}>EDIT</button>
-                          <button onClick={() => handleDeleteExpense(exp.id)} style={{ padding: '6px 12px', borderRadius: '8px', border: '1px solid #fee2e2', background: '#fef2f2', color: '#dc2626', cursor: 'pointer', fontSize: '10px', fontWeight: 800 }}>DELETE</button>
-                       </div>
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
+          <div style={{ overflowX: 'auto', WebkitOverflowScrolling: 'touch' }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: '800px' }}>
+              <thead style={{ background: '#f8fafc' }}>
+                <tr style={{ borderBottom: '1px solid #f1f5f9' }}>
+                  <th style={{ padding: '20px 30px', textAlign: 'left', fontSize: '10px', fontWeight: 950, color: '#94a3b8', letterSpacing: '2px' }}>DATE</th>
+                  <th style={{ padding: '20px 30px', textAlign: 'left', fontSize: '10px', fontWeight: 950, color: '#94a3b8', letterSpacing: '2px' }}>PAYEE / VENDOR</th>
+                  <th style={{ padding: '20px 30px', textAlign: 'left', fontSize: '10px', fontWeight: 950, color: '#94a3b8', letterSpacing: '2px' }}>CATEGORY</th>
+                  <th style={{ padding: '20px 30px', textAlign: 'left', fontSize: '10px', fontWeight: 950, color: '#94a3b8', letterSpacing: '2px' }}>AMOUNT</th>
+                  <th style={{ padding: '20px 30px', textAlign: 'left', fontSize: '10px', fontWeight: 950, color: '#94a3b8', letterSpacing: '2px' }}>STATUS</th>
+                  <th style={{ padding: '20px 30px', textAlign: 'right', fontSize: '10px', fontWeight: 950, color: '#94a3b8', letterSpacing: '2px' }}>ACTIONS</th>
+                </tr>
+              </thead>
+              <tbody>
+                {(expenses || []).map((exp, idx) => {
+                  const status = getStatusConfig(exp.status);
+                  return (
+                    <tr key={exp.id || idx} style={{ borderBottom: '1px solid #f8fafc', transition: 'background 0.2s' }}>
+                      <td style={{ padding: '20px 30px', fontSize: '12px', fontWeight: 800, color: '#64748b' }}>{new Date(exp.transactionDate).toLocaleDateString()}</td>
+                      <td style={{ padding: '20px 30px' }}>
+                         <div style={{ fontSize: '13px', fontWeight: 850, color: '#1e293b' }}>{exp.vendorName?.toUpperCase()}</div>
+                         <div style={{ fontSize: '9px', color: '#94a3b8', marginTop: '2px', fontWeight: 700 }}>{exp.description}</div>
+                      </td>
+                      <td style={{ padding: '20px 30px' }}>
+                         <span style={{ fontSize: '9px', fontWeight: 950, color: '#475569', background: '#f1f5f9', padding: '4px 10px', borderRadius: '6px' }}>{exp.category?.toUpperCase()}</span>
+                      </td>
+                      <td style={{ padding: '20px 30px', fontSize: '14px', fontWeight: 950, color: '#dc2626' }}>₹{(Number(exp.amount) + (Number(exp.taxAmount) || 0)).toLocaleString()}</td>
+                      <td style={{ padding: '20px 30px' }}>
+                         <span style={{ fontSize: '9px', fontWeight: 950, color: status.color, background: status.bg, padding: '4px 10px', borderRadius: '6px' }}>{status.label}</span>
+                      </td>
+                      <td style={{ padding: '20px 30px', textAlign: 'right' }}>
+                         <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
+                            <button onClick={() => { setEditExpense(exp); setIsExpenseDrawerOpen(true); }} style={{ padding: '6px 12px', borderRadius: '8px', border: '1px solid #e2e8f0', background: 'white', cursor: 'pointer', fontSize: '10px', fontWeight: 800 }}>EDIT</button>
+                            <button onClick={() => handleDeleteExpense(exp.id)} style={{ padding: '6px 12px', borderRadius: '8px', border: '1px solid #fee2e2', background: '#fef2f2', color: '#dc2626', cursor: 'pointer', fontSize: '10px', fontWeight: 800 }}>DELETE</button>
+                         </div>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
         </div>
       )}
 
@@ -405,7 +423,7 @@ const FinanceManager = ({
       {/* --- DRAWERS --- */}
       {isPriceDrawerOpen && (
         <div className="drawer-overlay" onClick={() => setIsPriceDrawerOpen(false)} style={{ backdropFilter: 'blur(8px)', background: 'rgba(10, 22, 40, 0.4)', zIndex: 10000 }}>
-          <div className="drawer-content" style={{ padding: 0, width: '750px', background: 'white' }} onClick={e => e.stopPropagation()}>
+          <div className="drawer-content" style={{ padding: 0, width: isMobile ? '100%' : '750px', background: 'white' }} onClick={e => e.stopPropagation()}>
             <div style={{ padding: '30px', background: 'linear-gradient(135deg, #0f52ba 0%, #061a40 100%)', color: 'white' }}>
                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                   <div>
@@ -416,9 +434,9 @@ const FinanceManager = ({
                </div>
             </div>
 
-            <div style={{ padding: '30px' }}>
+            <div style={{ padding: '30px', overflowY: 'auto', maxHeight: 'calc(100vh - 120px)' }}>
                <form onSubmit={handleSavePrice}>
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '40px', alignItems: 'flex-start' }}>
+                  <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: isMobile ? '20px' : '40px', alignItems: 'flex-start' }}>
                      
                      {/* Left Column: Core Parameters */}
                      <div style={{ display: 'flex', flexDirection: 'column', gap: '25px' }}>
@@ -542,7 +560,7 @@ const FinanceManager = ({
 
       {isExpenseDrawerOpen && (
         <div className="drawer-overlay" onClick={() => setIsExpenseDrawerOpen(false)} style={{ backdropFilter: 'blur(8px)', background: 'rgba(10, 22, 40, 0.4)', zIndex: 10000 }}>
-          <div className="drawer-content" style={{ padding: 0, width: '500px', background: 'white' }} onClick={e => e.stopPropagation()}>
+          <div className="drawer-content" style={{ padding: 0, width: isMobile ? '100%' : '500px', background: 'white' }} onClick={e => e.stopPropagation()}>
             <div style={{ padding: '35px', background: 'linear-gradient(135deg, #1e293b 0%, #0f172a 100%)', color: 'white' }}>
                <h2 style={{ fontSize: '11px', fontWeight: 950, color: '#38bdf8', letterSpacing: '3px', textTransform: 'uppercase', marginBottom: '8px' }}>Strategic Fiscal Ledger</h2>
                <div style={{ fontSize: '20px', fontWeight: 950, letterSpacing: '-1px' }}>INSTITUTIONAL_DEBIT_PROTOCOL</div>

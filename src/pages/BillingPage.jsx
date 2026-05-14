@@ -1285,55 +1285,80 @@ export default function BillingPage() {
     `);
   };
 
-
-
   return (
-
-    <div className="billing-page" style={{ padding: '40px', background: '#f8fafc', minHeight: '100vh' }}>
+    <div className="billing-page" style={{ padding: isMobile ? '15px' : '40px', background: '#f8fafc', minHeight: '100vh' }}>
       {/* Header Section */}
-      <div className="board-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '40px' }}>
+      <div className="board-header" style={{ 
+        display: 'flex', 
+        flexDirection: isMobile ? 'column' : 'row',
+        justifyContent: 'space-between', 
+        alignItems: isMobile ? 'stretch' : 'flex-start', 
+        marginBottom: isMobile ? '25px' : '40px',
+        gap: isMobile ? '20px' : '0'
+      }}>
         <div>
-          <h1 style={{ fontSize: '24px', fontWeight: 950, color: '#1a1a2e', letterSpacing: '-1px', marginBottom: '8px', display: 'flex', gap: '15px', alignItems: 'center' }}>
-            <span style={{ cursor: 'pointer', opacity: billingViewMode === 'INVOICES' ? 1 : 0.4 }} onClick={() => setBillingViewMode('INVOICES')}>REVENUE HUB</span>
+          <h1 style={{ 
+            fontSize: isMobile ? '18px' : '24px', 
+            fontWeight: 950, 
+            color: '#1a1a2e', 
+            letterSpacing: '-1px', 
+            marginBottom: '8px', 
+            display: 'flex', 
+            flexWrap: 'wrap',
+            gap: isMobile ? '10px' : '15px', 
+            alignItems: 'center' 
+          }}>
+            <span style={{ cursor: 'pointer', opacity: billingViewMode === 'INVOICES' ? 1 : 0.4 }} onClick={() => setBillingViewMode('INVOICES')}>REVENUE</span>
             <span style={{ opacity: 0.2 }}>|</span>
-            <span style={{ cursor: 'pointer', opacity: billingViewMode === 'EXPENSES' ? 1 : 0.4, color: '#dc2626' }} onClick={() => setBillingViewMode('EXPENSES')}>EXPENSE LEDGER</span>
+            <span style={{ cursor: 'pointer', opacity: billingViewMode === 'EXPENSES' ? 1 : 0.4, color: '#dc2626' }} onClick={() => setBillingViewMode('EXPENSES')}>EXPENSE</span>
             <span style={{ opacity: 0.2 }}>|</span>
-            <span style={{ cursor: 'pointer', opacity: billingViewMode === 'REFERRAL_CUTS' ? 1 : 0.4, color: '#e11d48' }} onClick={() => setBillingViewMode('REFERRAL_CUTS')}>REFERRAL HUB</span>
+            <span style={{ cursor: 'pointer', opacity: billingViewMode === 'REFERRAL_CUTS' ? 1 : 0.4, color: '#e11d48' }} onClick={() => setBillingViewMode('REFERRAL_CUTS')}>REFERRAL</span>
             <span style={{ opacity: 0.2 }}>|</span>
-            <span style={{ cursor: 'pointer', opacity: billingViewMode === 'ANALYTICS' ? 1 : 0.4, color: '#0f52ba' }} onClick={() => setBillingViewMode('ANALYTICS')}>ANALYTICS HUB</span>
+            <span style={{ cursor: 'pointer', opacity: billingViewMode === 'ANALYTICS' ? 1 : 0.4, color: '#0f52ba' }} onClick={() => setBillingViewMode('ANALYTICS')}>ANALYTICS</span>
           </h1>
           <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
             <span style={{ 
               background: 'var(--tactical-indigo)', color: 'white', padding: '4px 10px', 
-              borderRadius: '6px', fontSize: '10px', fontWeight: 900, letterSpacing: '1px' 
+              borderRadius: '6px', fontSize: '10px', fontWeight: 950, letterSpacing: '1px' 
             }}>
               {activeCenter?.name?.toUpperCase() || 'CORE HUB'}
             </span>
-            <span style={{ fontSize: '12px', color: '#64748b', fontWeight: 600 }}>
-              Fiscal Year 2026-27 | Global Financial Matrix
-            </span>
+            {!isMobile && (
+              <span style={{ fontSize: '12px', color: '#64748b', fontWeight: 600 }}>
+                Fiscal Year 2026-27 | Global Financial Matrix
+              </span>
+            )}
           </div>
         </div>
-        <div style={{ display: 'flex', gap: '15px' }}>
+
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '15px' }}>
            <div style={{ position: 'relative' }}>
               <input 
                 type="text" 
                 placeholder="SEARCH INVOICES / PATIENTS..." 
                 value={searchTerm}
                 onChange={e => setSearchTerm(e.target.value)}
-                style={{ padding: '12px 15px 12px 42px', borderRadius: '12px', border: '1px solid #e2e8f0', width: '280px', fontSize: '11px', fontWeight: 800 }}
+                style={{ 
+                  padding: '12px 15px 12px 42px', 
+                  borderRadius: '12px', 
+                  border: '1px solid #e2e8f0', 
+                  width: isMobile ? '100%' : '280px', 
+                  fontSize: '11px', 
+                  fontWeight: 800 
+                }}
               />
            </div>
-          <div style={{ display: 'flex', gap: '15px' }}>
+          <div style={{ display: 'flex', flexDirection: isMobile ? 'column' : 'row', gap: '10px' }}>
              <button 
                onClick={() => setIsExportDrawerOpen(true)}
                style={{ 
                  padding: '12px 24px', borderRadius: '12px', border: '1px solid #e2e8f0', 
                  background: '#10b981', color: 'white', fontSize: '11px', fontWeight: 950, cursor: 'pointer',
-                 boxShadow: '0 8px 20px rgba(16, 185, 129, 0.2)'
+                 boxShadow: '0 8px 20px rgba(16, 185, 129, 0.2)',
+                 width: isMobile ? '100%' : 'auto'
                }}
              >
-               EXPORT FISCAL DATA
+               EXPORT DATA
              </button>
              {localStorage.getItem('1rad_invoices') && (
                <button 
@@ -1342,6 +1367,7 @@ export default function BillingPage() {
                  style={{ 
                    padding: '12px 24px', borderRadius: '12px', border: '1px solid #e2e8f0', 
                    background: '#f8fafc', color: '#0f52ba', fontSize: '11px', fontWeight: 950, cursor: 'pointer',
+                   width: isMobile ? '100%' : 'auto'
                  }}
                >
                  {isSyncing ? 'SYNCING...' : 'SYNC LOCAL'}
@@ -1349,9 +1375,13 @@ export default function BillingPage() {
              )}
              <button 
                onClick={() => setIsNewInvoiceDrawerOpen(true)}
-               style={{ padding: '12px 24px', borderRadius: '12px', border: 'none', background: '#0f52ba', color: 'white', fontWeight: 800, fontSize: '11px', cursor: 'pointer', boxShadow: '0 8px 20px rgba(15, 82, 186, 0.2)' }}
+               style={{ 
+                 padding: '12px 24px', borderRadius: '12px', border: 'none', background: '#0f52ba', color: 'white', 
+                 fontWeight: 950, fontSize: '10px', cursor: 'pointer', boxShadow: '0 8px 20px rgba(15, 82, 186, 0.2)',
+                 width: isMobile ? '100%' : 'auto'
+               }}
              >
-               NEW MANUAL INVOICE
+               + NEW INVOICE
              </button>
           </div>
         </div>
@@ -1359,6 +1389,7 @@ export default function BillingPage() {
 
       {billingViewMode === 'EXPENSES' && (
         <ExpenseLedger 
+          isMobile={isMobile}
           outflowStats={outflowStats}
           filteredOutflow={filteredOutflow}
           paginatedOutflow={paginatedOutflow}
@@ -1424,6 +1455,7 @@ export default function BillingPage() {
 
       {billingViewMode === 'REFERRAL_CUTS' && (
         <ReferralHub 
+          isMobile={isMobile}
           filteredReferralCuts={filteredReferralCuts}
           paginatedReferralCuts={paginatedReferralCuts}
           timeFilter={timeFilter}
@@ -1450,6 +1482,7 @@ export default function BillingPage() {
 
       {billingViewMode === 'ANALYTICS' && matrix && (
         <AnalyticsHub 
+          isMobile={isMobile}
           liveStats={liveStats}
           outflowStats={outflowStats}
           matrix={matrix}
@@ -1465,6 +1498,7 @@ export default function BillingPage() {
       {/* Shared Drawers */}
       {isInvoiceDrawerOpen && (
         <InvoiceDrawer 
+          isMobile={isMobile}
           selectedInvoice={selectedInvoice}
           setIsInvoiceDrawerOpen={setIsInvoiceDrawerOpen}
           isPaid={selectedInvoice.status === 'PAID'}
@@ -1485,6 +1519,7 @@ export default function BillingPage() {
       )}
       {isNewInvoiceDrawerOpen && (
         <NewInvoiceDrawer 
+          isMobile={isMobile}
           setIsNewInvoiceDrawerOpen={setIsNewInvoiceDrawerOpen}
           handleCreateManualInvoice={handleCreateManualInvoice}
           selectedPatient={selectedPatient}
@@ -1504,6 +1539,7 @@ export default function BillingPage() {
       )}
       {isExportDrawerOpen && (
         <ExportDrawer 
+          isMobile={isMobile}
           setIsExportDrawerOpen={setIsExportDrawerOpen}
           exportMode={exportMode}
           setExportMode={setExportMode}
@@ -1514,6 +1550,7 @@ export default function BillingPage() {
       )}
       {isExpenseDrawerOpen && (
         <ExpenseDrawer 
+          isMobile={isMobile}
           setIsExpenseDrawerOpen={setIsExpenseDrawerOpen}
           handleSaveExpense={handleSaveExpense}
           editExpense={editExpense}
@@ -1525,6 +1562,7 @@ export default function BillingPage() {
       )}
       {isPayoutDrawerOpen && (
         <PayoutDrawer 
+          isMobile={isMobile}
           setIsPayoutDrawerOpen={setIsPayoutDrawerOpen}
           handleSavePayout={handleSavePayout}
           editPayout={editPayout}

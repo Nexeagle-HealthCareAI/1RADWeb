@@ -15,6 +15,14 @@ const TemplateManager = ({
   const [modalityFilter, setModalityFilter] = useState('ALL');
   const [searchTerm, setSearchTerm] = useState('');
 
+  const [isMobile, setIsMobile] = useState(window.innerWidth < 1024);
+
+  React.useEffect(() => {
+    const handleResize = () => setIsMobile(window.innerWidth < 1024);
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
+
   const safeTemplates = Array.isArray(templates) ? templates : [];
   const filteredTemplates = safeTemplates.filter(t => {
     const tName = (t.name || t.Name || '');
@@ -25,40 +33,50 @@ const TemplateManager = ({
   });
 
   return (
-    <div className="template-manager fade-in" style={{ padding: '20px', height: '100%', display: 'flex', flexDirection: 'column', gap: '20px', overflow: 'hidden' }}>
+    <div className="template-manager fade-in" style={{ padding: isMobile ? '10px' : '20px', height: '100%', display: 'flex', flexDirection: 'column', gap: isMobile ? '10px' : '20px', overflow: 'hidden' }}>
       <div className="board-header" style={{ display: 'none' }}>
       </div>
 
-      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', background: 'white', borderRadius: '24px', border: '1px solid #e2e8f0', overflow: 'hidden', boxShadow: '0 4px 20px rgba(0,0,0,0.01)' }}>
-        <div style={{ padding: '20px 30px', background: '#f8fafc', borderBottom: '1px solid #f1f5f9', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexShrink: 0 }}>
-          <div style={{ display: 'flex', gap: '20px', alignItems: 'center' }}>
+      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', background: 'white', borderRadius: isMobile ? '16px' : '24px', border: '1px solid #e2e8f0', overflow: 'hidden', boxShadow: '0 4px 20px rgba(0,0,0,0.01)' }}>
+        <div style={{ 
+          padding: isMobile ? '15px' : '20px 30px', 
+          background: '#f8fafc', 
+          borderBottom: '1px solid #f1f5f9', 
+          display: 'flex', 
+          flexDirection: isMobile ? 'column' : 'row',
+          justifyContent: 'space-between', 
+          alignItems: isMobile ? 'stretch' : 'center', 
+          flexShrink: 0,
+          gap: '15px'
+        }}>
+          <div style={{ display: 'flex', flexDirection: isMobile ? 'column' : 'row', gap: isMobile ? '10px' : '20px', alignItems: isMobile ? 'stretch' : 'center' }}>
             <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
-              <label style={{ fontSize: '9px', fontWeight: 950, color: '#64748b' }}>FILTER_MODALITY:</label>
+              <label style={{ fontSize: '9px', fontWeight: 950, color: '#64748b', whiteSpace: 'nowrap' }}>FILTER_MODALITY:</label>
               <select 
                 value={modalityFilter}
                 onChange={e => setModalityFilter(e.target.value)}
-                style={{ padding: '6px 12px', borderRadius: '8px', border: '1px solid #e2e8f0', fontSize: '10px', fontWeight: 800, color: '#0f52ba', outline: 'none' }}
+                style={{ flex: 1, padding: '8px 12px', borderRadius: '8px', border: '1px solid #e2e8f0', fontSize: '10px', fontWeight: 800, color: '#0f52ba', outline: 'none' }}
               >
                 <option value="ALL">ALL_MODALITIES</option>
                 {['X-RAY', 'MRI', 'CT', 'ULTRASOUND', 'DEXA', 'MAMMOGRAPHY', 'PET-CT'].map(m => <option key={m} value={m}>{m}</option>)}
               </select>
             </div>
             <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
-              <label style={{ fontSize: '9px', fontWeight: 950, color: '#64748b' }}>SEARCH:</label>
+              <label style={{ fontSize: '9px', fontWeight: 950, color: '#64748b', whiteSpace: 'nowrap' }}>SEARCH:</label>
               <input 
                 type="text"
                 value={searchTerm}
                 onChange={e => setSearchTerm(e.target.value)}
                 placeholder="Search by name..."
-                style={{ padding: '6px 12px', borderRadius: '8px', border: '1px solid #e2e8f0', fontSize: '10px', fontWeight: 800, outline: 'none', width: '200px' }}
+                style={{ flex: 1, padding: '8px 12px', borderRadius: '8px', border: '1px solid #e2e8f0', fontSize: '10px', fontWeight: 800, outline: 'none', width: isMobile ? '100%' : '200px' }}
               />
             </div>
           </div>
-          <div style={{ fontSize: '9px', fontWeight: 950, color: '#94a3b8' }}>TOTAL_TEMPLATES: {filteredTemplates.length}</div>
+          <div style={{ fontSize: '9px', fontWeight: 950, color: '#94a3b8', textAlign: isMobile ? 'center' : 'right' }}>TOTAL_TEMPLATES: {filteredTemplates.length}</div>
         </div>
 
-        <div style={{ flex: 1, overflowY: 'auto' }}>
-          <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+        <div style={{ flex: 1, overflowX: 'auto' }}>
+          <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: isMobile ? '600px' : 'auto' }}>
             <thead style={{ background: '#f8fafc', position: 'sticky', top: 0, zIndex: 10 }}>
               <tr style={{ borderBottom: '1px solid #f1f5f9' }}>
                 <th style={{ padding: '20px 30px', textAlign: 'left', fontSize: '10px', fontWeight: 950, color: '#94a3b8', letterSpacing: '2px' }}>MODALITY</th>
@@ -92,13 +110,13 @@ const TemplateManager = ({
                         }} 
                         style={{ padding: '6px 12px', borderRadius: '8px', border: '1px solid #e2e8f0', background: 'white', cursor: 'pointer', fontSize: '10px', fontWeight: 800 }}
                       >
-                        EDIT_PROTOCOL
+                        EDIT
                       </button>
                       <button 
                         onClick={() => handleDeleteTemplate(tId)} 
                         style={{ padding: '6px 12px', borderRadius: '8px', border: '1px solid #fee2e2', background: '#fef2f2', color: '#dc2626', cursor: 'pointer', fontSize: '10px', fontWeight: 800 }}
                       >
-                        DELETE
+                        DEL
                       </button>
                     </div>
                   </td>
@@ -118,22 +136,22 @@ const TemplateManager = ({
           display: 'flex', justifyContent: 'flex-end'
         }}>
           <div className="drawer-content" style={{ 
-            padding: 0, width: '900px', background: 'white', display: 'flex', flexDirection: 'column',
-            height: '100%', boxShadow: '-10px 0 30px rgba(0,0,0,0.1)'
+            padding: 0, width: isMobile ? '100%' : '900px', background: 'white', display: 'flex', flexDirection: 'column',
+            height: '100%', boxShadow: '-10px 0 30px rgba(0,0,0,0.1)', overflow: 'hidden'
           }} onClick={e => e.stopPropagation()}>
-            <div style={{ padding: '30px', background: 'linear-gradient(135deg, #0f52ba 0%, #061a40 100%)', color: 'white' }}>
+            <div style={{ padding: isMobile ? '20px' : '30px', background: 'linear-gradient(135deg, #0f52ba 0%, #061a40 100%)', color: 'white' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                 <div>
                   <h2 style={{ fontSize: '10px', fontWeight: 950, color: '#00f2fe', letterSpacing: '3px', textTransform: 'uppercase', marginBottom: '4px' }}>Protocol Architect</h2>
-                  <div style={{ fontSize: '18px', fontWeight: 950, letterSpacing: '-0.5px' }}>{editTemplate.id ? 'CONFIG_TEMPLATE_STRUCTURE' : 'INIT_NEW_TEMPLATE'}</div>
+                  <div style={{ fontSize: isMobile ? '16px' : '18px', fontWeight: 950, letterSpacing: '-0.5px' }}>{editTemplate.id ? 'CONFIG_TEMPLATE_STRUCTURE' : 'INIT_NEW_TEMPLATE'}</div>
                 </div>
                 <button onClick={() => setIsTemplateDrawerOpen(false)} style={{ background: 'rgba(255,255,255,0.1)', border: 'none', color: 'white', width: '32px', height: '32px', borderRadius: '50%', cursor: 'pointer', fontSize: '18px' }}>&times;</button>
               </div>
             </div>
 
-            <div style={{ padding: '30px', flex: 1, overflowY: 'auto' }}>
+            <div style={{ padding: isMobile ? '20px' : '30px', flex: 1, overflowY: 'auto' }}>
               <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '30px', marginBottom: '30px' }}>
+                <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: isMobile ? '20px' : '30px', marginBottom: '30px' }}>
                   <div className="form-group">
                     <label style={{ display: 'block', fontSize: '9px', fontWeight: 950, color: '#94a3b8', letterSpacing: '2px', marginBottom: '10px' }}>TEMPLATE_NAME (IDENTIFIER)</label>
                     <input 
@@ -158,7 +176,7 @@ const TemplateManager = ({
 
                 <div className="form-group" style={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
                   <label style={{ display: 'block', fontSize: '9px', fontWeight: 950, color: '#94a3b8', letterSpacing: '2px', marginBottom: '15px' }}>CONTENT_STRUCTURE (HTML)</label>
-                  <div style={{ flex: 1, border: '1px solid #e2e8f0', borderRadius: '16px', overflow: 'hidden', minHeight: '400px' }}>
+                  <div style={{ flex: 1, border: '1px solid #e2e8f0', borderRadius: '16px', overflow: 'hidden', minHeight: isMobile ? '300px' : '400px' }}>
                     <NarrativeEditor 
                       content={editTemplate.content} 
                       onChange={(html) => setEditTemplate({...editTemplate, content: html})}
@@ -167,13 +185,13 @@ const TemplateManager = ({
                   </div>
                 </div>
 
-                <div style={{ marginTop: '35px', display: 'flex', gap: '15px', justifyContent: 'flex-end' }}>
-                  <button type="button" onClick={() => setIsTemplateDrawerOpen(false)} style={{ width: '120px', padding: '14px', borderRadius: '12px', border: '1px solid #eee', fontSize: '11px', fontWeight: 950, cursor: 'pointer' }}>ABORT</button>
+                <div style={{ marginTop: '35px', display: 'flex', flexDirection: isMobile ? 'column-reverse' : 'row', gap: '15px', justifyContent: 'flex-end' }}>
+                  <button type="button" onClick={() => setIsTemplateDrawerOpen(false)} style={{ width: isMobile ? '100%' : '120px', padding: '14px', borderRadius: '12px', border: '1px solid #eee', fontSize: '11px', fontWeight: 950, cursor: 'pointer' }}>ABORT</button>
                   <button 
                     onClick={handleSaveTemplate}
                     disabled={isTemplateSaving}
                     style={{ 
-                      width: '280px', padding: '14px', borderRadius: '12px', border: 'none', 
+                      width: isMobile ? '100%' : '280px', padding: '14px', borderRadius: '12px', border: 'none', 
                       background: '#0f52ba', color: 'white', fontSize: '11px', fontWeight: 950, cursor: 'pointer',
                       boxShadow: '0 8px 20px rgba(15, 82, 186, 0.2)' 
                     }}

@@ -1227,25 +1227,31 @@ export default function AdminBoard() {
 
   const renderPatients = () => (
     <div className="patients-view">
-       <div className="board-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '30px' }}>
-         <div>
-            <h2 style={{ fontSize: '12px', fontWeight: 900, textTransform: 'uppercase', letterSpacing: '1px', color: '#888', marginBottom: '5px' }}>Global Patient Registry</h2>
-            <p style={{ fontSize: '11px', color: '#aaa' }}>Comprehensive oversight of all center-registered diagnostic targets.</p>
-         </div>
-         <div style={{ display: 'flex', gap: '15px' }}>
-            <div className="search-input-group" style={{ width: '300px' }}>
-
-               <input 
-                  type="text" 
-                  placeholder="Universal Search..." 
-                  value={patientSearch}
-                  onChange={e => setPatientSearch(e.target.value)}
-                  style={{ borderRadius: '8px' }}
-               />
-            </div>
-            <button className="btn-primary" style={{ background: '#2ecc71', fontSize: '11px', fontWeight: 900, padding: '0 20px' }}>EXPORT REGISTRY 📁</button>
-         </div>
-       </div>
+        <div className="board-header" style={{ 
+          display: 'flex', 
+          flexDirection: isMobile ? 'column' : 'row',
+          justifyContent: 'space-between', 
+          alignItems: isMobile ? 'flex-start' : 'center', 
+          marginBottom: '30px',
+          gap: '20px'
+        }}>
+          <div>
+             <h2 style={{ fontSize: '12px', fontWeight: 900, textTransform: 'uppercase', letterSpacing: '1px', color: '#888', marginBottom: '5px' }}>Global Patient Registry</h2>
+             <p style={{ fontSize: '11px', color: '#aaa' }}>Comprehensive oversight of all center-registered diagnostic targets.</p>
+          </div>
+          <div style={{ display: 'flex', flexDirection: isMobile ? 'column' : 'row', gap: '15px', width: isMobile ? '100%' : 'auto' }}>
+             <div className="search-input-group" style={{ width: isMobile ? '100%' : '300px' }}>
+                <input 
+                   type="text" 
+                   placeholder="Universal Search..." 
+                   value={patientSearch}
+                   onChange={e => setPatientSearch(e.target.value)}
+                   style={{ borderRadius: '8px' }}
+                />
+             </div>
+             <button className="btn-primary" style={{ width: isMobile ? '100%' : 'auto', background: '#2ecc71', fontSize: '11px', fontWeight: 900, padding: isMobile ? '14px 20px' : '0 20px' }}>EXPORT REGISTRY 📁</button>
+          </div>
+        </div>
 
        <div className="table-container">
           <table className="data-table">
@@ -1450,7 +1456,14 @@ export default function AdminBoard() {
   const renderSubscription = () => {
     return (
       <div className="subscription-view">
-        <div className="board-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '35px' }}>
+        <div className="board-header" style={{ 
+          display: 'flex', 
+          flexDirection: isMobile ? 'column' : 'row',
+          justifyContent: 'space-between', 
+          alignItems: isMobile ? 'flex-start' : 'center', 
+          marginBottom: '35px',
+          gap: '20px'
+        }}>
           <div>
             <h2 style={{ fontSize: '12px', fontWeight: 900, textTransform: 'uppercase', letterSpacing: '2px', color: '#0f52ba', marginBottom: '4px' }}>Subscription Protocol</h2>
             <div style={{ display: 'flex', gap: '15px', alignItems: 'center', marginTop: '10px' }}>
@@ -1463,7 +1476,8 @@ export default function AdminBoard() {
           <button 
             onClick={() => navigate('/subscription')}
             style={{ 
-              padding: '12px 24px', borderRadius: '12px', border: 'none', 
+              width: isMobile ? '100%' : 'auto',
+              padding: '14px 24px', borderRadius: '12px', border: 'none', 
               background: '#0f52ba', color: 'white', fontSize: '11px', fontWeight: 950, cursor: 'pointer',
               boxShadow: '0 8px 20px rgba(15, 82, 186, 0.2)'
             }}
@@ -1472,7 +1486,7 @@ export default function AdminBoard() {
           </button>
         </div>
 
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(400px, 1fr))', gap: '30px' }}>
+        <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : 'repeat(auto-fit, minmax(400px, 1fr))', gap: '30px' }}>
            {/* Active Plan Status */}
            <div style={{ background: 'white', border: '1px solid #e2e8f0', padding: '30px', borderRadius: '24px', boxShadow: '0 4px 20px rgba(0,0,0,0.02)' }}>
               <div style={{ fontSize: '10px', fontWeight: 950, color: '#64748b', textTransform: 'uppercase', letterSpacing: '2px', marginBottom: '30px' }}>Active Intelligence Tier</div>
@@ -1547,7 +1561,14 @@ export default function AdminBoard() {
     if (viewingHubId) {
       return (
         <div className="hospital-settings-view">
-          <div className="board-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '35px' }}>
+          <div className="board-header" style={{ 
+            display: 'flex', 
+            flexDirection: isMobile ? 'column' : 'row',
+            justifyContent: 'space-between', 
+            alignItems: isMobile ? 'flex-start' : 'center', 
+            marginBottom: '35px',
+            gap: '20px'
+          }}>
             <div style={{ display: 'flex', gap: '20px', alignItems: 'center' }}>
                <button 
                  onClick={() => setViewingHubId(null)}
@@ -1563,6 +1584,7 @@ export default function AdminBoard() {
             <button 
               onClick={() => setIsHospitalDrawerOpen(true)}
               style={{ 
+                width: isMobile ? '100%' : 'auto',
                 padding: '12px 24px', borderRadius: '12px', border: 'none', 
                 background: 'linear-gradient(90deg, #0f52ba 0%, #00f2fe 100%)', 
                 color: 'white', fontSize: '11px', fontWeight: 950, cursor: 'pointer',
@@ -1574,13 +1596,13 @@ export default function AdminBoard() {
           </div>
 
           <div style={{ display: 'flex', flexDirection: 'column', gap: '30px' }}>
-            <div style={{ background: 'white', padding: '40px', borderRadius: '24px', border: '1px solid #eee', boxShadow: '0 10px 40px rgba(0,0,0,0.02)', position: 'relative', overflow: 'hidden' }}>
+            <div style={{ background: 'white', padding: isMobile ? '25px' : '40px', borderRadius: '24px', border: '1px solid #eee', boxShadow: '0 10px 40px rgba(0,0,0,0.02)', position: 'relative', overflow: 'hidden' }}>
               <div style={{ position: 'absolute', top: 0, right: 0, width: '150px', height: '150px', background: 'linear-gradient(135deg, transparent 50%, rgba(15, 82, 186, 0.03) 50%)', borderRadius: '0 24px 0 0' }}></div>
-              <div style={{ display: 'flex', gap: '40px' }}>
-                <div style={{ width: '120px', height: '120px', background: '#f8fbfc', borderRadius: '20px', border: '1px solid #edf2f7', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '10px', fontWeight: 950, color: '#0f52ba' }}>HUB_IMAGE</div>
+              <div style={{ display: 'flex', flexDirection: isMobile ? 'column' : 'row', gap: isMobile ? '25px' : '40px' }}>
+                <div style={{ width: '120px', height: '120px', background: '#f8fbfc', borderRadius: '20px', border: '1px solid #edf2f7', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '10px', fontWeight: 950, color: '#0f52ba', flexShrink: 0 }}>HUB_IMAGE</div>
                 <div style={{ flex: 1 }}>
                   <span style={{ fontSize: '10px', fontWeight: 950, color: '#0f52ba', letterSpacing: '3px', textTransform: 'uppercase' }}>INSTITUTIONAL_IDENTITY</span>
-                  <h1 style={{ fontSize: '32px', fontWeight: 950, color: '#1a1a2e', marginTop: '8px', marginBottom: '4px' }}>{(hospitalData.hospitalName || 'UNCONFIGURED_HUB').toUpperCase()}</h1>
+                  <h1 style={{ fontSize: isMobile ? '24px' : '32px', fontWeight: 950, color: '#1a1a2e', marginTop: '8px', marginBottom: '4px' }}>{(hospitalData.hospitalName || 'UNCONFIGURED_HUB').toUpperCase()}</h1>
                   <p style={{ fontSize: '14px', color: '#64748b', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '8px' }}>
                     <span>ADR:</span> {hospitalData.hospitalAddress || 'Address not synchronized.'}
                   </p>
@@ -1611,7 +1633,14 @@ export default function AdminBoard() {
 
     return (
       <div className="hospital-settings-view">
-        <div className="board-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '35px' }}>
+        <div className="board-header" style={{ 
+          display: 'flex', 
+          flexDirection: isMobile ? 'column' : 'row',
+          justifyContent: 'space-between', 
+          alignItems: isMobile ? 'flex-start' : 'center', 
+          marginBottom: '35px',
+          gap: '20px'
+        }}>
           <div>
             <h2 style={{ fontSize: '12px', fontWeight: 900, textTransform: 'uppercase', letterSpacing: '2px', color: '#0f52ba', marginBottom: '4px' }}>Institutional Hub Registry</h2>
             <p style={{ fontSize: '11px', color: '#888', fontWeight: 600 }}>Overview of mapped physical centers within your authorized expansion zone.</p>
@@ -1788,9 +1817,9 @@ export default function AdminBoard() {
   };
 
 
-  const renderHospitalDrawer = () => (
-    <div className="drawer-overlay" onClick={() => setIsHospitalDrawerOpen(false)} style={{ backdropFilter: 'blur(8px)', background: 'rgba(10, 22, 40, 0.4)', zIndex: 3001 }}>
-      <div className="drawer-content" style={{ padding: 0, width: '500px', borderRadius: '24px 0 0 24px', background: '#fff', display: 'flex', flexDirection: 'column' }} onClick={e => e.stopPropagation()}>
+  const renderHospitalSettingsDrawer = () => (
+    <div className="drawer-overlay" onClick={() => setIsHospitalDrawerOpen(false)} style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backdropFilter: 'blur(8px)', background: 'rgba(10, 22, 40, 0.4)', zIndex: 3001 }}>
+      <div className="drawer-content" style={{ position: 'absolute', right: 0, top: 0, height: '100%', padding: 0, width: isMobile ? '100%' : '500px', borderRadius: isMobile ? 0 : '24px 0 0 24px', background: '#fff', display: 'flex', flexDirection: 'column' }} onClick={e => e.stopPropagation()}>
         <div className="drawer-header" style={{ background: 'linear-gradient(135deg, #0f52ba 0%, #061a40 100%)', color: 'white', padding: '40px 30px' }}>
            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
               <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
@@ -1866,16 +1895,22 @@ export default function AdminBoard() {
     const doctors = personnel.filter(p => p.roles.includes('doctor') || p.roles.includes('radiologist') || p.roles.includes('admindoctor'));
     
     return (
-      <div className="prescription-architect" style={{ display: 'flex', gap: '30px', height: 'calc(100vh - 200px)', animation: 'fadeIn 0.5s ease' }}>
+      <div className="prescription-architect" style={{ 
+        display: 'flex', 
+        flexDirection: isMobile ? 'column' : 'row',
+        gap: '30px', 
+        height: isMobile ? 'auto' : 'calc(100vh - 200px)', 
+        animation: 'fadeIn 0.5s ease' 
+      }}>
         {/* CONTROL SIDEBAR (Strategic Glass) */}
         <div style={{ 
-          width: '420px', 
+          width: isMobile ? '100%' : '420px', 
           background: 'rgba(255, 255, 255, 0.8)', 
           backdropFilter: 'blur(16px)',
           borderRadius: '30px', 
-          padding: '35px', 
+          padding: isMobile ? '25px' : '35px', 
           boxShadow: '0 20px 50px rgba(15, 82, 186, 0.05)', 
-          overflowY: 'auto', 
+          overflowY: isMobile ? 'visible' : 'auto', 
           border: '1px solid rgba(15, 82, 186, 0.1)',
           display: 'flex',
           flexDirection: 'column'
@@ -2200,14 +2235,32 @@ export default function AdminBoard() {
     return (
       <div className="analytics-view fade-in">
         {/* Intelligence Header: Real-time Flux Search */}
-        <div style={{ background: 'white', padding: '20px 30px', borderRadius: '24px', border: '1px solid #e2e8f0', marginBottom: '30px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+        <div style={{ 
+          background: 'white', 
+          padding: '20px 25px', 
+          borderRadius: '24px', 
+          border: '1px solid #e2e8f0', 
+          marginBottom: '30px', 
+          display: 'flex', 
+          flexDirection: isMobile ? 'column' : 'row',
+          justifyContent: 'space-between', 
+          alignItems: isMobile ? 'stretch' : 'center',
+          gap: '20px'
+        }}>
            <div style={{ display: 'flex', alignItems: 'center', gap: '15px', fontSize: '13px', fontWeight: 950, color: '#1e293b' }}>
               <span>Regional Source Outlook</span>
               <span style={{ color: '#94a3b8', fontSize: '10px' }}>LOGGED DATE: {selectedDateFilter === TODAY ? 'TODAY' : selectedDateFilter}</span>
            </div>
-           <div style={{ display: 'flex', gap: '10px' }}>
+           <div style={{ 
+             display: 'flex', 
+             gap: '8px', 
+             overflowX: 'auto', 
+             scrollbarWidth: 'none',
+             msOverflowStyle: 'none',
+             paddingBottom: isMobile ? '5px' : 0
+           }}>
               {(topSources || []).map((s, i) => (
-                <div key={s.name || i} style={{ fontSize: '9px', fontWeight: 950, padding: '6px 12px', background: i === 0 ? '#eff6ff' : '#f8fafc', color: i === 0 ? '#2563eb' : '#64748b', borderRadius: '10px', border: '1px solid #e2e8f0' }}>
+                <div key={s.name || i} style={{ fontSize: '9px', fontWeight: 950, padding: '6px 12px', background: i === 0 ? '#eff6ff' : '#f8fafc', color: i === 0 ? '#2563eb' : '#64748b', borderRadius: '10px', border: '1px solid #e2e8f0', whiteSpace: 'nowrap' }}>
                    {(s.name || 'Unknown').toUpperCase()} ({s.count || 0})
                 </div>
               ))}
@@ -2266,11 +2319,11 @@ export default function AdminBoard() {
         </div>
 
         {/* Level 2: Clinical Modality & Peak Matrix */}
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: '20px', marginBottom: '30px' }}>
+        <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : 'repeat(auto-fit, minmax(320px, 1fr))', gap: '20px', marginBottom: '30px' }}>
            {/* Modality Intel */}
            <div style={{ background: 'white', border: '1px solid #e2e8f0', padding: '30px', borderRadius: '24px' }}>
               <div style={{ fontSize: '10px', fontWeight: 950, color: '#64748b', textTransform: 'uppercase', letterSpacing: '2px', marginBottom: '30px' }}>Clinical Modality Intel</div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '40px' }}>
+              <div style={{ display: 'flex', flexDirection: isMobile ? 'column' : 'row', alignItems: 'center', gap: '40px' }}>
                  <div style={{ width: '150px', height: '150px', borderRadius: '50%', border: '20px solid #eff6ff', display: 'flex', alignItems: 'center', justifyContent: 'center', position: 'relative' }}>
                     <div style={{ position: 'absolute', width: '100%', height: '100%', borderRadius: '50%', border: '20px solid transparent', borderTopColor: '#0f52ba', transform: 'rotate(45deg)' }}></div>
                     <div style={{ textAlign: 'center' }}>
@@ -2278,7 +2331,7 @@ export default function AdminBoard() {
                        <div style={{ fontSize: '9px', fontWeight: 800, color: '#94a3b8' }}>TOTAL UNITS</div>
                     </div>
                  </div>
-                 <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '15px' }}>
+                 <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '15px', width: '100%' }}>
                     {(modalities || []).map((m, idx) => (
                        <div key={m.label} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                           <span style={{ fontSize: '11px', fontWeight: 800, color: '#1e293b', display: 'flex', alignItems: 'center', gap: '10px' }}>
@@ -2309,7 +2362,7 @@ export default function AdminBoard() {
         </div>
 
         {/* Level 3: Demographics & Specialist Leadership */}
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: '20px' }}>
+        <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : 'repeat(auto-fit, minmax(320px, 1fr))', gap: '20px' }}>
            {/* Gender Matrix */}
            <div style={{ background: 'white', border: '1px solid #e2e8f0', padding: '30px', borderRadius: '24px' }}>
               <div style={{ fontSize: '10px', fontWeight: 950, color: '#64748b', textTransform: 'uppercase', letterSpacing: '2px', marginBottom: '30px' }}>Gender Identity Matrix</div>
@@ -2385,7 +2438,12 @@ export default function AdminBoard() {
     return (
       <div className="referral-intel-view fade-in">
         {/* Level 0: Referral Instinct Dashboard */}
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '20px', marginBottom: '40px' }}>
+        <div style={{ 
+          display: 'grid', 
+          gridTemplateColumns: isMobile ? '1fr' : 'repeat(3, 1fr)', 
+          gap: '15px', 
+          marginBottom: '30px' 
+        }}>
            <div style={{ background: 'linear-gradient(135deg, #0f52ba 0%, #061a40 100%)', padding: '25px', borderRadius: '24px', color: 'white', position: 'relative', overflow: 'hidden' }}>
               <div style={{ position: 'absolute', right: '-10px', top: '-10px', fontSize: '60px', opacity: 0.1 }}>📈</div>
               <span style={{ fontSize: '9px', fontWeight: 950, color: 'var(--tactical-cyan)', textTransform: 'uppercase', letterSpacing: '2px', display: 'block', marginBottom: '10px' }}>Strategic Velocity</span>
@@ -2410,36 +2468,53 @@ export default function AdminBoard() {
         </div>
 
         {/* Level 1: Tactical Control Deck */}
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', marginBottom: '40px' }}>
-          <div>
-            <h2 style={{ fontSize: '13px', fontWeight: 950, textTransform: 'uppercase', letterSpacing: '3px', color: '#0f52ba', marginBottom: '12px' }}>Referral Intelligence Engine</h2>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '15px' }}>
-               <div style={{ display: 'flex', background: '#f1f5f9', padding: '3px', borderRadius: '10px', border: '1px solid #e2e8f0' }}>
-                  {['MATRIX', 'LOG', 'ROSTER', 'PATIENTS'].map(mode => (
-                    <button 
-                      key={mode} 
-                      onClick={() => {
-                        setReferralViewMode(mode);
-                        if (mode === 'PATIENTS') fetchPatientMasterList();
-                      }}
-                      style={{ 
-                        padding: '6px 15px', borderRadius: '8px', border: 'none', fontSize: '9px', fontWeight: 950,
-                        background: referralViewMode === mode ? 'white' : 'transparent',
-                        color: referralViewMode === mode ? '#0f52ba' : '#64748b',
-                        boxShadow: referralViewMode === mode ? '0 2px 8px rgba(0,0,0,0.05)' : 'none',
-                        cursor: 'pointer', transition: 'all 0.2s', letterSpacing: '0.5px'
-                      }}
-                    >
-                      {mode === 'MATRIX' ? 'SOURCE ANALYTICS' : mode === 'LOG' ? 'REFERRAL CASE LEDGER' : mode === 'ROSTER' ? 'PARTNER NETWORK' : 'MASTER PATIENT INDEX'}
-                    </button>
-                  ))}
-               </div>
+        <div style={{ 
+          display: 'flex', 
+          flexDirection: isMobile ? 'column' : 'row',
+          justifyContent: 'space-between', 
+          alignItems: isMobile ? 'stretch' : 'flex-end', 
+          gap: '20px', 
+          marginBottom: '30px' 
+        }}>
+          <div style={{ flex: 1 }}>
+            <h2 style={{ fontSize: '12px', fontWeight: 950, textTransform: 'uppercase', letterSpacing: '3px', color: '#0f52ba', marginBottom: '15px' }}>Intelligence Engine</h2>
+            <div style={{ 
+              display: 'flex', 
+              background: '#f1f5f9', 
+              padding: '4px', 
+              borderRadius: '12px', 
+              border: '1px solid #e2e8f0',
+              overflowX: 'auto',
+              scrollbarWidth: 'none',
+              msOverflowStyle: 'none',
+              gap: '4px'
+            }}>
+              {['MATRIX', 'LOG', 'ROSTER', 'PATIENTS'].map(mode => (
+                <button 
+                  key={mode} 
+                  onClick={() => {
+                    setReferralViewMode(mode);
+                    if (mode === 'PATIENTS') fetchPatientMasterList();
+                  }}
+                  style={{ 
+                    padding: '8px 16px', borderRadius: '8px', border: 'none', fontSize: '9px', fontWeight: 950,
+                    background: referralViewMode === mode ? 'white' : 'transparent',
+                    color: referralViewMode === mode ? '#0f52ba' : '#64748b',
+                    boxShadow: referralViewMode === mode ? '0 2px 8px rgba(0,0,0,0.05)' : 'none',
+                    cursor: 'pointer', transition: 'all 0.2s', letterSpacing: '0.5px',
+                    whiteSpace: 'nowrap',
+                    flex: isMobile ? '0 0 auto' : 1
+                  }}
+                >
+                  {mode === 'MATRIX' ? 'SOURCE ANALYTICS' : mode === 'LOG' ? 'CASE LEDGER' : mode === 'ROSTER' ? 'PARTNER NETWORK' : 'MASTER INDEX'}
+                </button>
+              ))}
             </div>
           </div>
           
-          <div style={{ display: 'flex', gap: '15px', alignItems: 'center' }}>
+          <div style={{ display: 'flex', flexDirection: isMobile ? 'column' : 'row', gap: '15px', alignItems: isMobile ? 'stretch' : 'center' }}>
              {/* Unified Search Sub-node */}
-             <div style={{ position: 'relative', width: '240px' }}>
+             <div style={{ position: 'relative', width: isMobile ? '100%' : '240px' }}>
                 <span style={{ position: 'absolute', left: '15px', top: '50%', transform: 'translateY(-50%)', opacity: 0.3, fontSize: '12px' }}>🔍</span>
                 <input 
                   type="text" 
@@ -2461,15 +2536,23 @@ export default function AdminBoard() {
                     else setReferralPatientsSearch(str);
                   }}
                   style={{ 
-                    width: '100%', padding: '12px 15px 12px 42px', borderRadius: '14px', border: '1px solid #e2e8f0', 
-                    fontSize: '10px', fontWeight: 900, background: 'white', outline: 'none', transition: 'all 0.3s'
+                    width: '100%', padding: '14px 15px 14px 42px', borderRadius: '14px', border: '1px solid #e2e8f0', 
+                    fontSize: '11px', fontWeight: 900, background: 'white', outline: 'none', transition: 'all 0.3s'
                   }} 
                 />
              </div>
 
               {/* Temporal Unit */}
-             <div style={{ display: 'flex', background: '#f8fafc', padding: '4px', borderRadius: '16px', border: '1px solid #e2e8f0' }}>
-                <div style={{ display: 'flex', gap: '2px', marginRight: '10px' }}>
+             <div style={{ 
+               display: 'flex', 
+               background: '#f8fafc', 
+               padding: '4px', 
+               borderRadius: '16px', 
+               border: '1px solid #e2e8f0',
+               width: isMobile ? '100%' : 'auto',
+               justifyContent: 'space-between'
+             }}>
+                <div style={{ display: 'flex', gap: '4px' }}>
                   {['SINGLE', 'RANGE', 'ALL'].map(mode => (
                     <button 
                       key={mode}
@@ -2485,27 +2568,27 @@ export default function AdminBoard() {
                     </button>
                   ))}
                 </div>
-                  {referralFilterMode !== 'ALL' && (
-                    <div style={{ display: 'flex', gap: '10px', alignItems: 'center', paddingRight: '10px' }}>
-                      <input 
-                        type="date" 
-                        value={referralRange.start} 
-                        onChange={e => setReferralRange(prev => ({ ...prev, start: e.target.value }))}
-                        style={{ border: 'none', background: 'transparent', fontSize: '11px', fontWeight: 950, color: '#1e293b', outline: 'none' }}
-                      />
-                      {referralFilterMode === 'RANGE' && (
-                        <>
-                          <span style={{ fontSize: '12px', color: '#cbd5e1' }}>→</span>
-                          <input 
-                            type="date" 
-                            value={referralRange.end} 
-                            onChange={e => setReferralRange(prev => ({ ...prev, end: e.target.value }))}
-                            style={{ border: 'none', background: 'transparent', fontSize: '11px', fontWeight: 950, color: '#1e293b', outline: 'none' }}
-                          />
-                        </>
-                      )}
-                    </div>
-                  )}
+                {referralFilterMode !== 'ALL' && (
+                  <div style={{ display: 'flex', gap: '10px', alignItems: 'center', paddingRight: '10px' }}>
+                    <input 
+                      type="date" 
+                      value={referralRange.start} 
+                      onChange={e => setReferralRange(prev => ({ ...prev, start: e.target.value }))}
+                      style={{ border: 'none', background: 'transparent', fontSize: '11px', fontWeight: 950, color: '#1e293b', outline: 'none' }}
+                    />
+                    {referralFilterMode === 'RANGE' && (
+                      <>
+                        <span style={{ fontSize: '12px', color: '#cbd5e1' }}>→</span>
+                        <input 
+                          type="date" 
+                          value={referralRange.end} 
+                          onChange={e => setReferralRange(prev => ({ ...prev, end: e.target.value }))}
+                          style={{ border: 'none', background: 'transparent', fontSize: '11px', fontWeight: 950, color: '#1e293b', outline: 'none' }}
+                        />
+                      </>
+                    )}
+                  </div>
+                )}
              </div>
 
              {/* Tactical Export Node */}
@@ -2587,8 +2670,15 @@ export default function AdminBoard() {
 
             {/* Level 3: Dual-Mode Intelligence List */}
             {referralViewMode === 'PATIENTS' ? (
-              <div style={{ background: 'white', borderRadius: '24px', border: '1px solid #e2e8f0', overflow: 'hidden' }}>
-                <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+              <div style={{ 
+                background: 'white', 
+                borderRadius: '24px', 
+                border: '1px solid #e2e8f0', 
+                overflow: 'hidden',
+                overflowX: 'auto',
+                WebkitOverflowScrolling: 'touch'
+              }}>
+                <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: isMobile ? '800px' : '100%' }}>
                   <thead style={{ background: '#f8fafc', borderBottom: '1px solid #e2e8f0' }}>
                     <tr>
                       <th style={{ padding: '20px 30px', textAlign: 'left', fontSize: '10px', fontWeight: 950, color: '#94a3b8', letterSpacing: '1px' }}>ID</th>
@@ -2660,8 +2750,15 @@ export default function AdminBoard() {
                 </table>
               </div>
             ) : referralViewMode === 'ROSTER' ? (
-              <div style={{ background: 'white', borderRadius: '24px', border: '1px solid #e2e8f0', overflow: 'hidden' }}>
-                <div style={{ padding: '25px 30px', borderBottom: '1px solid #e2e8f0', display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: '#fcfdfe' }}>
+              <div style={{ 
+                background: 'white', 
+                borderRadius: '24px', 
+                border: '1px solid #e2e8f0', 
+                overflow: 'hidden',
+                overflowX: 'auto',
+                WebkitOverflowScrolling: 'touch'
+              }}>
+                <div style={{ padding: '25px 30px', borderBottom: '1px solid #e2e8f0', display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: '#fcfdfe', minWidth: isMobile ? '800px' : '100%' }}>
                    <div style={{ fontSize: '12px', fontWeight: 950, color: '#1e293b', letterSpacing: '1px' }}>PARTNER NETWORK ROSTER</div>
                    <button 
                      onClick={handleExportRoster}
@@ -2670,7 +2767,7 @@ export default function AdminBoard() {
                      📥 DOWNLOAD PARTNER ROSTER (CSV)
                    </button>
                 </div>
-                <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: isMobile ? '800px' : '100%' }}>
                   <thead style={{ background: '#f8fafc', borderBottom: '1px solid #e2e8f0' }}>
                     <tr>
                       <th style={{ padding: '20px 30px', textAlign: 'left', fontSize: '10px', fontWeight: 950, color: '#94a3b8', letterSpacing: '1px' }}>RANK</th>
@@ -2773,41 +2870,41 @@ export default function AdminBoard() {
                       if (!selected) return null;
                       const percentage = totalPatientsCount > 0 ? (selected.patients.length / totalPatientsCount) * 100 : 0;
 
-                      return (
+return (
                         <div style={{ background: 'white', borderRadius: '30px', border: '1px solid #e2e8f0', overflow: isTestMode ? 'visible' : 'hidden', boxShadow: '0 10px 40px rgba(0,0,0,0.02)' }}>
-                          <div style={{ padding: '35px 40px', borderBottom: '1px solid #f1f5f9', display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: '#fcfdfe' }}>
+                          <div style={{ padding: '35px 40px', borderBottom: '1px solid #f1f5f9', display: 'flex', flexDirection: isMobile ? 'column' : 'row', justifyContent: 'space-between', alignItems: isMobile ? 'flex-start' : 'center', background: '#fcfdfe' }}>
                              <div>
                                 <div style={{ fontSize: '10px', fontWeight: 950, color: '#0f52ba', letterSpacing: '2px', marginBottom: '8px' }}>REFERRAL BRIEFING</div>
                                 <div style={{ fontSize: '22px', fontWeight: 950, color: '#1e293b', letterSpacing: '-0.5px' }}>{(selected.name || 'Anonymous').toUpperCase()}</div>
-                                <div style={{ display: 'flex', gap: '15px', marginTop: '12px' }}>
-                                   <div style={{ padding: '4px 10px', background: '#eff6ff', borderRadius: '6px', fontSize: '9px', fontWeight: 950, color: '#2563eb' }}>
-                                      {selected.patients.length} MISSIONS
-                                   </div>
-                                   <div style={{ padding: '4px 10px', background: '#ecfdf5', borderRadius: '6px', fontSize: '9px', fontWeight: 950, color: '#059669' }}>
-                                      ₹{(selected.totalRevenue || 0).toLocaleString()} YIELD
-                                   </div>
-                                   <div style={{ padding: '4px 10px', background: '#fffbeb', border: '1px solid #fde68a', borderRadius: '6px', fontSize: '9px', fontWeight: 950, color: '#d97706' }}>
-                                      ₹{(selected.totalDiscount || 0).toLocaleString()} DISCOUNT
-                                   </div>
-                                   <div style={{ padding: '4px 10px', background: '#eff6ff', borderRadius: '6px', fontSize: '9px', fontWeight: 950, color: '#2563eb' }}>
-                                      ₹{(selected.paidCommission || 0).toLocaleString()} PAID
-                                   </div>
-                                   <div style={{ padding: '4px 10px', background: '#fef2f2', borderRadius: '6px', fontSize: '9px', fontWeight: 950, color: '#dc2626' }}>
-                                      ₹{(selected.unpaidCommission || 0).toLocaleString()} PENDING
-                                   </div>
-                                   <div style={{ padding: '4px 10px', background: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: '6px', fontSize: '9px', fontWeight: 950, color: '#16a34a' }}>
-                                      ₹{(selected.netProfit || 0).toLocaleString()} NET PROFIT
-                                   </div>
-                                </div>
+                                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '10px', marginTop: '15px' }}>
+                                    <div style={{ padding: '6px 12px', background: '#eff6ff', borderRadius: '8px', fontSize: '10px', fontWeight: 950, color: '#2563eb' }}>
+                                       {selected.patients.length} MISSIONS
+                                    </div>
+                                    <div style={{ padding: '6px 12px', background: '#ecfdf5', borderRadius: '8px', fontSize: '10px', fontWeight: 950, color: '#059669' }}>
+                                       ₹{(selected.totalRevenue || 0).toLocaleString()} YIELD
+                                    </div>
+                                    <div style={{ padding: '6px 12px', background: '#fffbeb', border: '1px solid #fde68a', borderRadius: '8px', fontSize: '10px', fontWeight: 950, color: '#d97706' }}>
+                                       ₹{(selected.totalDiscount || 0).toLocaleString()} DISCOUNT
+                                    </div>
+                                    <div style={{ padding: '6px 12px', background: '#eff6ff', borderRadius: '8px', fontSize: '10px', fontWeight: 950, color: '#2563eb' }}>
+                                       ₹{(selected.paidCommission || 0).toLocaleString()} PAID
+                                    </div>
+                                    <div style={{ padding: '6px 12px', background: '#fef2f2', borderRadius: '8px', fontSize: '10px', fontWeight: 950, color: '#dc2626' }}>
+                                       ₹{(selected.unpaidCommission || 0).toLocaleString()} PENDING
+                                    </div>
+                                    <div style={{ padding: '6px 12px', background: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: '8px', fontSize: '10px', fontWeight: 950, color: '#16a34a' }}>
+                                       ₹{(selected.netProfit || 0).toLocaleString()} NET PROFIT
+                                    </div>
+                                 </div>
                              </div>
-                             <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', justifyContent: 'flex-end', maxWidth: '300px' }}>
-                                <div style={{ textAlign: 'center', minWidth: '80px', padding: '8px', border: '1px solid #e2e8f0', borderRadius: '12px', background: '#f8fafc' }}>
-                                   <div style={{ fontSize: '10px', fontWeight: 950, color: '#0f52ba' }}>₹{(selected.totalCommission || 0).toLocaleString()}</div>
+                             <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', justifyContent: isMobile ? 'flex-start' : 'flex-end', maxWidth: isMobile ? '100%' : '300px', marginTop: isMobile ? '20px' : 0 }}>
+                                <div style={{ textAlign: 'center', minWidth: '80px', padding: '10px', border: '1px solid #e2e8f0', borderRadius: '12px', background: '#f8fafc' }}>
+                                   <div style={{ fontSize: '11px', fontWeight: 950, color: '#0f52ba' }}>₹{(selected.totalCommission || 0).toLocaleString()}</div>
                                    <div style={{ fontSize: '8px', fontWeight: 800, color: '#94a3b8' }}>TOTAL PAYOUT</div>
                                 </div>
                                 {Object.entries(selected.modalities).map(([mod, count]) => (
-                                   <div key={mod} style={{ textAlign: 'center', minWidth: '60px', padding: '8px', border: '1px solid #e2e8f0', borderRadius: '12px', background: 'white' }}>
-                                      <div style={{ fontSize: '10px', fontWeight: 950, color: '#1e293b' }}>{count}</div>
+                                   <div key={mod} style={{ textAlign: 'center', minWidth: '60px', padding: '10px', border: '1px solid #e2e8f0', borderRadius: '12px', background: 'white' }}>
+                                      <div style={{ fontSize: '11px', fontWeight: 950, color: '#1e293b' }}>{count}</div>
                                       <div style={{ fontSize: '8px', fontWeight: 800, color: '#94a3b8' }}>{mod}</div>
                                    </div>
                                 ))}
@@ -2845,8 +2942,8 @@ export default function AdminBoard() {
                              </div>
 
                              {/* Referral Case Table */}
-                             <div style={{ borderRadius: '20px', border: '1px solid #f1f5f9', overflow: 'hidden' }}>
-                                <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                             <div style={{ borderRadius: '20px', border: '1px solid #f1f5f9', overflow: 'hidden', overflowX: 'auto', WebkitOverflowScrolling: 'touch' }}>
+                                <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: isMobile ? '900px' : '100%' }}>
                                   <thead style={{ background: '#fcfdfe' }}>
                                     <tr style={{ borderBottom: '1px solid #f1f5f9' }}>
                                       <th style={{ padding: '15px 25px', textAlign: 'left', width: '40px' }}>
@@ -2930,26 +3027,26 @@ export default function AdminBoard() {
               <div style={{ display: 'flex', flexDirection: 'column', gap: '30px' }}>
                  {/* 1. Tactical Matrix Grid */}
                  <div style={{ background: 'white', borderRadius: '24px', border: '1px solid #e2e8f0', overflow: isTestMode ? 'visible' : 'hidden', boxShadow: '0 4px 20px rgba(0,0,0,0.01)', padding: '30px' }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '25px', flexWrap: 'wrap', gap: '15px' }}>
-                       <div style={{ display: 'flex', alignItems: 'center', gap: '20px' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: isMobile ? 'stretch' : 'center', marginBottom: '25px', flexDirection: isMobile ? 'column' : 'row', gap: '20px' }}>
+                       <div style={{ display: 'flex', alignItems: isMobile ? 'stretch' : 'center', gap: '20px', flexDirection: isMobile ? 'column' : 'row' }}>
                          <div>
-                           <h3 style={{ fontSize: '18px', fontWeight: 900, color: '#1e293b', margin: 0 }}>SOURCE ANALYTICS MATRIX</h3>
-                           <p style={{ fontSize: '12px', color: '#64748b', marginTop: '4px' }}>Temporal volume density across diagnostic network</p>
+                           <h3 style={{ fontSize: '14px', fontWeight: 950, color: '#1e293b', margin: 0 }}>SOURCE ANALYTICS MATRIX</h3>
+                           <p style={{ fontSize: '11px', color: '#64748b', marginTop: '4px' }}>Temporal volume density across diagnostic network</p>
                          </div>
                          <button 
                            onClick={handleExportMatrix}
-                           style={{ padding: '8px 16px', borderRadius: '12px', background: '#f0f3fd', border: '1px solid #0f52ba30', color: '#0f52ba', fontSize: '10px', fontWeight: 950, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '8px' }}
+                           style={{ padding: '12px 18px', borderRadius: '14px', background: '#f0f3fd', border: '1px solid #0f52ba30', color: '#0f52ba', fontSize: '10px', fontWeight: 950, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}
                          >
                            📥 DOWNLOAD MATRIX (CSV)
                          </button>
                        </div>
-                       <div style={{ display: 'flex', gap: '15px', alignItems: 'center' }}>
+                       <div style={{ display: 'flex', gap: '15px', alignItems: 'center', justifyContent: isMobile ? 'space-between' : 'flex-end' }}>
                          {matrixPeriod === 'DAY' && (
                            <input 
                              type="date"
                              value={matrixDateStr}
                              onChange={(e) => e.target.value && setMatrixDateStr(e.target.value)}
-                             style={{ padding: '8px 16px', borderRadius: '8px', border: '1px solid #e2e8f0', fontSize: '12px', fontWeight: 800, color: '#1e293b', outline: 'none', background: '#f8fafc' }}
+                             style={{ padding: '10px 16px', borderRadius: '12px', border: '1px solid #e2e8f0', fontSize: '12px', fontWeight: 800, color: '#1e293b', outline: 'none', background: '#f8fafc' }}
                            />
                          )}
                          {matrixPeriod === 'WEEK' && (
@@ -3210,9 +3307,16 @@ export default function AdminBoard() {
   };
   const renderLayouts = () => (
     <div className="layouts-view">
-       <div className="board-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '30px' }}>
+       <div className="board-header" style={{ 
+          display: 'flex', 
+          flexDirection: isMobile ? 'column' : 'row',
+          justifyContent: 'space-between', 
+          alignItems: isMobile ? 'flex-start' : 'center', 
+          marginBottom: '30px',
+          gap: '20px'
+        }}>
          <h2 style={{ fontSize: '12px', fontWeight: 900, textTransform: 'uppercase', letterSpacing: '1px', color: '#888' }}>Reporting Protocol Design</h2>
-         <button className="btn-primary" onClick={() => handleOpenLayoutDrawer()}>+ New Configuration</button>
+         <button className="btn-primary" onClick={() => handleOpenLayoutDrawer()} style={{ width: isMobile ? '100%' : 'auto' }}>+ New Configuration</button>
        </div>
        <div className="table-container">
           <table className="data-table">
@@ -3240,15 +3344,22 @@ export default function AdminBoard() {
 
   const renderUserManagement = () => (
     <div className="users-view">
-      <div className="board-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '35px' }}>
+      <div className="board-header" style={{ 
+        display: 'flex', 
+        flexDirection: isMobile ? 'column' : 'row',
+        justifyContent: 'space-between', 
+        alignItems: isMobile ? 'flex-start' : 'center', 
+        marginBottom: '35px',
+        gap: '20px'
+      }}>
         <div>
           <h2 style={{ fontSize: '12px', fontWeight: 900, textTransform: 'uppercase', letterSpacing: '2px', color: '#0f52ba', marginBottom: '4px' }}>Hospital Personnel Roster</h2>
           <p style={{ fontSize: '11px', color: '#888', fontWeight: 600 }}>Active deployment and credential management for clinical staff.</p>
         </div>
         
-        <div style={{ display: 'flex', gap: '20px', alignItems: 'center' }}>
+        <div style={{ display: 'flex', flexDirection: isMobile ? 'column' : 'row', gap: '20px', alignItems: isMobile ? 'flex-start' : 'center', width: isMobile ? '100%' : 'auto' }}>
           {/* Tactical Search bar */}
-          <div style={{ position: 'relative', width: '300px' }}>
+          <div style={{ position: 'relative', width: isMobile ? '100%' : '300px' }}>
             <span style={{ position: 'absolute', left: '15px', top: '50%', transform: 'translateY(-50%)', opacity: 0.4 }}>🔍</span>
             <input 
               type="text" 
@@ -3268,6 +3379,7 @@ export default function AdminBoard() {
             className="btn-primary" 
             onClick={() => handleOpenUserDrawer()}
             style={{ 
+              width: isMobile ? '100%' : 'auto',
               padding: '12px 24px', borderRadius: '12px', border: 'none', 
               background: 'linear-gradient(90deg, #0f52ba 0%, #00f2fe 100%)', 
               color: 'white', fontSize: '11px', fontWeight: 950, cursor: 'pointer',
@@ -3424,7 +3536,7 @@ export default function AdminBoard() {
         onClick={() => setIsReferrerEditDrawerOpen(false)}
       />
       <div style={{ 
-        width: '450px', background: 'white', height: '100%', position: 'relative', zIndex: 10,
+        width: isMobile ? '100%' : '450px', background: 'white', height: '100%', position: 'relative', zIndex: 10,
         boxShadow: '-20px 0 60px rgba(0,0,0,0.1)', display: 'flex', flexDirection: 'column'
       }}>
         <div style={{ padding: '35px 40px', borderBottom: '1px solid #f1f5f9', background: '#fcfdfe' }}>
@@ -3495,7 +3607,7 @@ export default function AdminBoard() {
         onClick={() => setIsPatientEditDrawerOpen(false)}
       />
       <div style={{ 
-        width: '500px', background: 'white', height: '100%', position: 'relative', zIndex: 10,
+        width: isMobile ? '100%' : '500px', background: 'white', height: '100%', position: 'relative', zIndex: 10,
         boxShadow: '-20px 0 60px rgba(0,0,0,0.1)', display: 'flex', flexDirection: 'column'
       }}>
         <div style={{ padding: '35px 40px', borderBottom: '1px solid #f1f5f9', background: '#fcfdfe' }}>
@@ -3601,134 +3713,152 @@ export default function AdminBoard() {
 
   return (
     <div className="page-wrapper board-padding" style={{ paddingTop: '30px' }}>
-      <div className="board-hero-header flex-stack-mobile" style={{ marginBottom: '30px', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', gap: '20px' }}>
+      <div className="board-hero-header" style={{ 
+        marginBottom: '30px', 
+        display: 'flex', 
+        flexDirection: isMobile ? 'column' : 'row',
+        justifyContent: 'space-between', 
+        alignItems: isMobile ? 'stretch' : 'flex-end', 
+        gap: '20px' 
+      }}>
         <div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-            <h1 style={{ fontSize: '24px', fontWeight: 950, color: '#0a1628', letterSpacing: '-1px', margin: 0 }}>OPERATIONAL COMMAND</h1>
+            <h1 style={{ fontSize: isMobile ? '20px' : '24px', fontWeight: 950, color: '#0a1628', letterSpacing: '-1px', margin: 0 }}>OPERATIONAL COMMAND</h1>
             <span style={{ fontSize: '10px', color: '#94a3b8', fontWeight: 900, textTransform: 'uppercase', letterSpacing: '4px' }}>Strategic Node Control</span>
           </div>
         </div>
 
-        {/* Institutional Hub Switcher - Relocated from TopNav */}
-        <div className="center-switcher-hud" style={{ position: 'relative' }}>
+        <div style={{ display: 'flex', flexDirection: isMobile ? 'column' : 'row', gap: '15px', width: isMobile ? '100%' : 'auto' }}>
+          {/* Institutional Hub Switcher */}
+          <div className="center-switcher-hud" style={{ position: 'relative', width: isMobile ? '100%' : 'auto' }}>
+            <button 
+              id="center-switcher-btn"
+              className="command-core-btn"
+              onClick={() => setIsSwitcherOpen(!isSwitcherOpen)}
+              style={{ 
+                display: 'flex', alignItems: 'center', gap: '12px', padding: '10px 18px', 
+                borderRadius: '14px', background: 'white', border: '1px solid #e2e8f0', 
+                cursor: 'pointer', transition: 'all 0.2s', boxShadow: '0 4px 15px rgba(0,0,0,0.03)',
+                width: '100%'
+              }}
+            >
+              <div className={isSwitchingNode ? "pulse-loader-mini" : "tactical-node-active"} style={{ width: '10px', height: '10px', borderRadius: '50%', background: isSwitchingNode ? '#f39c12' : '#2ecc71', boxShadow: isSwitchingNode ? '0 0 10px rgba(243, 156, 18, 0.4)' : '0 0 10px rgba(46, 204, 113, 0.4)' }}></div>
+              <div className="hub-identity" style={{ textAlign: 'left', overflow: 'hidden', flex: 1 }}>
+                <div className="hub-label" style={{ fontSize: '7px', fontWeight: 950, color: isSwitchingNode ? '#f39c12' : '#aaa', letterSpacing: '1px', textTransform: 'uppercase' }}>{isSwitchingNode ? 'RECONFIGURING HUB...' : 'DEPLOYED HUB'}</div>
+                <div className="hub-name" style={{ fontSize: '13px', fontWeight: 950, color: '#1a1a2e', whiteSpace: 'nowrap', textOverflow: 'ellipsis', overflow: isTestMode ? 'visible' : 'hidden', maxWidth: isMobile ? '100%' : '180px', opacity: isSwitchingNode ? 0.5 : 1 }}>{activeCenter?.name?.toUpperCase()}</div>
+              </div>
+              <div style={{ fontSize: '10px', color: '#888', transition: 'transform 0.3s', transform: isSwitcherOpen ? 'rotate(180deg)' : 'rotate(0deg)' }}>
+                  ▼
+              </div>
+            </button>
+
+            {isSwitcherOpen && (
+              <>
+                <div 
+                  style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, zIndex: 1050, background: 'transparent' }} 
+                  onClick={() => setIsSwitcherOpen(false)}
+                />
+                <div 
+                  id="center-dropdown-menu"
+                  className="tactical-hub-dropdown"
+                  style={{ 
+                    position: 'absolute', top: '100%', left: 0, marginTop: '12px', width: isMobile ? '100%' : '350px', 
+                    zIndex: 1100, background: 'white', borderRadius: '18px', border: '1px solid #e2e8f0', 
+                    boxShadow: '0 15px 50px rgba(0,0,0,0.15)', padding: '15px', boxSizing: 'border-box'
+                  }}
+                >
+                <div style={{ padding: '0 5px 12px', fontSize: '10px', fontWeight: 950, color: '#0f52ba', textTransform: 'uppercase', letterSpacing: '2px', borderBottom: '1px solid #f1f5f9', marginBottom: '12px', display: 'flex', justifyContent: 'space-between' }}>
+                  <span>AUTHORIZED CLINICAL NODES</span>
+                  <span style={{ opacity: 0.5 }}>ACTIVE LIST</span>
+                </div>
+                
+                 <div style={{ maxHeight: '300px', overflowY: 'auto', paddingRight: '5px' }}>
+                   {centers.length > 0 ? (
+                     centers.map(center => (
+                       <button
+                         key={center.id}
+                         onClick={async () => { 
+                           const normalizedActiveId = String(activeCenter?.id || '').toLowerCase();
+                           const normalizedTargetId = String(center.id).toLowerCase();
+                           
+                           if (normalizedActiveId === normalizedTargetId || isSwitchingNode) return;
+                           setIsSwitchingNode(true);
+                           const result = await switchCenter(center.id); 
+                           setIsSwitchingNode(false);
+                           setIsSwitcherOpen(false); 
+                           if (result?.success && result.roles) {
+                             window.location.reload(); 
+                           }
+                         }}
+                         className={`hub-option ${activeCenter?.id === center.id ? 'active-hub' : ''}`}
+                         style={{ 
+                           width: '100%', textAlign: 'left', padding: '15px', borderRadius: '14px', 
+                           display: 'flex', alignItems: 'center', gap: '15px', cursor: 'pointer', 
+                           background: activeCenter?.id === center.id ? '#f0f7ff' : 'transparent',
+                           border: activeCenter?.id === center.id ? '1px solid #dbeafe' : '1px solid transparent', 
+                           transition: 'all 0.2s', marginBottom: '6px'
+                         }}
+                       >
+                         <div style={{ 
+                           width: '100%', textAlign: 'left', padding: '15px', borderRadius: '14px', 
+                           display: 'flex', alignItems: 'center', gap: '15px', cursor: 'pointer', 
+                           background: activeCenter?.id === center.id ? '#f0f7ff' : 'transparent',
+                           border: activeCenter?.id === center.id ? '1px solid #dbeafe' : '1px solid transparent', 
+                           transition: 'all 0.2s', marginBottom: '6px'
+                         }} />
+                         <div style={{ 
+                           width: '10px', height: '10px', borderRadius: '50%', 
+                           background: activeCenter?.id === center.id ? '#2ecc71' : 'rgba(0,0,0,0.1)',
+                           boxShadow: activeCenter?.id === center.id ? '0 0 10px rgba(46, 204, 113, 0.3)' : 'none'
+                         }}></div>
+                         <div style={{ flex: 1, overflow: 'hidden' }}>
+                           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                             <span style={{ fontSize: '12px', fontWeight: 900, color: '#1e293b', whiteSpace: 'nowrap', textOverflow: 'ellipsis', overflow: 'hidden' }}>{center.name}</span>
+                             {activeCenter?.id === center.id && <span style={{ fontSize: '9px', fontWeight: 950, color: '#2ecc71', letterSpacing: '1px' }}>ACTIVE</span>}
+                           </div>
+                         </div>
+                       </button>
+                     ))
+                   ) : (
+                     <div style={{ padding: '40px 20px', textAlign: 'center' }}>
+                        <div style={{ fontSize: '32px', marginBottom: '15px' }}>🛰️</div>
+                        <div style={{ fontSize: '11px', fontWeight: 950, color: '#64748b', letterSpacing: '1px' }}>No Authorized Nodes</div>
+                     </div>
+                   )}
+                 </div>
+               </div>
+              </>
+            )}
+          </div>
+
           <button 
-            id="center-switcher-btn"
-            className="command-core-btn"
-            onClick={() => setIsSwitcherOpen(!isSwitcherOpen)}
+            onClick={() => setIsChainDrawerOpen(true)}
             style={{ 
-              display: 'flex', alignItems: 'center', gap: '12px', padding: '10px 18px', 
-              borderRadius: '14px', background: 'white', border: '1px solid #e2e8f0', 
-              cursor: 'pointer', transition: 'all 0.2s', boxShadow: '0 4px 15px rgba(0,0,0,0.03)' 
+              padding: '12px 20px', borderRadius: '16px', background: 'linear-gradient(135deg, #0f52ba 0%, #061a40 100%)', 
+              border: 'none', color: 'white', display: 'flex', gap: '8px', 
+              alignItems: 'center', justifyContent: 'center', cursor: 'pointer', transition: 'all 0.2s',
+              fontSize: '10px', fontWeight: 950, letterSpacing: '1px',
+              boxShadow: '0 8px 25px rgba(15, 82, 186, 0.25)',
+              width: isMobile ? '100%' : 'auto'
             }}
           >
-            <div className={isSwitchingNode ? "pulse-loader-mini" : "tactical-node-active"} style={{ width: '10px', height: '10px', borderRadius: '50%', background: isSwitchingNode ? '#f39c12' : '#2ecc71', boxShadow: isSwitchingNode ? '0 0 10px rgba(243, 156, 18, 0.4)' : '0 0 10px rgba(46, 204, 113, 0.4)' }}></div>
-            <div className="hub-identity" style={{ textAlign: 'left', overflow: 'hidden' }}>
-              <div className="hub-label" style={{ fontSize: '7px', fontWeight: 950, color: isSwitchingNode ? '#f39c12' : '#aaa', letterSpacing: '1px', textTransform: 'uppercase' }}>{isSwitchingNode ? 'RECONFIGURING HUB...' : 'DEPLOYED HUB'}</div>
-              <div className="hub-name" style={{ fontSize: '13px', fontWeight: 950, color: '#1a1a2e', whiteSpace: 'nowrap', textOverflow: 'ellipsis', overflow: isTestMode ? 'visible' : 'hidden', maxWidth: '180px', opacity: isSwitchingNode ? 0.5 : 1 }}>{activeCenter?.name?.toUpperCase()}</div>
-            </div>
-            <div style={{ fontSize: '10px', color: '#888', transition: 'transform 0.3s', transform: isSwitcherOpen ? 'rotate(180deg)' : 'rotate(0deg)' }}>
-                ▼
-            </div>
+            <span style={{ fontSize: '14px' }}>📡</span> REGISTER NEW CHAIN
           </button>
-
-          {isSwitcherOpen && (
-            <>
-              <div 
-                style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, zIndex: 1050, background: 'transparent' }} 
-                onClick={() => setIsSwitcherOpen(false)}
-              />
-              <div 
-                id="center-dropdown-menu"
-                className="tactical-hub-dropdown"
-                style={{ 
-                  position: 'absolute', top: '100%', left: 0, marginTop: '12px', width: '350px', 
-                  zIndex: 1100, background: 'white', borderRadius: '18px', border: '1px solid #e2e8f0', 
-                  boxShadow: '0 15px 50px rgba(0,0,0,0.15)', padding: '15px' 
-                }}
-              >
-              <div style={{ padding: '0 5px 12px', fontSize: '10px', fontWeight: 950, color: '#0f52ba', textTransform: 'uppercase', letterSpacing: '2px', borderBottom: '1px solid #f1f5f9', marginBottom: '12px', display: 'flex', justifyContent: 'space-between' }}>
-                <span>AUTHORIZED CLINICAL NODES</span>
-                <span style={{ opacity: 0.5 }}>ACTIVE LIST</span>
-              </div>
-              
-               <div style={{ maxHeight: '300px', overflowY: 'auto', paddingRight: '5px' }}>
-                 {centers.length > 0 ? (
-                   centers.map(center => (
-                     <button
-                       key={center.id}
-                       onClick={async () => { 
-                         const normalizedActiveId = String(activeCenter?.id || '').toLowerCase();
-                         const normalizedTargetId = String(center.id).toLowerCase();
-                         
-                         if (normalizedActiveId === normalizedTargetId || isSwitchingNode) return;
-                         setIsSwitchingNode(true);
-                         const result = await switchCenter(center.id); 
-                         setIsSwitchingNode(false);
-                         setIsSwitcherOpen(false); 
-                         if (result?.success && result.roles) {
-                           window.location.reload(); 
-                         }
-                       }}
-                       className={`hub-option ${activeCenter?.id === center.id ? 'active-hub' : ''}`}
-                       style={{ 
-                         width: '100%', textAlign: 'left', padding: '15px', borderRadius: '14px', 
-                         display: 'flex', alignItems: 'center', gap: '15px', cursor: 'pointer', 
-                         background: activeCenter?.id === center.id ? '#f0f7ff' : 'transparent',
-                         border: activeCenter?.id === center.id ? '1px solid #dbeafe' : '1px solid transparent', 
-                         transition: 'all 0.2s', marginBottom: '6px'
-                       }}
-                     >
-                       <div style={{ 
-                         width: '10px', height: '10px', borderRadius: '50%', 
-                         background: activeCenter?.id === center.id ? '#2ecc71' : 'rgba(0,0,0,0.1)',
-                         boxShadow: activeCenter?.id === center.id ? '0 0 10px rgba(46, 204, 113, 0.3)' : 'none'
-                       }}></div>
-                       <div style={{ flex: 1, overflow: 'hidden' }}>
-                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                           <span style={{ fontSize: '12px', fontWeight: 900, color: '#1e293b', whiteSpace: 'nowrap', textOverflow: 'ellipsis', overflow: 'hidden' }}>{center.name}</span>
-                           {activeCenter?.id === center.id && <span style={{ fontSize: '9px', fontWeight: 950, color: '#2ecc71', letterSpacing: '1px' }}>ACTIVE</span>}
-                         </div>
-                       </div>
-                     </button>
-                   ))
-                 ) : (
-                   <div style={{ padding: '40px 20px', textAlign: 'center' }}>
-                      <div style={{ fontSize: '32px', marginBottom: '15px' }}>🛰️</div>
-                      <div style={{ fontSize: '11px', fontWeight: 950, color: '#64748b', letterSpacing: '1px' }}>No Authorized Nodes</div>
-                   </div>
-                 )}
-               </div>
-             </div>
-            </>
-          )}
         </div>
-
-        <button 
-          onClick={() => setIsChainDrawerOpen(true)}
-          style={{ 
-            padding: '12px 20px', borderRadius: '16px', background: 'linear-gradient(135deg, #0f52ba 0%, #061a40 100%)', 
-            border: 'none', color: 'white', display: 'flex', gap: '8px', 
-            alignItems: 'center', cursor: 'pointer', transition: 'all 0.2s',
-            fontSize: '10px', fontWeight: 950, letterSpacing: '1px',
-            boxShadow: '0 8px 25px rgba(15, 82, 186, 0.25)'
-          }}
-        >
-          <span style={{ fontSize: '14px' }}>📡</span> REGISTER NEW CHAIN
-        </button>
       </div>
       
       {/* Hub Controller Navigation */}
-      <div className="admin-tabs flex-stack-mobile" style={{ 
-        background: 'rgba(15, 82, 186, 0.03)', 
-        backdropFilter: 'blur(10px)',
-        padding: '6px', 
+      <div className="admin-tabs" style={{ 
+        background: '#f8fafc', 
+        padding: '4px', 
         borderRadius: '16px', 
-        border: '1px solid rgba(15, 82, 186, 0.1)', 
-        marginBottom: '40px', 
+        border: '1px solid #e2e8f0', 
+        marginBottom: '30px', 
         display: 'flex',
-        overflowX: 'auto', // Allow horizontal scroll for tabs on narrow tablets
-        boxShadow: '0 4px 20px rgba(0,0,0,0.03)',
-        scrollbarWidth: 'none' // Hide scrollbar for cleaner look
+        overflowX: 'auto',
+        scrollbarWidth: 'none',
+        msOverflowStyle: 'none',
+        gap: '4px'
       }}>
         {['INTELLIGENCE', 'REFERRAL INTEL', 'PERSONNEL', 'HOSPITAL', 'FINANCE', 'PRESCRIPTION', 'SUBSCRIPTION'].map(tab => (
           <button 
@@ -3736,19 +3866,20 @@ export default function AdminBoard() {
             className={`admin-tab ${activeTab === tab ? 'active' : ''}`} 
             onClick={() => setActiveTab(tab)}
             style={{ 
-              flex: 1, 
+              flex: isMobile ? '0 0 auto' : 1, 
               borderRadius: '12px', 
               border: 'none', 
-              padding: '14px', 
+              padding: isMobile ? '12px 20px' : '14px', 
               fontWeight: 950, 
               letterSpacing: '1px', 
               background: activeTab === tab ? 'white' : 'transparent', 
               color: activeTab === tab ? '#0f52ba' : '#64748b',
-              boxShadow: activeTab === tab ? '0 8px 20px rgba(15, 82, 186, 0.15)' : 'none', 
+              boxShadow: activeTab === tab ? '0 4px 12px rgba(0,0,0,0.05)' : 'none', 
               textTransform: 'uppercase', 
-              fontSize: '11px',
-              transition: 'all 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275)',
-              cursor: 'pointer'
+              fontSize: '10px',
+              transition: 'all 0.2s ease',
+              cursor: 'pointer',
+              whiteSpace: 'nowrap'
             }}
           >
             {tab}
@@ -3762,6 +3893,7 @@ export default function AdminBoard() {
       {activeTab === 'HOSPITAL' && renderHospitalSettings()}
       {activeTab === 'FINANCE' && (
         <FinanceManager 
+          isMobile={isMobile}
           servicePrices={servicePrices}
           fetchServicePrices={fetchServicePrices}
           financialMatrix={financialMatrix}
@@ -3803,8 +3935,8 @@ export default function AdminBoard() {
         <div className="drawer-overlay" onClick={() => { setIsUserDrawerOpen(false); setUserRegStep(1); }} style={{ backdropFilter: 'blur(8px)', background: 'rgba(10, 22, 40, 0.4)' }}>
            <div className="drawer-content" style={{ 
              padding: 0, 
-             width: '500px',
-             borderRadius: '24px 0 0 24px', 
+             width: isMobile ? '100%' : '500px',
+             borderRadius: isMobile ? 0 : '24px 0 0 24px', 
              background: '#fff',
              boxShadow: '-20px 0 60px rgba(0,0,0,0.1)',
              display: 'flex',
@@ -4069,7 +4201,7 @@ export default function AdminBoard() {
       {/* Layout Builder Drawer (Original) */}
       {isLayoutDrawerOpen && (
         <div className="drawer-overlay" onClick={() => setIsLayoutDrawerOpen(false)}>
-           <div className="drawer-content" onClick={e => e.stopPropagation()}>
+           <div className="drawer-content" style={{ width: isMobile ? '100%' : '500px', borderRadius: isMobile ? 0 : '24px 0 0 24px' }} onClick={e => e.stopPropagation()}>
               <div className="drawer-header">
                  <h2>{editLayout.id ? 'Edit Layout' : 'New Reporting Layout'}</h2>
                  <button className="btn-close" onClick={() => setIsLayoutDrawerOpen(false)}>&times;</button>
@@ -4187,7 +4319,7 @@ export default function AdminBoard() {
   function renderChainDrawer() {
     return (
       <div className="drawer-overlay" onClick={() => setIsChainDrawerOpen(false)} style={{ backdropFilter: 'blur(8px)', background: 'rgba(10, 22, 40, 0.4)', zIndex: 10000 }}>
-        <div className="drawer-content" style={{ padding: 0, width: '450px', background: 'white', display: 'flex', flexDirection: 'column' }} onClick={e => e.stopPropagation()}>
+        <div className="drawer-content" style={{ padding: 0, width: isMobile ? '100%' : '450px', borderRadius: isMobile ? 0 : '24px 0 0 24px', background: 'white', display: 'flex', flexDirection: 'column' }} onClick={e => e.stopPropagation()}>
           <div style={{ padding: '35px', background: 'linear-gradient(135deg, #0f52ba 0%, #061a40 100%)', color: 'white' }}>
              <h2 style={{ fontSize: '11px', fontWeight: 950, color: 'var(--tactical-cyan)', letterSpacing: '3px', textTransform: 'uppercase', marginBottom: '8px' }}>Infrastructure Deployment</h2>
              <div style={{ fontSize: '20px', fontWeight: 950, letterSpacing: '-1px' }}>REGISTER NEW CHAIN</div>
