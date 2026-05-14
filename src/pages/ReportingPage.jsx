@@ -342,10 +342,10 @@ const ReportingPage = () => {
             return;
           }
           
-          // Trigger hydration after state is set
+          // Trigger hydration after React flushes the uploadedFiles state update
           setTimeout(() => {
             setActiveAssetIndex(0);
-          }, 100);
+          }, 0);
         }
       } else {
         console.info(`[1RAD] No existing study assets found`);
@@ -692,152 +692,85 @@ const ReportingPage = () => {
         return;
       }
 
-      console.log(`[DICOM_LOAD] Cache MISS. Initializing optimized hydration for asset: ${asset.name}`);
-      console.log(`[DICOM_LOAD] Asset details:`, {
-        id: asset.id,
-        name: asset.name,
-        remoteUrl: asset.remoteUrl,
-        needsHydration: asset.needsHydration
-      });
-      
-      setProcessingStatus('Downloading study data...');
-      
-      // Validate URL before fetching
       if (!asset.remoteUrl) {
         throw new Error('MISSING_URL: Asset remote URL is not available. Please check the asset configuration.');
       }
-      
-      // Test connection first (non-blocking - if it fails, we'll try direct anyway)
-      console.log(`[DICOM_LOAD] Testing asset connectivity...`);
-      let useProxy = false;
-      try {
-        const connectionTest = await testAssetConnection(asset);
-        if (connectionTest.success) {
-          useProxy = connectionTest.useProxy;
-          console.log(`[DICOM_LOAD] ✅ Connection test passed (UseProxy: ${useProxy})`);
-        } else {
-          console.warn(`[DICOM_LOAD] ⚠️ Connection test failed, will attempt direct download anyway:`, connectionTest.error);
-        }
-      } catch (testError) {
-        console.warn(`[DICOM_LOAD] ⚠️ Connection test error, will attempt direct download anyway:`, testError);
-      }
-      
-      console.log(`[DICOM_LOAD] Proceeding with download...`);
-      
-      const token = sessionStorage.getItem('1rad_token') || sessionStorage.getItem('1rad_initiation_token');
-      
-      // Check if URL is accessible with retry mechanism
-      let response;
-      let retryCount = 0;
-      const maxRetries = 3;
-      
-      while (retryCount <= maxRetries) {
-        try {
-          console.log(`[DICOM_LOAD] Attempt ${retryCount + 1}/${maxRetries + 1} - Fetching: ${asset.remoteUrl}`);
-          
-          response = await fetch(asset.remoteUrl, {
-            method: 'GET',
-            headers: {
-              'Accept': 'application/zip, application/octet-stream, */*',
-            },
-            // Add credentials if needed for authenticated endpoints
-            credentials: 'same-origin'
-          });
-          
-          if (response.ok) {
-            break; 
-          } else if (retryCount < maxRetries && (response.status >= 500 || response.status === 429)) {
-            console.warn(`[DICOM_LOAD] Retryable error ${response.status}, waiting before retry...`);
-            await new Promise(resolve => setTimeout(resolve, (retryCount + 1) * 1000));
-            retryCount++;
-            continue;
-          } else {
-            break;
-          }
-        } catch (fetchError) {
-          console.error(`[DICOM_LOAD] Fetch error (attempt ${retryCount + 1}):`, fetchError);
-          
-          // Check for CORS-specific errors
-          if (fetchError.message.includes('CORS') || 
-              fetchError.message.includes('Access-Control-Allow-Origin') ||
-              (fetchError.name === 'TypeError' && fetchError.message.includes('Failed to fetch'))) {
-            
-            // Try API proxy as fallback for CORS issues
-            if (retryCount === 0) {
-              console.log(`[DICOM_LOAD] CORS error detected, trying API proxy fallback...`);
-              try {
-                const proxyResponse = await apiClient.get(`/Study/proxy-asset`, {
-                  params: { url: asset.remoteUrl },
-                  responseType: 'blob'
-                });
-                
-                if (proxyResponse.data && proxyResponse.status === 200) {
-                  console.log(`[DICOM_LOAD] ✅ API proxy successful`);
-                  // Convert axios response to fetch-like response
-                  response = {
-                    ok: true,
-                    status: proxyResponse.status,
-                    blob: async () => proxyResponse.data,
-                    headers: new Headers(proxyResponse.headers)
-                  };
-                  break;
-                }
-              } catch (proxyError) {
-                console.warn(`[DICOM_LOAD] API proxy failed:`, proxyError);
-                console.warn(`[DICOM_LOAD] Proxy error details:`, {
-                  status: proxyError.response?.status,
-                  statusText: proxyError.response?.statusText,
-                  message: proxyError.message
-                });
-                // Continue with original CORS error handling
-              }
-            }
-            
-            throw new Error(`CORS_ERROR: Cross-origin request blocked. The server needs to be configured to allow requests from this domain. ${fetchError.message}`);
-          }
-          
-          if (retryCount < maxRetries) {
-            console.warn(`[DICOM_LOAD] Network error, retrying in ${(retryCount + 1) * 1000}ms...`);
-            await new Promise(resolve => setTimeout(resolve, (retryCount + 1) * 1000));
-            retryCount++;
-            continue;
-          } else {
-            throw new Error(`NETWORK_ERROR: Unable to download study data after ${maxRetries + 1} attempts. ${fetchError.message}`);
-          }
-        }
-      }
-      
-      if (!response.ok) {
-        const errorDetails = {
-          status: response.status,
-          statusText: response.statusText,
-          url: asset.remoteUrl
-        };
-        console.error(`[DICOM_LOAD] HTTP Error:`, errorDetails);
-        
-        if (response.status === 404) {
-          throw new Error(`FILE_NOT_FOUND: The study file is no longer available on the server (HTTP 404).`);
-        } else if (response.status === 403) {
-          throw new Error(`ACCESS_DENIED: You don't have permission to access this study file (HTTP 403).`);
-        } else if (response.status === 500) {
-          throw new Error(`SERVER_ERROR: The server encountered an error while retrieving the study (HTTP 500).`);
-        } else {
-          throw new Error(`HTTP_ERROR: Server returned ${response.status} ${response.statusText} when fetching study data.`);
-        }
-      }
-      
+
+      console.log(`[DICOM_LOAD] Starting download: ${asset.remoteUrl}`);
+      setProcessingStatus('Downloading study...');
+
+      // ── Direct download — no pre-flight connection test ────────────────────
       let blob;
+      let response;
       try {
-        blob = await response.blob();
-        console.log(`[DICOM_LOAD] Binary stream received. Size: ${(blob.size / (1024*1024)).toFixed(2)} MB. Content-Type: ${blob.type}`);
-        
-        if (blob.size === 0) {
-          throw new Error('EMPTY_FILE: The downloaded study file is empty (0 bytes).');
+        response = await fetch(asset.remoteUrl, {
+          method: 'GET',
+          headers: { 'Accept': 'application/zip, application/octet-stream, */*' },
+          credentials: 'same-origin',
+          cache: 'no-store',
+        });
+      } catch (fetchError) {
+        // CORS / network failure → proxy fallback
+        const isCors = fetchError.name === 'TypeError' || fetchError.message.includes('Failed to fetch');
+        if (isCors) {
+          console.log(`[DICOM_LOAD] Direct fetch failed (CORS?), trying proxy...`);
+          setProcessingStatus('Trying secure proxy...');
+          try {
+            const proxyRes = await apiClient.get('/Study/proxy-asset', {
+              params: { url: asset.remoteUrl },
+              responseType: 'blob',
+              timeout: 120000,
+            });
+            if (proxyRes.status === 200 && proxyRes.data) {
+              blob = proxyRes.data;
+            } else {
+              throw new Error('Proxy returned no data.');
+            }
+          } catch (proxyErr) {
+            throw new Error(`CORS_ERROR: Direct access blocked and proxy failed. Contact your administrator to configure CORS on Azure Blob Storage.`);
+          }
+        } else {
+          throw new Error(`NETWORK_ERROR: ${fetchError.message}`);
         }
-        
-      } catch (blobError) {
-        console.error(`[DICOM_LOAD] Blob conversion error:`, blobError);
-        throw new Error(`DATA_CONVERSION_ERROR: Failed to process downloaded study data. ${blobError.message}`);
+      }
+
+      // Handle HTTP error codes
+      if (response && !response.ok) {
+        if (response.status === 404) throw new Error('FILE_NOT_FOUND: The study file is no longer available (HTTP 404).');
+        if (response.status === 403) throw new Error('ACCESS_DENIED: You don\'t have permission to access this study file (HTTP 403).');
+        if (response.status === 500) throw new Error('SERVER_ERROR: The server encountered an error retrieving the study (HTTP 500).');
+        throw new Error(`HTTP_ERROR: Server returned ${response.status} ${response.statusText}.`);
+      }
+
+      // ── Streaming read with real download progress ─────────────────────────
+      if (response && !blob) {
+        const contentLength = parseInt(response.headers.get('Content-Length') || '0', 10);
+        const reader = response.body.getReader();
+        const chunks = [];
+        let received = 0;
+
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          chunks.push(value);
+          received += value.length;
+          const mb = (received / 1048576).toFixed(1);
+          if (contentLength > 0) {
+            const pct = Math.round((received / contentLength) * 100);
+            const total = (contentLength / 1048576).toFixed(1);
+            setProcessingStatus(`Downloading: ${mb} / ${total} MB (${pct}%)`);
+            setLoadingProgress({ stage: 'Downloading', current: pct, total: 100 });
+          } else {
+            setProcessingStatus(`Downloading: ${mb} MB received...`);
+          }
+        }
+
+        blob = new Blob(chunks);
+        console.log(`[DICOM_LOAD] Download complete. ${(blob.size / 1048576).toFixed(2)} MB`);
+      }
+
+      if (!blob || blob.size === 0) {
+        throw new Error('EMPTY_FILE: The downloaded study file is empty (0 bytes).');
       }
       
       // Use optimized processor with progress tracking and corruption detection
@@ -908,28 +841,19 @@ const ReportingPage = () => {
 
       console.log(`[DICOM_LOAD] Optimized processing complete. Discovered ${finalAssets.length} valid diagnostic series.`);
 
-      // TACTICAL CACHE STORAGE
-      if (finalAssets.length > 0) {
-        try {
-          setProcessingStatus('Caching for future use...');
-          const cachePayload = {
-            ...asset,
-            series: finalAssets.map(ca => ({ 
-              name: ca.name, 
-              rawFiles: ca.rawFiles, 
-              seriesUID: ca.seriesUID,
-              modality: ca.modality,
-              patientName: ca.patientName,
-              seriesDesc: ca.seriesDesc,
-              metadata: ca.metadata
-            }))
-          };
-          await DicomCache.set(asset.id, cachePayload);
-          console.log(`[DICOM_LOAD] Asset ${asset.id} persisted to persistent cache.`);
-        } catch (cacheError) {
-          console.warn(`[DICOM_LOAD] Cache storage failed (non-critical):`, cacheError);
-          // Don't throw error for cache failures, just log warning
-        }
+      // Cache write — fire-and-forget so the viewer renders immediately
+      if (finalAssets.length > 0 && asset.id) {
+        const cachePayload = {
+          ...asset,
+          series: finalAssets.map(ca => ({
+            name: ca.name, rawFiles: ca.rawFiles, seriesUID: ca.seriesUID,
+            modality: ca.modality, patientName: ca.patientName,
+            seriesDesc: ca.seriesDesc, metadata: ca.metadata
+          }))
+        };
+        DicomCache.set(asset.id, cachePayload)
+          .then(() => console.log(`[DICOM_LOAD] Cached asset ${asset.id}`))
+          .catch(e => console.warn(`[DICOM_LOAD] Cache write failed (non-critical):`, e));
       }
 
       setUploadedFiles(prev => {
