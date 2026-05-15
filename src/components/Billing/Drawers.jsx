@@ -530,40 +530,74 @@ export const NewInvoiceDrawer = ({
                         <span style={{ fontSize: '10px', fontWeight: 950, color: '#64748b', letterSpacing: '1px' }}>GROSS_TOTAL</span>
                         <span style={{ fontSize: '12px', fontWeight: 950, color: '#1e293b' }}>₹{newInvoiceData.items.reduce((sum, it) => sum + (it.amount * it.quantity), 0)}</span>
                      </div>
-                     <div style={{ display: 'flex', flexDirection: isMobile ? 'column' : 'row', justifyContent: 'space-between', alignItems: isMobile ? 'flex-start' : 'center', gap: isMobile ? '12px' : '0', marginBottom: '12px' }}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                           <span style={{ fontSize: '10px', fontWeight: 950, color: '#ef4444', letterSpacing: '1px' }}>DISCOUNT</span>
-                        </div>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '10px', width: isMobile ? '100%' : 'auto' }}>
-                           <div style={{ display: 'flex', gap: '4px' }}>
-                              {[10, 25, 50].map(pct => (
-                                <button 
-                                  key={pct}
-                                  type="button"
-                                  onClick={() => {
-                                    const gross = newInvoiceData.items.reduce((sum, it) => sum + (it.amount * it.quantity), 0);
-                                    setNewInvoiceData({ ...newInvoiceData, discountAmount: Math.round(gross * (pct / 100)) });
-                                  }}
-                                  style={{ padding: '4px 8px', borderRadius: '6px', border: '1px solid #fecdd3', background: '#fff1f2', color: '#e11d48', fontSize: '8px', fontWeight: 950, cursor: 'pointer' }}
-                                >{pct}%</button>
-                              ))}
+                     <div style={{ display: 'flex', flexDirection: 'column', gap: '15px', marginBottom: '15px' }}>
+                        {/* Centre Discount Section */}
+                        <div style={{ display: 'flex', flexDirection: isMobile ? 'column' : 'row', justifyContent: 'space-between', alignItems: isMobile ? 'flex-start' : 'center', gap: isMobile ? '12px' : '0' }}>
+                           <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                              <span style={{ fontSize: '10px', fontWeight: 950, color: '#ef4444', letterSpacing: '1px' }}>CENTRE_DISC</span>
                            </div>
-                           <input 
-                               type="number" 
-                               value={newInvoiceData.discountAmount} 
-                               onChange={e => {
-                                 const val = parseInt(e.target.value) || 0;
-                                 const gross = newInvoiceData.items.reduce((sum, it) => sum + (it.amount * it.quantity), 0);
-                                 setNewInvoiceData({ ...newInvoiceData, discountAmount: Math.min(val, gross) });
-                               }}
-                               style={{ flex: 1, width: isMobile ? '100%' : '80px', padding: '6px 12px', borderRadius: '10px', border: '1px solid #cbd5e1', fontSize: '12px', fontWeight: 950, textAlign: 'right', color: '#ef4444', outline: 'none' }}
-                           />
+                           <div style={{ display: 'flex', alignItems: 'center', gap: '10px', width: isMobile ? '100%' : 'auto' }}>
+                              <div style={{ display: 'flex', gap: '4px' }}>
+                                 {[10, 25, 50, 100].map(pct => (
+                                   <button 
+                                     key={pct} type="button"
+                                     onClick={() => {
+                                       const gross = newInvoiceData.items.reduce((sum, it) => sum + (it.amount * it.quantity), 0);
+                                       setNewInvoiceData({ ...newInvoiceData, centreDiscount: Math.round(gross * (pct / 100)) });
+                                     }}
+                                     style={{ padding: '4px 8px', borderRadius: '6px', border: '1px solid #fecdd3', background: '#fff1f2', color: '#e11d48', fontSize: '8px', fontWeight: 950, cursor: 'pointer' }}
+                                   >{pct}%</button>
+                                 ))}
+                              </div>
+                              <input 
+                                  type="number" value={newInvoiceData.centreDiscount} 
+                                  onChange={e => {
+                                    const val = parseInt(e.target.value) || 0;
+                                    const gross = newInvoiceData.items.reduce((sum, it) => sum + (it.amount * it.quantity), 0);
+                                    setNewInvoiceData({ ...newInvoiceData, centreDiscount: Math.min(val, gross) });
+                                  }}
+                                  style={{ flex: 1, width: isMobile ? '100%' : '80px', padding: '6px 12px', borderRadius: '10px', border: '1px solid #cbd5e1', fontSize: '12px', fontWeight: 950, textAlign: 'right', color: '#ef4444', outline: 'none' }}
+                              />
+                           </div>
+                        </div>
+
+                        {/* Referrer Discount Section */}
+                        <div style={{ 
+                           display: 'flex', flexDirection: isMobile ? 'column' : 'row', justifyContent: 'space-between', alignItems: isMobile ? 'flex-start' : 'center', gap: isMobile ? '12px' : '0',
+                           opacity: newInvoiceData.referrerId ? 1 : 0.4, pointerEvents: newInvoiceData.referrerId ? 'auto' : 'none'
+                        }}>
+                           <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                              <span style={{ fontSize: '10px', fontWeight: 950, color: '#e11d48', letterSpacing: '1px' }}>REFERRER_DISC</span>
+                           </div>
+                           <div style={{ display: 'flex', alignItems: 'center', gap: '10px', width: isMobile ? '100%' : 'auto' }}>
+                              <div style={{ display: 'flex', gap: '4px' }}>
+                                 {[10, 25, 50, 100].map(pct => (
+                                   <button 
+                                     key={pct} type="button"
+                                     onClick={() => {
+                                       const totalCommission = newInvoiceData.items.reduce((sum, it) => sum + ((it.referralCutValue || 0) * (it.quantity || 1)), 0);
+                                       setNewInvoiceData({ ...newInvoiceData, referrerDiscount: Math.round(totalCommission * (pct / 100)) });
+                                     }}
+                                     style={{ padding: '4px 8px', borderRadius: '6px', border: '1px solid #fecdd3', background: '#fff1f2', color: '#e11d48', fontSize: '8px', fontWeight: 950, cursor: 'pointer' }}
+                                   >{pct}%</button>
+                                 ))}
+                              </div>
+                              <input 
+                                  type="number" value={newInvoiceData.referrerDiscount} 
+                                  onChange={e => {
+                                    const val = parseInt(e.target.value) || 0;
+                                    const totalCommission = newInvoiceData.items.reduce((sum, it) => sum + ((it.referralCutValue || 0) * (it.quantity || 1)), 0);
+                                    setNewInvoiceData({ ...newInvoiceData, referrerDiscount: Math.min(val, totalCommission) });
+                                  }}
+                                  style={{ flex: 1, width: isMobile ? '100%' : '80px', padding: '6px 12px', borderRadius: '10px', border: '1px solid #cbd5e1', fontSize: '12px', fontWeight: 950, textAlign: 'right', color: '#e11d48', outline: 'none' }}
+                              />
+                           </div>
                         </div>
                      </div>
                      <div style={{ borderTop: '2px dashed #cbd5e1', marginTop: '15px', paddingTop: '15px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                         <span style={{ fontSize: '10px', fontWeight: 950, color: '#0f52ba', letterSpacing: '2px' }}>NET_PAYABLE</span>
                         <span style={{ fontSize: isMobile ? '20px' : '18px', fontWeight: 950, color: '#0f52ba' }}>
-                           ₹{Math.max(0, newInvoiceData.items.reduce((sum, it) => sum + (it.amount * it.quantity), 0) - (newInvoiceData.discountAmount || 0))}
+                           ₹{Math.max(0, newInvoiceData.items.reduce((sum, it) => sum + (it.amount * it.quantity), 0) - (newInvoiceData.centreDiscount || 0) - (newInvoiceData.referrerDiscount || 0))}
                         </span>
                      </div>
                   </div>

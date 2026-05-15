@@ -53,7 +53,8 @@ export default function BillingPage() {
   const [newInvoiceData, setNewInvoiceData] = useState({
     patientName: '',
     items: [{ description: '', amount: 0, quantity: 1 }],
-    discountAmount: 0,
+    centreDiscount: 0,
+    referrerDiscount: 0,
     paymentMethod: 'CASH',
     referrerId: ''
   });
@@ -973,7 +974,8 @@ export default function BillingPage() {
       patientId: selectedPatient.patientId,
       appointmentId: newInvoiceData.items.find(it => it.appointmentId)?.appointmentId || null,
       referrerId: newInvoiceData.referrerId || null,
-      discountAmount: Number(newInvoiceData.discountAmount || 0),
+      centreDiscount: Number(newInvoiceData.centreDiscount || 0),
+      referrerDiscount: Number(newInvoiceData.referrerDiscount || 0),
       commissionAmount: totalCommission,
       items: newInvoiceData.items.map(it => ({
         description: it.description,
@@ -986,7 +988,7 @@ export default function BillingPage() {
       if (!isOnline) {
         await addToOutbox('INVOICE', payload);
         setIsNewInvoiceDrawerOpen(false);
-        setNewInvoiceData({ patientName: '', items: [{ description: '', amount: 0, quantity: 1 }], discountAmount: 0, paymentMethod: 'CASH', referrerId: '' });
+        setNewInvoiceData({ patientName: '', items: [{ description: '', amount: 0, quantity: 1 }], centreDiscount: 0, referrerDiscount: 0, paymentMethod: 'CASH', referrerId: '' });
         alert('OFFLINE MODE: Invoice cached locally. Will sync when online.');
         return;
       }
@@ -995,7 +997,7 @@ export default function BillingPage() {
       setIsNewInvoiceDrawerOpen(false);
       setSelectedPatient(null);
       setPatientSearchQuery('');
-      setNewInvoiceData({ patientName: '', items: [{ description: '', amount: 0, quantity: 1 }], discountAmount: 0, paymentMethod: 'CASH', referrerId: '' });
+      setNewInvoiceData({ patientName: '', items: [{ description: '', amount: 0, quantity: 1 }], centreDiscount: 0, referrerDiscount: 0, paymentMethod: 'CASH', referrerId: '' });
       fetchInvoices();
       fetchStats();
       alert('INVOICE GENERATED: Financial record successfully added to ledger.');
