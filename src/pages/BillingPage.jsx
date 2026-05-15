@@ -54,7 +54,8 @@ export default function BillingPage() {
     patientName: '',
     items: [{ description: '', amount: 0, quantity: 1 }],
     discountAmount: 0,
-    paymentMethod: 'CASH'
+    paymentMethod: 'CASH',
+    referrerId: ''
   });
   const [paymentMethod, setPaymentMethod] = useState('CASH');
   const [searchTerm, setSearchTerm] = useState('');
@@ -971,6 +972,7 @@ export default function BillingPage() {
     const payload = {
       patientId: selectedPatient.patientId,
       appointmentId: newInvoiceData.items.find(it => it.appointmentId)?.appointmentId || null,
+      referrerId: newInvoiceData.referrerId || null,
       discountAmount: Number(newInvoiceData.discountAmount || 0),
       commissionAmount: totalCommission,
       items: newInvoiceData.items.map(it => ({
@@ -984,7 +986,7 @@ export default function BillingPage() {
       if (!isOnline) {
         await addToOutbox('INVOICE', payload);
         setIsNewInvoiceDrawerOpen(false);
-        setNewInvoiceData({ patientName: '', items: [{ description: '', amount: 0, quantity: 1 }], discountAmount: 0, paymentMethod: 'CASH' });
+        setNewInvoiceData({ patientName: '', items: [{ description: '', amount: 0, quantity: 1 }], discountAmount: 0, paymentMethod: 'CASH', referrerId: '' });
         alert('OFFLINE MODE: Invoice cached locally. Will sync when online.');
         return;
       }
@@ -993,7 +995,7 @@ export default function BillingPage() {
       setIsNewInvoiceDrawerOpen(false);
       setSelectedPatient(null);
       setPatientSearchQuery('');
-      setNewInvoiceData({ patientName: '', items: [{ description: '', amount: 0, quantity: 1 }], discountAmount: 0, paymentMethod: 'CASH' });
+      setNewInvoiceData({ patientName: '', items: [{ description: '', amount: 0, quantity: 1 }], discountAmount: 0, paymentMethod: 'CASH', referrerId: '' });
       fetchInvoices();
       fetchStats();
       alert('INVOICE GENERATED: Financial record successfully added to ledger.');
@@ -1535,6 +1537,7 @@ export default function BillingPage() {
           newInvoiceData={newInvoiceData}
           setNewInvoiceData={setNewInvoiceData}
           serviceRegistry={serviceRegistry}
+          referrers={referrers}
         />
       )}
       {isExportDrawerOpen && (

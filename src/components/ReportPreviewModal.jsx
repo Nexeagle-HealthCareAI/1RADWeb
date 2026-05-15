@@ -339,9 +339,7 @@ const ReportPreviewModal = ({
 
               {/* Report Findings Matrix */}
               <div style={{ flex: 1 }}>
-                {mode !== 'Narrative Editor' && (
-                  <div style={{ fontSize: '10px', fontWeight: 950, color: protocol?.fontColor || '#0f52ba', marginBottom: '12px', letterSpacing: '1px', borderBottom: '1px solid rgba(15, 82, 186, 0.1)', paddingBottom: '4px' }}>CLINICAL FINDINGS:</div>
-                )}
+
                 <div dangerouslySetInnerHTML={{ __html: bodyContent }} />
                 
                 {/* Final Conclusion (Impression) */}

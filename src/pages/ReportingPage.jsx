@@ -24,11 +24,9 @@ const ReportingPage = () => {
   const [showInlineSuggestion, setShowInlineSuggestion] = useState(false);
   const [showSlashMenu, setShowSlashMenu] = useState(false);
   const [cursorPos, setCursorPos] = useState({ top: 0, left: 0 });
-  const [history, setHistory] = useState([editorText]);
-  const [historyIndex, setHistoryIndex] = useState(0);
   const [templates, setTemplates] = useState([]);
   const [keywordLibrary, setKeywordLibrary] = useState([]);
-  const textareaRef = useRef(null);
+  const editorRef = useRef(null);
   const fileInputRef = useRef(null);
   const [selectedImg, setSelectedImg] = useState(null);
   const [imgToolbarPos, setImgToolbarPos] = useState({ top: 0, left: 0 });
@@ -575,8 +573,7 @@ const ReportingPage = () => {
         }
       } catch (err) {
         console.error('Optimized ZIP load failed', err);
-        setProcessingStatus(`Error: ${err.message}`);
-        alert('Failed to process ZIP file: ' + err.message);
+        setError(err.message || String(err));
       } finally {
         setLoading(false);
         setProcessingStatus('');
@@ -945,60 +942,10 @@ const ReportingPage = () => {
 
 
 
-  const undo = () => {
-    if (history && historyIndex > 0) {
-      const prev = history[historyIndex - 1];
-      if (prev !== undefined) {
-        setHistoryIndex(historyIndex - 1);
-        setEditorText(prev);
-        if (textareaRef.current) textareaRef.current.innerHTML = prev;
-      }
-    }
-  };
 
-  const redo = () => {
-    if (history && historyIndex < history.length - 1) {
-      const next = history[historyIndex + 1];
-      if (next !== undefined) {
-        setHistoryIndex(historyIndex + 1);
-        setEditorText(next);
-        if (textareaRef.current) textareaRef.current.innerHTML = next;
-      }
-    }
-  };
 
-  const formatText = (style) => {
-    const el = textareaRef.current;
-    if (!el) return;
-    el.focus();
-    if (style === 'bold') document.execCommand('bold', false, null);
-    else if (style === 'italic') document.execCommand('italic', false, null);
-    else if (style === 'underline') document.execCommand('underline', false, null);
-    else if (style === 'h1') document.execCommand('formatBlock', false, '<h1>');
-    else if (style === 'list') document.execCommand('insertUnorderedList', false, null);
-    else if (style === 'list-num') document.execCommand('insertOrderedList', false, null);
-    else if (style.startsWith('fontName:')) {
-      const font = style.split(':')[1];
-      document.execCommand('fontName', false, font);
-    }
-    else if (style.startsWith('fontSize:')) {
-      const size = style.split(':')[1];
-      document.execCommand('fontSize', false, size);
-    }
-    else if (style.startsWith('color:')) {
-      const color = style.split(':')[1];
-      document.execCommand('foreColor', false, color);
-    }
-    else if (style.startsWith('hilite:')) {
-      const color = style.split(':')[1];
-      document.execCommand('hiliteColor', false, color);
-    }
-    setEditorText(el.innerHTML);
-  };
   const insertContent = (content) => {
-    const el = textareaRef.current;
-    if (!el) return;
-    el.focus();
+    if (!editorRef.current) return;
     
     let htmlContent = content;
     // Check if content is a Markdown-style table and convert to real HTML
@@ -1012,32 +959,24 @@ const ReportingPage = () => {
         }).join('') + 
         `</table><p>&nbsp;</p>`;
     } else {
-      htmlContent = content.replace(/\n/g, '<br>');
+      // Ensure we don't double wrap if it's already HTML, but convert newlines for simple text
+      if (!content.includes('<')) {
+        htmlContent = content.replace(/\n/g, '<br>');
+      }
     }
 
-    document.execCommand('insertHTML', false, htmlContent);
-    setEditorText(el.innerHTML);
+    editorRef.current.insertContent(htmlContent);
   };
 
-  // Initialize content once
-  useEffect(() => {
-    if (textareaRef.current) {
-      textareaRef.current.innerHTML = editorText;
-    }
-  }, []);
 
-  const handleEditorChange = (e) => {
-    const html = e.currentTarget.innerHTML || '';
+
+
+  const handleEditorChange = (html) => {
     setEditorText(html);
-    
-    // Save to history (debounce-ish)
-    if (history && Math.abs(html.length - (history[historyIndex]?.length || 0)) > 10) {
-      const newHistory = (history || []).slice(0, historyIndex + 1);
-      newHistory.push(html);
-      setHistory(newHistory);
-      setHistoryIndex(newHistory.length - 1);
-    }
   };
+
+
+
 
   const toggleFullscreen = () => {
     const container = document.querySelector('.panel-right');
@@ -1068,36 +1007,8 @@ const ReportingPage = () => {
 
   const handlePreviewPrint = () => setIsPreviewOpen(true);
 
-  const handleKeyDown = (e) => {
-    if (e.key === 'Enter') {
-      const el = textareaRef.current;
-      if (!el) return;
-      
-      const selection = window.getSelection();
-      if (!selection.rangeCount) return;
-      
-      const range = selection.getRangeAt(0);
-      const text = range.startContainer.textContent || '';
-      const cursor = range.startOffset;
-      const beforeCursor = text.substring(0, cursor);
-      const lastSegment = beforeCursor.split(/\s+/).pop();
+  // handleKeyDown removed - logic now handled inside NarrativeEditor via Tiptap extension
 
-      const match = keywordLibrary.find(k => (k.trigger || '').toLowerCase() === lastSegment.toLowerCase());
-      if (match) {
-        e.preventDefault();
-        
-        // Remove the keyword text
-        range.setStart(range.startContainer, cursor - lastSegment.length);
-        range.deleteContents();
-        
-        // Insert the paragraph
-        const html = (match.replacementText || '').replace(/\n/g, '<br>');
-        document.execCommand('insertHTML', false, html);
-        
-        setEditorText(el.innerHTML);
-      }
-    }
-  };
 
 
 
@@ -1578,9 +1489,9 @@ const ReportingPage = () => {
   useEffect(() => {
     window.onImgClick = (id) => {
       const img = document.getElementById(id);
-      if (!img) return;
+      if (!img || !editorRef.current?.container) return;
       const rect = img.getBoundingClientRect();
-      const parentRect = textareaRef.current.getBoundingClientRect();
+      const parentRect = editorRef.current.container.getBoundingClientRect();
       setSelectedImg(id);
       setImgToolbarPos({ 
         top: rect.top - parentRect.top - 40, 
@@ -1601,7 +1512,7 @@ const ReportingPage = () => {
     const container = document.getElementById(selectedImg + '_container');
     if (container) {
       container.style.width = size;
-      setEditorText(textareaRef.current.innerHTML);
+      setEditorText(editorRef.current?.getHTML() || '');
     }
   };
 
@@ -1611,7 +1522,7 @@ const ReportingPage = () => {
     if (container) {
       container.remove();
       setSelectedImg(null);
-      setEditorText(textareaRef.current.innerHTML);
+      setEditorText(editorRef.current?.getHTML() || '');
     }
   };
 
@@ -3597,6 +3508,7 @@ const ReportingPage = () => {
               <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '20px', padding: '20px', paddingTop: '10px' }}>
                 {/* NEW TIPTAP EDITOR */}
                 <NarrativeEditor
+                  ref={editorRef}
                   content={editorText}
                   onChange={(html) => setEditorText(html)}
                   placeholder="Start typing your radiology report..."

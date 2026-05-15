@@ -165,7 +165,11 @@ export const InvoiceDrawer = ({
                          <div style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
                             <span style={{ fontSize: '10px', fontWeight: 950, color: '#ef4444' }}>₹</span>
                             <input 
-                              type="number" value={centreDisc} onChange={e => setCentreDisc(parseInt(e.target.value) || 0)}
+                              type="number" value={centreDisc} onChange={e => {
+                                 const val = parseInt(e.target.value) || 0;
+                                 const maxAllowed = (selectedInvoice.grossAmount || 0) - referrerDisc - deduction;
+                                 setCentreDisc(Math.min(val, Math.max(0, maxAllowed)));
+                               }}
                               style={{ width: '60px', padding: '4px', border: '1px solid #f1f5f9', borderRadius: '6px', fontSize: '11px', fontWeight: 950, textAlign: 'right', color: '#ef4444' }}
                             />
                          </div>
@@ -279,7 +283,8 @@ export const NewInvoiceDrawer = ({
   pendingServices,
   newInvoiceData,
   setNewInvoiceData,
-  serviceRegistry
+  serviceRegistry,
+  referrers
 }) => {
   return (
     <div className="drawer-overlay" onClick={() => setIsNewInvoiceDrawerOpen(false)} style={{ backdropFilter: 'blur(8px)', background: 'rgba(10, 22, 40, 0.4)', zIndex: 10000 }}>
@@ -355,6 +360,20 @@ export const NewInvoiceDrawer = ({
                       <button type="button" onClick={() => { setSelectedPatient(null); setPendingServices([]); }} style={{ border: 'none', background: 'none', color: '#0f52ba', fontSize: '10px', fontWeight: 950, cursor: 'pointer' }}>CHANGE</button>
                    </div>
                  )}
+              </div>
+
+              <div style={{ marginBottom: '30px', opacity: selectedPatient ? 1 : 0.4, pointerEvents: selectedPatient ? 'auto' : 'none' }}>
+                 <label style={{ fontSize: '10px', fontWeight: 950, color: '#94a3b8', letterSpacing: '1px', display: 'block', marginBottom: '10px' }}>ASSIGN_REFERRER (OPTIONAL)</label>
+                 <select 
+                   value={newInvoiceData.referrerId || ''}
+                   onChange={e => setNewInvoiceData({ ...newInvoiceData, referrerId: e.target.value })}
+                   style={{ width: '100%', padding: '14px', borderRadius: '12px', border: '1px solid #eee', fontSize: '12px', fontWeight: 700, background: 'white' }}
+                 >
+                   <option value="">DIRECT / NO REFERRER</option>
+                   {referrers.map(r => (
+                     <option key={r.referrerId || r.id} value={r.referrerId || r.id}>{r.name?.toUpperCase()}</option>
+                   ))}
+                 </select>
               </div>
 
               <div style={{ marginBottom: '30px', opacity: selectedPatient ? 1 : 0.4, pointerEvents: selectedPatient ? 'auto' : 'none' }}>
@@ -532,7 +551,11 @@ export const NewInvoiceDrawer = ({
                            <input 
                                type="number" 
                                value={newInvoiceData.discountAmount} 
-                               onChange={e => setNewInvoiceData({ ...newInvoiceData, discountAmount: parseInt(e.target.value) || 0 })}
+                               onChange={e => {
+                                 const val = parseInt(e.target.value) || 0;
+                                 const gross = newInvoiceData.items.reduce((sum, it) => sum + (it.amount * it.quantity), 0);
+                                 setNewInvoiceData({ ...newInvoiceData, discountAmount: Math.min(val, gross) });
+                               }}
                                style={{ flex: 1, width: isMobile ? '100%' : '80px', padding: '6px 12px', borderRadius: '10px', border: '1px solid #cbd5e1', fontSize: '12px', fontWeight: 950, textAlign: 'right', color: '#ef4444', outline: 'none' }}
                            />
                         </div>

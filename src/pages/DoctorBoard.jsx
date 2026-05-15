@@ -202,7 +202,7 @@ export default function DoctorBoard() {
       setPreviewAppointment(c);
       
       // Attempt to fetch existing report for this appointment
-      const reportRes = await apiClient.get(`/Reporting/mission/${c.appointmentId || c.id}`).catch(() => null);
+      const reportRes = await apiClient.get(`/Reporting/report/${c.appointmentId || c.id}`).catch(() => null);
       const body = reportRes?.data;
       const r = (body?.success && body?.data) ? body.data : body;
 

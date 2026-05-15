@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useRef, useState, useEffect, useImperativeHandle } from 'react';
 import { useEditor, EditorContent } from '@tiptap/react';
 import { StarterKit } from '@tiptap/starter-kit';
 import { Underline } from '@tiptap/extension-underline';
@@ -116,7 +116,12 @@ const Link = Mark.create({
 
 const ZOOM_LEVELS = [50, 75, 90, 100, 110, 125, 150, 200];
 
-const NarrativeEditor = ({
+/**
+ * NarrativeEditor
+ * Clinical rich-text editor based on Tiptap.
+ * In React 19, ref is passed as a standard prop.
+ */
+const NarrativeEditor = React.forwardRef(function NarrativeEditor({
   content = '',
   onChange,
   placeholder = 'Start typing your radiology report...',
@@ -124,12 +129,12 @@ const NarrativeEditor = ({
   onSave,
   className = '',
   keywordLibrary = [],
-}) => {
-  const containerRef = React.useRef(null);
-  const [isFullscreen, setIsFullscreen] = React.useState(false);
-  const [zoom, setZoom] = React.useState(100);
+}, ref) {
+  const containerRef = useRef(null);
+  const [isFullscreen, setIsFullscreen] = useState(false);
+  const [zoom, setZoom] = useState(100);
 
-  React.useEffect(() => {
+  useEffect(() => {
     const onFsChange = () => setIsFullscreen(!!document.fullscreenElement);
     document.addEventListener('fullscreenchange', onFsChange);
     return () => document.removeEventListener('fullscreenchange', onFsChange);
@@ -170,7 +175,7 @@ const NarrativeEditor = ({
     ],
     content,
     editable,
-    onUpdate: ({ editor }) => onChange?.(editor.getHTML()),
+    onUpdate: ({ editor: e }) => onChange?.(e.getHTML()),
     editorProps: {
       attributes: {
         class: 'narrative-editor-content',
@@ -179,8 +184,25 @@ const NarrativeEditor = ({
     },
   });
 
+  // Expose methods to parent
+  useImperativeHandle(ref, () => ({
+    insertContent: (html) => {
+      if (editor) {
+        editor.chain().focus().insertContent(html).run();
+      }
+    },
+    setContent: (html) => {
+      if (editor) {
+        editor.commands.setContent(html);
+      }
+    },
+    getHTML: () => editor?.getHTML() || '',
+    container: containerRef.current,
+    editor
+  }));
+
   // Sync content prop on initial load
-  React.useEffect(() => {
+  useEffect(() => {
     if (editor && content !== undefined && content !== editor.getHTML()) {
       if (!editor.isFocused || editor.isEmpty) {
         editor.commands.setContent(content, false);
@@ -189,7 +211,7 @@ const NarrativeEditor = ({
   }, [content, editor]);
 
   // Ctrl+S handler
-  React.useEffect(() => {
+  useEffect(() => {
     const handler = e => {
       if ((e.ctrlKey || e.metaKey) && e.key === 's') {
         e.preventDefault();
@@ -201,7 +223,7 @@ const NarrativeEditor = ({
   }, [onSave]);
 
   // Keyword macro expansion
-  React.useEffect(() => {
+  useEffect(() => {
     if (!editor || !keywordLibrary?.length) return;
     editor.setOptions({
       editorProps: {
@@ -211,17 +233,34 @@ const NarrativeEditor = ({
           const { state } = view;
           const { $from, empty } = state.selection;
           if (!empty) return false;
+          
           const textBefore = $from.parent.textBetween(0, $from.parentOffset, undefined, '￼');
           if (!textBefore) return false;
-          const lastWord = textBefore.split(/\s+/).pop();
+          
+          const words = textBefore.split(/\s+/);
+          const lastWord = words[words.length - 1];
           if (!lastWord) return false;
-          const match = keywordLibrary.find(k => (k.trigger || '').toLowerCase() === lastWord.toLowerCase());
+          
+          const searchTrigger = lastWord.startsWith('/') ? lastWord.slice(1) : lastWord;
+          const match = keywordLibrary.find(k => 
+            (k.trigger || '').toLowerCase() === searchTrigger.toLowerCase()
+          );
+          
           if (!match) return false;
+          
           event.preventDefault();
           const from = $from.pos - lastWord.length;
           const to = $from.pos;
-          const html = (match.replacementText || '').replace(/\n/g, '<br>');
-          editor.chain().focus().deleteRange({ from, to }).insertContent(html).run();
+          
+          const rawHtml = (match.replacementText || '').replace(/\n/g, '<br>');
+          const finalHtml = `<strong>${rawHtml}</strong>${event.key === ' ' ? '&nbsp;' : ''}`;
+          
+          editor.chain()
+            .focus()
+            .deleteRange({ from, to })
+            .insertContent(finalHtml)
+            .run();
+            
           return true;
         },
       },
@@ -252,14 +291,12 @@ const NarrativeEditor = ({
         zoomLevels={ZOOM_LEVELS}
       />
 
-      {/* Word-like gray canvas */}
       <div className="word-canvas">
         <div className="word-page" style={{ zoom: zoom / 100 }}>
           <EditorContent editor={editor} />
         </div>
       </div>
 
-      {/* Status bar */}
       <div className="word-statusbar">
         <div className="statusbar-left">
           <span>{wordCount} words</span>
@@ -276,6 +313,6 @@ const NarrativeEditor = ({
       </div>
     </div>
   );
-};
+});
 
 export default NarrativeEditor;

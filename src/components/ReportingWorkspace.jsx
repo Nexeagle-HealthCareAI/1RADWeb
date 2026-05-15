@@ -515,7 +515,7 @@ const ReportingWorkspace = ({
                             }
                             setExpandedHistoryReport(prev => ({ ...prev, [pastAppt.appointmentId]: { loading: true } }));
                             try {
-                              const res = await apiClient.get(`/Reporting/mission/${pastAppt.appointmentId}`);
+                              const res = await apiClient.get(`/Reporting/report/${pastAppt.appointmentId}`);
                               setExpandedHistoryReport(prev => ({ ...prev, [pastAppt.appointmentId]: { loading: false, data: res.data } }));
                             } catch {
                               setExpandedHistoryReport(prev => ({ ...prev, [pastAppt.appointmentId]: { loading: false, error: 'Failed to load report.' } }));

@@ -256,86 +256,80 @@ export default function Sidebar({ isMobileOpen, onMobileClose }) {
         height: '60px', flexShrink: 0,
         borderBottom: `1px solid ${T.border}`,
         display: 'flex', alignItems: 'center',
-        justifyContent: showCollapsed ? 'center' : 'space-between',
-        padding: showCollapsed ? '0 10px' : '0 14px',
-        gap: '10px', overflow: 'hidden',
+        justifyContent: 'space-between',
+        padding: showCollapsed ? '0 7px' : '0 12px',
+        gap: '8px', overflow: 'hidden',
         transition: 'padding 0.22s cubic-bezier(0.4,0,0.2,1)',
       }}>
 
-        {/* Brand block */}
-        <div style={{
-          display: 'flex', alignItems: 'center', gap: '10px',
-          overflow: 'hidden', flexShrink: 1,
-          maxWidth: showCollapsed ? 0 : '200px',
-          opacity: showCollapsed ? 0 : 1,
-          transition: 'max-width 0.24s cubic-bezier(0.4,0,0.2,1), opacity 0.18s ease',
-          whiteSpace: 'nowrap',
-        }}>
-          {/* Logo */}
+        {/* Left: logo always visible + text slides out */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', minWidth: 0, overflow: 'hidden' }}>
+          {/* Logo — never hides */}
           <img
             src="/Logo.png"
             alt="NexEagle"
             style={{
-              width: '32px', height: '32px',
-              objectFit: 'contain', flexShrink: 0,
-              borderRadius: '6px',
+              width: '26px', height: '26px',
+              objectFit: 'contain', flexShrink: 0, borderRadius: '5px',
             }}
           />
-          {/* Wordmark */}
-          <div style={{ display: 'flex', flexDirection: 'column', lineHeight: 1.2 }}>
-            <span style={{
-              fontSize: '13.5px', fontWeight: 700,
-              color: T.textHigh, letterSpacing: '-0.2px', fontFamily: FF,
-            }}>NexEagle</span>
-            <span style={{
-              fontSize: '10px', fontWeight: 600,
-              color: T.accent, letterSpacing: '0.3px', fontFamily: FF,
-            }}>1Rad</span>
+          {/* Text — slides out on collapse */}
+          <div style={{
+            overflow: 'hidden',
+            maxWidth: showCollapsed ? 0 : '140px',
+            opacity: showCollapsed ? 0 : 1,
+            transition: 'max-width 0.22s cubic-bezier(0.4,0,0.2,1), opacity 0.16s ease',
+            whiteSpace: 'nowrap',
+          }}>
+            <div style={{ display: 'flex', flexDirection: 'column', lineHeight: 1.25 }}>
+              <span style={{ fontSize: '13px', fontWeight: 700, color: T.textHigh, letterSpacing: '-0.2px', fontFamily: FF }}>NexEagle</span>
+              <span style={{ fontSize: '10px', fontWeight: 600, color: T.accent, letterSpacing: '0.3px', fontFamily: FF }}>1Rad</span>
+            </div>
           </div>
         </div>
 
-        {/* Collapsed: show small logo only */}
-        {showCollapsed && (
-          <img
-            src="/Logo.png"
-            alt="NexEagle"
-            style={{ width: '28px', height: '28px', objectFit: 'contain', borderRadius: '5px', flexShrink: 0 }}
-          />
-        )}
-
-        {/* Toggle button — desktop */}
+        {/* Toggle chevron — desktop: always visible, fits within collapsed 60px */}
         {!isMobile && (
           <button
             onClick={() => setCollapsed(v => !v)}
             onMouseEnter={() => setToggleHov(true)}
             onMouseLeave={() => setToggleHov(false)}
-            title={collapsed ? 'Open sidebar' : 'Close sidebar'}
+            title={showCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
             style={{
               display: 'flex', alignItems: 'center', justifyContent: 'center',
-              width: '32px', height: '32px', flexShrink: 0,
-              border: 'none', borderRadius: '8px',
+              width: '22px', height: '22px', flexShrink: 0,
+              border: `1px solid ${toggleHov ? 'rgba(255,255,255,0.18)' : T.border}`,
+              borderRadius: '6px',
               background: toggleHov ? T.hover : 'transparent',
-              color: toggleHov ? T.textHigh : T.textMid,
-              cursor: 'pointer', transition: 'background 0.13s, color 0.13s',
+              color: toggleHov ? T.textHigh : T.textLow,
+              cursor: 'pointer',
+              transition: 'background 0.13s, border-color 0.13s, color 0.13s',
             }}
           >
-            {showCollapsed ? <HamburgerIcon /> : <CloseIcon />}
+            <svg width="13" height="13" viewBox="0 0 16 16" fill="currentColor">
+              {showCollapsed ? (
+                /* › expand — single chevron right */
+                <path d="M4.646 1.646a.5.5 0 0 1 .708 0l6 6a.5.5 0 0 1 0 .708l-6 6a.5.5 0 0 1-.708-.708L10.293 8 4.646 2.354a.5.5 0 0 1 0-.708z"/>
+              ) : (
+                /* ‹ collapse — single chevron left */
+                <path d="M11.354 1.646a.5.5 0 0 1 0 .708L5.707 8l5.647 5.646a.5.5 0 0 1-.708.708l-6-6a.5.5 0 0 1 0-.708l6-6a.5.5 0 0 1 .708 0z"/>
+              )}
+            </svg>
           </button>
         )}
 
-        {/* Close button — mobile */}
+        {/* Close — mobile */}
         {isMobile && (
           <button
             onClick={onMobileClose}
             style={{
               display: 'flex', alignItems: 'center', justifyContent: 'center',
-              width: '32px', height: '32px', flexShrink: 0,
-              border: 'none', borderRadius: '8px',
-              background: 'transparent', color: T.textMid,
-              cursor: 'pointer',
+              width: '26px', height: '26px', flexShrink: 0,
+              border: `1px solid ${T.border}`, borderRadius: '6px',
+              background: 'transparent', color: T.textLow, cursor: 'pointer',
             }}
           >
-            <CloseIcon />
+            <CloseIcon size={13} />
           </button>
         )}
       </div>

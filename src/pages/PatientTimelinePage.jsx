@@ -81,7 +81,7 @@ export default function PatientTimelinePage() {
     }
     setExpandedReport(prev => ({ ...prev, [id]: { loading: true, data: null, error: null } }));
     try {
-      const res = await apiClient.get(`/Reporting/mission/${id}`);
+      const res = await apiClient.get(`/Reporting/report/${id}`);
       const body = res.data;
       const r = (body?.success && body?.data) ? body.data : body;
       setExpandedReport(prev => ({ ...prev, [id]: { loading: false, data: r, error: null } }));
