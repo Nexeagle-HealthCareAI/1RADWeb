@@ -397,9 +397,10 @@ const RevenueHub = ({
              </tbody>
            </table>
            {renderPagination()}
-        </div>
+         </div>
       </div>
     </div>
+  </div>
   );
 };
 

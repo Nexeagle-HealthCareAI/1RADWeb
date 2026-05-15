@@ -1825,12 +1825,12 @@ const ReportingPage = () => {
           background: #0f172a; padding: 0; flex-direction: row; /* Changed to row for left toolbar */
           transition: width 0.4s cubic-bezier(0.4, 0, 0.2, 1);
         }
-        .panel-right { 
+        .panel-right {
           width: ${editorState === 'expanded' ? '100%' : editorWidth + '%'};
           min-width: ${editorState === 'collapsed' ? '60px' : '300px'};
-          background: #ffffff; padding: ${editorState === 'collapsed' ? '20px 10px' : '20px 30px'}; 
-          overflow-y: auto; display: flex; flex-direction: column; 
-          transition: width 0.4s cubic-bezier(0.4, 0, 0.2, 1), padding 0.4s;
+          background: #ffffff; padding: 0;
+          overflow: hidden; display: flex; flex-direction: column;
+          transition: width 0.4s cubic-bezier(0.4, 0, 0.2, 1);
           border-left: 1px solid #e2e8f0;
           position: relative;
         }
@@ -1859,12 +1859,12 @@ const ReportingPage = () => {
             z-index: 10 !important;
           }
           
-          .panel-right { 
-            width: 100% !important; 
-            height: ${activeWorkspaceMode === 'dicom' ? '0' : 'auto'}; 
-            display: ${activeWorkspaceMode === 'dicom' ? 'none' : 'flex'}; 
-            border-left: none; 
-            padding: 20px 15px; 
+          .panel-right {
+            width: 100% !important;
+            height: ${activeWorkspaceMode === 'dicom' ? '0' : 'auto'};
+            display: ${activeWorkspaceMode === 'dicom' ? 'none' : 'flex'};
+            border-left: none;
+            padding: 0;
           }
           .resizer-handle { display: none; }
           
@@ -1943,7 +1943,7 @@ const ReportingPage = () => {
           .main-layout { flex-direction: column; }
           .panel-center { width: 100% !important; height: 50vh; display: ${activeWorkspaceMode === 'editor' ? 'none' : 'flex'}; flex-direction: column; }
           .panel-center > div:first-child { display: none !important; } /* Hide left toolbar only on small mobile */
-          .panel-right { width: 100% !important; height: ${activeWorkspaceMode === 'dicom' ? '0' : 'auto'}; display: ${activeWorkspaceMode === 'dicom' ? 'none' : 'flex'}; border-left: none; padding: 20px 15px; }
+          .panel-right { width: 100% !important; height: ${activeWorkspaceMode === 'dicom' ? '0' : 'auto'}; display: ${activeWorkspaceMode === 'dicom' ? 'none' : 'flex'}; border-left: none; padding: 0; overflow: hidden; }
           .resizer-handle { display: none; }
         }
 

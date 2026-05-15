@@ -135,13 +135,10 @@ const ExpenseLedger = ({
           </div>
        </div>
 
-                         <button key={i} onClick={() => setCurrentPage(i + 1)} style={{ padding: '6px 12px', background: currentPage === i + 1 ? '#dc2626' : '#f1f5f9', color: currentPage === i + 1 ? 'white' : '#64748b', border: 'none', borderRadius: '8px', fontSize: '10px', fontWeight: 950, cursor: 'pointer', transition: 'all 0.2s' }}>{i + 1}</button>
-                     ))}
-                  </div>
-               </div>
-             )}
 
-             <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+       <div style={{ background: 'white', borderRadius: isMobile ? '16px' : '24px', border: '1px solid #e2e8f0', overflow: 'hidden', boxShadow: '0 4px 20px rgba(0,0,0,0.01)' }}>
+          <div style={{ overflowX: 'auto' }}>
+             <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: isMobile ? '1000px' : 'auto' }}>
 
                 <thead style={{ background: '#f8fafc' }}>
                   <tr style={{ borderBottom: '1px solid #f1f5f9' }}>
@@ -221,6 +218,12 @@ const ExpenseLedger = ({
                 </tbody>
              </table>
           </div>
+          <div style={{ padding: '20px', borderTop: '1px solid #f1f5f9', display: 'flex', justifyContent: 'center', gap: '5px' }}>
+            {Array.from({ length: Math.ceil(filteredOutflow.length / itemsPerPage) }).map((_, i) => (
+              <button key={i} onClick={() => setCurrentPage(i + 1)} style={{ padding: '6px 12px', background: currentPage === i + 1 ? '#dc2626' : '#f1f5f9', color: currentPage === i + 1 ? 'white' : '#64748b', border: 'none', borderRadius: '8px', fontSize: '10px', fontWeight: 950, cursor: 'pointer', transition: 'all 0.2s' }}>{i + 1}</button>
+            ))}
+          </div>
+       </div>
     </div>
   );
 };
