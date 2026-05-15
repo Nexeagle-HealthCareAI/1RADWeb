@@ -56,7 +56,7 @@ const ReportingRegistry = ({
   };
 
   const handleSaveTemplate = async () => {
-    if (!editTemplate.name) return alert('NAME REQUIRED');
+    if (!editTemplate.name) return alert('Please enter a template name.');
     setIsTemplateSaving(true);
     try {
       const payload = {
@@ -71,7 +71,7 @@ const ReportingRegistry = ({
       
       const res = await apiClient.post('/reporting/templates/upsert', payload);
       if (res.data.success) {
-        alert('TEMPLATE SAVED');
+        alert('Template saved.');
         setIsTemplateDrawerOpen(false);
         fetchRegistry();
         if (onRefresh) onRefresh();
@@ -84,7 +84,7 @@ const ReportingRegistry = ({
   };
 
   const handleDeleteTemplate = async (id) => {
-    if (!window.confirm('PERMANENT DELETE?')) return;
+    if (!window.confirm('Delete this template? This cannot be undone.')) return;
     try {
       await apiClient.delete(`/reporting/templates/${id}`);
       fetchRegistry();
@@ -204,7 +204,7 @@ const ReportingRegistry = ({
             width: isMobile ? '100%' : 'auto'
           }}
         >
-          {activeTab === 'Templates' ? '+ CREATE NEW TEMPLATE' : '+ REGISTER NEW MACRO'}
+          {activeTab === 'Templates' ? '+ New Template' : '+ New Keyword'}
         </button>
       </div>
 

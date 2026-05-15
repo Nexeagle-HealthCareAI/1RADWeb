@@ -87,15 +87,7 @@ const KeywordManager = ({
               style={{ flex: 1, padding: '7px 12px', borderRadius: '8px', border: '1px solid #e2e8f0', fontSize: '13px', outline: 'none', width: isMobile ? '100%' : '280px' }}
             />
           </div>
-          <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
-            <span style={{ fontSize: '12px', color: '#94a3b8' }}>{filteredKeywords.length} entries</span>
-            <button
-              onClick={() => { setSelectedKeywordId('new'); setNewMacro({ trigger: '', replacementText: '', category: '' }); }}
-              style={{ padding: '8px 16px', borderRadius: '8px', border: 'none', background: '#1d4ed8', color: 'white', fontSize: '13px', fontWeight: 600, cursor: 'pointer', whiteSpace: 'nowrap' }}
-            >
-              + New Keyword
-            </button>
-          </div>
+          <span style={{ fontSize: '12px', color: '#94a3b8' }}>{filteredKeywords.length} entries</span>
         </div>
 
         {/* Table */}
@@ -236,16 +228,15 @@ const KeywordManager = ({
             </div>
 
             {/* Full Word-like NarrativeEditor */}
-            <div style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
-              <NarrativeEditor
-                ref={editorRef}
-                content={newMacro.replacementText || ''}
-                onChange={(html) => setNewMacro(prev => ({ ...prev, replacementText: html }))}
-                onSave={handleSaveMacro}
-                placeholder="Type the expansion text for this keyword..."
-                editable={true}
-              />
-            </div>
+            <NarrativeEditor
+              ref={editorRef}
+              content={newMacro.replacementText || ''}
+              onChange={(html) => setNewMacro(prev => ({ ...prev, replacementText: html }))}
+              onSave={handleSaveMacro}
+              placeholder="Type the expansion text for this keyword..."
+              editable={true}
+              style={{ flex: 1, minHeight: 0, height: 'auto' }}
+            />
 
             {/* Footer */}
             <div style={{ padding: '16px 28px', background: 'white', borderTop: '1px solid #e2e8f0', display: 'flex', justifyContent: 'flex-end', gap: '12px', flexShrink: 0 }}>

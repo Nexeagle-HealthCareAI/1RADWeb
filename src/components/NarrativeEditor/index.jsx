@@ -128,6 +128,7 @@ const NarrativeEditor = React.forwardRef(function NarrativeEditor({
   editable = true,
   onSave,
   className = '',
+  style = {},
   keywordLibrary = [],
 }, ref) {
   const containerRef = useRef(null);
@@ -280,7 +281,7 @@ const NarrativeEditor = React.forwardRef(function NarrativeEditor({
   const charCount = editor.storage.characterCount?.characters() ?? 0;
 
   return (
-    <div ref={containerRef} className={`narrative-editor-container ${className}`}>
+    <div ref={containerRef} className={`narrative-editor-container ${className}`} style={style}>
       <EditorToolbar
         editor={editor}
         onSave={onSave}

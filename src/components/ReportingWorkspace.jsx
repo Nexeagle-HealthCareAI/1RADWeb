@@ -192,6 +192,7 @@ const ReportingWorkspace = ({
               placeholder="Begin your radiology report..."
               onSave={() => handleSaveReport(false)}
               keywordLibrary={keywordLibrary}
+              style={{ height: '100%' }}
             />
           </div>
         )}

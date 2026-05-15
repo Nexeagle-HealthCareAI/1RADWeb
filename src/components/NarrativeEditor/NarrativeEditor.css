@@ -2,7 +2,8 @@
 .narrative-editor-container {
   display: flex;
   flex-direction: column;
-  height: 100%;
+  /* Callers control height via the style prop: height:'100%' for panel usage, flex:1 for modal usage */
+  min-height: 0;
   overflow: hidden;
   background: #f0f0f0;
   font-family: "Segoe UI", system-ui, -apple-system, sans-serif;

@@ -3,7 +3,27 @@ import apiClient from '../api/apiClient';
 
 export const AuthContext = createContext(null);
 
+
+const handleUserRoles = (profile) => {
+  if (!profile) return [];
+  const hubs = profile.authorizedHospitals || profile.AuthorizedHospitals || [];
+  const roles = new Set();
+  hubs.forEach(h => {
+    // Collect roles from multiple possible keys used by backend DTOs
+    const rawRoles = h.roleNames || h.RoleNames || h.roles || h.Roles || 
+                    (h.roleName || h.RoleName ? (h.roleName || h.RoleName).split(',').map(r => r.trim()) : []);
+    
+    if (Array.isArray(rawRoles)) {
+      rawRoles.forEach(r => {
+        if (r) roles.add(String(r).trim().toLowerCase());
+      });
+    }
+  });
+  return Array.from(roles).filter(Boolean);
+};
+
 export function AuthProvider({ children }) {
+
   const [centers, setCenters] = useState(() => {
     const stored = localStorage.getItem('1rad_centers');
     return stored ? JSON.parse(stored) : [];
