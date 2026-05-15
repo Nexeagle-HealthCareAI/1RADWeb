@@ -174,16 +174,16 @@ export default function AppointmentBoard() {
         };
       });
 
-      // Sort by absolute dateTime to ensure strict chronological order (time-based)
-      const sortedData = mappedData.sort((a, b) => {
+      // Sort ASCENDING for correct sequential Token Number calculation
+      const chronologicalData = mappedData.sort((a, b) => {
         const timeA = new Date(a.dateTime || 0).getTime();
         const timeB = new Date(b.dateTime || 0).getTime();
-        return timeB - timeA;
+        return timeA - timeB;
       });
       
       const dailyCounters = {};
-      const processedData = sortedData.map(item => {
-        const dateKey = new Date(item.dateTime || TODAY).toISOString().split('T')[0];
+      const itemsWithTokens = chronologicalData.map(item => {
+        const dateKey = item.dateTime ? item.dateTime.split('T')[0] : (item.date || TODAY);
         dailyCounters[dateKey] = (dailyCounters[dateKey] || 0) + 1;
         
         return {
@@ -191,9 +191,16 @@ export default function AppointmentBoard() {
           tokenNo: dailyCounters[dateKey]
         };
       });
+      
+      // Sort DESCENDING for "Latest First" display on the board
+      const finalSortedData = itemsWithTokens.sort((a, b) => {
+        const timeA = new Date(a.dateTime || 0).getTime();
+        const timeB = new Date(b.dateTime || 0).getTime();
+        return timeB - timeA;
+      });
 
-      setAppointments(processedData);
-      await nativeStorage.set(cacheKey, processedData);
+      setAppointments(finalSortedData);
+      await nativeStorage.set(cacheKey, finalSortedData);
     } catch (error) {
       console.error('Failed to fetch appointments:', error);
       const cached = await nativeStorage.get(cacheKey);
@@ -1030,95 +1037,136 @@ export default function AppointmentBoard() {
     const next = getNextAction(app.status);
     const isExpanded = expandedRow === app.appointmentId;
 
+    // Formatting date
+    const appDate = app.dateTime ? new Date(app.dateTime).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) : '—';
+    const appTime = app.dateTime ? new Date(app.dateTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '';
+
     return (
-      <div key={app.appointmentId} className="appointments-table-wrapper" style={{ marginBottom: '12px' }}>
-        <table className="appointments-table">
-          <tbody>
-            <tr onClick={() => setExpandedRow(isExpanded ? null : app.appointmentId)} style={{ cursor: 'pointer' }}>
-              <td style={{ width: '80px' }}>
-                <div style={{ fontSize: '11px', fontWeight: 900, color: 'var(--primary-accent)' }}>{app.ptid || '—'}</div>
-                <div style={{ fontSize: '10px', color: 'var(--text-secondary)' }}>#{app.tokenNo || '—'}</div>
-              </td>
-              <td style={{ width: '250px' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                  <div style={{ 
-                    width: '36px', height: '36px', borderRadius: '10px', 
-                    background: 'var(--bg-main)', color: 'var(--primary-accent)', 
-                    display: 'flex', alignItems: 'center', justifyContent: 'center', 
-                    fontWeight: 950, fontSize: '14px', border: '1px solid var(--border-light)' 
-                  }}>
-                    {app.patientName.charAt(0).toUpperCase()}
-                  </div>
-                  <div>
-                    <div style={{ fontWeight: 800, color: 'var(--text-main)' }}>{app.patientName.toUpperCase()}</div>
-                    <div style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>
-                      {app.mobile} • {app.patientAge}Y {app.patientGender?.toUpperCase()}
-                    </div>
-                  </div>
-                </div>
-              </td>
-              <td style={{ width: '150px' }}>
-                <div style={{ fontSize: '12px', fontWeight: 700, color: 'var(--text-main)' }}>{app.modality}</div>
-                <div style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>{app.service}</div>
-              </td>
-              <td style={{ width: '140px' }}>
-                <div className="status-badge" style={{ backgroundColor: meta.bg, color: meta.color }}>
-                  {meta.icon} {meta.label}
-                </div>
-              </td>
-              <td>
-                <div style={{ fontSize: '12px', fontWeight: 700, color: 'var(--text-main)' }}>{app.doctor}</div>
-                <div style={{ fontSize: '10px', color: 'var(--text-secondary)', textTransform: 'uppercase' }}>Specialist</div>
-              </td>
-              <td style={{ textAlign: 'right', width: '200px' }} onClick={e => e.stopPropagation()}>
-                <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
-                  {next && (
-                    <button
-                      onClick={() => handleAction(app.id, next.action)}
-                      style={{ 
-                        padding: '6px 12px', borderRadius: '8px', 
-                        background: next.color, color: 'white', 
-                        border: 'none', cursor: 'pointer', 
-                        fontSize: '10px', fontWeight: 900, 
-                        boxShadow: `0 4px 10px ${next.color}33`
-                      }}
-                    >
-                      {next.label}
-                    </button>
-                  )}
-                  <button
-                    onClick={() => setTokenPrintData(app)}
-                    style={{ padding: '6px', borderRadius: '8px', background: '#f1f5f9', border: '1px solid #e2e8f0', cursor: 'pointer' }}
-                    title="Print Token"
-                  >
-                    🖨️
-                  </button>
-                  <button
-                    onClick={() => handlePreviewPrint(app)}
-                    style={{ padding: '6px', borderRadius: '8px', background: '#fffbeb', border: '1px solid #fde68a', cursor: 'pointer' }}
-                    title="Report"
-                  >
-                    📄
-                  </button>
-                  <button
-                    onClick={() => { setEditingAppointment(app); setIsEditingOpen(true); }}
-                    style={{ padding: '6px', borderRadius: '8px', background: '#f8fafc', border: '1px solid #e2e8f0', cursor: 'pointer' }}
-                    title="Edit"
-                  >
-                    ✏️
-                  </button>
-                  <button
-                    onClick={() => { if (window.confirm(`Cancel appointment for ${app.patientName}?`)) handleAction(app.id, 'CANCEL'); }}
-                    style={{ padding: '6px', borderRadius: '8px', background: '#fef2f2', border: '1px solid #fecaca', cursor: 'pointer', color: '#ef4444' }}
-                    title="Cancel"
-                  >
-                    ✕
-                  </button>
-                </div>
-              </td>
-            </tr>
-          </tbody>
-        </table>
+      <div key={app.appointmentId} className="appointments-table-wrapper" style={{ 
+        marginBottom: '10px', 
+        border: isExpanded ? '2px solid #0f52ba' : '1px solid #e2e8f0',
+        borderRadius: '16px',
+        overflow: 'hidden',
+        background: 'white',
+        boxShadow: isExpanded ? '0 15px 35px rgba(15, 82, 186, 0.15)' : '0 2px 8px rgba(0,0,0,0.02)',
+        minWidth: '950px' // Ensure columns don't collapse too much
+      }}>
+        <div 
+          onClick={() => setExpandedRow(isExpanded ? null : app.appointmentId)}
+          style={{ 
+            display: 'grid',
+            gridTemplateColumns: '85px 70px 1.8fr 1.2fr 110px 120px 1fr 180px',
+            gap: '15px',
+            padding: '16px 20px',
+            alignItems: 'center',
+            cursor: 'pointer',
+            background: isExpanded ? '#f8faff' : 'transparent'
+          }}
+        >
+          {/* Column 1: ID */}
+          <div style={{ display: 'flex', flexDirection: 'column' }}>
+            <span style={{ fontSize: '8px', fontWeight: 900, color: '#94a3b8', textTransform: 'uppercase' }}>Mission ID</span>
+            <span style={{ fontSize: '11px', fontWeight: 950, color: '#1e293b' }}>
+              {app.ptid || app.patientIdentifier || app.id?.substring(0,8) || '—'}
+            </span>
+          </div>
+
+          {/* Column 2: Token */}
+          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+            <span style={{ fontSize: '8px', fontWeight: 900, color: '#94a3b8', textTransform: 'uppercase', marginBottom: '4px' }}>Token</span>
+            <div style={{ 
+              width: '36px', height: '36px', borderRadius: '10px', 
+              background: '#0f52ba', color: 'white', 
+              display: 'flex', alignItems: 'center', justifyContent: 'center', 
+              fontWeight: 950, fontSize: '16px', boxShadow: '0 4px 10px rgba(15, 82, 186, 0.2)'
+            }}>
+              {app.tokenNo || '—'}
+            </div>
+          </div>
+
+          {/* Column 3: Patient & Service */}
+          <div>
+            <div style={{ fontWeight: 900, color: '#0f172a', fontSize: '14px', marginBottom: '2px' }}>{app.patientName.toUpperCase()}</div>
+            <div style={{ fontSize: '10px', color: '#64748b', fontWeight: 700 }}>
+              <span style={{ color: '#0f52ba' }}>{app.modality}</span> • {app.service}
+            </div>
+          </div>
+
+          {/* Column 4: Referred By */}
+          <div style={{ background: '#f8fafc', padding: '8px 12px', borderRadius: '10px', border: '1px solid #f1f5f9' }}>
+            <span style={{ fontSize: '8px', color: '#94a3b8', fontWeight: 800, textTransform: 'uppercase', display: 'block', marginBottom: '2px' }}>Referring Lead</span>
+            <div style={{ fontSize: '11px', fontWeight: 800, color: '#1e293b' }}>{app.referredBy || 'DIRECT/SELF'}</div>
+          </div>
+
+          {/* Column 5: Date */}
+          <div>
+            <div style={{ fontSize: '11px', fontWeight: 900, color: '#1e293b' }}>{appDate}</div>
+            <div style={{ fontSize: '10px', color: '#64748b', fontWeight: 700 }}>{appTime}</div>
+          </div>
+
+          {/* Column 6: Status */}
+          <div className="status-badge" style={{ 
+            backgroundColor: meta.bg, 
+            color: meta.color, 
+            padding: '6px 12px', 
+            width: 'fit-content',
+            border: `1px solid ${meta.color}20`
+          }}>
+            {meta.icon} {meta.label}
+          </div>
+
+          {/* Column 7: Specialist */}
+          <div>
+            <div style={{ fontSize: '11px', fontWeight: 800, color: '#1e293b' }}>{app.doctor || 'UNASSIGNED'}</div>
+            <div style={{ fontSize: '9px', color: '#94a3b8', textTransform: 'uppercase', fontWeight: 800 }}>Clinical Lead</div>
+          </div>
+
+          {/* Column 8: Actions */}
+          <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end' }} onClick={e => e.stopPropagation()}>
+            {next && (
+              <button
+                onClick={() => handleAction(app.appointmentId || app.id, next.action)}
+                style={{ 
+                  padding: '8px 14px', borderRadius: '8px', 
+                  background: next.color, color: 'white', 
+                  border: 'none', cursor: 'pointer', 
+                  fontSize: '10px', fontWeight: 950, 
+                  boxShadow: `0 6px 15px ${next.color}44`
+                }}
+              >
+                {next.label}
+              </button>
+            )}
+            <button
+              onClick={() => setTokenPrintData(app)}
+              style={{ padding: '8px', borderRadius: '8px', background: 'white', border: '1px solid #e2e8f0', cursor: 'pointer', fontSize: '14px' }}
+              title="Print Token"
+            >
+              🖨️
+            </button>
+            <button
+              onClick={() => handlePreviewPrint(app)}
+              style={{ padding: '8px', borderRadius: '8px', background: 'white', border: '1px solid #e2e8f0', cursor: 'pointer', fontSize: '14px' }}
+              title="Report"
+            >
+              📄
+            </button>
+            <button
+              onClick={() => { setEditingAppointment(app); setIsEditingOpen(true); }}
+              style={{ padding: '8px', borderRadius: '8px', background: 'white', border: '1px solid #e2e8f0', cursor: 'pointer', fontSize: '14px' }}
+              title="Edit"
+            >
+              ✏️
+            </button>
+            <button
+              onClick={() => { if (window.confirm(`Cancel appointment for ${app.patientName}?`)) handleAction(app.appointmentId || app.id, 'CANCEL'); }}
+              style={{ padding: '8px', borderRadius: '8px', background: '#fff1f2', border: '1px solid #fecdd3', cursor: 'pointer', color: '#e11d48', fontSize: '14px' }}
+              title="Cancel"
+            >
+              ✕
+            </button>
+          </div>
+        </div>
 
         {isExpanded && (
           <div style={{
@@ -2376,24 +2424,25 @@ export default function AppointmentBoard() {
         {!isMobile && (
           <div style={{
             display: 'grid',
-            gridTemplateColumns: '70px 60px 1.5fr 1fr 100px 110px 1fr 160px',
-            padding: '0 18px 10px',
+            gridTemplateColumns: '85px 70px 1.8fr 1.2fr 110px 120px 1fr 180px',
+            gap: '15px',
+            padding: '0 20px 10px',
             fontSize: '9px', fontWeight: 800, color: '#aaa',
             textTransform: 'uppercase', letterSpacing: '1px',
           }}>
-            <span>ID</span>
-            <span>Token</span>
-            <span>Patient Details</span>
-            <span>Referred By</span>
+            <span>Mission ID</span>
+            <span style={{ textAlign: 'center' }}>Token</span>
+            <span>Patient & Service</span>
+            <span>Referring Lead</span>
             <span>Date</span>
             <span>Status</span>
-            <span>Specialist</span>
-            <span style={{ textAlign: 'right', paddingRight: '20px' }}>Administrative Actions</span>
+            <span>Clinical Lead</span>
+            <span style={{ textAlign: 'right', paddingRight: '20px' }}>Mission Control</span>
           </div>
         )}
 
         {/* Appointments List - Responsive Display */}
-        <div className="appointments-list-container">
+        <div className="appointments-list-container" style={{ overflowX: 'auto', paddingBottom: '20px' }}>
           {loading ? (
             <div className="empty-state">
               <div className="empty-state-title">LOADING RECORDS...</div>

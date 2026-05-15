@@ -62,14 +62,20 @@ export default function AppointmentCard({
 
       {/* Info Grid */}
       <div className="card-section">
-        <div className="info-grid">
+        <div className="info-grid" style={{ gridTemplateColumns: 'repeat(3, 1fr)' }}>
           <div className="info-item">
             <span className="label">Modality</span>
             <div className="value">{appointment.modality || '—'}</div>
           </div>
           <div className="info-item">
-            <span className="label">Source</span>
+            <span className="label">Referrer</span>
             <div className="value">{appointment.referredBy || 'Direct'}</div>
+          </div>
+          <div className="info-item">
+            <span className="label">Mission Date</span>
+            <div className="value" style={{ color: '#0f52ba', fontWeight: 900 }}>
+              {appointment.dateTime ? new Date(appointment.dateTime).toLocaleDateString('en-GB', { day: '2-digit', month: 'short' }) : '—'}
+            </div>
           </div>
         </div>
       </div>
