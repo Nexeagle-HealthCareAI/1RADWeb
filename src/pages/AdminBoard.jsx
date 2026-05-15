@@ -391,6 +391,7 @@ export default function AdminBoard() {
         email: p.email,
         mobile: p.mobile,
         roles: (p.roles || []).map(r => String(r).toLowerCase()),
+        password: p.password,
         specialization: p.specialization,
         degree: p.degree,
         licenseNo: p.licenseNo,
@@ -1178,6 +1179,7 @@ export default function AdminBoard() {
       } else {
         await apiClient.post('/personnel', payload);
       }
+
       setIsUserDrawerOpen(false);
       fetchPersonnel();
     } catch (err) {
