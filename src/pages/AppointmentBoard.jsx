@@ -1728,11 +1728,17 @@ export default function AppointmentBoard() {
                 <div style={{ marginTop: '16px' }}>
                   <label style={{ fontSize: '9px', fontWeight: 800, letterSpacing: '0.5px', color: '#888', display: 'block', marginBottom: '10px' }}>MISSION DATE <span style={{ color: '#e74c3c' }}>*</span></label>
                   <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', marginBottom: '12px' }}>
-                    {[0, 1, 2, 3, 4, 5, 6].map(offset => {
+                    {[-2, -1, 0, 1, 2, 3].map(offset => {
                       const d = new Date();
                       d.setDate(d.getDate() + offset);
                       const dateStr = d.toLocaleDateString('en-CA');
-                      const label = offset === 0 ? 'TODAY' : offset === 1 ? 'TOMORROW' : d.toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric' }).toUpperCase();
+                      let label = '';
+                      if (offset === 0) label = 'TODAY';
+                      else if (offset === 1) label = 'TOMORROW';
+                      else if (offset === -1) label = 'YESTERDAY';
+                      else if (offset === -2) label = 'DAY BEFORE';
+                      else label = d.toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric' }).toUpperCase();
+                      
                       const isActive = newBooking.date === dateStr;
                       return (
                         <button
@@ -1777,14 +1783,13 @@ export default function AppointmentBoard() {
                         type="date" 
                         style={{ position: 'absolute', opacity: 0, pointerEvents: 'none', top: 0, left: 0, width: 1, height: 1 }}
                         value={newBooking.date}
-                        min={getTodayString()}
                         onChange={e => setNewBooking({...newBooking, date: e.target.value})}
                       />
                     </div>
                   </div>
                   
                   {/* Show specific custom date if selected and not in quick chips */}
-                  {![0, 1, 2, 3, 4, 5, 6].some(offset => {
+                  {![-2, -1, 0, 1, 2, 3].some(offset => {
                     const d = new Date();
                     d.setDate(d.getDate() + offset);
                     return d.toLocaleDateString('en-CA') === newBooking.date;

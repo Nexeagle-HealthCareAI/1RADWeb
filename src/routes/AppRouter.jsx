@@ -71,7 +71,7 @@ export default function AppRouter() {
       <Route
         path="/dicom-viewer"
         element={
-          <ProtectedRoute allowedRoles={['admindoctor', 'admin', 'doctor', 'technician']}>
+          <ProtectedRoute allowedRoles={['admindoctor', 'doctor', 'technician']}>
             <DicomViewerPage />
           </ProtectedRoute>
         }
@@ -104,7 +104,7 @@ export default function AppRouter() {
         <Route
           path="/technician"
           element={
-            <ProtectedRoute allowedRoles={['admindoctor', 'admin', 'technician']}>
+            <ProtectedRoute allowedRoles={['admindoctor', 'technician']}>
               <TechnicianPage />
             </ProtectedRoute>
           }
@@ -128,7 +128,7 @@ export default function AppRouter() {
         <Route
           path="/viewer"
           element={
-            <ProtectedRoute allowedRoles={['admindoctor', 'doctor', 'technician', 'admin']}>
+            <ProtectedRoute allowedRoles={['admindoctor', 'doctor', 'technician']}>
               <ViewerPage />
             </ProtectedRoute>
           }
@@ -168,7 +168,7 @@ export default function AppRouter() {
         <Route
           path="/patient-timeline/:appointmentId"
           element={
-            <ProtectedRoute allowedRoles={['admindoctor', 'admin', 'doctor']}>
+            <ProtectedRoute allowedRoles={['admindoctor', 'doctor']}>
               <PatientTimelinePage />
             </ProtectedRoute>
           }

@@ -53,7 +53,7 @@ export const NAV_ITEMS = [
   {
     label: 'Imaging',
     route: '/technician',
-    allowedRoles: ['admindoctor', 'admin', 'technician'],
+    allowedRoles: ['admindoctor', 'technician'],
   },
   {
     label: 'Reporting',
