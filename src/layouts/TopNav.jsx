@@ -122,7 +122,7 @@ export default function TopNav({ currentTime }) {
         </div>
       )}
 
-      <header className="top-nav-header" style={{ 
+      <header className="top-nav top-nav-header" style={{ 
         display: 'flex', justifyContent: 'space-between', alignItems: 'center', 
         height: '64px', padding: '0 40px', 
         background: 'rgba(255, 255, 255, 0.8)', 
