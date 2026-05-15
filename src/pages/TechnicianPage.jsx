@@ -125,7 +125,7 @@ export default function TechnicianPage() {
       fetchWorklist();
     } catch (err) {
       console.error('[TECH] Status transition failed', err);
-      alert('SYSTEM ERROR: Failed to update clinical status.');
+      alert('Error: Failed to update status.');
     }
   };
 
@@ -405,7 +405,7 @@ export default function TechnicianPage() {
       setProcessingStatus(`Error: ${err.message}`);
       
       // Provide user-friendly error messages based on error type
-      let userMessage = 'ACQUISITION SIGNAL FAILURE: ';
+      let userMessage = 'Failed to load study: ';
       
       if (err.message.includes('CORS_ERROR')) {
         userMessage += 'Server configuration issue detected. The DICOM storage server needs to allow cross-origin requests. Please contact your system administrator to configure CORS settings for the Azure Blob Storage.';
@@ -630,9 +630,9 @@ export default function TechnicianPage() {
       <div className="board-header" style={{ padding: '12px 30px', background: 'white', borderBottom: '1px solid #f1f5f9', display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
         <div>
            <div style={{ display: 'flex', alignItems: 'center', gap: '15px', marginBottom: '5px' }}>
-              <h1 style={{ fontSize: '24px', fontWeight: 950, color: '#1a1a2e', letterSpacing: '-1px', margin: 0 }}>SCANNING BAY COMMAND</h1>
+              <h1 style={{ fontSize: '22px', fontWeight: 700, color: '#0a1628', letterSpacing: '-0.5px', margin: 0 }}>Scanning Worklist</h1>
            </div>
-           <p style={{ fontSize: '10px', color: '#64748b', fontWeight: 900, marginLeft: '45px', textTransform: 'uppercase', letterSpacing: '2px' }}>Clinical Acquisition & Worklist Dispatch</p>
+           <p style={{ fontSize: '12px', color: '#6b7280', marginLeft: '2px' }}>Manage today's studies and upload DICOM files</p>
         </div>
         
         <div className="admin-tabs" style={{ 
@@ -644,20 +644,18 @@ export default function TechnicianPage() {
           display: 'flex',
           gap: '10px'
         }}>
-            <button onClick={() => setHubTab('ACTIVE')} style={{ 
-              padding: '12px 25px', borderRadius: '12px', border: 'none', fontSize: '10px', 
-              fontWeight: 950, background: hubTab === 'ACTIVE' ? 'white' : 'transparent', 
-              color: hubTab === 'ACTIVE' ? '#0f52ba' : '#64748b', cursor: 'pointer', 
-              transition: '0.2s', letterSpacing: '1px', textTransform: 'uppercase',
-              boxShadow: hubTab === 'ACTIVE' ? '0 8px 20px rgba(15, 82, 186, 0.15)' : 'none'
+            <button onClick={() => setHubTab('ACTIVE')} style={{
+              padding: '10px 22px', borderRadius: '8px', border: 'none', fontSize: '13px',
+              fontWeight: 600, background: hubTab === 'ACTIVE' ? 'white' : 'transparent',
+              color: hubTab === 'ACTIVE' ? '#1d4ed8' : '#6b7280', cursor: 'pointer',
+              transition: '0.2s', boxShadow: hubTab === 'ACTIVE' ? '0 2px 8px rgba(0,0,0,0.08)' : 'none'
             }}>Active Queue</button>
-            <button onClick={() => setHubTab('ARCHIVE')} style={{ 
-              padding: '12px 25px', borderRadius: '12px', border: 'none', fontSize: '10px', 
-              fontWeight: 950, background: hubTab === 'ARCHIVE' ? 'white' : 'transparent', 
-              color: hubTab === 'ARCHIVE' ? '#0f52ba' : '#64748b', cursor: 'pointer', 
-              transition: '0.2s', letterSpacing: '1px', textTransform: 'uppercase',
-              boxShadow: hubTab === 'ARCHIVE' ? '0 8px 20px rgba(15, 82, 186, 0.15)' : 'none'
-            }}>Clinical Archive</button>
+            <button onClick={() => setHubTab('ARCHIVE')} style={{
+              padding: '10px 22px', borderRadius: '8px', border: 'none', fontSize: '13px',
+              fontWeight: 600, background: hubTab === 'ARCHIVE' ? 'white' : 'transparent',
+              color: hubTab === 'ARCHIVE' ? '#1d4ed8' : '#6b7280', cursor: 'pointer',
+              transition: '0.2s', boxShadow: hubTab === 'ARCHIVE' ? '0 2px 8px rgba(0,0,0,0.08)' : 'none'
+            }}>Archive</button>
         </div>
       </div>
 
@@ -665,68 +663,68 @@ export default function TechnicianPage() {
         {hubTab === 'ACTIVE' ? (
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '10px', marginBottom: '15px' }}>
             <div className="summary-card" style={{ background: 'white', border: '1px solid #e2e8f0', padding: '8px 12px', borderRadius: '10px', boxShadow: '0 2px 8px rgba(0,0,0,0.02)' }}>
-              <span style={{ display: 'block', fontSize: '9px', fontWeight: 950, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '2px', marginBottom: '4px' }}>Daily Flux</span>
+              <span style={{ display: 'block', fontSize: '11px', fontWeight: 500, color: '#6b7280', marginBottom: '4px' }}>Today's Studies</span>
               <div style={{ display: 'flex', alignItems: 'baseline', gap: '6px' }}>
-                 <span style={{ fontSize: '24px', fontWeight: 950, color: '#1e293b', letterSpacing: '-1px' }}>{stats.total}</span>
-                 <span style={{ fontSize: '11px', fontWeight: 950, color: '#0f52ba', opacity: 0.8 }}>UNITS</span>
+                 <span style={{ fontSize: '24px', fontWeight: 700, color: '#1e293b' }}>{stats.total}</span>
+                 <span style={{ fontSize: '11px', fontWeight: 500, color: '#1d4ed8' }}>Studies</span>
               </div>
             </div>
 
             <div className="summary-card" style={{ background: 'white', border: '1px solid #e2e8f0', padding: '8px 12px', borderRadius: '10px', boxShadow: '0 2px 8px rgba(0,0,0,0.02)' }}>
-              <span style={{ display: 'block', fontSize: '9px', fontWeight: 950, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '2px', marginBottom: '4px' }}>Acquisition Active</span>
+              <span style={{ display: 'block', fontSize: '11px', fontWeight: 500, color: '#6b7280', marginBottom: '4px' }}>In Progress</span>
               <div style={{ display: 'flex', alignItems: 'baseline', gap: '6px' }}>
-                 <span style={{ fontSize: '24px', fontWeight: 950, color: '#f59e0b', letterSpacing: '-1px' }}>{stats.inProgress}</span>
-                 <span style={{ fontSize: '11px', fontWeight: 950, color: '#f59e0b', opacity: 0.8 }}>SCANNING</span>
+                 <span style={{ fontSize: '24px', fontWeight: 700, color: '#f59e0b' }}>{stats.inProgress}</span>
+                 <span style={{ fontSize: '11px', fontWeight: 500, color: '#f59e0b' }}>Scanning</span>
               </div>
             </div>
 
             <div className="summary-card" style={{ background: 'white', border: '1px solid #e2e8f0', padding: '8px 12px', borderRadius: '10px', boxShadow: '0 2px 8px rgba(0,0,0,0.02)' }}>
-              <span style={{ display: 'block', fontSize: '9px', fontWeight: 950, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '2px', marginBottom: '4px' }}>Arrival Confirmed</span>
+              <span style={{ display: 'block', fontSize: '11px', fontWeight: 500, color: '#6b7280', marginBottom: '4px' }}>Arrived</span>
               <div style={{ display: 'flex', alignItems: 'baseline', gap: '6px' }}>
-                 <span style={{ fontSize: '24px', fontWeight: 950, color: '#2ecc71', letterSpacing: '-1px' }}>{stats.pending}</span>
-                 <span style={{ fontSize: '11px', fontWeight: 950, color: '#2ecc71', opacity: 0.8 }}>READY</span>
+                 <span style={{ fontSize: '24px', fontWeight: 700, color: '#2ecc71' }}>{stats.pending}</span>
+                 <span style={{ fontSize: '11px', fontWeight: 500, color: '#2ecc71' }}>Ready</span>
               </div>
             </div>
 
             <div className="summary-card" style={{ background: 'white', border: '1px solid #e2e8f0', padding: '8px 12px', borderRadius: '10px', boxShadow: '0 2px 8px rgba(0,0,0,0.02)' }}>
-              <span style={{ display: 'block', fontSize: '9px', fontWeight: 950, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '2px', marginBottom: '4px' }}>Mission Expected</span>
+              <span style={{ display: 'block', fontSize: '11px', fontWeight: 500, color: '#6b7280', marginBottom: '4px' }}>Scheduled</span>
               <div style={{ display: 'flex', alignItems: 'baseline', gap: '6px' }}>
-                 <span style={{ fontSize: '24px', fontWeight: 950, color: '#0f52ba', letterSpacing: '-1px' }}>{stats.expected}</span>
-                 <span style={{ fontSize: '11px', fontWeight: 950, color: '#0f52ba', opacity: 0.8 }}>PENDING</span>
+                 <span style={{ fontSize: '24px', fontWeight: 700, color: '#1d4ed8' }}>{stats.expected}</span>
+                 <span style={{ fontSize: '11px', fontWeight: 500, color: '#1d4ed8' }}>Pending</span>
               </div>
             </div>
           </div>
         ) : (
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '10px', marginBottom: '15px' }}>
             <div className="summary-card" style={{ background: 'white', border: '1px solid #e2e8f0', padding: '8px 12px', borderRadius: '10px', boxShadow: '0 2px 8px rgba(0,0,0,0.02)' }}>
-              <span style={{ display: 'block', fontSize: '9px', fontWeight: 950, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '2px', marginBottom: '4px' }}>Archive Magnitude</span>
+              <span style={{ display: 'block', fontSize: '11px', fontWeight: 500, color: '#6b7280', marginBottom: '4px' }}>Total Archive</span>
               <div style={{ display: 'flex', alignItems: 'baseline', gap: '6px' }}>
-                 <span style={{ fontSize: '24px', fontWeight: 950, color: '#1e293b', letterSpacing: '-1px' }}>{stats.archiveTotal}</span>
-                 <span style={{ fontSize: '11px', fontWeight: 950, color: '#6366f1', opacity: 0.8 }}>STUDIES</span>
+                 <span style={{ fontSize: '24px', fontWeight: 700, color: '#1e293b' }}>{stats.archiveTotal}</span>
+                 <span style={{ fontSize: '11px', fontWeight: 500, color: '#6366f1' }}>Studies</span>
               </div>
             </div>
 
             <div className="summary-card" style={{ background: 'white', border: '1px solid #e2e8f0', padding: '8px 12px', borderRadius: '10px', boxShadow: '0 2px 8px rgba(0,0,0,0.02)' }}>
-              <span style={{ display: 'block', fontSize: '9px', fontWeight: 950, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '2px', marginBottom: '4px' }}>Clinical Finalized</span>
+              <span style={{ display: 'block', fontSize: '11px', fontWeight: 500, color: '#6b7280', marginBottom: '4px' }}>Reported</span>
               <div style={{ display: 'flex', alignItems: 'baseline', gap: '6px' }}>
-                 <span style={{ fontSize: '24px', fontWeight: 950, color: '#059669', letterSpacing: '-1px' }}>{stats.archiveReported}</span>
-                 <span style={{ fontSize: '11px', fontWeight: 950, color: '#059669', opacity: 0.8 }}>REPORTS</span>
+                 <span style={{ fontSize: '24px', fontWeight: 700, color: '#059669' }}>{stats.archiveReported}</span>
+                 <span style={{ fontSize: '11px', fontWeight: 500, color: '#059669' }}>Reports</span>
               </div>
             </div>
 
             <div className="summary-card" style={{ background: 'white', border: '1px solid #e2e8f0', padding: '8px 12px', borderRadius: '10px', boxShadow: '0 2px 8px rgba(0,0,0,0.02)' }}>
-              <span style={{ display: 'block', fontSize: '9px', fontWeight: 950, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '2px', marginBottom: '4px' }}>Closed Lifecycle</span>
+              <span style={{ display: 'block', fontSize: '11px', fontWeight: 500, color: '#6b7280', marginBottom: '4px' }}>Completed</span>
               <div style={{ display: 'flex', alignItems: 'baseline', gap: '6px' }}>
-                 <span style={{ fontSize: '24px', fontWeight: 950, color: '#0f52ba', letterSpacing: '-1px' }}>{stats.archiveCompleted}</span>
-                 <span style={{ fontSize: '11px', fontWeight: 950, color: '#0f52ba', opacity: 0.8 }}>CLOSED</span>
+                 <span style={{ fontSize: '24px', fontWeight: 700, color: '#1d4ed8' }}>{stats.archiveCompleted}</span>
+                 <span style={{ fontSize: '11px', fontWeight: 500, color: '#1d4ed8' }}>Closed</span>
               </div>
             </div>
 
             <div className="summary-card" style={{ background: 'white', border: '1px solid #e2e8f0', padding: '8px 12px', borderRadius: '10px', boxShadow: '0 2px 8px rgba(0,0,0,0.02)' }}>
-              <span style={{ display: 'block', fontSize: '9px', fontWeight: 950, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '2px', marginBottom: '4px' }}>Diagnostic Yield</span>
+              <span style={{ display: 'block', fontSize: '11px', fontWeight: 500, color: '#6b7280', marginBottom: '4px' }}>Completion Rate</span>
               <div style={{ display: 'flex', alignItems: 'baseline', gap: '6px' }}>
-                 <span style={{ fontSize: '24px', fontWeight: 950, color: '#6366f1', letterSpacing: '-1px' }}>{stats.archiveEfficiency}%</span>
-                 <span style={{ fontSize: '11px', fontWeight: 950, color: '#6366f1', opacity: 0.8 }}>RATIO</span>
+                 <span style={{ fontSize: '24px', fontWeight: 700, color: '#6366f1' }}>{stats.archiveEfficiency}%</span>
+                 <span style={{ fontSize: '11px', fontWeight: 500, color: '#6366f1' }}>Rate</span>
               </div>
             </div>
           </div>
@@ -737,7 +735,7 @@ export default function TechnicianPage() {
             <div style={{ position: 'relative', flex: 1 }}>
               <input 
                 type="text" 
-                placeholder={hubTab === 'ACTIVE' ? "SCAN BARCODE OR SEARCH MISSIONS..." : "SEARCH HISTORICAL ARCHIVE..."}
+                placeholder={hubTab === 'ACTIVE' ? "Search patients or IDs..." : "Search archive..."}
                 value={searchQuery}
                 onChange={e => setSearchQuery(e.target.value)}
                 style={{ 
@@ -756,7 +754,7 @@ export default function TechnicianPage() {
               style={{ padding: '12px 15px', borderRadius: '10px', background: '#f8fafc', border: '1px solid #e2e8f0', cursor: 'pointer', fontSize: '14px', display: 'flex', alignItems: 'center', gap: '8px', fontWeight: 900 }}
               title="Open Mobile Scanner"
             >
-               <span style={{ fontSize: '10px' }}>SCAN</span>
+               <span style={{ fontSize: '11px' }}>Scan</span>
             </button>
             <input 
               id="mobile-scanner-trigger" 
@@ -766,7 +764,7 @@ export default function TechnicianPage() {
               style={{ display: 'none' }} 
               onChange={(e) => {
                 // In a real app, we'd decode here. For now, we simulate finding the ID.
-                alert('SCANNER CAPTURE ACTIVE: Please point at the Token Barcode. (Simulated)');
+                alert('Scanner active: point at the barcode. (Simulated)');
               }}
             />
           </div>
@@ -788,62 +786,62 @@ export default function TechnicianPage() {
             </div>
           )}
 
-          <select value={filters.modality} onChange={e => setFilters({...filters, modality: e.target.value})} style={{ padding: '12px 15px', borderRadius: '10px', border: '1px solid #e2e8f0', fontSize: '11px', fontWeight: 900, background: 'white', outline: 'none' }}>
-            <option value="ALL">MODALITY: ALL</option>
+          <select value={filters.modality} onChange={e => setFilters({...filters, modality: e.target.value})} style={{ padding: '10px 14px', borderRadius: '8px', border: '1px solid #e2e8f0', fontSize: '12px', fontWeight: 500, background: 'white', outline: 'none' }}>
+            <option value="ALL">All Modalities</option>
             {Object.keys(MODALITY_ICONS).map(m => <option key={m} value={m}>{m}</option>)}
           </select>
 
-          <select value={filters.priority} onChange={e => setFilters({...filters, priority: e.target.value})} style={{ padding: '12px 15px', borderRadius: '10px', border: '1px solid #e2e8f0', fontSize: '11px', fontWeight: 900, background: 'white', outline: 'none' }}>
-            <option value="ALL">PRIORITY: ALL</option>
-            <option value="STAT">⚡ EMERGENCY</option>
-            <option value="ROUTINE">📋 ROUTINE</option>
+          <select value={filters.priority} onChange={e => setFilters({...filters, priority: e.target.value})} style={{ padding: '10px 14px', borderRadius: '8px', border: '1px solid #e2e8f0', fontSize: '12px', fontWeight: 500, background: 'white', outline: 'none' }}>
+            <option value="ALL">All Priorities</option>
+            <option value="STAT">Emergency</option>
+            <option value="ROUTINE">Routine</option>
           </select>
 
-          <select value={filters.clinicalStatus} onChange={e => setFilters({...filters, clinicalStatus: e.target.value})} style={{ padding: '12px 15px', borderRadius: '10px', border: '1px solid #e2e8f0', fontSize: '11px', fontWeight: 900, background: 'white', outline: 'none' }}>
-            <option value="ALL">PHASE: ALL</option>
+          <select value={filters.clinicalStatus} onChange={e => setFilters({...filters, clinicalStatus: e.target.value})} style={{ padding: '10px 14px', borderRadius: '8px', border: '1px solid #e2e8f0', fontSize: '12px', fontWeight: 500, background: 'white', outline: 'none' }}>
+            <option value="ALL">All Statuses</option>
             {hubTab === 'ACTIVE' ? (
               <>
-                <option value="CONFIRMED">AWAITING SCAN</option>
-                <option value="IN_PROGRESS">IN SCANNING</option>
-                <option value="SCANNED">READY FOR DOC</option>
-                <option value="REPORTING">UNDER REVIEW</option>
-                <option value="REPORTED">FINALIZED</option>
-                <option value="COMPLETED">ARCHIVED</option>
+                <option value="CONFIRMED">Awaiting Scan</option>
+                <option value="IN_PROGRESS">Scanning</option>
+                <option value="SCANNED">Ready for Doctor</option>
+                <option value="REPORTING">Under Review</option>
+                <option value="REPORTED">Finalized</option>
+                <option value="COMPLETED">Archived</option>
               </>
             ) : (
               <>
-                <option value="REPORTED">FINALIZED</option>
-                <option value="COMPLETED">COMPLETED</option>
+                <option value="REPORTED">Finalized</option>
+                <option value="COMPLETED">Completed</option>
               </>
             )}
           </select>
 
-          <button className="gamified-btn" onClick={fetchWorklist} style={{ padding: '12px 20px', borderRadius: '10px' }}>RE-SYNC HUD</button>
+          <button className="gamified-btn" onClick={fetchWorklist} style={{ padding: '10px 18px', borderRadius: '8px', fontSize: '13px', fontWeight: 600 }}>Refresh</button>
         </div>
 
         <div style={{ background: 'white', borderRadius: '20px', border: '1px solid #e2e8f0', overflow: 'hidden', boxShadow: '0 4px 20px rgba(0,0,0,0.03)' }}>
           <table style={{ width: '100%', borderCollapse: 'collapse' }}>
             <thead style={{ background: '#f8fafc', borderBottom: '1px solid #e2e8f0' }}>
               <tr>
-                <th onClick={() => handleSort('patientName')} style={{ padding: '20px', textAlign: 'left', fontSize: '10px', fontWeight: 950, color: '#64748b', letterSpacing: '1px', cursor: 'pointer' }}>
-                  SUBJECT
+                <th onClick={() => handleSort('patientName')} style={{ padding: '16px 20px', textAlign: 'left', fontSize: '11px', fontWeight: 600, color: '#6b7280', cursor: 'pointer', letterSpacing: '0.3px' }}>
+                  Patient
                 </th>
-                <th onClick={() => handleSort('tokenNo')} style={{ padding: '20px', textAlign: 'left', fontSize: '10px', fontWeight: 950, color: '#64748b', letterSpacing: '1px', cursor: 'pointer' }}>
-                  TOKEN
+                <th onClick={() => handleSort('tokenNo')} style={{ padding: '16px 20px', textAlign: 'left', fontSize: '11px', fontWeight: 600, color: '#6b7280', cursor: 'pointer', letterSpacing: '0.3px' }}>
+                  Token
                 </th>
-                <th onClick={() => handleSort('service')} style={{ padding: '20px', textAlign: 'left', fontSize: '10px', fontWeight: 950, color: '#64748b', letterSpacing: '1px', cursor: 'pointer' }}>
-                  MISSION TARGET
+                <th onClick={() => handleSort('service')} style={{ padding: '16px 20px', textAlign: 'left', fontSize: '11px', fontWeight: 600, color: '#6b7280', cursor: 'pointer', letterSpacing: '0.3px' }}>
+                  Service
                 </th>
-                <th onClick={() => handleSort('dateTime')} style={{ padding: '20px', textAlign: 'left', fontSize: '10px', fontWeight: 950, color: '#64748b', letterSpacing: '1px', cursor: 'pointer' }}>
-                  MISSION DATE
+                <th onClick={() => handleSort('dateTime')} style={{ padding: '16px 20px', textAlign: 'left', fontSize: '11px', fontWeight: 600, color: '#6b7280', cursor: 'pointer', letterSpacing: '0.3px' }}>
+                  Date
                 </th>
-                <th onClick={() => handleSort('modality')} style={{ padding: '20px', textAlign: 'left', fontSize: '10px', fontWeight: 950, color: '#64748b', letterSpacing: '1px', cursor: 'pointer' }}>
-                  MODALITY
+                <th onClick={() => handleSort('modality')} style={{ padding: '16px 20px', textAlign: 'left', fontSize: '11px', fontWeight: 600, color: '#6b7280', cursor: 'pointer', letterSpacing: '0.3px' }}>
+                  Modality
                 </th>
-                <th onClick={() => handleSort('status')} style={{ padding: '20px', textAlign: 'left', fontSize: '10px', fontWeight: 950, color: '#64748b', letterSpacing: '1px', cursor: 'pointer' }}>
-                  STATUS {sortConfig.key === 'status' ? (sortConfig.direction === 'asc' ? 'UP' : 'DOWN') : 'SORT'}
+                <th onClick={() => handleSort('status')} style={{ padding: '16px 20px', textAlign: 'left', fontSize: '11px', fontWeight: 600, color: '#6b7280', cursor: 'pointer', letterSpacing: '0.3px' }}>
+                  Status {sortConfig.key === 'status' ? (sortConfig.direction === 'asc' ? '↑' : '↓') : '↕'}
                 </th>
-                <th style={{ padding: '20px', textAlign: 'right', fontSize: '10px', fontWeight: 950, color: '#64748b', letterSpacing: '1px' }}>{hubTab === 'ACTIVE' ? 'WORKSPACE' : 'ACTIONS'}</th>
+                <th style={{ padding: '16px 20px', textAlign: 'right', fontSize: '11px', fontWeight: 600, color: '#6b7280', letterSpacing: '0.3px' }}>Actions</th>
               </tr>
             </thead>
             <tbody>
@@ -927,7 +925,7 @@ export default function TechnicianPage() {
                             style={{ padding: '8px 20px', fontSize: '10px', borderRadius: '12px', opacity: (study.isToday || hubTab === 'ARCHIVE') ? 1 : 0.4, background: (status === 'reported' || status === 'completed') ? '#16a34a' : '' }} 
                             onClick={() => handleOpenWorkspace(study)}
                           >
-                             {(status === 'reported' || status === 'completed') ? 'REVIEW MISSION' : isDone ? 'RE-UPLOAD ASSETS' : 'INITIATE SCAN →'}
+                             {(status === 'reported' || status === 'completed') ? 'Review' : isDone ? 'Re-upload' : 'Start Scan'}
                           </button>
                         </div>
                       ) : (
@@ -948,7 +946,7 @@ export default function TechnicianPage() {
                             style={{ padding: '10px 20px', borderRadius: '12px', fontSize: '11px' }} 
                             onClick={() => handleOpenWorkspace(study)}
                           >
-                            REVIEW DATA
+                            Review
                           </button>
                         </div>
                       )}
@@ -959,7 +957,7 @@ export default function TechnicianPage() {
               {filteredStudies.length === 0 && !loading && (
                 <tr>
                   <td colSpan="6" style={{ textAlign: 'center', padding: '100px', color: '#94a3b8', fontStyle: 'italic', fontSize: '14px' }}>
-                    [ NO DIAGNOSTIC ASSETS IN THIS FREQUENCY ]
+                    No studies found
                   </td>
                 </tr>
               )}
@@ -968,20 +966,20 @@ export default function TechnicianPage() {
           
           {hubTab === 'ARCHIVE' && totalPages > 1 && (
             <div style={{ padding: '15px 30px', background: '#f8fafc', borderTop: '1px solid #e2e8f0', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <div style={{ fontSize: '11px', fontWeight: 800, color: '#64748b' }}>
-                SHOWING PAGE <span style={{ color: '#0f52ba' }}>{archivePage}</span> OF <span style={{ color: '#0f52ba' }}>{totalPages}</span>
+              <div style={{ fontSize: '12px', fontWeight: 500, color: '#6b7280' }}>
+                Page <span style={{ color: '#1d4ed8' }}>{archivePage}</span> of <span style={{ color: '#1d4ed8' }}>{totalPages}</span>
               </div>
-              <div style={{ display: 'flex', gap: '10px' }}>
-                <button 
+              <div style={{ display: 'flex', gap: '8px' }}>
+                <button
                   onClick={() => setArchivePage(p => Math.max(1, p - 1))}
                   disabled={archivePage === 1}
-                  style={{ padding: '8px 15px', borderRadius: '8px', border: '1px solid #e2e8f0', background: 'white', fontSize: '10px', fontWeight: 900, cursor: archivePage === 1 ? 'not-allowed' : 'pointer', opacity: archivePage === 1 ? 0.5 : 1 }}
-                >PREVIOUS</button>
-                <button 
+                  style={{ padding: '7px 14px', borderRadius: '7px', border: '1px solid #e2e8f0', background: 'white', fontSize: '12px', fontWeight: 500, cursor: archivePage === 1 ? 'not-allowed' : 'pointer', opacity: archivePage === 1 ? 0.5 : 1 }}
+                >Previous</button>
+                <button
                   onClick={() => setArchivePage(p => Math.min(totalPages, p + 1))}
                   disabled={archivePage === totalPages}
-                  style={{ padding: '8px 15px', borderRadius: '8px', border: '1px solid #e2e8f0', background: 'white', fontSize: '10px', fontWeight: 900, cursor: archivePage === totalPages ? 'not-allowed' : 'pointer', opacity: archivePage === totalPages ? 0.5 : 1 }}
-                >NEXT</button>
+                  style={{ padding: '7px 14px', borderRadius: '7px', border: '1px solid #e2e8f0', background: 'white', fontSize: '12px', fontWeight: 500, cursor: archivePage === totalPages ? 'not-allowed' : 'pointer', opacity: archivePage === totalPages ? 0.5 : 1 }}
+                >Next</button>
               </div>
             </div>
           )}
@@ -1005,8 +1003,8 @@ export default function TechnicianPage() {
         zIndex: 100,
         boxShadow: '0 1px 3px rgba(0,0,0,0.02)'
       }}>
-        <button onClick={() => setCurrentView('QUEUE')} className="toolbar-btn light" style={{ width: 'auto', padding: '0 12px', fontSize: '10px', fontWeight: 900, height: '30px' }}>
-          ↩ EXIT
+        <button onClick={() => setCurrentView('QUEUE')} className="toolbar-btn light" style={{ width: 'auto', padding: '0 12px', fontSize: '12px', fontWeight: 600, height: '30px' }}>
+          ← Back
         </button>
         <div style={{ width: '1px', height: '24px', background: '#e2e8f0', margin: '0 5px' }}></div>
         
@@ -1030,7 +1028,7 @@ export default function TechnicianPage() {
             height: '30px'
           }}
         >
-          <span>IMPORT</span>
+          <span>Import DICOM</span>
         </button>
         <input id="tech-study-up" type="file" style={{ display: 'none' }} accept=".dcm,.zip" onChange={handleFileChange} />
         
@@ -1058,14 +1056,14 @@ export default function TechnicianPage() {
         <div style={{ width: '1px', height: '24px', background: '#e2e8f0', margin: '0 8px' }}></div>
 
         {/* SPECIAL TOOLS */}
-        <button onClick={() => setCineEnabled(!cineEnabled)} className={`toolbar-btn light ${cineEnabled ? 'active' : ''}`} title="Cine Loop" style={{ fontSize: '8px', padding: '0 8px', height: '28px' }}>🎬 CINE</button>
-        <button 
-          onClick={() => setIsSyncEnabled(!isSyncEnabled)} 
-          className={`toolbar-btn light ${isSyncEnabled ? 'active' : ''}`} 
+        <button onClick={() => setCineEnabled(!cineEnabled)} className={`toolbar-btn light ${cineEnabled ? 'active' : ''}`} title="Cine Loop" style={{ fontSize: '10px', padding: '0 10px', height: '28px', fontWeight: 500 }}>Cine</button>
+        <button
+          onClick={() => setIsSyncEnabled(!isSyncEnabled)}
+          className={`toolbar-btn light ${isSyncEnabled ? 'active' : ''}`}
           title="Synchronize Viewports"
-          style={{ fontWeight: 950, fontSize: '8px', padding: '0 8px', height: '28px' }}
+          style={{ fontSize: '10px', padding: '0 10px', height: '28px', fontWeight: 500 }}
         >
-          🔗 SYNC
+          Sync
         </button>
 
         <div style={{ flex: 1 }}></div>
@@ -1075,14 +1073,14 @@ export default function TechnicianPage() {
            onChange={e => setLayoutMode(e.target.value)}
            style={{ background: 'white', color: '#1e293b', border: '1px solid #e2e8f0', padding: '6px 12px', borderRadius: '8px', fontSize: '11px', fontWeight: 950 }}
         >
-           <option value="1x1">LAYOUT: 1X1</option>
-           <option value="2x2">LAYOUT: 2X2</option>
+           <option value="1x1">1×1</option>
+           <option value="2x2">2×2</option>
         </select>
         
         <div style={{ width: '1px', height: '24px', background: '#e2e8f0', margin: '0 8px' }}></div>
-        <button onClick={() => toggleKeyImage()} className={`toolbar-btn light ${keyImages.includes(`${activeAssetIndex}_${currentSlice}`) ? 'active' : ''}`} title="Mark Key Image" style={{ width: 'auto', height: '32px', fontSize: '9px', fontWeight: 950, padding: '0 10px' }}>KEY</button>
-        <button onClick={() => setScreenshotData(true)} className="toolbar-btn light" title="Export Screenshot" style={{ width: 'auto', height: '32px', fontSize: '9px', fontWeight: 950, padding: '0 10px' }}>CAP</button>
-        <button onClick={() => { setResetTrigger(t => t + 1); setViewportProps({ invert: false, flipHorizontal: false, flipVertical: false, rotation: 0 }); }} className="toolbar-btn light" title="Reset Viewer" style={{ width: 'auto', height: '32px', fontSize: '9px', fontWeight: 950, padding: '0 10px' }}>RESET</button>
+        <button onClick={() => toggleKeyImage()} className={`toolbar-btn light ${keyImages.includes(`${activeAssetIndex}_${currentSlice}`) ? 'active' : ''}`} title="Mark Key Image" style={{ width: 'auto', height: '32px', fontSize: '10px', fontWeight: 500, padding: '0 10px' }}>Key</button>
+        <button onClick={() => setScreenshotData(true)} className="toolbar-btn light" title="Screenshot" style={{ width: 'auto', height: '32px', fontSize: '10px', fontWeight: 500, padding: '0 10px' }}>Screenshot</button>
+        <button onClick={() => { setResetTrigger(t => t + 1); setViewportProps({ invert: false, flipHorizontal: false, flipVertical: false, rotation: 0 }); }} className="toolbar-btn light" title="Reset Viewer" style={{ width: 'auto', height: '32px', fontSize: '10px', fontWeight: 500, padding: '0 10px' }}>Reset</button>
         
         <div style={{ width: '1px', height: '30px', background: '#e2e8f0', margin: '0 10px' }}></div>
         
@@ -1091,7 +1089,7 @@ export default function TechnicianPage() {
         <button 
           onClick={() => { handleStatusUpdate(activeStudy?.appointmentId, 'scanned'); setCurrentView('QUEUE'); }}
           className="gamified-btn" style={{ padding: '10px 25px', borderRadius: '12px', fontSize: '11px', textTransform: 'uppercase', letterSpacing: '1px', fontWeight: 950 }}
-        >DEPLOY STUDY</button>
+        >Mark as Scanned</button>
       </div>
 
       <div style={{ flex: 1, display: 'flex', minHeight: 0, padding: '10px', gap: '10px' }}>
@@ -1103,10 +1101,10 @@ export default function TechnicianPage() {
           <div style={{ flex: 1, overflowY: 'auto' }}>
             <div style={{ background: '#f8fafc', padding: '12px', borderRadius: '12px', marginBottom: '15px', borderLeft: '3px solid #0f52ba', border: '1px solid #e2e8f0' }}>
               <div style={{ fontSize: '12px', fontWeight: 950, color: '#1e293b' }}>{activeStudy?.patientName}</div>
-              <div style={{ fontSize: '10px', color: '#64748b', marginTop: '4px', fontWeight: 800 }}>UHID: {activeStudy?.id}</div>
+              <div style={{ fontSize: '11px', color: '#6b7280', marginTop: '4px', fontWeight: 500 }}>ID: {activeStudy?.id}</div>
             </div>
 
-            <label style={{ fontSize: '8px', fontWeight: 950, color: '#94a3b8', textTransform: 'uppercase', marginBottom: '10px', display: 'block', letterSpacing: '1px' }}>ACQUISITION_SERIES ({uploadedFiles.length})</label>
+            <label style={{ fontSize: '11px', fontWeight: 600, color: '#94a3b8', marginBottom: '10px', display: 'block' }}>Series ({uploadedFiles.length})</label>
             {uploadedFiles.map((f, i) => (
               <div 
                 key={i} 
@@ -1128,7 +1126,7 @@ export default function TechnicianPage() {
                 {activeAssetIndex === i && <div style={{ position: 'absolute', left: 0, top: 0, bottom: 0, width: '4px', background: '#3b82f6' }}></div>}
                 <div style={{ flex: 1 }}>
                   <div style={{ fontSize: '10px', fontWeight: 950, color: activeAssetIndex === i ? '#1d4ed8' : '#1e293b', letterSpacing: '0.5px' }}>{f.name.toUpperCase()}</div>
-                  <div style={{ fontSize: '9px', color: '#94a3b8', marginTop: '4px', fontWeight: 700 }}>{f.rawFiles.length} DATA_SLICES</div>
+                  <div style={{ fontSize: '11px', color: '#94a3b8', marginTop: '4px', fontWeight: 400 }}>{f.rawFiles.length} slices</div>
                 </div>
               </div>
             ))}
@@ -1175,8 +1173,8 @@ export default function TechnicianPage() {
               }}></div>
               
               <div style={{ textAlign: 'center', maxWidth: '400px' }}>
-                <div style={{ fontSize: '16px', fontWeight: 900, marginBottom: '10px', letterSpacing: '1px' }}>
-                  PROCESSING DIAGNOSTIC DATA
+                <div style={{ fontSize: '16px', fontWeight: 600, marginBottom: '10px' }}>
+                  Processing DICOM data...
                 </div>
                 <div style={{ fontSize: '12px', color: '#94a3b8', marginBottom: '20px' }}>
                   {processingStatus || 'Initializing...'}
@@ -1248,12 +1246,12 @@ export default function TechnicianPage() {
                       {/* VIEWPORT HUD */}
                       <div style={{ position: 'absolute', top: '15px', left: '15px', display: 'flex', flexDirection: 'column', gap: '5px', zIndex: 10 }}>
                         <div style={{ background: 'rgba(15, 23, 42, 0.7)', backdropFilter: 'blur(8px)', padding: '4px 10px', borderRadius: '6px', fontSize: '9px', color: '#94a3b8', fontWeight: 950, letterSpacing: '1px', border: '1px solid rgba(255,255,255,0.1)' }}>
-                           {uploadedFiles[(activeAssetIndex + idx) % uploadedFiles.length]?.name.toUpperCase() || 'NO_SIGNAL'}
+                           {uploadedFiles[(activeAssetIndex + idx) % uploadedFiles.length]?.name || 'No signal'}
                         </div>
                         <div style={{ background: 'rgba(59, 130, 246, 0.9)', padding: '2px 8px', borderRadius: '4px', fontSize: '10px', color: 'white', fontWeight: 900, width: 'fit-content' }}>
                           SLICE: {idx === 0 ? currentSlice : '?'} / {uploadedFiles[(activeAssetIndex + idx) % uploadedFiles.length]?.rawFiles?.length || 0}
                         </div>
-                        {isSyncEnabled && <div style={{ background: 'rgba(16, 185, 129, 0.9)', color: 'white', padding: '4px 8px', borderRadius: '4px', fontSize: '8px', fontWeight: 950 }}>🔗 SYNCED</div>}
+                        {isSyncEnabled && <div style={{ background: 'rgba(16, 185, 129, 0.9)', color: 'white', padding: '4px 8px', borderRadius: '4px', fontSize: '10px', fontWeight: 500 }}>Synced</div>}
                       </div>
                     </div>
                   ))}
@@ -1303,23 +1301,23 @@ export default function TechnicianPage() {
                   </div>
                   
                   <div style={{ textAlign: 'center', zIndex: 1 }}>
-                    <h2 style={{ fontSize: '24px', fontWeight: 950, color: '#1e293b', marginBottom: '10px', letterSpacing: '-1px' }}>Initialize Acquisition</h2>
+                    <h2 style={{ fontSize: '22px', fontWeight: 700, color: '#1e293b', marginBottom: '10px', letterSpacing: '-0.5px' }}>Upload DICOM Study</h2>
                     <p style={{ color: '#64748b', fontSize: '13px', fontWeight: 600, maxWidth: '300px', margin: '0 auto 25px' }}>
                       Please select or drag and drop DICOM files or a ZIP study to begin processing for {activeStudy?.patientName}.
                     </p>
                     
                     <div style={{ display: 'flex', gap: '10px', justifyContent: 'center' }}>
-                      <div style={{ background: '#0f52ba', color: 'white', padding: '12px 25px', borderRadius: '12px', fontSize: '11px', fontWeight: 950, letterSpacing: '1px', boxShadow: '0 4px 15px rgba(15, 82, 186, 0.2)' }}>
-                        BROWSE FILES
+                      <div style={{ background: '#1d4ed8', color: 'white', padding: '11px 24px', borderRadius: '8px', fontSize: '13px', fontWeight: 600, boxShadow: '0 4px 12px rgba(29,78,216,0.2)' }}>
+                        Browse Files
                       </div>
-                      <div style={{ background: 'white', color: '#64748b', padding: '12px 25px', borderRadius: '12px', fontSize: '11px', fontWeight: 950, border: '1px solid #e2e8f0' }}>
-                        DRAG & DROP
+                      <div style={{ background: 'white', color: '#6b7280', padding: '11px 24px', borderRadius: '8px', fontSize: '13px', fontWeight: 500, border: '1px solid #e2e8f0' }}>
+                        Drag & Drop
                       </div>
                     </div>
                   </div>
 
-                  <div style={{ position: 'absolute', bottom: '30px', color: '#94a3b8', fontSize: '9px', fontWeight: 950, letterSpacing: '2px', textTransform: 'uppercase' }}>
-                    [ AWAITING_SECURE_SIGNAL ]
+                  <div style={{ position: 'absolute', bottom: '30px', color: '#94a3b8', fontSize: '12px', fontWeight: 400 }}>
+                    Supports .dcm and .zip files
                   </div>
                 </div>
               )}

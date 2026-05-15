@@ -1,310 +1,181 @@
 /* ==========================================================================
-   Appointment Card Component - Responsive Mobile/Tablet Layout
+   Appointment Card - Premium Mobile Design
    ========================================================================== */
 
 .appointment-card {
   background: white;
-  border: 1px solid #eee;
-  border-radius: 12px;
-  margin-bottom: 12px;
+  border-radius: 20px;
+  margin-bottom: 16px;
   overflow: hidden;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
-  transition: all 0.2s ease;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.03);
+  transition: var(--transition-smooth);
   position: relative;
+  border: 1px solid var(--border-light);
 }
 
-.appointment-card:active {
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+.appointment-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 10px 25px rgba(0, 0, 0, 0.08);
 }
 
-/* Status indicator bar */
 .card-status-bar {
-  height: 4px;
+  height: 6px;
   width: 100%;
   position: absolute;
   top: 0;
   left: 0;
 }
 
-/* Card header with token and status */
 .card-header {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 16px;
-  border-bottom: 1px solid #f0f0f0;
-  gap: 12px;
+  padding: 20px;
+  background: #fafbff;
+  border-bottom: 1px solid var(--border-light);
 }
 
 .card-token {
   display: flex;
   flex-direction: column;
-  align-items: flex-start;
 }
 
 .token-number {
-  font-size: 18px;
+  font-size: 22px;
   font-weight: 950;
-  color: #1a1a2e;
-  line-height: 1;
+  color: var(--text-main);
+  letter-spacing: -1px;
 }
 
 .token-label {
-  font-size: 8px;
+  font-size: 9px;
   font-weight: 900;
-  color: #abb8c3;
+  color: var(--text-secondary);
   text-transform: uppercase;
-  margin-top: 4px;
+  letter-spacing: 1px;
 }
 
 .card-status-badge {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  padding: 6px 12px;
-  border-radius: 20px;
-  border: 1px solid;
-  flex-shrink: 0;
-}
-
-.status-icon {
-  font-size: 12px;
-}
-
-.status-label {
-  font-size: 9px;
+  padding: 8px 16px;
+  border-radius: 12px;
+  border: 1px solid transparent;
+  font-size: 10px;
   font-weight: 950;
   text-transform: uppercase;
-}
-
-/* Card sections */
-.card-section {
-  padding: 12px 16px;
-  border-bottom: 1px solid #f5f5f5;
-}
-
-.card-section:last-of-type {
-  border-bottom: none;
-}
-
-.section-title {
-  font-size: 10px;
-  font-weight: 900;
-  color: #94a3b8;
-  text-transform: uppercase;
   letter-spacing: 0.5px;
-  margin-bottom: 8px;
 }
 
-/* Patient info */
-.patient-info {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
+.card-section {
+  padding: 20px;
+  border-bottom: 1px solid #f8fafc;
 }
 
-.patient-name {
-  font-size: 14px;
-  font-weight: 800;
-  color: #1a1a2e;
-}
-
-.patient-details {
-  font-size: 12px;
-  color: #888;
-  font-weight: 600;
-}
-
-.patient-id {
-  font-size: 10px;
-  color: #0f52ba;
-  font-weight: 700;
-  font-family: monospace;
-}
-
-/* Referral info */
-.referral-info {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-}
-
-.referral-name {
-  font-size: 13px;
-  font-weight: 800;
-  color: #0f52ba;
-}
-
-.referral-contact {
-  font-size: 11px;
-  color: #888;
-  font-weight: 600;
-}
-
-/* Doctor info */
-.doctor-name {
-  font-size: 13px;
-  font-weight: 700;
-  color: #333;
-}
-
-/* Card actions */
-.card-actions {
-  display: flex;
-  gap: 8px;
-  padding: 12px 16px;
-  background: #fafbfc;
-  flex-wrap: wrap;
-}
-
-.action-btn {
+.patient-avatar {
+  width: 48px;
+  height: 48px;
+  border-radius: 14px;
+  background: #f1f5f9;
+  color: var(--primary-accent);
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 6px;
-  padding: 8px 12px;
-  border: none;
+  font-weight: 950;
+  font-size: 18px;
+  border: 2px solid white;
+  box-shadow: 0 4px 10px rgba(0,0,0,0.05);
+}
+
+.patient-name {
+  font-size: 16px;
+  font-weight: 950;
+  color: var(--text-main);
+  letter-spacing: -0.3px;
+}
+
+.patient-meta {
+  font-size: 12px;
+  color: var(--text-secondary);
+  font-weight: 700;
+  margin-top: 2px;
+}
+
+.patient-id-tag {
+  display: inline-block;
+  margin-top: 12px;
+  padding: 6px 12px;
+  background: #f8fafc;
   border-radius: 8px;
   font-size: 11px;
+  color: var(--text-secondary);
   font-weight: 800;
-  cursor: pointer;
-  transition: all 0.2s ease;
+  border: 1px solid var(--border-light);
+}
+
+.patient-id-tag span {
+  color: var(--primary-accent);
+  font-weight: 950;
+}
+
+.info-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+}
+
+.info-item .label {
+  font-size: 9px;
+  font-weight: 900;
+  color: var(--text-secondary);
   text-transform: uppercase;
-  min-height: 36px;
-  flex: 1;
-  min-width: 80px;
+  letter-spacing: 1px;
+  margin-bottom: 6px;
+  display: block;
 }
 
-.action-btn-primary {
-  background: #3498db;
-  color: white;
-  box-shadow: 0 2px 6px rgba(52, 152, 219, 0.2);
+.info-item .value {
+  font-size: 13px;
+  font-weight: 800;
+  color: var(--text-main);
 }
 
-.action-btn-primary:active {
-  transform: scale(0.98);
-  box-shadow: 0 1px 3px rgba(52, 152, 219, 0.3);
+.card-actions {
+  display: flex;
+  gap: 10px;
+  padding: 16px 20px;
+  background: white;
+  border-top: 1px solid var(--border-light);
 }
 
-.action-btn-secondary {
-  background: #e8f0fe;
-  color: #0f52ba;
-  border: 1px solid #c5d5f0;
-  flex: 0 1 auto;
-  min-width: 36px;
-  padding: 8px;
+.action-btn-main {
+  flex: 2;
+  padding: 12px;
+  border-radius: 14px;
+  font-weight: 950;
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  border: none;
+  cursor: pointer;
+  transition: var(--transition-smooth);
 }
 
-.action-btn-secondary:active {
-  background: #d0dff5;
+.action-btn-icon {
+  flex: 0 0 48px;
+  height: 48px;
+  border-radius: 14px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--border-light);
+  background: white;
+  cursor: pointer;
+  transition: var(--transition-smooth);
 }
 
-.action-btn-danger {
-  background: #fff5f5;
-  color: #e74c3c;
-  border: 1px solid #fecaca;
-  flex: 0 1 auto;
-  min-width: 36px;
-  padding: 8px;
-}
-
-.action-btn-danger:active {
-  background: #ffe0e0;
-}
-
-.action-icon {
-  font-size: 14px;
-}
-
-.action-text {
-  display: none;
-}
-
-/* Show action text on larger cards */
-@media (min-width: 480px) {
-  .action-btn {
-    min-width: 100px;
-  }
-
-  .action-text {
-    display: inline;
-  }
-}
-
-/* ==========================================================================
-   Responsive Breakpoints
-   ========================================================================== */
-
-/* Mobile: < 640px */
-@media (max-width: 639px) {
-  .appointment-card {
-    margin-bottom: 10px;
-    border-radius: 10px;
-  }
-
-  .card-header {
-    padding: 14px;
-    gap: 10px;
-  }
-
-  .token-number {
-    font-size: 16px;
-  }
-
-  .card-section {
-    padding: 10px 14px;
-  }
-
-  .patient-name {
-    font-size: 13px;
-  }
-
-  .patient-details {
-    font-size: 11px;
-  }
-
-  .card-actions {
-    padding: 10px 14px;
-    gap: 6px;
-  }
-
-  .action-btn {
-    padding: 8px 10px;
-    font-size: 10px;
-    min-height: 34px;
-  }
-
-  .action-btn-secondary,
-  .action-btn-danger {
-    min-width: 34px;
-    padding: 8px;
-  }
-}
-
-/* Tablet: 640px - 1024px */
-@media (min-width: 640px) and (max-width: 1023px) {
-  .appointment-card {
-    margin-bottom: 12px;
-  }
-
-  .card-header {
-    padding: 16px;
-  }
-
-  .card-section {
-    padding: 12px 16px;
-  }
-
-  .card-actions {
-    padding: 12px 16px;
-    gap: 8px;
-  }
-
-  .action-btn {
-    padding: 8px 12px;
-    font-size: 11px;
-    min-height: 36px;
-  }
+.action-btn-icon:hover {
+  background: #f8fafc;
+  border-color: var(--primary-accent);
+  color: var(--primary-accent);
 }
 
 /* Desktop: > 1024px - Hide cards, show table instead */

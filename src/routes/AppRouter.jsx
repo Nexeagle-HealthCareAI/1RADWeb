@@ -23,12 +23,29 @@ import ConfigurationPage from '../pages/ConfigurationPage';
 
 function RootRedirect() {
   const { currentUser } = useAuth();
+  const location = useLocation();
   
   if (!currentUser) return <Navigate to="/login" replace />;
   
   const userRoles = currentUser.roles || [];
+  
+  // Find first role with a defined home
   const homeRole = userRoles.find(role => ROLE_HOME[role]);
-  return <Navigate to={ROLE_HOME[homeRole] || '/'} replace />;
+  const homePath = ROLE_HOME[homeRole];
+
+  if (!homePath) {
+    console.warn('User has no assigned dashboard home for roles:', userRoles);
+    // If we are already at /access-denied, don't redirect again
+    if (location.pathname === '/access-denied') return null;
+    return <Navigate to="/access-denied" replace />;
+  }
+
+  // Prevent infinite loop if home is /
+  if (homePath === '/') {
+    return <Navigate to="/access-denied" replace />;
+  }
+
+  return <Navigate to={homePath} replace />;
 }
 
 import StatusTracking from '../pages/StatusTracking';

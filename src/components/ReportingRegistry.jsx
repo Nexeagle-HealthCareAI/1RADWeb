@@ -105,7 +105,7 @@ const ReportingRegistry = ({
   const paginatedKeywords = filteredKeywords.slice((keywordPage - 1) * 10, keywordPage * 10);
 
   const handleSaveMacro = async () => {
-    if (!newMacro.trigger) return alert('TRIGGER REQUIRED');
+    if (!newMacro.trigger) return alert('Please enter a trigger word.');
     setIsKeywordSaving(true);
     try {
       const payload = {
@@ -119,7 +119,7 @@ const ReportingRegistry = ({
 
       const res = await apiClient.post('/reporting/keywords/upsert', payload);
       if (res.data.success) {
-        alert('MACRO SAVED');
+        alert('Keyword saved.');
         setSelectedKeywordId(null);
         fetchRegistry();
         if (onRefresh) onRefresh();

@@ -239,11 +239,10 @@ export default function DoctorBoard() {
     <div className="board-view-container" style={{ background: '#fcfdfe', minHeight: '100vh' }}>
       <div className="board-header" style={{ padding: '15px 40px', background: 'white', borderBottom: '1px solid #f1f5f9', display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '15px' }}>
         <div>
-           <div style={{ display: 'flex', alignItems: 'center', gap: '15px', marginBottom: '5px' }}>
-              <span style={{ fontSize: '28px' }}>🦸‍♂️</span>
-              <h1 style={{ fontSize: '26px', fontWeight: 950, color: '#1a1a2e', letterSpacing: '-1px', margin: 0 }}>SPECIALIST REPORTING COMMAND</h1>
+           <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '4px' }}>
+              <h1 style={{ fontSize: '22px', fontWeight: 700, color: '#0a1628', letterSpacing: '-0.5px', margin: 0 }}>Reporting Worklist</h1>
            </div>
-           <p style={{ fontSize: '11px', color: '#64748b', fontWeight: 800, marginLeft: '45px', textTransform: 'uppercase', letterSpacing: '2px' }}>Diagnostic Intelligence Worklist & Archive Registry</p>
+           <p style={{ fontSize: '12px', color: '#6b7280' }}>Review and write radiology reports for today's studies</p>
         </div>
         
         <div className="admin-tabs" style={{ 
@@ -255,20 +254,18 @@ export default function DoctorBoard() {
           display: 'flex',
           gap: '10px'
         }}>
-            <button onClick={() => setView('QUEUE')} style={{ 
-              padding: '12px 25px', borderRadius: '12px', border: 'none', fontSize: '10px', 
-              fontWeight: 950, background: view === 'QUEUE' ? 'white' : 'transparent', 
-              color: view === 'QUEUE' ? '#0f52ba' : '#64748b', cursor: 'pointer', 
-              transition: '0.2s', letterSpacing: '1px', textTransform: 'uppercase',
-              boxShadow: view === 'QUEUE' ? '0 8px 20px rgba(15, 82, 186, 0.15)' : 'none'
-            }}>Active Worklist</button>
-            <button onClick={() => setView('HISTORY')} style={{ 
-              padding: '12px 25px', borderRadius: '12px', border: 'none', fontSize: '10px', 
-              fontWeight: 950, background: view === 'HISTORY' ? 'white' : 'transparent', 
-              color: view === 'HISTORY' ? '#0f52ba' : '#64748b', cursor: 'pointer', 
-              transition: '0.2s', letterSpacing: '1px', textTransform: 'uppercase',
-              boxShadow: view === 'HISTORY' ? '0 8px 20px rgba(15, 82, 186, 0.15)' : 'none'
-            }}>Clinical Archive</button>
+            <button onClick={() => setView('QUEUE')} style={{
+              padding: '10px 22px', borderRadius: '8px', border: 'none', fontSize: '13px',
+              fontWeight: 600, background: view === 'QUEUE' ? 'white' : 'transparent',
+              color: view === 'QUEUE' ? '#1d4ed8' : '#6b7280', cursor: 'pointer',
+              transition: '0.2s', boxShadow: view === 'QUEUE' ? '0 2px 8px rgba(0,0,0,0.08)' : 'none'
+            }}>Today's Queue</button>
+            <button onClick={() => setView('HISTORY')} style={{
+              padding: '10px 22px', borderRadius: '8px', border: 'none', fontSize: '13px',
+              fontWeight: 600, background: view === 'HISTORY' ? 'white' : 'transparent',
+              color: view === 'HISTORY' ? '#1d4ed8' : '#6b7280', cursor: 'pointer',
+              transition: '0.2s', boxShadow: view === 'HISTORY' ? '0 2px 8px rgba(0,0,0,0.08)' : 'none'
+            }}>Archive</button>
         </div>
       </div>
 
@@ -276,68 +273,68 @@ export default function DoctorBoard() {
         {view === 'QUEUE' ? (
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '15px', marginBottom: '20px' }}>
             <div className="summary-card" style={{ background: 'white', border: '1px solid #e2e8f0', padding: '15px', borderRadius: '20px', boxShadow: '0 10px 40px rgba(0,0,0,0.02)' }}>
-              <span style={{ display: 'block', fontSize: '9px', fontWeight: 950, color: '#ef4444', textTransform: 'uppercase', letterSpacing: '2px', marginBottom: '8px' }}>Critical Action</span>
+              <span style={{ display: 'block', fontSize: '11px', fontWeight: 500, color: '#ef4444', marginBottom: '6px' }}>Needs Report</span>
               <div style={{ display: 'flex', alignItems: 'baseline', gap: '8px' }}>
-                 <span style={{ fontSize: '28px', fontWeight: 950, color: '#ef4444', letterSpacing: '-1.5px' }}>{stats.pendingReports}</span>
-                 <span style={{ fontSize: '11px', fontWeight: 700, color: '#ef4444' }}>AWAITING</span>
+                 <span style={{ fontSize: '28px', fontWeight: 700, color: '#ef4444' }}>{stats.pendingReports}</span>
+                 <span style={{ fontSize: '11px', fontWeight: 500, color: '#ef4444' }}>Awaiting</span>
               </div>
             </div>
 
             <div className="summary-card" style={{ background: 'white', border: '1px solid #e2e8f0', padding: '15px', borderRadius: '20px', boxShadow: '0 10px 40px rgba(0,0,0,0.02)' }}>
-              <span style={{ display: 'block', fontSize: '9px', fontWeight: 950, color: '#64748b', textTransform: 'uppercase', letterSpacing: '2px', marginBottom: '8px' }}>In Progress</span>
+              <span style={{ display: 'block', fontSize: '11px', fontWeight: 500, color: '#6b7280', marginBottom: '6px' }}>In Progress</span>
               <div style={{ display: 'flex', alignItems: 'baseline', gap: '8px' }}>
-                 <span style={{ fontSize: '28px', fontWeight: 950, color: '#f59e0b', letterSpacing: '-1.5px' }}>{stats.drafts}</span>
-                 <span style={{ fontSize: '11px', fontWeight: 700, color: '#f59e0b' }}>DRAFTS</span>
+                 <span style={{ fontSize: '28px', fontWeight: 700, color: '#f59e0b' }}>{stats.drafts}</span>
+                 <span style={{ fontSize: '11px', fontWeight: 500, color: '#f59e0b' }}>Drafts</span>
               </div>
             </div>
 
             <div className="summary-card" style={{ background: 'white', border: '1px solid #e2e8f0', padding: '15px', borderRadius: '20px', boxShadow: '0 10px 40px rgba(0,0,0,0.02)' }}>
-              <span style={{ display: 'block', fontSize: '9px', fontWeight: 950, color: '#64748b', textTransform: 'uppercase', letterSpacing: '2px', marginBottom: '8px' }}>Success Metrics</span>
+              <span style={{ display: 'block', fontSize: '11px', fontWeight: 500, color: '#6b7280', marginBottom: '6px' }}>Finalized Today</span>
               <div style={{ display: 'flex', alignItems: 'baseline', gap: '8px' }}>
-                 <span style={{ fontSize: '28px', fontWeight: 950, color: '#2ecc71', letterSpacing: '-1.5px' }}>{stats.finalizedToday}</span>
-                 <span style={{ fontSize: '11px', fontWeight: 700, color: '#2ecc71' }}>REPORTS</span>
+                 <span style={{ fontSize: '28px', fontWeight: 700, color: '#2ecc71' }}>{stats.finalizedToday}</span>
+                 <span style={{ fontSize: '11px', fontWeight: 500, color: '#2ecc71' }}>Reports</span>
               </div>
             </div>
 
             <div className="summary-card" style={{ background: 'white', border: '1px solid #e2e8f0', padding: '15px', borderRadius: '20px', boxShadow: '0 10px 40px rgba(0,0,0,0.02)' }}>
-              <span style={{ display: 'block', fontSize: '9px', fontWeight: 950, color: '#64748b', textTransform: 'uppercase', letterSpacing: '2px', marginBottom: '8px' }}>Clinical Flux</span>
+              <span style={{ display: 'block', fontSize: '11px', fontWeight: 500, color: '#6b7280', marginBottom: '6px' }}>Incoming</span>
               <div style={{ display: 'flex', alignItems: 'baseline', gap: '8px' }}>
-                 <span style={{ fontSize: '28px', fontWeight: 950, color: '#0f52ba', letterSpacing: '-1.5px' }}>{stats.upcoming}</span>
-                 <span style={{ fontSize: '11px', fontWeight: 700, color: '#0f52ba' }}>UNITS</span>
+                 <span style={{ fontSize: '28px', fontWeight: 700, color: '#1d4ed8' }}>{stats.upcoming}</span>
+                 <span style={{ fontSize: '11px', fontWeight: 500, color: '#1d4ed8' }}>Studies</span>
               </div>
             </div>
           </div>
         ) : (
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '15px', marginBottom: '20px' }}>
             <div className="summary-card" style={{ background: 'white', border: '1px solid #e2e8f0', padding: '15px', borderRadius: '20px', boxShadow: '0 10px 40px rgba(0,0,0,0.02)' }}>
-              <span style={{ display: 'block', fontSize: '9px', fontWeight: 950, color: '#64748b', textTransform: 'uppercase', letterSpacing: '2px', marginBottom: '8px' }}>Lifetime Archive</span>
+              <span style={{ display: 'block', fontSize: '11px', fontWeight: 500, color: '#6b7280', marginBottom: '6px' }}>Total Archive</span>
               <div style={{ display: 'flex', alignItems: 'baseline', gap: '8px' }}>
-                 <span style={{ fontSize: '28px', fontWeight: 950, color: '#1e293b', letterSpacing: '-1.5px' }}>{stats.archiveTotal}</span>
-                 <span style={{ fontSize: '11px', fontWeight: 700, color: '#6366f1' }}>STUDIES</span>
+                 <span style={{ fontSize: '28px', fontWeight: 700, color: '#1e293b' }}>{stats.archiveTotal}</span>
+                 <span style={{ fontSize: '11px', fontWeight: 500, color: '#6366f1' }}>Studies</span>
               </div>
             </div>
 
             <div className="summary-card" style={{ background: 'white', border: '1px solid #e2e8f0', padding: '15px', borderRadius: '20px', boxShadow: '0 10px 40px rgba(0,0,0,0.02)' }}>
-              <span style={{ display: 'block', fontSize: '9px', fontWeight: 950, color: '#64748b', textTransform: 'uppercase', letterSpacing: '2px', marginBottom: '8px' }}>Total Finalized</span>
+              <span style={{ display: 'block', fontSize: '11px', fontWeight: 500, color: '#6b7280', marginBottom: '6px' }}>Finalized</span>
               <div style={{ display: 'flex', alignItems: 'baseline', gap: '8px' }}>
-                 <span style={{ fontSize: '28px', fontWeight: 950, color: '#059669', letterSpacing: '-1.5px' }}>{stats.archiveFinalized}</span>
-                 <span style={{ fontSize: '11px', fontWeight: 700, color: '#059669' }}>VALIDATED</span>
+                 <span style={{ fontSize: '28px', fontWeight: 700, color: '#059669' }}>{stats.archiveFinalized}</span>
+                 <span style={{ fontSize: '11px', fontWeight: 500, color: '#059669' }}>Reports</span>
               </div>
             </div>
 
             <div className="summary-card" style={{ background: 'white', border: '1px solid #e2e8f0', padding: '15px', borderRadius: '20px', boxShadow: '0 10px 40px rgba(0,0,0,0.02)' }}>
-              <span style={{ display: 'block', fontSize: '9px', fontWeight: 950, color: '#64748b', textTransform: 'uppercase', letterSpacing: '2px', marginBottom: '8px' }}>Legacy Drafts</span>
+              <span style={{ display: 'block', fontSize: '11px', fontWeight: 500, color: '#6b7280', marginBottom: '6px' }}>Open Drafts</span>
               <div style={{ display: 'flex', alignItems: 'baseline', gap: '8px' }}>
-                 <span style={{ fontSize: '28px', fontWeight: 950, color: '#f59e0b', letterSpacing: '-1.5px' }}>{stats.archiveDrafts}</span>
-                 <span style={{ fontSize: '11px', fontWeight: 700, color: '#f59e0b' }}>DRAFTS</span>
+                 <span style={{ fontSize: '28px', fontWeight: 700, color: '#f59e0b' }}>{stats.archiveDrafts}</span>
+                 <span style={{ fontSize: '11px', fontWeight: 500, color: '#f59e0b' }}>Drafts</span>
               </div>
             </div>
 
             <div className="summary-card" style={{ background: 'white', border: '1px solid #e2e8f0', padding: '15px', borderRadius: '20px', boxShadow: '0 10px 40px rgba(0,0,0,0.02)' }}>
-              <span style={{ display: 'block', fontSize: '9px', fontWeight: 950, color: '#64748b', textTransform: 'uppercase', letterSpacing: '2px', marginBottom: '8px' }}>Performance</span>
+              <span style={{ display: 'block', fontSize: '11px', fontWeight: 500, color: '#6b7280', marginBottom: '6px' }}>Accuracy</span>
               <div style={{ display: 'flex', alignItems: 'baseline', gap: '8px' }}>
-                 <span style={{ fontSize: '28px', fontWeight: 950, color: '#0f52ba', letterSpacing: '-1.5px' }}>{stats.reportingAccuracy}%</span>
-                 <span style={{ fontSize: '11px', fontWeight: 700, color: '#0f52ba' }}>ACCURACY</span>
+                 <span style={{ fontSize: '28px', fontWeight: 700, color: '#1d4ed8' }}>{stats.reportingAccuracy}%</span>
+                 <span style={{ fontSize: '11px', fontWeight: 500, color: '#1d4ed8' }}>Rate</span>
               </div>
             </div>
           </div>
@@ -349,7 +346,7 @@ export default function DoctorBoard() {
               <span style={{ position: 'absolute', left: '15px', top: '50%', transform: 'translateY(-50%)', opacity: 0.5 }}>🔍</span>
               <input 
                 type="text" 
-                placeholder={view === 'QUEUE' ? "SCAN BARCODE OR SEARCH MISSIONS..." : "SEARCH CLINICAL ARCHIVE..."}
+                placeholder={view === 'QUEUE' ? "Search patients or IDs..." : "Search archive..."}
                 value={search} 
                 onChange={e => setSearch(e.target.value)} 
                 style={{ 
@@ -360,7 +357,7 @@ export default function DoctorBoard() {
                 }} 
               />
               {search.startsWith('ID:') && (
-                <span style={{ position: 'absolute', right: '15px', top: '50%', transform: 'translateY(-50%)', background: '#0f52ba', color: 'white', fontSize: '8px', fontWeight: 900, padding: '2px 6px', borderRadius: '4px' }}>SCANNER MODE</span>
+                <span style={{ position: 'absolute', right: '15px', top: '50%', transform: 'translateY(-50%)', background: '#1d4ed8', color: 'white', fontSize: '10px', fontWeight: 500, padding: '2px 8px', borderRadius: '4px' }}>Scanner Mode</span>
               )}
             </div>
             <button 
@@ -368,7 +365,7 @@ export default function DoctorBoard() {
               style={{ padding: '12px 15px', borderRadius: '10px', background: '#f8fafc', border: '1px solid #e2e8f0', cursor: 'pointer', fontSize: '14px', display: 'flex', alignItems: 'center', gap: '8px', fontWeight: 900 }}
               title="Open Mobile Scanner"
             >
-              📷 <span style={{ fontSize: '10px' }}>SCAN</span>
+              📷 <span style={{ fontSize: '11px' }}>Scan</span>
             </button>
             <input 
               id="doctor-mobile-scanner" 
@@ -377,7 +374,7 @@ export default function DoctorBoard() {
               capture="camera" 
               style={{ display: 'none' }} 
               onChange={(e) => {
-                alert('SCANNER CAPTURE ACTIVE: Please point at the Token Barcode. (Simulated)');
+                alert('Scanner active: point at the barcode. (Simulated)');
               }}
             />
           </div>
@@ -399,41 +396,41 @@ export default function DoctorBoard() {
             </div>
           )}
 
-          <select value={filters.modality} onChange={e => setFilters({...filters, modality: e.target.value})} style={{ padding: '12px 15px', borderRadius: '10px', border: '1px solid #e2e8f0', fontSize: '11px', fontWeight: 900, background: 'white', outline: 'none' }}>
-            <option value="ALL">MODALITY: ALL</option>
+          <select value={filters.modality} onChange={e => setFilters({...filters, modality: e.target.value})} style={{ padding: '10px 14px', borderRadius: '8px', border: '1px solid #e2e8f0', fontSize: '12px', fontWeight: 500, background: 'white', outline: 'none' }}>
+            <option value="ALL">All Modalities</option>
             {Object.keys(MODALITY_ICONS).map(m => <option key={m} value={m}>{m}</option>)}
           </select>
 
-          <select value={filters.priority} onChange={e => setFilters({...filters, priority: e.target.value})} style={{ padding: '12px 15px', borderRadius: '10px', border: '1px solid #e2e8f0', fontSize: '11px', fontWeight: 900, background: 'white', outline: 'none' }}>
-            <option value="ALL">PRIORITY: ALL</option>
-            <option value="STAT">⚡ EMERGENCY</option>
-            <option value="ROUTINE">📋 ROUTINE</option>
+          <select value={filters.priority} onChange={e => setFilters({...filters, priority: e.target.value})} style={{ padding: '10px 14px', borderRadius: '8px', border: '1px solid #e2e8f0', fontSize: '12px', fontWeight: 500, background: 'white', outline: 'none' }}>
+            <option value="ALL">All Priorities</option>
+            <option value="STAT">Emergency</option>
+            <option value="ROUTINE">Routine</option>
           </select>
 
-          <select value={filters.clinicalStatus} onChange={e => setFilters({...filters, clinicalStatus: e.target.value})} style={{ padding: '12px 15px', borderRadius: '10px', border: '1px solid #e2e8f0', fontSize: '11px', fontWeight: 900, background: 'white', outline: 'none' }}>
-            <option value="ALL">PHASE: ALL</option>
+          <select value={filters.clinicalStatus} onChange={e => setFilters({...filters, clinicalStatus: e.target.value})} style={{ padding: '10px 14px', borderRadius: '8px', border: '1px solid #e2e8f0', fontSize: '12px', fontWeight: 500, background: 'white', outline: 'none' }}>
+            <option value="ALL">All Statuses</option>
             {view === 'QUEUE' ? (
               <>
-                <option value="SCANNED">📡 READY FOR REPORT</option>
-                <option value="REPORTING">📝 IN DRAFTING</option>
-                <option value="IN_PROGRESS">⚡ IN ACQUISITION</option>
-                <option value="REPORTED">✅ FINALIZED TODAY</option>
+                <option value="SCANNED">Ready for Report</option>
+                <option value="REPORTING">In Progress</option>
+                <option value="IN_PROGRESS">Scanning</option>
+                <option value="REPORTED">Finalized Today</option>
               </>
             ) : (
               <>
-                <option value="REPORTED">📄 FINALIZED</option>
-                <option value="COMPLETED">✅ ARCHIVED</option>
+                <option value="REPORTED">Finalized</option>
+                <option value="COMPLETED">Archived</option>
               </>
             )}
           </select>
 
-          <button className="gamified-btn" onClick={fetchCases} style={{ padding: '12px 20px', borderRadius: '10px' }}>RE-SYNC HUB</button>
+          <button className="gamified-btn" onClick={fetchCases} style={{ padding: '10px 18px', borderRadius: '8px', fontSize: '13px', fontWeight: 600 }}>Refresh</button>
         </div>
 
         {!isTablet && (
           <div style={{ display: 'flex', gap: '10px', marginBottom: '20px', justifyContent: 'flex-end' }}>
-             <button onClick={() => setViewMode('TABLE')} style={{ padding: '8px 16px', borderRadius: '8px', border: 'none', background: viewMode === 'TABLE' ? '#0f52ba' : 'white', color: viewMode === 'TABLE' ? 'white' : '#64748b', fontSize: '11px', fontWeight: 950, cursor: 'pointer', boxShadow: '0 2px 8px rgba(0,0,0,0.05)' }}>GRID_VIEW</button>
-             <button onClick={() => setViewMode('CARDS')} style={{ padding: '8px 16px', borderRadius: '8px', border: 'none', background: viewMode === 'CARDS' ? '#0f52ba' : 'white', color: viewMode === 'CARDS' ? 'white' : '#64748b', fontSize: '11px', fontWeight: 950, cursor: 'pointer', boxShadow: '0 2px 8px rgba(0,0,0,0.05)' }}>CARD_VIEW</button>
+             <button onClick={() => setViewMode('TABLE')} style={{ padding: '7px 14px', borderRadius: '7px', border: '1px solid #e2e8f0', background: viewMode === 'TABLE' ? '#1d4ed8' : 'white', color: viewMode === 'TABLE' ? 'white' : '#6b7280', fontSize: '12px', fontWeight: 500, cursor: 'pointer' }}>Table</button>
+             <button onClick={() => setViewMode('CARDS')} style={{ padding: '7px 14px', borderRadius: '7px', border: '1px solid #e2e8f0', background: viewMode === 'CARDS' ? '#1d4ed8' : 'white', color: viewMode === 'CARDS' ? 'white' : '#6b7280', fontSize: '12px', fontWeight: 500, cursor: 'pointer' }}>Cards</button>
           </div>
         )}
 
@@ -443,25 +440,25 @@ export default function DoctorBoard() {
           <table style={{ width: '100%', borderCollapse: 'collapse' }}>
             <thead style={{ background: '#f8fafc', borderBottom: '1px solid #e2e8f0' }}>
               <tr>
-                <th onClick={() => handleSort('patientName')} style={{ padding: '20px', textAlign: 'left', fontSize: '11px', fontWeight: 950, color: '#64748b', letterSpacing: '1px', cursor: 'pointer' }}>
-                  PATIENT NODE {sortConfig.key === 'patientName' ? (sortConfig.direction === 'asc' ? '🔼' : '🔽') : '↕️'}
+                <th onClick={() => handleSort('patientName')} style={{ padding: '16px 20px', textAlign: 'left', fontSize: '11px', fontWeight: 600, color: '#6b7280', cursor: 'pointer', letterSpacing: '0.3px' }}>
+                  Patient {sortConfig.key === 'patientName' ? (sortConfig.direction === 'asc' ? '↑' : '↓') : '↕'}
                 </th>
-                <th onClick={() => handleSort('tokenNo')} style={{ padding: '20px', textAlign: 'left', fontSize: '11px', fontWeight: 950, color: '#64748b', letterSpacing: '1px', cursor: 'pointer' }}>
-                  TOKEN {sortConfig.key === 'tokenNo' ? (sortConfig.direction === 'asc' ? '🔼' : '🔽') : '↕️'}
+                <th onClick={() => handleSort('tokenNo')} style={{ padding: '16px 20px', textAlign: 'left', fontSize: '11px', fontWeight: 600, color: '#6b7280', cursor: 'pointer', letterSpacing: '0.3px' }}>
+                  Token {sortConfig.key === 'tokenNo' ? (sortConfig.direction === 'asc' ? '↑' : '↓') : '↕'}
                 </th>
-                <th onClick={() => handleSort('service')} style={{ padding: '20px', textAlign: 'left', fontSize: '11px', fontWeight: 950, color: '#64748b', letterSpacing: '1px', cursor: 'pointer' }}>
-                  STUDY ARCHITECTURE {sortConfig.key === 'service' ? (sortConfig.direction === 'asc' ? '🔼' : '🔽') : '↕️'}
+                <th onClick={() => handleSort('service')} style={{ padding: '16px 20px', textAlign: 'left', fontSize: '11px', fontWeight: 600, color: '#6b7280', cursor: 'pointer', letterSpacing: '0.3px' }}>
+                  Service {sortConfig.key === 'service' ? (sortConfig.direction === 'asc' ? '↑' : '↓') : '↕'}
                 </th>
-                <th onClick={() => handleSort('dateTime')} style={{ padding: '20px', textAlign: 'left', fontSize: '11px', fontWeight: 950, color: '#64748b', letterSpacing: '1px', cursor: 'pointer' }}>
-                  MISSION DATE {sortConfig.key === 'dateTime' ? (sortConfig.direction === 'asc' ? '🔼' : '🔽') : '↕️'}
+                <th onClick={() => handleSort('dateTime')} style={{ padding: '16px 20px', textAlign: 'left', fontSize: '11px', fontWeight: 600, color: '#6b7280', cursor: 'pointer', letterSpacing: '0.3px' }}>
+                  Date {sortConfig.key === 'dateTime' ? (sortConfig.direction === 'asc' ? '↑' : '↓') : '↕'}
                 </th>
-                <th onClick={() => handleSort('status')} style={{ padding: '20px', textAlign: 'left', fontSize: '11px', fontWeight: 950, color: '#64748b', letterSpacing: '1px', cursor: 'pointer' }}>
-                  SCANNING CONTEXT {sortConfig.key === 'status' ? (sortConfig.direction === 'asc' ? '🔼' : '🔽') : '↕️'}
+                <th style={{ padding: '16px 20px', textAlign: 'left', fontSize: '11px', fontWeight: 600, color: '#6b7280', letterSpacing: '0.3px' }}>
+                  Scan Notes
                 </th>
-                <th onClick={() => handleSort('status')} style={{ padding: '20px', textAlign: 'left', fontSize: '11px', fontWeight: 950, color: '#64748b', letterSpacing: '1px', cursor: 'pointer' }}>
-                  PHASE {sortConfig.key === 'status' ? (sortConfig.direction === 'asc' ? '🔼' : '🔽') : '↕️'}
+                <th onClick={() => handleSort('status')} style={{ padding: '16px 20px', textAlign: 'left', fontSize: '11px', fontWeight: 600, color: '#6b7280', cursor: 'pointer', letterSpacing: '0.3px' }}>
+                  Status {sortConfig.key === 'status' ? (sortConfig.direction === 'asc' ? '↑' : '↓') : '↕'}
                 </th>
-                <th style={{ padding: '20px', textAlign: 'right', fontSize: '11px', fontWeight: 950, color: '#64748b', letterSpacing: '1px' }}>OPERATIONS</th>
+                <th style={{ padding: '16px 20px', textAlign: 'right', fontSize: '11px', fontWeight: 600, color: '#6b7280', letterSpacing: '0.3px' }}>Actions</th>
               </tr>
             </thead>
             <tbody>
@@ -498,19 +495,19 @@ export default function DoctorBoard() {
                        <div style={{ display: 'flex', flexDirection: 'column' }}>
                           <span style={{ fontSize: '13px', fontWeight: 800, color: '#1a1a2e' }}>{c.service}</span>
                           <span style={{ fontSize: '9px', fontWeight: 950, color: c.priority === 'STAT' ? '#ef4444' : '#64748b', background: c.priority === 'STAT' ? '#fee2e2' : '#f1f5f9', padding: '2px 8px', borderRadius: '6px', alignSelf: 'flex-start', marginTop: '4px' }}>
-                            {c.priority === 'STAT' ? '⚡ EMERGENCY' : '📋 ROUTINE'}
+                            {c.priority === 'STAT' ? 'Emergency' : 'Routine'}
                           </span>
                        </div>
                     </td>
                     <td style={{ padding: '20px' }}>
                         <div style={{ fontWeight: 800, color: '#1e293b', fontSize: '13px' }}>{c.dateTime ? new Date(c.dateTime).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }).toUpperCase() : 'N/A'}</div>
-                        <div style={{ fontSize: '10px', color: '#94a3b8', fontWeight: 800, marginTop: '4px' }}>TIME: {c.dateTime ? new Date(c.dateTime).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', hour12: true }).toUpperCase() : '09:00 AM'}</div>
+                        <div style={{ fontSize: '11px', color: '#94a3b8', fontWeight: 400, marginTop: '4px' }}>{c.dateTime ? new Date(c.dateTime).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', hour12: true }) : '09:00 AM'}</div>
                     </td>
                     <td style={{ padding: '20px' }}>
                         <div style={{ maxWidth: '200px' }}>
                            <div style={{ fontSize: '10px', fontWeight: 800, color: '#0f52ba', display: 'flex', alignItems: 'center', gap: '5px', marginBottom: '4px' }}>
                               <span style={{ width: '6px', height: '6px', borderRadius: '50%', background: status === 'scanned' ? '#2ecc71' : '#e2e8f0' }}></span>
-                              {status === 'scanned' ? 'SCANNING COMPLETE' : 'IN_PIPELINE'}
+                              {status === 'scanned' ? 'Scan complete' : 'In pipeline'}
                            </div>
                            <div style={{ fontSize: '11px', color: c.technicianComments ? '#1e293b' : '#94a3b8', fontWeight: 500, fontStyle: c.technicianComments ? 'normal' : 'italic' }}>
                               {c.technicianComments || 'No scanning bay observations provided.'}
@@ -524,7 +521,7 @@ export default function DoctorBoard() {
                         color: status === 'reported' ? '#166534' : isReady ? '#27ae60' : isScanning ? '#d97706' : isExpected ? '#0f52ba' : '#64748b',
                         border: `1px solid ${status === 'reported' ? '#bbf7d0' : isReady ? '#c3e6cb' : isScanning ? '#fcd34d' : isExpected ? '#dbeafe' : '#e2e8f0'}`,
                         textTransform: 'uppercase'
-                      }}>{status === 'scanned' ? '📡 READY' : status === 'confirmed' ? '⚡ ARRIVED' : status === 'in_progress' ? '🌀 SCANNING' : status === 'scheduled' ? '📅 EXPECTED' : status === 'reported' ? '✅ FINALIZED' : status === 'completed' ? '🏁 ARCHIVED' : status.toUpperCase()}</span>
+                      }}>{status === 'scanned' ? 'Ready' : status === 'confirmed' ? 'Arrived' : status === 'in_progress' ? 'Scanning' : status === 'scheduled' ? 'Expected' : status === 'reported' ? 'Finalized' : status === 'completed' ? 'Archived' : status}</span>
                     </td>
                     <td style={{ padding: '20px', textAlign: 'right' }}>
                       <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
@@ -545,7 +542,7 @@ export default function DoctorBoard() {
                           style={{ padding: '10px 20px', fontSize: '11px', borderRadius: '12px', opacity: (isActive || view === 'HISTORY') ? 1 : 0.4, cursor: (isActive || view === 'HISTORY') ? 'pointer' : 'not-allowed' }} 
                           onClick={() => handleOpenWorkspace(c)}
                         >
-                          {status === 'reported' ? 'REVIEW REPORT' : isReady ? 'EXECUTE REPORTER' : 'PRE-TRIAGE REPORT'}
+                          {status === 'reported' ? 'Review' : isReady ? 'Write Report' : 'Open Report'}
                         </button>
                       </div>
                     </td>
@@ -555,7 +552,7 @@ export default function DoctorBoard() {
               {filteredCases.length === 0 && !loading && (
                 <tr>
                   <td colSpan="7" style={{ textAlign: 'center', padding: '100px', color: '#94a3b8', fontStyle: 'italic', fontSize: '14px' }}>
-                    [ NO DIAGNOSTIC MISSIONS IN THIS FREQUENCY ]
+                    No cases found
                   </td>
                 </tr>
               )}
@@ -563,20 +560,20 @@ export default function DoctorBoard() {
           </table>
           {view === 'HISTORY' && totalPages > 1 && (
             <div style={{ padding: '15px 30px', background: '#f8fafc', borderTop: '1px solid #f1f5f9', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <div style={{ fontSize: '11px', fontWeight: 800, color: '#64748b' }}>
-                SHOWING PAGE <span style={{ color: '#0f52ba' }}>{archivePage}</span> OF <span style={{ color: '#0f52ba' }}>{totalPages}</span>
+              <div style={{ fontSize: '12px', fontWeight: 500, color: '#6b7280' }}>
+                Page <span style={{ color: '#1d4ed8' }}>{archivePage}</span> of <span style={{ color: '#1d4ed8' }}>{totalPages}</span>
               </div>
-              <div style={{ display: 'flex', gap: '10px' }}>
-                <button 
+              <div style={{ display: 'flex', gap: '8px' }}>
+                <button
                   onClick={() => setArchivePage(p => Math.max(1, p - 1))}
                   disabled={archivePage === 1}
-                  style={{ padding: '8px 15px', borderRadius: '8px', border: '1px solid #e2e8f0', background: 'white', fontSize: '10px', fontWeight: 900, cursor: archivePage === 1 ? 'not-allowed' : 'pointer', opacity: archivePage === 1 ? 0.5 : 1 }}
-                >PREVIOUS</button>
-                <button 
+                  style={{ padding: '7px 14px', borderRadius: '7px', border: '1px solid #e2e8f0', background: 'white', fontSize: '12px', fontWeight: 500, cursor: archivePage === 1 ? 'not-allowed' : 'pointer', opacity: archivePage === 1 ? 0.5 : 1 }}
+                >Previous</button>
+                <button
                   onClick={() => setArchivePage(p => Math.min(totalPages, p + 1))}
                   disabled={archivePage === totalPages}
-                  style={{ padding: '8px 15px', borderRadius: '8px', border: '1px solid #e2e8f0', background: 'white', fontSize: '10px', fontWeight: 900, cursor: archivePage === totalPages ? 'not-allowed' : 'pointer', opacity: archivePage === totalPages ? 0.5 : 1 }}
-                >NEXT</button>
+                  style={{ padding: '7px 14px', borderRadius: '7px', border: '1px solid #e2e8f0', background: 'white', fontSize: '12px', fontWeight: 500, cursor: archivePage === totalPages ? 'not-allowed' : 'pointer', opacity: archivePage === totalPages ? 0.5 : 1 }}
+                >Next</button>
               </div>
             </div>
           )}
@@ -593,22 +590,22 @@ export default function DoctorBoard() {
                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
                           <div>
                              <div style={{ fontSize: '14px', fontWeight: 950, color: '#1e293b' }}>{c.patientName?.toUpperCase()}</div>
-                             <div style={{ fontSize: '10px', color: '#64748b', fontWeight: 800, marginTop: '4px' }}>UHID: {c.patientIdentifier || 'UH-XXX'} | TOKEN: <span style={{ color: '#0f52ba' }}>{c.tokenNo || '-'}</span></div>
+                             <div style={{ fontSize: '11px', color: '#6b7280', fontWeight: 400, marginTop: '4px' }}>ID: {c.patientIdentifier || '—'} · Token: <span style={{ color: '#1d4ed8' }}>{c.tokenNo || '-'}</span></div>
                           </div>
                            <span style={{ 
                             padding: '6px 12px', borderRadius: '8px', fontSize: '10px', fontWeight: 950,
                             background: status === 'reported' ? '#f0fdf4' : isReady ? '#ecfdf5' : isScanning ? '#fff7ed' : isExpected ? '#eff6ff' : '#f8fafc',
                             color: status === 'reported' ? '#166534' : isReady ? '#27ae60' : isScanning ? '#d97706' : isExpected ? '#0f52ba' : '#64748b'
-                          }}>{status === 'reported' ? '✅ FINALIZED' : status.toUpperCase()}</span>
+                          }}>{status === 'reported' ? 'Finalized' : status}</span>
                        </div>
                        
                        <div style={{ background: '#f8fafc', padding: '12px', borderRadius: '12px', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
                           <div>
-                             <div style={{ fontSize: '9px', fontWeight: 950, color: '#94a3b8' }}>STUDY</div>
-                             <div style={{ fontSize: '12px', fontWeight: 900, color: '#0f52ba' }}>{c.service?.toUpperCase()}</div>
+                             <div style={{ fontSize: '11px', fontWeight: 500, color: '#6b7280' }}>Service</div>
+                             <div style={{ fontSize: '12px', fontWeight: 600, color: '#1d4ed8' }}>{c.service}</div>
                           </div>
                           <div>
-                             <div style={{ fontSize: '9px', fontWeight: 950, color: '#94a3b8' }}>DATE/TIME</div>
+                             <div style={{ fontSize: '11px', fontWeight: 500, color: '#6b7280' }}>Date</div>
                              <div style={{ fontSize: '12px', fontWeight: 800 }}>{c.dateTime ? new Date(c.dateTime).toLocaleDateString('en-GB', { day: '2-digit', month: 'short' }).toUpperCase() : 'N/A'}</div>
                           </div>
                        </div>
@@ -634,14 +631,14 @@ export default function DoctorBoard() {
                             className="btn btn-primary"
                             onClick={() => handleOpenWorkspace(c)}
                             style={{ flex: 1, padding: '12px', borderRadius: '10px', fontSize: '11px', fontWeight: 950, background: status === 'reported' ? '#16a34a' : '#0f52ba', border: 'none', color: 'white', cursor: 'pointer' }}
-                          >{status === 'reported' ? 'REVIEW REPORT' : 'EXECUTE_REPORTER'}</button>
+                          >{status === 'reported' ? 'Review' : 'Write Report'}</button>
                        </div>
                     </div>
                   );
                })}
                {filteredCases.length === 0 && !loading && (
                  <div style={{ gridColumn: '1/-1', textAlign: 'center', padding: '60px', color: '#94a3b8', fontStyle: 'italic' }}>
-                    [ NO DIAGNOSTIC MISSIONS IN THIS FREQUENCY ]
+                    No cases found
                  </div>
                )}
             </div>

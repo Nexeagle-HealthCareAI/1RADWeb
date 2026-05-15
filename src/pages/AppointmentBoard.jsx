@@ -31,17 +31,17 @@ const INFORMATION_SOURCES = [
 ];
 
 const STATUS_META = {
-  future:      { label: 'FUTURE', color: '#6366f1', bg: '#eef2ff', glow: 'rgba(99,102,241,0.1)', icon: '\u23F3' },
-  scheduled:   { label: 'EXPECTED', color: '#64748b', bg: '#f1f5f9', glow: 'rgba(100,116,139,0.1)', icon: '\u231B' },
-  booked:      { label: 'EXPECTED', color: '#64748b', bg: '#f1f5f9', glow: 'rgba(100,116,139,0.1)', icon: '\u231B' },
-  confirmed:   { label: 'ARRIVED', color: '#10b981', bg: '#ecfdf5', glow: 'rgba(16,185,129,0.15)', icon: '\u2705' },
-  in_progress: { label: 'SCANNING', color: '#f59e0b', bg: '#fffbeb', glow: 'rgba(245,158,11,0.15)', icon: '\u2699\uFE0F' },
-  completed:   { label: 'SCANNED', color: '#0f52ba', bg: '#f0f4ff', glow: 'rgba(15,82,186,0.15)', icon: '\u2705' },
-  scanned:     { label: 'SCANNED', color: '#0f52ba', bg: '#f0f4ff', glow: 'rgba(15,82,186,0.15)', icon: '\u2705' },
-  reporting:   { label: 'REPORTING', color: '#8b5cf6', bg: '#f5f3ff', glow: 'rgba(139,92,246,0.15)', icon: '\u270F\uFE0F' },
-  reported:    { label: 'REPORTED', color: '#059669', bg: '#ecfdf5', glow: 'rgba(5,150,105,0.15)', icon: '\uD83D\uDCC4' },
-  cancelled:   { label: 'CANCELLED', color: '#ef4444', bg: '#fef2f2', glow: 'rgba(239,68,68,0.15)', icon: '\u274C' },
-  unknown:     { label: 'UNKNOWN', color: '#94a3b8', bg: '#f8fafc', glow: 'rgba(148,163,184,0.1)', icon: '\u2753' }
+  future:      { label: 'FUTURE', color: '#6366f1', bg: '#eef2ff', glow: 'rgba(99,102,241,0.1)', icon: '🕒' },
+  scheduled:   { label: 'EXPECTED', color: '#475569', bg: '#f1f5f9', glow: 'rgba(71,85,105,0.1)', icon: '⏳' },
+  booked:      { label: 'EXPECTED', color: '#475569', bg: '#f1f5f9', glow: 'rgba(71,85,105,0.1)', icon: '⏳' },
+  confirmed:   { label: 'ARRIVED', color: '#059669', bg: '#ecfdf5', glow: 'rgba(5,150,105,0.15)', icon: '✅' },
+  in_progress: { label: 'SCANNING', color: '#d97706', bg: '#fffbe6', glow: 'rgba(217,119,6,0.15)', icon: '⚙️' },
+  completed:   { label: 'SCANNED', color: '#2563eb', bg: '#eff6ff', glow: 'rgba(37,99,235,0.15)', icon: '✅' },
+  scanned:     { label: 'SCANNED', color: '#2563eb', bg: '#eff6ff', glow: 'rgba(37,99,235,0.15)', icon: '✅' },
+  reporting:   { label: 'REPORTING', color: '#7c3aed', bg: '#f5f3ff', glow: 'rgba(124,58,237,0.15)', icon: '📝' },
+  reported:    { label: 'REPORTED', color: '#10b981', bg: '#ecfdf5', glow: 'rgba(16,185,129,0.15)', icon: '📄' },
+  cancelled:   { label: 'CANCELLED', color: '#dc2626', bg: '#fef2f2', glow: 'rgba(220,38,38,0.15)', icon: '❌' },
+  unknown:     { label: 'UNKNOWN', color: '#64748b', bg: '#f8fafc', glow: 'rgba(100,116,139,0.1)', icon: '❓' }
 };
 
 const MODALITY_ICONS = {
@@ -61,6 +61,15 @@ export default function AppointmentBoard() {
   const navigate = useNavigate();
   const { activeCenterId, activeCenter } = useContext(AuthContext);
   const { isOnline, addToOutbox } = useOffline();
+  const [windowWidth, setWindowWidth] = useState(window.innerWidth);
+  const isMobile = windowWidth < 768;
+  const isTablet = windowWidth >= 768 && windowWidth < 1024;
+
+  useEffect(() => {
+    const handleResize = () => setWindowWidth(window.innerWidth);
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
   const [activeTab, setActiveTab] = useState('TODAY'); // 'TODAY' or 'PAST'
   const [pastDateRange, setPastDateRange] = useState({ 
     start: TODAY, 
@@ -115,23 +124,10 @@ export default function AppointmentBoard() {
   const [showBookingValidation, setShowBookingValidation] = useState(false);
   const drawerBodyRef = useRef(null);
 
-  // Responsive layout detection
-  const [isMobile, setIsMobile] = useState(window.innerWidth < 1024);
-  const [windowWidth, setWindowWidth] = useState(window.innerWidth);
-
   useEffect(() => {
     const handleClickOutside = () => setPrintDropdownId(null);
     window.addEventListener('click', handleClickOutside);
     return () => window.removeEventListener('click', handleClickOutside);
-  }, []);
-
-  useEffect(() => {
-    const handleResize = () => {
-      setIsMobile(window.innerWidth < 1024);
-      setWindowWidth(window.innerWidth);
-    };
-    window.addEventListener('resize', handleResize);
-    return () => window.removeEventListener('resize', handleResize);
   }, []);
 
   useEffect(() => {
@@ -347,16 +343,13 @@ export default function AppointmentBoard() {
 
   const stats = {
     total: appointmentsForTab.length,
-    scheduled: appointmentsForTab.filter(a => {
+    expected: appointmentsForTab.filter(a => {
       const s = a.status?.toLowerCase();
       return s === 'scheduled' || s === 'future' || s === 'booked';
     }).length,
     confirmed: appointmentsForTab.filter(a => a.status?.toLowerCase() === 'confirmed').length,
     inProgress: appointmentsForTab.filter(a => a.status?.toLowerCase() === 'in_progress').length,
-    completed: appointmentsForTab.filter(a => {
-      const s = a.status?.toLowerCase();
-      return s === 'completed' || s === 'scanned' || s === 'reported' || s === 'reporting';
-    }).length,
+    completed: appointmentsForTab.filter(a => a.status?.toLowerCase() === 'reported').length,
     cancelled: appointmentsForTab.filter(a => a.status?.toLowerCase() === 'cancelled').length,
   };
   const completionRate = stats.total > 0 ? Math.round((stats.completed / stats.total) * 100) : 0;
@@ -881,78 +874,55 @@ export default function AppointmentBoard() {
   //  MISSION INTEL CARDS
   // ============================================================
   const renderIntelCards = () => {
-    const readyCount = stats.scheduled + stats.confirmed;
-    const progressCount = stats.inProgress;
-    
     return (
-      <div className="clinical-hud-container" style={{
-        display: isMobile ? 'grid' : 'flex',
-        gridTemplateColumns: isMobile ? '1fr 1fr' : 'none',
-        gap: isMobile ? '12px' : '20px', 
-        marginBottom: '24px',
-        padding: isMobile ? '16px' : '24px', 
-        background: 'white', borderRadius: '16px',
-        border: '1px solid #eef2f6', boxShadow: '0 4px 20px rgba(0,0,0,0.02)',
-        overflowX: 'auto'
-      }}>
-        {/* Stat: Total */}
-        <div style={{ 
-          flex: 1, 
-          minWidth: isMobile ? '0' : '160px', 
-          borderRight: (isMobile && (windowWidth < 600)) ? 'none' : (isMobile ? '1px solid #f1f5f9' : '1px solid #f1f5f9'), 
-          borderBottom: isMobile ? (windowWidth < 600 ? '1px solid #f1f5f9' : 'none') : 'none',
-          paddingRight: '12px' 
-        }}>
-          <div style={{ fontSize: '9px', fontWeight: 900, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '1px', marginBottom: '4px' }}>Total</div>
-          <div style={{ display: 'flex', alignItems: 'baseline', gap: '6px' }}>
-            <span style={{ fontSize: isMobile ? '24px' : '32px', fontWeight: 950, color: '#1e293b', letterSpacing: '-1px' }}>{stats.total}</span>
-            <span style={{ fontSize: '8px', fontWeight: 800, color: '#0f52ba', opacity: 0.7 }}>PATIENTS</span>
+      <div className="intel-cards-grid" style={{ gridTemplateColumns: isMobile ? '1fr 1fr' : 'repeat(6, 1fr)' }}>
+        <div className="intel-card dark">
+          <span className="intel-label">Total Volume</span>
+          <div className="intel-value">{stats.total}</div>
+          <div className="intel-trend">
+            <span style={{ color: '#10b981' }}>↑ {activeRate}% Active</span>
+          </div>
+        </div>
+        
+        <div className="intel-card">
+          <span className="intel-label">Expected/Arrived</span>
+          <div className="intel-value" style={{ color: 'var(--primary-accent)' }}>
+            {stats.expected}<span style={{ fontSize: '16px', color: '#cbd5e1', margin: '0 4px' }}>/</span>{stats.confirmed}
+          </div>
+          <div className="intel-trend">
+            <span style={{ color: 'var(--text-secondary)' }}>PENDING INTAKE</span>
           </div>
         </div>
 
-        {/* Stat: Waiting */}
-        <div style={{ 
-          flex: 1, 
-          minWidth: isMobile ? '0' : '160px', 
-          borderRight: isMobile ? 'none' : '1px solid #f1f5f9', 
-          paddingRight: '12px' 
-        }}>
-          <div style={{ fontSize: '9px', fontWeight: 900, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '1px', marginBottom: '4px' }}>Waiting</div>
-          <div style={{ display: 'flex', alignItems: 'baseline', gap: '6px' }}>
-            <span style={{ fontSize: isMobile ? '24px' : '32px', fontWeight: 950, color: '#0f52ba', letterSpacing: '-1px' }}>{readyCount}</span>
-            <span style={{ fontSize: '8px', fontWeight: 800, color: '#0f52ba', opacity: 0.7 }}>READY</span>
+        <div className="intel-card">
+          <span className="intel-label">Scanning</span>
+          <div className="intel-value" style={{ color: '#f59e0b' }}>{stats.inProgress}</div>
+          <div className="intel-trend">
+            <span style={{ color: '#f59e0b' }}>ACTIVE MISSION</span>
           </div>
         </div>
 
-        {/* Stat: Active */}
-        <div style={{ 
-          flex: 1, 
-          minWidth: isMobile ? '0' : '160px', 
-          borderRight: isMobile ? '1px solid #f1f5f9' : '1px solid #f1f5f9', 
-          paddingRight: '12px',
-          marginTop: isMobile ? '12px' : '0',
-          paddingTop: isMobile ? '12px' : '0',
-          borderTop: isMobile ? '1px solid #f1f5f9' : 'none'
-        }}>
-          <div style={{ fontSize: '9px', fontWeight: 900, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '1px', marginBottom: '4px' }}>Active</div>
-          <div style={{ display: 'flex', alignItems: 'baseline', gap: '6px' }}>
-            <span style={{ fontSize: isMobile ? '24px' : '32px', fontWeight: 950, color: '#f59e0b', letterSpacing: '-1px' }}>{progressCount}</span>
-            <span style={{ fontSize: '8px', fontWeight: 800, color: '#f59e0b', opacity: 0.7 }}>SCAN</span>
+        <div className="intel-card">
+          <span className="intel-label">Completed Missions</span>
+          <div className="intel-value" style={{ color: '#10b981' }}>{stats.completed}</div>
+          <div className="intel-trend">
+            <span style={{ color: '#10b981' }}>FINALIZED DONE</span>
           </div>
         </div>
 
-        {/* Stat: Completed */}
-        <div style={{ 
-          flex: 1, 
-          minWidth: isMobile ? '0' : '160px',
-          marginTop: isMobile ? '12px' : '0',
-          paddingTop: isMobile ? '12px' : '0',
-          borderTop: isMobile ? '1px solid #f1f5f9' : 'none'
-        }}>
-          <div style={{ fontSize: '9px', fontWeight: 900, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '1px', marginBottom: '4px' }}>Finalized</div>
-          <div style={{ display: 'flex', alignItems: 'baseline', gap: '6px' }}>
-            <span style={{ fontSize: isMobile ? '24px' : '32px', fontWeight: 950, color: '#10b981', letterSpacing: '-1px' }}>{stats.completed}</span>
-            <span style={{ fontSize: '8px', fontWeight: 800, color: '#10b981', opacity: 0.7 }}>DONE</span>
+        <div className="intel-card">
+          <span className="intel-label">Efficiency</span>
+          <div className="intel-value" style={{ color: '#8b5cf6' }}>{completionRate}%</div>
+          <div className="intel-trend">
+            <span style={{ color: '#8b5cf6' }}>THROUGHPUT</span>
+          </div>
+        </div>
+
+        <div className="intel-card">
+          <span className="intel-label">Critical Status</span>
+          <div className="intel-value" style={{ color: '#ef4444' }}>{stats.cancelled}</div>
+          <div className="intel-trend">
+            <span style={{ color: '#ef4444' }}>CANCELLED/VOID</span>
           </div>
         </div>
       </div>
@@ -963,72 +933,47 @@ export default function AppointmentBoard() {
   //  FILTER CONSOLE - RESPONSIVE
   // ============================================================
   const renderFilterBar = () => (
-    <div className="clinical-action-ribbon" style={{
-      display: 'flex', 
-      flexDirection: isMobile ? 'column' : 'row',
-      alignItems: isMobile ? 'stretch' : 'center', 
-      gap: '12px',
-      marginBottom: '24px'
-    }}>
-      {/* Search Input */}
-      <div style={{
-        flex: 1, display: 'flex', alignItems: 'center',
-        background: '#f8fafc', border: '1px solid #e2e8f0',
-        borderRadius: '12px', padding: isMobile ? '12px 16px' : '10px 16px'
-      }}>
+    <div className="filter-bar-responsive">
+      <div className="filter-search-group">
         <input
           type="text"
           placeholder="Search patient, mobile, or ID..."
           value={searchQuery}
           onChange={e => setSearchQuery(e.target.value)}
-          style={{ border: 'none', background: 'transparent', width: '100%', outline: 'none', fontSize: isMobile ? '16px' : '13px', fontWeight: 600, color: '#1e293b' }}
         />
         {searchQuery && (
-          <button onClick={() => setSearchQuery('')} style={{ border: 'none', background: 'none', cursor: 'pointer', color: '#94a3b8', padding: '5px' }}>✕</button>
+          <button onClick={() => setSearchQuery('')} className="filter-reset-btn" style={{ padding: '4px', borderRadius: '50%', width: '24px', height: '24px' }}>✕</button>
         )}
       </div>
 
-      {/* Selectors Group */}
-      <div style={{ display: 'flex', gap: '10px', flexDirection: isMobile ? 'column' : 'row' }}>
+      <div className="filter-select-group">
         <select
+          className="filter-select"
           value={filters.doctor}
           onChange={e => setFilters({...filters, doctor: e.target.value})}
-          style={{
-            padding: '12px 16px', borderRadius: '12px', background: 'white',
-            border: '1px solid #e2e8f0', fontSize: '14px', fontWeight: 700, color: '#475569',
-            cursor: 'pointer', minWidth: isMobile ? '100%' : '160px', outline: 'none'
-          }}
         >
           <option value="ALL">All Specialists</option>
           {doctors.map(d => <option key={d} value={d}>{d}</option>)}
         </select>
+
+        <select
+          className="filter-select"
+          value={filters.status}
+          onChange={e => setFilters({...filters, status: e.target.value})}
+        >
+          <option value="ALL">All Statuses</option>
+          {Object.entries(STATUS_META).map(([key, meta]) => (
+            <option key={key} value={key}>{meta.label}</option>
+          ))}
+        </select>
       </div>
 
-      {/* Date Toggle (Archive only) */}
-      {activeTab === 'PAST' && (
-        <div style={{ display: 'flex', background: '#f1f5f9', padding: '3px', borderRadius: '10px' }}>
-          <button 
-            onClick={() => setArchiveFilterMode('ALL')}
-            style={{ padding: '8px 16px', borderRadius: '8px', border: 'none', fontSize: '10px', fontWeight: 950, background: archiveFilterMode === 'ALL' ? 'white' : 'transparent', color: archiveFilterMode === 'ALL' ? '#0f52ba' : '#64748b', cursor: 'pointer', boxShadow: archiveFilterMode === 'ALL' ? '0 2px 4px rgba(0,0,0,0.05)' : 'none' }}
-          >GLOBAL_ALL</button>
-          <button 
-            onClick={() => setArchiveFilterMode('RANGE')}
-            style={{ padding: '8px 16px', borderRadius: '8px', border: 'none', fontSize: '10px', fontWeight: 950, background: archiveFilterMode === 'RANGE' ? 'white' : 'transparent', color: archiveFilterMode === 'RANGE' ? '#0f52ba' : '#64748b', cursor: 'pointer', boxShadow: archiveFilterMode === 'RANGE' ? '0 2px 4px rgba(0,0,0,0.05)' : 'none' }}
-          >DATE_RANGE</button>
-        </div>
-      )}
-
-      {/* Reset */}
-      {(filters.status !== 'ALL' || filters.modality !== 'ALL' || filters.doctor !== 'ALL' || searchQuery || activeTab !== 'TODAY') && (
-        <button
-          onClick={() => {
-            setFilters({ date: TODAY, status: 'ALL', modality: 'ALL', doctor: 'ALL' });
-            setSearchQuery('');
-            setActiveTab('TODAY');
-          }}
-          style={{ padding: '10px 16px', background: '#fff1f2', color: '#e11d48', border: 'none', borderRadius: '12px', fontSize: '10px', fontWeight: 900, cursor: 'pointer' }}
-        >
-          RESET FILTERS
+      {(filters.status !== 'ALL' || filters.doctor !== 'ALL' || searchQuery) && (
+        <button className="filter-reset-btn" onClick={() => {
+          setSearchQuery('');
+          setFilters({ ...filters, status: 'ALL', doctor: 'ALL' });
+        }}>
+          Reset
         </button>
       )}
     </div>
@@ -1084,172 +1029,96 @@ export default function AppointmentBoard() {
     const meta = STATUS_META[app.status] || STATUS_META.unknown;
     const next = getNextAction(app.status);
     const isExpanded = expandedRow === app.appointmentId;
-    const statusIndex = ['scheduled','confirmed','in_progress','scanned','reporting','reported'].indexOf(app.status);
-    const patient = patients.find(p => p.id === app.patientId);
 
     return (
-      <div key={app.appointmentId} className="mission-row-wrapper" style={{ marginBottom: '12px' }}>
-        <div
-          onClick={() => setExpandedRow(isExpanded ? null : app.appointmentId)}
-          className={`mission-row-container ${isExpanded ? 'expanded' : ''}`}
-          style={{
-            display: 'grid',
-            gridTemplateColumns: '70px 60px 1.5fr 1fr 100px 110px 1fr 160px',
-            alignItems: 'center',
-            padding: '12px 18px',
-            background: isExpanded ? '#fafbff' : 'white',
-            borderRadius: isExpanded ? '16px 16px 0 0' : '16px',
-            border: `1px solid ${isExpanded ? '#c5d5f0' : '#eef2f6'}`,
-            borderBottom: isExpanded ? '1px dashed #dde5f5' : `1px solid ${isExpanded ? '#c5d5f0' : '#eef2f6'}`,
-            cursor: 'pointer',
-            transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
-            position: 'relative',
-            boxShadow: isExpanded ? '0 10px 30px rgba(15, 82, 186, 0.05)' : '0 2px 4px rgba(0,0,0,0.02)',
-          }}
-        >
-          <div style={{ position: 'absolute', left: 0, top: '15%', bottom: '15%', width: '4px', background: meta.color, borderRadius: '0 4px 4px 0' }} />
-
-          {/* ID Column */}
-          <div style={{ display: 'flex', flexDirection: 'column' }}>
-            <div style={{ fontSize: '10px', fontWeight: 950, color: '#0f52ba', fontFamily: 'monospace' }}>{app.ptid || '\u2014'}</div>
-            <div style={{ fontSize: '8px', fontWeight: 800, color: '#94a3b8' }}>{app.id.split('-').pop()}</div>
-          </div>
-
-          {/* Token Column */}
-          <div style={{ display: 'flex', flexDirection: 'column' }}>
-            <div style={{ fontSize: '16px', fontWeight: 950, color: '#1a1a2e', letterSpacing: '-0.5px' }}>
-              #{app.tokenNo || (app.id.includes('-') ? app.id.split('-')[1] : app.id)}
-            </div>
-            <div style={{ fontSize: '7px', fontWeight: 900, color: '#abb8c3', textTransform: 'uppercase', letterSpacing: '1px' }}>TOKEN_NO</div>
-          </div>
-
-          {/* Patient Column */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-            <div style={{ width: '36px', height: '36px', borderRadius: '12px', background: '#f0f4ff', color: '#0f52ba', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 900, fontSize: '14px', border: '1px solid #dbeafe' }}>{app.patientName.charAt(0)}</div>
-            <div style={{ display: 'flex', flexDirection: 'row', alignItems: 'center', gap: '8px', overflow: 'hidden' }}>
-              <div style={{ fontWeight: 850, color: '#1e293b', fontSize: '14px', letterSpacing: '-0.2px', whiteSpace: 'nowrap' }}>{app.patientName.toUpperCase()}</div>
-              <div style={{ fontSize: '10px', color: '#64748b', fontWeight: 700, whiteSpace: 'nowrap', display: 'flex', alignItems: 'center', gap: '4px' }}>
-                <span style={{ color: '#cbd5e1' }}>|</span> {app.mobile} <span style={{ color: '#cbd5e1' }}>\u00B7</span> {app.patientAge}Y {app.patientGender.toUpperCase()}
-              </div>
-            </div>
-          </div>
-
-          {/* Referral Column */}
-          <div style={{ display: 'flex', flexDirection: 'column' }}>
-            <div style={{ fontSize: '11px', color: '#0f52ba', fontWeight: 900 }}>{app.referredBy || 'DIRECT_WALKIN'}</div>
-            <div style={{ fontSize: '9px', color: '#94a3b8', fontWeight: 700, marginTop: '2px' }}>{app.referredContact !== 'N/A' ? app.referredContact : 'NO_REF_CONTACT'}</div>
-          </div>
-
-          {/* Date Column */}
-          <div style={{ display: 'flex', flexDirection: 'column' }}>
-            <div style={{ fontSize: '11px', fontWeight: 850, color: '#1e293b' }}>
-              {(() => {
-                const d = app.dateTime ? new Date(app.dateTime) : (app.date ? new Date(app.date) : null);
-                if (!d || isNaN(d.getTime())) return '\u2014';
-                return `${d.getDate()} ${d.toLocaleString('en-GB', { month: 'short' }).toUpperCase()}, ${d.getFullYear()}`;
-              })()}
-            </div>
-            <div style={{ fontSize: '7px', fontWeight: 900, color: '#abb8c3', textTransform: 'uppercase', letterSpacing: '1px', marginTop: '2px' }}>APPOINTMENT_DATE</div>
-          </div>
-
-          <div onClick={(e) => e.stopPropagation()}>
-            <div
-              style={{
-                display: 'inline-flex', alignItems: 'center', gap: '6px',
-                padding: '6px 12px', borderRadius: '10px',
-                background: meta.bg, border: `1px solid ${meta.color}30`,
-                color: meta.color, fontSize: '9px', fontWeight: 950,
-                textTransform: 'uppercase', letterSpacing: '0.5px',
-                cursor: 'default'
-              }}
-            >
-              <span style={{ fontSize: '10px' }}>{meta.icon}</span>
-              <span>{meta.label}</span>
-            </div>
-          </div>
-
-          {/* Specialist Column */}
-          <div style={{ display: 'flex', flexDirection: 'column' }}>
-            <div style={{ fontWeight: 850, color: '#334155', fontSize: '11px' }}>{app.doctor.toUpperCase()}</div>
-            <div style={{ fontSize: '8px', fontWeight: 900, color: '#94a3b8', marginTop: '2px', textTransform: 'uppercase' }}>SPECIALIST</div>
-          </div>
-
-          {/* Actions Column */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: '4px', justifySelf: 'end' }}>
-            
-            {/* Next Status Action */}
-            {next && (
-              <button
-                onClick={(e) => { e.stopPropagation(); handleAction(app.id, next.action); }}
-                style={{ 
-                  padding: '3px 6px', borderRadius: '6px', 
-                  background: next.color, color: 'white', 
-                  border: 'none', cursor: 'pointer', 
-                  fontSize: '7.5px', fontWeight: 950, 
-                  letterSpacing: '0.3px', transition: 'all 0.2s',
-                  boxShadow: `0 4px 10px ${next.color}30`,
-                  textTransform: 'uppercase'
-                }}
-              >
-                {next.label}
-              </button>
-            )}
-
-            {/* Token Print */}
-            <button
-              onClick={(e) => { e.stopPropagation(); setTokenPrintData(app); }}
-              style={{ 
-                padding: '3px 6px', borderRadius: '6px', 
-                background: '#f1f5f9', border: '1px solid #cbd5e1', 
-                cursor: 'pointer', display: 'flex', alignItems: 'center', 
-                justifyContent: 'center', fontSize: '7.5px', fontWeight: 950, 
-                color: '#0f52ba', transition: 'all 0.2s' 
-              }}
-              title="Print Token Slip"
-            >
-              TOKEN
-            </button>
-
-            {/* Prescription / Report Preview */}
-            <button
-              onClick={(e) => { e.stopPropagation(); handlePreviewPrint(app); }}
-              style={{ 
-                padding: '3px 6px', borderRadius: '6px', 
-                background: '#fffbeb', border: '1px solid #fde68a', 
-                cursor: 'pointer', display: 'flex', alignItems: 'center', 
-                justifyContent: 'center', fontSize: '7.5px', fontWeight: 950, 
-                color: '#b45309', transition: 'all 0.2s' 
-              }}
-              title="Print Prescription"
-            >
-              PRESCRIPTION
-            </button>
-
-            {/* Edit */}
-            {app.status !== 'cancelled' && app.status !== 'completed' && (
-              <button
-                onClick={(e) => { e.stopPropagation(); setEditingAppointment(app); setIsEditingOpen(true); }}
-                style={{ padding: '3px 6px', borderRadius: '6px', background: '#f8fafc', border: '1.5px solid #e2e8f0', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '7.5px', fontWeight: 950, color: '#475569', transition: 'all 0.2s' }}
-                title="Edit Appointment"
-              >
-                EDIT
-              </button>
-            )}
-
-            {/* Cancel */}
-            {app.status !== 'cancelled' && app.status !== 'completed' && (
-              <button
-                onClick={(e) => { e.stopPropagation(); if (confirm(`Cancel appointment for ${app.patientName}?`)) handleAction(app.id, 'CANCEL'); }}
-                style={{ width: '34px', height: '34px', borderRadius: '10px', background: '#fef2f2', border: '1.5px solid #fecaca', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '14px', color: '#ef4444', transition: 'all 0.2s' }}
-                title="Cancel Appointment"
-              >
-                ✕
-              </button>
-            )}
-
-            <div style={{ marginLeft: '4px', transition: 'transform 0.3s', transform: `rotate(${isExpanded ? 180 : 0}deg)`, fontSize: '12px', color: isExpanded ? '#0f52ba' : '#cbd5e1', fontWeight: 900 }}>▾</div>
-          </div>
-        </div>
+      <div key={app.appointmentId} className="appointments-table-wrapper" style={{ marginBottom: '12px' }}>
+        <table className="appointments-table">
+          <tbody>
+            <tr onClick={() => setExpandedRow(isExpanded ? null : app.appointmentId)} style={{ cursor: 'pointer' }}>
+              <td style={{ width: '80px' }}>
+                <div style={{ fontSize: '11px', fontWeight: 900, color: 'var(--primary-accent)' }}>{app.ptid || '—'}</div>
+                <div style={{ fontSize: '10px', color: 'var(--text-secondary)' }}>#{app.tokenNo || '—'}</div>
+              </td>
+              <td style={{ width: '250px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                  <div style={{ 
+                    width: '36px', height: '36px', borderRadius: '10px', 
+                    background: 'var(--bg-main)', color: 'var(--primary-accent)', 
+                    display: 'flex', alignItems: 'center', justifyContent: 'center', 
+                    fontWeight: 950, fontSize: '14px', border: '1px solid var(--border-light)' 
+                  }}>
+                    {app.patientName.charAt(0).toUpperCase()}
+                  </div>
+                  <div>
+                    <div style={{ fontWeight: 800, color: 'var(--text-main)' }}>{app.patientName.toUpperCase()}</div>
+                    <div style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>
+                      {app.mobile} • {app.patientAge}Y {app.patientGender?.toUpperCase()}
+                    </div>
+                  </div>
+                </div>
+              </td>
+              <td style={{ width: '150px' }}>
+                <div style={{ fontSize: '12px', fontWeight: 700, color: 'var(--text-main)' }}>{app.modality}</div>
+                <div style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>{app.service}</div>
+              </td>
+              <td style={{ width: '140px' }}>
+                <div className="status-badge" style={{ backgroundColor: meta.bg, color: meta.color }}>
+                  {meta.icon} {meta.label}
+                </div>
+              </td>
+              <td>
+                <div style={{ fontSize: '12px', fontWeight: 700, color: 'var(--text-main)' }}>{app.doctor}</div>
+                <div style={{ fontSize: '10px', color: 'var(--text-secondary)', textTransform: 'uppercase' }}>Specialist</div>
+              </td>
+              <td style={{ textAlign: 'right', width: '200px' }} onClick={e => e.stopPropagation()}>
+                <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
+                  {next && (
+                    <button
+                      onClick={() => handleAction(app.id, next.action)}
+                      style={{ 
+                        padding: '6px 12px', borderRadius: '8px', 
+                        background: next.color, color: 'white', 
+                        border: 'none', cursor: 'pointer', 
+                        fontSize: '10px', fontWeight: 900, 
+                        boxShadow: `0 4px 10px ${next.color}33`
+                      }}
+                    >
+                      {next.label}
+                    </button>
+                  )}
+                  <button
+                    onClick={() => setTokenPrintData(app)}
+                    style={{ padding: '6px', borderRadius: '8px', background: '#f1f5f9', border: '1px solid #e2e8f0', cursor: 'pointer' }}
+                    title="Print Token"
+                  >
+                    🖨️
+                  </button>
+                  <button
+                    onClick={() => handlePreviewPrint(app)}
+                    style={{ padding: '6px', borderRadius: '8px', background: '#fffbeb', border: '1px solid #fde68a', cursor: 'pointer' }}
+                    title="Report"
+                  >
+                    📄
+                  </button>
+                  <button
+                    onClick={() => { setEditingAppointment(app); setIsEditingOpen(true); }}
+                    style={{ padding: '6px', borderRadius: '8px', background: '#f8fafc', border: '1px solid #e2e8f0', cursor: 'pointer' }}
+                    title="Edit"
+                  >
+                    ✏️
+                  </button>
+                  <button
+                    onClick={() => { if (window.confirm(`Cancel appointment for ${app.patientName}?`)) handleAction(app.id, 'CANCEL'); }}
+                    style={{ padding: '6px', borderRadius: '8px', background: '#fef2f2', border: '1px solid #fecaca', cursor: 'pointer', color: '#ef4444' }}
+                    title="Cancel"
+                  >
+                    ✕
+                  </button>
+                </div>
+              </td>
+            </tr>
+          </tbody>
+        </table>
 
         {isExpanded && (
           <div style={{
@@ -1528,9 +1397,15 @@ export default function AppointmentBoard() {
                       <label style={{ fontSize: '10px', fontWeight: 700 }}>DISTRICT</label>
                       <input type="text" placeholder="District" style={{ fontSize: '13px', padding: '11px 12px' }} value={newPatient.district} onChange={e => setNewPatient({...newPatient, district: e.target.value})} />
                     </div>
-                     <div className="form-group" style={{ marginBottom: '8px', gridColumn: isMobile ? 'span 1' : 'span 2' }}>
+                     <div className="form-group" style={{ marginBottom: '12px', gridColumn: isMobile ? 'span 1' : 'span 2' }}>
                        <label style={{ fontSize: '10px', fontWeight: 700 }}>ADDRESS / RESIDENCE DATA</label>
-                       <input type="text" placeholder="Street, Landmark..." style={{ fontSize: '13px', padding: '11px 12px' }} value={newPatient.address} onChange={e => setNewPatient({...newPatient, address: e.target.value})} />
+                       <input 
+                         type="text" 
+                         placeholder="Street, Landmark..." 
+                         style={{ width: '100%', fontSize: '13px', padding: '12px 14px', height: '44px', borderRadius: '12px', border: '1.5px solid #dee2e6' }} 
+                         value={newPatient.address} 
+                         onChange={e => setNewPatient({...newPatient, address: e.target.value})} 
+                       />
                      </div>
 
                     <div className="form-group" style={{ gridColumn: isMobile ? 'span 1' : 'span 2', marginTop: '10px', position: 'relative' }}>
@@ -2369,127 +2244,125 @@ export default function AppointmentBoard() {
   //  MAIN RENDER
   // ============================================================
   return (
-    <div className="page-wrapper board-padding appt-page-top">
-      {/* \u2500\u2500 Responsive Command Header (Precision Fit) \u2500\u2500 */}
-      {/* \u2500\u2500 Formal Responsive Header \u2500\u2500 */}
-      <div className="appt-page-header" style={{ 
-        display: 'flex', 
-        flexDirection: isMobile ? 'column' : 'row', 
-        justifyContent: isMobile ? 'flex-start' : 'space-between', 
-        alignItems: isMobile ? 'stretch' : 'center',
-        gap: isMobile ? '16px' : '6px',
-        marginBottom: isMobile ? '20px' : '24px',
-        paddingBottom: isMobile ? '12px' : '16px',
-        borderBottom: '1px solid #f1f5f9',
-        width: '100%',
-        boxSizing: 'border-box'
-      }}>
-        {/* Mobile Tier 1: Page Identity - Hidden on Mobile for max space */}
-        {!isMobile && (
-          <div style={{ display: 'flex', alignItems: 'center', gap: '6px', width: 'auto', justifyContent: 'flex-start' }}>
-            <h1 className="appt-page-title" style={{ margin: 0, fontSize: '17px', letterSpacing: '-0.4px', whiteSpace: 'nowrap', fontWeight: 900 }}>APPOINTMENT DASHBOARD</h1>
-            <span style={{
-              display: 'inline-flex', alignItems: 'center', gap: '4px',
-              padding: '2px 8px', borderRadius: '20px',
-              background: '#0f52ba10', fontSize: '8px', fontWeight: 950, color: '#0f52ba',
-              letterSpacing: '0.5px', border: '1px solid #0f52ba20', whiteSpace: 'nowrap'
-            }}>
-              <span style={{ width: '4px', height: '4px', borderRadius: '50%', background: '#0f52ba', animation: 'pulse 2s infinite' }} />
-              LIVE
-            </span>
+    <div className="appointment-board-container">
+      {/* --- PAGE HEADER --- */}
+      <div className="appt-page-top">
+        <div className="appt-page-header">
+          <div className="appt-page-title-block">
+            <h1 className="appt-page-title">Appointment Command</h1>
+            <p className="appt-page-subtitle">Strategic Clinical Mission Control</p>
           </div>
-        )}
 
-        <div style={{ 
-          display: 'flex', 
-          flexDirection: isMobile ? 'column' : 'row', 
-          alignItems: 'stretch', 
-          gap: isMobile ? '14px' : '8px',
-          flex: isMobile ? 'none' : 1,
-          marginLeft: isMobile ? '0' : '24px',
-          justifyContent: isMobile ? 'flex-start' : 'flex-end'
-        }}>
-          {/* Mobile Tier 2: Worklist Navigation */}
-          <div style={{ 
-            display: 'flex', 
-            flexDirection: 'row',
-            background: '#f8fafc', 
-            padding: '4px', 
-            borderRadius: '14px',
-            border: '1.5px solid #e2e8f0',
-            width: isMobile ? '100%' : 'auto'
-          }}>
-            {[
-              { id: 'TODAY', label: 'TODAY' },
-              { id: 'FUTURE', label: 'UPCOMING' },
-              { id: 'PAST', label: 'PAST' }
-            ].map(tab => (
-              <button
-                key={tab.id}
-                onClick={() => setActiveTab(tab.id)}
-                style={{ 
-                  flex: 1,
-                  padding: isMobile ? '12px 10px' : '6px 12px',
-                  border: 'none',
-                  borderRadius: '11px',
-                  fontSize: isMobile ? '11px' : '10px',
-                  fontWeight: 900,
-                  cursor: 'pointer',
-                  transition: 'all 0.2s',
-                  background: activeTab === tab.id ? '#0f52ba' : 'transparent',
-                  color: activeTab === tab.id ? 'white' : '#475569',
-                  whiteSpace: 'nowrap'
-                }}
+          <div className="appt-page-actions">
+            <div className="appt-tab-toggle">
+              <button 
+                className={`appt-tab-btn ${activeTab === 'TODAY' ? 'active' : ''}`}
+                onClick={() => setActiveTab('TODAY')}
               >
-                {tab.label}
+                Today
               </button>
-            ))}
+              <button 
+                className={`appt-tab-btn ${activeTab === 'PAST' ? 'active' : ''}`}
+                onClick={() => setActiveTab('PAST')}
+              >
+                Archive
+              </button>
+              <button 
+                className={`appt-tab-btn ${activeTab === 'FUTURE' ? 'active' : ''}`}
+                onClick={() => setActiveTab('FUTURE')}
+              >
+                Schedule
+              </button>
+            </div>
+            
+            <button className="appt-new-mission-btn" onClick={() => { resetBooking(); setIsBookingOpen(true); }}>
+              + New Mission
+            </button>
           </div>
-
-          {/* Tier 3: High-Fidelity Hero Action Button */}
-          <button
-            className="gamified-btn"
-            onClick={() => { resetBooking(); setIsBookingOpen(true); }}
-            style={{ 
-              width: '100%',
-              padding: isMobile ? '16px' : '14px',
-              borderRadius: '16px',
-              fontSize: isMobile ? '12px' : '11px',
-              fontWeight: 950,
-              background: 'linear-gradient(135deg, #0f52ba 0%, #083d8d 100%)',
-              color: 'white',
-              border: 'none',
-              boxShadow: '0 10px 25px rgba(15, 82, 186, 0.25)',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              gap: '10px',
-              cursor: 'pointer',
-              transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
-              letterSpacing: '1px',
-              marginTop: isMobile ? '4px' : '6px',
-              position: 'relative',
-              overflow: 'hidden'
-            }}
-            onMouseOver={e => {
-              e.currentTarget.style.transform = 'translateY(-2px)';
-              e.currentTarget.style.boxShadow = '0 15px 35px rgba(15, 82, 186, 0.35)';
-            }}
-            onMouseOut={e => {
-              e.currentTarget.style.transform = 'translateY(0)';
-              e.currentTarget.style.boxShadow = '0 10px 25px rgba(15, 82, 186, 0.25)';
-            }}
-          >
-            <span style={{ fontSize: '18px', fontWeight: 400 }}>+</span>
-            CREATE NEW CLINICAL APPOINTMENT
-          </button>
         </div>
       </div>
 
+      {/* --- INTEL CARDS --- */}
+      <div className="intel-cards-grid">
+        <div className="intel-card dark">
+          <span className="intel-label">Total Volume</span>
+          <div className="intel-value">{stats.total}</div>
+          <div className="intel-trend" style={{ color: '#10b981' }}>
+            ↑ {activeRate}% Active
+          </div>
+        </div>
+        
+        <div className="intel-card">
+          <span className="intel-label">Expected/Arrived</span>
+          <div className="intel-value" style={{ color: 'var(--primary-accent)' }}>
+            {stats.scheduled} / {stats.confirmed}
+          </div>
+          <div className="intel-trend" style={{ color: 'var(--text-secondary)' }}>
+            Scanning: {stats.inProgress}
+          </div>
+        </div>
 
+        <div className="intel-card">
+          <span className="intel-label">Completed Missions</span>
+          <div className="intel-value" style={{ color: '#059669' }}>
+            {stats.completed}
+          </div>
+          <div className="intel-trend" style={{ color: '#059669' }}>
+            Efficiency: {completionRate}%
+          </div>
+        </div>
 
-      {renderIntelCards()}
-      {renderFilterBar()}
+        <div className="intel-card">
+          <span className="intel-label">Critical Status</span>
+          <div className="intel-value" style={{ color: '#e11d48' }}>
+            {stats.cancelled}
+          </div>
+          <div className="intel-trend" style={{ color: '#e11d48' }}>
+            Cancelled Cases
+          </div>
+        </div>
+      </div>
+
+      {/* --- FILTER BAR --- */}
+      <div className="filter-bar-responsive">
+        <div className="filter-search-group">
+          <input
+            type="text"
+            placeholder="Search mission records..."
+            value={searchQuery}
+            onChange={e => setSearchQuery(e.target.value)}
+          />
+        </div>
+
+        <div className="filter-select-group">
+          <select
+            className="filter-select"
+            value={filters.doctor}
+            onChange={e => setFilters({...filters, doctor: e.target.value})}
+          >
+            <option value="ALL">All Specialists</option>
+            {doctors.map(d => <option key={d} value={d}>{d}</option>)}
+          </select>
+
+          <select
+            className="filter-select"
+            value={filters.status}
+            onChange={e => setFilters({...filters, status: e.target.value})}
+          >
+            <option value="ALL">All Statuses</option>
+            {Object.entries(STATUS_META).map(([key, meta]) => (
+              <option key={key} value={key}>{meta.label}</option>
+            ))}
+          </select>
+        </div>
+
+        <button className="filter-reset-btn" onClick={() => {
+          setSearchQuery('');
+          setFilters({ date: TODAY, status: 'ALL', modality: 'ALL', doctor: 'ALL' });
+        }}>
+          Reset Filters
+        </button>
+      </div>
 
       <div style={{ marginBottom: '20px' }}>
         <div ref={listTopRef} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '14px' }}>
@@ -2545,7 +2418,7 @@ export default function AppointmentBoard() {
                   onPrint={(app) => setTokenPrintData(app)}
                   onPrescription={(app) => handlePreviewPrint(app)}
                   onEdit={(app) => { setEditingAppointment(app); setIsEditingOpen(true); }}
-                  onCancel={(id) => handleAction(id, 'CANCEL')}
+                  onCancel={(id) => { if (window.confirm('Cancel this mission?')) handleAction(id, 'CANCEL'); }}
                   patients={patients}
                 />
               ))}

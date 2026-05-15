@@ -204,20 +204,18 @@ export function AuthProvider({ children }) {
       sessionStorage.setItem('1rad_token', accessToken);
       localStorage.setItem('1rad_refresh_token', refreshToken);
 
-      const allRoles = [];
-      const authorizedHubs = userProfile.authorizedHospitals || userProfile.AuthorizedHospitals || [];
+      const allRoles = handleUserRoles(userProfile);
 
-      const mappedCenters = authorizedHubs.map(h => {
-        const rawRoles = h.roleNames || h.RoleNames || (h.roleName || h.RoleName ? (h.roleName || h.RoleName).split(',') : []);
-        const normalizedRoles = rawRoles.map(r => r.trim().toLowerCase()).filter(Boolean);
-        allRoles.push(...normalizedRoles);
+      const mappedCenters = (userProfile.authorizedHospitals || userProfile.AuthorizedHospitals || []).map(h => {
+        const centerRoles = h.roleNames || h.RoleNames || h.roles || h.Roles || (h.roleName || h.RoleName ? (h.roleName || h.RoleName).split(',') : []);
+        const normalizedCenterRoles = centerRoles.map(r => String(r).trim().toLowerCase()).filter(Boolean);
         
         return {
           id: String(h.hospitalId || h.HospitalId).toLowerCase(),
           name: h.hospitalName || h.HospitalName,
           groupName: h.groupName || h.GroupName || '',
-          roles: normalizedRoles,
-          role: normalizedRoles[0] || 'viewer',
+          roles: normalizedCenterRoles,
+          role: normalizedCenterRoles[0] || 'viewer',
           isAutoBillingEnabled: h.isAutoBillingEnabled || h.IsAutoBillingEnabled || false
         };
       });
@@ -226,7 +224,7 @@ export function AuthProvider({ children }) {
         id: userProfile.userId || userProfile.UserId,
         name: userProfile.fullName || userProfile.FullName,
         email: userProfile.email || userProfile.Email,
-        roles: [...new Set(allRoles)]
+        roles: allRoles
       };
 
       setCurrentUser(user);
@@ -412,17 +410,17 @@ export function AuthProvider({ children }) {
       if (!success) return { success: false, error: message || 'Verification failed.' };
 
       if (isRegistered) {
-        const allRoles = [];
+        const allRoles = handleUserRoles(backendUser);
         const mappedCenters = (backendUser.authorizedHospitals || backendUser.AuthorizedHospitals || []).map(h => {
-          const rawRoles = h.roleNames || h.RoleNames || (h.roleName || h.RoleName ? (h.roleName || h.RoleName).split(',') : []);
-          const normalizedRoles = rawRoles.map(r => r.trim().toLowerCase()).filter(Boolean);
-          allRoles.push(...normalizedRoles);
+          const centerRoles = h.roleNames || h.RoleNames || h.roles || h.Roles || (h.roleName || h.RoleName ? (h.roleName || h.RoleName).split(',') : []);
+          const normalizedCenterRoles = centerRoles.map(r => String(r).trim().toLowerCase()).filter(Boolean);
+
           return {
-            id: h.hospitalId || h.HospitalId,
+            id: String(h.hospitalId || h.HospitalId).toLowerCase(),
             name: h.hospitalName || h.HospitalName,
             groupName: h.groupName || h.GroupName || '',
-            roles: normalizedRoles,
-            role: normalizedRoles[0] || 'viewer',
+            roles: normalizedCenterRoles,
+            role: normalizedCenterRoles[0] || 'viewer',
             isDefault: h.isDefault || h.IsDefault,
             isAutoBillingEnabled: h.isAutoBillingEnabled || h.IsAutoBillingEnabled || false
           };
@@ -433,7 +431,7 @@ export function AuthProvider({ children }) {
           name: backendUser.fullName || backendUser.FullName,
           email: backendUser.email || backendUser.Email,
           mobile: backendUser.mobile || backendUser.Mobile,
-          roles: [...new Set(allRoles)]
+          roles: allRoles
         };
 
         setCurrentUser(user);

@@ -256,12 +256,12 @@ export default function AppointmentsScreen({ navigation }) {
 
   const getNextAction = (status) => {
     switch (status) {
-      case 'scheduled': 
-        return { action: 'CONFIRM', label: 'CONFIRM', icon: '📍', color: '#2ecc71' };
-      case 'confirmed': 
-        return { action: 'START', label: 'BEGIN SCAN', icon: '⚡', color: '#f39c12' };
-      case 'in_progress': 
-        return { action: 'COMPLETE', label: 'FINALIZE', icon: '✅', color: '#27ae60' };
+      case 'scheduled':
+        return { action: 'CONFIRM', label: 'Confirm', icon: '📍', color: '#2ecc71' };
+      case 'confirmed':
+        return { action: 'START', label: 'Begin Scan', icon: '⚡', color: '#f39c12' };
+      case 'in_progress':
+        return { action: 'COMPLETE', label: 'Complete', icon: '✅', color: '#27ae60' };
       default: 
         return null;
     }
@@ -375,44 +375,44 @@ export default function AppointmentsScreen({ navigation }) {
       >
         <View style={styles.intelCardsGrid}>
           <AnimatedStatCard
-            title="TOTAL MISSIONS"
+            title="Total"
             value={stats.total}
             icon={Database}
             gradient={[COLORS.cyan, '#4facfe']}
             onPress={() => {}}
             animated={true}
-            suffix=" UNITS"
+            suffix=" total"
           />
 
           <AnimatedStatCard
-            title="READY FOR DEPLOYMENT"
+            title="Upcoming"
             value={readyCount}
             icon={Shield}
             gradient={['#667eea', '#764ba2']}
             onPress={() => setFilters({ ...filters, status: 'BOOKED' })}
             animated={true}
-            suffix=" READY"
+            suffix=" upcoming"
           />
 
           <AnimatedStatCard
-            title="MISSION IN PROGRESS"
+            title="In Progress"
             value={progressCount}
             icon={Zap}
             gradient={['#f093fb', '#f5576c']}
             onPress={() => setFilters({ ...filters, status: 'IN_PROGRESS' })}
             animated={true}
             pulse={progressCount > 0}
-            suffix=" ACTIVE"
+            suffix=" active"
           />
 
           <AnimatedStatCard
-            title="COMPLETED OPERATIONS"
+            title="Completed"
             value={stats.completed}
             icon={CheckCircle}
             gradient={['#2ecc71', '#27ae60']}
             onPress={() => setFilters({ ...filters, status: 'COMPLETED' })}
             animated={true}
-            suffix=" SUCCESS"
+            suffix=" done"
           />
         </View>
       </Animated.View>
@@ -532,7 +532,7 @@ export default function AppointmentsScreen({ navigation }) {
           }}
         >
           <X size={12} color={COLORS.error} />
-          <Text style={styles.clearFiltersText}>CLEAR FILTERS</Text>
+          <Text style={styles.clearFiltersText}>Clear</Text>
         </TouchableOpacity>
       )}
     </View>
@@ -581,11 +581,11 @@ export default function AppointmentsScreen({ navigation }) {
             {/* Details Row */}
             <View style={styles.appointmentDetails}>
               <View style={styles.detailItem}>
-                <Text style={styles.detailLabel}>REFERRED BY</Text>
+                <Text style={styles.detailLabel}>Referred By</Text>
                 <Text style={styles.detailValue}>{app.referredBy}</Text>
               </View>
               <View style={styles.detailItem}>
-                <Text style={styles.detailLabel}>DOCTOR</Text>
+                <Text style={styles.detailLabel}>Doctor</Text>
                 <Text style={styles.detailValue}>{app.doctor}</Text>
               </View>
             </View>
@@ -753,7 +753,7 @@ export default function AppointmentsScreen({ navigation }) {
         <View style={styles.modalOverlay}>
           <View style={styles.tokenModal}>
             <View style={styles.tokenModalHeader}>
-              <Text style={styles.tokenModalTitle}>THERMAL PREVIEW (80mm)</Text>
+              <Text style={styles.tokenModalTitle}>Token Preview</Text>
               <TouchableOpacity onPress={() => setTokenPrintData(null)}>
                 <X size={18} color={COLORS.bgMain} />
               </TouchableOpacity>
@@ -762,8 +762,8 @@ export default function AppointmentsScreen({ navigation }) {
             <View style={styles.tokenPreviewContainer}>
               <View style={styles.tokenPreview}>
                 <View style={styles.tokenHeader}>
-                  <Text style={styles.tokenHubName}>1RAD HUB</Text>
-                  <Text style={styles.tokenSubtitle}>CLINICAL COMMAND CENTER</Text>
+                  <Text style={styles.tokenHubName}>1Rad</Text>
+                  <Text style={styles.tokenSubtitle}>Diagnostic Center</Text>
                 </View>
                 
                 <Text style={styles.tokenNumberLabel}>TOKEN NUMBER</Text>
@@ -774,14 +774,14 @@ export default function AppointmentsScreen({ navigation }) {
                 </View>
                 
                 <View style={styles.tokenPatientInfo}>
-                  <Text style={styles.tokenPatientLabel}>TARGET IDENTITY:</Text>
+                  <Text style={styles.tokenPatientLabel}>Patient:</Text>
                   <Text style={styles.tokenPatientName}>{tokenPrintData.patientName}</Text>
                   <Text style={styles.tokenPatientId}>ID: {tokenPrintData.patientId}</Text>
                 </View>
 
                 <View style={styles.tokenMissionInfo}>
                   <Text style={styles.tokenMissionTitle}>
-                    MISSION: {tokenPrintData.modality || 'X-RAY'}
+                    Study: {tokenPrintData.modality || 'X-RAY'}
                   </Text>
                   <Text style={styles.tokenMissionService}>{tokenPrintData.service}</Text>
                 </View>
@@ -791,7 +791,7 @@ export default function AppointmentsScreen({ navigation }) {
                 </Text>
                 
                 <View style={styles.tokenFooter}>
-                  <Text style={styles.tokenFooterText}>PLEASE WAIT FOR DEPLOYMENT</Text>
+                  <Text style={styles.tokenFooterText}>Please wait to be called</Text>
                 </View>
               </View>
             </View>
@@ -804,13 +804,13 @@ export default function AppointmentsScreen({ navigation }) {
                   setTokenPrintData(null);
                 }}
               >
-                <Text style={styles.tokenPrintBtnText}>CONFIRM PRINT</Text>
+                <Text style={styles.tokenPrintBtnText}>Print Token</Text>
               </TouchableOpacity>
               <TouchableOpacity
                 style={styles.tokenDiscardBtn}
                 onPress={() => setTokenPrintData(null)}
               >
-                <Text style={styles.tokenDiscardBtnText}>DISCARD</Text>
+                <Text style={styles.tokenDiscardBtnText}>Cancel</Text>
               </TouchableOpacity>
             </View>
           </View>
@@ -836,9 +836,9 @@ export default function AppointmentsScreen({ navigation }) {
           <View style={styles.bookingModal}>
           <View style={styles.bookingModalHeader}>
             <View>
-              <Text style={styles.bookingModalTitle}>NEW MISSION</Text>
+              <Text style={styles.bookingModalTitle}>New Appointment</Text>
               <Text style={styles.bookingModalSubtitle}>
-                Phase {bookingStep}: {bookingStep === 1 ? 'Target Identity' : 'Mission Configuration'}
+                Step {bookingStep} of 2: {bookingStep === 1 ? 'Patient Details' : 'Study Details'}
               </Text>
             </View>
             <TouchableOpacity onPress={() => setIsBookingOpen(false)}>
@@ -861,7 +861,7 @@ export default function AppointmentsScreen({ navigation }) {
           <ScrollView style={styles.bookingContent}>
             {bookingStep === 1 ? (
               <View style={styles.bookingStep}>
-                <Text style={styles.bookingStepTitle}>SEARCH PATIENT DATABASE</Text>
+                <Text style={styles.bookingStepTitle}>Search Patient</Text>
                 
                 <View style={styles.searchBar}>
                   <Search size={16} color={COLORS.textSecondary} />
@@ -915,11 +915,11 @@ export default function AppointmentsScreen({ navigation }) {
                 )}
 
                 <View style={styles.newPatientForm}>
-                  <Text style={styles.newPatientTitle}>ENTER NEW PATIENT DETAILS</Text>
+                  <Text style={styles.newPatientTitle}>New Patient</Text>
                   
                   <View style={styles.formRow}>
                     <View style={styles.formGroup}>
-                      <Text style={styles.formLabel}>FULL NAME</Text>
+                      <Text style={styles.formLabel}>Full Name</Text>
                       <TextInput
                         style={styles.formInput}
                         placeholder="e.g. Michael Thorne"
@@ -929,7 +929,7 @@ export default function AppointmentsScreen({ navigation }) {
                       />
                     </View>
                     <View style={styles.formGroup}>
-                      <Text style={styles.formLabel}>MOBILE</Text>
+                      <Text style={styles.formLabel}>Mobile</Text>
                       <TextInput
                         style={styles.formInput}
                         placeholder="987..."
@@ -943,7 +943,7 @@ export default function AppointmentsScreen({ navigation }) {
 
                   <View style={styles.formRow}>
                     <View style={styles.formGroup}>
-                      <Text style={styles.formLabel}>AGE</Text>
+                      <Text style={styles.formLabel}>Age</Text>
                       <TextInput
                         style={styles.formInput}
                         placeholder="25"
@@ -954,7 +954,7 @@ export default function AppointmentsScreen({ navigation }) {
                       />
                     </View>
                     <View style={styles.formGroup}>
-                      <Text style={styles.formLabel}>GENDER</Text>
+                      <Text style={styles.formLabel}>Gender</Text>
                       <View style={styles.genderSelector}>
                         {['Male', 'Female', 'Other'].map(gender => (
                           <TouchableOpacity
@@ -979,7 +979,7 @@ export default function AppointmentsScreen({ navigation }) {
 
                   <View style={styles.formRow}>
                     <View style={styles.formGroup}>
-                      <Text style={styles.formLabel}>VILLAGE</Text>
+                      <Text style={styles.formLabel}>Village</Text>
                       <TextInput
                         style={styles.formInput}
                         placeholder="Village name"
@@ -989,7 +989,7 @@ export default function AppointmentsScreen({ navigation }) {
                       />
                     </View>
                     <View style={styles.formGroup}>
-                      <Text style={styles.formLabel}>DISTRICT</Text>
+                      <Text style={styles.formLabel}>District</Text>
                       <TextInput
                         style={styles.formInput}
                         placeholder="District name"
@@ -1001,7 +1001,7 @@ export default function AppointmentsScreen({ navigation }) {
                   </View>
 
                   <View style={styles.formGroup}>
-                    <Text style={styles.formLabel}>ADDRESS</Text>
+                    <Text style={styles.formLabel}>Address</Text>
                     <TextInput
                       style={[styles.formInput, styles.textArea]}
                       placeholder="Complete address..."
@@ -1015,7 +1015,7 @@ export default function AppointmentsScreen({ navigation }) {
 
                   <View style={styles.formRow}>
                     <View style={styles.formGroup}>
-                      <Text style={styles.formLabel}>REFERRED BY</Text>
+                      <Text style={styles.formLabel}>Referred By</Text>
                       <TextInput
                         style={styles.formInput}
                         placeholder="Referrer name (optional)"
@@ -1025,7 +1025,7 @@ export default function AppointmentsScreen({ navigation }) {
                       />
                     </View>
                     <View style={styles.formGroup}>
-                      <Text style={styles.formLabel}>SOURCE OF INFO</Text>
+                      <Text style={styles.formLabel}>Source of Info</Text>
                       <TextInput
                         style={styles.formInput}
                         placeholder="How did you find us?"
@@ -1039,7 +1039,7 @@ export default function AppointmentsScreen({ navigation }) {
               </View>
             ) : (
               <View style={styles.bookingStep}>
-                <Text style={styles.bookingStepTitle}>MISSION CONFIGURATION</Text>
+                <Text style={styles.bookingStepTitle}>Study Details</Text>
                 
                 <View style={styles.modalitySection}>
                   <Text style={styles.sectionTitle}>1. Select Study Modality</Text>
@@ -1063,7 +1063,7 @@ export default function AppointmentsScreen({ navigation }) {
                 </View>
 
                 <View style={styles.formGroup}>
-                  <Text style={styles.formLabel}>2. SERVICE / PROCEDURE</Text>
+                  <Text style={styles.formLabel}>2. Service / Procedure</Text>
                   <TextInput
                     style={styles.formInput}
                     placeholder="e.g. Chest X-Ray with Lateral"
@@ -1078,7 +1078,7 @@ export default function AppointmentsScreen({ navigation }) {
                   <Text style={styles.sectionTitle}>3. Schedule Appointment</Text>
                   <View style={styles.formRow}>
                     <View style={styles.formGroup}>
-                      <Text style={styles.formLabel}>DATE</Text>
+                      <Text style={styles.formLabel}>Date</Text>
                       <TouchableOpacity
                         style={styles.dateTimeButton}
                         onPress={() => setShowDatePicker(true)}
@@ -1094,7 +1094,7 @@ export default function AppointmentsScreen({ navigation }) {
                       </TouchableOpacity>
                     </View>
                     <View style={styles.formGroup}>
-                      <Text style={styles.formLabel}>TIME</Text>
+                      <Text style={styles.formLabel}>Time</Text>
                       <TouchableOpacity
                         style={styles.dateTimeButton}
                         onPress={() => setShowTimePicker(true)}
@@ -1163,7 +1163,7 @@ export default function AppointmentsScreen({ navigation }) {
                 )}
 
                 <View style={styles.doctorSection}>
-                  <Text style={styles.sectionTitle}>4. Assign Lead Specialist</Text>
+                  <Text style={styles.sectionTitle}>4. Assign Doctor</Text>
                   <View style={styles.doctorGrid}>
                     {DOCTORS.map(doctor => (
                       <TouchableOpacity
@@ -1200,7 +1200,7 @@ export default function AppointmentsScreen({ navigation }) {
                 </View>
 
                 <View style={styles.formGroup}>
-                  <Text style={styles.formLabel}>5. NOTES (OPTIONAL)</Text>
+                  <Text style={styles.formLabel}>5. Notes (optional)</Text>
                   <TextInput
                     style={[styles.formInput, styles.textArea]}
                     placeholder="Clinical notes..."
@@ -1221,7 +1221,7 @@ export default function AppointmentsScreen({ navigation }) {
                 style={styles.bookingBackBtn}
                 onPress={() => setBookingStep(1)}
               >
-                <Text style={styles.bookingBackBtnText}>← BACK</Text>
+                <Text style={styles.bookingBackBtnText}>← Back</Text>
               </TouchableOpacity>
             )}
             
@@ -1245,7 +1245,7 @@ export default function AppointmentsScreen({ navigation }) {
               }}
             >
               <Text style={styles.bookingNextBtnText}>
-                {loading ? 'DEPLOYING...' : (bookingStep === 1 ? 'PROCEED → MISSION CONFIG' : '🚀 DEPLOY MISSION')}
+                {loading ? 'Saving...' : (bookingStep === 1 ? 'Next →' : 'Book Appointment')}
               </Text>
             </TouchableOpacity>
           </View>
@@ -1265,17 +1265,16 @@ export default function AppointmentsScreen({ navigation }) {
         <View style={styles.header}>
           <View>
             <View style={styles.headerTitleRow}>
-              <Text style={styles.headerIcon}>📡</Text>
-              <Text style={styles.headerTitle}>MISSION SCHEDULER</Text>
+              <Text style={styles.headerTitle}>Appointments</Text>
             </View>
             <Text style={styles.headerSubtitle}>
-              Patient Intake & Appointment Command
-              <Text style={styles.liveIndicator}> ● LIVE</Text>
+              Book and manage patient appointments
+              <Text style={styles.liveIndicator}> ● Live</Text>
             </Text>
           </View>
           
           <GradientButton
-            title="NEW MISSION"
+            title="New Appointment"
             icon={Plus}
             gradient={[COLORS.cyan, '#4facfe']}
             onPress={() => setIsBookingOpen(true)}
@@ -1312,7 +1311,7 @@ export default function AppointmentsScreen({ navigation }) {
             <View style={styles.appointmentsSection}>
               <View style={styles.appointmentsHeader}>
                 <Text style={styles.appointmentsCount}>
-                  {filteredAppointments.length} Mission{filteredAppointments.length !== 1 ? 's' : ''} Found
+                  {filteredAppointments.length} appointment{filteredAppointments.length !== 1 ? 's' : ''}
                 </Text>
               </View>
             </View>
@@ -1321,9 +1320,9 @@ export default function AppointmentsScreen({ navigation }) {
         ListEmptyComponent={
           <EmptyState
             icon={Search}
-            title="No Missions Match Your Filters"
-            subtitle="Try adjusting your search or pipeline filters to find what you're looking for"
-            actionText="CLEAR FILTERS"
+            title="No appointments found"
+            subtitle="Try adjusting your search or filters"
+            actionText="Clear Filters"
             onAction={() => {
               setFilters({ status: 'ALL', modality: 'ALL', doctor: 'ALL' });
               setAppointmentSearchQuery('');

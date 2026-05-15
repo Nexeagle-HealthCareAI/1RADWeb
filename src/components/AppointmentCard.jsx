@@ -17,120 +17,103 @@ export default function AppointmentCard({
   onCancel,
   patients
 }) {
-  const meta = statusMeta[appointment.status];
+  const meta = statusMeta[appointment.status] || statusMeta['unknown'];
   const next = getNextAction(appointment.status);
-  const patient = patients.find(p => p.id === appointment.patientId);
 
   return (
-    <div className="appointment-card" style={{ 
-      border: `1.5px solid ${meta.color}20`,
-      boxShadow: `0 8px 30px ${meta.color}08`,
-      background: 'white'
-    }}>
-      {/* Precision Status Indicator */}
+    <div className="appointment-card">
+      {/* Status Bar */}
       <div className="card-status-bar" style={{ 
-        background: `linear-gradient(90deg, ${meta.color} 0%, ${meta.color}dd 100%)`,
-        height: '5px'
+        background: `linear-gradient(90deg, ${meta.color} 0%, ${meta.color}88 100%)`
       }} />
 
-      {/* Institutional Header */}
-      <div className="card-header" style={{ padding: '20px 18px', background: '#fafbff' }}>
+      {/* Header */}
+      <div className="card-header">
         <div className="card-token">
-          <div className="token-number" style={{ fontSize: '20px', letterSpacing: '-0.5px' }}>#{appointment.tokenNo || appointment.id.split('-')[1] || '\u2014'}</div>
-          <div className="token-label" style={{ letterSpacing: '1px' }}>INSTITUTIONAL_TOKEN</div>
+          <div className="token-number">#{appointment.tokenNo || appointment.id.split('-')[1] || '—'}</div>
+          <div className="token-label">Token ID</div>
         </div>
         <div className="card-status-badge" style={{ 
           backgroundColor: meta.bg, 
-          borderColor: meta.color,
-          padding: '6px 14px',
-          borderRadius: '10px'
+          color: meta.color,
+          borderColor: `${meta.color}33`
         }}>
-          <span className="status-label" style={{ color: meta.color, letterSpacing: '0.5px', fontSize: '10px' }}>{meta.label}</span>
+          {meta.icon} {meta.label}
         </div>
       </div>
 
-      {/* Patient Central Section */}
-      <div className="card-section" style={{ padding: '18px' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '14px', marginBottom: '12px' }}>
-          <div style={{ 
-            width: '42px', height: '42px', borderRadius: '12px', 
-            background: '#f1f5f9', color: '#0f52ba', 
-            display: 'flex', alignItems: 'center', justifyContent: 'center', 
-            fontWeight: 900, fontSize: '16px', border: '1.5px solid #e2e8f0' 
-          }}>
-            {appointment.patientName.charAt(0)}
+      {/* Patient Section */}
+      <div className="card-section">
+        <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
+          <div className="patient-avatar">
+            {appointment.patientName.charAt(0).toUpperCase()}
           </div>
-          <div style={{ display: 'flex', flexDirection: 'column' }}>
-            <div className="patient-name" style={{ fontSize: '15px', letterSpacing: '-0.2px' }}>{appointment.patientName.toUpperCase()}</div>
-            <div style={{ fontSize: '11px', color: '#64748b', fontWeight: 700, marginTop: '2px' }}>
-              {appointment.mobile} <span style={{ color: '#cbd5e1' }}>\u00B7</span> {appointment.patientAge}Y {appointment.patientGender.toUpperCase()}
+          <div>
+            <div className="patient-name">{appointment.patientName.toUpperCase()}</div>
+            <div className="patient-meta">
+              {appointment.mobile} • {appointment.patientAge}Y {appointment.patientGender?.toUpperCase()}
             </div>
           </div>
         </div>
-        <div className="patient-id" style={{ 
-          background: '#f8fafc', padding: '6px 12px', borderRadius: '8px', 
-          display: 'inline-block', fontSize: '10px', color: '#475569', border: '1px solid #e2e8f0' 
-        }}>
-          PATIENT_ID: <span style={{ color: '#0f52ba', fontWeight: 900 }}>{appointment.ptid || '\u2014'}</span>
+        <div className="patient-id-tag">
+          MISSION_ID: <span>{appointment.ptid || appointment.id || '—'}</span>
         </div>
       </div>
 
-      {/* Clinical & Referral Matrix */}
-      <div className="card-section" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', background: '#fcfdfe', borderTop: '1px solid #f1f5f9' }}>
-        <div className="info-block">
-          <div className="section-title">REFERRAL_SOURCE</div>
-          <div className="referral-name" style={{ fontSize: '12px' }}>{appointment.referredBy || 'DIRECT_WALKIN'}</div>
-        </div>
-        <div className="info-block">
-          <div className="section-title">MODALITY_SPEC</div>
-          <div className="doctor-name" style={{ fontSize: '12px', fontWeight: 800, color: '#1e293b' }}>{appointment.modality || 'NOT_SPECIFIED'}</div>
+      {/* Info Grid */}
+      <div className="card-section">
+        <div className="info-grid">
+          <div className="info-item">
+            <span className="label">Modality</span>
+            <div className="value">{appointment.modality || '—'}</div>
+          </div>
+          <div className="info-item">
+            <span className="label">Source</span>
+            <div className="value">{appointment.referredBy || 'Direct'}</div>
+          </div>
         </div>
       </div>
 
-      {/* Primary Action Suite */}
-      <div className="card-actions" style={{ padding: '15px', background: 'white', borderTop: '1.5px solid #f1f5f9', gap: '10px' }}>
+      {/* Actions */}
+      <div className="card-actions">
         {next && (
           <button
-            className="action-btn action-btn-primary"
+            className="action-btn-main"
             onClick={() => onAction(appointment.id, next.action)}
             style={{ 
               backgroundColor: next.color, 
-              flex: 2, 
-              borderRadius: '12px',
-              boxShadow: `0 4px 12px ${next.color}30`
+              color: 'white',
+              boxShadow: `0 8px 16px ${next.color}33`
             }}
           >
-            <span className="action-text" style={{ display: 'inline', letterSpacing: '0.5px' }}>{next.label}</span>
+            {next.icon} {next.label}
           </button>
         )}
 
-        <div style={{ display: 'flex', gap: '8px', width: next ? 'auto' : '100%' }}>
-          <button
-            className="action-btn action-btn-secondary"
-            onClick={() => onPrint(appointment)}
-            style={{ borderRadius: '12px', border: '1.5px solid #e2e8f0', background: 'white', color: '#475569' }}
-          >
-            SLIP
-          </button>
+        <button className="action-btn-icon" onClick={() => onPrint(appointment)} title="Print Slip">
+          🖨️
+        </button>
 
-          <button
-            className="action-btn action-btn-secondary"
-            onClick={() => onPrescription && onPrescription(appointment)}
-            style={{ 
-              borderRadius: '12px', background: '#fffbeb', border: '1.5px solid #fde68a', color: '#b45309' 
-            }}
-          >
-            RX
-          </button>
+        <button className="action-btn-icon" onClick={() => onPrescription && onPrescription(appointment)} title="Report">
+          📄
+        </button>
 
-          <button
-            className="action-btn action-btn-danger"
-            onClick={() => onCancel(appointment.id)}
-            style={{ borderRadius: '12px', minWidth: '44px', background: '#fff1f2', color: '#e11d48', border: '1.5px solid #fecdd3' }}
-          >
-            \u2715
-          </button>
-        </div>
+        <button 
+          className="action-btn-icon" 
+          onClick={() => onEdit(appointment)} 
+          title="Edit"
+        >
+          ✏️
+        </button>
+
+        <button 
+          className="action-btn-icon" 
+          onClick={() => onCancel(appointment.id)} 
+          style={{ color: '#ef4444' }}
+          title="Cancel"
+        >
+          ✕
+        </button>
       </div>
     </div>
   );

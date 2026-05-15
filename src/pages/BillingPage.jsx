@@ -10,6 +10,7 @@ import RevenueHub from '../components/Billing/RevenueHub';
 import ExpenseLedger from '../components/Billing/ExpenseLedger';
 import ReferralHub from '../components/Billing/ReferralHub';
 import AnalyticsHub from '../components/Billing/AnalyticsHub';
+import FinanceManager from '../components/FinanceManager';
 
 // Shared Drawers
 import { 
@@ -27,7 +28,7 @@ export default function BillingPage() {
   const TODAY = new Date().toISOString().split('T')[0];
 
   // --- STATE ---
-  const [billingViewMode, setBillingViewMode] = useState('INVOICES'); // 'INVOICES' or 'EXPENSES'
+  const [billingViewMode, setBillingViewMode] = useState('INVOICES'); // 'INVOICES', 'EXPENSES', 'FINANCE'
   const [expenses, setExpenses] = useState([]);
   const [referrers, setReferrers] = useState([]);
   const [expenseFilter, setExpenseFilter] = useState('ALL'); // 'ALL' or 'REFERRAL'
@@ -74,6 +75,11 @@ export default function BillingPage() {
   const [referralCommissions, setReferralCommissions] = useState([]);
   const [referrerFilter, setReferrerFilter] = useState('ALL'); // 'ALL' or referrerId
   const [appointments, setAppointments] = useState([]);
+
+  // FinanceManager Specific State
+  const [billingSettings, setBillingSettings] = useState({ autoBill: true, currency: '₹' });
+  const [isPriceDrawerOpen, setIsPriceDrawerOpen] = useState(false);
+  const [editPrice, setEditPrice] = useState({ modality: '', serviceName: '', amount: 0, referralCutType: 'PERCENTAGE', referralCutValue: 0, referralCutInput: 0 });
 
 
   
@@ -292,6 +298,37 @@ export default function BillingPage() {
     } finally {
       setSavingExpense(false);
     }
+  };
+
+  const handleSavePrice = async (e) => {
+    e.preventDefault();
+    try {
+      if (editPrice.id) {
+        await apiClient.put(`/finance/registry/${editPrice.id}`, editPrice);
+      } else {
+        await apiClient.post('/finance/registry', editPrice);
+      }
+      setIsPriceDrawerOpen(false);
+      fetchRegistry();
+    } catch (err) {
+      console.error('[FINANCE] Price save failed', err);
+      alert('Error: Failed to save service price.');
+    }
+  };
+
+  const handleDeletePrice = async (id) => {
+    if (!window.confirm('Delete this service price?')) return;
+    try {
+      await apiClient.delete(`/finance/registry/${id}`);
+      fetchRegistry();
+    } catch (err) {
+      console.error('[FINANCE] Price deletion failed', err);
+      alert('Error: Could not delete service price.');
+    }
+  };
+
+  const handleToggleAutoBill = () => {
+    setBillingSettings(prev => ({ ...prev, autoBill: !prev.autoBill }));
   };
   
   const handlePrintThermal = (invInput = null) => {
@@ -1315,6 +1352,7 @@ export default function BillingPage() {
               { id: 'EXPENSES',      label: 'Expenses' },
               { id: 'REFERRAL_CUTS', label: 'Referrals' },
               { id: 'ANALYTICS',     label: 'Analytics' },
+              { id: 'FINANCE',       label: 'Control' },
             ].map(tab => (
               <button
                 key={tab.id}
@@ -1499,6 +1537,39 @@ export default function BillingPage() {
           setStartDate={setStartDate}
           endDate={endDate}
           setEndDate={setEndDate}
+        />
+      )}
+
+      {billingViewMode === 'FINANCE' && (
+        <FinanceManager 
+          isMobile={isMobile}
+          servicePrices={serviceRegistry}
+          fetchServicePrices={fetchRegistry}
+          financialMatrix={matrix}
+          fetchFinancialMatrix={fetchMatrix}
+          expenses={expenses}
+          fetchExpenses={fetchExpenses}
+          billingSettings={billingSettings}
+          setBillingSettings={setBillingSettings}
+          handleToggleAutoBill={handleToggleAutoBill}
+          isOnline={isOnline}
+          activeCenter={activeCenter}
+          isPriceDrawerOpen={isPriceDrawerOpen}
+          setIsPriceDrawerOpen={setIsPriceDrawerOpen}
+          editPrice={editPrice}
+          setEditPrice={setEditPrice}
+          handleSavePrice={handleSavePrice}
+          handleDeletePrice={handleDeletePrice}
+          isExpenseDrawerOpen={isExpenseDrawerOpen}
+          setIsExpenseDrawerOpen={setIsExpenseDrawerOpen}
+          editExpense={editExpense}
+          setEditExpense={setEditExpense}
+          handleSaveExpense={handleSaveExpense}
+          handleDeleteExpense={handleDeleteExpense}
+          savingExpense={savingExpense}
+          isTestMode={false}
+          TODAY={TODAY}
+          hideTabs={['EXPENSES', 'LEDGER']}
         />
       )}
 

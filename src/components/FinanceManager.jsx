@@ -28,7 +28,8 @@ const FinanceManager = ({
   handleDeleteExpense,
   savingExpense,
   isTestMode,
-  TODAY
+  TODAY,
+  hideTabs = []
 }) => {
   const [financeViewMode, setFinanceViewMode] = useState('REGISTRY');
 
@@ -94,7 +95,7 @@ const FinanceManager = ({
           { id: 'REGISTRY', label: 'Services' },
           { id: 'EXPENSES', label: 'Expenses' },
           { id: 'LEDGER',   label: 'Overview' }
-        ].map(tab => (
+        ].filter(tab => !hideTabs.includes(tab.id)).map(tab => (
           <button
             key={tab.id}
             onClick={() => setFinanceViewMode(tab.id)}

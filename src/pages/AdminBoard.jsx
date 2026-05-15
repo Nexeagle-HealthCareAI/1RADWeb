@@ -1148,6 +1148,11 @@ export default function AdminBoard() {
       if (!confirmSurcharge) return;
     }
 
+    if (!editUser.roles || editUser.roles.length === 0) {
+      alert("System Protocol Error: At least one clinical or administrative role must be assigned.");
+      return;
+    }
+
     const payload = {
       fullName: editUser.name,
       email: editUser.email,
