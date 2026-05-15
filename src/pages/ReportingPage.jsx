@@ -86,8 +86,9 @@ const ReportingPage = () => {
       const isTouchDevice = 'ontouchstart' in window || navigator.maxTouchPoints > 0;
       const isIPad = /iPad|Macintosh/.test(navigator.userAgent) && 'ontouchstart' in document;
       const isTabletSize = (width >= 768 && width <= 1366) || (height >= 768 && height <= 1366);
+      const isMobileSize = width < 768;
       
-      const tablet = isTouchDevice && (isTabletSize || isIPad);
+      const tablet = (isTouchDevice && (isTabletSize || isIPad)) || isMobileSize;
       setIsTablet(tablet);
       
       console.log('[REPORTING] Device detection:', {
@@ -3443,9 +3444,17 @@ const ReportingPage = () => {
             animation: 'fadeIn 0.4s ease'
           }}>
         {/* Shared Header: Metadata & Status */}
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '15px', padding: '0 20px' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '20px' }}>
-             <div style={{ padding: '6px 12px', background: '#f0f7ff', borderRadius: '10px', border: '1px solid #dbeafe' }}>
+        <div style={{ 
+          display: 'flex', 
+          flexDirection: window.innerWidth < 768 ? 'column' : 'row',
+          justifyContent: 'space-between', 
+          alignItems: window.innerWidth < 768 ? 'flex-start' : 'center', 
+          marginBottom: '15px', 
+          padding: '0 20px',
+          gap: window.innerWidth < 768 ? '15px' : '0'
+        }}>
+          <div style={{ display: 'flex', flexDirection: window.innerWidth < 480 ? 'column' : 'row', alignItems: window.innerWidth < 480 ? 'flex-start' : 'center', gap: '10px' }}>
+             <div style={{ padding: '6px 12px', background: '#f0f7ff', borderRadius: '10px', border: '1px solid #dbeafe', width: window.innerWidth < 480 ? '100%' : 'auto' }}>
                 <div style={{ fontSize: '9px', fontWeight: 950, color: '#0f52ba', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Workstation Status</div>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginTop: '1px' }}>
                   <div style={{ width: '6px', height: '6px', borderRadius: '50%', background: isOnline ? '#10b981' : '#f59e0b' }}></div>
@@ -3453,7 +3462,7 @@ const ReportingPage = () => {
                 </div>
              </div>
              
-             <div style={{ padding: '6px 12px', background: saveStatus === 'SAVING' ? '#fffbeb' : '#f8fafc', borderRadius: '10px', border: `1px solid ${saveStatus === 'SAVING' ? '#fde68a' : '#e2e8f0'}`, transition: 'all 0.3s' }}>
+             <div style={{ padding: '6px 12px', background: saveStatus === 'SAVING' ? '#fffbeb' : '#f8fafc', borderRadius: '10px', border: `1px solid ${saveStatus === 'SAVING' ? '#fde68a' : '#e2e8f0'}`, transition: 'all 0.3s', width: window.innerWidth < 480 ? '100%' : 'auto' }}>
                 <div style={{ fontSize: '9px', fontWeight: 950, color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Cloud Intelligence</div>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginTop: '1px' }}>
                   <span style={{ fontSize: '10px', fontWeight: 800, color: saveStatus === 'SAVING' ? '#d97706' : '#1e293b' }}>
@@ -3463,10 +3472,10 @@ const ReportingPage = () => {
              </div>
           </div>
           
-          <div style={{ display: 'flex', gap: '12px' }}>
-             <button className="btn btn-outline" style={{ padding: '8px 16px', fontSize: '11px' }} onClick={() => handleSaveReport(false)}>💾 Save Draft</button>
-             <button className="btn btn-outline" style={{ padding: '8px 16px', fontSize: '11px' }} onClick={handlePreviewPrint}>👁️ Preview Report</button>
-             <button className="btn btn-success" style={{ padding: '8px 20px', fontSize: '11px' }} onClick={() => handleSaveReport(true)}>Finalize & Sign</button>
+          <div style={{ display: 'flex', gap: '8px', width: window.innerWidth < 768 ? '100%' : 'auto', flexWrap: 'wrap' }}>
+             <button className="btn btn-outline" style={{ flex: 1, padding: '8px 10px', fontSize: '10px' }} onClick={() => handleSaveReport(false)}>💾 Save Draft</button>
+             <button className="btn btn-outline" style={{ flex: 1, padding: '8px 10px', fontSize: '10px' }} onClick={handlePreviewPrint}>👁️ Preview</button>
+             <button className="btn btn-success" style={{ flex: window.innerWidth < 768 ? '100%' : 'auto', padding: '10px 15px', fontSize: '10px', fontWeight: 900 }} onClick={() => handleSaveReport(true)}>Finalize & Sign</button>
           </div>
         </div>
 
@@ -3517,14 +3526,14 @@ const ReportingPage = () => {
                 />
                 
                 {/* Bottom Narrative Inputs (Impression & Advice) */}
-                <div style={{ display: 'flex', gap: '20px' }}>
+                <div style={{ display: 'flex', flexDirection: window.innerWidth < 768 ? 'column' : 'row', gap: '20px' }}>
                   <div style={{ flex: 1 }}>
                     <label style={{ fontSize: '10px', fontWeight: 950, color: '#0f52ba', display: 'block', marginBottom: '8px' }}>CLINICAL IMPRESSION</label>
                     <textarea 
                       value={impression}
                       onChange={(e) => setImpression(e.target.value)}
                       placeholder="Enter final study impression..."
-                      style={{ width: '100%', padding: '12px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '13px', minHeight: '80px', outline: 'none' }}
+                      style={{ width: '100%', padding: '12px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '16px', minHeight: '100px', outline: 'none' }}
                     />
                   </div>
                   <div style={{ flex: 1 }}>
@@ -3533,7 +3542,7 @@ const ReportingPage = () => {
                       value={advice}
                       onChange={(e) => setAdvice(e.target.value)}
                       placeholder="Enter patient advice..."
-                      style={{ width: '100%', padding: '12px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '13px', minHeight: '80px', outline: 'none' }}
+                      style={{ width: '100%', padding: '12px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '16px', minHeight: '100px', outline: 'none' }}
                     />
                   </div>
                 </div>

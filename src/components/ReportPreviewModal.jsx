@@ -5,7 +5,8 @@ import { Document, Page, pdfjs } from 'react-pdf';
 import { QRCodeCanvas } from 'qrcode.react';
 
 // Configure PDF.js worker
-pdfjs.GlobalWorkerOptions.workerSrc = '/pdf.worker.min.mjs';
+// Configure PDF.js worker to use CDN for maximum reliability
+pdfjs.GlobalWorkerOptions.workerSrc = `https://unpkg.com/pdfjs-dist@${pdfjs.version}/build/pdf.worker.min.mjs`;
 
 const ReportPreviewModal = ({ 
   isOpen, 
@@ -69,8 +70,8 @@ const ReportPreviewModal = ({
     const handleResize = () => {
       // Calculate scale to fit A4 (794x1123 @ 96dpi) into the viewport
       const padding = 80;
-      const availableWidth = window.innerWidth - padding;
-      const availableHeight = window.innerHeight - 150; // Accounting for header
+      const availableWidth = window.innerWidth - (window.innerWidth < 768 ? 20 : 80);
+      const availableHeight = window.innerHeight - (window.innerWidth < 768 ? 100 : 180); 
       const scale = Math.min(availableWidth / 794, availableHeight / 1123);
       setSheetScale(scale);
     };
@@ -161,49 +162,91 @@ const ReportPreviewModal = ({
   const modalContent = (
     <div className="modal-overlay" style={{ background: 'rgba(10, 22, 40, 0.98)', zIndex: 10000, display: 'flex', alignItems: 'center', justifyContent: 'center', position: 'fixed', inset: 0, backdropFilter: 'blur(10px)' }}>
       <div style={{ width: '100vw', height: '100vh', background: '#0a1628', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
-        <div style={{ padding: '20px 40px', background: 'rgba(15, 23, 42, 0.8)', backdropFilter: 'blur(20px)', color: 'white', display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid rgba(255,255,255,0.05)', zIndex: 10 }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '20px' }}>
-             <div style={{ width: '40px', height: '40px', background: '#0f52ba', borderRadius: '12px', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '20px' }}>📄</div>
+        <div className="preview-header" style={{ 
+          padding: '12px 25px', 
+          background: 'rgba(15, 23, 42, 0.95)', 
+          backdropFilter: 'blur(20px)', 
+          color: 'white', 
+          display: 'flex', 
+          flexDirection: window.innerWidth < 768 ? 'column' : 'row',
+          justifyContent: 'space-between', 
+          alignItems: window.innerWidth < 768 ? 'flex-start' : 'center', 
+          borderBottom: '1px solid rgba(255,255,255,0.1)', 
+          zIndex: 100,
+          gap: '15px',
+          boxShadow: '0 4px 30px rgba(0,0,0,0.5)'
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '15px' }}>
+             <button onClick={onClose} style={{ background: 'none', border: 'none', color: '#94a3b8', fontSize: '24px', cursor: 'pointer', padding: '5px' }}>✕</button>
+             <div style={{ width: '1px', height: '30px', background: 'rgba(255,255,255,0.1)' }} />
              <div>
-              <h3 style={{ fontSize: '13px', fontWeight: 950, letterSpacing: '2px', margin: 0, color: '#60a5fa' }}>DIAGNOSTIC_REPORT_PREVIEW</h3>
-              <div style={{ fontSize: '10px', opacity: 0.6, marginTop: '2px' }}>
-                Protocol: {loadingProtocol ? 'LOADING...' : (protocol ? 'INSTITUTIONAL_READY' : 'DEFAULT_LAYOUT')} • Mode: {mode?.toUpperCase()}
+              <h3 style={{ fontSize: '11px', fontWeight: 950, letterSpacing: '3px', margin: 0, color: '#3b82f6', textTransform: 'uppercase' }}>Diagnostic Signal Preview</h3>
+              <div style={{ fontSize: '9px', opacity: 0.5, marginTop: '2px', fontWeight: 700 }}>
+                {loadingProtocol ? 'SYNCHRONIZING_BRANDING...' : `MODE: ${mode?.toUpperCase()} • STATUS: ${isFinalized ? 'AUTHENTICATED' : 'DRAFT_RECON'}`}
               </div>
              </div>
           </div>
-          <div style={{ display: 'flex', gap: '15px' }}>
-            <button 
-              className="btn" 
-              style={{ background: 'rgba(37, 211, 102, 0.1)', border: '1px solid rgba(37, 211, 102, 0.2)', color: '#25d366', padding: '12px 20px', borderRadius: '12px', fontWeight: 900, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '8px' }} 
-              onClick={handleWhatsAppShare}
-            >
-              <span>💬</span> WHATSAPP
-            </button>
-            <button 
-              className="btn" 
-              style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', color: 'white', padding: '12px 20px', borderRadius: '12px', fontWeight: 900, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '8px' }} 
-              onClick={handleDownload}
-            >
-              <span>📥</span> DOWNLOAD
-            </button>
-            <button className="btn btn-primary" style={{ background: '#0f52ba', border: 'none', padding: '12px 25px', borderRadius: '12px', fontWeight: 900, cursor: 'pointer' }} onClick={() => window.print()}>🖨️ PRINT_FINAL</button>
-            <button onClick={onClose} style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', color: '#94a3b8', padding: '12px 25px', borderRadius: '12px', cursor: 'pointer', fontWeight: 900 }}>CLOSE</button>
+
+          <div style={{ display: 'flex', alignItems: 'center', gap: '20px' }}>
+            {/* Zoom Controls */}
+            <div style={{ display: 'flex', alignItems: 'center', background: 'rgba(255,255,255,0.05)', padding: '4px', borderRadius: '10px', border: '1px solid rgba(255,255,255,0.1)' }}>
+              <button onClick={() => setSheetScale(s => Math.max(0.3, s - 0.1))} style={{ background: 'none', border: 'none', color: 'white', width: '30px', height: '30px', cursor: 'pointer', fontWeight: 900 }}>−</button>
+              <div style={{ fontSize: '10px', fontWeight: 950, width: '45px', textAlign: 'center', color: '#60a5fa' }}>{Math.round(sheetScale * 100)}%</div>
+              <button onClick={() => setSheetScale(s => Math.min(2, s + 0.1))} style={{ background: 'none', border: 'none', color: 'white', width: '30px', height: '30px', cursor: 'pointer', fontWeight: 900 }}>+</button>
+            </div>
+
+            <div style={{ display: 'flex', gap: '8px', width: window.innerWidth < 768 ? '100%' : 'auto', flexWrap: 'wrap' }}>
+              <button 
+                className="btn-preview-action" 
+                style={{ flex: 1, background: 'rgba(37, 211, 102, 0.15)', border: '1px solid rgba(37, 211, 102, 0.3)', color: '#25d366', padding: '10px 18px', borderRadius: '10px', fontWeight: 900, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', fontSize: '11px', transition: 'all 0.2s' }} 
+                onClick={handleWhatsAppShare}
+              >
+                <span>💬</span> {window.innerWidth > 600 ? 'WHATSAPP_SECURE' : 'SHARE'}
+              </button>
+              <button 
+                className="btn-preview-action" 
+                style={{ flex: 1, background: 'rgba(255,255,255,0.08)', border: '1px solid rgba(255,255,255,0.15)', color: 'white', padding: '10px 18px', borderRadius: '10px', fontWeight: 900, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', fontSize: '11px', transition: 'all 0.2s' }} 
+                onClick={handleDownload}
+              >
+                <span>📥</span> {window.innerWidth > 600 ? 'DOWNLOAD_PDF' : 'PDF'}
+              </button>
+              <button className="btn-preview-primary" style={{ flex: 1, background: '#0f52ba', border: 'none', color: 'white', padding: '10px 22px', borderRadius: '10px', fontWeight: 950, cursor: 'pointer', fontSize: '11px', boxShadow: '0 4px 15px rgba(15, 82, 186, 0.4)', transition: 'all 0.2s' }} onClick={() => window.print()}>🖨️ {window.innerWidth > 600 ? 'AUTHENTIC_PRINT' : 'PRINT'}</button>
+            </div>
           </div>
         </div>
         
-        <div style={{ flex: 1, background: '#0f172a', overflow: 'hidden', display: 'flex', justifyContent: 'center', alignItems: 'center', padding: '20px' }}>
-          <div id="printable-report" style={{ 
-            width: '210mm', 
-            minHeight: '297mm', 
-            background: 'white', 
-            boxShadow: '0 50px 100px rgba(0,0,0,0.5)', 
-            color: protocol?.fontColor || '#1e293b',
-            fontFamily: protocol?.fontFamily || 'Arial, sans-serif',
+        <div className="preview-canvas" style={{ 
+          flex: 1, 
+          background: '#0a1628', 
+          backgroundImage: 'radial-gradient(rgba(255,255,255,0.05) 1px, transparent 1px)',
+          backgroundSize: '30px 30px',
+          overflow: 'auto', 
+          display: 'flex', 
+          justifyContent: 'center', 
+          alignItems: 'flex-start', 
+          padding: window.innerWidth < 768 ? '20px 10px' : '60px 20px' 
+        }}>
+          {/* Scaled Wrapper to ensure scrollbars work with transform: scale */}
+          <div style={{ 
+            width: `${210 * sheetScale}mm`, 
+            height: `${297 * sheetScale}mm`, 
             position: 'relative',
-            overflow: 'hidden',
-            transform: `scale(${sheetScale})`,
-            transformOrigin: 'center center'
+            flexShrink: 0
           }}>
+            <div id="printable-report" style={{ 
+              width: '210mm', 
+              height: '297mm', 
+              background: 'white', 
+              boxShadow: '0 60px 120px rgba(0,0,0,0.8)', 
+              color: protocol?.fontColor || '#1e293b',
+              fontFamily: protocol?.fontFamily || 'Arial, sans-serif',
+              position: 'absolute',
+              top: 0,
+              left: 0,
+              transform: `scale(${sheetScale})`,
+              transformOrigin: 'top left',
+              border: '1px solid #e2e8f0'
+            }}>
             
             {/* WATERMARK FOR NON-FINALIZED */}
             {!isFinalized && (
@@ -216,21 +259,24 @@ const ReportPreviewModal = ({
             {resolvedAssetUrl && (
               <div className="letterhead-container" style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, zIndex: 1, pointerEvents: 'none' }}>
                 { (resolvedAssetUrl?.toLowerCase().includes('.pdf') || resolvedAssetUrl?.includes('type=pdf')) ? (
-                  <Document
-                    file={resolvedAssetUrl}
-                    onLoadSuccess={({ numPages }) => setNumPdfPages(numPages)}
-                    onLoadError={(err) => console.error("[ReportPreview] PDF Load Error:", err)}
-                    loading={<div />}
-                  >
-                    <Page 
-                      pageNumber={1} 
-                      width={794} 
-                      renderTextLayer={false}
-                      renderAnnotationLayer={false}
-                      renderMode="svg"
-                      className="pdf-page-canvas"
-                    />
-                  </Document>
+                    <Document
+                      file={resolvedAssetUrl}
+                      onLoadSuccess={({ numPages }) => setNumPdfPages(numPages)}
+                      onLoadError={(err) => {
+                        console.error("[ReportPreview] PDF Load Error:", err);
+                        // If PDF fails, fallback to treat as image if possible or show error
+                      }}
+                      loading={<div style={{ padding: '20px', textAlign: 'center', color: '#64748b' }}>Initializing PDF Engine...</div>}
+                    >
+                      <Page 
+                        pageNumber={1} 
+                        width={794} 
+                        renderTextLayer={false}
+                        renderAnnotationLayer={false}
+                        renderMode="canvas" /* Canvas is more compatible than SVG on some browsers */
+                        className="pdf-page-canvas"
+                      />
+                    </Document>
                 ) : (
                   <img 
                     src={resolvedAssetUrl}
@@ -370,6 +416,7 @@ const ReportPreviewModal = ({
           </div>
         </div>
       </div>
+    </div>
       <style>{`
         @media print {
           @page {
@@ -451,9 +498,28 @@ const ReportPreviewModal = ({
           }
 
           /* Hide UI */
-          button, .modal-header, .btn, .modal-overlay > div > div:first-child {
+          button, .modal-header, .btn, .preview-header, .modal-overlay > div > div:first-child {
             display: none !important;
           }
+
+          /* Force exact dimensions */
+          #printable-report {
+            width: 210mm !important;
+            height: 297mm !important;
+            margin: 0 !important;
+            border: none !important;
+            box-shadow: none !important;
+          }
+        }
+
+        .btn-preview-action:hover {
+          background: rgba(255,255,255,0.15) !important;
+          transform: translateY(-1px);
+        }
+        .btn-preview-primary:hover {
+          background: #1e40af !important;
+          box-shadow: 0 6px 20px rgba(15, 82, 186, 0.5) !important;
+          transform: translateY(-1px);
         }
       `}</style>
     </div>

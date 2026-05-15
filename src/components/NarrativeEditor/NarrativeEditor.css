@@ -308,6 +308,15 @@
   }
 }
 
+@media (max-width: 480px) {
+  .narrative-editor-content {
+    padding: 20px 15px;
+  }
+  .word-canvas {
+    padding: 10px 5px 40px;
+  }
+}
+
 /* ── Print styles ────────────────────────────────────────────────────────────── */
 @media print {
   .narrative-editor-container {

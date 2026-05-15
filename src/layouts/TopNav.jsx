@@ -41,6 +41,48 @@ export default function TopNav({ currentTime }) {
         .nav-button-hover:active {
           transform: translateY(0);
         }
+        
+        @media (max-width: 768px) {
+          .top-nav-header {
+            padding: 0 15px !important;
+            height: 56px !important;
+          }
+          .nav-logo-section {
+            gap: 10px !important;
+          }
+          .nav-terminal-label, .nav-status-details, .nav-temporal-section {
+            display: none !important;
+          }
+          .nav-logo-icon {
+            width: 32px !important;
+            height: 32px !important;
+            font-size: 14px !important;
+          }
+          .nav-center-name {
+            font-size: 12px !important;
+          }
+          .nav-status-indicators {
+            gap: 12px !important;
+          }
+          .nav-user-section {
+            gap: 8px !important;
+          }
+          .nav-user-meta {
+            display: none !important;
+          }
+          .nav-divider {
+            margin: 0 10px !important;
+          }
+        }
+
+        @media (max-width: 480px) {
+          .nav-divider {
+             display: none !important;
+          }
+          .nav-status-indicators {
+             display: none !important;
+          }
+        }
       `}</style>
 
       {/* Expiry Warning Banner - Modern Streamlined Design */}
@@ -80,7 +122,7 @@ export default function TopNav({ currentTime }) {
         </div>
       )}
 
-      <header style={{ 
+      <header className="top-nav-header" style={{ 
         display: 'flex', justifyContent: 'space-between', alignItems: 'center', 
         height: '64px', padding: '0 40px', 
         background: 'rgba(255, 255, 255, 0.8)', 
@@ -90,10 +132,10 @@ export default function TopNav({ currentTime }) {
         boxShadow: '0 4px 20px rgba(0,0,0,0.02)'
       }}>
         
-        <div style={{ display: 'flex', alignItems: 'center', gap: '40px' }}>
+        <div style={{ display: 'flex', alignItems: 'center' }}>
           {/* Institutional Node Identifier */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: '15px' }}>
-            <div style={{ 
+          <div className="nav-logo-section" style={{ display: 'flex', alignItems: 'center', gap: '15px' }}>
+            <div className="nav-logo-icon" style={{ 
               width: '40px', height: '40px', borderRadius: '12px', 
               background: 'linear-gradient(135deg, #0f52ba 0%, #1e40af 100%)',
               display: 'flex', alignItems: 'center', justifyContent: 'center',
@@ -102,20 +144,20 @@ export default function TopNav({ currentTime }) {
               <span style={{ color: 'white', fontWeight: 950, fontSize: '16px' }}>{activeCenter?.name?.charAt(0) || 'H'}</span>
             </div>
             <div style={{ display: 'flex', flexDirection: 'column' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+              <div className="nav-terminal-label" style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
                 <span style={{ fontSize: '9px', fontWeight: 950, color: '#94a3b8', letterSpacing: '1.5px', textTransform: 'uppercase' }}>Current Terminal</span>
                 {isOnline && <div style={{ width: '6px', height: '6px', borderRadius: '50%', background: '#10b981', boxShadow: '0 0 8px #10b981' }} />}
               </div>
-              <span style={{ fontSize: '14px', fontWeight: 950, color: '#1e293b', letterSpacing: '-0.3px' }}>
+              <span className="nav-center-name" style={{ fontSize: '14px', fontWeight: 950, color: '#1e293b', letterSpacing: '-0.3px' }}>
                 {activeCenter?.name || 'INITIALIZING_NODE...'}
               </span>
             </div>
           </div>
 
-          <div style={{ width: '1px', height: '24px', background: '#e2e8f0' }} />
+          <div className="nav-divider" style={{ width: '1px', height: '24px', background: '#e2e8f0', margin: '0 40px' }} />
 
           {/* Tactical Status Indicators */}
-          <div style={{ display: 'flex', gap: '24px' }}>
+          <div className="nav-status-indicators" style={{ display: 'flex', gap: '24px' }}>
             {/* Sync Hub */}
             <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
               <div style={{ 
@@ -126,7 +168,7 @@ export default function TopNav({ currentTime }) {
               }}>
                 <span style={{ fontSize: '14px' }}>{isOnline ? '🌐' : '📡'}</span>
               </div>
-              <div style={{ display: 'flex', flexDirection: 'column' }}>
+              <div className="nav-status-details" style={{ display: 'flex', flexDirection: 'column' }}>
                 <span style={{ fontSize: '9px', fontWeight: 950, color: '#10b981', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
                   {isSyncing ? 'Syncing...' : isOnline ? 'Online' : 'Offline'}
                 </span>
@@ -139,8 +181,8 @@ export default function TopNav({ currentTime }) {
         </div>
 
         {/* Temporal / User HUD */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: '25px' }}>
-          <div style={{ textAlign: 'right' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '25px' }} className="nav-user-section">
+          <div style={{ textAlign: 'right' }} className="nav-temporal-section">
             <div style={{ fontSize: '16px', fontWeight: 950, color: '#1e293b', letterSpacing: '-0.5px', lineHeight: 1, marginBottom: '2px' }}>
               {formattedTime}
             </div>
@@ -149,10 +191,10 @@ export default function TopNav({ currentTime }) {
             </div>
           </div>
           
-          <div style={{ width: '1px', height: '32px', background: '#e2e8f0' }} />
+          <div className="nav-divider" style={{ width: '1px', height: '32px', background: '#e2e8f0' }} />
           
           <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-            <div style={{ textAlign: 'right', display: 'flex', flexDirection: 'column' }}>
+            <div className="nav-user-meta" style={{ textAlign: 'right', display: 'flex', flexDirection: 'column' }}>
               <span style={{ fontSize: '12px', fontWeight: 950, color: '#1e293b' }}>{currentUser?.name || 'USER'}</span>
               <span style={{ fontSize: '9px', fontWeight: 950, color: '#0f52ba', textTransform: 'uppercase', letterSpacing: '1px' }}>
                 {roles[0]?.replace('admin', 'CHIEF ')}

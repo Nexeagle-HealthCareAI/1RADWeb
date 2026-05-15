@@ -469,7 +469,18 @@ const FinanceManager = ({
                               type="number" required 
                               value={editPrice.amount || ''} 
                               placeholder={editPrice.serviceName ? "Enter price" : "ENTER_DESCRIPTOR_FIRST"}
-                              onChange={e => setEditPrice({...editPrice, amount: parseFloat(e.target.value) || 0})}
+                              onChange={e => {
+                                const val = parseFloat(e.target.value) || 0;
+                                const currentCut = editPrice.referralCutValue || 0;
+                                const clampedCut = Math.min(currentCut, val);
+                                const calculatedPct = val > 0 ? (clampedCut / val) * 100 : 0;
+                                setEditPrice({
+                                  ...editPrice, 
+                                  amount: val,
+                                  referralCutValue: clampedCut,
+                                  referralCutInput: calculatedPct.toFixed(2)
+                                });
+                              }}
                               style={{ width: '100%', border: 'none', borderBottom: '2px solid #f0f0f0', fontSize: '20px', fontWeight: 950, padding: '10px 0', outline: 'none', color: '#0f52ba' }}
                            />
                         </div>
@@ -501,7 +512,9 @@ const FinanceManager = ({
                            onChange={e => {
                              const pct = parseFloat(e.target.value);
                              const calculated = (editPrice.amount * pct) / 100;
-                             setEditPrice({...editPrice, referralCutInput: pct, referralCutValue: calculated});
+                             const clamped = Math.min(calculated, editPrice.amount);
+                             const finalPct = editPrice.amount > 0 ? (clamped / editPrice.amount) * 100 : 0;
+                             setEditPrice({...editPrice, referralCutInput: finalPct.toFixed(2), referralCutValue: clamped});
                            }}
                            style={{ width: '100%', height: '6px', background: '#e2e8f0', borderRadius: '3px', accentColor: '#0f52ba', cursor: 'pointer' }}
                          />
@@ -518,7 +531,9 @@ const FinanceManager = ({
                                  const val = e.target.value === '' ? '' : parseFloat(e.target.value);
                                  const num = parseFloat(val) || 0;
                                  const calculated = (editPrice.amount * num) / 100;
-                                 setEditPrice({...editPrice, referralCutInput: val, referralCutValue: calculated});
+                                 const clamped = Math.min(calculated, editPrice.amount);
+                                 const finalPct = editPrice.amount > 0 ? (clamped / editPrice.amount) * 100 : 0;
+                                 setEditPrice({...editPrice, referralCutInput: val, referralCutValue: clamped});
                                }}
                                style={{ width: '100%', border: 'none', borderBottom: '1px solid #cbd5e1', fontSize: '14px', fontWeight: 800, padding: '8px 0', outline: 'none', background: 'transparent' }}
                             />
@@ -533,8 +548,9 @@ const FinanceManager = ({
                                onChange={e => {
                                  const val = e.target.value === '' ? '' : parseFloat(e.target.value);
                                  const num = parseFloat(val) || 0;
-                                 const calculatedPct = editPrice.amount > 0 ? (num / editPrice.amount) * 100 : 0;
-                                 setEditPrice({...editPrice, referralCutValue: val, referralCutInput: calculatedPct.toFixed(2)});
+                                 const clamped = Math.min(num, editPrice.amount);
+                                 const calculatedPct = editPrice.amount > 0 ? (clamped / editPrice.amount) * 100 : 0;
+                                 setEditPrice({...editPrice, referralCutValue: val === '' ? '' : clamped, referralCutInput: calculatedPct.toFixed(2)});
                                }}
                                style={{ width: '100%', border: 'none', borderBottom: '1px solid #cbd5e1', fontSize: '14px', fontWeight: 800, padding: '8px 0', outline: 'none', color: '#0f52ba', background: 'transparent' }}
                             />

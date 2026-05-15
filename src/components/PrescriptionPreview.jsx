@@ -3,7 +3,8 @@ import { Document, Page, pdfjs } from 'react-pdf';
 import { BASE_URL } from '../api/apiClient';
 
 // Configure PDF.js worker
-pdfjs.GlobalWorkerOptions.workerSrc = '/pdf.worker.min.mjs';
+// Configure PDF.js worker to use CDN for maximum reliability
+pdfjs.GlobalWorkerOptions.workerSrc = `https://unpkg.com/pdfjs-dist@${pdfjs.version}/build/pdf.worker.min.mjs`;
 
 const PrescriptionPreview = ({ 
   prescriptionSettings, 
@@ -81,13 +82,15 @@ const PrescriptionPreview = ({
                   <Document
                     file={letterheadUrl}
                     onLoadSuccess={({ numPages }) => pageIdx === 0 && setNumPdfPages(numPages)}
-                    loading={<div />}
+                    onLoadError={(err) => console.error("[PrescriptionPreview] PDF Load Error:", err)}
+                    loading={<div style={{ padding: '20px', textAlign: 'center', color: '#64748b' }}>Loading Template...</div>}
                   >
                     <Page 
                       pageNumber={1} 
                       width={794} 
                       renderTextLayer={false}
                       renderAnnotationLayer={false}
+                      renderMode="canvas"
                       className="pdf-page-canvas"
                     />
                   </Document>

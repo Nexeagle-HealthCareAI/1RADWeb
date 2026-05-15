@@ -507,8 +507,13 @@ export const NewInvoiceDrawer = ({
                                <input 
                                  type="number" required placeholder="₹" value={item.amount}
                                  onChange={e => {
+                                   const val = parseInt(e.target.value) || 0;
                                    const items = [...newInvoiceData.items];
-                                   items[idx].amount = parseInt(e.target.value) || 0;
+                                   items[idx].amount = val;
+                                   // Clamp referral cut if it exceeds new amount
+                                   if (items[idx].referralCutValue > val) {
+                                     items[idx].referralCutValue = val;
+                                   }
                                    setNewInvoiceData({ ...newInvoiceData, items });
                                  }}
                                  style={{ width: '100%', padding: '10px', borderRadius: '10px', border: '1px solid #eee', fontSize: '11px', fontWeight: 950, textAlign: 'right' }}
@@ -554,14 +559,14 @@ export const NewInvoiceDrawer = ({
                                   onChange={e => {
                                     const val = parseInt(e.target.value) || 0;
                                     const gross = newInvoiceData.items.reduce((sum, it) => sum + (it.amount * it.quantity), 0);
-                                    setNewInvoiceData({ ...newInvoiceData, centreDiscount: Math.min(val, gross) });
+                                    const maxAllowed = Math.max(0, gross - (newInvoiceData.referrerDiscount || 0));
+                                    setNewInvoiceData({ ...newInvoiceData, centreDiscount: Math.min(val, maxAllowed) });
                                   }}
                                   style={{ flex: 1, width: isMobile ? '100%' : '80px', padding: '6px 12px', borderRadius: '10px', border: '1px solid #cbd5e1', fontSize: '12px', fontWeight: 950, textAlign: 'right', color: '#ef4444', outline: 'none' }}
                               />
                            </div>
                         </div>
 
-                        {/* Referrer Discount Section */}
                         <div style={{ 
                            display: 'flex', flexDirection: isMobile ? 'column' : 'row', justifyContent: 'space-between', alignItems: isMobile ? 'flex-start' : 'center', gap: isMobile ? '12px' : '0',
                            opacity: newInvoiceData.referrerId ? 1 : 0.4, pointerEvents: newInvoiceData.referrerId ? 'auto' : 'none'
@@ -575,8 +580,11 @@ export const NewInvoiceDrawer = ({
                                    <button 
                                      key={pct} type="button"
                                      onClick={() => {
+                                       const gross = newInvoiceData.items.reduce((sum, it) => sum + (it.amount * it.quantity), 0);
                                        const totalCommission = newInvoiceData.items.reduce((sum, it) => sum + ((it.referralCutValue || 0) * (it.quantity || 1)), 0);
-                                       setNewInvoiceData({ ...newInvoiceData, referrerDiscount: Math.round(totalCommission * (pct / 100)) });
+                                       const maxByGross = Math.max(0, gross - (newInvoiceData.centreDiscount || 0));
+                                       const maxAllowed = Math.min(totalCommission, maxByGross);
+                                       setNewInvoiceData({ ...newInvoiceData, referrerDiscount: Math.round(Math.min(totalCommission * (pct / 100), maxAllowed)) });
                                      }}
                                      style={{ padding: '4px 8px', borderRadius: '6px', border: '1px solid #fecdd3', background: '#fff1f2', color: '#e11d48', fontSize: '8px', fontWeight: 950, cursor: 'pointer' }}
                                    >{pct}%</button>
@@ -586,8 +594,11 @@ export const NewInvoiceDrawer = ({
                                   type="number" value={newInvoiceData.referrerDiscount} 
                                   onChange={e => {
                                     const val = parseInt(e.target.value) || 0;
+                                    const gross = newInvoiceData.items.reduce((sum, it) => sum + (it.amount * it.quantity), 0);
                                     const totalCommission = newInvoiceData.items.reduce((sum, it) => sum + ((it.referralCutValue || 0) * (it.quantity || 1)), 0);
-                                    setNewInvoiceData({ ...newInvoiceData, referrerDiscount: Math.min(val, totalCommission) });
+                                    const maxByGross = Math.max(0, gross - (newInvoiceData.centreDiscount || 0));
+                                    const maxAllowed = Math.min(totalCommission, maxByGross);
+                                    setNewInvoiceData({ ...newInvoiceData, referrerDiscount: Math.min(val, maxAllowed) });
                                   }}
                                   style={{ flex: 1, width: isMobile ? '100%' : '80px', padding: '6px 12px', borderRadius: '10px', border: '1px solid #cbd5e1', fontSize: '12px', fontWeight: 950, textAlign: 'right', color: '#e11d48', outline: 'none' }}
                               />

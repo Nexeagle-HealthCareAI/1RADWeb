@@ -151,10 +151,19 @@ export default function EditorToolbar({ editor, onSave, isFullscreen, toggleFull
     <div style={{
       background: '#f0f0f0',
       borderBottom: '2px solid #c8c8c8',
-      display: 'flex', flexWrap: 'wrap', alignItems: 'center',
+      display: 'flex', 
+      flexWrap: window.innerWidth < 768 ? 'nowrap' : 'wrap', 
+      alignItems: 'center',
       gap: '2px', padding: '4px 8px',
       userSelect: 'none', flexShrink: 0,
+      overflowX: window.innerWidth < 768 ? 'auto' : 'visible',
+      msOverflowStyle: 'none',
+      scrollbarWidth: 'none',
+      WebkitOverflowScrolling: 'touch'
     }}>
+      <style>{`
+        div::-webkit-scrollbar { display: none; }
+      `}</style>
 
       {/* ── History ── */}
       <Btn onClick={() => editor.chain().focus().undo().run()} disabled={!editor.can().undo()} title="Undo (Ctrl+Z)">
@@ -376,35 +385,39 @@ export default function EditorToolbar({ editor, onSave, isFullscreen, toggleFull
       <div style={{ flex: 1 }} />
 
       {/* ── Zoom ── */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-        <Btn
-          onClick={() => setZoom(z => Math.max(50, zoomLevels[zoomLevels.indexOf(z) - 1] ?? 50))}
-          disabled={zoom <= 50}
-          title="Zoom out"
-          style={{ minWidth: '22px', height: '22px', fontSize: '16px', padding: 0 }}
-        >−</Btn>
-        <select
-          value={zoom}
-          onChange={e => setZoom(Number(e.target.value))}
-          style={{ ...selStyle, width: '60px', fontSize: '11px', height: '24px' }}
-          title="Zoom level"
-        >
-          {zoomLevels.map(z => <option key={z} value={z}>{z}%</option>)}
-        </select>
-        <Btn
-          onClick={() => setZoom(z => Math.min(200, zoomLevels[zoomLevels.indexOf(z) + 1] ?? 200))}
-          disabled={zoom >= 200}
-          title="Zoom in"
-          style={{ minWidth: '22px', height: '22px', fontSize: '16px', padding: 0 }}
-        >+</Btn>
-      </div>
+      {window.innerWidth >= 600 && (
+        <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+          <Btn
+            onClick={() => setZoom(z => Math.max(50, zoomLevels[zoomLevels.indexOf(z) - 1] ?? 50))}
+            disabled={zoom <= 50}
+            title="Zoom out"
+            style={{ minWidth: '22px', height: '22px', fontSize: '16px', padding: 0 }}
+          >−</Btn>
+          <select
+            value={zoom}
+            onChange={e => setZoom(Number(e.target.value))}
+            style={{ ...selStyle, width: '60px', fontSize: '11px', height: '24px' }}
+            title="Zoom level"
+          >
+            {zoomLevels.map(z => <option key={z} value={z}>{z}%</option>)}
+          </select>
+          <Btn
+            onClick={() => setZoom(z => Math.min(200, zoomLevels[zoomLevels.indexOf(z) + 1] ?? 200))}
+            disabled={zoom >= 200}
+            title="Zoom in"
+            style={{ minWidth: '22px', height: '22px', fontSize: '16px', padding: 0 }}
+          >+</Btn>
+        </div>
+      )}
 
       <Sep />
 
       {/* ── Fullscreen ── */}
-      <Btn onClick={toggleFullscreen} title={isFullscreen ? 'Exit Full Screen (Esc)' : 'Full Screen'} active={isFullscreen}>
-        <Icon d={isFullscreen ? ICONS.exitFs : ICONS.fullscreen} />
-      </Btn>
+      {window.innerWidth >= 768 && (
+        <Btn onClick={toggleFullscreen} title={isFullscreen ? 'Exit Full Screen (Esc)' : 'Full Screen'} active={isFullscreen}>
+          <Icon d={isFullscreen ? ICONS.exitFs : ICONS.fullscreen} />
+        </Btn>
+      )}
 
       {/* ── Save (if handler provided) ── */}
       {onSave && (
