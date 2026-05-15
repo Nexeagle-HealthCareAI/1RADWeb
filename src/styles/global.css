@@ -2293,7 +2293,7 @@ button, a, input[type="button"], input[type="submit"] {
   padding: 50px 40px 40px 40px;
 }
 
-@media (max-width: 1024px) {
+@media (max-width: 1023px) {
   .board-padding {
     padding: 80px 30px 30px 30px !important;
   }
