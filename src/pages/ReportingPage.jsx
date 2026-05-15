@@ -11,6 +11,7 @@ import { jwtDecode } from 'jwt-decode';
 import useOffline from '../hooks/useOffline';
 import { nativeStorage } from '../hooks/useElectron';
 import ReportPreviewModal from '../components/ReportPreviewModal';
+import PatientTimeline from '../components/PatientTimeline';
 
 const ReportingPage = () => {
   const navigate = useNavigate();
@@ -71,6 +72,7 @@ const ReportingPage = () => {
   const [patientHistory, setPatientHistory] = useState([]);
   const [loadingTimeline, setLoadingTimeline] = useState(false);
   const [showTimeline, setShowTimeline] = useState(false);
+  const [activeRightTab, setActiveRightTab] = useState('REPORT'); // 'REPORT', 'TIMELINE'
   const [expandedHistoryReport, setExpandedHistoryReport] = useState({}); // { [appointmentId]: { loading, data, error } }
   const [expandedHistoryDicom, setExpandedHistoryDicom] = useState({}); // { [appointmentId]: true/false }
   
@@ -3414,19 +3416,26 @@ const ReportingPage = () => {
             marginTop: '0px', marginBottom: '10px', borderBottom: '1px solid #f1f5f9', display: editorState === 'collapsed' ? 'none' : 'flex',
             justifyContent: 'center', gap: '20px'
           }}>
-            <div className="tab active" style={{ fontSize: '10px', fontWeight: 950 }}>REPORT_WORKSPACE</div>
+            <div 
+              className={`tab ${activeRightTab === 'REPORT' ? 'active' : ''}`} 
+              style={{ fontSize: '10px', fontWeight: 950, cursor: 'pointer' }}
+              onClick={() => setActiveRightTab('REPORT')}
+            >
+              REPORT_WORKSPACE
+            </div>
             {showTimeline && (
               <div
-                className="tab"
+                className={`tab ${activeRightTab === 'TIMELINE' ? 'active' : ''}`}
                 style={{
                   fontSize: '10px',
                   fontWeight: 950,
                   display: 'flex',
                   alignItems: 'center',
                   gap: '5px',
-                  position: 'relative'
+                  position: 'relative',
+                  cursor: 'pointer'
                 }}
-                onClick={() => navigate(`/patient-timeline/${appointmentId}`, { state: { patient: activeAppointment, returnPath: `/reporting/${appointmentId}` } })}
+                onClick={() => setActiveRightTab('TIMELINE')}
               >
                 🕒 TIMELINE
                 {patientHistory.length > 0 && (
@@ -3441,8 +3450,11 @@ const ReportingPage = () => {
           <div style={{ 
             display: editorState === 'collapsed' ? 'none' : 'flex', 
             flexDirection: 'column', flex: 1, paddingRight: '5px',
-            animation: 'fadeIn 0.4s ease'
+            animation: 'fadeIn 0.4s ease',
+            overflow: 'hidden'
           }}>
+            {activeRightTab === 'REPORT' ? (
+              <div style={{ display: 'flex', flexDirection: 'column', flex: 1, overflow: 'hidden' }}>
         {/* Shared Header: Metadata & Status */}
         <div style={{ 
           display: 'flex', 
@@ -3558,6 +3570,24 @@ const ReportingPage = () => {
                 <div style={{ fontSize: '12px', color: '#64748b' }}>Digital Medical Record Signature</div>
               </div>
             </div>
+              </div>
+            ) : (
+              <div style={{ flex: 1, overflowY: 'auto', background: '#f8fafc' }}>
+                <PatientTimeline 
+                  history={patientHistory}
+                  loading={loadingTimeline}
+                  activeAppointmentId={appointmentId}
+                  onViewReport={(study) => {
+                    // Navigate to a preview of this specific historical report
+                    navigate(`/patient-timeline/${appointmentId}`, { state: { patient: activeAppointment, returnPath: `/reporting/${appointmentId}` } });
+                  }}
+                  onViewDicom={(study) => {
+                    // Logic to load historical DICOM if available
+                    alert(`Loading DICOM for study: ${study.procedureName}. This would typically switch the viewer context.`);
+                  }}
+                />
+              </div>
+            )}
           </div>
         </div>
       </div>

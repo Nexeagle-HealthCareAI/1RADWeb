@@ -9,9 +9,9 @@ export default function ConfigurationPage() {
   return (
     <div style={{ padding: '25px', height: 'calc(100vh - 64px)', overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
       <div style={{ marginBottom: '20px', flexShrink: 0 }}>
-        <h1 style={{ fontSize: '24px', fontWeight: 950, color: '#1e293b', margin: 0 }}>CLINICAL_REGISTRY</h1>
-        <p style={{ fontSize: '12px', color: '#64748b', marginTop: '4px' }}>
-          Manage global report templates and diagnostic shorthand macros for {activeCenter?.name || 'the current facility'}.
+        <h1 style={{ fontSize: '24px', fontWeight: 700, color: '#0a1628', margin: 0 }}>Configuration</h1>
+        <p style={{ fontSize: '13px', color: '#6b7280', marginTop: '4px' }}>
+          Manage report templates and shorthand macros for {activeCenter?.name || 'the current facility'}.
         </p>
       </div>
       

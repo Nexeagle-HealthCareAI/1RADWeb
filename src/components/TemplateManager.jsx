@@ -128,78 +128,89 @@ const TemplateManager = ({
       </div>
     </div>
 
-      {/* --- TEMPLATE EDITOR DRAWER --- */}
+      {/* --- TEMPLATE EDITOR: WORD-LIKE PROTOCOL ARCHITECT --- */}
       {isTemplateDrawerOpen && (
-        <div className="drawer-overlay" onClick={() => setIsTemplateDrawerOpen(false)} style={{ 
+        <div style={{ 
           position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
-          backdropFilter: 'blur(10px)', background: 'rgba(10, 22, 40, 0.5)', zIndex: 10000,
-          display: 'flex', justifyContent: 'flex-end'
-        }}>
-          <div className="drawer-content" style={{ 
-            padding: 0, width: isMobile ? '100%' : '900px', background: 'white', display: 'flex', flexDirection: 'column',
-            height: '100%', boxShadow: '-10px 0 30px rgba(0,0,0,0.1)', overflow: 'hidden'
+          background: 'rgba(10, 22, 40, 0.85)', backdropFilter: 'blur(12px)',
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          zIndex: 11000
+        }} onClick={() => setIsTemplateDrawerOpen(false)}>
+          
+          <div style={{ 
+            width: isMobile ? '100%' : '1000px', 
+            height: isMobile ? '100%' : '95vh',
+            background: '#f1f5f9', borderRadius: isMobile ? 0 : '24px', 
+            display: 'flex', flexDirection: 'column', boxShadow: '0 30px 60px -12px rgba(0,0,0,0.6)',
+            overflow: 'hidden', border: '1px solid rgba(255,255,255,0.1)'
           }} onClick={e => e.stopPropagation()}>
-            <div style={{ padding: isMobile ? '20px' : '30px', background: 'linear-gradient(135deg, #0f52ba 0%, #061a40 100%)', color: 'white' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <div>
-                  <h2 style={{ fontSize: '10px', fontWeight: 950, color: '#00f2fe', letterSpacing: '3px', textTransform: 'uppercase', marginBottom: '4px' }}>Protocol Architect</h2>
-                  <div style={{ fontSize: isMobile ? '16px' : '18px', fontWeight: 950, letterSpacing: '-0.5px' }}>{editTemplate.id ? 'CONFIG_TEMPLATE_STRUCTURE' : 'INIT_NEW_TEMPLATE'}</div>
-                </div>
-                <button onClick={() => setIsTemplateDrawerOpen(false)} style={{ background: 'rgba(255,255,255,0.1)', border: 'none', color: 'white', width: '32px', height: '32px', borderRadius: '50%', cursor: 'pointer', fontSize: '18px' }}>&times;</button>
+            {/* Header: Institutional Blue */}
+            <div style={{ padding: '20px 30px', background: 'linear-gradient(135deg, #0f52ba 0%, #061a40 100%)', color: 'white', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexShrink: 0 }}>
+              <div>
+                <h3 style={{ fontSize: '10px', fontWeight: 950, color: '#60a5fa', letterSpacing: '2.5px', textTransform: 'uppercase', marginBottom: '4px' }}>Protocol_Architect_v3.2</h3>
+                <div style={{ fontSize: '18px', fontWeight: 950 }}>{editTemplate.id ? 'RECONFIG_DIAGNOSTIC_PROTOCOL' : 'INIT_NEW_TEMPLATE_CORE'}</div>
+              </div>
+              <button onClick={() => setIsTemplateDrawerOpen(false)} style={{ background: 'rgba(255,255,255,0.1)', border: 'none', color: 'white', width: '36px', height: '36px', borderRadius: '50%', cursor: 'pointer', fontSize: '22px' }}>&times;</button>
+            </div>
+
+            {/* Config Row (Static) */}
+            <div style={{ padding: '20px 30px', background: 'white', borderBottom: '1px solid #e2e8f0', display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: isMobile ? '15px' : '30px', flexShrink: 0 }}>
+              <div>
+                <label style={{ display: 'block', fontSize: '9px', fontWeight: 950, color: '#94a3b8', letterSpacing: '1px', marginBottom: '8px' }}>TEMPLATE_NAME (IDENTIFIER)</label>
+                <input 
+                  type="text" required 
+                  value={editTemplate.name} 
+                  placeholder="e.g. CHEST_XRAY_NORMAL"
+                  onChange={e => setEditTemplate({...editTemplate, name: e.target.value.toUpperCase()})}
+                  style={{ width: '100%', padding: '10px 15px', borderRadius: '8px', border: '1px solid #e2e8f0', fontSize: '14px', fontWeight: 800, outline: 'none', background: '#f8fafc' }}
+                />
+              </div>
+              <div>
+                <label style={{ display: 'block', fontSize: '9px', fontWeight: 950, color: '#94a3b8', letterSpacing: '1px', marginBottom: '8px' }}>MODALITY_CONTEXT</label>
+                <select 
+                  value={editTemplate.modality} 
+                  onChange={e => setEditTemplate({...editTemplate, modality: e.target.value})}
+                  style={{ width: '100%', padding: '10px 15px', borderRadius: '8px', border: '1px solid #e2e8f0', fontSize: '13px', fontWeight: 700, background: 'white' }}
+                >
+                  {['X-RAY', 'MRI', 'CT', 'ULTRASOUND', 'DEXA', 'MAMMOGRAPHY', 'PET-CT'].map(m => <option key={m} value={m}>{m}</option>)}
+                </select>
               </div>
             </div>
 
-            <div style={{ padding: isMobile ? '20px' : '30px', flex: 1, overflowY: 'auto' }}>
-              <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
-                <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: isMobile ? '20px' : '30px', marginBottom: '30px' }}>
-                  <div className="form-group">
-                    <label style={{ display: 'block', fontSize: '9px', fontWeight: 950, color: '#94a3b8', letterSpacing: '2px', marginBottom: '10px' }}>TEMPLATE_NAME (IDENTIFIER)</label>
-                    <input 
-                      type="text" required 
-                      value={editTemplate.name} 
-                      placeholder="e.g. CHEST_XRAY_NORMAL"
-                      onChange={e => setEditTemplate({...editTemplate, name: e.target.value})}
-                      style={{ width: '100%', border: 'none', borderBottom: '2px solid #f0f0f0', fontSize: '16px', fontWeight: 800, padding: '10px 0', outline: 'none' }}
-                    />
-                  </div>
-                  <div className="form-group">
-                    <label style={{ display: 'block', fontSize: '9px', fontWeight: 950, color: '#94a3b8', letterSpacing: '2px', marginBottom: '10px' }}>MODALITY_CONTEXT</label>
-                    <select 
-                      value={editTemplate.modality} 
-                      onChange={e => setEditTemplate({...editTemplate, modality: e.target.value})}
-                      style={{ width: '100%', padding: '12px', borderRadius: '12px', border: '1px solid #eee', fontSize: '12px', fontWeight: 700, background: 'white' }}
-                    >
-                      {['X-RAY', 'MRI', 'CT', 'ULTRASOUND', 'DEXA', 'MAMMOGRAPHY', 'PET-CT'].map(m => <option key={m} value={m}>{m}</option>)}
-                    </select>
-                  </div>
-                </div>
-
-                <div className="form-group" style={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
-                  <label style={{ display: 'block', fontSize: '9px', fontWeight: 950, color: '#94a3b8', letterSpacing: '2px', marginBottom: '15px' }}>CONTENT_STRUCTURE (HTML)</label>
-                  <div style={{ flex: 1, border: '1px solid #e2e8f0', borderRadius: '16px', overflow: 'hidden', minHeight: isMobile ? '300px' : '400px' }}>
-                    <NarrativeEditor 
-                      content={editTemplate.content} 
-                      onChange={(html) => setEditTemplate({...editTemplate, content: html})}
-                      placeholder="Design your report template here..."
-                    />
-                  </div>
-                </div>
-
-                <div style={{ marginTop: '35px', display: 'flex', flexDirection: isMobile ? 'column-reverse' : 'row', gap: '15px', justifyContent: 'flex-end' }}>
-                  <button type="button" onClick={() => setIsTemplateDrawerOpen(false)} style={{ width: isMobile ? '100%' : '120px', padding: '14px', borderRadius: '12px', border: '1px solid #eee', fontSize: '11px', fontWeight: 950, cursor: 'pointer' }}>ABORT</button>
-                  <button 
-                    onClick={handleSaveTemplate}
-                    disabled={isTemplateSaving}
-                    style={{ 
-                      width: isMobile ? '100%' : '280px', padding: '14px', borderRadius: '12px', border: 'none', 
-                      background: '#0f52ba', color: 'white', fontSize: '11px', fontWeight: 950, cursor: 'pointer',
-                      boxShadow: '0 8px 20px rgba(15, 82, 186, 0.2)' 
-                    }}
-                  >
-                    {isTemplateSaving ? 'COMMITTING_CHANGES...' : 'SAVE REPORT PROTOCOL →'}
-                  </button>
-                </div>
+            {/* Word-like Editor Workspace (Scrollable Area) */}
+            <div style={{ flex: 1, overflowY: 'auto', background: isMobile ? 'white' : '#e2e8f0', padding: isMobile ? '0' : '40px 20px' }}>
+              <div style={{ 
+                width: isMobile ? '100%' : '210mm',
+                margin: isMobile ? '0' : '0 auto',
+                background: 'white', 
+                border: isMobile ? 'none' : '1px solid #cbd5e1', 
+                boxShadow: isMobile ? 'none' : '0 10px 40px rgba(0,0,0,0.1)', 
+                minHeight: isMobile ? '400px' : '297mm', 
+                padding: isMobile ? '20px' : '80px 100px',
+                flexShrink: 0
+              }}>
+                <NarrativeEditor 
+                  content={editTemplate.content} 
+                  onChange={(html) => setEditTemplate({...editTemplate, content: html})}
+                  placeholder="Design your institutional report template here..."
+                />
               </div>
+            </div>
+
+            {/* Footer Actions (Static) */}
+            <div style={{ padding: '20px 30px', background: 'white', borderTop: '1px solid #e2e8f0', display: 'flex', justifyContent: 'flex-end', gap: '15px', flexShrink: 0 }}>
+                <button onClick={() => setIsTemplateDrawerOpen(false)} style={{ padding: '12px 24px', borderRadius: '10px', border: '1px solid #eee', fontSize: '11px', fontWeight: 950, cursor: 'pointer', background: 'white' }}>ABORT</button>
+                <button 
+                  disabled={isTemplateSaving} 
+                  onClick={handleSaveTemplate}
+                  style={{ 
+                    padding: '12px 30px', borderRadius: '10px', border: 'none', 
+                    background: '#0f52ba', color: 'white', fontSize: '11px', fontWeight: 950, cursor: 'pointer',
+                    boxShadow: '0 8px 25px rgba(15, 82, 186, 0.3)' 
+                  }}
+                >
+                  {isTemplateSaving ? 'COMMITTING_PROTOCOL...' : 'SAVE REPORT PROTOCOL →'}
+                </button>
             </div>
           </div>
         </div>

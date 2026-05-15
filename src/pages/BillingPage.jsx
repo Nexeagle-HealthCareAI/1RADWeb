@@ -258,7 +258,7 @@ export default function BillingPage() {
 
     if (!isOnline) {
       await addToOutbox('EXPENSE', payload);
-      alert('OFFLINE_MODE: Operational expense queued for synchronization.');
+      alert('Offline: Expense will sync when reconnected.');
       setIsExpenseDrawerOpen(false);
       return;
     }
@@ -284,10 +284,10 @@ export default function BillingPage() {
       console.error('[FINANCE] Expense save failed', err);
       if (!err.response) {
         await addToOutbox('EXPENSE', payload);
-        alert('NETWORK_ERROR: Record added to offline queue.');
+        alert('No connection: expense added to offline queue.');
         setIsExpenseDrawerOpen(false);
       } else {
-        alert('PROTOCOL FAILURE: Failed to record operational expense.');
+        alert('Error: Failed to save expense.');
       }
     } finally {
       setSavingExpense(false);
@@ -356,15 +356,15 @@ export default function BillingPage() {
       fetchStats();
     } catch (err) {
       console.error('[FINANCE] Status transition failed', err);
-      const errorMsg = err.response?.data?.message || err.response?.data?.error || 'Could not synchronize expense status.';
-      alert(`PROTOCOL FAILURE: ${errorMsg}`);
+      const errorMsg = err.response?.data?.message || err.response?.data?.error || 'Could not update expense status.';
+      alert(`Error: ${errorMsg}`);
     }
   };
 
   const handleSavePayout = async (e) => {
     e.preventDefault();
     if (!editPayout.referrerId) {
-      alert("PROTOCOL ERROR: Referrer identity is missing. Please ensure a valid partner is selected.");
+      alert("Please select a referrer before saving.");
       return;
     }
 
@@ -379,7 +379,7 @@ export default function BillingPage() {
 
     if (!isOnline) {
       await addToOutbox('PAYOUT', payload);
-      alert('OFFLINE_MODE: Referral payout queued for synchronization.');
+      alert('Offline: Payout will sync when reconnected.');
       setIsPayoutDrawerOpen(false);
       return;
     }
@@ -404,16 +404,16 @@ export default function BillingPage() {
         fetchInvoices();
         fetchStats();
         fetchCommissions();
-        alert(editPayout.commissionId ? 'RECORD UPDATED: Referral metadata successfully synchronized.' : 'PAYMENT LOGGED: Referral commission successfully recorded in strategic ledger.');
+        alert(editPayout.commissionId ? 'Payout updated successfully.' : 'Commission recorded successfully.');
       }
     } catch (err) {
       console.error('[PAYOUT] Transaction failure:', err);
       if (!err.response) {
         await addToOutbox('PAYOUT', payload);
-        alert('NETWORK_ERROR: Payout added to offline queue.');
+        alert('No connection: payout added to offline queue.');
         setIsPayoutDrawerOpen(false);
       } else {
-        alert('SYSTEM ERROR: Could not commit payout to global registry.');
+        alert('Error: Could not save payout.');
       }
     } finally {
       setIsSavingPayout(false);
@@ -421,12 +421,12 @@ export default function BillingPage() {
   };
 
   const handleDeleteExpense = async (id) => {
-    if (!window.confirm('Are you sure you want to delete this operational expense?')) return;
+    if (!window.confirm('Are you sure you want to delete this expense?')) return;
     
     if (!isOnline) {
       await addToOutbox('EXPENSE_DELETE', { id });
-      alert('OFFLINE_MODE: Operational expense deletion queued.');
-      setExpenses(prev => prev.filter(e => e.id !== id)); // Optimistic UI
+      alert('Offline: Deletion will sync when reconnected.');
+      setExpenses(prev => prev.filter(e => e.id !== id));
       return;
     }
 
@@ -437,10 +437,10 @@ export default function BillingPage() {
       console.error('[FINANCE] Failed to delete expense', err);
       if (!err.response) {
         await addToOutbox('EXPENSE_DELETE', { id });
-        alert('NETWORK_ERROR: Deletion added to offline queue.');
-        setExpenses(prev => prev.filter(e => e.id !== id)); // Optimistic UI
+        alert('No connection: deletion queued.');
+        setExpenses(prev => prev.filter(e => e.id !== id));
       } else {
-        alert('PROTOCOL FAILURE: Could not delete expense.');
+        alert('Error: Could not delete expense.');
       }
     }
   };
@@ -455,7 +455,7 @@ export default function BillingPage() {
       fetchStats();
     } catch (err) {
       console.error('[FINANCE] Commission transition failed', err);
-      alert('PROTOCOL FAILURE: Could not update commission status.');
+      alert('Error: Could not update commission status.');
     }
   };
 
@@ -521,10 +521,10 @@ export default function BillingPage() {
       localStorage.removeItem('1rad_invoices');
       fetchInvoices();
       fetchStats();
-      alert('SYNCHRONIZATION COMPLETE: Legacy records merged with server ledger.');
+      alert('Sync complete: local records merged.');
     } catch (err) {
       console.error('[FINANCE] Sync failed', err);
-      alert('SYNC FAILURE: Protocol interrupted. Please try again.');
+      alert('Sync failed. Please try again.');
     } finally {
       setIsSyncing(false);
     }
@@ -551,7 +551,7 @@ export default function BillingPage() {
       setIsExportDrawerOpen(false);
     } catch (err) {
       console.error('[FINANCE] Export failed', err);
-      alert('EXPORT FAILURE: Could not generate report.');
+      alert('Export failed. Please try again.');
     }
   };
 
@@ -940,7 +940,7 @@ export default function BillingPage() {
       
       if (!isOnline) {
         await addToOutbox('PAYMENT', payload);
-        alert('OFFLINE MODE: Payment cached locally. Will sync when online.');
+        alert('Offline: Payment will sync when reconnected.');
         setIsInvoiceDrawerOpen(false);
         return;
       }
@@ -949,13 +949,13 @@ export default function BillingPage() {
       setIsInvoiceDrawerOpen(false);
       fetchInvoices();
       fetchStats();
-      alert(`PAYMENT SUCCESS: Received ₹${selectedInvoice.balanceAmount} via ${paymentMethod}`);
+      alert(`Payment of ₹${selectedInvoice.balanceAmount} via ${paymentMethod} recorded.`);
     } catch (err) {
       console.error('[FINANCE] Payment failed', err);
       // Optional: Add to outbox if it was a network error
       if (!err.response) {
          await addToOutbox('PAYMENT', payload);
-         alert('NETWORK ERROR: Record saved to offline queue.');
+         alert('No connection: payment queued.');
          setIsInvoiceDrawerOpen(false);
       }
     }
@@ -964,7 +964,7 @@ export default function BillingPage() {
   const handleCreateManualInvoice = async (e) => {
     e.preventDefault();
     if (!selectedPatient || newInvoiceData.items.length === 0) {
-      alert("PLEASE SELECT A REGISTERED PATIENT TO PROCEED");
+      alert("Please select a patient to continue.");
       return;
     }
     
@@ -989,7 +989,7 @@ export default function BillingPage() {
         await addToOutbox('INVOICE', payload);
         setIsNewInvoiceDrawerOpen(false);
         setNewInvoiceData({ patientName: '', items: [{ description: '', amount: 0, quantity: 1 }], centreDiscount: 0, referrerDiscount: 0, paymentMethod: 'CASH', referrerId: '' });
-        alert('OFFLINE MODE: Invoice cached locally. Will sync when online.');
+        alert('Offline: Invoice will sync when reconnected.');
         return;
       }
 
@@ -1000,15 +1000,15 @@ export default function BillingPage() {
       setNewInvoiceData({ patientName: '', items: [{ description: '', amount: 0, quantity: 1 }], centreDiscount: 0, referrerDiscount: 0, paymentMethod: 'CASH', referrerId: '' });
       fetchInvoices();
       fetchStats();
-      alert('INVOICE GENERATED: Financial record successfully added to ledger.');
+      alert('Invoice created successfully.');
     } catch (err) {
       console.error('[FINANCE] Invoice creation failed', err);
       if (!err.response) {
          await addToOutbox('INVOICE', payload);
-         alert('NETWORK ERROR: Invoice saved to offline queue.');
+         alert('No connection: invoice queued.');
          setIsNewInvoiceDrawerOpen(false);
       } else {
-         const errorMsg = err.response?.data?.error || err.response?.data?.message || 'SYSTEM FAILURE: Failed to deploy invoice metadata.';
+         const errorMsg = err.response?.data?.error || err.response?.data?.message || 'Failed to create invoice.';
          alert(errorMsg);
       }
     }
@@ -1022,10 +1022,10 @@ export default function BillingPage() {
       fetchInvoices();
       fetchStats();
       setIsInvoiceDrawerOpen(false);
-      alert('INVOICE UPDATED: Discount applied successfully.');
+      alert('Invoice updated successfully.');
     } catch (err) {
       console.error('[FINANCE] Discount application failed', err);
-      alert('PROTOCOL FAILURE: Could not update invoice discount.');
+      alert('Error: Could not update invoice.');
     }
   };
 
@@ -1038,10 +1038,10 @@ export default function BillingPage() {
       fetchInvoices();
       fetchStats();
       setIsInvoiceDrawerOpen(false);
-      alert(`ADJUSTMENT SUCCESS: Applied ₹${amount} concession.`);
+      alert(`Adjustment of ₹${amount} applied.`);
     } catch (err) {
       console.error('[FINANCE] Adjustment failed', err);
-      alert('ADJUSTMENT FAILURE: ' + (err.response?.data?.message || 'Internal Error'));
+      alert('Error: ' + (err.response?.data?.message || 'Could not apply adjustment.'));
     }
   };
 
@@ -1132,8 +1132,8 @@ export default function BillingPage() {
             <div class="header">
               <div class="hospital-info">
                 <div class="hospital-logo">1R</div>
-                <h1>${(activeCenter?.hospitalName || '1RAD STRATEGIC DIAGNOSTICS').toUpperCase()}</h1>
-                <p>${activeCenter?.address || 'Strategic Healthcare Node, Global District'}</p>
+                <h1>${(activeCenter?.hospitalName || '1RAD DIAGNOSTICS').toUpperCase()}</h1>
+                <p>${activeCenter?.address || ''}</p>
                 <p>CONTACT: ${activeCenter?.contactNo || '+91 XXXXXXXXXX'} | EMAIL: contact@1rad.health</p>
               </div>
               <div class="invoice-meta">
@@ -1202,7 +1202,7 @@ export default function BillingPage() {
               <div class="signature-box">
                 <div class="signature-line"></div>
                 <div class="signature-label">Authorized Signatory</div>
-                <div style="font-size: 9px; color: #94a3b8; margin-top: 4px;">1Rad Strategic Finance Unit</div>
+                <div style="font-size: 9px; color: #94a3b8; margin-top: 4px;">1Rad Finance</div>
               </div>
             </div>
           </div>
@@ -1301,45 +1301,48 @@ export default function BillingPage() {
         gap: isMobile ? '20px' : '0'
       }}>
         <div>
-          <h1 style={{ 
-            fontSize: isMobile ? '18px' : '24px', 
-            fontWeight: 950, 
-            color: '#1a1a2e', 
-            letterSpacing: '-1px', 
-            marginBottom: '8px', 
-            display: 'flex', 
-            flexWrap: 'wrap',
-            gap: isMobile ? '10px' : '15px', 
-            alignItems: 'center' 
-          }}>
-            <span style={{ cursor: 'pointer', opacity: billingViewMode === 'INVOICES' ? 1 : 0.4 }} onClick={() => setBillingViewMode('INVOICES')}>REVENUE</span>
-            <span style={{ opacity: 0.2 }}>|</span>
-            <span style={{ cursor: 'pointer', opacity: billingViewMode === 'EXPENSES' ? 1 : 0.4, color: '#dc2626' }} onClick={() => setBillingViewMode('EXPENSES')}>EXPENSE</span>
-            <span style={{ opacity: 0.2 }}>|</span>
-            <span style={{ cursor: 'pointer', opacity: billingViewMode === 'REFERRAL_CUTS' ? 1 : 0.4, color: '#e11d48' }} onClick={() => setBillingViewMode('REFERRAL_CUTS')}>REFERRAL</span>
-            <span style={{ opacity: 0.2 }}>|</span>
-            <span style={{ cursor: 'pointer', opacity: billingViewMode === 'ANALYTICS' ? 1 : 0.4, color: '#0f52ba' }} onClick={() => setBillingViewMode('ANALYTICS')}>ANALYTICS</span>
-          </h1>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-            <span style={{ 
-              background: 'var(--tactical-indigo)', color: 'white', padding: '4px 10px', 
-              borderRadius: '6px', fontSize: '10px', fontWeight: 950, letterSpacing: '1px' 
-            }}>
-              {activeCenter?.name?.toUpperCase() || 'CORE HUB'}
-            </span>
-            {!isMobile && (
-              <span style={{ fontSize: '12px', color: '#64748b', fontWeight: 600 }}>
-                Fiscal Year 2026-27 | Global Financial Matrix
-              </span>
-            )}
+          <h1 style={{
+            fontSize: isMobile ? '20px' : '24px',
+            fontWeight: 700,
+            color: '#0a1628',
+            letterSpacing: '-0.5px',
+            marginBottom: '8px',
+            margin: 0
+          }}>Finance</h1>
+          <div style={{ display: 'flex', gap: '6px', marginTop: '12px', flexWrap: 'wrap' }}>
+            {[
+              { id: 'INVOICES',      label: 'Revenue' },
+              { id: 'EXPENSES',      label: 'Expenses' },
+              { id: 'REFERRAL_CUTS', label: 'Referrals' },
+              { id: 'ANALYTICS',     label: 'Analytics' },
+            ].map(tab => (
+              <button
+                key={tab.id}
+                onClick={() => setBillingViewMode(tab.id)}
+                style={{
+                  padding: '7px 16px', borderRadius: '8px', border: '1px solid #e2e8f0',
+                  fontSize: '13px', fontWeight: 600, cursor: 'pointer',
+                  background: billingViewMode === tab.id ? '#0a1628' : 'white',
+                  color: billingViewMode === tab.id ? 'white' : '#6b7280',
+                  transition: 'all 0.2s'
+                }}
+              >
+                {tab.label}
+              </button>
+            ))}
           </div>
+          {!isMobile && (
+            <div style={{ marginTop: '8px', fontSize: '12px', color: '#6b7280' }}>
+              {activeCenter?.name || 'Current facility'} · Finance & Billing
+            </div>
+          )}
         </div>
 
         <div style={{ display: 'flex', flexDirection: 'column', gap: '15px' }}>
            <div style={{ position: 'relative' }}>
               <input 
                 type="text" 
-                placeholder="SEARCH INVOICES / PATIENTS..." 
+                placeholder="Search invoices or patients..."
                 value={searchTerm}
                 onChange={e => setSearchTerm(e.target.value)}
                 style={{ 
@@ -1353,39 +1356,39 @@ export default function BillingPage() {
               />
            </div>
           <div style={{ display: 'flex', flexDirection: isMobile ? 'column' : 'row', gap: '10px' }}>
-             <button 
+             <button
                onClick={() => setIsExportDrawerOpen(true)}
-               style={{ 
-                 padding: '12px 24px', borderRadius: '12px', border: '1px solid #e2e8f0', 
-                 background: '#10b981', color: 'white', fontSize: '11px', fontWeight: 950, cursor: 'pointer',
-                 boxShadow: '0 8px 20px rgba(16, 185, 129, 0.2)',
+               style={{
+                 padding: '10px 20px', borderRadius: '8px', border: '1px solid #e2e8f0',
+                 background: '#10b981', color: 'white', fontSize: '13px', fontWeight: 600, cursor: 'pointer',
+                 boxShadow: '0 4px 12px rgba(16,185,129,0.2)',
                  width: isMobile ? '100%' : 'auto'
                }}
              >
-               EXPORT DATA
+               Export
              </button>
              {localStorage.getItem('1rad_invoices') && (
-               <button 
+               <button
                  onClick={handleSyncLegacyData}
                  disabled={isSyncing}
-                 style={{ 
-                   padding: '12px 24px', borderRadius: '12px', border: '1px solid #e2e8f0', 
-                   background: '#f8fafc', color: '#0f52ba', fontSize: '11px', fontWeight: 950, cursor: 'pointer',
+                 style={{
+                   padding: '10px 20px', borderRadius: '8px', border: '1px solid #e2e8f0',
+                   background: '#f8fafc', color: '#1d4ed8', fontSize: '13px', fontWeight: 600, cursor: 'pointer',
                    width: isMobile ? '100%' : 'auto'
                  }}
                >
-                 {isSyncing ? 'SYNCING...' : 'SYNC LOCAL'}
+                 {isSyncing ? 'Syncing...' : 'Sync Local'}
                </button>
              )}
-             <button 
+             <button
                onClick={() => setIsNewInvoiceDrawerOpen(true)}
-               style={{ 
-                 padding: '12px 24px', borderRadius: '12px', border: 'none', background: '#0f52ba', color: 'white', 
-                 fontWeight: 950, fontSize: '10px', cursor: 'pointer', boxShadow: '0 8px 20px rgba(15, 82, 186, 0.2)',
+               style={{
+                 padding: '10px 20px', borderRadius: '8px', border: 'none', background: '#1d4ed8', color: 'white',
+                 fontWeight: 600, fontSize: '13px', cursor: 'pointer', boxShadow: '0 4px 12px rgba(29,78,216,0.2)',
                  width: isMobile ? '100%' : 'auto'
                }}
              >
-               + NEW INVOICE
+               + New Invoice
              </button>
           </div>
         </div>

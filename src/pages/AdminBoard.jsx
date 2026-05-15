@@ -44,7 +44,7 @@ export default function AdminBoard() {
   const { currentUser, logout, activeCenter, centers, switchCenter, refreshCenters, createCenter, subscription, refreshSubscription } = useAuth();
   const { isOnline, addToOutbox } = useOffline();
   const navigate = useNavigate();
-  const [activeTab, setActiveTab] = useState('INTELLIGENCE');
+  const [activeTab, setActiveTab] = useState('Overview');
   const [layouts, setLayouts] = useState(INITIAL_LAYOUTS);
   const [patients, setPatients] = useState([]);
   const [patientSearch, setPatientSearch] = useState('');
@@ -247,7 +247,7 @@ export default function AdminBoard() {
 
   const handleExportRoster = () => {
     if (!referralAggregated) return;
-    let csv = "RANK,REFERRAL SOURCE,CONTACT,ADDRESS,TOTAL MISSIONS,PAID COMMISSION,UNPAID COMMISSION,TOTAL REVENUE\n";
+    let csv = "RANK,REFERRAL SOURCE,CONTACT,ADDRESS,TOTAL STUDIES,PAID COMMISSION,UNPAID COMMISSION,TOTAL REVENUE\n";
     referralAggregated.forEach((s, i) => {
       csv += `${i+1},"${s.name}","${s.contact}","${s.address || ''}",${s.patients.length},${s.paidCommission || 0},${s.unpaidCommission || 0},${s.totalRevenue || 0}\n`;
     });
@@ -449,7 +449,7 @@ export default function AdminBoard() {
       if (referralViewMode === 'PATIENTS') fetchPatientMasterList();
     } catch (error) {
       console.error('Import failed:', error);
-      setImportResult({ successCount: 0, failureCount: 1, errors: ['PROTOCOL FAILURE: Could not establish secure data stream.'] });
+      setImportResult({ successCount: 0, failureCount: 1, errors: ['Error: Could not connect to data source.'] });
     } finally {
       setIsImporting(false);
       e.target.value = ''; // Reset input
@@ -568,7 +568,7 @@ export default function AdminBoard() {
       setEditingReferrer(null);
     } catch (err) {
       console.error('[REFERRER] Update failed', err);
-      alert('PROTOCOL FAILURE: Could not synchronize partner metadata.');
+      alert('Error: Could not save partner details.');
     } finally {
       setIsSavingReferrer(false);
     }
@@ -598,7 +598,7 @@ export default function AdminBoard() {
       setEditingPatient(null);
     } catch (err) {
       console.error('[PATIENT] Update failed', err);
-      alert('PROTOCOL FAILURE: Could not synchronize Master Patient Index.');
+      alert('Error: Could not save patient details.');
     } finally {
       setIsSavingPatient(false);
     }
@@ -608,35 +608,35 @@ export default function AdminBoard() {
   
   // Personnel & Prescription
   useEffect(() => {
-    if (activeTab === 'PERSONNEL' || activeTab === 'PRESCRIPTION') {
+    if (activeTab === 'Staff' || activeTab === 'Letterhead') {
       fetchPersonnel();
     }
   }, [activeTab, fetchPersonnel]);
 
   // Referral Intelligence
   useEffect(() => {
-    if (activeTab === 'REFERRAL INTEL') {
+    if (activeTab === 'Referrals') {
       fetchReferralIntelligence();
     }
   }, [activeTab, fetchReferralIntelligence]);
 
   // Patient Master List
   useEffect(() => {
-    if (activeTab === 'REFERRAL INTEL' && referralViewMode === 'PATIENTS') {
+    if (activeTab === 'Referrals' && referralViewMode === 'PATIENTS') {
       fetchPatientMasterList();
     }
   }, [activeTab, referralViewMode, fetchPatientMasterList]);
 
   // Hospital Infrastructure
   useEffect(() => {
-    if (activeTab === 'HOSPITAL') {
+    if (activeTab === 'Hospitals') {
       fetchMappedHospitals();
     }
   }, [activeTab, fetchMappedHospitals]);
 
   // Financial Ledger
   useEffect(() => {
-    if (activeTab === 'FINANCE') {
+    if (activeTab === 'Finance') {
       fetchServicePrices();
       fetchFinancialMatrix();
       fetchExpenses();
@@ -659,7 +659,7 @@ export default function AdminBoard() {
   }, []);
 
   useEffect(() => {
-    if (activeTab === 'INTELLIGENCE') {
+    if (activeTab === 'Overview') {
        fetchStrategicOutlook(selectedDateFilter);
     }
   }, [activeTab, selectedDateFilter, fetchStrategicOutlook]);
@@ -686,7 +686,7 @@ export default function AdminBoard() {
       setShowExportOverlay(false);
     } catch (err) {
       console.error('Export Failed:', err);
-      alert('PROTOCOL FAILURE: Could not compile strategic intelligence export.');
+      alert('Error: Could not export data.');
     } finally {
       setIsExporting(false);
     }
@@ -843,7 +843,7 @@ export default function AdminBoard() {
         alert('NETWORK_ERROR: Billing protocol added to offline outbox.');
         setBillingSettings(prev => ({ ...prev, autoBill: newAutoBill }));
       } else {
-        alert('SYSTEM ERROR: Failed to persist billing protocol. Please check institutional connectivity.');
+        alert('Error: Failed to save billing settings. Please check your connection.');
       }
     }
   };
@@ -1359,7 +1359,7 @@ export default function AdminBoard() {
         alert('NETWORK_ERROR: Expense added to offline outbox.');
         setIsExpenseDrawerOpen(false);
       } else {
-        alert('PROTOCOL FAILURE: Failed to record operational expense.');
+        alert('Error: Failed to save expense.');
       }
     } finally {
       setSavingExpense(false);
@@ -1387,7 +1387,7 @@ export default function AdminBoard() {
         alert('NETWORK_ERROR: Deletion added to offline outbox.');
         setExpenses(prev => prev.filter(e => e.id !== id)); // Optimistic UI
       } else {
-        alert('PROTOCOL FAILURE: Could not delete expense.');
+        alert('Error: Could not delete expense.');
       }
     }
   };
@@ -1882,7 +1882,7 @@ export default function AdminBoard() {
               <div className="drawer-footer" style={{ marginTop: '20px', display: 'flex', gap: '15px' }}>
                 <button type="button" className="btn-logout" style={{ flex: 1, padding: '16px', borderRadius: '16px', border: '1px solid #eee' }} onClick={() => setIsHospitalDrawerOpen(false)}>ABORT</button>
                 <button type="submit" disabled={savingHospital} style={{ flex: 2, padding: '16px', borderRadius: '16px', background: '#0f52ba', color: 'white', fontWeight: 950, fontSize: '11px', letterSpacing: '1px', border: 'none', cursor: 'pointer' }}>
-                    {savingHospital ? 'SYNCHRONIZING...' : 'COMMIT CHANGES →'}
+                    {savingHospital ? 'Saving...' : 'Save Changes'}
                 </button>
               </div>
             </form>
@@ -1936,7 +1936,7 @@ export default function AdminBoard() {
             </select>
             {doctors.length === 0 && !personnelLoading && (
                <div style={{ marginTop: '12px', padding: '10px 15px', background: '#fff1f2', border: '1px solid #fda4af', borderRadius: '12px', color: '#be123c', fontSize: '10px', fontWeight: 800 }}>
-                 ⚠️ NO CLINICAL CONSULTANTS DETECTED. PLEASE REGISTER RADIOLOGISTS IN THE PERSONNEL TAB.
+                 No radiologists found. Please add them under the Staff tab.
                </div>
             )}
           </div>
@@ -2183,7 +2183,7 @@ export default function AdminBoard() {
                    });
                    const updated = response.data;
                    setPrescriptionSettings(prev => ({...prev, letterhead: updated.data?.letterheadBlobUrl, letterheadFile: null}));
-                   alert("STRATEGIC PROTOCOL SYNCHRONIZED SUCCESSFULLY 📡");
+                   alert("Settings saved successfully.");
                    fetchDoctorProtocol(selectedPrescriptionDoctorId);
                 } catch (err) {
                    console.error("Sync failed:", err);
@@ -2223,7 +2223,7 @@ export default function AdminBoard() {
       return (
         <div style={{ padding: '150px', textAlign: 'center' }}>
           <div className="pulse-loader" style={{ margin: '0 auto' }}></div>
-          <div style={{ marginTop: '20px', fontSize: '12px', fontWeight: 950, color: '#0f52ba', letterSpacing: '2px' }}>SYNCHRONIZING STRATEGIC OUTLOOK...</div>
+          <div style={{ marginTop: '20px', fontSize: '12px', fontWeight: 500, color: '#0f52ba', letterSpacing: '0' }}>Loading overview...</div>
         </div>
       );
     }
@@ -2276,7 +2276,7 @@ export default function AdminBoard() {
                  <span style={{ fontSize: '32px', fontWeight: 950, letterSpacing: '-1.5px' }}>{kpis?.universalRegistry || 0}</span>
                  <span style={{ fontSize: '12px', fontWeight: 700, opacity: 0.6 }}>ENTITIES</span>
               </div>
-              <div style={{ marginTop: '15px', fontSize: '8px', color: 'var(--tactical-cyan)', fontWeight: 900, background: 'rgba(255,255,255,0.1)', padding: '4px 10px', borderRadius: '20px', display: 'inline-block' }}>STRATEGIC RESOURCE POOL</div>
+              <div style={{ marginTop: '15px', fontSize: '8px', color: 'var(--tactical-cyan)', fontWeight: 900, background: 'rgba(255,255,255,0.1)', padding: '4px 10px', borderRadius: '20px', display: 'inline-block' }}>Revenue Summary</div>
            </div>
 
 
@@ -2285,11 +2285,11 @@ export default function AdminBoard() {
               <span style={{ display: 'block', fontSize: '10px', fontWeight: 950, color: '#64748b', textTransform: 'uppercase', letterSpacing: '3px', marginBottom: '12px' }}>Live Volume</span>
               <div style={{ display: 'flex', alignItems: 'baseline', gap: '12px' }}>
                  <span style={{ fontSize: '32px', fontWeight: 950, color: '#1e293b', letterSpacing: '-1.5px' }}>{kpis?.dailyMissions || 0}</span>
-                 <span style={{ fontSize: '12px', fontWeight: 700, color: '#0f52ba' }}>MISSIONS</span>
+                 <span style={{ fontSize: '12px', fontWeight: 700, color: '#0f52ba' }}>Studies</span>
               </div>
               <div style={{ marginTop: '15px', display: 'flex', alignItems: 'center', gap: '8px' }}>
                  <span style={{ fontSize: '10px', fontWeight: 950, color: '#2ecc71' }}>↑ {kpis?.growthPercentage || 0}%</span>
-                 <span style={{ fontSize: '9px', fontWeight: 800, color: '#94a3b8' }}>OPERATIONAL GAIN</span>
+                 <span style={{ fontSize: '9px', fontWeight: 500, color: '#94a3b8' }}>vs yesterday</span>
               </div>
            </div>
 
@@ -2448,7 +2448,7 @@ export default function AdminBoard() {
               <div style={{ position: 'absolute', right: '-10px', top: '-10px', fontSize: '60px', opacity: 0.1 }}>📈</div>
               <span style={{ fontSize: '9px', fontWeight: 950, color: 'var(--tactical-cyan)', textTransform: 'uppercase', letterSpacing: '2px', display: 'block', marginBottom: '10px' }}>Strategic Velocity</span>
               <div style={{ fontSize: '28px', fontWeight: 950 }}>{totalMissions}</div>
-              <div style={{ fontSize: '10px', fontWeight: 700, color: 'var(--tactical-cyan)', marginTop: '5px' }}>TOTAL MISSIONS DETECTED</div>
+              <div style={{ fontSize: '10px', fontWeight: 600, color: 'var(--tactical-cyan)', marginTop: '5px' }}>Total Studies</div>
            </div>
            
            <div style={{ background: 'white', padding: '25px', borderRadius: '24px', border: '1px solid #e2e8f0' }}>
@@ -2463,7 +2463,7 @@ export default function AdminBoard() {
            <div style={{ background: 'white', padding: '25px', borderRadius: '24px', border: '1px solid #e2e8f0' }}>
               <span style={{ fontSize: '9px', fontWeight: 950, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '2px', display: 'block', marginBottom: '10px' }}>Revenue Integrity</span>
               <div style={{ fontSize: '24px', fontWeight: 950, color: '#1e293b' }}>₹{(totalRevenue / (totalMissions || 1)).toLocaleString(undefined, { maximumFractionDigits: 0 })}</div>
-              <div style={{ fontSize: '10px', fontWeight: 700, color: '#dc2626', marginTop: '5px' }}>AVG REVENUE PER MISSION</div>
+              <div style={{ fontSize: '10px', fontWeight: 600, color: '#dc2626', marginTop: '5px' }}>Avg Revenue / Study</div>
            </div>
         </div>
 
@@ -2650,7 +2650,7 @@ export default function AdminBoard() {
                            fontSize: '10px', border: 'none', cursor: 'pointer', letterSpacing: '1px' 
                          }}
                        >
-                         {isExporting ? 'EXPORTING...' : 'INITIATE TACTICAL EXPORT'}
+                         {isExporting ? 'Exporting...' : 'Export Data'}
                        </button>
                     </div>
                   </div>
@@ -2663,7 +2663,7 @@ export default function AdminBoard() {
         {referralLoading ? (
             <div style={{ padding: '120px', textAlign: 'center' }}>
                 <div className="pulse-loader"></div>
-                <p style={{ fontSize: '11px', fontWeight: 950, color: '#0f52ba', marginTop: '25px', letterSpacing: '2px' }}>SYNCHRONIZING TACTICAL DATA...</p>
+                <p style={{ fontSize: '11px', fontWeight: 950, color: '#0f52ba', marginTop: '25px', letterSpacing: '2px' }}>Loading referral data...</p>
             </div>
         ) : (
           <>
@@ -2772,9 +2772,9 @@ export default function AdminBoard() {
                     <tr>
                       <th style={{ padding: '20px 30px', textAlign: 'left', fontSize: '10px', fontWeight: 950, color: '#94a3b8', letterSpacing: '1px' }}>RANK</th>
                       <th style={{ padding: '20px 30px', textAlign: 'left', fontSize: '10px', fontWeight: 950, color: '#94a3b8', letterSpacing: '1px' }}>REFERRAL SOURCE</th>
-                      <th style={{ padding: '20px 30px', textAlign: 'left', fontSize: '10px', fontWeight: 950, color: '#94a3b8', letterSpacing: '1px' }}>CONTACT NODE</th>
-                      <th style={{ padding: '20px 30px', textAlign: 'left', fontSize: '10px', fontWeight: 950, color: '#94a3b8', letterSpacing: '1px' }}>ADDRESS / SECTOR</th>
-                      <th style={{ padding: '20px 30px', textAlign: 'right', fontSize: '10px', fontWeight: 950, color: '#94a3b8', letterSpacing: '1px' }}>TOTAL MISSIONS</th>
+                      <th style={{ padding: '20px 30px', textAlign: 'left', fontSize: '10px', fontWeight: 600, color: '#94a3b8', letterSpacing: '0.5px' }}>Contact</th>
+                      <th style={{ padding: '20px 30px', textAlign: 'left', fontSize: '10px', fontWeight: 600, color: '#94a3b8', letterSpacing: '0.5px' }}>Address</th>
+                      <th style={{ padding: '20px 30px', textAlign: 'right', fontSize: '10px', fontWeight: 600, color: '#94a3b8', letterSpacing: '0.5px' }}>Total Studies</th>
                       <th style={{ padding: '20px 30px', textAlign: 'right', fontSize: '10px', fontWeight: 950, color: '#94a3b8', letterSpacing: '1px' }}>ACTIONS</th>
                     </tr>
                   </thead>
@@ -2825,7 +2825,7 @@ export default function AdminBoard() {
               <div style={{ display: 'grid', gridTemplateColumns: '350px 1fr', gap: '30px', alignItems: 'flex-start' }}>
                 {/* Master Pane: Intelligence Roster */}
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '15px' }}>
-                  <div style={{ fontSize: '10px', fontWeight: 950, color: '#94a3b8', letterSpacing: '2px', marginBottom: '5px' }}>INTELLIGENCE ROSTER</div>
+                  <div style={{ fontSize: '10px', fontWeight: 600, color: '#94a3b8', letterSpacing: '0.5px', marginBottom: '5px' }}>Referral List</div>
                   {referralAggregated.map((s, i) => {
                     const isSelected = expandedReferrer === s.name;
                     return (
@@ -2874,11 +2874,11 @@ return (
                         <div style={{ background: 'white', borderRadius: '30px', border: '1px solid #e2e8f0', overflow: isTestMode ? 'visible' : 'hidden', boxShadow: '0 10px 40px rgba(0,0,0,0.02)' }}>
                           <div style={{ padding: '35px 40px', borderBottom: '1px solid #f1f5f9', display: 'flex', flexDirection: isMobile ? 'column' : 'row', justifyContent: 'space-between', alignItems: isMobile ? 'flex-start' : 'center', background: '#fcfdfe' }}>
                              <div>
-                                <div style={{ fontSize: '10px', fontWeight: 950, color: '#0f52ba', letterSpacing: '2px', marginBottom: '8px' }}>REFERRAL BRIEFING</div>
+                                <div style={{ fontSize: '11px', fontWeight: 600, color: '#0f52ba', letterSpacing: '0', marginBottom: '8px' }}>Referral Summary</div>
                                 <div style={{ fontSize: '22px', fontWeight: 950, color: '#1e293b', letterSpacing: '-0.5px' }}>{(selected.name || 'Anonymous').toUpperCase()}</div>
                                 <div style={{ display: 'flex', flexWrap: 'wrap', gap: '10px', marginTop: '15px' }}>
                                     <div style={{ padding: '6px 12px', background: '#eff6ff', borderRadius: '8px', fontSize: '10px', fontWeight: 950, color: '#2563eb' }}>
-                                       {selected.patients.length} MISSIONS
+                                       {selected.patients.length} Studies
                                     </div>
                                     <div style={{ padding: '6px 12px', background: '#ecfdf5', borderRadius: '8px', fontSize: '10px', fontWeight: 950, color: '#059669' }}>
                                        ₹{(selected.totalRevenue || 0).toLocaleString()} YIELD
@@ -2914,8 +2914,8 @@ return (
                           <div style={{ padding: '30px' }}>
                              {/* Referral Case Table Selection Hub */}
                              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '15px' }}>
-                                <div style={{ fontSize: '10px', fontWeight: 950, color: '#64748b', letterSpacing: '2px' }}>
-                                   {selectedLedgerRows.length > 0 ? `${selectedLedgerRows.length} RECORDS SELECTED` : 'MISSION REGISTRY'}
+                                <div style={{ fontSize: '12px', fontWeight: 500, color: '#64748b', letterSpacing: '0' }}>
+                                   {selectedLedgerRows.length > 0 ? `${selectedLedgerRows.length} records selected` : 'Case Records'}
                                 </div>
                                 {selectedLedgerRows.length > 0 && (
                                    <div style={{ display: 'flex', gap: '10px' }}>
@@ -3395,7 +3395,7 @@ return (
         {personnelLoading && (
           <div style={{ gridColumn: '1/-1', textAlign: 'center', padding: '60px' }}>
             <div className="pulse-loader"></div>
-            <p style={{ fontSize: '11px', fontWeight: 900, color: '#0f52ba', marginTop: '20px' }}>SYNCHRONIZING PERSONNEL...</p>
+            <p style={{ fontSize: '12px', fontWeight: 500, color: '#0f52ba', marginTop: '20px' }}>Loading staff...</p>
           </div>
         )}
         
@@ -3585,7 +3585,7 @@ return (
                disabled={isSavingReferrer}
                style={{ flex: 1, padding: '16px', borderRadius: '14px', background: '#0f52ba', color: 'white', fontWeight: 950, fontSize: '11px', border: 'none', cursor: 'pointer', letterSpacing: '1px' }}
              >
-               {isSavingReferrer ? 'SYNCHRONIZING...' : 'UPDATE PARTNER METADATA'}
+               {isSavingReferrer ? 'Saving...' : 'Save Changes'}
              </button>
              <button 
                type="button"
@@ -3696,7 +3696,7 @@ return (
                disabled={isSavingPatient}
                style={{ flex: 1, padding: '16px', borderRadius: '14px', background: '#0f52ba', color: 'white', fontWeight: 950, fontSize: '11px', border: 'none', cursor: 'pointer', letterSpacing: '1px' }}
              >
-               {isSavingPatient ? 'SYNCHRONIZING...' : 'UPDATE PATIENT INDEX'}
+               {isSavingPatient ? 'Saving...' : 'Save Changes'}
              </button>
              <button 
                type="button"
@@ -3723,8 +3723,8 @@ return (
       }}>
         <div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-            <h1 style={{ fontSize: isMobile ? '20px' : '24px', fontWeight: 950, color: '#0a1628', letterSpacing: '-1px', margin: 0 }}>OPERATIONAL COMMAND</h1>
-            <span style={{ fontSize: '10px', color: '#94a3b8', fontWeight: 900, textTransform: 'uppercase', letterSpacing: '4px' }}>Strategic Node Control</span>
+            <h1 style={{ fontSize: isMobile ? '20px' : '24px', fontWeight: 700, color: '#0a1628', letterSpacing: '-0.5px', margin: 0 }}>Admin Panel</h1>
+            <span style={{ fontSize: '12px', color: '#6b7280', fontWeight: 400, letterSpacing: '0' }}>Manage your workspace</span>
           </div>
         </div>
 
@@ -3744,7 +3744,7 @@ return (
             >
               <div className={isSwitchingNode ? "pulse-loader-mini" : "tactical-node-active"} style={{ width: '10px', height: '10px', borderRadius: '50%', background: isSwitchingNode ? '#f39c12' : '#2ecc71', boxShadow: isSwitchingNode ? '0 0 10px rgba(243, 156, 18, 0.4)' : '0 0 10px rgba(46, 204, 113, 0.4)' }}></div>
               <div className="hub-identity" style={{ textAlign: 'left', overflow: 'hidden', flex: 1 }}>
-                <div className="hub-label" style={{ fontSize: '7px', fontWeight: 950, color: isSwitchingNode ? '#f39c12' : '#aaa', letterSpacing: '1px', textTransform: 'uppercase' }}>{isSwitchingNode ? 'RECONFIGURING HUB...' : 'DEPLOYED HUB'}</div>
+                <div className="hub-label" style={{ fontSize: '7px', fontWeight: 950, color: isSwitchingNode ? '#f39c12' : '#aaa', letterSpacing: '1px', textTransform: 'uppercase' }}>{isSwitchingNode ? 'Switching...' : 'Active Center'}</div>
                 <div className="hub-name" style={{ fontSize: '13px', fontWeight: 950, color: '#1a1a2e', whiteSpace: 'nowrap', textOverflow: 'ellipsis', overflow: isTestMode ? 'visible' : 'hidden', maxWidth: isMobile ? '100%' : '180px', opacity: isSwitchingNode ? 0.5 : 1 }}>{activeCenter?.name?.toUpperCase()}</div>
               </div>
               <div style={{ fontSize: '10px', color: '#888', transition: 'transform 0.3s', transform: isSwitcherOpen ? 'rotate(180deg)' : 'rotate(0deg)' }}>
@@ -3860,23 +3860,22 @@ return (
         msOverflowStyle: 'none',
         gap: '4px'
       }}>
-        {['INTELLIGENCE', 'REFERRAL INTEL', 'PERSONNEL', 'HOSPITAL', 'FINANCE', 'PRESCRIPTION', 'SUBSCRIPTION'].map(tab => (
-          <button 
+        {['Overview', 'Referrals', 'Staff', 'Hospitals', 'Finance', 'Letterhead', 'Plan'].map(tab => (
+          <button
             key={tab}
-            className={`admin-tab ${activeTab === tab ? 'active' : ''}`} 
+            className={`admin-tab ${activeTab === tab ? 'active' : ''}`}
             onClick={() => setActiveTab(tab)}
-            style={{ 
-              flex: isMobile ? '0 0 auto' : 1, 
-              borderRadius: '12px', 
-              border: 'none', 
-              padding: isMobile ? '12px 20px' : '14px', 
-              fontWeight: 950, 
-              letterSpacing: '1px', 
-              background: activeTab === tab ? 'white' : 'transparent', 
-              color: activeTab === tab ? '#0f52ba' : '#64748b',
-              boxShadow: activeTab === tab ? '0 4px 12px rgba(0,0,0,0.05)' : 'none', 
-              textTransform: 'uppercase', 
-              fontSize: '10px',
+            style={{
+              flex: isMobile ? '0 0 auto' : 1,
+              borderRadius: '8px',
+              border: 'none',
+              padding: isMobile ? '10px 18px' : '11px 12px',
+              fontWeight: 600,
+              letterSpacing: '0.2px',
+              background: activeTab === tab ? 'white' : 'transparent',
+              color: activeTab === tab ? '#1d4ed8' : '#6b7280',
+              boxShadow: activeTab === tab ? '0 2px 8px rgba(0,0,0,0.08)' : 'none',
+              fontSize: '13px',
               transition: 'all 0.2s ease',
               cursor: 'pointer',
               whiteSpace: 'nowrap'
@@ -3887,11 +3886,11 @@ return (
         ))}
       </div>
 
-      {activeTab === 'INTELLIGENCE' && renderAnalytics()}
-      {activeTab === 'REFERRAL INTEL' && renderReferralIntel()}
-      {activeTab === 'PERSONNEL' && renderUserManagement()}
-      {activeTab === 'HOSPITAL' && renderHospitalSettings()}
-      {activeTab === 'FINANCE' && (
+      {activeTab === 'Overview' && renderAnalytics()}
+      {activeTab === 'Referrals' && renderReferralIntel()}
+      {activeTab === 'Staff' && renderUserManagement()}
+      {activeTab === 'Hospitals' && renderHospitalSettings()}
+      {activeTab === 'Finance' && (
         <FinanceManager 
           isMobile={isMobile}
           servicePrices={servicePrices}
@@ -3922,8 +3921,8 @@ return (
           TODAY={TODAY}
         />
       )}
-      {activeTab === 'PRESCRIPTION' && renderPrescriptionArchitect()}
-      {activeTab === 'SUBSCRIPTION' && renderSubscription()}
+      {activeTab === 'Letterhead' && renderPrescriptionArchitect()}
+      {activeTab === 'Plan' && renderSubscription()}
 
       {isHospitalDrawerOpen && renderHospitalSettingsDrawer()}
       {isChainDrawerOpen && renderChainDrawer()}
@@ -3975,7 +3974,7 @@ return (
                    border: '1px solid rgba(255,255,255,0.1)'
                  }}>
                     <div className="tactical-node-active" style={{ width: '6px', height: '6px' }}></div>
-                    <span style={{ fontSize: '9px', fontWeight: 950, letterSpacing: '1px' }}>SYSTEM_PHASE_{userRegStep}: {(userRegStep === 1 ? 'BIO_DATA' : 'CREDENTIAL_SYNC')}</span>
+                    <span style={{ fontSize: '11px', fontWeight: 500, letterSpacing: '0' }}>Step {userRegStep}: {(userRegStep === 1 ? 'Basic Info' : 'Credentials')}</span>
                  </div>
               </div>
 
@@ -4287,7 +4286,7 @@ return (
               </div>
               <div style={{ background: '#fef2f2', padding: '15px', borderRadius: '16px', border: '1px solid #fecaca', textAlign: 'center' }}>
                 <div style={{ fontSize: '24px', fontWeight: 950, color: '#991b1b' }}>{importResult.failureCount}</div>
-                <div style={{ fontSize: '9px', fontWeight: 800, color: '#991b1b', letterSpacing: '1px' }}>SYSTEM FAILURES</div>
+                <div style={{ fontSize: '11px', fontWeight: 600, color: '#991b1b', letterSpacing: '0' }}>Errors</div>
               </div>
             </div>
 

@@ -1,4 +1,10 @@
 import React, { useState, useMemo, useEffect } from 'react';
+import { useEditor, EditorContent } from '@tiptap/react';
+import { StarterKit } from '@tiptap/starter-kit';
+import { Underline } from '@tiptap/extension-underline';
+import { TextAlign } from '@tiptap/extension-text-align';
+import { Color } from '@tiptap/extension-color';
+import { TextStyle } from '@tiptap/extension-text-style';
 
 const KeywordManager = ({ 
   keywords, 
@@ -10,11 +16,30 @@ const KeywordManager = ({
   setNewMacro,
   handleSaveMacro,
   handleDeleteKeyword,
-  isKeywordSaving,
-  formatMacroText,
-  macroTextareaRef
+  isKeywordSaving
 }) => {
   const [isMobile, setIsMobile] = useState(window.innerWidth < 1024);
+
+  const editor = useEditor({
+    extensions: [
+      StarterKit,
+      Underline,
+      TextStyle,
+      Color,
+      TextAlign.configure({ types: ['heading', 'paragraph'] }),
+    ],
+    content: newMacro.replacementText,
+    onUpdate: ({ editor }) => {
+      setNewMacro(prev => ({ ...prev, replacementText: editor.getHTML() }));
+    },
+  }, [selectedKeywordId]);
+
+  useEffect(() => {
+    if (editor && selectedKeywordId) {
+      editor.commands.setContent(newMacro.replacementText || '');
+    }
+    // We only sync on initial selection to prevent cursor resets while typing
+  }, [selectedKeywordId, editor]);
 
   useEffect(() => {
     const handleResize = () => setIsMobile(window.innerWidth < 1024);
@@ -175,46 +200,44 @@ const KeywordManager = ({
           <button disabled={page >= totalPages} onClick={() => setPage(p => p + 1)} style={{ padding: '8px 16px', borderRadius: '8px', border: '1px solid #e2e8f0', background: 'white', fontSize: '10px', fontWeight: 900, cursor: page >= totalPages ? 'not-allowed' : 'pointer', opacity: page >= totalPages ? 0.5 : 1 }}>NEXT</button>
         </div>
       </div>
-
-      {/* --- MODAL POPUP EDITOR --- */}
+      {/* --- MODAL POPUP EDITOR: WORD-LIKE EXPERIENCE --- */}
       {selectedKeywordId && (
         <div style={{ 
           position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
-          background: 'rgba(10, 22, 40, 0.7)', backdropFilter: 'blur(10px)',
+          background: 'rgba(10, 22, 40, 0.85)', backdropFilter: 'blur(12px)',
           display: 'flex', alignItems: 'center', justifyContent: 'center',
-          zIndex: 11000, animation: 'fadeIn 0.3s ease-out'
+          zIndex: 11000
         }} onClick={() => setSelectedKeywordId(null)}>
           
           <div style={{ 
-            width: isMobile ? '100%' : '600px', 
-            height: isMobile ? '100%' : 'auto',
-            background: 'white', borderRadius: isMobile ? 0 : '32px', 
-            display: 'flex', flexDirection: 'column', boxShadow: '0 25px 50px -12px rgba(0,0,0,0.5)',
-            animation: 'modalPopUp 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275)',
-            maxHeight: isMobile ? '100%' : '90vh', overflow: 'hidden'
+            width: isMobile ? '100%' : '850px', 
+            height: isMobile ? '100%' : '90vh',
+            background: '#f1f5f9', borderRadius: isMobile ? 0 : '24px', 
+            display: 'flex', flexDirection: 'column', boxShadow: '0 30px 60px -12px rgba(0,0,0,0.6)',
+            overflow: 'hidden', border: '1px solid rgba(255,255,255,0.1)',
+            animation: 'modalPopUp 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275)'
           }} onClick={e => e.stopPropagation()}>
             
-            <div style={{ padding: isMobile ? '20px' : '30px', background: 'linear-gradient(135deg, #0f52ba 0%, #061a40 100%)', color: 'white' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <div>
-                  <h3 style={{ fontSize: '9px', fontWeight: 950, color: '#00f2fe', letterSpacing: '2px', textTransform: 'uppercase', marginBottom: '4px' }}>Macro Architect</h3>
-                  <div style={{ fontSize: isMobile ? '16px' : '18px', fontWeight: 950, letterSpacing: '-0.5px' }}>{selectedKeywordId === 'new' ? 'INIT_NEW_SHORTCUT' : 'MODIFY_CORE_MACRO'}</div>
-                </div>
-                <button onClick={() => setSelectedKeywordId(null)} style={{ background: 'rgba(255,255,255,0.1)', border: 'none', color: 'white', width: '36px', height: '36px', borderRadius: '50%', cursor: 'pointer', fontSize: '20px' }}>&times;</button>
+            {/* Header: Institutional Blue */}
+            <div style={{ padding: '20px 30px', background: 'linear-gradient(135deg, #0f52ba 0%, #061a40 100%)', color: 'white', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexShrink: 0 }}>
+              <div>
+                <h3 style={{ fontSize: '10px', fontWeight: 950, color: '#60a5fa', letterSpacing: '2.5px', textTransform: 'uppercase', marginBottom: '4px' }}>Macro_Architect_v2.0</h3>
+                <div style={{ fontSize: '18px', fontWeight: 950 }}>{selectedKeywordId === 'new' ? 'INIT_NEW_MACRO' : 'RECONFIG_MACRO_PAYLOAD'}</div>
               </div>
+              <button onClick={() => setSelectedKeywordId(null)} style={{ background: 'rgba(255,255,255,0.1)', border: 'none', color: 'white', width: '36px', height: '36px', borderRadius: '50%', cursor: 'pointer', fontSize: '22px' }}>&times;</button>
             </div>
 
-            <div style={{ padding: isMobile ? '20px' : '30px', overflowY: 'auto', flex: 1 }}>
-              <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: isMobile ? '20px' : '25px', marginBottom: '25px' }}>
+            {/* Config Row (Static) */}
+            <div style={{ padding: isMobile ? '15px' : '20px 30px', background: 'white', borderBottom: '1px solid #e2e8f0', display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1.5fr', gap: isMobile ? '15px' : '20px', flexShrink: 0 }}>
                 <div>
-                  <label style={{ display: 'block', fontSize: '9px', fontWeight: 950, color: '#94a3b8', letterSpacing: '2px', marginBottom: '10px' }}>MACRO_TYPE / ORGAN</label>
+                  <label style={{ display: 'block', fontSize: '9px', fontWeight: 950, color: '#94a3b8', letterSpacing: '1px', marginBottom: '8px' }}>TARGET_CATEGORY</label>
                   <input 
                     type="text" 
                     list="category-suggestions"
                     value={newMacro.category} 
-                    placeholder="e.g. LIVER, GB, HEART"
+                    placeholder="e.g. X-RAY, CHEST, CT"
                     onChange={e => setNewMacro({...newMacro, category: e.target.value.toUpperCase()})}
-                    style={{ width: '100%', border: 'none', borderBottom: '2px solid #f0f0f0', fontSize: '16px', fontWeight: 800, padding: '10px 0', outline: 'none' }}
+                    style={{ width: '100%', padding: '10px 12px', borderRadius: '8px', border: '1px solid #e2e8f0', fontSize: '13px', fontWeight: 700, outline: 'none', background: '#f8fafc' }}
                   />
                   <datalist id="category-suggestions">
                     {Array.from(new Set(keywords.map(k => (k.category || k.Category || '').toUpperCase()).filter(Boolean))).map(cat => (
@@ -223,64 +246,103 @@ const KeywordManager = ({
                   </datalist>
                 </div>
                 <div>
-                  <label style={{ display: 'block', fontSize: '9px', fontWeight: 950, color: '#94a3b8', letterSpacing: '2px', marginBottom: '10px' }}>TRIGGER_COMMAND</label>
+                  <label style={{ display: 'block', fontSize: '9px', fontWeight: 950, color: '#94a3b8', letterSpacing: '1px', marginBottom: '8px' }}>COMMAND_TRIGGER</label>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                    <span style={{ fontSize: '24px', fontWeight: 900, color: '#0f52ba' }}>/</span>
+                    <span style={{ fontSize: '20px', fontWeight: 900, color: '#0f52ba' }}>/</span>
                     <input 
                       type="text" 
                       value={newMacro.trigger} 
-                      placeholder="e.g. normal_cxr"
+                      placeholder="e.g. normal_brain"
                       onChange={e => setNewMacro({...newMacro, trigger: e.target.value.toLowerCase().replace(/\s+/g, '_')})}
-                      style={{ flex: 1, border: 'none', borderBottom: '2px solid #f0f0f0', fontSize: '18px', fontWeight: 800, padding: '10px 0', outline: 'none', color: '#0f52ba' }}
+                      style={{ flex: 1, padding: '10px 12px', borderRadius: '8px', border: '1px solid #0f52ba', fontSize: '14px', fontWeight: 800, outline: 'none', background: 'rgba(15, 82, 186, 0.02)', color: '#0f52ba' }}
                     />
                   </div>
                 </div>
-              </div>
+            </div>
 
-              <div style={{ display: 'flex', flexDirection: 'column' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
-                  <label style={{ fontSize: '9px', fontWeight: 950, color: '#94a3b8', letterSpacing: '2px' }}>EXPANSION_PAYLOAD</label>
-                  <div style={{ display: 'flex', gap: '8px' }}>
-                    {['bold', 'italic', 'underline'].map(cmd => (
-                      <button 
-                        key={cmd} 
-                        onClick={() => formatMacroText(cmd)} 
-                        style={{ width: '32px', height: '32px', borderRadius: '8px', border: '1px solid #e2e8f0', background: 'white', fontSize: '11px', fontWeight: 900, cursor: 'pointer', transition: 'all 0.2s' }}
-                      >
-                        {cmd.charAt(0).toUpperCase()}
-                      </button>
-                    ))}
-                  </div>
-                </div>
+            {/* Word-like Editor Area (Scrollable Workspace) */}
+            <div style={{ flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column', background: isMobile ? 'white' : '#e2e8f0', padding: isMobile ? '0' : '40px 20px' }}>
+              
+              {/* Toolbar (Sticky) */}
+              <div style={{ 
+                background: '#f0f0f0', padding: '6px 12px', 
+                borderRadius: isMobile ? 0 : '12px 12px 0 0', 
+                border: '1px solid #c8c8c8', borderBottom: '2px solid #c8c8c8',
+                display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '4px',
+                position: 'sticky', top: 0, zIndex: 10,
+                width: isMobile ? '100%' : '190mm',
+                margin: isMobile ? '0' : '0 auto',
+                flexShrink: 0
+              }}>
+                <ToolbarBtn active={editor.isActive('bold')} onClick={() => editor.chain().focus().toggleBold().run()} title="Bold (Ctrl+B)">
+                  <Icon d={ICONS.bold} />
+                </ToolbarBtn>
+                <ToolbarBtn active={editor.isActive('italic')} onClick={() => editor.chain().focus().toggleItalic().run()} title="Italic (Ctrl+I)">
+                  <Icon d={ICONS.italic} />
+                </ToolbarBtn>
+                <ToolbarBtn active={editor.isActive('underline')} onClick={() => editor.chain().focus().toggleUnderline().run()} title="Underline (Ctrl+U)">
+                  <Icon d={ICONS.underline} />
+                </ToolbarBtn>
                 
-                <div 
-                  ref={macroTextareaRef}
-                  contentEditable="true"
-                  onInput={(e) => setNewMacro({...newMacro, replacementText: e.currentTarget.innerHTML})}
-                  dangerouslySetInnerHTML={{ __html: newMacro.replacementText }}
-                  style={{ 
-                    minHeight: isMobile ? '150px' : '200px', padding: '20px', borderRadius: '20px', border: '1px solid #e2e8f0', 
-                    background: '#f8fafc', outline: 'none', fontSize: '15px', lineHeight: '1.6', color: '#1e293b'
-                  }}
-                />
+                <div style={{ width: '1px', height: '20px', background: '#c8c8c8', margin: '0 4px' }} />
+                
+                <ToolbarBtn active={editor.isActive({ textAlign: 'left' })} onClick={() => editor.chain().focus().setTextAlign('left').run()} title="Align Left">
+                  <Icon d={ICONS.alignL} />
+                </ToolbarBtn>
+                <ToolbarBtn active={editor.isActive({ textAlign: 'center' })} onClick={() => editor.chain().focus().setTextAlign('center').run()} title="Center">
+                  <Icon d={ICONS.alignC} />
+                </ToolbarBtn>
+                <ToolbarBtn active={editor.isActive({ textAlign: 'right' })} onClick={() => editor.chain().focus().setTextAlign('right').run()} title="Align Right">
+                  <Icon d={ICONS.alignR} />
+                </ToolbarBtn>
+                
+                <div style={{ width: '1px', height: '20px', background: '#c8c8c8', margin: '0 4px' }} />
+                
+                <ToolbarBtn active={editor.isActive('bulletList')} onClick={() => editor.chain().focus().toggleBulletList().run()} title="Bullet List">
+                  <Icon d={ICONS.bulletList} />
+                </ToolbarBtn>
+
+                <div style={{ flex: 1 }} />
+                {!isMobile && <span style={{ fontSize: '9px', fontWeight: 950, color: '#94a3b8', alignSelf: 'center' }}>MACRO_ENGINE_v2.0</span>}
               </div>
 
-              <div style={{ marginTop: '35px', display: 'flex', flexDirection: isMobile ? 'column-reverse' : 'row', gap: '15px' }}>
-                <button onClick={() => setSelectedKeywordId(null)} style={{ flex: 1, padding: '15px', borderRadius: '16px', border: '1px solid #eee', fontSize: '11px', fontWeight: 950, cursor: 'pointer' }}>ABORT</button>
+              {/* Editor Content (Centered Page) */}
+              <div style={{ 
+                width: isMobile ? '100%' : '190mm', 
+                margin: isMobile ? '0' : '0 auto',
+                background: 'white', 
+                border: isMobile ? 'none' : '1px solid #cbd5e1', 
+                boxShadow: isMobile ? 'none' : '0 10px 40px rgba(0,0,0,0.1)', 
+                minHeight: isMobile ? '300px' : '450px', 
+                padding: isMobile ? '20px' : '50px 70px',
+                flexShrink: 0
+              }} className="macro-word-page">
+                <EditorContent editor={editor} style={{ outline: 'none', fontSize: isMobile ? '14px' : '15px', lineHeight: '1.6' }} />
+              </div>
+            </div>
+
+            {/* Footer Actions (Static) */}
+            <div style={{ padding: '20px 30px', background: 'white', borderTop: '1px solid #e2e8f0', display: 'flex', justifyContent: 'flex-end', gap: '15px', flexShrink: 0 }}>
+                <button onClick={() => setSelectedKeywordId(null)} style={{ padding: '12px 24px', borderRadius: '10px', border: '1px solid #eee', fontSize: '11px', fontWeight: 950, cursor: 'pointer', background: 'white' }}>ABORT</button>
                 <button 
                   disabled={isKeywordSaving} 
                   onClick={handleSaveMacro}
                   style={{ 
-                    flex: 2, padding: '15px', borderRadius: '16px', border: 'none', 
+                    padding: '12px 30px', borderRadius: '10px', border: 'none', 
                     background: '#0f52ba', color: 'white', fontSize: '11px', fontWeight: 950, cursor: 'pointer',
                     boxShadow: '0 8px 25px rgba(15, 82, 186, 0.3)' 
                   }}
                 >
-                  {isKeywordSaving ? 'COMMITTING...' : 'SAVE MACRO SHORTHAND →'}
+                  {isKeywordSaving ? 'COMMITTING...' : 'REGISTER MACRO →'}
                 </button>
-              </div>
             </div>
           </div>
+          
+          <style>{`
+            .macro-word-page .ProseMirror { outline: none; min-height: 300px; }
+            .macro-word-page p { margin-bottom: 10px; }
+            .macro-word-page ul, .macro-word-page ol { padding-left: 20px; margin-bottom: 15px; }
+          `}</style>
         </div>
       )}
       
@@ -300,5 +362,39 @@ const KeywordManager = ({
     </div>
   );
 };
+
+const Icon = ({ d, size = 14 }) => (
+  <svg width={size} height={size} viewBox="0 0 16 16" fill="currentColor" style={{ display: 'block', pointerEvents: 'none' }}>
+    <path d={d} />
+  </svg>
+);
+
+const ICONS = {
+  bold: 'M3 2h5.5a3.5 3.5 0 0 1 2.19 6.22A3.5 3.5 0 0 1 8.5 15H3V2zm2 5.5h3.5a1.5 1.5 0 0 0 0-3H5v3zm0 5h3.5a1.5 1.5 0 0 0 0-3H5v3z',
+  italic: 'M7 2h6v2H10.58L7.42 12H10v2H4v-2h2.42L9.58 4H7V2z',
+  underline: 'M3 1h2v7a3 3 0 0 0 6 0V1h2v7a5 5 0 0 1-10 0V1zm-1 13h12v2H2v-2z',
+  alignL: 'M2 3h12v2H2V3zm0 4h8v2H2V7zm0 4h12v2H2v-2z',
+  alignC: 'M2 3h12v2H2V3zm3 4h6v2H5V7zm-3 4h12v2H2v-2z',
+  alignR: 'M2 3h12v2H2V3zm4 4h8v2H6V7zm-4 4h12v2H2v-2z',
+  bulletList: 'M2 4a1 1 0 1 1 0-2 1 1 0 0 1 0 2zm3-2h9v2H5V2zm-3 6a1 1 0 1 1 0-2 1 1 0 0 1 0 2zm3-2h9v2H5V6zm-3 6a1 1 0 1 1 0-2 1 1 0 0 1 0 2zm3-2h9v2H5v-2z',
+};
+
+const ToolbarBtn = ({ children, onClick, active, title }) => (
+  <button 
+    onMouseDown={e => { e.preventDefault(); onClick(); }} 
+    title={title}
+    style={{ 
+      minWidth: '28px', height: '28px', borderRadius: '3px', border: active ? '1px solid #90c8f0' : '1px solid transparent', 
+      background: active ? '#cce4f7' : 'transparent', 
+      color: active ? '#003a75' : '#323130',
+      fontSize: '11px', fontWeight: 950, cursor: 'pointer', 
+      display: 'flex', alignItems: 'center', justifyContent: 'center',
+      padding: '0 6px', transition: 'all 0.08s',
+      fontFamily: '"Segoe UI", system-ui, sans-serif'
+    }}
+  >
+    {children}
+  </button>
+);
 
 export default KeywordManager;
