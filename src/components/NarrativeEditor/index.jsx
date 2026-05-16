@@ -15,10 +15,15 @@ import { Placeholder } from '@tiptap/extension-placeholder';
 import { CharacterCount } from '@tiptap/extension-character-count';
 import { Extension, Mark } from '@tiptap/core';
 import EditorToolbar from './EditorToolbar';
+import Ribbon from './Ribbon';
 import { PageDocument, Page } from './extensions/PageNode';
 import { Pagination } from './extensions/Pagination';
 import { LineHeight, ParagraphIndent, PageBreak } from './extensions/Spacing';
+import { FormatPainter } from './extensions/FormatPainter';
 import FindReplaceDialog from './dialogs/FindReplaceDialog';
+import SymbolPickerDialog from './dialogs/SymbolPickerDialog';
+import PromptDialog from './dialogs/PromptDialog';
+import { useVoiceDictation } from './hooks/useVoiceDictation';
 import './NarrativeEditor.css';
 
 /**
@@ -152,6 +157,23 @@ const NarrativeEditor = React.forwardRef(function NarrativeEditor({
   const [zoom, setZoom] = useState(100);
   const [findOpen, setFindOpen] = useState(false);
   const [findFocusReplace, setFindFocusReplace] = useState(false);
+  const [symbolOpen, setSymbolOpen] = useState(false);
+  const [spellcheckOn, setSpellcheckOn] = useState(false);
+  const [currentPage, setCurrentPage] = useState(1);
+  const [totalPages, setTotalPages] = useState(1);
+  const [promptState, setPromptState] = useState(null); // {title, message, defaultValue, placeholder, resolve}
+
+  // Voice dictation — text inserted at cursor when a phrase finalises.
+  const voice = useVoiceDictation({
+    onResult: (text) => {
+      if (!editor) return;
+      // Append with a leading space if previous char isn't a space/newline
+      const { state } = editor;
+      const before = state.doc.textBetween(Math.max(0, state.selection.from - 1), state.selection.from);
+      const prefix = (before && !/\s/.test(before)) ? ' ' : '';
+      editor.chain().focus().insertContent(prefix + text).run();
+    },
+  });
 
   useEffect(() => {
     const onFsChange = () => setIsFullscreen(!!document.fullscreenElement);
@@ -181,6 +203,7 @@ const NarrativeEditor = React.forwardRef(function NarrativeEditor({
       LineHeight,
       ParagraphIndent,
       PageBreak,
+      FormatPainter,
       Underline,
       TextAlign.configure({ types: ['heading', 'paragraph'] }),
       TextStyle,
@@ -205,7 +228,7 @@ const NarrativeEditor = React.forwardRef(function NarrativeEditor({
     editorProps: {
       attributes: {
         class: 'narrative-editor-content',
-        spellcheck: 'false',
+        spellcheck: 'false', // toggled at runtime by spellcheckOn effect
       },
       // Strip <div class="word-page"> and <div class="word-page-inner"> wrappers
       // from pasted HTML so copy/paste from the editor itself does not create
@@ -245,32 +268,85 @@ const NarrativeEditor = React.forwardRef(function NarrativeEditor({
     }
   }, [content, editor]);
 
-  // Ctrl+S / Ctrl+F / Ctrl+H handlers
+  // MS Word-style keyboard shortcuts.
+  // Tiptap StarterKit already handles: Ctrl+B/I, Ctrl+U (Underline), Ctrl+Z/Y,
+  // Ctrl+Shift+8/7 (lists). We add what's missing.
   useEffect(() => {
+    if (!editor) return;
     const handler = e => {
+      const mod = e.ctrlKey || e.metaKey;
+      if (!mod) return;
       const inEditor = containerRef.current?.contains(document.activeElement)
         || containerRef.current?.contains(e.target);
+      const key = e.key.toLowerCase();
 
-      if ((e.ctrlKey || e.metaKey) && e.key === 's') {
+      // Global (app-level) shortcuts
+      if (key === 's') { e.preventDefault(); onSave?.(); return; }
+
+      if (!inEditor) return;
+
+      // Find / Replace
+      if (key === 'f') { e.preventDefault(); setFindFocusReplace(false); setFindOpen(true); return; }
+      if (key === 'h') { e.preventDefault(); setFindFocusReplace(true);  setFindOpen(true); return; }
+
+      // Alignment
+      if (!e.shiftKey && key === 'l') { e.preventDefault(); editor.chain().focus().setTextAlign('left').run(); return; }
+      if (key === 'e') { e.preventDefault(); editor.chain().focus().setTextAlign('center').run(); return; }
+      if (!e.shiftKey && key === 'r') { e.preventDefault(); editor.chain().focus().setTextAlign('right').run(); return; }
+      if (key === 'j') { e.preventDefault(); editor.chain().focus().setTextAlign('justify').run(); return; }
+
+      // Headings (Ctrl+1..4 = H1..H4, Ctrl+0 = Normal)
+      if (!e.shiftKey && ['1', '2', '3', '4'].includes(e.key)) {
         e.preventDefault();
-        onSave?.();
-      } else if ((e.ctrlKey || e.metaKey) && (e.key === 'f' || e.key === 'F')) {
-        if (inEditor) {
+        editor.chain().focus().setHeading({ level: parseInt(e.key, 10) }).run();
+        return;
+      }
+      if (!e.shiftKey && e.key === '0') {
+        e.preventDefault();
+        editor.chain().focus().setParagraph().run();
+        return;
+      }
+
+      // Insert link (Ctrl+K)
+      if (key === 'k') {
+        e.preventDefault();
+        const url = window.prompt('Enter URL:', 'https://');
+        if (url) editor.chain().focus().setLink({ href: url, target: '_blank' }).run();
+        return;
+      }
+
+      // Format Painter — Ctrl+Shift+C captures, Ctrl+Shift+V applies
+      if (e.shiftKey && key === 'c') { e.preventDefault(); editor.chain().pickupFormat().run(); return; }
+      if (e.shiftKey && key === 'v') {
+        if (editor.storage?.formatPainter?.active) {
           e.preventDefault();
-          setFindFocusReplace(false);
-          setFindOpen(true);
+          editor.chain().applyFormat().run();
+          return;
         }
-      } else if ((e.ctrlKey || e.metaKey) && (e.key === 'h' || e.key === 'H')) {
-        if (inEditor) {
-          e.preventDefault();
-          setFindFocusReplace(true);
-          setFindOpen(true);
-        }
+      }
+
+      // Page break (Ctrl+Enter — same as Word)
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        editor.chain().focus().insertPageBreak().run();
+        return;
+      }
+
+      // Clear formatting (Ctrl+Space — Word also uses this)
+      if (key === ' ') {
+        e.preventDefault();
+        editor.chain().focus().unsetAllMarks().run();
+        return;
+      }
+
+      // Print preview (Ctrl+P)
+      if (key === 'p' && typeof window !== 'undefined') {
+        // Let browser handle it
       }
     };
     document.addEventListener('keydown', handler);
     return () => document.removeEventListener('keydown', handler);
-  }, [onSave]);
+  }, [onSave, editor]);
 
   // Toolbar Find button dispatches a window event — listen and open the dialog
   useEffect(() => {
@@ -281,6 +357,89 @@ const NarrativeEditor = React.forwardRef(function NarrativeEditor({
     window.addEventListener('narrative-editor:open-find-replace', open);
     return () => window.removeEventListener('narrative-editor:open-find-replace', open);
   }, []);
+
+  // Symbol picker open event
+  useEffect(() => {
+    const open = () => setSymbolOpen(true);
+    window.addEventListener('narrative-editor:open-symbol-picker', open);
+    return () => window.removeEventListener('narrative-editor:open-symbol-picker', open);
+  }, []);
+
+  // Generic in-editor prompt — replaces window.prompt() across the toolbar.
+  // Listeners dispatch `narrative-editor:prompt` with detail.{title,message,defaultValue,placeholder,resolve}.
+  useEffect(() => {
+    const open = (e) => setPromptState(e.detail || null);
+    window.addEventListener('narrative-editor:prompt', open);
+    return () => window.removeEventListener('narrative-editor:prompt', open);
+  }, []);
+
+  // Toggle the browser's native spellcheck attribute on the ProseMirror DOM.
+  useEffect(() => {
+    if (!editor) return;
+    const el = editor.view?.dom;
+    if (el) el.setAttribute('spellcheck', spellcheckOn ? 'true' : 'false');
+  }, [editor, spellcheckOn]);
+
+  // Track current page (most visible) + total pages.
+  useEffect(() => {
+    if (!editor) return;
+
+    const updateTotal = () => {
+      try {
+        setTotalPages(Math.max(1, editor.state.doc.childCount));
+      } catch {}
+    };
+    updateTotal();
+    editor.on('update', updateTotal);
+
+    let observer;
+    let cleanupTimer;
+    const attachObserver = () => {
+      const canvas = containerRef.current?.querySelector('.word-canvas');
+      if (!canvas) return;
+      const pages = canvas.querySelectorAll('.word-page');
+      if (!pages.length) return;
+
+      observer?.disconnect();
+      const visibility = new Map();
+      observer = new IntersectionObserver(
+        (entries) => {
+          entries.forEach(en => visibility.set(en.target, en.intersectionRatio));
+          let bestIdx = 0;
+          let bestRatio = -1;
+          let i = 0;
+          for (const p of pages) {
+            const r = visibility.get(p) ?? 0;
+            if (r > bestRatio) { bestRatio = r; bestIdx = i; }
+            i++;
+          }
+          setCurrentPage(bestIdx + 1);
+        },
+        { root: canvas, threshold: [0, 0.25, 0.5, 0.75, 1] }
+      );
+      pages.forEach(p => observer.observe(p));
+    };
+
+    // Attach after the next paint so new .word-page divs exist.
+    cleanupTimer = setTimeout(attachObserver, 50);
+    const reattach = () => { clearTimeout(cleanupTimer); cleanupTimer = setTimeout(attachObserver, 50); };
+    editor.on('update', reattach);
+
+    return () => {
+      clearTimeout(cleanupTimer);
+      observer?.disconnect();
+      editor.off('update', updateTotal);
+      editor.off('update', reattach);
+    };
+  }, [editor]);
+
+  const goToPage = (n) => {
+    const canvas = containerRef.current?.querySelector('.word-canvas');
+    if (!canvas) return;
+    const pages = canvas.querySelectorAll('.word-page');
+    const idx = Math.max(0, Math.min(pages.length - 1, n - 1));
+    pages[idx]?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  };
 
   // Keyword macro expansion
   useEffect(() => {
@@ -364,7 +523,7 @@ const NarrativeEditor = React.forwardRef(function NarrativeEditor({
 
   return (
     <div ref={containerRef} className={`narrative-editor-container ${className}`} style={style}>
-      <EditorToolbar
+      <Ribbon
         editor={editor}
         onSave={onSave}
         isFullscreen={isFullscreen}
@@ -372,6 +531,13 @@ const NarrativeEditor = React.forwardRef(function NarrativeEditor({
         zoom={zoom}
         setZoom={setZoom}
         zoomLevels={ZOOM_LEVELS}
+        wordCount={editor.storage.characterCount?.words() ?? 0}
+        charCount={editor.storage.characterCount?.characters() ?? 0}
+        spellcheckOn={spellcheckOn}
+        onToggleSpellcheck={() => setSpellcheckOn(v => !v)}
+        voiceSupported={voice.supported}
+        voiceActive={voice.active}
+        onToggleVoice={voice.toggle}
       />
 
       <div className="word-canvas" style={{ '--zoom': zoom / 100, position: 'relative' }}>
@@ -379,8 +545,38 @@ const NarrativeEditor = React.forwardRef(function NarrativeEditor({
         <FindReplaceDialog editor={editor} open={findOpen} focusReplace={findFocusReplace} onClose={() => setFindOpen(false)} />
       </div>
 
+      <SymbolPickerDialog editor={editor} open={symbolOpen} onClose={() => setSymbolOpen(false)} />
+
+      <PromptDialog
+        open={!!promptState}
+        title={promptState?.title}
+        message={promptState?.message}
+        defaultValue={promptState?.defaultValue || ''}
+        placeholder={promptState?.placeholder}
+        confirmLabel={promptState?.confirmLabel || 'OK'}
+        cancelLabel={promptState?.cancelLabel || 'Cancel'}
+        onConfirm={(v) => { promptState?.resolve?.(v); setPromptState(null); }}
+        onCancel={() => { promptState?.resolve?.(null); setPromptState(null); }}
+      />
+
       <div className="word-statusbar">
         <div className="statusbar-left">
+          <span className="page-nav">
+            <button
+              onMouseDown={e => { e.preventDefault(); goToPage(currentPage - 1); }}
+              disabled={currentPage <= 1}
+              title="Previous page"
+              className="page-nav-btn"
+            >▲</button>
+            <span>Page {currentPage} of {totalPages}</span>
+            <button
+              onMouseDown={e => { e.preventDefault(); goToPage(currentPage + 1); }}
+              disabled={currentPage >= totalPages}
+              title="Next page"
+              className="page-nav-btn"
+            >▼</button>
+          </span>
+          <span className="statusbar-sep" />
           <span>{wordCount} words</span>
           <span className="statusbar-sep" />
           <span>{charCount} characters</span>
@@ -388,7 +584,7 @@ const NarrativeEditor = React.forwardRef(function NarrativeEditor({
         <div className="statusbar-right">
           <kbd>Ctrl+S</kbd><span> Save</span>
           <span className="statusbar-sep" />
-          <kbd>Ctrl+B</kbd><span> Bold</span>
+          <kbd>Ctrl+F</kbd><span> Find</span>
           <span className="statusbar-sep" />
           <kbd>Ctrl+Z</kbd><span> Undo</span>
         </div>

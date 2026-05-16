@@ -364,7 +364,7 @@ export default function AppointmentBoard() {
 
   // --- HANDLERS ---
   const handleAction = async (id, actionOrStatus) => {
-    const app = appointments.find(a => a.id === id);
+    const app = appointments.find(a => a.id === id || a.appointmentId === id);
     if (!app) return;
 
     let newStatus = '';
@@ -379,7 +379,7 @@ export default function AppointmentBoard() {
     else newStatus = actionOrStatus.toLowerCase(); // Direct status update
 
     // Optimistic UI Update
-    setAppointments(prev => prev.map(a => a.id === id ? { ...a, status: newStatus } : a));
+    setAppointments(prev => prev.map(a => (a.id === id || a.appointmentId === id) ? { ...a, status: newStatus } : a));
 
     if (!isOnline) {
       await addToOutbox('APPOINTMENT_STATUS', { id: app.appointmentId, status: newStatus });
