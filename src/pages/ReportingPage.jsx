@@ -3493,72 +3493,48 @@ const ReportingPage = () => {
 
 
 
-            <div style={{ display: 'flex', flexDirection: 'column', flex: 1, overflow: 'auto' }}>
-              {/* STICKY PROTOCOL SELECTOR */}
-              <div style={{ 
-                position: 'sticky', top: 0, zIndex: 10, 
-                padding: '10px 20px', background: 'white', 
+            <div style={{ display: 'flex', flexDirection: 'column', flex: 1, overflow: 'hidden', minHeight: 0 }}>
+
+              {/* Template selector */}
+              <div style={{
+                flexShrink: 0,
+                padding: '8px 20px',
+                background: 'white',
                 borderBottom: '1px solid #f1f5f9',
-                backdropFilter: 'blur(8px)',
-                backgroundColor: 'rgba(255, 255, 255, 0.9)'
               }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px 15px', background: '#f8fafc', borderRadius: '10px', border: '1px solid #e2e8f0' }}>
-                  <div style={{ flex: 1 }}>
-                    <label style={{ fontSize: '10px', fontWeight: 950, color: '#94a3b8', textTransform: 'uppercase', display: 'block', marginBottom: '8px', letterSpacing: '1px' }}>Active Clinical Protocol</label>
-                    <select 
-                      className="template-selector" 
-                      value={selectedTemplateId || ''} 
-                      onChange={(e) => {
-                        const tpl = templates.find(t => String(t.id) === String(e.target.value));
-                        if (tpl) {
-                          setSelectedTemplateId(tpl.id);
-                          setEditorText(tpl.content || '');
-                        }
-                      }}
-                      style={{ width: '100%', padding: '8px', borderRadius: '6px', border: '1px solid #cbd5e1', outline: 'none' }}
-                    >
-                      <option value="">Select Protocol Template...</option>
-                      {templates.map(tpl => (
-                        <option key={tpl.id} value={tpl.id}>{tpl.name}</option>
-                      ))}
-                    </select>
-                  </div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                  <label style={{ fontSize: '12px', fontWeight: 500, color: '#6b7280', whiteSpace: 'nowrap' }}>Template</label>
+                  <select
+                    className="template-selector"
+                    value={selectedTemplateId || ''}
+                    onChange={(e) => {
+                      const tpl = templates.find(t => String(t.id) === String(e.target.value));
+                      if (tpl) {
+                        setSelectedTemplateId(tpl.id);
+                        setEditorText(tpl.content || '');
+                      }
+                    }}
+                    style={{ flex: 1, padding: '6px 10px', borderRadius: '6px', border: '1px solid #cbd5e1', outline: 'none', fontSize: '13px' }}
+                  >
+                    <option value="">Select a template...</option>
+                    {templates.map(tpl => (
+                      <option key={tpl.id} value={tpl.id}>{tpl.name}</option>
+                    ))}
+                  </select>
                 </div>
               </div>
 
-              <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '20px', padding: '20px', paddingTop: '10px' }}>
-                {/* NEW TIPTAP EDITOR */}
-                <NarrativeEditor
-                  ref={editorRef}
-                  content={editorText}
-                  onChange={(html) => setEditorText(html)}
-                  placeholder="Start typing your radiology report..."
-                  onSave={() => handleSaveReport(false)}
-                  keywordLibrary={keywordLibrary}
-                />
-                
-                {/* Bottom Narrative Inputs (Impression & Advice) */}
-                <div style={{ display: 'flex', flexDirection: window.innerWidth < 768 ? 'column' : 'row', gap: '20px' }}>
-                  <div style={{ flex: 1 }}>
-                    <label style={{ fontSize: '10px', fontWeight: 950, color: '#0f52ba', display: 'block', marginBottom: '8px' }}>CLINICAL IMPRESSION</label>
-                    <textarea 
-                      value={impression}
-                      onChange={(e) => setImpression(e.target.value)}
-                      placeholder="Enter final study impression..."
-                      style={{ width: '100%', padding: '12px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '16px', minHeight: '100px', outline: 'none' }}
-                    />
-                  </div>
-                  <div style={{ flex: 1 }}>
-                    <label style={{ fontSize: '10px', fontWeight: 950, color: '#64748b', display: 'block', marginBottom: '8px' }}>FOLLOW-UP ADVICE</label>
-                    <textarea 
-                      value={advice}
-                      onChange={(e) => setAdvice(e.target.value)}
-                      placeholder="Enter patient advice..."
-                      style={{ width: '100%', padding: '12px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '16px', minHeight: '100px', outline: 'none' }}
-                    />
-                  </div>
-                </div>
-              </div>
+              {/* NarrativeEditor — fills all remaining space; word-canvas is the only scroll context */}
+              <NarrativeEditor
+                ref={editorRef}
+                content={editorText}
+                onChange={(html) => setEditorText(html)}
+                placeholder="Start typing your radiology report..."
+                onSave={() => handleSaveReport(false)}
+                style={{ flex: 1, minHeight: 0 }}
+                keywordLibrary={keywordLibrary}
+              />
+
             </div>
 
 

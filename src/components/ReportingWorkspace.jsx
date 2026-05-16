@@ -181,20 +181,18 @@ const ReportingWorkspace = ({
       </div>
 
       {/* ── Content area ── */}
-      <div style={{ flex: 1, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
+      <div style={{ flex: 1, minHeight: 0, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
 
-        {/* REPORT WORKSPACE — NarrativeEditor owns its own canvas/scrolling */}
+        {/* REPORT WORKSPACE — NarrativeEditor with full Word-like toolbar */}
         {activeTab === 'REPORT_WORKSPACE' && (
-          <div style={{ flex: 1, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
-            <NarrativeEditor
-              content={editorText}
-              onChange={(html) => setEditorText(html)}
-              placeholder="Begin your radiology report..."
-              onSave={() => handleSaveReport(false)}
-              keywordLibrary={keywordLibrary}
-              style={{ height: '100%' }}
-            />
-          </div>
+          <NarrativeEditor
+            content={editorText}
+            onChange={(html) => setEditorText(html)}
+            placeholder="Begin your radiology report..."
+            onSave={() => handleSaveReport(false)}
+            keywordLibrary={keywordLibrary}
+            style={{ flex: 1, minHeight: 0 }}
+          />
         )}
 
         {/* KEYWORDS / MACROS */}

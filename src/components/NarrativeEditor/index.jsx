@@ -15,7 +15,21 @@ import { Placeholder } from '@tiptap/extension-placeholder';
 import { CharacterCount } from '@tiptap/extension-character-count';
 import { Extension, Mark } from '@tiptap/core';
 import EditorToolbar from './EditorToolbar';
+import { PageDocument, Page } from './extensions/PageNode';
+import { Pagination } from './extensions/Pagination';
 import './NarrativeEditor.css';
+
+/**
+ * Wrap raw HTML content in a <div class="word-page"> if it isn't already.
+ * Ensures the editor's schema (doc -> page+) accepts legacy flat-HTML reports.
+ */
+function ensurePagedHTML(html) {
+  const trimmed = (html || '').trim();
+  if (!trimmed) return '<div class="word-page"><div class="word-page-inner"><p></p></div></div>';
+  // Already paginated
+  if (/^<div[^>]*class="[^"]*word-page[^"]*"/i.test(trimmed)) return trimmed;
+  return `<div class="word-page"><div class="word-page-inner">${trimmed}</div></div>`;
+}
 
 // ── Custom extensions ────────────────────────────────────────────────────────
 
@@ -152,10 +166,14 @@ const NarrativeEditor = React.forwardRef(function NarrativeEditor({
   const editor = useEditor({
     extensions: [
       StarterKit.configure({
+        document: false, // we use our own PageDocument (schema: doc -> page+)
         heading: { levels: [1, 2, 3, 4, 5, 6] },
         bulletList: { keepMarks: true, keepAttributes: false },
         orderedList: { keepMarks: true, keepAttributes: false },
       }),
+      PageDocument,
+      Page,
+      Pagination,
       Underline,
       TextAlign.configure({ types: ['heading', 'paragraph'] }),
       TextStyle,
@@ -174,13 +192,22 @@ const NarrativeEditor = React.forwardRef(function NarrativeEditor({
       Superscript,
       Link,
     ],
-    content,
+    content: ensurePagedHTML(content),
     editable,
     onUpdate: ({ editor: e }) => onChange?.(e.getHTML()),
     editorProps: {
       attributes: {
         class: 'narrative-editor-content',
         spellcheck: 'false',
+      },
+      // Strip <div class="word-page"> and <div class="word-page-inner"> wrappers
+      // from pasted HTML so copy/paste from the editor itself does not create
+      // page-in-page visuals.
+      transformPastedHTML(html) {
+        return (html || '')
+          .replace(/<div[^>]*class="[^"]*word-page-inner[^"]*"[^>]*>/gi, '')
+          .replace(/<div[^>]*class="[^"]*word-page[^"]*"[^>]*>/gi, '')
+          .replace(/<\/div>\s*<\/div>(?=\s*(<div[^>]*class="[^"]*word-page|$))/gi, '');
       },
     },
   });
@@ -206,7 +233,7 @@ const NarrativeEditor = React.forwardRef(function NarrativeEditor({
   useEffect(() => {
     if (editor && content !== undefined && content !== editor.getHTML()) {
       if (!editor.isFocused || editor.isEmpty) {
-        editor.commands.setContent(content, false);
+        editor.commands.setContent(ensurePagedHTML(content), false);
       }
     }
   }, [content, editor]);
@@ -234,34 +261,57 @@ const NarrativeEditor = React.forwardRef(function NarrativeEditor({
           const { state } = view;
           const { $from, empty } = state.selection;
           if (!empty) return false;
-          
+
           const textBefore = $from.parent.textBetween(0, $from.parentOffset, undefined, '￼');
           if (!textBefore) return false;
-          
+
           const words = textBefore.split(/\s+/);
           const lastWord = words[words.length - 1];
           if (!lastWord) return false;
-          
+
           const searchTrigger = lastWord.startsWith('/') ? lastWord.slice(1) : lastWord;
-          const match = keywordLibrary.find(k => 
+          const match = keywordLibrary.find(k =>
             (k.trigger || '').toLowerCase() === searchTrigger.toLowerCase()
           );
-          
+
           if (!match) return false;
-          
+
           event.preventDefault();
           const from = $from.pos - lastWord.length;
           const to = $from.pos;
-          
-          const rawHtml = (match.replacementText || '').replace(/\n/g, '<br>');
-          const finalHtml = `<strong>${rawHtml}</strong>${event.key === ' ' ? '&nbsp;' : ''}`;
-          
+
+          // Strip the editor's own page wrappers from the saved replacement HTML —
+          // otherwise inserting a Page node inside an existing Page is rejected by
+          // the schema and the content gets pushed to a new page.
+          const tmp = document.createElement('div');
+          tmp.innerHTML = match.replacementText || '';
+          tmp.querySelectorAll('.word-page-inner, .word-page').forEach(el => {
+            const parent = el.parentNode;
+            while (el.firstChild) parent.insertBefore(el.firstChild, el);
+            el.remove();
+          });
+
+          // If the replacement is a SINGLE top-level paragraph, unwrap it so the
+          // content inserts inline on the current line (instead of splitting the
+          // surrounding paragraph in two and creating an extra block — which made
+          // expansions feel like they jumped to a new page).
+          const topChildren = Array.from(tmp.children);
+          if (topChildren.length === 1 && topChildren[0].tagName === 'P') {
+            tmp.innerHTML = topChildren[0].innerHTML;
+          }
+
+          const rawHtml = tmp.innerHTML.replace(/\n/g, '<br>');
+
+          // Insert raw HTML directly. Do NOT wrap in <strong> — if the replacement
+          // contains block-level elements (paragraphs, headings, lists), wrapping
+          // them in an inline mark produces invalid HTML and ProseMirror re-splits
+          // it into separate blocks, breaking the line/page the user was on.
           editor.chain()
             .focus()
             .deleteRange({ from, to })
-            .insertContent(finalHtml)
+            .insertContent(rawHtml + (event.key === ' ' ? '&nbsp;' : ''))
             .run();
-            
+
           return true;
         },
       },
@@ -292,10 +342,8 @@ const NarrativeEditor = React.forwardRef(function NarrativeEditor({
         zoomLevels={ZOOM_LEVELS}
       />
 
-      <div className="word-canvas">
-        <div className="word-page" style={{ zoom: zoom / 100 }}>
-          <EditorContent editor={editor} />
-        </div>
+      <div className="word-canvas" style={{ '--zoom': zoom / 100 }}>
+        <EditorContent editor={editor} />
       </div>
 
       <div className="word-statusbar">

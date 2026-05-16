@@ -3752,7 +3752,7 @@ return (
               <div className={isSwitchingNode ? "pulse-loader-mini" : "tactical-node-active"} style={{ width: '10px', height: '10px', borderRadius: '50%', background: isSwitchingNode ? '#f39c12' : '#2ecc71', boxShadow: isSwitchingNode ? '0 0 10px rgba(243, 156, 18, 0.4)' : '0 0 10px rgba(46, 204, 113, 0.4)' }}></div>
               <div className="hub-identity" style={{ textAlign: 'left', overflow: 'hidden', flex: 1 }}>
                 <div className="hub-label" style={{ fontSize: '7px', fontWeight: 950, color: isSwitchingNode ? '#f39c12' : '#aaa', letterSpacing: '1px', textTransform: 'uppercase' }}>{isSwitchingNode ? 'Switching...' : 'Active Center'}</div>
-                <div className="hub-name" style={{ fontSize: '13px', fontWeight: 950, color: '#1a1a2e', whiteSpace: 'nowrap', textOverflow: 'ellipsis', overflow: isTestMode ? 'visible' : 'hidden', maxWidth: isMobile ? '100%' : '180px', opacity: isSwitchingNode ? 0.5 : 1 }}>{activeCenter?.name?.toUpperCase()}</div>
+                <div className="hub-name" style={{ fontSize: '13px', fontWeight: 950, color: '#1a1a2e', whiteSpace: 'nowrap', textOverflow: 'ellipsis', overflow: isTestMode ? 'visible' : 'hidden', maxWidth: isMobile ? '100%' : '180px', opacity: isSwitchingNode ? 0.5 : 1 }}>{activeCenter?.name?.toUpperCase() || 'SELECT CENTER...'}</div>
               </div>
               <div style={{ fontSize: '10px', color: '#888', transition: 'transform 0.3s', transform: isSwitcherOpen ? 'rotate(180deg)' : 'rotate(0deg)' }}>
                   ▼
@@ -3806,13 +3806,7 @@ return (
                            transition: 'all 0.2s', marginBottom: '6px'
                          }}
                        >
-                         <div style={{ 
-                           width: '100%', textAlign: 'left', padding: '15px', borderRadius: '14px', 
-                           display: 'flex', alignItems: 'center', gap: '15px', cursor: 'pointer', 
-                           background: activeCenter?.id === center.id ? '#f0f7ff' : 'transparent',
-                           border: activeCenter?.id === center.id ? '1px solid #dbeafe' : '1px solid transparent', 
-                           transition: 'all 0.2s', marginBottom: '6px'
-                         }} />
+
                          <div style={{ 
                            width: '10px', height: '10px', borderRadius: '50%', 
                            background: activeCenter?.id === center.id ? '#2ecc71' : 'rgba(0,0,0,0.1)',
@@ -3820,7 +3814,7 @@ return (
                          }}></div>
                          <div style={{ flex: 1, overflow: 'hidden' }}>
                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                             <span style={{ fontSize: '12px', fontWeight: 900, color: '#1e293b', whiteSpace: 'nowrap', textOverflow: 'ellipsis', overflow: 'hidden' }}>{center.name}</span>
+                             <span style={{ fontSize: '12px', fontWeight: 900, color: '#1e293b', whiteSpace: 'nowrap', textOverflow: 'ellipsis', overflow: 'hidden' }}>{center.name || 'Unnamed Center'}</span>
                              {activeCenter?.id === center.id && <span style={{ fontSize: '9px', fontWeight: 950, color: '#2ecc71', letterSpacing: '1px' }}>ACTIVE</span>}
                            </div>
                          </div>

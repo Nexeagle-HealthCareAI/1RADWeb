@@ -119,15 +119,30 @@ const ReportPreviewModal = ({
     console.log(`[ReportPreview] Asset Type: ${resolvedAssetUrl?.toLowerCase().includes('.pdf') ? 'PDF_DOCUMENT' : 'IMAGE_ASSET'}`);
   }
 
+  // Strip the NarrativeEditor's page wrappers (<div class="word-page"> /
+  // <div class="word-page-inner">) before rendering — otherwise the preview
+  // shows nested A4 sheets because global CSS styles those classes.
+  const unwrapPages = (html) => {
+    if (!html) return '';
+    const tmp = document.createElement('div');
+    tmp.innerHTML = html;
+    tmp.querySelectorAll('.word-page-inner, .word-page').forEach(el => {
+      const parent = el.parentNode;
+      while (el.firstChild) parent.insertBefore(el.firstChild, el);
+      el.remove();
+    });
+    return tmp.innerHTML;
+  };
+
   if (mode === 'Structured' && data) {
     bodyContent = Object.entries(data).map(([key, val]) => `
       <div style="margin-bottom: 25px; page-break-inside: avoid;">
         <div style="font-size: 10px; font-weight: 950; color: #64748b; text-transform: uppercase; margin-bottom: 6px; letter-spacing: 1.5px; border-bottom: 1px solid #f1f5f9; padding-bottom: 2px;">${key.replace(/_/g, ' ')}</div>
-        <div style="${contentStyle} white-space: pre-wrap;">${val}</div>
+        <div style="${contentStyle} white-space: pre-wrap;">${unwrapPages(val)}</div>
       </div>
     `).join('');
   } else {
-    bodyContent = `<div style="${contentStyle}">${text || ''}</div>`;
+    bodyContent = `<div style="${contentStyle}">${unwrapPages(text)}</div>`;
   }
 
   // Surgical Margin Resolution (mm to style)

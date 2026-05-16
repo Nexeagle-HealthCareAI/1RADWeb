@@ -13,46 +13,47 @@
 .word-canvas {
   flex: 1;
   overflow: auto;
-  background: #d3d3d3;
+  background: #b0b0b0;   /* darker gray — visible as the gap between pages */
   display: flex;
   flex-direction: column;
   align-items: center;
-  padding: 28px 20px 60px;
-  /* subtle inner shadow to reinforce the "canvas" feel */
-  box-shadow: inset 0 2px 6px rgba(0, 0, 0, 0.12);
+  padding: 40px 24px 80px;
+  box-shadow: inset 0 2px 8px rgba(0, 0, 0, 0.18);
 }
 
-/* ── A4 page ─────────────────────────────────────────────────────────────────── */
+/* ── A4 pages ────────────────────────────────────────────────────────────────── */
 /*
-  A4 at 96 dpi:  794 × 1123 px
-  1-inch margins: 96 px all sides
-  Printable width: 602 px
-  Page-break indicator: 1 px gray line every 1123 px via repeating-linear-gradient
+  A4 at 96 dpi : 794 × 1123 px
+  Real DOM pagination: each <div class="word-page"> is one sheet.
+  Inter-page gap of 28 px is created by margin-bottom on each page,
+  revealing the dark canvas underneath.
 */
 .word-page {
   width: 794px;
   min-height: 1123px;
   background-color: #ffffff;
-  /* Visual page-break lines — 1 px at every 1123 px from the top of the element */
-  background-image: repeating-linear-gradient(
-    to bottom,
-    transparent 0px,
-    transparent calc(1123px - 1px),
-    #a0a0a0 calc(1123px - 1px),
-    #a0a0a0 1123px
-  );
   box-shadow:
-    0 1px 3px rgba(0, 0, 0, 0.25),
-    0 4px 12px rgba(0, 0, 0, 0.12);
+    0 1px 3px rgba(0, 0, 0, 0.30),
+    0 4px 10px rgba(0, 0, 0, 0.15);
+  margin-bottom: 28px;
   position: relative;
   transform-origin: top center;
+  box-sizing: border-box;
+}
+.word-page:last-child {
+  margin-bottom: 0;
 }
 
-/* ── Editor content (ProseMirror element) ───────────────────────────────────── */
-.narrative-editor-content {
-  /* 1-inch margins: mimic Word's default margins */
+/* Inner content holder — applies the 1-inch margins (Word default) */
+.word-page-inner {
   padding: 96px;
   min-height: 1123px;
+  box-sizing: border-box;
+  outline: none;
+}
+
+/* ── Editor content (ProseMirror root element) ──────────────────────────────── */
+.narrative-editor-content {
   outline: none;
   font-family: "Calibri", "Segoe UI", -apple-system, sans-serif;
   font-size: 12pt;
@@ -61,10 +62,20 @@
   word-wrap: break-word;
   overflow-wrap: break-word;
   -webkit-font-smoothing: antialiased;
+  /* The ProseMirror root no longer carries page styling — pages do */
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  width: 100%;
+  /* Zoom is applied here (via CSS variable set on .word-canvas).
+     The `zoom` property scales both the element and its computed layout,
+     so .word-canvas's overflow:auto sees the scaled height and shows
+     a scrollbar correctly at every zoom level. */
+  zoom: var(--zoom, 1);
 }
 
-/* Placeholder */
-.narrative-editor-content p.is-editor-empty:first-child::before {
+/* Placeholder — first empty paragraph inside the first page */
+.word-page:first-child .word-page-inner > p.is-editor-empty:first-child::before {
   content: attr(data-placeholder);
   float: left;
   color: #aaaaaa;
@@ -301,20 +312,21 @@
   .word-page {
     width: 100%;
     min-width: 320px;
-    box-shadow: none;
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.15);
   }
-
-  .narrative-editor-content {
+  .word-page-inner {
     padding: 40px 32px;
+    min-height: 0;
   }
 }
 
 @media (max-width: 480px) {
-  .narrative-editor-content {
+  .word-page-inner {
     padding: 20px 15px;
   }
   .word-canvas {
     padding: 10px 5px 40px;
+    background: #c0c0c0;
   }
 }
 
@@ -336,7 +348,12 @@
   .word-page {
     width: 100%;
     box-shadow: none;
-    background-image: none;
+    margin-bottom: 0;
+    page-break-after: always;
+    background-color: white;
+  }
+  .word-page:last-child {
+    page-break-after: auto;
   }
 
   .word-statusbar {
