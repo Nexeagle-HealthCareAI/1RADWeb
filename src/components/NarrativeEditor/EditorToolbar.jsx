@@ -96,8 +96,10 @@ const ColorPicker = ({ colors, onSelect, onClose, extraRow }) => {
   const ref = useRef(null);
   useEffect(() => {
     const handler = e => { if (ref.current && !ref.current.contains(e.target)) onClose(); };
-    document.addEventListener('mousedown', handler);
-    return () => document.removeEventListener('mousedown', handler);
+    // Defer registration so we don't catch the same mousedown that opened the
+    // picker (which would close it immediately on the next bubble step).
+    const t = setTimeout(() => document.addEventListener('mousedown', handler), 0);
+    return () => { clearTimeout(t); document.removeEventListener('mousedown', handler); };
   }, [onClose]);
 
   return (
@@ -297,19 +299,62 @@ export default function EditorToolbar({ editor, onSave, isFullscreen, toggleFull
         <Icon d={ICONS.orderedList} />
       </Btn>
 
-      {/* ── Indent / Outdent (inside lists) ── */}
+      {/* ── Indent / Outdent (works for both list items and paragraphs) ── */}
       <Btn
-        onClick={() => editor.chain().focus().liftListItem('listItem').run()}
-        disabled={!editor.can().liftListItem('listItem')}
+        onClick={() => {
+          // Prefer list-item lift inside lists; fall back to paragraph indent
+          if (editor.can().liftListItem('listItem')) {
+            editor.chain().focus().liftListItem('listItem').run();
+          } else {
+            editor.chain().focus().decreaseParagraphIndent().run();
+          }
+        }}
         title="Decrease Indent"
         style={{ fontSize: '14px' }}
       >⇤</Btn>
       <Btn
-        onClick={() => editor.chain().focus().sinkListItem('listItem').run()}
-        disabled={!editor.can().sinkListItem('listItem')}
+        onClick={() => {
+          if (editor.can().sinkListItem('listItem')) {
+            editor.chain().focus().sinkListItem('listItem').run();
+          } else {
+            editor.chain().focus().increaseParagraphIndent().run();
+          }
+        }}
         title="Increase Indent"
         style={{ fontSize: '14px' }}
       >⇥</Btn>
+
+      <Sep />
+
+      {/* ── Line spacing ── */}
+      <select
+        value={editor.getAttributes('paragraph').lineHeight || editor.getAttributes('heading').lineHeight || ''}
+        onChange={e => {
+          const v = e.target.value;
+          if (v === '__custom__') {
+            const current = editor.getAttributes('paragraph').lineHeight || editor.getAttributes('heading').lineHeight || '1.6';
+            const input = window.prompt('Line spacing (number or value with unit, e.g. 1.75, 24px, 150%):', current);
+            if (input == null) return; // user cancelled
+            const trimmed = input.trim();
+            if (!trimmed) editor.chain().focus().unsetLineHeight().run();
+            else editor.chain().focus().setLineHeight(trimmed).run();
+            return;
+          }
+          if (v) editor.chain().focus().setLineHeight(v).run();
+          else editor.chain().focus().unsetLineHeight().run();
+        }}
+        style={{ ...selStyle, width: '90px' }}
+        title="Line Spacing"
+      >
+        <option value="">Spacing</option>
+        <option value="1">1.0</option>
+        <option value="1.15">1.15</option>
+        <option value="1.5">1.5</option>
+        <option value="2">2.0</option>
+        <option value="2.5">2.5</option>
+        <option value="3">3.0</option>
+        <option value="__custom__">Custom…</option>
+      </select>
 
       <Sep />
 
@@ -379,6 +424,32 @@ export default function EditorToolbar({ editor, onSave, isFullscreen, toggleFull
       </Btn>
       <Btn onClick={() => editor.chain().focus().setHorizontalRule().run()} title="Horizontal Rule">
         <Icon d={ICONS.hr} />
+      </Btn>
+
+      {/* ── Page Break ── */}
+      <Btn
+        onClick={() => editor.chain().focus().insertPageBreak().run()}
+        title="Insert Page Break (Ctrl+Enter)"
+        style={{ fontSize: '11px', fontWeight: 700, minWidth: '36px' }}
+      >
+        ⤵PB
+      </Btn>
+
+      {/* ── Find (Ctrl+F) ── */}
+      <Btn
+        onClick={() => window.dispatchEvent(new CustomEvent('narrative-editor:open-find-replace', { detail: { focusReplace: false } }))}
+        title="Find (Ctrl+F)"
+        style={{ fontSize: '13px', fontWeight: 700, minWidth: '28px' }}
+      >
+        🔍
+      </Btn>
+      {/* ── Replace (Ctrl+H) ── */}
+      <Btn
+        onClick={() => window.dispatchEvent(new CustomEvent('narrative-editor:open-find-replace', { detail: { focusReplace: true } }))}
+        title="Find &amp; Replace (Ctrl+H)"
+        style={{ fontSize: '11px', fontWeight: 700, minWidth: '32px' }}
+      >
+        ⇄
       </Btn>
 
       {/* ── Spacer ── */}

@@ -17,6 +17,8 @@ import { Extension, Mark } from '@tiptap/core';
 import EditorToolbar from './EditorToolbar';
 import { PageDocument, Page } from './extensions/PageNode';
 import { Pagination } from './extensions/Pagination';
+import { LineHeight, ParagraphIndent, PageBreak } from './extensions/Spacing';
+import FindReplaceDialog from './dialogs/FindReplaceDialog';
 import './NarrativeEditor.css';
 
 /**
@@ -148,6 +150,8 @@ const NarrativeEditor = React.forwardRef(function NarrativeEditor({
   const containerRef = useRef(null);
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [zoom, setZoom] = useState(100);
+  const [findOpen, setFindOpen] = useState(false);
+  const [findFocusReplace, setFindFocusReplace] = useState(false);
 
   useEffect(() => {
     const onFsChange = () => setIsFullscreen(!!document.fullscreenElement);
@@ -174,6 +178,9 @@ const NarrativeEditor = React.forwardRef(function NarrativeEditor({
       PageDocument,
       Page,
       Pagination,
+      LineHeight,
+      ParagraphIndent,
+      PageBreak,
       Underline,
       TextAlign.configure({ types: ['heading', 'paragraph'] }),
       TextStyle,
@@ -238,17 +245,42 @@ const NarrativeEditor = React.forwardRef(function NarrativeEditor({
     }
   }, [content, editor]);
 
-  // Ctrl+S handler
+  // Ctrl+S / Ctrl+F / Ctrl+H handlers
   useEffect(() => {
     const handler = e => {
+      const inEditor = containerRef.current?.contains(document.activeElement)
+        || containerRef.current?.contains(e.target);
+
       if ((e.ctrlKey || e.metaKey) && e.key === 's') {
         e.preventDefault();
         onSave?.();
+      } else if ((e.ctrlKey || e.metaKey) && (e.key === 'f' || e.key === 'F')) {
+        if (inEditor) {
+          e.preventDefault();
+          setFindFocusReplace(false);
+          setFindOpen(true);
+        }
+      } else if ((e.ctrlKey || e.metaKey) && (e.key === 'h' || e.key === 'H')) {
+        if (inEditor) {
+          e.preventDefault();
+          setFindFocusReplace(true);
+          setFindOpen(true);
+        }
       }
     };
     document.addEventListener('keydown', handler);
     return () => document.removeEventListener('keydown', handler);
   }, [onSave]);
+
+  // Toolbar Find button dispatches a window event — listen and open the dialog
+  useEffect(() => {
+    const open = (e) => {
+      setFindFocusReplace(!!e?.detail?.focusReplace);
+      setFindOpen(true);
+    };
+    window.addEventListener('narrative-editor:open-find-replace', open);
+    return () => window.removeEventListener('narrative-editor:open-find-replace', open);
+  }, []);
 
   // Keyword macro expansion
   useEffect(() => {
@@ -342,8 +374,9 @@ const NarrativeEditor = React.forwardRef(function NarrativeEditor({
         zoomLevels={ZOOM_LEVELS}
       />
 
-      <div className="word-canvas" style={{ '--zoom': zoom / 100 }}>
+      <div className="word-canvas" style={{ '--zoom': zoom / 100, position: 'relative' }}>
         <EditorContent editor={editor} />
+        <FindReplaceDialog editor={editor} open={findOpen} focusReplace={findFocusReplace} onClose={() => setFindOpen(false)} />
       </div>
 
       <div className="word-statusbar">

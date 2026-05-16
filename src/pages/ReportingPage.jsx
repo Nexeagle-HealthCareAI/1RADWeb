@@ -52,12 +52,13 @@ const ReportingPage = () => {
   const [isPreviewOpen, setIsPreviewOpen] = useState(false);
   const isResizing = useRef(false);
   const [isTablet, setIsTablet] = useState(window.innerWidth < 1100);
-  const [activeWorkspaceMode, setActiveWorkspaceMode] = useState('split'); // 'split', 'dicom', 'editor'
-  
+  const [isMobile, setIsMobile] = useState(window.innerWidth < 768);
+  const [activeMainTab, setActiveMainTab] = useState('REPORTING'); // 'DICOM', 'REPORTING', 'TIMELINE'
+
   // Performance optimization states
   const [loadingProgress, setLoadingProgress] = useState({ stage: '', current: 0, total: 0 });
   const [processingStatus, setProcessingStatus] = useState('');
-  
+
   // --- API SYNC STATES ---
   const [protocol, setProtocol] = useState(null);
   const [isSaving, setIsSaving] = useState(false);
@@ -78,7 +79,7 @@ const ReportingPage = () => {
   const [isHistoricalMode, setIsHistoricalMode] = useState(false);
   const [historicalStudyContext, setHistoricalStudyContext] = useState(null);
   const [originalAssets, setOriginalAssets] = useState([]);
-  
+
   // --- AUTOSAVE SYSTEM ---
   const [lastSaved, setLastSaved] = useState(null);
   const [saveStatus, setSaveStatus] = useState('IDLE'); // 'IDLE', 'DIRTY', 'SAVING', 'SUCCESS'
@@ -92,17 +93,17 @@ const ReportingPage = () => {
       const isIPad = /iPad|Macintosh/.test(navigator.userAgent) && 'ontouchstart' in document;
       const isTabletSize = (width >= 768 && width <= 1366) || (height >= 768 && height <= 1366);
       const isMobileSize = width < 768;
-      
+
       const tablet = (isTouchDevice && (isTabletSize || isIPad)) || isMobileSize;
       setIsTablet(tablet);
-      
+      setIsMobile(isMobileSize);
+
       console.log('[REPORTING] Device detection:', {
         width, height, isTouchDevice, isIPad, isTabletSize, tablet,
         userAgent: navigator.userAgent,
-        maxTouchPoints: navigator.maxTouchPoints,
-        activeWorkspaceMode
+        maxTouchPoints: navigator.maxTouchPoints
       });
-      
+
       // Force toolbar visibility on tablets
       if (tablet) {
         setTimeout(() => {
@@ -114,12 +115,8 @@ const ReportingPage = () => {
           }
         }, 100);
       }
-      
-      if (tablet && activeWorkspaceMode === 'split') {
-        setActiveWorkspaceMode('editor'); // Default to editor on tablet
-      }
     };
-    
+
     handleResize();
     window.addEventListener('resize', handleResize);
     window.addEventListener('orientationchange', handleResize);
@@ -127,12 +124,12 @@ const ReportingPage = () => {
       window.removeEventListener('resize', handleResize);
       window.removeEventListener('orientationchange', handleResize);
     };
-  }, [activeWorkspaceMode]);
+  }, []);
 
   // 1. LOCAL AUTOSAVE: Immediate persistence to nativeStorage/localStorage
   useEffect(() => {
     if (!appointmentId || isFinalized) return;
-    
+
     const draft = {
       appointmentId,
       templateId: selectedTemplateId,
@@ -241,35 +238,35 @@ const ReportingPage = () => {
       setLoadingTimeline(false);
     }
   }, []);
-  
+
   const handleLoadHistoricalDicom = async (study) => {
     const historicalId = study.appointmentId || study.AppointmentId || study.id || study.Id;
     if (historicalId === String(appointmentId)) return;
 
     setLoading(true);
     setProcessingStatus(`Synchronizing comparative study: ${study.modality || 'DICOM'}...`);
-    
+
     try {
       const assetRes = await apiClient.get(`/Study/${historicalId}/assets`);
       if (assetRes.data && assetRes.data.length > 0) {
         const hydAssets = assetRes.data.map((asset, index) => ({
-            id: asset.id,
-            name: asset.fileName || `Historical Asset ${index + 1}`,
-            type: (asset.fileType || 'unknown').toUpperCase(),
-            remoteUrl: asset.blobUrl,
-            needsHydration: (asset.fileType || '').toLowerCase() === 'zip',
-            rawFiles: [],
-            isHistorical: true
+          id: asset.id,
+          name: asset.fileName || `Historical Asset ${index + 1}`,
+          type: (asset.fileType || 'unknown').toUpperCase(),
+          remoteUrl: asset.blobUrl,
+          needsHydration: (asset.fileType || '').toLowerCase() === 'zip',
+          rawFiles: [],
+          isHistorical: true
         }));
-        
+
         setUploadedFiles(hydAssets);
         setIsHistoricalMode(true);
         setHistoricalStudyContext(study);
         setActiveAssetIndex(0);
-        
+
         // Switch to split mode if on tablet to ensure visibility
         if (isTablet) setActiveWorkspaceMode('split');
-        
+
         console.info(`[1RAD] Historical Context Injected: ${historicalId}`);
       } else {
         alert("No imaging assets found for this historical study.");
@@ -287,12 +284,12 @@ const ReportingPage = () => {
     setLoading(true);
     setProcessingStatus('Restoring active case context...');
     setTimeout(() => {
-        setUploadedFiles(originalAssets);
-        setIsHistoricalMode(false);
-        setHistoricalStudyContext(null);
-        setActiveAssetIndex(0);
-        setLoading(false);
-        setProcessingStatus('');
+      setUploadedFiles(originalAssets);
+      setIsHistoricalMode(false);
+      setHistoricalStudyContext(null);
+      setActiveAssetIndex(0);
+      setLoading(false);
+      setProcessingStatus('');
     }, 400);
   };
 
@@ -305,19 +302,19 @@ const ReportingPage = () => {
     try {
       // 1. Fetch Core Patient & Case Data first to resolve context
       const appRes = await apiClient.get(`/appointments/${appId}`).catch(() => ({ data: null }));
-      
+
       if (!appRes?.data) {
         setError("PATIENT_CONTEXT_NOT_FOUND: The requested appointment record could not be retrieved.");
         setLoading(false);
         return;
       }
-      
+
       const appointmentData = appRes.data;
       setActiveAppointment(appointmentData);
-      
+
       // TACTICAL RESOLUTION: Try appointment first, then Auth Token fallback
       let doctorId = appointmentData.doctorId || appointmentData.doctorUserId || appointmentData.doctor?.userId;
-      
+
       if (!doctorId) {
         console.warn("[1RAD] Doctor ID missing in Appointment. Attempting Auth Token fallback...");
         try {
@@ -352,18 +349,18 @@ const ReportingPage = () => {
         }));
         setKeywordLibrary(mapped);
       }
-      
+
       if (protRes?.data?.success) {
         console.info(`[1RAD] Branding Protocol Synchronized:`, protRes.data.data);
         setProtocol(protRes.data.data);
       } else {
         console.warn(`[1RAD] Institutional Branding failed for DoctorID: ${doctorId}. Reverting to default.`);
       }
-      
+
       if (assetRes.data && assetRes.data.length > 0) {
         console.info(`[1RAD] Found ${assetRes.data.length} existing study assets`);
         console.info(`[1RAD] Raw asset data:`, assetRes.data);
-        
+
         const hydAssets = assetRes.data.map((asset, index) => {
           // Validate asset data
           if (!asset.blobUrl) {
@@ -372,7 +369,7 @@ const ReportingPage = () => {
           if (!asset.fileName) {
             console.warn(`[1RAD] Asset ${index} missing fileName:`, asset);
           }
-          
+
           return {
             id: asset.id,
             name: asset.fileName || `Asset ${index + 1}`,
@@ -384,23 +381,23 @@ const ReportingPage = () => {
             originalAsset: asset
           };
         });
-        
+
         console.info(`[1RAD] Processed assets:`, hydAssets);
         setUploadedFiles(hydAssets);
         setOriginalAssets(hydAssets);
-        
+
         // Auto-hydrate first asset if it's a ZIP
         if (hydAssets.length > 0 && hydAssets[0].needsHydration) {
           console.info(`[1RAD] Auto-hydrating first asset: ${hydAssets[0].name}`);
           console.info(`[1RAD] Asset remoteUrl: ${hydAssets[0].remoteUrl}`);
-          
+
           // Validate URL before attempting hydration
           if (!hydAssets[0].remoteUrl) {
             console.error(`[1RAD] Cannot hydrate asset - missing remoteUrl`);
             alert('ASSET_ERROR: Study file URL is missing. Please contact support.');
             return;
           }
-          
+
           // Trigger hydration after React flushes the uploadedFiles state update
           setTimeout(() => {
             setActiveAssetIndex(0);
@@ -417,7 +414,7 @@ const ReportingPage = () => {
       setShowTimeline(true);
       fetchPatientTimeline(appointmentData, appId);
 
-      
+
       // 3. Resolve Report Data (Handle both nested and flat structures)
       const reportBody = reportRes.data;
       const r = (reportBody?.success && reportBody?.data) ? reportBody.data : reportBody;
@@ -427,7 +424,7 @@ const ReportingPage = () => {
 
         // 1. Restore Findings Content
         setEditorText(r.findings || '');
-        
+
         setImpression(r.impression || '');
         setAdvice(r.advice || '');
         setIsFinalized(r.isFinalized);
@@ -435,12 +432,12 @@ const ReportingPage = () => {
       } else {
         // FALLBACK: New Case. Attempt auto-matching template with service name.
         console.info(`[1RAD] New Case Detected. Searching for default protocol for service: ${appointmentData.service}`);
-        
+
         if (templRes.data?.success && appointmentData.service) {
-          const serviceMatch = templRes.data.data.find(t => 
+          const serviceMatch = templRes.data.data.find(t =>
             t.name?.toLowerCase().trim() === appointmentData.service.toLowerCase().trim()
           );
-          
+
           if (serviceMatch) {
             console.info(`[1RAD] Intelligent Match Found: ${serviceMatch.name}`);
             setSelectedTemplateId(String(serviceMatch.id));
@@ -455,7 +452,7 @@ const ReportingPage = () => {
       if (cachedAppointment) {
         setActiveAppointment(cachedAppointment);
       }
-      
+
       const draft = await nativeStorage.get(`1rad_draft_${appId}`);
       if (draft) {
         console.info('[1RAD] Reconstituting Workspace from Local Draft');
@@ -464,7 +461,7 @@ const ReportingPage = () => {
         setAdvice(draft.advice || '');
         setSelectedTemplateId(draft.selectedTemplateId);
       } else {
-         setError("SYSTEM_INITIALIZATION_ERROR: A critical failure occurred while preparing the diagnostic workspace. " + (err.message || "Please check your connection."));
+        setError("SYSTEM_INITIALIZATION_ERROR: A critical failure occurred while preparing the diagnostic workspace. " + (err.message || "Please check your connection."));
       }
     } finally {
       setLoading(false);
@@ -476,21 +473,21 @@ const ReportingPage = () => {
       fetchReportingContext(appointmentId);
     }
   }, [appointmentId, fetchReportingContext]);
-  
+
   // --- OFFLINE AUTOSAVE ---
   useEffect(() => {
     if (!appointmentId || isFinalized) return;
-    
+
     const autosaveTimer = setTimeout(async () => {
-       const draft = {
-         findings: editorText,
-         impression,
-         advice,
-         selectedTemplateId,
-         timestamp: new Date().getTime()
-       };
-       console.log(`[REPORTING] Autosaving draft for ${appointmentId}...`);
-       await nativeStorage.set(`1rad_draft_${appointmentId}`, draft);
+      const draft = {
+        findings: editorText,
+        impression,
+        advice,
+        selectedTemplateId,
+        timestamp: new Date().getTime()
+      };
+      console.log(`[REPORTING] Autosaving draft for ${appointmentId}...`);
+      await nativeStorage.set(`1rad_draft_${appointmentId}`, draft);
     }, 2000); // Debounce for 2 seconds
 
     return () => clearTimeout(autosaveTimer);
@@ -503,7 +500,7 @@ const ReportingPage = () => {
       alert('APPOINTMENT CONTEXT MISSING: Cannot save report.');
       return;
     }
-    
+
     const payload = {
       appointmentId: appointmentId,
       templateId: selectedTemplateId,
@@ -539,14 +536,14 @@ const ReportingPage = () => {
     } catch (err) {
       console.error('[REPORTING] Save failed', err);
       if (!err.response) {
-         await addToOutbox('REPORT', payload);
-         alert('NETWORK_ERROR: Report saved to offline outbox.');
-         if (finalizing) {
-            setIsFinalized(true);
-            navigate('/doctor-board');
-         }
+        await addToOutbox('REPORT', payload);
+        alert('NETWORK_ERROR: Report saved to offline outbox.');
+        if (finalizing) {
+          setIsFinalized(true);
+          navigate('/doctor-board');
+        }
       } else {
-         alert(`SAVE FAILURE: ${err.response?.data?.error || err.message}`);
+        alert(`SAVE FAILURE: ${err.response?.data?.error || err.message}`);
       }
     } finally {
       setIsSaving(false);
@@ -565,7 +562,7 @@ const ReportingPage = () => {
   const handleApplyKeyword = (macro) => {
     const textToInsert = macro.replacementText || '';
     insertContent(textToInsert);
-    
+
     // Also copy plain text version to clipboard for tactical versatility
     try {
       const plainText = textToInsert.replace(/<[^>]*>?/gm, '');
@@ -592,11 +589,11 @@ const ReportingPage = () => {
     if (!file) return;
 
     const isZip = file.name.toLowerCase().endsWith('.zip') || file.type === 'application/zip' || file.type === 'application/x-zip-compressed';
-    
+
     if (isZip) {
       setLoading(true);
       setProcessingStatus('Initializing optimized DICOM processor...');
-      
+
       try {
         // Use optimized processor for ZIP files
         const processingResult = await dicomOptimizer.processZipFileOptimized(
@@ -609,14 +606,14 @@ const ReportingPage = () => {
             console.log(`[REPORTING] New series discovered: ${seriesInfo.seriesDesc}`);
           }
         );
-        
+
         // Extract series array from result
         const classifiedAssets = processingResult?.series || [];
-        
+
         if (!Array.isArray(classifiedAssets) || classifiedAssets.length === 0) {
           throw new Error('NO_DICOM_SERIES: No valid DICOM image series found in the uploaded file');
         }
-        
+
         const assets = classifiedAssets.map(series => ({
           name: `${series.patientName} - ${series.seriesDesc}`,
           rawFiles: series.files,
@@ -624,10 +621,10 @@ const ReportingPage = () => {
           seriesUID: series.seriesUID,
           modality: series.modality
         }));
-        
+
         setUploadedFiles(assets);
         setIsDicomImage(true);
-        
+
         // Log processing statistics
         if (processingResult?.stats) {
           console.log(`[REPORTING] Processing statistics:`, processingResult.stats);
@@ -649,8 +646,8 @@ const ReportingPage = () => {
 
       // Try direct first
       try {
-        const headResponse = await fetch(asset.remoteUrl, { 
-          method: 'HEAD', 
+        const headResponse = await fetch(asset.remoteUrl, {
+          method: 'HEAD',
           mode: 'cors',
           cache: 'no-cache'
         });
@@ -681,7 +678,7 @@ const ReportingPage = () => {
           statusText: proxyError.response?.statusText,
           message: proxyError.message
         });
-        
+
         // If proxy returns 405, it means endpoint doesn't support this method
         // This is not a critical error - we can still try direct download
         if (proxyError.response?.status === 405) {
@@ -691,17 +688,17 @@ const ReportingPage = () => {
 
       // Return success=false but don't throw - let the main download logic handle it
       console.log(`[DICOM_TEST] Connection test inconclusive, will attempt direct download`);
-      return { 
-        success: false, 
+      return {
+        success: false,
         useProxy: false,
-        error: "Connection test failed, but direct download will be attempted" 
+        error: "Connection test failed, but direct download will be attempted"
       };
     } catch (error) {
       console.error(`[DICOM_TEST] Connection test error:`, error);
-      return { 
-        success: false, 
+      return {
+        success: false,
         useProxy: false,
-        error: error.message 
+        error: error.message
       };
     }
   };
@@ -712,7 +709,7 @@ const ReportingPage = () => {
 
     setLoading(true);
     setProcessingStatus('Initializing optimized DICOM processor...');
-    
+
     try {
       // TACTICAL CACHE CHECK
       console.log(`[DICOM_LOAD] Checking persistent cache for asset: ${asset.id}`);
@@ -723,11 +720,11 @@ const ReportingPage = () => {
         console.warn(`[DICOM_LOAD] Cache retrieval failed (non-critical):`, cacheError);
         cachedData = null;
       }
-      
+
       if (cachedData && cachedData.series?.length > 0) {
         console.log(`[DICOM_LOAD] Cache HIT for ${asset.id}. Restoring ${cachedData.series.length} series.`);
         setProcessingStatus('Restoring from cache...');
-        
+
         const hydratedFromCache = cachedData.series.map(s => ({
           ...asset,
           name: s.name,
@@ -830,7 +827,7 @@ const ReportingPage = () => {
       if (!blob || blob.size === 0) {
         throw new Error('EMPTY_FILE: The downloaded study file is empty (0 bytes).');
       }
-      
+
       // Use optimized processor with progress tracking and corruption detection
       let result;
       try {
@@ -848,11 +845,11 @@ const ReportingPage = () => {
             console.log(`[DICOM_LOAD] New series discovered: ${seriesInfo.seriesDesc}`);
           }
         );
-        
+
         if (!result || !result.series) {
           throw new Error('PROCESSING_FAILED: DICOM processor returned invalid result.');
         }
-        
+
       } catch (processingError) {
         console.error(`[DICOM_LOAD] Processing error:`, processingError);
         throw new Error(`DICOM_PROCESSING_ERROR: Failed to process study files. ${processingError.message}`);
@@ -863,12 +860,12 @@ const ReportingPage = () => {
 
       // Log statistics
       console.log(`[DICOM_LOAD] Processing statistics:`, stats);
-      
+
       // Show warning if corrupted files were found
       if (stats.corruptedFiles > 0) {
         console.warn(`[DICOM_LOAD] ⚠️ Eliminated ${stats.corruptedFiles} corrupted files from study`);
         setProcessingStatus(`✅ Loaded ${stats.validFiles} valid files (eliminated ${stats.corruptedFiles} corrupted)`);
-        
+
         // Show user notification
         setTimeout(() => {
           if (stats.corruptedFiles > 0) {
@@ -928,10 +925,10 @@ const ReportingPage = () => {
     } catch (err) {
       console.error('[DICOM_LOAD] Optimized hydration failure', err);
       setProcessingStatus(`Error: ${err.message}`);
-      
+
       // Provide user-friendly error messages based on error type
       let userMessage = 'DIAGNOSTIC SIGNAL FAILURE: ';
-      
+
       if (err.message.includes('CORS_ERROR')) {
         userMessage += 'Server configuration issue detected. The DICOM storage server needs to allow cross-origin requests. Please contact your system administrator to configure CORS settings for the Azure Blob Storage.';
       } else if (err.message.includes('NETWORK_ERROR') || err.message.includes('Failed to fetch')) {
@@ -947,7 +944,7 @@ const ReportingPage = () => {
       } else {
         userMessage += err.message;
       }
-      
+
       // Show detailed error in console for debugging
       console.error('[DICOM_LOAD] Full error details:', {
         message: err.message,
@@ -958,7 +955,7 @@ const ReportingPage = () => {
           remoteUrl: asset?.remoteUrl
         }
       });
-      
+
       // Enhanced error display with actionable guidance
       const errorDetails = {
         title: 'DIAGNOSTIC SIGNAL FAILURE',
@@ -966,7 +963,7 @@ const ReportingPage = () => {
         technicalDetails: err.message,
         suggestions: []
       };
-      
+
       if (err.message.includes('CORS_ERROR')) {
         errorDetails.suggestions = [
           '1. Contact your system administrator to configure CORS settings',
@@ -980,13 +977,13 @@ const ReportingPage = () => {
           '3. Contact IT support if the problem persists'
         ];
       }
-      
+
       // Display comprehensive error information
       const errorMessage = `${errorDetails.title}\n\n${errorDetails.message}\n\n` +
-        (errorDetails.suggestions.length > 0 ? 
+        (errorDetails.suggestions.length > 0 ?
           `Suggested Actions:\n${errorDetails.suggestions.join('\n')}\n\n` : '') +
         `Technical Details: ${errorDetails.technicalDetails}`;
-      
+
       alert(errorMessage);
     } finally {
       setLoading(false);
@@ -1007,17 +1004,17 @@ const ReportingPage = () => {
 
   const insertContent = (content) => {
     if (!editorRef.current) return;
-    
+
     let htmlContent = content;
     // Check if content is a Markdown-style table and convert to real HTML
     if (content.trim().startsWith('|')) {
       const rows = content.trim().split('\n').filter(r => !r.includes('---') && r.trim() !== '');
-      htmlContent = `<table style="width:100%; border-collapse: collapse; margin: 15px 0; border: 1px solid #e2e8f0;">` + 
+      htmlContent = `<table style="width:100%; border-collapse: collapse; margin: 15px 0; border: 1px solid #e2e8f0;">` +
         rows.map((row, i) => {
           const cells = row.split('|').filter(c => c.trim() !== '' || row.indexOf('|') !== row.lastIndexOf('|'));
           const tag = i === 0 ? 'th' : 'td';
           return `<tr>${cells.map(c => `<${tag} style="border: 1px solid #e2e8f0; padding: 10px; background: ${i === 0 ? '#f8fafc' : '#fff'}; text-align: left;">${c.trim() || '&nbsp;'}</${tag}>`).join('')}</tr>`;
-        }).join('') + 
+        }).join('') +
         `</table><p>&nbsp;</p>`;
     } else {
       // Ensure we don't double wrap if it's already HTML, but convert newlines for simple text
@@ -1113,12 +1110,12 @@ const ReportingPage = () => {
 
   // --- DICOM VIEWER KEYBOARD SHORTCUTS ---
   const [showShortcutsHelp, setShowShortcutsHelp] = useState(false);
-  
+
   useEffect(() => {
     const handleDicomShortcuts = (e) => {
       // Only activate shortcuts when DICOM viewer is active
       if (!isDicomImage) return;
-      
+
       // Ignore shortcuts when typing in input fields
       if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA' || e.target.isContentEditable) {
         return;
@@ -1131,7 +1128,7 @@ const ReportingPage = () => {
       }
 
       // Tool Selection Shortcuts
-      switch(e.key.toLowerCase()) {
+      switch (e.key.toLowerCase()) {
         // Navigation & Manipulation
         case 'w':
           setActiveTool('WindowLevelTool');
@@ -1304,19 +1301,19 @@ const ReportingPage = () => {
   // Keyboard shortcuts help modal
   const renderShortcutsHelp = () => {
     if (!showShortcutsHelp) return null;
-    
+
     return (
       <div className="overlay" style={{ zIndex: 10002, background: 'rgba(15, 23, 42, 0.95)' }} onClick={() => setShowShortcutsHelp(false)}>
-        <div className="modal" style={{ 
-          width: '800px', 
-          maxHeight: '85vh', 
+        <div className="modal" style={{
+          width: '800px',
+          maxHeight: '85vh',
           overflow: 'auto',
           background: 'linear-gradient(135deg, #0f172a, #1e293b)',
           border: '2px solid rgba(59, 130, 246, 0.3)',
           boxShadow: '0 25px 50px rgba(0, 0, 0, 0.5)'
         }} onClick={e => e.stopPropagation()}>
-          <div className="modal-header" style={{ 
-            background: 'linear-gradient(135deg, #3b82f6, #8b5cf6)', 
+          <div className="modal-header" style={{
+            background: 'linear-gradient(135deg, #3b82f6, #8b5cf6)',
             color: 'white',
             padding: '20px 25px'
           }}>
@@ -1324,12 +1321,12 @@ const ReportingPage = () => {
               <span style={{ fontSize: '24px' }}>⚡</span>
               <span style={{ fontSize: '16px', fontWeight: 900, letterSpacing: '1px' }}>DICOM VIEWER KEYBOARD SHORTCUTS</span>
             </div>
-            <button 
-              className="tool-btn" 
+            <button
+              className="tool-btn"
               onClick={() => setShowShortcutsHelp(false)}
-              style={{ 
-                background: 'rgba(255,255,255,0.2)', 
-                color: 'white', 
+              style={{
+                background: 'rgba(255,255,255,0.2)',
+                color: 'white',
                 border: '1px solid rgba(255,255,255,0.3)',
                 borderRadius: '6px',
                 width: '32px',
@@ -1345,89 +1342,89 @@ const ReportingPage = () => {
                 </h4>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                    <kbd style={{ minWidth: '24px' }}>W</kbd> 
+                    <kbd style={{ minWidth: '24px' }}>W</kbd>
                     <span>Window/Level Tool</span>
                   </div>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                    <kbd style={{ minWidth: '24px' }}>Z</kbd> 
+                    <kbd style={{ minWidth: '24px' }}>Z</kbd>
                     <span>Zoom Tool</span>
                   </div>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                    <kbd style={{ minWidth: '24px' }}>P</kbd> 
+                    <kbd style={{ minWidth: '24px' }}>P</kbd>
                     <span>Pan Tool</span>
                   </div>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                    <kbd style={{ minWidth: '24px' }}>S</kbd> 
+                    <kbd style={{ minWidth: '24px' }}>S</kbd>
                     <span>Stack Scroll</span>
                   </div>
                 </div>
               </div>
-              
+
               <div>
                 <h4 style={{ color: '#10b981', marginBottom: '12px', fontSize: '14px', display: 'flex', alignItems: 'center', gap: '8px' }}>
                   <span>📏</span> Measurements
                 </h4>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                    <kbd style={{ minWidth: '24px' }}>L</kbd> 
+                    <kbd style={{ minWidth: '24px' }}>L</kbd>
                     <span>Length Tool</span>
                   </div>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                    <kbd style={{ minWidth: '24px' }}>H</kbd> 
+                    <kbd style={{ minWidth: '24px' }}>H</kbd>
                     <span>Height Tool</span>
                   </div>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                    <kbd style={{ minWidth: '24px' }}>B</kbd> 
+                    <kbd style={{ minWidth: '24px' }}>B</kbd>
                     <span>Bidirectional (RECIST)</span>
                   </div>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                    <kbd style={{ minWidth: '24px' }}>A</kbd> 
+                    <kbd style={{ minWidth: '24px' }}>A</kbd>
                     <span>Angle Tool</span>
                   </div>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                    <kbd style={{ minWidth: '24px' }}>C</kbd> 
+                    <kbd style={{ minWidth: '24px' }}>C</kbd>
                     <span>Cobb Angle</span>
                   </div>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                    <kbd style={{ minWidth: '24px' }}>U</kbd> 
+                    <kbd style={{ minWidth: '24px' }}>U</kbd>
                     <span>HU Probe</span>
                   </div>
                 </div>
               </div>
-              
+
               <div>
                 <h4 style={{ color: '#f59e0b', marginBottom: '12px', fontSize: '14px', display: 'flex', alignItems: 'center', gap: '8px' }}>
                   <span>🎯</span> ROI Analysis
                 </h4>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                    <kbd style={{ minWidth: '24px' }}>E</kbd> 
+                    <kbd style={{ minWidth: '24px' }}>E</kbd>
                     <span>Elliptical ROI</span>
                   </div>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                    <kbd style={{ minWidth: '24px' }}>R</kbd> 
+                    <kbd style={{ minWidth: '24px' }}>R</kbd>
                     <span>Rectangle ROI</span>
                   </div>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                    <kbd style={{ minWidth: '24px' }}>O</kbd> 
+                    <kbd style={{ minWidth: '24px' }}>O</kbd>
                     <span>Circle ROI</span>
                   </div>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                    <kbd style={{ minWidth: '24px' }}>F</kbd> 
+                    <kbd style={{ minWidth: '24px' }}>F</kbd>
                     <span>Freehand ROI</span>
                   </div>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                    <kbd style={{ minWidth: '24px' }}>N</kbd> 
+                    <kbd style={{ minWidth: '24px' }}>N</kbd>
                     <span>Arrow Annotation</span>
                   </div>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                    <kbd style={{ minWidth: '24px' }}>M</kbd> 
+                    <kbd style={{ minWidth: '24px' }}>M</kbd>
                     <span>Magnifier</span>
                   </div>
                 </div>
               </div>
             </div>
-            
+
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '25px', marginTop: '25px', fontSize: '12px' }}>
               <div>
                 <h4 style={{ color: '#8b5cf6', marginBottom: '12px', fontSize: '14px', display: 'flex', alignItems: 'center', gap: '8px' }}>
@@ -1435,62 +1432,62 @@ const ReportingPage = () => {
                 </h4>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                    <kbd style={{ minWidth: '24px' }}>I</kbd> 
+                    <kbd style={{ minWidth: '24px' }}>I</kbd>
                     <span>Invert Colors</span>
                   </div>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                    <kbd style={{ minWidth: '24px' }}>X</kbd> 
+                    <kbd style={{ minWidth: '24px' }}>X</kbd>
                     <span>Flip Horizontal</span>
                   </div>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                    <kbd style={{ minWidth: '24px' }}>Y</kbd> 
+                    <kbd style={{ minWidth: '24px' }}>Y</kbd>
                     <span>Flip Vertical</span>
                   </div>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                    <kbd style={{ minWidth: '24px' }}>T</kbd> 
+                    <kbd style={{ minWidth: '24px' }}>T</kbd>
                     <span>Rotate 90°</span>
                   </div>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                    <kbd style={{ minWidth: '24px' }}>ESC</kbd> 
+                    <kbd style={{ minWidth: '24px' }}>ESC</kbd>
                     <span>Reset View</span>
                   </div>
                 </div>
               </div>
-              
+
               <div>
                 <h4 style={{ color: '#ef4444', marginBottom: '12px', fontSize: '14px', display: 'flex', alignItems: 'center', gap: '8px' }}>
                   <span>⚡</span> Quick Actions
                 </h4>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                    <kbd style={{ minWidth: '24px' }}>Space</kbd> 
+                    <kbd style={{ minWidth: '24px' }}>Space</kbd>
                     <span>Toggle Cine</span>
                   </div>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                    <kbd style={{ minWidth: '24px' }}>K</kbd> 
+                    <kbd style={{ minWidth: '24px' }}>K</kbd>
                     <span>Key Image</span>
                   </div>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                    <kbd style={{ minWidth: '24px' }}>V</kbd> 
+                    <kbd style={{ minWidth: '24px' }}>V</kbd>
                     <span>Toggle Sync</span>
                   </div>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                    <kbd style={{ minWidth: '24px' }}>↑↓</kbd> 
+                    <kbd style={{ minWidth: '24px' }}>↑↓</kbd>
                     <span>Series Navigation</span>
                   </div>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                    <kbd style={{ minWidth: '24px' }}>?</kbd> 
+                    <kbd style={{ minWidth: '24px' }}>?</kbd>
                     <span>Toggle Help</span>
                   </div>
                 </div>
               </div>
             </div>
-            
-            <div style={{ 
-              marginTop: '25px', 
-              padding: '20px', 
-              background: 'linear-gradient(135deg, rgba(59, 130, 246, 0.1), rgba(139, 92, 246, 0.1))', 
-              borderRadius: '12px', 
+
+            <div style={{
+              marginTop: '25px',
+              padding: '20px',
+              background: 'linear-gradient(135deg, rgba(59, 130, 246, 0.1), rgba(139, 92, 246, 0.1))',
+              borderRadius: '12px',
               border: '2px solid rgba(59, 130, 246, 0.2)',
               textAlign: 'center'
             }}>
@@ -1498,7 +1495,7 @@ const ReportingPage = () => {
                 <span>🎯</span> PRO TIP
               </div>
               <div style={{ fontSize: '13px', color: '#64748b', lineHeight: '1.6' }}>
-                <strong>All advanced measurement and ROI tools are accessible via keyboard shortcuts</strong> while the DICOM viewer is active. 
+                <strong>All advanced measurement and ROI tools are accessible via keyboard shortcuts</strong> while the DICOM viewer is active.
                 The toolbar shows only essential tools to keep the interface clean and maximize viewing space for optimal diagnosis.
               </div>
               <div style={{ fontSize: '12px', color: '#94a3b8', marginTop: '8px', fontStyle: 'italic' }}>
@@ -1554,8 +1551,8 @@ const ReportingPage = () => {
       const rect = img.getBoundingClientRect();
       const parentRect = editorRef.current.container.getBoundingClientRect();
       setSelectedImg(id);
-      setImgToolbarPos({ 
-        top: rect.top - parentRect.top - 40, 
+      setImgToolbarPos({
+        top: rect.top - parentRect.top - 40,
         left: rect.left - parentRect.left + (rect.width / 2) - 80
       });
     };
@@ -1591,10 +1588,10 @@ const ReportingPage = () => {
 
   const syncFromStructured = () => {
     // Mock sync logic: takes structured data and generates a clean summary
-    const syncText = "SYNALYSIS REPORT:\n" + 
-      "Clinical: Pain abdomen, fever.\n" + 
-      "Liver: Normal size and echotexture.\n" + 
-      "Kidneys: Right measures 10.2 cm. Left measures 9.8 cm.\n" + 
+    const syncText = "SYNALYSIS REPORT:\n" +
+      "Clinical: Pain abdomen, fever.\n" +
+      "Liver: Normal size and echotexture.\n" +
+      "Kidneys: Right measures 10.2 cm. Left measures 9.8 cm.\n" +
       "Impression: Normal study.";
     setEditorText(syncText);
   };
@@ -1625,8 +1622,8 @@ const ReportingPage = () => {
         <div style={{ fontSize: '64px', animation: 'pulse 2s infinite' }}>⚠️</div>
         <h2 style={{ fontWeight: 900, letterSpacing: '4px', color: '#3b82f6' }}>SIGNAL_INTERRUPTED</h2>
         <p style={{ color: '#94a3b8', maxWidth: '500px', lineHeight: '1.6', fontSize: '14px', fontWeight: 600 }}>{error}</p>
-        <button 
-          className="btn btn-primary" 
+        <button
+          className="btn btn-primary"
           style={{ padding: '12px 30px', borderRadius: '12px', background: '#3b82f6', border: 'none', color: 'white', fontWeight: 800, cursor: 'pointer', marginTop: '20px' }}
           onClick={() => navigate('/doctor-board')}
         >
@@ -1814,8 +1811,8 @@ const ReportingPage = () => {
           .main-layout { flex-direction: column; }
           .panel-center { 
             width: 100% !important; 
-            height: ${activeWorkspaceMode === 'editor' ? '0' : '65vh'}; 
-            display: ${activeWorkspaceMode === 'editor' ? 'none' : 'flex'}; 
+            height: 65vh; 
+            display: flex; 
             flex-direction: row; /* Keep row to show toolbar */
           }
           
@@ -1833,8 +1830,8 @@ const ReportingPage = () => {
           
           .panel-right {
             width: 100% !important;
-            height: ${activeWorkspaceMode === 'dicom' ? '0' : 'auto'};
-            display: ${activeWorkspaceMode === 'dicom' ? 'none' : 'flex'};
+            height: auto;
+            display: flex;
             border-left: none;
             padding: 0;
           }
@@ -1913,9 +1910,9 @@ const ReportingPage = () => {
         /* iPhone and small tablet portrait - Hide toolbar only on small screens */
         @media (max-width: 768px) {
           .main-layout { flex-direction: column; }
-          .panel-center { width: 100% !important; height: 50vh; display: ${activeWorkspaceMode === 'editor' ? 'none' : 'flex'}; flex-direction: column; }
+          .panel-center { width: 100% !important; height: 50vh; display: flex; flex-direction: column; }
           .panel-center > div:first-child { display: none !important; } /* Hide left toolbar only on small mobile */
-          .panel-right { width: 100% !important; height: ${activeWorkspaceMode === 'dicom' ? '0' : 'auto'}; display: ${activeWorkspaceMode === 'dicom' ? 'none' : 'flex'}; border-left: none; padding: 0; overflow: hidden; }
+          .panel-right { width: 100% !important; height: auto; display: flex; border-left: none; padding: 0; overflow: hidden; }
           .resizer-handle { display: none; }
         }
 
@@ -2430,1324 +2427,1210 @@ const ReportingPage = () => {
           </div>
         </div>
         <div className="header-right" style={{ display: 'flex', alignItems: 'center', gap: '20px' }}>
-          {/* COMPACT TIMELINE LINK */}
-          <div style={{ display: 'flex', background: '#f1f5f9', padding: '3px', borderRadius: '10px', border: '1px solid #e2e8f0' }}>
-            <button
-              onClick={() => navigate(`/patient-timeline/${appointmentId}`, { state: { patient: activeAppointment, returnPath: `/reporting/${appointmentId}` } })}
-              style={{
-                padding: '6px 15px', borderRadius: '7px', border: 'none',
-                background: '#0f52ba',
-                color: 'white',
-                fontWeight: 900, fontSize: '10px', cursor: 'pointer',
-                transition: 'all 0.2s cubic-bezier(0.4, 0, 0.2, 1)',
-                display: 'flex', alignItems: 'center', gap: '5px'
-              }}
-            >
-              🕒 PATIENT_HISTORY
-              {patientHistory.length > 0 && (
-                <span style={{ background: '#ef4444', color: 'white', borderRadius: '99px', fontSize: '8px', fontWeight: 950, padding: '1px 5px', lineHeight: 1.4, minWidth: '16px', textAlign: 'center' }}>
-                  {patientHistory.length}
-                </span>
-              )}
-              {loadingTimeline && (
-                <span style={{ display: 'inline-block', width: '8px', height: '8px', border: '1.5px solid rgba(255,255,255,0.3)', borderTopColor: 'white', borderRadius: '50%', animation: 'spin 0.8s linear infinite' }} />
-              )}
-            </button>
+          {/* COMPACT ACTIONS */}
+          <div style={{ display: 'flex', gap: '10px' }}>
+            {/* ... Reserved for future header actions ... */}
           </div>
 
-          <div style={{ 
-            display: 'flex', gap: '2px', background: 'rgba(15, 82, 186, 0.05)', 
-            padding: '4px', borderRadius: '12px', border: '1px solid rgba(15, 82, 186, 0.1)'
+          <div style={{
+            display: 'flex', gap: '8px', background: 'rgba(15, 82, 186, 0.05)',
+            padding: '5px', borderRadius: '16px', border: '1px solid rgba(15, 82, 186, 0.1)'
           }}>
-            {isTablet ? (
-               <div style={{ display: 'flex', gap: '5px' }}>
-                  <button 
-                    onClick={() => setActiveWorkspaceMode('dicom')}
-                    style={{ 
-                      background: activeWorkspaceMode === 'dicom' ? '#0f52ba' : 'transparent',
-                      border: 'none', padding: '8px 15px', borderRadius: '8px', color: activeWorkspaceMode === 'dicom' ? 'white' : '#64748b',
-                      fontSize: '11px', fontWeight: 900
-                    }}
-                  >VIEWER</button>
-                  <button 
-                    onClick={() => setActiveWorkspaceMode('editor')}
-                    style={{ 
-                      background: activeWorkspaceMode === 'editor' ? '#0f52ba' : 'transparent',
-                      border: 'none', padding: '8px 15px', borderRadius: '8px', color: activeWorkspaceMode === 'editor' ? 'white' : '#64748b',
-                      fontSize: '11px', fontWeight: 900
-                    }}
-                  >EDITOR</button>
-               </div>
-            ) : (
-              [
-                { state: 'collapsed', icon: '\u{21E4}', label: 'Diag' },
-                { state: 'standard', icon: '\u{2139}', label: 'Split' },
-                { state: 'expanded', icon: '\u{21E5}', label: 'Edit' }
-              ].map(mode => (
-                <button 
-                  key={mode.state}
-                  onClick={() => setEditorState(mode.state)}
-                  style={{ 
-                    background: editorState === mode.state ? '#0f52ba' : 'transparent',
-                    border: 'none', padding: '6px 12px', borderRadius: '8px', cursor: 'pointer',
-                    color: editorState === mode.state ? 'white' : '#64748b',
-                    fontSize: '9px', fontWeight: 900, display: 'flex', alignItems: 'center', gap: '4px',
-                    transition: 'all 0.3s'
-                  }}
-                >
-                  <span style={{ fontSize: '12px' }}>{mode.icon}</span>
-                  {editorState === mode.state && <span>{mode.label.toUpperCase()}</span>}
-                </button>
-              ))
-            )}
+            {[
+              { id: 'DICOM', label: 'DICOM_VIEWER', icon: '🔍' },
+              { id: 'REPORTING', label: 'REPORTING', icon: '📝' },
+              { id: 'TIMELINE', label: 'TIMELINE', icon: '🕒' }
+            ].map(tab => (
+              <button
+                key={tab.id}
+                onClick={() => setActiveMainTab(tab.id)}
+                style={{
+                  background: activeMainTab === tab.id ? 'linear-gradient(135deg, #0f52ba 0%, #1e3a8a 100%)' : 'transparent',
+                  border: 'none', padding: '8px 18px', borderRadius: '12px', cursor: 'pointer',
+                  color: activeMainTab === tab.id ? 'white' : '#64748b',
+                  fontSize: '10px', fontWeight: 950, display: 'flex', alignItems: 'center', gap: '8px',
+                  transition: 'all 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275)',
+                  boxShadow: activeMainTab === tab.id ? '0 4px 12px rgba(15, 82, 186, 0.2)' : 'none'
+                }}
+              >
+                <span style={{ fontSize: '14px' }}>{tab.icon}</span>
+                {!isMobile && <span>{tab.label}</span>}
+              </button>
+            ))}
           </div>
         </div>
       </header>
 
       {/* --- MAIN LAYOUT --- */}
-      <div className="main-layout">
-        
-        {/* LEFT PANEL removed for cleaner workspace */}
+      <div className="main-layout" style={{ flex: 1, display: 'flex', minHeight: 0, overflow: 'hidden' }}>
 
-        {/* CENTER PANEL: DICOM Viewer */}
-        <div className="panel panel-center" style={{ display: 'flex' }}>
-          {/* LEFT TOOLBAR - Tablet Optimized */}
-          <div 
-            id="dicom-toolbar"
-            style={{
-              width: isTablet ? (window.innerWidth > 1024 ? '320px' : '280px') : '200px',
-              background: 'linear-gradient(180deg, #0f172a 0%, #1e293b 100%)',
-              borderRight: '2px solid #334155',
-              display: 'flex',
-              flexDirection: 'column',
-              overflow: 'hidden',
-              boxShadow: isTablet ? '4px 0 20px rgba(0,0,0,0.3)' : 'none',
-              position: 'relative',
-              zIndex: 10,
-              transition: 'transform 0.3s ease',
-              transform: 'translateX(0)' // Default to visible on tablets
-            }}>
-
-            {/* Tablet Toolbar Toggle - Show on tablets only */}
-            {isTablet && (
-              <button
-                onClick={() => {
-                  const toolbar = document.getElementById('dicom-toolbar');
-                  if (toolbar.style.transform === 'translateX(-100%)') {
-                    toolbar.style.transform = 'translateX(0)';
-                  } else {
-                    toolbar.style.transform = 'translateX(-100%)';
-                  }
-                }}
-                style={{
-                  position: 'absolute',
-                  right: '-40px',
-                  top: '50%',
-                  transform: 'translateY(-50%)',
-                  background: 'linear-gradient(135deg, #3b82f6, #8b5cf6)',
-                  border: 'none',
-                  color: 'white',
-                  width: '40px',
-                  height: '80px',
-                  borderRadius: '0 8px 8px 0',
-                  cursor: 'pointer',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  fontSize: '16px',
-                  zIndex: 20,
-                  boxShadow: '2px 0 10px rgba(0,0,0,0.3)',
-                  touchAction: 'manipulation'
-                }}
-              >
-                🛠️
-              </button>
-            )}
-            {/* Toolbar Header */}
-            <div style={{
-              padding: isTablet ? '25px 20px' : '15px',
-              borderBottom: '2px solid #334155',
-              background: 'linear-gradient(135deg, #3b82f6, #8b5cf6)',
-              position: 'relative'
-            }}>
-              <div style={{
-                color: 'white',
-                fontSize: isTablet ? '16px' : '12px',
-                fontWeight: 900,
-                letterSpacing: '1px',
+        {/* DICOM TAB */}
+        {activeMainTab === 'DICOM' && (
+          <div className="panel panel-center" style={{ display: 'flex', flex: 1 }}>
+            {/* LEFT TOOLBAR - Tablet Optimized */}
+            <div
+              id="dicom-toolbar"
+              style={{
+                width: isTablet ? (window.innerWidth > 1024 ? '320px' : '280px') : '200px',
+                background: 'linear-gradient(180deg, #0f172a 0%, #1e293b 100%)',
+                borderRight: '2px solid #334155',
                 display: 'flex',
-                alignItems: 'center',
-                gap: '10px'
+                flexDirection: 'column',
+                overflow: 'hidden',
+                boxShadow: isTablet ? '4px 0 20px rgba(0,0,0,0.3)' : 'none',
+                position: 'relative',
+                zIndex: 10,
+                transition: 'transform 0.3s ease',
+                transform: 'translateX(0)' // Default to visible on tablets
               }}>
-                <span style={{ fontSize: isTablet ? '24px' : '16px' }}>🛠️</span>
-                DICOM TOOLS
-              </div>
+
+              {/* Tablet Toolbar Toggle - Show on tablets only */}
               {isTablet && (
-                <div style={{
-                  color: 'rgba(255,255,255,0.8)',
-                  fontSize: '11px',
-                  marginTop: '6px',
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '6px'
-                }}>
-                  <span>📱</span> Touch optimized interface
-                </div>
-              )}
-            </div>
-
-            {/* Quick Actions - Tablet Only */}
-            {isTablet && (
-              <div style={{ padding: '20px', borderBottom: '1px solid #334155', background: 'rgba(59, 130, 246, 0.1)' }}>
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
-                  <button
-                    onClick={() => {
-                      setActiveTool('WindowLevelTool');
-                      setResetTrigger(prev => prev + 1);
-                    }}
-                    style={{
-                      background: 'linear-gradient(135deg, #10b981, #059669)',
-                      border: 'none',
-                      color: 'white',
-                      padding: '12px',
-                      borderRadius: '8px',
-                      fontSize: '12px',
-                      fontWeight: 900,
-                      cursor: 'pointer',
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: '8px',
-                      touchAction: 'manipulation',
-                      boxShadow: '0 4px 12px rgba(16, 185, 129, 0.3)'
-                    }}
-                  >
-                    <span style={{ fontSize: '16px' }}>🔄</span>
-                    RESET VIEW
-                  </button>
-                  <button
-                    onClick={() => {
-                      alert('Touch Gestures:\n\n🤏 Pinch to zoom in/out\n👆 Single finger to pan\n👆👆 Double tap to reset\n🖱️ Use toolbar for measurements\n\nKeyboard shortcuts available when connected to external keyboard.');
-                    }}
-                    style={{
-                      background: 'linear-gradient(135deg, #8b5cf6, #7c3aed)',
-                      border: 'none',
-                      color: 'white',
-                      padding: '12px',
-                      borderRadius: '8px',
-                      fontSize: '12px',
-                      fontWeight: 900,
-                      cursor: 'pointer',
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: '8px',
-                      touchAction: 'manipulation',
-                      boxShadow: '0 4px 12px rgba(139, 92, 246, 0.3)'
-                    }}
-                  >
-                    <span style={{ fontSize: '16px' }}>❓</span>
-                    HELP
-                  </button>
-                </div>
-              </div>
-            )}
-
-            {/* Essential Tools */}
-            {/* Navigation Tools */}
-            <div style={{ padding: isTablet ? '25px 20px' : '15px', borderBottom: '1px solid #334155' }}>
-              <div style={{ 
-                color: '#3b82f6', 
-                fontSize: isTablet ? '14px' : '10px', 
-                fontWeight: 900, 
-                marginBottom: isTablet ? '20px' : '10px',
-                letterSpacing: '1px',
-                display: 'flex',
-                alignItems: 'center',
-                gap: '8px'
-              }}>
-                <span style={{ fontSize: isTablet ? '18px' : '14px' }}>🎮</span>
-                NAVIGATION
-              </div>
-              <div style={{ 
-                display: 'grid', 
-                gridTemplateColumns: isTablet ? '1fr 1fr' : '1fr 1fr 1fr', 
-                gap: isTablet ? '12px' : '4px' 
-              }}>
-                {[
-                  { id: 'WindowLevelTool', icon: '☀️', label: 'Window/Level', shortcut: 'W', desc: 'Adjust brightness & contrast' },
-                  { id: 'ZoomTool', icon: '🔍', label: 'Zoom', shortcut: 'Z', desc: 'Magnify image' },
-                  { id: 'PanTool', icon: '✋', label: 'Pan', shortcut: 'P', desc: 'Move image around' },
-                  { id: 'StackScrollTool', icon: '📜', label: 'Scroll', shortcut: 'S', desc: 'Navigate slices' }
-                ].map(t => (
-                  <button 
-                    key={t.id}
-                    onClick={() => setActiveTool(t.id)}
-                    style={{ 
-                      background: activeTool === t.id 
-                        ? 'linear-gradient(135deg, #3b82f6, #2563eb)' 
-                        : 'rgba(255,255,255,0.05)', 
-                      border: activeTool === t.id ? '3px solid #60a5fa' : '3px solid transparent',
-                      color: activeTool === t.id ? 'white' : '#e2e8f0',
-                      padding: isTablet ? '16px 12px' : '6px 4px',
-                      borderRadius: '10px',
-                      fontSize: isTablet ? '11px' : '8px',
-                      fontWeight: 900,
-                      cursor: 'pointer',
-                      display: 'flex',
-                      flexDirection: 'column',
-                      alignItems: 'center',
-                      gap: isTablet ? '8px' : '3px',
-                      transition: 'all 0.3s ease',
-                      width: '100%',
-                      textAlign: 'center',
-                      minHeight: isTablet ? '80px' : '45px',
-                      touchAction: 'manipulation',
-                      boxShadow: activeTool === t.id 
-                        ? '0 6px 20px rgba(59, 130, 246, 0.4)' 
-                        : '0 2px 8px rgba(0,0,0,0.1)',
-                      transform: activeTool === t.id ? 'translateY(-2px)' : 'none'
-                    }}
-                    title={isTablet ? t.desc : undefined}
-                  >
-                    <span style={{ fontSize: isTablet ? '20px' : '12px' }}>{t.icon}</span> 
-                    <span style={{ fontSize: isTablet ? '10px' : '7px', lineHeight: '1.2', textAlign: 'center' }}>
-                      {t.label}
-                    </span>
-                    <span style={{ 
-                      fontSize: isTablet ? '9px' : '6px', 
-                      background: 'rgba(255,255,255,0.2)', 
-                      padding: isTablet ? '3px 6px' : '1px 2px', 
-                      borderRadius: '4px',
-                      letterSpacing: '0.5px'
-                    }}>{t.shortcut}</span>
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            {/* Measurement Tools */}
-            <div style={{ padding: isTablet ? '25px 20px' : '15px', borderBottom: '1px solid #334155' }}>
-              <div style={{ 
-                color: '#10b981', 
-                fontSize: isTablet ? '14px' : '10px', 
-                fontWeight: 900, 
-                marginBottom: isTablet ? '20px' : '10px',
-                letterSpacing: '1px',
-                display: 'flex',
-                alignItems: 'center',
-                gap: '8px'
-              }}>
-                <span style={{ fontSize: isTablet ? '18px' : '14px' }}>📏</span>
-                MEASUREMENTS
-              </div>
-              <div style={{ 
-                display: 'grid', 
-                gridTemplateColumns: isTablet ? '1fr 1fr' : '1fr 1fr 1fr', 
-                gap: isTablet ? '12px' : '4px' 
-              }}>
-                {[
-                  { id: 'LengthTool', icon: '📏', label: 'Length', shortcut: 'L', desc: 'Measure distance' },
-                  { id: 'HeightTool', icon: '📐', label: 'Height', shortcut: 'H', desc: 'Measure height' },
-                  { id: 'BidirectionalTool', icon: '↔️', label: 'Bidirectional', shortcut: 'B', desc: 'RECIST measurement' },
-                  { id: 'AngleTool', icon: '∠', label: 'Angle', shortcut: 'A', desc: 'Measure angles' },
-                  { id: 'CobbAngleTool', icon: '🦴', label: 'Cobb Angle', shortcut: 'C', desc: 'Spine curvature' },
-                  { id: 'CircleROITool', icon: '🔵', label: 'Circle ROI', shortcut: 'O', desc: 'Circular region' }
-                ].map(t => (
-                  <button 
-                    key={t.id}
-                    onClick={() => setActiveTool(t.id)}
-                    style={{ 
-                      background: activeTool === t.id 
-                        ? 'linear-gradient(135deg, #10b981, #059669)' 
-                        : 'rgba(255,255,255,0.05)', 
-                      border: activeTool === t.id ? '3px solid #34d399' : '3px solid transparent',
-                      color: activeTool === t.id ? 'white' : '#e2e8f0',
-                      padding: isTablet ? '16px 12px' : '6px 4px',
-                      borderRadius: '10px',
-                      fontSize: isTablet ? '11px' : '8px',
-                      fontWeight: 900,
-                      cursor: 'pointer',
-                      display: 'flex',
-                      flexDirection: 'column',
-                      alignItems: 'center',
-                      gap: isTablet ? '8px' : '3px',
-                      transition: 'all 0.3s ease',
-                      width: '100%',
-                      textAlign: 'center',
-                      minHeight: isTablet ? '80px' : '45px',
-                      touchAction: 'manipulation',
-                      boxShadow: activeTool === t.id 
-                        ? '0 6px 20px rgba(16, 185, 129, 0.4)' 
-                        : '0 2px 8px rgba(0,0,0,0.1)',
-                      transform: activeTool === t.id ? 'translateY(-2px)' : 'none'
-                    }}
-                    title={isTablet ? t.desc : undefined}
-                  >
-                    <span style={{ fontSize: isTablet ? '20px' : '12px' }}>{t.icon}</span> 
-                    <span style={{ fontSize: isTablet ? '10px' : '7px', lineHeight: '1.2', textAlign: 'center' }}>
-                      {t.label}
-                    </span>
-                    <span style={{ 
-                      fontSize: isTablet ? '9px' : '6px', 
-                      background: 'rgba(255,255,255,0.2)', 
-                      padding: isTablet ? '3px 6px' : '1px 2px', 
-                      borderRadius: '4px',
-                      letterSpacing: '0.5px'
-                    }}>{t.shortcut}</span>
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            {/* ROI Analysis Tools */}
-            <div style={{ padding: isTablet ? '25px 20px' : '15px', borderBottom: '1px solid #334155' }}>
-              <div style={{ 
-                color: '#f59e0b', 
-                fontSize: isTablet ? '14px' : '10px', 
-                fontWeight: 900, 
-                marginBottom: isTablet ? '20px' : '10px',
-                letterSpacing: '1px',
-                display: 'flex',
-                alignItems: 'center',
-                gap: '8px'
-              }}>
-                <span style={{ fontSize: isTablet ? '18px' : '14px' }}>🎯</span>
-                ROI ANALYSIS
-              </div>
-              <div style={{ 
-                display: 'grid', 
-                gridTemplateColumns: isTablet ? '1fr 1fr' : '1fr 1fr 1fr', 
-                gap: isTablet ? '12px' : '4px' 
-              }}>
-                {[
-                  { id: 'EllipticalROITool', icon: '⭕', label: 'Ellipse ROI', shortcut: 'E', desc: 'Elliptical region' },
-                  { id: 'RectangleROITool', icon: '⬜', label: 'Rectangle ROI', shortcut: 'R', desc: 'Rectangular region' },
-                  { id: 'PlanarFreehandROITool', icon: '✏️', label: 'Freehand ROI', shortcut: 'F', desc: 'Custom shape' },
-                  { id: 'ProbeTool', icon: '🎯', label: 'HU Probe', shortcut: 'U', desc: 'Pixel values' },
-                  { id: 'ArrowAnnotateTool', icon: '➡️', label: 'Arrow', shortcut: 'N', desc: 'Point annotation' },
-                  { id: 'AdvancedMagnifyTool', icon: '🔍', label: 'Magnify', shortcut: 'M', desc: 'Magnification tool' }
-                ].map(t => (
-                  <button 
-                    key={t.id}
-                    onClick={() => setActiveTool(t.id)}
-                    style={{ 
-                      background: activeTool === t.id 
-                        ? 'linear-gradient(135deg, #f59e0b, #d97706)' 
-                        : 'rgba(255,255,255,0.05)', 
-                      border: activeTool === t.id ? '3px solid #fbbf24' : '3px solid transparent',
-                      color: activeTool === t.id ? 'white' : '#e2e8f0',
-                      padding: isTablet ? '16px 12px' : '6px 4px',
-                      borderRadius: '10px',
-                      fontSize: isTablet ? '11px' : '8px',
-                      fontWeight: 900,
-                      cursor: 'pointer',
-                      display: 'flex',
-                      flexDirection: 'column',
-                      alignItems: 'center',
-                      gap: isTablet ? '8px' : '3px',
-                      transition: 'all 0.3s ease',
-                      width: '100%',
-                      textAlign: 'center',
-                      minHeight: isTablet ? '80px' : '45px',
-                      touchAction: 'manipulation',
-                      boxShadow: activeTool === t.id 
-                        ? '0 6px 20px rgba(245, 158, 11, 0.4)' 
-                        : '0 2px 8px rgba(0,0,0,0.1)',
-                      transform: activeTool === t.id ? 'translateY(-2px)' : 'none'
-                    }}
-                    title={isTablet ? t.desc : undefined}
-                  >
-                    <span style={{ fontSize: isTablet ? '20px' : '12px' }}>{t.icon}</span> 
-                    <span style={{ fontSize: isTablet ? '10px' : '7px', lineHeight: '1.2', textAlign: 'center' }}>
-                      {t.label}
-                    </span>
-                    <span style={{ 
-                      fontSize: isTablet ? '9px' : '6px', 
-                      background: 'rgba(255,255,255,0.2)', 
-                      padding: isTablet ? '3px 6px' : '1px 2px', 
-                      borderRadius: '4px',
-                      letterSpacing: '0.5px'
-                    }}>{t.shortcut}</span>
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            {/* Tablet Footer Info */}
-            {isTablet && (
-              <div style={{ 
-                padding: '20px', 
-                background: 'rgba(15, 23, 42, 0.8)',
-                marginTop: 'auto'
-              }}>
-                <div style={{ 
-                  color: '#94a3b8', 
-                  fontSize: '10px', 
-                  lineHeight: '1.4',
-                  textAlign: 'center'
-                }}>
-                  <div style={{ marginBottom: '8px', color: '#e2e8f0', fontWeight: 700 }}>
-                    📱 TABLET OPTIMIZED
-                  </div>
-                  <div style={{ marginBottom: '4px' }}>
-                    • Touch gestures for navigation
-                  </div>
-                  <div style={{ marginBottom: '4px' }}>
-                    • Large touch targets (WCAG AA)
-                  </div>
-                  <div>
-                    • Professional medical imaging
-                  </div>
-                </div>
-              </div>
-            )}
-
-            {/* Advanced Tools Info */}
-            <div style={{ padding: '15px', background: 'rgba(59, 130, 246, 0.1)' }}>
-              <div style={{ 
-                color: '#3b82f6', 
-                fontSize: '9px', 
-                fontWeight: 900, 
-                marginBottom: '8px',
-                letterSpacing: '1px'
-              }}>
-                ⚡ QUICK ACCESS
-              </div>
-              <div style={{ fontSize: '8px', color: '#94a3b8', lineHeight: '1.4' }}>
-                <div style={{ marginBottom: '4px' }}>
-                  <strong style={{ color: '#e2e8f0' }}>All tools accessible via keyboard shortcuts</strong>
-                </div>
-                <div style={{ marginBottom: '2px' }}>• Press <kbd style={{ background: 'rgba(255,255,255,0.1)', padding: '1px 3px', borderRadius: '2px', fontSize: '7px' }}>ESC</kbd> to reset</div>
-                <div>• Press <kbd style={{ background: 'rgba(255,255,255,0.1)', padding: '1px 3px', borderRadius: '2px', fontSize: '7px' }}>?</kbd> for help</div>
-              </div>
-            </div>
-
-            {/* Footer */}
-            <div style={{ marginTop: 'auto', padding: '15px' }}>
-              <button
-                onClick={() => setShowShortcutsHelp(true)}
-                style={{
-                  width: '100%',
-                  background: 'linear-gradient(135deg, rgba(139, 92, 246, 0.2), rgba(59, 130, 246, 0.2))',
-                  border: '1px solid rgba(139, 92, 246, 0.5)',
-                  color: '#c4b5fd',
-                  padding: '8px',
-                  borderRadius: '6px',
-                  fontSize: '10px',
-                  fontWeight: 900,
-                  cursor: 'pointer',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  gap: '6px'
-                }}
-              >
-                <span>❓</span> SHORTCUTS
-              </button>
-            </div>
-          </div>
-
-          {/* MAIN VIEWER AREA */}
-          <div style={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
-            {/* Top Controls */}
-            <div style={{ 
-              height: '50px', 
-              background: '#1e293b', 
-              borderBottom: '1px solid #334155', 
-              display: 'flex', 
-              alignItems: 'center', 
-              padding: '0 15px', 
-              gap: '15px', 
-              justifyContent: 'space-between' 
-            }}>
-              {/* Active Tool Display */}
-              <div style={{
-                background: 'rgba(59, 130, 246, 0.2)',
-                border: '1px solid rgba(59, 130, 246, 0.5)',
-                padding: '6px 12px',
-                borderRadius: '6px',
-                fontSize: '11px',
-                fontWeight: 900,
-                color: '#60a5fa',
-                display: 'flex',
-                alignItems: 'center',
-                gap: '6px'
-              }}>
-                <span>⚡</span> ACTIVE: {activeTool.replace('Tool', '').toUpperCase()}
-              </div>
-
-              {/* Controls */}
-              <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
-                <button 
-                  onClick={() => setCineEnabled(!cineEnabled)} 
-                  title="Toggle Cine Mode (Space)"
-                  style={{ 
-                    background: cineEnabled ? '#ef4444' : 'rgba(255,255,255,0.08)', 
-                    border: '2px solid ' + (cineEnabled ? '#f87171' : 'transparent'),
-                    color: 'white', 
-                    padding: '6px 10px', 
-                    borderRadius: '6px', 
-                    fontSize: '10px', 
-                    fontWeight: 900, 
+                <button
+                  onClick={() => {
+                    const toolbar = document.getElementById('dicom-toolbar');
+                    if (toolbar.style.transform === 'translateX(-100%)') {
+                      toolbar.style.transform = 'translateX(0)';
+                    } else {
+                      toolbar.style.transform = 'translateX(-100%)';
+                    }
+                  }}
+                  style={{
+                    position: 'absolute',
+                    right: '-40px',
+                    top: '50%',
+                    transform: 'translateY(-50%)',
+                    background: 'linear-gradient(135deg, #3b82f6, #8b5cf6)',
+                    border: 'none',
+                    color: 'white',
+                    width: '40px',
+                    height: '80px',
+                    borderRadius: '0 8px 8px 0',
                     cursor: 'pointer',
                     display: 'flex',
                     alignItems: 'center',
-                    gap: '4px'
+                    justifyContent: 'center',
+                    fontSize: '16px',
+                    zIndex: 20,
+                    boxShadow: '2px 0 10px rgba(0,0,0,0.3)',
+                    touchAction: 'manipulation'
                   }}
                 >
-                  <span>🎬</span> CINE
+                  🛠️
                 </button>
-                
-                <select 
-                  value={layoutMode} 
-                  onChange={e => setLayoutMode(e.target.value)}
-                  style={{ 
-                    background: 'rgba(255,255,255,0.08)', 
-                    color: 'white', 
-                    border: '2px solid #334155', 
-                    padding: '6px 10px', 
-                    borderRadius: '6px', 
-                    fontSize: '10px', 
-                    fontWeight: 900, 
-                    outline: 'none',
-                    cursor: 'pointer'
-                  }}
-                >
-                  <option value="1x1" style={{ background: '#1e293b', color: 'white' }}>1×1</option>
-                  <option value="2x2" style={{ background: '#1e293b', color: 'white' }}>2×2</option>
-                </select>
+              )}
+              {/* Toolbar Header */}
+              <div style={{
+                padding: isTablet ? '25px 20px' : '15px',
+                borderBottom: '2px solid #334155',
+                background: 'linear-gradient(135deg, #3b82f6, #8b5cf6)',
+                position: 'relative'
+              }}>
+                <div style={{
+                  color: 'white',
+                  fontSize: isTablet ? '16px' : '12px',
+                  fontWeight: 900,
+                  letterSpacing: '1px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '10px'
+                }}>
+                  <span style={{ fontSize: isTablet ? '24px' : '16px' }}>🛠️</span>
+                  DICOM TOOLS
+                </div>
+                {isTablet && (
+                  <div style={{
+                    color: 'rgba(255,255,255,0.8)',
+                    fontSize: '11px',
+                    marginTop: '6px',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '6px'
+                  }}>
+                    <span>📱</span> Touch optimized interface
+                  </div>
+                )}
+              </div>
 
-                {/* FULLSCREEN BUTTON */}
+              {/* Quick Actions - Tablet Only */}
+              {isTablet && (
+                <div style={{ padding: '20px', borderBottom: '1px solid #334155', background: 'rgba(59, 130, 246, 0.1)' }}>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
+                    <button
+                      onClick={() => {
+                        setActiveTool('WindowLevelTool');
+                        setResetTrigger(prev => prev + 1);
+                      }}
+                      style={{
+                        background: 'linear-gradient(135deg, #10b981, #059669)',
+                        border: 'none',
+                        color: 'white',
+                        padding: '12px',
+                        borderRadius: '8px',
+                        fontSize: '12px',
+                        fontWeight: 900,
+                        cursor: 'pointer',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '8px',
+                        touchAction: 'manipulation',
+                        boxShadow: '0 4px 12px rgba(16, 185, 129, 0.3)'
+                      }}
+                    >
+                      <span style={{ fontSize: '16px' }}>🔄</span>
+                      RESET VIEW
+                    </button>
+                    <button
+                      onClick={() => {
+                        alert('Touch Gestures:\n\n🤏 Pinch to zoom in/out\n👆 Single finger to pan\n👆👆 Double tap to reset\n🖱️ Use toolbar for measurements\n\nKeyboard shortcuts available when connected to external keyboard.');
+                      }}
+                      style={{
+                        background: 'linear-gradient(135deg, #8b5cf6, #7c3aed)',
+                        border: 'none',
+                        color: 'white',
+                        padding: '12px',
+                        borderRadius: '8px',
+                        fontSize: '12px',
+                        fontWeight: 900,
+                        cursor: 'pointer',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '8px',
+                        touchAction: 'manipulation',
+                        boxShadow: '0 4px 12px rgba(139, 92, 246, 0.3)'
+                      }}
+                    >
+                      <span style={{ fontSize: '16px' }}>❓</span>
+                      HELP
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {/* Essential Tools */}
+              {/* Navigation Tools */}
+              <div style={{ padding: isTablet ? '25px 20px' : '15px', borderBottom: '1px solid #334155' }}>
+                <div style={{
+                  color: '#3b82f6',
+                  fontSize: isTablet ? '14px' : '10px',
+                  fontWeight: 900,
+                  marginBottom: isTablet ? '20px' : '10px',
+                  letterSpacing: '1px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '8px'
+                }}>
+                  <span style={{ fontSize: isTablet ? '18px' : '14px' }}>🎮</span>
+                  NAVIGATION
+                </div>
+                <div style={{
+                  display: 'grid',
+                  gridTemplateColumns: isTablet ? '1fr 1fr' : '1fr 1fr 1fr',
+                  gap: isTablet ? '12px' : '4px'
+                }}>
+                  {[
+                    { id: 'WindowLevelTool', icon: '☀️', label: 'Window/Level', shortcut: 'W', desc: 'Adjust brightness & contrast' },
+                    { id: 'ZoomTool', icon: '🔍', label: 'Zoom', shortcut: 'Z', desc: 'Magnify image' },
+                    { id: 'PanTool', icon: '✋', label: 'Pan', shortcut: 'P', desc: 'Move image around' },
+                    { id: 'StackScrollTool', icon: '📜', label: 'Scroll', shortcut: 'S', desc: 'Navigate slices' }
+                  ].map(t => (
+                    <button
+                      key={t.id}
+                      onClick={() => setActiveTool(t.id)}
+                      style={{
+                        background: activeTool === t.id
+                          ? 'linear-gradient(135deg, #3b82f6, #2563eb)'
+                          : 'rgba(255,255,255,0.05)',
+                        border: activeTool === t.id ? '3px solid #60a5fa' : '3px solid transparent',
+                        color: activeTool === t.id ? 'white' : '#e2e8f0',
+                        padding: isTablet ? '16px 12px' : '6px 4px',
+                        borderRadius: '10px',
+                        fontSize: isTablet ? '11px' : '8px',
+                        fontWeight: 900,
+                        cursor: 'pointer',
+                        display: 'flex',
+                        flexDirection: 'column',
+                        alignItems: 'center',
+                        gap: isTablet ? '8px' : '3px',
+                        transition: 'all 0.3s ease',
+                        width: '100%',
+                        textAlign: 'center',
+                        minHeight: isTablet ? '80px' : '45px',
+                        touchAction: 'manipulation',
+                        boxShadow: activeTool === t.id
+                          ? '0 6px 20px rgba(59, 130, 246, 0.4)'
+                          : '0 2px 8px rgba(0,0,0,0.1)',
+                        transform: activeTool === t.id ? 'translateY(-2px)' : 'none'
+                      }}
+                      title={isTablet ? t.desc : undefined}
+                    >
+                      <span style={{ fontSize: isTablet ? '20px' : '12px' }}>{t.icon}</span>
+                      <span style={{ fontSize: isTablet ? '10px' : '7px', lineHeight: '1.2', textAlign: 'center' }}>
+                        {t.label}
+                      </span>
+                      <span style={{
+                        fontSize: isTablet ? '9px' : '6px',
+                        background: 'rgba(255,255,255,0.2)',
+                        padding: isTablet ? '3px 6px' : '1px 2px',
+                        borderRadius: '4px',
+                        letterSpacing: '0.5px'
+                      }}>{t.shortcut}</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Measurement Tools */}
+              <div style={{ padding: isTablet ? '25px 20px' : '15px', borderBottom: '1px solid #334155' }}>
+                <div style={{
+                  color: '#10b981',
+                  fontSize: isTablet ? '14px' : '10px',
+                  fontWeight: 900,
+                  marginBottom: isTablet ? '20px' : '10px',
+                  letterSpacing: '1px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '8px'
+                }}>
+                  <span style={{ fontSize: isTablet ? '18px' : '14px' }}>📏</span>
+                  MEASUREMENTS
+                </div>
+                <div style={{
+                  display: 'grid',
+                  gridTemplateColumns: isTablet ? '1fr 1fr' : '1fr 1fr 1fr',
+                  gap: isTablet ? '12px' : '4px'
+                }}>
+                  {[
+                    { id: 'LengthTool', icon: '📏', label: 'Length', shortcut: 'L', desc: 'Measure distance' },
+                    { id: 'HeightTool', icon: '📐', label: 'Height', shortcut: 'H', desc: 'Measure height' },
+                    { id: 'BidirectionalTool', icon: '↔️', label: 'Bidirectional', shortcut: 'B', desc: 'RECIST measurement' },
+                    { id: 'AngleTool', icon: '∠', label: 'Angle', shortcut: 'A', desc: 'Measure angles' },
+                    { id: 'CobbAngleTool', icon: '🦴', label: 'Cobb Angle', shortcut: 'C', desc: 'Spine curvature' },
+                    { id: 'CircleROITool', icon: '🔵', label: 'Circle ROI', shortcut: 'O', desc: 'Circular region' }
+                  ].map(t => (
+                    <button
+                      key={t.id}
+                      onClick={() => setActiveTool(t.id)}
+                      style={{
+                        background: activeTool === t.id
+                          ? 'linear-gradient(135deg, #10b981, #059669)'
+                          : 'rgba(255,255,255,0.05)',
+                        border: activeTool === t.id ? '3px solid #34d399' : '3px solid transparent',
+                        color: activeTool === t.id ? 'white' : '#e2e8f0',
+                        padding: isTablet ? '16px 12px' : '6px 4px',
+                        borderRadius: '10px',
+                        fontSize: isTablet ? '11px' : '8px',
+                        fontWeight: 900,
+                        cursor: 'pointer',
+                        display: 'flex',
+                        flexDirection: 'column',
+                        alignItems: 'center',
+                        gap: isTablet ? '8px' : '3px',
+                        transition: 'all 0.3s ease',
+                        width: '100%',
+                        textAlign: 'center',
+                        minHeight: isTablet ? '80px' : '45px',
+                        touchAction: 'manipulation',
+                        boxShadow: activeTool === t.id
+                          ? '0 6px 20px rgba(16, 185, 129, 0.4)'
+                          : '0 2px 8px rgba(0,0,0,0.1)',
+                        transform: activeTool === t.id ? 'translateY(-2px)' : 'none'
+                      }}
+                      title={isTablet ? t.desc : undefined}
+                    >
+                      <span style={{ fontSize: isTablet ? '20px' : '12px' }}>{t.icon}</span>
+                      <span style={{ fontSize: isTablet ? '10px' : '7px', lineHeight: '1.2', textAlign: 'center' }}>
+                        {t.label}
+                      </span>
+                      <span style={{
+                        fontSize: isTablet ? '9px' : '6px',
+                        background: 'rgba(255,255,255,0.2)',
+                        padding: isTablet ? '3px 6px' : '1px 2px',
+                        borderRadius: '4px',
+                        letterSpacing: '0.5px'
+                      }}>{t.shortcut}</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* ROI Analysis Tools */}
+              <div style={{ padding: isTablet ? '25px 20px' : '15px', borderBottom: '1px solid #334155' }}>
+                <div style={{
+                  color: '#f59e0b',
+                  fontSize: isTablet ? '14px' : '10px',
+                  fontWeight: 900,
+                  marginBottom: isTablet ? '20px' : '10px',
+                  letterSpacing: '1px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '8px'
+                }}>
+                  <span style={{ fontSize: isTablet ? '18px' : '14px' }}>🎯</span>
+                  ROI ANALYSIS
+                </div>
+                <div style={{
+                  display: 'grid',
+                  gridTemplateColumns: isTablet ? '1fr 1fr' : '1fr 1fr 1fr',
+                  gap: isTablet ? '12px' : '4px'
+                }}>
+                  {[
+                    { id: 'EllipticalROITool', icon: '⭕', label: 'Ellipse ROI', shortcut: 'E', desc: 'Elliptical region' },
+                    { id: 'RectangleROITool', icon: '⬜', label: 'Rectangle ROI', shortcut: 'R', desc: 'Rectangular region' },
+                    { id: 'PlanarFreehandROITool', icon: '✏️', label: 'Freehand ROI', shortcut: 'F', desc: 'Custom shape' },
+                    { id: 'ProbeTool', icon: '🎯', label: 'HU Probe', shortcut: 'U', desc: 'Pixel values' },
+                    { id: 'ArrowAnnotateTool', icon: '➡️', label: 'Arrow', shortcut: 'N', desc: 'Point annotation' },
+                    { id: 'AdvancedMagnifyTool', icon: '🔍', label: 'Magnify', shortcut: 'M', desc: 'Magnification tool' }
+                  ].map(t => (
+                    <button
+                      key={t.id}
+                      onClick={() => setActiveTool(t.id)}
+                      style={{
+                        background: activeTool === t.id
+                          ? 'linear-gradient(135deg, #f59e0b, #d97706)'
+                          : 'rgba(255,255,255,0.05)',
+                        border: activeTool === t.id ? '3px solid #fbbf24' : '3px solid transparent',
+                        color: activeTool === t.id ? 'white' : '#e2e8f0',
+                        padding: isTablet ? '16px 12px' : '6px 4px',
+                        borderRadius: '10px',
+                        fontSize: isTablet ? '11px' : '8px',
+                        fontWeight: 900,
+                        cursor: 'pointer',
+                        display: 'flex',
+                        flexDirection: 'column',
+                        alignItems: 'center',
+                        gap: isTablet ? '8px' : '3px',
+                        transition: 'all 0.3s ease',
+                        width: '100%',
+                        textAlign: 'center',
+                        minHeight: isTablet ? '80px' : '45px',
+                        touchAction: 'manipulation',
+                        boxShadow: activeTool === t.id
+                          ? '0 6px 20px rgba(245, 158, 11, 0.4)'
+                          : '0 2px 8px rgba(0,0,0,0.1)',
+                        transform: activeTool === t.id ? 'translateY(-2px)' : 'none'
+                      }}
+                      title={isTablet ? t.desc : undefined}
+                    >
+                      <span style={{ fontSize: isTablet ? '20px' : '12px' }}>{t.icon}</span>
+                      <span style={{ fontSize: isTablet ? '10px' : '7px', lineHeight: '1.2', textAlign: 'center' }}>
+                        {t.label}
+                      </span>
+                      <span style={{
+                        fontSize: isTablet ? '9px' : '6px',
+                        background: 'rgba(255,255,255,0.2)',
+                        padding: isTablet ? '3px 6px' : '1px 2px',
+                        borderRadius: '4px',
+                        letterSpacing: '0.5px'
+                      }}>{t.shortcut}</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Tablet Footer Info */}
+              {isTablet && (
+                <div style={{
+                  padding: '20px',
+                  background: 'rgba(15, 23, 42, 0.8)',
+                  marginTop: 'auto'
+                }}>
+                  <div style={{
+                    color: '#94a3b8',
+                    fontSize: '10px',
+                    lineHeight: '1.4',
+                    textAlign: 'center'
+                  }}>
+                    <div style={{ marginBottom: '8px', color: '#e2e8f0', fontWeight: 700 }}>
+                      📱 TABLET OPTIMIZED
+                    </div>
+                    <div style={{ marginBottom: '4px' }}>
+                      • Touch gestures for navigation
+                    </div>
+                    <div style={{ marginBottom: '4px' }}>
+                      • Large touch targets (WCAG AA)
+                    </div>
+                    <div>
+                      • Professional medical imaging
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Advanced Tools Info */}
+              <div style={{ padding: '15px', background: 'rgba(59, 130, 246, 0.1)' }}>
+                <div style={{
+                  color: '#3b82f6',
+                  fontSize: '9px',
+                  fontWeight: 900,
+                  marginBottom: '8px',
+                  letterSpacing: '1px'
+                }}>
+                  ⚡ QUICK ACCESS
+                </div>
+                <div style={{ fontSize: '8px', color: '#94a3b8', lineHeight: '1.4' }}>
+                  <div style={{ marginBottom: '4px' }}>
+                    <strong style={{ color: '#e2e8f0' }}>All tools accessible via keyboard shortcuts</strong>
+                  </div>
+                  <div style={{ marginBottom: '2px' }}>• Press <kbd style={{ background: 'rgba(255,255,255,0.1)', padding: '1px 3px', borderRadius: '2px', fontSize: '7px' }}>ESC</kbd> to reset</div>
+                  <div>• Press <kbd style={{ background: 'rgba(255,255,255,0.1)', padding: '1px 3px', borderRadius: '2px', fontSize: '7px' }}>?</kbd> for help</div>
+                </div>
+              </div>
+
+              {/* Footer */}
+              <div style={{ marginTop: 'auto', padding: '15px' }}>
                 <button
-                  onClick={() => {
-                    console.log('[FULL VIEW] Button clicked');
-                    console.log('[FULL VIEW] uploadedFiles:', uploadedFiles);
-                    console.log('[FULL VIEW] uploadedFiles.length:', uploadedFiles.length);
-                    console.log('[FULL VIEW] Total series count:', uploadedFiles.length);
-                    console.log('[FULL VIEW] activeAssetIndex:', activeAssetIndex);
-                    console.log('[FULL VIEW] activeAppointment:', activeAppointment);
-                    
-                    // Detailed logging of each series
-                    uploadedFiles.forEach((file, index) => {
-                      console.log(`[FULL VIEW] Series ${index + 1}:`, {
-                        name: file.name,
-                        hasRawFiles: !!file.rawFiles,
-                        rawFilesCount: file.rawFiles?.length || 0,
-                        seriesUID: file.seriesUID,
-                        modality: file.modality
-                      });
-                    });
-                    
-                    // Check if we have any files with rawFiles
-                    const validSeries = uploadedFiles.filter(file => file.rawFiles && file.rawFiles.length > 0);
-                    
-                    console.log('[FULL VIEW] Valid series count:', validSeries.length);
-                    console.log('[FULL VIEW] Valid series:', validSeries.map(s => s.name));
-                    
-                    if (validSeries.length > 0) {
-                      // Pass ALL series to the viewer, not just the active one
-                      const allSeries = validSeries.map(series => ({
-                        name: series.name,
-                        files: series.rawFiles,
-                        seriesUID: series.seriesUID,
-                        modality: series.modality
-                      }));
-                      
-                      const activeValidSeriesIndex = validSeries.findIndex(s => s.name === uploadedFiles[activeAssetIndex]?.name);
-                      
-                      const navigationState = {
-                        allSeries: allSeries, // Pass all series
-                        files: validSeries[0].rawFiles, // Default to first series for backward compatibility
-                        seriesName: uploadedFiles[activeAssetIndex]?.name || 'DICOM STUDY',
-                        activeSeriesIndex: activeValidSeriesIndex >= 0 ? activeValidSeriesIndex : 0, // Map to validSeries index
-                        layoutMode: layoutMode, // Preserve layout mode
-                        appointmentData: {
-                          ...activeAppointment,
-                          appointmentId: appointmentId,
-                          id: appointmentId
-                        }
-                      };
-                      
-                      console.log('[FULL VIEW] Navigating to DICOM viewer with ALL series:', {
-                        totalSeries: allSeries.length,
-                        seriesNames: allSeries.map(s => s.name),
-                        totalFiles: allSeries.reduce((sum, s) => sum + s.files.length, 0),
-                        navigationState: navigationState
-                      });
-                      
-                      console.log('[FULL VIEW] 🚀 Navigation state being passed:', JSON.stringify({
-                        allSeriesCount: navigationState.allSeries.length,
-                        filesCount: navigationState.files.length,
-                        seriesName: navigationState.seriesName,
-                        activeSeriesIndex: navigationState.activeSeriesIndex
-                      }, null, 2));
-                      
-                      navigate('/dicom-viewer', {
-                        state: navigationState,
-                        replace: false
-                      });
-                    } else {
-                      console.error('[FULL VIEW] No DICOM files available');
-                      console.error('[FULL VIEW] uploadedFiles.length:', uploadedFiles.length);
-                      console.error('[FULL VIEW] Valid series count:', validSeries.length);
-                      console.error('[FULL VIEW] Files with rawFiles:', uploadedFiles.map(f => ({
-                        name: f.name,
-                        hasRawFiles: !!f.rawFiles,
-                        rawFilesCount: f.rawFiles?.length || 0
-                      })));
-                      alert('No DICOM files available for full-screen viewing. Please ensure DICOM files are loaded first.');
-                    }
-                  }}
-                  title="Open Full Screen DICOM Viewer"
+                  onClick={() => setShowShortcutsHelp(true)}
                   style={{
-                    background: 'linear-gradient(135deg, #10b981, #059669)',
-                    border: '2px solid #34d399',
-                    color: 'white',
-                    padding: '8px 12px',
+                    width: '100%',
+                    background: 'linear-gradient(135deg, rgba(139, 92, 246, 0.2), rgba(59, 130, 246, 0.2))',
+                    border: '1px solid rgba(139, 92, 246, 0.5)',
+                    color: '#c4b5fd',
+                    padding: '8px',
                     borderRadius: '6px',
                     fontSize: '10px',
                     fontWeight: 900,
                     cursor: 'pointer',
                     display: 'flex',
                     alignItems: 'center',
-                    gap: '6px',
-                    boxShadow: '0 4px 12px rgba(16, 185, 129, 0.3)'
+                    justifyContent: 'center',
+                    gap: '6px'
                   }}
                 >
-                  <span style={{ fontSize: '12px' }}>🔍</span>
-                  FULL VIEW
+                  <span>❓</span> SHORTCUTS
                 </button>
               </div>
             </div>
 
-          <div style={{ flex: 1, background: '#000', position: 'relative', display: 'flex', gap: '2px', padding: '2px' }}>
-            {/* Floating Toolbar Toggle for Tablets */}
-            {isTablet && (
-              <button
-                onClick={() => {
-                  const toolbar = document.getElementById('dicom-toolbar');
-                  if (toolbar) {
-                    if (toolbar.style.transform === 'translateX(-100%)') {
-                      toolbar.style.transform = 'translateX(0)';
-                      toolbar.style.transition = 'transform 0.3s ease';
-                    } else {
-                      toolbar.style.transform = 'translateX(-100%)';
-                      toolbar.style.transition = 'transform 0.3s ease';
-                    }
-                  }
-                }}
-                style={{
-                  position: 'absolute',
-                  top: '20px',
-                  left: '20px',
-                  background: 'linear-gradient(135deg, #3b82f6, #8b5cf6)',
-                  border: 'none',
-                  color: 'white',
-                  width: '60px',
-                  height: '60px',
-                  borderRadius: '50%',
-                  cursor: 'pointer',
+            {/* MAIN VIEWER AREA */}
+            <div style={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
+              {/* Top Controls */}
+              <div style={{
+                height: '50px',
+                background: '#1e293b',
+                borderBottom: '1px solid #334155',
+                display: 'flex',
+                alignItems: 'center',
+                padding: '0 15px',
+                gap: '15px',
+                justifyContent: 'space-between'
+              }}>
+                {/* Active Tool Display */}
+                <div style={{
+                  background: 'rgba(59, 130, 246, 0.2)',
+                  border: '1px solid rgba(59, 130, 246, 0.5)',
+                  padding: '6px 12px',
+                  borderRadius: '6px',
+                  fontSize: '11px',
+                  fontWeight: 900,
+                  color: '#60a5fa',
                   display: 'flex',
                   alignItems: 'center',
-                  justifyContent: 'center',
-                  fontSize: '24px',
-                  zIndex: 100,
-                  boxShadow: '0 4px 20px rgba(59, 130, 246, 0.4)',
-                  touchAction: 'manipulation',
-                  transition: 'all 0.3s ease'
-                }}
-                onMouseEnter={(e) => {
-                  e.target.style.transform = 'scale(1.1)';
-                }}
-                onMouseLeave={(e) => {
-                  e.target.style.transform = 'scale(1)';
-                }}
-                title="Toggle DICOM Tools"
-              >
-                🛠️
-              </button>
-            )}
-            {/* PROGRESS OVERLAY */}
-            {loading && (
-              <div style={{
-                position: 'absolute',
-                top: 0,
-                left: 0,
-                right: 0,
-                bottom: 0,
-                background: 'rgba(15, 23, 42, 0.95)',
-                backdropFilter: 'blur(8px)',
-                zIndex: 1000,
-                display: 'flex',
-                flexDirection: 'column',
-                alignItems: 'center',
-                justifyContent: 'center',
-                color: 'white',
-                gap: '20px'
-              }}>
-                <div style={{
-                  width: '60px',
-                  height: '60px',
-                  border: '3px solid rgba(59, 130, 246, 0.2)',
-                  borderTopColor: '#3b82f6',
-                  borderRadius: '50%',
-                  animation: 'spin 1s linear infinite'
-                }}></div>
-                
-                <div style={{ textAlign: 'center', maxWidth: '350px' }}>
-                  <div style={{ fontSize: '14px', fontWeight: 900, marginBottom: '8px', letterSpacing: '1px' }}>
-                    PROCESSING DICOM DATA
-                  </div>
-                  <div style={{ fontSize: '11px', color: '#94a3b8', marginBottom: '15px' }}>
-                    {processingStatus || 'Initializing...'}
-                  </div>
-                  
-                  {loadingProgress.total > 0 && (
-                    <div style={{ width: '250px', margin: '0 auto' }}>
-                      <div style={{
-                        width: '100%',
-                        height: '6px',
-                        background: 'rgba(255, 255, 255, 0.1)',
-                        borderRadius: '3px',
-                        overflow: 'hidden',
-                        marginBottom: '8px'
-                      }}>
-                        <div style={{
-                          width: `${(loadingProgress.current / loadingProgress.total) * 100}%`,
-                          height: '100%',
-                          background: 'linear-gradient(90deg, #3b82f6, #1d4ed8)',
-                          borderRadius: '3px',
-                          transition: 'width 0.3s ease'
-                        }}></div>
-                      </div>
-                      <div style={{ fontSize: '10px', color: '#cbd5e1' }}>
-                        {loadingProgress.current} / {loadingProgress.total} files
-                        {loadingProgress.seriesCount && ` • ${loadingProgress.seriesCount} series`}
-                      </div>
-                    </div>
-                  )}
+                  gap: '6px'
+                }}>
+                  <span>⚡</span> ACTIVE: {activeTool.replace('Tool', '').toUpperCase()}
                 </div>
-                
-                <style>{`
+
+                {/* Controls */}
+                <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
+                  <button
+                    onClick={() => setCineEnabled(!cineEnabled)}
+                    title="Toggle Cine Mode (Space)"
+                    style={{
+                      background: cineEnabled ? '#ef4444' : 'rgba(255,255,255,0.08)',
+                      border: '2px solid ' + (cineEnabled ? '#f87171' : 'transparent'),
+                      color: 'white',
+                      padding: '6px 10px',
+                      borderRadius: '6px',
+                      fontSize: '10px',
+                      fontWeight: 900,
+                      cursor: 'pointer',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '4px'
+                    }}
+                  >
+                    <span>🎬</span> CINE
+                  </button>
+
+                  <select
+                    value={layoutMode}
+                    onChange={e => setLayoutMode(e.target.value)}
+                    style={{
+                      background: 'rgba(255,255,255,0.08)',
+                      color: 'white',
+                      border: '2px solid #334155',
+                      padding: '6px 10px',
+                      borderRadius: '6px',
+                      fontSize: '10px',
+                      fontWeight: 900,
+                      outline: 'none',
+                      cursor: 'pointer'
+                    }}
+                  >
+                    <option value="1x1" style={{ background: '#1e293b', color: 'white' }}>1×1</option>
+                    <option value="2x2" style={{ background: '#1e293b', color: 'white' }}>2×2</option>
+                  </select>
+
+                  {/* FULLSCREEN BUTTON */}
+                  <button
+                    onClick={() => {
+                      // Check if we have any files with rawFiles
+                      const validSeries = uploadedFiles.filter(file => file.rawFiles && file.rawFiles.length > 0);
+
+                      if (validSeries.length > 0) {
+                        // Pass ALL series to the viewer, not just the active one
+                        const allSeries = validSeries.map(series => ({
+                          name: series.name,
+                          files: series.rawFiles,
+                          seriesUID: series.seriesUID,
+                          modality: series.modality
+                        }));
+
+                        const activeValidSeriesIndex = validSeries.findIndex(s => s.name === uploadedFiles[activeAssetIndex]?.name);
+
+                        const navigationState = {
+                          allSeries: allSeries, // Pass all series
+                          files: validSeries[0].rawFiles, // Default to first series for backward compatibility
+                          seriesName: uploadedFiles[activeAssetIndex]?.name || 'DICOM STUDY',
+                          activeSeriesIndex: activeValidSeriesIndex >= 0 ? activeValidSeriesIndex : 0, // Map to validSeries index
+                          layoutMode: layoutMode, // Preserve layout mode
+                          appointmentData: {
+                            ...activeAppointment,
+                            appointmentId: appointmentId,
+                            id: appointmentId
+                          }
+                        };
+
+                        navigate('/dicom-viewer', {
+                          state: navigationState,
+                          replace: false
+                        });
+                      } else {
+                        alert('No DICOM files available for full-screen viewing. Please ensure DICOM files are loaded first.');
+                      }
+                    }}
+                    title="Open Full Screen DICOM Viewer"
+                    style={{
+                      background: 'linear-gradient(135deg, #10b981, #059669)',
+                      border: '2px solid #34d399',
+                      color: 'white',
+                      padding: '8px 12px',
+                      borderRadius: '6px',
+                      fontSize: '10px',
+                      fontWeight: 900,
+                      cursor: 'pointer',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '6px',
+                      boxShadow: '0 4px 12px rgba(16, 185, 129, 0.3)'
+                    }}
+                  >
+                    <span style={{ fontSize: '12px' }}>🔍</span>
+                    FULL VIEW
+                  </button>
+                </div>
+              </div>
+
+              <div style={{ flex: 1, background: '#000', position: 'relative', display: 'flex', gap: '2px', padding: '2px' }}>
+                {/* Floating Toolbar Toggle for Tablets */}
+                {isTablet && (
+                  <button
+                    onClick={() => {
+                      const toolbar = document.getElementById('dicom-toolbar');
+                      if (toolbar) {
+                        if (toolbar.style.transform === 'translateX(-100%)') {
+                          toolbar.style.transform = 'translateX(0)';
+                          toolbar.style.transition = 'transform 0.3s ease';
+                        } else {
+                          toolbar.style.transform = 'translateX(-100%)';
+                          toolbar.style.transition = 'transform 0.3s ease';
+                        }
+                      }
+                    }}
+                    style={{
+                      position: 'absolute',
+                      top: '20px',
+                      left: '20px',
+                      background: 'linear-gradient(135deg, #3b82f6, #8b5cf6)',
+                      border: 'none',
+                      color: 'white',
+                      width: '60px',
+                      height: '60px',
+                      borderRadius: '50%',
+                      cursor: 'pointer',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      fontSize: '24px',
+                      zIndex: 100,
+                      boxShadow: '0 4px 20px rgba(59, 130, 246, 0.4)',
+                      touchAction: 'manipulation',
+                      transition: 'all 0.3s ease'
+                    }}
+                    onMouseEnter={(e) => {
+                      e.target.style.transform = 'scale(1.1)';
+                    }}
+                    onMouseLeave={(e) => {
+                      e.target.style.transform = 'scale(1)';
+                    }}
+                    title="Toggle DICOM Tools"
+                  >
+                    🛠️
+                  </button>
+                )}
+                {/* PROGRESS OVERLAY */}
+                {loading && (
+                  <div style={{
+                    position: 'absolute',
+                    top: 0,
+                    left: 0,
+                    right: 0,
+                    bottom: 0,
+                    background: 'rgba(15, 23, 42, 0.95)',
+                    backdropFilter: 'blur(8px)',
+                    zIndex: 1000,
+                    display: 'flex',
+                    flexDirection: 'column',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    color: 'white',
+                    gap: '20px'
+                  }}>
+                    <div style={{
+                      width: '60px',
+                      height: '60px',
+                      border: '3px solid rgba(59, 130, 246, 0.2)',
+                      borderTopColor: '#3b82f6',
+                      borderRadius: '50%',
+                      animation: 'spin 1s linear infinite'
+                    }}></div>
+
+                    <div style={{ textAlign: 'center', maxWidth: '350px' }}>
+                      <div style={{ fontSize: '14px', fontWeight: 900, marginBottom: '8px', letterSpacing: '1px' }}>
+                        PROCESSING DICOM DATA
+                      </div>
+                      <div style={{ fontSize: '11px', color: '#94a3b8', marginBottom: '15px' }}>
+                        {processingStatus || 'Initializing...'}
+                      </div>
+
+                      {loadingProgress.total > 0 && (
+                        <div style={{ width: '250px', margin: '0 auto' }}>
+                          <div style={{
+                            width: '100%',
+                            height: '6px',
+                            background: 'rgba(255, 255, 255, 0.1)',
+                            borderRadius: '3px',
+                            overflow: 'hidden',
+                            marginBottom: '8px'
+                          }}>
+                            <div style={{
+                              width: `${(loadingProgress.current / loadingProgress.total) * 100}%`,
+                              height: '100%',
+                              background: 'linear-gradient(90deg, #3b82f6, #1d4ed8)',
+                              borderRadius: '3px',
+                              transition: 'width 0.3s ease'
+                            }}></div>
+                          </div>
+                          <div style={{ fontSize: '10px', color: '#cbd5e1' }}>
+                            {loadingProgress.current} / {loadingProgress.total} files
+                            {loadingProgress.seriesCount && ` • ${loadingProgress.seriesCount} series`}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+
+                    <style>{`
                   @keyframes spin {
                     to { transform: rotate(360deg); }
                   }
                 `}</style>
-              </div>
-            )}
-            
-            {/* SERIES LIBRARY MINI-SIDEBAR */}
-            {uploadedFiles.length > 1 && (
-              <div style={{ width: '60px', background: '#0f172a', borderRight: '1px solid #1e293b', display: 'flex', flexDirection: 'column', gap: '10px', padding: '10px 5px', zIndex: 10 }}>
-                {uploadedFiles.map((f, i) => (
-                  <button 
-                    key={i}
-                    onClick={() => setActiveAssetIndex(i)}
-                    title={f.name}
-                    style={{ 
-                      width: '100%', height: '50px', background: activeAssetIndex === i ? '#3b82f6' : 'rgba(255,255,255,0.05)', 
-                      border: 'none', borderRadius: '8px', cursor: 'pointer', display: 'flex', flexDirection: 'column',
-                      alignItems: 'center', justifyContent: 'center', transition: '0.2s', gap: '4px'
-                    }}
-                  >
-                    <div style={{ fontSize: '12px' }}>🎞️</div>
-                    <div style={{ fontSize: '8px', color: 'white', fontWeight: 900, whiteSpace: 'nowrap', overflow: 'hidden', width: '100%', textAlign: 'center' }}>S{i+1}</div>
-                  </button>
-                ))}
-              </div>
-            )}
-
-            {uploadedFiles.length === 0 ? (
-              <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#334155', fontSize: '12px', fontWeight: 950, letterSpacing: '2px', flexDirection: 'column', gap: '20px' }}>
-                <div style={{ fontSize: '48px', opacity: 0.2 }}>📡</div>
-                <div style={{ textAlign: 'center' }}>
-                  <div>WAITING_FOR_DATA_SIGNAL</div>
-                  <div style={{ fontSize: '10px', color: '#64748b', marginTop: '10px', fontWeight: 400 }}>
-                    Upload DICOM files or ZIP archives to begin analysis
                   </div>
-                </div>
-                <input 
-                  type="file" 
-                  multiple 
-                  accept=".dcm,.dicom,.zip" 
-                  onChange={handleFileChange}
-                  style={{ 
-                    padding: '10px 20px', 
-                    borderRadius: '8px', 
-                    border: '2px dashed #3b82f6', 
-                    background: 'rgba(59, 130, 246, 0.1)', 
-                    color: '#3b82f6',
-                    cursor: 'pointer',
-                    fontSize: '11px',
-                    fontWeight: 700
-                  }}
-                />
-              </div>
-            ) : (
-              <div style={{ flex: 1, display: 'grid', gridTemplateColumns: layoutMode === '2x2' ? '1fr 1fr' : '1fr', gridTemplateRows: layoutMode === '2x2' ? '1fr 1fr' : '1fr', gap: '2px' }}>
-                {[...Array(layoutMode === '2x2' ? 4 : 1)].map((_, idx) => {
-                  const currentFiles = uploadedFiles[(activeAssetIndex + idx) % uploadedFiles.length]?.rawFiles;
-                  
-                  return (
-                    <div key={idx} style={{ position: 'relative', background: '#000', overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
-                      {/* DICOM Viewer with Advanced Tools */}
-                      <div style={{ flex: 1, position: 'relative' }}>
-                        <AdvancedDicomViewer 
-                          key={`${activeAssetIndex}_${idx}_${resetTrigger}`} 
-                          files={currentFiles || []} 
-                          preParsedMetadata={uploadedFiles[(activeAssetIndex + idx) % uploadedFiles.length]?.metadata}
-                          activeTool={activeTool}
-                          isCine={cineEnabled}
-                          isSynced={isSyncEnabled}
-                          keyImages={keyImages}
-                          onKeyImageToggle={toggleKeyImage}
-                          onSliceChange={(index, total) => {
-                            if (idx === 0) setCurrentSlice(index + 1);
-                          }}
-                          // Enhanced features - all enabled
-                          enableFullscreen={true}
-                          showMetadata={true}
-                          showMeasurements={true}
-                          showWindowingPresets={true}
-                          enableAdvancedTools={true}
-                          onFullscreenChange={(isFullscreen) => {
-                            console.log(`[DICOM] Viewport ${idx} fullscreen:`, isFullscreen);
-                          }}
-                          onMeasurement={(measurement) => {
-                            console.log(`[DICOM] New measurement in viewport ${idx}:`, measurement);
-                            if (onMeasurement) onMeasurement(measurement);
-                          }}
-                          onMetadata={(metadata) => {
-                            if (idx === 0) setActiveMetadata(metadata);
-                          }}
-                          // Viewport transformations
-                          invert={viewportProps.invert}
-                          flipHorizontal={viewportProps.flipHorizontal}
-                          flipVertical={viewportProps.flipVertical}
-                          rotation={viewportProps.rotation}
-                          resetTrigger={resetTrigger}
-                        />
-                        
-                        {/* Enhanced Overlay Information */}
-                        <div style={{ position: 'absolute', top: '15px', left: '15px', zIndex: 10, display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                          <div style={{ background: 'rgba(15, 23, 42, 0.9)', backdropFilter: 'blur(8px)', padding: '8px 15px', borderRadius: '8px', fontSize: '11px', color: '#e2e8f0', fontWeight: 900, letterSpacing: '1px', border: '1px solid rgba(255,255,255,0.1)' }}>
-                            {uploadedFiles[(activeAssetIndex + idx) % uploadedFiles.length]?.name?.toUpperCase() || 'SERIES'}
-                          </div>
-                          <div style={{ background: 'rgba(59, 130, 246, 0.9)', padding: '6px 12px', borderRadius: '6px', fontSize: '12px', color: 'white', fontWeight: 900, width: 'fit-content' }}>
-                            SLICE: {idx === 0 ? currentSlice : '?'} / {currentFiles?.length || 0}
-                          </div>
-                          {activeMetadata && idx === 0 && (
-                            <div style={{ background: 'rgba(16, 185, 129, 0.9)', padding: '4px 10px', borderRadius: '4px', fontSize: '10px', color: 'white', fontWeight: 900, width: 'fit-content' }}>
-                              {activeMetadata.modality} • {activeMetadata.rows}x{activeMetadata.columns}
-                            </div>
-                          )}
-                        </div>
+                )}
 
-                        {/* ACTIVE TOOL INDICATOR */}
-                        <div style={{ position: 'absolute', top: '15px', right: '15px', zIndex: 10 }}>
-                          <div style={{ 
-                            background: 'rgba(59, 130, 246, 0.9)', 
-                            padding: '8px 15px', 
-                            borderRadius: '8px', 
-                            fontSize: '11px', 
-                            color: 'white', 
-                            fontWeight: 900,
-                            display: 'flex',
-                            alignItems: 'center',
-                            gap: '8px',
-                            border: '2px solid rgba(255,255,255,0.2)'
-                          }}>
-                            <span style={{ fontSize: '14px' }}>
-                              {activeTool === 'WindowLevelTool' && '☀️'}
-                              {activeTool === 'ZoomTool' && '🔍'}
-                              {activeTool === 'PanTool' && '✋'}
-                              {activeTool === 'LengthTool' && '📏'}
-                              {activeTool === 'ArrowAnnotateTool' && '➡️'}
-                              {!['WindowLevelTool', 'ZoomTool', 'PanTool', 'LengthTool', 'ArrowAnnotateTool'].includes(activeTool) && '⚡'}
-                            </span>
-                            <span>
-                              {activeTool === 'WindowLevelTool' && 'WINDOW/LEVEL'}
-                              {activeTool === 'ZoomTool' && 'ZOOM'}
-                              {activeTool === 'PanTool' && 'PAN'}
-                              {activeTool === 'LengthTool' && 'MEASURE'}
-                              {activeTool === 'ArrowAnnotateTool' && 'ANNOTATE'}
-                              {activeTool === 'HeightTool' && 'HEIGHT'}
-                              {activeTool === 'BidirectionalTool' && 'BIDIRECTIONAL'}
-                              {activeTool === 'AngleTool' && 'ANGLE'}
-                              {activeTool === 'CobbAngleTool' && 'COBB ANGLE'}
-                              {activeTool === 'EllipticalROITool' && 'ELLIPSE ROI'}
-                              {activeTool === 'RectangleROITool' && 'RECTANGLE ROI'}
-                              {activeTool === 'CircleROITool' && 'CIRCLE ROI'}
-                              {activeTool === 'PlanarFreehandROITool' && 'FREEHAND ROI'}
-                              {activeTool === 'ProbeTool' && 'HU PROBE'}
-                              {activeTool === 'AdvancedMagnifyTool' && 'MAGNIFY'}
-                              {!['WindowLevelTool', 'ZoomTool', 'PanTool', 'LengthTool', 'ArrowAnnotateTool', 'HeightTool', 'BidirectionalTool', 'AngleTool', 'CobbAngleTool', 'EllipticalROITool', 'RectangleROITool', 'CircleROITool', 'PlanarFreehandROITool', 'ProbeTool', 'AdvancedMagnifyTool'].includes(activeTool) && 'ADVANCED TOOL'}
-                            </span>
-                          </div>
-                        </div>
+                {/* SERIES LIBRARY MINI-SIDEBAR */}
+                {uploadedFiles.length > 1 && (
+                  <div style={{ width: '60px', background: '#0f172a', borderRight: '1px solid #1e293b', display: 'flex', flexDirection: 'column', gap: '10px', padding: '10px 5px', zIndex: 10 }}>
+                    {uploadedFiles.map((f, i) => (
+                      <button
+                        key={i}
+                        onClick={() => setActiveAssetIndex(i)}
+                        title={f.name}
+                        style={{
+                          width: '100%', height: '50px', background: activeAssetIndex === i ? '#3b82f6' : 'rgba(255,255,255,0.05)',
+                          border: 'none', borderRadius: '8px', cursor: 'pointer', display: 'flex', flexDirection: 'column',
+                          alignItems: 'center', justifyContent: 'center', transition: '0.2s', gap: '4px'
+                        }}
+                      >
+                        <div style={{ fontSize: '12px' }}>🎞️</div>
+                        <div style={{ fontSize: '8px', color: 'white', fontWeight: 900, whiteSpace: 'nowrap', overflow: 'hidden', width: '100%', textAlign: 'center' }}>S{i + 1}</div>
+                      </button>
+                    ))}
+                  </div>
+                )}
 
-                        {/* Windowing Presets - Bottom Right */}
-                        <div style={{ position: 'absolute', bottom: '15px', right: '15px', zIndex: 10 }}>
-                          <select 
-                            onChange={(e) => {
-                              // This would be handled by the AdvancedDicomViewer component
-                              console.log('Windowing preset changed:', e.target.value);
-                            }}
-                            style={{ 
-                              background: 'rgba(15, 23, 42, 0.9)', 
-                              color: 'white', 
-                              border: '2px solid rgba(255,255,255,0.2)', 
-                              padding: '6px 12px', 
-                              borderRadius: '6px', 
-                              fontSize: '10px', 
-                              fontWeight: 900,
-                              outline: 'none',
-                              cursor: 'pointer'
-                            }}
-                          >
-                            <option value="Default">DEFAULT W/L</option>
-                            <option value="Lung">LUNG</option>
-                            <option value="Bone">BONE</option>
-                            <option value="Brain">BRAIN</option>
-                            <option value="Abdomen">ABDOMEN</option>
-                            <option value="Liver">LIVER</option>
-                            <option value="Mediastinum">MEDIASTINUM</option>
-                            <option value="Angio">ANGIO</option>
-                          </select>
-                        </div>
-
-                        {/* Key Images Indicator */}
-                        {keyImages.includes(`${activeAssetIndex + idx}_${currentSlice}`) && (
-                          <div style={{ position: 'absolute', top: '60px', right: '15px', zIndex: 10 }}>
-                            <div style={{ background: 'rgba(245, 158, 11, 0.9)', padding: '4px 10px', borderRadius: '6px', fontSize: '10px', color: 'white', fontWeight: 900, display: 'flex', alignItems: 'center', gap: '5px' }}>
-                              ⭐ KEY IMAGE
-                            </div>
-                          </div>
-                        )}
-
-                        {/* Active Tool & Instructions - Bottom Left */}
-                        <div style={{ position: 'absolute', bottom: '15px', left: '15px', zIndex: 10, display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                          <div style={{ background: 'rgba(15, 23, 42, 0.8)', backdropFilter: 'blur(8px)', padding: '4px 10px', borderRadius: '6px', fontSize: '9px', color: '#94a3b8', fontWeight: 900, letterSpacing: '1px', border: '1px solid rgba(255,255,255,0.1)' }}>
-                            ACTIVE: {activeTool?.replace('Tool', '').toUpperCase() || 'WINDOW_LEVEL'}
-                          </div>
-                          {activeTool && activeTool !== 'WindowLevelTool' && (
-                            <div style={{ background: 'rgba(59, 130, 246, 0.8)', padding: '3px 8px', borderRadius: '4px', fontSize: '8px', color: 'white', fontWeight: 700, maxWidth: '200px' }}>
-                              {activeTool === 'LengthTool' && 'Click and drag to measure distance'}
-                              {activeTool === 'AngleTool' && 'Click 3 points to measure angle'}
-                              {activeTool === 'EllipticalROITool' && 'Draw ellipse for ROI analysis'}
-                              {activeTool === 'ProbeTool' && 'Click to probe pixel values'}
-                              {activeTool === 'ArrowAnnotateTool' && 'Click and drag to annotate'}
-                              {activeTool === 'ZoomTool' && 'Click and drag to zoom'}
-                              {activeTool === 'PanTool' && 'Click and drag to pan'}
-                            </div>
-                          )}
-                        </div>
-
-                        {/* Measurement Results - Bottom Right */}
-                        {idx === 0 && (
-                          <div style={{ position: 'absolute', bottom: '15px', right: '15px', zIndex: 10, maxWidth: '250px' }}>
-                            <div style={{ background: 'rgba(15, 23, 42, 0.9)', backdropFilter: 'blur(8px)', padding: '8px 12px', borderRadius: '8px', border: '1px solid rgba(255,255,255,0.1)' }}>
-                              <div style={{ fontSize: '8px', color: '#94a3b8', fontWeight: 900, marginBottom: '4px', letterSpacing: '1px' }}>MEASUREMENTS</div>
-                              <div style={{ fontSize: '10px', color: '#e2e8f0', fontWeight: 700 }}>
-                                {/* This would be populated by the AdvancedDicomViewer component */}
-                                <div>Distance: 12.4 mm</div>
-                                <div>Area: 156.7 mm²</div>
-                                <div>HU: -45 ± 12</div>
-                              </div>
-                            </div>
-                          </div>
-                        )}
+                {uploadedFiles.length === 0 ? (
+                  <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#334155', fontSize: '12px', fontWeight: 950, letterSpacing: '2px', flexDirection: 'column', gap: '20px' }}>
+                    <div style={{ fontSize: '48px', opacity: 0.2 }}>📡</div>
+                    <div style={{ textAlign: 'center' }}>
+                      <div>WAITING_FOR_DATA_SIGNAL</div>
+                      <div style={{ fontSize: '10px', color: '#64748b', marginTop: '10px', fontWeight: 400 }}>
+                        Upload DICOM files or ZIP archives to begin analysis
                       </div>
                     </div>
-                  );
-                })}
-                
-                {/* Historical Mode Status Banner */}
-                {isHistoricalMode && (
-                  <div style={{ 
-                    position: 'absolute', top: '15px', left: '50%', transform: 'translateX(-50%)', zIndex: 100,
-                    background: 'rgba(234, 88, 12, 0.9)', backdropFilter: 'blur(10px)',
-                    padding: '8px 20px', borderRadius: '30px', border: '1px solid rgba(255,255,255,0.2)',
-                    display: 'flex', alignItems: 'center', gap: '15px', boxShadow: '0 10px 30px rgba(0,0,0,0.3)',
-                    animation: 'slideDown 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275)'
-                  }}>
-                     <div style={{ display: 'flex', flexDirection: 'column' }}>
-                        <span style={{ fontSize: '9px', fontWeight: 950, color: 'rgba(255,255,255,0.8)', letterSpacing: '2px' }}>COMPARATIVE_VIEW_ACTIVE</span>
-                        <span style={{ fontSize: '11px', fontWeight: 950, color: 'white' }}>
-                          {historicalStudyContext?.modality} — {new Date(historicalStudyContext?.dateTime || historicalStudyContext?.appointmentDate).toLocaleDateString()}
-                        </span>
-                     </div>
-                     <button 
-                       onClick={handleRestoreCurrentStudy}
-                       style={{ 
-                         background: 'white', color: '#ea580c', border: 'none', 
-                         padding: '6px 12px', borderRadius: '20px', fontSize: '9px', 
-                         fontWeight: 950, cursor: 'pointer', transition: 'all 0.2s'
-                       }}
-                     >
-                       RETURN TO CURRENT CASE
-                     </button>
+                    <input
+                      type="file"
+                      multiple
+                      accept=".dcm,.dicom,.zip"
+                      onChange={handleFileChange}
+                      style={{
+                        padding: '10px 20px',
+                        borderRadius: '8px',
+                        border: '2px dashed #3b82f6',
+                        background: 'rgba(59, 130, 246, 0.1)',
+                        color: '#3b82f6',
+                        cursor: 'pointer',
+                        fontSize: '11px',
+                        fontWeight: 700
+                      }}
+                    />
                   </div>
-                )}
+                ) : (
+                  <div style={{ flex: 1, display: 'grid', gridTemplateColumns: layoutMode === '2x2' ? '1fr 1fr' : '1fr', gridTemplateRows: layoutMode === '2x2' ? '1fr 1fr' : '1fr', gap: '2px' }}>
+                    {[...Array(layoutMode === '2x2' ? 4 : 1)].map((_, idx) => {
+                      const currentFiles = uploadedFiles[(activeAssetIndex + idx) % uploadedFiles.length]?.rawFiles;
+
+                      return (
+                        <div key={idx} style={{ position: 'relative', background: '#000', overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
+                          {/* DICOM Viewer with Advanced Tools */}
+                          <div style={{ flex: 1, position: 'relative' }}>
+                            <AdvancedDicomViewer
+                              key={`${activeAssetIndex}_${idx}_${resetTrigger}`}
+                              files={currentFiles || []}
+                              preParsedMetadata={uploadedFiles[(activeAssetIndex + idx) % uploadedFiles.length]?.metadata}
+                              activeTool={activeTool}
+                              isCine={cineEnabled}
+                              isSynced={isSyncEnabled}
+                              keyImages={keyImages}
+                              onKeyImageToggle={toggleKeyImage}
+                              onSliceChange={(index, total) => {
+                                if (idx === 0) setCurrentSlice(index + 1);
+                              }}
+                              // Enhanced features - all enabled
+                              enableFullscreen={true}
+                              showMetadata={true}
+                              showMeasurements={true}
+                              showWindowingPresets={true}
+                              enableAdvancedTools={true}
+                              onFullscreenChange={(isFullscreen) => {
+                                console.log(`[DICOM] Viewport ${idx} fullscreen:`, isFullscreen);
+                              }}
+                              onMeasurement={(measurement) => {
+                                console.log(`[DICOM] New measurement in viewport ${idx}:`, measurement);
+                                if (onMeasurement) onMeasurement(measurement);
+                              }}
+                              onMetadata={(metadata) => {
+                                if (idx === 0) setActiveMetadata(metadata);
+                              }}
+                              // Viewport transformations
+                              invert={viewportProps.invert}
+                              flipHorizontal={viewportProps.flipHorizontal}
+                              flipVertical={viewportProps.flipVertical}
+                              rotation={viewportProps.rotation}
+                              resetTrigger={resetTrigger}
+                            />
+
+                            {/* Enhanced Overlay Information */}
+                            <div style={{ position: 'absolute', top: '15px', left: '15px', zIndex: 10, display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                              <div style={{ background: 'rgba(15, 23, 42, 0.9)', backdropFilter: 'blur(8px)', padding: '8px 15px', borderRadius: '8px', fontSize: '11px', color: '#e2e8f0', fontWeight: 900, letterSpacing: '1px', border: '1px solid rgba(255,255,255,0.1)' }}>
+                                {uploadedFiles[(activeAssetIndex + idx) % uploadedFiles.length]?.name?.toUpperCase() || 'SERIES'}
+                              </div>
+                              <div style={{ background: 'rgba(59, 130, 246, 0.9)', padding: '6px 12px', borderRadius: '6px', fontSize: '12px', color: 'white', fontWeight: 900, width: 'fit-content' }}>
+                                SLICE: {idx === 0 ? currentSlice : '?'} / {currentFiles?.length || 0}
+                              </div>
+                              {activeMetadata && idx === 0 && (
+                                <div style={{ background: 'rgba(16, 185, 129, 0.9)', padding: '4px 10px', borderRadius: '4px', fontSize: '10px', color: 'white', fontWeight: 900, width: 'fit-content' }}>
+                                  {activeMetadata.modality} • {activeMetadata.rows}x{activeMetadata.columns}
+                                </div>
+                              )}
+                            </div>
+
+                            {/* ACTIVE TOOL INDICATOR */}
+                            <div style={{ position: 'absolute', top: '15px', right: '15px', zIndex: 10 }}>
+                              <div style={{
+                                background: 'rgba(59, 130, 246, 0.9)',
+                                padding: '8px 15px',
+                                borderRadius: '8px',
+                                fontSize: '11px',
+                                color: 'white',
+                                fontWeight: 900,
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: '8px',
+                                border: '2px solid rgba(255,255,255,0.2)'
+                              }}>
+                                <span style={{ fontSize: '14px' }}>
+                                  {activeTool === 'WindowLevelTool' && '☀️'}
+                                  {activeTool === 'ZoomTool' && '🔍'}
+                                  {activeTool === 'PanTool' && '✋'}
+                                  {activeTool === 'LengthTool' && '📏'}
+                                  {activeTool === 'ArrowAnnotateTool' && '➡️'}
+                                  {!['WindowLevelTool', 'ZoomTool', 'PanTool', 'LengthTool', 'ArrowAnnotateTool'].includes(activeTool) && '⚡'}
+                                </span>
+                                <span>
+                                  {activeTool === 'WindowLevelTool' && 'WINDOW/LEVEL'}
+                                  {activeTool === 'ZoomTool' && 'ZOOM'}
+                                  {activeTool === 'PanTool' && 'PAN'}
+                                  {activeTool === 'LengthTool' && 'MEASURE'}
+                                  {activeTool === 'ArrowAnnotateTool' && 'ANNOTATE'}
+                                  {activeTool === 'HeightTool' && 'HEIGHT'}
+                                  {activeTool === 'BidirectionalTool' && 'BIDIRECTIONAL'}
+                                  {activeTool === 'AngleTool' && 'ANGLE'}
+                                  {activeTool === 'CobbAngleTool' && 'COBB ANGLE'}
+                                  {activeTool === 'EllipticalROITool' && 'ELLIPSE ROI'}
+                                  {activeTool === 'RectangleROITool' && 'RECTANGLE ROI'}
+                                  {activeTool === 'CircleROITool' && 'CIRCLE ROI'}
+                                  {activeTool === 'PlanarFreehandROITool' && 'FREEHAND ROI'}
+                                  {activeTool === 'ProbeTool' && 'HU PROBE'}
+                                  {activeTool === 'AdvancedMagnifyTool' && 'MAGNIFY'}
+                                  {!['WindowLevelTool', 'ZoomTool', 'PanTool', 'LengthTool', 'ArrowAnnotateTool', 'HeightTool', 'BidirectionalTool', 'AngleTool', 'CobbAngleTool', 'EllipticalROITool', 'RectangleROITool', 'CircleROITool', 'PlanarFreehandROITool', 'ProbeTool', 'AdvancedMagnifyTool'].includes(activeTool) && 'ADVANCED TOOL'}
+                                </span>
+                              </div>
+                            </div>
+
+                            {/* Windowing Presets - Bottom Right */}
+                            <div style={{ position: 'absolute', bottom: '15px', right: '15px', zIndex: 10 }}>
+                              <select
+                                onChange={(e) => {
+                                  // This would be handled by the AdvancedDicomViewer component
+                                  console.log('Windowing preset changed:', e.target.value);
+                                }}
+                                style={{
+                                  background: 'rgba(15, 23, 42, 0.9)',
+                                  color: 'white',
+                                  border: '2px solid rgba(255,255,255,0.2)',
+                                  padding: '6px 12px',
+                                  borderRadius: '6px',
+                                  fontSize: '10px',
+                                  fontWeight: 900,
+                                  outline: 'none',
+                                  cursor: 'pointer'
+                                }}
+                              >
+                                <option value="Default">DEFAULT W/L</option>
+                                <option value="Lung">LUNG</option>
+                                <option value="Bone">BONE</option>
+                                <option value="Brain">BRAIN</option>
+                                <option value="Abdomen">ABDOMEN</option>
+                                <option value="Liver">LIVER</option>
+                                <option value="Mediastinum">MEDIASTINUM</option>
+                                <option value="Angio">ANGIO</option>
+                              </select>
+                            </div>
+
+                            {/* Key Images Indicator */}
+                            {keyImages.includes(`${activeAssetIndex + idx}_${currentSlice}`) && (
+                              <div style={{ position: 'absolute', top: '60px', right: '15px', zIndex: 10 }}>
+                                <div style={{ background: 'rgba(245, 158, 11, 0.9)', padding: '4px 10px', borderRadius: '6px', fontSize: '10px', color: 'white', fontWeight: 900, display: 'flex', alignItems: 'center', gap: '5px' }}>
+                                  ⭐ KEY IMAGE
+                                </div>
+                              </div>
+                            )}
+
+                            {/* Active Tool & Instructions - Bottom Left */}
+                            <div style={{ position: 'absolute', bottom: '15px', left: '15px', zIndex: 10, display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                              <div style={{ background: 'rgba(15, 23, 42, 0.8)', backdropFilter: 'blur(8px)', padding: '4px 10px', borderRadius: '6px', fontSize: '9px', color: '#94a3b8', fontWeight: 900, letterSpacing: '1px', border: '1px solid rgba(255,255,255,0.1)' }}>
+                                ACTIVE: {activeTool?.replace('Tool', '').toUpperCase() || 'WINDOW_LEVEL'}
+                              </div>
+                              {activeTool && activeTool !== 'WindowLevelTool' && (
+                                <div style={{ background: 'rgba(59, 130, 246, 0.8)', padding: '3px 8px', borderRadius: '4px', fontSize: '8px', color: 'white', fontWeight: 700, maxWidth: '200px' }}>
+                                  {activeTool === 'LengthTool' && 'Click and drag to measure distance'}
+                                  {activeTool === 'AngleTool' && 'Click 3 points to measure angle'}
+                                  {activeTool === 'EllipticalROITool' && 'Draw ellipse for ROI analysis'}
+                                  {activeTool === 'ProbeTool' && 'Click to probe pixel values'}
+                                  {activeTool === 'ArrowAnnotateTool' && 'Click and drag to annotate'}
+                                  {activeTool === 'ZoomTool' && 'Click and drag to zoom'}
+                                  {activeTool === 'PanTool' && 'Click and drag to pan'}
+                                </div>
+                              )}
+                            </div>
+
+                            {/* Measurement Results - Bottom Right */}
+                            {idx === 0 && (
+                              <div style={{ position: 'absolute', bottom: '15px', right: '15px', zIndex: 10, maxWidth: '250px' }}>
+                                <div style={{ background: 'rgba(15, 23, 42, 0.9)', backdropFilter: 'blur(8px)', padding: '8px 12px', borderRadius: '8px', border: '1px solid rgba(255,255,255,0.1)' }}>
+                                  <div style={{ fontSize: '8px', color: '#94a3b8', fontWeight: 900, marginBottom: '4px', letterSpacing: '1px' }}>MEASUREMENTS</div>
+                                  <div style={{ fontSize: '10px', color: '#e2e8f0', fontWeight: 700 }}>
+                                    {/* This would be populated by the AdvancedDicomViewer component */}
+                                    <div>Distance: 12.4 mm</div>
+                                    <div>Area: 156.7 mm²</div>
+                                    <div>HU: -45 ± 12</div>
+                                  </div>
+                                </div>
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })}
+
+                    {/* Historical Mode Status Banner */}
+                    {isHistoricalMode && (
+                      <div style={{
+                        position: 'absolute', top: '15px', left: '50%', transform: 'translateX(-50%)', zIndex: 100,
+                        background: 'rgba(234, 88, 12, 0.9)', backdropFilter: 'blur(10px)',
+                        padding: '8px 20px', borderRadius: '30px', border: '1px solid rgba(255,255,255,0.2)',
+                        display: 'flex', alignItems: 'center', gap: '15px', boxShadow: '0 10px 30px rgba(0,0,0,0.3)',
+                        animation: 'slideDown 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275)'
+                      }}>
+                        <div style={{ display: 'flex', flexDirection: 'column' }}>
+                          <span style={{ fontSize: '9px', fontWeight: 950, color: 'rgba(255,255,255,0.8)', letterSpacing: '2px' }}>COMPARATIVE_VIEW_ACTIVE</span>
+                          <span style={{ fontSize: '11px', fontWeight: 950, color: 'white' }}>
+                            {historicalStudyContext?.modality} - {new Date(historicalStudyContext?.dateTime || historicalStudyContext?.appointmentDate).toLocaleDateString()}
+                          </span>
+                        </div>
+                        <button
+                          onClick={handleRestoreCurrentStudy}
+                          style={{
+                            background: 'white', color: '#ea580c', border: 'none',
+                            padding: '6px 12px', borderRadius: '20px', fontSize: '9px',
+                            fontWeight: 950, cursor: 'pointer', transition: 'all 0.2s'
+                          }}
+                        >
+                          RETURN TO CURRENT CASE
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                    )}
+                  </div>
+                </div>
               </div>
             )}
-          </div>
-          </div>
-        </div>
 
-        {/* RIGHT PANEL: Reporting Workspace */}
-        <div className="panel panel-right">
-          <div className="resizer-handle" onMouseDown={startResizing}></div>
+            {/* REPORTING TAB */}
+            {activeMainTab === 'REPORTING' && (
+              <div className="panel panel-right" style={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0, background: 'white' }}>
+                <div style={{
+                  display: editorState === 'collapsed' ? 'none' : 'flex',
+                  flexDirection: 'column', flex: 1, paddingRight: '5px',
+                  animation: 'fadeIn 0.4s ease',
+                  overflow: 'hidden'
+                }}>
+                  {activeRightTab === 'REPORT' && (
+                    <div style={{ display: 'flex', flexDirection: 'column', flex: 1, overflow: 'hidden' }}>
+                      {/* Shared Header: Metadata & Status */}
+                      <div style={{
+                        display: 'flex',
+                        flexDirection: window.innerWidth < 768 ? 'column' : 'row',
+                        justifyContent: 'space-between',
+                        alignItems: window.innerWidth < 768 ? 'flex-start' : 'center',
+                        marginBottom: '15px',
+                        padding: '0 20px',
+                        gap: window.innerWidth < 768 ? '15px' : '0'
+                      }}>
+                        <div style={{ display: 'flex', flexDirection: window.innerWidth < 480 ? 'column' : 'row', alignItems: window.innerWidth < 480 ? 'flex-start' : 'center', gap: '10px' }}>
+                          <div style={{ padding: '6px 12px', background: '#f0f7ff', borderRadius: '10px', border: '1px solid #dbeafe', width: window.innerWidth < 480 ? '100%' : 'auto' }}>
+                            <div style={{ fontSize: '9px', fontWeight: 950, color: '#0f52ba', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Workstation Status</div>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginTop: '1px' }}>
+                              <div style={{ width: '6px', height: '6px', borderRadius: '50%', background: isOnline ? '#10b981' : '#f59e0b' }}></div>
+                              <span style={{ fontSize: '10px', fontWeight: 800, color: '#1e293b' }}>{isOnline ? 'CLOUD_CONNECTED' : 'OFFLINE_CACHE_ACTIVE'}</span>
+                            </div>
+                          </div>
 
-          <div className="tabs" style={{ 
-            marginTop: '0px', marginBottom: '10px', borderBottom: '1px solid #f1f5f9', display: editorState === 'collapsed' ? 'none' : 'flex',
-            justifyContent: 'center', gap: '20px'
-          }}>
-            <div 
-              className={`tab ${activeRightTab === 'REPORT' ? 'active' : ''}`} 
-              style={{ fontSize: '10px', fontWeight: 950, cursor: 'pointer' }}
-              onClick={() => setActiveRightTab('REPORT')}
-            >
-              REPORT_WORKSPACE
-            </div>
-            {showTimeline && (
-              <div
-                className={`tab ${activeRightTab === 'TIMELINE' ? 'active' : ''}`}
-                style={{
-                  fontSize: '10px',
-                  fontWeight: 950,
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '5px',
-                  position: 'relative',
-                  cursor: 'pointer'
-                }}
-                onClick={() => setActiveRightTab('TIMELINE')}
-              >
-                🕒 TIMELINE
-                {patientHistory.length > 0 && (
-                  <span style={{ background: '#ef4444', color: 'white', borderRadius: '99px', fontSize: '8px', fontWeight: 950, padding: '1px 5px', letterSpacing: '0.5px', lineHeight: 1.4 }}>
-                    {patientHistory.length}
-                  </span>
-                )}
+                          <div style={{ padding: '6px 12px', background: saveStatus === 'SAVING' ? '#fffbeb' : '#f8fafc', borderRadius: '10px', border: `1px solid ${saveStatus === 'SAVING' ? '#fde68a' : '#e2e8f0'}`, transition: 'all 0.3s', width: window.innerWidth < 480 ? '100%' : 'auto' }}>
+                            <div style={{ fontSize: '9px', fontWeight: 950, color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Cloud Intelligence</div>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginTop: '1px' }}>
+                              <span style={{ fontSize: '10px', fontWeight: 800, color: saveStatus === 'SAVING' ? '#d97706' : '#1e293b' }}>
+                                {saveStatus === 'SAVING' ? '📡 SYNCING...' : saveStatus === 'SUCCESS' ? `✅ SAVED AT ${lastSaved}` : saveStatus === 'DIRTY' ? '📝 PENDING SYNC' : '💤 MONITORING'}
+                              </span>
+                            </div>
+                          </div>
+                        </div>
+
+                        <div style={{ display: 'flex', gap: '8px', width: window.innerWidth < 768 ? '100%' : 'auto', flexWrap: 'wrap' }}>
+                          <button className="btn btn-outline" style={{ flex: 1, padding: '8px 10px', fontSize: '10px' }} onClick={() => handleSaveReport(false)}>💾 Save Draft</button>
+                          <button className="btn btn-outline" style={{ flex: 1, padding: '8px 10px', fontSize: '10px' }} onClick={handlePreviewPrint}>👁️ Preview</button>
+                          <button className="btn btn-success" style={{ flex: window.innerWidth < 768 ? '100%' : 'auto', padding: '10px 15px', fontSize: '10px', fontWeight: 900 }} onClick={() => handleSaveReport(true)}>Finalize & Sign</button>
+                        </div>
+                      </div>
+
+
+
+                      <div style={{ display: 'flex', flexDirection: 'column', flex: 1, overflow: 'hidden', minHeight: 0 }}>
+
+                        {/* Template selector */}
+                        <div style={{
+                          flexShrink: 0,
+                          padding: '8px 20px',
+                          background: 'white',
+                          borderBottom: '1px solid #f1f5f9',
+                        }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                            <label style={{ fontSize: '12px', fontWeight: 500, color: '#6b7280', whiteSpace: 'nowrap' }}>Template</label>
+                            <select
+                              className="template-selector"
+                              value={selectedTemplateId || ''}
+                              onChange={(e) => {
+                                const tpl = templates.find(t => String(t.id) === String(e.target.value));
+                                if (tpl) {
+                                  setSelectedTemplateId(tpl.id);
+                                  setEditorText(tpl.content || '');
+                                }
+                              }}
+                              style={{ flex: 1, padding: '6px 10px', borderRadius: '6px', border: '1px solid #cbd5e1', outline: 'none', fontSize: '13px' }}
+                            >
+                              <option value="">Select a template...</option>
+                              {templates.map(tpl => (
+                                <option key={tpl.id} value={tpl.id}>{tpl.name}</option>
+                              ))}
+                            </select>
+                          </div>
+                        </div>
+
+                        {/* NarrativeEditor — fills all remaining space; word-canvas is the only scroll context */}
+                        <NarrativeEditor
+                          ref={editorRef}
+                          content={editorText}
+                          onChange={(html) => setEditorText(html)}
+                          placeholder="Start typing your radiology report..."
+                          onSave={() => handleSaveReport(false)}
+                          style={{ flex: 1, minHeight: 0 }}
+                          keywordLibrary={keywordLibrary}
+                        />
+
+                      </div>
+
+
+
+                      {/* Signature Block */}
+                      <div style={{ marginTop: '20px', paddingTop: '15px', borderTop: '1px solid #e2e8f0', display: 'flex', justifyContent: 'flex-end', alignItems: 'center', gap: '15px' }}>
+                        <div style={{ textAlign: 'right' }}>
+                          <div style={{ fontWeight: 600, fontSize: '14px', color: '#0f172a' }}>{protocol?.hospital?.name || 'Authorized Diagnostic Center'}</div>
+                          <div style={{ fontSize: '12px', color: '#64748b' }}>Digital Medical Record Signature</div>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                </div>
               </div>
             )}
-          </div>
 
-          <div style={{ 
-            display: editorState === 'collapsed' ? 'none' : 'flex', 
-            flexDirection: 'column', flex: 1, paddingRight: '5px',
-            animation: 'fadeIn 0.4s ease',
-            overflow: 'hidden'
-          }}>
-            {activeRightTab === 'REPORT' ? (
-              <div style={{ display: 'flex', flexDirection: 'column', flex: 1, overflow: 'hidden' }}>
-        {/* Shared Header: Metadata & Status */}
-        <div style={{ 
-          display: 'flex', 
-          flexDirection: window.innerWidth < 768 ? 'column' : 'row',
-          justifyContent: 'space-between', 
-          alignItems: window.innerWidth < 768 ? 'flex-start' : 'center', 
-          marginBottom: '15px', 
-          padding: '0 20px',
-          gap: window.innerWidth < 768 ? '15px' : '0'
-        }}>
-          <div style={{ display: 'flex', flexDirection: window.innerWidth < 480 ? 'column' : 'row', alignItems: window.innerWidth < 480 ? 'flex-start' : 'center', gap: '10px' }}>
-             <div style={{ padding: '6px 12px', background: '#f0f7ff', borderRadius: '10px', border: '1px solid #dbeafe', width: window.innerWidth < 480 ? '100%' : 'auto' }}>
-                <div style={{ fontSize: '9px', fontWeight: 950, color: '#0f52ba', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Workstation Status</div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginTop: '1px' }}>
-                  <div style={{ width: '6px', height: '6px', borderRadius: '50%', background: isOnline ? '#10b981' : '#f59e0b' }}></div>
-                  <span style={{ fontSize: '10px', fontWeight: 800, color: '#1e293b' }}>{isOnline ? 'CLOUD_CONNECTED' : 'OFFLINE_CACHE_ACTIVE'}</span>
-                </div>
-             </div>
-             
-             <div style={{ padding: '6px 12px', background: saveStatus === 'SAVING' ? '#fffbeb' : '#f8fafc', borderRadius: '10px', border: `1px solid ${saveStatus === 'SAVING' ? '#fde68a' : '#e2e8f0'}`, transition: 'all 0.3s', width: window.innerWidth < 480 ? '100%' : 'auto' }}>
-                <div style={{ fontSize: '9px', fontWeight: 950, color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Cloud Intelligence</div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginTop: '1px' }}>
-                  <span style={{ fontSize: '10px', fontWeight: 800, color: saveStatus === 'SAVING' ? '#d97706' : '#1e293b' }}>
-                    {saveStatus === 'SAVING' ? '📡 SYNCING...' : saveStatus === 'SUCCESS' ? `✅ SAVED AT ${lastSaved}` : saveStatus === 'DIRTY' ? '📝 PENDING SYNC' : '💤 MONITORING'}
-                  </span>
-                </div>
-             </div>
-          </div>
-          
-          <div style={{ display: 'flex', gap: '8px', width: window.innerWidth < 768 ? '100%' : 'auto', flexWrap: 'wrap' }}>
-             <button className="btn btn-outline" style={{ flex: 1, padding: '8px 10px', fontSize: '10px' }} onClick={() => handleSaveReport(false)}>💾 Save Draft</button>
-             <button className="btn btn-outline" style={{ flex: 1, padding: '8px 10px', fontSize: '10px' }} onClick={handlePreviewPrint}>👁️ Preview</button>
-             <button className="btn btn-success" style={{ flex: window.innerWidth < 768 ? '100%' : 'auto', padding: '10px 15px', fontSize: '10px', fontWeight: 900 }} onClick={() => handleSaveReport(true)}>Finalize & Sign</button>
-          </div>
-        </div>
-
-
-
-            <div style={{ display: 'flex', flexDirection: 'column', flex: 1, overflow: 'hidden', minHeight: 0 }}>
-
-              {/* Template selector */}
-              <div style={{
-                flexShrink: 0,
-                padding: '8px 20px',
-                background: 'white',
-                borderBottom: '1px solid #f1f5f9',
-              }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                  <label style={{ fontSize: '12px', fontWeight: 500, color: '#6b7280', whiteSpace: 'nowrap' }}>Template</label>
-                  <select
-                    className="template-selector"
-                    value={selectedTemplateId || ''}
-                    onChange={(e) => {
-                      const tpl = templates.find(t => String(t.id) === String(e.target.value));
-                      if (tpl) {
-                        setSelectedTemplateId(tpl.id);
-                        setEditorText(tpl.content || '');
-                      }
-                    }}
-                    style={{ flex: 1, padding: '6px 10px', borderRadius: '6px', border: '1px solid #cbd5e1', outline: 'none', fontSize: '13px' }}
-                  >
-                    <option value="">Select a template...</option>
-                    {templates.map(tpl => (
-                      <option key={tpl.id} value={tpl.id}>{tpl.name}</option>
-                    ))}
-                  </select>
-                </div>
-              </div>
-
-              {/* NarrativeEditor — fills all remaining space; word-canvas is the only scroll context */}
-              <NarrativeEditor
-                ref={editorRef}
-                content={editorText}
-                onChange={(html) => setEditorText(html)}
-                placeholder="Start typing your radiology report..."
-                onSave={() => handleSaveReport(false)}
-                style={{ flex: 1, minHeight: 0 }}
-                keywordLibrary={keywordLibrary}
-              />
-
-            </div>
-
-
-
-            {/* Signature Block */}
-            <div style={{ marginTop: '20px', paddingTop: '15px', borderTop: '1px solid #e2e8f0', display: 'flex', justifyContent: 'flex-end', alignItems: 'center', gap: '15px' }}>
-              <div style={{ textAlign: 'right' }}>
-                <div style={{ fontWeight: 600, fontSize: '14px', color: '#0f172a' }}>{protocol?.hospital?.name || 'Authorized Diagnostic Center'}</div>
-                <div style={{ fontSize: '12px', color: '#64748b' }}>Digital Medical Record Signature</div>
-              </div>
-            </div>
-              </div>
-            ) : (
+            {/* TIMELINE TAB */}
+            {activeMainTab === 'TIMELINE' && (
               <div style={{ flex: 1, overflowY: 'auto', background: '#f8fafc' }}>
-                <PatientTimeline 
+                <PatientTimeline
                   history={patientHistory}
                   loading={loadingTimeline}
                   activeAppointmentId={appointmentId}
                   onViewReport={(study) => {
-                    // Navigate to a preview of this specific historical report
                     navigate(`/patient-timeline/${appointmentId}`, { state: { patient: activeAppointment, returnPath: `/reporting/${appointmentId}` } });
                   }}
                   onViewDicom={(study) => {
                     handleLoadHistoricalDicom(study);
+                    setActiveMainTab('DICOM'); // Switch to DICOM tab to see the loaded study
                   }}
                 />
               </div>
             )}
           </div>
-        </div>
-      </div>
-
+      
       {/* --- MODALS & DRAWERS --- */}
 
-      {/* Insert Table Modal */}
-      {showTableModal && (
-        <div className="overlay" style={{ zIndex: 10001 }} onClick={() => { setShowTableModal(false); setShowTableBuilder(false); }}>
-          <div className="modal" style={{ width: '600px' }} onClick={e => e.stopPropagation()}>
-            <div className="modal-header">
-              <span>{showTableBuilder ? '⚙️ Table Configuration' : '📊 Insert Measurement Table'}</span>
-              <button className="tool-btn" onClick={() => { setShowTableModal(false); setShowTableBuilder(false); }}>✕</button>
-            </div>
-            <div className="modal-body">
-              {!showTableBuilder ? (
-                <>
-                  <div style={{ fontSize: '12px', color: '#64748b', marginBottom: '15px' }}>Choose a preset to insert into your report:</div>
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
-                    {tablePresets.map(preset => (
-                      <div key={preset.id} className="preset-card" onClick={() => insertTable(preset)} style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                        <div style={{ fontSize: '20px' }}>📊</div>
-                        <div>
-                          <div style={{ fontSize: '14px', fontWeight: 700 }}>{preset.name}</div>
-                          <div style={{ fontSize: '10px', color: '#64748b', marginTop: '4px' }}>{preset.columns.length} columns</div>
+        {/* Insert Table Modal */}
+        {showTableModal && (
+          <div className="overlay" style={{ zIndex: 10001 }} onClick={() => { setShowTableModal(false); setShowTableBuilder(false); }}>
+            <div className="modal" style={{ width: '600px' }} onClick={e => e.stopPropagation()}>
+              <div className="modal-header">
+                <span>{showTableBuilder ? '⚙️ Table Configuration' : '📊 Insert Measurement Table'}</span>
+                <button className="tool-btn" onClick={() => { setShowTableModal(false); setShowTableBuilder(false); }}>✕</button>
+              </div>
+              <div className="modal-body">
+                {!showTableBuilder ? (
+                  <>
+                    <div style={{ fontSize: '12px', color: '#64748b', marginBottom: '15px' }}>Choose a preset to insert into your report:</div>
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
+                      {tablePresets.map(preset => (
+                        <div key={preset.id} className="preset-card" onClick={() => insertTable(preset)} style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                          <div style={{ fontSize: '20px' }}>📊</div>
+                          <div>
+                            <div style={{ fontSize: '14px', fontWeight: 700 }}>{preset.name}</div>
+                            <div style={{ fontSize: '10px', color: '#64748b', marginTop: '4px' }}>{preset.columns.length} columns</div>
+                          </div>
                         </div>
-                      </div>
-                    ))}
+                      ))}
+                    </div>
+                    <button className="btn btn-primary" style={{ width: '100%', marginTop: '20px' }} onClick={() => setShowTableBuilder(true)}>+ Configure New Table Type</button>
+                  </>
+                ) : (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '15px' }}>
+                    <div>
+                      <label style={{ fontSize: '11px', fontWeight: 700, color: '#64748b', display: 'block', marginBottom: '5px' }}>TABLE NAME</label>
+                      <input
+                        type="text"
+                        placeholder="e.g., Fetal Growth"
+                        value={newTable.name}
+                        onChange={e => setNewTable({ ...newTable, name: e.target.value })}
+                        style={{ width: '100%', padding: '10px', border: '1px solid #cbd5e1', borderRadius: '6px' }}
+                      />
+                    </div>
+                    <div>
+                      <label style={{ fontSize: '11px', fontWeight: 700, color: '#64748b', display: 'block', marginBottom: '5px' }}>COLUMN HEADERS</label>
+                      {newTable.columns.map((col, idx) => (
+                        <div key={idx} style={{ display: 'flex', gap: '5px', marginBottom: '8px' }}>
+                          <input
+                            type="text"
+                            placeholder={`Column ${idx + 1}`}
+                            value={col}
+                            onChange={e => {
+                              const newCols = [...newTable.columns];
+                              newCols[idx] = e.target.value;
+                              setNewTable({ ...newTable, columns: newCols });
+                            }}
+                            style={{ flex: 1, padding: '8px', border: '1px solid #cbd5e1', borderRadius: '6px', fontSize: '13px' }}
+                          />
+                          <button
+                            className="tool-btn"
+                            onClick={() => {
+                              const newCols = newTable.columns.filter((_, i) => i !== idx);
+                              setNewTable({ ...newTable, columns: newCols });
+                            }}
+                            style={{ background: '#fecaca', color: '#dc2626' }}
+                          >✕</button>
+                        </div>
+                      ))}
+                      <button className="btn btn-outline" style={{ width: '100%', fontSize: '12px' }} onClick={() => setNewTable({ ...newTable, columns: [...newTable.columns, ''] })}>+ Add Column</button>
+                    </div>
+                    <div style={{ display: 'flex', gap: '10px', marginTop: '10px' }}>
+                      <button className="btn btn-outline" style={{ flex: 1 }} onClick={() => setShowTableBuilder(false)}>Cancel</button>
+                      <button className="btn btn-primary" style={{ flex: 2 }} onClick={handleSaveTable}>Save Table Preset</button>
+                    </div>
                   </div>
-                  <button className="btn btn-primary" style={{ width: '100%', marginTop: '20px' }} onClick={() => setShowTableBuilder(true)}>+ Configure New Table Type</button>
-                </>
-              ) : (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '15px' }}>
-                  <div>
-                    <label style={{ fontSize: '11px', fontWeight: 700, color: '#64748b', display: 'block', marginBottom: '5px' }}>TABLE NAME</label>
-                    <input 
-                      type="text" 
-                      placeholder="e.g., Fetal Growth" 
-                      value={newTable.name}
-                      onChange={e => setNewTable({...newTable, name: e.target.value})}
-                      style={{ width: '100%', padding: '10px', border: '1px solid #cbd5e1', borderRadius: '6px' }}
-                    />
-                  </div>
-                  <div>
-                    <label style={{ fontSize: '11px', fontWeight: 700, color: '#64748b', display: 'block', marginBottom: '5px' }}>COLUMN HEADERS</label>
-                    {newTable.columns.map((col, idx) => (
-                      <div key={idx} style={{ display: 'flex', gap: '5px', marginBottom: '8px' }}>
-                        <input 
-                          type="text" 
-                          placeholder={`Column ${idx + 1}`} 
-                          value={col}
-                          onChange={e => {
-                            const newCols = [...newTable.columns];
-                            newCols[idx] = e.target.value;
-                            setNewTable({...newTable, columns: newCols});
-                          }}
-                          style={{ flex: 1, padding: '8px', border: '1px solid #cbd5e1', borderRadius: '6px', fontSize: '13px' }}
-                        />
-                        <button 
-                          className="tool-btn" 
-                          onClick={() => {
-                            const newCols = newTable.columns.filter((_, i) => i !== idx);
-                            setNewTable({...newTable, columns: newCols});
-                          }}
-                          style={{ background: '#fecaca', color: '#dc2626' }}
-                        >✕</button>
-                      </div>
-                    ))}
-                    <button className="btn btn-outline" style={{ width: '100%', fontSize: '12px' }} onClick={() => setNewTable({...newTable, columns: [...newTable.columns, '']})}>+ Add Column</button>
-                  </div>
-                  <div style={{ display: 'flex', gap: '10px', marginTop: '10px' }}>
-                    <button className="btn btn-outline" style={{ flex: 1 }} onClick={() => setShowTableBuilder(false)}>Cancel</button>
-                    <button className="btn btn-primary" style={{ flex: 2 }} onClick={handleSaveTable}>Save Table Preset</button>
-                  </div>
-                </div>
-              )}
+                )}
+              </div>
             </div>
           </div>
-        </div>
-      )}
+        )}
 
-      <ReportPreviewModal 
-        isOpen={isPreviewOpen} 
-        onClose={() => setIsPreviewOpen(false)}
-        appointmentId={appointmentId}
-        doctorId={activeAppointment?.doctorId || activeAppointment?.doctorUserId || activeAppointment?.doctor?.userId || sessionStorage.getItem('1rad_doctor_id')}
-        patientData={activeAppointment}
-        reportContent={{
-          mode: 'Narrative',
-          text: editorText,
-          data: {},
-          impression: impression,
-          advice: advice,
-          isFinalized: isFinalized
-        }}
-      />
-      {renderShortcutsHelp()}
-    </div>
+        <ReportPreviewModal
+          isOpen={isPreviewOpen}
+          onClose={() => setIsPreviewOpen(false)}
+          appointmentId={appointmentId}
+          doctorId={activeAppointment?.doctorId || activeAppointment?.doctorUserId || activeAppointment?.doctor?.userId || sessionStorage.getItem('1rad_doctor_id')}
+          patientData={activeAppointment}
+          reportContent={{
+            mode: 'Narrative',
+            text: editorText,
+            data: {},
+            impression: impression,
+            advice: advice,
+            isFinalized: isFinalized
+          }}
+        />
+        {renderShortcutsHelp()}
+      </div>
   );
+
 };
 
 export default ReportingPage;
