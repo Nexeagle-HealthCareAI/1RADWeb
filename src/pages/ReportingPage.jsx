@@ -75,6 +75,9 @@ const ReportingPage = () => {
   const [activeRightTab, setActiveRightTab] = useState('REPORT'); // 'REPORT', 'TIMELINE'
   const [expandedHistoryReport, setExpandedHistoryReport] = useState({}); // { [appointmentId]: { loading, data, error } }
   const [expandedHistoryDicom, setExpandedHistoryDicom] = useState({}); // { [appointmentId]: true/false }
+  const [isHistoricalMode, setIsHistoricalMode] = useState(false);
+  const [historicalStudyContext, setHistoricalStudyContext] = useState(null);
+  const [originalAssets, setOriginalAssets] = useState([]);
   
   // --- AUTOSAVE SYSTEM ---
   const [lastSaved, setLastSaved] = useState(null);
@@ -238,6 +241,60 @@ const ReportingPage = () => {
       setLoadingTimeline(false);
     }
   }, []);
+  
+  const handleLoadHistoricalDicom = async (study) => {
+    const historicalId = study.appointmentId || study.AppointmentId || study.id || study.Id;
+    if (historicalId === String(appointmentId)) return;
+
+    setLoading(true);
+    setProcessingStatus(`Synchronizing comparative study: ${study.modality || 'DICOM'}...`);
+    
+    try {
+      const assetRes = await apiClient.get(`/Study/${historicalId}/assets`);
+      if (assetRes.data && assetRes.data.length > 0) {
+        const hydAssets = assetRes.data.map((asset, index) => ({
+            id: asset.id,
+            name: asset.fileName || `Historical Asset ${index + 1}`,
+            type: (asset.fileType || 'unknown').toUpperCase(),
+            remoteUrl: asset.blobUrl,
+            needsHydration: (asset.fileType || '').toLowerCase() === 'zip',
+            rawFiles: [],
+            isHistorical: true
+        }));
+        
+        setUploadedFiles(hydAssets);
+        setIsHistoricalMode(true);
+        setHistoricalStudyContext(study);
+        setActiveAssetIndex(0);
+        
+        // Switch to split mode if on tablet to ensure visibility
+        if (isTablet) setActiveWorkspaceMode('split');
+        
+        console.info(`[1RAD] Historical Context Injected: ${historicalId}`);
+      } else {
+        alert("No imaging assets found for this historical study.");
+      }
+    } catch (err) {
+      console.error("[1RAD] Historical load failure:", err);
+      alert("System Error: Could not synchronize historical study assets.");
+    } finally {
+      setLoading(false);
+      setProcessingStatus('');
+    }
+  };
+
+  const handleRestoreCurrentStudy = () => {
+    setLoading(true);
+    setProcessingStatus('Restoring active case context...');
+    setTimeout(() => {
+        setUploadedFiles(originalAssets);
+        setIsHistoricalMode(false);
+        setHistoricalStudyContext(null);
+        setActiveAssetIndex(0);
+        setLoading(false);
+        setProcessingStatus('');
+    }, 400);
+  };
 
   // --- DATA FETCHING ---
   const fetchReportingContext = useCallback(async (appId) => {
@@ -330,6 +387,7 @@ const ReportingPage = () => {
         
         console.info(`[1RAD] Processed assets:`, hydAssets);
         setUploadedFiles(hydAssets);
+        setOriginalAssets(hydAssets);
         
         // Auto-hydrate first asset if it's a ZIP
         if (hydAssets.length > 0 && hydAssets[0].needsHydration) {
@@ -3402,6 +3460,34 @@ const ReportingPage = () => {
                     </div>
                   );
                 })}
+                
+                {/* Historical Mode Status Banner */}
+                {isHistoricalMode && (
+                  <div style={{ 
+                    position: 'absolute', top: '15px', left: '50%', transform: 'translateX(-50%)', zIndex: 100,
+                    background: 'rgba(234, 88, 12, 0.9)', backdropFilter: 'blur(10px)',
+                    padding: '8px 20px', borderRadius: '30px', border: '1px solid rgba(255,255,255,0.2)',
+                    display: 'flex', alignItems: 'center', gap: '15px', boxShadow: '0 10px 30px rgba(0,0,0,0.3)',
+                    animation: 'slideDown 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275)'
+                  }}>
+                     <div style={{ display: 'flex', flexDirection: 'column' }}>
+                        <span style={{ fontSize: '9px', fontWeight: 950, color: 'rgba(255,255,255,0.8)', letterSpacing: '2px' }}>COMPARATIVE_VIEW_ACTIVE</span>
+                        <span style={{ fontSize: '11px', fontWeight: 950, color: 'white' }}>
+                          {historicalStudyContext?.modality} — {new Date(historicalStudyContext?.dateTime || historicalStudyContext?.appointmentDate).toLocaleDateString()}
+                        </span>
+                     </div>
+                     <button 
+                       onClick={handleRestoreCurrentStudy}
+                       style={{ 
+                         background: 'white', color: '#ea580c', border: 'none', 
+                         padding: '6px 12px', borderRadius: '20px', fontSize: '9px', 
+                         fontWeight: 950, cursor: 'pointer', transition: 'all 0.2s'
+                       }}
+                     >
+                       RETURN TO CURRENT CASE
+                     </button>
+                  </div>
+                )}
               </div>
             )}
           </div>
@@ -3558,8 +3644,7 @@ const ReportingPage = () => {
                     navigate(`/patient-timeline/${appointmentId}`, { state: { patient: activeAppointment, returnPath: `/reporting/${appointmentId}` } });
                   }}
                   onViewDicom={(study) => {
-                    // Logic to load historical DICOM if available
-                    alert(`Loading DICOM for study: ${study.procedureName}. This would typically switch the viewer context.`);
+                    handleLoadHistoricalDicom(study);
                   }}
                 />
               </div>
