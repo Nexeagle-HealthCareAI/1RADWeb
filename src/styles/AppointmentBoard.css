@@ -338,9 +338,11 @@
   padding: 6px 14px;
   border-radius: 10px;
   font-size: 10px;
-  font-weight: 950;
+  font-weight: 800;
   text-transform: uppercase;
   letter-spacing: 0.5px;
+  white-space: nowrap;
+  line-height: 1;
 }
 
 /* ==========================================================================

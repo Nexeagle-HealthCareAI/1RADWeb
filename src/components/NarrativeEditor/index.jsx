@@ -25,6 +25,10 @@ import { ListStyles } from './extensions/ListStyles';
 import { Sort } from './extensions/Sort';
 import { MultilevelList } from './extensions/MultilevelList';
 import { PageNumber } from './extensions/PageNumberNode';
+import { AutoCorrect } from './extensions/AutoCorrect';
+import TableToolbar from './TableToolbar';
+import ImageToolbar from './ImageToolbar';
+import ContextMenu from './ContextMenu';
 import FindReplaceDialog from './dialogs/FindReplaceDialog';
 import SymbolPickerDialog from './dialogs/SymbolPickerDialog';
 import PromptDialog, { editorPrompt } from './dialogs/PromptDialog';
@@ -209,6 +213,11 @@ const NarrativeEditor = React.forwardRef(function NarrativeEditor({
   const [headerState, setHeaderState] = useState({ text: '', fontFamily: 'Calibri', fontSize: '9', align: 'left' });
   const [footerState, setFooterState] = useState({ text: '', fontFamily: 'Calibri', fontSize: '9', align: 'center' });
 
+  // Auto-save
+  const [saveStatus, setSaveStatus] = useState(''); // '' | 'modified' | 'saving' | 'saved'
+  const autoSaveTimerRef = useRef(null);
+  const fadeTimerRef = useRef(null);
+
   // Voice dictation — text inserted at cursor when a phrase finalises.
   const voice = useVoiceDictation({
     onResult: (text) => {
@@ -255,12 +264,20 @@ const NarrativeEditor = React.forwardRef(function NarrativeEditor({
       Sort,
       MultilevelList,
       PageNumber,
+      AutoCorrect,
       Underline,
       TextAlign.configure({ types: ['heading', 'paragraph'] }),
       TextStyle,
       Color,
       Highlight.configure({ multicolor: true }),
-      Image.configure({ inline: true, allowBase64: true }),
+      Image.configure({ inline: true, allowBase64: true }).extend({
+        addAttributes() {
+          return {
+            ...this.parent?.(),
+            width:  { default: null, parseHTML: el => el.getAttribute('width')  || el.style.width  || null, renderHTML: a => a.width  ? { width: a.width,  style: `width:${a.width};height:auto`  } : {} },
+          };
+        },
+      }),
       Table.configure({ resizable: true }),
       TableRow,
       TableCell,
@@ -362,6 +379,41 @@ const NarrativeEditor = React.forwardRef(function NarrativeEditor({
       if (e.key === 'Escape') {
         if (shortcutsOpenRef.current) { e.preventDefault(); setShortcutsOpen(false); return; }
         // Find/Symbol dialogs handle their own Esc
+        return;
+      }
+
+      // ── Tab — Word-style indent (no modifier required) ────
+      if (e.key === 'Tab' && !e.ctrlKey && !e.metaKey && !e.altKey) {
+        if (!inEditor(e)) return;
+
+        // Let the Table extension handle Tab inside table cells
+        const { state } = editor;
+        const $from = state.selection.$from;
+        let insideTable = false;
+        for (let d = $from.depth; d > 0; d--) {
+          const name = $from.node(d).type.name;
+          if (name === 'table') { insideTable = true; break; }
+        }
+        if (insideTable) return; // pass through to Tiptap's table keymap
+
+        e.preventDefault();
+        e.stopImmediatePropagation();
+
+        if (e.shiftKey) {
+          // Shift+Tab: lift list item or decrease paragraph indent
+          if (editor.can().liftListItem('listItem')) {
+            editor.chain().focus().liftListItem('listItem').run();
+          } else {
+            editor.chain().focus().decreaseParagraphIndent().run();
+          }
+        } else {
+          // Tab: sink list item or increase paragraph indent
+          if (editor.can().sinkListItem('listItem')) {
+            editor.chain().focus().sinkListItem('listItem').run();
+          } else {
+            editor.chain().focus().increaseParagraphIndent().run();
+          }
+        }
         return;
       }
 
@@ -595,6 +647,28 @@ const NarrativeEditor = React.forwardRef(function NarrativeEditor({
     const el = editor.view?.dom;
     if (el) el.setAttribute('spellcheck', spellcheckOn ? 'true' : 'false');
   }, [editor, spellcheckOn]);
+
+  // Auto-save: debounce 3 s after last change, then call onSave()
+  useEffect(() => {
+    if (!editor || !onSave) return;
+    const handleUpdate = () => {
+      setSaveStatus('modified');
+      clearTimeout(autoSaveTimerRef.current);
+      clearTimeout(fadeTimerRef.current);
+      autoSaveTimerRef.current = setTimeout(() => {
+        setSaveStatus('saving');
+        try { onSave(); } catch (_) { /* ignore */ }
+        setSaveStatus('saved');
+        fadeTimerRef.current = setTimeout(() => setSaveStatus(''), 3000);
+      }, 3000);
+    };
+    editor.on('update', handleUpdate);
+    return () => {
+      editor.off('update', handleUpdate);
+      clearTimeout(autoSaveTimerRef.current);
+      clearTimeout(fadeTimerRef.current);
+    };
+  }, [editor, onSave]);
 
   // Inject / update header & footer divs on every .word-page element.
   // These sit alongside .word-page-inner (outside ProseMirror's content hole),
@@ -832,6 +906,11 @@ const NarrativeEditor = React.forwardRef(function NarrativeEditor({
         onClose={() => setHeaderFooterOpen(false)}
       />
 
+      {/* Floating toolbars */}
+      <TableToolbar editor={editor} containerRef={containerRef} />
+      <ImageToolbar editor={editor} containerRef={containerRef} />
+      <ContextMenu  editor={editor} containerRef={containerRef} />
+
       <PromptDialog
         open={!!promptState}
         title={promptState?.title}
@@ -867,6 +946,10 @@ const NarrativeEditor = React.forwardRef(function NarrativeEditor({
           <span>{charCount} characters</span>
         </div>
         <div className="statusbar-right">
+          {saveStatus === 'modified' && <span className="autosave-status autosave-modified">Unsaved changes</span>}
+          {saveStatus === 'saving'   && <span className="autosave-status autosave-saving">Saving…</span>}
+          {saveStatus === 'saved'    && <span className="autosave-status autosave-saved">✓ Saved</span>}
+          {saveStatus && <span className="statusbar-sep" />}
           <kbd>Ctrl+S</kbd><span> Save</span>
           <span className="statusbar-sep" />
           <kbd>Ctrl+F</kbd><span> Find</span>

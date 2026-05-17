@@ -106,7 +106,7 @@ export default function AppointmentBoard() {
     date: getTodayString(), 
     doctor: '', 
     notes: '',
-    amount: 0,
+    amount: '',
     referralCutValue: 0
   });
 
@@ -531,6 +531,7 @@ export default function AppointmentBoard() {
       date: getTodayString(), 
       doctor: '', 
       notes: '',
+      amount: '',
       referralCutValue: 0
     });
 
@@ -1111,9 +1112,14 @@ export default function AppointmentBoard() {
             color: meta.color, 
             padding: '6px 12px', 
             width: 'fit-content',
+            whiteSpace: 'nowrap',
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: '6px',
             border: `1px solid ${meta.color}20`
           }}>
-            {meta.icon} {meta.label}
+            <span style={{ fontSize: '12px', lineHeight: '1', display: 'flex', alignItems: 'center' }}>{meta.icon}</span>
+            <span style={{ lineHeight: '1', display: 'flex', alignItems: 'center', fontWeight: 800 }}>{meta.label}</span>
           </div>
 
           {/* Column 7: Specialist */}
@@ -1628,7 +1634,7 @@ export default function AppointmentBoard() {
                   {MODALITIES.map(m => (
                     <div key={m} className={`modality-card ${newBooking.modality === m ? 'active' : ''}`} 
                       style={{ padding: '12px 8px', minHeight: 'auto' }}
-                      onClick={() => setNewBooking({...newBooking, modality: m, service: '', amount: 0, referralCutValue: 0})}
+                      onClick={() => setNewBooking({...newBooking, modality: m, service: '', amount: '', referralCutValue: 0})}
                     >
                       <span className="modality-icon" style={{ fontSize: '14px', fontWeight: 900, marginBottom: '4px', color: newBooking.modality === m ? 'white' : '#0f52ba' }}>{MODALITY_ICONS[m] || 'MOD'}</span>
                       <span className="modality-name" style={{ fontSize: '9px' }}>{m}</span>
@@ -1713,8 +1719,8 @@ export default function AppointmentBoard() {
                   <input 
                     type="number" 
                     placeholder="e.g. 500" 
-                    value={newBooking.amount || ''} 
-                    onChange={e => setNewBooking({...newBooking, amount: parseFloat(e.target.value) || 0})} 
+                    value={newBooking.amount} 
+                    onChange={e => setNewBooking({...newBooking, amount: e.target.value === '' ? '' : parseFloat(e.target.value)})} 
                     style={{ fontSize: '13px', padding: '10px' }} 
                   />
                   {newBooking.referralCutValue > 0 && (
@@ -1846,7 +1852,7 @@ export default function AppointmentBoard() {
                   <div style={{ fontSize: '8px', fontWeight: 900, color: '#0f52ba', textTransform: 'uppercase', letterSpacing: '1px', marginBottom: '8px' }}>Final Mission Briefing Summary</div>
                   <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 1fr', gap: '8px' }}>
                     <div><span style={{ fontSize: '8px', color: '#888', fontWeight: 700 }}>PATIENT</span><div style={{ fontWeight: 800, fontSize: '11px', color: '#1a1a2e' }}>{patients.find(p => p.id === newBooking.patientId)?.name}</div></div>
-                    <div><span style={{ fontSize: '8px', color: '#888', fontWeight: 700 }}>MODALITY</span><div style={{ fontWeight: 800, fontSize: '11px', color: '#1a1a2e' }}>{MODALITY_ICONS[newBooking.modality]} {newBooking.modality}</div></div>
+                    <div><span style={{ fontSize: '8px', color: '#888', fontWeight: 700 }}>MODALITY</span><div style={{ fontWeight: 800, fontSize: '11px', color: '#1a1a2e' }}>{newBooking.modality}</div></div>
                     <div style={{ gridColumn: 'span 2' }}>
                       <span style={{ fontSize: '8px', color: '#888', fontWeight: 700 }}>SERVICE & BILLING</span>
                       <div style={{ fontWeight: 800, fontSize: '11px', color: '#1a1a2e', display: 'flex', justifyContent: 'space-between' }}>

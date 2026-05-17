@@ -56,4 +56,6 @@ stages:
         output_location: ''                          # already built; nothing more to output
         api_location: ''                             # no API project
         skip_app_build: true                         # skip Oryx build & repo scan
+        skip_api_build: true                         # skip API host provisioning to prevent timeouts
+        verbose: true                                # enable detailed logs for better debugging
         azure_static_web_apps_api_token: '63267714dcea289a5d17b2d9f8758cf2ea3a6346a7758d78c822af846803efe601-ac25efd2-8938-4c37-8d4e-c7d5dddc25ca0000326058a09500'

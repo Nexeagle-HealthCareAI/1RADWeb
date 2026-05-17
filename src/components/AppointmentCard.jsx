@@ -38,7 +38,8 @@ export default function AppointmentCard({
           color: meta.color,
           borderColor: `${meta.color}33`
         }}>
-          {meta.icon} {meta.label}
+          <span style={{ fontSize: '12px', lineHeight: '1', display: 'flex', alignItems: 'center' }}>{meta.icon}</span>
+          <span style={{ lineHeight: '1', display: 'flex', alignItems: 'center', fontWeight: 800 }}>{meta.label}</span>
         </div>
       </div>
 

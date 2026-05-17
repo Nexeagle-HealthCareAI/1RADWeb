@@ -36,7 +36,8 @@ const SECTIONS = [
     items: [
       ['Ctrl + Shift + L', 'Bullet list'],
       ['Ctrl + Shift + 7', 'Numbered list'],
-      ['Tab / Shift + Tab', 'Indent / outdent (inside list)'],
+      ['Tab',              'Increase indent (paragraph or list level)'],
+      ['Shift + Tab',      'Decrease indent (paragraph or list level)'],
     ],
   },
   {
