@@ -359,7 +359,7 @@ export default function AppointmentBoard() {
     expected: appointmentsForTab.filter(a => a.status?.toLowerCase() !== 'cancelled').length,
     confirmed: appointmentsForTab.filter(a => ['confirmed', 'in_progress', 'completed', 'scanned', 'reporting', 'reported'].includes(a.status?.toLowerCase())).length,
     inProgress: appointmentsForTab.filter(a => a.status?.toLowerCase() === 'in_progress').length,
-    completed: appointmentsForTab.filter(a => ['completed', 'scanned', 'reporting', 'reported'].includes(a.status?.toLowerCase())).length,
+    completed: appointmentsForTab.filter(a => a.status?.toLowerCase() === 'reported').length,
     cancelled: appointmentsForTab.filter(a => a.status?.toLowerCase() === 'cancelled').length,
   };
   const completionRate = stats.total > 0 ? Math.round((stats.completed / stats.total) * 100) : 0;
