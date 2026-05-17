@@ -44,20 +44,20 @@ export default function Ribbon(props) {
 
   return (
     <div className="word-ribbon" style={{
-      background: '#fafafa',
-      borderBottom: '1px solid #e0e0e0',
+      background: '#f3f3f3',
+      borderBottom: '1px solid #d8d8d8',
       flexShrink: 0,
       userSelect: 'none',
       fontFamily: '"Segoe UI", system-ui, sans-serif',
-      boxShadow: '0 1px 0 rgba(0, 0, 0, 0.04)',
+      boxShadow: '0 1px 2px rgba(0, 0, 0, 0.06)',
     }}>
       {/* ── Quick Access Toolbar (Word-style, above tab strip) ───── */}
       <div style={{
         display: 'flex', alignItems: 'center', justifyContent: 'space-between',
         gap: '1px',
         height: '26px', padding: '0 12px',
-        background: '#f5f5f5',
-        borderBottom: '1px solid #e8e8e8',
+        background: '#f3f3f3',
+        borderBottom: '1px solid #ddd',
         fontSize: '11px',
       }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '1px' }}>
@@ -153,25 +153,25 @@ export default function Ribbon(props) {
                 onDoubleClick={e => { e.preventDefault(); handleTabDoubleClick(t.id); }}
                 style={{
                   border: 'none',
-                  background: isActive ? '#fafafa' : 'transparent',
-                  padding: '0 18px',
+                  background: isActive ? '#f3f3f3' : 'transparent',
+                  padding: '0 16px',
                   height: '30px',
                   marginBottom: '-1px',
                   position: 'relative',
                   fontSize: '12px',
-                  fontWeight: isActive ? 600 : 500,
-                  color: isActive ? '#0078d4' : '#555',
+                  fontWeight: isActive ? 700 : 400,
+                  color: isActive ? '#0078d4' : '#3b3b3b',
                   cursor: 'pointer',
                   fontFamily: 'inherit',
                   display: 'flex',
                   alignItems: 'center',
                   gap: '6px',
                   letterSpacing: '0.1px',
-                  transition: 'color 0.15s, background 0.15s',
-                  borderRadius: '3px 3px 0 0',
+                  transition: 'color 0.12s, background 0.12s',
+                  borderRadius: '2px 2px 0 0',
                 }}
-                onMouseEnter={e => { if (!isActive) { e.currentTarget.style.color = '#0078d4'; e.currentTarget.style.background = '#f3f7fc'; } }}
-                onMouseLeave={e => { if (!isActive) { e.currentTarget.style.color = '#555'; e.currentTarget.style.background = 'transparent'; } }}
+                onMouseEnter={e => { if (!isActive) { e.currentTarget.style.color = '#0078d4'; e.currentTarget.style.background = '#e8f1fc'; } }}
+                onMouseLeave={e => { if (!isActive) { e.currentTarget.style.color = '#3b3b3b'; e.currentTarget.style.background = 'transparent'; } }}
               >
                 {t.label}
                 {isActive && (
@@ -277,7 +277,7 @@ export default function Ribbon(props) {
               flexShrink: 0,
               transition: 'background 0.1s, border-color 0.1s',
             }}
-            onMouseEnter={e => { e.currentTarget.style.background = '#eff6fc'; e.currentTarget.style.borderColor = '#d6e6f5'; }}
+            onMouseEnter={e => { e.currentTarget.style.background = '#DEECF9'; e.currentTarget.style.borderColor = '#C7E0F4'; }}
             onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.borderColor = 'transparent'; }}
           >
             {ribbonCollapsed ? '⌄' : '⌃'}
@@ -287,9 +287,9 @@ export default function Ribbon(props) {
 
       {/* ── Active tab body ──────────────────────────────── */}
       <div style={{
-        height: ribbonCollapsed ? '0' : '98px',
-        padding: ribbonCollapsed ? '0 10px' : '4px 10px',
-        background: '#fafafa',
+        height: ribbonCollapsed ? '0' : '90px',
+        padding: ribbonCollapsed ? '0 10px' : '3px 10px 0',
+        background: '#f3f3f3',
         overflowX: ribbonCollapsed ? 'hidden' : 'auto',
         overflowY: 'hidden',
         msOverflowStyle: 'none',
@@ -326,7 +326,7 @@ const QATBtn = ({ title, onClick, disabled, icon }) => (
       fontFamily: 'inherit',
       transition: 'background 0.08s, border-color 0.08s',
     }}
-    onMouseEnter={e => { if (!disabled) { e.currentTarget.style.background = '#e8e8e8'; e.currentTarget.style.borderColor = '#d1d5db'; } }}
+            onMouseEnter={e => { if (!disabled) { e.currentTarget.style.background = '#DEECF9'; e.currentTarget.style.borderColor = '#C7E0F4'; } }}
     onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.borderColor = 'transparent'; }}
   >
     {icon}

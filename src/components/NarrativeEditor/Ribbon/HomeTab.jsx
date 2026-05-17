@@ -83,15 +83,15 @@ const ChangeCaseDropdown = ({ editor }) => {
         style={{
           display: 'inline-flex', alignItems: 'center', gap: '2px',
           minWidth: '34px', height: '24px', padding: '0 4px 0 6px',
-          background: open ? '#cce4f7' : 'transparent',
-          border: `1px solid ${open ? '#90c8f0' : 'transparent'}`,
-          borderRadius: '3px', cursor: 'pointer',
-          color: open ? '#003a75' : '#323130',
+          background: open ? '#DEECF9' : 'transparent',
+          border: `1px solid ${open ? '#2B86CE' : 'transparent'}`,
+          borderRadius: '2px', cursor: 'pointer',
+          color: open ? '#004578' : '#1f1f1f',
           fontSize: '13px', fontFamily: '"Segoe UI", system-ui, sans-serif',
           lineHeight: 1,
         }}
-        onMouseEnter={e => { if (!open) e.currentTarget.style.background = '#e8e8e8'; }}
-        onMouseLeave={e => { if (!open) e.currentTarget.style.background = 'transparent'; }}
+        onMouseEnter={e => { if (!open) { e.currentTarget.style.background = '#DEECF9'; e.currentTarget.style.borderColor = '#C7E0F4'; } }}
+        onMouseLeave={e => { if (!open) { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.borderColor = 'transparent'; } }}
       >
         <span style={{ fontWeight: 600 }}>Aa</span>
         <span style={{ fontSize: '8px', marginTop: '2px' }}>▾</span>
@@ -263,21 +263,21 @@ const SmallRowBtn = ({ label, icon, title, active, onClick }) => (
     title={title}
     style={{
       display: 'flex', alignItems: 'center', gap: '6px',
-      width: '78px', height: '18px',
+      width: '80px', height: '19px',
       padding: '0 6px',
-      background: active ? '#cce4f7' : 'transparent',
-      border: `1px solid ${active ? '#90c8f0' : 'transparent'}`,
-      borderRadius: '3px',
+      background: active ? '#DEECF9' : 'transparent',
+      border: `1px solid ${active ? '#2B86CE' : 'transparent'}`,
+      borderRadius: '2px',
       cursor: 'pointer',
       fontSize: '11px', lineHeight: 1,
-      color: active ? '#003a75' : '#323130',
+      color: active ? '#004578' : '#1f1f1f',
       fontFamily: '"Segoe UI", system-ui, sans-serif',
       boxSizing: 'border-box',
       flexShrink: 0,
-      transition: 'background 0.08s, border-color 0.08s',
+      transition: 'background 0.06s, border-color 0.06s',
     }}
-    onMouseEnter={e => { if (!active) e.currentTarget.style.background = '#e8e8e8'; }}
-    onMouseLeave={e => { if (!active) e.currentTarget.style.background = 'transparent'; }}
+    onMouseEnter={e => { if (!active) { e.currentTarget.style.background = '#DEECF9'; e.currentTarget.style.borderColor = '#C7E0F4'; } }}
+    onMouseLeave={e => { if (!active) { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.borderColor = 'transparent'; } }}
   >
     <span style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: 12, flexShrink: 0 }}>{icon}</span>
     <span style={{ whiteSpace: 'nowrap', lineHeight: 1 }}>{label}</span>

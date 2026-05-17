@@ -40,6 +40,16 @@ const RevenueHub = ({
     return sortConfig.direction === 'ASC' ? '↑' : '↓';
   };
 
+  const formatDate = (dateStr) => {
+    if (!dateStr) return 'N/A';
+    const date = new Date(dateStr);
+    const day = date.getDate();
+    const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    const month = months[date.getMonth()];
+    const year = date.getFullYear();
+    return `${day} ${month.toUpperCase()}, ${year}`;
+  };
+
   const getServicePrice = (serviceName) => {
     const service = serviceRegistry.find(s => (s.serviceName || s.descriptor)?.toLowerCase() === serviceName?.toLowerCase());
     return service ? (service.amount || service.unitPrice || 0) : 0;
@@ -246,6 +256,7 @@ const RevenueHub = ({
                       <th onClick={() => handleSort('displayId')} style={{ cursor: 'pointer', padding: '15px 10px', fontSize: '10px', fontWeight: 950, color: '#94a3b8', letterSpacing: '1px' }}>INVOICE_ID {getSortIcon('displayId')}</th>
                       <th onClick={() => handleSort('patientName')} style={{ cursor: 'pointer', padding: '15px 10px', fontSize: '10px', fontWeight: 950, color: '#94a3b8', letterSpacing: '1px' }}>PATIENT_ENTITY {getSortIcon('patientName')}</th>
                       <th onClick={() => handleSort('date')} style={{ cursor: 'pointer', padding: '15px 10px', fontSize: '10px', fontWeight: 950, color: '#94a3b8', letterSpacing: '1px' }}>TIMESTAMP {getSortIcon('date')}</th>
+                      <th style={{ padding: '15px 10px', fontSize: '10px', fontWeight: 950, color: '#94a3b8', letterSpacing: '1px' }}>MODALITY</th>
                       <th onClick={() => handleSort('grossAmount')} style={{ cursor: 'pointer', padding: '15px 10px', fontSize: '10px', fontWeight: 950, color: '#1e293b', letterSpacing: '1px', background: '#f8fafc' }}>GROSS {getSortIcon('grossAmount')}</th>
                       <th onClick={() => handleSort('discountAmount')} style={{ cursor: 'pointer', padding: '15px 10px', fontSize: '10px', fontWeight: 950, color: '#ef4444', letterSpacing: '1px', background: '#fff1f2' }}>DISCOUNT {getSortIcon('discountAmount')}</th>
                       <th onClick={() => handleSort('totalAmount')} style={{ cursor: 'pointer', padding: '15px 10px', fontSize: '10px', fontWeight: 950, color: '#0f52ba', letterSpacing: '1px', background: '#f0f4ff' }}>NET_PAYABLE {getSortIcon('totalAmount')}</th>
@@ -262,18 +273,18 @@ const RevenueHub = ({
                  <>
                    {paginatedFutureAppointments.map(app => (
                      <tr key={app.appointmentId} style={{ borderBottom: '1px solid #f8fafc' }}>
-                        <td style={{ padding: '20px 10px', fontSize: '12px', fontWeight: 900, color: '#64748b', fontFamily: 'monospace' }}>{app.displayId}</td>
-                        <td style={{ padding: '20px 10px', fontSize: '13px', fontWeight: 800, color: '#1e293b' }}>{(app.patientName || 'UNKNOWN').toUpperCase()}</td>
-                        <td style={{ padding: '20px 10px', fontSize: '12px', color: '#64748b', fontWeight: 600 }}>{new Date(app.date || app.dateTime).toLocaleDateString()}</td>
+                        <td style={{ padding: '20px 10px', fontSize: '11px', fontWeight: 900, color: '#64748b', fontFamily: 'monospace' }}>{app.displayId}</td>
+                        <td style={{ padding: '20px 10px', fontSize: '11.5px', fontWeight: 800, color: '#1e293b' }}>{(app.patientName || 'UNKNOWN').toUpperCase()}</td>
+                        <td style={{ padding: '20px 10px', fontSize: '11px', color: '#64748b', fontWeight: 600 }}>{formatDate(app.date || app.dateTime)}</td>
                         <td style={{ padding: '20px 10px' }}>
-                          <span style={{ padding: '4px 8px', background: '#f1f5f9', borderRadius: '6px', fontSize: '10px', fontWeight: 950, color: '#0f52ba' }}>{app.modality}</span>
+                          <span style={{ padding: '4px 8px', background: '#f1f5f9', borderRadius: '6px', fontSize: '9px', fontWeight: 950, color: '#0f52ba' }}>{(app.modality || 'US').toUpperCase()}</span>
                         </td>
-                        <td style={{ padding: '20px 10px', fontSize: '12px', fontWeight: 700, color: '#1e293b' }}>{app.service}</td>
-                        <td style={{ padding: '20px 10px', textAlign: 'right', fontSize: '14px', fontWeight: 950, color: '#0f52ba' }}>₹{getServicePrice(app.service).toLocaleString()}</td>
-                        <td style={{ padding: '20px 10px', textAlign: 'right', fontSize: '13px', fontWeight: 950, color: '#e11d48' }}>
+                        <td style={{ padding: '20px 10px', fontSize: '11px', fontWeight: 700, color: '#1e293b' }}>{app.service}</td>
+                        <td style={{ padding: '20px 10px', textAlign: 'right', fontSize: '12px', fontWeight: 950, color: '#0f52ba' }}>₹{getServicePrice(app.service).toLocaleString()}</td>
+                        <td style={{ padding: '20px 10px', textAlign: 'right', fontSize: '11.5px', fontWeight: 950, color: '#e11d48' }}>
                           {getServiceCut(app) > 0 ? `₹${getServiceCut(app).toLocaleString()}` : '—'}
                         </td>
-                        <td style={{ padding: '20px 10px', textAlign: 'right', fontSize: '14px', fontWeight: 950, color: '#166534' }}>
+                        <td style={{ padding: '20px 10px', textAlign: 'right', fontSize: '12px', fontWeight: 950, color: '#166534' }}>
                           ₹{(getServicePrice(app.service) - getServiceCut(app)).toLocaleString()}
                         </td>
                      </tr>
@@ -285,25 +296,28 @@ const RevenueHub = ({
                    )}
                    {paginatedInvoices.map(inv => (
                      <tr key={inv.invoiceId} style={{ borderBottom: '1px solid #f1f5f9', background: '#f8fafc', opacity: 0.85 }}>
-                        <td style={{ padding: '15px 10px', fontSize: '11px', fontWeight: 900, color: '#64748b', fontFamily: 'monospace' }}>{inv.displayId}</td>
-                        <td style={{ padding: '15px 10px', fontSize: '12px', fontWeight: 800, color: '#1e293b' }}>{(inv.patientName || 'UNKNOWN').toUpperCase()}</td>
-                        <td style={{ padding: '15px 10px', fontSize: '11px', color: '#0f52ba', fontWeight: 900 }}>BILLED</td>
-                        <td colSpan="2" style={{ padding: '15px 10px', fontSize: '11px', fontWeight: 700, color: '#64748b' }}>MANUAL_INVOICE_LEDGER</td>
-                        <td style={{ padding: '15px 10px', textAlign: 'right', fontSize: '13px', fontWeight: 950, color: '#0f52ba' }}>₹{(inv.totalAmount || 0).toLocaleString()}</td>
-                        <td style={{ padding: '15px 10px', textAlign: 'right', fontSize: '12px', fontWeight: 950, color: '#e11d48' }}>₹{(inv.commissionAmount || 0).toLocaleString()}</td>
-                        <td style={{ padding: '15px 10px', textAlign: 'right', fontSize: '13px', fontWeight: 950, color: '#166534' }}>₹{(inv.totalAmount - (inv.commissionAmount || 0)).toLocaleString()}</td>
+                        <td style={{ padding: '15px 10px', fontSize: '10px', fontWeight: 900, color: '#64748b', fontFamily: 'monospace' }}>{inv.displayId}</td>
+                        <td style={{ padding: '15px 10px', fontSize: '11px', fontWeight: 800, color: '#1e293b' }}>{(inv.patientName || 'UNKNOWN').toUpperCase()}</td>
+                        <td style={{ padding: '15px 10px', fontSize: '10px', color: '#0f52ba', fontWeight: 900 }}>BILLED</td>
+                        <td colSpan="2" style={{ padding: '15px 10px', fontSize: '10px', fontWeight: 700, color: '#64748b' }}>MANUAL_INVOICE_LEDGER</td>
+                        <td style={{ padding: '15px 10px', textAlign: 'right', fontSize: '11.5px', fontWeight: 950, color: '#0f52ba' }}>₹{(inv.totalAmount || 0).toLocaleString()}</td>
+                        <td style={{ padding: '15px 10px', textAlign: 'right', fontSize: '10px', fontWeight: 950, color: '#e11d48' }}>₹{(inv.commissionAmount || 0).toLocaleString()}</td>
+                        <td style={{ padding: '15px 10px', textAlign: 'right', fontSize: '11.5px', fontWeight: 950, color: '#166534' }}>₹{(inv.totalAmount - (inv.commissionAmount || 0)).toLocaleString()}</td>
                      </tr>
                    ))}
                  </>
                ) : (
                  paginatedInvoices.map(inv => (
                    <tr key={inv.invoiceId} style={{ borderBottom: '1px solid #f8fafc', transition: 'background 0.2s' }}>
-                     <td style={{ padding: '20px 10px', fontSize: '12px', fontWeight: 900, color: '#0f52ba', fontFamily: 'monospace' }}>{inv?.displayId || 'N/A'}</td>
-                     <td style={{ padding: '20px 10px', fontSize: '13px', fontWeight: 800, color: '#1e293b' }}>{(inv?.patientName || 'UNKNOWN').toUpperCase()}</td>
-                     <td style={{ padding: '20px 10px', fontSize: '12px', color: '#64748b', fontWeight: 600 }}>{inv?.createdAt ? new Date(inv.createdAt).toLocaleString() : 'N/A'}</td>
-                     <td style={{ padding: '20px 10px', fontSize: '13px', fontWeight: 700, color: '#64748b', background: '#f8fafc' }}>₹{(inv.grossAmount || 0).toLocaleString()}</td>
-                     <td style={{ padding: '20px 10px', fontSize: '13px', fontWeight: 950, color: '#ef4444', background: '#fff1f2' }}>{(inv?.discountAmount || 0) > 0 ? `-₹${(inv.discountAmount || 0).toLocaleString()}` : '—'}</td>
-                     <td style={{ padding: '20px 10px', fontSize: '14px', fontWeight: 950, color: '#0f52ba', background: '#f0f4ff' }}>₹{(inv?.totalAmount || 0).toLocaleString()}</td>
+                     <td style={{ padding: '20px 10px', fontSize: '11px', fontWeight: 900, color: '#0f52ba', fontFamily: 'monospace' }}>{inv?.displayId || 'N/A'}</td>
+                     <td style={{ padding: '20px 10px', fontSize: '11.5px', fontWeight: 800, color: '#1e293b' }}>{(inv?.patientName || 'UNKNOWN').toUpperCase()}</td>
+                     <td style={{ padding: '20px 10px', fontSize: '11px', color: '#64748b', fontWeight: 600 }}>{formatDate(inv?.createdAt)}</td>
+                     <td style={{ padding: '20px 10px' }}>
+                       <span style={{ padding: '4px 8px', background: '#f1f5f9', borderRadius: '6px', fontSize: '9px', fontWeight: 950, color: '#0f52ba' }}>{(inv.modality || 'US').toUpperCase()}</span>
+                     </td>
+                     <td style={{ padding: '20px 10px', fontSize: '11.5px', fontWeight: 700, color: '#64748b', background: '#f8fafc' }}>₹{(inv.grossAmount || 0).toLocaleString()}</td>
+                     <td style={{ padding: '20px 10px', fontSize: '11.5px', fontWeight: 950, color: '#ef4444', background: '#fff1f2' }}>{(inv?.discountAmount || 0) > 0 ? `-₹${(inv.discountAmount || 0).toLocaleString()}` : '—'}</td>
+                     <td style={{ padding: '20px 10px', fontSize: '12px', fontWeight: 950, color: '#0f52ba', background: '#f0f4ff' }}>₹{(inv?.totalAmount || 0).toLocaleString()}</td>
                      <td style={{ padding: '20px 10px' }}>
                          {(Number(inv?.commissionAmount) || 0) > 0 ? (
                            <div style={{ display: 'flex', flexDirection: 'column' }}>
@@ -311,13 +325,13 @@ const RevenueHub = ({
                               <span style={{ fontSize: '8px', fontWeight: 800, color: '#e11d48', opacity: 0.7 }}>LOGGED_PAYOUT</span>
                            </div>
                          ) : (
-                           <span style={{ fontSize: '12px', color: '#cbd5e1', fontWeight: 700 }}>—</span>
+                           <span style={{ fontSize: '11px', color: '#cbd5e1', fontWeight: 700 }}>—</span>
                          )}
                      </td>
-                     <td style={{ padding: '20px 10px', fontSize: '14px', fontWeight: 950, color: '#166534', background: '#f0fdf4' }}>₹{(Number(inv?.totalAmount || 0) - (Number(inv?.commissionAmount) || 0)).toLocaleString()}</td>
+                     <td style={{ padding: '20px 10px', fontSize: '12px', fontWeight: 950, color: '#166534', background: '#f0fdf4' }}>₹{(Number(inv?.totalAmount || 0) - (Number(inv?.commissionAmount) || 0)).toLocaleString()}</td>
                      <td style={{ padding: '20px 10px' }}>
                         <span style={{ 
-                          padding: '6px 12px', borderRadius: '8px', fontSize: '9px', fontWeight: 950,
+                          padding: '6px 12px', borderRadius: '8px', fontSize: '8.5px', fontWeight: 950,
                           background: inv?.status === 'PAID' ? '#ecfdf5' : '#fff7ed',
                           color: inv?.status === 'PAID' ? '#059669' : '#ea580c'
                         }}>
@@ -349,10 +363,10 @@ const RevenueHub = ({
                              setIsPayoutDrawerOpen(true);
                           }}
                            style={{ 
-                             padding: '8px 12px', borderRadius: '10px', border: 'none', 
+                             padding: '6px 10px', borderRadius: '10px', border: 'none', 
                              background: '#fff1f2', 
                              color: '#e11d48', 
-                             fontSize: '10px', fontWeight: 950, 
+                             fontSize: '8.5px', fontWeight: 950, 
                              cursor: 'pointer', 
                              boxShadow: '0 2px 5px rgba(225,29,72,0.1)' 
                            }} >UPDATE PAYOUT</button>
@@ -375,7 +389,7 @@ const RevenueHub = ({
                          <div style={{ width: '1px', height: '20px', background: '#e2e8f0', margin: '0 5px' }}></div>
                         <button 
                           onClick={() => { setSelectedInvoice(inv); setIsInvoiceDrawerOpen(true); }}
-                          style={{ padding: '8px 16px', borderRadius: '10px', border: '1px solid #e2e8f0', background: 'white', color: '#0f52ba', fontSize: '10px', fontWeight: 950, cursor: 'pointer' }}
+                          style={{ padding: '6px 12px', borderRadius: '10px', border: '1px solid #e2e8f0', background: 'white', color: '#0f52ba', fontSize: '9px', fontWeight: 950, cursor: 'pointer' }}
                         >{inv.status === 'PAID' ? 'VIEW' : 'PAYMENT'}</button>
 
 
@@ -383,7 +397,7 @@ const RevenueHub = ({
 
                         <button 
                           onClick={() => handleDeleteInvoice(inv.invoiceId)}
-                          style={{ padding: '8px 12px', borderRadius: '10px', border: 'none', background: '#fee2e2', color: '#ef4444', fontSize: '10px', fontWeight: 950, cursor: 'pointer' }}
+                          style={{ padding: '6px 10px', borderRadius: '10px', border: 'none', background: '#fee2e2', color: '#ef4444', fontSize: '9px', fontWeight: 950, cursor: 'pointer' }}
                         >DEL</button>
                      </td>
                    </tr>
@@ -391,7 +405,7 @@ const RevenueHub = ({
                )}
                 {(timeFilter === 'FUTURE' ? ((futureAppointments?.length || 0) + (filteredInvoices?.length || 0)) : (filteredInvoices?.length || 0)) === 0 && (
                   <tr>
-                    <td colSpan="10" style={{ padding: '80px', textAlign: 'center', color: '#94a3b8', fontSize: '12px', fontWeight: 700 }}>NO DATA DETECTED IN ACTIVE SCOPE</td>
+                    <td colSpan="11" style={{ padding: '80px', textAlign: 'center', color: '#94a3b8', fontSize: '12px', fontWeight: 700 }}>NO DATA DETECTED IN ACTIVE SCOPE</td>
                   </tr>
                 )}
              </tbody>

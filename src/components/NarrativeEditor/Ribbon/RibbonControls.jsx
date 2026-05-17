@@ -10,17 +10,17 @@ export const Btn = ({ onClick, disabled, active, title, children, style = {} }) 
     title={title}
     style={{
       display: 'flex', alignItems: 'center', justifyContent: 'center',
-      minWidth: '26px', height: '26px', padding: '0 6px',
-      background: active ? '#cce4f7' : 'transparent',
-      border: `1px solid ${active ? '#90c8f0' : 'transparent'}`,
-      borderRadius: '3px', cursor: disabled ? 'not-allowed' : 'pointer',
-      fontSize: '13px', color: active ? '#003a75' : '#323130',
+      minWidth: '26px', height: '26px', padding: '0 5px',
+      background: active ? '#DEECF9' : 'transparent',
+      border: `1px solid ${active ? '#2B86CE' : 'transparent'}`,
+      borderRadius: '2px', cursor: disabled ? 'not-allowed' : 'pointer',
+      fontSize: '13px', color: active ? '#004578' : '#1f1f1f',
       opacity: disabled ? 0.38 : 1, lineHeight: 1, flexShrink: 0,
       fontFamily: '"Segoe UI", system-ui, sans-serif',
-      transition: 'background 0.1s, border-color 0.1s',
+      transition: 'background 0.06s, border-color 0.06s',
       ...style,
     }}
-    onMouseEnter={e => { if (!disabled && !active) { e.currentTarget.style.background = '#eff6fc'; e.currentTarget.style.borderColor = '#d6e6f5'; } }}
+    onMouseEnter={e => { if (!disabled && !active) { e.currentTarget.style.background = '#DEECF9'; e.currentTarget.style.borderColor = '#C7E0F4'; } }}
     onMouseLeave={e => { if (!active) { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.borderColor = 'transparent'; } }}
   >
     {children}
@@ -38,30 +38,30 @@ export const BigBtn = ({ onClick, disabled, active, title, icon, label, style = 
     title={title}
     style={{
       display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'flex-start',
-      gap: '3px',
-      minWidth: '52px', height: '58px', padding: '4px 6px',
-      background: active ? '#cce4f7' : 'transparent',
-      border: `1px solid ${active ? '#90c8f0' : 'transparent'}`,
-      borderRadius: '3px', cursor: disabled ? 'not-allowed' : 'pointer',
-      fontSize: '10px', color: active ? '#003a75' : '#323130',
+      gap: '2px',
+      minWidth: '48px', height: '62px', padding: '5px 5px 3px',
+      background: active ? '#DEECF9' : 'transparent',
+      border: `1px solid ${active ? '#2B86CE' : 'transparent'}`,
+      borderRadius: '2px', cursor: disabled ? 'not-allowed' : 'pointer',
+      fontSize: '10px', color: active ? '#004578' : '#1f1f1f',
       opacity: disabled ? 0.38 : 1, lineHeight: 1.2, flexShrink: 0,
       fontFamily: '"Segoe UI", system-ui, sans-serif',
-      transition: 'background 0.08s, border-color 0.08s',
+      transition: 'background 0.06s, border-color 0.06s',
       ...style,
     }}
-    onMouseEnter={e => { if (!disabled && !active) e.currentTarget.style.background = '#e8e8e8'; }}
-    onMouseLeave={e => { if (!active) e.currentTarget.style.background = active ? '#cce4f7' : 'transparent'; }}
+    onMouseEnter={e => { if (!disabled && !active) { e.currentTarget.style.background = '#DEECF9'; e.currentTarget.style.borderColor = '#C7E0F4'; } }}
+    onMouseLeave={e => { if (!active) { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.borderColor = 'transparent'; } }}
   >
-    <div style={{ fontSize: '18px', lineHeight: 1, marginTop: '4px' }}>{icon}</div>
-    <span style={{ marginTop: 'auto', textAlign: 'center', whiteSpace: 'nowrap' }}>{label}</span>
+    <div style={{ fontSize: '22px', lineHeight: 1, flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>{icon}</div>
+    <span style={{ textAlign: 'center', whiteSpace: 'nowrap', fontSize: '10px', lineHeight: 1.2 }}>{label}</span>
   </button>
 );
 
 export const Sep = () => (
   <div style={{
-    width: '1px', height: '60px',
-    background: 'linear-gradient(to bottom, transparent 0%, #d8d8d8 15%, #d8d8d8 85%, transparent 100%)',
-    margin: '0 8px', flexShrink: 0,
+    width: '1px', alignSelf: 'stretch',
+    background: 'linear-gradient(to bottom, transparent 0%, #cfcfcf 10%, #cfcfcf 90%, transparent 100%)',
+    margin: '0 5px', flexShrink: 0,
   }} />
 );
 
@@ -74,9 +74,9 @@ export const SplitButton = ({
 }) => (
   <span style={{
     display: 'inline-flex', alignItems: 'stretch', height: '28px',
-    background: active ? '#cce4f7' : 'transparent',
-    border: `1px solid ${active || caretOpen ? '#90c8f0' : 'transparent'}`,
-    borderRadius: '3px',
+    background: active ? '#DEECF9' : 'transparent',
+    border: `1px solid ${active || caretOpen ? '#2B86CE' : 'transparent'}`,
+    borderRadius: '2px',
     overflow: 'hidden',
     flexShrink: 0,
   }} ref={btnRef}>
@@ -87,20 +87,20 @@ export const SplitButton = ({
         background: 'transparent', border: 'none',
         padding: '0 4px',
         display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-        color: active ? '#003a75' : '#323130',
+        color: active ? '#004578' : '#1f1f1f',
         cursor: 'pointer', minWidth: '24px',
         fontFamily: 'inherit',
         ...mainStyle,
       }}
-      onMouseEnter={e => { if (!active) e.currentTarget.parentElement.style.background = '#e8e8e8'; }}
-      onMouseLeave={e => { if (!active) e.currentTarget.parentElement.style.background = 'transparent'; }}
+      onMouseEnter={e => { if (!active) { e.currentTarget.parentElement.style.background = '#DEECF9'; e.currentTarget.parentElement.style.borderColor = '#C7E0F4'; } }}
+      onMouseLeave={e => { if (!active) { e.currentTarget.parentElement.style.background = 'transparent'; e.currentTarget.parentElement.style.borderColor = 'transparent'; } }}
     >{children}</button>
     <button
       onMouseDown={e => { e.preventDefault(); onCaret?.(); }}
       title={`${title} options`}
       style={{
-        background: caretOpen ? '#cce4f7' : 'transparent',
-        border: 'none', borderLeft: '1px solid rgba(0,0,0,0.05)',
+        background: caretOpen ? '#DEECF9' : 'transparent',
+        border: 'none', borderLeft: '1px solid rgba(0,0,0,0.07)',
         padding: '0 2px',
         cursor: 'pointer', fontSize: '8px', color: '#666',
         display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
@@ -123,19 +123,21 @@ export const Icon = ({ d, size = 14 }) => (
 export const Group = ({ label, children, onLauncher, style = {} }) => (
   <div style={{
     display: 'flex', flexDirection: 'column', alignItems: 'stretch',
-    padding: '4px 4px 0', flexShrink: 0, ...style,
+    padding: '0 4px', flexShrink: 0, ...style,
   }}>
     <div style={{
       display: 'flex', alignItems: 'center', gap: '2px',
-      flex: 1, minHeight: '52px',
+      flex: 1, minHeight: '58px', paddingTop: '2px',
     }}>
       {children}
     </div>
     <div style={{
       display: 'flex', alignItems: 'center', justifyContent: 'center',
-      gap: '4px', paddingTop: '4px', userSelect: 'none',
+      gap: '2px', height: '18px',
+      borderTop: '1px solid #e0e0e0',
+      userSelect: 'none',
     }}>
-      <span style={{ fontSize: '10.5px', color: '#777', letterSpacing: '0.25px', fontWeight: 500 }}>{label}</span>
+      <span style={{ fontSize: '10px', color: '#787878', letterSpacing: '0.1px', fontWeight: 400, lineHeight: 1 }}>{label}</span>
       {onLauncher && (
         <button
           onMouseDown={e => { e.preventDefault(); onLauncher(); }}
@@ -148,8 +150,8 @@ export const Group = ({ label, children, onLauncher, style = {} }) => (
             display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
             transition: 'background 0.08s, color 0.08s',
           }}
-          onMouseEnter={e => { e.currentTarget.style.background = '#e0e0e0'; e.currentTarget.style.color = '#333'; }}
-          onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = '#888'; }}
+          onMouseEnter={e => { e.currentTarget.style.color = '#0078d4'; }}
+          onMouseLeave={e => { e.currentTarget.style.color = '#888'; }}
         >
           <svg width="10" height="10" viewBox="0 0 10 10" fill="currentColor">
             <path d="M0 0v10h10V0H0zm9 9H1V1h6v4h2v4z M5 6l4-4-1-1-3 3V2H4v2h2V3l-1 1-1 1z" />

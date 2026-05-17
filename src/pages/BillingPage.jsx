@@ -237,6 +237,34 @@ export default function BillingPage() {
     }
   }, []);
 
+  const [ownerDetails, setOwnerDetails] = useState(null);
+
+  const fetchPersonnel = useCallback(async () => {
+    try {
+      const res = await apiClient.get('/personnel');
+      const staffList = res.data || [];
+      let owner = staffList.find(u => {
+        const roles = (u.roles || u.Roles || []).map(r => r.toLowerCase());
+        return roles.includes('admindoctor');
+      });
+      if (!owner) {
+        owner = staffList.find(u => {
+          const roles = (u.roles || u.Roles || []).map(r => r.toLowerCase());
+          return roles.includes('admin');
+        });
+      }
+      if (owner) {
+        setOwnerDetails({
+          name: owner.fullName || owner.FullName || 'Owner',
+          contact: owner.mobile || owner.Mobile || owner.phoneNumber || owner.PhoneNumber || '+91 XXXXXXXXXX',
+          email: owner.email || owner.Email || 'contact@1rad.health'
+        });
+      }
+    } catch (err) {
+      console.error('[FINANCE] Personnel fetch failed', err);
+    }
+  }, []);
+
   const refreshAllFinancialData = useCallback(() => {
     fetchInvoices();
     fetchStats();
@@ -246,7 +274,9 @@ export default function BillingPage() {
     fetchReferrers();
     fetchCommissions();
     fetchAppointments();
-  }, [fetchInvoices, fetchStats, fetchRegistry, fetchMatrix, fetchExpenses, fetchReferrers, fetchCommissions, fetchAppointments]);
+    fetchPersonnel();
+    fetchPersonnel();
+  }, [fetchInvoices, fetchStats, fetchRegistry, fetchMatrix, fetchExpenses, fetchReferrers, fetchCommissions, fetchAppointments, fetchPersonnel]);
 
   useEffect(() => {
     const handleResize = () => {
@@ -367,15 +397,18 @@ export default function BillingPage() {
         </head>
         <body>
           <div class="center">
-            <div class="header-text">${(activeCenter?.hospitalName || '1RAD DIAGNOSTICS').toUpperCase()}</div>
+            <div class="header-text">${(activeCenter?.name || activeCenter?.hospitalName || '1RAD DIAGNOSTICS').toUpperCase()}</div>
             <div class="sub-text">${activeCenter?.address || ''}</div>
-            <div class="sub-text">TEL: ${activeCenter?.contactNo || ''}</div>
+            <div class="sub-text">TEL: ${ownerDetails?.contact || activeCenter?.contactNo || '+91 XXXXXXXXXX'} | EMAIL: ${ownerDetails?.email || 'contact@1rad.health'}</div>
+            <div class="sub-text" style="font-weight: bold; margin-top: 2px;">REPRESENTATIVE: ${ownerDetails?.name || 'ADMINISTRATOR'}</div>
           </div>
           <div class="divider"></div>
           <div style="font-size: 11px;">
             <div>INV: ${inv.displayId}</div>
             <div>DATE: ${new Date().toLocaleDateString()}</div>
-            <div class="bold">PAT: ${(inv.patientName || 'N/A').toUpperCase()}</div>
+            <div class="bold">PATIENT: ${(inv.patientName || 'N/A').toUpperCase()}</div>
+            <div>PATIENT ID: ${inv.patientIdentifier || inv.patientId || 'N/A'}</div>
+            <div>REF. NO: ${inv.referrerName || inv.referenceNumber || 'N/A'}</div>
           </div>
           <div class="divider"></div>
           ${itemsHtml}
@@ -389,6 +422,7 @@ export default function BillingPage() {
             THANK YOU FOR CHOOSING 1RAD<br/>
             DIGITAL REPORT AT 1RAD.HEALTH
           </div>
+          <div class="center" style="font-size: 8px; color: #555; margin-top: 15px; font-weight: bold; font-family: monospace; letter-spacing: 1px;">POWERED BY NEXEAGLE</div>
         </body>
       </html>
     `);
@@ -1084,25 +1118,43 @@ export default function BillingPage() {
 
 
   const ghostPrint = (html) => {
-    const iframe = document.createElement('iframe');
-    iframe.style.position = 'fixed';
-    iframe.style.right = '0';
-    iframe.style.bottom = '0';
-    iframe.style.width = '0';
-    iframe.style.height = '0';
-    iframe.style.border = 'none';
-    document.body.appendChild(iframe);
-    iframe.contentDocument.write(html);
-    iframe.contentDocument.close();
-    
-    // In Electron, we need a slight delay for styles to load in the iframe
-    setTimeout(() => {
-      iframe.contentWindow.focus();
-      iframe.contentWindow.print();
+    const isMobileDevice = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent) || window.innerWidth < 768;
+    if (isMobileDevice) {
+      const printWindow = window.open('', '_blank');
+      if (printWindow) {
+        printWindow.document.write(html);
+        printWindow.document.close();
+        setTimeout(() => {
+          printWindow.focus();
+          printWindow.print();
+          setTimeout(() => {
+            printWindow.close();
+          }, 1000);
+        }, 500);
+      } else {
+        alert('Please allow popups to print on mobile devices.');
+      }
+    } else {
+      const iframe = document.createElement('iframe');
+      iframe.style.position = 'fixed';
+      iframe.style.right = '0';
+      iframe.style.bottom = '0';
+      iframe.style.width = '0';
+      iframe.style.height = '0';
+      iframe.style.border = 'none';
+      document.body.appendChild(iframe);
+      iframe.contentDocument.write(html);
+      iframe.contentDocument.close();
+      
+      // In Electron, we need a slight delay for styles to load in the iframe
       setTimeout(() => {
-        document.body.removeChild(iframe);
-      }, 1000);
-    }, 500);
+        iframe.contentWindow.focus();
+        iframe.contentWindow.print();
+        setTimeout(() => {
+          document.body.removeChild(iframe);
+        }, 1000);
+      }, 500);
+    }
   };
 
   const handlePrintA4 = (invInput = null) => {
@@ -1169,9 +1221,10 @@ export default function BillingPage() {
             <div class="header">
               <div class="hospital-info">
                 <div class="hospital-logo">1R</div>
-                <h1>${(activeCenter?.hospitalName || '1RAD DIAGNOSTICS').toUpperCase()}</h1>
-                <p>${activeCenter?.address || ''}</p>
-                <p>CONTACT: ${activeCenter?.contactNo || '+91 XXXXXXXXXX'} | EMAIL: contact@1rad.health</p>
+                <h1>${(activeCenter?.name || activeCenter?.hospitalName || '1RAD DIAGNOSTICS').toUpperCase()}</h1>
+                <p>${activeCenter?.address || 'Strategic Clinical Node'}</p>
+                <p>CONTACT: ${ownerDetails?.contact || activeCenter?.contactNo || '+91 XXXXXXXXXX'} | EMAIL: ${ownerDetails?.email || 'contact@1rad.health'}</p>
+                <p style="font-size: 10px; color: #94a3b8; text-transform: uppercase; font-weight: 700; margin-top: 2px;">REPRESENTATIVE: ${ownerDetails?.name || 'ADMINISTRATOR'}</p>
               </div>
               <div class="invoice-meta">
                 <div class="invoice-title">Tax Invoice</div>
@@ -1187,8 +1240,8 @@ export default function BillingPage() {
               <div class="billing-box">
                 <div class="box-title">Bill To Patient</div>
                 <div class="patient-name">${(inv.patientName || 'UNKNOWN PATIENT').toUpperCase()}</div>
-                <p class="patient-meta">Patient ID: ${inv.patientId || 'N/A'}</p>
-                <p class="patient-meta">Ref. No: ${inv.referenceNumber || 'N/A'}</p>
+                <p class="patient-meta">Patient ID: ${inv.patientIdentifier || inv.patientId || 'N/A'}</p>
+                <p class="patient-meta">Ref. No (Referred By): ${inv.referrerName || inv.referenceNumber || 'N/A'}</p>
               </div>
               <div class="billing-box">
                 <div class="box-title">Center Policy</div>
@@ -1242,6 +1295,7 @@ export default function BillingPage() {
                 <div style="font-size: 9px; color: #94a3b8; margin-top: 4px;">1Rad Finance</div>
               </div>
             </div>
+            <div style="text-align: center; font-size: 9px; color: #94a3b8; margin-top: 40px; font-weight: 700; letter-spacing: 1px; text-transform: uppercase;">Powered by Nexeagle</div>
           </div>
         </body>
       </html>
@@ -1257,69 +1311,104 @@ export default function BillingPage() {
         <head>
           <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
           <style>
-            @page { size: A5 landscape; margin: 0; }
-            body { font-family: 'Inter', sans-serif; margin: 0; padding: 40px; color: #1e293b; }
-            .receipt-shell { border: 2px solid #0f52ba; border-radius: 24px; padding: 30px; position: relative; overflow: hidden; height: 100%; }
-            .receipt-header { display: flex; justify-content: space-between; border-bottom: 1px solid #e2e8f0; padding-bottom: 20px; margin-bottom: 20px; }
-            .hospital-brand { font-size: 18px; font-weight: 900; color: #0f52ba; }
-            .receipt-title { font-size: 12px; font-weight: 900; color: #94a3b8; text-transform: uppercase; letter-spacing: 2px; }
+            @page { size: A4; margin: 0; }
+            body { font-family: 'Inter', sans-serif; margin: 0; padding: 50px; color: #1e293b; background: #fff; }
+            .container { max-width: 800px; margin: 0 auto; }
+            
+            /* Center Branding Header block (same style as A4 Invoice) */
+            .header { display: flex; justify-content: space-between; align-items: flex-start; border-bottom: 4px solid #0f52ba; padding-bottom: 30px; margin-bottom: 40px; }
+            .hospital-logo { width: 60px; height: 60px; background: #0f52ba; border-radius: 12px; display: flex; align-items: center; justify-content: center; color: white; font-weight: 900; font-size: 24px; margin-bottom: 15px; }
+            .hospital-info h1 { font-size: 22px; font-weight: 900; color: #0f52ba; margin: 0; letter-spacing: -0.5px; }
+            .hospital-info p { font-size: 11px; color: #64748b; margin: 4px 0; font-weight: 500; }
+            .invoice-meta { text-align: right; }
+            .invoice-title { font-size: 32px; font-weight: 900; color: #e2e8f0; margin-bottom: 10px; text-transform: uppercase; letter-spacing: 2px; }
+            .meta-grid { display: grid; grid-template-columns: auto auto; gap: 8px 20px; font-size: 11px; }
+            .meta-label { font-weight: 800; color: #94a3b8; text-transform: uppercase; }
+            .meta-value { font-weight: 700; color: #1e293b; }
+            
+            /* Payment Receipt details container below */
+            .receipt-shell { border: 2px solid #0f52ba; border-radius: 24px; padding: 40px; position: relative; overflow: hidden; background: #f8fafc; border-top: 8px solid #0f52ba; }
+            .receipt-title-box { font-size: 14px; font-weight: 900; color: #0f52ba; text-transform: uppercase; letter-spacing: 1px; border-bottom: 1px solid #e2e8f0; padding-bottom: 15px; margin-bottom: 25px; }
             
             .content-row { display: flex; margin-bottom: 15px; align-items: baseline; }
-            .label { font-size: 10px; font-weight: 900; color: #94a3b8; text-transform: uppercase; min-width: 150px; }
+            .label { font-size: 10px; font-weight: 900; color: #94a3b8; text-transform: uppercase; min-width: 200px; }
             .value { font-size: 14px; font-weight: 700; color: #1e293b; border-bottom: 1px dashed #cbd5e1; flex-grow: 1; padding-bottom: 2px; }
             
-            .payment-card { background: #f0f4ff; border-radius: 16px; padding: 20px; display: flex; justify-content: space-between; align-items: center; margin-top: 30px; border: 1px solid #dbeafe; }
+            .payment-card { background: #f0f4ff; border-radius: 16px; padding: 25px; display: flex; justify-content: space-between; align-items: center; margin-top: 40px; border: 1px solid #dbeafe; }
             .amount-label { font-size: 10px; font-weight: 950; color: #0f52ba; text-transform: uppercase; }
             .amount-value { font-size: 28px; font-weight: 950; color: #0f52ba; }
             
-            .watermark { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%) rotate(-15deg); font-size: 100px; font-weight: 900; color: rgba(15, 82, 186, 0.03); z-index: -1; text-transform: uppercase; }
+            .watermark { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%) rotate(-15deg); font-size: 120px; font-weight: 900; color: rgba(15, 82, 186, 0.03); z-index: 0; text-transform: uppercase; pointer-events: none; }
             .seal { position: absolute; bottom: 30px; right: 30px; width: 100px; height: 100px; border: 2px dashed rgba(15, 82, 186, 0.2); border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 8px; font-weight: 900; color: rgba(15, 82, 186, 0.2); text-align: center; padding: 10px; }
           </style>
         </head>
         <body>
-          <div class="receipt-shell">
-            <div class="watermark">OFFICIAL</div>
-            <div class="receipt-header">
-              <div class="hospital-brand">${(activeCenter?.hospitalName || '1RAD DIAGNOSTICS').toUpperCase()}</div>
-              <div class="receipt-title">Payment Acknowledgement</div>
-            </div>
-
-            <div class="content-row">
-              <span class="label">Received With Thanks From:</span>
-              <span class="value">${(inv.patientName || 'VALUED PATIENT').toUpperCase()}</span>
-            </div>
-            <div class="content-row">
-              <span class="label">Reference Invoice:</span>
-              <span class="value">${inv.displayId}</span>
-            </div>
-            <div class="content-row">
-              <span class="label">Date of Settlement:</span>
-              <span class="value">${new Date().toLocaleDateString('en-GB', { day: '2-digit', month: 'long', year: 'numeric' })}</span>
-            </div>
-            <div class="content-row">
-              <span class="label">Payment Instrument:</span>
-              <span class="value">${inv.paymentMethod || 'CASH'} / ID: ${inv.invoiceId.substring(0, 8).toUpperCase()}</span>
-            </div>
-
-            <div class="payment-card">
-              <div>
-                <div class="amount-label">Aggregate Amount Received</div>
-                <div style="font-size: 10px; color: #64748b; font-weight: 600;">(In Words: RUPEES ${(inv.totalAmount || 0).toLocaleString()} ONLY)</div>
+          <div class="container">
+            <!-- Proper Center Name Branding Header Block -->
+            <div class="header">
+              <div class="hospital-info">
+                <div class="hospital-logo">1R</div>
+                <h1>${(activeCenter?.name || activeCenter?.hospitalName || '1RAD DIAGNOSTICS').toUpperCase()}</h1>
+                <p>${activeCenter?.address || 'Strategic Clinical Node'}</p>
+                <p>CONTACT: ${ownerDetails?.contact || activeCenter?.contactNo || '+91 XXXXXXXXXX'} | EMAIL: ${ownerDetails?.email || 'contact@1rad.health'}</p>
+                <p style="font-size: 10px; color: #94a3b8; text-transform: uppercase; font-weight: 700; margin-top: 2px;">REPRESENTATIVE: ${ownerDetails?.name || 'ADMINISTRATOR'}</p>
               </div>
-              <div class="amount-value">₹${(inv.totalAmount || 0).toLocaleString()}</div>
+              <div class="invoice-meta">
+                <div class="invoice-title">RECEIPT</div>
+                <div class="meta-grid">
+                  <span class="meta-label">Receipt No:</span><span class="meta-value">REC/${inv.displayId}</span>
+                  <span class="meta-label">Settlement Date:</span><span class="meta-value">${new Date(inv.createdAt).toLocaleDateString('en-GB', { day: '2-digit', month: 'long', year: 'numeric' })}</span>
+                </div>
+              </div>
             </div>
 
-            <div class="seal">OFFICIAL<br/>COLLECTION<br/>STAMP</div>
-            
-            <div style="margin-top: 40px; display: flex; justify-content: space-between; align-items: flex-end;">
-               <div style="font-size: 9px; color: #94a3b8; font-weight: 700;">
-                 SYSTEM GENERATED RECEIPT<br/>
-                 NO PHYSICAL SIGNATURE REQUIRED
-               </div>
-               <div style="text-align: right;">
-                 <div style="font-size: 11px; font-weight: 900; color: #1e293b; border-top: 1px solid #1e293b; padding-top: 5px; width: 180px;">AUTHORIZED CASHIER</div>
-               </div>
+            <!-- Payment Receipt Acknowledgement Card Box -->
+            <div class="receipt-shell">
+              <div class="watermark">OFFICIAL</div>
+              <div class="receipt-title-box">Payment Receipt Acknowledgement</div>
+
+              <div class="content-row">
+                <span class="label">Received With Thanks From:</span>
+                <span class="value">${(inv.patientName || 'VALUED PATIENT').toUpperCase()}</span>
+              </div>
+              <div class="content-row">
+                <span class="label">Patient ID:</span>
+                <span class="value">${inv.patientIdentifier || inv.patientId || 'N/A'}</span>
+              </div>
+              <div class="content-row">
+                <span class="label">Ref. No / Referred By:</span>
+                <span class="value">${inv.referrerName || inv.referenceNumber || 'N/A'}</span>
+              </div>
+              <div class="content-row">
+                <span class="label">Reference Invoice:</span>
+                <span class="value">${inv.displayId}</span>
+              </div>
+              <div class="content-row">
+                <span class="label">Payment Instrument:</span>
+                <span class="value">${inv.paymentMethod || 'CASH'} / ID: ${inv.invoiceId.substring(0, 8).toUpperCase()}</span>
+              </div>
+
+              <div class="payment-card">
+                <div>
+                  <div class="amount-label">Aggregate Amount Received</div>
+                  <div style="font-size: 10px; color: #64748b; font-weight: 600;">(In Words: RUPEES ${(inv.totalAmount || 0).toLocaleString()} ONLY)</div>
+                </div>
+                <div class="amount-value">₹${(inv.totalAmount || 0).toLocaleString()}</div>
+              </div>
+
+              <div class="seal">OFFICIAL<br/>COLLECTION<br/>STAMP</div>
+              
+              <div style="margin-top: 40px; display: flex; justify-content: space-between; align-items: flex-end; position: relative; z-index: 2;">
+                 <div style="font-size: 9px; color: #94a3b8; font-weight: 700;">
+                   SYSTEM GENERATED RECEIPT<br/>
+                   NO PHYSICAL SIGNATURE REQUIRED
+                 </div>
+                 <div style="text-align: right;">
+                   <div style="font-size: 11px; font-weight: 900; color: #1e293b; border-top: 1px solid #1e293b; padding-top: 5px; width: 180px;">AUTHORIZED CASHIER</div>
+                 </div>
+              </div>
             </div>
+            <div style="text-align: center; font-size: 9px; color: #94a3b8; margin-top: 30px; font-weight: 700; letter-spacing: 1px; text-transform: uppercase;">Powered by Nexeagle</div>
           </div>
         </body>
       </html>

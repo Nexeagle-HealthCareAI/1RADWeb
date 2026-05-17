@@ -131,24 +131,27 @@ export const InvoiceDrawer = ({
                 }}>
                    <div style={{ display: 'flex', flexDirection: isMobile ? 'column' : 'row', justifyContent: 'space-between', alignItems: isMobile ? 'flex-start' : 'center', gap: isMobile ? '12px' : '0' }}>
                       <div>
-                         <span style={{ fontSize: '9px', fontWeight: 950, color: '#e11d48', letterSpacing: '1.5px', textTransform: 'uppercase' }}>CONCESSION_PROTOCOL</span>
-                         <div style={{ fontSize: '10px', color: '#9f1239', fontWeight: 700, marginTop: '2px', opacity: 0.6 }}>CENTRE_DEBIT_MODE</div>
+                         <span style={{ fontSize: '9px', fontWeight: 950, color: '#e11d48', letterSpacing: '1.5px', textTransform: 'uppercase' }}>POST-PAYMENT CONCESSION</span>
+                         <div style={{ fontSize: '10px', color: '#9f1239', fontWeight: 700, marginTop: '2px', opacity: 0.6 }}>Adjust from Center Share</div>
                       </div>
 
                       {!isAdjusting ? (
-                        <button onClick={() => setIsAdjusting(true)} style={{ width: isMobile ? '100%' : 'auto', padding: '8px 16px', borderRadius: '10px', border: 'none', background: '#e11d48', color: 'white', fontSize: '9px', fontWeight: 950, cursor: 'pointer', boxShadow: '0 4px 10px rgba(225, 29, 72, 0.2)' }}>INIT_ADJUSTMENT</button>
+                        <button onClick={() => setIsAdjusting(true)} style={{ width: isMobile ? '100%' : 'auto', padding: '8px 16px', borderRadius: '10px', border: 'none', background: '#e11d48', color: 'white', fontSize: '9px', fontWeight: 950, cursor: 'pointer', boxShadow: '0 4px 10px rgba(225, 29, 72, 0.2)' }}>ADD CONCESSION</button>
                       ) : (
-                        <div style={{ display: 'flex', gap: '10px', alignItems: 'center', background: 'white', padding: '4px', borderRadius: '12px', border: '1px solid #fecaca', width: isMobile ? '100%' : 'auto' }}>
-                           <div style={{ display: 'flex', alignItems: 'center', paddingLeft: '10px', flex: 1 }}>
-                              <span style={{ fontSize: '12px', fontWeight: 950, color: '#e11d48' }}>₹</span>
+                        <div style={{ display: 'flex', gap: '8px', alignItems: 'center', width: isMobile ? '100%' : '260px' }}>
+                           <div style={{ display: 'flex', alignItems: 'center', background: '#fff', border: '2px solid #e11d48', borderRadius: '10px', padding: '2px 8px', flex: 1, boxShadow: '0 0 8px rgba(225, 29, 72, 0.1)' }}>
+                              <span style={{ fontSize: '12px', fontWeight: 950, color: '#e11d48', marginRight: '4px' }}>₹</span>
                               <input 
-                                type="number" autoFocus placeholder="0" value={adjustAmount || ''}
+                                type="number" 
+                                autoFocus 
+                                placeholder="Enter value" 
+                                value={adjustAmount === 0 ? '' : adjustAmount}
                                 onChange={e => setAdjustAmount(parseFloat(e.target.value) || 0)}
-                                style={{ width: '100%', padding: '8px 4px', border: 'none', fontSize: '14px', fontWeight: 950, color: '#1a1a2e', outline: 'none', fontFamily: 'monospace' }}
+                                style={{ width: '100%', padding: '6px 2px', border: 'none', background: 'transparent', fontSize: '13px', fontWeight: 900, color: '#1e293b', outline: 'none' }}
                               />
                            </div>
-                           <button onClick={() => { if (adjustAmount > 0 && onApplyAdjustment) { onApplyAdjustment(selectedInvoice.invoiceId, adjustAmount); setIsAdjusting(false); } }} style={{ padding: '8px 16px', borderRadius: '8px', border: 'none', background: '#e11d48', color: 'white', fontSize: '9px', fontWeight: 950, cursor: 'pointer' }}>COMMIT</button>
-                           <button onClick={() => setIsAdjusting(false)} style={{ width: '28px', height: '28px', borderRadius: '8px', border: 'none', background: '#f1f5f9', color: '#64748b', cursor: 'pointer', fontSize: '12px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>✕</button>
+                           <button onClick={() => { if (adjustAmount > 0 && onApplyAdjustment) { onApplyAdjustment(selectedInvoice.invoiceId, adjustAmount); setIsAdjusting(false); } }} style={{ padding: '8px 14px', borderRadius: '10px', border: 'none', background: '#e11d48', color: 'white', fontSize: '9px', fontWeight: 950, cursor: 'pointer' }}>APPLY</button>
+                           <button onClick={() => setIsAdjusting(false)} style={{ width: '28px', height: '28px', borderRadius: '10px', border: 'none', background: '#f1f5f9', color: '#64748b', cursor: 'pointer', fontSize: '11px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>✕</button>
                         </div>
                       )}
                    </div>
