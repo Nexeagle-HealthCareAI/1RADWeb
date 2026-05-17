@@ -245,6 +245,25 @@
   border-radius: 2px;
 }
 
+/* ── Formatting marks (¶ toggle) ──────────────────────────────────────────── */
+.word-canvas.show-formatting-marks .narrative-editor-content p::after,
+.word-canvas.show-formatting-marks .narrative-editor-content h1::after,
+.word-canvas.show-formatting-marks .narrative-editor-content h2::after,
+.word-canvas.show-formatting-marks .narrative-editor-content h3::after,
+.word-canvas.show-formatting-marks .narrative-editor-content h4::after,
+.word-canvas.show-formatting-marks .narrative-editor-content li::after {
+  content: '¶';
+  color: #b3b3b3;
+  margin-left: 2px;
+  font-weight: 400;
+  pointer-events: none;
+}
+
+.word-canvas.show-formatting-marks .narrative-editor-content br::before {
+  content: '↵';
+  color: #b3b3b3;
+}
+
 /* ── Status bar ──────────────────────────────────────────────────────────────── */
 .word-statusbar {
   display: flex;

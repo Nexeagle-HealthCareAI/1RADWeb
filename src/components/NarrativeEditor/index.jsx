@@ -20,6 +20,8 @@ import { PageDocument, Page } from './extensions/PageNode';
 import { Pagination } from './extensions/Pagination';
 import { LineHeight, ParagraphIndent, PageBreak } from './extensions/Spacing';
 import { FormatPainter } from './extensions/FormatPainter';
+import { ParagraphFraming } from './extensions/ParagraphFraming';
+import { ListStyles } from './extensions/ListStyles';
 import FindReplaceDialog from './dialogs/FindReplaceDialog';
 import SymbolPickerDialog from './dialogs/SymbolPickerDialog';
 import PromptDialog, { editorPrompt } from './dialogs/PromptDialog';
@@ -195,6 +197,7 @@ const NarrativeEditor = React.forwardRef(function NarrativeEditor({
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
   const [fontDlgOpen, setFontDlgOpen] = useState(false);
   const [paragraphDlgOpen, setParagraphDlgOpen] = useState(false);
+  const [showFormattingMarks, setShowFormattingMarks] = useState(false);
 
   // Voice dictation — text inserted at cursor when a phrase finalises.
   const voice = useVoiceDictation({
@@ -237,6 +240,8 @@ const NarrativeEditor = React.forwardRef(function NarrativeEditor({
       ParagraphIndent,
       PageBreak,
       FormatPainter,
+      ParagraphFraming,
+      ListStyles,
       Underline,
       TextAlign.configure({ types: ['heading', 'paragraph'] }),
       TextStyle,
@@ -726,9 +731,11 @@ const NarrativeEditor = React.forwardRef(function NarrativeEditor({
         voiceSupported={voice.supported}
         voiceActive={voice.active}
         onToggleVoice={voice.toggle}
+        showFormattingMarks={showFormattingMarks}
+        onToggleFormattingMarks={() => setShowFormattingMarks(v => !v)}
       />
 
-      <div className="word-canvas" style={{ '--zoom': zoom / 100, position: 'relative' }}>
+      <div className={`word-canvas${showFormattingMarks ? ' show-formatting-marks' : ''}`} style={{ '--zoom': zoom / 100, position: 'relative' }}>
         <EditorContent editor={editor} />
         <FindReplaceDialog editor={editor} open={findOpen} focusReplace={findFocusReplace} onClose={() => setFindOpen(false)} />
       </div>

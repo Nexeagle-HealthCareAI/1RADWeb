@@ -235,16 +235,17 @@ export default function Sidebar({ isMobileOpen, onMobileClose }) {
   const FF = '"Segoe UI", system-ui, sans-serif';
 
   return (
-    <aside
+      <aside
       id="tactical-sidebar"
       className={`sidebar ${showCollapsed ? 'collapsed' : ''} ${isMobileOpen ? 'mobile-open' : ''}`}
       style={{
         width: sidebarW, minWidth: sidebarW,
-        height: '100vh',
+        height: '100dvh', // Changed to 100dvh
         background: T.bg,
         borderRight: `1px solid ${T.borderStrong}`,
         display: 'flex', flexDirection: 'column',
-        overflow: 'hidden', flexShrink: 0,
+        overflow: 'visible', flexShrink: 0,
+        position: 'relative',
         transition: 'width 0.24s cubic-bezier(0.4,0,0.2,1), min-width 0.24s cubic-bezier(0.4,0,0.2,1)',
         // On mobile, CSS class handles position:fixed + transform
         zIndex: isMobile ? 1100 : 'auto',
@@ -288,36 +289,6 @@ export default function Sidebar({ isMobileOpen, onMobileClose }) {
           </div>
         </div>
 
-        {/* Toggle chevron — desktop: always visible, fits within collapsed 60px */}
-        {!isMobile && (
-          <button
-            onClick={() => setCollapsed(v => !v)}
-            onMouseEnter={() => setToggleHov(true)}
-            onMouseLeave={() => setToggleHov(false)}
-            title={showCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
-            style={{
-              display: 'flex', alignItems: 'center', justifyContent: 'center',
-              width: '22px', height: '22px', flexShrink: 0,
-              border: `1px solid ${toggleHov ? 'rgba(255,255,255,0.18)' : T.border}`,
-              borderRadius: '6px',
-              background: toggleHov ? T.hover : 'transparent',
-              color: toggleHov ? T.textHigh : T.textLow,
-              cursor: 'pointer',
-              transition: 'background 0.13s, border-color 0.13s, color 0.13s',
-            }}
-          >
-            <svg width="13" height="13" viewBox="0 0 16 16" fill="currentColor">
-              {showCollapsed ? (
-                /* › expand — single chevron right */
-                <path d="M4.646 1.646a.5.5 0 0 1 .708 0l6 6a.5.5 0 0 1 0 .708l-6 6a.5.5 0 0 1-.708-.708L10.293 8 4.646 2.354a.5.5 0 0 1 0-.708z"/>
-              ) : (
-                /* ‹ collapse — single chevron left */
-                <path d="M11.354 1.646a.5.5 0 0 1 0 .708L5.707 8l5.647 5.646a.5.5 0 0 1-.708.708l-6-6a.5.5 0 0 1 0-.708l6-6a.5.5 0 0 1 .708 0z"/>
-              )}
-            </svg>
-          </button>
-        )}
-
         {/* Close — mobile */}
         {isMobile && (
           <button
@@ -333,6 +304,41 @@ export default function Sidebar({ isMobileOpen, onMobileClose }) {
           </button>
         )}
       </div>
+
+      {/* Toggle chevron — desktop: floating over the border */}
+      {!isMobile && (
+        <button
+          onClick={() => setCollapsed(v => !v)}
+          onMouseEnter={() => setToggleHov(true)}
+          onMouseLeave={() => setToggleHov(false)}
+          title={showCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+          style={{
+            position: 'absolute',
+            top: '18px',
+            right: '-12px',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            width: '24px', height: '24px', flexShrink: 0,
+            border: `1px solid ${T.borderStrong}`,
+            borderRadius: '50%',
+            background: toggleHov ? '#1e293b' : T.bg,
+            color: toggleHov ? T.textHigh : T.textMid,
+            cursor: 'pointer',
+            zIndex: 100,
+            transition: 'background 0.2s, border-color 0.2s, color 0.2s',
+            boxShadow: '0 2px 5px rgba(0,0,0,0.2)',
+          }}
+        >
+          <svg 
+            width="14" height="14" viewBox="0 0 16 16" fill="currentColor"
+            style={{ 
+              transform: showCollapsed ? 'rotate(180deg)' : 'rotate(0deg)',
+              transition: 'transform 0.4s cubic-bezier(0.4,0,0.2,1)'
+            }}
+          >
+            <path d="M11.354 1.646a.5.5 0 0 1 0 .708L5.707 8l5.647 5.646a.5.5 0 0 1-.708.708l-6-6a.5.5 0 0 1 0-.708l6-6a.5.5 0 0 1 .708 0z"/>
+          </svg>
+        </button>
+      )}
 
       {/* ══ NAV ══ */}
       <nav style={{
