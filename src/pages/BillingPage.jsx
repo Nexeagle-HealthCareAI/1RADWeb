@@ -237,6 +237,16 @@ export default function BillingPage() {
     }
   }, []);
 
+  const refreshAllFinancialData = useCallback(() => {
+    fetchInvoices();
+    fetchStats();
+    fetchRegistry();
+    fetchMatrix();
+    fetchExpenses();
+    fetchReferrers();
+    fetchCommissions();
+    fetchAppointments();
+  }, [fetchInvoices, fetchStats, fetchRegistry, fetchMatrix, fetchExpenses, fetchReferrers, fetchCommissions, fetchAppointments]);
 
   useEffect(() => {
     const handleResize = () => {
@@ -285,7 +295,7 @@ export default function BillingPage() {
         costCenter: 'Radiology',
         status: 'Paid'
       });
-      fetchExpenses(); // Refresh expense list
+      refreshAllFinancialData(); // Refresh all financial hubs
     } catch (err) {
       console.error('[FINANCE] Expense save failed', err);
       if (!err.response) {
@@ -389,8 +399,7 @@ export default function BillingPage() {
     const newStatus = currentStatus === 'PAID' ? 'UNPAID' : 'PAID';
     try {
       await apiClient.put(`/finance/expenses/${id}/status`, { status: newStatus });
-      fetchExpenses();
-      fetchStats();
+      refreshAllFinancialData();
     } catch (err) {
       console.error('[FINANCE] Status transition failed', err);
       const errorMsg = err.response?.data?.message || err.response?.data?.error || 'Could not update expense status.';
@@ -438,9 +447,7 @@ export default function BillingPage() {
 
       if (response.data) {
         setIsPayoutDrawerOpen(false);
-        fetchInvoices();
-        fetchStats();
-        fetchCommissions();
+        refreshAllFinancialData();
         alert(editPayout.commissionId ? 'Payout updated successfully.' : 'Commission recorded successfully.');
       }
     } catch (err) {
@@ -469,7 +476,7 @@ export default function BillingPage() {
 
     try {
       await apiClient.delete(`/finance/expenses/${id}`);
-      fetchExpenses();
+      refreshAllFinancialData();
     } catch (err) {
       console.error('[FINANCE] Failed to delete expense', err);
       if (!err.response) {
@@ -488,8 +495,7 @@ export default function BillingPage() {
       await apiClient.patch(`/referrers/commissions/${id}/status`, `"${newStatus}"`, {
         headers: { 'Content-Type': 'application/json' }
       });
-      fetchCommissions();
-      fetchStats();
+      refreshAllFinancialData();
     } catch (err) {
       console.error('[FINANCE] Commission transition failed', err);
       alert('Error: Could not update commission status.');
@@ -508,8 +514,7 @@ export default function BillingPage() {
 
     try {
       await apiClient.delete(`/finance/invoices/${id}`);
-      fetchInvoices();
-      fetchStats();
+      refreshAllFinancialData();
     } catch (err) {
       console.error('[FINANCE] Failed to delete invoice', err);
       if (!err.response) {
@@ -556,8 +561,7 @@ export default function BillingPage() {
 
       await apiClient.post('/finance/sync', { invoices: payload });
       localStorage.removeItem('1rad_invoices');
-      fetchInvoices();
-      fetchStats();
+      refreshAllFinancialData();
       alert('Sync complete: local records merged.');
     } catch (err) {
       console.error('[FINANCE] Sync failed', err);
@@ -984,8 +988,7 @@ export default function BillingPage() {
 
       await apiClient.post('/finance/payments', payload);
       setIsInvoiceDrawerOpen(false);
-      fetchInvoices();
-      fetchStats();
+      refreshAllFinancialData();
       alert(`Payment of ₹${selectedInvoice.balanceAmount} via ${paymentMethod} recorded.`);
     } catch (err) {
       console.error('[FINANCE] Payment failed', err);
@@ -1035,8 +1038,7 @@ export default function BillingPage() {
       setSelectedPatient(null);
       setPatientSearchQuery('');
       setNewInvoiceData({ patientName: '', items: [{ description: '', amount: 0, quantity: 1 }], centreDiscount: 0, referrerDiscount: 0, paymentMethod: 'CASH', referrerId: '' });
-      fetchInvoices();
-      fetchStats();
+      refreshAllFinancialData();
       alert('Invoice created successfully.');
     } catch (err) {
       console.error('[FINANCE] Invoice creation failed', err);
@@ -1056,8 +1058,7 @@ export default function BillingPage() {
       await apiClient.post(`/finance/invoices/${selectedInvoice.invoiceId}/discount`, {
         discountAmount: selectedInvoice.discountAmount
       });
-      fetchInvoices();
-      fetchStats();
+      refreshAllFinancialData();
       setIsInvoiceDrawerOpen(false);
       alert('Invoice updated successfully.');
     } catch (err) {
@@ -1070,10 +1071,9 @@ export default function BillingPage() {
     try {
       await apiClient.post('/finance/adjust', { 
         invoiceId, 
-        extraDiscount: amount 
+        extraDiscount: amount
       });
-      fetchInvoices();
-      fetchStats();
+      refreshAllFinancialData();
       setIsInvoiceDrawerOpen(false);
       alert(`Adjustment of ₹${amount} applied.`);
     } catch (err) {
