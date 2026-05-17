@@ -38,6 +38,8 @@ export default function TechnicianPage() {
   const [isDicomImage, setIsDicomImage] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [filters, setFilters] = useState({ modality: 'ALL', priority: 'ALL', clinicalStatus: 'ALL' });
+  const [selectedDoctor, setSelectedDoctor] = useState('ALL');
+  const [doctors, setDoctors] = useState([]);
   
   // Workspace specific states
   const [uploadedFiles, setUploadedFiles] = useState([]);
@@ -117,6 +119,24 @@ export default function TechnicianPage() {
     return () => clearInterval(interval);
   }, [fetchWorklist]);
 
+  const fetchDoctors = useCallback(async () => {
+    try {
+      const res = await apiClient.get('/personnel');
+      const docList = (res.data || []).map(p => ({
+        id: p.userId,
+        name: p.fullName || 'UNKNOWN_STAFF',
+        roles: (p.roles || []).map(r => String(r).toLowerCase())
+      })).filter(p => p.roles.includes('doctor'));
+      setDoctors(docList);
+    } catch (err) {
+      console.error('[TECH] Failed to fetch doctors', err);
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchDoctors();
+  }, [fetchDoctors]);
+
   const handleStatusUpdate = async (id, newStatus) => {
     try {
       await apiClient.patch(`/appointments/${id}/status`, `"${newStatus}"`, {
@@ -138,16 +158,17 @@ export default function TechnicianPage() {
       const status = s.status?.toLowerCase();
       const matchesPriority = filters.priority === 'ALL' || s.priority === filters.priority;
       const matchesStatus = filters.clinicalStatus === 'ALL' || status === filters.clinicalStatus.toLowerCase();
+      const matchesDoctor = selectedDoctor === 'ALL' || s.doctorId === selectedDoctor;
 
       if (hubTab === 'ACTIVE') {
-        return matchesSearch && matchesModality && matchesPriority && matchesStatus && s.isToday && ['scheduled', 'confirmed', 'in_progress', 'booked', 'scanned', 'reporting', 'reported', 'completed'].includes(status);
+        return matchesDoctor && matchesSearch && matchesModality && matchesPriority && matchesStatus && s.isToday && ['scheduled', 'confirmed', 'in_progress', 'booked', 'scanned', 'reporting', 'reported', 'completed'].includes(status);
       } else {
         const studyDate = s.dateTime ? s.dateTime.split('T')[0] : null;
         const matchesDate = archiveFilterMode === 'ALL' || (studyDate && studyDate >= archiveDateRange.start && studyDate <= archiveDateRange.end);
-        return matchesSearch && matchesModality && matchesPriority && matchesStatus && matchesDate && (['reported', 'completed'].includes(status) || !s.isToday);
+        return matchesDoctor && matchesSearch && matchesModality && matchesPriority && matchesStatus && matchesDate && (['reported', 'completed'].includes(status) || !s.isToday);
       }
     });
-  }, [studies, searchQuery, filters, hubTab, TODAY, archiveFilterMode, archiveDateRange]);
+  }, [studies, searchQuery, filters, hubTab, TODAY, archiveFilterMode, archiveDateRange, selectedDoctor]);
 
   const sortedStudies = useMemo(() => {
     const sortableItems = [...filteredStudies];
@@ -785,6 +806,11 @@ export default function TechnicianPage() {
               )}
             </div>
           )}
+
+          <select value={selectedDoctor} onChange={e => setSelectedDoctor(e.target.value)} style={{ padding: '10px 14px', borderRadius: '8px', border: '1px solid #e2e8f0', fontSize: '12px', fontWeight: 500, background: 'white', outline: 'none' }}>
+            <option value="ALL">All Doctors</option>
+            {doctors.map(d => <option key={d.id} value={d.id}>{d.name}</option>)}
+          </select>
 
           <select value={filters.modality} onChange={e => setFilters({...filters, modality: e.target.value})} style={{ padding: '10px 14px', borderRadius: '8px', border: '1px solid #e2e8f0', fontSize: '12px', fontWeight: 500, background: 'white', outline: 'none' }}>
             <option value="ALL">All Modalities</option>

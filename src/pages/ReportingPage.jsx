@@ -1116,8 +1116,15 @@ const ReportingPage = () => {
       // Only activate shortcuts when DICOM viewer is active
       if (!isDicomImage) return;
 
-      // Ignore shortcuts when typing in input fields
-      if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA' || e.target.isContentEditable) {
+      // Ignore shortcuts when typing in input fields OR anywhere inside the
+      // NarrativeEditor (covers Ribbon buttons that don't have isContentEditable
+      // but still belong to the editor's interaction surface).
+      if (
+        e.target.tagName === 'INPUT' ||
+        e.target.tagName === 'TEXTAREA' ||
+        e.target.isContentEditable ||
+        e.target.closest?.('.narrative-editor-container')
+      ) {
         return;
       }
 

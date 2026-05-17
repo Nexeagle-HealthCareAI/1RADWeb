@@ -4,6 +4,7 @@ import InsertTab from './InsertTab';
 import LayoutTab from './LayoutTab';
 import ReviewTab from './ReviewTab';
 import ViewTab from './ViewTab';
+import { Icon, ICONS } from './RibbonControls';
 
 const TABS = [
   { id: 'home',   label: 'Home',   icon: '🏠' },
@@ -18,7 +19,7 @@ const TABS = [
  */
 export default function Ribbon(props) {
   const {
-    editor, onSave, zoom, setZoom, zoomLevels = [50, 75, 90, 100, 110, 125, 150, 200],
+    editor, onSave, isFullscreen, toggleFullscreen,
   } = props;
 
   const [activeTab, setActiveTab] = useState('home');
@@ -33,6 +34,35 @@ export default function Ribbon(props) {
       userSelect: 'none',
       fontFamily: '"Segoe UI", system-ui, sans-serif',
     }}>
+      {/* ── Quick Access Toolbar (Word-style, above tab strip) ───── */}
+      <div style={{
+        display: 'flex', alignItems: 'center', gap: '2px',
+        height: '24px', padding: '0 10px',
+        background: '#f3f3f3',
+        borderBottom: '1px solid #e0e0e0',
+        fontSize: '11px',
+      }}>
+        <QATBtn
+          title="Save (Ctrl+S)"
+          onClick={() => onSave?.()}
+          icon={(
+            <svg width="13" height="13" viewBox="0 0 16 16" fill="currentColor"><path d="M11 1H3a1 1 0 0 0-1 1v12a1 1 0 0 0 1 1h10a1 1 0 0 0 1-1V4l-3-3zM9 13H5v-3h4v3zm2-7H4V3h7v3z"/></svg>
+          )}
+        />
+        <QATBtn
+          title="Undo (Ctrl+Z)"
+          disabled={!editor.can().undo()}
+          onClick={() => editor.chain().focus().undo().run()}
+          icon={<Icon d={ICONS.undo} size={13} />}
+        />
+        <QATBtn
+          title="Redo (Ctrl+Y)"
+          disabled={!editor.can().redo()}
+          onClick={() => editor.chain().focus().redo().run()}
+          icon={<Icon d={ICONS.redo} size={13} />}
+        />
+      </div>
+
       {/* ── Tab strip (modern) ────────────────────────────── */}
       <div style={{
         display: 'flex', alignItems: 'center', justifyContent: 'space-between',
@@ -82,48 +112,67 @@ export default function Ribbon(props) {
           })}
         </div>
 
-        {/* Persistent right-side controls: zoom + save */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-          {setZoom && (
-            <div style={{
-              display: 'flex', alignItems: 'center', gap: '4px',
-              background: '#f4f4f4', borderRadius: '14px', padding: '2px 6px',
-              border: '1px solid #e0e0e0',
-            }}>
-              <button
-                onMouseDown={e => { e.preventDefault(); setZoom(z => Math.max(50, zoomLevels[zoomLevels.indexOf(z) - 1] ?? 50)); }}
-                disabled={zoom <= 50}
-                title="Zoom out"
-                style={{
-                  width: 20, height: 20, border: 'none', background: 'transparent',
-                  cursor: zoom <= 50 ? 'not-allowed' : 'pointer', fontSize: '14px', color: '#555',
-                  borderRadius: '50%',
-                }}
-              >−</button>
-              <select
-                value={zoom}
-                onChange={e => setZoom(Number(e.target.value))}
-                title="Zoom level"
-                style={{
-                  border: 'none', background: 'transparent', fontSize: '11px',
-                  fontWeight: 600, color: '#333', cursor: 'pointer', outline: 'none',
-                  fontFamily: 'inherit', width: '44px', textAlign: 'center',
-                }}
-              >
-                {zoomLevels.map(z => <option key={z} value={z}>{z}%</option>)}
-              </select>
-              <button
-                onMouseDown={e => { e.preventDefault(); setZoom(z => Math.min(200, zoomLevels[zoomLevels.indexOf(z) + 1] ?? 200)); }}
-                disabled={zoom >= 200}
-                title="Zoom in"
-                style={{
-                  width: 20, height: 20, border: 'none', background: 'transparent',
-                  cursor: zoom >= 200 ? 'not-allowed' : 'pointer', fontSize: '14px', color: '#555',
-                  borderRadius: '50%',
-                }}
-              >+</button>
-            </div>
+        {/* Persistent right-side controls: fullscreen + help + save */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+          {toggleFullscreen && (
+            <button
+              onMouseDown={e => { e.preventDefault(); toggleFullscreen(); }}
+              title={isFullscreen ? 'Exit Full Screen (F11)' : 'Enter Full Screen (F11)'}
+              aria-pressed={isFullscreen}
+              style={{
+                display: 'inline-flex', alignItems: 'center', gap: '6px',
+                height: '26px', padding: '0 10px 0 9px',
+                background: isFullscreen ? '#0078d4' : '#ffffff',
+                border: `1px solid ${isFullscreen ? '#0078d4' : '#d1d5db'}`,
+                borderRadius: '4px',
+                color: isFullscreen ? '#ffffff' : '#374151',
+                fontSize: '11.5px', fontWeight: 500,
+                cursor: 'pointer', fontFamily: 'inherit',
+                boxShadow: isFullscreen
+                  ? '0 1px 2px rgba(0, 120, 212, 0.35)'
+                  : '0 1px 0 rgba(0, 0, 0, 0.02)',
+                transition: 'background 0.12s, border-color 0.12s, color 0.12s',
+              }}
+              onMouseEnter={e => {
+                if (!isFullscreen) {
+                  e.currentTarget.style.background = '#f3f4f6';
+                  e.currentTarget.style.borderColor = '#9ca3af';
+                }
+              }}
+              onMouseLeave={e => {
+                if (!isFullscreen) {
+                  e.currentTarget.style.background = '#ffffff';
+                  e.currentTarget.style.borderColor = '#d1d5db';
+                }
+              }}
+            >
+              <Icon d={isFullscreen ? ICONS.exitFs : ICONS.fullscreen} size={13} />
+              <span style={{ lineHeight: 1 }}>{isFullscreen ? 'Exit Full Screen' : 'Full Screen'}</span>
+              <kbd style={{
+                marginLeft: '2px',
+                padding: '1px 5px',
+                background: isFullscreen ? 'rgba(255,255,255,0.18)' : '#f3f4f6',
+                border: `1px solid ${isFullscreen ? 'rgba(255,255,255,0.3)' : '#e5e7eb'}`,
+                borderRadius: '3px',
+                fontFamily: '"Cascadia Code", "Consolas", monospace',
+                fontSize: '9.5px', fontWeight: 600,
+                color: isFullscreen ? '#ffffff' : '#6b7280',
+                lineHeight: 1,
+              }}>F11</kbd>
+            </button>
           )}
+
+          <button
+            onMouseDown={e => { e.preventDefault(); window.dispatchEvent(new CustomEvent('narrative-editor:open-shortcuts')); }}
+            title="Keyboard shortcuts (F1)"
+            style={{
+              width: '24px', height: '24px', borderRadius: '50%',
+              background: 'transparent', border: '1px solid #d1d5db',
+              color: '#555', fontSize: '12px', fontWeight: 700,
+              cursor: 'pointer', fontFamily: 'inherit',
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+            }}
+          >?</button>
 
           {onSave && (
             <button
@@ -160,3 +209,29 @@ export default function Ribbon(props) {
     </div>
   );
 }
+
+/**
+ * Quick-Access Toolbar button — compact 22×20 transparent button that hovers
+ * to a subtle gray, matches Word's QAT visual weight.
+ */
+const QATBtn = ({ title, onClick, disabled, icon }) => (
+  <button
+    onMouseDown={e => { e.preventDefault(); if (!disabled) onClick?.(); }}
+    disabled={disabled}
+    title={title}
+    style={{
+      display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+      width: '22px', height: '20px', padding: 0,
+      background: 'transparent', border: '1px solid transparent',
+      borderRadius: '3px',
+      color: disabled ? '#bbb' : '#444',
+      cursor: disabled ? 'not-allowed' : 'pointer',
+      fontFamily: 'inherit',
+      transition: 'background 0.08s, border-color 0.08s',
+    }}
+    onMouseEnter={e => { if (!disabled) { e.currentTarget.style.background = '#e8e8e8'; e.currentTarget.style.borderColor = '#d1d5db'; } }}
+    onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.borderColor = 'transparent'; }}
+  >
+    {icon}
+  </button>
+);

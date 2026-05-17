@@ -22,7 +22,11 @@ import { LineHeight, ParagraphIndent, PageBreak } from './extensions/Spacing';
 import { FormatPainter } from './extensions/FormatPainter';
 import FindReplaceDialog from './dialogs/FindReplaceDialog';
 import SymbolPickerDialog from './dialogs/SymbolPickerDialog';
-import PromptDialog from './dialogs/PromptDialog';
+import PromptDialog, { editorPrompt } from './dialogs/PromptDialog';
+import ShortcutsDialog from './dialogs/ShortcutsDialog';
+import FontDialog from './dialogs/FontDialog';
+import ParagraphDialog from './dialogs/ParagraphDialog';
+import { FONT_SIZES } from './Ribbon/RibbonControls';
 import { useVoiceDictation } from './hooks/useVoiceDictation';
 import './NarrativeEditor.css';
 
@@ -133,6 +137,31 @@ const Link = Mark.create({
   },
 });
 
+// ── Helpers used by the shortcut handler ─────────────────────────────────────
+
+function cycleFontSize(editor, delta) {
+  const attrs = editor.getAttributes('textStyle') || {};
+  const current = (attrs.fontSize || '12pt').replace('pt', '');
+  let idx = FONT_SIZES.indexOf(current);
+  if (idx < 0) idx = FONT_SIZES.indexOf('12');
+  const nextIdx = Math.max(0, Math.min(FONT_SIZES.length - 1, idx + delta));
+  const next = FONT_SIZES[nextIdx];
+  editor.chain().focus().setMark('textStyle', { fontSize: `${next}pt` }).run();
+}
+
+function resetParagraph(editor) {
+  editor.chain().focus()
+    .setTextAlign('left')
+    .unsetLineHeight()
+    .setParagraph()
+    .unsetAllMarks()
+    .run();
+  // Also clear our paragraph indent if present
+  try {
+    editor.chain().focus().decreaseParagraphIndent().decreaseParagraphIndent().decreaseParagraphIndent().run();
+  } catch {}
+}
+
 // ── Main component ────────────────────────────────────────────────────────────
 
 const ZOOM_LEVELS = [50, 75, 90, 100, 110, 125, 150, 200];
@@ -148,6 +177,7 @@ const NarrativeEditor = React.forwardRef(function NarrativeEditor({
   placeholder = 'Start typing your radiology report...',
   editable = true,
   onSave,
+  onPrint,
   className = '',
   style = {},
   keywordLibrary = [],
@@ -162,6 +192,9 @@ const NarrativeEditor = React.forwardRef(function NarrativeEditor({
   const [currentPage, setCurrentPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
   const [promptState, setPromptState] = useState(null); // {title, message, defaultValue, placeholder, resolve}
+  const [shortcutsOpen, setShortcutsOpen] = useState(false);
+  const [fontDlgOpen, setFontDlgOpen] = useState(false);
+  const [paragraphDlgOpen, setParagraphDlgOpen] = useState(false);
 
   // Voice dictation — text inserted at cursor when a phrase finalises.
   const voice = useVoiceDictation({
@@ -268,85 +301,221 @@ const NarrativeEditor = React.forwardRef(function NarrativeEditor({
     }
   }, [content, editor]);
 
-  // MS Word-style keyboard shortcuts.
-  // Tiptap StarterKit already handles: Ctrl+B/I, Ctrl+U (Underline), Ctrl+Z/Y,
-  // Ctrl+Shift+8/7 (lists). We add what's missing.
+  // Refs that the keydown closure reads — keeps the effect deps minimal so the
+  // listener isn't torn down and re-added on every scroll/page-count change.
+  const currentPageRef = useRef(currentPage);
+  const totalPagesRef = useRef(totalPages);
+  const shortcutsOpenRef = useRef(shortcutsOpen);
+  useEffect(() => { currentPageRef.current = currentPage; }, [currentPage]);
+  useEffect(() => { totalPagesRef.current = totalPages; }, [totalPages]);
+  useEffect(() => { shortcutsOpenRef.current = shortcutsOpen; }, [shortcutsOpen]);
+
+  // MS Word-style keyboard shortcuts — exhaustive, capture-phase so this wins
+  // over any page-level (DICOM) handlers AND ensures Tiptap's internal keymap
+  // doesn't fire twice (we stopImmediatePropagation on handled events).
   useEffect(() => {
     if (!editor) return;
-    const handler = e => {
+
+    const inEditor = (e) =>
+      containerRef.current?.contains(e.target) ||
+      containerRef.current?.contains(document.activeElement);
+
+    const handler = (e) => {
+      // F1 — global, always works (open shortcuts cheat-sheet)
+      if (e.key === 'F1') {
+        if (inEditor(e)) {
+          e.preventDefault();
+          e.stopImmediatePropagation();
+          setShortcutsOpen(true);
+        }
+        return;
+      }
+      // F11 — toggle fullscreen for the editor container
+      if (e.key === 'F11') {
+        if (inEditor(e)) {
+          e.preventDefault();
+          e.stopImmediatePropagation();
+          if (!document.fullscreenElement) containerRef.current?.requestFullscreen?.();
+          else document.exitFullscreen?.();
+        }
+        return;
+      }
+      // Esc — close any of our open dialogs
+      if (e.key === 'Escape') {
+        if (shortcutsOpenRef.current) { e.preventDefault(); setShortcutsOpen(false); return; }
+        // Find/Symbol dialogs handle their own Esc
+        return;
+      }
+
       const mod = e.ctrlKey || e.metaKey;
       if (!mod) return;
-      const inEditor = containerRef.current?.contains(document.activeElement)
-        || containerRef.current?.contains(e.target);
+      if (!inEditor(e)) return;
+
       const key = e.key.toLowerCase();
+      const stop = () => { e.preventDefault(); e.stopImmediatePropagation(); };
+      const run = (fn) => { stop(); fn(); };
 
-      // Global (app-level) shortcuts
-      if (key === 's') { e.preventDefault(); onSave?.(); return; }
+      // ── App-level ────────────────────────────────────────
+      if (key === 's' && !e.shiftKey) return run(() => onSave?.());
 
-      if (!inEditor) return;
+      // ── Find / Replace ────────────────────────────────────
+      if (key === 'f') return run(() => { setFindFocusReplace(false); setFindOpen(true); });
+      if (key === 'h') return run(() => { setFindFocusReplace(true);  setFindOpen(true); });
 
-      // Find / Replace
-      if (key === 'f') { e.preventDefault(); setFindFocusReplace(false); setFindOpen(true); return; }
-      if (key === 'h') { e.preventDefault(); setFindFocusReplace(true);  setFindOpen(true); return; }
-
-      // Alignment
-      if (!e.shiftKey && key === 'l') { e.preventDefault(); editor.chain().focus().setTextAlign('left').run(); return; }
-      if (key === 'e') { e.preventDefault(); editor.chain().focus().setTextAlign('center').run(); return; }
-      if (!e.shiftKey && key === 'r') { e.preventDefault(); editor.chain().focus().setTextAlign('right').run(); return; }
-      if (key === 'j') { e.preventDefault(); editor.chain().focus().setTextAlign('justify').run(); return; }
-
-      // Headings (Ctrl+1..4 = H1..H4, Ctrl+0 = Normal)
-      if (!e.shiftKey && ['1', '2', '3', '4'].includes(e.key)) {
-        e.preventDefault();
-        editor.chain().focus().setHeading({ level: parseInt(e.key, 10) }).run();
-        return;
-      }
-      if (!e.shiftKey && e.key === '0') {
-        e.preventDefault();
-        editor.chain().focus().setParagraph().run();
-        return;
+      // ── Go to page (Ctrl+G or F5) ─────────────────────────
+      if (key === 'g') {
+        return run(async () => {
+          const n = await editorPrompt({
+            title: 'Go to Page',
+            message: `Enter page number (1 – ${totalPagesRef.current}).`,
+            defaultValue: String(currentPageRef.current),
+            placeholder: '1',
+            confirmLabel: 'Go',
+            inputType: 'number',
+          });
+          const num = parseInt(n, 10);
+          if (Number.isFinite(num)) goToPage(num);
+        });
       }
 
-      // Insert link (Ctrl+K)
+      // ── Insert link ───────────────────────────────────────
       if (key === 'k') {
-        e.preventDefault();
-        const url = window.prompt('Enter URL:', 'https://');
-        if (url) editor.chain().focus().setLink({ href: url, target: '_blank' }).run();
+        return run(async () => {
+          const url = await editorPrompt({
+            title: 'Insert Hyperlink',
+            message: 'Enter the URL to link to.',
+            defaultValue: 'https://',
+            placeholder: 'https://example.com',
+            confirmLabel: 'Insert',
+          });
+          if (url) editor.chain().focus().setLink({ href: url, target: '_blank' }).run();
+        });
+      }
+
+      // ── Character formatting ──────────────────────────────
+      if (key === 'b' && !e.shiftKey && !e.altKey) {
+        return run(() => { editor.commands.focus(); editor.commands.toggleBold(); });
+      }
+      if (key === 'i' && !e.shiftKey && !e.altKey) {
+        return run(() => { editor.commands.focus(); editor.commands.toggleItalic(); });
+      }
+      if (key === 'u' && !e.shiftKey && !e.altKey) {
+        return run(() => { editor.commands.focus(); editor.commands.toggleUnderline(); });
+      }
+      if (e.shiftKey && key === 'x') {
+        return run(() => { editor.commands.focus(); editor.commands.toggleStrike(); });
+      }
+
+      // Ctrl+= and Ctrl+Shift+=
+      if (e.key === '=' && !e.shiftKey) return run(() => editor.commands.toggleSubscript?.());
+      if (e.key === '=' && e.shiftKey)  return run(() => editor.commands.toggleSuperscript?.());
+      if (e.key === '+' && e.shiftKey)  return run(() => editor.commands.toggleSuperscript?.());
+
+      // Font size cycling
+      if (e.key === ']' || (e.shiftKey && e.key === '>')) return run(() => cycleFontSize(editor, +1));
+      if (e.key === '[' || (e.shiftKey && e.key === '<')) return run(() => cycleFontSize(editor, -1));
+
+      // Clear character formatting (Ctrl+Space)
+      if (e.key === ' ' && !e.shiftKey && !e.altKey) return run(() => editor.chain().focus().unsetAllMarks().run());
+
+      // ── Paragraph alignment ───────────────────────────────
+      if (!e.shiftKey && !e.altKey && key === 'l') return run(() => editor.chain().focus().setTextAlign('left').run());
+      if (!e.altKey && key === 'e')                return run(() => editor.chain().focus().setTextAlign('center').run());
+      if (!e.shiftKey && !e.altKey && key === 'r') return run(() => editor.chain().focus().setTextAlign('right').run());
+      if (!e.altKey && key === 'j')                return run(() => editor.chain().focus().setTextAlign('justify').run());
+
+      // Paragraph indent (Ctrl+M / Ctrl+Shift+M)
+      if (key === 'm' && !e.shiftKey) return run(() => {
+        if (editor.can().sinkListItem('listItem')) editor.chain().focus().sinkListItem('listItem').run();
+        else editor.chain().focus().increaseParagraphIndent().run();
+      });
+      if (key === 'm' && e.shiftKey) return run(() => {
+        if (editor.can().liftListItem('listItem')) editor.chain().focus().liftListItem('listItem').run();
+        else editor.chain().focus().decreaseParagraphIndent().run();
+      });
+
+      // Reset paragraph (Ctrl+Q)
+      if (key === 'q') return run(() => resetParagraph(editor));
+
+      // Line spacing — Ctrl+1 / Ctrl+2 / Ctrl+5 (Word convention)
+      if (!e.shiftKey && !e.altKey && e.key === '1') return run(() => editor.chain().focus().setLineHeight('1').run());
+      if (!e.shiftKey && !e.altKey && e.key === '2') return run(() => editor.chain().focus().setLineHeight('2').run());
+      if (!e.shiftKey && !e.altKey && e.key === '5') return run(() => editor.chain().focus().setLineHeight('1.5').run());
+
+      // Headings — Ctrl+Alt+1..4 (Word), Ctrl+Shift+N = Normal
+      if (e.altKey && ['1', '2', '3', '4'].includes(e.key)) {
+        return run(() => editor.chain().focus().setHeading({ level: parseInt(e.key, 10) }).run());
+      }
+      if (e.shiftKey && key === 'n') return run(() => editor.chain().focus().setParagraph().run());
+
+      // ── Lists ─────────────────────────────────────────────
+      if (e.shiftKey && key === 'l') return run(() => editor.chain().focus().toggleBulletList().run());
+      if (e.shiftKey && e.key === '7') return run(() => editor.chain().focus().toggleOrderedList().run());
+
+      // ── History ───────────────────────────────────────────
+      if (key === 'z' && !e.shiftKey) return run(() => editor.chain().focus().undo().run());
+      if (key === 'y' || (e.shiftKey && key === 'z')) return run(() => editor.chain().focus().redo().run());
+
+      // ── Clipboard ─────────────────────────────────────────
+      // Select all
+      if (key === 'a') return run(() => editor.chain().focus().selectAll().run());
+
+      // Copy / Cut — refocus editor and let browser/Prosemirror handle natively.
+      if (key === 'c' && !e.shiftKey) {
+        editor.commands.focus();
+        // Don't preventDefault — let browser copy from contenteditable.
+        return;
+      }
+      if (key === 'x' && !e.shiftKey) {
+        editor.commands.focus();
+        return;
+      }
+      if (key === 'v' && !e.shiftKey) {
+        editor.commands.focus();
         return;
       }
 
-      // Format Painter — Ctrl+Shift+C captures, Ctrl+Shift+V applies
-      if (e.shiftKey && key === 'c') { e.preventDefault(); editor.chain().pickupFormat().run(); return; }
+      // Format Painter — Ctrl+Shift+C / Ctrl+Shift+V
+      if (e.shiftKey && key === 'c') return run(() => editor.chain().pickupFormat().run());
       if (e.shiftKey && key === 'v') {
         if (editor.storage?.formatPainter?.active) {
-          e.preventDefault();
-          editor.chain().applyFormat().run();
-          return;
+          return run(() => editor.chain().applyFormat().run());
         }
-      }
-
-      // Page break (Ctrl+Enter — same as Word)
-      if (e.key === 'Enter') {
-        e.preventDefault();
-        editor.chain().focus().insertPageBreak().run();
         return;
       }
 
-      // Clear formatting (Ctrl+Space — Word also uses this)
-      if (key === ' ') {
-        e.preventDefault();
-        editor.chain().focus().unsetAllMarks().run();
-        return;
+      // ── Insert ────────────────────────────────────────────
+      if (e.key === 'Enter') return run(() => editor.chain().focus().insertPageBreak().run());
+      if (e.shiftKey && (e.key === '-' || e.key === '_')) return run(() => editor.chain().focus().insertContent('—').run());
+      if (e.shiftKey && e.key === ' ') return run(() => editor.chain().focus().insertContent(' ').run());
+
+      // ── Navigation ────────────────────────────────────────
+      if (e.key === 'Home') {
+        return run(() => {
+          const size = editor.state.doc.content.size;
+          editor.chain().focus().setTextSelection(1).scrollIntoView().run();
+        });
+      }
+      if (e.key === 'End') {
+        return run(() => {
+          const size = editor.state.doc.content.size;
+          editor.chain().focus().setTextSelection(size - 1).scrollIntoView().run();
+        });
       }
 
-      // Print preview (Ctrl+P)
-      if (key === 'p' && typeof window !== 'undefined') {
-        // Let browser handle it
+      // ── Print ─────────────────────────────────────────────
+      if (key === 'p') {
+        if (typeof onPrint === 'function') {
+          return run(() => onPrint());
+        }
+        // else let the browser handle Ctrl+P
+        return;
       }
     };
-    document.addEventListener('keydown', handler);
-    return () => document.removeEventListener('keydown', handler);
-  }, [onSave, editor]);
+
+    document.addEventListener('keydown', handler, true /* capture */);
+    return () => document.removeEventListener('keydown', handler, true);
+  }, [editor, onSave, onPrint]);
 
   // Toolbar Find button dispatches a window event — listen and open the dialog
   useEffect(() => {
@@ -371,6 +540,25 @@ const NarrativeEditor = React.forwardRef(function NarrativeEditor({
     const open = (e) => setPromptState(e.detail || null);
     window.addEventListener('narrative-editor:prompt', open);
     return () => window.removeEventListener('narrative-editor:prompt', open);
+  }, []);
+
+  // Open shortcuts cheat-sheet via Ribbon "?" button
+  useEffect(() => {
+    const open = () => setShortcutsOpen(true);
+    window.addEventListener('narrative-editor:open-shortcuts', open);
+    return () => window.removeEventListener('narrative-editor:open-shortcuts', open);
+  }, []);
+
+  // Dialog-launcher events from Ribbon group corners
+  useEffect(() => {
+    const openFont = () => setFontDlgOpen(true);
+    const openPara = () => setParagraphDlgOpen(true);
+    window.addEventListener('narrative-editor:open-font-dialog', openFont);
+    window.addEventListener('narrative-editor:open-paragraph-dialog', openPara);
+    return () => {
+      window.removeEventListener('narrative-editor:open-font-dialog', openFont);
+      window.removeEventListener('narrative-editor:open-paragraph-dialog', openPara);
+    };
   }, []);
 
   // Toggle the browser's native spellcheck attribute on the ProseMirror DOM.
@@ -546,6 +734,11 @@ const NarrativeEditor = React.forwardRef(function NarrativeEditor({
       </div>
 
       <SymbolPickerDialog editor={editor} open={symbolOpen} onClose={() => setSymbolOpen(false)} />
+
+      <ShortcutsDialog open={shortcutsOpen} onClose={() => setShortcutsOpen(false)} />
+
+      <FontDialog editor={editor} open={fontDlgOpen} onClose={() => setFontDlgOpen(false)} />
+      <ParagraphDialog editor={editor} open={paragraphDlgOpen} onClose={() => setParagraphDlgOpen(false)} />
 
       <PromptDialog
         open={!!promptState}

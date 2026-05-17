@@ -93,31 +93,35 @@ export default function StylesGallery({ editor }) {
 
   return (
     <div style={{
-      display: 'flex', gap: '4px', alignItems: 'center',
+      display: 'flex', gap: '2px', alignItems: 'center',
       overflowX: 'auto', overflowY: 'hidden',
-      maxWidth: '420px', height: '60px',
+      maxWidth: '520px', height: '60px', padding: '2px',
       msOverflowStyle: 'none', scrollbarWidth: 'none',
     }}>
-      <style>{`.styles-gallery::-webkit-scrollbar { display: none; }`}</style>
+      <style>{`.styles-gallery-card::-webkit-scrollbar { display: none; }`}</style>
       {PRESETS.map(preset => {
         const active = preset.isActive ? preset.isActive(editor) : false;
         return (
           <button
             key={preset.id}
-            className="styles-gallery"
+            className="styles-gallery-card"
             onMouseDown={e => { e.preventDefault(); preset.apply(editor); }}
             title={preset.label}
             style={{
-              display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
-              minWidth: '70px', height: '52px', padding: '4px 8px',
-              background: active ? '#cce4f7' : '#fff',
-              border: `1px solid ${active ? '#90c8f0' : '#d1d1d1'}`,
+              display: 'flex', flexDirection: 'column',
+              alignItems: 'stretch', justifyContent: 'space-between',
+              width: '108px', height: '52px',
+              padding: '8px 10px 4px',
+              background: active ? '#eff6fc' : '#ffffff',
+              border: `1px solid ${active ? '#0078d4' : '#d1d5db'}`,
               borderRadius: '3px', cursor: 'pointer', flexShrink: 0,
               fontFamily: '"Segoe UI", system-ui, sans-serif',
+              boxShadow: active ? '0 0 0 1px #0078d4 inset' : 'none',
               transition: 'background 0.1s, border-color 0.1s',
+              textAlign: 'left',
             }}
-            onMouseEnter={e => { if (!active) e.currentTarget.style.background = '#f0f0f0'; }}
-            onMouseLeave={e => { if (!active) e.currentTarget.style.background = '#fff'; }}
+            onMouseEnter={e => { if (!active) { e.currentTarget.style.background = '#f3f4f6'; e.currentTarget.style.borderColor = '#9ca3af'; } }}
+            onMouseLeave={e => { if (!active) { e.currentTarget.style.background = '#ffffff'; e.currentTarget.style.borderColor = '#d1d5db'; } }}
           >
             <div style={{
               ...preset.sample,
@@ -125,11 +129,9 @@ export default function StylesGallery({ editor }) {
               whiteSpace: 'nowrap',
               overflow: 'hidden',
               textOverflow: 'ellipsis',
-              maxWidth: '60px',
-            }}>Aa</div>
-            <div style={{ fontSize: '9px', color: '#666', marginTop: '4px', whiteSpace: 'nowrap' }}>
-              {preset.label}
-            </div>
+              flex: 1,
+              display: 'flex', alignItems: 'center',
+            }}>{preset.label}</div>
           </button>
         );
       })}

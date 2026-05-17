@@ -1,10 +1,160 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import {
   Btn, BigBtn, Sep, Icon, Group, selectStyle, ICONS,
   FONT_FAMILIES, FONT_SIZES, HIGHLIGHTS, ColorPicker,
 } from './RibbonControls';
 import StylesGallery from './StylesGallery';
 import { editorPrompt } from '../dialogs/PromptDialog';
+
+// ── Font helpers ─────────────────────────────────────────────────────────────
+
+function cycleFontSize(editor, delta) {
+  const attrs = editor.getAttributes('textStyle') || {};
+  const current = (attrs.fontSize || '12pt').replace('pt', '');
+  let idx = FONT_SIZES.indexOf(current);
+  if (idx < 0) idx = FONT_SIZES.indexOf('12');
+  const nextIdx = Math.max(0, Math.min(FONT_SIZES.length - 1, idx + delta));
+  editor.chain().focus().setMark('textStyle', { fontSize: `${FONT_SIZES[nextIdx]}pt` }).run();
+}
+
+const CASE_TRANSFORMS = {
+  sentence: (s) => s.charAt(0).toUpperCase() + s.slice(1).toLowerCase(),
+  upper:    (s) => s.toUpperCase(),
+  lower:    (s) => s.toLowerCase(),
+  capitalize: (s) => s.replace(/\b\w/g, c => c.toUpperCase()),
+  toggle:   (s) => s.split('').map(c => c === c.toUpperCase() ? c.toLowerCase() : c.toUpperCase()).join(''),
+};
+
+function transformSelectedText(editor, fn) {
+  const { state } = editor;
+  const { from, to, empty } = state.selection;
+  if (empty) return;
+  const text = state.doc.textBetween(from, to, '\n');
+  if (!text) return;
+  editor.chain().focus().insertContentAt({ from, to }, fn(text)).run();
+}
+
+// ── Change Case dropdown ─────────────────────────────────────────────────────
+
+const ChangeCaseDropdown = ({ editor }) => {
+  const [open, setOpen] = useState(false);
+  const [pos, setPos] = useState({ top: 0, left: 0 });
+  const btnRef = useRef(null);
+  const menuRef = useRef(null);
+  const [portalTarget, setPortalTarget] = useState(() =>
+    (typeof document !== 'undefined' ? (document.fullscreenElement || document.body) : null)
+  );
+
+  useEffect(() => {
+    const onFs = () => setPortalTarget(document.fullscreenElement || document.body);
+    document.addEventListener('fullscreenchange', onFs);
+    return () => document.removeEventListener('fullscreenchange', onFs);
+  }, []);
+
+  useEffect(() => {
+    if (!open) return;
+    const rect = btnRef.current?.getBoundingClientRect();
+    if (rect) setPos({ top: rect.bottom + 4, left: rect.left });
+    const onDown = e => { if (menuRef.current && !menuRef.current.contains(e.target) && !btnRef.current?.contains(e.target)) setOpen(false); };
+    const t = setTimeout(() => document.addEventListener('mousedown', onDown), 0);
+    return () => { clearTimeout(t); document.removeEventListener('mousedown', onDown); };
+  }, [open]);
+
+  const apply = (key) => {
+    transformSelectedText(editor, CASE_TRANSFORMS[key]);
+    setOpen(false);
+  };
+
+  const items = [
+    { key: 'sentence',   label: 'Sentence case.',     sample: 'Sentence case.' },
+    { key: 'lower',      label: 'lowercase',          sample: 'lowercase' },
+    { key: 'upper',      label: 'UPPERCASE',          sample: 'UPPERCASE' },
+    { key: 'capitalize', label: 'Capitalize Each Word', sample: 'Capitalize Each Word' },
+    { key: 'toggle',     label: 'tOGGLE cASE',        sample: 'tOGGLE cASE' },
+  ];
+
+  return (
+    <>
+      <button
+        ref={btnRef}
+        onMouseDown={e => { e.preventDefault(); setOpen(v => !v); }}
+        title="Change Case"
+        style={{
+          display: 'inline-flex', alignItems: 'center', gap: '2px',
+          minWidth: '34px', height: '24px', padding: '0 4px 0 6px',
+          background: open ? '#cce4f7' : 'transparent',
+          border: `1px solid ${open ? '#90c8f0' : 'transparent'}`,
+          borderRadius: '3px', cursor: 'pointer',
+          color: open ? '#003a75' : '#323130',
+          fontSize: '13px', fontFamily: '"Segoe UI", system-ui, sans-serif',
+          lineHeight: 1,
+        }}
+        onMouseEnter={e => { if (!open) e.currentTarget.style.background = '#e8e8e8'; }}
+        onMouseLeave={e => { if (!open) e.currentTarget.style.background = 'transparent'; }}
+      >
+        <span style={{ fontWeight: 600 }}>Aa</span>
+        <span style={{ fontSize: '8px', marginTop: '2px' }}>▾</span>
+      </button>
+      {open && portalTarget && createPortal(
+        <div ref={menuRef} style={{
+          position: 'fixed', top: pos.top, left: pos.left,
+          background: '#fff', border: '1px solid #d1d5db', borderRadius: '4px',
+          boxShadow: '0 8px 24px rgba(0,0,0,0.18)',
+          padding: '4px', zIndex: 13000, minWidth: '180px',
+          fontFamily: '"Segoe UI", system-ui, sans-serif', fontSize: '12px',
+        }}>
+          {items.map(it => (
+            <button
+              key={it.key}
+              onMouseDown={e => { e.preventDefault(); apply(it.key); }}
+              style={{
+                width: '100%', textAlign: 'left',
+                padding: '6px 10px', background: 'transparent',
+                border: 'none', borderRadius: '3px', cursor: 'pointer',
+                fontFamily: 'inherit', fontSize: '12px', color: '#374151',
+              }}
+              onMouseEnter={e => e.currentTarget.style.background = '#f3f4f6'}
+              onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
+            >{it.sample}</button>
+          ))}
+        </div>,
+        portalTarget
+      )}
+    </>
+  );
+};
+
+/**
+ * Small row-style button used for the stacked Cut / Copy / Painter list
+ * in the Clipboard group. Compact 18px row.
+ */
+const SmallRowBtn = ({ label, icon, title, active, onClick }) => (
+  <button
+    onMouseDown={e => { e.preventDefault(); onClick?.(); }}
+    title={title}
+    style={{
+      display: 'flex', alignItems: 'center', gap: '6px',
+      width: '78px', height: '18px',
+      padding: '0 6px',
+      background: active ? '#cce4f7' : 'transparent',
+      border: `1px solid ${active ? '#90c8f0' : 'transparent'}`,
+      borderRadius: '3px',
+      cursor: 'pointer',
+      fontSize: '11px', lineHeight: 1,
+      color: active ? '#003a75' : '#323130',
+      fontFamily: '"Segoe UI", system-ui, sans-serif',
+      boxSizing: 'border-box',
+      flexShrink: 0,
+      transition: 'background 0.08s, border-color 0.08s',
+    }}
+    onMouseEnter={e => { if (!active) e.currentTarget.style.background = '#e8e8e8'; }}
+    onMouseLeave={e => { if (!active) e.currentTarget.style.background = 'transparent'; }}
+  >
+    <span style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: 12, flexShrink: 0 }}>{icon}</span>
+    <span style={{ whiteSpace: 'nowrap', lineHeight: 1 }}>{label}</span>
+  </button>
+);
 
 /**
  * HomeTab — primary formatting controls.
@@ -35,31 +185,41 @@ export default function HomeTab({ editor }) {
           title="Paste (Ctrl+V)"
           onClick={() => navigator.clipboard.readText().then(t => editor.chain().focus().insertContent(t).run()).catch(() => {})}
         />
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '1px', alignItems: 'stretch', justifyContent: 'space-between', height: '52px' }}>
-          <Btn onClick={() => document.execCommand('cut')} title="Cut (Ctrl+X)" style={{ fontSize: '11px', height: '17px', justifyContent: 'flex-start', minWidth: '64px' }}>
-            <span style={{ marginRight: '4px' }}>✂</span> Cut
-          </Btn>
-          <Btn onClick={() => document.execCommand('copy')} title="Copy (Ctrl+C)" style={{ fontSize: '11px', height: '17px', justifyContent: 'flex-start', minWidth: '64px' }}>
-            <span style={{ marginRight: '4px' }}>⎘</span> Copy
-          </Btn>
-          <Btn
+        <div style={{
+          display: 'flex', flexDirection: 'column',
+          gap: '2px',
+          alignSelf: 'center',
+          marginLeft: '2px',
+        }}>
+          <SmallRowBtn
+            label="Cut"
+            icon={<span style={{ fontSize: '11px' }}>✂</span>}
+            title="Cut (Ctrl+X)"
+            onClick={() => { editor.commands.focus(); document.execCommand('cut'); }}
+          />
+          <SmallRowBtn
+            label="Copy"
+            icon={<span style={{ fontSize: '11px' }}>⎘</span>}
+            title="Copy (Ctrl+C)"
+            onClick={() => { editor.commands.focus(); document.execCommand('copy'); }}
+          />
+          <SmallRowBtn
+            label="Painter"
+            icon={<Icon d={ICONS.brush} size={11} />}
+            title="Format Painter (Ctrl+Shift+C / V)"
+            active={painterActive}
             onClick={() => {
               if (painterActive) editor.chain().applyFormat().run();
               else editor.chain().pickupFormat().run();
             }}
-            active={painterActive}
-            title="Format Painter (Ctrl+Shift+C / V)"
-            style={{ fontSize: '11px', height: '17px', justifyContent: 'flex-start', minWidth: '64px' }}
-          >
-            <span style={{ marginRight: '4px' }}><Icon d={ICONS.brush} size={11} /></span> Painter
-          </Btn>
+          />
         </div>
       </Group>
 
       <Sep />
 
       {/* ── Font group ──────────────────────────────────── */}
-      <Group label="Font">
+      <Group label="Font" onLauncher={() => window.dispatchEvent(new CustomEvent('narrative-editor:open-font-dialog'))}>
         <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', alignItems: 'flex-start' }}>
           <div style={{ display: 'flex', gap: '4px' }}>
             <select
@@ -80,6 +240,19 @@ export default function HomeTab({ editor }) {
             >
               {FONT_SIZES.map(s => <option key={s} value={s}>{s}</option>)}
             </select>
+            <Btn onClick={() => cycleFontSize(editor, +1)} title="Grow Font (Ctrl+])">
+              <span style={{ display: 'inline-flex', alignItems: 'baseline', gap: '1px', lineHeight: 1 }}>
+                <span style={{ fontSize: '14px', fontWeight: 700 }}>A</span>
+                <span style={{ fontSize: '9px', position: 'relative', top: '-3px' }}>▲</span>
+              </span>
+            </Btn>
+            <Btn onClick={() => cycleFontSize(editor, -1)} title="Shrink Font (Ctrl+[)">
+              <span style={{ display: 'inline-flex', alignItems: 'baseline', gap: '1px', lineHeight: 1 }}>
+                <span style={{ fontSize: '11px', fontWeight: 700 }}>A</span>
+                <span style={{ fontSize: '9px', position: 'relative', top: '-2px' }}>▼</span>
+              </span>
+            </Btn>
+            <ChangeCaseDropdown editor={editor} />
           </div>
           <div style={{ display: 'flex', gap: '1px' }}>
             <Btn onClick={() => editor.chain().focus().toggleBold().run()} active={editor.isActive('bold')} title="Bold (Ctrl+B)" style={{ fontWeight: 900 }}>B</Btn>
@@ -141,7 +314,7 @@ export default function HomeTab({ editor }) {
       <Sep />
 
       {/* ── Paragraph group ─────────────────────────────── */}
-      <Group label="Paragraph">
+      <Group label="Paragraph" onLauncher={() => window.dispatchEvent(new CustomEvent('narrative-editor:open-paragraph-dialog'))}>
         <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', alignItems: 'flex-start' }}>
           <div style={{ display: 'flex', gap: '1px' }}>
             <Btn onClick={() => editor.chain().focus().toggleBulletList().run()} active={editor.isActive('bulletList')} title="Bullet List (Ctrl+Shift+8)">

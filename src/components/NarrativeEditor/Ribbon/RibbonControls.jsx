@@ -69,8 +69,9 @@ export const Icon = ({ d, size = 14 }) => (
 
 /**
  * Group — Word-style ribbon group with controls on top and label at bottom.
+ * Optional `onLauncher` shows the dialog-launcher arrow icon next to the label.
  */
-export const Group = ({ label, children, style = {} }) => (
+export const Group = ({ label, children, onLauncher, style = {} }) => (
   <div style={{
     display: 'flex', flexDirection: 'column', alignItems: 'stretch',
     padding: '4px 4px 0', flexShrink: 0, ...style,
@@ -82,10 +83,30 @@ export const Group = ({ label, children, style = {} }) => (
       {children}
     </div>
     <div style={{
-      textAlign: 'center', fontSize: '10px', color: '#666',
-      paddingTop: '2px', userSelect: 'none', letterSpacing: '0.2px',
+      display: 'flex', alignItems: 'center', justifyContent: 'center',
+      gap: '4px', paddingTop: '2px', userSelect: 'none',
     }}>
-      {label}
+      <span style={{ fontSize: '10px', color: '#666', letterSpacing: '0.2px' }}>{label}</span>
+      {onLauncher && (
+        <button
+          onMouseDown={e => { e.preventDefault(); onLauncher(); }}
+          title={`${label} dialog`}
+          style={{
+            width: '14px', height: '14px',
+            background: 'transparent', border: 'none',
+            cursor: 'pointer', padding: 0,
+            color: '#888', borderRadius: '2px',
+            display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+            transition: 'background 0.08s, color 0.08s',
+          }}
+          onMouseEnter={e => { e.currentTarget.style.background = '#e0e0e0'; e.currentTarget.style.color = '#333'; }}
+          onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = '#888'; }}
+        >
+          <svg width="10" height="10" viewBox="0 0 10 10" fill="currentColor">
+            <path d="M0 0v10h10V0H0zm9 9H1V1h6v4h2v4z M5 6l4-4-1-1-3 3V2H4v2h2V3l-1 1-1 1z" />
+          </svg>
+        </button>
+      )}
     </div>
   </div>
 );
@@ -187,22 +208,79 @@ function saveRecents(arr) {
   try { localStorage.setItem(RECENTS_KEY, JSON.stringify(arr.slice(0, 10))); } catch {}
 }
 
-// ── Color picker dropdown — Word-like, portaled so it can't be clipped ───────
+// ── Color helpers ────────────────────────────────────────────────────────────
+
+function hsvToRgb(h, s, v) {
+  const c = v * s;
+  const x = c * (1 - Math.abs(((h / 60) % 2) - 1));
+  const m = v - c;
+  let [r, g, b] = [0, 0, 0];
+  if (h < 60) [r, g, b] = [c, x, 0];
+  else if (h < 120) [r, g, b] = [x, c, 0];
+  else if (h < 180) [r, g, b] = [0, c, x];
+  else if (h < 240) [r, g, b] = [0, x, c];
+  else if (h < 300) [r, g, b] = [x, 0, c];
+  else [r, g, b] = [c, 0, x];
+  return [Math.round((r + m) * 255), Math.round((g + m) * 255), Math.round((b + m) * 255)];
+}
+
+function rgbToHex(r, g, b) {
+  const h = (n) => n.toString(16).padStart(2, '0');
+  return `#${h(r)}${h(g)}${h(b)}`;
+}
+
+function hexToHsv(hex) {
+  if (!/^#[0-9a-f]{6}$/i.test(hex)) return null;
+  const r = parseInt(hex.slice(1, 3), 16) / 255;
+  const g = parseInt(hex.slice(3, 5), 16) / 255;
+  const b = parseInt(hex.slice(5, 7), 16) / 255;
+  const max = Math.max(r, g, b), min = Math.min(r, g, b);
+  const d = max - min;
+  let hh = 0;
+  if (d !== 0) {
+    if (max === r) hh = ((g - b) / d) % 6;
+    else if (max === g) hh = (b - r) / d + 2;
+    else hh = (r - g) / d + 4;
+  }
+  hh = Math.round(hh * 60); if (hh < 0) hh += 360;
+  const ss = max === 0 ? 0 : d / max;
+  return { h: hh, s: ss, v: max };
+}
+
+// ── Color picker dropdown — Office Fluent style, fullscreen-aware portal ─────
 
 export const ColorPicker = ({ anchorEl, onSelect, onClose, onClear, clearLabel = 'No color' }) => {
   const ref = useRef(null);
+  const sbAreaRef = useRef(null);
   const [pos, setPos] = useState({ top: 0, left: 0 });
   const [recents, setRecents] = useState(loadRecents);
-  const [showHSL, setShowHSL] = useState(false);
+  const [showCustom, setShowCustom] = useState(false);
   const [h, setH] = useState(220);
-  const [s, setS] = useState(70);
-  const [l, setL] = useState(50);
+  const [s, setS] = useState(0.7);  // 0..1
+  const [v, setV] = useState(0.95); // 0..1
+  const [hexInput, setHexInput] = useState('#3b82f6');
+  const [portalTarget, setPortalTarget] = useState(() =>
+    (typeof document !== 'undefined' ? (document.fullscreenElement || document.body) : null)
+  );
+
+  // Re-portal when entering/exiting fullscreen so the picker stays visible.
+  useEffect(() => {
+    const onFsChange = () => {
+      setPortalTarget(document.fullscreenElement || document.body);
+    };
+    document.addEventListener('fullscreenchange', onFsChange);
+    return () => document.removeEventListener('fullscreenchange', onFsChange);
+  }, []);
 
   useLayoutEffect(() => {
     if (!anchorEl) return;
     const rect = anchorEl.getBoundingClientRect();
-    setPos({ top: rect.bottom + 4, left: rect.left });
-  }, [anchorEl]);
+    // Keep the panel inside viewport horizontally — flip left if it would overflow.
+    const PANEL_W = 268;
+    let left = rect.left;
+    if (left + PANEL_W > window.innerWidth - 8) left = Math.max(8, window.innerWidth - PANEL_W - 8);
+    setPos({ top: rect.bottom + 6, left });
+  }, [anchorEl, showCustom]);
 
   useEffect(() => {
     const handler = e => { if (ref.current && !ref.current.contains(e.target) && !anchorEl?.contains(e.target)) onClose(); };
@@ -218,48 +296,81 @@ export const ColorPicker = ({ anchorEl, onSelect, onClose, onClear, clearLabel =
     onClose();
   };
 
-  const hslHex = (() => {
-    // HSL -> hex
-    const a = s / 100;
-    const ll = l / 100;
-    const k = (n) => (n + h / 30) % 12;
-    const f = (n) => ll - a * Math.min(ll, 1 - ll) * Math.max(-1, Math.min(k(n) - 3, Math.min(9 - k(n), 1)));
-    const toHex = (x) => Math.round(255 * x).toString(16).padStart(2, '0');
-    return `#${toHex(f(0))}${toHex(f(8))}${toHex(f(4))}`;
-  })();
+  // Current color from HSV
+  const [r, g, b] = hsvToRgb(h, s, v);
+  const currentHex = rgbToHex(r, g, b);
+
+  // Sync hex input when sliders change
+  useEffect(() => { setHexInput(currentHex); }, [currentHex]);
+
+  // Pure-hue color for the SB area background
+  const pureHue = rgbToHex(...hsvToRgb(h, 1, 1));
+
+  const onSbMouseDown = (e) => {
+    e.preventDefault();
+    const move = (ev) => {
+      const rect = sbAreaRef.current.getBoundingClientRect();
+      const x = Math.max(0, Math.min(1, (ev.clientX - rect.left) / rect.width));
+      const y = Math.max(0, Math.min(1, (ev.clientY - rect.top) / rect.height));
+      setS(x);
+      setV(1 - y);
+    };
+    move(e);
+    const up = () => {
+      document.removeEventListener('mousemove', move);
+      document.removeEventListener('mouseup', up);
+    };
+    document.addEventListener('mousemove', move);
+    document.addEventListener('mouseup', up);
+  };
+
+  const handleHexInput = (val) => {
+    setHexInput(val);
+    const cleaned = val.trim();
+    const hsv = hexToHsv(cleaned);
+    if (hsv) {
+      setH(hsv.h);
+      setS(hsv.s);
+      setV(hsv.v);
+    }
+  };
 
   const panel = (
     <div ref={ref} style={{
       position: 'fixed', top: pos.top, left: pos.left,
-      background: '#fff', border: '1px solid #c8c8c8', borderRadius: '4px',
-      padding: '10px 12px', zIndex: 13000,
-      boxShadow: '0 8px 24px rgba(0,0,0,0.18)',
-      fontFamily: '"Segoe UI", system-ui, sans-serif', fontSize: '11px', color: '#333',
-      minWidth: '240px',
+      background: '#ffffff',
+      border: '1px solid #d1d5db', borderRadius: '6px',
+      padding: '12px 12px 10px', zIndex: 13000,
+      boxShadow: '0 10px 32px rgba(0,0,0,0.18), 0 2px 6px rgba(0,0,0,0.08)',
+      fontFamily: '"Segoe UI", system-ui, sans-serif', fontSize: '11px', color: '#1f2937',
+      width: '268px', boxSizing: 'border-box',
     }}>
       {/* Automatic / Clear row */}
       {onClear && (
         <button
           onMouseDown={e => { e.preventDefault(); onClear(); onClose(); }}
           style={{
-            display: 'flex', alignItems: 'center', gap: '6px', width: '100%',
-            padding: '5px 8px', border: '1px solid #e0e0e0', background: '#fafafa',
-            borderRadius: '3px', cursor: 'pointer', fontSize: '12px', color: '#333',
-            fontFamily: 'inherit', marginBottom: '8px',
+            display: 'flex', alignItems: 'center', gap: '8px', width: '100%',
+            padding: '6px 8px', border: '1px solid #e5e7eb', background: '#ffffff',
+            borderRadius: '4px', cursor: 'pointer', fontSize: '12px', color: '#374151',
+            fontFamily: 'inherit', marginBottom: '10px',
+            transition: 'background 0.1s',
           }}
+          onMouseEnter={e => e.currentTarget.style.background = '#f3f4f6'}
+          onMouseLeave={e => e.currentTarget.style.background = '#ffffff'}
         >
-          <span style={{ display: 'inline-block', width: 12, height: 12, border: '1px solid #999', background: '#fff', position: 'relative' }}>
-            <span style={{ position: 'absolute', inset: 0, borderTop: '2px solid red', transform: 'rotate(-30deg)', transformOrigin: 'center' }} />
+          <span style={{ display: 'inline-block', width: 14, height: 14, border: '1px solid #d1d5db', background: '#ffffff', position: 'relative', borderRadius: '2px', overflow: 'hidden' }}>
+            <span style={{ position: 'absolute', top: '50%', left: '-2px', right: '-2px', height: '2px', background: '#dc2626', transform: 'rotate(-30deg)', transformOrigin: 'center' }} />
           </span>
-          {clearLabel}
+          <span style={{ fontWeight: 500 }}>{clearLabel}</span>
         </button>
       )}
 
       {/* Theme colors */}
-      <div style={{ fontWeight: 600, marginBottom: '4px', color: '#555' }}>Theme Colors</div>
-      <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', marginBottom: '8px' }}>
+      <SectionLabel>Theme colors</SectionLabel>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '3px', marginBottom: '10px' }}>
         {THEME_COLORS.map((row, ri) => (
-          <div key={ri} style={{ display: 'grid', gridTemplateColumns: 'repeat(10, 18px)', gap: '2px' }}>
+          <div key={ri} style={{ display: 'grid', gridTemplateColumns: 'repeat(10, 1fr)', gap: '3px' }}>
             {row.map((c, ci) => (
               <Swatch key={ci} color={c} onClick={() => pick(c)} />
             ))}
@@ -268,79 +379,171 @@ export const ColorPicker = ({ anchorEl, onSelect, onClose, onClear, clearLabel =
       </div>
 
       {/* Standard colors */}
-      <div style={{ fontWeight: 600, marginBottom: '4px', color: '#555' }}>Standard Colors</div>
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(10, 18px)', gap: '2px', marginBottom: '8px' }}>
+      <SectionLabel>Standard colors</SectionLabel>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(10, 1fr)', gap: '3px', marginBottom: '10px' }}>
         {STANDARD_COLORS.map((c, i) => <Swatch key={i} color={c} onClick={() => pick(c)} />)}
       </div>
 
       {/* Recents */}
       {recents.length > 0 && (
         <>
-          <div style={{ fontWeight: 600, marginBottom: '4px', color: '#555' }}>Recent</div>
-          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '2px', marginBottom: '8px' }}>
+          <SectionLabel>Recent</SectionLabel>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(10, 1fr)', gap: '3px', marginBottom: '10px' }}>
             {recents.map((c, i) => <Swatch key={i} color={c} onClick={() => pick(c)} />)}
           </div>
         </>
       )}
 
-      {/* More colors toggle */}
+      {/* More colors disclosure */}
       <button
-        onMouseDown={e => { e.preventDefault(); setShowHSL(v => !v); }}
+        onMouseDown={e => { e.preventDefault(); setShowCustom(v => !v); }}
         style={{
-          width: '100%', padding: '5px', border: '1px solid #e0e0e0', background: showHSL ? '#e8f0fe' : '#fff',
-          borderRadius: '3px', cursor: 'pointer', fontSize: '11px', color: '#333',
+          width: '100%', padding: '7px 10px',
+          border: '1px solid #e5e7eb', background: showCustom ? '#eff6ff' : '#ffffff',
+          color: showCustom ? '#0078d4' : '#374151',
+          borderRadius: '4px', cursor: 'pointer', fontSize: '11.5px', fontWeight: 500,
           fontFamily: 'inherit', marginTop: '2px',
+          display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+          transition: 'background 0.1s, color 0.1s',
         }}
-      >🎨 More Colors {showHSL ? '▲' : '▼'}</button>
+      >
+        <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
+          <span style={{ display: 'inline-block', width: 12, height: 12, borderRadius: '50%',
+            background: 'conic-gradient(red, yellow, lime, cyan, blue, magenta, red)',
+            border: '1px solid #d1d5db' }} />
+          More colors
+        </span>
+        <span style={{ fontSize: '10px' }}>{showCustom ? '▲' : '▼'}</span>
+      </button>
 
-      {showHSL && (
-        <div style={{ marginTop: '8px', display: 'flex', flexDirection: 'column', gap: '6px' }}>
+      {showCustom && (
+        <div style={{ marginTop: '10px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+          {/* 2D Saturation/Value picker */}
+          <div
+            ref={sbAreaRef}
+            onMouseDown={onSbMouseDown}
+            style={{
+              position: 'relative', width: '100%', height: '120px',
+              background: `linear-gradient(to top, #000, transparent), linear-gradient(to right, #fff, ${pureHue})`,
+              borderRadius: '4px', cursor: 'crosshair',
+              border: '1px solid #d1d5db',
+              userSelect: 'none',
+            }}
+          >
+            <div style={{
+              position: 'absolute',
+              left: `${s * 100}%`, top: `${(1 - v) * 100}%`,
+              width: '12px', height: '12px',
+              transform: 'translate(-50%, -50%)',
+              border: '2px solid #fff',
+              borderRadius: '50%',
+              boxShadow: '0 0 0 1px rgba(0,0,0,0.4)',
+              pointerEvents: 'none',
+            }} />
+          </div>
+
+          {/* Hue slider */}
+          <div style={{ position: 'relative', height: '14px' }}>
+            <div style={{
+              position: 'absolute', inset: 0, borderRadius: '4px',
+              background: 'linear-gradient(to right, #f00, #ff0, #0f0, #0ff, #00f, #f0f, #f00)',
+              border: '1px solid #d1d5db',
+            }} />
+            <input
+              type="range" min={0} max={360} value={h}
+              onChange={e => setH(Number(e.target.value))}
+              style={{
+                position: 'absolute', inset: 0, width: '100%', height: '100%',
+                background: 'transparent', appearance: 'none',
+                cursor: 'pointer', margin: 0, opacity: 0,
+              }}
+            />
+            <div style={{
+              position: 'absolute', top: '50%', left: `${(h / 360) * 100}%`,
+              width: '12px', height: '20px',
+              transform: 'translate(-50%, -50%)',
+              background: '#fff',
+              border: '2px solid #1f2937',
+              borderRadius: '3px',
+              pointerEvents: 'none',
+              boxShadow: '0 1px 3px rgba(0,0,0,0.3)',
+            }} />
+          </div>
+
+          {/* Hex input + preview + Apply */}
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-            <div style={{ width: 28, height: 28, background: hslHex, border: '1px solid #c8c8c8', borderRadius: '3px' }} />
-            <div style={{ flex: 1, fontFamily: 'Cascadia Code, Consolas, monospace', fontSize: '11px' }}>{hslHex.toUpperCase()}</div>
+            <div style={{
+              width: 32, height: 32, background: currentHex,
+              borderRadius: '4px', border: '1px solid #d1d5db',
+              flexShrink: 0,
+            }} />
+            <div style={{ flex: 1, display: 'flex', alignItems: 'center', gap: '6px' }}>
+              <span style={{ color: '#6b7280', fontSize: '11px' }}>HEX</span>
+              <input
+                type="text"
+                value={hexInput.toUpperCase()}
+                onChange={e => handleHexInput(e.target.value)}
+                onBlur={() => setHexInput(currentHex)}
+                style={{
+                  flex: 1, height: '28px', padding: '0 8px',
+                  border: '1px solid #d1d5db', borderRadius: '4px',
+                  fontFamily: '"Cascadia Code", Consolas, monospace',
+                  fontSize: '12px', outline: 'none', color: '#1f2937',
+                  textTransform: 'uppercase',
+                }}
+                onFocus={e => e.target.style.borderColor = '#0078d4'}
+                onBlurCapture={e => e.target.style.borderColor = '#d1d5db'}
+              />
+            </div>
             <button
-              onMouseDown={e => { e.preventDefault(); pick(hslHex); }}
-              style={{ padding: '4px 10px', background: '#0078d4', color: '#fff', border: 'none', borderRadius: '3px', cursor: 'pointer', fontSize: '11px', fontFamily: 'inherit' }}
+              onMouseDown={e => { e.preventDefault(); pick(currentHex); }}
+              style={{
+                height: '28px', padding: '0 14px',
+                background: '#0078d4', color: '#fff', border: 'none',
+                borderRadius: '4px', cursor: 'pointer',
+                fontSize: '11.5px', fontWeight: 600, fontFamily: 'inherit',
+                boxShadow: '0 1px 2px rgba(0, 120, 212, 0.35)',
+              }}
             >Apply</button>
           </div>
-          <Slider label="Hue" min={0} max={360} value={h} onChange={setH}
-            track={`linear-gradient(to right, hsl(0,${s}%,${l}%), hsl(60,${s}%,${l}%), hsl(120,${s}%,${l}%), hsl(180,${s}%,${l}%), hsl(240,${s}%,${l}%), hsl(300,${s}%,${l}%), hsl(360,${s}%,${l}%))`} />
-          <Slider label="Sat" min={0} max={100} value={s} onChange={setS}
-            track={`linear-gradient(to right, hsl(${h},0%,${l}%), hsl(${h},100%,${l}%))`} />
-          <Slider label="Lit" min={0} max={100} value={l} onChange={setL}
-            track={`linear-gradient(to right, #000, hsl(${h},${s}%,50%), #fff)`} />
         </div>
       )}
     </div>
   );
 
-  return createPortal(panel, document.body);
+  if (!portalTarget) return null;
+  return createPortal(panel, portalTarget);
 };
+
+const SectionLabel = ({ children }) => (
+  <div style={{
+    fontSize: '10px', fontWeight: 600, color: '#6b7280',
+    textTransform: 'uppercase', letterSpacing: '0.5px',
+    marginBottom: '5px',
+  }}>{children}</div>
+);
 
 const Swatch = ({ color, onClick }) => (
   <button
     onMouseDown={e => { e.preventDefault(); onClick(); }}
     title={color}
     style={{
-      width: 18, height: 18, background: color, padding: 0,
-      border: '1px solid rgba(0,0,0,0.15)', borderRadius: '2px', cursor: 'pointer',
-      flexShrink: 0,
+      width: '100%', aspectRatio: '1', minWidth: 0,
+      background: color, padding: 0,
+      border: '1px solid rgba(0,0,0,0.12)', borderRadius: '3px',
+      cursor: 'pointer', flexShrink: 0,
+      boxSizing: 'border-box',
+      transition: 'transform 0.08s, box-shadow 0.08s',
     }}
-    onMouseEnter={e => e.currentTarget.style.outline = '2px solid #0078d4'}
-    onMouseLeave={e => e.currentTarget.style.outline = 'none'}
+    onMouseEnter={e => {
+      e.currentTarget.style.boxShadow = '0 0 0 2px #0078d4, 0 1px 4px rgba(0,0,0,0.18)';
+      e.currentTarget.style.transform = 'scale(1.08)';
+    }}
+    onMouseLeave={e => {
+      e.currentTarget.style.boxShadow = 'none';
+      e.currentTarget.style.transform = 'scale(1)';
+    }}
   />
-);
-
-const Slider = ({ label, min, max, value, onChange, track }) => (
-  <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '10px', color: '#555' }}>
-    <span style={{ width: 22 }}>{label}</span>
-    <input
-      type="range" min={min} max={max} value={value}
-      onChange={e => onChange(Number(e.target.value))}
-      style={{ flex: 1, height: '14px', background: track, appearance: 'none', borderRadius: '3px', cursor: 'pointer' }}
-    />
-    <span style={{ width: 24, textAlign: 'right', fontFamily: 'Cascadia Code, monospace' }}>{value}</span>
-  </div>
 );
 
 // Backwards-compat export — old code may still import COLORS

@@ -9,25 +9,25 @@ const Btn = ({ onClick, disabled, active, title, children, style = {} }) => (
     title={title}
     style={{
       display: 'flex', alignItems: 'center', justifyContent: 'center',
-      minWidth: '28px', height: '28px', padding: '0 5px',
-      background: active ? '#cce4f7' : 'transparent',
-      border: `1px solid ${active ? '#90c8f0' : 'transparent'}`,
-      borderRadius: '3px', cursor: disabled ? 'not-allowed' : 'pointer',
-      fontSize: '13px', color: active ? '#003a75' : '#323130',
-      opacity: disabled ? 0.38 : 1, lineHeight: 1, flexShrink: 0,
+      minWidth: '30px', height: '30px', padding: '0 6px',
+      background: active ? '#d6eaf8' : 'transparent',
+      border: `1px solid ${active ? '#0078d4' : 'transparent'}`,
+      borderRadius: '4px', cursor: disabled ? 'not-allowed' : 'pointer',
+      fontSize: '13px', color: active ? '#004f9e' : '#2b2b2b',
+      opacity: disabled ? 0.35 : 1, lineHeight: 1, flexShrink: 0,
       fontFamily: '"Segoe UI", system-ui, sans-serif',
-      transition: 'background 0.08s, border-color 0.08s',
+      transition: 'background 0.1s, border-color 0.1s, color 0.1s',
       ...style,
     }}
-    onMouseEnter={e => { if (!disabled && !active) e.currentTarget.style.background = '#e8e8e8'; }}
-    onMouseLeave={e => { if (!active) e.currentTarget.style.background = active ? '#cce4f7' : 'transparent'; }}
+    onMouseEnter={e => { if (!disabled && !active) { e.currentTarget.style.background = '#eef4fc'; e.currentTarget.style.borderColor = '#c5dcf0'; } }}
+    onMouseLeave={e => { if (!active) { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.borderColor = 'transparent'; } }}
   >
     {children}
   </button>
 );
 
 const Sep = () => (
-  <div style={{ width: '1px', height: '20px', background: '#c8c8c8', margin: '0 3px', flexShrink: 0 }} />
+  <div style={{ width: '1px', height: '20px', background: '#dedede', margin: '0 5px', flexShrink: 0, alignSelf: 'center' }} />
 );
 
 // ── SVG icon paths ────────────────────────────────────────────────────────────
@@ -60,6 +60,9 @@ const ICONS = {
   clearFmt: 'M4.5 2L3 3.5 6.5 7l-5 8h2.4l3.6-6 1.5 1.5V12h2v-3.6L14.5 5 13 3.5l-2 2L4.5 2z',
   fullscreen: 'M1 1h5v2H3v3H1V1zm9 0h5v5h-2V3h-3V1zm-9 9h2v3h3v2H1v-5zm12 3h-3v2h5v-5h-2v3z',
   exitFs: 'M3 3H1v5h2V5h3V3H3zm7 0H8v2h3v3h2V3h-3zM3 8H1v5h5v-2H3V8zm10 5h-3v2h5v-5h-2v3z',
+  find: 'M6 1a5 5 0 1 0 3.22 8.9l3.94 3.93-1.06 1.06-3.94-3.93A5 5 0 1 0 6 1zm0 1.5a3.5 3.5 0 1 1 0 7 3.5 3.5 0 0 1 0-7z',
+  replace: 'M1 3h12v2H1V3zm0 4h12v2H1V7zm9.5 4 3 2.5-3 2.5v-1.5H1v-2h9.5V11z',
+  pageBreak: 'M1 1h14v5H1V1zm0 9h14v5H1v-5zM0 7.25h16v1.5H0v-1.5z',
 };
 
 // ── Constants ────────────────────────────────────────────────────────────────
@@ -104,11 +107,11 @@ const ColorPicker = ({ colors, onSelect, onClose, extraRow }) => {
 
   return (
     <div ref={ref} style={{
-      position: 'absolute', top: '100%', left: 0, marginTop: '3px',
-      background: '#fff', border: '1px solid #c8c8c8', borderRadius: '4px',
-      padding: '8px', zIndex: 2000,
-      display: 'grid', gridTemplateColumns: 'repeat(8, 20px)', gap: '3px',
-      boxShadow: '0 4px 12px rgba(0,0,0,0.15)',
+      position: 'absolute', top: '100%', left: 0, marginTop: '4px',
+      background: '#fff', border: '1px solid #e0e0e0', borderRadius: '6px',
+      padding: '10px', zIndex: 2000,
+      display: 'grid', gridTemplateColumns: 'repeat(8, 22px)', gap: '4px',
+      boxShadow: '0 6px 20px rgba(0,0,0,0.12)',
     }}>
       {colors.map(c => (
         <div
@@ -116,12 +119,57 @@ const ColorPicker = ({ colors, onSelect, onClose, extraRow }) => {
           onMouseDown={e => { e.preventDefault(); onSelect(c); onClose(); }}
           title={c}
           style={{
-            width: 20, height: 20, background: c,
-            border: '1px solid rgba(0,0,0,0.15)', borderRadius: '2px', cursor: 'pointer',
+            width: 22, height: 22, background: c,
+            border: '1px solid rgba(0,0,0,0.12)', borderRadius: '3px', cursor: 'pointer',
+            transition: 'transform 0.1s, box-shadow 0.1s',
           }}
+          onMouseEnter={e => { e.currentTarget.style.transform = 'scale(1.18)'; e.currentTarget.style.boxShadow = '0 2px 6px rgba(0,0,0,0.22)'; }}
+          onMouseLeave={e => { e.currentTarget.style.transform = 'scale(1)'; e.currentTarget.style.boxShadow = 'none'; }}
         />
       ))}
       {extraRow}
+    </div>
+  );
+};
+
+// ── Highlight picker dropdown ────────────────────────────────────────────────
+
+const HighlightPicker = ({ highlights, editor, onClose }) => {
+  const ref = useRef(null);
+  useEffect(() => {
+    const handler = e => { if (ref.current && !ref.current.contains(e.target)) onClose(); };
+    const t = setTimeout(() => document.addEventListener('mousedown', handler), 0);
+    return () => { clearTimeout(t); document.removeEventListener('mousedown', handler); };
+  }, [onClose]);
+
+  return (
+    <div ref={ref} style={{
+      position: 'absolute', top: '100%', left: 0, marginTop: '4px',
+      background: '#fff', border: '1px solid #e0e0e0', borderRadius: '6px',
+      padding: '6px', zIndex: 2000, minWidth: '136px',
+      boxShadow: '0 6px 20px rgba(0,0,0,0.12)',
+    }}>
+      {highlights.map(h => (
+        <div
+          key={h.label}
+          onMouseDown={e => {
+            e.preventDefault();
+            if (h.value) editor.chain().focus().setHighlight({ color: h.value }).run();
+            else editor.chain().focus().unsetHighlight().run();
+            onClose();
+          }}
+          style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '5px 8px', cursor: 'pointer', borderRadius: '4px', transition: 'background 0.1s' }}
+          onMouseEnter={e => e.currentTarget.style.background = '#f0f6ff'}
+          onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
+        >
+          <div style={{
+            width: '18px', height: '18px', borderRadius: '3px', flexShrink: 0,
+            background: h.value || 'transparent',
+            border: h.value ? '1px solid rgba(0,0,0,0.12)' : '1px dashed #c8c8c8',
+          }} />
+          <span style={{ fontSize: '12px', color: '#2b2b2b' }}>{h.label}</span>
+        </div>
+      ))}
     </div>
   );
 };
@@ -143,28 +191,32 @@ export default function EditorToolbar({ editor, onSave, isFullscreen, toggleFull
   const currentHL = editor.getAttributes('highlight').color || null;
 
   const selStyle = {
-    height: '28px', padding: '0 6px', border: '1px solid #c8c8c8',
-    borderRadius: '3px', fontSize: '12px', background: '#fff',
-    color: '#323130', cursor: 'pointer', outline: 'none',
+    height: '30px', padding: '0 7px', border: '1px solid #d0d0d0',
+    borderRadius: '4px', fontSize: '12px', background: '#fff',
+    color: '#2b2b2b', cursor: 'pointer', outline: 'none',
     fontFamily: '"Segoe UI", sans-serif',
+    transition: 'border-color 0.15s',
   };
 
   return (
     <div style={{
-      background: '#f0f0f0',
-      borderBottom: '2px solid #c8c8c8',
-      display: 'flex', 
-      flexWrap: window.innerWidth < 768 ? 'nowrap' : 'wrap', 
+      background: '#ffffff',
+      borderBottom: '1px solid #e3e3e3',
+      boxShadow: '0 2px 6px rgba(0,0,0,0.07)',
+      display: 'flex',
+      flexWrap: window.innerWidth < 768 ? 'nowrap' : 'wrap',
       alignItems: 'center',
-      gap: '2px', padding: '4px 8px',
+      gap: '2px', padding: '5px 10px',
       userSelect: 'none', flexShrink: 0,
       overflowX: window.innerWidth < 768 ? 'auto' : 'visible',
       msOverflowStyle: 'none',
       scrollbarWidth: 'none',
-      WebkitOverflowScrolling: 'touch'
+      WebkitOverflowScrolling: 'touch',
     }}>
       <style>{`
         div::-webkit-scrollbar { display: none; }
+        select:focus { border-color: #0078d4 !important; box-shadow: 0 0 0 2px rgba(0,120,212,0.15) !important; outline: none !important; }
+        select:hover:not(:focus) { border-color: #a0a0a0 !important; }
       `}</style>
 
       {/* ── History ── */}
@@ -231,7 +283,9 @@ export default function EditorToolbar({ editor, onSave, isFullscreen, toggleFull
             extraRow={
               <div
                 onMouseDown={e => { e.preventDefault(); editor.chain().focus().unsetColor().run(); setShowColors(false); }}
-                style={{ gridColumn: 'span 8', padding: '4px 2px', fontSize: '11px', color: '#555', cursor: 'pointer', textAlign: 'center', borderTop: '1px solid #eee', marginTop: '4px' }}
+                style={{ gridColumn: 'span 8', padding: '5px 2px', fontSize: '11px', color: '#555', cursor: 'pointer', textAlign: 'center', borderTop: '1px solid #eee', marginTop: '5px', borderRadius: '0 0 3px 3px', transition: 'background 0.1s' }}
+              onMouseEnter={e => e.currentTarget.style.background = '#f5f5f5'}
+              onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
               >No color</div>
             }
           />
@@ -242,46 +296,17 @@ export default function EditorToolbar({ editor, onSave, isFullscreen, toggleFull
       <div style={{ position: 'relative' }} ref={hlBtnRef}>
         <Btn onClick={() => { setShowHighlights(v => !v); setShowColors(false); }} title="Highlight Color">
           <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '1px' }}>
-            <span style={{ fontSize: '12px', lineHeight: 1 }}>ab</span>
-            <div style={{ width: '16px', height: '3px', background: currentHL || '#ffff00', borderRadius: '1px' }} />
+            <span style={{ fontSize: '12px', lineHeight: 1, fontStyle: 'italic' }}>ab</span>
+            <div style={{ width: '18px', height: '3px', background: currentHL || '#ffff00', borderRadius: '1px' }} />
           </div>
         </Btn>
-        {showHighlights && (() => {
-          const hlRef = { current: null };
-          return (
-            <div
-              ref={el => { hlRef.current = el; }}
-              style={{
-                position: 'absolute', top: '100%', left: 0, marginTop: '3px',
-                background: '#fff', border: '1px solid #c8c8c8', borderRadius: '4px',
-                padding: '8px', zIndex: 2000, minWidth: '120px',
-                boxShadow: '0 4px 12px rgba(0,0,0,0.15)',
-              }}
-            >
-              {HIGHLIGHTS.map(h => (
-                <div
-                  key={h.label}
-                  onMouseDown={e => {
-                    e.preventDefault();
-                    if (h.value) editor.chain().focus().setHighlight({ color: h.value }).run();
-                    else editor.chain().focus().unsetHighlight().run();
-                    setShowHighlights(false);
-                  }}
-                  style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '4px 6px', cursor: 'pointer', borderRadius: '3px' }}
-                  onMouseEnter={e => e.currentTarget.style.background = '#f0f0f0'}
-                  onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
-                >
-                  <div style={{
-                    width: '16px', height: '16px', borderRadius: '2px',
-                    background: h.value || 'transparent',
-                    border: h.value ? '1px solid rgba(0,0,0,0.15)' : '1px solid #c8c8c8',
-                  }} />
-                  <span style={{ fontSize: '12px', color: '#323130' }}>{h.label}</span>
-                </div>
-              ))}
-            </div>
-          );
-        })()}
+        {showHighlights && (
+          <HighlightPicker
+            highlights={HIGHLIGHTS}
+            editor={editor}
+            onClose={() => setShowHighlights(false)}
+          />
+        )}
       </div>
 
       {/* ── Clear formatting ── */}
@@ -430,26 +455,25 @@ export default function EditorToolbar({ editor, onSave, isFullscreen, toggleFull
       <Btn
         onClick={() => editor.chain().focus().insertPageBreak().run()}
         title="Insert Page Break (Ctrl+Enter)"
-        style={{ fontSize: '11px', fontWeight: 700, minWidth: '36px' }}
       >
-        ⤵PB
+        <Icon d={ICONS.pageBreak} />
       </Btn>
+
+      <Sep />
 
       {/* ── Find (Ctrl+F) ── */}
       <Btn
         onClick={() => window.dispatchEvent(new CustomEvent('narrative-editor:open-find-replace', { detail: { focusReplace: false } }))}
         title="Find (Ctrl+F)"
-        style={{ fontSize: '13px', fontWeight: 700, minWidth: '28px' }}
       >
-        🔍
+        <Icon d={ICONS.find} />
       </Btn>
       {/* ── Replace (Ctrl+H) ── */}
       <Btn
         onClick={() => window.dispatchEvent(new CustomEvent('narrative-editor:open-find-replace', { detail: { focusReplace: true } }))}
-        title="Find &amp; Replace (Ctrl+H)"
-        style={{ fontSize: '11px', fontWeight: 700, minWidth: '32px' }}
+        title="Find & Replace (Ctrl+H)"
       >
-        ⇄
+        <Icon d={ICONS.replace} />
       </Btn>
 
       {/* ── Spacer ── */}
@@ -457,17 +481,17 @@ export default function EditorToolbar({ editor, onSave, isFullscreen, toggleFull
 
       {/* ── Zoom ── */}
       {window.innerWidth >= 600 && (
-        <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '3px' }}>
           <Btn
             onClick={() => setZoom(z => Math.max(50, zoomLevels[zoomLevels.indexOf(z) - 1] ?? 50))}
             disabled={zoom <= 50}
             title="Zoom out"
-            style={{ minWidth: '22px', height: '22px', fontSize: '16px', padding: 0 }}
+            style={{ minWidth: '26px', height: '26px', fontSize: '16px', padding: 0 }}
           >−</Btn>
           <select
             value={zoom}
             onChange={e => setZoom(Number(e.target.value))}
-            style={{ ...selStyle, width: '60px', fontSize: '11px', height: '24px' }}
+            style={{ ...selStyle, width: '64px', fontSize: '11px', height: '26px' }}
             title="Zoom level"
           >
             {zoomLevels.map(z => <option key={z} value={z}>{z}%</option>)}
@@ -476,7 +500,7 @@ export default function EditorToolbar({ editor, onSave, isFullscreen, toggleFull
             onClick={() => setZoom(z => Math.min(200, zoomLevels[zoomLevels.indexOf(z) + 1] ?? 200))}
             disabled={zoom >= 200}
             title="Zoom in"
-            style={{ minWidth: '22px', height: '22px', fontSize: '16px', padding: 0 }}
+            style={{ minWidth: '26px', height: '26px', fontSize: '16px', padding: 0 }}
           >+</Btn>
         </div>
       )}
@@ -497,10 +521,13 @@ export default function EditorToolbar({ editor, onSave, isFullscreen, toggleFull
           <button
             onMouseDown={e => { e.preventDefault(); onSave(); }}
             style={{
-              height: '28px', padding: '0 14px', background: '#0078d4', color: '#fff',
-              border: 'none', borderRadius: '3px', fontSize: '12px', fontWeight: 600,
+              height: '30px', padding: '0 18px', background: '#0078d4', color: '#fff',
+              border: '1px solid #006cbe', borderRadius: '4px', fontSize: '12px', fontWeight: 600,
               cursor: 'pointer', fontFamily: '"Segoe UI", sans-serif',
+              letterSpacing: '0.02em', transition: 'background 0.12s, box-shadow 0.12s',
             }}
+            onMouseEnter={e => { e.currentTarget.style.background = '#106ebe'; e.currentTarget.style.boxShadow = '0 2px 8px rgba(0,120,212,0.35)'; }}
+            onMouseLeave={e => { e.currentTarget.style.background = '#0078d4'; e.currentTarget.style.boxShadow = 'none'; }}
           >Save</button>
         </>
       )}

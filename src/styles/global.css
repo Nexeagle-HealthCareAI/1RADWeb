@@ -97,7 +97,9 @@
 
 html {
   height: 100%;
+  width: 100%;
   overflow: hidden;
+  position: fixed;
 }
 
 body {
@@ -107,7 +109,9 @@ body {
   line-height: 1.5;
   -webkit-font-smoothing: antialiased;
   height: 100%;
+  width: 100%;
   overflow: hidden;
+  position: fixed;
 }
 
 a {
@@ -505,8 +509,12 @@ button, a, input[type="button"], input[type="submit"] {
 .app-layout {
   display: flex;
   flex-direction: column;
-  height: 100vh;
+  height: 100dvh;
+  width: 100vw;
   overflow: hidden;
+  position: fixed;
+  top: 0;
+  left: 0;
 }
 
 /* Desktop: Horizontal layout */
@@ -532,7 +540,7 @@ button, a, input[type="button"], input[type="submit"] {
   left: 0;
   right: 0;
   transform: translateX(-100%);
-  height: 100vh;
+  height: 100dvh;
   overflow-y: auto;
   border-top: 1px solid rgba(255, 255, 255, 0.1);
 }
@@ -670,8 +678,8 @@ button, a, input[type="button"], input[type="submit"] {
   display: flex;
   flex-direction: column;
   background-color: var(--bg-main);
-  height: 100vh;
   overflow: hidden;
+  min-width: 0;
 }
 
 .page-content {

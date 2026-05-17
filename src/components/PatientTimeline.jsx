@@ -3,7 +3,7 @@ import React, { useState } from 'react';
 /**
  * PatientTimeline
  * A high-fidelity, medical-grade vertical timeline for tracking patient diagnostic history.
- * Designed for use within the ReportingWorkspace / ReportingPage.
+ * Designed for use within the ReportingPage.
  */
 const PatientTimeline = ({ 
   history = [], 
