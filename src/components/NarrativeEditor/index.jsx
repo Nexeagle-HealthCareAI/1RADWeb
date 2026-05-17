@@ -36,6 +36,7 @@ import ShortcutsDialog from './dialogs/ShortcutsDialog';
 import FontDialog from './dialogs/FontDialog';
 import ParagraphDialog from './dialogs/ParagraphDialog';
 import HeaderFooterDialog from './dialogs/HeaderFooterDialog';
+import HorizontalRuler from './HorizontalRuler';
 import { FONT_SIZES } from './Ribbon/RibbonControls';
 import { useVoiceDictation } from './hooks/useVoiceDictation';
 import './NarrativeEditor.css';
@@ -344,6 +345,12 @@ const NarrativeEditor = React.forwardRef(function NarrativeEditor({
       }
     }
   }, [content, editor]);
+
+  // Preview mode: toggle editor editability
+  useEffect(() => {
+    if (!editor) return;
+    editor.setEditable(!previewMode && editable);
+  }, [editor, previewMode, editable]);
 
   // Refs that the keydown closure reads — keeps the effect deps minimal so the
   // listener isn't torn down and re-added on every scroll/page-count change.
@@ -902,7 +909,20 @@ const NarrativeEditor = React.forwardRef(function NarrativeEditor({
         />
       )}
 
-      <div className={`word-canvas${showFormattingMarks ? ' show-formatting-marks' : ''}`} style={{ '--zoom': zoom / 100, position: 'relative' }}>
+      {!previewMode && showRuler && (
+        <HorizontalRuler editor={editor} zoom={zoom} />
+      )}
+
+      <div className={`word-canvas${showFormattingMarks ? ' show-formatting-marks' : ''}${previewMode ? ' preview-mode-canvas' : ''}`} style={{ '--zoom': zoom / 100, position: 'relative' }}>
+        {previewMode && (
+          <button
+            onClick={() => setPreviewMode(false)}
+            className="exit-preview-btn"
+            title="Exit reading view and return to editing"
+          >
+            ✏️ Exit Reading View
+          </button>
+        )}
         <EditorContent editor={editor} />
         <FindReplaceDialog editor={editor} open={findOpen} focusReplace={findFocusReplace} onClose={() => setFindOpen(false)} />
       </div>

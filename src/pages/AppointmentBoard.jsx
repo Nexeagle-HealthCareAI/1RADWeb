@@ -403,12 +403,12 @@ export default function AppointmentBoard() {
   const getNextAction = (status) => {
     switch (status) {
       case 'future':      return null;
-      case 'scheduled':   return { action: 'CONFIRM', label: 'ARRIVED', color: '#10b981', icon: '\u2705' };
-      case 'booked':      return { action: 'CONFIRM', label: 'ARRIVED', color: '#10b981', icon: '\u2705' };
-      case 'confirmed':   return { action: 'START', label: 'SCAN', color: '#f59e0b', icon: '\u25B6\uFE0F' };
-      case 'in_progress': return { action: 'COMPLETE', label: 'FINISH', color: '#0f52ba', icon: '\u2705' };
+      case 'scheduled':   return { action: 'CONFIRM', label: 'ARRIVED', color: '#10b981', icon: '✅' };
+      case 'booked':      return { action: 'CONFIRM', label: 'ARRIVED', color: '#10b981', icon: '✅' };
+      case 'confirmed':   return { action: 'START', label: 'SCAN', color: '#f59e0b', icon: '▶️' };
+      case 'in_progress': return { action: 'COMPLETE', label: 'FINISH', color: '#0f52ba', icon: '✅' };
       case 'completed':   
-      case 'scanned':     return { action: 'REPORTING', label: 'REPORT', color: '#8b5cf6', icon: '\u270F\uFE0F' };
+      case 'scanned':     return { action: 'REPORTING', label: 'REPORT', color: '#8b5cf6', icon: '📝' };
       default: return null;
     }
   };
@@ -1057,9 +1057,9 @@ export default function AppointmentBoard() {
           onClick={() => setExpandedRow(isExpanded ? null : app.appointmentId)}
           style={{ 
             display: 'grid',
-            gridTemplateColumns: '100px 70px 2fr 1.2fr 110px 130px 1fr 180px',
-            gap: '15px',
-            padding: '16px 20px',
+            gridTemplateColumns: '75px 50px 2.4fr 0.9fr 95px 110px 1.3fr 215px',
+            gap: '12px',
+            padding: '12px 16px',
             alignItems: 'center',
             cursor: 'pointer',
             background: isExpanded ? '#f8faff' : 'transparent'
@@ -1067,7 +1067,7 @@ export default function AppointmentBoard() {
         >
           {/* Column 1: ID */}
           <div>
-            <span style={{ fontFamily: 'monospace', fontSize: '11px', fontWeight: 800, color: '#64748b', background: '#f1f5f9', padding: '4px 8px', borderRadius: '6px' }}>
+            <span style={{ fontFamily: 'monospace', fontSize: '10px', fontWeight: 800, color: '#64748b', background: '#f1f5f9', padding: '3px 6px', borderRadius: '6px' }}>
               #{app.ptid || app.patientIdentifier || app.id?.substring(0,8) || '—'}
             </span>
           </div>
@@ -1075,10 +1075,10 @@ export default function AppointmentBoard() {
           {/* Column 2: Token */}
           <div style={{ display: 'flex', justifyContent: 'center' }}>
             <div style={{ 
-              width: '32px', height: '32px', borderRadius: '8px', 
+              width: '28px', height: '28px', borderRadius: '6px', 
               background: 'rgba(15, 82, 186, 0.08)', color: '#0f52ba', 
               display: 'flex', alignItems: 'center', justifyContent: 'center', 
-              fontWeight: 950, fontSize: '14px', border: '1.5px solid rgba(15, 82, 186, 0.2)'
+              fontWeight: 950, fontSize: '12px', border: '1.5px solid rgba(15, 82, 186, 0.2)'
             }}>
               {app.tokenNo || '—'}
             </div>
@@ -1086,11 +1086,16 @@ export default function AppointmentBoard() {
 
           {/* Column 3: Patient & Service */}
           <div>
-            <div style={{ fontWeight: 800, color: '#0f172a', fontSize: '13.5px', letterSpacing: '-0.2px' }}>
-              {app.patientName.toUpperCase()}
+            <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
+              <span style={{ fontWeight: 800, color: '#0f172a', fontSize: '12px', letterSpacing: '-0.2px' }}>
+                {app.patientName.toUpperCase()}
+              </span>
+              <span style={{ fontSize: '9px', fontWeight: 900, color: '#475569', background: '#f1f5f9', padding: '1px 5px', borderRadius: '4px', textTransform: 'uppercase' }}>
+                {app.patientGender || 'U'} • {app.patientAge ? `${app.patientAge}Y` : '—'}
+              </span>
             </div>
-            <div style={{ fontSize: '10px', color: '#64748b', fontWeight: 700, marginTop: '2px', display: 'flex', alignItems: 'center', gap: '6px' }}>
-              <span style={{ color: '#0f52ba', background: '#eff6ff', padding: '2px 6px', borderRadius: '4px', fontSize: '9px', fontWeight: 900 }}>
+            <div style={{ fontSize: '9px', color: '#64748b', fontWeight: 700, marginTop: '3px', display: 'flex', alignItems: 'center', gap: '4px' }}>
+              <span style={{ color: '#0f52ba', background: '#eff6ff', padding: '1.5px 5px', borderRadius: '4px', fontSize: '8.5px', fontWeight: 900 }}>
                 {app.modality}
               </span>
               <span>•</span>
@@ -1100,86 +1105,93 @@ export default function AppointmentBoard() {
 
           {/* Column 4: Referred By */}
           <div>
-            <div style={{ fontSize: '12px', fontWeight: 700, color: '#334155' }}>
+            <div style={{ fontSize: '11px', fontWeight: 700, color: '#334155', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }} title={app.referredBy || 'DIRECT/SELF'}>
               {app.referredBy || 'DIRECT/SELF'}
             </div>
-            <div style={{ fontSize: '9px', color: '#94a3b8', fontWeight: 700, textTransform: 'uppercase', marginTop: '1px' }}>
+            <div style={{ fontSize: '8.5px', color: '#94a3b8', fontWeight: 700, textTransform: 'uppercase', marginTop: '1px' }}>
               REFERRING DR.
             </div>
           </div>
 
           {/* Column 5: Date */}
           <div>
-            <div style={{ fontSize: '12px', fontWeight: 800, color: '#1e293b' }}>{appDate}</div>
-            <div style={{ fontSize: '10px', color: '#64748b', fontWeight: 700, marginTop: '2px' }}>{appTime}</div>
+            <div style={{ fontSize: '11px', fontWeight: 800, color: '#1e293b' }}>{appDate}</div>
+            <div style={{ fontSize: '9px', color: '#64748b', fontWeight: 700, marginTop: '2px' }}>{appTime}</div>
           </div>
 
           {/* Column 6: Status */}
           <div className="status-badge" style={{ 
             backgroundColor: meta.bg, 
             color: meta.color, 
-            padding: '6px 12px', 
+            padding: '4px 8px', 
             width: 'fit-content',
             whiteSpace: 'nowrap',
             display: 'inline-flex',
             alignItems: 'center',
-            gap: '6px',
-            border: `1px solid ${meta.color}20`
+            gap: '4px',
+            border: `1px solid ${meta.color}20`,
+            borderRadius: '6px'
           }}>
-            <span style={{ fontSize: '12px', lineHeight: '1', display: 'flex', alignItems: 'center' }}>{meta.icon}</span>
-            <span style={{ lineHeight: '1', display: 'flex', alignItems: 'center', fontWeight: 800 }}>{meta.label}</span>
+            <span style={{ fontSize: '11px', lineHeight: '1', display: 'flex', alignItems: 'center' }}>{meta.icon}</span>
+            <span style={{ lineHeight: '1', display: 'flex', alignItems: 'center', fontWeight: 800, fontSize: '8.5px' }}>{meta.label}</span>
           </div>
 
           {/* Column 7: Specialist */}
           <div>
-            <div style={{ fontSize: '12px', fontWeight: 700, color: '#1e293b' }}>
+            <div style={{ fontSize: '11px', fontWeight: 700, color: '#1e293b', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }} title={app.doctor || 'UNASSIGNED'}>
               {app.doctor || 'UNASSIGNED'}
             </div>
-            <div style={{ fontSize: '9px', color: '#94a3b8', textTransform: 'uppercase', fontWeight: 700, marginTop: '1px' }}>
-              CLINICAL SPECIALIST
+            <div style={{ fontSize: '8.5px', color: '#94a3b8', textTransform: 'uppercase', fontWeight: 700, marginTop: '1px' }}>
+              SPECIALIST
             </div>
           </div>
 
           {/* Column 8: Actions */}
-          <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end' }} onClick={e => e.stopPropagation()}>
+          <div style={{ display: 'flex', gap: '6px', justifyContent: 'flex-end' }} onClick={e => e.stopPropagation()}>
             {next && (
               <button
                 onClick={() => handleAction(app.appointmentId || app.id, next.action)}
                 style={{ 
-                  padding: '8px 14px', borderRadius: '8px', 
+                  padding: '6px 14px', borderRadius: '6px', 
                   background: next.color, color: 'white', 
                   border: 'none', cursor: 'pointer', 
-                  fontSize: '10px', fontWeight: 950, 
-                  boxShadow: `0 6px 15px ${next.color}44`
+                  fontSize: '9px', fontWeight: 950, 
+                  boxShadow: `0 4px 10px ${next.color}33`,
+                  whiteSpace: 'nowrap',
+                  minWidth: '85px',
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: '4px'
                 }}
               >
-                {next.label}
+                <span>{next.icon}</span> <span>{next.label}</span>
               </button>
             )}
             <button
               onClick={() => setTokenPrintData(app)}
-              style={{ padding: '8px', borderRadius: '8px', background: 'white', border: '1px solid #e2e8f0', cursor: 'pointer', fontSize: '14px' }}
+              style={{ width: '28px', height: '28px', display: 'flex', alignItems: 'center', justifyContent: 'center', borderRadius: '6px', background: 'white', border: '1px solid #e2e8f0', cursor: 'pointer', fontSize: '12px' }}
               title="Print Token"
             >
               🖨️
             </button>
             <button
               onClick={() => handlePreviewPrint(app)}
-              style={{ padding: '8px', borderRadius: '8px', background: 'white', border: '1px solid #e2e8f0', cursor: 'pointer', fontSize: '14px' }}
+              style={{ width: '28px', height: '28px', display: 'flex', alignItems: 'center', justifyContent: 'center', borderRadius: '6px', background: 'white', border: '1px solid #e2e8f0', cursor: 'pointer', fontSize: '12px' }}
               title="Report"
             >
               📄
             </button>
             <button
               onClick={() => { setEditingAppointment(app); setIsEditingOpen(true); }}
-              style={{ padding: '8px', borderRadius: '8px', background: 'white', border: '1px solid #e2e8f0', cursor: 'pointer', fontSize: '14px' }}
+              style={{ width: '28px', height: '28px', display: 'flex', alignItems: 'center', justifyContent: 'center', borderRadius: '6px', background: 'white', border: '1px solid #e2e8f0', cursor: 'pointer', fontSize: '12px' }}
               title="Edit"
             >
               ✏️
             </button>
             <button
               onClick={() => { if (window.confirm(`Cancel appointment for ${app.patientName}?`)) handleAction(app.appointmentId || app.id, 'CANCEL'); }}
-              style={{ padding: '8px', borderRadius: '8px', background: '#fff1f2', border: '1px solid #fecdd3', cursor: 'pointer', color: '#e11d48', fontSize: '14px' }}
+              style={{ width: '28px', height: '28px', display: 'flex', alignItems: 'center', justifyContent: 'center', borderRadius: '6px', background: '#fff1f2', border: '1px solid #fecdd3', cursor: 'pointer', color: '#e11d48', fontSize: '12px' }}
               title="Cancel"
             >
               ✕
@@ -2448,10 +2460,10 @@ export default function AppointmentBoard() {
         {!isMobile && (
           <div style={{
             display: 'grid',
-            gridTemplateColumns: '100px 70px 2fr 1.2fr 110px 130px 1fr 180px',
-            gap: '15px',
-            padding: '0 20px 10px',
-            fontSize: '9px', fontWeight: 800, color: '#aaa',
+            gridTemplateColumns: '75px 50px 2.4fr 0.9fr 95px 110px 1.3fr 215px',
+            gap: '12px',
+            padding: '0 16px 8px',
+            fontSize: '8.5px', fontWeight: 800, color: '#aaa',
             textTransform: 'uppercase', letterSpacing: '1px',
           }}>
             <span>Mission ID</span>
@@ -2460,8 +2472,8 @@ export default function AppointmentBoard() {
             <span>Referring Dr.</span>
             <span>Scheduled Date</span>
             <span>Status</span>
-            <span>Clinical Specialist</span>
-            <span style={{ textAlign: 'right', paddingRight: '20px' }}>Mission Control</span>
+            <span>Specialist</span>
+            <span style={{ textAlign: 'right', paddingRight: '16px' }}>Mission Control</span>
           </div>
         )}
 

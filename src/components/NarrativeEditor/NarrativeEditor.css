@@ -509,3 +509,75 @@
     display: none;
   }
 }
+
+/* ── Word count goal status colours (in status bar) ─────────────────────────── */
+.wc-goal-met   { color: #16a34a; font-weight: 600; }
+.wc-goal-near  { color: #d97706; font-weight: 600; }
+.wc-goal-under { color: #dc2626; font-weight: 600; }
+
+/* ── Horizontal ruler ────────────────────────────────────────────────────────── */
+.word-ruler-band {
+  flex-shrink: 0;
+  display: flex;
+  justify-content: center;
+  background: #b0b0b0;   /* same as .word-canvas background */
+  border-bottom: 1px solid #9a9a9a;
+  padding: 2px 0 0;
+  overflow: hidden;
+}
+
+.word-ruler-track {
+  position: relative;
+  width: 794px;
+  height: 22px;
+  background: #ffffff;
+  border-left: 1px solid #c8c8c8;
+  border-right: 1px solid #c8c8c8;
+  flex-shrink: 0;
+  overflow: visible;
+}
+
+.ruler-gray-margin {
+  position: absolute;
+  top: 0;
+  left: 0;
+  height: 100%;
+  background: #e4e4e4;
+  pointer-events: none;
+  z-index: 0;
+}
+
+/* ── Preview / Reading mode ──────────────────────────────────────────────────── */
+.preview-mode-canvas {
+  background: #d0d0d0;
+  padding-top: 32px;
+}
+
+/* In preview mode, pages look cleaner — no focus ring */
+.preview-mode-canvas .word-page-inner {
+  cursor: default;
+}
+
+.exit-preview-btn {
+  position: sticky;
+  top: 8px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 30;
+  display: inline-block;
+  padding: 6px 18px;
+  background: #0078d4;
+  color: #fff;
+  border: none;
+  border-radius: 20px;
+  font-size: 12px;
+  font-weight: 600;
+  font-family: "Segoe UI", system-ui, sans-serif;
+  cursor: pointer;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.25);
+  margin-bottom: 16px;
+  transition: background 0.15s;
+  white-space: nowrap;
+}
+.exit-preview-btn:hover { background: #006bbc; }
+
