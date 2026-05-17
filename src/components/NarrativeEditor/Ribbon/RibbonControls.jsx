@@ -10,18 +10,18 @@ export const Btn = ({ onClick, disabled, active, title, children, style = {} }) 
     title={title}
     style={{
       display: 'flex', alignItems: 'center', justifyContent: 'center',
-      minWidth: '28px', height: '28px', padding: '0 6px',
+      minWidth: '26px', height: '26px', padding: '0 6px',
       background: active ? '#cce4f7' : 'transparent',
       border: `1px solid ${active ? '#90c8f0' : 'transparent'}`,
       borderRadius: '3px', cursor: disabled ? 'not-allowed' : 'pointer',
       fontSize: '13px', color: active ? '#003a75' : '#323130',
       opacity: disabled ? 0.38 : 1, lineHeight: 1, flexShrink: 0,
       fontFamily: '"Segoe UI", system-ui, sans-serif',
-      transition: 'background 0.08s, border-color 0.08s',
+      transition: 'background 0.1s, border-color 0.1s',
       ...style,
     }}
-    onMouseEnter={e => { if (!disabled && !active) e.currentTarget.style.background = '#e8e8e8'; }}
-    onMouseLeave={e => { if (!active) e.currentTarget.style.background = active ? '#cce4f7' : 'transparent'; }}
+    onMouseEnter={e => { if (!disabled && !active) { e.currentTarget.style.background = '#eff6fc'; e.currentTarget.style.borderColor = '#d6e6f5'; } }}
+    onMouseLeave={e => { if (!active) { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.borderColor = 'transparent'; } }}
   >
     {children}
   </button>
@@ -58,7 +58,11 @@ export const BigBtn = ({ onClick, disabled, active, title, icon, label, style = 
 );
 
 export const Sep = () => (
-  <div style={{ width: '1px', height: '52px', background: '#d1d1d1', margin: '0 6px', flexShrink: 0 }} />
+  <div style={{
+    width: '1px', height: '60px',
+    background: 'linear-gradient(to bottom, transparent 0%, #d8d8d8 15%, #d8d8d8 85%, transparent 100%)',
+    margin: '0 8px', flexShrink: 0,
+  }} />
 );
 
 /**
@@ -129,9 +133,9 @@ export const Group = ({ label, children, onLauncher, style = {} }) => (
     </div>
     <div style={{
       display: 'flex', alignItems: 'center', justifyContent: 'center',
-      gap: '4px', paddingTop: '2px', userSelect: 'none',
+      gap: '4px', paddingTop: '4px', userSelect: 'none',
     }}>
-      <span style={{ fontSize: '10px', color: '#666', letterSpacing: '0.2px' }}>{label}</span>
+      <span style={{ fontSize: '10.5px', color: '#777', letterSpacing: '0.25px', fontWeight: 500 }}>{label}</span>
       {onLauncher && (
         <button
           onMouseDown={e => { e.preventDefault(); onLauncher(); }}
@@ -169,6 +173,124 @@ export const selectStyle = {
   borderRadius: '3px', fontSize: '12px', background: '#fff',
   color: '#323130', cursor: 'pointer', outline: 'none',
   fontFamily: '"Segoe UI", sans-serif',
+};
+
+/**
+ * Combobox — Word-style replacement for native <select>. Renders the
+ * dropdown via portal so it can't be clipped by the top nav or other
+ * overflow:hidden ancestors. Always opens downward; if there's not enough
+ * room below, it flips upward.
+ *
+ * Props:
+ *   value, onChange, options: [{value, label, sample?}]
+ *   width
+ *   renderValue?(value)    — custom value display (defaults to label)
+ *   renderItem?(opt)       — custom item display in dropdown
+ */
+export const Combobox = ({ value, onChange, options, width = 120, renderValue, renderItem, title }) => {
+  const [open, setOpen] = useState(false);
+  const [pos, setPos] = useState({ top: 0, left: 0, openUp: false });
+  const [target, setTarget] = useState(() =>
+    typeof document !== 'undefined' ? (document.fullscreenElement || document.body) : null
+  );
+  const btnRef = useRef(null);
+  const menuRef = useRef(null);
+
+  useEffect(() => {
+    const onFs = () => setTarget(document.fullscreenElement || document.body);
+    document.addEventListener('fullscreenchange', onFs);
+    return () => document.removeEventListener('fullscreenchange', onFs);
+  }, []);
+
+  useEffect(() => {
+    if (!open || !btnRef.current) return;
+    const r = btnRef.current.getBoundingClientRect();
+    const menuH = Math.min(280, options.length * 26 + 8);
+    const spaceBelow = window.innerHeight - r.bottom - 8;
+    const openUp = spaceBelow < menuH && r.top > menuH;
+    setPos({
+      top: openUp ? r.top - menuH - 4 : r.bottom + 4,
+      left: r.left,
+      openUp,
+    });
+
+    const onDown = (e) => {
+      if (menuRef.current && !menuRef.current.contains(e.target) && !btnRef.current?.contains(e.target)) {
+        setOpen(false);
+      }
+    };
+    const t = setTimeout(() => document.addEventListener('mousedown', onDown), 0);
+    return () => { clearTimeout(t); document.removeEventListener('mousedown', onDown); };
+  }, [open, options.length]);
+
+  const selected = options.find(o => String(o.value) === String(value));
+
+  return (
+    <>
+      <button
+        ref={btnRef}
+        onMouseDown={e => { e.preventDefault(); setOpen(v => !v); }}
+        title={title}
+        style={{
+          display: 'inline-flex', alignItems: 'center', justifyContent: 'space-between',
+          width, height: '24px', padding: '0 6px 0 8px',
+          background: open ? '#cce4f7' : '#ffffff',
+          border: `1px solid ${open ? '#0078d4' : '#c8c8c8'}`,
+          borderRadius: '3px', cursor: 'pointer', outline: 'none',
+          fontSize: '12px', color: '#323130',
+          fontFamily: '"Segoe UI", sans-serif', flexShrink: 0,
+          transition: 'background 0.1s, border-color 0.1s',
+        }}
+        onMouseEnter={e => { if (!open) e.currentTarget.style.background = '#f0f8ff'; }}
+        onMouseLeave={e => { if (!open) e.currentTarget.style.background = '#ffffff'; }}
+      >
+        <span style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', flex: 1, textAlign: 'left' }}>
+          {renderValue ? renderValue(value, selected) : (selected?.label ?? value)}
+        </span>
+        <span style={{ fontSize: '8px', color: '#666', marginLeft: '4px' }}>▾</span>
+      </button>
+      {open && target && createPortal(
+        <div
+          ref={menuRef}
+          style={{
+            position: 'fixed', top: pos.top, left: pos.left,
+            minWidth: width, maxHeight: '280px',
+            background: '#ffffff', border: '1px solid #d1d5db',
+            borderRadius: '4px', overflowY: 'auto',
+            boxShadow: pos.openUp
+              ? '0 -8px 24px rgba(0,0,0,0.18)'
+              : '0 8px 24px rgba(0,0,0,0.18)',
+            zIndex: 13000, padding: '4px 0',
+            fontFamily: '"Segoe UI", sans-serif', fontSize: '12px',
+          }}
+        >
+          {options.map(opt => {
+            const active = String(opt.value) === String(value);
+            return (
+              <button
+                key={opt.value}
+                onMouseDown={e => { e.preventDefault(); onChange(opt.value); setOpen(false); }}
+                style={{
+                  display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                  width: '100%', padding: '5px 12px',
+                  background: active ? '#eff6fc' : 'transparent',
+                  border: 'none', cursor: 'pointer',
+                  fontFamily: 'inherit', fontSize: '12px', color: active ? '#0078d4' : '#1f2937',
+                  fontWeight: active ? 600 : 400, textAlign: 'left',
+                }}
+                onMouseEnter={e => { if (!active) e.currentTarget.style.background = '#f3f4f6'; }}
+                onMouseLeave={e => { if (!active) e.currentTarget.style.background = 'transparent'; }}
+              >
+                {renderItem ? renderItem(opt) : <span style={opt.sample || {}}>{opt.label}</span>}
+                {active && <span style={{ fontSize: '11px' }}>✓</span>}
+              </button>
+            );
+          })}
+        </div>,
+        target
+      )}
+    </>
+  );
 };
 
 // ── Icon set ─────────────────────────────────────────────────────────────────

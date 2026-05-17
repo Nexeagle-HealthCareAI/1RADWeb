@@ -20,7 +20,7 @@ const MODALITY_ICONS = {
 const TODAY = new Date().toLocaleDateString('en-CA');
 
 export default function DoctorBoard() {
-  const { activeCenter } = useContext(AuthContext);
+  const { activeCenter, currentUser } = useContext(AuthContext);
   const { isOnline } = useOffline();
   const navigate = useNavigate();
   const [cases, setCases] = useState([]);
@@ -33,9 +33,10 @@ export default function DoctorBoard() {
   
 
 
-  // Filters
   const [search, setSearch] = useState('');
   const [filters, setFilters] = useState({ modality: 'ALL', priority: 'ALL', clinicalStatus: 'ALL' });
+  const [selectedDoctor, setSelectedDoctor] = useState(currentUser?.id || 'ALL');
+  const [doctors, setDoctors] = useState([]);
   const [isTablet, setIsTablet] = useState(window.innerWidth < 1100);
   const [isMobile, setIsMobile] = useState(window.innerWidth < 768);
   const [viewMode, setViewMode] = useState('TABLE');
@@ -108,6 +109,24 @@ export default function DoctorBoard() {
     return () => clearInterval(interval);
   }, [fetchCases]);
 
+  const fetchDoctors = useCallback(async () => {
+    try {
+      const res = await apiClient.get('/personnel');
+      const docList = (res.data || []).map(p => ({
+        id: p.userId,
+        name: p.fullName || 'UNKNOWN_STAFF',
+        roles: (p.roles || []).map(r => String(r).toLowerCase())
+      })).filter(p => p.roles.some(r => r.includes('doctor')));
+      setDoctors(docList);
+    } catch (err) {
+      console.error('[DOCTOR] Failed to fetch doctors', err);
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchDoctors();
+  }, [fetchDoctors]);
+
   const handleStatusUpdate = async (id, newStatus) => {
     try {
       await apiClient.patch(`/appointments/${id}/status`, `"${newStatus}"`, {
@@ -128,16 +147,17 @@ export default function DoctorBoard() {
       
       const status = c.status?.toLowerCase();
       const matchesStatus = filters.clinicalStatus === 'ALL' || status === filters.clinicalStatus.toLowerCase();
+      const matchesDoctor = selectedDoctor === 'ALL' || c.doctorId === selectedDoctor || c.doctor === doctors.find(d => d.id === selectedDoctor)?.name;
 
       if (view === 'QUEUE') {
-        return matchesSearch && matchesModality && matchesPriority && matchesStatus && c.isToday && ['scheduled', 'confirmed', 'in_progress', 'scanned', 'reporting', 'booked', 'reported', 'completed'].includes(status);
+        return matchesDoctor && matchesSearch && matchesModality && matchesPriority && matchesStatus && c.isToday && ['scheduled', 'confirmed', 'in_progress', 'scanned', 'reporting', 'booked', 'reported', 'completed'].includes(status);
       } else {
         const studyDate = c.dateTime ? c.dateTime.split('T')[0] : null;
         const matchesDate = archiveFilterMode === 'ALL' || (studyDate && studyDate >= archiveDateRange.start && studyDate <= archiveDateRange.end);
-        return matchesSearch && matchesModality && matchesPriority && matchesStatus && matchesDate && (status === 'reported' || !c.isToday);
+        return matchesDoctor && matchesSearch && matchesModality && matchesPriority && matchesStatus && matchesDate && (status === 'reported' || !c.isToday);
       }
     });
-  }, [cases, search, filters, view, TODAY, archiveFilterMode, archiveDateRange]);
+  }, [cases, search, filters, view, TODAY, archiveFilterMode, archiveDateRange, selectedDoctor, doctors]);
 
   const sortedCases = useMemo(() => {
     const sortableItems = [...filteredCases];
@@ -360,23 +380,6 @@ export default function DoctorBoard() {
                 <span style={{ position: 'absolute', right: '15px', top: '50%', transform: 'translateY(-50%)', background: '#1d4ed8', color: 'white', fontSize: '10px', fontWeight: 500, padding: '2px 8px', borderRadius: '4px' }}>Scanner Mode</span>
               )}
             </div>
-            <button 
-              onClick={() => document.getElementById('doctor-mobile-scanner')?.click()}
-              style={{ padding: '12px 15px', borderRadius: '10px', background: '#f8fafc', border: '1px solid #e2e8f0', cursor: 'pointer', fontSize: '14px', display: 'flex', alignItems: 'center', gap: '8px', fontWeight: 900 }}
-              title="Open Mobile Scanner"
-            >
-              📷 <span style={{ fontSize: '11px' }}>Scan</span>
-            </button>
-            <input 
-              id="doctor-mobile-scanner" 
-              type="file" 
-              accept="image/*" 
-              capture="camera" 
-              style={{ display: 'none' }} 
-              onChange={(e) => {
-                alert('Scanner active: point at the barcode. (Simulated)');
-              }}
-            />
           </div>
 
           {view === 'HISTORY' && (
@@ -395,6 +398,11 @@ export default function DoctorBoard() {
               )}
             </div>
           )}
+
+          <select value={selectedDoctor} onChange={e => setSelectedDoctor(e.target.value)} style={{ padding: '10px 14px', borderRadius: '8px', border: '1px solid #e2e8f0', fontSize: '12px', fontWeight: 500, background: 'white', outline: 'none' }}>
+            <option value="ALL">All Doctors</option>
+            {doctors.map(d => <option key={d.id} value={d.id}>{d.name}</option>)}
+          </select>
 
           <select value={filters.modality} onChange={e => setFilters({...filters, modality: e.target.value})} style={{ padding: '10px 14px', borderRadius: '8px', border: '1px solid #e2e8f0', fontSize: '12px', fontWeight: 500, background: 'white', outline: 'none' }}>
             <option value="ALL">All Modalities</option>
@@ -452,6 +460,9 @@ export default function DoctorBoard() {
                 <th onClick={() => handleSort('dateTime')} style={{ padding: '16px 20px', textAlign: 'left', fontSize: '11px', fontWeight: 600, color: '#6b7280', cursor: 'pointer', letterSpacing: '0.3px' }}>
                   Date {sortConfig.key === 'dateTime' ? (sortConfig.direction === 'asc' ? '↑' : '↓') : '↕'}
                 </th>
+                <th onClick={() => handleSort('doctorId')} style={{ padding: '16px 20px', textAlign: 'left', fontSize: '11px', fontWeight: 600, color: '#6b7280', cursor: 'pointer', letterSpacing: '0.3px' }}>
+                  Doctor {sortConfig.key === 'doctorId' ? (sortConfig.direction === 'asc' ? '↑' : '↓') : '↕'}
+                </th>
                 <th style={{ padding: '16px 20px', textAlign: 'left', fontSize: '11px', fontWeight: 600, color: '#6b7280', letterSpacing: '0.3px' }}>
                   Scan Notes
                 </th>
@@ -502,6 +513,14 @@ export default function DoctorBoard() {
                     <td style={{ padding: '20px' }}>
                         <div style={{ fontWeight: 800, color: '#1e293b', fontSize: '13px' }}>{c.dateTime ? new Date(c.dateTime).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }).toUpperCase() : 'N/A'}</div>
                         <div style={{ fontSize: '11px', color: '#94a3b8', fontWeight: 400, marginTop: '4px' }}>{c.dateTime ? new Date(c.dateTime).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', hour12: true }) : '09:00 AM'}</div>
+                    </td>
+                    <td style={{ padding: '20px' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                            <div style={{ width: '28px', height: '28px', borderRadius: '50%', background: '#f1f5f9', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '10px', color: '#64748b', fontWeight: 800, border: '1px solid #e2e8f0', flexShrink: 0 }}>DR</div>
+                            <span style={{ fontSize: '13px', fontWeight: 700, color: '#334155', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '120px' }}>
+                                {c.doctor || doctors.find(d => d.id === c.doctorId)?.name || 'Unassigned'}
+                            </span>
+                        </div>
                     </td>
                     <td style={{ padding: '20px' }}>
                         <div style={{ maxWidth: '200px' }}>
@@ -599,7 +618,7 @@ export default function DoctorBoard() {
                           }}>{status === 'reported' ? 'Finalized' : status}</span>
                        </div>
                        
-                       <div style={{ background: '#f8fafc', padding: '12px', borderRadius: '12px', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
+                       <div style={{ background: '#f8fafc', padding: '12px', borderRadius: '12px', display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '10px' }}>
                           <div>
                              <div style={{ fontSize: '11px', fontWeight: 500, color: '#6b7280' }}>Service</div>
                              <div style={{ fontSize: '12px', fontWeight: 600, color: '#1d4ed8' }}>{c.service}</div>
@@ -607,6 +626,10 @@ export default function DoctorBoard() {
                           <div>
                              <div style={{ fontSize: '11px', fontWeight: 500, color: '#6b7280' }}>Date</div>
                              <div style={{ fontSize: '12px', fontWeight: 800 }}>{c.dateTime ? new Date(c.dateTime).toLocaleDateString('en-GB', { day: '2-digit', month: 'short' }).toUpperCase() : 'N/A'}</div>
+                          </div>
+                          <div>
+                             <div style={{ fontSize: '11px', fontWeight: 500, color: '#6b7280' }}>Doctor</div>
+                             <div style={{ fontSize: '12px', fontWeight: 800, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{c.doctor || doctors.find(d => d.id === c.doctorId)?.name || 'Unassigned'}</div>
                           </div>
                        </div>
 

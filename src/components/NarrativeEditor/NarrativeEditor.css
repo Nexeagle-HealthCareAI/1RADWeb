@@ -264,6 +264,30 @@
   color: #b3b3b3;
 }
 
+/* ── Multilevel list outline numbering ────────────────────────────────────── */
+.narrative-editor-content ol[data-multilevel="true"],
+.narrative-editor-content ul[data-multilevel="true"] {
+  list-style-type: decimal;
+}
+.narrative-editor-content [data-multilevel="true"] [data-multilevel="true"],
+.narrative-editor-content [data-multilevel="true"] ol,
+.narrative-editor-content [data-multilevel="true"] ul {
+  list-style-type: lower-alpha;
+}
+.narrative-editor-content [data-multilevel="true"] [data-multilevel="true"] [data-multilevel="true"],
+.narrative-editor-content [data-multilevel="true"] ol ol,
+.narrative-editor-content [data-multilevel="true"] ul ul,
+.narrative-editor-content [data-multilevel="true"] ol ul,
+.narrative-editor-content [data-multilevel="true"] ul ol {
+  list-style-type: lower-roman;
+}
+.narrative-editor-content [data-multilevel="true"] ol ol ol,
+.narrative-editor-content [data-multilevel="true"] ul ul ul,
+.narrative-editor-content [data-multilevel="true"] ol ul ol,
+.narrative-editor-content [data-multilevel="true"] ul ol ul {
+  list-style-type: upper-alpha;
+}
+
 /* ── Status bar ──────────────────────────────────────────────────────────────── */
 .word-statusbar {
   display: flex;

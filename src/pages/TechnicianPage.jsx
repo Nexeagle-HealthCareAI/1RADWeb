@@ -126,7 +126,7 @@ export default function TechnicianPage() {
         id: p.userId,
         name: p.fullName || 'UNKNOWN_STAFF',
         roles: (p.roles || []).map(r => String(r).toLowerCase())
-      })).filter(p => p.roles.includes('doctor'));
+      })).filter(p => p.roles.some(r => r.includes('doctor')));
       setDoctors(docList);
     } catch (err) {
       console.error('[TECH] Failed to fetch doctors', err);
@@ -158,7 +158,7 @@ export default function TechnicianPage() {
       const status = s.status?.toLowerCase();
       const matchesPriority = filters.priority === 'ALL' || s.priority === filters.priority;
       const matchesStatus = filters.clinicalStatus === 'ALL' || status === filters.clinicalStatus.toLowerCase();
-      const matchesDoctor = selectedDoctor === 'ALL' || s.doctorId === selectedDoctor;
+      const matchesDoctor = selectedDoctor === 'ALL' || s.doctorId === selectedDoctor || s.doctor === doctors.find(d => d.id === selectedDoctor)?.name;
 
       if (hubTab === 'ACTIVE') {
         return matchesDoctor && matchesSearch && matchesModality && matchesPriority && matchesStatus && s.isToday && ['scheduled', 'confirmed', 'in_progress', 'booked', 'scanned', 'reporting', 'reported', 'completed'].includes(status);
@@ -770,24 +770,6 @@ export default function TechnicianPage() {
                 <span style={{ position: 'absolute', right: '15px', top: '50%', transform: 'translateY(-50%)', background: '#0f52ba', color: 'white', fontSize: '8px', fontWeight: 900, padding: '2px 6px', borderRadius: '4px' }}>SCANNER MODE</span>
               )}
             </div>
-            <button 
-              onClick={() => document.getElementById('mobile-scanner-trigger')?.click()}
-              style={{ padding: '12px 15px', borderRadius: '10px', background: '#f8fafc', border: '1px solid #e2e8f0', cursor: 'pointer', fontSize: '14px', display: 'flex', alignItems: 'center', gap: '8px', fontWeight: 900 }}
-              title="Open Mobile Scanner"
-            >
-               <span style={{ fontSize: '11px' }}>Scan</span>
-            </button>
-            <input 
-              id="mobile-scanner-trigger" 
-              type="file" 
-              accept="image/*" 
-              capture="camera" 
-              style={{ display: 'none' }} 
-              onChange={(e) => {
-                // In a real app, we'd decode here. For now, we simulate finding the ID.
-                alert('Scanner active: point at the barcode. (Simulated)');
-              }}
-            />
           </div>
 
           {hubTab === 'ARCHIVE' && (
@@ -861,6 +843,9 @@ export default function TechnicianPage() {
                 <th onClick={() => handleSort('dateTime')} style={{ padding: '16px 20px', textAlign: 'left', fontSize: '11px', fontWeight: 600, color: '#6b7280', cursor: 'pointer', letterSpacing: '0.3px' }}>
                   Date
                 </th>
+                <th onClick={() => handleSort('doctorId')} style={{ padding: '16px 20px', textAlign: 'left', fontSize: '11px', fontWeight: 600, color: '#6b7280', cursor: 'pointer', letterSpacing: '0.3px' }}>
+                  Doctor
+                </th>
                 <th onClick={() => handleSort('modality')} style={{ padding: '16px 20px', textAlign: 'left', fontSize: '11px', fontWeight: 600, color: '#6b7280', cursor: 'pointer', letterSpacing: '0.3px' }}>
                   Modality
                 </th>
@@ -912,6 +897,14 @@ export default function TechnicianPage() {
                     <td style={{ padding: '8px 15px' }}>
                         <div style={{ fontWeight: 800, color: '#1e293b', fontSize: '12px' }}>{study.dateTime ? new Date(study.dateTime).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }).toUpperCase() : 'N/A'}</div>
                         <div style={{ fontSize: '9px', color: '#94a3b8', fontWeight: 800, marginTop: '2px' }}>{study.appointmentTime || '09:00 AM'}</div>
+                    </td>
+                    <td style={{ padding: '8px 15px' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                            <div style={{ width: '24px', height: '24px', borderRadius: '50%', background: '#f1f5f9', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '9px', color: '#64748b', fontWeight: 800, border: '1px solid #e2e8f0', flexShrink: 0 }}>DR</div>
+                            <span style={{ fontSize: '11px', fontWeight: 700, color: '#334155', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '100px' }}>
+                                {study.doctor || doctors.find(d => d.id === study.doctorId)?.name || 'Unassigned'}
+                            </span>
+                        </div>
                     </td>
                     <td style={{ padding: '8px 15px' }}>
                        <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>

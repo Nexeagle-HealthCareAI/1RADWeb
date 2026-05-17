@@ -22,6 +22,8 @@ import { LineHeight, ParagraphIndent, PageBreak } from './extensions/Spacing';
 import { FormatPainter } from './extensions/FormatPainter';
 import { ParagraphFraming } from './extensions/ParagraphFraming';
 import { ListStyles } from './extensions/ListStyles';
+import { Sort } from './extensions/Sort';
+import { MultilevelList } from './extensions/MultilevelList';
 import FindReplaceDialog from './dialogs/FindReplaceDialog';
 import SymbolPickerDialog from './dialogs/SymbolPickerDialog';
 import PromptDialog, { editorPrompt } from './dialogs/PromptDialog';
@@ -242,6 +244,8 @@ const NarrativeEditor = React.forwardRef(function NarrativeEditor({
       FormatPainter,
       ParagraphFraming,
       ListStyles,
+      Sort,
+      MultilevelList,
       Underline,
       TextAlign.configure({ types: ['heading', 'paragraph'] }),
       TextStyle,

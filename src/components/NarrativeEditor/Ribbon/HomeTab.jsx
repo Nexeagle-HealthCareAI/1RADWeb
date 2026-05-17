@@ -2,7 +2,7 @@ import React, { useState, useRef, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import {
   Btn, BigBtn, Sep, Icon, Group, selectStyle, ICONS,
-  FONT_FAMILIES, FONT_SIZES, HIGHLIGHTS, ColorPicker, SplitButton,
+  FONT_FAMILIES, FONT_SIZES, HIGHLIGHTS, ColorPicker, SplitButton, Combobox,
 } from './RibbonControls';
 import StylesGallery from './StylesGallery';
 import { editorPrompt } from '../dialogs/PromptDialog';
@@ -358,24 +358,21 @@ export default function HomeTab({ editor, showFormattingMarks, onToggleFormattin
       <Group label="Font" onLauncher={() => window.dispatchEvent(new CustomEvent('narrative-editor:open-font-dialog'))}>
         <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', alignItems: 'flex-start' }}>
           <div style={{ display: 'flex', gap: '4px' }}>
-            <select
+            <Combobox
               value={currentFontFamily}
-              onChange={e => editor.chain().focus().setMark('textStyle', { fontFamily: e.target.value }).run()}
-              style={{ ...selectStyle, width: '130px', fontFamily: currentFontFamily }}
+              onChange={(v) => editor.chain().focus().setMark('textStyle', { fontFamily: v }).run()}
+              options={FONT_FAMILIES.map(f => ({ value: f, label: f, sample: { fontFamily: f } }))}
+              width={132}
               title="Font Family"
-            >
-              {FONT_FAMILIES.map(f => (
-                <option key={f} value={f} style={{ fontFamily: f }}>{f}</option>
-              ))}
-            </select>
-            <select
+              renderValue={(_, sel) => <span style={{ fontFamily: sel?.value || 'Calibri' }}>{sel?.label || 'Calibri'}</span>}
+            />
+            <Combobox
               value={currentFontSize}
-              onChange={e => editor.chain().focus().setMark('textStyle', { fontSize: `${e.target.value}pt` }).run()}
-              style={{ ...selectStyle, width: '54px' }}
+              onChange={(v) => editor.chain().focus().setMark('textStyle', { fontSize: `${v}pt` }).run()}
+              options={FONT_SIZES.map(s => ({ value: s, label: s }))}
+              width={56}
               title="Font Size"
-            >
-              {FONT_SIZES.map(s => <option key={s} value={s}>{s}</option>)}
-            </select>
+            />
             <Btn onClick={() => cycleFontSize(editor, +1)} title="Grow Font (Ctrl+])">
               <span style={{ display: 'inline-flex', alignItems: 'baseline', gap: '1px', lineHeight: 1 }}>
                 <span style={{ fontSize: '14px', fontWeight: 700 }}>A</span>
@@ -520,15 +517,34 @@ export default function HomeTab({ editor, showFormattingMarks, onToggleFormattin
               style={{ fontSize: '14px' }}
             >⇥</Btn>
             <Btn
+              onClick={() => editor.chain().focus().toggleMultilevelList().run()}
+              active={
+                (editor.isActive('orderedList') && editor.getAttributes('orderedList').multilevel) ||
+                (editor.isActive('bulletList') && editor.getAttributes('bulletList').multilevel)
+              }
+              title="Multilevel List"
+              style={{ fontSize: '11px', fontWeight: 700, minWidth: '28px' }}
+            >
+              <span style={{ display: 'inline-flex', flexDirection: 'column', alignItems: 'flex-start', lineHeight: 1, gap: '1px', fontSize: '8px' }}>
+                <span>1.</span>
+                <span style={{ marginLeft: '4px' }}>a.</span>
+                <span style={{ marginLeft: '8px' }}>i.</span>
+              </span>
+            </Btn>
+            <Btn
+              onClick={() => editor.chain().focus().sortSelected('asc').run()}
+              title="Sort A → Z (selected list / paragraphs)"
+              style={{ fontSize: '12px', fontWeight: 600, minWidth: '28px' }}
+            >A↓Z</Btn>
+            <Btn
               onClick={() => onToggleFormattingMarks?.()}
               active={!!showFormattingMarks}
               title="Show/Hide formatting marks (¶)"
               style={{ fontSize: '13px', fontWeight: 700 }}
             >¶</Btn>
-            <select
+            <Combobox
               value={editor.getAttributes('paragraph').lineHeight || editor.getAttributes('heading').lineHeight || ''}
-              onChange={async e => {
-                const v = e.target.value;
+              onChange={async v => {
                 if (v === '__custom__') {
                   const current = editor.getAttributes('paragraph').lineHeight || editor.getAttributes('heading').lineHeight || '1.6';
                   const input = await editorPrompt({
@@ -538,8 +554,6 @@ export default function HomeTab({ editor, showFormattingMarks, onToggleFormattin
                     placeholder: '1.75',
                     confirmLabel: 'Apply',
                   });
-                  // Reset the select to its previous state (so it doesn't stay on Custom…)
-                  e.target.value = current || '';
                   if (input == null) return;
                   const trimmed = input.trim();
                   if (!trimmed) editor.chain().focus().unsetLineHeight().run();
@@ -549,18 +563,19 @@ export default function HomeTab({ editor, showFormattingMarks, onToggleFormattin
                 if (v) editor.chain().focus().setLineHeight(v).run();
                 else editor.chain().focus().unsetLineHeight().run();
               }}
-              style={{ ...selectStyle, width: '78px' }}
+              options={[
+                { value: '', label: 'Spacing' },
+                { value: '1', label: '1.0' },
+                { value: '1.15', label: '1.15' },
+                { value: '1.5', label: '1.5' },
+                { value: '2', label: '2.0' },
+                { value: '2.5', label: '2.5' },
+                { value: '3', label: '3.0' },
+                { value: '__custom__', label: 'Custom…' },
+              ]}
+              width={84}
               title="Line Spacing"
-            >
-              <option value="">Spacing</option>
-              <option value="1">1.0</option>
-              <option value="1.15">1.15</option>
-              <option value="1.5">1.5</option>
-              <option value="2">2.0</option>
-              <option value="2.5">2.5</option>
-              <option value="3">3.0</option>
-              <option value="__custom__">Custom…</option>
-            </select>
+            />
           </div>
           <div style={{ display: 'flex', gap: '1px' }}>
             <Btn onClick={() => editor.chain().focus().setTextAlign('left').run()} active={editor.isActive({ textAlign: 'left' })} title="Align Left (Ctrl+L)">
@@ -652,6 +667,139 @@ export default function HomeTab({ editor, showFormattingMarks, onToggleFormattin
           <Icon d={ICONS.redo} />
         </Btn>
       </Group>
+
+      <Sep />
+
+      {/* ── Editing group (Word convention: Find / Replace / Select on Home) ── */}
+      <Group label="Editing">
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', alignItems: 'flex-start' }}>
+          <button
+            onMouseDown={e => { e.preventDefault(); window.dispatchEvent(new CustomEvent('narrative-editor:open-find-replace', { detail: { focusReplace: false } })); }}
+            title="Find (Ctrl+F)"
+            style={editingRowBtnStyle}
+            onMouseEnter={e => e.currentTarget.style.background = '#e8e8e8'}
+            onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
+          >
+            <Icon d={ICONS.search} size={11} />
+            <span>Find</span>
+          </button>
+          <button
+            onMouseDown={e => { e.preventDefault(); window.dispatchEvent(new CustomEvent('narrative-editor:open-find-replace', { detail: { focusReplace: true } })); }}
+            title="Replace (Ctrl+H)"
+            style={editingRowBtnStyle}
+            onMouseEnter={e => e.currentTarget.style.background = '#e8e8e8'}
+            onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
+          >
+            <span style={{ fontSize: '11px' }}>⇄</span>
+            <span>Replace</span>
+          </button>
+          <SelectMenuButton editor={editor} />
+        </div>
+      </Group>
     </div>
   );
 }
+
+const editingRowBtnStyle = {
+  display: 'flex', alignItems: 'center', gap: '6px',
+  width: '88px', height: '18px',
+  padding: '0 6px',
+  background: 'transparent', border: '1px solid transparent',
+  borderRadius: '3px', cursor: 'pointer',
+  fontSize: '11px', lineHeight: 1, color: '#323130',
+  fontFamily: '"Segoe UI", system-ui, sans-serif',
+  boxSizing: 'border-box', flexShrink: 0,
+};
+
+/** Word-like "Select ▾" button that opens a tiny menu. */
+const SelectMenuButton = ({ editor }) => {
+  const [open, setOpen] = useState(false);
+  const ref = useRef(null);
+  return (
+    <>
+      <button
+        ref={ref}
+        onMouseDown={e => { e.preventDefault(); setOpen(v => !v); }}
+        title="Select"
+        style={{ ...editingRowBtnStyle, justifyContent: 'space-between' }}
+        onMouseEnter={e => e.currentTarget.style.background = '#e8e8e8'}
+        onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
+      >
+        <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
+          <span style={{ fontSize: '11px' }}>☑</span>
+          <span>Select</span>
+        </span>
+        <span style={{ fontSize: '8px' }}>▾</span>
+      </button>
+      {open && (
+        <SelectMenuPopup
+          anchor={ref.current}
+          onClose={() => setOpen(false)}
+          editor={editor}
+        />
+      )}
+    </>
+  );
+};
+
+const SelectMenuPopup = ({ anchor, onClose, editor }) => {
+  const [pos, setPos] = useState({ top: 0, left: 0 });
+  const [target, setTarget] = useState(() =>
+    typeof document !== 'undefined' ? (document.fullscreenElement || document.body) : null
+  );
+  const menuRef = useRef(null);
+
+  useEffect(() => {
+    const onFs = () => setTarget(document.fullscreenElement || document.body);
+    document.addEventListener('fullscreenchange', onFs);
+    return () => document.removeEventListener('fullscreenchange', onFs);
+  }, []);
+
+  useEffect(() => {
+    if (!anchor) return;
+    const r = anchor.getBoundingClientRect();
+    setPos({ top: r.bottom + 4, left: r.left });
+    const onDown = e => { if (menuRef.current && !menuRef.current.contains(e.target) && !anchor.contains(e.target)) onClose(); };
+    const t = setTimeout(() => document.addEventListener('mousedown', onDown), 0);
+    return () => { clearTimeout(t); document.removeEventListener('mousedown', onDown); };
+  }, [anchor, onClose]);
+
+  if (!target) return null;
+  return createPortal(
+    <div ref={menuRef} style={{
+      position: 'fixed', top: pos.top, left: pos.left,
+      background: '#fff', border: '1px solid #d1d5db', borderRadius: '4px',
+      boxShadow: '0 8px 24px rgba(0,0,0,0.18)',
+      padding: '4px', zIndex: 13000, minWidth: '200px',
+      fontFamily: '"Segoe UI", system-ui, sans-serif',
+    }}>
+      {[
+        { id: 'all',       label: 'Select All', shortcut: 'Ctrl+A', fn: () => editor.chain().focus().selectAll().run() },
+        { id: 'paragraph', label: 'Select Current Paragraph', fn: () => {
+            const { $from } = editor.state.selection;
+            let blockStart = $from.start($from.depth);
+            let blockEnd   = $from.end($from.depth);
+            editor.chain().focus().setTextSelection({ from: blockStart, to: blockEnd }).run();
+          }
+        },
+      ].map(it => (
+        <button
+          key={it.id}
+          onMouseDown={e => { e.preventDefault(); it.fn(); onClose(); }}
+          style={{
+            display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%',
+            padding: '6px 10px', background: 'transparent', border: 'none', borderRadius: '3px',
+            cursor: 'pointer', fontSize: '12px', color: '#374151',
+            fontFamily: 'inherit', textAlign: 'left',
+          }}
+          onMouseEnter={e => e.currentTarget.style.background = '#f3f4f6'}
+          onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
+        >
+          <span>{it.label}</span>
+          {it.shortcut && <span style={{ color: '#9ca3af', fontSize: '10px', fontFamily: '"Cascadia Code", Consolas, monospace' }}>{it.shortcut}</span>}
+        </button>
+      ))}
+    </div>,
+    target
+  );
+};
