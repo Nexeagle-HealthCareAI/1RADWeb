@@ -153,19 +153,19 @@ const ExpenseLedger = ({
                 <tbody>
                   {(paginatedOutflow || []).map(exp => (
                     <tr key={exp.id} style={{ borderBottom: '1px solid #f8fafc', transition: 'background 0.2s' }}>
-                      <td style={{ padding: '20px 30px', fontSize: '13px', fontWeight: 850, color: '#1e293b' }}>{exp.date ? new Date(exp.date).toLocaleDateString('en-US', { day: 'numeric', month: 'short', year: 'numeric' }) : 'N/A'}</td>
+                      <td style={{ padding: '20px 30px', fontSize: '11px', fontWeight: 800, color: '#1e293b' }}>{exp.date ? new Date(exp.date).toLocaleDateString('en-US', { day: 'numeric', month: 'short', year: 'numeric' }) : 'N/A'}</td>
                       <td style={{ padding: '20px 30px' }}>
-                        <div style={{ fontSize: '13px', fontWeight: 850, color: '#1e293b' }}>{exp.description}</div>
-                        <div style={{ fontSize: '9px', fontWeight: 900, color: '#94a3b8' }}>{(exp.name || 'N/A').toUpperCase()}</div>
+                        <div style={{ fontSize: '11.5px', fontWeight: 850, color: '#1e293b' }}>{exp.description}</div>
+                        <div style={{ fontSize: '8px', fontWeight: 900, color: '#94a3b8' }}>{(exp.name || 'N/A').toUpperCase()}</div>
                       </td>
                       <td style={{ padding: '20px 30px' }}>
                         <span style={{ 
-                          fontSize: '10px', fontWeight: 950, color: 'white', 
+                          fontSize: '9px', fontWeight: 950, color: 'white', 
                           background: exp.category === 'Referral' ? '#e11d48' : '#dc2626', 
                           padding: '5px 12px', borderRadius: '8px' 
                         }}>{(exp.category || 'General').toUpperCase()}</span>
                       </td>
-                      <td style={{ padding: '20px 30px', textAlign: 'right', fontSize: '14px', fontWeight: 950, color: '#dc2626' }}>₹{(Number(exp.amount) || 0).toLocaleString()}</td>
+                      <td style={{ padding: '20px 30px', textAlign: 'right', fontSize: '12px', fontWeight: 950, color: '#dc2626' }}>₹{(Number(exp.amount) || 0).toLocaleString()}</td>
                       <td style={{ padding: '20px 30px', textAlign: 'center' }}>
                          {exp.type === 'OPERATIONAL' || exp.type === 'LEGACY' ? (
                            <button 
@@ -174,11 +174,11 @@ const ExpenseLedger = ({
                                padding: '6px 12px', borderRadius: '10px', border: 'none', 
                                background: exp.status === 'PAID' ? '#dcfce7' : '#fee2e2',
                                color: exp.status === 'PAID' ? '#166534' : '#991b1b',
-                               fontSize: '9px', fontWeight: 950, cursor: 'pointer', transition: 'all 0.2s'
+                               fontSize: '8.5px', fontWeight: 950, cursor: 'pointer', transition: 'all 0.2s'
                              }}
                            >{(exp.status || 'UNPAID').toUpperCase()}</button>
                          ) : (
-                           <span style={{ fontSize: '9px', fontWeight: 950, color: '#10b981' }}>PAID</span>
+                           <span style={{ fontSize: '8.5px', fontWeight: 950, color: '#10b981' }}>PAID</span>
                          )}
                       </td>
                        <td style={{ padding: '20px 30px', textAlign: 'right' }}>
@@ -197,15 +197,15 @@ const ExpenseLedger = ({
                                    });
                                    setIsExpenseDrawerOpen(true);
                                  }}
-                                 style={{ padding: '8px 16px', borderRadius: '10px', border: 'none', background: '#f0f4ff', color: '#0f52ba', fontSize: '10px', fontWeight: 950, cursor: 'pointer' }}
+                                 style={{ padding: '6px 12px', borderRadius: '10px', border: 'none', background: '#f0f4ff', color: '#0f52ba', fontSize: '8.5px', fontWeight: 950, cursor: 'pointer' }}
                                >EDIT</button>
                                <button 
                                  onClick={() => handleDeleteExpense(exp.id)}
-                                 style={{ padding: '8px 16px', borderRadius: '10px', border: 'none', background: '#fee2e2', color: '#ef4444', fontSize: '10px', fontWeight: 950, cursor: 'pointer' }}
+                                 style={{ padding: '6px 12px', borderRadius: '10px', border: 'none', background: '#fee2e2', color: '#ef4444', fontSize: '8.5px', fontWeight: 950, cursor: 'pointer' }}
                                >DELETE</button>
                             </div>
                           ) : (
-                            <span style={{ fontSize: '10px', fontWeight: 950, color: '#94a3b8' }}>LOCKED (STRATEGIC)</span>
+                            <span style={{ fontSize: '8.5px', fontWeight: 950, color: '#94a3b8' }}>LOCKED (STRATEGIC)</span>
                           )}
                        </td>
 

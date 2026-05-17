@@ -21,7 +21,9 @@ const ReferralHub = ({
   handleSort,
   referrers,
   referrerFilter,
-  setReferrerFilter
+  setReferrerFilter,
+  modalityFilter,
+  setModalityFilter
 }) => {
   const referralStats = React.useMemo(() => {
     const cuts = filteredReferralCuts || [];
@@ -69,6 +71,25 @@ const ReferralHub = ({
                     <option key={ref.referrerId} value={ref.referrerId}>{ref.name?.toUpperCase()}</option>
                   ))}
                 </select>
+             </div>
+
+             <div style={{ display: 'flex', alignItems: 'center', gap: isMobile ? '8px' : '12px' }}>
+                <span style={{ fontSize: '9px', fontWeight: 950, color: '#e11d48', letterSpacing: '1px' }}>MODALITY:</span>
+                <div style={{ display: 'flex', background: 'white', padding: '3px', borderRadius: '10px', border: '1px solid #e2e8f0', width: isMobile ? '100%' : 'auto' }}>
+                   {['ALL', 'MRI', 'CT', 'X-RAY', 'USG'].map(m => (
+                     <button 
+                      key={m}
+                      onClick={() => setModalityFilter(m)}
+                      style={{ 
+                        padding: '6px 12px', borderRadius: '8px', border: 'none', fontSize: '9px', fontWeight: 950,
+                        background: modalityFilter === m ? '#e11d48' : 'transparent',
+                        color: modalityFilter === m ? 'white' : '#64748b',
+                        cursor: 'pointer', transition: 'all 0.2s',
+                        flex: isMobile ? 1 : 'none'
+                      }}
+                     >{m}</button>
+                   ))}
+                </div>
              </div>
 
              <div style={{ 
@@ -149,27 +170,27 @@ const ReferralHub = ({
                 ) : (
                    paginatedReferralCuts.map(cut => (
                       <tr key={cut?.id} style={{ borderBottom: '1px solid #f1f5f9' }}>
-                         <td style={{ padding: '20px 30px', fontSize: '12px', fontWeight: 800, color: '#1e293b' }}>{cut?.date ? new Date(cut.date).toLocaleDateString() : 'N/A'}</td>
+                         <td style={{ padding: '20px 30px', fontSize: '11px', fontWeight: 800, color: '#1e293b' }}>{cut?.date ? new Date(cut.date).toLocaleDateString() : 'N/A'}</td>
                          <td style={{ padding: '20px 30px' }}>
-                            <div style={{ fontSize: '13px', fontWeight: 950, color: '#e11d48' }}>{(cut?.name || 'DIRECT').toUpperCase()}</div>
+                            <div style={{ fontSize: '11.5px', fontWeight: 950, color: '#e11d48' }}>{(cut?.name || 'DIRECT').toUpperCase()}</div>
                          </td>
-                         <td style={{ padding: '20px 30px', fontSize: '12px', fontWeight: 850, color: '#1e293b' }}>{(cut?.patientName || 'N/A').toUpperCase()}</td>
+                         <td style={{ padding: '20px 30px', fontSize: '11.5px', fontWeight: 850, color: '#1e293b' }}>{(cut?.patientName || 'N/A').toUpperCase()}</td>
                          <td style={{ padding: '20px 30px' }}>
-                            <div style={{ fontSize: '11px', fontWeight: 950, color: '#0f52ba' }}>{(cut?.modality || 'MRI').toUpperCase()}</div>
-                            {cut?.description && <div style={{ fontSize: '9px', color: '#94a3b8', marginTop: '2px' }}>{cut.description}</div>}
+                            <div style={{ fontSize: '9.5px', fontWeight: 950, color: '#0f52ba' }}>{(cut?.modality || 'MRI').toUpperCase()}</div>
+                            {cut?.description && <div style={{ fontSize: '8px', color: '#94a3b8', marginTop: '2px' }}>{cut.description}</div>}
                          </td>
                          <td style={{ padding: '20px 30px' }}>
-                            <div style={{ padding: '4px 8px', background: '#f1f5f9', borderRadius: '6px', fontSize: '10px', fontWeight: 950, color: '#1e293b', display: 'inline-block', fontFamily: 'monospace' }}>{cut?.reference || 'N/A'}</div>
+                            <div style={{ padding: '4px 8px', background: '#f1f5f9', borderRadius: '6px', fontSize: '9px', fontWeight: 950, color: '#1e293b', display: 'inline-block', fontFamily: 'monospace' }}>{cut?.reference || 'N/A'}</div>
                          </td>
                          <td style={{ padding: '20px 30px', textAlign: 'right' }}>
-                            <div style={{ fontSize: '16px', fontWeight: 950, color: '#e11d48' }}>₹{(Number(cut?.amount) || 0).toLocaleString()}</div>
+                            <div style={{ fontSize: '12px', fontWeight: 950, color: '#e11d48' }}>₹{(Number(cut?.amount) || 0).toLocaleString()}</div>
                          </td>
                          <td style={{ padding: '20px 30px', textAlign: 'center' }}>
                             <button 
                               onClick={() => cut?.type === 'STRATEGIC' && handleToggleCommissionStatus(cut?.id, cut?.status)}
                               disabled={cut?.type === 'LEGACY'}
                               style={{ 
-                                padding: '6px 12px', borderRadius: '8px', border: 'none', fontSize: '9px', fontWeight: 950,
+                                padding: '6px 12px', borderRadius: '8px', border: 'none', fontSize: '8.5px', fontWeight: 950,
                                 background: cut?.status === 'PAID' ? '#dcfce7' : '#fee2e2',
                                 color: cut?.status === 'PAID' ? '#166534' : '#991b1b',
                                 cursor: cut?.type === 'STRATEGIC' ? 'pointer' : 'default',
@@ -183,7 +204,7 @@ const ReferralHub = ({
                              {cut.type === 'LEGACY' ? (
                                 <button 
                                    onClick={() => handleDeleteExpense(cut.id)}
-                                   style={{ padding: '8px 12px', borderRadius: '8px', border: 'none', background: '#fee2e2', color: '#ef4444', fontSize: '9px', fontWeight: 950, cursor: 'pointer' }}
+                                   style={{ padding: '6px 10px', borderRadius: '8px', border: 'none', background: '#fee2e2', color: '#ef4444', fontSize: '8.5px', fontWeight: 950, cursor: 'pointer' }}
                                 >DELETE</button>
                              ) : (
                                 <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end', alignItems: 'center' }}>
@@ -201,9 +222,9 @@ const ReferralHub = ({
                                          });
                                          setIsPayoutDrawerOpen(true);
                                       }}
-                                      style={{ padding: '6px 12px', borderRadius: '8px', border: 'none', background: '#f0f4ff', color: '#0f52ba', fontSize: '9px', fontWeight: 950, cursor: 'pointer' }}
+                                      style={{ padding: '6px 12px', borderRadius: '8px', border: 'none', background: '#f0f4ff', color: '#0f52ba', fontSize: '8.5px', fontWeight: 950, cursor: 'pointer' }}
                                    >UPDATE PAYOUT</button>
-                                   <span style={{ fontSize: '9px', fontWeight: 950, color: '#94a3b8', letterSpacing: '0.5px' }}>LOCKED</span>
+                                   <span style={{ fontSize: '8px', fontWeight: 950, color: '#94a3b8', letterSpacing: '0.5px' }}>LOCKED</span>
                                 </div>
                              )}
                          </td>

@@ -1610,6 +1610,8 @@ export default function BillingPage() {
           referrers={referrers}
           referrerFilter={referrerFilter}
           setReferrerFilter={setReferrerFilter}
+          modalityFilter={modalityFilter}
+          setModalityFilter={setModalityFilter}
         />
 
       )}
