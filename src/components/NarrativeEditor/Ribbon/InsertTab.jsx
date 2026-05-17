@@ -15,13 +15,25 @@ const SECTIONS = [
 ];
 
 /**
- * InsertTab — table, image, link, page break, symbol, etc.
+ * InsertTab — report templates, sections, table, image, link, page break, symbol, etc.
  */
-export default function InsertTab({ editor }) {
+export default function InsertTab({ editor, onOpenTemplates }) {
   if (!editor) return null;
 
   return (
     <div style={{ display: 'flex', alignItems: 'stretch', height: '100%' }}>
+      {/* ── Templates ── */}
+      <Group label="Templates">
+        <BigBtn
+          icon="📋"
+          label="Templates"
+          title="Pick a radiology report template"
+          onClick={onOpenTemplates}
+        />
+      </Group>
+
+      <Sep />
+
       {/* ── Radiology Sections ── */}
       <Group label="Report Sections">
         <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', justifyContent: 'center', height: '100%' }}>

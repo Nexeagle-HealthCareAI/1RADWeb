@@ -290,7 +290,7 @@ export default function VersionHistoryDialog({
             value={label}
             onChange={e => setLabel(e.target.value)}
             onKeyDown={e => { if (e.key === 'Enter') handleSave(); }}
-            placeholder="Optional label (e.g. "After CT findings")"
+            placeholder='Optional label (e.g. "After CT findings")'
             style={{
               flex: 1,
               padding: '6px 10px',

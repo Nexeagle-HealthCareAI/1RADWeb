@@ -24,6 +24,22 @@ export const InvoiceDrawer = ({
   const [isAdjusting, setIsAdjusting] = React.useState(false);
   const [adjustAmount, setAdjustAmount] = React.useState(0);
 
+  const handleSetCentreDisc = (val) => {
+    const maxAllowed = Math.max(0, (selectedInvoice.grossAmount || 0) - referrerDisc - deduction);
+    setCentreDisc(Math.min(val, maxAllowed));
+  };
+
+  const handleSetReferrerDisc = (val) => {
+    const limit = selectedInvoice.commissionAmount || 0;
+    const maxAllowed = Math.max(0, Math.min(limit, (selectedInvoice.grossAmount || 0) - centreDisc - deduction));
+    setReferrerDisc(Math.min(val, maxAllowed));
+  };
+
+  const handleSetDeduction = (val) => {
+    const maxAllowed = Math.max(0, (selectedInvoice.grossAmount || 0) - centreDisc - referrerDisc);
+    setDeduction(Math.min(val, maxAllowed));
+  };
+
 
   if (!selectedInvoice) return null;
 
@@ -86,28 +102,24 @@ export const InvoiceDrawer = ({
            <div>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
                  <span style={{ fontSize: '9px', fontWeight: 950, color: '#94a3b8', letterSpacing: '1px' }}>LINE_ITEMS_MANIFEST</span>
-                 {!isPaid && <button onClick={handleAddItem} style={{ color: '#0f52ba', border: 'none', background: 'none', fontSize: '9px', fontWeight: 950, cursor: 'pointer' }}>+ ADD_ITEM</button>}
+                 
               </div>
               
               <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', maxHeight: '200px', overflowY: 'auto', paddingRight: '5px', marginBottom: '20px' }}>
                  {selectedInvoice.items?.map((item, idx) => (
                    <div key={idx} style={{ display: 'flex', gap: '10px', alignItems: 'center', background: '#f8fafc', padding: '10px', borderRadius: '10px', border: '1px solid #f1f5f9' }}>
                       <input 
-                        disabled={isPaid}
-                        type="text" value={item.description} 
-                        onChange={e => handleUpdateItem(idx, 'description', e.target.value)}
+                        disabled={true} type="text" value={item.description}
                         placeholder="Description"
-                        style={{ flex: 1, background: 'transparent', border: 'none', borderBottom: isPaid ? 'none' : '1px solid #ddd', fontSize: '11px', fontWeight: 700 }}
+                        style={{ flex: 1, background: 'transparent', border: 'none', borderBottom: 'none', fontSize: '11px', fontWeight: 700 }}
                       />
                       <div style={{ fontSize: '11px', fontWeight: 950, color: '#0f52ba', display: 'flex', alignItems: 'center' }}>
                          ₹<input 
-                           disabled={isPaid}
-                           type="number" value={item.amount} 
-                           onChange={e => handleUpdateItem(idx, 'amount', parseInt(e.target.value) || 0)}
-                           style={{ width: '60px', background: 'transparent', border: 'none', borderBottom: isPaid ? 'none' : '1px solid #ddd', fontSize: '11px', fontWeight: 950, textAlign: 'right', marginLeft: '4px' }}
+                           disabled={true} type="number" value={item.amount}
+                           style={{ width: '60px', background: 'transparent', border: 'none', borderBottom: 'none', fontSize: '11px', fontWeight: 950, textAlign: 'right', marginLeft: '4px' }}
                          />
                       </div>
-                      {!isPaid && <button onClick={() => handleRemoveItem(idx)} style={{ color: '#ef4444', border: 'none', background: 'none', cursor: 'pointer', fontSize: '12px' }}>✕</button>}
+                      
                    </div>
                  ))}
               </div>
@@ -156,7 +168,7 @@ export const InvoiceDrawer = ({
                                {[10, 25, 50, 100].map(p => (
                                  <button 
                                    key={p} type="button"
-                                   onClick={() => setCentreDisc(Math.round((selectedInvoice.grossAmount || 0) * (p / 100)))}
+                                   onClick={() => handleSetCentreDisc(Math.round((selectedInvoice.grossAmount || 0) * (p / 100)))}
                                    style={{ padding: '2px 4px', fontSize: '7px', fontWeight: 950, border: '1px solid #eee', borderRadius: '4px', background: '#f8fafc', cursor: 'pointer' }}
                                  >{p}%</button>
                                ))}
@@ -165,11 +177,7 @@ export const InvoiceDrawer = ({
                          <div style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
                             <span style={{ fontSize: '10px', fontWeight: 950, color: '#ef4444' }}>₹</span>
                             <input 
-                              type="number" value={centreDisc} onChange={e => {
-                                 const val = parseInt(e.target.value) || 0;
-                                 const maxAllowed = (selectedInvoice.grossAmount || 0) - referrerDisc - deduction;
-                                 setCentreDisc(Math.min(val, Math.max(0, maxAllowed)));
-                               }}
+                              type="number" value={centreDisc === 0 ? '' : centreDisc} placeholder="0" min="0" onChange={e => handleSetCentreDisc(Math.max(0, parseInt(e.target.value) || 0))}
                               style={{ width: '60px', padding: '4px', border: '1px solid #f1f5f9', borderRadius: '6px', fontSize: '11px', fontWeight: 950, textAlign: 'right', color: '#ef4444' }}
                             />
                          </div>
@@ -182,7 +190,7 @@ export const InvoiceDrawer = ({
                                {[10, 25, 50, 100].map(p => (
                                  <button 
                                    key={p} type="button"
-                                   onClick={() => setReferrerDisc(Math.round((selectedInvoice.commissionAmount || 0) * (p / 100)))}
+                                   onClick={() => handleSetReferrerDisc(Math.round((selectedInvoice.commissionAmount || 0) * (p / 100)))}
                                    style={{ padding: '2px 4px', fontSize: '7px', fontWeight: 950, border: '1px solid #eee', borderRadius: '4px', background: '#f8fafc', cursor: 'pointer' }}
                                  >{p}%</button>
                                ))}
@@ -192,24 +200,18 @@ export const InvoiceDrawer = ({
                          <div style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
                             <span style={{ fontSize: '10px', fontWeight: 950, color: '#e11d48' }}>₹</span>
                             <input 
-                              type="number" value={referrerDisc} 
-                              max={selectedInvoice.commissionAmount || 0}
-                              onChange={e => {
-                                const val = parseInt(e.target.value) || 0;
-                                const limit = selectedInvoice.commissionAmount || 0;
-                                setReferrerDisc(val > limit ? limit : val);
-                              }}
+                              type="number" value={referrerDisc === 0 ? '' : referrerDisc} placeholder="0" min="0" max={selectedInvoice.commissionAmount || 0} onChange={e => handleSetReferrerDisc(Math.max(0, parseInt(e.target.value) || 0))}
                               style={{ width: '60px', padding: '4px', border: '1px solid #f1f5f9', borderRadius: '6px', fontSize: '11px', fontWeight: 950, textAlign: 'right', color: '#e11d48' }}
                             />
                          </div>
                       </div>
 
                       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                         <span style={{ fontSize: '8px', fontWeight: 950, color: '#64748b' }}>INSTITUTIONAL DEDUCTION</span>
+                         <span style={{ fontSize: '8px', fontWeight: 950, color: '#64748b' }}>ADDITIONAL DISCOUNT</span>
                          <div style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
                             <span style={{ fontSize: '10px', fontWeight: 950, color: '#64748b' }}>₹</span>
                             <input 
-                              type="number" value={deduction} onChange={e => setDeduction(parseInt(e.target.value) || 0)}
+                              type="number" value={deduction === 0 ? '' : deduction} placeholder="0" min="0" onChange={e => handleSetDeduction(Math.max(0, parseInt(e.target.value) || 0))}
                               style={{ width: '60px', padding: '4px', border: '1px solid #f1f5f9', borderRadius: '6px', fontSize: '11px', fontWeight: 950, textAlign: 'right', color: '#1e293b' }}
                             />
                          </div>
@@ -548,16 +550,20 @@ export const NewInvoiceDrawer = ({
                                      key={pct} type="button"
                                      onClick={() => {
                                        const gross = newInvoiceData.items.reduce((sum, it) => sum + (it.amount * it.quantity), 0);
-                                       setNewInvoiceData({ ...newInvoiceData, centreDiscount: Math.round(gross * (pct / 100)) });
+                                       const maxAllowed = Math.max(0, gross - (newInvoiceData.referrerDiscount || 0));
+                                       setNewInvoiceData({ ...newInvoiceData, centreDiscount: Math.round(Math.min(gross * (pct / 100), maxAllowed)) });
                                      }}
                                      style={{ padding: '4px 8px', borderRadius: '6px', border: '1px solid #fecdd3', background: '#fff1f2', color: '#e11d48', fontSize: '8px', fontWeight: 950, cursor: 'pointer' }}
                                    >{pct}%</button>
                                  ))}
                               </div>
                               <input 
-                                  type="number" value={newInvoiceData.centreDiscount} 
+                                  type="number" 
+                                  value={newInvoiceData.centreDiscount === 0 ? '' : newInvoiceData.centreDiscount} 
+                                  placeholder="0"
+                                  min="0"
                                   onChange={e => {
-                                    const val = parseInt(e.target.value) || 0;
+                                    const val = Math.max(0, parseInt(e.target.value) || 0);
                                     const gross = newInvoiceData.items.reduce((sum, it) => sum + (it.amount * it.quantity), 0);
                                     const maxAllowed = Math.max(0, gross - (newInvoiceData.referrerDiscount || 0));
                                     setNewInvoiceData({ ...newInvoiceData, centreDiscount: Math.min(val, maxAllowed) });
@@ -591,9 +597,12 @@ export const NewInvoiceDrawer = ({
                                  ))}
                               </div>
                               <input 
-                                  type="number" value={newInvoiceData.referrerDiscount} 
+                                  type="number" 
+                                  value={newInvoiceData.referrerDiscount === 0 ? '' : newInvoiceData.referrerDiscount} 
+                                  placeholder="0"
+                                  min="0"
                                   onChange={e => {
-                                    const val = parseInt(e.target.value) || 0;
+                                    const val = Math.max(0, parseInt(e.target.value) || 0);
                                     const gross = newInvoiceData.items.reduce((sum, it) => sum + (it.amount * it.quantity), 0);
                                     const totalCommission = newInvoiceData.items.reduce((sum, it) => sum + ((it.referralCutValue || 0) * (it.quantity || 1)), 0);
                                     const maxByGross = Math.max(0, gross - (newInvoiceData.centreDiscount || 0));

@@ -36,9 +36,12 @@ import ShortcutsDialog from './dialogs/ShortcutsDialog';
 import FontDialog from './dialogs/FontDialog';
 import ParagraphDialog from './dialogs/ParagraphDialog';
 import HeaderFooterDialog from './dialogs/HeaderFooterDialog';
+import ReportTemplatesDialog from './dialogs/ReportTemplatesDialog';
+import VersionHistoryDialog, { loadVersions, persistVersions, addVersion, removeVersion } from './dialogs/VersionHistoryDialog';
 import HorizontalRuler from './HorizontalRuler';
 import { FONT_SIZES } from './Ribbon/RibbonControls';
 import { useVoiceDictation } from './hooks/useVoiceDictation';
+import { exportToDocx } from './utils/exportDocx';
 import './NarrativeEditor.css';
 
 /**
@@ -228,6 +231,13 @@ const NarrativeEditor = React.forwardRef(function NarrativeEditor({
   // Ruler
   const [showRuler, setShowRuler] = useState(true);
 
+  // Report templates dialog
+  const [templatesOpen, setTemplatesOpen] = useState(false);
+
+  // Version history
+  const [versionsOpen, setVersionsOpen] = useState(false);
+  const [versions, setVersions] = useState(() => loadVersions());
+
   // Voice dictation — text inserted at cursor when a phrase finalises.
   const voice = useVoiceDictation({
     onResult: (text) => {
@@ -252,6 +262,32 @@ const NarrativeEditor = React.forwardRef(function NarrativeEditor({
     } else {
       document.exitFullscreen();
     }
+  };
+
+  // ── Version history callbacks ─────────────────────────────────────────────
+  const saveVersion = (label) => {
+    if (!editor) return;
+    const updated = addVersion(versions, editor.getHTML(), label);
+    setVersions(updated);
+    persistVersions(updated);
+  };
+
+  const deleteVersion = (id) => {
+    const updated = removeVersion(versions, id);
+    setVersions(updated);
+    persistVersions(updated);
+  };
+
+  const restoreVersion = (version) => {
+    if (!editor) return;
+    editor.commands.setContent(ensurePagedHTML(version.html), false);
+    setVersionsOpen(false);
+  };
+
+  // ── Export to Word ────────────────────────────────────────────────────────
+  const handleExportDocx = async () => {
+    if (!editor) return;
+    await exportToDocx(editor.getHTML(), 'radiology-report.docx');
   };
 
   const editor = useEditor({
@@ -906,6 +942,10 @@ const NarrativeEditor = React.forwardRef(function NarrativeEditor({
           onTogglePreview={() => setPreviewMode(v => !v)}
           showRuler={showRuler}
           onToggleRuler={() => setShowRuler(v => !v)}
+          onOpenTemplates={() => setTemplatesOpen(true)}
+          onOpenVersionHistory={() => setVersionsOpen(true)}
+          onSaveVersion={saveVersion}
+          onExportDocx={handleExportDocx}
         />
       )}
 
@@ -941,6 +981,26 @@ const NarrativeEditor = React.forwardRef(function NarrativeEditor({
         footer={footerState}
         onSave={(h, f) => { setHeaderState(h); setFooterState(f); }}
         onClose={() => setHeaderFooterOpen(false)}
+      />
+
+      <ReportTemplatesDialog
+        open={templatesOpen}
+        onClose={() => setTemplatesOpen(false)}
+        onInsert={(html) => {
+          editor.chain().focus().insertContent(html).run();
+        }}
+        onReplace={(html) => {
+          editor.commands.setContent(ensurePagedHTML(html), false);
+        }}
+      />
+
+      <VersionHistoryDialog
+        open={versionsOpen}
+        versions={versions}
+        onClose={() => setVersionsOpen(false)}
+        onSave={saveVersion}
+        onRestore={restoreVersion}
+        onDelete={deleteVersion}
       />
 
       {/* Floating toolbars */}

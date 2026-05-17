@@ -2,9 +2,21 @@ import React from 'react';
 import { Btn, BigBtn, Sep, Icon, Group, ICONS } from './RibbonControls';
 
 /**
- * ReviewTab — proofing (spellcheck, find/replace, word count) + voice.
+ * ReviewTab — proofing, word count, voice, version history, export.
  */
-export default function ReviewTab({ editor, wordCount = 0, charCount = 0, spellcheckOn = false, onToggleSpellcheck, voiceSupported = false, voiceActive = false, onToggleVoice }) {
+export default function ReviewTab({
+  editor,
+  wordCount = 0,
+  charCount = 0,
+  spellcheckOn = false,
+  onToggleSpellcheck,
+  voiceSupported = false,
+  voiceActive = false,
+  onToggleVoice,
+  onOpenVersionHistory,
+  onSaveVersion,
+  onExportDocx,
+}) {
   if (!editor) return null;
 
   return (
@@ -43,6 +55,34 @@ export default function ReviewTab({ editor, wordCount = 0, charCount = 0, spellc
           <div style={{ color: '#666' }}>words</div>
           <div style={{ color: '#999', fontSize: '10px', marginTop: '2px' }}>{charCount} chars</div>
         </div>
+      </Group>
+
+      <Sep />
+
+      <Group label="Versions">
+        <BigBtn
+          icon="💾"
+          label="Save Ver."
+          title="Save a snapshot of the current content"
+          onClick={onSaveVersion}
+        />
+        <BigBtn
+          icon="🕑"
+          label="History"
+          title="Browse and restore saved versions"
+          onClick={onOpenVersionHistory}
+        />
+      </Group>
+
+      <Sep />
+
+      <Group label="Export">
+        <BigBtn
+          icon="📄"
+          label="Word .docx"
+          title="Export to Microsoft Word (.docx)"
+          onClick={onExportDocx}
+        />
       </Group>
 
       {voiceSupported && (
