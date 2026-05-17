@@ -193,11 +193,16 @@ export default function AppointmentBoard() {
         };
       });
       
-      // Sort DESCENDING for "Latest First" display on the board
+      // Sort ASCENDING by Token Number as requested
       const finalSortedData = itemsWithTokens.sort((a, b) => {
+        const tokenA = a.tokenNo || 999999;
+        const tokenB = b.tokenNo || 999999;
+        if (tokenA !== tokenB) {
+          return tokenA - tokenB;
+        }
         const timeA = new Date(a.dateTime || 0).getTime();
         const timeB = new Date(b.dateTime || 0).getTime();
-        return timeB - timeA;
+        return timeA - timeB;
       });
 
       setAppointments(finalSortedData);
@@ -351,13 +356,10 @@ export default function AppointmentBoard() {
 
   const stats = {
     total: appointmentsForTab.length,
-    expected: appointmentsForTab.filter(a => {
-      const s = a.status?.toLowerCase();
-      return s === 'scheduled' || s === 'future' || s === 'booked';
-    }).length,
-    confirmed: appointmentsForTab.filter(a => a.status?.toLowerCase() === 'confirmed').length,
+    expected: appointmentsForTab.filter(a => a.status?.toLowerCase() !== 'cancelled').length,
+    confirmed: appointmentsForTab.filter(a => ['confirmed', 'in_progress', 'completed', 'scanned', 'reporting', 'reported'].includes(a.status?.toLowerCase())).length,
     inProgress: appointmentsForTab.filter(a => a.status?.toLowerCase() === 'in_progress').length,
-    completed: appointmentsForTab.filter(a => a.status?.toLowerCase() === 'reported').length,
+    completed: appointmentsForTab.filter(a => ['completed', 'scanned', 'reporting', 'reported'].includes(a.status?.toLowerCase())).length,
     cancelled: appointmentsForTab.filter(a => a.status?.toLowerCase() === 'cancelled').length,
   };
   const completionRate = stats.total > 0 ? Math.round((stats.completed / stats.total) * 100) : 0;
@@ -2379,7 +2381,7 @@ export default function AppointmentBoard() {
         <div className="intel-card">
           <span className="intel-label">Expected/Arrived</span>
           <div className="intel-value" style={{ color: 'var(--primary-accent)' }}>
-            {stats.scheduled} / {stats.confirmed}
+            {stats.expected} / {stats.confirmed}
           </div>
           <div className="intel-trend" style={{ color: 'var(--text-secondary)' }}>
             Scanning: {stats.inProgress}
