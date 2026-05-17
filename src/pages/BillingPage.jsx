@@ -706,7 +706,7 @@ export default function BillingPage() {
     const paidInvoices = safeInvoices.filter(inv => inv?.status === 'PAID');
     const pendingInvoices = safeInvoices.filter(inv => inv?.status === 'PENDING');
     
-    const totalRevenue = safeInvoices.reduce((sum, inv) => sum + (Number(inv?.grossAmount) || 0), 0);
+    const totalRevenue = safeInvoices.reduce((sum, inv) => sum + (Number(inv?.paidAmount) || 0), 0);
     const pendingRevenue = pendingInvoices.reduce((sum, inv) => sum + (Number(inv?.totalAmount) || 0) - (Number(inv?.paidAmount) || 0), 0);
     const pendingCount = pendingInvoices.length;
     
@@ -714,10 +714,10 @@ export default function BillingPage() {
     const realizationRate = totalBilled > 0 ? Math.round((totalRevenue / totalBilled) * 100) : 0;
     const averageTicket = paidInvoices.length > 0 ? Math.round(totalRevenue / paidInvoices.length) : 0;
 
-    const totalGross = totalRevenue;
+    const totalGross = safeInvoices.reduce((sum, inv) => sum + (Number(inv?.grossAmount) || 0), 0);
     const totalDiscount = safeInvoices.reduce((sum, inv) => sum + (Number(inv?.discountAmount) || 0), 0);
     const totalCommission = safeInvoices.reduce((sum, inv) => sum + (Number(inv?.commissionAmount) || 0), 0);
-    const netProfit = totalGross - totalDiscount - totalCommission;
+    const netProfit = totalRevenue - totalCommission;
 
     return { totalRevenue, pendingRevenue, pendingCount, realizationRate, averageTicket, totalGross, totalDiscount, totalCommission, netProfit };
   }, [filteredInvoices]);
