@@ -24,6 +24,21 @@ export default function Ribbon(props) {
   } = props;
 
   const [activeTab, setActiveTab] = useState('home');
+  const [ribbonCollapsed, setRibbonCollapsed] = useState(false);
+
+  const handleTabClick = (id) => {
+    if (ribbonCollapsed) {
+      setRibbonCollapsed(false);
+      setActiveTab(id);
+    } else {
+      setActiveTab(id);
+    }
+  };
+
+  const handleTabDoubleClick = (id) => {
+    setActiveTab(id);
+    setRibbonCollapsed(c => !c);
+  };
 
   if (!editor) return null;
 
@@ -134,7 +149,8 @@ export default function Ribbon(props) {
             return (
               <button
                 key={t.id}
-                onMouseDown={e => { e.preventDefault(); setActiveTab(t.id); }}
+                onMouseDown={e => { e.preventDefault(); handleTabClick(t.id); }}
+                onDoubleClick={e => { e.preventDefault(); handleTabDoubleClick(t.id); }}
                 style={{
                   border: 'none',
                   background: isActive ? '#fafafa' : 'transparent',
@@ -247,16 +263,38 @@ export default function Ribbon(props) {
               title="Save (Ctrl+S)"
             >Save</button>
           )}
+
+          {/* Collapse/expand ribbon toggle */}
+          <button
+            onMouseDown={e => { e.preventDefault(); setRibbonCollapsed(c => !c); }}
+            title={ribbonCollapsed ? 'Expand ribbon (Ctrl+F1)' : 'Collapse ribbon (Ctrl+F1)'}
+            style={{
+              width: '22px', height: '22px', borderRadius: '3px',
+              background: 'transparent', border: '1px solid transparent',
+              color: '#555', fontSize: '10px', fontWeight: 700,
+              cursor: 'pointer', fontFamily: 'inherit',
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              flexShrink: 0,
+              transition: 'background 0.1s, border-color 0.1s',
+            }}
+            onMouseEnter={e => { e.currentTarget.style.background = '#eff6fc'; e.currentTarget.style.borderColor = '#d6e6f5'; }}
+            onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.borderColor = 'transparent'; }}
+          >
+            {ribbonCollapsed ? '⌄' : '⌃'}
+          </button>
         </div>
       </div>
 
       {/* ── Active tab body ──────────────────────────────── */}
       <div style={{
-        height: '98px', padding: '4px 10px',
+        height: ribbonCollapsed ? '0' : '98px',
+        padding: ribbonCollapsed ? '0 10px' : '4px 10px',
         background: '#fafafa',
-        overflowX: 'auto', overflowY: 'visible',
+        overflowX: ribbonCollapsed ? 'hidden' : 'auto',
+        overflowY: 'hidden',
         msOverflowStyle: 'none',
         scrollbarWidth: 'none',
+        transition: 'height 0.18s ease, padding 0.18s ease',
       }}>
         <style>{`.word-ribbon ::-webkit-scrollbar { display: none; }`}</style>
         {activeTab === 'home'   && <HomeTab   {...props} />}

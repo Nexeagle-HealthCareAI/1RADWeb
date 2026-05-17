@@ -1,6 +1,19 @@
 import React from 'react';
 import { Btn, BigBtn, Sep, Icon, Group, ICONS } from './RibbonControls';
 
+/** Inserts a radiology report section heading + empty body paragraph. */
+function insertSection(editor, title) {
+  editor.chain().focus().insertContent(`<h2>${title}</h2><p></p>`).run();
+}
+
+const SECTIONS = [
+  { key: 'clinical',        label: 'Clinical Hx',   title: 'Clinical History',  icon: '📋' },
+  { key: 'technique',       label: 'Technique',      title: 'Technique',         icon: '⚙️' },
+  { key: 'findings',        label: 'Findings',       title: 'Findings',          icon: '🔍' },
+  { key: 'impression',      label: 'Impression',     title: 'Impression',        icon: '📝' },
+  { key: 'recommendation',  label: 'Recommend.',     title: 'Recommendation',    icon: '💡' },
+];
+
 /**
  * InsertTab — table, image, link, page break, symbol, etc.
  */
@@ -9,6 +22,38 @@ export default function InsertTab({ editor }) {
 
   return (
     <div style={{ display: 'flex', alignItems: 'stretch', height: '100%' }}>
+      {/* ── Radiology Sections ── */}
+      <Group label="Report Sections">
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', justifyContent: 'center', height: '100%' }}>
+          <div style={{ display: 'flex', gap: '2px' }}>
+            {SECTIONS.slice(0, 3).map(s => (
+              <Btn
+                key={s.key}
+                title={`Insert "${s.title}" section`}
+                onClick={() => insertSection(editor, s.title)}
+                style={{ fontSize: '10px', padding: '0 5px', whiteSpace: 'nowrap', height: '22px' }}
+              >
+                {s.icon} {s.label}
+              </Btn>
+            ))}
+          </div>
+          <div style={{ display: 'flex', gap: '2px' }}>
+            {SECTIONS.slice(3).map(s => (
+              <Btn
+                key={s.key}
+                title={`Insert "${s.title}" section`}
+                onClick={() => insertSection(editor, s.title)}
+                style={{ fontSize: '10px', padding: '0 5px', whiteSpace: 'nowrap', height: '22px' }}
+              >
+                {s.icon} {s.label}
+              </Btn>
+            ))}
+          </div>
+        </div>
+      </Group>
+
+      <Sep />
+
       <Group label="Tables">
         <BigBtn
           icon={<Icon d={ICONS.table} size={20} />}

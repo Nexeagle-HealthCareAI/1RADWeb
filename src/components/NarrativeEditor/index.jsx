@@ -218,6 +218,15 @@ const NarrativeEditor = React.forwardRef(function NarrativeEditor({
   const autoSaveTimerRef = useRef(null);
   const fadeTimerRef = useRef(null);
 
+  // Word count goal
+  const [wordCountGoal, setWordCountGoal] = useState(null); // null | number
+
+  // Preview / reading mode
+  const [previewMode, setPreviewMode] = useState(false);
+
+  // Ruler
+  const [showRuler, setShowRuler] = useState(true);
+
   // Voice dictation — text inserted at cursor when a phrase finalises.
   const voice = useVoiceDictation({
     onResult: (text) => {
@@ -866,24 +875,32 @@ const NarrativeEditor = React.forwardRef(function NarrativeEditor({
 
   return (
     <div ref={containerRef} className={`narrative-editor-container ${className}`} style={style}>
-      <Ribbon
-        editor={editor}
-        onSave={onSave}
-        isFullscreen={isFullscreen}
-        toggleFullscreen={toggleFullscreen}
-        zoom={zoom}
-        setZoom={setZoom}
-        zoomLevels={ZOOM_LEVELS}
-        wordCount={editor.storage.characterCount?.words() ?? 0}
-        charCount={editor.storage.characterCount?.characters() ?? 0}
-        spellcheckOn={spellcheckOn}
-        onToggleSpellcheck={() => setSpellcheckOn(v => !v)}
-        voiceSupported={voice.supported}
-        voiceActive={voice.active}
-        onToggleVoice={voice.toggle}
-        showFormattingMarks={showFormattingMarks}
-        onToggleFormattingMarks={() => setShowFormattingMarks(v => !v)}
-      />
+      {!previewMode && (
+        <Ribbon
+          editor={editor}
+          onSave={onSave}
+          isFullscreen={isFullscreen}
+          toggleFullscreen={toggleFullscreen}
+          zoom={zoom}
+          setZoom={setZoom}
+          zoomLevels={ZOOM_LEVELS}
+          wordCount={editor.storage.characterCount?.words() ?? 0}
+          charCount={editor.storage.characterCount?.characters() ?? 0}
+          spellcheckOn={spellcheckOn}
+          onToggleSpellcheck={() => setSpellcheckOn(v => !v)}
+          voiceSupported={voice.supported}
+          voiceActive={voice.active}
+          onToggleVoice={voice.toggle}
+          showFormattingMarks={showFormattingMarks}
+          onToggleFormattingMarks={() => setShowFormattingMarks(v => !v)}
+          wordCountGoal={wordCountGoal}
+          setWordCountGoal={setWordCountGoal}
+          previewMode={previewMode}
+          onTogglePreview={() => setPreviewMode(v => !v)}
+          showRuler={showRuler}
+          onToggleRuler={() => setShowRuler(v => !v)}
+        />
+      )}
 
       <div className={`word-canvas${showFormattingMarks ? ' show-formatting-marks' : ''}`} style={{ '--zoom': zoom / 100, position: 'relative' }}>
         <EditorContent editor={editor} />
@@ -941,7 +958,17 @@ const NarrativeEditor = React.forwardRef(function NarrativeEditor({
             >▼</button>
           </span>
           <span className="statusbar-sep" />
-          <span>{wordCount} words</span>
+          <span
+            className={
+              wordCountGoal == null ? ''
+              : wordCount >= wordCountGoal ? 'wc-goal-met'
+              : wordCount >= wordCountGoal * 0.8 ? 'wc-goal-near'
+              : 'wc-goal-under'
+            }
+            title={wordCountGoal ? `Goal: ${wordCountGoal} words` : undefined}
+          >
+            {wordCount} words{wordCountGoal ? ` / ${wordCountGoal}` : ''}
+          </span>
           <span className="statusbar-sep" />
           <span>{charCount} characters</span>
         </div>

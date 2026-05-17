@@ -1057,7 +1057,7 @@ export default function AppointmentBoard() {
           onClick={() => setExpandedRow(isExpanded ? null : app.appointmentId)}
           style={{ 
             display: 'grid',
-            gridTemplateColumns: '85px 70px 1.8fr 1.2fr 110px 120px 1fr 180px',
+            gridTemplateColumns: '100px 70px 2fr 1.2fr 110px 130px 1fr 180px',
             gap: '15px',
             padding: '16px 20px',
             alignItems: 'center',
@@ -1066,21 +1066,19 @@ export default function AppointmentBoard() {
           }}
         >
           {/* Column 1: ID */}
-          <div style={{ display: 'flex', flexDirection: 'column' }}>
-            <span style={{ fontSize: '8px', fontWeight: 900, color: '#94a3b8', textTransform: 'uppercase' }}>Mission ID</span>
-            <span style={{ fontSize: '11px', fontWeight: 950, color: '#1e293b' }}>
-              {app.ptid || app.patientIdentifier || app.id?.substring(0,8) || '—'}
+          <div>
+            <span style={{ fontFamily: 'monospace', fontSize: '11px', fontWeight: 800, color: '#64748b', background: '#f1f5f9', padding: '4px 8px', borderRadius: '6px' }}>
+              #{app.ptid || app.patientIdentifier || app.id?.substring(0,8) || '—'}
             </span>
           </div>
 
           {/* Column 2: Token */}
-          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
-            <span style={{ fontSize: '8px', fontWeight: 900, color: '#94a3b8', textTransform: 'uppercase', marginBottom: '4px' }}>Token</span>
+          <div style={{ display: 'flex', justifyContent: 'center' }}>
             <div style={{ 
-              width: '36px', height: '36px', borderRadius: '10px', 
-              background: '#0f52ba', color: 'white', 
+              width: '32px', height: '32px', borderRadius: '8px', 
+              background: 'rgba(15, 82, 186, 0.08)', color: '#0f52ba', 
               display: 'flex', alignItems: 'center', justifyContent: 'center', 
-              fontWeight: 950, fontSize: '16px', boxShadow: '0 4px 10px rgba(15, 82, 186, 0.2)'
+              fontWeight: 950, fontSize: '14px', border: '1.5px solid rgba(15, 82, 186, 0.2)'
             }}>
               {app.tokenNo || '—'}
             </div>
@@ -1088,22 +1086,32 @@ export default function AppointmentBoard() {
 
           {/* Column 3: Patient & Service */}
           <div>
-            <div style={{ fontWeight: 900, color: '#0f172a', fontSize: '14px', marginBottom: '2px' }}>{app.patientName.toUpperCase()}</div>
-            <div style={{ fontSize: '10px', color: '#64748b', fontWeight: 700 }}>
-              <span style={{ color: '#0f52ba' }}>{app.modality}</span> • {app.service}
+            <div style={{ fontWeight: 800, color: '#0f172a', fontSize: '13.5px', letterSpacing: '-0.2px' }}>
+              {app.patientName.toUpperCase()}
+            </div>
+            <div style={{ fontSize: '10px', color: '#64748b', fontWeight: 700, marginTop: '2px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+              <span style={{ color: '#0f52ba', background: '#eff6ff', padding: '2px 6px', borderRadius: '4px', fontSize: '9px', fontWeight: 900 }}>
+                {app.modality}
+              </span>
+              <span>•</span>
+              <span style={{ textTransform: 'uppercase' }}>{app.service}</span>
             </div>
           </div>
 
           {/* Column 4: Referred By */}
-          <div style={{ background: '#f8fafc', padding: '8px 12px', borderRadius: '10px', border: '1px solid #f1f5f9' }}>
-            <span style={{ fontSize: '8px', color: '#94a3b8', fontWeight: 800, textTransform: 'uppercase', display: 'block', marginBottom: '2px' }}>Referring Lead</span>
-            <div style={{ fontSize: '11px', fontWeight: 800, color: '#1e293b' }}>{app.referredBy || 'DIRECT/SELF'}</div>
+          <div>
+            <div style={{ fontSize: '12px', fontWeight: 700, color: '#334155' }}>
+              {app.referredBy || 'DIRECT/SELF'}
+            </div>
+            <div style={{ fontSize: '9px', color: '#94a3b8', fontWeight: 700, textTransform: 'uppercase', marginTop: '1px' }}>
+              REFERRING DR.
+            </div>
           </div>
 
           {/* Column 5: Date */}
           <div>
-            <div style={{ fontSize: '11px', fontWeight: 900, color: '#1e293b' }}>{appDate}</div>
-            <div style={{ fontSize: '10px', color: '#64748b', fontWeight: 700 }}>{appTime}</div>
+            <div style={{ fontSize: '12px', fontWeight: 800, color: '#1e293b' }}>{appDate}</div>
+            <div style={{ fontSize: '10px', color: '#64748b', fontWeight: 700, marginTop: '2px' }}>{appTime}</div>
           </div>
 
           {/* Column 6: Status */}
@@ -1124,8 +1132,12 @@ export default function AppointmentBoard() {
 
           {/* Column 7: Specialist */}
           <div>
-            <div style={{ fontSize: '11px', fontWeight: 800, color: '#1e293b' }}>{app.doctor || 'UNASSIGNED'}</div>
-            <div style={{ fontSize: '9px', color: '#94a3b8', textTransform: 'uppercase', fontWeight: 800 }}>Clinical Lead</div>
+            <div style={{ fontSize: '12px', fontWeight: 700, color: '#1e293b' }}>
+              {app.doctor || 'UNASSIGNED'}
+            </div>
+            <div style={{ fontSize: '9px', color: '#94a3b8', textTransform: 'uppercase', fontWeight: 700, marginTop: '1px' }}>
+              CLINICAL SPECIALIST
+            </div>
           </div>
 
           {/* Column 8: Actions */}
@@ -2436,7 +2448,7 @@ export default function AppointmentBoard() {
         {!isMobile && (
           <div style={{
             display: 'grid',
-            gridTemplateColumns: '85px 70px 1.8fr 1.2fr 110px 120px 1fr 180px',
+            gridTemplateColumns: '100px 70px 2fr 1.2fr 110px 130px 1fr 180px',
             gap: '15px',
             padding: '0 20px 10px',
             fontSize: '9px', fontWeight: 800, color: '#aaa',
@@ -2445,10 +2457,10 @@ export default function AppointmentBoard() {
             <span>Mission ID</span>
             <span style={{ textAlign: 'center' }}>Token</span>
             <span>Patient & Service</span>
-            <span>Referring Lead</span>
-            <span>Date</span>
+            <span>Referring Dr.</span>
+            <span>Scheduled Date</span>
             <span>Status</span>
-            <span>Clinical Lead</span>
+            <span>Clinical Specialist</span>
             <span style={{ textAlign: 'right', paddingRight: '20px' }}>Mission Control</span>
           </div>
         )}
