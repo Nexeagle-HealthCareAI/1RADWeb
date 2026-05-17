@@ -2,7 +2,7 @@ import React, { useState, useRef, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import {
   Btn, BigBtn, Sep, Icon, Group, selectStyle, ICONS,
-  FONT_FAMILIES, FONT_SIZES, HIGHLIGHTS, ColorPicker,
+  FONT_FAMILIES, FONT_SIZES, HIGHLIGHTS, ColorPicker, SplitButton,
 } from './RibbonControls';
 import StylesGallery from './StylesGallery';
 import { editorPrompt } from '../dialogs/PromptDialog';
@@ -129,6 +129,134 @@ const ChangeCaseDropdown = ({ editor }) => {
  * Small row-style button used for the stacked Cut / Copy / Painter list
  * in the Clipboard group. Compact 18px row.
  */
+/** Small portaled dropdown menu for picking a list marker style. */
+const ListStyleMenu = ({ anchor, items, onPick, onClose }) => {
+  const [pos, setPos] = useState({ top: 0, left: 0 });
+  const [target, setTarget] = useState(() =>
+    typeof document !== 'undefined' ? (document.fullscreenElement || document.body) : null
+  );
+  const menuRef = useRef(null);
+
+  useEffect(() => {
+    const onFs = () => setTarget(document.fullscreenElement || document.body);
+    document.addEventListener('fullscreenchange', onFs);
+    return () => document.removeEventListener('fullscreenchange', onFs);
+  }, []);
+
+  useEffect(() => {
+    if (!anchor) return;
+    const r = anchor.getBoundingClientRect();
+    setPos({ top: r.bottom + 4, left: r.left });
+    const onDown = e => { if (menuRef.current && !menuRef.current.contains(e.target) && !anchor.contains(e.target)) onClose(); };
+    const t = setTimeout(() => document.addEventListener('mousedown', onDown), 0);
+    return () => { clearTimeout(t); document.removeEventListener('mousedown', onDown); };
+  }, [anchor, onClose]);
+
+  if (!target) return null;
+  return createPortal(
+    <div ref={menuRef} style={{
+      position: 'fixed', top: pos.top, left: pos.left,
+      background: '#fff', border: '1px solid #d1d5db', borderRadius: '4px',
+      boxShadow: '0 8px 24px rgba(0,0,0,0.18)',
+      padding: '4px', zIndex: 13000, minWidth: '140px',
+      fontFamily: '"Segoe UI", system-ui, sans-serif',
+    }}>
+      {items.map(it => (
+        <button
+          key={it.id}
+          onMouseDown={e => { e.preventDefault(); onPick(it.id); onClose(); }}
+          style={{
+            display: 'flex', alignItems: 'center', gap: '10px',
+            width: '100%', padding: '5px 10px',
+            background: 'transparent', border: 'none', borderRadius: '3px',
+            cursor: 'pointer', fontSize: '12px', color: '#374151',
+            fontFamily: 'inherit', textAlign: 'left',
+          }}
+          onMouseEnter={e => e.currentTarget.style.background = '#f3f4f6'}
+          onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
+        >
+          <span style={{ width: '24px', fontWeight: 700, fontFamily: '"Cascadia Code", Consolas, monospace' }}>{it.label}</span>
+          <span style={{ color: '#6b7280' }}>{it.desc}</span>
+        </button>
+      ))}
+    </div>,
+    target
+  );
+};
+
+/** Portaled menu for paragraph borders. */
+const BordersMenu = ({ anchor, onPick, onClear, onClose }) => {
+  const [pos, setPos] = useState({ top: 0, left: 0 });
+  const [target, setTarget] = useState(() =>
+    typeof document !== 'undefined' ? (document.fullscreenElement || document.body) : null
+  );
+  const menuRef = useRef(null);
+
+  useEffect(() => {
+    const onFs = () => setTarget(document.fullscreenElement || document.body);
+    document.addEventListener('fullscreenchange', onFs);
+    return () => document.removeEventListener('fullscreenchange', onFs);
+  }, []);
+
+  useEffect(() => {
+    if (!anchor) return;
+    const r = anchor.getBoundingClientRect();
+    setPos({ top: r.bottom + 4, left: r.left });
+    const onDown = e => { if (menuRef.current && !menuRef.current.contains(e.target) && !anchor.contains(e.target)) onClose(); };
+    const t = setTimeout(() => document.addEventListener('mousedown', onDown), 0);
+    return () => { clearTimeout(t); document.removeEventListener('mousedown', onDown); };
+  }, [anchor, onClose]);
+
+  const items = [
+    { id: 'bottom', label: 'Bottom Border' },
+    { id: 'top',    label: 'Top Border' },
+    { id: 'left',   label: 'Left Border' },
+    { id: 'right',  label: 'Right Border' },
+    { id: 'all',    label: 'All Borders' },
+    { id: 'box',    label: 'Outside Borders' },
+  ];
+
+  if (!target) return null;
+  return createPortal(
+    <div ref={menuRef} style={{
+      position: 'fixed', top: pos.top, left: pos.left,
+      background: '#fff', border: '1px solid #d1d5db', borderRadius: '4px',
+      boxShadow: '0 8px 24px rgba(0,0,0,0.18)',
+      padding: '4px', zIndex: 13000, minWidth: '170px',
+      fontFamily: '"Segoe UI", system-ui, sans-serif',
+    }}>
+      {items.map(it => (
+        <button
+          key={it.id}
+          onMouseDown={e => { e.preventDefault(); onPick(it.id); onClose(); }}
+          style={{
+            width: '100%', padding: '6px 10px',
+            background: 'transparent', border: 'none', borderRadius: '3px',
+            cursor: 'pointer', fontSize: '12px', color: '#374151',
+            fontFamily: 'inherit', textAlign: 'left',
+          }}
+          onMouseEnter={e => e.currentTarget.style.background = '#f3f4f6'}
+          onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
+        >{it.label}</button>
+      ))}
+      <div style={{ borderTop: '1px solid #e5e7eb', marginTop: '4px', paddingTop: '4px' }}>
+        <button
+          onMouseDown={e => { e.preventDefault(); onClear(); onClose(); }}
+          style={{
+            width: '100%', padding: '6px 10px',
+            background: 'transparent', border: 'none', borderRadius: '3px',
+            cursor: 'pointer', fontSize: '12px', color: '#dc2626',
+            fontFamily: 'inherit', textAlign: 'left',
+          }}
+          onMouseEnter={e => e.currentTarget.style.background = '#fef2f2'}
+          onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
+        >No Border</button>
+      </div>
+    </div>,
+    target
+  );
+};
+
 const SmallRowBtn = ({ label, icon, title, active, onClick }) => (
   <button
     onMouseDown={e => { e.preventDefault(); onClick?.(); }}
@@ -160,11 +288,19 @@ const SmallRowBtn = ({ label, icon, title, active, onClick }) => (
  * HomeTab — primary formatting controls.
  * Groups: Clipboard | Font | Paragraph | Styles | History
  */
-export default function HomeTab({ editor }) {
+export default function HomeTab({ editor, showFormattingMarks, onToggleFormattingMarks }) {
   const [showColors, setShowColors] = useState(false);
   const [showHighlights, setShowHighlights] = useState(false);
+  const [showBullet, setShowBullet] = useState(false);
+  const [showOrdered, setShowOrdered] = useState(false);
+  const [showShading, setShowShading] = useState(false);
+  const [showBorders, setShowBorders] = useState(false);
   const colorBtnRef = useRef(null);
   const hlBtnRef = useRef(null);
+  const bulletBtnRef = useRef(null);
+  const orderedBtnRef = useRef(null);
+  const shadingBtnRef = useRef(null);
+  const bordersBtnRef = useRef(null);
 
   if (!editor) return null;
 
@@ -316,13 +452,57 @@ export default function HomeTab({ editor }) {
       {/* ── Paragraph group ─────────────────────────────── */}
       <Group label="Paragraph" onLauncher={() => window.dispatchEvent(new CustomEvent('narrative-editor:open-paragraph-dialog'))}>
         <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', alignItems: 'flex-start' }}>
-          <div style={{ display: 'flex', gap: '1px' }}>
-            <Btn onClick={() => editor.chain().focus().toggleBulletList().run()} active={editor.isActive('bulletList')} title="Bullet List (Ctrl+Shift+8)">
+          <div style={{ display: 'flex', gap: '1px', alignItems: 'center' }}>
+            {/* Bullet list — split button */}
+            <SplitButton
+              btnRef={bulletBtnRef}
+              active={editor.isActive('bulletList')}
+              caretOpen={showBullet}
+              title="Bullet List (Ctrl+Shift+L)"
+              onMain={() => editor.chain().focus().toggleBulletList().run()}
+              onCaret={() => { setShowBullet(v => !v); setShowOrdered(false); }}
+            >
               <Icon d={ICONS.bulletList} />
-            </Btn>
-            <Btn onClick={() => editor.chain().focus().toggleOrderedList().run()} active={editor.isActive('orderedList')} title="Numbered List (Ctrl+Shift+7)">
+            </SplitButton>
+            {showBullet && (
+              <ListStyleMenu
+                anchor={bulletBtnRef.current}
+                onClose={() => setShowBullet(false)}
+                items={[
+                  { id: 'disc',   label: '•', desc: 'Disc (•)' },
+                  { id: 'circle', label: '◦', desc: 'Circle (○)' },
+                  { id: 'square', label: '▪', desc: 'Square (▪)' },
+                ]}
+                onPick={(s) => editor.chain().focus().setBulletStyle(s).run()}
+              />
+            )}
+
+            {/* Numbered list — split button */}
+            <SplitButton
+              btnRef={orderedBtnRef}
+              active={editor.isActive('orderedList')}
+              caretOpen={showOrdered}
+              title="Numbered List (Ctrl+Shift+7)"
+              onMain={() => editor.chain().focus().toggleOrderedList().run()}
+              onCaret={() => { setShowOrdered(v => !v); setShowBullet(false); }}
+            >
               <Icon d={ICONS.orderedList} />
-            </Btn>
+            </SplitButton>
+            {showOrdered && (
+              <ListStyleMenu
+                anchor={orderedBtnRef.current}
+                onClose={() => setShowOrdered(false)}
+                items={[
+                  { id: 'decimal',     label: '1.', desc: '1, 2, 3' },
+                  { id: 'lower-alpha', label: 'a.', desc: 'a, b, c' },
+                  { id: 'upper-alpha', label: 'A.', desc: 'A, B, C' },
+                  { id: 'lower-roman', label: 'i.', desc: 'i, ii, iii' },
+                  { id: 'upper-roman', label: 'I.', desc: 'I, II, III' },
+                ]}
+                onPick={(s) => editor.chain().focus().setOrderedStyle(s).run()}
+              />
+            )}
+
             <Btn
               onClick={() => {
                 if (editor.can().liftListItem('listItem')) editor.chain().focus().liftListItem('listItem').run();
@@ -339,6 +519,12 @@ export default function HomeTab({ editor }) {
               title="Increase Indent (Tab)"
               style={{ fontSize: '14px' }}
             >⇥</Btn>
+            <Btn
+              onClick={() => onToggleFormattingMarks?.()}
+              active={!!showFormattingMarks}
+              title="Show/Hide formatting marks (¶)"
+              style={{ fontSize: '13px', fontWeight: 700 }}
+            >¶</Btn>
             <select
               value={editor.getAttributes('paragraph').lineHeight || editor.getAttributes('heading').lineHeight || ''}
               onChange={async e => {
@@ -389,6 +575,61 @@ export default function HomeTab({ editor }) {
             <Btn onClick={() => editor.chain().focus().setTextAlign('justify').run()} active={editor.isActive({ textAlign: 'justify' })} title="Justify (Ctrl+J)">
               <Icon d={ICONS.alignJ} />
             </Btn>
+
+            {/* Shading — paragraph background color */}
+            <span ref={shadingBtnRef} style={{ display: 'inline-flex' }}>
+              <Btn
+                onClick={() => { setShowShading(v => !v); setShowBorders(false); }}
+                active={showShading || !!editor.getAttributes('paragraph').shading}
+                title="Paragraph Shading"
+                style={{ minWidth: '30px' }}
+              >
+                <span style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '1px' }}>
+                  <span style={{ fontSize: '11px' }}>🪣</span>
+                  <span style={{
+                    width: '14px', height: '3px',
+                    background: editor.getAttributes('paragraph').shading || '#ffeb3b',
+                    borderRadius: '1px',
+                  }} />
+                </span>
+              </Btn>
+            </span>
+            {showShading && (
+              <ColorPicker
+                anchorEl={shadingBtnRef.current}
+                onSelect={c => editor.chain().focus().setParagraphShading(c).run()}
+                onClear={() => editor.chain().focus().unsetParagraphShading().run()}
+                onClose={() => setShowShading(false)}
+                clearLabel="No shading"
+              />
+            )}
+
+            {/* Borders */}
+            <span ref={bordersBtnRef} style={{ display: 'inline-flex' }}>
+              <Btn
+                onClick={() => { setShowBorders(v => !v); setShowShading(false); }}
+                active={showBorders || !!editor.getAttributes('paragraph').borders}
+                title="Paragraph Borders"
+                style={{ minWidth: '30px' }}
+              >
+                <span style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '1px' }}>
+                  <span style={{
+                    width: '14px', height: '10px',
+                    border: '1px solid currentColor',
+                    boxSizing: 'border-box',
+                  }} />
+                  <span style={{ fontSize: '7px', lineHeight: 1 }}>▾</span>
+                </span>
+              </Btn>
+            </span>
+            {showBorders && (
+              <BordersMenu
+                anchor={bordersBtnRef.current}
+                onClose={() => setShowBorders(false)}
+                onPick={(b) => editor.chain().focus().setParagraphBorders(b).run()}
+                onClear={() => editor.chain().focus().unsetParagraphBorders().run()}
+              />
+            )}
           </div>
         </div>
       </Group>

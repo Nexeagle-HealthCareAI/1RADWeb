@@ -61,6 +61,51 @@ export const Sep = () => (
   <div style={{ width: '1px', height: '52px', background: '#d1d1d1', margin: '0 6px', flexShrink: 0 }} />
 );
 
+/**
+ * SplitButton — Word-style split button: main action on the left, a small
+ * caret ▾ on the right that toggles a dropdown menu (rendered by caller).
+ */
+export const SplitButton = ({
+  active, title, onMain, onCaret, caretOpen, children, mainStyle = {}, btnRef,
+}) => (
+  <span style={{
+    display: 'inline-flex', alignItems: 'stretch', height: '28px',
+    background: active ? '#cce4f7' : 'transparent',
+    border: `1px solid ${active || caretOpen ? '#90c8f0' : 'transparent'}`,
+    borderRadius: '3px',
+    overflow: 'hidden',
+    flexShrink: 0,
+  }} ref={btnRef}>
+    <button
+      onMouseDown={e => { e.preventDefault(); onMain?.(); }}
+      title={title}
+      style={{
+        background: 'transparent', border: 'none',
+        padding: '0 4px',
+        display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+        color: active ? '#003a75' : '#323130',
+        cursor: 'pointer', minWidth: '24px',
+        fontFamily: 'inherit',
+        ...mainStyle,
+      }}
+      onMouseEnter={e => { if (!active) e.currentTarget.parentElement.style.background = '#e8e8e8'; }}
+      onMouseLeave={e => { if (!active) e.currentTarget.parentElement.style.background = 'transparent'; }}
+    >{children}</button>
+    <button
+      onMouseDown={e => { e.preventDefault(); onCaret?.(); }}
+      title={`${title} options`}
+      style={{
+        background: caretOpen ? '#cce4f7' : 'transparent',
+        border: 'none', borderLeft: '1px solid rgba(0,0,0,0.05)',
+        padding: '0 2px',
+        cursor: 'pointer', fontSize: '8px', color: '#666',
+        display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+        fontFamily: 'inherit',
+      }}
+    >▾</button>
+  </span>
+);
+
 export const Icon = ({ d, size = 14 }) => (
   <svg width={size} height={size} viewBox="0 0 16 16" fill="currentColor" style={{ display: 'block', pointerEvents: 'none' }}>
     <path d={d} />

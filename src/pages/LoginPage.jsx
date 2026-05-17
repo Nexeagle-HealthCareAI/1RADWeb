@@ -126,24 +126,19 @@ export default function LoginPage() {
     <div className="auth-immersive-container">
       <RadiologyWorkflowBG />
       <div className="immersive-brand">
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-start', marginBottom: '5px' }}>
-          <div className="immersive-logo" style={{ 
-            background: 'linear-gradient(135deg, #00f2fe 0%, #0f52ba 100%)',
-            boxShadow: '0 0 20px rgba(0, 242, 254, 0.4)', 
-            height: '32px', width: '32px', 
-            marginRight: '15px', 
-            display: 'flex', 
-            alignItems: 'center',
-            justifyContent: 'center',
-            borderRadius: '8px',
-            color: 'white',
-            fontWeight: 950,
-            fontSize: '14px'
-          }}>
-            1R
-          </div>
-          <div className="immersive-logo-text" style={{ fontSize: '26px', fontWeight: 950, color: 'white', letterSpacing: '3px', lineHeight: 1 }}>
-            1<span style={{ color: '#00f2fe' }}>RAD</span>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-start', marginBottom: '15px' }}>
+          <img
+            src="/Logo.png"
+            alt="NexEagle"
+            style={{
+              width: '48px', height: '48px',
+              objectFit: 'contain', flexShrink: 0, borderRadius: '12px',
+              boxShadow: '0 8px 24px rgba(0, 242, 254, 0.3)'
+            }}
+          />
+          <div style={{ display: 'flex', flexDirection: 'column', lineHeight: 1.15, marginLeft: '16px' }}>
+            <span style={{ fontSize: '32px', fontWeight: 900, color: '#ffffff', letterSpacing: '-0.5px' }}>NexEagle</span>
+            <span style={{ fontSize: '14px', fontWeight: 700, color: '#00f2fe', letterSpacing: '2px', textTransform: 'uppercase' }}>1Rad</span>
           </div>
         </div>
         <div className="immersive-tagline">Radiology Management System</div>
@@ -153,7 +148,17 @@ export default function LoginPage() {
       </div>
 
       <div className="glass-card">
-        <div className="auth-header" style={{ textAlign: 'center', marginBottom: '30px' }}>
+        <div className="auth-header" style={{ textAlign: 'center', marginBottom: '30px', display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+          <img
+            src="/Logo.png"
+            alt="NexEagle"
+            style={{
+              width: '40px', height: '40px',
+              objectFit: 'contain', borderRadius: '10px',
+              marginBottom: '16px',
+              boxShadow: '0 4px 16px rgba(0, 0, 0, 0.2)'
+            }}
+          />
           <h2 className="auth-title" style={{ color: '#fff', fontSize: '24px', fontWeight: 900 }}>Welcome Back</h2>
           <p className="auth-subtitle" style={{ color: 'rgba(255,255,255,0.5)', fontSize: '12px' }}>Sign in to your account to continue</p>
         </div>

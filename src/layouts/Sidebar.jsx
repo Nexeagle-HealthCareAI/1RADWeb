@@ -240,7 +240,7 @@ export default function Sidebar({ isMobileOpen, onMobileClose }) {
       className={`sidebar ${showCollapsed ? 'collapsed' : ''} ${isMobileOpen ? 'mobile-open' : ''}`}
       style={{
         width: sidebarW, minWidth: sidebarW,
-        height: '100dvh', // Changed to 100dvh
+        height: '100%',
         background: T.bg,
         borderRight: `1px solid ${T.borderStrong}`,
         display: 'flex', flexDirection: 'column',
@@ -254,37 +254,38 @@ export default function Sidebar({ isMobileOpen, onMobileClose }) {
 
       {/* ══ HEADER ══ */}
       <div style={{
-        height: '60px', flexShrink: 0,
+        height: '68px', flexShrink: 0,
         borderBottom: `1px solid ${T.border}`,
         display: 'flex', alignItems: 'center',
         justifyContent: 'space-between',
-        padding: showCollapsed ? '0 7px' : '0 12px',
-        gap: '8px', overflow: 'hidden',
+        padding: showCollapsed ? '0 13px' : '0 18px',
+        gap: '12px', overflow: 'hidden',
         transition: 'padding 0.22s cubic-bezier(0.4,0,0.2,1)',
       }}>
 
         {/* Left: logo always visible + text slides out */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', minWidth: 0, overflow: 'hidden' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '12px', minWidth: 0, overflow: 'hidden' }}>
           {/* Logo — never hides */}
           <img
             src="/Logo.png"
             alt="NexEagle"
             style={{
-              width: '26px', height: '26px',
-              objectFit: 'contain', flexShrink: 0, borderRadius: '5px',
+              width: '34px', height: '34px',
+              objectFit: 'contain', flexShrink: 0, borderRadius: '8px',
+              boxShadow: '0 4px 12px rgba(0,0,0,0.15)'
             }}
           />
           {/* Text — slides out on collapse */}
           <div style={{
             overflow: 'hidden',
-            maxWidth: showCollapsed ? 0 : '140px',
+            maxWidth: showCollapsed ? 0 : '160px',
             opacity: showCollapsed ? 0 : 1,
             transition: 'max-width 0.22s cubic-bezier(0.4,0,0.2,1), opacity 0.16s ease',
             whiteSpace: 'nowrap',
           }}>
-            <div style={{ display: 'flex', flexDirection: 'column', lineHeight: 1.25 }}>
-              <span style={{ fontSize: '13px', fontWeight: 700, color: T.textHigh, letterSpacing: '-0.2px', fontFamily: FF }}>NexEagle</span>
-              <span style={{ fontSize: '10px', fontWeight: 600, color: T.accent, letterSpacing: '0.3px', fontFamily: FF }}>1Rad</span>
+            <div style={{ display: 'flex', flexDirection: 'column', lineHeight: 1.15 }}>
+              <span style={{ fontSize: '18px', fontWeight: 800, color: T.textHigh, letterSpacing: '-0.4px', fontFamily: FF }}>NexEagle</span>
+              <span style={{ fontSize: '11px', fontWeight: 700, color: T.accent, letterSpacing: '1px', fontFamily: FF, textTransform: 'uppercase', marginTop: '2px' }}>1Rad</span>
             </div>
           </div>
         </div>
@@ -314,7 +315,8 @@ export default function Sidebar({ isMobileOpen, onMobileClose }) {
           title={showCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
           style={{
             position: 'absolute',
-            top: '18px',
+            top: '68px',
+            marginTop: '-12px',
             right: '-12px',
             display: 'flex', alignItems: 'center', justifyContent: 'center',
             width: '24px', height: '24px', flexShrink: 0,

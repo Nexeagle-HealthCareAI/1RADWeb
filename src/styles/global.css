@@ -114,6 +114,12 @@ body {
   position: fixed;
 }
 
+#root {
+  height: 100%;
+  width: 100%;
+  overflow: hidden;
+}
+
 a {
   color: var(--text-primary);
   text-decoration: none;
@@ -509,8 +515,8 @@ button, a, input[type="button"], input[type="submit"] {
 .app-layout {
   display: flex;
   flex-direction: column;
-  height: 100dvh;
-  width: 100vw;
+  height: 100%;
+  width: 100%;
   overflow: hidden;
   position: fixed;
   top: 0;
@@ -540,7 +546,7 @@ button, a, input[type="button"], input[type="submit"] {
   left: 0;
   right: 0;
   transform: translateX(-100%);
-  height: 100dvh;
+  height: 100%;
   overflow-y: auto;
   border-top: 1px solid rgba(255, 255, 255, 0.1);
 }
