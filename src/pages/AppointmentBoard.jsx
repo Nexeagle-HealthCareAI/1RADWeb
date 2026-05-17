@@ -358,7 +358,7 @@ export default function AppointmentBoard() {
     total: appointmentsForTab.length,
     expected: appointmentsForTab.filter(a => a.status?.toLowerCase() !== 'cancelled').length,
     confirmed: appointmentsForTab.filter(a => ['confirmed', 'in_progress', 'completed', 'scanned', 'reporting', 'reported'].includes(a.status?.toLowerCase())).length,
-    inProgress: appointmentsForTab.filter(a => a.status?.toLowerCase() === 'in_progress').length,
+    inProgress: appointmentsForTab.filter(a => ['in_progress', 'completed', 'scanned', 'reporting'].includes(a.status?.toLowerCase())).length,
     completed: appointmentsForTab.filter(a => a.status?.toLowerCase() === 'reported').length,
     cancelled: appointmentsForTab.filter(a => a.status?.toLowerCase() === 'cancelled').length,
   };
@@ -906,10 +906,10 @@ export default function AppointmentBoard() {
         </div>
 
         <div className="intel-card">
-          <span className="intel-label">Scanning</span>
+          <span className="intel-label">In Progress</span>
           <div className="intel-value" style={{ color: '#f59e0b' }}>{stats.inProgress}</div>
           <div className="intel-trend">
-            <span style={{ color: '#f59e0b' }}>ACTIVE MISSION</span>
+            <span style={{ color: '#f59e0b' }}>SCANNING/REPORTING</span>
           </div>
         </div>
 
@@ -2384,7 +2384,7 @@ export default function AppointmentBoard() {
             {stats.expected} / {stats.confirmed}
           </div>
           <div className="intel-trend" style={{ color: 'var(--text-secondary)' }}>
-            Scanning: {stats.inProgress}
+            In Progress: {stats.inProgress}
           </div>
         </div>
 
