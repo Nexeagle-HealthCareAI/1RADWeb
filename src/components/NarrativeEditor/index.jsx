@@ -24,12 +24,14 @@ import { ParagraphFraming } from './extensions/ParagraphFraming';
 import { ListStyles } from './extensions/ListStyles';
 import { Sort } from './extensions/Sort';
 import { MultilevelList } from './extensions/MultilevelList';
+import { PageNumber } from './extensions/PageNumberNode';
 import FindReplaceDialog from './dialogs/FindReplaceDialog';
 import SymbolPickerDialog from './dialogs/SymbolPickerDialog';
 import PromptDialog, { editorPrompt } from './dialogs/PromptDialog';
 import ShortcutsDialog from './dialogs/ShortcutsDialog';
 import FontDialog from './dialogs/FontDialog';
 import ParagraphDialog from './dialogs/ParagraphDialog';
+import HeaderFooterDialog from './dialogs/HeaderFooterDialog';
 import { FONT_SIZES } from './Ribbon/RibbonControls';
 import { useVoiceDictation } from './hooks/useVoiceDictation';
 import './NarrativeEditor.css';
@@ -201,6 +203,12 @@ const NarrativeEditor = React.forwardRef(function NarrativeEditor({
   const [paragraphDlgOpen, setParagraphDlgOpen] = useState(false);
   const [showFormattingMarks, setShowFormattingMarks] = useState(false);
 
+  // Header / footer state — { text, fontFamily, fontSize, align }
+  const [headerFooterOpen, setHeaderFooterOpen] = useState(false);
+  const [headerFooterFocus, setHeaderFooterFocus] = useState('header');
+  const [headerState, setHeaderState] = useState({ text: '', fontFamily: 'Calibri', fontSize: '9', align: 'left' });
+  const [footerState, setFooterState] = useState({ text: '', fontFamily: 'Calibri', fontSize: '9', align: 'center' });
+
   // Voice dictation — text inserted at cursor when a phrase finalises.
   const voice = useVoiceDictation({
     onResult: (text) => {
@@ -246,6 +254,7 @@ const NarrativeEditor = React.forwardRef(function NarrativeEditor({
       ListStyles,
       Sort,
       MultilevelList,
+      PageNumber,
       Underline,
       TextAlign.configure({ types: ['heading', 'paragraph'] }),
       TextStyle,
@@ -570,12 +579,75 @@ const NarrativeEditor = React.forwardRef(function NarrativeEditor({
     };
   }, []);
 
+  // Header / footer dialog launcher
+  useEffect(() => {
+    const open = (e) => {
+      setHeaderFooterFocus(e?.detail?.focus || 'header');
+      setHeaderFooterOpen(true);
+    };
+    window.addEventListener('narrative-editor:open-header-footer', open);
+    return () => window.removeEventListener('narrative-editor:open-header-footer', open);
+  }, []);
+
   // Toggle the browser's native spellcheck attribute on the ProseMirror DOM.
   useEffect(() => {
     if (!editor) return;
     const el = editor.view?.dom;
     if (el) el.setAttribute('spellcheck', spellcheckOn ? 'true' : 'false');
   }, [editor, spellcheckOn]);
+
+  // Inject / update header & footer divs on every .word-page element.
+  // These sit alongside .word-page-inner (outside ProseMirror's content hole),
+  // so ProseMirror will not overwrite them on re-renders.
+  useEffect(() => {
+    if (!containerRef.current) return;
+
+    const applyToPages = () => {
+      const pages = containerRef.current?.querySelectorAll('.word-page');
+      if (!pages?.length) return;
+
+      pages.forEach((page, idx) => {
+        // ── Header ─────────────────────────────────────────
+        let hdrEl = page.querySelector('.word-page-header');
+        if (headerState.text) {
+          if (!hdrEl) {
+            hdrEl = document.createElement('div');
+            hdrEl.className = 'word-page-header';
+            page.insertBefore(hdrEl, page.firstChild);
+          }
+          const display = headerState.text.replace('{pageNumber}', String(idx + 1));
+          hdrEl.textContent = display;
+          hdrEl.style.fontFamily = headerState.fontFamily;
+          hdrEl.style.fontSize = `${headerState.fontSize}pt`;
+          hdrEl.style.textAlign = headerState.align;
+        } else if (hdrEl) {
+          hdrEl.remove();
+        }
+
+        // ── Footer ─────────────────────────────────────────
+        let ftrEl = page.querySelector('.word-page-footer');
+        if (footerState.text) {
+          if (!ftrEl) {
+            ftrEl = document.createElement('div');
+            ftrEl.className = 'word-page-footer';
+            page.appendChild(ftrEl);
+          }
+          const display = footerState.text.replace('{pageNumber}', String(idx + 1));
+          ftrEl.textContent = display;
+          ftrEl.style.fontFamily = footerState.fontFamily;
+          ftrEl.style.fontSize = `${footerState.fontSize}pt`;
+          ftrEl.style.textAlign = footerState.align;
+        } else if (ftrEl) {
+          ftrEl.remove();
+        }
+      });
+    };
+
+    applyToPages();
+    // Re-apply whenever the editor updates (pagination may add/remove pages).
+    editor?.on('update', applyToPages);
+    return () => editor?.off('update', applyToPages);
+  }, [editor, headerState, footerState]);
 
   // Track current page (most visible) + total pages.
   useEffect(() => {
@@ -750,6 +822,15 @@ const NarrativeEditor = React.forwardRef(function NarrativeEditor({
 
       <FontDialog editor={editor} open={fontDlgOpen} onClose={() => setFontDlgOpen(false)} />
       <ParagraphDialog editor={editor} open={paragraphDlgOpen} onClose={() => setParagraphDlgOpen(false)} />
+
+      <HeaderFooterDialog
+        open={headerFooterOpen}
+        initialFocus={headerFooterFocus}
+        header={headerState}
+        footer={footerState}
+        onSave={(h, f) => { setHeaderState(h); setFooterState(f); }}
+        onClose={() => setHeaderFooterOpen(false)}
+      />
 
       <PromptDialog
         open={!!promptState}

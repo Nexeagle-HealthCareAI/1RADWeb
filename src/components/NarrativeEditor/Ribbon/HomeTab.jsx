@@ -319,7 +319,25 @@ export default function HomeTab({ editor, showFormattingMarks, onToggleFormattin
           icon="📋"
           label="Paste"
           title="Paste (Ctrl+V)"
-          onClick={() => navigator.clipboard.readText().then(t => editor.chain().focus().insertContent(t).run()).catch(() => {})}
+          onClick={async () => {
+            try {
+              // Prefer rich HTML from clipboard
+              const items = await navigator.clipboard.read();
+              for (const item of items) {
+                if (item.types.includes('text/html')) {
+                  const blob = await item.getType('text/html');
+                  const html = await blob.text();
+                  editor.chain().focus().insertContent(html).run();
+                  return;
+                }
+              }
+              // Fallback to plain text
+              const text = await navigator.clipboard.readText();
+              if (text) editor.chain().focus().insertContent(text).run();
+            } catch {
+              // Permission denied or API unavailable — native Ctrl+V handles it
+            }
+          }}
         />
         <div style={{
           display: 'flex', flexDirection: 'column',

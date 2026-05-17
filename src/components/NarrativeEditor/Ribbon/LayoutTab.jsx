@@ -50,7 +50,7 @@ export default function LayoutTab({ editor, documentMeta = {} }) {
           icon="#"
           label="Insert"
           title="Insert page number token at cursor"
-          onClick={() => editor.chain().focus().insertContent('{pageNumber}').run()}
+          onClick={() => editor.chain().focus().insertPageNumber().run()}
         />
       </Group>
     </div>

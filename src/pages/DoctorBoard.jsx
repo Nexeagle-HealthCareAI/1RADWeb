@@ -75,7 +75,7 @@ export default function DoctorBoard() {
     try {
       const res = await apiClient.get('/appointments');
       
-      // Sort and calculate daily tokens
+      // Sort ASCENDING for correct sequential token number calculation
       const sortedData = res.data.sort((a, b) => new Date(a.dateTime || 0).getTime() - new Date(b.dateTime || 0).getTime());
       const dailyCounters = {};
 
@@ -89,7 +89,8 @@ export default function DoctorBoard() {
           id: a.displayId,
           priority: a.type === 'EMERGENCY' ? 'STAT' : 'ROUTINE',
           isToday: studyDate === TODAY,
-          tokenNo: dailyCounters[dateKey]
+          // Prefer persisted server-side token; fall back to calculated for legacy records
+          tokenNo: a.dailyTokenNumber ?? dailyCounters[dateKey]
         };
       });
       setCases(allCases);

@@ -348,6 +348,64 @@
   justify-content: center;
 }
 
+/* ── Page Number token ───────────────────────────────────────────────────────── */
+.page-number-token {
+  display: inline-block;
+  background: #e8f3ff;
+  border: 1px solid #7cb9f0;
+  border-radius: 3px;
+  padding: 0 5px;
+  font-size: 9pt;
+  color: #0055a5;
+  font-family: "Segoe UI", system-ui, sans-serif;
+  font-style: normal;
+  font-weight: 500;
+  white-space: nowrap;
+  cursor: default;
+  user-select: none;
+  vertical-align: baseline;
+}
+
+/* ── Page Header & Footer ────────────────────────────────────────────────────── */
+/* These divs are injected into .word-page by the header/footer effect.
+   They live alongside .word-page-inner (not inside it), so ProseMirror
+   never overwrites them. Positioned absolutely within the page margins. */
+.word-page-header {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 80px;
+  padding: 18px 96px 0;
+  box-sizing: border-box;
+  color: #444;
+  border-bottom: 1px solid #d0d0d0;
+  pointer-events: none;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  z-index: 1;
+}
+
+.word-page-footer {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 80px;
+  padding: 0 96px 18px;
+  box-sizing: border-box;
+  color: #444;
+  border-top: 1px solid #d0d0d0;
+  pointer-events: none;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  display: flex;
+  align-items: flex-end;
+  z-index: 1;
+}
+
 .word-statusbar .page-nav-btn:hover:not(:disabled) {
   background: rgba(255, 255, 255, 0.3);
 }

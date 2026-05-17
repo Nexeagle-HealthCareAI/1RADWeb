@@ -188,7 +188,8 @@ export default function AppointmentBoard() {
         
         return {
           ...item,
-          tokenNo: dailyCounters[dateKey]
+          // Prefer persisted server-side token; fall back to calculated for legacy records
+          tokenNo: item.dailyTokenNumber ?? dailyCounters[dateKey]
         };
       });
       
