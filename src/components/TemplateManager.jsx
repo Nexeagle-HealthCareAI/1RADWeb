@@ -74,15 +74,6 @@ const TemplateManager = ({
               />
             </div>
           </div>
-          <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
-            <span style={{ fontSize: '12px', color: '#94a3b8' }}>{filteredTemplates.length} templates</span>
-            <button
-              onClick={() => { setEditTemplate({ id: null, name: '', modality: 'X-RAY', content: '' }); setIsTemplateDrawerOpen(true); }}
-              style={{ padding: '8px 16px', borderRadius: '8px', border: 'none', background: '#1d4ed8', color: 'white', fontSize: '13px', fontWeight: 600, cursor: 'pointer', whiteSpace: 'nowrap' }}
-            >
-              + New Template
-            </button>
-          </div>
         </div>
 
         {/* Table */}
