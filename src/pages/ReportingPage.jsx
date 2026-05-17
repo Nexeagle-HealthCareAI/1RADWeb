@@ -474,6 +474,71 @@ const ReportingPage = () => {
     }
   }, [appointmentId, fetchReportingContext]);
 
+  // --- LIVE BACKGROUND POLLING FOR STUDY ASSETS & STATUS ---
+  useEffect(() => {
+    if (!appointmentId || isFinalized || !isOnline) return;
+
+    const pollLiveUpdates = async () => {
+      try {
+        // 1. Fetch appointment details to see if status or notes changed
+        const appRes = await apiClient.get(`/appointments/${appointmentId}`).catch(() => null);
+        if (appRes?.data) {
+          setActiveAppointment(prev => {
+            if (!prev) return appRes.data;
+            if (prev.status !== appRes.data.status || prev.notes !== appRes.data.notes || prev.technicianComments !== appRes.data.technicianComments) {
+              console.log('[LIVE_UPDATE] Appointment updated:', appRes.data.status);
+              return appRes.data;
+            }
+            return prev;
+          });
+        }
+
+        // 2. Fetch assets to see if new DICOM files have been uploaded by technician
+        const assetRes = await apiClient.get(`/Study/${appointmentId}/assets`).catch(() => null);
+        if (assetRes?.data) {
+          setUploadedFiles(prev => {
+            const currentIds = prev.map(a => String(a.id));
+            const hasNewAssets = assetRes.data.some(asset => !currentIds.includes(String(asset.id)));
+            const hasRemovedAssets = currentIds.some(id => !assetRes.data.some(asset => String(asset.id) === id));
+
+            if (hasNewAssets || hasRemovedAssets || prev.length !== assetRes.data.length) {
+              console.log('[LIVE_UPDATE] Assets changed, reloading study library...');
+              const hydAssets = assetRes.data.map((asset, index) => {
+                const existing = prev.find(p => String(p.id) === String(asset.id));
+                return {
+                  id: asset.id,
+                  name: asset.fileName || `Asset ${index + 1}`,
+                  type: (asset.fileType || 'unknown').toUpperCase(),
+                  remoteUrl: asset.blobUrl,
+                  needsHydration: (asset.fileType || '').toLowerCase() === 'zip' && (!existing || existing.rawFiles?.length === 0),
+                  rawFiles: existing?.rawFiles || [],
+                  originalAsset: asset
+                };
+              });
+
+              // Trigger auto-hydration for the newly added ZIP asset if needed
+              if (hydAssets.length > 0 && hydAssets[0].needsHydration && hydAssets[0].rawFiles.length === 0) {
+                console.log('[LIVE_UPDATE] Triggering auto-hydration for new active asset:', hydAssets[0].name);
+                setTimeout(() => {
+                  setActiveAssetIndex(0);
+                }, 100);
+              }
+
+              setOriginalAssets(hydAssets);
+              return hydAssets;
+            }
+            return prev;
+          });
+        }
+      } catch (err) {
+        console.warn('[LIVE_UPDATE] Failed to poll updates:', err);
+      }
+    };
+
+    const interval = setInterval(pollLiveUpdates, 5000); // Poll every 5 seconds
+    return () => clearInterval(interval);
+  }, [appointmentId, isFinalized, isOnline]);
+
   // --- OFFLINE AUTOSAVE ---
   useEffect(() => {
     if (!appointmentId || isFinalized) return;

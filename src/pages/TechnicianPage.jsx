@@ -116,7 +116,7 @@ export default function TechnicianPage() {
 
   useEffect(() => {
     fetchWorklist();
-    const interval = setInterval(fetchWorklist, 30000); 
+    const interval = setInterval(fetchWorklist, 5000); 
     return () => clearInterval(interval);
   }, [fetchWorklist]);
 

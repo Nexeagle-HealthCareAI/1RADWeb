@@ -106,7 +106,7 @@ export default function DoctorBoard() {
 
   useEffect(() => {
     fetchCases();
-    const interval = setInterval(fetchCases, 45000); 
+    const interval = setInterval(fetchCases, 5000); 
     return () => clearInterval(interval);
   }, [fetchCases]);
 
