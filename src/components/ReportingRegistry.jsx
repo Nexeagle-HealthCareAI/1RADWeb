@@ -57,6 +57,21 @@ const ReportingRegistry = ({
 
   const handleSaveTemplate = async () => {
     if (!editTemplate.name) return alert('Please enter a template name.');
+
+    // Prevent duplicate template name for a given modality (case-insensitive check)
+    const isDuplicate = templates.some(t => {
+      const tName = t.name || t.Name || '';
+      const tModality = t.modality || t.Modality || '';
+      const tId = t.id || t.Id;
+      return tId !== editTemplate.id &&
+             tName.trim().toLowerCase() === editTemplate.name.trim().toLowerCase() &&
+             tModality.trim().toUpperCase() === editTemplate.modality.trim().toUpperCase();
+    });
+
+    if (isDuplicate) {
+      return alert(`A template with the name "${editTemplate.name}" already exists for modality "${editTemplate.modality}".`);
+    }
+
     setIsTemplateSaving(true);
     try {
       const payload = {
@@ -78,6 +93,8 @@ const ReportingRegistry = ({
       }
     } catch (err) {
       console.error('[TEMPLATE] Save failed', err);
+      const errMsg = err.response?.data?.error || 'An unexpected error occurred while saving the template.';
+      alert(errMsg);
     } finally {
       setIsTemplateSaving(false);
     }
@@ -106,6 +123,19 @@ const ReportingRegistry = ({
 
   const handleSaveMacro = async () => {
     if (!newMacro.trigger) return alert('Please enter a trigger word.');
+
+    // Prevent duplicate trigger word (case-insensitive check)
+    const isDuplicate = keywordLibrary.some(k => {
+      const kTrigger = k.trigger || k.keyword || '';
+      const kId = k.id || k.Id;
+      return kId !== selectedKeywordId &&
+             kTrigger.trim().toLowerCase() === newMacro.trigger.trim().toLowerCase();
+    });
+
+    if (isDuplicate) {
+      return alert(`A keyword with the trigger "/${newMacro.trigger}" already exists.`);
+    }
+
     setIsKeywordSaving(true);
     try {
       const payload = {
@@ -126,6 +156,8 @@ const ReportingRegistry = ({
       }
     } catch (err) {
       console.error('[KEYWORD] Save failed', err);
+      const errMsg = err.response?.data?.error || 'An unexpected error occurred while saving the keyword.';
+      alert(errMsg);
     } finally {
       setIsKeywordSaving(false);
     }
