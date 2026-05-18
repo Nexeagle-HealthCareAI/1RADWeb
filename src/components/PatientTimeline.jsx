@@ -1,9 +1,10 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
+import apiClient from '../api/apiClient';
 
 /**
  * PatientTimeline
  * A high-fidelity, medical-grade vertical timeline for tracking patient diagnostic history.
- * Designed for use within the ReportingPage.
+ * Designed for use within the ReportingPage with seamless inline reports and quick copy actions.
  */
 const PatientTimeline = ({ 
   history = [], 
@@ -14,12 +15,63 @@ const PatientTimeline = ({
 }) => {
   const [isMobile, setIsMobile] = useState(window.innerWidth < 768);
   const [expandedId, setExpandedId] = useState(null);
+  const [loadedReports, setLoadedReports] = useState({}); // { [studyId]: { loading, data, error } }
+  const [copiedId, setCopiedId] = useState(null);
 
-  React.useEffect(() => {
+  useEffect(() => {
     const handleResize = () => setIsMobile(window.innerWidth < 768);
     window.addEventListener('resize', handleResize);
     return () => window.removeEventListener('resize', handleResize);
   }, []);
+
+  const handleLoadReport = async (studyId) => {
+    if (loadedReports[studyId]) return;
+
+    // Check if the study already has the report pre-embedded from the dedicated timeline API
+    const study = history.find(s => {
+      const sId = s.appointmentId || s.AppointmentId || s.id || s.Id;
+      return String(sId) === String(studyId);
+    });
+
+    if (study?.report) {
+      console.info(`[TIMELINE COMPONENT] Found pre-embedded report for ${studyId}`);
+      setLoadedReports(prev => ({
+        ...prev,
+        [studyId]: { loading: false, data: study.report, error: null }
+      }));
+      return;
+    }
+
+    setLoadedReports(prev => ({
+      ...prev,
+      [studyId]: { loading: true, data: null, error: null }
+    }));
+
+    try {
+      const res = await apiClient.get(`/Reporting/report/${studyId}`);
+      const body = res.data;
+      const r = (body?.success && body?.data) ? body.data : body;
+      
+      setLoadedReports(prev => ({
+        ...prev,
+        [studyId]: { loading: false, data: r, error: null }
+      }));
+    } catch (err) {
+      console.warn('[TIMELINE COMPONENT] Failed to fetch report:', err.message);
+      setLoadedReports(prev => ({
+        ...prev,
+        [studyId]: { loading: false, data: null, error: 'Could not load historical report.' }
+      }));
+    }
+  };
+
+  const handleToggleExpand = (studyId) => {
+    const nextExpanded = expandedId === studyId ? null : studyId;
+    setExpandedId(nextExpanded);
+    if (nextExpanded) {
+      handleLoadReport(studyId);
+    }
+  };
 
   if (loading) {
     return (
@@ -62,10 +114,10 @@ const PatientTimeline = ({
           borderRadius: '1px'
         }} />
 
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '30px' }}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
           {history.map((study, idx) => {
             const studyId = study.appointmentId || study.AppointmentId || study.id || study.Id;
-            const isActive = activeAppointmentId === studyId;
+            const isActive = String(activeAppointmentId) === String(studyId);
             const isExpanded = expandedId === studyId;
             const date = new Date(study.appointmentDate || study.AppointmentDate || study.dateTime || study.DateTime);
             const formattedDate = date.toLocaleDateString('en-US', { day: '2-digit', month: 'short', year: 'numeric' });
@@ -83,7 +135,7 @@ const PatientTimeline = ({
                 }} />
 
                 <div 
-                  onClick={() => setExpandedId(isExpanded ? null : studyId)}
+                  onClick={() => handleToggleExpand(studyId)}
                   style={{ 
                     background: isActive ? '#f0f7ff' : 'white',
                     borderRadius: '16px', border: `1px solid ${isActive ? '#bfdbfe' : '#e2e8f0'}`,
@@ -105,7 +157,7 @@ const PatientTimeline = ({
                             {study.assetCount || study.AssetCount} IMAGES
                           </span>
                         )}
-                        {(study.status === 'REPORTED' || study.Status === 'REPORTED') && (
+                        {(study.status === 'REPORTED' || study.Status === 'REPORTED' || study.status === 'reported' || study.Status === 'reported') && (
                           <span style={{ fontSize: '9px', fontWeight: 950, color: '#059669', background: '#d1fae5', padding: '3px 8px', borderRadius: '6px' }}>REPORTED</span>
                         )}
                       </div>
@@ -121,44 +173,235 @@ const PatientTimeline = ({
                     </div>
                   </div>
 
+                  {/* Inline Expanded Full Report Details */}
                   {isExpanded && (
-                    <div style={{ marginTop: '15px', padding: '15px', background: '#f8fafc', borderRadius: '12px', borderLeft: '4px solid #0f52ba', animation: 'fadeIn 0.3s ease' }}>
-                        <div style={{ fontSize: '9px', fontWeight: 950, color: '#64748b', letterSpacing: '1px', marginBottom: '8px', textTransform: 'uppercase' }}>CLINICAL_IMPRESSION_PREVIEW</div>
-                        <div style={{ fontSize: '13px', color: '#334155', lineHeight: '1.5', fontStyle: 'italic' }}>
+                    <div 
+                      onClick={(e) => e.stopPropagation()}
+                      style={{ 
+                        marginTop: '15px', 
+                        padding: '16px', 
+                        background: '#f8fafc', 
+                        borderRadius: '12px', 
+                        border: '1px solid #e2e8f0',
+                        borderLeft: '4px solid #0f52ba', 
+                        animation: 'fadeIn 0.2s ease',
+                        display: 'flex',
+                        flexDirection: 'column',
+                        gap: '12px',
+                        cursor: 'default'
+                      }}
+                    >
+                      {/* Loading State */}
+                      {loadedReports[studyId]?.loading && (
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '10px', color: '#64748b', fontSize: '11px', fontWeight: 900 }}>
+                          <span style={{ display: 'inline-block', width: '12px', height: '12px', border: '2px solid rgba(15,82,186,0.2)', borderTopColor: '#0f52ba', borderRadius: '50%', animation: 'spin 0.8s linear infinite' }} />
+                          RETRIEVING FULL DIAGNOSTIC REPORT...
+                        </div>
+                      )}
+
+                      {/* Error State */}
+                      {loadedReports[studyId]?.error && (
+                        <div style={{ color: '#ef4444', fontSize: '11px', fontWeight: 900 }}>
+                          ⚠️ {loadedReports[studyId].error}
+                        </div>
+                      )}
+
+                      {/* Loaded Report Details */}
+                      {loadedReports[studyId]?.data && (() => {
+                        const reportData = loadedReports[studyId].data;
+
+                        const plainFindings = (() => {
+                          try {
+                            return Object.values(JSON.parse(reportData.findings)).join('\n\n');
+                          } catch {
+                            return reportData.findings || '';
+                          }
+                        })();
+                        
+                        const htmlFindings = (() => {
+                          try {
+                            return Object.values(JSON.parse(reportData.findings)).join('<br/>');
+                          } catch {
+                            return reportData.findings || '';
+                          }
+                        })();
+
+                        const hasFindings = !!plainFindings;
+                        const hasImpression = !!reportData.impression;
+
+                        return (
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+                            
+                            {/* Findings Section */}
+                            {hasFindings && (
+                              <div>
+                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
+                                  <span style={{ fontSize: '9px', fontWeight: 950, color: '#0f52ba', letterSpacing: '1px', textTransform: 'uppercase' }}>HISTORICAL FINDINGS</span>
+                                  <button
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      navigator.clipboard.writeText(plainFindings);
+                                      setCopiedId(`findings-${studyId}`);
+                                      setTimeout(() => setCopiedId(null), 2000);
+                                    }}
+                                    style={{
+                                      background: copiedId === `findings-${studyId}` ? '#dcfce7' : '#eff6ff',
+                                      border: `1px solid ${copiedId === `findings-${studyId}` ? '#bbf7d0' : '#bfdbfe'}`,
+                                      borderRadius: '6px',
+                                      color: copiedId === `findings-${studyId}` ? '#16a34a' : '#0f52ba',
+                                      fontSize: '8px',
+                                      fontWeight: 950,
+                                      padding: '3px 8px',
+                                      cursor: 'pointer',
+                                      transition: 'all 0.2s'
+                                    }}
+                                  >
+                                    {copiedId === `findings-${studyId}` ? '✓ COPIED' : '⎘ COPY FINDINGS'}
+                                  </button>
+                                </div>
+                                <div 
+                                  style={{
+                                    fontSize: '11px',
+                                    color: '#334155',
+                                    lineHeight: '1.6',
+                                    background: 'white',
+                                    padding: '12px',
+                                    borderRadius: '8px',
+                                    border: '1px solid #e2e8f0',
+                                    maxHeight: '120px',
+                                    overflowY: 'auto'
+                                  }}
+                                  dangerouslySetInnerHTML={{ __html: htmlFindings }}
+                                />
+                              </div>
+                            )}
+
+                            {/* Impression Section */}
+                            {hasImpression && (
+                              <div>
+                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
+                                  <span style={{ fontSize: '9px', fontWeight: 950, color: '#10b981', letterSpacing: '1px', textTransform: 'uppercase' }}>IMPRESSION</span>
+                                  <button
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      navigator.clipboard.writeText(reportData.impression);
+                                      setCopiedId(`imp-${studyId}`);
+                                      setTimeout(() => setCopiedId(null), 2000);
+                                    }}
+                                    style={{
+                                      background: copiedId === `imp-${studyId}` ? '#dcfce7' : '#f0fdf4',
+                                      border: `1px solid ${copiedId === `imp-${studyId}` ? '#bbf7d0' : '#bbf7d0'}`,
+                                      borderRadius: '6px',
+                                      color: copiedId === `imp-${studyId}` ? '#16a34a' : '#16a34a',
+                                      fontSize: '8px',
+                                      fontWeight: 950,
+                                      padding: '3px 8px',
+                                      cursor: 'pointer',
+                                      transition: 'all 0.2s'
+                                    }}
+                                  >
+                                    {copiedId === `imp-${studyId}` ? '✓ COPIED' : '⎘ COPY IMPRESSION'}
+                                  </button>
+                                </div>
+                                <div style={{
+                                  fontSize: '11px',
+                                  color: '#0f172a',
+                                  fontWeight: 900,
+                                  lineHeight: '1.5',
+                                  background: '#f0fdf4',
+                                  padding: '12px',
+                                  borderRadius: '8px',
+                                  border: '1px solid #bbf7d0'
+                                }}>
+                                  {reportData.impression}
+                                </div>
+                              </div>
+                            )}
+
+                            {/* Advice Section */}
+                            {reportData.advice && (
+                              <div style={{ fontSize: '10px', color: '#64748b', fontStyle: 'italic' }}>
+                                <strong>Advice:</strong> {reportData.advice}
+                              </div>
+                            )}
+
+                            {/* Verification Badge */}
+                            {reportData.isFinalized && (
+                              <span style={{ alignSelf: 'flex-start', background: '#ecfdf5', color: '#10b981', border: '1px solid #a7f3d0', borderRadius: '4px', padding: '2px 6px', fontSize: '8px', fontWeight: 950 }}>
+                                ✓ VERIFIED REPORT
+                              </span>
+                            )}
+                          </div>
+                        );
+                      })()}
+
+                      {/* Fallback to simple local impression preview if not loaded or failed */}
+                      {!loadedReports[studyId] && (
+                        <div>
+                          <div style={{ fontSize: '9px', fontWeight: 950, color: '#64748b', letterSpacing: '1px', marginBottom: '8px', textTransform: 'uppercase' }}>CLINICAL_IMPRESSION_PREVIEW</div>
+                          <div style={{ fontSize: '12px', color: '#334155', lineHeight: '1.5', fontStyle: 'italic' }}>
                             {study.reportImpression || study.ReportImpression ? (
                               `"${study.reportImpression || study.ReportImpression}"`
                             ) : (
-                              'No narrative impression available for this historical study.'
+                              'No narrative impression preview available.'
                             )}
+                          </div>
                         </div>
+                      )}
                     </div>
                   )}
 
+                  {/* Actions Area */}
                   <div style={{ display: 'flex', flexWrap: 'wrap', gap: '10px', marginTop: '15px' }}>
                     <button 
-                      onClick={(e) => { e.stopPropagation(); onViewReport?.(study); }}
+                      onClick={(e) => { 
+                        e.stopPropagation(); 
+                        handleToggleExpand(studyId); 
+                      }}
                       style={{ 
                         flex: isMobile ? 1 : 'none',
                         padding: '8px 16px', borderRadius: '8px', 
-                        border: '1px solid #0f52ba', background: 'transparent', 
+                        border: '1.5px solid #0f52ba', 
+                        background: isExpanded ? '#eff6ff' : 'transparent', 
                         color: '#0f52ba', fontSize: '10px', fontWeight: 950, cursor: 'pointer',
-                        transition: 'all 0.2s'
+                        transition: 'all 0.2s',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '6px'
                       }}
                     >
-                      VIEW_FULL_REPORT
+                      {isExpanded ? '🗁 HIDE INLINE REPORT' : '📄 VIEW INLINE REPORT'}
                     </button>
+                    
                     <button 
                       onClick={(e) => { e.stopPropagation(); onViewDicom?.(study); }}
                       style={{ 
                         flex: isMobile ? 1 : 'none',
                         padding: '8px 16px', borderRadius: '8px', 
-                        border: 'none', background: '#f1f5f9', 
-                        color: '#475569', fontSize: '10px', fontWeight: 950, cursor: 'pointer',
+                        border: 'none', background: '#10b981', 
+                        color: 'white', fontSize: '10px', fontWeight: 950, cursor: 'pointer',
+                        boxShadow: '0 4px 12px rgba(16,185,129,0.15)',
                         transition: 'all 0.2s'
                       }}
                     >
-                      VISUALIZE_DICOM
+                      🔍 VISUALIZE DICOM
                     </button>
+
+                    {onViewReport && (
+                      <button 
+                        onClick={(e) => { e.stopPropagation(); onViewReport?.(study); }}
+                        style={{ 
+                          marginLeft: isMobile ? '0' : 'auto',
+                          flex: isMobile ? 1 : 'none',
+                          padding: '8px 12px', borderRadius: '8px', 
+                          border: '1px solid #cbd5e1', background: '#f8fafc', 
+                          color: '#64748b', fontSize: '10px', fontWeight: 800, cursor: 'pointer',
+                          transition: 'all 0.2s'
+                        }}
+                      >
+                        Dedicated Page ↗
+                      </button>
+                    )}
                   </div>
                 </div>
               </div>
@@ -174,7 +417,7 @@ const PatientTimeline = ({
           margin: 0 auto; animation: spin 1s linear infinite;
         }
         @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
-        .patient-timeline button:hover { opacity: 0.8; transform: translateY(-1px); }
+        .patient-timeline button:hover { opacity: 0.85; transform: translateY(-1px); }
         .patient-timeline button:active { transform: translateY(0px); }
         @keyframes fadeIn { from { opacity: 0; transform: translateY(-5px); } to { opacity: 1; transform: translateY(0); } }
       `}</style>

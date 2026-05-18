@@ -519,7 +519,7 @@ const AnalyticsHub = ({
     return (
       <div style={{ position: 'relative', width: '100%', overflowX: 'auto' }}>
         <svg viewBox={`0 0 ${width} ${height}`} style={{ width: '100%', minWidth: '500px', height: 'auto', display: 'block' }}>
-          {/* Grids */}
+          {/* Grids and grid lines */}
           {gridLines.map((line, idx) => (
             <g key={idx}>
               <line 
@@ -531,36 +531,78 @@ const AnalyticsHub = ({
                 strokeWidth={1.5} 
                 strokeDasharray="4,4" 
               />
+              {/* Y-axis Ticks */}
+              <line 
+                x1={paddingX - 5} 
+                y1={line.y} 
+                x2={paddingX} 
+                y2={line.y} 
+                stroke="#cbd5e1" 
+                strokeWidth={1.5} 
+              />
               <text 
-                x={paddingX - 10} 
-                y={line.y + 4} 
-                fill="#94a3b8" 
-                fontSize="9px" 
+                x={paddingX - 12} 
+                y={line.y + 3} 
+                fill="#64748b" 
+                fontSize="10px" 
                 fontWeight="800" 
                 textAnchor="end"
               >
-                ₹{line.val >= 100000 ? `${(line.val / 100000).toFixed(1)}L` : `${line.val / 1000}k`}
+                ₹{line.val >= 100000 
+                  ? `${(line.val / 100000).toFixed(1).replace(/\.0$/, '')}L` 
+                  : line.val >= 1000 
+                  ? `${(line.val / 1000).toFixed(1).replace(/\.0$/, '')}k` 
+                  : line.val}
               </text>
             </g>
           ))}
 
-          {/* Month labels */}
+          {/* Month labels and X-axis Ticks */}
           {data.map((d, i) => {
             const x = paddingX + (i * chartWidth) / (data.length - 1);
             return (
-              <text 
-                key={i} 
-                x={x} 
-                y={height - 10} 
-                fill="#64748b" 
-                fontSize="10px" 
-                fontWeight="900" 
-                textAnchor="middle"
-              >
-                {d.label}
-              </text>
+              <g key={i}>
+                <line 
+                  x1={x} 
+                  y1={paddingY + chartHeight} 
+                  x2={x} 
+                  y2={paddingY + chartHeight + 5} 
+                  stroke="#cbd5e1" 
+                  strokeWidth={1.5} 
+                />
+                <text 
+                  x={x} 
+                  y={paddingY + chartHeight + 18} 
+                  fill="#64748b" 
+                  fontSize="10px" 
+                  fontWeight="900" 
+                  textAnchor="middle"
+                >
+                  {d.label}
+                </text>
+              </g>
             );
           })}
+
+          {/* Solid axis border lines */}
+          {/* Solid Y-Axis line */}
+          <line 
+            x1={paddingX} 
+            y1={paddingY - 10} 
+            x2={paddingX} 
+            y2={paddingY + chartHeight} 
+            stroke="#cbd5e1" 
+            strokeWidth={1.5} 
+          />
+          {/* Solid X-Axis line */}
+          <line 
+            x1={paddingX} 
+            y1={paddingY + chartHeight} 
+            x2={width - 20} 
+            y2={paddingY + chartHeight} 
+            stroke="#cbd5e1" 
+            strokeWidth={1.5} 
+          />
 
           {/* Lines */}
           <path 
@@ -613,36 +655,53 @@ const AnalyticsHub = ({
         </svg>
 
         {/* Floating Glassmorphic Tooltip */}
-        {hoveredPoint && (
-          <div style={{
-            position: 'absolute',
-            top: `${hoveredPoint.y - 85}px`,
-            left: `${hoveredPoint.x - 70}px`,
-            background: 'rgba(15, 23, 42, 0.95)',
-            color: 'white',
-            padding: '12px 16px',
-            borderRadius: '12px',
-            boxShadow: '0 8px 30px rgba(0,0,0,0.15)',
-            border: '1px solid rgba(255,255,255,0.1)',
-            zIndex: 100,
-            pointerEvents: 'none',
-            fontSize: '11px',
-            fontWeight: 800,
-            animation: 'fadeIn 0.15s ease-out'
-          }}>
-            <div style={{ color: '#94a3b8', fontSize: '9px', fontWeight: 900, marginBottom: '6px', textTransform: 'uppercase' }}>
-              {hoveredPoint.label} REALIZATIONS
+        {hoveredPoint && (() => {
+          const billedVal = hoveredPoint.type === 'Billed' ? hoveredPoint.val : hoveredPoint.otherVal;
+          const collectedVal = hoveredPoint.type === 'Collected' ? hoveredPoint.val : hoveredPoint.otherVal;
+          const outstandingVal = Math.max(0, billedVal - collectedVal);
+          const realizationPct = billedVal > 0 ? ((collectedVal / billedVal) * 100).toFixed(1) : '0.0';
+
+          return (
+            <div style={{
+              position: 'absolute',
+              top: `${hoveredPoint.y - 100}px`,
+              left: `${hoveredPoint.x - 85}px`,
+              background: 'rgba(15, 23, 42, 0.96)',
+              color: 'white',
+              padding: '12px 16px',
+              borderRadius: '12px',
+              boxShadow: '0 8px 30px rgba(0,0,0,0.25)',
+              border: '1px solid rgba(255,255,255,0.12)',
+              zIndex: 100,
+              pointerEvents: 'none',
+              fontSize: '11px',
+              fontWeight: 800,
+              animation: 'fadeIn 0.15s ease-out'
+            }}>
+              <div style={{ color: '#94a3b8', fontSize: '9px', fontWeight: 900, marginBottom: '6px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                {hoveredPoint.label} REALIZATIONS
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '4px' }}>
+                <span style={{ width: '8px', height: '8px', borderRadius: '50%', background: '#0f52ba' }} />
+                <span>BILLED: <b style={{ color: '#60a5fa' }}>₹{billedVal.toLocaleString()}</b></span>
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '6px' }}>
+                <span style={{ width: '8px', height: '8px', borderRadius: '50%', background: '#10b981' }} />
+                <span>COLLECTED: <b style={{ color: '#34d399' }}>₹{collectedVal.toLocaleString()}</b></span>
+              </div>
+              <div style={{ borderTop: '1px solid rgba(255,255,255,0.1)', marginTop: '8px', paddingTop: '8px', display: 'flex', flexDirection: 'column', gap: '5px' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', gap: '15px' }}>
+                  <span style={{ color: '#94a3b8', fontSize: '9px' }}>REALIZATION RATE:</span>
+                  <span style={{ color: '#34d399', fontWeight: 900 }}>{realizationPct}%</span>
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', gap: '15px' }}>
+                  <span style={{ color: '#94a3b8', fontSize: '9px' }}>OUTSTANDING DUES:</span>
+                  <span style={{ color: '#f87171', fontWeight: 900 }}>₹{outstandingVal.toLocaleString()}</span>
+                </div>
+              </div>
             </div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '4px' }}>
-              <span style={{ width: '8px', height: '8px', borderRadius: '50%', background: '#0f52ba' }} />
-              <span>BILLED: <b style={{ color: '#60a5fa' }}>₹{hoveredPoint.type === 'Billed' ? hoveredPoint.val.toLocaleString() : hoveredPoint.otherVal.toLocaleString()}</b></span>
-            </div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-              <span style={{ width: '8px', height: '8px', borderRadius: '50%', background: '#10b981' }} />
-              <span>COLLECTED: <b style={{ color: '#34d399' }}>₹{hoveredPoint.type === 'Collected' ? hoveredPoint.val.toLocaleString() : hoveredPoint.otherVal.toLocaleString()}</b></span>
-            </div>
-          </div>
-        )}
+          );
+        })()}
       </div>
     );
   };
@@ -878,6 +937,33 @@ const AnalyticsHub = ({
                   </div>
                 </div>
                 {drawLineChart()}
+                <div style={{ 
+                  display: 'flex', 
+                  flexDirection: isMobile ? 'column' : 'row',
+                  gap: '12px', 
+                  marginTop: '20px', 
+                  paddingTop: '18px', 
+                  borderTop: '1px solid #e2e8f0' 
+                }}>
+                  <div style={{ flex: 1, background: 'white', padding: '12px 14px', borderRadius: '12px', border: '1px solid #f1f5f9', display: 'flex', gap: '8px', alignItems: 'center' }}>
+                    <span style={{ width: '8px', height: '8px', borderRadius: '50%', background: '#0f52ba', flexShrink: 0 }} />
+                    <span style={{ fontSize: '10px', color: '#64748b', fontWeight: 700, lineHeight: '1.4' }}>
+                      <strong style={{ color: '#1e293b' }}>Billed</strong> is the total scan work performed/invoiced.
+                    </span>
+                  </div>
+                  <div style={{ flex: 1, background: 'white', padding: '12px 14px', borderRadius: '12px', border: '1px solid #f1f5f9', display: 'flex', gap: '8px', alignItems: 'center' }}>
+                    <span style={{ width: '8px', height: '8px', borderRadius: '50%', background: '#10b981', flexShrink: 0 }} />
+                    <span style={{ fontSize: '10px', color: '#64748b', fontWeight: 700, lineHeight: '1.4' }}>
+                      <strong style={{ color: '#1e293b' }}>Collected</strong> is the actual cash/UPI received in the bank.
+                    </span>
+                  </div>
+                  <div style={{ flex: 1, background: 'white', padding: '12px 14px', borderRadius: '12px', border: '1px solid #f1f5f9', display: 'flex', gap: '8px', alignItems: 'center' }}>
+                    <span style={{ width: '8px', height: '8px', borderRadius: '50%', background: '#f87171', flexShrink: 0 }} />
+                    <span style={{ fontSize: '10px', color: '#64748b', fontWeight: 700, lineHeight: '1.4' }}>
+                      The <strong style={{ color: '#1e293b' }}>Gap</strong> shows outstanding insurer claims or pending co-pays.
+                    </span>
+                  </div>
+                </div>
               </div>
 
               {/* Donut Card */}

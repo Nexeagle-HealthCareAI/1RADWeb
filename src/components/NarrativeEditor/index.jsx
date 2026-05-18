@@ -190,6 +190,65 @@ function resetParagraph(editor) {
   } catch {}
 }
 
+/**
+ * Shift+F3 — cycle selection case: Mixed → ALL UPPER → all lower → Title Case → …
+ */
+function toggleCase(editor) {
+  const { state } = editor;
+  const { from, to, empty } = state.selection;
+  if (empty) return;
+  const selected = state.doc.textBetween(from, to, '\n');
+  const hasLower = /[a-z]/.test(selected);
+  const hasUpper = /[A-Z]/.test(selected);
+  let transform;
+  if (hasLower && hasUpper) {
+    transform = s => s.toUpperCase();
+  } else if (hasUpper && !hasLower) {
+    transform = s => s.toLowerCase();
+  } else {
+    transform = s => s.replace(/\b\w/g, c => c.toUpperCase());
+  }
+  const replacements = [];
+  state.doc.nodesBetween(from, to, (node, pos) => {
+    if (!node.isText) return true;
+    const nFrom = Math.max(from, pos);
+    const nTo   = Math.min(to, pos + node.nodeSize);
+    const text  = node.text.slice(nFrom - pos, nTo - pos);
+    const next  = transform(text);
+    if (text !== next) replacements.push({ from: nFrom, to: nTo, text: next, marks: node.marks });
+  });
+  if (!replacements.length) return;
+  const tr = state.tr;
+  for (let i = replacements.length - 1; i >= 0; i--) {
+    const r = replacements[i];
+    tr.replaceWith(r.from, r.to, state.schema.text(r.text, r.marks));
+  }
+  editor.view.dispatch(tr);
+}
+
+/**
+ * Alt+Shift+↑/↓ — swap the current block with the one above/below it.
+ */
+function moveBlockVertically(editor, direction) {
+  const { state } = editor;
+  const { $from } = state.selection;
+  if ($from.depth < 2) return;
+  const pageNode = $from.node(1);
+  const pagePos  = $from.before(1);
+  const blockIdx = $from.index(1);
+  const sibIdx   = direction === 'up' ? blockIdx - 1 : blockIdx + 1;
+  if (sibIdx < 0 || sibIdx >= pageNode.childCount) return;
+  const lowerIdx = Math.min(blockIdx, sibIdx);
+  let lowerPos = pagePos + 1;
+  for (let i = 0; i < lowerIdx; i++) lowerPos += pageNode.child(i).nodeSize;
+  const lowerBlock = pageNode.child(lowerIdx);
+  const upperBlock = pageNode.child(lowerIdx + 1);
+  const rangeEnd   = lowerPos + lowerBlock.nodeSize + upperBlock.nodeSize;
+  const tr = state.tr.replaceWith(lowerPos, rangeEnd, [upperBlock, lowerBlock]);
+  tr.scrollIntoView();
+  editor.view.dispatch(tr);
+}
+
 // ── Main component ────────────────────────────────────────────────────────────
 
 const ZOOM_LEVELS = [50, 75, 90, 100, 110, 125, 150, 200];
@@ -664,6 +723,41 @@ const NarrativeEditor = React.forwardRef(function NarrativeEditor({
         return;
       }
 
+      // ── Shift+F3 — toggle case of selection ───────────────────────────────
+      if (e.key === 'F3' && e.shiftKey && !e.ctrlKey && !e.metaKey && !e.altKey) {
+        if (!inEditor(e)) return;
+        e.preventDefault();
+        e.stopImmediatePropagation();
+        toggleCase(editor);
+        return;
+      }
+
+      // ── Alt+Shift+↑ / ↓ — move current block up or down ────────────────────
+      if (e.altKey && e.shiftKey && !e.ctrlKey && !e.metaKey &&
+          (e.key === 'ArrowUp' || e.key === 'ArrowDown')) {
+        if (!inEditor(e)) return;
+        e.preventDefault();
+        e.stopImmediatePropagation();
+        moveBlockVertically(editor, e.key === 'ArrowUp' ? 'up' : 'down');
+        return;
+      }
+
+      // ── Backspace — remove one indent level when cursor is at line start ──
+      if (e.key === 'Backspace' && !e.ctrlKey && !e.metaKey && !e.altKey && !e.shiftKey) {
+        if (!inEditor(e)) return;
+        const { $from, empty } = editor.state.selection;
+        if (empty && $from.parentOffset === 0) {
+          const nodeType = $from.parent.type.name;
+          const indent = $from.parent.attrs?.indent || 0;
+          if ((nodeType === 'paragraph' || nodeType === 'heading') && indent > 0) {
+            e.preventDefault();
+            e.stopImmediatePropagation();
+            editor.chain().focus().decreaseParagraphIndent().run();
+            return;
+          }
+        }
+      }
+
       const mod = e.ctrlKey || e.metaKey;
       if (!mod) return;
       if (!inEditor(e)) return;
@@ -686,6 +780,15 @@ const NarrativeEditor = React.forwardRef(function NarrativeEditor({
           setCommentsOpen(true);
         });
       }
+
+      // ── Ctrl+Alt: headings (1–4) and special character inserts ────────────
+      if (e.altKey && ['1', '2', '3', '4'].includes(e.key)) {
+        return run(() => editor.chain().focus().setHeading({ level: parseInt(e.key, 10) }).run());
+      }
+      if (e.altKey && e.key === '.')          return run(() => editor.chain().focus().insertContent('\u2026').run()); // …
+      if (e.altKey && key === 'c' && !e.shiftKey) return run(() => editor.chain().focus().insertContent('\u00A9').run()); // ©
+      if (e.altKey && key === 'r' && !e.shiftKey) return run(() => editor.chain().focus().insertContent('\u00AE').run()); // ®
+      if (e.altKey && key === 't' && !e.shiftKey) return run(() => editor.chain().focus().insertContent('\u2122').run()); // ™
 
       if (e.altKey) return; // don't intercept other Ctrl+Alt combos
 
@@ -776,10 +879,7 @@ const NarrativeEditor = React.forwardRef(function NarrativeEditor({
       if (!e.shiftKey && !e.altKey && e.key === '2') return run(() => editor.chain().focus().setLineHeight('2').run());
       if (!e.shiftKey && !e.altKey && e.key === '5') return run(() => editor.chain().focus().setLineHeight('1.5').run());
 
-      // Headings — Ctrl+Alt+1..4 (Word), Ctrl+Shift+N = Normal
-      if (e.altKey && ['1', '2', '3', '4'].includes(e.key)) {
-        return run(() => editor.chain().focus().setHeading({ level: parseInt(e.key, 10) }).run());
-      }
+      // Ctrl+Shift+N = Normal style
       if (e.shiftKey && key === 'n') return run(() => editor.chain().focus().setParagraph().run());
 
       // ── Lists ─────────────────────────────────────────────

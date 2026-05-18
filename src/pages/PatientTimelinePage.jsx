@@ -36,7 +36,32 @@ export default function PatientTimelinePage() {
     if (!patient.patientName && !patient.patientId) return;
     setLoading(true);
     try {
-      const searchQuery = patient.patientId || patient.patientIdentifier || patient.patientName;
+      const patientId = patient.patientId || patient.patientIdentifier;
+
+      // Try the dedicated patient timeline API first if patientId is a valid Guid
+      const guidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+      const isGuid = guidRegex.test(patientId);
+
+      if (isGuid) {
+        console.info(`[TIMELINE PAGE] Querying dedicated timeline API for patient Guid: ${patientId}`);
+        const res = await apiClient.get(`/patients/${patientId}/timeline`);
+        if (res.data?.success && Array.isArray(res.data.data)) {
+          const formattedHistory = res.data.data
+            .filter(a => String(a.appointmentId) !== String(appointmentId) && a.displayId !== appointmentId)
+            .map(a => ({
+              ...a,
+              assetCount: a.assets?.length || 0,
+              reportImpression: a.report?.impression || '',
+              report: a.report
+            }));
+          setHistory(formattedHistory);
+          setLoading(false);
+          return;
+        }
+      }
+
+      // Fallback search
+      const searchQuery = patientId || patient.patientName;
       const [todayRes, archiveRes] = await Promise.all([
         apiClient.get('/appointments', { params: { search: searchQuery } }).catch(() => ({ data: [] })),
         apiClient.get('/appointments', { params: { search: searchQuery, isArchive: true } }).catch(() => ({ data: [] })),
