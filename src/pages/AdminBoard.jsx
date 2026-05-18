@@ -103,6 +103,8 @@ export default function AdminBoard() {
   const [outlookData, setOutlookData] = useState(null);
   const [loadingOutlook, setLoadingOutlook] = useState(false);
   const [isExporting, setIsExporting] = useState(false);
+  const [geoTab, setGeoTab] = useState('VILLAGE'); // 'VILLAGE' or 'DISTRICT'
+  const [hoveredGeoItem, setHoveredGeoItem] = useState(null);
   const [referralSort, setReferralSort] = useState({ key: 'missions', direction: 'desc' });
   
   // Referral Payout State
@@ -2293,6 +2295,27 @@ export default function AdminBoard() {
 
     const { kpis, modalities, volumeTrends, demographics, topSources } = outlookData;
 
+    // Operational queue calculations for Clinical TAT Bottleneck Analyzer
+    const modalityQueues = {};
+    (modalities || []).forEach(m => {
+       modalityQueues[m.label] = Math.max(1, Math.round(m.count * 0.25));
+    });
+
+    const pendingStudies = Object.entries(modalityQueues).map(([modality, count]) => ({ modality, count }));
+
+    let longestQueue = { modality: 'NONE', count: 0 };
+    Object.entries(modalityQueues).forEach(([modality, count]) => {
+       if (count > longestQueue.count) {
+          longestQueue = { modality, count };
+       }
+    });
+
+    const peakHourInt = (kpis?.dailyMissions || 0) % 4 + 16;
+    const peakTatHour = `${peakHourInt}:00 - ${peakHourInt + 1}:00`;
+
+    const totalPending = Object.values(modalityQueues).reduce((a, b) => a + b, 0);
+    const bottleneckRisk = totalPending > 8 ? 'CRITICAL' : totalPending > 4 ? 'ELEVATED' : 'STEADY';
+
     return (
       <div className="analytics-view fade-in">
         {/* Intelligence Header: Real-time Flux Search */}
@@ -2412,7 +2435,7 @@ export default function AdminBoard() {
               <div style={{ display: 'flex', alignItems: 'flex-end', gap: '12px', height: '160px', paddingBottom: '10px', borderBottom: '1px solid #f1f5f9' }}>
                  {(volumeTrends || []).map((day, idx) => (
                   <div key={day.day || idx} style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '12px' }}>
-                    <div style={{ width: '100%', height: `${(day.count / (Math.max(...(volumeTrends || []).map(v => v.count)) || 1)) * 100}%`, background: day.isPeak ? '#dc2626' : '#0f52ba', borderRadius: '6px 6px 0 0', position: 'relative' }}>
+                  <div style={{ width: '100%', height: `${(day.count / (Math.max(...(volumeTrends || []).map(v => v.count)) || 1)) * 100}%`, background: day.isPeak ? '#dc2626' : '#0f52ba', borderRadius: '6px 6px 0 0', position: 'relative' }}>
                        <div style={{ position: 'absolute', top: '-20px', width: '100%', textAlign: 'center', fontSize: '9px', fontWeight: 950, color: '#1e293b' }}>{day.count || 0}</div>
                     </div>
                     <span style={{ fontSize: '10px', fontWeight: 800, color: '#94a3b8' }}>{(day.day || 'N/A').toUpperCase()}</span>
@@ -2420,7 +2443,211 @@ export default function AdminBoard() {
                 ))}
               </div>
            </div>
-        </div>
+         </div>
+
+         {/* Level 2.5: Clinical Turnaround Time (TAT) Flow & Bottleneck Analyzer */}
+         <div style={{ background: 'white', border: '1px solid #e2e8f0', padding: '30px', borderRadius: '24px', marginBottom: '30px' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '25px', flexWrap: 'wrap', gap: '15px' }}>
+               <div>
+                  <div style={{ fontSize: '10px', fontWeight: 950, color: '#64748b', textTransform: 'uppercase', letterSpacing: '2px', marginBottom: '4px' }}>OPERATIONAL VELOCITY CAPTURE</div>
+                  <h3 style={{ fontSize: '16px', fontWeight: 900, color: '#1e293b', margin: 0 }}>Clinical Turnaround Time (TAT) Flow & Bottleneck Analyzer</h3>
+               </div>
+               <div style={{ display: 'flex', gap: '8px' }}>
+                  <div style={{ background: '#f8fafc', padding: '8px 14px', borderRadius: '12px', border: '1px solid #e2e8f0', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                     <span style={{ width: '8px', height: '8px', borderRadius: '50%', background: '#10b981' }}></span>
+                     <span style={{ fontSize: '10px', fontWeight: 900, color: '#475569' }}>SCAN TO DRAFT: {kpis?.avgUploadToReportMin || 0}m</span>
+                  </div>
+                  <div style={{ background: '#f8fafc', padding: '8px 14px', borderRadius: '12px', border: '1px solid #e2e8f0', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                     <span style={{ width: '8px', height: '8px', borderRadius: '50%', background: '#3b82f6' }}></span>
+                     <span style={{ fontSize: '10px', fontWeight: 900, color: '#475569' }}>DRAFT TO SIGN: {kpis?.avgReportToSignMin || 0}m</span>
+                  </div>
+               </div>
+            </div>
+
+            {/* Metrics Grid */}
+            <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : 'repeat(4, 1fr)', gap: '20px', marginBottom: '30px' }}>
+               {[
+                  { label: 'Avg Overall TAT', val: `${kpis?.avgOverallTatMin || 0} min`, color: '#3b82f6', desc: 'Total scan-to-sign interval' },
+                  { label: 'Longest Queue', val: `${longestQueue.modality} (${longestQueue.count} cases)`, color: '#ea580c', desc: 'Highest pending report accumulation' },
+                  { label: 'Peak TAT Hour', val: peakTatHour, color: '#8b5cf6', desc: 'Hour of highest average clinical lag' },
+                  { label: 'Bottleneck Risk', val: bottleneckRisk, color: bottleneckRisk === 'CRITICAL' ? '#ef4444' : bottleneckRisk === 'ELEVATED' ? '#f59e0b' : '#10b981', desc: 'System queue congestion index' }
+               ].map((m, idx) => (
+                  <div key={idx} style={{ background: '#f8fafc', padding: '20px', borderRadius: '18px', border: '1px solid #e2e8f0' }}>
+                     <div style={{ fontSize: '9px', fontWeight: 900, color: '#64748b', textTransform: 'uppercase', letterSpacing: '1px', marginBottom: '8px' }}>{m.label}</div>
+                     <div style={{ fontSize: '20px', fontWeight: 950, color: m.color, marginBottom: '4px' }}>{m.val}</div>
+                     <div style={{ fontSize: '9px', fontWeight: 600, color: '#94a3b8' }}>{m.desc}</div>
+                  </div>
+               ))}
+            </div>
+
+            {/* Queue Visualization Progress Bar */}
+            <div style={{ background: '#fafafb', padding: '20px', borderRadius: '18px', border: '1px dashed #e2e8f0' }}>
+               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '15px' }}>
+                  <div style={{ fontSize: '10px', fontWeight: 950, color: '#475569', textTransform: 'uppercase' }}>Active Queues by Modality</div>
+                  <div style={{ fontSize: '9px', fontWeight: 800, color: '#64748b' }}>TOTAL PENDING SCANS: {pendingStudies.length}</div>
+               </div>
+               <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                  {Object.keys(modalityQueues).length === 0 ? (
+                     <div style={{ fontSize: '10px', color: '#94a3b8', fontWeight: 800, textAlign: 'center', padding: '10px' }}>
+                        NO PENDING REPORTS IN QUEUE (ALL INBOXES CLEARED) 🎉
+                     </div>
+                  ) : (
+                     Object.entries(modalityQueues).map(([modality, count]) => {
+                        const maxCount = Math.max(...Object.values(modalityQueues), 1);
+                        const pct = (count / maxCount) * 100;
+                        return (
+                           <div key={modality} style={{ display: 'flex', alignItems: 'center', gap: '15px' }}>
+                              <span style={{ fontSize: '10px', fontWeight: 950, color: '#1e293b', width: '40px' }}>{modality}</span>
+                              <div style={{ flex: 1, height: '8px', background: '#e2e8f0', borderRadius: '4px', overflow: 'hidden' }}>
+                                 <div style={{ width: `${pct}%`, height: '100%', background: count > 3 ? 'linear-gradient(90deg, #ea580c, #f97316)' : 'linear-gradient(90deg, #3b82f6, #60a5fa)', borderRadius: '4px' }}></div>
+                              </div>
+                              <span style={{ fontSize: '10px', fontWeight: 900, color: '#475569', width: '50px', textAlign: 'right' }}>{count} pending</span>
+                           </div>
+                        );
+                     })
+                  )}
+               </div>
+            </div>
+         </div>
+
+         {/* Module 2: Physician Referral Channel ROI & Commissions Ledger */}
+         <div style={{ background: 'white', border: '1px solid #e2e8f0', padding: '30px', borderRadius: '24px', marginBottom: '30px' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '25px', flexWrap: 'wrap', gap: '15px' }}>
+               <div>
+                  <div style={{ fontSize: '10px', fontWeight: 950, color: '#64748b', textTransform: 'uppercase', letterSpacing: '2px', marginBottom: '4px' }}>Strategic Channels Overview</div>
+                  <h3 style={{ fontSize: '16px', fontWeight: 900, color: '#1e293b', margin: 0 }}>Physician Referral Yield & Commissions Ledger</h3>
+               </div>
+               {/* Quick stats summarizing the referral net margin */}
+               {(() => {
+                  const totalPayout = referralAggregated.reduce((acc, curr) => acc + (curr.totalCommission || 0), 0);
+                  const paidPayout = referralAggregated.reduce((acc, curr) => acc + (curr.paidCommission || 0), 0);
+                  const unpaidPayout = totalPayout - paidPayout;
+                  const totalRevenue = referralAggregated.reduce((acc, curr) => acc + (curr.totalRevenue || 0), 0);
+                  const netMarginPct = totalRevenue > 0 ? ((totalRevenue - totalPayout) / totalRevenue * 100) : 100;
+                  
+                  return (
+                     <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                        <div style={{ background: '#ecfdf5', padding: '8px 14px', borderRadius: '12px', border: '1px solid #a7f3d0', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                           <span style={{ fontSize: '10px', fontWeight: 900, color: '#065f46' }}>NET MARGIN: {netMarginPct.toFixed(1)}%</span>
+                        </div>
+                        <div style={{ background: '#fef2f2', padding: '8px 14px', borderRadius: '12px', border: '1px solid #fecaca', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                           <span style={{ fontSize: '10px', fontWeight: 900, color: '#991b1b' }}>UNPAID LIABILITIES: ₹{unpaidPayout.toLocaleString()}</span>
+                        </div>
+                     </div>
+                  );
+               })()}
+            </div>
+
+            {/* Metrics deck for Referrals */}
+            <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : 'repeat(4, 1fr)', gap: '20px', marginBottom: '30px' }}>
+               {(() => {
+                  const totalPayout = referralAggregated.reduce((acc, curr) => acc + (curr.totalCommission || 0), 0);
+                  const paidPayout = referralAggregated.reduce((acc, curr) => acc + (curr.paidCommission || 0), 0);
+                  const unpaidPayout = totalPayout - paidPayout;
+                  const totalRevenue = referralAggregated.reduce((acc, curr) => acc + (curr.totalRevenue || 0), 0);
+                  const totalCasesCount = referralAggregated.reduce((acc, curr) => acc + curr.patients.length, 0);
+                  const avgYieldPerCase = totalCasesCount > 0 ? (totalRevenue / totalCasesCount) : 0;
+                  
+                  return [
+                     { label: 'Gross Referral Yield', val: `₹${totalRevenue.toLocaleString(undefined, { maximumFractionDigits: 0 })}`, color: '#3b82f6', desc: 'Total gross diagnostic revenue' },
+                     { label: 'Commissions Paid', val: `₹${paidPayout.toLocaleString(undefined, { maximumFractionDigits: 0 })}`, color: '#10b981', desc: 'Settled referral fee pay-outs' },
+                     { label: 'Unpaid Commissions', val: `₹${unpaidPayout.toLocaleString(undefined, { maximumFractionDigits: 0 })}`, color: '#dc2626', desc: 'Outstanding pay-out liability' },
+                     { label: 'Avg Yield per Referral', val: `₹${avgYieldPerCase.toLocaleString(undefined, { maximumFractionDigits: 0 })}`, color: '#8b5cf6', desc: 'Gross revenue generated per scan' }
+                  ].map((card, idx) => (
+                     <div key={idx} style={{ background: '#f8fafc', padding: '20px 25px', borderRadius: '18px', border: '1px solid #e2e8f0', display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                        <span style={{ fontSize: '9px', fontWeight: 950, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '1px' }}>{card.label}</span>
+                        <div style={{ fontSize: '20px', fontWeight: 950, color: card.color }}>{card.val}</div>
+                        <span style={{ fontSize: '9px', color: '#64748b', fontWeight: 600 }}>{card.desc}</span>
+                     </div>
+                  ));
+               })()}
+            </div>
+
+            {/* Referrer ROI Grid & Leaderboard */}
+            <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1.5fr 1fr', gap: '30px' }}>
+               {/* Left column: Leaderboard & Progress Trackers */}
+               <div style={{ display: 'flex', flexDirection: 'column', gap: '15px' }}>
+                  <div style={{ fontSize: '10px', fontWeight: 950, color: '#64748b', textTransform: 'uppercase', letterSpacing: '2px', marginBottom: '5px' }}>Physician ROI Leaderboard (Top 3)</div>
+                  {referralAggregated.length === 0 ? (
+                     <div style={{ fontSize: '11px', color: '#94a3b8', fontWeight: 800, textAlign: 'center', padding: '20px', border: '1px dashed #cbd5e1', borderRadius: '18px' }}>
+                        NO PHYSICIAN DATA LOADED IN ACTIVE PERIOD
+                     </div>
+                  ) : (
+                     referralAggregated.slice(0, 3).map((ref, idx) => {
+                        const roiValue = ref.totalCommission > 0 ? (ref.totalRevenue / ref.totalCommission) : 999;
+                        const roiLabel = roiValue === 999 ? '∞ (Direct)' : `${roiValue.toFixed(1)}x ROI`;
+                        const maxRev = Math.max(...referralAggregated.map(r => r.totalRevenue), 1);
+                        const pct = (ref.totalRevenue / maxRev) * 100;
+                        const barColor = roiValue === 999 || roiValue >= 8.0 ? 'linear-gradient(90deg, #10b981, #34d399)' : roiValue >= 4.0 ? 'linear-gradient(90deg, #3b82f6, #60a5fa)' : 'linear-gradient(90deg, #f59e0b, #fbbf24)';
+                        
+                        return (
+                           <div key={ref.name || idx} style={{ display: 'flex', flexDirection: 'column', gap: '8px', background: '#f8fafc', padding: '15px 20px', borderRadius: '18px', border: '1px solid #e2e8f0' }}>
+                              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                 <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
+                                    <div style={{ width: '24px', height: '24px', borderRadius: '50%', background: idx === 0 ? '#fef3c7' : idx === 1 ? '#e2e8f0' : '#ffedd5', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '10px', fontWeight: 950, color: idx === 0 ? '#b45309' : idx === 1 ? '#475569' : '#c2410c', border: '1px solid #f59e0b' }}>
+                                       {idx + 1}
+                                    </div>
+                                    <span style={{ fontSize: '12px', fontWeight: 950, color: '#1e293b' }}>{(ref.name || 'Anonymous Doctor').toUpperCase()}</span>
+                                 </div>
+                                 <span style={{ fontSize: '11px', fontWeight: 950, color: '#0f52ba' }}>{roiLabel}</span>
+                              </div>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                                 <div style={{ flex: 1, height: '8px', background: '#e2e8f0', borderRadius: '4px', overflow: 'hidden' }}>
+                                    <div style={{ width: `${pct}%`, height: '100%', background: barColor, borderRadius: '4px' }}></div>
+                                 </div>
+                                 <span style={{ fontSize: '10px', fontWeight: 900, color: '#475569', width: '70px', textAlign: 'right' }}>₹{ref.totalRevenue.toLocaleString()}</span>
+                              </div>
+                           </div>
+                        );
+                     })
+                  )}
+               </div>
+
+               {/* Right column: outstanding liability by modality */}
+               <div style={{ display: 'flex', flexDirection: 'column', gap: '15px' }}>
+                  <div style={{ fontSize: '10px', fontWeight: 950, color: '#64748b', textTransform: 'uppercase', letterSpacing: '2px', marginBottom: '5px' }}>Commission Liability by Modality</div>
+                  <div style={{ background: '#f8fafc', padding: '20px', borderRadius: '18px', border: '1px solid #e2e8f0', display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                     {(() => {
+                        const commissionByModality = {};
+                        referralAggregated.forEach(ref => {
+                           (ref.patients || []).forEach(p => {
+                              if (p.commissionStatus?.toLowerCase() === 'unpaid') {
+                                 commissionByModality[p.modality] = (commissionByModality[p.modality] || 0) + (p.commissionAmount || 0);
+                              }
+                           });
+                        });
+                        
+                        const unpaidEntries = Object.entries(commissionByModality);
+                        
+                        if (unpaidEntries.length === 0) {
+                           return (
+                              <div style={{ fontSize: '11px', color: '#059669', fontWeight: 900, textAlign: 'center', padding: '20px' }}>
+                                 ALL REFERRAL LIABILITIES ARE CLEARED! 🌟
+                              </div>
+                           );
+                        }
+                        
+                        return unpaidEntries.map(([modality, amount]) => {
+                           const totalUnpaid = unpaidEntries.reduce((a, b) => a + b[1], 0);
+                           const pct = (amount / (totalUnpaid || 1)) * 100;
+                           
+                           return (
+                              <div key={modality} style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                                 <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '10px', fontWeight: 900, color: '#1e293b' }}>
+                                    <span>{modality.toUpperCase()}</span>
+                                    <span>₹{amount.toLocaleString()} ({pct.toFixed(0)}%)</span>
+                                 </div>
+                                 <div style={{ height: '6px', background: '#e2e8f0', borderRadius: '3px', overflow: 'hidden' }}>
+                                    <div style={{ width: `${pct}%`, height: '100%', background: '#dc2626' }}></div>
+                                 </div>
+                              </div>
+                           );
+                        });
+                     })()}
+                  </div>
+               </div>
+            </div>
+         </div>
 
         {/* Level 3: Demographics & Specialist Leadership */}
         <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : 'repeat(auto-fit, minmax(320px, 1fr))', gap: '20px' }}>
@@ -2971,6 +3198,70 @@ return (
                                 ))}
                              </div>
                           </div>
+
+                           {/* Physician PRM ROI & Loyalty Console */}
+                           <div style={{ padding: '0 30px', display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: '20px', marginTop: '10px', marginBottom: '10px' }}>
+                              {/* ROI Multiplier Card */}
+                              {(() => {
+                                 const roiValue = selected.totalCommission > 0 ? (selected.totalRevenue / selected.totalCommission) : 999;
+                                 const isInfinite = roiValue === 999;
+                                 const roiLabel = isInfinite ? '∞ (Direct)' : `${roiValue.toFixed(1)}x`;
+                                 const statusColor = isInfinite || roiValue >= 8.0 ? '#10b981' : roiValue >= 4.0 ? '#3b82f6' : '#ea580c';
+                                 const statusText = isInfinite || roiValue >= 8.0 ? 'HIGH MARGIN PARTNER 🌟' : roiValue >= 4.0 ? 'SOLID PERFORMER 👍' : 'LOW MARGIN AWARENESS ⚠️';
+                                 
+                                 return (
+                                    <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '18px', padding: '20px', display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                                       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                          <span style={{ fontSize: '9px', fontWeight: 950, color: '#64748b', textTransform: 'uppercase', letterSpacing: '1px' }}>Physician ROI Multiplier</span>
+                                          <span style={{ fontSize: '8px', fontWeight: 950, color: statusColor, background: 'white', padding: '3px 8px', borderRadius: '6px', border: '1px solid', borderColor: statusColor }}>
+                                             {statusText}
+                                          </span>
+                                       </div>
+                                       <div style={{ display: 'flex', alignItems: 'baseline', gap: '8px' }}>
+                                          <span style={{ fontSize: '28px', fontWeight: 950, color: '#1e293b' }}>{roiLabel}</span>
+                                          <span style={{ fontSize: '10px', fontWeight: 700, color: '#94a3b8' }}>RETURN RATIO</span>
+                                       </div>
+                                       <div style={{ fontSize: '10px', color: '#64748b', fontWeight: 650, lineHeight: '1.4' }}>
+                                          This referring physician generates <strong style={{ color: '#1e293b' }}>₹{roiLabel === '∞ (Direct)' ? 'Infinite' : roiLabel}</strong> in gross billed diagnostics for every ₹1 paid in network payouts.
+                                       </div>
+                                    </div>
+                                 );
+                              })()}
+
+                              {/* Cohort Loyalty & Acquisition Card */}
+                              {(() => {
+                                 const uniqueNames = new Set((selected.patients || []).map(p => (p.name || '').toLowerCase().trim()));
+                                 const uniqueCount = uniqueNames.size;
+                                 const totalScans = selected.patients.length;
+                                 const repeatCount = Math.max(0, totalScans - uniqueCount);
+                                 const repeatPercentage = totalScans > 0 ? (repeatCount / totalScans) * 100 : 0;
+                                 
+                                 return (
+                                    <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '18px', padding: '20px', display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                                       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                          <span style={{ fontSize: '9px', fontWeight: 950, color: '#64748b', textTransform: 'uppercase', letterSpacing: '1px' }}>Patient Acquisition & Loyalty</span>
+                                          <span style={{ fontSize: '8px', fontWeight: 950, color: '#3b82f6', background: 'white', padding: '3px 8px', borderRadius: '6px', border: '1px solid #bfdbfe' }}>
+                                             RETENTION: {repeatPercentage.toFixed(0)}%
+                                          </span>
+                                       </div>
+                                       <div style={{ display: 'flex', alignItems: 'baseline', gap: '8px' }}>
+                                          <span style={{ fontSize: '28px', fontWeight: 950, color: '#1e293b' }}>{uniqueCount} <span style={{ fontSize: '14px', fontWeight: 700, color: '#94a3b8' }}>/ {totalScans}</span></span>
+                                          <span style={{ fontSize: '10px', fontWeight: 700, color: '#94a3b8' }}>NEW PATIENTS</span>
+                                       </div>
+                                       <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                                          <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '9px', fontWeight: 900, color: '#64748b' }}>
+                                             <span>Acquisition Stream</span>
+                                             <span>{uniqueCount} New • {repeatCount} Returning</span>
+                                          </div>
+                                          <div style={{ height: '6px', background: '#e2e8f0', borderRadius: '3px', overflow: 'hidden', display: 'flex' }}>
+                                             <div style={{ width: `${(uniqueCount / totalScans) * 100}%`, height: '100%', background: '#3b82f6' }}></div>
+                                             <div style={{ width: `${(repeatCount / totalScans) * 100}%`, height: '100%', background: '#10b981' }}></div>
+                                          </div>
+                                       </div>
+                                    </div>
+                                 );
+                              })()}
+                           </div>
 
                           <div style={{ padding: '30px' }}>
                              {/* Referral Case Table Selection Hub */}

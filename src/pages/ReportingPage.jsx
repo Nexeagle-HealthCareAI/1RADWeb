@@ -1756,9 +1756,10 @@ const ReportingPage = () => {
       {/* SCOPED CSS */}
       <style>{`
         .reporting-app-container {
-          height: 100vh;
+          height: calc(100vh - 20px);
           width: calc(100% - 24px);
           margin-left: 24px;
+          margin-top: 20px;
           background: #f8fafc;
           color: #1e293b;
           font-family: 'Inter', system-ui, sans-serif;

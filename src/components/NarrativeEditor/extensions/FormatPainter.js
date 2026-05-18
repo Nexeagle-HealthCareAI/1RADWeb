@@ -46,9 +46,8 @@ export const FormatPainter = Extension.create({
         }
 
         editor.storage.formatPainter.marks  = markList;
-        editor.storage.formatPainter.active = true; // activate even if no marks — lets user clear formatting
-        // Force a re-render so the button shows active state
-        editor.view.dispatch(editor.state.tr.setMeta('forceUpdate', true));
+        editor.storage.formatPainter.active = true;
+        window.dispatchEvent(new CustomEvent('narrative-editor:painter-state-changed', { detail: { active: true } }));
         return true;
       },
 
@@ -58,29 +57,27 @@ export const FormatPainter = Extension.create({
 
         const { from, to } = editor.state.selection;
         if (from === to) {
-          // No selection — just toggle off
           editor.storage.formatPainter.active = false;
-          editor.view.dispatch(editor.state.tr.setMeta('forceUpdate', true));
+          window.dispatchEvent(new CustomEvent('narrative-editor:painter-state-changed', { detail: { active: false } }));
           return true;
         }
 
+        // Apply the captured marks directly to selection
         let c = chain().focus();
-        // Strip existing marks on the target, then re-apply the captured ones
-        marks.forEach(m => {
+        for (const m of marks) {
           c = c.setMark(m.name, m.attrs);
-        });
+        }
         const ok = c.run();
 
-        // Single-shot mode (Word style) — turn off after one application.
         editor.storage.formatPainter.active = false;
-        editor.view.dispatch(editor.state.tr.setMeta('forceUpdate', true));
+        window.dispatchEvent(new CustomEvent('narrative-editor:painter-state-changed', { detail: { active: false } }));
         return ok;
       },
 
       cancelFormatPainter: () => ({ editor }) => {
         editor.storage.formatPainter.active = false;
         editor.storage.formatPainter.marks = [];
-        editor.view.dispatch(editor.state.tr.setMeta('forceUpdate', true));
+        window.dispatchEvent(new CustomEvent('narrative-editor:painter-state-changed', { detail: { active: false } }));
         return true;
       },
     };

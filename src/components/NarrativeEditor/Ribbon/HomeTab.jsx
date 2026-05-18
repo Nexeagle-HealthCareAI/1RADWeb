@@ -297,6 +297,7 @@ export default function HomeTab({ editor, showFormattingMarks, onToggleFormattin
   const [showOrdered, setShowOrdered] = useState(false);
   const [showShading, setShowShading] = useState(false);
   const [showBorders, setShowBorders] = useState(false);
+  const [painterActive, setPainterActive] = useState(false);
   const colorBtnRef = useRef(null);
   const hlBtnRef = useRef(null);
   const bulletBtnRef = useRef(null);
@@ -304,8 +305,16 @@ export default function HomeTab({ editor, showFormattingMarks, onToggleFormattin
   const shadingBtnRef = useRef(null);
   const bordersBtnRef = useRef(null);
 
+  // Listen to painter state changes
+  useEffect(() => {
+    const handler = (e) => {
+      setPainterActive(!!e.detail?.active);
+    };
+    window.addEventListener('narrative-editor:painter-state-changed', handler);
+    return () => window.removeEventListener('narrative-editor:painter-state-changed', handler);
+  }, []);
+
   // Change editor cursor to a crosshair while format-painter is active
-  const painterActive = !!editor?.storage?.formatPainter?.active;
   useEffect(() => {
     if (!editor) return;
     const dom = editor.view?.dom;
@@ -326,64 +335,129 @@ export default function HomeTab({ editor, showFormattingMarks, onToggleFormattin
     <div style={{ display: 'flex', alignItems: 'stretch', height: '100%' }}>
       {/* ── Clipboard group ─────────────────────────────── */}
       <Group label="Clipboard">
-        <BigBtn
-          icon="📋"
-          label="Paste"
-          title="Paste (Ctrl+V)"
-          onClick={async () => {
-            try {
-              // Prefer rich HTML from clipboard
-              const items = await navigator.clipboard.read();
-              for (const item of items) {
-                if (item.types.includes('text/html')) {
-                  const blob = await item.getType('text/html');
-                  const html = await blob.text();
-                  editor.chain().focus().insertContent(html).run();
-                  return;
+        <div style={{ display: 'flex', gap: '4px', alignItems: 'center', height: '100%' }}>
+
+          {/* Paste — tall primary button */}
+          <button
+            onMouseDown={e => e.preventDefault()}
+            onClick={async () => {
+              try {
+                const items = await navigator.clipboard.read();
+                for (const item of items) {
+                  if (item.types.includes('text/html')) {
+                    const blob = await item.getType('text/html');
+                    const html = await blob.text();
+                    editor.chain().focus().insertContent(html).run();
+                    return;
+                  }
                 }
-              }
-              // Fallback to plain text
-              const text = await navigator.clipboard.readText();
-              if (text) editor.chain().focus().insertContent(text).run();
-            } catch {
-              // Permission denied or API unavailable — native Ctrl+V handles it
-            }
-          }}
-        />
-        <div style={{
-          display: 'flex', flexDirection: 'column',
-          gap: '2px',
-          alignSelf: 'center',
-          marginLeft: '2px',
-        }}>
-          <SmallRowBtn
-            label="Cut"
-            icon={<span style={{ fontSize: '11px' }}>✂</span>}
-            title="Cut (Ctrl+X)"
-            onClick={() => { editor.commands.focus(); document.execCommand('cut'); }}
-          />
-          <SmallRowBtn
-            label="Copy"
-            icon={<span style={{ fontSize: '11px' }}>⎘</span>}
-            title="Copy (Ctrl+C)"
-            onClick={() => { editor.commands.focus(); document.execCommand('copy'); }}
-          />
-          <SmallRowBtn
-            label="Painter"
-            icon={<Icon d={ICONS.painter} size={11} />}
-            title={painterActive
-              ? 'Format Painter active — select text to apply  |  Click again to cancel  (Ctrl+Shift+C / V)'
-              : 'Format Painter — click to pick up formatting, then select target text  (Ctrl+Shift+C / V)'}
-            active={painterActive}
-            onClick={() => {
-              // Toggle: if already active → cancel; otherwise → pick up formatting at cursor/selection
-              if (painterActive) {
-                editor.chain().focus().cancelFormatPainter().run();
-              } else {
-                editor.chain().focus().pickupFormat().run();
-              }
+                const text = await navigator.clipboard.readText();
+                if (text) editor.chain().focus().insertContent(text).run();
+              } catch {}
             }}
-          />
+            title="Paste (Ctrl+V)"
+            style={{
+              display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
+              gap: '5px', width: '48px', height: '62px',
+              background: 'transparent', border: '1px solid transparent',
+              borderRadius: '3px', cursor: 'pointer', flexShrink: 0,
+              fontFamily: '"Segoe UI", system-ui, sans-serif',
+            }}
+            onMouseEnter={e => { e.currentTarget.style.background = '#DEECF9'; e.currentTarget.style.borderColor = '#C7E0F4'; }}
+            onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.borderColor = 'transparent'; }}
+          >
+            <Icon d="M4 1.5H3a2 2 0 0 0-2 2V14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V3.5a2 2 0 0 0-2-2h-1v1h1a1 1 0 0 1 1 1V14a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1V3.5a1 1 0 0 1 1-1h1v-1zM9.5 1v1h-3V1h3zm-4-1a1 1 0 0 0-1 1v2a1 1 0 0 0 1 1h5a1 1 0 0 0 1-1V1a1 1 0 0 0-1-1z" size={24} />
+            <span style={{ fontSize: '10px', color: '#1f1f1f', lineHeight: 1, fontWeight: 500 }}>Paste</span>
+          </button>
+
+          {/* Divider line */}
+          <div style={{ width: '1px', height: '48px', background: '#d8d8d8', flexShrink: 0 }} />
+
+          {/* Cut / Copy / Painter — vertical stack */}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+            {/* Cut */}
+            <button
+              onMouseDown={e => { e.preventDefault(); document.execCommand('cut'); }}
+              title="Cut (Ctrl+X)"
+              style={{
+                display: 'flex', alignItems: 'center', gap: '5px',
+                height: '18px', padding: '0 6px',
+                background: 'transparent', border: '1px solid transparent',
+                borderRadius: '2px', cursor: 'pointer',
+                fontSize: '11px', color: '#1f1f1f',
+                fontFamily: '"Segoe UI", system-ui, sans-serif', whiteSpace: 'nowrap',
+                boxSizing: 'border-box',
+              }}
+              onMouseEnter={e => { e.currentTarget.style.background = '#DEECF9'; e.currentTarget.style.borderColor = '#C7E0F4'; }}
+              onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.borderColor = 'transparent'; }}
+            >
+              <Icon d="M9.828.722a.5.5 0 0 1 .354.146l4.95 4.95a.5.5 0 0 1 0 .707c-.48.48-1.072.588-1.503.588-.177 0-.335-.018-.46-.039l-3.134 3.134a5.5 5.5 0 0 1 .16 1.013c.046.702-.032 1.687-.72 2.375a.5.5 0 0 1-.707 0l-2.829-2.828-3.182 3.182a.5.5 0 0 1-.707-.707l3.182-3.182-2.828-2.829a.5.5 0 0 1 0-.707c.688-.688 1.673-.767 2.375-.72a5.5 5.5 0 0 1 1.013.16l3.134-3.133a2.7 2.7 0 0 1-.04-.461c0-.43.108-1.022.589-1.503a.5.5 0 0 1 .353-.146" size={11} />
+              Cut
+            </button>
+
+            {/* Copy to Clipboard */}
+            <button
+              onMouseDown={e => { e.preventDefault(); document.execCommand('copy'); }}
+              title="Copy to Clipboard (Ctrl+C)"
+              style={{
+                display: 'flex', alignItems: 'center', gap: '5px',
+                height: '18px', padding: '0 6px',
+                background: 'transparent', border: '1px solid transparent',
+                borderRadius: '2px', cursor: 'pointer',
+                fontSize: '11px', color: '#1f1f1f',
+                fontFamily: '"Segoe UI", system-ui, sans-serif', whiteSpace: 'nowrap',
+                boxSizing: 'border-box',
+              }}
+              onMouseEnter={e => { e.currentTarget.style.background = '#DEECF9'; e.currentTarget.style.borderColor = '#C7E0F4'; }}
+              onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.borderColor = 'transparent'; }}
+            >
+              <Icon d="M4 1.5H3a2 2 0 0 0-2 2V14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V3.5a2 2 0 0 0-2-2h-1v1h1a1 1 0 0 1 1 1V14a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1V3.5a1 1 0 0 1 1-1h1v-1zM9.5 1v1h-3V1h3zm-4-1a1 1 0 0 0-1 1v2a1 1 0 0 0 1 1h5a1 1 0 0 0 1-1V1a1 1 0 0 0-1-1z" size={11} />
+              Copy
+            </button>
+
+            {/* Format Painter */}
+            <button
+              onMouseDown={e => {
+                e.preventDefault();
+                if (painterActive) {
+                  editor.chain().focus().cancelFormatPainter().run();
+                } else {
+                  editor.chain().focus().pickupFormat().run();
+                }
+              }}
+              title={painterActive
+                ? 'Format Painter active — click again to cancel  (Ctrl+Shift+C / V)'
+                : 'Format Painter — pick up formatting  (Ctrl+Shift+C)'}
+              style={{
+                display: 'flex', alignItems: 'center', gap: '5px',
+                height: '18px', padding: '0 6px',
+                background: painterActive ? '#DEECF9' : 'transparent',
+                border: `1px solid ${painterActive ? '#2B86CE' : 'transparent'}`,
+                boxShadow: painterActive ? '0 0 0 1px #2B86CE' : 'none',
+                borderRadius: '2px', cursor: 'pointer',
+                fontSize: '11px', color: painterActive ? '#004578' : '#1f1f1f',
+                fontWeight: painterActive ? 600 : 400,
+                fontFamily: '"Segoe UI", system-ui, sans-serif', whiteSpace: 'nowrap',
+                boxSizing: 'border-box',
+              }}
+              onMouseEnter={e => {
+                if (!painterActive) {
+                  e.currentTarget.style.background = '#DEECF9';
+                  e.currentTarget.style.borderColor = '#C7E0F4';
+                }
+              }}
+              onMouseLeave={e => {
+                if (!painterActive) {
+                  e.currentTarget.style.background = 'transparent';
+                  e.currentTarget.style.borderColor = 'transparent';
+                }
+              }}
+            >
+              <Icon d={ICONS.painter} size={11} />
+              Painter
+            </button>
+          </div>
+
         </div>
       </Group>
 

@@ -350,39 +350,268 @@ const FinanceManager = ({
       )}
 
       {/* ── OVERVIEW TAB ── */}
-      {financeViewMode === 'LEDGER' && financialMatrix && (
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '24px' }}>
-          <div style={{ background: 'white', padding: '28px', borderRadius: '16px', border: '1px solid #e2e8f0' }}>
-            <span style={{ fontSize: '12px', fontWeight: 500, color: '#6b7280', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Gross Revenue</span>
-            <div style={{ fontSize: '32px', fontWeight: 700, color: '#1e293b', marginTop: '12px' }}>₹{(Number(financialMatrix.grossRevenue) || 0).toLocaleString()}</div>
-            <div style={{ marginTop: '16px', height: '5px', background: '#f1f5f9', borderRadius: '3px' }}>
-              <div style={{ width: '100%', height: '100%', background: '#1d4ed8', borderRadius: '3px' }}></div>
-            </div>
-            <div style={{ marginTop: '12px', fontSize: '12px', fontWeight: 500, color: '#1d4ed8' }}>Total income collected</div>
-          </div>
+      {financeViewMode === 'LEDGER' && financialMatrix && (() => {
+        const perf = financialMatrix.performance || {};
+        const aging = financialMatrix.agingDues || {};
+        const discounts = financialMatrix.discountAllocations || {};
+        const modalities = financialMatrix.modalityProfitability || [];
+        const physicianRoi = financialMatrix.physicianRoiLedger || [];
+        const leakage = financialMatrix.leakageAudits || [];
 
-          <div style={{ background: 'white', padding: '28px', borderRadius: '16px', border: '1px solid #e2e8f0' }}>
-            <span style={{ fontSize: '12px', fontWeight: 500, color: '#6b7280', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Total Expenses</span>
-            <div style={{ fontSize: '32px', fontWeight: 700, color: '#dc2626', marginTop: '12px' }}>₹{(Number(financialMatrix.totalExpenses) || 0).toLocaleString()}</div>
-            <div style={{ marginTop: '16px', height: '5px', background: '#f1f5f9', borderRadius: '3px' }}>
-              <div style={{ width: `${Math.min((financialMatrix.totalExpenses / (financialMatrix.grossRevenue || 1)) * 100, 100)}%`, height: '100%', background: '#dc2626', borderRadius: '3px' }}></div>
-            </div>
-            <div style={{ marginTop: '12px', fontSize: '12px', fontWeight: 500, color: '#dc2626' }}>
-              {((financialMatrix.totalExpenses / (financialMatrix.grossRevenue || 1)) * 100).toFixed(1)}% of revenue
-            </div>
-          </div>
+        const totalExp = expenses ? expenses.reduce((acc, curr) => acc + Number(curr.amount) + (Number(curr.taxAmount) || 0), 0) : 0;
+        const gross = Number(perf.grossRevenue) || 0;
+        const netProfitValue = gross - totalExp;
+        const marginPct = gross > 0 ? (netProfitValue / gross) * 100 : 0;
 
-          <div style={{ background: 'linear-gradient(135deg, #059669 0%, #064e3b 100%)', padding: '28px', borderRadius: '16px', color: 'white' }}>
-            <span style={{ fontSize: '12px', fontWeight: 500, color: 'rgba(255,255,255,0.7)', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Net Profit</span>
-            <div style={{ fontSize: '32px', fontWeight: 700, color: 'white', marginTop: '12px' }}>₹{(Number(financialMatrix.netIncome) || 0).toLocaleString()}</div>
-            <div style={{ marginTop: '16px', background: 'rgba(255,255,255,0.15)', padding: '10px 14px', borderRadius: '8px' }}>
-              <div style={{ fontSize: '13px', fontWeight: 600 }}>
-                Margin: {((financialMatrix.netIncome / (financialMatrix.grossRevenue || 1)) * 100).toFixed(1)}%
+        return (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '30px' }}>
+            {/* Core Financial KPI Dashboard Cards */}
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: '20px' }}>
+              
+              {/* Gross Revenue Card */}
+              <div style={{ background: 'white', padding: '24px', borderRadius: '20px', border: '1px solid #e2e8f0', boxShadow: '0 2px 8px rgba(0,0,0,0.02)' }}>
+                <span style={{ fontSize: '10px', fontWeight: 950, color: '#64748b', textTransform: 'uppercase', letterSpacing: '2px' }}>Gross Invoiced Revenue</span>
+                <div style={{ fontSize: '28px', fontWeight: 950, color: '#1e293b', marginTop: '12px' }}>₹{gross.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '14px', fontSize: '10px', fontWeight: 900, color: '#059669' }}>
+                   <span>📈 NOMINAL VALUE REALIZED</span>
+                </div>
+              </div>
+
+              {/* Total Expenses Card */}
+              <div style={{ background: 'white', padding: '24px', borderRadius: '20px', border: '1px solid #e2e8f0', boxShadow: '0 2px 8px rgba(0,0,0,0.02)' }}>
+                <span style={{ fontSize: '10px', fontWeight: 950, color: '#64748b', textTransform: 'uppercase', letterSpacing: '2px' }}>Total Expenditures</span>
+                <div style={{ fontSize: '28px', fontWeight: 950, color: '#dc2626', marginTop: '12px' }}>₹{totalExp.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '14px', fontSize: '10px', fontWeight: 800, color: '#64748b' }}>
+                   <span>{gross > 0 ? ((totalExp / gross) * 100).toFixed(1) : '0.0'}% of Gross Billing</span>
+                </div>
+              </div>
+
+              {/* Net Profit Card */}
+              <div style={{ background: 'linear-gradient(135deg, #059669 0%, #064e3b 100%)', padding: '24px', borderRadius: '20px', color: 'white', boxShadow: '0 4px 20px rgba(5,150,105,0.15)' }}>
+                <span style={{ fontSize: '10px', fontWeight: 950, color: '#a7f3d0', textTransform: 'uppercase', letterSpacing: '2px' }}>Operating Net Profit</span>
+                <div style={{ fontSize: '28px', fontWeight: 950, color: 'white', marginTop: '12px' }}>₹{netProfitValue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '14px', fontSize: '10px', fontWeight: 900, color: '#a7f3d0' }}>
+                   <span>Yield Margin: {marginPct.toFixed(1)}%</span>
+                </div>
+              </div>
+
+              {/* Outstanding AR Card */}
+              <div style={{ background: 'white', padding: '24px', borderRadius: '20px', border: '1px solid #e2e8f0', boxShadow: '0 2px 8px rgba(0,0,0,0.02)' }}>
+                <span style={{ fontSize: '10px', fontWeight: 950, color: '#64748b', textTransform: 'uppercase', letterSpacing: '2px' }}>Outstanding Dues (A/R)</span>
+                <div style={{ fontSize: '28px', fontWeight: 950, color: '#d97706', marginTop: '12px' }}>₹{(Number(perf.outstandingAR) || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '14px', fontSize: '10px', fontWeight: 800, color: '#d97706' }}>
+                   <span>⚠️ {((Number(perf.outstandingAR) || 0) > 0 && gross > 0 ? ((Number(perf.outstandingAR) / gross) * 100).toFixed(1) : '0.0')}% unpaid book dues</span>
+                </div>
+              </div>
+
+            </div>
+
+            {/* Visual Section 1: A/R Aging Stacked Ledger & Discount Allocations */}
+            <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1.3fr 1fr', gap: '24px' }}>
+              
+              {/* Accounts Receivable (AR) Aging Buckets */}
+              <div style={{ background: 'white', padding: '30px', borderRadius: '24px', border: '1px solid #e2e8f0', boxShadow: '0 2px 8px rgba(0,0,0,0.02)' }}>
+                 <div style={{ fontSize: '10px', fontWeight: 950, color: '#64748b', textTransform: 'uppercase', letterSpacing: '2px', marginBottom: '25px' }}>Accounts Receivable (A/R) Aging Buckets</div>
+                 <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+                    
+                    {[
+                      { label: '0 - 30 Days (Current)', value: Number(aging.bucket0To30) || 0, color: '#2563eb' },
+                      { label: '31 - 60 Days (Grace)', value: Number(aging.bucket31To60) || 0, color: '#f59e0b' },
+                      { label: '61 - 90 Days (Overdue)', value: Number(aging.bucket61To90) || 0, color: '#ea580c' },
+                      { label: '91+ Days (Critical Debt)', value: Number(aging.bucket91Plus) || 0, color: '#dc2626' }
+                    ].map((bucket, i) => {
+                      const totalOutstanding = Number(aging.totalOutstanding) || 1;
+                      const percentage = (bucket.value / totalOutstanding) * 100;
+                      return (
+                        <div key={bucket.label}>
+                           <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px', fontSize: '11px', fontWeight: 950 }}>
+                              <span style={{ color: '#1e293b' }}>{bucket.label.toUpperCase()}</span>
+                              <span style={{ color: bucket.color }}>₹{bucket.value.toLocaleString()} ({percentage.toFixed(1)}%)</span>
+                           </div>
+                           <div style={{ height: '8px', background: '#f1f5f9', borderRadius: '4px', overflow: 'hidden' }}>
+                              <div style={{ width: `${percentage}%`, height: '100%', background: bucket.color, borderRadius: '4px' }}></div>
+                           </div>
+                        </div>
+                      );
+                    })}
+
+                 </div>
+              </div>
+
+              {/* Discount & Concession Distribution */}
+              <div style={{ background: 'white', padding: '30px', borderRadius: '24px', border: '1px solid #e2e8f0', boxShadow: '0 2px 8px rgba(0,0,0,0.02)' }}>
+                 <div style={{ fontSize: '10px', fontWeight: 950, color: '#64748b', textTransform: 'uppercase', letterSpacing: '2px', marginBottom: '25px' }}>Discount & Concession Breakdowns</div>
+                 <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                    
+                    {[
+                      { label: 'REFERRED DOCTORS', value: Number(discounts.referral) || 0, color: '#6c5ce7' },
+                      { label: 'SENIOR CITIZENS', value: Number(discounts.seniorCitizen) || 0, color: '#0f52ba' },
+                      { label: 'CORPORATE CONCESSIONS', value: Number(discounts.corporate) || 0, color: '#2ecc71' },
+                      { label: 'PROMOTIONAL OFFERINGS', value: Number(discounts.promotional) || 0, color: '#f39c12' }
+                    ].map((disc, idx) => {
+                      const totalDiscounts = Object.values(discounts).reduce((a, b) => Number(a) + Number(b), 0) || 1;
+                      const percentage = (disc.value / totalDiscounts) * 100;
+                      return (
+                        <div key={disc.label} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px 14px', background: '#f8fafc', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
+                           <span style={{ fontSize: '9px', fontWeight: 950, color: '#64748b', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                              <div style={{ width: '8px', height: '8px', borderRadius: '50%', background: disc.color }}></div>
+                              {disc.label}
+                           </span>
+                           <span style={{ fontSize: '12px', fontWeight: 950, color: '#1e293b' }}>₹{disc.value.toLocaleString()}</span>
+                        </div>
+                      );
+                    })}
+
+                 </div>
+              </div>
+
+            </div>
+
+            {/* Visual Section 2: Modality Operating Margin Matrix */}
+            <div style={{ background: 'white', padding: '30px', borderRadius: '24px', border: '1px solid #e2e8f0', boxShadow: '0 2px 8px rgba(0,0,0,0.02)' }}>
+              <div style={{ fontSize: '10px', fontWeight: 950, color: '#64748b', textTransform: 'uppercase', letterSpacing: '2px', marginBottom: '25px' }}>Modality Profitability & Operating Margins</div>
+              <div style={{ overflowX: 'auto' }}>
+                 <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                    <thead>
+                       <tr style={{ borderBottom: '2px solid #f1f5f9', paddingBottom: '12px' }}>
+                          {['Modality', 'Study Count', 'Gross Revenue', 'Referral Cut Paid', 'Net Yield', 'Margin %', 'Collection Efficiency'].map((th, i) => (
+                             <th key={th} style={{ padding: '12px 16px', textAlign: i === 0 ? 'left' : 'right', fontSize: '9px', fontWeight: 950, color: '#94a3b8', textTransform: 'uppercase' }}>{th}</th>
+                          ))}
+                       </tr>
+                    </thead>
+                    <tbody>
+                       {modalities.map((mod, idx) => (
+                          <tr key={mod.modality || idx} style={{ borderBottom: '1px solid #f8fafc' }}>
+                             <td style={{ padding: '14px 16px', fontSize: '12px', fontWeight: 950, color: '#1e293b' }}>
+                                <span style={{ padding: '4px 8px', borderRadius: '6px', background: '#334155', color: 'white', fontSize: '9px', fontWeight: 900 }}>{(mod.modality || 'OTHER').toUpperCase()}</span>
+                             </td>
+                             <td style={{ padding: '14px 16px', textAlign: 'right', fontSize: '12px', fontWeight: 800, color: '#64748b' }}>{mod.scanCount || 0} Scans</td>
+                             <td style={{ padding: '14px 16px', textAlign: 'right', fontSize: '13px', fontWeight: 850, color: '#1e293b' }}>₹{(mod.grossRevenue || 0).toLocaleString()}</td>
+                             <td style={{ padding: '14px 16px', textAlign: 'right', fontSize: '13px', fontWeight: 850, color: '#dc2626' }}>₹{(mod.referralCut || 0).toLocaleString()}</td>
+                             <td style={{ padding: '14px 16px', textAlign: 'right', fontSize: '13px', fontWeight: 850, color: '#059669' }}>₹{(mod.netRevenue || 0).toLocaleString()}</td>
+                             <td style={{ padding: '14px 16px', textAlign: 'right' }}>
+                                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: '8px' }}>
+                                   <span style={{ fontSize: '12px', fontWeight: 950, color: '#1e293b' }}>{mod.marginPercentage}%</span>
+                                   <div style={{ width: '50px', height: '6px', background: '#f1f5f9', borderRadius: '3px', overflow: 'hidden' }}>
+                                      <div style={{ width: `${mod.marginPercentage}%`, height: '100%', background: '#059669', borderRadius: '3px' }}></div>
+                                   </div>
+                                </div>
+                             </td>
+                             <td style={{ padding: '14px 16px', textAlign: 'right' }}>
+                                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: '8px' }}>
+                                   <span style={{ fontSize: '12px', fontWeight: 950, color: '#1e293b' }}>{mod.collectionEfficiency}%</span>
+                                   <div style={{ width: '50px', height: '6px', background: '#f1f5f9', borderRadius: '3px', overflow: 'hidden' }}>
+                                      <div style={{ width: `${mod.collectionEfficiency}%`, height: '100%', background: '#2563eb', borderRadius: '3px' }}></div>
+                                   </div>
+                                </div>
+                             </td>
+                          </tr>
+                       ))}
+                       {modalities.length === 0 && (
+                          <tr>
+                             <td colSpan="7" style={{ padding: '30px', textAlign: 'center', color: '#94a3b8', fontSize: '12px' }}>No Modality profitability metrics loaded.</td>
+                          </tr>
+                       )}
+                    </tbody>
+                 </table>
               </div>
             </div>
+
+            {/* Visual Section 3: Physician Referral ROI & Concession Leakage Ledger */}
+            <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1.2fr', gap: '24px' }}>
+              
+              {/* Physician ROI Ledger */}
+              <div style={{ background: 'white', padding: '30px', borderRadius: '24px', border: '1px solid #e2e8f0', boxShadow: '0 2px 8px rgba(0,0,0,0.02)', display: 'flex', flexDirection: 'column' }}>
+                 <div style={{ fontSize: '10px', fontWeight: 950, color: '#64748b', textTransform: 'uppercase', letterSpacing: '2px', marginBottom: '25px' }}>Physician Referral ROI Ledger</div>
+                 <div style={{ overflowX: 'auto', flex: 1 }}>
+                    <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                       <thead>
+                          <tr style={{ borderBottom: '2px solid #f1f5f9' }}>
+                             {['Physician', 'Billed Vol.', 'Commission', 'Yield ROI'].map((th, i) => (
+                                <th key={th} style={{ padding: '10px 12px', textAlign: i === 0 ? 'left' : 'right', fontSize: '9px', fontWeight: 950, color: '#94a3b8', textTransform: 'uppercase' }}>{th}</th>
+                             ))}
+                          </tr>
+                       </thead>
+                       <tbody>
+                          {physicianRoi.map((doc, idx) => (
+                             <tr key={doc.doctorName || idx} style={{ borderBottom: '1px solid #f8fafc' }}>
+                                <td style={{ padding: '12px', fontSize: '12px', fontWeight: 900, color: '#1e293b' }}>{doc.doctorName}</td>
+                                <td style={{ padding: '12px', textAlign: 'right', fontSize: '12px', fontWeight: 850, color: '#1e293b' }}>₹{(doc.billedRevenue || 0).toLocaleString()}</td>
+                                <td style={{ padding: '12px', textAlign: 'right', fontSize: '12px', fontWeight: 850, color: '#dc2626' }}>₹{(doc.commissionPaid || 0).toLocaleString()}</td>
+                                <td style={{ padding: '12px', textAlign: 'right' }}>
+                                   <span style={{ 
+                                      fontSize: '10px', 
+                                      fontWeight: 950, 
+                                      padding: '4px 8px', 
+                                      borderRadius: '6px', 
+                                      background: doc.roiMultiplier > 5 ? '#eff6ff' : '#f8fafc',
+                                      color: doc.roiMultiplier > 5 ? '#2563eb' : '#64748b',
+                                      border: doc.roiMultiplier > 5 ? '1px solid #bfdbfe' : '1px solid #e2e8f0'
+                                   }}>
+                                      {doc.roiMultiplier}x Yield
+                                   </span>
+                                </td>
+                             </tr>
+                          ))}
+                          {physicianRoi.length === 0 && (
+                             <tr>
+                                <td colSpan="4" style={{ padding: '20px', textAlign: 'center', color: '#94a3b8', fontSize: '12px' }}>No ROI records compiled.</td>
+                             </tr>
+                          )}
+                       </tbody>
+                    </table>
+                 </div>
+              </div>
+
+              {/* Discount Concession Leakage Auditor */}
+              <div style={{ background: 'white', padding: '30px', borderRadius: '24px', border: '1px solid #e2e8f0', boxShadow: '0 2px 8px rgba(0,0,0,0.02)', display: 'flex', flexDirection: 'column' }}>
+                 <div style={{ fontSize: '10px', fontWeight: 950, color: '#64748b', textTransform: 'uppercase', letterSpacing: '2px', marginBottom: '25px' }}>Discount & Concession Leakage Auditor</div>
+                 <div style={{ overflowX: 'auto', flex: 1 }}>
+                    <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                       <thead>
+                          <tr style={{ borderBottom: '2px solid #f1f5f9' }}>
+                             {['Authorized By', 'Discounts', 'Billed gross', 'Avg %', 'Risk profile'].map((th, i) => (
+                                <th key={th} style={{ padding: '10px 12px', textAlign: i === 0 ? 'left' : 'right', fontSize: '9px', fontWeight: 950, color: '#94a3b8', textTransform: 'uppercase' }}>{th}</th>
+                             ))}
+                          </tr>
+                       </thead>
+                       <tbody>
+                          {leakage.map((leak, idx) => (
+                             <tr key={leak.doctorName || idx} style={{ borderBottom: '1px solid #f8fafc' }}>
+                                <td style={{ padding: '12px', fontSize: '12px', fontWeight: 900, color: '#1e293b' }}>{leak.doctorName}</td>
+                                <td style={{ padding: '12px', textAlign: 'right', fontSize: '12px', fontWeight: 850, color: '#ea580c' }}>₹{(leak.totalDiscountApproved || 0).toLocaleString()}</td>
+                                <td style={{ padding: '12px', textAlign: 'right', fontSize: '12px', fontWeight: 850, color: '#1e293b' }}>₹{(leak.totalBilledRevenue || 0).toLocaleString()}</td>
+                                <td style={{ padding: '12px', textAlign: 'right', fontSize: '12px', fontWeight: 950, color: '#1e293b' }}>{leak.averageDiscountPercentage}%</td>
+                                <td style={{ padding: '12px', textAlign: 'right' }}>
+                                   <span style={{ 
+                                      fontSize: '9px', 
+                                      fontWeight: 950, 
+                                      padding: '3px 6px', 
+                                      borderRadius: '6px', 
+                                      background: leak.riskLevel === 'HIGH RISK' ? '#fef2f2' : leak.riskLevel === 'REVIEW' ? '#fff7ed' : '#f0fdf4',
+                                      color: leak.riskLevel === 'HIGH RISK' ? '#dc2626' : leak.riskLevel === 'REVIEW' ? '#ea580c' : '#16a34a',
+                                      border: leak.riskLevel === 'HIGH RISK' ? '1px solid #fecaca' : leak.riskLevel === 'REVIEW' ? '1px solid #ffedd5' : '1px solid #bbf7d0'
+                                   }}>
+                                      {leak.riskLevel}
+                                   </span>
+                                </td>
+                             </tr>
+                          ))}
+                          {leakage.length === 0 && (
+                             <tr>
+                                <td colSpan="5" style={{ padding: '20px', textAlign: 'center', color: '#94a3b8', fontSize: '12px' }}>No concession audit trail active.</td>
+                             </tr>
+                          )}
+                       </tbody>
+                    </table>
+                 </div>
+              </div>
+
+            </div>
+
           </div>
-        </div>
-      )}
+        );
+      })()}
 
       {/* ── SERVICE PRICE DRAWER ── */}
       {isPriceDrawerOpen && (
