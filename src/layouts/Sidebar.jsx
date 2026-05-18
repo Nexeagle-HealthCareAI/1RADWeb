@@ -8,16 +8,16 @@ import '../styles/global.css';
 const T = {
   bg: '#0a1628',
   surface: 'rgba(255,255,255,0.05)',
-  hover: 'rgba(255,255,255,0.07)',
-  active: 'rgba(96,165,250,0.16)',
+  hover: 'rgba(255,255,255,0.11)',
+  active: 'rgba(96,165,250,0.22)',
   activeBorder: '#60a5fa',
-  border: 'rgba(255,255,255,0.09)',
+  border: 'rgba(255,255,255,0.12)',
   borderStrong: '#1e3a5f',
   accent: '#60a5fa',
-  accentDim: 'rgba(96,165,250,0.14)',
-  textHigh: 'rgba(255,255,255,0.92)',
-  textMid: 'rgba(255,255,255,0.50)',
-  textLow: 'rgba(255,255,255,0.25)',
+  accentDim: 'rgba(96,165,250,0.18)',
+  textHigh: 'rgba(255,255,255,0.96)',
+  textMid: 'rgba(255,255,255,0.72)',
+  textLow: 'rgba(255,255,255,0.45)',
   danger: '#f87171',
   dangerBg: 'rgba(248,113,113,0.10)',
   wExpanded: 228,
@@ -194,6 +194,7 @@ export default function Sidebar({ isMobileOpen, onMobileClose }) {
   const [collapsed, setCollapsed] = useState(false);
   const [soHov, setSoHov] = useState(false);
   const [toggleHov, setToggleHov] = useState(false);
+  const [closeHov, setCloseHov] = useState(false);
   const [viewW, setViewW] = useState(window.innerWidth);
   const navigate = useNavigate();
 
@@ -294,11 +295,17 @@ export default function Sidebar({ isMobileOpen, onMobileClose }) {
         {isMobile && (
           <button
             onClick={onMobileClose}
+            onMouseEnter={() => setCloseHov(true)}
+            onMouseLeave={() => setCloseHov(false)}
             style={{
               display: 'flex', alignItems: 'center', justifyContent: 'center',
-              width: '26px', height: '26px', flexShrink: 0,
-              border: `1px solid ${T.border}`, borderRadius: '6px',
-              background: 'transparent', color: T.textLow, cursor: 'pointer',
+              width: '28px', height: '28px', flexShrink: 0,
+              border: `1px solid ${closeHov ? T.danger : 'rgba(255,255,255,0.22)'}`,
+              borderRadius: '6px',
+              background: closeHov ? T.dangerBg : 'rgba(255,255,255,0.05)',
+              color: closeHov ? T.danger : T.textHigh,
+              cursor: 'pointer',
+              transition: 'all 0.2s ease',
             }}
           >
             <CloseIcon size={13} />
@@ -320,14 +327,14 @@ export default function Sidebar({ isMobileOpen, onMobileClose }) {
             right: '-12px',
             display: 'flex', alignItems: 'center', justifyContent: 'center',
             width: '24px', height: '24px', flexShrink: 0,
-            border: `1px solid ${T.borderStrong}`,
+            border: `1px solid ${toggleHov ? T.accent : 'rgba(255,255,255,0.22)'}`,
             borderRadius: '50%',
-            background: toggleHov ? '#1e293b' : T.bg,
-            color: toggleHov ? T.textHigh : T.textMid,
+            background: toggleHov ? '#1e3a5f' : '#0f172a',
+            color: toggleHov ? '#ffffff' : T.textHigh,
             cursor: 'pointer',
             zIndex: 100,
-            transition: 'background 0.2s, border-color 0.2s, color 0.2s',
-            boxShadow: '0 2px 5px rgba(0,0,0,0.2)',
+            transition: 'all 0.2s ease',
+            boxShadow: toggleHov ? '0 0 8px rgba(96, 165, 250, 0.4)' : '0 2px 5px rgba(0,0,0,0.3)',
           }}
         >
           <svg 
@@ -436,9 +443,9 @@ export default function Sidebar({ isMobileOpen, onMobileClose }) {
             gap: '10px',
             padding: showCollapsed ? '9px 0' : '8px 10px',
             borderRadius: '9px', border: 'none',
-            background: soHov ? T.dangerBg : 'transparent',
-            color: T.danger, cursor: 'pointer',
-            transition: 'background 0.13s, padding 0.22s',
+            background: soHov ? 'rgba(248,113,113,0.18)' : 'transparent',
+            color: soHov ? '#ffffff' : T.danger, cursor: 'pointer',
+            transition: 'all 0.2s ease, padding 0.22s',
             fontFamily: FF,
           }}
         >

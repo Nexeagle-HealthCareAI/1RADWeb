@@ -142,8 +142,59 @@ export default function Ribbon(props) {
           })}
         </div>
 
-        {/* Persistent right-side controls: fullscreen + help + save */}
+        {/* ── Persistent right-side controls ──────────────────────
+             All elements use a unified 26px-tall row with consistent
+             borders, spacing, and typography. Order (most→least used):
+             Dictate · Full Screen · Help · Save · Collapse ribbon */}
         <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+
+          {/* Dictate — moved here from QAT for visual consistency */}
+          {voiceSupported && onToggleVoice && (
+            <button
+              onMouseDown={e => { e.preventDefault(); onToggleVoice(); }}
+              title={voiceActive ? 'Stop dictation' : 'Start voice dictation'}
+              aria-pressed={voiceActive}
+              style={{
+                display: 'inline-flex', alignItems: 'center', gap: '6px',
+                height: '26px', padding: '0 10px 0 9px',
+                background: voiceActive ? '#dc2626' : '#ffffff',
+                border: `1px solid ${voiceActive ? '#dc2626' : '#d1d5db'}`,
+                borderRadius: '4px',
+                color: voiceActive ? '#ffffff' : '#374151',
+                fontSize: '11.5px', fontWeight: 500,
+                cursor: 'pointer', fontFamily: 'inherit',
+                boxShadow: voiceActive
+                  ? '0 0 0 3px rgba(220, 38, 38, 0.18), 0 1px 2px rgba(220, 38, 38, 0.4)'
+                  : '0 1px 0 rgba(0, 0, 0, 0.02)',
+                transition: 'background 0.12s, border-color 0.12s, color 0.12s, box-shadow 0.12s',
+              }}
+              onMouseEnter={e => {
+                if (!voiceActive) { e.currentTarget.style.background = '#f3f4f6'; e.currentTarget.style.borderColor = '#9ca3af'; }
+              }}
+              onMouseLeave={e => {
+                if (!voiceActive) { e.currentTarget.style.background = '#ffffff'; e.currentTarget.style.borderColor = '#d1d5db'; }
+              }}
+            >
+              <span
+                style={{
+                  display: 'inline-flex',
+                  animation: voiceActive ? 'narrative-mic-pulse 1.2s ease-in-out infinite' : 'none',
+                }}
+              >
+                <Icon d={ICONS.mic} size={13} />
+              </span>
+              <span style={{ lineHeight: 1 }}>{voiceActive ? 'Listening…' : 'Dictate'}</span>
+              {voiceActive && (
+                <span style={{
+                  width: '6px', height: '6px', borderRadius: '50%',
+                  background: '#fff',
+                  animation: 'narrative-mic-pulse 1.2s ease-in-out infinite',
+                }} />
+              )}
+            </button>
+          )}
+
+          {/* Full Screen */}
           {toggleFullscreen && (
             <button
               onMouseDown={e => { e.preventDefault(); toggleFullscreen(); }}
@@ -164,71 +215,71 @@ export default function Ribbon(props) {
                 transition: 'background 0.12s, border-color 0.12s, color 0.12s',
               }}
               onMouseEnter={e => {
-                if (!isFullscreen) {
-                  e.currentTarget.style.background = '#f3f4f6';
-                  e.currentTarget.style.borderColor = '#9ca3af';
-                }
+                if (!isFullscreen) { e.currentTarget.style.background = '#f3f4f6'; e.currentTarget.style.borderColor = '#9ca3af'; }
               }}
               onMouseLeave={e => {
-                if (!isFullscreen) {
-                  e.currentTarget.style.background = '#ffffff';
-                  e.currentTarget.style.borderColor = '#d1d5db';
-                }
+                if (!isFullscreen) { e.currentTarget.style.background = '#ffffff'; e.currentTarget.style.borderColor = '#d1d5db'; }
               }}
             >
               <Icon d={isFullscreen ? ICONS.exitFs : ICONS.fullscreen} size={13} />
-              <span style={{ lineHeight: 1 }}>{isFullscreen ? 'Exit Full Screen' : 'Full Screen'}</span>
-              <kbd style={{
-                marginLeft: '2px',
-                padding: '1px 5px',
-                background: isFullscreen ? 'rgba(255,255,255,0.18)' : '#f3f4f6',
-                border: `1px solid ${isFullscreen ? 'rgba(255,255,255,0.3)' : '#e5e7eb'}`,
-                borderRadius: '3px',
-                fontFamily: '"Cascadia Code", "Consolas", monospace',
-                fontSize: '9.5px', fontWeight: 600,
-                color: isFullscreen ? '#ffffff' : '#6b7280',
-                lineHeight: 1,
-              }}>F11</kbd>
+              <span style={{ lineHeight: 1 }}>{isFullscreen ? 'Exit Full' : 'Full Screen'}</span>
             </button>
           )}
 
+          {/* Help — circle button matched to 26px height */}
           <button
             onMouseDown={e => { e.preventDefault(); window.dispatchEvent(new CustomEvent('narrative-editor:open-shortcuts')); }}
             title="Keyboard shortcuts (F1)"
             style={{
-              width: '24px', height: '24px', borderRadius: '50%',
-              background: 'transparent', border: '1px solid #d1d5db',
+              width: '26px', height: '26px', borderRadius: '50%',
+              background: '#ffffff', border: '1px solid #d1d5db',
               color: '#555', fontSize: '12px', fontWeight: 700,
               cursor: 'pointer', fontFamily: 'inherit',
-              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+              flexShrink: 0,
+              transition: 'background 0.12s, border-color 0.12s, color 0.12s',
             }}
+            onMouseEnter={e => { e.currentTarget.style.background = '#f3f4f6'; e.currentTarget.style.borderColor = '#9ca3af'; e.currentTarget.style.color = '#0078d4'; }}
+            onMouseLeave={e => { e.currentTarget.style.background = '#ffffff'; e.currentTarget.style.borderColor = '#d1d5db'; e.currentTarget.style.color = '#555'; }}
           >?</button>
 
+          {/* Primary Save button — slightly more visually prominent */}
           {onSave && (
             <button
               onMouseDown={e => { e.preventDefault(); onSave(); }}
+              title="Save (Ctrl+S)"
               style={{
-                height: '24px', padding: '0 14px',
-                background: 'linear-gradient(180deg, #0078d4 0%, #006bbc 100%)',
-                color: '#fff', border: 'none', borderRadius: '3px',
-                fontSize: '11px', fontWeight: 600,
+                display: 'inline-flex', alignItems: 'center', gap: '6px',
+                height: '26px', padding: '0 14px',
+                background: 'linear-gradient(180deg, #0a8aea 0%, #006bbc 100%)',
+                color: '#fff', border: '1px solid #006bbc',
+                borderRadius: '4px',
+                fontSize: '11.5px', fontWeight: 600,
                 cursor: 'pointer', fontFamily: 'inherit',
                 boxShadow: '0 1px 2px rgba(0, 120, 212, 0.4)',
+                transition: 'background 0.12s, box-shadow 0.12s',
               }}
-              title="Save (Ctrl+S)"
-            >Save</button>
+              onMouseEnter={e => { e.currentTarget.style.background = 'linear-gradient(180deg, #1894f0 0%, #0078d4 100%)'; }}
+              onMouseLeave={e => { e.currentTarget.style.background = 'linear-gradient(180deg, #0a8aea 0%, #006bbc 100%)'; }}
+            >
+              <svg width="12" height="12" viewBox="0 0 16 16" fill="currentColor"><path d="M11 1H3a1 1 0 0 0-1 1v12a1 1 0 0 0 1 1h10a1 1 0 0 0 1-1V4l-3-3zM9 13H5v-3h4v3zm2-7H4V3h7v3z"/></svg>
+              <span style={{ lineHeight: 1 }}>Save</span>
+            </button>
           )}
+
+          {/* Subtle vertical divider before the collapse toggle */}
+          <span style={{ width: '1px', height: '18px', background: '#d8d8d8', margin: '0 2px' }} />
 
           {/* Collapse/expand ribbon toggle */}
           <button
             onMouseDown={e => { e.preventDefault(); setRibbonCollapsed(c => !c); }}
             title={ribbonCollapsed ? 'Expand ribbon (Ctrl+F1)' : 'Collapse ribbon (Ctrl+F1)'}
             style={{
-              width: '22px', height: '22px', borderRadius: '3px',
+              width: '24px', height: '24px', borderRadius: '3px',
               background: 'transparent', border: '1px solid transparent',
-              color: '#555', fontSize: '10px', fontWeight: 700,
+              color: '#555', fontSize: '12px', fontWeight: 700,
               cursor: 'pointer', fontFamily: 'inherit',
-              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
               flexShrink: 0,
               transition: 'background 0.1s, border-color 0.1s',
             }}
