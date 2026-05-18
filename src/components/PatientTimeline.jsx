@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import DOMPurify from 'dompurify';
 import apiClient from '../api/apiClient';
 
 /**
@@ -280,7 +281,7 @@ const PatientTimeline = ({
                                     maxHeight: '120px',
                                     overflowY: 'auto'
                                   }}
-                                  dangerouslySetInnerHTML={{ __html: htmlFindings }}
+                                  dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(htmlFindings) }}
                                 />
                               </div>
                             )}

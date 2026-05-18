@@ -16,12 +16,8 @@
 */
 .narrative-editor-container:fullscreen,
 .narrative-editor-container:-webkit-full-screen {
-  width:      100vw         !important;
-  height:     100dvh        !important; /* dvh = dynamic: shrinks when mobile address-bar hides */
-  max-height: 100dvh        !important;
-  /* fallback for browsers without dvh support (Safari < 15.4) */
-  height:     100vh         !important;
-  max-height: 100vh         !important;
+  /* The browser already fills the viewport in native fullscreen.
+     Do NOT set explicit height/width — it interferes on iOS Safari. */
   overflow:   hidden        !important;
   display:    flex          !important;
   flex-direction: column    !important;

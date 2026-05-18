@@ -289,6 +289,10 @@ const NarrativeEditor = React.forwardRef(function NarrativeEditor({
   const [isFullscreen, setIsFullscreen] = useState(false);
   // CSS-only fallback fullscreen — used on iPad/Safari when requestFullscreen API is unavailable or fails
   const [cssFullscreen, setCssFullscreen] = useState(false);
+  // Set to true just before we intentionally call exitFullscreen() so that
+  // onFsChange can tell the difference between a user-initiated exit and iOS
+  // auto-cancelling native fullscreen on scroll/app-switch.
+  const exitingIntentionallyRef = useRef(false);
   const [zoom, setZoom] = useState(100);
   const [findOpen, setFindOpen] = useState(false);
   const [findFocusReplace, setFindFocusReplace] = useState(false);
@@ -413,8 +417,18 @@ const NarrativeEditor = React.forwardRef(function NarrativeEditor({
     const onFsChange = () => {
       const active = !!(document.fullscreenElement || document.webkitFullscreenElement);
       setIsFullscreen(active);
-      // If native fullscreen exited, also clear CSS fallback
-      if (!active) setCssFullscreen(false);
+      if (!active) {
+        if (exitingIntentionallyRef.current) {
+          // User tapped "Exit Fullscreen" — honour the intent and clear everything.
+          setCssFullscreen(false);
+        } else {
+          // iOS/browser cancelled native fullscreen externally (scroll triggers
+          // address-bar, app-switcher, etc.). Re-enter CSS fallback so the
+          // user's fullscreen session is NOT interrupted by a stray scroll.
+          setCssFullscreen(true);
+        }
+        exitingIntentionallyRef.current = false;
+      }
     };
     document.addEventListener('fullscreenchange', onFsChange);
     document.addEventListener('webkitfullscreenchange', onFsChange);
@@ -495,7 +509,11 @@ const NarrativeEditor = React.forwardRef(function NarrativeEditor({
         setCssFullscreen(true);
       }
     } else {
-      (document.exitFullscreen?.() ?? document.webkitExitFullscreen?.())?.catch?.(() => {});
+      // Mark as intentional so onFsChange doesn't re-enter CSS fallback.
+      exitingIntentionallyRef.current = true;
+      (document.exitFullscreen?.() ?? document.webkitExitFullscreen?.())?.catch?.(() => {
+        exitingIntentionallyRef.current = false;
+      });
     }
   };
 

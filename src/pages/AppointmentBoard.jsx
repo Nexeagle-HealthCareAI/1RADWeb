@@ -363,8 +363,13 @@ export default function AppointmentBoard() {
     setCurrentPage(1);
   }, [searchQuery, filters, activeTab, archiveFilterMode, pastDateRange]);
 
+  const isInitialMount = useRef(true);
   // Auto-scroll on page change
   useEffect(() => {
+    if (isInitialMount.current) {
+      isInitialMount.current = false;
+      return;
+    }
     if (listTopRef.current) {
       listTopRef.current.scrollIntoView({ behavior: 'smooth' });
     }

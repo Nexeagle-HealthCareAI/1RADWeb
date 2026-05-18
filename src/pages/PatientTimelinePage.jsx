@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { useNavigate, useParams, useLocation } from 'react-router-dom';
+import DOMPurify from 'dompurify';
 import apiClient from '../api/apiClient';
 
 const STATUS_COLOR = {
@@ -413,7 +414,7 @@ export default function PatientTimelinePage() {
                                     </div>
                                     <div
                                       style={{ fontSize: '12px', color: '#1e293b', lineHeight: '1.7', background: 'white', borderRadius: '10px', padding: '14px 16px', border: '1px solid #e2e8f0', maxHeight: '200px', overflowY: 'auto' }}
-                                      dangerouslySetInnerHTML={{ __html: html }}
+                                      dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(html) }}
                                     />
                                   </div>
                                 );
