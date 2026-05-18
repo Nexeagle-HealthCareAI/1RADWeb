@@ -97,6 +97,7 @@ export default function AdminBoard() {
   const [expandedReferrer, setExpandedReferrer] = useState(null);
   const [personnel, setPersonnel] = useState([]);
   const [referralIntelligence, setReferralIntelligence] = useState([]);
+  const [allReferrers, setAllReferrers] = useState([]);
   const [referralLoading, setReferralLoading] = useState(false);
   const [personnelLoading, setPersonnelLoading] = useState(false);
   const [outlookData, setOutlookData] = useState(null);
@@ -545,10 +546,17 @@ export default function AdminBoard() {
       const res = await apiClient.get('/referrers/intelligence', { params });
       setReferralIntelligence(res.data);
       await nativeStorage.set(`1rad_cache_referral_intel_${referralFilterMode}`, res.data);
+
+      const allRes = await apiClient.get('/referrers');
+      setAllReferrers(allRes.data || []);
+      await nativeStorage.set('1rad_cache_all_referrers', allRes.data || []);
     } catch (err) {
       console.error('[REFERRAL INTEL] Fetch failed, trying cache', err);
       const cached = await nativeStorage.get(`1rad_cache_referral_intel_${referralFilterMode}`);
       if (cached) setReferralIntelligence(cached);
+
+      const cachedAll = await nativeStorage.get('1rad_cache_all_referrers');
+      if (cachedAll) setAllReferrers(cachedAll);
     } finally {
       setReferralLoading(false);
     }
@@ -939,6 +947,44 @@ export default function AdminBoard() {
     return allPatients;
   }, [referralIntelligence, referralLogSearch, referralViewMode]);
 
+  const caseLedgerList = useMemo(() => {
+    const safeAll = allReferrers || [];
+    const safeIntel = referralIntelligence || [];
+
+    return safeAll.map(ref => {
+      const intel = safeIntel.find(i => i.referrerId === ref.referrerId);
+      return {
+        referrerId: ref.referrerId,
+        name: ref.name,
+        contact: ref.contact,
+        address: ref.address,
+        hasSentPatients: !!intel && intel.totalPatients > 0,
+        patientCount: intel ? intel.totalPatients : 0,
+        totalRevenue: intel ? intel.totalRevenue : 0,
+        totalDiscount: intel ? intel.totalDiscount : 0,
+        totalCommission: intel ? intel.totalCommission : 0,
+        paidCommission: intel ? intel.paidCommission : 0,
+        unpaidCommission: intel ? intel.unpaidCommission : 0,
+        netProfit: intel ? intel.netProfit : 0,
+        patients: intel ? intel.patients : []
+      };
+    }).sort((a, b) => {
+      if (a.hasSentPatients && !b.hasSentPatients) return -1;
+      if (!a.hasSentPatients && b.hasSentPatients) return 1;
+      return b.patientCount - a.patientCount;
+    });
+  }, [allReferrers, referralIntelligence]);
+
+  const filteredCaseLedger = useMemo(() => {
+    if (!referralLogSearch) return caseLedgerList;
+    const searchLow = referralLogSearch.toLowerCase();
+    return caseLedgerList.filter(item => 
+      (item.name || '').toLowerCase().includes(searchLow) ||
+      (item.contact || '').toLowerCase().includes(searchLow) ||
+      (item.address || '').toLowerCase().includes(searchLow)
+    );
+  }, [caseLedgerList, referralLogSearch]);
+
   const referralAggregated = useMemo(() => {
     // Map the backend intelligence DTOs to the frontend's expected Matrix structure
     const mapped = referralIntelligence.map(ref => {
@@ -958,7 +1004,8 @@ export default function AdminBoard() {
         totalCommission: ref.totalCommission,
         paidCommission: ref.paidCommission,
         unpaidCommission: ref.unpaidCommission,
-        totalRevenue: ref.totalRevenue
+        totalRevenue: ref.totalRevenue,
+        netProfit: ref.netProfit
       };
     });
 
@@ -1053,13 +1100,16 @@ export default function AdminBoard() {
     }
 
     const searchLow = (referralLogSearch || '').toLowerCase();
-    const rows = referralIntelligence
+    const rows = allReferrers
       .filter(ref => !searchLow || (ref.name || '').toLowerCase().includes(searchLow))
       .map(ref => {
         const counts = {};
         cols.forEach(c => counts[c] = 0);
         let totalMatched = 0;
-        ref.patients.forEach(p => {
+        const intel = referralIntelligence.find(i => i.referrerId === ref.referrerId || i.name === ref.name);
+        const patientsList = intel ? (intel.patients || []) : [];
+
+        patientsList.forEach(p => {
            const pStr = p.registrationDate || p.date || TODAY;
            const key = getColKey(pStr);
            if (key && counts[key] !== undefined) {
@@ -1077,7 +1127,7 @@ export default function AdminBoard() {
       .sort((a, b) => b.total - a.total);
 
     return { cols, rows };
-  }, [referralIntelligence, referralViewMode, matrixPeriod, matrixDateStr, matrixWeekIndex, referralLogSearch]);
+  }, [allReferrers, referralIntelligence, referralViewMode, matrixPeriod, matrixDateStr, matrixWeekIndex, referralLogSearch]);
 
   const handleDeleteUser = async (id) => {
     if (id === currentUser.id) {
@@ -3033,8 +3083,8 @@ return (
                   )}
                 </div>
               </div>
-            ) : referralViewMode === 'LOG' ? (
-              /* Unified Referral Intelligence: Matrix + Case Ledger */
+                                    ) : referralViewMode === 'LOG' ? (
+              /* Unified Referral Intelligence: Matrix + Case Ledger showing all registered doctors */
               <div style={{ display: 'flex', flexDirection: 'column', gap: '30px' }}>
                  {/* 1. Tactical Matrix Grid */}
                  <div style={{ background: 'white', borderRadius: '24px', border: '1px solid #e2e8f0', overflow: isTestMode ? 'visible' : 'hidden', boxShadow: '0 4px 20px rgba(0,0,0,0.01)', padding: '30px' }}>
@@ -3042,7 +3092,7 @@ return (
                        <div style={{ display: 'flex', alignItems: isMobile ? 'stretch' : 'center', gap: '20px', flexDirection: isMobile ? 'column' : 'row' }}>
                          <div>
                            <h3 style={{ fontSize: '14px', fontWeight: 950, color: '#1e293b', margin: 0 }}>SOURCE ANALYTICS MATRIX</h3>
-                           <p style={{ fontSize: '11px', color: '#64748b', marginTop: '4px' }}>Temporal volume density across diagnostic network</p>
+                           <p style={{ fontSize: '11px', color: '#64748b', marginTop: '4px' }}>Temporal volume density across all registered partners</p>
                          </div>
                          <button 
                            onClick={handleExportMatrix}

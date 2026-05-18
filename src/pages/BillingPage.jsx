@@ -718,7 +718,7 @@ export default function BillingPage() {
     const totalGross = totalRevenue;
     const totalDiscount = safeInvoices.reduce((sum, inv) => sum + (Number(inv?.discountAmount) || 0), 0);
     const totalCommission = safeInvoices.reduce((sum, inv) => sum + (Number(inv?.commissionAmount) || 0), 0);
-    const netProfit = totalPaid - totalCommission;
+    const netProfit = totalBilled - totalCommission;
 
     return { totalRevenue, pendingRevenue, pendingCount, realizationRate, averageTicket, totalGross, totalDiscount, totalCommission, netProfit };
   }, [filteredInvoices]);

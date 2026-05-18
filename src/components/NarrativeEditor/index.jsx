@@ -282,6 +282,23 @@ const NarrativeEditor = React.forwardRef(function NarrativeEditor({
     active: false, query: '', suggestions: [], from: 0, rect: null, selected: 0,
   });
 
+  // Debounced onChange — avoid serialising the whole document to HTML on
+  // every keystroke (which would cascade-re-render the entire ReportingPage).
+  const onChangeRef = useRef(onChange);
+  useEffect(() => { onChangeRef.current = onChange; }, [onChange]);
+  const onChangeTimerRef = useRef(null);
+  const latestEditorRef = useRef(null);
+  // Flush any pending HTML on unmount so we don't lose the last edit.
+  useEffect(() => () => {
+    if (onChangeTimerRef.current) {
+      clearTimeout(onChangeTimerRef.current);
+      try {
+        const e = latestEditorRef.current;
+        if (e) onChangeRef.current?.(e.getHTML());
+      } catch (_) {}
+    }
+  }, []);
+
   // Voice dictation — text inserted at cursor when a phrase finalises.
   const voice = useVoiceDictation({
     onResult: (text) => {
@@ -489,7 +506,16 @@ const NarrativeEditor = React.forwardRef(function NarrativeEditor({
     ],
     content: ensurePagedHTML(content),
     editable,
-    onUpdate: ({ editor: e }) => onChange?.(e.getHTML()),
+    onUpdate: ({ editor: e }) => {
+      // Stash the editor for the unmount flush below.
+      latestEditorRef.current = e;
+      // Debounce the heavy getHTML() + parent setState chain by 300ms.
+      // Keeps typing smooth even on long multi-page reports.
+      if (onChangeTimerRef.current) clearTimeout(onChangeTimerRef.current);
+      onChangeTimerRef.current = setTimeout(() => {
+        try { onChangeRef.current?.(e.getHTML()); } catch (_) {}
+      }, 300);
+    },
     editorProps: {
       attributes: {
         class: 'narrative-editor-content',
