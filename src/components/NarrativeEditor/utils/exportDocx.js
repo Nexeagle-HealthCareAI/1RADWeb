@@ -241,13 +241,15 @@ function htmlToWmlBody(html) {
 }
 
 // ─── OOXML file builders ──────────────────────────────────────────────────────
-function buildContentTypes() {
+function buildContentTypes(hasHeader, hasFooter) {
+  const hdrCT = hasHeader ? '\n  <Override PartName="/word/header1.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.header+xml"/>' : '';
+  const ftrCT = hasFooter ? '\n  <Override PartName="/word/footer1.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.footer+xml"/>' : '';
   return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
   <Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
   <Default Extension="xml"  ContentType="application/xml"/>
   <Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/>
-  <Override PartName="/word/styles.xml"   ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.styles+xml"/>
+  <Override PartName="/word/styles.xml"   ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.styles+xml"/>${hdrCT}${ftrCT}
 </Types>`;
 }
 
@@ -258,21 +260,67 @@ function buildRels() {
 </Relationships>`;
 }
 
-function buildDocumentRels() {
+// ─── Header / Footer XML builders ────────────────────────────────────────────
+function alignToJc(align) {
+  if (align === 'right') return 'right';
+  if (align === 'center') return 'center';
+  return 'left';
+}
+
+function buildHdrFtrRuns(text, rPrXml) {
+  if (!text) return `<w:r>${rPrXml}<w:t/></w:r>`;
+  const parts = text.split('{pageNumber}');
+  let xml = '';
+  parts.forEach((part, i) => {
+    if (part) xml += `<w:r>${rPrXml}<w:t xml:space="preserve">${esc(part)}</w:t></w:r>`;
+    if (i < parts.length - 1) {
+      xml += `<w:r>${rPrXml}<w:fldChar w:fldCharType="begin"/></w:r>`;
+      xml += `<w:r><w:instrText xml:space="preserve"> PAGE </w:instrText></w:r>`;
+      xml += `<w:r>${rPrXml}<w:fldChar w:fldCharType="end"/></w:r>`;
+    }
+  });
+  return xml || `<w:r>${rPrXml}<w:t/></w:r>`;
+}
+
+function buildHeaderXml({ text, fontFamily, fontSize, align }) {
+  const szVal = Math.round(Number(fontSize) * 2);
+  const rPrXml = `<w:rPr><w:rFonts w:ascii="${esc(fontFamily)}" w:hAnsi="${esc(fontFamily)}"/><w:sz w:val="${szVal}"/><w:szCs w:val="${szVal}"/></w:rPr>`;
+  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<w:hdr xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"
+       xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
+  <w:p><w:pPr><w:jc w:val="${alignToJc(align)}"/></w:pPr>${buildHdrFtrRuns(text, rPrXml)}</w:p>
+</w:hdr>`;
+}
+
+function buildFooterXml({ text, fontFamily, fontSize, align }) {
+  const szVal = Math.round(Number(fontSize) * 2);
+  const rPrXml = `<w:rPr><w:rFonts w:ascii="${esc(fontFamily)}" w:hAnsi="${esc(fontFamily)}"/><w:sz w:val="${szVal}"/><w:szCs w:val="${szVal}"/></w:rPr>`;
+  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<w:ftr xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"
+       xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
+  <w:p><w:pPr><w:jc w:val="${alignToJc(align)}"/></w:pPr>${buildHdrFtrRuns(text, rPrXml)}</w:p>
+</w:ftr>`;
+}
+
+function buildDocumentRels(hasHeader, hasFooter) {
+  const hdrRel = hasHeader ? '\n  <Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/header" Target="header1.xml"/>' : '';
+  const ftrRel = hasFooter ? '\n  <Relationship Id="rId3" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/footer" Target="footer1.xml"/>' : '';
   return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
-  <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/>
+  <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/>${hdrRel}${ftrRel}
 </Relationships>`;
 }
 
-function buildDocument(bodyWml) {
+function buildDocument(bodyWml, hasHeader, hasFooter) {
+  const hdrRef = hasHeader ? '\n      <w:headerReference w:type="default" r:id="rId2"/>' : '';
+  const ftrRef = hasFooter ? '\n      <w:footerReference w:type="default" r:id="rId3"/>' : '';
   return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <w:document
   xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"
   xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
   <w:body>
     ${bodyWml}
-    <w:sectPr>
+    <w:sectPr>${hdrRef}${ftrRef}
       <w:pgSz w:w="12240" w:h="15840"/>
       <w:pgMar w:top="1440" w:right="1440" w:bottom="1440" w:left="1440" w:header="720" w:footer="720" w:gutter="0"/>
     </w:sectPr>
@@ -340,16 +388,20 @@ function buildStyles() {
  * @param {string} html     - raw HTML from editor.getHTML()
  * @param {string} filename - download file name (default: radiology-report.docx)
  */
-export async function exportToDocx(html, filename = 'radiology-report.docx') {
+export async function exportToDocx(html, filename = 'radiology-report.docx', { header, footer } = {}) {
   const bodyWml = htmlToWmlBody(html);
+  const hasHeader = !!(header?.text);
+  const hasFooter = !!(footer?.text);
 
   const zip = new JSZip();
-  zip.file('[Content_Types].xml', buildContentTypes());
+  zip.file('[Content_Types].xml', buildContentTypes(hasHeader, hasFooter));
   zip.folder('_rels').file('.rels', buildRels());
   const word = zip.folder('word');
-  word.file('document.xml', buildDocument(bodyWml));
+  word.file('document.xml', buildDocument(bodyWml, hasHeader, hasFooter));
   word.file('styles.xml', buildStyles());
-  word.folder('_rels').file('document.xml.rels', buildDocumentRels());
+  word.folder('_rels').file('document.xml.rels', buildDocumentRels(hasHeader, hasFooter));
+  if (hasHeader) word.file('header1.xml', buildHeaderXml(header));
+  if (hasFooter) word.file('footer1.xml', buildFooterXml(footer));
 
   const blob = await zip.generateAsync({
     type: 'blob',

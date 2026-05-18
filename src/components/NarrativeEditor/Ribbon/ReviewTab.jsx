@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState, useRef, useCallback, useEffect } from 'react';
 import { Btn, BigBtn, Sep, Icon, Group, ICONS } from './RibbonControls';
 
 /**
@@ -20,7 +20,11 @@ export default function ReviewTab({
   onOpenFinalize,
   isFinalized = false,
   onRunQualityCheck,
+  onRunGrammarCheck,
+  grammarLoading = false,
+  grammarMatchCount = 0,
   onOpenSnippetManager,
+  editLog = [],
   // Track Changes
   trackChangesOn = false,
   trackChangeCount = 0,
@@ -33,6 +37,24 @@ export default function ReviewTab({
   onOpenComments,
 }) {
   if (!editor) return null;
+
+  // ── Edit History dropdown helpers ─────────────────────────────────────────
+  const [histOpen, setHistOpen] = useState(false);
+  const histRef = useRef(null);
+  // Close on outside click
+  useEffect(() => {
+    if (!histOpen) return;
+    const handler = (e) => { if (!histRef.current?.contains(e.target)) setHistOpen(false); };
+    document.addEventListener('mousedown', handler, true);
+    return () => document.removeEventListener('mousedown', handler, true);
+  }, [histOpen]);
+
+  function relativeTime(ts) {
+    const secs = Math.floor((Date.now() - ts) / 1000);
+    if (secs < 60)  return `${secs}s ago`;
+    if (secs < 3600) return `${Math.floor(secs / 60)}m ago`;
+    return `${Math.floor(secs / 3600)}h ago`;
+  }
 
   return (
     <div style={{ display: 'flex', alignItems: 'stretch', height: '100%' }}>
@@ -173,11 +195,57 @@ export default function ReviewTab({
           onClick={onRunQualityCheck}
         />
         <BigBtn
+          icon={grammarLoading ? '⏳' : grammarMatchCount > 0 ? `🔍 ${grammarMatchCount}` : '🔍'}
+          label={grammarLoading ? 'Checking…' : 'Grammar'}
+          title="Check grammar and style with LanguageTool (text sent to api.languagetool.org)"
+          active={grammarMatchCount > 0 && !grammarLoading}
+          onClick={onRunGrammarCheck}
+          style={grammarMatchCount > 0 && !grammarLoading ? { color: '#92400e', background: '#fffbeb', borderColor: '#fde68a' } : {}}
+        />
+        <BigBtn
           icon="⚡"
           label="Snippets"
           title="Manage text-expansion snippets"
           onClick={onOpenSnippetManager}
         />
+        {/* ── Edit History ── */}
+        <div style={{ position: 'relative' }} ref={histRef}>
+          <BigBtn
+            icon="🕘"
+            label={`History${editLog.length ? ` (${editLog.length})` : ''}`}
+            title="View recent edit history"
+            active={histOpen}
+            onClick={() => setHistOpen(v => !v)}
+          />
+          {histOpen && (
+            <div style={{
+              position: 'absolute', top: '100%', left: 0, zIndex: 9999,
+              background: '#fff', border: '1px solid #d1d5db', borderRadius: 6,
+              boxShadow: '0 4px 16px rgba(0,0,0,.15)', width: 280, padding: '6px 0',
+              marginTop: 2, maxHeight: 340, overflowY: 'auto',
+            }}>
+              <div style={{ padding: '4px 12px 6px', fontSize: 11, fontWeight: 700, color: '#6b7280', borderBottom: '1px solid #e5e7eb' }}>
+                EDIT HISTORY
+              </div>
+              {editLog.length === 0 ? (
+                <div style={{ padding: '10px 12px', fontSize: 12, color: '#9ca3af' }}>No edits recorded yet.</div>
+              ) : editLog.map((entry, i) => (
+                <div key={i} style={{
+                  padding: '6px 12px', borderBottom: '1px solid #f3f4f6',
+                  cursor: 'default',
+                }} title={entry.preview}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
+                    <span style={{ fontSize: 11, color: '#6b7280' }}>{relativeTime(entry.time)}</span>
+                    <span style={{ fontSize: 11, color: '#9ca3af' }}>{entry.wordCount} words</span>
+                  </div>
+                  <div style={{ fontSize: 12, color: '#374151', marginTop: 2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                    {entry.preview}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
       </Group>
 
       <Sep />

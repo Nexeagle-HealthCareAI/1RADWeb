@@ -75,6 +75,7 @@ export function exportPdf(containerEl, { title = 'Radiology Report' } = {}) {
       margin: 0 auto !important;
       page-break-after: always;
       break-after: page;
+      position: relative;
     }
     .word-page:last-child {
       page-break-after: auto;

@@ -9,6 +9,86 @@
   font-family: "Segoe UI", system-ui, -apple-system, sans-serif;
 }
 
+/* ── Fullscreen — native browser API (all vendors) ───────────────────────────── */
+/*
+  Applied automatically by the browser when containerRef.requestFullscreen() succeeds.
+  Ensures the flex column fills the entire viewport and the canvas scrolls inside it.
+*/
+.narrative-editor-container:fullscreen,
+.narrative-editor-container:-webkit-full-screen {
+  width:      100vw         !important;
+  height:     100dvh        !important; /* dvh = dynamic: shrinks when mobile address-bar hides */
+  max-height: 100dvh        !important;
+  /* fallback for browsers without dvh support (Safari < 15.4) */
+  height:     100vh         !important;
+  max-height: 100vh         !important;
+  overflow:   hidden        !important;
+  display:    flex          !important;
+  flex-direction: column    !important;
+  border-radius: 0          !important;
+  /* safe-area insets for notched tablets */
+  padding-top:    env(safe-area-inset-top,    0px) !important;
+  padding-bottom: env(safe-area-inset-bottom, 0px) !important;
+  padding-left:   env(safe-area-inset-left,   0px) !important;
+  padding-right:  env(safe-area-inset-right,  0px) !important;
+}
+
+/* Canvas fills remaining height in native fullscreen */
+.narrative-editor-container:fullscreen .word-canvas,
+.narrative-editor-container:-webkit-full-screen .word-canvas {
+  flex:       1 1 0   !important;
+  min-height: 0       !important;
+  overflow-y: auto    !important;
+  overflow-x: hidden  !important;
+}
+
+/* ── Fullscreen — CSS fallback for iPad/iOS Safari where requestFullscreen fails ─ */
+/*
+  When the native Fullscreen API is unavailable or rejected (older Safari iOS),
+  we apply this class manually via React state to simulate fullscreen.
+*/
+.ne--css-fullscreen {
+  position:   fixed     !important;
+  inset:      0         !important;
+  z-index:    9999      !important;
+  width:      100vw     !important;
+  height:     100dvh    !important;
+  height:     100vh     !important;      /* fallback */
+  max-height: 100dvh    !important;
+  max-height: 100vh     !important;      /* fallback */
+  overflow:   hidden    !important;
+  display:    flex      !important;
+  flex-direction: column !important;
+  border-radius: 0      !important;
+  padding-top:    env(safe-area-inset-top,    0px) !important;
+  padding-bottom: env(safe-area-inset-bottom, 0px) !important;
+  padding-left:   env(safe-area-inset-left,   0px) !important;
+  padding-right:  env(safe-area-inset-right,  0px) !important;
+}
+
+.ne--css-fullscreen .word-canvas {
+  flex:       1 1 0   !important;
+  min-height: 0       !important;
+  overflow-y: auto    !important;
+  overflow-x: hidden  !important;
+  /* iOS momentum scrolling */
+  -webkit-overflow-scrolling: touch;
+}
+
+/* Ribbon must not shrink in fullscreen */
+.narrative-editor-container:fullscreen         .word-ribbon,
+.narrative-editor-container:-webkit-full-screen .word-ribbon,
+.ne--css-fullscreen                             .word-ribbon {
+  flex-shrink: 0;
+}
+
+/* Status bar must not shrink in fullscreen */
+.narrative-editor-container:fullscreen         .word-statusbar,
+.narrative-editor-container:-webkit-full-screen .word-statusbar,
+.ne--css-fullscreen                             .word-statusbar {
+  flex-shrink: 0;
+}
+
 /* ── Word-like gray canvas ───────────────────────────────────────────────────── */
 .word-canvas {
   flex: 1;
@@ -471,6 +551,154 @@
   from { opacity: 1; }
   to   { opacity: 0; pointer-events: none; }
 }
+
+/* ── Footnotes ────────────────────────────────────────────────────────────────── */
+.ne-footnotes-section {
+  padding: 0 40px 16px;
+  margin-top: 12px;
+}
+.ne-footnotes-rule {
+  border: none;
+  border-top: 1px solid #d1d5db;
+  width: 35%;
+  margin: 0 0 8px 0;
+}
+.ne-footnote-item {
+  font-size: 9pt;
+  color: #374151;
+  margin: 2px 0;
+  line-height: 1.6;
+}
+.ne-footnote-num {
+  color: #1d4ed8;
+  font-weight: 700;
+  margin-right: 2px;
+}
+.ne-footnote-ref {
+  color: #1d4ed8;
+  font-weight: 700;
+  cursor: help;
+  user-select: none;
+}
+
+/* ── Grammar / LanguageTool decorations ──────────────────────────────────────── */
+/* Wavy underline via SVG background — works on all browsers without ::after */
+.ne-grammar-error {
+  background-repeat: repeat-x;
+  background-position: left bottom;
+  background-size: 6px 3px;
+  padding-bottom: 2px;
+  cursor: pointer;
+}
+.ne-grammar-error--grammar {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='6' height='3'%3E%3Cpath d='M0 2.5 Q1.5 0 3 2.5 Q4.5 5 6 2.5' stroke='%23ef4444' stroke-width='1' fill='none'/%3E%3C/svg%3E");
+}
+.ne-grammar-error--spelling {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='6' height='3'%3E%3Cpath d='M0 2.5 Q1.5 0 3 2.5 Q4.5 5 6 2.5' stroke='%23f97316' stroke-width='1' fill='none'/%3E%3C/svg%3E");
+}
+.ne-grammar-error--style {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='6' height='3'%3E%3Cpath d='M0 2.5 Q1.5 0 3 2.5 Q4.5 5 6 2.5' stroke='%233b82f6' stroke-width='1' fill='none'/%3E%3C/svg%3E");
+}
+
+/* ── Grammar panel ───────────────────────────────────────────────────────────── */
+.ne-grammar-panel {
+  margin: 8px 40px 12px;
+  border: 1px solid #fed7aa;
+  border-radius: 6px;
+  background: #fff;
+  font-size: 13px;
+  box-shadow: 0 2px 8px rgba(0,0,0,.06);
+  overflow: hidden;
+}
+.ne-grammar-panel__header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 7px 12px;
+  background: #fff7ed;
+  border-bottom: 1px solid #fed7aa;
+  font-weight: 600;
+  font-size: 12px;
+  color: #7c2d12;
+}
+.ne-grammar-panel__action {
+  font-size: 11px;
+  padding: 2px 8px;
+  border: 1px solid #fed7aa;
+  border-radius: 4px;
+  background: #fff;
+  cursor: pointer;
+  color: #7c2d12;
+}
+.ne-grammar-panel__action:hover { background: #fef3c7; }
+.ne-grammar-panel__close {
+  font-size: 13px;
+  border: none;
+  background: none;
+  cursor: pointer;
+  color: #9a3412;
+  padding: 0 2px;
+  line-height: 1;
+}
+.ne-grammar-panel__list {
+  max-height: 260px;
+  overflow-y: auto;
+}
+.ne-grammar-panel__item {
+  padding: 8px 12px;
+  border-bottom: 1px solid #f3f4f6;
+}
+.ne-grammar-panel__item:last-child { border-bottom: none; }
+.ne-grammar-panel__item-meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 3px;
+}
+.ne-grammar-panel__badge {
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  padding: 1px 6px;
+  border-radius: 10px;
+}
+.ne-grammar-panel__badge--grammar  { background: #fee2e2; color: #991b1b; }
+.ne-grammar-panel__badge--spelling { background: #ffedd5; color: #9a3412; }
+.ne-grammar-panel__badge--style    { background: #dbeafe; color: #1e40af; }
+.ne-grammar-panel__category {
+  font-size: 11px;
+  color: #9ca3af;
+}
+.ne-grammar-panel__message {
+  color: #111827;
+  font-size: 13px;
+  margin-bottom: 4px;
+}
+.ne-grammar-panel__context {
+  font-size: 11px;
+  color: #6b7280;
+  font-style: italic;
+  margin-bottom: 4px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ne-grammar-panel__fixes {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+.ne-grammar-panel__fix-btn {
+  font-size: 12px;
+  padding: 2px 8px;
+  border: 1px solid #d1d5db;
+  border-radius: 12px;
+  background: #f9fafb;
+  cursor: pointer;
+  color: #111827;
+  transition: background 0.1s;
+}
+.ne-grammar-panel__fix-btn:hover { background: #e0f2fe; border-color: #7dd3fc; }
 
 /* ── Loading ─────────────────────────────────────────────────────────────────── */
 .narrative-editor-loading {

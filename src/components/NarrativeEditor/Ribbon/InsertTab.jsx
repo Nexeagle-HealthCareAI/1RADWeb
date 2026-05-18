@@ -6,6 +6,37 @@ function insertSection(editor, title) {
   editor.chain().focus().insertContent(`<h2>${title}</h2><p></p>`).run();
 }
 
+/** Scans all heading nodes and builds a static Table of Contents block. */
+function insertToc(editor) {
+  const headings = [];
+  editor.state.doc.descendants((node) => {
+    if (node.type.name === 'heading') {
+      headings.push({ level: node.attrs.level, text: node.textContent.trim() });
+    }
+  });
+  if (!headings.length) {
+    // No headings — still insert a placeholder so the user sees structure
+    headings.push({ level: 2, text: 'Add headings to populate this list…' });
+  }
+
+  const itemsHtml = headings.map(({ level, text }) => {
+    const indent  = (level - 1) * 20;
+    const fsize   = level === 1 ? '12pt' : level === 2 ? '11pt' : '10pt';
+    const fweight = level === 1 ? '700' : '400';
+    return `<p style="margin:1px 0;padding-left:${indent}px;font-size:${fsize};font-weight:${fweight};color:#1e293b">${text}</p>`;
+  }).join('');
+
+  const tocHtml = `
+    <div style="border:1px solid #cbd5e1;border-radius:4px;padding:12px 16px;background:#f8fafc;margin:8px 0">
+      <p style="font-size:12pt;font-weight:700;color:#0f172a;margin:0 0 8px 0;border-bottom:1px solid #e2e8f0;padding-bottom:6px">
+        Table of Contents
+      </p>
+      ${itemsHtml}
+    </div>
+    <p></p>`;
+  editor.chain().focus().insertContent(tocHtml).run();
+}
+
 const SECTIONS = [
   { key: 'clinical',        label: 'Clinical Hx',   title: 'Clinical History',  icon: '📋' },
   { key: 'technique',       label: 'Technique',      title: 'Technique',         icon: '⚙️' },
@@ -150,6 +181,18 @@ export default function InsertTab({ editor, onOpenTemplates, onOpenNormalFinding
           label="Horizontal Rule"
           title="Insert a horizontal rule"
           onClick={() => editor.chain().focus().setHorizontalRule().run()}
+        />
+        <BigBtn
+          icon="📑"
+          label="TOC"
+          title="Insert a Table of Contents based on current headings"
+          onClick={() => insertToc(editor)}
+        />
+        <BigBtn
+          icon="†"
+          label="Footnote"
+          title="Insert a footnote reference at cursor"
+          onClick={() => window.dispatchEvent(new CustomEvent('narrative-editor:insert-footnote'))}
         />
       </Group>
 

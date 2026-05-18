@@ -40,6 +40,8 @@ import { Sort } from './extensions/Sort';
 import { MultilevelList } from './extensions/MultilevelList';
 import { PageNumber } from './extensions/PageNumberNode';
 import { AutoCorrect } from './extensions/AutoCorrect';
+import Footnote from './extensions/Footnote';
+import { GrammarCheck, buildOffsetMap, buildGrammarDecorations } from './extensions/GrammarCheck';
 import { TrackInsert, TrackDelete, TrackChanges } from './extensions/TrackChanges';
 import { CommentMark, Comment } from './extensions/Comment';
 import { MedicalAutocomplete } from './extensions/MedicalAutocomplete';
@@ -285,6 +287,8 @@ const NarrativeEditor = React.forwardRef(function NarrativeEditor({
 }, ref) {
   const containerRef = useRef(null);
   const [isFullscreen, setIsFullscreen] = useState(false);
+  // CSS-only fallback fullscreen — used on iPad/Safari when requestFullscreen API is unavailable or fails
+  const [cssFullscreen, setCssFullscreen] = useState(false);
   const [zoom, setZoom] = useState(100);
   const [findOpen, setFindOpen] = useState(false);
   const [findFocusReplace, setFindFocusReplace] = useState(false);
@@ -327,6 +331,10 @@ const NarrativeEditor = React.forwardRef(function NarrativeEditor({
   // Preview / reading mode
   const [previewMode, setPreviewMode] = useState(false);
 
+  // ── Edit log — ring buffer of up to 20 timestamped document snapshots ────
+  const [editLog, setEditLog] = useState([]);
+  const editLogTimerRef = useRef(null);
+
   // Ruler
   const [showRuler, setShowRuler] = useState(true);
 
@@ -349,6 +357,11 @@ const NarrativeEditor = React.forwardRef(function NarrativeEditor({
   const [qualityOpen, setQualityOpen]               = useState(false);
   const [qualityResults, setQualityResults]         = useState([]);
   const [addendumOpen, setAddendumOpen]             = useState(false);
+
+  // ── Grammar Check (LanguageTool) ─────────────────────────────────────────
+  const [grammarMatches, setGrammarMatches]         = useState([]);
+  const [grammarLoading, setGrammarLoading]         = useState(false);
+  const [grammarOpen, setGrammarOpen]               = useState(false);
 
   // ── Tier 1 features ──────────────────────────────────────────────────────
   // Track Changes
@@ -397,9 +410,18 @@ const NarrativeEditor = React.forwardRef(function NarrativeEditor({
   });
 
   useEffect(() => {
-    const onFsChange = () => setIsFullscreen(!!document.fullscreenElement);
+    const onFsChange = () => {
+      const active = !!(document.fullscreenElement || document.webkitFullscreenElement);
+      setIsFullscreen(active);
+      // If native fullscreen exited, also clear CSS fallback
+      if (!active) setCssFullscreen(false);
+    };
     document.addEventListener('fullscreenchange', onFsChange);
-    return () => document.removeEventListener('fullscreenchange', onFsChange);
+    document.addEventListener('webkitfullscreenchange', onFsChange);
+    return () => {
+      document.removeEventListener('fullscreenchange', onFsChange);
+      document.removeEventListener('webkitfullscreenchange', onFsChange);
+    };
   }, []);
 
   // Track-change-count effect moved below the useEditor call (was triggering
@@ -451,10 +473,29 @@ const NarrativeEditor = React.forwardRef(function NarrativeEditor({
   }, [autocomplete.active, autocomplete.selected, autocomplete.suggestions, autocomplete.from]);
 
   const toggleFullscreen = () => {
-    if (!document.fullscreenElement) {
-      containerRef.current?.requestFullscreen();
+    const el = containerRef.current;
+    if (!el) return;
+
+    // CSS fallback mode — just clear the class
+    if (cssFullscreen) {
+      setCssFullscreen(false);
+      return;
+    }
+
+    const nativeActive = !!(document.fullscreenElement || document.webkitFullscreenElement);
+
+    if (!nativeActive) {
+      if (el.requestFullscreen) {
+        el.requestFullscreen().catch(() => setCssFullscreen(true));
+      } else if (el.webkitRequestFullscreen) {
+        // Safari / old iOS
+        try { el.webkitRequestFullscreen(); } catch { setCssFullscreen(true); }
+      } else {
+        // No Fullscreen API at all (older Safari iOS)
+        setCssFullscreen(true);
+      }
     } else {
-      document.exitFullscreen();
+      (document.exitFullscreen?.() ?? document.webkitExitFullscreen?.())?.catch?.(() => {});
     }
   };
 
@@ -482,7 +523,10 @@ const NarrativeEditor = React.forwardRef(function NarrativeEditor({
   // ── Export to Word ────────────────────────────────────────────────────────
   const handleExportDocx = async () => {
     if (!editor) return;
-    await exportToDocx(editor.getHTML(), 'radiology-report.docx');
+    await exportToDocx(editor.getHTML(), 'radiology-report.docx', {
+      header: headerState.text ? headerState : undefined,
+      footer: footerState.text ? footerState : undefined,
+    });
     showToast('Report exported as DOCX');
   };
 
@@ -530,6 +574,66 @@ const NarrativeEditor = React.forwardRef(function NarrativeEditor({
     showToast(qMsg, qType);
   };
 
+  // ── Grammar Check (LanguageTool free API) ─────────────────────────────────
+  const handleGrammarCheck = async () => {
+    if (!editor || grammarLoading) return;
+
+    // One-time privacy acknowledgement stored in localStorage
+    const ackKey = 'ne:lt-privacy-ack';
+    if (!localStorage.getItem(ackKey)) {
+      const ok = window.confirm(
+        'Grammar Check sends the document text to api.languagetool.org for analysis.\n\n' +
+        'Do not use this feature with documents that contain identifiable patient data, ' +
+        'or ensure your organisation permits use of external grammar-check services.\n\n' +
+        'Continue?'
+      );
+      if (!ok) return;
+      localStorage.setItem(ackKey, '1');
+    }
+
+    setGrammarLoading(true);
+    setGrammarMatches([]);
+    editor.commands.clearGrammarDecorations();
+
+    try {
+      const text = editor.state.doc.textContent;
+      if (!text.trim()) {
+        showToast('Document is empty', 'info');
+        return;
+      }
+
+      const resp = await fetch('https://api.languagetool.org/v2/check', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: new URLSearchParams({ text, language: 'en-US', enabledOnly: 'false' }),
+      });
+
+      if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+      const data = await resp.json();
+
+      const offsetMap = buildOffsetMap(editor.state.doc);
+      const { decoSet, validMatches } = buildGrammarDecorations(
+        editor.state.doc,
+        data.matches ?? [],
+        offsetMap,
+      );
+
+      editor.commands.setGrammarDecorations(decoSet);
+      setGrammarMatches(validMatches);
+      setGrammarOpen(validMatches.length > 0);
+
+      const n = validMatches.length;
+      showToast(
+        n === 0 ? 'No grammar issues found ✓' : `${n} issue${n !== 1 ? 's' : ''} found`,
+        n === 0 ? 'success' : 'warning',
+      );
+    } catch (err) {
+      showToast('Grammar check failed — check your connection', 'error');
+    } finally {
+      setGrammarLoading(false);
+    }
+  };
+
   // ── Addendum ──────────────────────────────────────────────────────────────
   const handleAddendum = ({ author, text, timestamp }) => {
     if (!editor) return;
@@ -562,7 +666,8 @@ const NarrativeEditor = React.forwardRef(function NarrativeEditor({
       MultilevelList,
       PageNumber,
       AutoCorrect,
-      Underline,
+      Footnote,
+      GrammarCheck,
       TextAlign.configure({ types: ['heading', 'paragraph'] }),
       TextStyle,
       Color,
@@ -668,6 +773,48 @@ const NarrativeEditor = React.forwardRef(function NarrativeEditor({
     editor.setEditable(!previewMode && editable);
   }, [editor, previewMode, editable]);
 
+  // ── Footnote renumbering ──────────────────────────────────────────────────
+  // Re-run whenever the doc changes and assign sequential [1], [2]… numbers to
+  // all footnote atoms so they always reflect document order.
+  useEffect(() => {
+    if (!editor) return;
+    const renumber = () => {
+      let n = 1;
+      const { tr, doc } = editor.state;
+      let changed = false;
+      doc.descendants((node, pos) => {
+        if (node.type.name === 'footnote') {
+          if (node.attrs.number !== n) {
+            tr.setNodeMarkup(pos, undefined, { ...node.attrs, number: n });
+            changed = true;
+          }
+          n++;
+        }
+      });
+      if (changed) editor.view.dispatch(tr);
+    };
+    editor.on('update', renumber);
+    return () => editor.off('update', renumber);
+  }, [editor]);
+
+  // ── Insert-footnote custom event (fired from InsertTab button) ────────────
+  useEffect(() => {
+    if (!editor) return;
+    const handler = async () => {
+      const text = await editorPrompt({
+        title: 'Insert Footnote',
+        message: 'Enter the footnote text:',
+        defaultValue: '',
+        placeholder: 'Citation, reference, or annotation…',
+        confirmLabel: 'Insert',
+      });
+      if (text?.trim()) editor.chain().focus().insertFootnote(text.trim()).run();
+    };
+    window.addEventListener('narrative-editor:insert-footnote', handler);
+    return () => window.removeEventListener('narrative-editor:insert-footnote', handler);
+  }, [editor]);
+  // ─────────────────────────────────────────────────────────────────────────
+
   // Refs that the keydown closure reads — keeps the effect deps minimal so the
   // listener isn't torn down and re-added on every scroll/page-count change.
   const currentPageRef     = useRef(currentPage);
@@ -680,6 +827,22 @@ const NarrativeEditor = React.forwardRef(function NarrativeEditor({
   useEffect(() => { shortcutsOpenRef.current  = shortcutsOpen; },  [shortcutsOpen]);
   useEffect(() => { trackChangesOnRef.current = trackChangesOn; }, [trackChangesOn]);
   useEffect(() => { commentsRef.current       = comments; },       [comments]);
+
+  // ── Edit log capture ─────────────────────────────────────────────────────
+  // After 2 s of idle, push a snapshot entry into the ring buffer (max 20).
+  useEffect(() => {
+    if (!editor) return;
+    const record = () => {
+      clearTimeout(editLogTimerRef.current);
+      editLogTimerRef.current = setTimeout(() => {
+        const preview = editor.state.doc.textContent.replace(/\s+/g, ' ').trim().slice(0, 70) || '(empty)';
+        const wc = editor.state.doc.textContent.split(/\s+/).filter(Boolean).length;
+        setEditLog(prev => [{ time: Date.now(), preview, wordCount: wc }, ...prev].slice(0, 20));
+      }, 2000);
+    };
+    editor.on('update', record);
+    return () => { editor.off('update', record); clearTimeout(editLogTimerRef.current); };
+  }, [editor]);
 
   // MS Word-style keyboard shortcuts — exhaustive, capture-phase so this wins
   // over any page-level (DICOM) handlers AND ensures Tiptap's internal keymap
@@ -706,8 +869,7 @@ const NarrativeEditor = React.forwardRef(function NarrativeEditor({
         if (inEditor(e)) {
           e.preventDefault();
           e.stopImmediatePropagation();
-          if (!document.fullscreenElement) containerRef.current?.requestFullscreen?.();
-          else document.exitFullscreen?.();
+          toggleFullscreen();
         }
         return;
       }
@@ -1313,12 +1475,12 @@ const NarrativeEditor = React.forwardRef(function NarrativeEditor({
   const charCount = editor.storage.characterCount?.characters() ?? 0;
 
   return (
-    <div ref={containerRef} className={`narrative-editor-container${isFinalized ? ' is-finalized' : ''} ${className}`} style={style}>
+    <div ref={containerRef} className={`narrative-editor-container${isFinalized ? ' is-finalized' : ''}${cssFullscreen ? ' ne--css-fullscreen' : ''} ${className}`} style={style}>
       {!previewMode && (
         <Ribbon
           editor={editor}
           onSave={onSave}
-          isFullscreen={isFullscreen}
+          isFullscreen={isFullscreen || cssFullscreen}
           toggleFullscreen={toggleFullscreen}
           zoom={zoom}
           setZoom={setZoom}
@@ -1348,7 +1510,11 @@ const NarrativeEditor = React.forwardRef(function NarrativeEditor({
           onOpenNormalFindings={() => setNormalFindingsOpen(true)}
           onOpenMeasurement={() => setMeasurementOpen(true)}
           onRunQualityCheck={handleRunQualityCheck}
+          onRunGrammarCheck={handleGrammarCheck}
+          grammarLoading={grammarLoading}
+          grammarMatchCount={grammarMatches.length}
           onOpenSnippetManager={() => setSnippetManagerOpen(true)}
+          editLog={editLog}
           trackChangesOn={trackChangesOn}
           trackChangeCount={trackChangeCount}
           onToggleTrackChanges={() => {
@@ -1401,8 +1567,84 @@ const NarrativeEditor = React.forwardRef(function NarrativeEditor({
           </button>
         )}
         <EditorContent editor={editor} />
+
+        {/* ── Footnotes panel ─────────────────────────────────────────────── */}
+        {editor && (() => {
+          const fns = [];
+          editor.state.doc.descendants((node) => {
+            if (node.type.name === 'footnote')
+              fns.push({ number: node.attrs.number, text: node.attrs.text });
+          });
+          if (!fns.length) return null;
+          return (
+            <div className="ne-footnotes-section">
+              <hr className="ne-footnotes-rule" />
+              {fns.map(fn => (
+                <p key={fn.number} className="ne-footnote-item">
+                  <sup className="ne-footnote-num">{fn.number}</sup>&nbsp;{fn.text}
+                </p>
+              ))}
+            </div>
+          );
+        })()}
+
         <FindReplaceDialog editor={editor} open={findOpen} focusReplace={findFocusReplace} onClose={() => setFindOpen(false)} />
       </div>
+
+      {/* ── Grammar errors panel ────────────────────────────────────────── */}
+      {grammarOpen && grammarMatches.length > 0 && (
+        <div className="ne-grammar-panel">
+          <div className="ne-grammar-panel__header">
+            <span>🔍 Grammar &amp; Style — {grammarMatches.length} issue{grammarMatches.length !== 1 ? 's' : ''}</span>
+            <div style={{ display: 'flex', gap: 6 }}>
+              <button className="ne-grammar-panel__action" onClick={() => {
+                editor.commands.clearGrammarDecorations();
+                setGrammarMatches([]);
+                setGrammarOpen(false);
+              }}>Clear all</button>
+              <button className="ne-grammar-panel__close" onClick={() => setGrammarOpen(false)}>✕</button>
+            </div>
+          </div>
+          <div className="ne-grammar-panel__list">
+            {grammarMatches.map((m, i) => (
+              <div key={i} className={`ne-grammar-panel__item ne-grammar-panel__item--${m.issueType}`}>
+                <div className="ne-grammar-panel__item-meta">
+                  <span className={`ne-grammar-panel__badge ne-grammar-panel__badge--${m.issueType}`}>
+                    {m.issueType}
+                  </span>
+                  <span className="ne-grammar-panel__category">{m.rule?.category?.name ?? ''}</span>
+                </div>
+                <div className="ne-grammar-panel__message">{m.message}</div>
+                {m.context?.text && (
+                  <div className="ne-grammar-panel__context">
+                    "…{m.context.text.slice(Math.max(0, m.context.offset - 10), m.context.offset + m.context.length + 10)}…"
+                  </div>
+                )}
+                {m.replacements?.length > 0 && (
+                  <div className="ne-grammar-panel__fixes">
+                    {m.replacements.slice(0, 3).map((r, ri) => (
+                      <button key={ri} className="ne-grammar-panel__fix-btn" onClick={() => {
+                        const { state } = editor;
+                        // Re-locate: find the current text at the stored from/to
+                        editor.chain().focus()
+                          .setTextSelection({ from: m.from, to: m.to })
+                          .insertContent(r.value)
+                          .run();
+                        // Remove this match
+                        const next = grammarMatches.filter((_, j) => j !== i);
+                        setGrammarMatches(next);
+                        if (next.length === 0) { editor.commands.clearGrammarDecorations(); setGrammarOpen(false); }
+                      }}>
+                        {r.value}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       <SymbolPickerDialog editor={editor} open={symbolOpen} onClose={() => setSymbolOpen(false)} />
 
