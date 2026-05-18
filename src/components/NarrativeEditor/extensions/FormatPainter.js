@@ -1,4 +1,5 @@
 import { Extension } from '@tiptap/core';
+import { Plugin, PluginKey } from '@tiptap/pm/state';
 
 /**
  * FormatPainter — Word's brush.
@@ -23,23 +24,29 @@ export const FormatPainter = Extension.create({
   addCommands() {
     return {
       pickupFormat: () => ({ editor }) => {
-        const { from, to } = editor.state.selection;
-        if (from === to) return false;
+        const { from, to, $from } = editor.state.selection;
 
-        // Collect marks active anywhere in the selection range.
-        const seen = new Map();
-        editor.state.doc.nodesBetween(from, to, (node) => {
-          if (node.isText) {
-            node.marks.forEach(mark => {
-              if (!seen.has(mark.type.name)) {
-                seen.set(mark.type.name, { name: mark.type.name, attrs: { ...mark.attrs } });
-              }
-            });
-          }
-        });
+        let markList;
+        if (from === to) {
+          // No selection — pick up marks stored at the cursor position
+          markList = $from.marks().map(m => ({ name: m.type.name, attrs: { ...m.attrs } }));
+        } else {
+          // Collect marks active anywhere in the selection range.
+          const seen = new Map();
+          editor.state.doc.nodesBetween(from, to, (node) => {
+            if (node.isText) {
+              node.marks.forEach(mark => {
+                if (!seen.has(mark.type.name)) {
+                  seen.set(mark.type.name, { name: mark.type.name, attrs: { ...mark.attrs } });
+                }
+              });
+            }
+          });
+          markList = Array.from(seen.values());
+        }
 
-        editor.storage.formatPainter.marks = Array.from(seen.values());
-        editor.storage.formatPainter.active = true;
+        editor.storage.formatPainter.marks  = markList;
+        editor.storage.formatPainter.active = true; // activate even if no marks — lets user clear formatting
         // Force a re-render so the button shows active state
         editor.view.dispatch(editor.state.tr.setMeta('forceUpdate', true));
         return true;
@@ -80,6 +87,34 @@ export const FormatPainter = Extension.create({
   },
 
   addProseMirrorPlugins() {
-    return [];
+    // eslint-disable-next-line consistent-this
+    const ext = this;
+    return [
+      new Plugin({
+        key: new PluginKey('formatPainterAutoApply'),
+        props: {
+          handleDOMEvents: {
+            /**
+             * Auto-apply stored format whenever the user finishes a drag-selection
+             * inside the editor content area (i.e. mouseup on view.dom).
+             * This gives the standard Word behaviour: pick up → select target → done.
+             */
+            mouseup: (view, event) => {
+              if (!ext.editor.storage.formatPainter.active) return false;
+              // Only fire when the pointer is released inside the editable area
+              if (!view.dom.contains(event.target)) return false;
+              // Give the browser a tick to commit the selection
+              requestAnimationFrame(() => {
+                const { from, to } = ext.editor.state.selection;
+                if (from < to) {
+                  ext.editor.chain().applyFormat().run();
+                }
+              });
+              return false; // don't absorb the event
+            },
+          },
+        },
+      }),
+    ];
   },
 });

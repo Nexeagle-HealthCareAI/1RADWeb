@@ -55,6 +55,21 @@ const ReportingPage = () => {
   const [isMobile, setIsMobile] = useState(window.innerWidth < 768);
   const [activeMainTab, setActiveMainTab] = useState('REPORTING'); // 'DICOM', 'REPORTING', 'TIMELINE'
 
+  const handleSelectMainTab = (tabId) => {
+    setActiveMainTab(tabId);
+    if (!isTablet) {
+      if (tabId === 'DICOM') {
+        setEditorState('collapsed');
+      } else if (tabId === 'REPORTING') {
+        setEditorState('standard');
+        setActiveRightTab('REPORT');
+      } else if (tabId === 'TIMELINE') {
+        setEditorState('standard');
+        setActiveRightTab('TIMELINE');
+      }
+    }
+  };
+
   // Performance optimization states
   const [loadingProgress, setLoadingProgress] = useState({ stage: '', current: 0, total: 0 });
   const [processingStatus, setProcessingStatus] = useState('');
@@ -288,8 +303,8 @@ const ReportingPage = () => {
         setHistoricalStudyContext(study);
         setActiveAssetIndex(0);
 
-        // Switch to split mode if on tablet to ensure visibility
-        if (isTablet) setActiveWorkspaceMode('split');
+        // Switch to split mode to ensure visibility
+        setEditorState('standard');
 
         console.info(`[1RAD] Historical Context Injected: ${historicalId}`);
       } else {
@@ -2517,8 +2532,23 @@ const ReportingPage = () => {
                 <span style={{ fontSize: '10px', fontWeight: 950, color: '#94a3b8', letterSpacing: '1px' }}>ACC: {activeAppointment?.displayId || '...'}</span>
               </div>
             </div>
-            <div style={{ display: 'flex', gap: '8px', marginLeft: '15px' }}>
+            <div style={{ display: 'flex', gap: '8px', marginLeft: '15px', alignItems: 'center' }}>
               <span style={{ background: '#0f52ba', color: 'white', padding: '4px 10px', borderRadius: '6px', fontSize: '10px', fontWeight: 950, letterSpacing: '1px' }}>{activeAppointment?.modality || '...'}</span>
+              {(activeAppointment?.referredBy || activeAppointment?.ReferredBy) && (
+                <span style={{ 
+                  background: '#f5f3ff', 
+                  border: '1px solid #ddd6fe', 
+                  color: '#7c3aed', 
+                  padding: '4px 10px', 
+                  borderRadius: '6px', 
+                  fontSize: '10px', 
+                  fontWeight: 950, 
+                  letterSpacing: '0.5px'
+                }}>
+                  ↗ REF: {activeAppointment?.referredBy || activeAppointment?.ReferredBy}
+                  {(activeAppointment?.referredContact || activeAppointment?.ReferredContact) && ` (${activeAppointment?.referredContact || activeAppointment?.ReferredContact})`}
+                </span>
+              )}
             </div>
           </div>
         </div>
@@ -2562,7 +2592,7 @@ const ReportingPage = () => {
 
         {/* DICOM TAB */}
         {activeMainTab === 'DICOM' && (
-          <div className="panel panel-center" style={{ display: 'flex', flex: 1 }}>
+          <div className="panel panel-center" style={{ display: 'flex', flex: 1, padding: 0 }}>
             {/* LEFT TOOLBAR - Tablet Optimized */}
             <div
               id="dicom-toolbar"
@@ -3506,127 +3536,128 @@ const ReportingPage = () => {
 
             {/* REPORTING TAB */}
             {activeMainTab === 'REPORTING' && (
-              <div className="panel panel-right" style={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0, background: 'white' }}>
+              <div className="panel panel-right" style={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0, background: 'white', padding: 0 }}>
                 <div style={{
-                  display: editorState === 'collapsed' ? 'none' : 'flex',
-                  flexDirection: 'column', flex: 1, paddingRight: '5px',
-                  animation: 'fadeIn 0.4s ease',
+                  width: '100%',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  flex: 1,
+                  background: 'white',
                   overflow: 'hidden'
                 }}>
-                  {activeRightTab === 'REPORT' && (
-                    <div style={{ display: 'flex', flexDirection: 'column', flex: 1, overflow: 'hidden' }}>
-                      {/* Shared Header: Metadata & Status */}
-                      <div style={{
-                        display: 'flex',
-                        flexDirection: window.innerWidth < 768 ? 'column' : 'row',
-                        justifyContent: 'space-between',
-                        alignItems: window.innerWidth < 768 ? 'flex-start' : 'center',
-                        marginBottom: '15px',
-                        padding: '0 20px',
-                        gap: window.innerWidth < 768 ? '15px' : '0'
-                      }}>
-                        <div style={{ display: 'flex', flexDirection: window.innerWidth < 480 ? 'column' : 'row', alignItems: window.innerWidth < 480 ? 'flex-start' : 'center', gap: '10px' }}>
-                          <div style={{ padding: '6px 12px', background: '#f0f7ff', borderRadius: '10px', border: '1px solid #dbeafe', width: window.innerWidth < 480 ? '100%' : 'auto' }}>
-                            <div style={{ fontSize: '9px', fontWeight: 950, color: '#0f52ba', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Workstation Status</div>
-                            <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginTop: '1px' }}>
-                              <div style={{ width: '6px', height: '6px', borderRadius: '50%', background: isOnline ? '#10b981' : '#f59e0b' }}></div>
-                              <span style={{ fontSize: '10px', fontWeight: 800, color: '#1e293b' }}>{isOnline ? 'CLOUD_CONNECTED' : 'OFFLINE_CACHE_ACTIVE'}</span>
-                            </div>
-                          </div>
-
-                          <div style={{ padding: '6px 12px', background: saveStatus === 'SAVING' ? '#fffbeb' : '#f8fafc', borderRadius: '10px', border: `1px solid ${saveStatus === 'SAVING' ? '#fde68a' : '#e2e8f0'}`, transition: 'all 0.3s', width: window.innerWidth < 480 ? '100%' : 'auto' }}>
-                            <div style={{ fontSize: '9px', fontWeight: 950, color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Cloud Intelligence</div>
-                            <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginTop: '1px' }}>
-                              <span style={{ fontSize: '10px', fontWeight: 800, color: saveStatus === 'SAVING' ? '#d97706' : '#1e293b' }}>
-                                {saveStatus === 'SAVING' ? '📡 SYNCING...' : saveStatus === 'SUCCESS' ? `✅ SAVED AT ${lastSaved}` : saveStatus === 'DIRTY' ? '📝 PENDING SYNC' : '💤 MONITORING'}
-                              </span>
-                            </div>
-                          </div>
-                        </div>
-
-                        <div style={{ display: 'flex', gap: '8px', width: window.innerWidth < 768 ? '100%' : 'auto', flexWrap: 'wrap' }}>
-                          <button className="btn btn-outline" style={{ flex: 1, padding: '8px 10px', fontSize: '10px' }} onClick={() => handleSaveReport(false)}>💾 Save Draft</button>
-                          <button className="btn btn-outline" style={{ flex: 1, padding: '8px 10px', fontSize: '10px' }} onClick={handlePreviewPrint}>👁️ Preview</button>
-                          <button className="btn btn-success" style={{ flex: window.innerWidth < 768 ? '100%' : 'auto', padding: '10px 15px', fontSize: '10px', fontWeight: 900 }} onClick={() => handleSaveReport(true)}>Finalize & Sign</button>
+                  {/* Top Editor Actions bar */}
+                  <div style={{
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    alignItems: 'center',
+                    padding: '16px 24px',
+                    background: '#f8fafc',
+                    borderBottom: '1px solid #e2e8f0',
+                    flexShrink: 0
+                  }}>
+                    <div style={{ display: 'flex', gap: '10px' }}>
+                      <div style={{ padding: '6px 12px', background: '#f0f7ff', borderRadius: '8px', border: '1px solid #dbeafe' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                          <div style={{ width: '6px', height: '6px', borderRadius: '50%', background: isOnline ? '#10b981' : '#f59e0b', animation: 'pulse 1.5s infinite' }}></div>
+                          <span style={{ fontSize: '10px', fontWeight: 900, color: '#0f52ba' }}>
+                            {isOnline ? 'CLOUD_CONNECTED' : 'OFFLINE_CACHE_ACTIVE'}
+                          </span>
                         </div>
                       </div>
 
-
-
-                      <div style={{ display: 'flex', flexDirection: 'column', flex: 1, overflow: 'hidden', minHeight: 0 }}>
-
-                        {/* Template selector */}
-                        <div style={{
-                          flexShrink: 0,
-                          padding: '8px 20px',
-                          background: 'white',
-                          borderBottom: '1px solid #f1f5f9',
-                        }}>
-                          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                            <label style={{ fontSize: '12px', fontWeight: 500, color: '#6b7280', whiteSpace: 'nowrap' }}>Template</label>
-                            <select
-                              className="template-selector"
-                              value={selectedTemplateId || ''}
-                              onChange={(e) => {
-                                const tpl = templates.find(t => String(t.id) === String(e.target.value));
-                                if (tpl) {
-                                  setSelectedTemplateId(tpl.id);
-                                  setEditorText(tpl.content || '');
-                                }
-                              }}
-                              style={{ flex: 1, padding: '6px 10px', borderRadius: '6px', border: '1px solid #cbd5e1', outline: 'none', fontSize: '13px' }}
-                            >
-                              <option value="">Select a template...</option>
-                              {templates.map(tpl => (
-                                <option key={tpl.id} value={tpl.id}>{tpl.name}</option>
-                              ))}
-                            </select>
-                          </div>
-                        </div>
-
-                        {/* NarrativeEditor — fills all remaining space; word-canvas is the only scroll context */}
-                        <NarrativeEditor
-                          ref={editorRef}
-                          content={editorText}
-                          onChange={(html) => setEditorText(html)}
-                          placeholder="Start typing your radiology report..."
-                          onSave={() => handleSaveReport(false)}
-                          style={{ flex: 1, minHeight: 0 }}
-                          keywordLibrary={keywordLibrary}
-                        />
-
-                      </div>
-
-
-
-                      {/* Signature Block */}
-                      <div style={{ marginTop: '20px', paddingTop: '15px', borderTop: '1px solid #e2e8f0', display: 'flex', justifyContent: 'flex-end', alignItems: 'center', gap: '15px' }}>
-                        <div style={{ textAlign: 'right' }}>
-                          <div style={{ fontWeight: 600, fontSize: '14px', color: '#0f172a' }}>{protocol?.hospital?.name || 'Authorized Diagnostic Center'}</div>
-                          <div style={{ fontSize: '12px', color: '#64748b' }}>Digital Medical Record Signature</div>
-                        </div>
+                      <div style={{ padding: '6px 12px', background: '#f8fafc', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
+                        <span style={{ fontSize: '10px', fontWeight: 800, color: '#475569' }}>
+                          {saveStatus === 'SAVING' ? '📡 SYNCING...' : saveStatus === 'SUCCESS' ? `✅ SAVED AT ${lastSaved}` : '💤 MONITORING'}
+                        </span>
                       </div>
                     </div>
-                  )}
+
+                    <div style={{ display: 'flex', gap: '8px' }}>
+                      <button className="btn btn-outline" style={{ padding: '8px 16px', fontSize: '11px', fontWeight: 800 }} onClick={() => handleSaveReport(false)}>💾 Save Draft</button>
+                      <button className="btn btn-outline" style={{ padding: '8px 16px', fontSize: '11px', fontWeight: 800 }} onClick={handlePreviewPrint}>👁️ Preview</button>
+                      <button className="btn btn-success" style={{ padding: '10px 24px', fontSize: '11px', fontWeight: 900 }} onClick={() => handleSaveReport(true)}>Finalize & Sign</button>
+                    </div>
+                  </div>
+
+                  {/* Template selection row */}
+                  <div style={{
+                    padding: '12px 24px',
+                    background: 'white',
+                    borderBottom: '1px solid #f1f5f9',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '15px',
+                    flexShrink: 0
+                  }}>
+                    <label style={{ fontSize: '12px', fontWeight: 800, color: '#475569', whiteSpace: 'nowrap' }}>📁 SELECT REPORT TEMPLATE</label>
+                    <select
+                      className="template-selector"
+                      value={selectedTemplateId || ''}
+                      onChange={(e) => {
+                        const tpl = templates.find(t => String(t.id) === String(e.target.value));
+                        if (tpl) {
+                          setSelectedTemplateId(tpl.id);
+                          setEditorText(tpl.content || '');
+                        }
+                      }}
+                      style={{ flex: 1, padding: '8px 12px', borderRadius: '6px', border: '1px solid #cbd5e1', outline: 'none', fontSize: '13px' }}
+                    >
+                      <option value="">Select a template...</option>
+                      {templates.map(tpl => (
+                        <option key={tpl.id} value={tpl.id}>{tpl.name}</option>
+                      ))}
+                    </select>
+                  </div>
+
+                  {/* Main Editor Text Area */}
+                  <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0 }}>
+                    <NarrativeEditor
+                      ref={editorRef}
+                      content={editorText}
+                      onChange={(html) => setEditorText(html)}
+                      placeholder="Start typing your radiology report..."
+                      onSave={() => handleSaveReport(false)}
+                      style={{ flex: 1, minHeight: 0 }}
+                      keywordLibrary={keywordLibrary}
+                    />
+                  </div>
+
+                  {/* Signature row */}
+                  <div style={{
+                    padding: '16px 24px',
+                    background: '#f8fafc',
+                    borderTop: '1px solid #e2e8f0',
+                    display: 'flex',
+                    justifyContent: 'flex-end',
+                    alignItems: 'center',
+                    flexShrink: 0
+                  }}>
+                    <div style={{ textAlign: 'right' }}>
+                      <div style={{ fontWeight: 800, fontSize: '12px', color: '#0f172a' }}>{protocol?.hospital?.name || 'Authorized Diagnostic Center'}</div>
+                      <div style={{ fontSize: '10px', color: '#64748b', fontWeight: 600 }}>Digital Medical Record Signature</div>
+                    </div>
+                  </div>
                 </div>
               </div>
             )}
 
             {/* TIMELINE TAB */}
             {activeMainTab === 'TIMELINE' && (
-              <div style={{ flex: 1, overflowY: 'auto', background: '#f8fafc' }}>
-                <PatientTimeline
-                  history={patientHistory}
-                  loading={loadingTimeline}
-                  activeAppointmentId={appointmentId}
-                  onViewReport={(study) => {
-                    navigate(`/patient-timeline/${appointmentId}`, { state: { patient: activeAppointment, returnPath: `/reporting/${appointmentId}` } });
-                  }}
-                  onViewDicom={(study) => {
-                    handleLoadHistoricalDicom(study);
-                    setActiveMainTab('DICOM'); // Switch to DICOM tab to see the loaded study
-                  }}
-                />
+              <div style={{ flex: 1, overflowY: 'auto', background: '#f8fafc', padding: '24px' }}>
+                <div style={{ width: '100%', background: 'white', borderRadius: '16px', padding: '24px', boxShadow: '0 4px 20px rgba(0,0,0,0.05)', border: '1px solid #e2e8f0' }}>
+                  <PatientTimeline
+                    history={patientHistory}
+                    loading={loadingTimeline}
+                    activeAppointmentId={appointmentId}
+                    onViewReport={(study) => {
+                      navigate(`/patient-timeline/${appointmentId}`, { state: { patient: activeAppointment, returnPath: `/reporting/${appointmentId}` } });
+                    }}
+                    onViewDicom={(study) => {
+                      handleLoadHistoricalDicom(study);
+                      setActiveMainTab('DICOM'); // Switch to DICOM tab to see the loaded study
+                    }}
+                  />
+                </div>
               </div>
             )}
           </div>

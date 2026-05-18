@@ -676,6 +676,12 @@ const NarrativeEditor = React.forwardRef(function NarrativeEditor({
       // Esc — close any of our open dialogs, OR exit fullscreen.
       if (e.key === 'Escape') {
         if (shortcutsOpenRef.current) { e.preventDefault(); setShortcutsOpen(false); return; }
+        // Cancel format painter if active
+        if (editor?.storage?.formatPainter?.active) {
+          e.preventDefault();
+          editor.chain().cancelFormatPainter().run();
+          return;
+        }
         // Explicit exit from browser fullscreen API. Some browsers' native
         // Esc-to-exit-fullscreen is unreliable when other capture-phase keydown
         // handlers are on `document`; do it ourselves to be safe.

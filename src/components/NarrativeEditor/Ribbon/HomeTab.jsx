@@ -274,7 +274,9 @@ const SmallRowBtn = ({ label, icon, title, active, onClick }) => (
       fontFamily: '"Segoe UI", system-ui, sans-serif',
       boxSizing: 'border-box',
       flexShrink: 0,
-      transition: 'background 0.06s, border-color 0.06s',
+      outline: active ? '2px solid #2B86CE' : 'none',
+      outlineOffset: '1px',
+      transition: 'background 0.06s, border-color 0.06s, outline 0.06s',
     }}
     onMouseEnter={e => { if (!active) { e.currentTarget.style.background = '#DEECF9'; e.currentTarget.style.borderColor = '#C7E0F4'; } }}
     onMouseLeave={e => { if (!active) { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.borderColor = 'transparent'; } }}
@@ -302,6 +304,16 @@ export default function HomeTab({ editor, showFormattingMarks, onToggleFormattin
   const shadingBtnRef = useRef(null);
   const bordersBtnRef = useRef(null);
 
+  // Change editor cursor to a crosshair while format-painter is active
+  const painterActive = !!editor?.storage?.formatPainter?.active;
+  useEffect(() => {
+    if (!editor) return;
+    const dom = editor.view?.dom;
+    if (!dom) return;
+    dom.style.cursor = painterActive ? 'crosshair' : '';
+    return () => { dom.style.cursor = ''; };
+  }, [editor, painterActive]);
+
   if (!editor) return null;
 
   const attrs = editor.getAttributes('textStyle');
@@ -309,7 +321,6 @@ export default function HomeTab({ editor, showFormattingMarks, onToggleFormattin
   const currentFontSize = (attrs.fontSize || '12pt').replace('pt', '');
   const currentColor = attrs.color || '#000000';
   const currentHL = editor.getAttributes('highlight').color || null;
-  const painterActive = !!editor.storage?.formatPainter?.active;
 
   return (
     <div style={{ display: 'flex', alignItems: 'stretch', height: '100%' }}>
@@ -359,12 +370,18 @@ export default function HomeTab({ editor, showFormattingMarks, onToggleFormattin
           />
           <SmallRowBtn
             label="Painter"
-            icon={<Icon d={ICONS.brush} size={11} />}
-            title="Format Painter (Ctrl+Shift+C / V)"
+            icon={<Icon d={ICONS.painter} size={11} />}
+            title={painterActive
+              ? 'Format Painter active — select text to apply  |  Click again to cancel  (Ctrl+Shift+C / V)'
+              : 'Format Painter — click to pick up formatting, then select target text  (Ctrl+Shift+C / V)'}
             active={painterActive}
             onClick={() => {
-              if (painterActive) editor.chain().applyFormat().run();
-              else editor.chain().pickupFormat().run();
+              // Toggle: if already active → cancel; otherwise → pick up formatting at cursor/selection
+              if (painterActive) {
+                editor.chain().focus().cancelFormatPainter().run();
+              } else {
+                editor.chain().focus().pickupFormat().run();
+              }
             }}
           />
         </div>
