@@ -173,6 +173,40 @@ export default function ContextMenu({ editor, containerRef }) {
         }}
       />
 
+      {/* ── Link operations (when cursor is on a link) ──── */}
+      {editor.isActive('link') && (
+        <>
+          <CSep />
+          <CItem
+            label="Edit Link…"
+            onClick={async () => {
+              const current = editor.getAttributes('link').href || '';
+              close();
+              const url = await editorPrompt({
+                title: 'Edit Hyperlink',
+                message: 'Update the URL for this link.',
+                defaultValue: current,
+                placeholder: 'https://example.com',
+                confirmLabel: 'Update',
+              });
+              if (url) editor.chain().focus().setLink({ href: url, target: '_blank' }).run();
+            }}
+          />
+          <CItem
+            label="Remove Link"
+            onClick={() => { editor.chain().focus().unsetLink().run(); close(); }}
+          />
+          <CItem
+            label="Copy Link URL"
+            onClick={() => {
+              const href = editor.getAttributes('link').href;
+              if (href) navigator.clipboard.writeText(href).catch(() => {});
+              close();
+            }}
+          />
+        </>
+      )}
+
       {/* ── Table operations ───────────────────────────── */}
       {inTable && (
         <>

@@ -64,6 +64,24 @@ export const AutoCorrect = Extension.create({
             const textBefore = $from.parent.textBetween(0, $from.parentOffset);
             if (!textBefore) return false;
 
+            // URL auto-linkify — wrap a typed URL in a link mark before the trigger key inserts
+            const urlMatch = textBefore.match(/(https?:\/\/[^\s<>'"()]+)$/);
+            if (urlMatch) {
+              const url = urlMatch[1];
+              const linkMarkType = state.schema.marks['link'];
+              if (linkMarkType) {
+                const from = $from.pos - url.length;
+                const to   = $from.pos;
+                // Only linkify if there's no link mark already
+                if (!state.doc.rangeHasMark(from, to, linkMarkType)) {
+                  view.dispatch(
+                    state.tr.addMark(from, to, linkMarkType.create({ href: url, target: '_blank' }))
+                  );
+                }
+              }
+              return false; // let trigger key insert normally
+            }
+
             for (const { pattern, replacement } of RULES) {
               const m = textBefore.match(pattern);
               if (m) {

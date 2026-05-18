@@ -2330,27 +2330,27 @@ export default function AdminBoard() {
 
     if (!outlookData) return null;
 
-    const { kpis, modalities, volumeTrends, demographics, topSources } = outlookData;
+    const { kpis, modalities, volumeTrends, demographics, topSources, pendingQueues } = outlookData;
 
     // Operational queue calculations for Clinical TAT Bottleneck Analyzer
     const modalityQueues = {};
-    (modalities || []).forEach(m => {
-       modalityQueues[m.label] = Math.max(1, Math.round(m.count * 0.25));
+    (pendingQueues || []).forEach(q => {
+       modalityQueues[q.modality] = q.count;
     });
 
-    const pendingStudies = Object.entries(modalityQueues).map(([modality, count]) => ({ modality, count }));
+    const pendingStudies = pendingQueues || [];
 
     let longestQueue = { modality: 'NONE', count: 0 };
-    Object.entries(modalityQueues).forEach(([modality, count]) => {
-       if (count > longestQueue.count) {
-          longestQueue = { modality, count };
+    (pendingQueues || []).forEach(q => {
+       if (q.count > longestQueue.count) {
+          longestQueue = { modality: q.modality, count: q.count };
        }
     });
 
     const peakHourInt = (kpis?.dailyMissions || 0) % 4 + 16;
     const peakTatHour = `${peakHourInt}:00 - ${peakHourInt + 1}:00`;
 
-    const totalPending = Object.values(modalityQueues).reduce((a, b) => a + b, 0);
+    const totalPending = (pendingQueues || []).reduce((sum, q) => sum + q.count, 0);
     const bottleneckRisk = totalPending > 8 ? 'CRITICAL' : totalPending > 4 ? 'ELEVATED' : 'STEADY';
 
     return (

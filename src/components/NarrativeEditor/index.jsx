@@ -11,6 +11,20 @@ import { Table } from '@tiptap/extension-table';
 import { TableRow } from '@tiptap/extension-table-row';
 import { TableCell } from '@tiptap/extension-table-cell';
 import { TableHeader } from '@tiptap/extension-table-header';
+
+// Extend TableCell to support per-cell background colour.
+const CustomTableCell = TableCell.extend({
+  addAttributes() {
+    return {
+      ...this.parent?.(),
+      backgroundColor: {
+        default: null,
+        renderHTML: attrs => (!attrs.backgroundColor ? {} : { style: `background-color: ${attrs.backgroundColor}` }),
+        parseHTML: el => el.style.backgroundColor || null,
+      },
+    };
+  },
+});
 import { Placeholder } from '@tiptap/extension-placeholder';
 import { CharacterCount } from '@tiptap/extension-character-count';
 import { Extension, Mark } from '@tiptap/core';
@@ -298,6 +312,18 @@ const NarrativeEditor = React.forwardRef(function NarrativeEditor({
   // Word count goal
   const [wordCountGoal, setWordCountGoal] = useState(null); // null | number
 
+  // Toast notifications
+  const [toasts, setToasts] = useState([]);
+  const toastTimersRef = useRef({});
+  const showToast = useCallback((message, type = 'success') => {
+    const id = Date.now().toString(36) + Math.random().toString(36).slice(2);
+    setToasts(prev => [...prev.slice(-2), { id, message, type }]);
+    toastTimersRef.current[id] = setTimeout(() => {
+      setToasts(prev => prev.filter(t => t.id !== id));
+      delete toastTimersRef.current[id];
+    }, 3200);
+  }, []);
+
   // Preview / reading mode
   const [previewMode, setPreviewMode] = useState(false);
 
@@ -438,6 +464,7 @@ const NarrativeEditor = React.forwardRef(function NarrativeEditor({
     const updated = addVersion(versions, editor.getHTML(), label);
     setVersions(updated);
     persistVersions(updated);
+    showToast('Version saved');
   };
 
   const deleteVersion = (id) => {
@@ -456,11 +483,13 @@ const NarrativeEditor = React.forwardRef(function NarrativeEditor({
   const handleExportDocx = async () => {
     if (!editor) return;
     await exportToDocx(editor.getHTML(), 'radiology-report.docx');
+    showToast('Report exported as DOCX');
   };
 
   // ── Export PDF ────────────────────────────────────────────────────────────
   const handleExportPdf = () => {
     exportPdf(containerRef.current, { title: 'Radiology Report' });
+    showToast('PDF print dialog opened', 'info');
   };
 
   // ── Report Finalization ───────────────────────────────────────────────────
@@ -490,6 +519,15 @@ const NarrativeEditor = React.forwardRef(function NarrativeEditor({
     const results = runQualityCheck(html, { trackChangeCount, hasUnfilledFields });
     setQualityResults(results);
     setQualityOpen(true);
+    const errors   = results.filter(r => r.type === 'error').length;
+    const warnings = results.filter(r => r.type === 'warning').length;
+    const qType = errors > 0 ? 'error' : warnings > 0 ? 'warning' : 'success';
+    const qMsg  = errors > 0
+      ? `${errors} error${errors > 1 ? 's' : ''}, ${warnings} warning${warnings !== 1 ? 's' : ''} found`
+      : warnings > 0
+        ? `${warnings} warning${warnings > 1 ? 's' : ''} found`
+        : 'Quality check passed';
+    showToast(qMsg, qType);
   };
 
   // ── Addendum ──────────────────────────────────────────────────────────────
@@ -539,7 +577,7 @@ const NarrativeEditor = React.forwardRef(function NarrativeEditor({
       }),
       Table.configure({ resizable: true }),
       TableRow,
-      TableCell,
+      CustomTableCell,
       TableHeader,
       Placeholder.configure({ placeholder }),
       CharacterCount,
@@ -949,6 +987,11 @@ const NarrativeEditor = React.forwardRef(function NarrativeEditor({
         if (editor.storage?.formatPainter?.active) {
           return run(() => editor.chain().applyFormat().run());
         }
+        // Paste as plain text (strip source formatting)
+        stop();
+        navigator.clipboard.readText().then(text => {
+          if (text) editor.chain().focus().insertContent(text).run();
+        }).catch(() => {});
         return;
       }
 
@@ -1313,8 +1356,8 @@ const NarrativeEditor = React.forwardRef(function NarrativeEditor({
             setTrackChangesOn(next);
             editor?.commands.setTrackChanges(next, trackAuthorRef.current);
           }}
-          onAcceptAll={() => editor?.commands.acceptTrackChange(null)}
-          onRejectAll={() => editor?.commands.rejectTrackChange(null)}
+          onAcceptAll={() => { editor?.commands.acceptTrackChange(null); showToast('All changes accepted'); }}
+          onRejectAll={() => { editor?.commands.rejectTrackChange(null); showToast('All changes rejected', 'warning'); }}
           commentsOpen={commentsOpen}
           onOpenComments={() => setCommentsOpen(v => !v)}
           onAddComment={() => {
@@ -1527,6 +1570,20 @@ const NarrativeEditor = React.forwardRef(function NarrativeEditor({
         onCancel={() => { promptState?.resolve?.(null); setPromptState(null); }}
       />
 
+      {toasts.length > 0 && (
+        <div className="ne-toasts">
+          {toasts.map(t => (
+            <div key={t.id} className={`ne-toast ne-toast--${t.type}`}>
+              {t.type === 'success' && <span aria-hidden>✓</span>}
+              {t.type === 'warning' && <span aria-hidden>⚠</span>}
+              {t.type === 'error'   && <span aria-hidden>✗</span>}
+              {t.type === 'info'    && <span aria-hidden>ℹ</span>}
+              {t.message}
+            </div>
+          ))}
+        </div>
+      )}
+
       <div className="word-statusbar">
         <div className="statusbar-left">
           <span className="page-nav">
@@ -1558,6 +1615,17 @@ const NarrativeEditor = React.forwardRef(function NarrativeEditor({
           </span>
           <span className="statusbar-sep" />
           <span>{charCount} characters</span>
+          {!editor.state.selection.empty && (() => {
+            const { from, to } = editor.state.selection;
+            const selTxt   = editor.state.doc.textBetween(from, to, '\n');
+            const selWords = selTxt.trim() ? selTxt.trim().split(/\s+/).length : 0;
+            return (
+              <>
+                <span className="statusbar-sep" />
+                <span title="Selected text">{selWords}w selected</span>
+              </>
+            );
+          })()}
         </div>
         <div className="statusbar-right">
           {saveStatus === 'modified' && <span className="autosave-status autosave-modified">Unsaved changes</span>}

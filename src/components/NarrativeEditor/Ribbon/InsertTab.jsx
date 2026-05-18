@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useRef } from 'react';
 import { Btn, BigBtn, Sep, Icon, Group, ICONS } from './RibbonControls';
 
 /** Inserts a radiology report section heading + empty body paragraph. */
@@ -20,6 +20,19 @@ const SECTIONS = [
  */
 export default function InsertTab({ editor, onOpenTemplates, onOpenNormalFindings, onOpenMeasurement }) {
   if (!editor) return null;
+
+  const imageInputRef = useRef(null);
+
+  const handleImageFile = (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      editor.chain().focus().setImage({ src: ev.target.result, alt: file.name }).run();
+    };
+    reader.readAsDataURL(file);
+    e.target.value = '';
+  };
 
   const insertField = (type, label) => {
     editor.chain().focus().insertStructuredField(type, label).run();
@@ -83,11 +96,18 @@ export default function InsertTab({ editor, onOpenTemplates, onOpenNormalFinding
       <Sep />
 
       <Group label="Illustrations">
+        <input
+          ref={imageInputRef}
+          type="file"
+          accept="image/*"
+          style={{ display: 'none' }}
+          onChange={handleImageFile}
+        />
         <BigBtn
           icon={<Icon d={ICONS.image} size={20} />}
           label="Image"
-          title="Insert image from URL"
-          onClick={() => { const url = window.prompt('Image URL:'); if (url) editor.chain().focus().setImage({ src: url }).run(); }}
+          title="Insert image from file"
+          onClick={() => imageInputRef.current?.click()}
         />
       </Group>
 

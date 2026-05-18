@@ -136,6 +136,37 @@ export default function TableToolbar({ editor, containerRef }) {
 
       <TDivider />
 
+      {/* Cell background colour swatches */}
+      {[
+        { color: null,      label: 'No fill',  bg: 'transparent', border: '#9ca3af' },
+        { color: '#ffffff', label: 'White',    bg: '#ffffff',      border: '#d1d5db' },
+        { color: '#fef9c3', label: 'Yellow',   bg: '#fef9c3',      border: '#fde047' },
+        { color: '#dcfce7', label: 'Green',    bg: '#dcfce7',      border: '#86efac' },
+        { color: '#dbeafe', label: 'Blue',     bg: '#dbeafe',      border: '#93c5fd' },
+        { color: '#fce7f3', label: 'Pink',     bg: '#fce7f3',      border: '#f9a8d4' },
+        { color: '#f3e8ff', label: 'Purple',   bg: '#f3e8ff',      border: '#d8b4fe' },
+        { color: '#ffedd5', label: 'Orange',   bg: '#ffedd5',      border: '#fdba74' },
+        { color: '#f1f5f9', label: 'Gray',     bg: '#f1f5f9',      border: '#94a3b8' },
+      ].map(({ color, label, bg, border }) => (
+        <button
+          key={label}
+          onMouseDown={e => {
+            e.preventDefault();
+            editor.chain().focus().setCellAttribute('backgroundColor', color).run();
+          }}
+          title={`Cell background: ${label}`}
+          style={{
+            width: '16px', height: '16px',
+            background: bg,
+            border: `1px solid ${border}`,
+            borderRadius: '2px',
+            cursor: 'pointer', flexShrink: 0, padding: 0,
+          }}
+        />
+      ))}
+
+      <TDivider />
+
       {/* Table delete */}
       <TBtn title="Delete entire table" danger onClick={() => editor.chain().focus().deleteTable().run()}>
         🗑 Table

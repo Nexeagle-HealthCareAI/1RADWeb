@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
+import { editorPrompt } from './dialogs/PromptDialog';
 
 const IBtn = ({ title, onClick, active, danger, children }) => (
   <button
@@ -128,6 +129,24 @@ export default function ImageToolbar({ editor, containerRef }) {
         title="Full width"
         onClick={() => editor.chain().focus().updateAttributes('image', { width: '100%' }).run()}
       >Full</IBtn>
+
+      <IDivider />
+
+      {/* Alt text */}
+      <IBtn
+        title="Edit alt text (accessibility)"
+        onClick={async () => {
+          const current = editor.getAttributes('image').alt || '';
+          const alt = await editorPrompt({
+            title: 'Alt Text',
+            message: 'Describe the image for screen readers and accessibility.',
+            defaultValue: current,
+            placeholder: 'e.g. Chest X-ray showing right-sided pleural effusion',
+            confirmLabel: 'Save',
+          });
+          if (alt !== null) editor.chain().focus().updateAttributes('image', { alt }).run();
+        }}
+      >Alt</IBtn>
 
       <IDivider />
 
