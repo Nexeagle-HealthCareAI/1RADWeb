@@ -7,9 +7,11 @@
  *
  * @param {HTMLElement} containerEl  — the .narrative-editor-container DOM node
  * @param {object}      [opts]
- * @param {string}      [opts.title] — window / document title
+ * @param {string}      [opts.title]  — window / document title
+ * @param {object}      [opts.header] — header config: { text, fontFamily, fontSize, align }
+ * @param {object}      [opts.footer] — footer config: { text, fontFamily, fontSize, align }
  */
-export function exportPdf(containerEl, { title = 'Radiology Report' } = {}) {
+export function exportPdf(containerEl, { title = 'Radiology Report', header, footer } = {}) {
   const canvas = containerEl?.querySelector('.word-canvas');
   if (!canvas) return;
 
@@ -18,10 +20,42 @@ export function exportPdf(containerEl, { title = 'Radiology Report' } = {}) {
   if (!pages.length) return;
 
   const pagesHtml = Array.from(pages)
-    .map(p => {
+    .map((p, idx) => {
       const clone = p.cloneNode(true);
-      // Remove injected header/footer DOM nodes – they'll be re-read from data
+
+      // Remove transient UI overlays from the clone
       clone.querySelectorAll('.ne-autocomplete-dropdown').forEach(el => el.remove());
+
+      // ── Header ──────────────────────────────────────────────────────────
+      // Always strip whatever was in the live DOM (could be stale / absent),
+      // then re-inject from the authoritative React state passed in via `header`.
+      clone.querySelectorAll('.word-page-header').forEach(el => el.remove());
+      if (header?.text) {
+        const hdrEl = document.createElement('div');
+        hdrEl.className = 'word-page-header';
+        hdrEl.textContent = header.text.replace('{pageNumber}', String(idx + 1));
+        hdrEl.style.cssText = [
+          `font-family:${header.fontFamily || 'Calibri'}`,
+          `font-size:${header.fontSize || '9'}pt`,
+          `text-align:${header.align || 'left'}`,
+        ].join(';');
+        clone.insertBefore(hdrEl, clone.firstChild);
+      }
+
+      // ── Footer ──────────────────────────────────────────────────────────
+      clone.querySelectorAll('.word-page-footer').forEach(el => el.remove());
+      if (footer?.text) {
+        const ftrEl = document.createElement('div');
+        ftrEl.className = 'word-page-footer';
+        ftrEl.textContent = footer.text.replace('{pageNumber}', String(idx + 1));
+        ftrEl.style.cssText = [
+          `font-family:${footer.fontFamily || 'Calibri'}`,
+          `font-size:${footer.fontSize || '9'}pt`,
+          `text-align:${footer.align || 'center'}`,
+        ].join(';');
+        clone.appendChild(ftrEl);
+      }
+
       return clone.outerHTML;
     })
     .join('\n');
@@ -80,6 +114,45 @@ export function exportPdf(containerEl, { title = 'Radiology Report' } = {}) {
     .word-page:last-child {
       page-break-after: auto;
       break-after: auto;
+    }
+
+    /* ── Header & Footer — hard-coded so they always appear ──── */
+    .word-page-header {
+      position: absolute !important;
+      top: 0 !important;
+      left: 0 !important;
+      right: 0 !important;
+      height: 80px !important;
+      padding: 18px 96px 0 !important;
+      box-sizing: border-box !important;
+      color: #444 !important;
+      border-bottom: 1px solid #d0d0d0 !important;
+      overflow: hidden !important;
+      white-space: nowrap !important;
+      text-overflow: ellipsis !important;
+      z-index: 2 !important;
+    }
+    .word-page-footer {
+      position: absolute !important;
+      bottom: 0 !important;
+      left: 0 !important;
+      right: 0 !important;
+      height: 80px !important;
+      padding: 0 96px 18px !important;
+      box-sizing: border-box !important;
+      color: #444 !important;
+      border-top: 1px solid #d0d0d0 !important;
+      overflow: hidden !important;
+      white-space: nowrap !important;
+      text-overflow: ellipsis !important;
+      display: flex !important;
+      align-items: flex-end !important;
+      z-index: 2 !important;
+    }
+    /* Ensure inner content doesn't bleed under header/footer */
+    .word-page-inner {
+      padding: 96px !important;
+      box-sizing: border-box !important;
     }
 
     /* Hide non-print elements */

@@ -532,7 +532,11 @@ const NarrativeEditor = React.forwardRef(function NarrativeEditor({
 
   // ── Export PDF ────────────────────────────────────────────────────────────
   const handleExportPdf = () => {
-    exportPdf(containerRef.current, { title: 'Radiology Report' });
+    exportPdf(containerRef.current, {
+      title: 'Radiology Report',
+      header: headerState.text ? headerState : undefined,
+      footer: footerState.text ? footerState : undefined,
+    });
     showToast('PDF print dialog opened', 'info');
   };
 
@@ -1325,7 +1329,7 @@ const NarrativeEditor = React.forwardRef(function NarrativeEditor({
     // Re-apply whenever the editor updates (pagination may add/remove pages).
     editor?.on('update', applyToPages);
     return () => editor?.off('update', applyToPages);
-  }, [editor, headerState, footerState]);
+  }, [editor, headerState, footerState, previewMode]);
 
   // Track current page (most visible) + total pages.
   useEffect(() => {
