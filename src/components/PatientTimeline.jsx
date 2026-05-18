@@ -164,6 +164,15 @@ const PatientTimeline = ({
                       <h4 style={{ fontSize: '14px', fontWeight: 950, color: '#1e293b', margin: 0 }}>
                         {study.procedureName || study.ProcedureName || study.service || study.Service || 'Diagnostic Study'}
                       </h4>
+                      {(study.referredBy || study.ReferredBy) && (
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '5px', marginTop: '6px', fontSize: '12px', fontWeight: 800, color: '#7c3aed' }}>
+                          <span style={{ fontSize: '10px', fontWeight: 950, background: '#f5f3ff', color: '#7c3aed', padding: '2px 6px', borderRadius: '4px', border: '1px solid #ddd6fe' }}>↗ REFERRER</span>
+                          <span>{study.referredBy || study.ReferredBy}</span>
+                          {(study.referredContact || study.ReferredContact) && (
+                            <span style={{ color: '#94a3b8', fontWeight: 500 }}>• {study.referredContact || study.ReferredContact}</span>
+                          )}
+                        </div>
+                      )}
                     </div>
                     <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '5px' }}>
                        {isActive && (

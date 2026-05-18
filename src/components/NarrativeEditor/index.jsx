@@ -930,7 +930,8 @@ const NarrativeEditor = React.forwardRef(function NarrativeEditor({
       // ── Insert ────────────────────────────────────────────
       if (e.key === 'Enter') return run(() => editor.chain().focus().insertPageBreak().run());
       if (e.shiftKey && (e.key === '-' || e.key === '_')) return run(() => editor.chain().focus().insertContent('—').run());
-      if (e.shiftKey && e.key === ' ') return run(() => editor.chain().focus().insertContent(' ').run());
+      if (e.shiftKey && e.key === ' ')  return run(() => editor.chain().focus().insertContent(' ').run()); // non-breaking space
+      if (!e.shiftKey && !e.altKey && e.key === '-') return run(() => editor.chain().focus().insertContent('­').run()); // soft/optional hyphen
 
       // ── Navigation ────────────────────────────────────────
       if (e.key === 'Home') {

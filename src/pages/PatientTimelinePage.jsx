@@ -313,7 +313,12 @@ export default function PatientTimelinePage() {
                               <span>📅 {appt.dateTime ? new Date(appt.dateTime).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : 'N/A'}</span>
                               {appt.dateTime && <span>⏰ {new Date(appt.dateTime).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })}</span>}
                               {appt.doctor && <span>👨‍⚕️ {appt.doctor}</span>}
-                              {appt.referredBy && <span style={{ color: '#7c3aed' }}>↗ Ref: {appt.referredBy}</span>}
+                              {appt.referredBy && (
+                                <span style={{ color: '#7c3aed' }}>
+                                  ↗ Ref: {appt.referredBy}
+                                  {(appt.referredContact || appt.ReferredContact) && ` (${appt.referredContact || appt.ReferredContact})`}
+                                </span>
+                              )}
                             </div>
                           </div>
                           <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '6px', flexShrink: 0 }}>

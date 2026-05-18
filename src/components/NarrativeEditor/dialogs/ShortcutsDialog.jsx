@@ -88,6 +88,25 @@ const SECTIONS = [
     ],
   },
   {
+    title: 'Text editing',
+    items: [
+      ['Shift + F3', 'Toggle case (Mixed → UPPER → lower → Title)'],
+      ['Alt + Shift + ↑ / ↓', 'Move paragraph up / down'],
+      ['Ctrl + Shift + Space', 'Insert non-breaking space'],
+      ['Ctrl + –', 'Insert soft/optional hyphen'],
+      ['Ctrl + Shift + –', 'Insert em dash —'],
+    ],
+  },
+  {
+    title: 'Special characters',
+    items: [
+      ['Ctrl + Alt + .', 'Ellipsis …'],
+      ['Ctrl + Alt + C', 'Copyright ©'],
+      ['Ctrl + Alt + R', 'Registered ®'],
+      ['Ctrl + Alt + T', 'Trademark ™'],
+    ],
+  },
+  {
     title: 'App',
     items: [
       ['Ctrl + S', 'Save'],
