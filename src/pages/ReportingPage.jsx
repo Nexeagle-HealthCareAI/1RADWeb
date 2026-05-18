@@ -605,10 +605,16 @@ const ReportingPage = () => {
       return;
     }
 
+    // Flush any pending editor changes (debounce is 300ms) so all content is saved
+    let currentFindings = editorText;
+    if (editorRef.current?.editor) {
+      currentFindings = editorRef.current.editor.getHTML();
+    }
+
     const payload = {
       appointmentId: appointmentId,
       templateId: selectedTemplateId,
-      findings: editorText,
+      findings: currentFindings,
       impression: impression || '',
       advice: advice || '',
       isFinalized: finalizing,
@@ -1167,7 +1173,13 @@ const ReportingPage = () => {
     setShowInlineSuggestion(false);
   };
 
-  const handlePreviewPrint = () => setIsPreviewOpen(true);
+  const handlePreviewPrint = () => {
+    // Flush any pending editor changes (debounce is 300ms) so the preview shows all pages
+    if (editorRef.current?.editor) {
+      setEditorText(editorRef.current.editor.getHTML());
+    }
+    setIsPreviewOpen(true);
+  };
 
   // handleKeyDown removed - logic now handled inside NarrativeEditor via Tiptap extension
 

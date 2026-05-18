@@ -676,8 +676,9 @@ export default function AdminBoard() {
   useEffect(() => {
     if (activeTab === 'Overview') {
        fetchStrategicOutlook(selectedDateFilter);
+       fetchFinancialMatrix();
     }
-  }, [activeTab, selectedDateFilter, fetchStrategicOutlook]);
+  }, [activeTab, selectedDateFilter, fetchStrategicOutlook, fetchFinancialMatrix]);
 
 
 
@@ -2649,7 +2650,489 @@ export default function AdminBoard() {
             </div>
          </div>
 
-        {/* Level 3: Demographics & Specialist Leadership */}
+         {/* Module 3: Accounts Receivable (A/R) Cash Realization & Collections Analytics */}
+         {financialMatrix && (
+         <div style={{ background: 'white', border: '1px solid #e2e8f0', padding: '30px', borderRadius: '24px', marginBottom: '30px' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '25px', flexWrap: 'wrap', gap: '15px' }}>
+               <div>
+                  <div style={{ fontSize: '10px', fontWeight: 950, color: '#64748b', textTransform: 'uppercase', letterSpacing: '2px', marginBottom: '4px' }}>REAL-TIME RECOVERY & REALIZATION</div>
+                  <h3 style={{ fontSize: '16px', fontWeight: 900, color: '#1e293b', margin: 0 }}>Accounts Receivable (A/R) Cash Realization & Collections Analytics</h3>
+               </div>
+               {/* Quick stats summarizing collections efficiency */}
+               {(() => {
+                  const arGrossBilled = Number(financialMatrix.performance?.grossRevenue) || 0;
+                  const arCollected = Number(financialMatrix.performance?.cashCollected) || 0;
+                  const arRealizationIndex = arGrossBilled > 0 ? (arCollected / arGrossBilled) * 100 : 0;
+                  
+                  return (
+                     <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                        <div style={{ background: arRealizationIndex >= 85 ? '#ecfdf5' : '#fffbeb', padding: '8px 14px', borderRadius: '12px', border: arRealizationIndex >= 85 ? '1px solid #a7f3d0' : '1px solid #fde68a', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                           <span style={{ fontSize: '10px', fontWeight: 900, color: arRealizationIndex >= 85 ? '#065f46' : '#b45309' }}>A/R REALIZATION INDEX: {arRealizationIndex.toFixed(1)}%</span>
+                        </div>
+                        <div style={{ background: '#f8fafc', padding: '8px 14px', borderRadius: '12px', border: '1px solid #e2e8f0', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                           <span style={{ fontSize: '10px', fontWeight: 900, color: '#475569' }}>HEALTH RATE: {arRealizationIndex >= 90 ? 'EXCELLENT' : arRealizationIndex >= 70 ? 'STABLE' : 'ACTION REQUIRED'}</span>
+                        </div>
+                     </div>
+                  );
+               })()}
+            </div>
+
+            {/* Metrics deck for Module 3 */}
+            <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : 'repeat(4, 1fr)', gap: '20px', marginBottom: '30px' }}>
+               {(() => {
+                  const arGrossBilled = Number(financialMatrix.performance?.grossRevenue) || 0;
+                  const arCollected = Number(financialMatrix.performance?.cashCollected) || 0;
+                  const arOutstanding = Number(financialMatrix.performance?.outstandingAR) || 0;
+                  const bucket91Plus = Number(financialMatrix.agingDues?.bucket91Plus) || 0;
+                  const badDebtRatio = arOutstanding > 0 ? (bucket91Plus / arOutstanding) * 100 : 0;
+                  
+                  return [
+                     { label: 'Total Billed Gross', val: `₹${arGrossBilled.toLocaleString(undefined, { maximumFractionDigits: 0 })}`, color: '#3b82f6', desc: 'Cumulative billings generated' },
+                     { label: 'Realized Cash Collections', val: `₹${arCollected.toLocaleString(undefined, { maximumFractionDigits: 0 })}`, color: '#10b981', desc: 'Actual cash and digital payments received' },
+                     { label: 'Outstanding A/R Debt', val: `₹${arOutstanding.toLocaleString(undefined, { maximumFractionDigits: 0 })}`, color: '#f59e0b', desc: 'Pending patient/client liabilities' },
+                     { label: 'Bad Debt Ratio (90+ Days)', val: `${badDebtRatio.toFixed(1)}%`, color: badDebtRatio > 20 ? '#dc2626' : badDebtRatio > 10 ? '#ea580c' : '#059669', desc: 'Dues at critical debt status' }
+                  ].map((card, idx) => (
+                     <div key={idx} style={{ background: '#f8fafc', padding: '20px 25px', borderRadius: '18px', border: '1px solid #e2e8f0', display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                        <span style={{ fontSize: '9px', fontWeight: 950, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '1px' }}>{card.label}</span>
+                        <div style={{ fontSize: '20px', fontWeight: 950, color: card.color }}>{card.val}</div>
+                        <span style={{ fontSize: '9px', color: '#64748b', fontWeight: 600 }}>{card.desc}</span>
+                     </div>
+                  ));
+               })()}
+            </div>
+
+            {/* A/R Aging Timeline & Collection Channels Dual-Panel */}
+            <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1.2fr 0.8fr', gap: '30px' }}>
+               {/* Left column: A/R Aging Buckets Timeline Tracker */}
+               <div style={{ display: 'flex', flexDirection: 'column', gap: '15px' }}>
+                  <div style={{ fontSize: '10px', fontWeight: 950, color: '#64748b', textTransform: 'uppercase', letterSpacing: '2px', marginBottom: '5px' }}>Outstanding Dues Timeline (A/R Aging Buckets)</div>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '18px', background: '#f8fafc', padding: '25px', borderRadius: '18px', border: '1px solid #e2e8f0' }}>
+                     {(() => {
+                        const aging = financialMatrix.agingDues || {};
+                        const outstanding = Number(financialMatrix.performance?.outstandingAR) || 1;
+                        const buckets = [
+                           { label: '0 - 30 Days (Current)', value: Number(aging.bucket0To30) || 0, color: '#3b82f6', desc: 'Active accounts within grace period' },
+                           { label: '31 - 60 Days (Grace)', value: Number(aging.bucket31To60) || 0, color: '#f59e0b', desc: 'First overdue notices sent' },
+                           { label: '61 - 90 Days (Overdue)', value: Number(aging.bucket61To90) || 0, color: '#ea580c', desc: 'Substantial payment delay' },
+                           { label: '91+ Days (Critical Debt)', value: Number(aging.bucket91Plus) || 0, color: '#dc2626', desc: 'Collections agency escalations required' }
+                        ];
+
+                        return buckets.map((b, idx) => {
+                           const pct = (b.value / outstanding) * 100;
+                           return (
+                              <div key={idx} style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                    <div style={{ display: 'flex', flexDirection: 'column' }}>
+                                       <span style={{ fontSize: '11px', fontWeight: 950, color: '#1e293b' }}>{b.label}</span>
+                                       <span style={{ fontSize: '9px', fontWeight: 600, color: '#94a3b8' }}>{b.desc}</span>
+                                    </div>
+                                    <div style={{ textAlign: 'right' }}>
+                                       <span style={{ fontSize: '12px', fontWeight: 950, color: b.color }}>₹{b.value.toLocaleString(undefined, { maximumFractionDigits: 0 })}</span>
+                                       <span style={{ fontSize: '10px', fontWeight: 800, color: '#94a3b8', marginLeft: '6px' }}>({pct.toFixed(1)}%)</span>
+                                    </div>
+                                 </div>
+                                 <div style={{ height: '8px', background: '#e2e8f0', borderRadius: '4px', overflow: 'hidden' }}>
+                                    <div style={{ width: `${pct}%`, height: '100%', background: b.color, borderRadius: '4px' }}></div>
+                                 </div>
+                              </div>
+                           );
+                        });
+                     })()}
+                  </div>
+               </div>
+
+               {/* Right column: Collection Channels Breakdown */}
+               <div style={{ display: 'flex', flexDirection: 'column', gap: '15px' }}>
+                  <div style={{ fontSize: '10px', fontWeight: 950, color: '#64748b', textTransform: 'uppercase', letterSpacing: '2px', marginBottom: '5px' }}>Collection Channels & Stream Health</div>
+                  <div style={{ background: '#f8fafc', padding: '25px', borderRadius: '18px', border: '1px solid #e2e8f0', display: 'flex', flexDirection: 'column', gap: '20px' }}>
+                     {(() => {
+                        const channels = financialMatrix.collectionChannels || {};
+                        const cashAmount = Number(channels.cashAmount) || 0;
+                        const upiAmount = Number(channels.upiAmount) || 0;
+                        const cardAmount = Number(channels.cardAmount) || 0;
+                        const total = cashAmount + upiAmount + cardAmount || 1;
+                        
+                        const items = [
+                           { label: 'CASH PAYMENTS', amount: cashAmount, color: '#10b981', icon: '💵' },
+                           { label: 'UPI TRANSACTIONS', amount: upiAmount, color: '#4f46e5', icon: '📱' },
+                           { label: 'CARD / POS SETTLEMENTS', amount: cardAmount, color: '#7c3aed', icon: '💳' }
+                        ];
+
+                        const maxAmount = Math.max(cashAmount, upiAmount, cardAmount);
+                        let dominantChannel = "N/A";
+                        let channelAdvice = "Provide multiple payment options to patients to boost collections velocity.";
+                        if (maxAmount > 0) {
+                           if (maxAmount === cashAmount) {
+                              dominantChannel = "CASH";
+                              channelAdvice = "Cash is your primary channel. Ensure regular bank deposits to minimize physical security risks.";
+                           } else if (maxAmount === upiAmount) {
+                              dominantChannel = "UPI";
+                              channelAdvice = "UPI is your primary channel, ensuring zero-fee real-time bank settlement and high liquidity.";
+                           } else {
+                              dominantChannel = "CARD";
+                              channelAdvice = "Card is your primary channel. Monitor processor merchant discount rates (MDR) to prevent margin erosion.";
+                           }
+                        }
+
+                        return (
+                           <>
+                              <div style={{ display: 'flex', flexDirection: 'column', gap: '15px' }}>
+                                 {items.map((item, idx) => {
+                                    const pct = (item.amount / total) * 100;
+                                    return (
+                                       <div key={idx} style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                                          <div style={{ width: '32px', height: '32px', borderRadius: '50%', background: '#fff', border: '1px solid #e2e8f0', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '16px' }}>
+                                             {item.icon}
+                                          </div>
+                                          <div style={{ flex: 1 }}>
+                                             <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '4px', fontSize: '10px', fontWeight: 900 }}>
+                                                <span style={{ color: '#1e293b' }}>{item.label}</span>
+                                                <span style={{ color: item.color }}>₹{item.amount.toLocaleString(undefined, { maximumFractionDigits: 0 })} ({pct.toFixed(0)}%)</span>
+                                             </div>
+                                             <div style={{ height: '6px', background: '#e2e8f0', borderRadius: '3px', overflow: 'hidden' }}>
+                                                <div style={{ width: `${pct}%`, height: '100%', background: item.color, borderRadius: '3px' }}></div>
+                                             </div>
+                                          </div>
+                                       </div>
+                                    );
+                                 })}
+                              </div>
+                              <div style={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '12px 15px' }}>
+                                 <div style={{ fontSize: '9px', fontWeight: 950, color: '#0f52ba', textTransform: 'uppercase', letterSpacing: '1px', marginBottom: '4px' }}>Dominant Channel: {dominantChannel}</div>
+                                 <p style={{ fontSize: '10px', color: '#64748b', fontWeight: 600, margin: 0, lineHeight: '1.4' }}>{channelAdvice}</p>
+                              </div>
+                           </>
+                        );
+                     })()}
+                  </div>
+               </div>
+            </div>
+         </div>
+         )}
+
+         {/* Module 4: Modality Net Operating Margin & Equipment ROI */}
+         {financialMatrix && financialMatrix.modalityProfitability && (
+         <div style={{ background: 'white', border: '1px solid #e2e8f0', padding: '30px', borderRadius: '24px', marginBottom: '30px' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '25px', flexWrap: 'wrap', gap: '15px' }}>
+               <div>
+                  <div style={{ fontSize: '10px', fontWeight: 950, color: '#64748b', textTransform: 'uppercase', letterSpacing: '2px', marginBottom: '4px' }}>SCANNER PROFITABILITY & EQUIPMENT PERFORMANCE</div>
+                  <h3 style={{ fontSize: '16px', fontWeight: 900, color: '#1e293b', margin: 0 }}>Modality Net Operating Margin & Equipment ROI</h3>
+               </div>
+               {/* Quick stats summarizing overall equipment ROI */}
+               {(() => {
+                  const items = financialMatrix.modalityProfitability || [];
+                  let highestRoiModality = "NONE";
+                  let highestRoiVal = 0;
+                  items.forEach(item => {
+                     const roi = Number(item.equipmentRoiRatio) || 0;
+                     if (roi > highestRoiVal) {
+                        highestRoiVal = roi;
+                        highestRoiModality = item.modality;
+                     }
+                  });
+                  
+                  return (
+                     <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                        {highestRoiVal > 0 && (
+                           <div style={{ background: '#e0e7ff', padding: '8px 14px', borderRadius: '12px', border: '1px solid #c7d2fe', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                              <span style={{ fontSize: '10px', fontWeight: 900, color: '#3730a3' }}>TOP SCANNER ROI: {highestRoiModality} ({highestRoiVal.toFixed(1)}x)</span>
+                           </div>
+                        )}
+                        <div style={{ background: '#f8fafc', padding: '8px 14px', borderRadius: '12px', border: '1px solid #e2e8f0', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                           <span style={{ fontSize: '10px', fontWeight: 900, color: '#475569' }}>SCANNERS MONITORED: {items.length}</span>
+                        </div>
+                     </div>
+                  );
+               })()}
+            </div>
+
+            {/* A/R Modality Profitability comparison & Strategic Equipment ROI */}
+            <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1.2fr 0.8fr', gap: '30px' }}>
+               {/* Left column: Equipment Profitability Matrix */}
+               <div style={{ display: 'flex', flexDirection: 'column', gap: '15px' }}>
+                  <div style={{ fontSize: '10px', fontWeight: 950, color: '#64748b', textTransform: 'uppercase', letterSpacing: '2px', marginBottom: '5px' }}>Modality Performance Comparison</div>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '20px', background: '#f8fafc', padding: '25px', borderRadius: '18px', border: '1px solid #e2e8f0' }}>
+                     {(financialMatrix.modalityProfitability || []).map((m, idx) => {
+                        const gross = Number(m.grossRevenue) || 0;
+                        const cost = Number(m.operatingCost) || 0;
+                        const netProfit = Number(m.netOperatingProfit) || 0;
+                        const margin = Number(m.operatingMarginPercentage) || 0;
+                        const maxVal = Math.max(...(financialMatrix.modalityProfitability || []).map(x => Number(x.grossRevenue) || 1));
+                        
+                        const revPct = (gross / maxVal) * 100;
+                        const costPct = (cost / maxVal) * 100;
+
+                        return (
+                           <div key={idx} style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                 <div>
+                                    <span style={{ fontSize: '12px', fontWeight: 950, color: '#1e293b' }}>{m.modality}</span>
+                                    <span style={{ fontSize: '9px', fontWeight: 800, color: '#94a3b8', marginLeft: '8px' }}>({m.scanCount || 0} scans)</span>
+                                 </div>
+                                 <div style={{ textAlign: 'right' }}>
+                                    <span style={{ fontSize: '11px', fontWeight: 950, color: netProfit >= 0 ? '#059669' : '#dc2626' }}>
+                                       Net: ₹{netProfit.toLocaleString(undefined, { maximumFractionDigits: 0 })}
+                                    </span>
+                                    <span style={{ fontSize: '10px', fontWeight: 800, color: '#64748b', marginLeft: '8px' }}>
+                                       (Margin: {margin.toFixed(1)}%)
+                                    </span>
+                                 </div>
+                              </div>
+                              <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                                 {/* Gross Revenue bar */}
+                                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                    <span style={{ fontSize: '9px', fontWeight: 800, color: '#94a3b8', width: '32px' }}>REV</span>
+                                    <div style={{ flex: 1, height: '6px', background: '#e2e8f0', borderRadius: '3px', overflow: 'hidden' }}>
+                                       <div style={{ width: `${revPct}%`, height: '100%', background: '#0f52ba', borderRadius: '3px' }}></div>
+                                    </div>
+                                    <span style={{ fontSize: '9px', fontWeight: 800, color: '#1e293b', width: '60px', textAlign: 'right' }}>₹{gross.toLocaleString(undefined, { maximumFractionDigits: 0 })}</span>
+                                 </div>
+                                 {/* Operating Cost bar */}
+                                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                    <span style={{ fontSize: '9px', fontWeight: 800, color: '#94a3b8', width: '32px' }}>COST</span>
+                                    <div style={{ flex: 1, height: '6px', background: '#e2e8f0', borderRadius: '3px', overflow: 'hidden' }}>
+                                       <div style={{ width: `${costPct}%`, height: '100%', background: '#f43f5e', borderRadius: '3px' }}></div>
+                                    </div>
+                                    <span style={{ fontSize: '9px', fontWeight: 800, color: '#f43f5e', width: '60px', textAlign: 'right' }}>₹{cost.toLocaleString(undefined, { maximumFractionDigits: 0 })}</span>
+                                 </div>
+                              </div>
+                           </div>
+                        );
+                     })}
+                  </div>
+               </div>
+
+               {/* Right column: Strategic Equipment ROI & Break-Even Analysis */}
+               <div style={{ display: 'flex', flexDirection: 'column', gap: '15px' }}>
+                  <div style={{ fontSize: '10px', fontWeight: 950, color: '#64748b', textTransform: 'uppercase', letterSpacing: '2px', marginBottom: '5px' }}>Equipment Yield & Break-Even Rates</div>
+                  <div style={{ background: '#f8fafc', padding: '25px', borderRadius: '18px', border: '1px solid #e2e8f0', display: 'flex', flexDirection: 'column', gap: '20px' }}>
+                     {(() => {
+                        const items = financialMatrix.modalityProfitability || [];
+                        let lowestMarginModality = "NONE";
+                        let lowestMarginVal = 999;
+                        items.forEach(item => {
+                           const margin = Number(item.operatingMarginPercentage) || 0;
+                           if (margin < lowestMarginVal) {
+                              lowestMarginVal = margin;
+                              lowestMarginModality = item.modality;
+                           }
+                        });
+
+                        let advisoryText = "All imaging scanners are operating at healthy positive margins, validating highly optimized equipment pricing and staff alignment.";
+                        if (lowestMarginVal < 15 && lowestMarginModality !== "NONE") {
+                           advisoryText = `${lowestMarginModality} scanner has relatively low operating margins (${lowestMarginVal.toFixed(1)}%) due to accumulated direct operating maintenance or referral cuts. Focus on direct walk-in campaigns to optimize equipment yield.`;
+                        } else {
+                           const highestCostModality = items.reduce((max, item) => (Number(item.operatingCost) || 0) > (Number(max.operatingCost) || 0) ? item : max, items[0] || {});
+                           if (highestCostModality.modality) {
+                              advisoryText = `${highestCostModality.modality} represents the highest equipment maintenance overhead (₹${(Number(highestCostModality.operatingCost) || 0).toLocaleString()}). Consider bundling scanners for volume service discounts.`;
+                           }
+                        }
+
+                        return (
+                           <>
+                              <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                                 {items.map((m, idx) => {
+                                    const roi = Number(m.equipmentRoiRatio) || 0;
+                                    const breakEven = Number(m.breakEvenScansNeeded) || 0;
+                                    const count = m.scanCount || 0;
+                                    const clearanceRate = breakEven > 0 ? (count / breakEven) * 100 : 100;
+                                    
+                                    return (
+                                       <div key={idx} style={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '15px' }}>
+                                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+                                             <span style={{ fontSize: '11px', fontWeight: 950, color: '#1e293b' }}>{m.modality} SCALING</span>
+                                             <span style={{ fontSize: '10px', fontWeight: 900, color: '#4f46e5', background: '#e0e7ff', padding: '2px 8px', borderRadius: '8px' }}>
+                                                {roi.toFixed(1)}x ROI
+                                             </span>
+                                          </div>
+                                          <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '10px', fontWeight: 600, color: '#64748b', marginBottom: '4px' }}>
+                                             <span>Break-Even: {breakEven.toFixed(0)} Scans</span>
+                                             <span style={{ color: clearanceRate >= 100 ? '#059669' : '#ea580c', fontWeight: 800 }}>
+                                                {clearanceRate.toFixed(0)}% Cleared
+                                             </span>
+                                          </div>
+                                          <div style={{ height: '6px', background: '#e2e8f0', borderRadius: '3px', overflow: 'hidden' }}>
+                                             <div style={{ width: `${Math.min(100, clearanceRate)}%`, height: '100%', background: clearanceRate >= 100 ? '#059669' : '#ea580c', borderRadius: '3px' }}></div>
+                                          </div>
+                                       </div>
+                                    );
+                                 })}
+                              </div>
+                              <div style={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '12px 15px' }}>
+                                 <div style={{ fontSize: '9px', fontWeight: 950, color: '#4f46e5', textTransform: 'uppercase', letterSpacing: '1px', marginBottom: '4px' }}>EQUIPMENT LEASE & OPERATIONAL ADVISORY</div>
+                                 <p style={{ fontSize: '10px', color: '#64748b', fontWeight: 600, margin: 0, lineHeight: '1.4' }}>{advisoryText}</p>
+                              </div>
+                           </>
+                        );
+                     })()}
+                  </div>
+               </div>
+            </div>
+         </div>
+         )}
+
+         {/* Module 5: Patient Lifetime Value (LTV) & Cohort Retention Heatmap */}
+         {financialMatrix && financialMatrix.patientLtv && (
+         <div style={{ background: 'white', border: '1px solid #e2e8f0', padding: '30px', borderRadius: '24px', marginBottom: '30px' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '25px', flexWrap: 'wrap', gap: '15px' }}>
+               <div>
+                  <div style={{ fontSize: '10px', fontWeight: 950, color: '#64748b', textTransform: 'uppercase', letterSpacing: '2px', marginBottom: '4px' }}>PATIENT LIFETIME RETENTION & RETENTION GEOMETRY</div>
+                  <h3 style={{ fontSize: '16px', fontWeight: 900, color: '#1e293b', margin: 0 }}>Patient Lifetime Value (LTV) & Cohort Retention</h3>
+               </div>
+               
+               {/* Hero LTV Indicators */}
+               <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
+                  <div style={{ background: '#f0fdf4', border: '1px solid #bbf7d0', padding: '6px 12px', borderRadius: '10px', textAlign: 'center' }}>
+                     <div style={{ fontSize: '8px', fontWeight: 900, color: '#166534', textTransform: 'uppercase' }}>Average Order Value</div>
+                     <div style={{ fontSize: '12px', fontWeight: 950, color: '#15803d' }}>₹{Number(financialMatrix.patientLtv.averageOrderValue || 0).toLocaleString(undefined, { maximumFractionDigits: 0 })}</div>
+                  </div>
+                  <div style={{ background: '#f5f3ff', border: '1px solid #ddd6fe', padding: '6px 12px', borderRadius: '10px', textAlign: 'center' }}>
+                     <div style={{ fontSize: '8px', fontWeight: 900, color: '#5b21b6', textTransform: 'uppercase' }}>Purchase Freq</div>
+                     <div style={{ fontSize: '12px', fontWeight: 950, color: '#6d28d9' }}>{Number(financialMatrix.patientLtv.purchaseFrequency || 0).toFixed(1)}x</div>
+                  </div>
+                  <div style={{ background: '#eff6ff', border: '1px solid #bfdbfe', padding: '6px 12px', borderRadius: '10px', textAlign: 'center' }}>
+                     <div style={{ fontSize: '8px', fontWeight: 900, color: '#1e40af', textTransform: 'uppercase' }}>Proj. Patient LTV</div>
+                     <div style={{ fontSize: '12px', fontWeight: 950, color: '#1d4ed8' }}>₹{Number(financialMatrix.patientLtv.estimatedLifetimeValue || 0).toLocaleString(undefined, { maximumFractionDigits: 0 })}</div>
+                  </div>
+               </div>
+            </div>
+
+            <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1.2fr', gap: '30px' }}>
+               {/* Left: LTV Segments & Churn Watchlist */}
+               <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+                  {/* LTV Segments */}
+                  <div>
+                     <div style={{ fontSize: '10px', fontWeight: 950, color: '#64748b', textTransform: 'uppercase', letterSpacing: '2px', marginBottom: '10px' }}>Economic Segmentation</div>
+                     <div style={{ background: '#f8fafc', padding: '20px', borderRadius: '18px', border: '1px solid #e2e8f0', display: 'flex', flexDirection: 'column', gap: '15px' }}>
+                        {(financialMatrix.patientLtv.segments || []).map((seg, idx) => {
+                           const icon = seg.tier === "High Value" ? "👑" : seg.tier === "Mid Value" ? "💎" : "🌱";
+                           const barColor = seg.tier === "High Value" ? "#4f46e5" : seg.tier === "Mid Value" ? "#0f52ba" : "#94a3b8";
+
+                           return (
+                              <div key={idx} style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                    <span style={{ fontSize: '11px', fontWeight: 950, color: '#1e293b', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                       <span>{icon}</span>
+                                       <span>{seg.tier}</span>
+                                    </span>
+                                    <span style={{ fontSize: '10px', fontWeight: 800, color: '#64748b' }}>
+                                       {seg.patientCount} patients ({seg.percentage}%)
+                                    </span>
+                                 </div>
+                                 <div style={{ height: '6px', background: '#e2e8f0', borderRadius: '3px', overflow: 'hidden', display: 'flex' }}>
+                                    <div style={{ width: `${seg.percentage}%`, height: '100%', background: barColor, borderRadius: '3px' }}></div>
+                                 </div>
+                                 <div style={{ display: 'flex', justifyContent: 'flex-end', fontSize: '9px', fontWeight: 800, color: barColor }}>
+                                    Yield: ₹{Number(seg.totalRevenue || 0).toLocaleString(undefined, { maximumFractionDigits: 0 })}
+                                 </div>
+                              </div>
+                           );
+                        })}
+                     </div>
+                  </div>
+
+                  {/* Churn Watchlist */}
+                  <div>
+                     <div style={{ fontSize: '10px', fontWeight: 950, color: '#64748b', textTransform: 'uppercase', letterSpacing: '2px', marginBottom: '10px' }}>Churn Risk Alert Watchlist</div>
+                     <div style={{ background: '#fff5f5', border: '1px solid #fee2e2', borderRadius: '18px', padding: '20px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                        {(!financialMatrix.patientLtv.churnAlerts || financialMatrix.patientLtv.churnAlerts.length === 0) ? (
+                           <div style={{ fontSize: '11px', color: '#991b1b', fontWeight: 800, textAlign: 'center' }}>No active patients categorized under Churn Risk segments.</div>
+                        ) : (
+                           financialMatrix.patientLtv.churnAlerts.map((c, idx) => (
+                              <div key={idx} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'white', padding: '10px 14px', borderRadius: '12px', border: '1px solid #fca5a5' }}>
+                                 <div>
+                                    <div style={{ fontSize: '11px', fontWeight: 950, color: '#1e293b' }}>{c.patientName}</div>
+                                    <div style={{ fontSize: '9px', fontWeight: 800, color: '#64748b' }}>Last Scan: {c.lastModality} ({c.daysSinceLastScan} days ago)</div>
+                                 </div>
+                                 <span style={{ 
+                                    fontSize: '8px', 
+                                    fontWeight: 950, 
+                                    background: c.riskLevel === "CRITICAL" ? '#fee2e2' : '#ffedd5', 
+                                    color: c.riskLevel === "CRITICAL" ? '#991b1b' : '#c2410c', 
+                                    padding: '3px 8px', 
+                                    borderRadius: '6px',
+                                    border: '1px solid ' + (c.riskLevel === "CRITICAL" ? '#fca5a5' : '#fed7aa')
+                                 }}>
+                                    {c.riskLevel}
+                                 </span>
+                              </div>
+                           ))
+                        )}
+                     </div>
+                  </div>
+               </div>
+
+               {/* Right: Heatmap Cohort Retention */}
+               <div style={{ display: 'flex', flexDirection: 'column', gap: '15px' }}>
+                  <div style={{ fontSize: '10px', fontWeight: 950, color: '#64748b', textTransform: 'uppercase', letterSpacing: '2px', marginBottom: '5px' }}>Cohort Retention Heatmap (%)</div>
+                  <div style={{ background: '#f8fafc', padding: '25px', borderRadius: '18px', border: '1px solid #e2e8f0', display: 'flex', flexDirection: 'column', gap: '20px' }}>
+                     {(!financialMatrix.patientLtv.retentionHeatmap || financialMatrix.patientLtv.retentionHeatmap.length === 0) ? (
+                        <div style={{ fontSize: '11px', color: '#64748b', textAlign: 'center', padding: '30px' }}>Insufficient historical registration cohorts to construct heatmap.</div>
+                     ) : (
+                        <div style={{ overflowX: 'auto', width: '100%' }}>
+                           <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '11px', minWidth: '400px' }}>
+                              <thead>
+                                 <tr>
+                                    <th style={{ textAlign: 'left', padding: '8px', color: '#64748b', fontWeight: 900 }}>Cohort Month</th>
+                                    <th style={{ textAlign: 'center', padding: '8px', color: '#64748b', fontWeight: 900 }}>Size</th>
+                                    <th style={{ textAlign: 'center', padding: '8px', color: '#64748b', fontWeight: 900 }}>M0</th>
+                                    <th style={{ textAlign: 'center', padding: '8px', color: '#64748b', fontWeight: 900 }}>M1</th>
+                                    <th style={{ textAlign: 'center', padding: '8px', color: '#64748b', fontWeight: 900 }}>M2</th>
+                                    <th style={{ textAlign: 'center', padding: '8px', color: '#64748b', fontWeight: 900 }}>M3</th>
+                                    <th style={{ textAlign: 'center', padding: '8px', color: '#64748b', fontWeight: 900 }}>M4</th>
+                                    <th style={{ textAlign: 'center', padding: '8px', color: '#64748b', fontWeight: 900 }}>M5</th>
+                                 </tr>
+                              </thead>
+                              <tbody>
+                                 {financialMatrix.patientLtv.retentionHeatmap.map((row, idx) => (
+                                    <tr key={idx} style={{ borderBottom: '1px solid #f1f5f9' }}>
+                                       <td style={{ padding: '8px', fontWeight: 950, color: '#1e293b' }}>{row.cohortMonth}</td>
+                                       <td style={{ padding: '8px', textAlign: 'center', color: '#475569', fontWeight: 800 }}>{row.size} pts</td>
+                                       {(row.retentionRates || []).map((rate, rIdx) => {
+                                          let bg = '#f8fafc';
+                                          let fg = '#475569';
+                                          if (rate > 0) {
+                                             const alpha = Math.max(0.1, rate / 100);
+                                             bg = `rgba(79, 70, 229, ${alpha})`;
+                                             fg = rate > 50 ? 'white' : '#1e1b4b';
+                                          }
+                                          return (
+                                             <td 
+                                                key={rIdx} 
+                                                style={{ 
+                                                   padding: '8px', 
+                                                   textAlign: 'center', 
+                                                   background: bg, 
+                                                   color: fg, 
+                                                   fontWeight: 950,
+                                                   borderRadius: '6px',
+                                                   transition: 'all 0.2s'
+                                                }}
+                                             >
+                                                {rate.toFixed(0)}%
+                                             </td>
+                                          );
+                                       })}
+                                    </tr>
+                                 ))}
+                              </tbody>
+                           </table>
+                        </div>
+                     )}
+                     
+                     <div style={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '12px 15px' }}>
+                        <div style={{ fontSize: '9px', fontWeight: 950, color: '#4f46e5', textTransform: 'uppercase', letterSpacing: '1px', marginBottom: '4px' }}>ACQUISITION & RETENTION ADVISORY INSIGHTS</div>
+                        <p style={{ fontSize: '10px', color: '#64748b', fontWeight: 600, margin: 0, lineHeight: '1.4' }}>
+                           Cohort retention analysis displays high returning rates during the first 30 days due to post-scan doctor follow-ups, with a typical long-term stabilization. To offset churn risks, configure automated wellness check-ins and diagnostic reminders for patients approaching day 45 post-imaging.
+                        </p>
+                     </div>
+                  </div>
+               </div>
+            </div>
+         </div>
+         )}
+
+         {/* Level 3: Demographics & Specialist Leadership */}
         <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : 'repeat(auto-fit, minmax(320px, 1fr))', gap: '20px' }}>
            {/* Gender Matrix */}
            <div style={{ background: 'white', border: '1px solid #e2e8f0', padding: '30px', borderRadius: '24px' }}>
