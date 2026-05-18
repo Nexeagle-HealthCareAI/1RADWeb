@@ -150,6 +150,24 @@ export default function TechnicianPage() {
     }
   };
 
+  const handleCompleteStudy = async () => {
+    if (!activeStudy) return;
+    try {
+      setLoading(true);
+      await apiClient.post('/Study/complete', {
+        appointmentId: activeStudy.appointmentId || activeStudy.id,
+        comments: techNotes
+      });
+      await fetchWorklist();
+      setCurrentView('QUEUE');
+    } catch (err) {
+      console.error('[TECH] Finalizing study failed', err);
+      alert('Error: Failed to save observations and finalize scanning study.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
   // --- DERIVED DATA ---
   const filteredStudies = useMemo(() => {
     return studies.filter(s => {
@@ -223,9 +241,15 @@ export default function TechnicianPage() {
     setActiveStudy(study);
     setCurrentView('WORKSPACE');
     setUploadedFiles([]);
-    setTechNotes(study.notes || '');
+    setTechNotes(study.notes || study.technicianComments || '');
     setViewportProps({ invert: false, flipHorizontal: false, flipVertical: false, rotation: 0 });
     setKeyImages([]);
+
+    // Auto-update status to in_progress if starting scan from confirmed/scheduled/booked
+    const currentStatus = study.status?.toLowerCase();
+    if (['confirmed', 'scheduled', 'booked'].includes(currentStatus)) {
+      await handleStatusUpdate(study.appointmentId || study.id, 'in_progress');
+    }
 
     // Fetch existing assets for this mission
     try {
@@ -473,6 +497,7 @@ export default function TechnicianPage() {
       await apiClient.post('/Study/upload', formData, {
         headers: { 'Content-Type': 'multipart/form-data' }
       });
+      fetchWorklist();
     } catch (err) {
       console.error('[TECH] Persistence failed', err);
     }
@@ -1107,7 +1132,7 @@ export default function TechnicianPage() {
         <div style={{ flex: 1 }}></div>
 
         <button 
-          onClick={() => { handleStatusUpdate(activeStudy?.appointmentId, 'scanned'); setCurrentView('QUEUE'); }}
+          onClick={handleCompleteStudy}
           className="gamified-btn" style={{ padding: '10px 25px', borderRadius: '12px', fontSize: '11px', textTransform: 'uppercase', letterSpacing: '1px', fontWeight: 950 }}
         >Mark as Scanned</button>
       </div>

@@ -37,9 +37,6 @@ export default function DoctorBoard() {
   const [filters, setFilters] = useState({ modality: 'ALL', priority: 'ALL', clinicalStatus: 'ALL' });
   const [selectedDoctor, setSelectedDoctor] = useState(currentUser?.id || 'ALL');
   const [doctors, setDoctors] = useState([]);
-  const [isTablet, setIsTablet] = useState(window.innerWidth < 1100);
-  const [isMobile, setIsMobile] = useState(window.innerWidth < 768);
-  const [viewMode, setViewMode] = useState('TABLE');
   const [archivePage, setArchivePage] = useState(1);
   const [archiveFilterMode, setArchiveFilterMode] = useState('ALL'); // 'ALL' or 'RANGE'
   const [archiveDateRange, setArchiveDateRange] = useState({ start: TODAY, end: TODAY });
@@ -53,19 +50,6 @@ export default function DoctorBoard() {
     }
     setSortConfig({ key, direction });
   };
-
-  useEffect(() => {
-    const handleResize = () => {
-      const tablet = window.innerWidth < 1100;
-      const mobile = window.innerWidth < 768;
-      setIsTablet(tablet);
-      setIsMobile(mobile);
-      if (tablet) setViewMode('CARDS');
-      else setViewMode('TABLE');
-    };
-    window.addEventListener('resize', handleResize);
-    return () => window.removeEventListener('resize', handleResize);
-  }, []);
 
 
 
@@ -207,10 +191,11 @@ export default function DoctorBoard() {
   };
 
   // --- HANDLERS ---
-  const handleOpenWorkspace = (c) => {
-    // Update status to reporting if not already
-    if (c.status?.toLowerCase() !== 'reporting') {
-      handleStatusUpdate(c.appointmentId || c.id, 'reporting');
+  const handleOpenWorkspace = async (c) => {
+    // Update status to reporting if not already reporting, reported, or completed
+    const currentStatus = c.status?.toLowerCase();
+    if (!['reporting', 'reported', 'completed'].includes(currentStatus)) {
+      await handleStatusUpdate(c.appointmentId || c.id, 'reporting');
     }
 
     // Navigate to the ReportingPage with the appointment ID
@@ -436,16 +421,7 @@ export default function DoctorBoard() {
           <button className="gamified-btn" onClick={fetchCases} style={{ padding: '10px 18px', borderRadius: '8px', fontSize: '13px', fontWeight: 600 }}>Refresh</button>
         </div>
 
-        {!isTablet && (
-          <div style={{ display: 'flex', gap: '10px', marginBottom: '20px', justifyContent: 'flex-end' }}>
-             <button onClick={() => setViewMode('TABLE')} style={{ padding: '7px 14px', borderRadius: '7px', border: '1px solid #e2e8f0', background: viewMode === 'TABLE' ? '#1d4ed8' : 'white', color: viewMode === 'TABLE' ? 'white' : '#6b7280', fontSize: '12px', fontWeight: 500, cursor: 'pointer' }}>Table</button>
-             <button onClick={() => setViewMode('CARDS')} style={{ padding: '7px 14px', borderRadius: '7px', border: '1px solid #e2e8f0', background: viewMode === 'CARDS' ? '#1d4ed8' : 'white', color: viewMode === 'CARDS' ? 'white' : '#6b7280', fontSize: '12px', fontWeight: 500, cursor: 'pointer' }}>Cards</button>
-          </div>
-        )}
-
         <div style={{ background: 'white', borderRadius: '20px', border: '1px solid #e2e8f0', overflow: 'hidden', boxShadow: '0 4px 20px rgba(0,0,0,0.03)' }}>
-          {viewMode === 'TABLE' ? (
-            <>
           <table style={{ width: '100%', borderCollapse: 'collapse' }}>
             <thead style={{ background: '#f8fafc', borderBottom: '1px solid #e2e8f0' }}>
               <tr>
@@ -555,7 +531,6 @@ export default function DoctorBoard() {
                           }}
                           title="Print Prescription"
                         >📜</button>
-                        {view === 'HISTORY' && <button className="icon-btn" onClick={() => handlePreviewPrint(c)}>🖨️</button>}
                         <button 
                           className="gamified-btn" 
                           disabled={!isActive && view !== 'HISTORY'}
@@ -571,7 +546,7 @@ export default function DoctorBoard() {
               })}
               {filteredCases.length === 0 && !loading && (
                 <tr>
-                  <td colSpan="7" style={{ textAlign: 'center', padding: '100px', color: '#94a3b8', fontStyle: 'italic', fontSize: '14px' }}>
+                  <td colSpan="8" style={{ textAlign: 'center', padding: '100px', color: '#94a3b8', fontStyle: 'italic', fontSize: '14px' }}>
                     No cases found
                   </td>
                 </tr>
@@ -595,76 +570,6 @@ export default function DoctorBoard() {
                   style={{ padding: '7px 14px', borderRadius: '7px', border: '1px solid #e2e8f0', background: 'white', fontSize: '12px', fontWeight: 500, cursor: archivePage === totalPages ? 'not-allowed' : 'pointer', opacity: archivePage === totalPages ? 0.5 : 1 }}
                 >Next</button>
               </div>
-            </div>
-          )}
-            </>
-          ) : (
-            <div style={{ padding: '20px', display: 'grid', gridTemplateColumns: isTablet ? '1fr' : 'repeat(auto-fill, minmax(350px, 1fr))', gap: '20px' }}>
-               {filteredCases.map(c => {
-                  const status = c.status || 'scheduled';
-                  const isReady = status === 'scanned';
-                  const isScanning = status === 'in_progress';
-                  const isExpected = status === 'scheduled';
-                  return (
-                    <div key={c.id || c.appointmentId} style={{ background: 'white', border: '1px solid #e2e8f0', borderRadius: '16px', padding: '20px', display: 'flex', flexDirection: 'column', gap: '15px' }}>
-                       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-                          <div>
-                             <div style={{ fontSize: '14px', fontWeight: 950, color: '#1e293b' }}>{c.patientName?.toUpperCase()}</div>
-                             <div style={{ fontSize: '11px', color: '#6b7280', fontWeight: 400, marginTop: '4px' }}>ID: {c.patientIdentifier || '—'} · Token: <span style={{ color: '#1d4ed8' }}>{c.tokenNo || '-'}</span></div>
-                          </div>
-                           <span style={{ 
-                            padding: '6px 12px', borderRadius: '8px', fontSize: '10px', fontWeight: 950,
-                            background: status === 'reported' ? '#f0fdf4' : isReady ? '#ecfdf5' : isScanning ? '#fff7ed' : isExpected ? '#eff6ff' : '#f8fafc',
-                            color: status === 'reported' ? '#166534' : isReady ? '#27ae60' : isScanning ? '#d97706' : isExpected ? '#0f52ba' : '#64748b'
-                          }}>{status === 'reported' ? 'Finalized' : status}</span>
-                       </div>
-                       
-                       <div style={{ background: '#f8fafc', padding: '12px', borderRadius: '12px', display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '10px' }}>
-                          <div>
-                             <div style={{ fontSize: '11px', fontWeight: 500, color: '#6b7280' }}>Service</div>
-                             <div style={{ fontSize: '12px', fontWeight: 600, color: '#1d4ed8' }}>{c.service}</div>
-                          </div>
-                          <div>
-                             <div style={{ fontSize: '11px', fontWeight: 500, color: '#6b7280' }}>Date</div>
-                             <div style={{ fontSize: '12px', fontWeight: 800 }}>{c.dateTime ? new Date(c.dateTime).toLocaleDateString('en-GB', { day: '2-digit', month: 'short' }).toUpperCase() : 'N/A'}</div>
-                          </div>
-                          <div>
-                             <div style={{ fontSize: '11px', fontWeight: 500, color: '#6b7280' }}>Doctor</div>
-                             <div style={{ fontSize: '12px', fontWeight: 800, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{c.doctor || doctors.find(d => d.id === c.doctorId)?.name || 'Unassigned'}</div>
-                          </div>
-                       </div>
-
-                       {c.technicianComments && (
-                         <div style={{ fontSize: '11px', color: '#64748b', fontStyle: 'italic', padding: '0 5px' }}>
-                            "{c.technicianComments}"
-                         </div>
-                       )}
-
-                       <div style={{ marginTop: 'auto', display: 'flex', gap: '10px' }}>
-
-                           <button 
-                             onClick={(e) => { e.stopPropagation(); handlePreviewPrint(c); }}
-                            style={{ 
-                              width: '45px', height: '45px', borderRadius: '12px', background: '#fef3c7', color: '#d97706', 
-                              border: '1px solid #fde68a', cursor: 'pointer', display: 'flex', 
-                              alignItems: 'center', justifyContent: 'center', fontSize: '20px'
-                            }}
-                            title="Print Prescription"
-                          >📜</button>
-                          <button 
-                            className="btn btn-primary"
-                            onClick={() => handleOpenWorkspace(c)}
-                            style={{ flex: 1, padding: '12px', borderRadius: '10px', fontSize: '11px', fontWeight: 950, background: status === 'reported' ? '#16a34a' : '#0f52ba', border: 'none', color: 'white', cursor: 'pointer' }}
-                          >{status === 'reported' ? 'Review' : 'Write Report'}</button>
-                       </div>
-                    </div>
-                  );
-               })}
-               {filteredCases.length === 0 && !loading && (
-                 <div style={{ gridColumn: '1/-1', textAlign: 'center', padding: '60px', color: '#94a3b8', fontStyle: 'italic' }}>
-                    No cases found
-                 </div>
-               )}
             </div>
           )}
         </div>

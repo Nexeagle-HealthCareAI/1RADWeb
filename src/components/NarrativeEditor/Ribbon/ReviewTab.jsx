@@ -19,6 +19,8 @@ export default function ReviewTab({
   onExportPdf,
   onOpenFinalize,
   isFinalized = false,
+  onRunQualityCheck,
+  onOpenSnippetManager,
   // Track Changes
   trackChangesOn = false,
   trackChangeCount = 0,
@@ -158,6 +160,23 @@ export default function ReviewTab({
           label="PDF / Print"
           title="Print or save as PDF"
           onClick={onExportPdf}
+        />
+      </Group>
+
+      <Sep />
+
+      <Group label="Quality">
+        <BigBtn
+          icon="📋"
+          label="Check"
+          title="Run report quality and completeness check"
+          onClick={onRunQualityCheck}
+        />
+        <BigBtn
+          icon="⚡"
+          label="Snippets"
+          title="Manage text-expansion snippets"
+          onClick={onOpenSnippetManager}
         />
       </Group>
 

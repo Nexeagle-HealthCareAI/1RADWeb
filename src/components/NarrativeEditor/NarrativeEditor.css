@@ -592,6 +592,18 @@
   font-family: inherit;
 }
 
+.finalized-banner .finalized-addendum-btn {
+  margin-left: 6px;
+  padding: 2px 10px;
+  border: 1px solid #fcd34d;
+  background: #fffbeb;
+  color: #92400e;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 11px;
+  font-family: inherit;
+}
+
 
 /* ═══════════════════════════════════════════════════════════════════════════════
    TIER 1 FEATURES

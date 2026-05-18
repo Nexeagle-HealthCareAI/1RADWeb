@@ -46,11 +46,16 @@ import CommentsPanel from './dialogs/CommentsPanel';
 import NormalFindingsDialog from './dialogs/NormalFindingsDialog';
 import FinalizeDialog from './dialogs/FinalizeDialog';
 import MeasurementDialog from './dialogs/MeasurementDialog';
+import QualityCheckPanel from './dialogs/QualityCheckPanel';
+import SnippetManagerDialog from './dialogs/SnippetManagerDialog';
+import AddendumDialog from './dialogs/AddendumDialog';
 import HorizontalRuler from './HorizontalRuler';
 import { FONT_SIZES } from './Ribbon/RibbonControls';
 import { useVoiceDictation } from './hooks/useVoiceDictation';
 import { exportToDocx } from './utils/exportDocx';
 import { exportPdf } from './utils/exportPdf';
+import { runQualityCheck } from './utils/reportQuality';
+import { loadSnippets, saveSnippets } from './data/snippetStorage';
 import './NarrativeEditor.css';
 
 /**
@@ -253,6 +258,13 @@ const NarrativeEditor = React.forwardRef(function NarrativeEditor({
   const [measurementOpen, setMeasurementOpen]       = useState(false);
   const [isFinalized, setIsFinalized]               = useState(false);
 
+  // ── Tier 3 features ──────────────────────────────────────────────────────
+  const [snippets, setSnippets]                     = useState(() => loadSnippets());
+  const [snippetManagerOpen, setSnippetManagerOpen] = useState(false);
+  const [qualityOpen, setQualityOpen]               = useState(false);
+  const [qualityResults, setQualityResults]         = useState([]);
+  const [addendumOpen, setAddendumOpen]             = useState(false);
+
   // ── Tier 1 features ──────────────────────────────────────────────────────
   // Track Changes
   const [trackChangesOn, setTrackChangesOn] = useState(false);
@@ -397,6 +409,29 @@ const NarrativeEditor = React.forwardRef(function NarrativeEditor({
     editor.setEditable(false);
     setIsFinalized(true);
     setFinalizeOpen(false);
+  };
+
+  // ── Quality Check ─────────────────────────────────────────────────────────
+  const handleRunQualityCheck = () => {
+    if (!editor) return;
+    const html = editor.getHTML();
+    const tmp = document.createElement('div');
+    tmp.innerHTML = html;
+    const hasUnfilledFields = tmp.querySelectorAll('.ne-structured-field:not(.ne-structured-field--filled)').length > 0;
+    const results = runQualityCheck(html, { trackChangeCount, hasUnfilledFields });
+    setQualityResults(results);
+    setQualityOpen(true);
+  };
+
+  // ── Addendum ──────────────────────────────────────────────────────────────
+  const handleAddendum = ({ author, text, timestamp }) => {
+    if (!editor) return;
+    const html = `<hr><p><strong>ADDENDUM</strong></p><p><strong>Author:</strong> ${author}</p><p><strong>Date/Time:</strong> ${timestamp}</p><p>${text.replace(/\n/g, '<br>')}</p>`;
+    // Temporarily re-enable editing to insert addendum, then lock again
+    editor.setEditable(true);
+    editor.chain().focus().insertContent(html).run();
+    editor.setEditable(false);
+    setAddendumOpen(false);
   };
 
   const editor = useEditor({
@@ -982,9 +1017,15 @@ const NarrativeEditor = React.forwardRef(function NarrativeEditor({
     pages[idx]?.scrollIntoView({ behavior: 'smooth', block: 'start' });
   };
 
-  // Keyword macro expansion
+  // Keyword macro expansion — merges internal snippets with the external keywordLibrary prop
   useEffect(() => {
-    if (!editor || !keywordLibrary?.length) return;
+    if (!editor) return;
+    // Normalize trigger: strip leading '/' so "/norm" and "norm" both match.
+    const normTrigger = (t = '') => (t.startsWith('/') ? t.slice(1) : t).toLowerCase();
+    const mergedLibrary = [
+      ...snippets.map(s => ({ trigger: s.trigger, replacementText: s.content })),
+      ...(keywordLibrary || []),
+    ];
     editor.setOptions({
       editorProps: {
         ...editor.options.editorProps,
@@ -1002,8 +1043,8 @@ const NarrativeEditor = React.forwardRef(function NarrativeEditor({
           if (!lastWord) return false;
 
           const searchTrigger = lastWord.startsWith('/') ? lastWord.slice(1) : lastWord;
-          const match = keywordLibrary.find(k =>
-            (k.trigger || '').toLowerCase() === searchTrigger.toLowerCase()
+          const match = mergedLibrary.find(k =>
+            normTrigger(k.trigger) === searchTrigger.toLowerCase()
           );
 
           if (!match) return false;
@@ -1048,7 +1089,7 @@ const NarrativeEditor = React.forwardRef(function NarrativeEditor({
         },
       },
     });
-  }, [editor, keywordLibrary]);
+  }, [editor, keywordLibrary, snippets]);
 
   if (!editor) {
     return (
@@ -1097,6 +1138,8 @@ const NarrativeEditor = React.forwardRef(function NarrativeEditor({
           isFinalized={isFinalized}
           onOpenNormalFindings={() => setNormalFindingsOpen(true)}
           onOpenMeasurement={() => setMeasurementOpen(true)}
+          onRunQualityCheck={handleRunQualityCheck}
+          onOpenSnippetManager={() => setSnippetManagerOpen(true)}
           trackChangesOn={trackChangesOn}
           trackChangeCount={trackChangeCount}
           onToggleTrackChanges={() => {
@@ -1125,6 +1168,9 @@ const NarrativeEditor = React.forwardRef(function NarrativeEditor({
       {isFinalized && (
         <div className="finalized-banner">
           🔒 This report has been electronically signed and finalized.
+          <button className="finalized-addendum-btn" onClick={() => setAddendumOpen(true)}>
+            + Addendum
+          </button>
           <button className="finalized-undo" onClick={() => { setIsFinalized(false); editor?.setEditable(true); }}>
             Unlock
           </button>
@@ -1241,6 +1287,30 @@ const NarrativeEditor = React.forwardRef(function NarrativeEditor({
         open={measurementOpen}
         onInsert={(text) => editor?.chain().focus().insertContent(text).run()}
         onClose={() => setMeasurementOpen(false)}
+      />
+
+      {/* ── Tier 3 Dialogs ── */}
+      <QualityCheckPanel
+        open={qualityOpen}
+        results={qualityResults}
+        onRerun={handleRunQualityCheck}
+        onClose={() => setQualityOpen(false)}
+      />
+
+      <SnippetManagerDialog
+        open={snippetManagerOpen}
+        onClose={() => setSnippetManagerOpen(false)}
+        onChanged={(updated) => {
+          setSnippets(updated);
+          saveSnippets(updated);
+        }}
+      />
+
+      <AddendumDialog
+        open={addendumOpen}
+        defaultAuthor={trackAuthorRef.current}
+        onAddendum={handleAddendum}
+        onClose={() => setAddendumOpen(false)}
       />
 
       {/* ── Medical Autocomplete Dropdown ── */}
