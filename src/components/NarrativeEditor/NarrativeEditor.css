@@ -49,17 +49,25 @@
 */
 .ne--css-fullscreen {
   position:   fixed     !important;
-  inset:      0         !important;
+  /* Anchor all four sides to the viewport — the element's size comes from
+     these constraints, NOT from height/dvh/vh which ALL shrink when the iOS
+     virtual keyboard or Safari address-bar appears. */
+  top:        0         !important;
+  right:      0         !important;
+  bottom:     0         !important;
+  left:       0         !important;
+  inset:      0         !important;   /* modern shorthand (same effect) */
   z-index:    9999      !important;
-  width:      100vw     !important;
-  height:     100dvh    !important;
-  height:     100vh     !important;      /* fallback */
-  max-height: 100dvh    !important;
-  max-height: 100vh     !important;      /* fallback */
+  /* width/height intentionally omitted — top+right+bottom+left already fill
+     the fixed viewport and stay stable when the keyboard appears. */
   overflow:   hidden    !important;
   display:    flex      !important;
   flex-direction: column !important;
   border-radius: 0      !important;
+  /* Prevent iOS overscroll bounce that makes the whole editor "move" */
+  overscroll-behavior: none !important;
+  /* Prevent double-tap zoom on toolbar/chrome outside the canvas */
+  touch-action: manipulation !important;
   padding-top:    env(safe-area-inset-top,    0px) !important;
   padding-bottom: env(safe-area-inset-bottom, 0px) !important;
   padding-left:   env(safe-area-inset-left,   0px) !important;
@@ -73,6 +81,11 @@
   overflow-x: hidden  !important;
   /* iOS momentum scrolling */
   -webkit-overflow-scrolling: touch;
+  /* Only allow vertical pan; blocks horizontal pan and pinch-zoom on the
+     canvas so stray touch gestures don’t resize or pan the editor */
+  touch-action: pan-y !important;
+  /* Contain overscroll so it doesn’t bounce the outer fixed container */
+  overscroll-behavior: contain !important;
 }
 
 /* Ribbon must not shrink in fullscreen */
