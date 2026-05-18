@@ -296,14 +296,16 @@ const ReportPreviewModal = ({
 
     let letterheadHtml = '';
     if (showLetterhead && resolvedAssetUrl) {
+      // Always resolve to an absolute URL so the print popup (about:blank) can fetch it
+      let letterheadUrl = resolvedAssetUrl;
+      if (!letterheadUrl.startsWith('http')) {
+        letterheadUrl = `${window.location.origin}${letterheadUrl.startsWith('/') ? '' : '/'}${letterheadUrl}`;
+      }
       if (!isPdf) {
-        // Ensure absolute URL for letterhead
-        let letterheadUrl = resolvedAssetUrl;
-        if (!letterheadUrl.startsWith('http')) {
-          letterheadUrl = `${BASE_URL}${letterheadUrl}`;
-        }
-        // For image letterheads, embed directly
         letterheadHtml = `<img src="${letterheadUrl}" style="position: absolute; top: 0; left: 0; width: 210mm; height: 297mm; z-index: 1; pointer-events: none; object-fit: fill; display: block;" alt="Letterhead" />`;
+      } else {
+        // PDF letterhead — embed as inline frame; browser prints the first page with the content layer on top
+        letterheadHtml = `<embed src="${letterheadUrl}" type="application/pdf" style="position: absolute; top: 0; left: 0; width: 210mm; height: 297mm; z-index: 1; pointer-events: none; display: block;" />`;
       }
     }
 
@@ -428,6 +430,7 @@ const ReportPreviewModal = ({
       <head>
         <meta charset="UTF-8">
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <base href="${window.location.origin}/">
         <title>Diagnostic Report - Print</title>
         <style>
           @page {
@@ -500,6 +503,25 @@ const ReportPreviewModal = ({
             body { margin: 0 !important; padding: 0 !important; }
           }
         </style>
+        <script>
+          // Wait for ALL images/embeds to finish loading before opening the
+          // print dialog. The letterhead is a proxied Azure Blob that can take
+          // several seconds — the old 500 ms setTimeout fired too early.
+          window.addEventListener('load', function () {
+            var images = document.querySelectorAll('img, embed');
+            if (!images.length) { setTimeout(window.print, 100); return; }
+            var pending = images.length;
+            function done() { if (--pending <= 0) setTimeout(window.print, 100); }
+            images.forEach(function(el) {
+              if (el.tagName === 'IMG') {
+                if (el.complete) { done(); } else { el.onload = done; el.onerror = done; }
+              } else {
+                // embed/object — no reliable load event; give it a generous head-start
+                setTimeout(done, 1500);
+              }
+            });
+          });
+        </script>
       </head>
       <body>
         <div class="print-header">
@@ -526,11 +548,8 @@ const ReportPreviewModal = ({
     printWindow.document.write(printContent);
     printWindow.document.close();
     printWindow.focus();
-
-    // Auto-trigger print dialog after a short delay for better UX
-    setTimeout(() => {
-      printWindow.print();
-    }, 500);
+    // Print is triggered by the inline window.addEventListener('load', ...) script
+    // injected into the print HTML above — no more race-condition setTimeout here.
   };
 
   const handleWhatsAppShare = () => {

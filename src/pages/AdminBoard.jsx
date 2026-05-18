@@ -4780,7 +4780,8 @@ return (
               alignItems: 'center', justifyContent: 'center', cursor: 'pointer', transition: 'all 0.2s',
               fontSize: '10px', fontWeight: 950, letterSpacing: '1px',
               boxShadow: '0 8px 25px rgba(15, 82, 186, 0.25)',
-              width: isMobile ? '100%' : 'auto'
+              width: isMobile ? '100%' : 'auto',
+              whiteSpace: 'nowrap'
             }}
           >
             <span style={{ fontSize: '14px' }}>📡</span> REGISTER NEW CHAIN
