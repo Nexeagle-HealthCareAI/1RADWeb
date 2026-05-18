@@ -558,6 +558,169 @@
   cursor: default;
 }
 
+/* ── Report Finalized state ──────────────────────────────────────────────────── */
+.narrative-editor-container.is-finalized .word-page-inner {
+  cursor: default;
+  user-select: text;
+}
+
+/* Finalized banner bar (rendered above the ruler) */
+.finalized-banner {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 5px 16px;
+  background: #dcfce7;
+  border-bottom: 2px solid #22c55e;
+  color: #166534;
+  font-size: 12px;
+  font-weight: 600;
+  font-family: "Segoe UI", system-ui, sans-serif;
+  flex-shrink: 0;
+}
+
+.finalized-banner .finalized-undo {
+  margin-left: 12px;
+  padding: 2px 10px;
+  border: 1px solid #86efac;
+  background: white;
+  color: #166534;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 11px;
+  font-family: inherit;
+}
+
+
+/* ═══════════════════════════════════════════════════════════════════════════════
+   TIER 1 FEATURES
+   ═══════════════════════════════════════════════════════════════════════════════ */
+
+/* ── Track Changes ───────────────────────────────────────────────────────────── */
+ins[data-ci] {
+  color: #1a56db;
+  text-decoration: underline dotted 2px;
+  background: rgba(26, 86, 219, 0.08);
+  border-radius: 2px;
+  cursor: text;
+}
+
+del[data-ci] {
+  color: #e02424;
+  text-decoration: line-through;
+  background: rgba(224, 36, 36, 0.06);
+  border-radius: 2px;
+  cursor: default;
+  pointer-events: none;
+  user-select: none;
+}
+
+/* ── Inline Comments ─────────────────────────────────────────────────────────── */
+.ne-comment-mark {
+  background: rgba(255, 193, 7, 0.28);
+  border-bottom: 2px solid #f59e0b;
+  border-radius: 2px;
+  cursor: pointer;
+  padding-bottom: 1px;
+  transition: background 0.1s;
+}
+
+.ne-comment-mark:hover {
+  background: rgba(255, 193, 7, 0.48);
+}
+
+/* ── Structured Fields ───────────────────────────────────────────────────────── */
+.ne-structured-field {
+  display: inline-flex;
+  align-items: center;
+  padding: 0 7px;
+  height: 18px;
+  background: #dbeafe;
+  color: #1d4ed8;
+  border: 1px solid #93c5fd;
+  border-radius: 10px;
+  font-size: 11px;
+  font-weight: 500;
+  font-family: "Segoe UI", system-ui, sans-serif;
+  line-height: 1;
+  white-space: nowrap;
+  cursor: pointer;
+  user-select: none;
+  vertical-align: middle;
+  margin: 0 2px;
+  transition: background 0.1s, border-color 0.1s;
+}
+
+.ne-structured-field:hover {
+  background: #bfdbfe;
+  border-color: #3b82f6;
+}
+
+.ne-structured-field--filled {
+  background: #dcfce7;
+  color: #166534;
+  border-color: #86efac;
+}
+
+.ne-structured-field--filled:hover {
+  background: #bbf7d0;
+  border-color: #22c55e;
+}
+
+/* Selected atom node ring */
+.ne-structured-field.ProseMirror-selectednode {
+  outline: 2px solid #3b82f6;
+  outline-offset: 1px;
+}
+
+/* ── Medical Autocomplete Dropdown ───────────────────────────────────────────── */
+.ne-autocomplete-dropdown {
+  position: fixed;
+  z-index: 9999;
+  background: #fff;
+  border: 1px solid #d1d5db;
+  border-radius: 6px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.14);
+  min-width: 220px;
+  max-width: 380px;
+  overflow: hidden;
+  font-family: "Segoe UI", system-ui, sans-serif;
+  font-size: 12px;
+}
+
+.ne-autocomplete-item {
+  padding: 6px 12px;
+  cursor: pointer;
+  color: #111827;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  transition: background 0.08s;
+}
+
+.ne-autocomplete-item:hover,
+.ne-autocomplete-item--active {
+  background: #dbeafe;
+  color: #1d4ed8;
+}
+
+.ne-autocomplete-item__match {
+  font-weight: 700;
+  color: #1d4ed8;
+}
+
+.ne-autocomplete-header {
+  padding: 4px 12px 2px;
+  font-size: 10px;
+  color: #9ca3af;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  border-bottom: 1px solid #f3f4f6;
+  background: #f9fafb;
+}
+
+
 .exit-preview-btn {
   position: sticky;
   top: 8px;

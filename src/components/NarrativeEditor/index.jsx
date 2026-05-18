@@ -1,4 +1,4 @@
-import React, { useRef, useState, useEffect, useImperativeHandle } from 'react';
+import React, { useRef, useState, useEffect, useCallback, useImperativeHandle } from 'react';
 import { useEditor, EditorContent } from '@tiptap/react';
 import { StarterKit } from '@tiptap/starter-kit';
 import { Underline } from '@tiptap/extension-underline';
@@ -26,6 +26,10 @@ import { Sort } from './extensions/Sort';
 import { MultilevelList } from './extensions/MultilevelList';
 import { PageNumber } from './extensions/PageNumberNode';
 import { AutoCorrect } from './extensions/AutoCorrect';
+import { TrackInsert, TrackDelete, TrackChanges } from './extensions/TrackChanges';
+import { CommentMark, Comment } from './extensions/Comment';
+import { MedicalAutocomplete } from './extensions/MedicalAutocomplete';
+import { StructuredField } from './extensions/StructuredField';
 import TableToolbar from './TableToolbar';
 import ImageToolbar from './ImageToolbar';
 import ContextMenu from './ContextMenu';
@@ -38,10 +42,15 @@ import ParagraphDialog from './dialogs/ParagraphDialog';
 import HeaderFooterDialog from './dialogs/HeaderFooterDialog';
 import ReportTemplatesDialog from './dialogs/ReportTemplatesDialog';
 import VersionHistoryDialog, { loadVersions, persistVersions, addVersion, removeVersion } from './dialogs/VersionHistoryDialog';
+import CommentsPanel from './dialogs/CommentsPanel';
+import NormalFindingsDialog from './dialogs/NormalFindingsDialog';
+import FinalizeDialog from './dialogs/FinalizeDialog';
+import MeasurementDialog from './dialogs/MeasurementDialog';
 import HorizontalRuler from './HorizontalRuler';
 import { FONT_SIZES } from './Ribbon/RibbonControls';
 import { useVoiceDictation } from './hooks/useVoiceDictation';
 import { exportToDocx } from './utils/exportDocx';
+import { exportPdf } from './utils/exportPdf';
 import './NarrativeEditor.css';
 
 /**
@@ -238,6 +247,29 @@ const NarrativeEditor = React.forwardRef(function NarrativeEditor({
   const [versionsOpen, setVersionsOpen] = useState(false);
   const [versions, setVersions] = useState(() => loadVersions());
 
+  // ── Tier 2 features ──────────────────────────────────────────────────────
+  const [normalFindingsOpen, setNormalFindingsOpen] = useState(false);
+  const [finalizeOpen, setFinalizeOpen]             = useState(false);
+  const [measurementOpen, setMeasurementOpen]       = useState(false);
+  const [isFinalized, setIsFinalized]               = useState(false);
+
+  // ── Tier 1 features ──────────────────────────────────────────────────────
+  // Track Changes
+  const [trackChangesOn, setTrackChangesOn] = useState(false);
+  const [trackChangeCount, setTrackChangeCount] = useState(0);
+  const trackAuthorRef = useRef('Author');
+
+  // Inline Comments
+  const [comments, setComments] = useState([]); // [{id,text,author,date,resolved,replies}]
+  const [commentsOpen, setCommentsOpen] = useState(false);
+  const [pendingCommentId, setPendingCommentId] = useState(null);
+  const [activeCommentId, setActiveCommentId] = useState(null);
+
+  // Medical Autocomplete
+  const [autocomplete, setAutocomplete] = useState({
+    active: false, query: '', suggestions: [], from: 0, rect: null, selected: 0,
+  });
+
   // Voice dictation — text inserted at cursor when a phrase finalises.
   const voice = useVoiceDictation({
     onResult: (text) => {
@@ -255,6 +287,61 @@ const NarrativeEditor = React.forwardRef(function NarrativeEditor({
     document.addEventListener('fullscreenchange', onFsChange);
     return () => document.removeEventListener('fullscreenchange', onFsChange);
   }, []);
+
+  // ── Track change count — update on every editor transaction ──────────────
+  useEffect(() => {
+    if (!editor) return;
+    const update = () => {
+      try {
+        const count = editor.commands.getTrackChangeCount?.() ?? 0;
+        setTrackChangeCount(count);
+      } catch (_) {}
+    };
+    editor.on('update', update);
+    return () => editor.off('update', update);
+  }, [editor]);
+
+  // ── Medical autocomplete — listen to plugin events ────────────────────────
+  useEffect(() => {
+    const handler = (e) => {
+      const d = e.detail;
+      setAutocomplete(prev => ({
+        active:      d.active,
+        query:       d.query || '',
+        suggestions: d.suggestions || [],
+        from:        d.from ?? 0,
+        rect:        d.rect ?? null,
+        selected:    0,
+      }));
+    };
+    window.addEventListener('narrative-editor:autocomplete', handler);
+    return () => window.removeEventListener('narrative-editor:autocomplete', handler);
+  }, []);
+
+  // Keyboard navigation for autocomplete dropdown
+  useEffect(() => {
+    if (!autocomplete.active) return;
+    const handler = (e) => {
+      if (e.key === 'ArrowDown') {
+        e.preventDefault();
+        setAutocomplete(prev => ({ ...prev, selected: Math.min(prev.selected + 1, prev.suggestions.length - 1) }));
+      } else if (e.key === 'ArrowUp') {
+        e.preventDefault();
+        setAutocomplete(prev => ({ ...prev, selected: Math.max(prev.selected - 1, 0) }));
+      } else if (e.key === 'Enter' || e.key === 'Tab') {
+        if (autocomplete.suggestions.length > 0) {
+          e.preventDefault();
+          const term = autocomplete.suggestions[autocomplete.selected];
+          editor?.commands.insertAutocomplete({ term, from: autocomplete.from });
+          setAutocomplete(prev => ({ ...prev, active: false }));
+        }
+      } else if (e.key === 'Escape') {
+        setAutocomplete(prev => ({ ...prev, active: false }));
+      }
+    };
+    document.addEventListener('keydown', handler, true);
+    return () => document.removeEventListener('keydown', handler, true);
+  }, [autocomplete.active, autocomplete.selected, autocomplete.suggestions, autocomplete.from, editor]);
 
   const toggleFullscreen = () => {
     if (!document.fullscreenElement) {
@@ -288,6 +375,28 @@ const NarrativeEditor = React.forwardRef(function NarrativeEditor({
   const handleExportDocx = async () => {
     if (!editor) return;
     await exportToDocx(editor.getHTML(), 'radiology-report.docx');
+  };
+
+  // ── Export PDF ────────────────────────────────────────────────────────────
+  const handleExportPdf = () => {
+    exportPdf(containerRef.current, { title: 'Radiology Report' });
+  };
+
+  // ── Report Finalization ───────────────────────────────────────────────────
+  const handleFinalize = ({ name, credentials, timestamp }) => {
+    if (!editor) return;
+    const credStr = credentials ? `, ${credentials}` : '';
+    const sigBlock = `<hr><p><strong>Electronically signed by:</strong> ${name}${credStr}</p><p><strong>Date/Time:</strong> ${timestamp}</p><p><em>I attest that I have reviewed this report and it accurately reflects my interpretation of the imaging study.</em></p>`;
+    editor.chain().focus().command(({ tr, dispatch, state }) => {
+      if (dispatch) {
+        const end = state.doc.content.size;
+        tr.insertText('', end - 1); // move to end
+      }
+      return true;
+    }).insertContent(sigBlock).run();
+    editor.setEditable(false);
+    setIsFinalized(true);
+    setFinalizeOpen(false);
   };
 
   const editor = useEditor({
@@ -335,6 +444,13 @@ const NarrativeEditor = React.forwardRef(function NarrativeEditor({
       Subscript,
       Superscript,
       Link,
+      TrackInsert,
+      TrackDelete,
+      TrackChanges,
+      CommentMark,
+      Comment,
+      MedicalAutocomplete,
+      StructuredField,
     ],
     content: ensurePagedHTML(content),
     editable,
@@ -390,12 +506,16 @@ const NarrativeEditor = React.forwardRef(function NarrativeEditor({
 
   // Refs that the keydown closure reads — keeps the effect deps minimal so the
   // listener isn't torn down and re-added on every scroll/page-count change.
-  const currentPageRef = useRef(currentPage);
-  const totalPagesRef = useRef(totalPages);
-  const shortcutsOpenRef = useRef(shortcutsOpen);
-  useEffect(() => { currentPageRef.current = currentPage; }, [currentPage]);
-  useEffect(() => { totalPagesRef.current = totalPages; }, [totalPages]);
-  useEffect(() => { shortcutsOpenRef.current = shortcutsOpen; }, [shortcutsOpen]);
+  const currentPageRef     = useRef(currentPage);
+  const totalPagesRef      = useRef(totalPages);
+  const shortcutsOpenRef   = useRef(shortcutsOpen);
+  const trackChangesOnRef  = useRef(trackChangesOn);
+  const commentsRef        = useRef(comments);
+  useEffect(() => { currentPageRef.current   = currentPage; },    [currentPage]);
+  useEffect(() => { totalPagesRef.current     = totalPages; },     [totalPages]);
+  useEffect(() => { shortcutsOpenRef.current  = shortcutsOpen; },  [shortcutsOpen]);
+  useEffect(() => { trackChangesOnRef.current = trackChangesOn; }, [trackChangesOn]);
+  useEffect(() => { commentsRef.current       = comments; },       [comments]);
 
   // MS Word-style keyboard shortcuts — exhaustive, capture-phase so this wins
   // over any page-level (DICOM) handlers AND ensures Tiptap's internal keymap
@@ -476,6 +596,23 @@ const NarrativeEditor = React.forwardRef(function NarrativeEditor({
       const key = e.key.toLowerCase();
       const stop = () => { e.preventDefault(); e.stopImmediatePropagation(); };
       const run = (fn) => { stop(); fn(); };
+
+      // ── Ctrl+Alt+M — Add inline comment ──────────────────
+      if (e.altKey && key === 'm') {
+        return run(() => {
+          if (editor.state.selection.empty) return;
+          const id = 'cmt-' + Date.now().toString(36) + Math.random().toString(36).slice(2, 5);
+          editor.commands.addComment(id);
+          setComments(prev => [
+            ...prev,
+            { id, text: '', author: trackAuthorRef.current, date: new Date().toISOString(), resolved: false, replies: [] },
+          ]);
+          setPendingCommentId(id);
+          setCommentsOpen(true);
+        });
+      }
+
+      if (e.altKey) return; // don't intercept other Ctrl+Alt combos
 
       // ── App-level ────────────────────────────────────────
       if (key === 's' && !e.shiftKey) return run(() => onSave?.());
@@ -577,6 +714,15 @@ const NarrativeEditor = React.forwardRef(function NarrativeEditor({
       // ── History ───────────────────────────────────────────
       if (key === 'z' && !e.shiftKey) return run(() => editor.chain().focus().undo().run());
       if (key === 'y' || (e.shiftKey && key === 'z')) return run(() => editor.chain().focus().redo().run());
+
+      // ── Track Changes ─────────────────────────────────────
+      if (e.shiftKey && key === 'e') {
+        return run(() => {
+          const next = !trackChangesOnRef.current;
+          setTrackChangesOn(next);
+          editor.commands.setTrackChanges(next, trackAuthorRef.current);
+        });
+      }
 
       // ── Clipboard ─────────────────────────────────────────
       // Select all
@@ -917,7 +1063,7 @@ const NarrativeEditor = React.forwardRef(function NarrativeEditor({
   const charCount = editor.storage.characterCount?.characters() ?? 0;
 
   return (
-    <div ref={containerRef} className={`narrative-editor-container ${className}`} style={style}>
+    <div ref={containerRef} className={`narrative-editor-container${isFinalized ? ' is-finalized' : ''} ${className}`} style={style}>
       {!previewMode && (
         <Ribbon
           editor={editor}
@@ -946,7 +1092,43 @@ const NarrativeEditor = React.forwardRef(function NarrativeEditor({
           onOpenVersionHistory={() => setVersionsOpen(true)}
           onSaveVersion={saveVersion}
           onExportDocx={handleExportDocx}
+          onExportPdf={handleExportPdf}
+          onOpenFinalize={() => setFinalizeOpen(true)}
+          isFinalized={isFinalized}
+          onOpenNormalFindings={() => setNormalFindingsOpen(true)}
+          onOpenMeasurement={() => setMeasurementOpen(true)}
+          trackChangesOn={trackChangesOn}
+          trackChangeCount={trackChangeCount}
+          onToggleTrackChanges={() => {
+            const next = !trackChangesOn;
+            setTrackChangesOn(next);
+            editor?.commands.setTrackChanges(next, trackAuthorRef.current);
+          }}
+          onAcceptAll={() => editor?.commands.acceptTrackChange(null)}
+          onRejectAll={() => editor?.commands.rejectTrackChange(null)}
+          commentsOpen={commentsOpen}
+          onOpenComments={() => setCommentsOpen(v => !v)}
+          onAddComment={() => {
+            if (!editor || editor.state.selection.empty) return;
+            const id = 'cmt-' + Date.now().toString(36) + Math.random().toString(36).slice(2, 5);
+            editor.commands.addComment(id);
+            setComments(prev => [
+              ...prev,
+              { id, text: '', author: trackAuthorRef.current, date: new Date().toISOString(), resolved: false, replies: [] },
+            ]);
+            setPendingCommentId(id);
+            setCommentsOpen(true);
+          }}
         />
+      )}
+
+      {isFinalized && (
+        <div className="finalized-banner">
+          🔒 This report has been electronically signed and finalized.
+          <button className="finalized-undo" onClick={() => { setIsFinalized(false); editor?.setEditable(true); }}>
+            Unlock
+          </button>
+        </div>
       )}
 
       {!previewMode && showRuler && (
@@ -1002,6 +1184,95 @@ const NarrativeEditor = React.forwardRef(function NarrativeEditor({
         onRestore={restoreVersion}
         onDelete={deleteVersion}
       />
+
+      {/* ── Inline Comments Panel ── */}
+      <CommentsPanel
+        open={commentsOpen}
+        comments={comments}
+        pendingId={pendingCommentId}
+        activeId={activeCommentId}
+        onSetActive={setActiveCommentId}
+        onSetText={(id, text) => {
+          setComments(prev => prev.map(c => c.id === id ? { ...c, text } : c));
+          setPendingCommentId(null);
+        }}
+        onAddReply={(id, text) => {
+          setComments(prev => prev.map(c =>
+            c.id === id
+              ? { ...c, replies: [...(c.replies || []), { text, author: trackAuthorRef.current, date: new Date().toISOString() }] }
+              : c
+          ));
+        }}
+        onResolve={(id) => {
+          setComments(prev => prev.map(c => c.id === id ? { ...c, resolved: true } : c));
+        }}
+        onDelete={(id) => {
+          editor?.commands.removeComment(id);
+          setComments(prev => prev.filter(c => c.id !== id));
+          if (pendingCommentId === id) setPendingCommentId(null);
+          if (activeCommentId === id) setActiveCommentId(null);
+        }}
+        onClose={() => setCommentsOpen(false)}
+      />
+
+      {/* ── Tier 2 Dialogs ── */}
+      <NormalFindingsDialog
+        open={normalFindingsOpen}
+        onClose={() => setNormalFindingsOpen(false)}
+        onInsert={(html) => editor?.chain().focus().insertContent(html).run()}
+        onAppend={(html) => {
+          if (!editor) return;
+          editor.chain().focus().command(({ tr, state, dispatch }) => {
+            if (dispatch) tr.setSelection(state.doc.resolve(state.doc.content.size - 1));
+            return true;
+          }).insertContent(html).run();
+        }}
+        onReplace={(html) => editor?.commands.setContent(ensurePagedHTML(html), false)}
+      />
+
+      <FinalizeDialog
+        open={finalizeOpen}
+        defaultName={trackAuthorRef.current}
+        onFinalize={handleFinalize}
+        onClose={() => setFinalizeOpen(false)}
+      />
+
+      <MeasurementDialog
+        open={measurementOpen}
+        onInsert={(text) => editor?.chain().focus().insertContent(text).run()}
+        onClose={() => setMeasurementOpen(false)}
+      />
+
+      {/* ── Medical Autocomplete Dropdown ── */}
+      {autocomplete.active && autocomplete.suggestions.length > 0 && autocomplete.rect && (
+        <div
+          className="ne-autocomplete-dropdown"
+          style={{
+            top:  Math.min(autocomplete.rect.bottom + 4, window.innerHeight - 200),
+            left: Math.min(autocomplete.rect.left,       window.innerWidth  - 400),
+          }}
+          onMouseDown={e => e.preventDefault()} // keep editor focus
+        >
+          <div className="ne-autocomplete-header">Medical terms</div>
+          {autocomplete.suggestions.map((term, i) => {
+            const matchLen = autocomplete.query.length;
+            return (
+              <div
+                key={term}
+                className={`ne-autocomplete-item${i === autocomplete.selected ? ' ne-autocomplete-item--active' : ''}`}
+                onMouseEnter={() => setAutocomplete(prev => ({ ...prev, selected: i }))}
+                onMouseDown={() => {
+                  editor?.commands.insertAutocomplete({ term, from: autocomplete.from });
+                  setAutocomplete(prev => ({ ...prev, active: false }));
+                }}
+              >
+                <span className="ne-autocomplete-item__match">{term.slice(0, matchLen)}</span>
+                {term.slice(matchLen)}
+              </div>
+            );
+          })}
+        </div>
+      )}
 
       {/* Floating toolbars */}
       <TableToolbar editor={editor} containerRef={containerRef} />

@@ -15,10 +15,15 @@ const SECTIONS = [
 ];
 
 /**
- * InsertTab — report templates, sections, table, image, link, page break, symbol, etc.
+ * InsertTab — report templates, sections, table, image, link, page break, symbol,
+ *             structured fields, etc.
  */
-export default function InsertTab({ editor, onOpenTemplates }) {
+export default function InsertTab({ editor, onOpenTemplates, onOpenNormalFindings, onOpenMeasurement }) {
   if (!editor) return null;
+
+  const insertField = (type, label) => {
+    editor.chain().focus().insertStructuredField(type, label).run();
+  };
 
   return (
     <div style={{ display: 'flex', alignItems: 'stretch', height: '100%' }}>
@@ -125,6 +130,68 @@ export default function InsertTab({ editor, onOpenTemplates }) {
           label="Horizontal Rule"
           title="Insert a horizontal rule"
           onClick={() => editor.chain().focus().setHorizontalRule().run()}
+        />
+      </Group>
+
+      <Sep />
+
+      {/* ── Structured Fields ── */}
+      <Group label="Fields">
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', justifyContent: 'center', height: '100%' }}>
+          <div style={{ display: 'flex', gap: '2px' }}>
+            <Btn onClick={() => insertField('patient-name', 'Patient')}
+                 title="Insert Patient Name field" style={{ fontSize: '10px', padding: '0 5px', height: '22px', whiteSpace: 'nowrap' }}>
+              👤 Patient
+            </Btn>
+            <Btn onClick={() => insertField('accession', 'Accession #')}
+                 title="Insert Accession Number field" style={{ fontSize: '10px', padding: '0 5px', height: '22px', whiteSpace: 'nowrap' }}>
+              🔢 Acc #
+            </Btn>
+          </div>
+          <div style={{ display: 'flex', gap: '2px' }}>
+            <Btn onClick={() => insertField('study-date', 'Study Date')}
+                 title="Insert Study Date field" style={{ fontSize: '10px', padding: '0 5px', height: '22px', whiteSpace: 'nowrap' }}>
+              📅 Date
+            </Btn>
+            <Btn onClick={() => insertField('modality', 'Modality')}
+                 title="Insert Modality field" style={{ fontSize: '10px', padding: '0 5px', height: '22px', whiteSpace: 'nowrap' }}>
+              🔬 Mod.
+            </Btn>
+          </div>
+          <div style={{ display: 'flex', gap: '2px' }}>
+            <Btn onClick={() => insertField('physician', 'Referring MD')}
+                 title="Insert Referring Physician field" style={{ fontSize: '10px', padding: '0 5px', height: '22px', whiteSpace: 'nowrap' }}>
+              👨‍⚕️ Ref. MD
+            </Btn>
+            <Btn onClick={() => insertField('radiologist', 'Radiologist')}
+                 title="Insert Radiologist field" style={{ fontSize: '10px', padding: '0 5px', height: '22px', whiteSpace: 'nowrap' }}>
+              🩺 Rad.
+            </Btn>
+          </div>
+        </div>
+      </Group>
+
+      <Sep />
+
+      {/* ── Normal Findings Library ── */}
+      <Group label="Normal Findings">
+        <BigBtn
+          icon="✅"
+          label="Normal Lib."
+          title="Insert normal findings from the library"
+          onClick={onOpenNormalFindings}
+        />
+      </Group>
+
+      <Sep />
+
+      {/* ── Measurement Formatter ── */}
+      <Group label="Measurement">
+        <BigBtn
+          icon="📏"
+          label="Measure"
+          title="Format and insert a clinical measurement"
+          onClick={onOpenMeasurement}
         />
       </Group>
     </div>

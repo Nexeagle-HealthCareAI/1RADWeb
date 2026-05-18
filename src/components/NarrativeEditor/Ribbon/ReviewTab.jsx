@@ -2,7 +2,7 @@ import React from 'react';
 import { Btn, BigBtn, Sep, Icon, Group, ICONS } from './RibbonControls';
 
 /**
- * ReviewTab — proofing, word count, voice, version history, export.
+ * ReviewTab — proofing, track changes, comments, word count, voice, version history, export, finalize.
  */
 export default function ReviewTab({
   editor,
@@ -16,11 +16,81 @@ export default function ReviewTab({
   onOpenVersionHistory,
   onSaveVersion,
   onExportDocx,
+  onExportPdf,
+  onOpenFinalize,
+  isFinalized = false,
+  // Track Changes
+  trackChangesOn = false,
+  trackChangeCount = 0,
+  onToggleTrackChanges,
+  onAcceptAll,
+  onRejectAll,
+  // Comments
+  commentsOpen = false,
+  onAddComment,
+  onOpenComments,
 }) {
   if (!editor) return null;
 
   return (
     <div style={{ display: 'flex', alignItems: 'stretch', height: '100%' }}>
+
+      {/* ── Track Changes ── */}
+      <Group label="Track Changes">
+        <BigBtn
+          icon="📝"
+          label={trackChangesOn ? 'Tracking' : 'Track'}
+          title="Toggle track changes (Ctrl+Shift+E)"
+          active={trackChangesOn}
+          onClick={onToggleTrackChanges}
+          style={trackChangesOn ? { background: '#e8f4fc', borderColor: '#2B86CE' } : {}}
+        />
+        <BigBtn
+          icon="✓"
+          label="Accept All"
+          title="Accept all tracked changes"
+          onClick={onAcceptAll}
+        />
+        <BigBtn
+          icon="✗"
+          label="Reject All"
+          title="Reject all tracked changes"
+          onClick={onRejectAll}
+        />
+        {trackChangeCount > 0 && (
+          <div style={{
+            alignSelf: 'center', marginLeft: '2px', minWidth: '20px', height: '20px',
+            background: '#e02424', color: '#fff', borderRadius: '10px',
+            fontSize: '10px', fontWeight: 700, display: 'flex',
+            alignItems: 'center', justifyContent: 'center', padding: '0 5px',
+          }}>
+            {trackChangeCount}
+          </div>
+        )}
+      </Group>
+
+      <Sep />
+
+      {/* ── Comments ── */}
+      <Group label="Comments">
+        <BigBtn
+          icon="💬"
+          label="Comment"
+          title="Add inline comment to selection (Ctrl+Alt+M)"
+          onClick={onAddComment}
+        />
+        <BigBtn
+          icon="📋"
+          label="All"
+          title="Show / hide comments panel"
+          active={commentsOpen}
+          onClick={onOpenComments}
+          style={commentsOpen ? { background: '#e8f4fc', borderColor: '#2B86CE' } : {}}
+        />
+      </Group>
+
+      <Sep />
+
       <Group label="Proofing">
         <BigBtn
           icon={<Icon d={ICONS.spell} size={20} />}
@@ -82,6 +152,25 @@ export default function ReviewTab({
           label="Word .docx"
           title="Export to Microsoft Word (.docx)"
           onClick={onExportDocx}
+        />
+        <BigBtn
+          icon="🖨️"
+          label="PDF / Print"
+          title="Print or save as PDF"
+          onClick={onExportPdf}
+        />
+      </Group>
+
+      <Sep />
+
+      <Group label="Finalize">
+        <BigBtn
+          icon={isFinalized ? '🔒' : '✍️'}
+          label={isFinalized ? 'Finalized' : 'Sign'}
+          title={isFinalized ? 'Report is finalized and locked' : 'Sign and finalize the report'}
+          active={isFinalized}
+          onClick={onOpenFinalize}
+          style={isFinalized ? { background: '#dcfce7', borderColor: '#22c55e', color: '#166534' } : {}}
         />
       </Group>
 

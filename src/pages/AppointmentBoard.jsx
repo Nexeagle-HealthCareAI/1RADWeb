@@ -1152,7 +1152,6 @@ export default function AppointmentBoard() {
   const renderAppointmentRow = (app) => {
     const meta = STATUS_META[app.status] || STATUS_META.unknown;
     const next = getNextAction(app.status);
-    const isExpanded = expandedRow === app.appointmentId;
 
     // Formatting date
     const appDate = app.dateTime ? new Date(app.dateTime).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) : '—';
@@ -1161,23 +1160,21 @@ export default function AppointmentBoard() {
     return (
       <div key={app.appointmentId} className="appointments-table-wrapper" style={{ 
         marginBottom: '10px', 
-        border: isExpanded ? '2px solid #0f52ba' : '1px solid #e2e8f0',
+        border: '1px solid #e2e8f0',
         borderRadius: '16px',
         overflow: 'hidden',
         background: 'white',
-        boxShadow: isExpanded ? '0 15px 35px rgba(15, 82, 186, 0.15)' : '0 2px 8px rgba(0,0,0,0.02)',
+        boxShadow: '0 2px 8px rgba(0,0,0,0.02)',
         minWidth: '950px' // Ensure columns don't collapse too much
       }}>
         <div 
-          onClick={() => setExpandedRow(isExpanded ? null : app.appointmentId)}
           style={{ 
             display: 'grid',
             gridTemplateColumns: '75px 50px 2.4fr 0.9fr 95px 110px 1.3fr 215px',
             gap: '12px',
             padding: '12px 16px',
             alignItems: 'center',
-            cursor: 'pointer',
-            background: isExpanded ? '#f8faff' : 'transparent'
+            background: 'transparent'
           }}
         >
           {/* Column 1: ID */}
@@ -1314,85 +1311,7 @@ export default function AppointmentBoard() {
           </div>
         </div>
 
-        {isExpanded && (
-          <div style={{
-            background: '#fafbff', borderRadius: '0 0 14px 14px',
-            border: '1px solid #c5d5f0', borderTop: 'none',
-            padding: '20px 22px',
-          }}>
-            <div style={{ display: 'flex', gap: '24px', alignItems: 'flex-start', flexWrap: 'wrap' }}>
 
-
-              {patient && (
-                <div style={{ flex: 1, display: 'flex', gap: '24px', flexWrap: 'wrap' }}>
-                  <div style={{ flex: '1 1 350px', background: 'white', padding: '24px', borderRadius: '16px', border: '1px solid #e2e8f0', boxShadow: '0 4px 15px rgba(0,0,0,0.03)' }}>
-                    <div style={{ fontSize: '11px', fontWeight: 950, color: '#0f52ba', letterSpacing: '1.5px', marginBottom: '20px', textTransform: 'uppercase', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                       CLINICAL INTELLIGENCE
-                    </div>
-                    
-                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '20px' }}>
-                      <div style={{ background: '#f8fafc', padding: '15px', borderRadius: '12px', border: '1px solid #f1f5f9' }}>
-                        <div style={{ fontSize: '10px', color: '#64748b', fontWeight: 800, marginBottom: '5px' }}>STUDY MODALITY</div>
-                        <div style={{ fontSize: '14px', fontWeight: 950, color: '#1a1a2e' }}>{app.modality}</div>
-                      </div>
-                      <div style={{ background: '#f8fafc', padding: '15px', borderRadius: '12px', border: '1px solid #f1f5f9' }}>
-                        <div style={{ fontSize: '10px', color: '#64748b', fontWeight: 800, marginBottom: '5px' }}>PROCEDURE / SERVICE</div>
-                        <div style={{ fontSize: '14px', fontWeight: 950, color: '#1a1a2e' }}>{app.service}</div>
-                      </div>
-                      <div style={{ background: '#f8fafc', padding: '15px', borderRadius: '12px', border: '1px solid #f1f5f9' }}>
-                        <div style={{ fontSize: '10px', color: '#64748b', fontWeight: 800, marginBottom: '5px' }}>GENDER / AGE</div>
-                        <div style={{ fontSize: '14px', fontWeight: 950, color: '#1a1a2e' }}>{app.patientGender} / {app.patientAge}Y</div>
-                      </div>
-                    </div>
-                  </div>
-
-                  <div style={{ flex: '1 1 350px', background: '#fffbeb', padding: '24px', borderRadius: '16px', border: '1px solid #fde68a', boxShadow: '0 4px 15px rgba(245,158,11,0.05)' }}>
-                    <div style={{ fontSize: '11px', fontWeight: 950, color: '#b45309', letterSpacing: '1.5px', marginBottom: '15px', textTransform: 'uppercase', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                       PHYSICIAN OBSERVATIONS
-                    </div>
-                    <p style={{ fontSize: '13px', color: '#92400e', fontWeight: 600, margin: 0, lineHeight: '1.6', background: 'rgba(255,255,255,0.4)', padding: '15px', borderRadius: '10px' }}>
-                      {app.notes || 'No clinical observations or critical notes provided for this mission.'}
-                    </p>
-                  </div>
-                  <div style={{ flex: '1 1 100%', background: '#f8fafc', padding: '24px', borderRadius: '16px', border: '1px solid #e2e8f0', marginTop: '12px' }}>
-                    <div style={{ fontSize: '11px', fontWeight: 950, color: '#1e293b', letterSpacing: '1.5px', marginBottom: '20px', textTransform: 'uppercase', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                       REPORTING & PRINTING SUITE
-                    </div>
-                    <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap' }}>
-                      <button
-                        onClick={(e) => { e.stopPropagation(); setTokenPrintData(app); }}
-                        style={{ padding: '12px 24px', background: 'white', border: '1.5px solid #0f52ba', borderRadius: '12px', fontSize: '11px', fontWeight: 950, color: '#0f52ba', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '10px' }}
-                      >
-                        PRINT THERMAL SLIP
-                      </button>
-                      <button 
-                        onClick={(e) => { e.stopPropagation(); handlePrintInstitutional(app, 'RECEIPT'); }}
-                        style={{ padding: '12px 24px', background: 'white', border: '1.5px solid #10b981', borderRadius: '12px', fontSize: '11px', fontWeight: 950, color: '#10b981', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '10px' }}
-                      >
-                        PAYMENT RECEIPT
-                      </button>
-                      <button 
-                        onClick={(e) => { e.stopPropagation(); handlePrintInstitutional(app, 'A4'); }}
-                        style={{ padding: '12px 24px', background: 'white', border: '1.5px solid #6366f1', borderRadius: '12px', fontSize: '11px', fontWeight: 950, color: '#6366f1', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '10px' }}
-                      >
-                        CLINICAL INVOICE (A4)
-                      </button>
-                      <button 
-                        onClick={(e) => { e.stopPropagation(); handlePreviewPrint(app); }}
-                        style={{ padding: '12px 24px', background: '#fffbeb', border: '1.5px solid #f59e0b', borderRadius: '12px', fontSize: '11px', fontWeight: 950, color: '#b45309', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '10px' }}
-                      >
-                        PRESCRIPTION
-                      </button>
-                    </div>
-                  </div>
-                </div>
-              )}
-
-              <div style={{ display: 'flex', gap: '8px', alignItems: 'center', marginLeft: 'auto' }}>
-              </div>
-            </div>
-          </div>
-        )}
       </div>
     );
   };
