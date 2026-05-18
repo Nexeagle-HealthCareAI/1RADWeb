@@ -1629,6 +1629,11 @@ export default function BillingPage() {
           setStartDate={setStartDate}
           endDate={endDate}
           setEndDate={setEndDate}
+          invoices={invoices}
+          expenses={expenses}
+          referrers={referrers}
+          referralCommissions={referralCommissions}
+          appointments={appointments}
         />
       )}
 

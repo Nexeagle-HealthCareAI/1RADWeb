@@ -51,82 +51,37 @@ export default function Ribbon(props) {
       fontFamily: '"Segoe UI", system-ui, sans-serif',
       boxShadow: '0 1px 2px rgba(0, 0, 0, 0.06)',
     }}>
-      {/* ── Quick Access Toolbar (Word-style, above tab strip) ───── */}
+      {/* ── Quick Access Toolbar (Word-style, above tab strip) ─────
+           Compact icon-only quick actions on the LEFT.
+           Persistent action buttons (Dictate / Full Screen / Help / Save)
+           moved DOWN to the tab strip's right side for visual consistency. */}
       <div style={{
-        display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-        gap: '1px',
-        height: '26px', padding: '0 12px',
+        display: 'flex', alignItems: 'center',
+        gap: '2px',
+        height: '24px', padding: '0 10px',
         background: '#f3f3f3',
         borderBottom: '1px solid #ddd',
         fontSize: '11px',
       }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '1px' }}>
-          <QATBtn
-            title="Save (Ctrl+S)"
-            onClick={() => onSave?.()}
-            icon={(
-              <svg width="13" height="13" viewBox="0 0 16 16" fill="currentColor"><path d="M11 1H3a1 1 0 0 0-1 1v12a1 1 0 0 0 1 1h10a1 1 0 0 0 1-1V4l-3-3zM9 13H5v-3h4v3zm2-7H4V3h7v3z"/></svg>
-            )}
-          />
-          <QATBtn
-            title="Undo (Ctrl+Z)"
-            disabled={!editor.can().undo()}
-            onClick={() => editor.chain().focus().undo().run()}
-            icon={<Icon d={ICONS.undo} size={13} />}
-          />
-          <QATBtn
-            title="Redo (Ctrl+Y)"
-            disabled={!editor.can().redo()}
-            onClick={() => editor.chain().focus().redo().run()}
-            icon={<Icon d={ICONS.redo} size={13} />}
-          />
-        </div>
-
-        {/* Right side — Dictate pill (always visible) */}
-        {voiceSupported && onToggleVoice && (
-          <button
-            onMouseDown={e => { e.preventDefault(); onToggleVoice(); }}
-            title={voiceActive ? 'Stop dictation' : 'Start voice dictation'}
-            aria-pressed={voiceActive}
-            style={{
-              display: 'inline-flex', alignItems: 'center', gap: '6px',
-              height: '20px', padding: '0 10px 0 8px',
-              background: voiceActive ? '#dc2626' : '#ffffff',
-              border: `1px solid ${voiceActive ? '#dc2626' : '#d1d5db'}`,
-              borderRadius: '12px',
-              color: voiceActive ? '#ffffff' : '#374151',
-              fontSize: '11px', fontWeight: 500,
-              cursor: 'pointer', fontFamily: 'inherit',
-              transition: 'background 0.12s, border-color 0.12s, color 0.12s, box-shadow 0.12s',
-              boxShadow: voiceActive
-                ? '0 0 0 3px rgba(220, 38, 38, 0.18), 0 1px 2px rgba(220, 38, 38, 0.4)'
-                : '0 1px 0 rgba(0, 0, 0, 0.02)',
-            }}
-            onMouseEnter={e => {
-              if (!voiceActive) { e.currentTarget.style.background = '#f3f4f6'; e.currentTarget.style.borderColor = '#9ca3af'; }
-            }}
-            onMouseLeave={e => {
-              if (!voiceActive) { e.currentTarget.style.background = '#ffffff'; e.currentTarget.style.borderColor = '#d1d5db'; }
-            }}
-          >
-            <span
-              style={{
-                display: 'inline-flex',
-                animation: voiceActive ? 'narrative-mic-pulse 1.2s ease-in-out infinite' : 'none',
-              }}
-            >
-              <Icon d={ICONS.mic} size={12} />
-            </span>
-            <span style={{ lineHeight: 1 }}>{voiceActive ? 'Listening…' : 'Dictate'}</span>
-            {voiceActive && (
-              <span style={{
-                width: '6px', height: '6px', borderRadius: '50%',
-                background: '#fff',
-                animation: 'narrative-mic-pulse 1.2s ease-in-out infinite',
-              }} />
-            )}
-          </button>
-        )}
+        <QATBtn
+          title="Save (Ctrl+S)"
+          onClick={() => onSave?.()}
+          icon={(
+            <svg width="13" height="13" viewBox="0 0 16 16" fill="currentColor"><path d="M11 1H3a1 1 0 0 0-1 1v12a1 1 0 0 0 1 1h10a1 1 0 0 0 1-1V4l-3-3zM9 13H5v-3h4v3zm2-7H4V3h7v3z"/></svg>
+          )}
+        />
+        <QATBtn
+          title="Undo (Ctrl+Z)"
+          disabled={!editor.can().undo()}
+          onClick={() => editor.chain().focus().undo().run()}
+          icon={<Icon d={ICONS.undo} size={13} />}
+        />
+        <QATBtn
+          title="Redo (Ctrl+Y)"
+          disabled={!editor.can().redo()}
+          onClick={() => editor.chain().focus().redo().run()}
+          icon={<Icon d={ICONS.redo} size={13} />}
+        />
         <style>{`
           @keyframes narrative-mic-pulse {
             0%, 100% { opacity: 1; transform: scale(1); }

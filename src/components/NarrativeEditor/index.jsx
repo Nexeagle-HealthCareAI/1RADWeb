@@ -317,18 +317,8 @@ const NarrativeEditor = React.forwardRef(function NarrativeEditor({
     return () => document.removeEventListener('fullscreenchange', onFsChange);
   }, []);
 
-  // ── Track change count — update on every editor transaction ──────────────
-  useEffect(() => {
-    if (!editor) return;
-    const update = () => {
-      try {
-        const count = editor.commands.getTrackChangeCount?.() ?? 0;
-        setTrackChangeCount(count);
-      } catch (_) {}
-    };
-    editor.on('update', update);
-    return () => editor.off('update', update);
-  }, [editor]);
+  // Track-change-count effect moved below the useEditor call (was triggering
+  // a Temporal Dead Zone error here because `editor` wasn't yet declared).
 
   // ── Medical autocomplete — listen to plugin events ────────────────────────
   useEffect(() => {
@@ -370,7 +360,10 @@ const NarrativeEditor = React.forwardRef(function NarrativeEditor({
     };
     document.addEventListener('keydown', handler, true);
     return () => document.removeEventListener('keydown', handler, true);
-  }, [autocomplete.active, autocomplete.selected, autocomplete.suggestions, autocomplete.from, editor]);
+    // `editor` intentionally omitted from deps: it's referenced via lexical
+    // closure with optional chaining and is initialised by `useEditor()` later
+    // in the function body. Including it would trigger Temporal Dead Zone.
+  }, [autocomplete.active, autocomplete.selected, autocomplete.suggestions, autocomplete.from]);
 
   const toggleFullscreen = () => {
     if (!document.fullscreenElement) {
@@ -533,6 +526,19 @@ const NarrativeEditor = React.forwardRef(function NarrativeEditor({
     },
   });
 
+  // ── Track change count — update on every editor transaction ──────────────
+  useEffect(() => {
+    if (!editor) return;
+    const update = () => {
+      try {
+        const count = editor.commands.getTrackChangeCount?.() ?? 0;
+        setTrackChangeCount(count);
+      } catch (_) {}
+    };
+    editor.on('update', update);
+    return () => editor.off('update', update);
+  }, [editor]);
+
   // Expose methods to parent
   useImperativeHandle(ref, () => ({
     insertContent: (html) => {
@@ -608,9 +614,17 @@ const NarrativeEditor = React.forwardRef(function NarrativeEditor({
         }
         return;
       }
-      // Esc — close any of our open dialogs
+      // Esc — close any of our open dialogs, OR exit fullscreen.
       if (e.key === 'Escape') {
         if (shortcutsOpenRef.current) { e.preventDefault(); setShortcutsOpen(false); return; }
+        // Explicit exit from browser fullscreen API. Some browsers' native
+        // Esc-to-exit-fullscreen is unreliable when other capture-phase keydown
+        // handlers are on `document`; do it ourselves to be safe.
+        if (document.fullscreenElement && containerRef.current?.contains(document.fullscreenElement)) {
+          e.preventDefault();
+          document.exitFullscreen?.().catch(() => {});
+          return;
+        }
         // Find/Symbol dialogs handle their own Esc
         return;
       }
