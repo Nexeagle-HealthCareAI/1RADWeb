@@ -673,6 +673,25 @@ const NarrativeEditor = React.forwardRef(function NarrativeEditor({
         }
         return;
       }
+      // F5 — Go to page (same as Ctrl+G)
+      if (e.key === 'F5') {
+        if (inEditor(e)) {
+          e.preventDefault();
+          e.stopImmediatePropagation();
+          editorPrompt({
+            title: 'Go to Page',
+            message: `Enter page number (1 – ${totalPagesRef.current}).`,
+            defaultValue: String(currentPageRef.current),
+            placeholder: '1',
+            confirmLabel: 'Go',
+            inputType: 'number',
+          }).then(n => {
+            const num = parseInt(n, 10);
+            if (Number.isFinite(num)) goToPage(num);
+          });
+        }
+        return;
+      }
       // Esc — close any of our open dialogs, OR exit fullscreen.
       if (e.key === 'Escape') {
         if (shortcutsOpenRef.current) { e.preventDefault(); setShortcutsOpen(false); return; }
@@ -863,9 +882,9 @@ const NarrativeEditor = React.forwardRef(function NarrativeEditor({
 
       // ── Paragraph alignment ───────────────────────────────
       if (!e.shiftKey && !e.altKey && key === 'l') return run(() => editor.chain().focus().setTextAlign('left').run());
-      if (!e.altKey && key === 'e')                return run(() => editor.chain().focus().setTextAlign('center').run());
+      if (!e.shiftKey && !e.altKey && key === 'e') return run(() => editor.chain().focus().setTextAlign('center').run());
       if (!e.shiftKey && !e.altKey && key === 'r') return run(() => editor.chain().focus().setTextAlign('right').run());
-      if (!e.altKey && key === 'j')                return run(() => editor.chain().focus().setTextAlign('justify').run());
+      if (!e.shiftKey && !e.altKey && key === 'j') return run(() => editor.chain().focus().setTextAlign('justify').run());
 
       // Paragraph indent (Ctrl+M / Ctrl+Shift+M)
       if (key === 'm' && !e.shiftKey) return run(() => {

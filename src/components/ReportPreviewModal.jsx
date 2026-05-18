@@ -3,6 +3,8 @@ import { createPortal } from 'react-dom';
 import apiClient, { BASE_URL } from '../api/apiClient';
 import { Document, Page, pdfjs } from 'react-pdf';
 import { QRCodeCanvas } from 'qrcode.react';
+import QRCode from 'qrcode';
+import { downloadReportPdf } from '../utils/downloadPdf';
 
 // Configure PDF.js worker
 // Configure PDF.js worker to use CDN for maximum reliability
@@ -116,13 +118,37 @@ const ReportPreviewModal = ({
 
 
   const [sheetScale, setSheetScale] = useState(1);
+  const [qrCodeDataUrl, setQrCodeDataUrl] = useState(null);
+
+  // Generate QR code as data URL for use in PDF/print
+  useEffect(() => {
+    if (!isOpen || !appointmentId) return;
+
+    const generateQR = async () => {
+      try {
+        const qrUrl = `${window.location.origin}/track/${appointmentId}`;
+        const dataUrl = await QRCode.toDataURL(qrUrl, {
+          errorCorrectionLevel: 'H',
+          type: 'image/png',
+          width: 200,
+          margin: 1,
+          color: { dark: '#000000', light: '#ffffff' }
+        });
+        setQrCodeDataUrl(dataUrl);
+      } catch (error) {
+        console.error('[ReportPreview] QR Code generation failed:', error);
+      }
+    };
+
+    generateQR();
+  }, [isOpen, appointmentId]);
 
   useEffect(() => {
     const handleResize = () => {
       // Calculate scale to fit A4 (794x1123 @ 96dpi) into the viewport
       const padding = 80;
       const availableWidth = window.innerWidth - (window.innerWidth < 768 ? 20 : 80);
-      const availableHeight = window.innerHeight - (window.innerWidth < 768 ? 100 : 180); 
+      const availableHeight = window.innerHeight - (window.innerWidth < 768 ? 100 : 180);
       const scale = Math.min(availableWidth / 794, availableHeight / 1123);
       setSheetScale(scale);
     };
@@ -237,6 +263,9 @@ const ReportPreviewModal = ({
     if (currHTML) chunks.push(currHTML);
 
     measureDiv.remove();
+    const pageCount = chunks.length ? chunks.length : 1;
+    console.log(`[ReportPreview] Pagination complete: ${pageCount} pages created`);
+    console.log(`[ReportPreview] Pages array:`, chunks);
     setPages(chunks.length ? chunks : ['']);
   }, [isOpen, reportContent, protocol, savedMetadata, fullAppointment]);
 
@@ -247,6 +276,7 @@ const ReportPreviewModal = ({
 
   const isPlain = !protocol?.letterheadBlobUrl;
   console.log(`[ReportPreview] Scenario Mode: ${isPlain ? 'PLAIN_HEADER' : 'LETTERHEAD_BINDING'}`);
+  console.log(`[ReportPreview] Total pages to render: ${pages.length}`);
   
   // Honor protocol.fontSize when provided; fall back per scenario
   const baseFontSize = protocol?.fontSize || (isPlain ? 12 : 14);
@@ -258,8 +288,249 @@ const ReportPreviewModal = ({
   const bottomMm = (protocol?.bottomMargin || 20);
   const m = { top: `${topMm}mm`, left: `${leftMm}mm`, right: `${rightMm}mm`, bottom: `${bottomMm}mm` };
 
-  const handleDownload = () => {
-    window.print();
+  // Helper to generate complete page HTML (with letterhead, margins, content)
+  const generatePageHtml = (pageHTML, pageIdx) => {
+    const isLast = pageIdx === pages.length - 1;
+    const showLetterhead = !!resolvedAssetUrl && (pageIdx === 0 || protocol?.overflowBackgroundMode === 'REUSE');
+    const isPdf = resolvedAssetUrl?.toLowerCase().includes('.pdf') || resolvedAssetUrl?.includes('type=pdf');
+
+    let letterheadHtml = '';
+    if (showLetterhead && resolvedAssetUrl) {
+      if (!isPdf) {
+        // Ensure absolute URL for letterhead
+        let letterheadUrl = resolvedAssetUrl;
+        if (!letterheadUrl.startsWith('http')) {
+          letterheadUrl = `${BASE_URL}${letterheadUrl}`;
+        }
+        // For image letterheads, embed directly
+        letterheadHtml = `<img src="${letterheadUrl}" style="position: absolute; top: 0; left: 0; width: 210mm; height: 297mm; z-index: 1; pointer-events: none; object-fit: fill; display: block;" alt="Letterhead" />`;
+      }
+    }
+
+    const plainHeaderHtml = isPlain && pageIdx === 0 ? `
+      <div style="position: absolute; top: 10mm; left: 20mm; right: 20mm; border-bottom: 2px solid #0f52ba; padding-bottom: 10px; display: flex; justify-content: space-between; align-items: flex-end; z-index: 2;">
+        <div>
+          <div style="font-size: 18px; font-weight: 950; color: #0f52ba;">${fullAppointment?.hospitalName || 'DIAGNOSTIC CENTRE'}</div>
+          <div style="font-size: 9px; color: #64748b;">${fullAppointment?.hospitalAddress || 'Digital Medical Report'}</div>
+        </div>
+        <div style="text-align: right;">
+          <div style="font-size: 10px; font-weight: 700;">24/7 SUPPORT</div>
+          <div style="font-size: 9px; color: #64748b;">${fullAppointment?.hospitalPhone || ''}</div>
+        </div>
+      </div>
+    ` : '';
+
+    return `
+      <div style="
+        width: 210mm;
+        height: 297mm;
+        page-break-after: ${isLast ? 'auto' : 'always'};
+        break-after: ${isLast ? 'auto' : 'page'};
+        background: white;
+        margin: 0;
+        padding: 0;
+        position: relative;
+        overflow: hidden;
+        box-sizing: border-box;
+      ">
+        ${letterheadHtml}
+        ${plainHeaderHtml}
+        <div style="
+          position: absolute;
+          top: ${topMm}mm;
+          left: ${leftMm}mm;
+          right: ${rightMm}mm;
+          bottom: ${bottomMm}mm;
+          z-index: 2;
+          overflow: hidden;
+          font-size: ${baseFontSize}px;
+          line-height: 1.6;
+          font-family: ${protocol?.fontFamily || 'inherit'};
+          color: ${protocol?.fontColor || '#1e293b'};
+          background: white;
+        ">
+          ${pageIdx === 0 ? `
+            <div style="
+              display: flex;
+              gap: 30px;
+              margin-bottom: 20px;
+              padding-bottom: 12px;
+              border-bottom: 2px solid #0f52ba;
+            ">
+              <div style="display: flex; flex-direction: column; align-items: center; justify-content: center;">
+                <div style="padding: 4px; border: 1px solid #e2e8f0; border-radius: 4px;">
+                  ${qrCodeDataUrl ? `<img src="${qrCodeDataUrl}" style="width: 55px; height: 55px; display: block;" alt="QR Code" />` : '<div style="width: 55px; height: 55px; background: #f0f0f0;"></div>'}
+                </div>
+                <div style="font-size: 7px; font-weight: 950; color: #0f52ba; margin-top: 4px;">SECURE_SCAN</div>
+              </div>
+              <div style="flex: 1;">
+                <div style="display: flex; justify-content: space-between; align-items: flex-end; margin-bottom: 10px;">
+                  <div>
+                    <span style="font-size: 9px; font-weight: 900; color: #94a3b8; letter-spacing: 1px; display: block;">PATIENT NAME</span>
+                    <strong style="font-size: 22px; color: #0f172a;">${fullAppointment?.patientName?.toUpperCase() || 'NAME'}</strong>
+                  </div>
+                  <div style="text-align: right;">
+                    <span style="font-size: 9px; font-weight: 900; color: #94a3b8; letter-spacing: 1px; display: block;">REPORT DATE</span>
+                    <strong style="font-size: 13px;">${savedMetadata?.finalizedAt ? new Date(savedMetadata.finalizedAt).toLocaleDateString() : new Date().toLocaleDateString()}</strong>
+                  </div>
+                </div>
+                <div style="display: flex; gap: 30px; align-items: center; background: #f8fafc; padding: 8px 15px; border-radius: 6px;">
+                  <div>
+                    <span style="color: #64748b; font-size: 9px; font-weight: 900;">PATIENT ID:</span>
+                    <strong style="margin-left: 8px; font-size: 12px;">${fullAppointment?.patientIdentifier || fullAppointment?.ptid || fullAppointment?.id || '--'}</strong>
+                  </div>
+                  <div style="width: 1px; height: 12px; background: #cbd5e1;"></div>
+                  <div>
+                    <span style="color: #64748b; font-size: 9px; font-weight: 900;">AGE / SEX:</span>
+                    <strong style="margin-left: 8px; font-size: 12px;">${fullAppointment?.patientAge || fullAppointment?.age || '--'} / ${fullAppointment?.patientGender || fullAppointment?.gender || '--'}</strong>
+                  </div>
+                  <div style="width: 1px; height: 12px; background: #cbd5e1;"></div>
+                  <div>
+                    <span style="color: #64748b; font-size: 9px; font-weight: 900;">STUDY:</span>
+                    <strong style="margin-left: 8px; font-size: 12px;">${fullAppointment?.service || fullAppointment?.modality || '--'}</strong>
+                  </div>
+                </div>
+                <div style="margin-top: 8px; padding-left: 15px;">
+                  <span style="color: #64748b; font-size: 9px; font-weight: 900;">REFERRED BY:</span>
+                  <strong style="margin-left: 8px; font-size: 11px; font-style: italic;">${fullAppointment?.referredBy || 'Self'}</strong>
+                </div>
+              </div>
+            </div>
+          ` : ''}
+          <div style="white-space: pre-wrap; word-wrap: break-word;">
+            ${pageHTML}
+          </div>
+        </div>
+      </div>
+    `;
+  };
+
+  const handleDownload = async () => {
+    try {
+      const filename = `diagnostic-report-${new Date().toISOString().split('T')[0]}.pdf`;
+      // Generate complete page HTML with letterhead and styling
+      const completePages = pages.map((pageHTML, idx) => generatePageHtml(pageHTML, idx));
+      await downloadReportPdf(completePages, filename);
+    } catch (error) {
+      console.error('Download failed:', error);
+      alert('Failed to download PDF. Please try again.');
+    }
+  };
+
+  const handlePrintInNewWindow = () => {
+    // Use the same helper function to generate complete pages
+    const pagesHtml = pages.map((pageHTML, pageIdx) => generatePageHtml(pageHTML, pageIdx)).join('');
+
+    // Create print document with full styling
+    const printContent = `
+      <!DOCTYPE html>
+      <html lang="en">
+      <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>Diagnostic Report - Print</title>
+        <style>
+          @page {
+            size: A4;
+            margin: 0;
+          }
+          * {
+            -webkit-print-color-adjust: exact !important;
+            print-color-adjust: exact !important;
+            box-sizing: border-box;
+          }
+          html, body {
+            margin: 0;
+            padding: 0;
+            background: white;
+            width: 100%;
+            height: auto;
+          }
+          .print-container {
+            width: 210mm;
+            background: white;
+            margin: 0;
+          }
+          .print-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 16px;
+            background: #f0f0f0;
+            border-bottom: 1px solid #d0d0d0;
+            margin-bottom: 16px;
+            gap: 16px;
+            flex-wrap: wrap;
+          }
+          .print-header h2 {
+            margin: 0;
+            font-size: 18px;
+            color: #333;
+          }
+          .print-button-group {
+            display: flex;
+            gap: 8px;
+          }
+          .print-button {
+            padding: 10px 20px;
+            font-size: 14px;
+            font-weight: bold;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            transition: all 0.2s;
+          }
+          .print-button.primary {
+            background: #0078d4;
+            color: white;
+          }
+          .print-button.primary:hover {
+            background: #1e40af;
+          }
+          .print-button.secondary {
+            background: white;
+            color: #0078d4;
+            border: 1px solid #0078d4;
+          }
+          .print-button.secondary:hover {
+            background: #f0f0f0;
+          }
+          @media print {
+            .print-header { display: none !important; }
+            body { margin: 0 !important; padding: 0 !important; }
+          }
+        </style>
+      </head>
+      <body>
+        <div class="print-header">
+          <h2>📄 Diagnostic Report</h2>
+          <div class="print-button-group">
+            <button class="print-button primary" onclick="window.print()">🖨️ Print / Save as PDF</button>
+            <button class="print-button secondary" onclick="window.close()">✕ Close</button>
+          </div>
+        </div>
+        <div class="print-container">
+          ${pagesHtml}
+        </div>
+      </body>
+      </html>
+    `;
+
+    // Open in new window
+    const printWindow = window.open('', '_blank', 'width=1200,height=800');
+    if (!printWindow) {
+      alert('Pop-up was blocked. Please allow pop-ups for this site and try again.');
+      return;
+    }
+
+    printWindow.document.write(printContent);
+    printWindow.document.close();
+    printWindow.focus();
+
+    // Auto-trigger print dialog after a short delay for better UX
+    setTimeout(() => {
+      printWindow.print();
+    }, 500);
   };
 
   const handleWhatsAppShare = () => {
@@ -330,7 +601,7 @@ const ReportPreviewModal = ({
               >
                 <span>📥</span> {window.innerWidth > 600 ? 'DOWNLOAD_PDF' : 'PDF'}
               </button>
-              <button className="btn-preview-primary" style={{ flex: 1, background: '#0f52ba', border: 'none', color: 'white', padding: '10px 22px', borderRadius: '10px', fontWeight: 950, cursor: 'pointer', fontSize: '11px', boxShadow: '0 4px 15px rgba(15, 82, 186, 0.4)', transition: 'all 0.2s' }} onClick={() => window.print()}>🖨️ {window.innerWidth > 600 ? 'AUTHENTIC_PRINT' : 'PRINT'}</button>
+              <button className="btn-preview-primary" style={{ flex: 1, background: '#0f52ba', border: 'none', color: 'white', padding: '10px 22px', borderRadius: '10px', fontWeight: 950, cursor: 'pointer', fontSize: '11px', boxShadow: '0 4px 15px rgba(15, 82, 186, 0.4)', transition: 'all 0.2s' }} onClick={handlePrintInNewWindow}>🖨️ {window.innerWidth > 600 ? 'AUTHENTIC_PRINT' : 'PRINT'}</button>
             </div>
           </div>
         </div>
@@ -644,9 +915,11 @@ const ReportPreviewModal = ({
   // hidden on screen and shown only in print. By being a direct body child it
   // avoids all the modal wrapper layout interference that was previously
   // causing only page 1 to print.
+  console.log(`[ReportPreview] Rendering print tree with ${pages.length} pages`);
   const printTree = (
     <div className="print-only-tree" aria-hidden="true">
       {pages.map((pageHTML, pageIdx) => {
+        console.log(`[ReportPreview] Print tree rendering page ${pageIdx + 1}`);
         const isLast = pageIdx === pages.length - 1;
         const showLetterhead = !!resolvedAssetUrl && (pageIdx === 0 || protocol?.overflowBackgroundMode === 'REUSE');
         const isPdf = resolvedAssetUrl?.toLowerCase().includes('.pdf') || resolvedAssetUrl?.includes('type=pdf');
@@ -717,7 +990,7 @@ const ReportPreviewModal = ({
            letterheads actually render. We just push it off-screen on screen.
            In print, it returns to (0,0) and shows; the rest of the page hides. */
         .print-only-tree {
-          position: fixed;
+          position: absolute;
           left: -99999px;
           top: 0;
           width: 210mm;
@@ -727,7 +1000,13 @@ const ReportPreviewModal = ({
         }
         @media print {
           @page { size: A4; margin: 0; }
-          html, body { margin: 0 !important; padding: 0 !important; background: white !important; }
+          html, body {
+            margin: 0 !important;
+            padding: 0 !important;
+            background: white !important;
+            width: 100% !important;
+            height: auto !important;
+          }
           body > *:not(.print-only-tree) { display: none !important; }
           .print-only-tree {
             position: static !important;
@@ -736,17 +1015,49 @@ const ReportPreviewModal = ({
             visibility: visible !important;
             display: block !important;
             width: 210mm !important;
+            height: auto !important;
             z-index: auto !important;
+            page-break-inside: avoid;
           }
-          .print-only-tree * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; box-sizing: border-box !important; }
-          .print-only-page { page-break-after: always; break-after: page; page-break-inside: avoid; break-inside: avoid; }
-          .print-only-page:last-child { page-break-after: auto; break-after: auto; }
-          .print-only-page p, .print-only-page h1, .print-only-page h2, .print-only-page h3, .print-only-page h4, .print-only-page tr, .print-only-page img, .print-only-page .impression-block, .print-only-page .advice-block { page-break-inside: avoid; }
-          .print-only-tree .react-pdf__Document, .print-only-tree .react-pdf__Page, .print-only-tree .react-pdf__Page__canvas, .print-only-tree .react-pdf__Page__svg {
+          .print-only-tree * {
+            -webkit-print-color-adjust: exact !important;
+            print-color-adjust: exact !important;
+            box-sizing: border-box !important;
+          }
+          .print-only-page {
+            width: 210mm !important;
+            height: 297mm !important;
+            page-break-after: always !important;
+            break-after: page !important;
+            page-break-inside: avoid !important;
+            break-inside: avoid !important;
+            margin: 0 !important;
+            padding: 0 !important;
+            display: block !important;
+          }
+          .print-only-page:last-child {
+            page-break-after: auto !important;
+            break-after: auto !important;
+          }
+          .print-only-page p,
+          .print-only-page h1, .print-only-page h2, .print-only-page h3, .print-only-page h4,
+          .print-only-page tr, .print-only-page img,
+          .print-only-page .impression-block, .print-only-page .advice-block {
+            page-break-inside: avoid;
+          }
+          .print-only-tree .react-pdf__Document,
+          .print-only-tree .react-pdf__Page,
+          .print-only-tree .react-pdf__Page__canvas,
+          .print-only-tree .react-pdf__Page__svg {
             display: block !important;
             width: 210mm !important;
             height: 297mm !important;
             max-width: none !important;
+          }
+          /* Ensure content areas in print pages are visible */
+          .print-only-page > div[style*="position: absolute"] {
+            position: absolute !important;
+            overflow: visible !important;
           }
         }
       `}</style>

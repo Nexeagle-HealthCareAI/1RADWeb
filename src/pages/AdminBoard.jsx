@@ -40,6 +40,29 @@ const SECTIONS_POOL = [
   { id: 'notes', name: 'Notes' }
 ];
 
+const getOverviewDates = (timeframe) => {
+  const now = new Date();
+  let start = null;
+  let end = getISODate(0); // TODAY
+
+  if (timeframe === 'DAY') {
+    start = getISODate(0);
+  } else if (timeframe === 'WEEK') {
+    start = getISODate(6); // 7 days including today
+  } else if (timeframe === 'MONTH') {
+    const d = new Date(now.getFullYear(), now.getMonth(), 1);
+    const offset = d.getTimezoneOffset();
+    const localDate = new Date(d.getTime() - (offset*60*1000));
+    start = localDate.toISOString().split('T')[0];
+  } else if (timeframe === 'YEAR') {
+    const d = new Date(now.getFullYear(), 0, 1);
+    const offset = d.getTimezoneOffset();
+    const localDate = new Date(d.getTime() - (offset*60*1000));
+    start = localDate.toISOString().split('T')[0];
+  }
+  return { start, end };
+};
+
 export default function AdminBoard() {
   const { currentUser, logout, activeCenter, centers, switchCenter, refreshCenters, createCenter, subscription, refreshSubscription } = useAuth();
   const { isOnline, addToOutbox } = useOffline();
@@ -61,6 +84,7 @@ export default function AdminBoard() {
   // Dashboard Filters
   const [selectedDateFilter, setSelectedDateFilter] = useState(TODAY);
   const [referrerFilter, setReferrerFilter] = useState('ALL');
+  const [overviewTimeframe, setOverviewTimeframe] = useState('ALL'); // 'DAY', 'WEEK', 'MONTH', 'YEAR', 'ALL'
   
   // Layout Builder State
   const [isLayoutDrawerOpen, setIsLayoutDrawerOpen] = useState(false);
@@ -321,15 +345,18 @@ export default function AdminBoard() {
   }, [selectedPrescriptionDoctorId, fetchDoctorProtocol]);
 
 
-  const fetchFinancialMatrix = useCallback(async () => {
+  const fetchFinancialMatrix = useCallback(async (startDate = null, endDate = null) => {
     try {
       setLoading(true);
-      const res = await apiClient.get('/finance/matrix');
+      const params = {};
+      if (startDate) params.startDate = startDate;
+      if (endDate) params.endDate = endDate;
+      const res = await apiClient.get('/finance/matrix', { params });
       setFinancialMatrix(res.data);
-      await nativeStorage.set('1rad_cache_finance_matrix', res.data);
+      await nativeStorage.set(`1rad_cache_finance_matrix_${startDate || 'all'}_${endDate || 'all'}`, res.data);
     } catch (err) {
       console.error('[FINANCE] Matrix fetch failed, trying cache', err);
-      const cached = await nativeStorage.get('1rad_cache_finance_matrix');
+      const cached = await nativeStorage.get(`1rad_cache_finance_matrix_${startDate || 'all'}_${endDate || 'all'}`);
       if (cached) setFinancialMatrix(cached);
     } finally {
       setLoading(false);
@@ -536,25 +563,25 @@ export default function AdminBoard() {
     }
   }, [centers]);
 
-  const fetchReferralIntelligence = useCallback(async () => {
+  const fetchReferralIntelligence = useCallback(async (startDate = null, endDate = null, allTime = false) => {
     try {
       setReferralLoading(true);
-      const params = referralFilterMode === 'ALL'
+      const params = allTime
         ? { allTime: true }
         : {
-            startDate: referralRange.start,
-            endDate: referralFilterMode === 'SINGLE' ? referralRange.start : referralRange.end
+            startDate: startDate || referralRange.start,
+            endDate: endDate || (referralFilterMode === 'SINGLE' ? referralRange.start : referralRange.end)
           };
       const res = await apiClient.get('/referrers/intelligence', { params });
       setReferralIntelligence(res.data);
-      await nativeStorage.set(`1rad_cache_referral_intel_${referralFilterMode}`, res.data);
+      await nativeStorage.set(`1rad_cache_referral_intel_${startDate || 'default'}_${endDate || 'default'}`, res.data);
 
       const allRes = await apiClient.get('/referrers');
       setAllReferrers(allRes.data || []);
       await nativeStorage.set('1rad_cache_all_referrers', allRes.data || []);
     } catch (err) {
       console.error('[REFERRAL INTEL] Fetch failed, trying cache', err);
-      const cached = await nativeStorage.get(`1rad_cache_referral_intel_${referralFilterMode}`);
+      const cached = await nativeStorage.get(`1rad_cache_referral_intel_${startDate || 'default'}_${endDate || 'default'}`);
       if (cached) setReferralIntelligence(cached);
 
       const cachedAll = await nativeStorage.get('1rad_cache_all_referrers');
@@ -658,15 +685,22 @@ export default function AdminBoard() {
     }
   }, [activeTab, fetchServicePrices, fetchFinancialMatrix, fetchExpenses]);
 
-  const fetchStrategicOutlook = useCallback(async (dateString) => {
+  const fetchStrategicOutlook = useCallback(async (dateString = null, startDate = null, endDate = null) => {
     try {
       setLoadingOutlook(true);
-      const res = await apiClient.get('/intelligence/outlook', { params: { referenceDate: dateString || TODAY } });
+      const params = {};
+      if (dateString) params.referenceDate = dateString;
+      if (startDate) params.startDate = startDate;
+      if (endDate) params.endDate = endDate;
+      
+      const cacheKey = `1rad_cache_outlook_${dateString || 'default'}_${startDate || 'all'}_${endDate || 'all'}`;
+      const res = await apiClient.get('/intelligence/outlook', { params });
       setOutlookData(res.data);
-      await nativeStorage.set(`1rad_cache_outlook_${dateString || TODAY}`, res.data);
+      await nativeStorage.set(cacheKey, res.data);
     } catch (err) {
       console.error('Tactical Insight Failure, trying cache:', err);
-      const cached = await nativeStorage.get(`1rad_cache_outlook_${dateString || TODAY}`);
+      const cacheKey = `1rad_cache_outlook_${dateString || 'default'}_${startDate || 'all'}_${endDate || 'all'}`;
+      const cached = await nativeStorage.get(cacheKey);
       if (cached) setOutlookData(cached);
     } finally {
       setLoadingOutlook(false);
@@ -675,10 +709,12 @@ export default function AdminBoard() {
 
   useEffect(() => {
     if (activeTab === 'Overview') {
-       fetchStrategicOutlook(selectedDateFilter);
-       fetchFinancialMatrix();
+       const { start, end } = getOverviewDates(overviewTimeframe);
+       fetchStrategicOutlook(TODAY, start, end);
+       fetchFinancialMatrix(start, end);
+       fetchReferralIntelligence(start, end, overviewTimeframe === 'ALL');
     }
-  }, [activeTab, selectedDateFilter, fetchStrategicOutlook, fetchFinancialMatrix]);
+  }, [activeTab, overviewTimeframe, fetchStrategicOutlook, fetchFinancialMatrix, fetchReferralIntelligence]);
 
 
 
@@ -2319,6 +2355,71 @@ export default function AdminBoard() {
 
     return (
       <div className="analytics-view fade-in">
+        {/* Timeframe Controller Banner */}
+        <div style={{
+           background: 'white',
+           padding: '25px 30px',
+           borderRadius: '24px',
+           border: '1px solid #e2e8f0',
+           marginBottom: '30px',
+           display: 'flex',
+           justifyContent: 'space-between',
+           alignItems: 'center',
+           flexWrap: 'wrap',
+           gap: '20px'
+        }}>
+           <div>
+              <div style={{ fontSize: '10px', fontWeight: 950, color: '#0f52ba', textTransform: 'uppercase', letterSpacing: '2px', marginBottom: '4px' }}>
+                 CLINICAL PERFORMANCE HUB
+              </div>
+              <h2 style={{ fontSize: '18px', fontWeight: 950, color: '#1e293b', margin: 0 }}>
+                 Overview & Analytics Command Center
+              </h2>
+           </div>
+
+           {/* Timeframe Picker */}
+           <div style={{ display: 'flex', alignItems: 'center', gap: '15px' }}>
+              <span style={{ fontSize: '11px', fontWeight: 800, color: '#64748b' }}>Timeframe:</span>
+              <div style={{
+                 display: 'flex',
+                 background: '#f1f5f9',
+                 padding: '4px',
+                 borderRadius: '16px',
+                 border: '1px solid #e2e8f0'
+              }}>
+                 {[
+                    { key: 'DAY', label: 'Day' },
+                    { key: 'WEEK', label: 'Week' },
+                    { key: 'MONTH', label: 'Month' },
+                    { key: 'YEAR', label: 'Year' },
+                    { key: 'ALL', label: 'All Time' }
+                 ].map(item => {
+                    const active = overviewTimeframe === item.key;
+                    return (
+                       <button
+                          key={item.key}
+                          onClick={() => setOverviewTimeframe(item.key)}
+                          style={{
+                             padding: '8px 16px',
+                             borderRadius: '12px',
+                             border: 'none',
+                             fontSize: '10px',
+                             fontWeight: 950,
+                             cursor: 'pointer',
+                             transition: 'all 0.2s',
+                             background: active ? '#1e293b' : 'transparent',
+                             color: active ? 'white' : '#64748b',
+                             letterSpacing: '0.5px'
+                          }}
+                       >
+                          {item.label}
+                       </button>
+                    );
+                 })}
+              </div>
+           </div>
+        </div>
+
         {/* Intelligence Header: Real-time Flux Search */}
         <div style={{ 
           background: 'white', 
@@ -2433,15 +2534,26 @@ export default function AdminBoard() {
            {/* Peak Matrix */}
            <div style={{ background: 'white', border: '1px solid #e2e8f0', padding: '30px', borderRadius: '24px' }}>
               <div style={{ fontSize: '10px', fontWeight: 950, color: '#64748b', textTransform: 'uppercase', letterSpacing: '2px', marginBottom: '30px' }}>Operational Peak Matrix (Daily)</div>
-              <div style={{ display: 'flex', alignItems: 'flex-end', gap: '12px', height: '160px', paddingBottom: '10px', borderBottom: '1px solid #f1f5f9' }}>
+              <div style={{ display: 'flex', alignItems: 'flex-end', gap: '16px', height: '180px', paddingBottom: '10px', borderBottom: '1px solid #f1f5f9' }}>
                  {(volumeTrends || []).map((day, idx) => (
-                  <div key={day.day || idx} style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '12px' }}>
-                  <div style={{ width: '100%', height: `${(day.count / (Math.max(...(volumeTrends || []).map(v => v.count)) || 1)) * 100}%`, background: day.isPeak ? '#dc2626' : '#0f52ba', borderRadius: '6px 6px 0 0', position: 'relative' }}>
-                       <div style={{ position: 'absolute', top: '-20px', width: '100%', textAlign: 'center', fontSize: '9px', fontWeight: 950, color: '#1e293b' }}>{day.count || 0}</div>
+                    <div key={day.day || idx} style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '10px', height: '100%', justifyContent: 'flex-end' }}>
+                       {/* Bar Container */}
+                       <div style={{ flex: 1, width: '100%', display: 'flex', alignItems: 'flex-end', position: 'relative', minHeight: '60px' }}>
+                          <div style={{
+                             width: '100%',
+                             height: `${(day.count / (Math.max(...(volumeTrends || []).map(v => v.count)) || 1)) * 100}%`,
+                             background: day.isPeak ? 'linear-gradient(180deg, #f97316 0%, #ea580c 100%)' : 'linear-gradient(180deg, #60a5fa 0%, #2563eb 100%)',
+                             borderRadius: '6px 6px 0 0',
+                             position: 'relative',
+                             transition: 'height 0.4s cubic-bezier(0.4, 0, 0.2, 1)',
+                             boxShadow: '0 4px 12px rgba(37, 99, 235, 0.15)'
+                          }}>
+                             <div style={{ position: 'absolute', top: '-22px', width: '100%', textAlign: 'center', fontSize: '9px', fontWeight: 950, color: '#1e293b' }}>{day.count || 0}</div>
+                          </div>
+                       </div>
+                       <span style={{ fontSize: '10px', fontWeight: 950, color: '#94a3b8', letterSpacing: '0.5px' }}>{(day.day || 'N/A').toUpperCase()}</span>
                     </div>
-                    <span style={{ fontSize: '10px', fontWeight: 800, color: '#94a3b8' }}>{(day.day || 'N/A').toUpperCase()}</span>
-                  </div>
-                ))}
+                 ))}
               </div>
            </div>
          </div>

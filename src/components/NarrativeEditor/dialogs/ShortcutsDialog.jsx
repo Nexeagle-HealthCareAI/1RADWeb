@@ -56,7 +56,7 @@ const SECTIONS = [
       ['Ctrl + C', 'Copy'],
       ['Ctrl + X', 'Cut'],
       ['Ctrl + V', 'Paste'],
-      ['Ctrl + Shift + V', 'Paste plain / Apply Painter'],
+      ['Ctrl + Shift + V', 'Apply Format Painter (when active)'],
       ['Ctrl + A', 'Select all'],
     ],
   },
@@ -69,6 +69,8 @@ const SECTIONS = [
       ['Ctrl + Y / Ctrl + Shift + Z', 'Redo'],
       ['Ctrl + K', 'Insert hyperlink'],
       ['Ctrl + Enter', 'Insert page break'],
+      ['Ctrl + Shift + E', 'Toggle Track Changes'],
+      ['Ctrl + Alt + M', 'Add comment (requires selection)'],
     ],
   },
   {
@@ -83,7 +85,7 @@ const SECTIONS = [
     items: [
       ['Ctrl + Home', 'Go to document start'],
       ['Ctrl + End', 'Go to document end'],
-      ['Ctrl + G / F5', 'Go to page…'],
+      ['Ctrl + G  /  F5', 'Go to page…'],
       ['PgUp / PgDn', 'Scroll one page'],
     ],
   },
