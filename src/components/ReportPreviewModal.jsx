@@ -176,6 +176,64 @@ const ReportPreviewModal = ({
     return url;
   }, [protocol?.letterheadBlobUrl]);
 
+  // Pre-render the letterhead (PDF or image) to a PNG data URL so that the
+  // print popup never needs to make a network request (avoids the browser
+  // downloading a PDF letterhead instead of embedding it).
+  const [letterheadDataUrl, setLetterheadDataUrl] = useState(null);
+
+  useEffect(() => {
+    if (!resolvedAssetUrl) { setLetterheadDataUrl(null); return; }
+
+    let cancelled = false;
+    const isPdfSource = resolvedAssetUrl.toLowerCase().includes('.pdf') || resolvedAssetUrl.includes('type=pdf');
+
+    if (isPdfSource) {
+      // Use pdfjs to render page 1 of the PDF letterhead to a canvas → PNG data URL
+      (async () => {
+        try {
+          const loadingTask = pdfjs.getDocument({ url: resolvedAssetUrl });
+          const pdfDocument = await loadingTask.promise;
+          const page = await pdfDocument.getPage(1);
+          const naturalViewport = page.getViewport({ scale: 1 });
+          const scale = 794 / naturalViewport.width; // fit A4 width (96 dpi)
+          const viewport = page.getViewport({ scale });
+          const canvas = document.createElement('canvas');
+          canvas.width = Math.round(viewport.width);
+          canvas.height = Math.round(viewport.height);
+          await page.render({ canvasContext: canvas.getContext('2d'), viewport }).promise;
+          if (!cancelled) setLetterheadDataUrl(canvas.toDataURL('image/png'));
+        } catch (err) {
+          console.warn('[ReportPreview] PDF letterhead pre-render failed:', err);
+          if (!cancelled) setLetterheadDataUrl(null);
+        }
+      })();
+    } else {
+      // Draw the image to an offscreen canvas to obtain a data URL.
+      // crossOrigin='anonymous' is required for canvas.toDataURL on proxied assets.
+      const img = new Image();
+      img.crossOrigin = 'anonymous';
+      img.onload = () => {
+        if (cancelled) return;
+        const canvas = document.createElement('canvas');
+        canvas.width = img.naturalWidth;
+        canvas.height = img.naturalHeight;
+        canvas.getContext('2d').drawImage(img, 0, 0);
+        try {
+          setLetterheadDataUrl(canvas.toDataURL('image/png'));
+        } catch {
+          // Canvas tainted (proxy lacks CORS headers) — fall back to the URL
+          // directly; the window.onload script in the print popup will wait
+          // for the <img> to load before triggering window.print().
+          setLetterheadDataUrl(resolvedAssetUrl);
+        }
+      };
+      img.onerror = () => { if (!cancelled) setLetterheadDataUrl(resolvedAssetUrl); };
+      img.src = resolvedAssetUrl;
+    }
+
+    return () => { cancelled = true; };
+  }, [resolvedAssetUrl]);
+
   // ── Multi-page pagination ─────────────────────────────────────────────────
   // Splits body content (findings + impression + advice) into per-page HTML
   // chunks so each rendered sheet stays within the available content area
@@ -291,22 +349,13 @@ const ReportPreviewModal = ({
   // Helper to generate complete page HTML (with letterhead, margins, content)
   const generatePageHtml = (pageHTML, pageIdx) => {
     const isLast = pageIdx === pages.length - 1;
-    const showLetterhead = !!resolvedAssetUrl && (pageIdx === 0 || protocol?.overflowBackgroundMode === 'REUSE');
-    const isPdf = resolvedAssetUrl?.toLowerCase().includes('.pdf') || resolvedAssetUrl?.includes('type=pdf');
+    // Use the pre-rendered data URL (set by the useEffect above) so the print
+    // popup is fully self-contained and never triggers a browser download.
+    const showLetterhead = !!letterheadDataUrl && (pageIdx === 0 || protocol?.overflowBackgroundMode === 'REUSE');
 
     let letterheadHtml = '';
-    if (showLetterhead && resolvedAssetUrl) {
-      // Always resolve to an absolute URL so the print popup (about:blank) can fetch it
-      let letterheadUrl = resolvedAssetUrl;
-      if (!letterheadUrl.startsWith('http')) {
-        letterheadUrl = `${window.location.origin}${letterheadUrl.startsWith('/') ? '' : '/'}${letterheadUrl}`;
-      }
-      if (!isPdf) {
-        letterheadHtml = `<img src="${letterheadUrl}" style="position: absolute; top: 0; left: 0; width: 210mm; height: 297mm; z-index: 1; pointer-events: none; object-fit: fill; display: block;" alt="Letterhead" />`;
-      } else {
-        // PDF letterhead — embed as inline frame; browser prints the first page with the content layer on top
-        letterheadHtml = `<embed src="${letterheadUrl}" type="application/pdf" style="position: absolute; top: 0; left: 0; width: 210mm; height: 297mm; z-index: 1; pointer-events: none; display: block;" />`;
-      }
+    if (showLetterhead) {
+      letterheadHtml = `<img src="${letterheadDataUrl}" style="position: absolute; top: 0; left: 0; width: 210mm; height: 297mm; z-index: 1; pointer-events: none; object-fit: fill; display: block;" alt="Letterhead" />`;
     }
 
     const plainHeaderHtml = isPlain && pageIdx === 0 ? `
