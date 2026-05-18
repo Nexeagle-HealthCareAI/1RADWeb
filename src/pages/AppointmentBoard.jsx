@@ -40,6 +40,7 @@ const STATUS_META = {
   scanned:     { label: 'SCANNED', color: '#2563eb', bg: '#eff6ff', glow: 'rgba(37,99,235,0.15)', icon: '✅' },
   reporting:   { label: 'REPORTING', color: '#7c3aed', bg: '#f5f3ff', glow: 'rgba(124,58,237,0.15)', icon: '📝' },
   reported:    { label: 'REPORTED', color: '#10b981', bg: '#ecfdf5', glow: 'rgba(16,185,129,0.15)', icon: '📄' },
+  delivered:   { label: 'DELIVERED', color: '#0369a1', bg: '#e0f2fe', glow: 'rgba(3,105,161,0.15)', icon: '📬' },
   cancelled:   { label: 'CANCELLED', color: '#dc2626', bg: '#fef2f2', glow: 'rgba(220,38,38,0.15)', icon: '❌' },
   unknown:     { label: 'UNKNOWN', color: '#64748b', bg: '#f8fafc', glow: 'rgba(100,116,139,0.1)', icon: '❓' }
 };
@@ -382,12 +383,13 @@ export default function AppointmentBoard() {
   const stats = {
     total: appointmentsForTab.length,
     expected: appointmentsForTab.filter(a => a.status?.toLowerCase() !== 'cancelled').length,
-    confirmed: appointmentsForTab.filter(a => ['confirmed', 'in_progress', 'completed', 'scanned', 'reporting', 'reported'].includes(a.status?.toLowerCase())).length,
+    confirmed: appointmentsForTab.filter(a => ['confirmed', 'in_progress', 'completed', 'scanned', 'reporting', 'reported', 'delivered'].includes(a.status?.toLowerCase())).length,
     inProgress: appointmentsForTab.filter(a => ['in_progress', 'completed', 'scanned', 'reporting'].includes(a.status?.toLowerCase())).length,
-    completed: appointmentsForTab.filter(a => a.status?.toLowerCase() === 'reported').length,
+    finalized: appointmentsForTab.filter(a => a.status?.toLowerCase() === 'reported').length,
+    delivered: appointmentsForTab.filter(a => a.status?.toLowerCase() === 'delivered').length,
     cancelled: appointmentsForTab.filter(a => a.status?.toLowerCase() === 'cancelled').length,
   };
-  const completionRate = stats.total > 0 ? Math.round((stats.completed / stats.total) * 100) : 0;
+  const completionRate = stats.total > 0 ? Math.round(((stats.finalized + stats.delivered) / stats.total) * 100) : 0;
   const activeRate = stats.total > 0 ? Math.round(((stats.total - stats.cancelled) / stats.total) * 100) : 0;
 
   // --- HANDLERS ---
@@ -400,6 +402,7 @@ export default function AppointmentBoard() {
     else if (actionOrStatus === 'START') newStatus = 'in_progress';
     else if (actionOrStatus === 'COMPLETE') newStatus = 'completed';
     else if (actionOrStatus === 'CANCEL') newStatus = 'cancelled';
+    else if (actionOrStatus === 'DELIVER') newStatus = 'delivered';
     else if (actionOrStatus === 'REPORTING') {
       navigate(`/reporting/${app.appointmentId}`);
       return;
@@ -434,8 +437,8 @@ export default function AppointmentBoard() {
       case 'booked':      return { action: 'CONFIRM', label: 'ARRIVED', color: '#10b981', icon: '✅' };
       case 'confirmed':   return { action: 'START', label: 'SCAN', color: '#f59e0b', icon: '▶️' };
       case 'in_progress': return { action: 'COMPLETE', label: 'FINISH', color: '#0f52ba', icon: '✅' };
-      case 'completed':   
-      case 'scanned':     return { action: 'REPORTING', label: 'REPORT', color: '#8b5cf6', icon: '📝' };
+      case 'reported':    return { action: 'DELIVER', label: 'DELIVER', color: '#0369a1', icon: '📬' };
+      // completed/scanned → doctor handles reporting from DoctorBoard; no action needed here
       default: return null;
     }
   };
@@ -1032,10 +1035,18 @@ export default function AppointmentBoard() {
         </div>
 
         <div className="intel-card">
-          <span className="intel-label">Completed Missions</span>
-          <div className="intel-value" style={{ color: '#10b981' }}>{stats.completed}</div>
+          <span className="intel-label">Finalized Reports</span>
+          <div className="intel-value" style={{ color: '#10b981' }}>{stats.finalized}</div>
           <div className="intel-trend">
-            <span style={{ color: '#10b981' }}>FINALIZED DONE</span>
+            <span style={{ color: '#10b981' }}>SIGNED REPORT</span>
+          </div>
+        </div>
+
+        <div className="intel-card">
+          <span className="intel-label">Delivered Reports</span>
+          <div className="intel-value" style={{ color: '#0369a1' }}>{stats.delivered}</div>
+          <div className="intel-trend">
+            <span style={{ color: '#0369a1' }}>HANDED OVER</span>
           </div>
         </div>
 
@@ -1044,14 +1055,6 @@ export default function AppointmentBoard() {
           <div className="intel-value" style={{ color: '#8b5cf6' }}>{completionRate}%</div>
           <div className="intel-trend">
             <span style={{ color: '#8b5cf6' }}>THROUGHPUT</span>
-          </div>
-        </div>
-
-        <div className="intel-card">
-          <span className="intel-label">Critical Status</span>
-          <div className="intel-value" style={{ color: '#ef4444' }}>{stats.cancelled}</div>
-          <div className="intel-trend">
-            <span style={{ color: '#ef4444' }}>CANCELLED/VOID</span>
           </div>
         </div>
       </div>
@@ -2426,9 +2429,9 @@ export default function AppointmentBoard() {
         </div>
 
         <div className="intel-card">
-          <span className="intel-label">Completed Missions</span>
+          <span className="intel-label">Finalized Reports</span>
           <div className="intel-value" style={{ color: '#059669' }}>
-            {stats.completed}
+            {stats.finalized}
           </div>
           <div className="intel-trend" style={{ color: '#059669' }}>
             Efficiency: {completionRate}%
@@ -2436,12 +2439,12 @@ export default function AppointmentBoard() {
         </div>
 
         <div className="intel-card">
-          <span className="intel-label">Critical Status</span>
-          <div className="intel-value" style={{ color: '#e11d48' }}>
-            {stats.cancelled}
+          <span className="intel-label">Delivered Reports</span>
+          <div className="intel-value" style={{ color: '#0369a1' }}>
+            {stats.delivered}
           </div>
-          <div className="intel-trend" style={{ color: '#e11d48' }}>
-            Cancelled Cases
+          <div className="intel-trend" style={{ color: '#0369a1' }}>
+            Handed Over
           </div>
         </div>
       </div>
