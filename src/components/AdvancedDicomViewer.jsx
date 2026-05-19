@@ -918,11 +918,29 @@ const AdvancedDicomViewer = ({
       return;
     }
 
-    console.log('[DICOM METADATA] First file:', files[0]);
+    console.log('[DICOM METADATA] Files array:', { length: files?.length, files: files });
+
+    if (!files || files.length === 0) {
+      console.error('[DICOM METADATA] ❌ No files provided!');
+      setError('NO_FILES: No DICOM files to display');
+      if (onImageStatus) onImageStatus(false);
+      return;
+    }
 
     const checkMetadata = async () => {
       try {
-        console.log('[DICOM METADATA] Reading first file arrayBuffer...');
+        if (!files[0]) {
+          console.error('[DICOM METADATA] ❌ First file is undefined!', { files });
+          setError('INVALID_FILE_ARRAY: First file is undefined');
+          if (onImageStatus) onImageStatus(false);
+          return;
+        }
+
+        console.log('[DICOM METADATA] Reading first file arrayBuffer...', {
+          fileName: files[0].name,
+          fileSize: files[0].size,
+          fileType: files[0].type
+        });
         const arrayBuffer = await files[0].arrayBuffer();
         console.log('[DICOM METADATA] ArrayBuffer size:', arrayBuffer.byteLength);
         

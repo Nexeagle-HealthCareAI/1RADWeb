@@ -3050,6 +3050,22 @@ const ReportingPage = () => {
                 gap: '15px',
                 justifyContent: 'space-between'
               }}>
+                {/* Series Display Indicator */}
+                <div style={{
+                  background: 'rgba(139, 92, 246, 0.2)',
+                  border: '1px solid rgba(139, 92, 246, 0.5)',
+                  padding: '6px 12px',
+                  borderRadius: '6px',
+                  fontSize: '11px',
+                  fontWeight: 900,
+                  color: '#c4b5fd',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '6px'
+                }}>
+                  <span>🎬</span> SERIES: S{(activeAssetIndex + 1)} / {uploadedFiles.length} {uploadedFiles[activeAssetIndex]?.name && `(${uploadedFiles[activeAssetIndex].name.substring(0, 20)}...)`}
+                </div>
+
                 {/* Active Tool Display */}
                 <div style={{
                   background: 'rgba(59, 130, 246, 0.2)',
@@ -3285,12 +3301,13 @@ const ReportingPage = () => {
 
                 {/* SERIES LIBRARY MINI-SIDEBAR */}
                 {uploadedFiles.length > 0 && (
-                  <div style={{ width: '60px', background: '#0f172a', borderRight: '1px solid #1e293b', display: 'flex', flexDirection: 'column', gap: '10px', padding: '10px 5px', zIndex: 100, position: 'relative' }}>
+                  <div style={{ width: '60px', minWidth: '60px', maxWidth: '60px', flexShrink: 0, background: '#0f172a', borderRight: '2px solid #334155', display: 'flex', flexDirection: 'column', gap: '10px', padding: '10px 5px', zIndex: 100, position: 'relative', height: '100%', overflow: 'hidden' }}>
                     {uploadedFiles.map((f, i) => (
                       <button
                         key={i}
                         onClick={(e) => {
                           e.stopPropagation();
+                          console.log('[SERIES SELECTOR] Clicked series index:', i, 'Series name:', f.name);
                           setActiveAssetIndex(i);
                         }}
                         onMouseDown={(e) => {
@@ -3349,8 +3366,34 @@ const ReportingPage = () => {
                   </div>
                 ) : (
                   <div style={{ flex: 1, display: 'grid', gridTemplateColumns: layoutMode === '2x2' ? '1fr 1fr' : '1fr', gridTemplateRows: layoutMode === '2x2' ? '1fr 1fr' : '1fr', gap: '2px' }}>
+                    {uploadedFiles.length > 0 && (
+                      <>
+                        {console.log('[REPORTING] Current uploadedFiles array:', {
+                          length: uploadedFiles.length,
+                          files: uploadedFiles.map((f, i) => ({
+                            index: i,
+                            name: f.name,
+                            rawFilesLength: f.rawFiles?.length || 0,
+                            hasMetadata: !!f.metadata
+                          }))
+                        })}
+                      </>
+                    )}
                     {[...Array(layoutMode === '2x2' ? 4 : 1)].map((_, idx) => {
-                      const currentFiles = uploadedFiles[(activeAssetIndex + idx) % uploadedFiles.length]?.rawFiles;
+                      const seriesIndex = (activeAssetIndex + idx) % uploadedFiles.length;
+                      const currentSeries = uploadedFiles[seriesIndex];
+                      const currentFiles = currentSeries?.rawFiles;
+
+                      console.log(`[DICOM VIEWER] Viewport ${idx}: activeIndex=${activeAssetIndex}, seriesIdx=${seriesIndex}`, {
+                        seriesName: currentSeries?.name,
+                        hasRawFiles: !!currentFiles,
+                        rawFilesLength: currentFiles?.length,
+                        rawFilesType: typeof currentFiles,
+                        isArray: Array.isArray(currentFiles),
+                        firstFileExists: currentFiles?.[0] ? true : false,
+                        firstFileName: currentFiles?.[0]?.name,
+                        fullSeries: currentSeries
+                      });
 
                       return (
                         <div key={idx} style={{ position: 'relative', background: '#000', overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>

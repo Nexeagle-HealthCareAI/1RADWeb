@@ -703,10 +703,11 @@ const DicomViewerPage = () => {
       flexDirection: isTablet && hasMultipleSeries ? 'column' : 'row',
       overflow: 'hidden'
     }}>
-      {/* Left Series List Panel (if multiple series) */}
-      {hasMultipleSeries && (
+      {/* Left Series List Panel (always show if series data exists) */}
+      {(hasMultipleSeries || allSeries?.length > 0) && (
         <div style={{
           width: isTablet ? '100%' : '280px',
+          minWidth: isTablet ? 'auto' : '280px',
           maxWidth: isTablet ? '100%' : '280px',
           height: isTablet ? 'auto' : '100%',
           maxHeight: isTablet ? '30vh' : '100%',
@@ -718,7 +719,8 @@ const DicomViewerPage = () => {
           overflow: 'hidden',
           boxShadow: isTablet ? '0 4px 20px rgba(0, 0, 0, 0.3)' : '4px 0 20px rgba(0, 0, 0, 0.3)',
           position: isTablet ? 'relative' : 'static',
-          zIndex: isTablet ? 100 : 'auto'
+          zIndex: isTablet ? 100 : 'auto',
+          flexShrink: 0
         }}>
           {/* Series List Header */}
           <div style={{
@@ -766,9 +768,13 @@ const DicomViewerPage = () => {
             {allSeries.map((series, index) => (
               <button
                 key={index}
-                onClick={() => {
+                onClick={(e) => {
+                  e.stopPropagation();
                   console.log('[SERIES LIST] Clicked series:', index, series.name);
                   setActiveSeriesIndex(index);
+                }}
+                onMouseDown={(e) => {
+                  e.preventDefault();
                 }}
                 style={{
                   width: isTablet ? '200px' : '100%',

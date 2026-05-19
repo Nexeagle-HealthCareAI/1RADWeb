@@ -195,16 +195,16 @@ export default function AppointmentBoard() {
         };
       });
       
-      // Sort ASCENDING by Token Number as requested
+      // Sort DESCENDING by Token Number as requested
       const finalSortedData = itemsWithTokens.sort((a, b) => {
-        const tokenA = a.tokenNo || 999999;
-        const tokenB = b.tokenNo || 999999;
+        const tokenA = a.tokenNo || 0;
+        const tokenB = b.tokenNo || 0;
         if (tokenA !== tokenB) {
-          return tokenA - tokenB;
+          return tokenB - tokenA;
         }
         const timeA = new Date(a.dateTime || 0).getTime();
         const timeB = new Date(b.dateTime || 0).getTime();
-        return timeA - timeB;
+        return timeB - timeA;
       });
 
       setAppointments(finalSortedData);
