@@ -93,6 +93,28 @@ if (typeof SharedArrayBuffer === 'undefined') {
   console.warn("[DICOM] SharedArrayBuffer is not available. Some compressed DICOMs may fail to decode.");
 }
 
+// Session-wide blob URL cache: same File -> same blob URL across remounts.
+// This keeps Cornerstone's decoded-image cache useful when switching series and
+// re-visiting them. URLs live for the page lifetime (cleared on full reload).
+const blobUrlCache = new WeakMap();
+// Parallel Map for revocation (WeakMap isn't iterable). Keyed by File too.
+const blobUrlTracker = new Map();
+function getOrCreateBlobUrl(file) {
+  let url = blobUrlCache.get(file);
+  if (!url) {
+    url = URL.createObjectURL(file);
+    blobUrlCache.set(file, url);
+    blobUrlTracker.set(file, url);
+  }
+  return url;
+}
+export function clearDicomBlobUrlCache() {
+  blobUrlTracker.forEach(url => {
+    try { URL.revokeObjectURL(url); } catch (e) {}
+  });
+  blobUrlTracker.clear();
+}
+
 // --- GLOBAL INITIALIZATION ---
 let cornerstoneInitialized = false;
 async function initCornerstone() {
@@ -194,27 +216,25 @@ async function initCornerstone() {
   console.log("[DICOM] Available loader methods:", Object.keys(cornerstoneDICOMImageLoader));
   
   imageLoader.registerImageLoader('wadouri', (imageId, options) => {
-    console.log(`[DICOM] Loader triggered for: ${imageId}`);
-    
+    if (DICOM_CONFIG.DEBUG_LOGGING) console.log(`[DICOM] Loader triggered for: ${imageId}`);
+
     const promise = new Promise(async (resolve, reject) => {
       const loaderTimeout = setTimeout(() => {
         console.error(`[DICOM] Loader internal timeout for: ${imageId}`);
         reject(new Error('Loader internal timeout - DICOM decoder is not responding (180s limit)'));
       }, 180000);
-      
+
       try {
         let loadPromise;
-        
+
         if (cornerstoneDICOMImageLoader.wadouri && cornerstoneDICOMImageLoader.wadouri.loadImage) {
-          console.log(`[DICOM] Path A: wadouri.loadImage detected`);
           loadPromise = cornerstoneDICOMImageLoader.wadouri.loadImage(imageId, options);
           if (loadPromise && loadPromise.promise) loadPromise = loadPromise.promise;
         } else if (cornerstoneDICOMImageLoader.loadImage) {
-          console.log(`[DICOM] Path B: direct loadImage detected`);
           loadPromise = cornerstoneDICOMImageLoader.loadImage(imageId, options);
           if (loadPromise && loadPromise.promise) loadPromise = loadPromise.promise;
         } else {
-          console.log(`[DICOM] Path C: Manual fallback triggered`);
+          if (DICOM_CONFIG.DEBUG_LOGGING) console.log(`[DICOM] Path C: Manual fallback triggered`);
           const blobUrl = imageId.replace('wadouri:', '');
           const response = await fetch(blobUrl);
           const arrayBuffer = await response.arrayBuffer();
@@ -254,7 +274,7 @@ async function initCornerstone() {
           };
           
           clearTimeout(loaderTimeout);
-          console.log(`[DICOM] Manual fallback resolved for: ${imageId} (Bits: ${dataSet.uint16('x00280100')})`);
+          if (DICOM_CONFIG.DEBUG_LOGGING) console.log(`[DICOM] Manual fallback resolved for: ${imageId} (Bits: ${dataSet.uint16('x00280100')})`);
           resolve(image);
           return;
         }
@@ -270,7 +290,7 @@ async function initCornerstone() {
           (result) => {
             clearTimeout(loaderTimeout);
             const image = result?.image || result;
-            console.log(`[DICOM] Path A/B resolved for: ${imageId}`);
+            if (DICOM_CONFIG.DEBUG_LOGGING) console.log(`[DICOM] Path A/B resolved for: ${imageId}`);
             resolve(image);
           },
           async (error) => {
@@ -393,7 +413,6 @@ const AdvancedDicomViewer = ({
   const toolGroupRef = useRef(null);
   const fullscreenContainerRef = useRef(null);
   const filesRef = useRef(null); // Keep files in ref to prevent garbage collection
-  const blobUrlsRef = useRef([]); // Track blob URLs for proper cleanup
   
   const uniqueId = useId().replace(/[^a-zA-Z0-9]/g, '');
   const engineId = `ENGINE_${uniqueId}`;
@@ -1035,13 +1054,9 @@ const AdvancedDicomViewer = ({
         // Keep strong references to prevent garbage collection of File objects
         filesRef.current = files;
 
-        // Generate internal wado-uri for local files using Blob URLs
-        // Note: old blob URLs from previous effect run are revoked by that effect's cleanup function
-        imageIds = files.map(f => {
-          const blobUrl = URL.createObjectURL(f);
-          blobUrlsRef.current.push(blobUrl); // Track for cleanup
-          return `wadouri:${blobUrl}`;
-        });
+        // Reuse cached blob URLs for the same File objects. This keeps Cornerstone's
+        // decoded-image cache useful across series switches and re-visits.
+        imageIds = files.map(f => `wadouri:${getOrCreateBlobUrl(f)}`);
 
         console.log(`[DICOM] Loading ${imageIds.length} images via Blob URIs into ${viewportId}`);
 
@@ -1177,30 +1192,19 @@ const AdvancedDicomViewer = ({
                 
                 // Store event handlers for cleanup
                 const stackNewImageHandler = (evt) => {
-                   console.log(`[DICOM] STACK_NEW_IMAGE event:`, evt.detail);
                    const index = evt.detail.imageIdIndex;
                    setCurrentImageIndex(index);
                    if (onSliceChange) onSliceChange(index, files.length);
-                   console.log(`[DICOM] Slice changed via event: ${index + 1}/${files.length}`);
+                   if (DICOM_CONFIG.DEBUG_LOGGING) {
+                     console.log(`[DICOM] STACK_NEW_IMAGE event: slice ${index + 1}/${files.length}`);
+                   }
                 };
-                
-                const wheelDebugHandler = (evt) => {
-                  console.log(`[DICOM] Wheel event detected:`, {
-                    deltaY: evt.deltaY,
-                    ctrlKey: evt.ctrlKey,
-                    shiftKey: evt.shiftKey,
-                    currentIndex: currentImageIndex,
-                    totalFiles: files.length
-                  });
-                };
-                
-                // Add listeners for stack scroll index changes
+
+                // Add listener for stack scroll index changes
                 elementRef.current.addEventListener(Enums.Events.STACK_NEW_IMAGE, stackNewImageHandler);
-                elementRef.current.addEventListener('wheel', wheelDebugHandler);
-                
-                // Store handlers for cleanup
+
+                // Store handler for cleanup
                 renderingEngineRef.current._stackNewImageHandler = stackNewImageHandler;
-                renderingEngineRef.current._wheelDebugHandler = wheelDebugHandler;
 
                 // Verify viewport stack data
                 const stackData = viewport.getStackData();
@@ -1354,11 +1358,13 @@ const AdvancedDicomViewer = ({
           AdvancedMagnify: AdvancedMagnifyTool.toolName
         });
         
-        // Start prefetching for smoother scrolling using the utility
-        // OPTIMIZATION: Configure prefetch for higher performance (Turbo-charge)
+        // Start prefetching for smoother scrolling using the utility.
+        // preserveOrder=true loads slices sequentially from the current index outward,
+        // matching how users actually scroll. Cuts perceived load time on the slices
+        // they reach first.
         utilities.stackPrefetch.enable(elementRef.current, {
-          maxImagesToPrefetch: 100, // Increased from 50 to 100 for smoother high-speed scrolling
-          preserveOrder: false,
+          maxImagesToPrefetch: 100,
+          preserveOrder: true,
           displaySetId: viewportId
         });
         
@@ -1422,9 +1428,6 @@ const AdvancedDicomViewer = ({
           if (elementRef.current && renderingEngineRef.current._stackNewImageHandler) {
             elementRef.current.removeEventListener(Enums.Events.STACK_NEW_IMAGE, renderingEngineRef.current._stackNewImageHandler);
           }
-          if (elementRef.current && renderingEngineRef.current._wheelDebugHandler) {
-            elementRef.current.removeEventListener('wheel', renderingEngineRef.current._wheelDebugHandler);
-          }
           if (renderingEngineRef.current._onImageLoadFailed && elementRef.current) {
             elementRef.current.removeEventListener(Enums.Events.IMAGE_LOAD_FAILED, renderingEngineRef.current._onImageLoadFailed);
           }
@@ -1445,25 +1448,10 @@ const AdvancedDicomViewer = ({
         if (sync) sync.remove({ renderingEngineId: engineId, viewportId });
       }
 
-      // Revoke tracked blob URLs on cleanup
-      if (blobUrlsRef.current.length > 0) {
-        // TACTICAL: Use a delayed revocation to prevent race conditions with
-        // Cornerstone's background loaders and prefetchers.
-        const urlsToRevoke = [...blobUrlsRef.current];
-        setTimeout(() => {
-          urlsToRevoke.forEach(url => {
-            try {
-              URL.revokeObjectURL(url);
-            } catch (e) {
-              console.warn(`[DICOM] Cleanup: Failed to revoke blob URL: ${url}`, e);
-            }
-          });
-          console.log(`[DICOM] Cleanup: Revoked ${urlsToRevoke.length} blob URLs after delay`);
-        }, 5000); // 5 second buffer for pending fetches
-        blobUrlsRef.current = [];
-      }
-
-      // Clear file reference
+      // Note: blob URLs are intentionally NOT revoked here.
+      // They live in the session-wide blobUrlCache so re-visiting a series
+      // hits Cornerstone's decoded-image cache (imageId stays stable).
+      // Call clearDicomBlobUrlCache() if memory needs to be reclaimed.
       filesRef.current = null;
     };
   }, [isReady, files, engineId, viewportId, toolGroupId]);

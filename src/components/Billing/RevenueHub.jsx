@@ -187,6 +187,7 @@ const RevenueHub = ({
       headers = [
         'Appointment ID',
         'Patient Name',
+        'Referred By',
         'Scheduled For',
         'Modality',
         'Service Name',
@@ -207,6 +208,7 @@ const RevenueHub = ({
         rows.push([
           app.displayId || 'N/A',
           app.patientName || 'UNKNOWN',
+          app.referredBy || app.referrerName || 'SELF',
           formatDate(app.date || app.dateTime),
           app.modality || 'US',
           app.service || 'N/A',
@@ -226,6 +228,7 @@ const RevenueHub = ({
         rows.push([
           inv.displayId || 'N/A',
           inv.patientName || 'UNKNOWN',
+          inv.referrerName || 'SELF',
           'PRE-BILLED',
           inv.modality || 'US',
           'MANUAL_INVOICE_LEDGER',
@@ -238,6 +241,7 @@ const RevenueHub = ({
       headers = [
         'Invoice ID',
         'Patient Name',
+        'Referred By',
         'Timestamp',
         'Modality',
         'Gross Amount (INR)',
@@ -257,6 +261,7 @@ const RevenueHub = ({
         rows.push([
           inv.displayId || 'N/A',
           inv.patientName || 'UNKNOWN',
+          inv.referrerName || 'SELF',
           formatDate(inv.createdAt, true),
           inv.modality || 'US',
           inv.grossAmount || 0,
@@ -501,6 +506,7 @@ const RevenueHub = ({
                     <>
                        <th style={{ padding: '15px 10px', fontSize: '10px', fontWeight: 950, color: '#94a3b8', letterSpacing: '1px' }}>APPT_ID</th>
                        <th style={{ padding: '15px 10px', fontSize: '10px', fontWeight: 950, color: '#94a3b8', letterSpacing: '1px' }}>PATIENT_ENTITY</th>
+                       <th style={{ padding: '15px 10px', fontSize: '10px', fontWeight: 950, color: '#94a3b8', letterSpacing: '1px' }}>REFERRED_BY</th>
                        <th style={{ padding: '15px 10px', fontSize: '10px', fontWeight: 950, color: '#94a3b8', letterSpacing: '1px' }}>SCHEDULED_FOR</th>
                        <th style={{ padding: '15px 10px', fontSize: '10px', fontWeight: 950, color: '#94a3b8', letterSpacing: '1px' }}>MODALITY</th>
                        <th style={{ padding: '15px 10px', fontSize: '10px', fontWeight: 950, color: '#94a3b8', letterSpacing: '1px' }}>SERVICE_NAME</th>
@@ -512,6 +518,7 @@ const RevenueHub = ({
                     <>
                       <th onClick={() => handleSort('displayId')} style={{ cursor: 'pointer', padding: '15px 10px', fontSize: '10px', fontWeight: 950, color: '#94a3b8', letterSpacing: '1px' }}>INVOICE_ID {getSortIcon('displayId')}</th>
                       <th onClick={() => handleSort('patientName')} style={{ cursor: 'pointer', padding: '15px 10px', fontSize: '10px', fontWeight: 950, color: '#94a3b8', letterSpacing: '1px' }}>PATIENT_ENTITY {getSortIcon('patientName')}</th>
+                      <th onClick={() => handleSort('referrerName')} style={{ cursor: 'pointer', padding: '15px 10px', fontSize: '10px', fontWeight: 950, color: '#94a3b8', letterSpacing: '1px' }}>REFERRED_BY {getSortIcon('referrerName')}</th>
                       <th onClick={() => handleSort('date')} style={{ cursor: 'pointer', padding: '15px 10px', fontSize: '10px', fontWeight: 950, color: '#94a3b8', letterSpacing: '1px' }}>TIMESTAMP {getSortIcon('date')}</th>
                       <th style={{ padding: '15px 10px', fontSize: '10px', fontWeight: 950, color: '#94a3b8', letterSpacing: '1px' }}>MODALITY</th>
                       <th onClick={() => handleSort('grossAmount')} style={{ cursor: 'pointer', padding: '15px 10px', fontSize: '10px', fontWeight: 950, color: '#1e293b', letterSpacing: '1px', background: '#f8fafc' }}>GROSS {getSortIcon('grossAmount')}</th>
@@ -540,6 +547,7 @@ const RevenueHub = ({
                         </td>
                         <td style={{ padding: '20px 10px', fontSize: '11px', fontWeight: 900, color: '#64748b', fontFamily: 'monospace' }}>{app.displayId}</td>
                         <td style={{ padding: '20px 10px', fontSize: '11.5px', fontWeight: 800, color: '#1e293b' }}>{(app.patientName || 'UNKNOWN').toUpperCase()}</td>
+                        <td style={{ padding: '20px 10px', fontSize: '11px', fontWeight: 700, color: '#64748b' }}>{(app.referredBy || app.referrerName || 'SELF').toUpperCase()}</td>
                         <td style={{ padding: '20px 10px', fontSize: '11px', color: '#64748b', fontWeight: 600 }}>{formatDate(app.date || app.dateTime)}</td>
                         <td style={{ padding: '20px 10px' }}>
                           <span style={{ padding: '4px 8px', background: '#f1f5f9', borderRadius: '6px', fontSize: '9px', fontWeight: 950, color: '#0f52ba' }}>{(app.modality || 'US').toUpperCase()}</span>
@@ -556,7 +564,7 @@ const RevenueHub = ({
                    ))}
                    {paginatedInvoices.length > 0 && (
                      <tr style={{ background: '#f1f5f9' }}>
-                       <td colSpan="9" style={{ padding: '12px 20px', fontSize: '9px', fontWeight: 950, color: '#0f52ba', letterSpacing: '2px' }}>PRE-BILLED_FUTURE_TRANSACTIONS</td>
+                       <td colSpan="10" style={{ padding: '12px 20px', fontSize: '9px', fontWeight: 950, color: '#0f52ba', letterSpacing: '2px' }}>PRE-BILLED_FUTURE_TRANSACTIONS</td>
                      </tr>
                    )}
                    {paginatedInvoices.map(inv => (
@@ -571,6 +579,7 @@ const RevenueHub = ({
                         </td>
                         <td style={{ padding: '15px 10px', fontSize: '10px', fontWeight: 900, color: '#64748b', fontFamily: 'monospace' }}>{inv.displayId}</td>
                         <td style={{ padding: '15px 10px', fontSize: '11px', fontWeight: 800, color: '#1e293b' }}>{(inv.patientName || 'UNKNOWN').toUpperCase()}</td>
+                        <td style={{ padding: '15px 10px', fontSize: '11px', fontWeight: 700, color: '#64748b' }}>{(inv.referrerName || 'SELF').toUpperCase()}</td>
                         <td style={{ padding: '15px 10px', fontSize: '10px', color: '#0f52ba', fontWeight: 900 }}>BILLED</td>
                         <td colSpan="2" style={{ padding: '15px 10px', fontSize: '10px', fontWeight: 700, color: '#64748b' }}>MANUAL_INVOICE_LEDGER</td>
                         <td style={{ padding: '15px 10px', textAlign: 'right', fontSize: '11.5px', fontWeight: 950, color: '#0f52ba' }}>₹{(inv.totalAmount || 0).toLocaleString()}</td>
@@ -592,6 +601,7 @@ const RevenueHub = ({
                      </td>
                      <td style={{ padding: '20px 10px', fontSize: '11px', fontWeight: 900, color: '#0f52ba', fontFamily: 'monospace' }}>{inv?.displayId || 'N/A'}</td>
                      <td style={{ padding: '20px 10px', fontSize: '11.5px', fontWeight: 800, color: '#1e293b' }}>{(inv?.patientName || 'UNKNOWN').toUpperCase()}</td>
+                     <td style={{ padding: '20px 10px', fontSize: '11px', fontWeight: 700, color: '#64748b' }}>{(inv?.referrerName || 'SELF').toUpperCase()}</td>
                      <td style={{ padding: '20px 10px', fontSize: '11px', color: '#64748b', fontWeight: 600 }}>{formatDate(inv?.createdAt, true)}</td>
                      <td style={{ padding: '20px 10px' }}>
                        <span style={{ padding: '4px 8px', background: '#f1f5f9', borderRadius: '6px', fontSize: '9px', fontWeight: 950, color: '#0f52ba' }}>{(inv.modality || 'US').toUpperCase()}</span>
@@ -622,8 +632,13 @@ const RevenueHub = ({
                      <td style={{ padding: '20px 10px', textAlign: 'right', display: 'flex', gap: '10px', justifyContent: 'flex-end', alignItems: 'center' }}>
                         <button 
                           onClick={() => {
-                             const cutAmount = inv.commissionAmount || 0;
-
+                             let cutAmount = inv.commissionAmount || 0;
+                             if (cutAmount === 0 && inv.items?.length > 0) {
+                                cutAmount = inv.items.reduce((sum, item) => {
+                                  const service = serviceRegistry?.find(s => (s.serviceName || s.descriptor)?.toLowerCase() === item.description?.toLowerCase());
+                                  return sum + ((service?.referralCutValue || 0) * (item.quantity || 1));
+                                }, 0);
+                             }
                              // Multi-stage identity resolution
                              let refId = inv.referrerId;
                              if (!refId && inv.referrerName) {
@@ -640,7 +655,7 @@ const RevenueHub = ({
                                 commissionId: existingCommission?.id || '',
                                 referrerId: existingCommission?.referrerId || refId || '',
                                 referrerName: existingCommission?.referrerName || inv.referrerName || 'DIRECT',
-                                amount: existingCommission != null ? existingCommission.commissionAmount : cutAmount,
+                                amount: existingCommission != null ? existingCommission.commissionAmount : (cutAmount === 0 ? '' : cutAmount),
                                 modality: existingCommission?.modality || inv.modality || 'MRI',
                                 remarks: existingCommission?.remarks || `Commission for ${inv.displayId} (${inv.patientName})`,
                                 invoiceId: inv.displayId,

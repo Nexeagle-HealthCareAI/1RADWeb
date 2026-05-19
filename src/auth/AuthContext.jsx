@@ -1,5 +1,7 @@
 import { createContext, useState, useCallback, useEffect, useMemo, useRef } from 'react';
 import apiClient from '../api/apiClient';
+import { StudyPrefetcher } from '../utils/StudyPrefetcher';
+import { DicomCache } from '../utils/DicomCache';
 
 export const AuthContext = createContext(null);
 
@@ -197,6 +199,11 @@ export function AuthProvider({ children }) {
     if (currentUser?.id) {
       refreshCenters();
       refreshSubscription();
+      // Kick off background pre-download of today's worklist for radiologists.
+      // Guardrails (role, network, storage) live inside the prefetcher.
+      StudyPrefetcher.start(currentUser);
+    } else {
+      StudyPrefetcher.stop();
     }
   }, [currentUser?.id, refreshCenters, refreshSubscription]);
 
@@ -271,7 +278,11 @@ export function AuthProvider({ children }) {
     sessionStorage.removeItem('1rad_token');
     sessionStorage.removeItem('1rad_initiation_token');
     localStorage.removeItem('1rad_refresh_token');
-    
+
+    // PHI hygiene: stop background downloads and purge the local DICOM cache on logout.
+    StudyPrefetcher.stop();
+    DicomCache.clear().catch(() => {});
+
     // Clear timers
     if (idleTimerRef.current) clearTimeout(idleTimerRef.current);
     if (countdownTimerRef.current) clearInterval(countdownTimerRef.current);
