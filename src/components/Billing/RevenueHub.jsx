@@ -647,7 +647,6 @@ const RevenueHub = ({
                              }
 
                              const existingCommission = (referralCommissions || []).find(c =>
-                               (inv.appointmentId && c.appointmentId === inv.appointmentId) ||
                                c.referenceNumber === inv.displayId ||
                                c.referenceNumber === inv.invoiceId
                              );
@@ -655,7 +654,7 @@ const RevenueHub = ({
                                 commissionId: existingCommission?.id || '',
                                 referrerId: existingCommission?.referrerId || refId || '',
                                 referrerName: existingCommission?.referrerName || inv.referrerName || 'DIRECT',
-                                amount: existingCommission != null ? existingCommission.commissionAmount : (cutAmount === 0 ? '' : cutAmount),
+                                amount: existingCommission != null ? existingCommission.amount : (cutAmount === 0 ? '' : cutAmount),
                                 modality: existingCommission?.modality || inv.modality || 'MRI',
                                 remarks: existingCommission?.remarks || `Commission for ${inv.displayId} (${inv.patientName})`,
                                 invoiceId: inv.displayId,
