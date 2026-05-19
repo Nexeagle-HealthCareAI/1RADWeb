@@ -1206,37 +1206,23 @@ export default function TechnicianPage() {
           </>
         )}
 
-        {/* MOBILE: SIMPLE SERIES/SLICE NAV */}
+        {/* MOBILE: SIMPLE DCM FILE SELECTOR ONLY */}
         {isMobile && uploadedFiles.length > 0 && (
-          <div style={{ display: 'flex', gap: '10px', alignItems: 'center', flex: 1 }}>
-            <select
-              value={activeAssetIndex}
-              onChange={e => setActiveAssetIndex(Number(e.target.value))}
-              style={{ padding: '6px 10px', borderRadius: '6px', border: '1px solid #e2e8f0', fontSize: '12px', fontWeight: 600 }}
-            >
-              {uploadedFiles.map((f, i) => (
-                <option key={i} value={i}>Series {i + 1}: {f.name}</option>
-              ))}
-            </select>
-            <input
-              type="range"
-              min="1"
-              max={uploadedFiles[activeAssetIndex]?.rawFiles?.length || 1}
-              value={currentSlice}
-              onChange={e => setCurrentSlice(Number(e.target.value))}
-              style={{ flex: 1, height: '24px', borderRadius: '4px' }}
-              title="Slice Navigation"
-            />
-            <span style={{ fontSize: '11px', fontWeight: 600, color: '#1e293b', minWidth: '40px' }}>
-              {currentSlice} / {uploadedFiles[activeAssetIndex]?.rawFiles?.length || 0}
-            </span>
-          </div>
+          <select
+            value={activeAssetIndex}
+            onChange={e => setActiveAssetIndex(Number(e.target.value))}
+            style={{ padding: '8px 12px', borderRadius: '8px', border: '1px solid #e2e8f0', fontSize: '12px', fontWeight: 600, background: 'white', color: '#1e293b' }}
+          >
+            {uploadedFiles.map((f, i) => (
+              <option key={i} value={i}>{f.name}</option>
+            ))}
+          </select>
         )}
 
         <button
           onClick={handleCompleteStudy}
-          className="gamified-btn" style={{ padding: isMobile ? '8px 16px' : '10px 25px', borderRadius: '12px', fontSize: isMobile ? '10px' : '11px', textTransform: 'uppercase', letterSpacing: '1px', fontWeight: 950 }}
-        >{isMobile ? 'Done' : 'Mark as Scanned'}</button>
+          className="gamified-btn" style={{ padding: isMobile ? '8px 12px' : '10px 25px', borderRadius: '12px', fontSize: isMobile ? '12px' : '11px', textTransform: 'uppercase', letterSpacing: '1px', fontWeight: 950 }}
+        >{isMobile ? '✓' : 'Mark as Scanned'}</button>
       </div>
 
       <div style={{ flex: 1, display: 'flex', minHeight: 0, padding: isMobile ? '8px' : '10px', gap: isMobile ? '0' : '10px', flexDirection: isMobile ? 'column' : 'row' }}>
