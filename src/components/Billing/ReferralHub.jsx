@@ -46,10 +46,157 @@ const ReferralHub = ({
     amount: 0
   });
 
+  // Per-partner drill-down state
+  const [activePartnerId, setActivePartnerId] = useState(null);
+  const [drawerSelectedIds, setDrawerSelectedIds] = useState(new Set());
+  const [bulkConfirmModal, setBulkConfirmModal] = useState({
+    isOpen: false,
+    count: 0,
+    total: 0,
+    eligibleIds: [],
+    partnerName: ''
+  });
+
   // Clear selections on filter adjustments
   useEffect(() => {
     setSelectedIds(new Set());
   }, [timeFilter, startDate, endDate, referrerFilter, modalityFilter, referralSearch]);
+
+  // Reset drawer selection whenever the active partner changes
+  useEffect(() => {
+    setDrawerSelectedIds(new Set());
+  }, [activePartnerId]);
+
+  // Group filtered cuts by partner, with aggregates. Sorted: outstanding DESC,
+  // then total DESC; "DIRECT" (no referrer) pinned to the bottom.
+  const partnerGroups = useMemo(() => {
+    const groups = new Map();
+    (filteredReferralCuts || []).forEach(cut => {
+      const key = cut?.referrerId || (cut?.name ? cut.name.toUpperCase() : '__DIRECT__');
+      const displayName = (cut?.name || 'DIRECT').toUpperCase();
+      if (!groups.has(key)) {
+        groups.set(key, {
+          id: key,
+          name: displayName,
+          isDirect: !cut?.referrerId && !cut?.name,
+          cuts: [],
+          total: 0,
+          paid: 0,
+          unpaid: 0,
+          count: 0,
+          lastDate: 0,
+        });
+      }
+      const g = groups.get(key);
+      g.cuts.push(cut);
+      g.count += 1;
+      const amt = Number(cut?.amount) || 0;
+      g.total += amt;
+      if (cut?.status === 'PAID') g.paid += amt; else g.unpaid += amt;
+      const cutDate = cut?.date ? new Date(cut.date).getTime() : 0;
+      if (cutDate > g.lastDate) g.lastDate = cutDate;
+    });
+    return Array.from(groups.values()).sort((a, b) => {
+      if (a.isDirect !== b.isDirect) return a.isDirect ? 1 : -1;
+      if (b.unpaid !== a.unpaid) return b.unpaid - a.unpaid;
+      return b.total - a.total;
+    });
+  }, [filteredReferralCuts]);
+
+  const activePartner = useMemo(
+    () => partnerGroups.find(g => g.id === activePartnerId) || null,
+    [partnerGroups, activePartnerId]
+  );
+
+  const closeDrawer = () => {
+    setActivePartnerId(null);
+    setDrawerSelectedIds(new Set());
+  };
+
+  const toggleDrawerSelectRow = (id) => {
+    setDrawerSelectedIds(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  };
+
+  const isAllDrawerSelected = activePartner && activePartner.cuts.length > 0 &&
+    activePartner.cuts.every(c => drawerSelectedIds.has(c.id));
+
+  const toggleSelectAllInDrawer = () => {
+    if (!activePartner) return;
+    if (isAllDrawerSelected) {
+      setDrawerSelectedIds(new Set());
+    } else {
+      setDrawerSelectedIds(new Set(activePartner.cuts.map(c => c.id)));
+    }
+  };
+
+  // "Mark selected as PAID" — only strategic + currently unpaid cuts are eligible.
+  const openBulkPaidConfirm = () => {
+    if (!activePartner) return;
+    const eligible = activePartner.cuts.filter(c =>
+      drawerSelectedIds.has(c.id) && c.type === 'STRATEGIC' && c.status !== 'PAID'
+    );
+    const total = eligible.reduce((s, c) => s + (Number(c.amount) || 0), 0);
+    setBulkConfirmModal({
+      isOpen: true,
+      count: eligible.length,
+      total,
+      eligibleIds: eligible.map(c => c.id),
+      partnerName: activePartner.name
+    });
+  };
+
+  const handleBulkMarkPaid = () => {
+    // handleToggleCommissionStatus toggles based on the *current* status, so we
+    // pass 'UNPAID' to flip these into PAID.
+    bulkConfirmModal.eligibleIds.forEach(id => {
+      handleToggleCommissionStatus(id, 'UNPAID');
+    });
+    setBulkConfirmModal({ isOpen: false, count: 0, total: 0, eligibleIds: [], partnerName: '' });
+    setDrawerSelectedIds(new Set());
+  };
+
+  const handleBulkExport = () => {
+    if (!activePartner) return;
+    const selectedCuts = activePartner.cuts.filter(c => drawerSelectedIds.has(c.id));
+    if (selectedCuts.length === 0) return;
+    const timestampStr = new Date().toISOString().replace(/[:.]/g, '-');
+    const safeName = activePartner.name.replace(/[^A-Z0-9]+/gi, '_');
+    const fileName = `1RAD_Partner_${safeName}_${timestampStr}`;
+    const headers = ['Payout Date', 'Patient Name', 'Modality', 'Reference ID', 'Payout Amount (INR)', 'Status'];
+    const rows = selectedCuts.map(cut => [
+      formatDate(cut?.date, true),
+      cut?.patientName || 'N/A',
+      cut?.modality || 'MRI',
+      cut?.reference || 'N/A',
+      Number(cut?.amount) || 0,
+      cut?.status || 'UNPAID'
+    ]);
+    const escapeCsvCell = (cell) => {
+      if (cell === null || cell === undefined) return '';
+      const cellStr = String(cell);
+      if (cellStr.includes(',') || cellStr.includes('"') || cellStr.includes('\n')) {
+        return `"${cellStr.replace(/"/g, '""')}"`;
+      }
+      return cellStr;
+    };
+    const csvContent = [
+      headers.map(escapeCsvCell).join(','),
+      ...rows.map(r => r.map(escapeCsvCell).join(','))
+    ].join('\n');
+    const blob = new Blob(['﻿' + csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.setAttribute('href', url);
+    link.setAttribute('download', `${fileName}.csv`);
+    link.style.visibility = 'hidden';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
 
   const toggleSelectRow = (id) => {
     setSelectedIds(prev => {

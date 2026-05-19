@@ -95,6 +95,8 @@ export default function AppointmentBoard() {
   const [isPreviewOpen, setIsPreviewOpen] = useState(false);
   const [previewAppointment, setPreviewAppointment] = useState(null);
   const [previewReport, setPreviewReport] = useState({ mode: 'Narrative Editor', text: '', impression: '', isFinalized: false });
+  const [errorModal, setErrorModal] = useState({ isOpen: false, title: '', message: '' });
+  const [cancelConfirmModal, setCancelConfirmModal] = useState({ isOpen: false, appointmentId: null, patientName: '' });
   const [tokenPrintData, setTokenPrintData] = useState(null);
   const [printDropdownId, setPrintDropdownId] = useState(null);
 
@@ -431,10 +433,23 @@ export default function AppointmentBoard() {
     }
 
     try {
-      await apiClient.patch(`/appointments/${app.appointmentId}/status`, `"${newStatus}"`, {
+      const response = await apiClient.patch(`/appointments/${app.appointmentId}/status`, `"${newStatus}"`, {
         headers: { 'Content-Type': 'application/json' }
       });
-      fetchAppointments();
+      
+      const result = response.data;
+      if (result && result.notAllowed) {
+        // Rollback the optimistic UI state since it was not allowed by the business rule
+        setAppointments(prev => prev.map(a => (a.id === id || a.appointmentId === id) ? { ...a, status: originalStatus } : a));
+        
+        setErrorModal({
+          isOpen: true,
+          title: "🔒 Cancellation Locked",
+          message: result.message || "Cannot cancel appointment at this time."
+        });
+      } else {
+        fetchAppointments();
+      }
     } catch (error) {
       console.error('Failed to update status:', error);
       
@@ -443,11 +458,11 @@ export default function AppointmentBoard() {
 
       if (error.response) {
         const serverMessage = error.response.data?.error || error.response.data?.message || error.response.data;
-        if (serverMessage?.toLowerCase().includes("payment")) {
-          alert("🔒 CANCELLATION LOCKED: Payment is done. Not allowed to cancel for now.");
-        } else {
-          alert(`VALIDATION FAILURE: ${serverMessage || 'Could not update status.'}`);
-        }
+        setErrorModal({
+          isOpen: true,
+          title: "Validation Failure",
+          message: serverMessage || "Could not update status."
+        });
       } else {
         await addToOutbox('APPOINTMENT_STATUS', { id: app.appointmentId, status: newStatus });
       }
@@ -1360,7 +1375,7 @@ export default function AppointmentBoard() {
               ✏️
             </button>
             <button
-              onClick={() => { if (window.confirm(`Cancel appointment for ${app.patientName}?`)) handleAction(app.appointmentId || app.id, 'CANCEL'); }}
+              onClick={() => setCancelConfirmModal({ isOpen: true, appointmentId: app.appointmentId || app.id, patientName: app.patientName })}
               style={{ width: '28px', height: '28px', display: 'flex', alignItems: 'center', justifyContent: 'center', borderRadius: '6px', background: '#fff1f2', border: '1px solid #fecdd3', cursor: 'pointer', color: '#e11d48', fontSize: '12px' }}
               title="Cancel"
             >
@@ -2649,7 +2664,10 @@ export default function AppointmentBoard() {
                   onPrint={(app) => setTokenPrintData(app)}
                   onPrescription={(app) => handlePreviewPrint(app)}
                   onEdit={(app) => { setEditingAppointment(app); setIsEditingOpen(true); }}
-                  onCancel={(id) => { if (window.confirm('Cancel this mission?')) handleAction(id, 'CANCEL'); }}
+                  onCancel={(id) => {
+                    const matchedApp = appointments.find(a => a.id === id || a.appointmentId === id);
+                    setCancelConfirmModal({ isOpen: true, appointmentId: id, patientName: matchedApp?.patientName || 'this patient' });
+                  }}
                   patients={patients}
                 />
               ))}
@@ -2744,6 +2762,232 @@ export default function AppointmentBoard() {
         patientData={previewAppointment}
         reportContent={previewReport}
       />
+
+      {/* Premium Glassmorphic Error Dialog Modal */}
+      {errorModal.isOpen && (
+        <div style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          background: 'rgba(15, 23, 42, 0.4)',
+          backdropFilter: 'blur(12px)',
+          WebkitBackdropFilter: 'blur(12px)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          zIndex: 99999,
+          animation: 'fadeIn 0.25s ease-out'
+        }}>
+          <div style={{
+            background: 'rgba(255, 255, 255, 0.85)',
+            border: '1px solid rgba(239, 68, 68, 0.2)',
+            borderRadius: '24px',
+            padding: '30px',
+            width: '100%',
+            maxWidth: '440px',
+            boxShadow: '0 25px 50px -12px rgba(239, 68, 68, 0.15), 0 0 40px rgba(0, 0, 0, 0.05)',
+            textAlign: 'center',
+            backdropFilter: 'blur(20px)',
+            WebkitBackdropFilter: 'blur(20px)',
+            transform: 'scale(1)',
+            transition: 'transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1)',
+            color: '#1e293b'
+          }}>
+            <div style={{
+              width: '64px',
+              height: '64px',
+              background: '#fef2f2',
+              border: '1px solid #fee2e2',
+              borderRadius: '50%',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              margin: '0 auto 20px',
+              boxShadow: '0 8px 16px rgba(239, 68, 68, 0.1)'
+            }}>
+              <span style={{ fontSize: '32px' }}>🔒</span>
+            </div>
+            
+            <h3 style={{
+              fontSize: '20px',
+              fontWeight: 950,
+              color: '#991b1b',
+              margin: '0 0 10px 0',
+              letterSpacing: '-0.025em'
+            }}>
+              {errorModal.title}
+            </h3>
+            
+            <p style={{
+              fontSize: '14px',
+              color: '#475569',
+              lineHeight: '1.6',
+              margin: '0 0 24px 0',
+              fontWeight: 650
+            }}>
+              {errorModal.message}
+            </p>
+            
+            <button
+              onClick={() => setErrorModal({ isOpen: false, title: '', message: '' })}
+              style={{
+                width: '100%',
+                padding: '14px 20px',
+                borderRadius: '14px',
+                border: 'none',
+                background: 'linear-gradient(135deg, #ef4444, #dc2626)',
+                color: '#ffffff',
+                fontWeight: 800,
+                fontSize: '14px',
+                cursor: 'pointer',
+                boxShadow: '0 10px 15px -3px rgba(220, 38, 38, 0.3)',
+                transition: 'all 0.2s ease',
+              }}
+              onMouseEnter={(e) => {
+                e.target.style.transform = 'translateY(-1px)';
+                e.target.style.boxShadow = '0 12px 20px -3px rgba(220, 38, 38, 0.4)';
+              }}
+              onMouseLeave={(e) => {
+                e.target.style.transform = 'none';
+                e.target.style.boxShadow = '0 10px 15px -3px rgba(220, 38, 38, 0.3)';
+              }}
+            >
+              Acknowledge & Close
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Premium Glassmorphic Cancel Confirmation Modal */}
+      {cancelConfirmModal.isOpen && (
+        <div style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          background: 'rgba(15, 23, 42, 0.4)',
+          backdropFilter: 'blur(12px)',
+          WebkitBackdropFilter: 'blur(12px)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          zIndex: 99999,
+          animation: 'fadeIn 0.25s ease-out'
+        }}>
+          <div style={{
+            background: 'rgba(255, 255, 255, 0.85)',
+            border: '1px solid rgba(245, 158, 11, 0.2)',
+            borderRadius: '24px',
+            padding: '30px',
+            width: '100%',
+            maxWidth: '440px',
+            boxShadow: '0 25px 50px -12px rgba(245, 158, 11, 0.15), 0 0 40px rgba(0, 0, 0, 0.05)',
+            textAlign: 'center',
+            backdropFilter: 'blur(20px)',
+            WebkitBackdropFilter: 'blur(20px)',
+            transform: 'scale(1)',
+            transition: 'transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1)',
+            color: '#1e293b'
+          }}>
+            <div style={{
+              width: '64px',
+              height: '64px',
+              background: '#fffbeb',
+              border: '1px solid #fef3c7',
+              borderRadius: '50%',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              margin: '0 auto 20px',
+              boxShadow: '0 8px 16px rgba(245, 158, 11, 0.1)'
+            }}>
+              <span style={{ fontSize: '32px' }}>⚠️</span>
+            </div>
+            
+            <h3 style={{
+              fontSize: '20px',
+              fontWeight: 950,
+              color: '#b45309',
+              margin: '0 0 10px 0',
+              letterSpacing: '-0.025em'
+            }}>
+              Cancel Appointment
+            </h3>
+            
+            <p style={{
+              fontSize: '14px',
+              color: '#475569',
+              lineHeight: '1.6',
+              margin: '0 0 24px 0',
+              fontWeight: 600
+            }}>
+              Are you sure you want to cancel the appointment for <strong style={{ color: '#0f172a', fontWeight: 800 }}>{(cancelConfirmModal.patientName || '').toUpperCase()}</strong>? 
+              <span style={{ display: 'block', marginTop: '8px', fontSize: '12px', color: '#64748b' }}>
+                This action will automatically delete any associated unpaid invoices, collected payment entries, and referral commissions.
+              </span>
+            </p>
+            
+            <div style={{ display: 'flex', gap: '12px' }}>
+              <button
+                onClick={() => setCancelConfirmModal({ isOpen: false, appointmentId: null, patientName: '' })}
+                style={{
+                  flex: 1,
+                  padding: '14px 20px',
+                  borderRadius: '14px',
+                  border: '1px solid #cbd5e1',
+                  background: '#ffffff',
+                  color: '#475569',
+                  fontWeight: 800,
+                  fontSize: '13px',
+                  cursor: 'pointer',
+                  transition: 'all 0.2s ease',
+                }}
+                onMouseEnter={(e) => {
+                  e.target.style.background = '#f8fafc';
+                }}
+                onMouseLeave={(e) => {
+                  e.target.style.background = '#ffffff';
+                }}
+              >
+                No, Keep It
+              </button>
+              
+              <button
+                onClick={() => {
+                  handleAction(cancelConfirmModal.appointmentId, 'CANCEL');
+                  setCancelConfirmModal({ isOpen: false, appointmentId: null, patientName: '' });
+                }}
+                style={{
+                  flex: 1,
+                  padding: '14px 20px',
+                  borderRadius: '14px',
+                  border: 'none',
+                  background: 'linear-gradient(135deg, #ef4444, #dc2626)',
+                  color: '#ffffff',
+                  fontWeight: 800,
+                  fontSize: '13px',
+                  cursor: 'pointer',
+                  boxShadow: '0 10px 15px -3px rgba(220, 38, 38, 0.3)',
+                  transition: 'all 0.2s ease',
+                }}
+                onMouseEnter={(e) => {
+                  e.target.style.transform = 'translateY(-1px)';
+                  e.target.style.boxShadow = '0 12px 20px -3px rgba(220, 38, 38, 0.4)';
+                }}
+                onMouseLeave={(e) => {
+                  e.target.style.transform = 'none';
+                  e.target.style.boxShadow = '0 10px 15px -3px rgba(220, 38, 38, 0.3)';
+                }}
+              >
+                Yes, Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
