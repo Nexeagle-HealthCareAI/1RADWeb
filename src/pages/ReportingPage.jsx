@@ -3380,19 +3380,25 @@ const ReportingPage = () => {
                       </>
                     )}
                     {[...Array(layoutMode === '2x2' ? 4 : 1)].map((_, idx) => {
-                      const seriesIndex = (activeAssetIndex + idx) % uploadedFiles.length;
-                      const currentSeries = uploadedFiles[seriesIndex];
-                      const currentFiles = currentSeries?.rawFiles;
+                      // For 2x2, cycle through series. For 1x1, just use active series
+                      const seriesIndex = layoutMode === '2x2'
+                        ? (activeAssetIndex + idx) % uploadedFiles.length
+                        : activeAssetIndex;
 
-                      console.log(`[DICOM VIEWER] Viewport ${idx}: activeIndex=${activeAssetIndex}, seriesIdx=${seriesIndex}`, {
+                      const currentSeries = uploadedFiles[seriesIndex];
+                      const currentFiles = currentSeries?.rawFiles && Array.isArray(currentSeries.rawFiles)
+                        ? currentSeries.rawFiles
+                        : [];
+
+                      console.log(`[DICOM VIEWER] Viewport ${idx} (${layoutMode}): activeIndex=${activeAssetIndex}, seriesIdx=${seriesIndex}`, {
                         seriesName: currentSeries?.name,
                         hasRawFiles: !!currentFiles,
-                        rawFilesLength: currentFiles?.length,
+                        rawFilesLength: currentFiles?.length || 0,
                         rawFilesType: typeof currentFiles,
                         isArray: Array.isArray(currentFiles),
                         firstFileExists: currentFiles?.[0] ? true : false,
                         firstFileName: currentFiles?.[0]?.name,
-                        fullSeries: currentSeries
+                        uploadedFilesCount: uploadedFiles.length
                       });
 
                       return (

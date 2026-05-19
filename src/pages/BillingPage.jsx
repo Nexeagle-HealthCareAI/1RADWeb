@@ -28,6 +28,21 @@ export default function BillingPage() {
   const TODAY = new Date().toISOString().split('T')[0];
 
   // --- STATE ---
+  const [toast, setToast] = useState(null); // { message, type }
+
+  const showToast = (message, type = 'success') => {
+    setToast({ message, type });
+  };
+
+  useEffect(() => {
+    if (toast) {
+      const timer = setTimeout(() => {
+        setToast(null);
+      }, 4000);
+      return () => clearTimeout(timer);
+    }
+  }, [toast]);
+
   const [billingViewMode, setBillingViewMode] = useState('INVOICES'); // 'INVOICES', 'EXPENSES', 'FINANCE'
   const [expenses, setExpenses] = useState([]);
   const [referrers, setReferrers] = useState([]);
@@ -999,21 +1014,22 @@ export default function BillingPage() {
   };
 
   const handleCollectPayment = async (centreDiscount = 0, referrerDiscount = 0, deduction = 0, netAmount = 0) => {
+    const currentNet = netAmount || selectedInvoice.totalAmount;
+    const currentPaid = selectedInvoice.paidAmount || 0;
+    const paymentAmount = Math.max(0, currentNet - currentPaid);
+
+    const payload = {
+      invoiceId: selectedInvoice.invoiceId,
+      amount: paymentAmount,
+      centreDiscount,
+      referrerDiscount,
+      deduction,
+      paymentMethod: paymentMethod
+    };
+
     try {
-      const payload = {
-        invoiceId: selectedInvoice.invoiceId,
-        amount: netAmount || selectedInvoice.totalAmount,
-        centreDiscount,
-        referrerDiscount,
-        deduction,
-        paymentMethod: paymentMethod
-      };
-      
       console.log('[FINANCE] Committing settlement:', payload);
 
-
-
-      
       if (!isOnline) {
         await addToOutbox('PAYMENT', payload);
         alert('Offline: Payment will sync when reconnected.');
@@ -1024,7 +1040,7 @@ export default function BillingPage() {
       await apiClient.post('/finance/payments', payload);
       setIsInvoiceDrawerOpen(false);
       refreshAllFinancialData();
-      alert(`Payment of ₹${selectedInvoice.balanceAmount} via ${paymentMethod} recorded.`);
+      alert(`Payment of ₹${paymentAmount} via ${paymentMethod} recorded.`);
     } catch (err) {
       console.error('[FINANCE] Payment failed', err);
       // Optional: Add to outbox if it was a network error
