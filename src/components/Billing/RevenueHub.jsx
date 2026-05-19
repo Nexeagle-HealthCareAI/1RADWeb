@@ -1,4 +1,4 @@
-import React, { useMemo, useState, useEffect } from 'react';
+﻿import React, { useMemo, useState, useEffect } from 'react';
 
 const RevenueHub = ({
   filteredInvoices,
@@ -695,10 +695,14 @@ const RevenueHub = ({
 
 
 
-                        <button 
-                          onClick={() => handleDeleteInvoice(inv.invoiceId)}
-                          style={{ padding: '6px 10px', borderRadius: '10px', border: 'none', background: '#fee2e2', color: '#ef4444', fontSize: '9px', fontWeight: 950, cursor: 'pointer' }}
-                        >DEL</button>
+                        {inv?.status === 'PAID' ? (
+                           <span title="Cannot delete a paid invoice" style={{ padding: '6px 10px', borderRadius: '10px', background: '#f1f5f9', color: '#cbd5e1', fontSize: '9px', fontWeight: 950, cursor: 'not-allowed', userSelect: 'none' }}>🔒 LOCKED</span>
+                         ) : (
+                           <button
+                             onClick={() => handleDeleteInvoice(inv.invoiceId)}
+                             style={{ padding: '6px 10px', borderRadius: '10px', border: 'none', background: '#fee2e2', color: '#ef4444', fontSize: '9px', fontWeight: 950, cursor: 'pointer' }}
+                           >DEL</button>
+                         )}
                      </td>
                    </tr>
                  ))
