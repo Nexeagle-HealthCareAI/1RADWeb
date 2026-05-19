@@ -929,9 +929,10 @@ export const PayoutDrawer = ({
                     <div className="form-group">
                        <label style={{ display: 'block', fontSize: '9px', fontWeight: 950, color: '#94a3b8', letterSpacing: '2px', marginBottom: '10px' }}>DISBURSEMENT_AMOUNT (₹)</label>
                        <input 
-                          type="number" required 
-                          value={editPayout.amount} 
-                          onChange={e => setEditPayout({...editPayout, amount: e.target.value})}
+                          type="number" required min="0" step="1"
+                          placeholder="0"
+                          value={editPayout.amount === 0 || editPayout.amount === '' ? '' : editPayout.amount}
+                          onChange={e => setEditPayout({...editPayout, amount: e.target.value === '' ? '' : Number(e.target.value)})}
                           style={{ width: '100%', border: 'none', borderBottom: '2px solid #f0f0f0', fontSize: '20px', fontWeight: 950, padding: '10px 0', outline: 'none', color: '#0f52ba' }}
                        />
                     </div>

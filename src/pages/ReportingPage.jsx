@@ -535,6 +535,22 @@ const ReportingPage = () => {
           const assetRes = await apiClient.get(`/Study/${appointmentId}/assets`).catch(() => null);
           if (assetRes?.data) {
             setUploadedFiles(prev => {
+              // Don't overwrite if we already have extracted series (local upload OR hydrated remote ZIP).
+              // Both populate rawFiles + set needsHydration=false. We also catch the case where one
+              // remote ZIP got expanded into multiple series entries sharing the same id.
+              const hasExtractedSeries = prev.some(a =>
+                (a.rawFiles?.length > 0) ||
+                (a.needsHydration === false && a.seriesUID) ||
+                (a.type === 'DICOM SERIES')
+              );
+              if (hasExtractedSeries) {
+                console.log('[LIVE_UPDATE] Preserving extracted series, skipping API sync', {
+                  prevCount: prev.length,
+                  apiCount: assetRes.data.length
+                });
+                return prev;
+              }
+
               const currentIds = prev.map(a => String(a.id));
               const hasNewAssets = assetRes.data.some(asset => !currentIds.includes(String(asset.id)));
               const hasRemovedAssets = currentIds.some(id => !assetRes.data.some(asset => String(asset.id) === id));
@@ -713,20 +729,58 @@ const ReportingPage = () => {
         // Extract series array from result
         const classifiedAssets = processingResult?.series || [];
 
+        console.log('[REPORTING] ZIP Processing result:', {
+          totalSeries: classifiedAssets.length,
+          seriesList: classifiedAssets.map((s, i) => ({
+            index: i,
+            name: s.patientName,
+            desc: s.seriesDesc,
+            fileCount: s.files?.length || 0,
+            seriesUID: s.seriesUID,
+            modality: s.modality
+          }))
+        });
+
         if (!Array.isArray(classifiedAssets) || classifiedAssets.length === 0) {
           throw new Error('NO_DICOM_SERIES: No valid DICOM image series found in the uploaded file');
         }
 
-        const assets = classifiedAssets.map(series => ({
+        const newAssets = classifiedAssets.map(series => ({
           name: `${series.patientName} - ${series.seriesDesc}`,
+          type: 'DICOM SERIES',
+          size: `${series.files.length} IMAGES`,
+          time: new Date().toLocaleTimeString(),
+          previewUrl: null,
+          isZip: false,
           rawFiles: series.files,
-          size: `${series.files.length} slices`,
           seriesUID: series.seriesUID,
-          modality: series.modality
+          modality: series.modality,
+          metadata: series.metadata || {
+            patientName: series.patientName,
+            modality: series.modality,
+            seriesDescription: series.seriesDesc,
+            studyDate: series.studyDate
+          }
         }));
 
-        setUploadedFiles(assets);
-        setIsDicomImage(true);
+        console.log('[REPORTING] Final assets to be stored:', {
+          count: newAssets.length,
+          assets: newAssets.map((a, i) => ({
+            index: i,
+            name: a.name,
+            rawFilesCount: a.rawFiles?.length || 0
+          }))
+        });
+
+        if (newAssets.length > 0) {
+          setUploadedFiles(prev => {
+            const updated = [...prev, ...newAssets];
+            console.log(`[REPORTING] ✅ Files uploaded successfully! Total series: ${updated.length}`, updated);
+            return updated;
+          });
+          setIsDicomImage(true);
+          setActiveAssetIndex(0);
+        }
 
         // Log processing statistics
         if (processingResult?.stats) {
@@ -3301,24 +3355,25 @@ const ReportingPage = () => {
 
                 {/* SERIES LIBRARY MINI-SIDEBAR */}
                 {uploadedFiles.length > 0 && (
-                  <div style={{ width: '60px', minWidth: '60px', maxWidth: '60px', flexShrink: 0, background: '#0f172a', borderRight: '2px solid #334155', display: 'flex', flexDirection: 'column', gap: '10px', padding: '10px 5px', zIndex: 100, position: 'relative', height: '100%', overflow: 'hidden' }}>
+                  <div style={{ width: '60px', minWidth: '60px', maxWidth: '60px', flexShrink: 0, background: '#0f172a', borderRight: '2px solid #334155', display: 'flex', flexDirection: 'column', gap: '10px', padding: '10px 5px', zIndex: 99999, position: 'relative', height: '100%', overflow: 'hidden', pointerEvents: 'auto' }}>
                     {uploadedFiles.map((f, i) => (
                       <button
                         key={i}
+                        type="button"
                         onClick={(e) => {
                           e.stopPropagation();
                           console.log('[SERIES SELECTOR] Clicked series index:', i, 'Series name:', f.name);
                           setActiveAssetIndex(i);
-                        }}
-                        onMouseDown={(e) => {
-                          e.preventDefault();
                         }}
                         title={f.name}
                         style={{
                           width: '100%', height: '50px', background: activeAssetIndex === i ? 'linear-gradient(135deg, #3b82f6, #2563eb)' : 'rgba(255,255,255,0.05)',
                           border: activeAssetIndex === i ? '2px solid #1d4ed8' : 'none', borderRadius: '8px', cursor: 'pointer', display: 'flex', flexDirection: 'column',
                           alignItems: 'center', justifyContent: 'center', transition: 'all 0.2s ease', gap: '4px', boxShadow: activeAssetIndex === i ? '0 4px 12px rgba(59, 130, 246, 0.4)' : 'none',
-                          transform: activeAssetIndex === i ? 'scale(1.05)' : 'scale(1)'
+                          transform: activeAssetIndex === i ? 'scale(1.05)' : 'scale(1)',
+                          pointerEvents: 'auto',
+                          position: 'relative',
+                          zIndex: 99999
                         }}
                         onMouseEnter={(e) => {
                           if (activeAssetIndex !== i) {

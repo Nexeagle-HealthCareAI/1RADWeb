@@ -24,6 +24,7 @@ const RevenueHub = ({
   handlePrintReceipt,
   isMobile,
   recordedPayouts,
+  referralCommissions,
   setEditPayout,
   setIsPayoutDrawerOpen,
   referrers,
@@ -456,7 +457,7 @@ const RevenueHub = ({
         ) : (
           <>
             <div className="kpi-card" style={{ background: 'white', padding: '20px', borderRadius: '24px', border: '1px solid #e2e8f0', boxShadow: '0 4px 20px rgba(0,0,0,0.02)' }}>
-              <p style={{ fontSize: '10px', fontWeight: 950, color: '#94a3b8', letterSpacing: '1px', marginBottom: '12px' }}>REVENUE</p>
+              <p style={{ fontSize: '10px', fontWeight: 950, color: '#94a3b8', letterSpacing: '1px', marginBottom: '12px' }}>GROSS REVENUE</p>
               <div style={{ fontSize: isMobile ? '20px' : '24px', fontWeight: 950, color: '#1a1a2e' }}>₹{liveStats.totalRevenue.toLocaleString()}</div>
             </div>
             <div className="kpi-card" style={{ background: 'white', padding: '20px', borderRadius: '24px', border: '1px solid #e2e8f0', boxShadow: '0 4px 20px rgba(0,0,0,0.02)' }}>
@@ -630,15 +631,20 @@ const RevenueHub = ({
                                 if (match) refId = match.referrerId || match.id;
                              }
 
+                             const existingCommission = (referralCommissions || []).find(c =>
+                               (inv.appointmentId && c.appointmentId === inv.appointmentId) ||
+                               c.referenceNumber === inv.displayId ||
+                               c.referenceNumber === inv.invoiceId
+                             );
                              setEditPayout({
-                                commissionId: '',
-                                referrerId: refId || '',
-                                referrerName: inv.referrerName || 'DIRECT',
-                                amount: cutAmount || 0,
-                                modality: inv.modality || 'MRI', 
-                                remarks: `Commission for Mission ${inv.displayId} (${inv.patientName})`,
+                                commissionId: existingCommission?.id || '',
+                                referrerId: existingCommission?.referrerId || refId || '',
+                                referrerName: existingCommission?.referrerName || inv.referrerName || 'DIRECT',
+                                amount: existingCommission != null ? existingCommission.commissionAmount : cutAmount,
+                                modality: existingCommission?.modality || inv.modality || 'MRI',
+                                remarks: existingCommission?.remarks || `Commission for ${inv.displayId} (${inv.patientName})`,
                                 invoiceId: inv.displayId,
-                                status: 'UNPAID'
+                                status: existingCommission?.status || 'UNPAID'
                              });
                              setIsPayoutDrawerOpen(true);
                           }}

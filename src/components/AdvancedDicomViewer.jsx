@@ -393,6 +393,7 @@ const AdvancedDicomViewer = ({
   const toolGroupRef = useRef(null);
   const fullscreenContainerRef = useRef(null);
   const filesRef = useRef(null); // Keep files in ref to prevent garbage collection
+  const blobUrlsRef = useRef([]); // Track blob URLs for proper cleanup
   
   const uniqueId = useId().replace(/[^a-zA-Z0-9]/g, '');
   const engineId = `ENGINE_${uniqueId}`;
@@ -906,8 +907,16 @@ const AdvancedDicomViewer = ({
   }, [isFullscreen]);
 
   useEffect(() => {
+    // Silently bail out when no files are loaded yet (initial mount before upload)
+    if (!files || files.length === 0) {
+      // Clear any previous state but don't set error (it's just empty initial state)
+      setIsReady(false);
+      if (onImageStatus) onImageStatus(false);
+      return;
+    }
+
     console.log('[DICOM METADATA] Starting metadata check for', files.length, 'files');
-    
+
     // OPTIMIZATION: Use pre-parsed metadata if available
     if (preParsedMetadata) {
       console.log('[DICOM METADATA] Using pre-parsed metadata');
@@ -918,14 +927,7 @@ const AdvancedDicomViewer = ({
       return;
     }
 
-    console.log('[DICOM METADATA] Files array:', { length: files?.length, files: files });
-
-    if (!files || files.length === 0) {
-      console.error('[DICOM METADATA] ❌ No files provided!');
-      setError('NO_FILES: No DICOM files to display');
-      if (onImageStatus) onImageStatus(false);
-      return;
-    }
+    console.log('[DICOM METADATA] Files array:', { length: files?.length });
 
     const checkMetadata = async () => {
       try {
@@ -1030,9 +1032,14 @@ const AdvancedDicomViewer = ({
       }
 
       try {
+        // Keep strong references to prevent garbage collection of File objects
+        filesRef.current = files;
+
         // Generate internal wado-uri for local files using Blob URLs
+        // Note: old blob URLs from previous effect run are revoked by that effect's cleanup function
         imageIds = files.map(f => {
           const blobUrl = URL.createObjectURL(f);
+          blobUrlsRef.current.push(blobUrl); // Track for cleanup
           return `wadouri:${blobUrl}`;
         });
 
@@ -1438,22 +1445,26 @@ const AdvancedDicomViewer = ({
         if (sync) sync.remove({ renderingEngineId: engineId, viewportId });
       }
 
-      if (imageIds.length > 0) {
-        // TACTICAL: Use a delayed revocation to prevent race conditions with 
+      // Revoke tracked blob URLs on cleanup
+      if (blobUrlsRef.current.length > 0) {
+        // TACTICAL: Use a delayed revocation to prevent race conditions with
         // Cornerstone's background loaders and prefetchers.
-        const idsToRevoke = [...imageIds];
+        const urlsToRevoke = [...blobUrlsRef.current];
         setTimeout(() => {
-          idsToRevoke.forEach(id => {
+          urlsToRevoke.forEach(url => {
             try {
-              const blobUrl = id.replace('wadouri:', '');
-              if (blobUrl.startsWith('blob:')) {
-                URL.revokeObjectURL(blobUrl);
-              }
-            } catch (e) {}
+              URL.revokeObjectURL(url);
+            } catch (e) {
+              console.warn(`[DICOM] Cleanup: Failed to revoke blob URL: ${url}`, e);
+            }
           });
-          console.log(`[DICOM] Cleanup: Revoked ${idsToRevoke.length} blob URLs after delay`);
+          console.log(`[DICOM] Cleanup: Revoked ${urlsToRevoke.length} blob URLs after delay`);
         }, 5000); // 5 second buffer for pending fetches
+        blobUrlsRef.current = [];
       }
+
+      // Clear file reference
+      filesRef.current = null;
     };
   }, [isReady, files, engineId, viewportId, toolGroupId]);
 

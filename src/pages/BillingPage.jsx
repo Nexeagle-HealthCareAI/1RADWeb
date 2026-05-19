@@ -28,20 +28,7 @@ export default function BillingPage() {
   const TODAY = new Date().toISOString().split('T')[0];
 
   // --- STATE ---
-  const [toast, setToast] = useState(null); // { message, type }
-
-  const showToast = (message, type = 'success') => {
-    setToast({ message, type });
-  };
-
-  useEffect(() => {
-    if (toast) {
-      const timer = setTimeout(() => {
-        setToast(null);
-      }, 4000);
-      return () => clearTimeout(timer);
-    }
-  }, [toast]);
+  const [paymentSuccess, setPaymentSuccess] = useState(null); // { amount, method, patientName, invoiceId }
 
   const [billingViewMode, setBillingViewMode] = useState('INVOICES'); // 'INVOICES', 'EXPENSES', 'FINANCE'
   const [expenses, setExpenses] = useState([]);
@@ -482,23 +469,19 @@ export default function BillingPage() {
     try {
       setIsSavingPayout(true);
       
-      let response;
       if (editPayout.commissionId) {
         // Update Mode
-        response = await apiClient.put(`/referrers/commissions/${editPayout.commissionId}`, {
+        await apiClient.put(`/referrers/commissions/${editPayout.commissionId}`, {
           ...payload,
           commissionId: editPayout.commissionId
         });
       } else {
         // Create Mode
-        response = await apiClient.post('/referrers/commissions', payload);
+        await apiClient.post('/referrers/commissions', payload);
       }
 
-      if (response.data) {
-        setIsPayoutDrawerOpen(false);
-        refreshAllFinancialData();
-        alert(editPayout.commissionId ? 'Payout updated successfully.' : 'Commission recorded successfully.');
-      }
+      setIsPayoutDrawerOpen(false);
+      refreshAllFinancialData();
     } catch (err) {
       console.error('[PAYOUT] Transaction failure:', err);
       if (!err.response) {
@@ -719,10 +702,10 @@ export default function BillingPage() {
   const liveStats = useMemo(() => {
     const safeInvoices = filteredInvoices || [];
     const paidInvoices = safeInvoices.filter(inv => inv?.status === 'PAID');
-    const pendingInvoices = safeInvoices.filter(inv => inv?.status === 'PENDING');
+    const pendingInvoices = safeInvoices.filter(inv => inv?.status === 'PENDING' || inv?.status === 'PARTIAL');
     
     const totalRevenue = safeInvoices.reduce((sum, inv) => sum + (Number(inv?.grossAmount) || 0), 0);
-    const pendingRevenue = pendingInvoices.reduce((sum, inv) => sum + (Number(inv?.totalAmount) || 0) - (Number(inv?.paidAmount) || 0), 0);
+    const pendingRevenue = safeInvoices.reduce((sum, inv) => sum + Math.max(0, (Number(inv?.totalAmount) || 0) - (Number(inv?.paidAmount) || 0)), 0);
     const pendingCount = pendingInvoices.length;
     
     const totalBilled = safeInvoices.reduce((sum, inv) => sum + (Number(inv?.totalAmount) || 0), 0);
@@ -735,7 +718,7 @@ export default function BillingPage() {
     const totalCommission = safeInvoices.reduce((sum, inv) => sum + (Number(inv?.commissionAmount) || 0), 0);
     const netProfit = totalBilled - totalCommission;
 
-    return { totalRevenue, pendingRevenue, pendingCount, realizationRate, averageTicket, totalGross, totalDiscount, totalCommission, netProfit };
+    return { totalRevenue, pendingRevenue, pendingCount, realizationRate, averageTicket, totalGross, totalDiscount, totalCommission, netProfit, totalBilled };
   }, [filteredInvoices]);
   const combinedReferralCuts = useMemo(() => {
     const legacyCuts = expenses.filter(e => e && (e.category === 'Referral' || (e.description || '').toLowerCase().includes('referral'))).map(e => ({
@@ -1032,22 +1015,39 @@ export default function BillingPage() {
 
       if (!isOnline) {
         await addToOutbox('PAYMENT', payload);
-        alert('Offline: Payment will sync when reconnected.');
         setIsInvoiceDrawerOpen(false);
+        setPaymentSuccess({
+          amount: paymentAmount,
+          method: paymentMethod,
+          patientName: selectedInvoice.patientName,
+          invoiceId: selectedInvoice.displayId,
+          offline: true
+        });
         return;
       }
 
       await apiClient.post('/finance/payments', payload);
       setIsInvoiceDrawerOpen(false);
       refreshAllFinancialData();
-      alert(`Payment of ₹${paymentAmount} via ${paymentMethod} recorded.`);
+      setPaymentSuccess({
+        amount: paymentAmount,
+        method: paymentMethod,
+        patientName: selectedInvoice.patientName,
+        invoiceId: selectedInvoice.displayId,
+        offline: false
+      });
     } catch (err) {
       console.error('[FINANCE] Payment failed', err);
-      // Optional: Add to outbox if it was a network error
       if (!err.response) {
          await addToOutbox('PAYMENT', payload);
-         alert('No connection: payment queued.');
          setIsInvoiceDrawerOpen(false);
+         setPaymentSuccess({
+           amount: paymentAmount,
+           method: paymentMethod,
+           patientName: selectedInvoice.patientName,
+           invoiceId: selectedInvoice.displayId,
+           offline: true
+         });
       }
     }
   };
@@ -1590,6 +1590,7 @@ export default function BillingPage() {
           handlePrintReceipt={handlePrintReceipt}
           isMobile={isMobile}
           recordedPayouts={recordedPayouts}
+          referralCommissions={referralCommissions}
           setEditPayout={setEditPayout}
           setIsPayoutDrawerOpen={setIsPayoutDrawerOpen}
           referrers={referrers}
@@ -1761,6 +1762,106 @@ export default function BillingPage() {
           setEditPayout={setEditPayout}
           isSavingPayout={isSavingPayout}
         />
+      )}
+
+      {/* ── Payment Success Modal ─────────────────────────────────────────── */}
+      {paymentSuccess && (
+        <div
+          onClick={() => setPaymentSuccess(null)}
+          style={{
+            position: 'fixed', inset: 0, zIndex: 99999,
+            background: 'rgba(10, 22, 40, 0.55)',
+            backdropFilter: 'blur(10px)',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            animation: 'fadeIn 0.25s ease'
+          }}
+        >
+          <div
+            onClick={e => e.stopPropagation()}
+            style={{
+              background: 'white',
+              borderRadius: '28px',
+              width: isMobile ? 'calc(100% - 32px)' : '420px',
+              overflow: 'hidden',
+              boxShadow: '0 32px 80px rgba(0,0,0,0.22)',
+              animation: 'slideUp 0.3s cubic-bezier(.16,1,.3,1)'
+            }}
+          >
+            {/* Green header band */}
+            <div style={{
+              background: paymentSuccess.offline
+                ? 'linear-gradient(135deg, #f59e0b 0%, #d97706 100%)'
+                : 'linear-gradient(135deg, #10b981 0%, #059669 100%)',
+              padding: '36px 32px 28px',
+              textAlign: 'center',
+              position: 'relative'
+            }}>
+              {/* Big checkmark / offline icon */}
+              <div style={{
+                width: '72px', height: '72px',
+                background: 'rgba(255,255,255,0.2)',
+                borderRadius: '50%',
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                margin: '0 auto 16px',
+                fontSize: '36px'
+              }}>
+                {paymentSuccess.offline ? '📶' : '✓'}
+              </div>
+              <div style={{ fontSize: '11px', fontWeight: 950, color: 'rgba(255,255,255,0.75)', letterSpacing: '2px', textTransform: 'uppercase', marginBottom: '6px' }}>
+                {paymentSuccess.offline ? 'QUEUED OFFLINE' : 'PAYMENT RECEIVED'}
+              </div>
+              <div style={{ fontSize: '38px', fontWeight: 950, color: 'white', letterSpacing: '-1px' }}>
+                ₹{Number(paymentSuccess.amount).toLocaleString('en-IN')}
+              </div>
+              <div style={{ fontSize: '12px', fontWeight: 700, color: 'rgba(255,255,255,0.8)', marginTop: '6px' }}>
+                via {paymentSuccess.method}
+              </div>
+            </div>
+
+            {/* Detail rows */}
+            <div style={{ padding: '28px 32px 8px' }}>
+              {[
+                { label: 'PATIENT', value: (paymentSuccess.patientName || 'N/A').toUpperCase() },
+                { label: 'INVOICE', value: paymentSuccess.invoiceId },
+                { label: 'STATUS', value: paymentSuccess.offline ? 'Will sync when online' : 'Settled & Recorded' },
+              ].map(({ label, value }) => (
+                <div key={label} style={{
+                  display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+                  padding: '12px 0', borderBottom: '1px solid #f1f5f9'
+                }}>
+                  <span style={{ fontSize: '9px', fontWeight: 950, color: '#94a3b8', letterSpacing: '1.5px' }}>{label}</span>
+                  <span style={{ fontSize: '12px', fontWeight: 800, color: '#1e293b' }}>{value}</span>
+                </div>
+              ))}
+            </div>
+
+            {/* Action button */}
+            <div style={{ padding: '20px 32px 28px' }}>
+              <button
+                onClick={() => setPaymentSuccess(null)}
+                style={{
+                  width: '100%', padding: '14px',
+                  borderRadius: '14px', border: 'none',
+                  background: paymentSuccess.offline
+                    ? 'linear-gradient(135deg, #f59e0b, #d97706)'
+                    : 'linear-gradient(135deg, #10b981, #059669)',
+                  color: 'white', fontSize: '11px', fontWeight: 950,
+                  cursor: 'pointer', letterSpacing: '1px',
+                  boxShadow: paymentSuccess.offline
+                    ? '0 8px 24px rgba(245,158,11,0.25)'
+                    : '0 8px 24px rgba(16,185,129,0.25)'
+                }}
+              >
+                DONE
+              </button>
+            </div>
+          </div>
+
+          <style>{`
+            @keyframes fadeIn { from { opacity: 0 } to { opacity: 1 } }
+            @keyframes slideUp { from { opacity: 0; transform: translateY(32px) scale(0.97) } to { opacity: 1; transform: translateY(0) scale(1) } }
+          `}</style>
+        </div>
       )}
     </div>
   );
