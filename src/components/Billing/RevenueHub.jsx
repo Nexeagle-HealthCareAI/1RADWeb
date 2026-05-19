@@ -37,6 +37,7 @@ const RevenueHub = ({
   serviceRegistry
 }) => {
   const [errorModal, setErrorModal] = useState({ isOpen: false, title: '', message: '' });
+  const [deleteConfirmModal, setDeleteConfirmModal] = useState({ isOpen: false, invoiceId: null, commissionId: null, displayId: '' });
 
   const getSortIcon = (key) => {
     if (sortConfig.key !== key) return '↕';
@@ -743,7 +744,7 @@ const RevenueHub = ({
                            <span title="Cannot delete a paid invoice" style={{ padding: '6px 10px', borderRadius: '10px', background: '#f1f5f9', color: '#cbd5e1', fontSize: '9px', fontWeight: 950, cursor: 'not-allowed', userSelect: 'none' }}>🔒 LOCKED</span>
                          ) : (
                            <button
-                             onClick={() => handleDeleteInvoice(inv.invoiceId, inv.commissionId)}
+                             onClick={() => setDeleteConfirmModal({ isOpen: true, invoiceId: inv.invoiceId, commissionId: inv.commissionId, displayId: inv.displayId || 'N/A' })}
                              style={{ padding: '6px 10px', borderRadius: '10px', border: 'none', background: '#fee2e2', color: '#ef4444', fontSize: '9px', fontWeight: 950, cursor: 'pointer' }}
                            >DEL</button>
                          )}
@@ -882,6 +883,135 @@ const RevenueHub = ({
          `}</style>
        </div>
      )}
+
+      {/* Premium Glassmorphic Delete Confirmation Modal */}
+      {deleteConfirmModal.isOpen && (
+        <div style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          background: 'rgba(15, 23, 42, 0.4)',
+          backdropFilter: 'blur(12px)',
+          WebkitBackdropFilter: 'blur(12px)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          zIndex: 99999,
+          animation: 'fadeIn 0.25s ease-out'
+        }}>
+          <div style={{
+            background: 'rgba(255, 255, 255, 0.85)',
+            border: '1px solid rgba(239, 68, 68, 0.2)',
+            borderRadius: '24px',
+            padding: '30px',
+            width: '100%',
+            maxWidth: '440px',
+            boxShadow: '0 25px 50px -12px rgba(239, 68, 68, 0.15), 0 0 40px rgba(0, 0, 0, 0.05)',
+            textAlign: 'center',
+            backdropFilter: 'blur(20px)',
+            WebkitBackdropFilter: 'blur(20px)',
+            transform: 'scale(1)',
+            transition: 'transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1)',
+            color: '#1e293b'
+          }}>
+            <div style={{
+              width: '64px',
+              height: '64px',
+              background: '#fef2f2',
+              border: '1px solid #fee2e2',
+              borderRadius: '50%',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              margin: '0 auto 20px',
+              boxShadow: '0 8px 16px rgba(239, 68, 68, 0.1)'
+            }}>
+              <span style={{ fontSize: '32px' }}>🗑️</span>
+            </div>
+            
+            <h3 style={{
+              fontSize: '20px',
+              fontWeight: 950,
+              color: '#991b1b',
+              margin: '0 0 10px 0',
+              letterSpacing: '-0.025em'
+            }}>
+              Delete Invoice
+            </h3>
+            
+            <p style={{
+              fontSize: '14px',
+              color: '#475569',
+              lineHeight: '1.6',
+              margin: '0 0 24px 0',
+              fontWeight: 600
+            }}>
+              Are you sure you want to delete invoice <strong style={{ color: '#0f172a', fontWeight: 800 }}>{deleteConfirmModal.displayId}</strong>?
+              <span style={{ display: 'block', marginTop: '8px', fontSize: '12px', color: '#dc2626', fontWeight: 700 }}>
+                This action is irreversible and will permanently purge this record!
+              </span>
+            </p>
+            
+            <div style={{ display: 'flex', gap: '12px' }}>
+              <button
+                onClick={() => setDeleteConfirmModal({ isOpen: false, invoiceId: null, commissionId: null, displayId: '' })}
+                style={{
+                  flex: 1,
+                  padding: '14px 20px',
+                  borderRadius: '14px',
+                  border: '1px solid #cbd5e1',
+                  background: '#ffffff',
+                  color: '#475569',
+                  fontWeight: 800,
+                  fontSize: '13px',
+                  cursor: 'pointer',
+                  transition: 'all 0.2s ease',
+                }}
+                onMouseEnter={(e) => {
+                  e.target.style.background = '#f8fafc';
+                }}
+                onMouseLeave={(e) => {
+                  e.target.style.background = '#ffffff';
+                }}
+              >
+                No, Keep It
+              </button>
+              
+              <button
+                onClick={() => {
+                  handleDeleteInvoice(deleteConfirmModal.invoiceId, deleteConfirmModal.commissionId);
+                  setDeleteConfirmModal({ isOpen: false, invoiceId: null, commissionId: null, displayId: '' });
+                }}
+                style={{
+                  flex: 1,
+                  padding: '14px 20px',
+                  borderRadius: '14px',
+                  border: 'none',
+                  background: 'linear-gradient(135deg, #ef4444, #dc2626)',
+                  color: '#ffffff',
+                  fontWeight: 800,
+                  fontSize: '13px',
+                  cursor: 'pointer',
+                  boxShadow: '0 10px 15px -3px rgba(220, 38, 38, 0.3)',
+                  transition: 'all 0.2s ease',
+                }}
+                onMouseEnter={(e) => {
+                  e.target.style.transform = 'translateY(-1px)';
+                  e.target.style.boxShadow = '0 12px 20px -3px rgba(220, 38, 38, 0.4)';
+                }}
+                onMouseLeave={(e) => {
+                  e.target.style.transform = 'none';
+                  e.target.style.boxShadow = '0 10px 15px -3px rgba(220, 38, 38, 0.3)';
+                }}
+              >
+                Yes, Delete
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
    </div>
    );
 };

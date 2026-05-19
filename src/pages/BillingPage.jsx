@@ -536,8 +536,6 @@ export default function BillingPage() {
   };
 
   const handleDeleteInvoice = async (id, commissionId) => {
-    if (!window.confirm('Are you sure you want to delete this invoice? This action is irreversible.')) return;
-    
     if (!isOnline) {
       await addToOutbox('INVOICE_DELETE', { id, commissionId });
       alert('OFFLINE_MODE: Invoice deletion queued.');

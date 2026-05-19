@@ -394,15 +394,18 @@ export default function AppointmentBoard() {
 
   const stats = {
     total: appointmentsForTab.length,
-    expected: appointmentsForTab.filter(a => a.status?.toLowerCase() !== 'cancelled').length,
-    confirmed: appointmentsForTab.filter(a => ['confirmed', 'in_progress', 'completed', 'scanned', 'reporting', 'reported', 'delivered'].includes(a.status?.toLowerCase())).length,
-    inProgress: appointmentsForTab.filter(a => ['in_progress', 'completed', 'scanned', 'reporting'].includes(a.status?.toLowerCase())).length,
+    expected: appointmentsForTab.filter(a => ['scheduled', 'booked'].includes(a.status?.toLowerCase())).length,
+    arrived: appointmentsForTab.filter(a => a.status?.toLowerCase() === 'confirmed').length,
+    scanning: appointmentsForTab.filter(a => a.status?.toLowerCase() === 'in_progress').length,
+    scanned: appointmentsForTab.filter(a => ['scanned', 'completed'].includes(a.status?.toLowerCase())).length,
+    reporting: appointmentsForTab.filter(a => a.status?.toLowerCase() === 'reporting').length,
     finalized: appointmentsForTab.filter(a => a.status?.toLowerCase() === 'reported').length,
     delivered: appointmentsForTab.filter(a => a.status?.toLowerCase() === 'delivered').length,
     cancelled: appointmentsForTab.filter(a => a.status?.toLowerCase() === 'cancelled').length,
   };
-  const completionRate = stats.total > 0 ? Math.round(((stats.finalized + stats.delivered) / stats.total) * 100) : 0;
-  const activeRate = stats.total > 0 ? Math.round(((stats.total - stats.cancelled) / stats.total) * 100) : 0;
+  const activeCount = stats.total - stats.cancelled;
+  const activeRate = stats.total > 0 ? Math.round((activeCount / stats.total) * 100) : 0;
+  const completionRate = activeCount > 0 ? Math.round(((stats.finalized + stats.delivered) / activeCount) * 100) : 0;
 
   // --- HANDLERS ---
   const handleAction = async (id, actionOrStatus) => {
@@ -471,14 +474,13 @@ export default function AppointmentBoard() {
 
   const getNextAction = (status) => {
     switch (status) {
-      case 'future':      return null;
-      case 'scheduled':   return { action: 'CONFIRM', label: 'ARRIVED', color: '#10b981', icon: '✅' };
-      case 'booked':      return { action: 'CONFIRM', label: 'ARRIVED', color: '#10b981', icon: '✅' };
-      case 'confirmed':   return { action: 'START', label: 'SCAN', color: '#f59e0b', icon: '▶️' };
-      case 'in_progress': return { action: 'COMPLETE', label: 'FINISH', color: '#0f52ba', icon: '✅' };
-      case 'reported':    return { action: 'DELIVER', label: 'DELIVER', color: '#0369a1', icon: '📬' };
-      // completed/scanned → doctor handles reporting from DoctorBoard; no action needed here
-      default: return null;
+      case 'scheduled':   
+      case 'booked':      
+        return { action: 'CONFIRM', label: 'ARRIVED', color: '#10b981', icon: '✅' };
+      case 'reported':    
+        return { action: 'DELIVER', label: 'DELIVER', color: '#0369a1', icon: '📬' };
+      default: 
+        return null;
     }
   };
 
@@ -1182,37 +1184,64 @@ export default function AppointmentBoard() {
   const renderPagination = () => {
     if (totalPages <= 1) return null;
 
+    const itemStart = (currentPage - 1) * itemsPerPage + 1;
+    const itemEnd = Math.min(currentPage * itemsPerPage, filteredAppointments.length);
+
+    const getPageNumbers = () => {
+      if (totalPages <= 7) return Array.from({ length: totalPages }, (_, i) => i + 1);
+      const pages = [1];
+      if (currentPage > 3) pages.push('...');
+      for (let i = Math.max(2, currentPage - 1); i <= Math.min(totalPages - 1, currentPage + 1); i++) {
+        pages.push(i);
+      }
+      if (currentPage < totalPages - 2) pages.push('...');
+      pages.push(totalPages);
+      return pages;
+    };
+
     return (
       <div className="pagination-container">
-        <button
-          className="pagination-btn"
-          onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
-          disabled={currentPage === 1}
-        >
-          ← Prev
-        </button>
-
-        {Array.from({ length: totalPages }, (_, i) => i + 1).map(page => (
-          <button
-            key={page}
-            className={`pagination-btn ${currentPage === page ? 'active' : ''}`}
-            onClick={() => setCurrentPage(page)}
-          >
-            {page}
-          </button>
-        ))}
-
-        <button
-          className="pagination-btn"
-          onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
-          disabled={currentPage === totalPages}
-        >
-          Next →
-        </button>
-
         <span className="pagination-info">
-          Page {currentPage} of {totalPages}
+          Showing <strong>{itemStart}–{itemEnd}</strong> of <strong>{filteredAppointments.length}</strong> record{filteredAppointments.length !== 1 ? 's' : ''}
         </span>
+
+        <div className="pagination-pages">
+          <button
+            className="pagination-btn pagination-nav"
+            onClick={() => setCurrentPage(1)}
+            disabled={currentPage === 1}
+            title="First page"
+          >«</button>
+
+          <button
+            className="pagination-btn pagination-nav"
+            onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
+            disabled={currentPage === 1}
+          ><span className="nav-label">Prev</span></button>
+
+          {getPageNumbers().map((page, i) =>
+            page === '...'
+              ? <span key={`el-${i}`} className="pagination-ellipsis">…</span>
+              : <button
+                  key={page}
+                  className={`pagination-btn${currentPage === page ? ' active' : ''}`}
+                  onClick={() => setCurrentPage(page)}
+                >{page}</button>
+          )}
+
+          <button
+            className="pagination-btn pagination-nav"
+            onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
+            disabled={currentPage === totalPages}
+          ><span className="nav-label">Next</span></button>
+
+          <button
+            className="pagination-btn pagination-nav"
+            onClick={() => setCurrentPage(totalPages)}
+            disabled={currentPage === totalPages}
+            title="Last page"
+          >»</button>
+        </div>
       </div>
     );
   };
@@ -2528,42 +2557,128 @@ export default function AppointmentBoard() {
       </div>
 
       {/* --- INTEL CARDS --- */}
-      <div className="intel-cards-grid">
-        <div className="intel-card dark">
-          <span className="intel-label">Total Volume</span>
-          <div className="intel-value">{stats.total}</div>
-          <div className="intel-trend" style={{ color: '#10b981' }}>
+      <div className="intel-cards-grid" style={{
+        display: 'grid',
+        gridTemplateColumns: isMobile ? '1fr 1fr' : 'repeat(6, 1fr)',
+        gap: '16px',
+        marginBottom: '24px'
+      }}>
+        {/* Card 1: Total Volume */}
+        <div className="intel-card dark" style={{
+          background: 'linear-gradient(135deg, #1e293b 0%, #0f172a 100%)',
+          color: 'white',
+          padding: '20px',
+          borderRadius: '20px',
+          boxShadow: '0 10px 15px -3px rgba(0, 0, 0, 0.1)',
+          border: '1px solid rgba(255, 255, 255, 0.05)',
+          display: 'flex',
+          flexDirection: 'column',
+          justifyContent: 'space-between',
+          minHeight: '100px'
+        }}>
+          <span className="intel-label" style={{ fontSize: '9px', fontWeight: 900, color: '#94a3b8', letterSpacing: '1px', textTransform: 'uppercase' }}>Total Volume</span>
+          <div className="intel-value" style={{ fontSize: '28px', fontWeight: 950, margin: '6px 0', fontFamily: 'monospace' }}>{stats.total}</div>
+          <div className="intel-trend" style={{ fontSize: '10px', color: '#10b981', fontWeight: 800 }}>
             ↑ {activeRate}% Active
           </div>
         </div>
-        
-        <div className="intel-card">
-          <span className="intel-label">Expected/Arrived</span>
-          <div className="intel-value" style={{ color: 'var(--primary-accent)' }}>
-            {stats.expected} / {stats.confirmed}
-          </div>
-          <div className="intel-trend" style={{ color: 'var(--text-secondary)' }}>
-            In Progress: {stats.inProgress}
+
+        {/* Card 2: Expected */}
+        <div className="intel-card" style={{
+          background: '#ffffff',
+          padding: '20px',
+          borderRadius: '20px',
+          boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.05), 0 2px 4px -1px rgba(0, 0, 0, 0.03)',
+          border: '1px solid #e2e8f0',
+          display: 'flex',
+          flexDirection: 'column',
+          justifyContent: 'space-between',
+          minHeight: '100px'
+        }}>
+          <span className="intel-label" style={{ fontSize: '9px', fontWeight: 900, color: '#64748b', letterSpacing: '1px', textTransform: 'uppercase' }}>Expected Today</span>
+          <div className="intel-value" style={{ fontSize: '28px', fontWeight: 950, margin: '6px 0', color: '#475569', fontFamily: 'monospace' }}>{stats.expected}</div>
+          <div className="intel-trend" style={{ fontSize: '10px', color: '#64748b', fontWeight: 800 }}>
+            Intake Pending
           </div>
         </div>
 
-        <div className="intel-card">
-          <span className="intel-label">Finalized Reports</span>
-          <div className="intel-value" style={{ color: '#059669' }}>
-            {stats.finalized}
-          </div>
-          <div className="intel-trend" style={{ color: '#059669' }}>
-            Efficiency: {completionRate}%
+        {/* Card 3: Arrived */}
+        <div className="intel-card" style={{
+          background: '#ecfdf5',
+          padding: '20px',
+          borderRadius: '20px',
+          boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.05)',
+          border: '1px solid #d1fae5',
+          display: 'flex',
+          flexDirection: 'column',
+          justifyContent: 'space-between',
+          minHeight: '100px'
+        }}>
+          <span className="intel-label" style={{ fontSize: '9px', fontWeight: 900, color: '#047857', letterSpacing: '1px', textTransform: 'uppercase' }}>Arrived In Hall</span>
+          <div className="intel-value" style={{ fontSize: '28px', fontWeight: 950, margin: '6px 0', color: '#059669', fontFamily: 'monospace' }}>{stats.arrived}</div>
+          <div className="intel-trend" style={{ fontSize: '10px', color: '#059669', fontWeight: 800 }}>
+            Queue Waiting
           </div>
         </div>
 
-        <div className="intel-card">
-          <span className="intel-label">Delivered Reports</span>
-          <div className="intel-value" style={{ color: '#0369a1' }}>
-            {stats.delivered}
+        {/* Card 4: Clinical */}
+        <div className="intel-card" style={{
+          background: '#fffbeb',
+          padding: '20px',
+          borderRadius: '20px',
+          boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.05)',
+          border: '1px solid #fef3c7',
+          display: 'flex',
+          flexDirection: 'column',
+          justifyContent: 'space-between',
+          minHeight: '100px'
+        }}>
+          <span className="intel-label" style={{ fontSize: '9px', fontWeight: 900, color: '#b45309', letterSpacing: '1px', textTransform: 'uppercase' }}>Scanning / Scanned</span>
+          <div className="intel-value" style={{ fontSize: '22px', fontWeight: 950, margin: '10px 0', color: '#d97706', fontFamily: 'monospace' }}>
+            {stats.scanning} <span style={{ fontSize: '14px', color: '#cbd5e1', fontWeight: 800 }}>/</span> {stats.scanned}
           </div>
-          <div className="intel-trend" style={{ color: '#0369a1' }}>
-            Handed Over
+          <div className="intel-trend" style={{ fontSize: '9px', color: '#b45309', fontWeight: 800 }}>
+            In Progress / Complete
+          </div>
+        </div>
+
+        {/* Card 5: Backlog */}
+        <div className="intel-card" style={{
+          background: '#f5f3ff',
+          padding: '20px',
+          borderRadius: '20px',
+          boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.05)',
+          border: '1px solid #ddd6fe',
+          display: 'flex',
+          flexDirection: 'column',
+          justifyContent: 'space-between',
+          minHeight: '100px'
+        }}>
+          <span className="intel-label" style={{ fontSize: '9px', fontWeight: 900, color: '#6d28d9', letterSpacing: '1px', textTransform: 'uppercase' }}>Reporting / Reported</span>
+          <div className="intel-value" style={{ fontSize: '22px', fontWeight: 950, margin: '10px 0', color: '#7c3aed', fontFamily: 'monospace' }}>
+            {stats.reporting} <span style={{ fontSize: '14px', color: '#cbd5e1', fontWeight: 800 }}>/</span> {stats.finalized}
+          </div>
+          <div className="intel-trend" style={{ fontSize: '9px', color: '#6d28d9', fontWeight: 800 }}>
+            Drafting / Finalized
+          </div>
+        </div>
+
+        {/* Card 6: Delivered */}
+        <div className="intel-card" style={{
+          background: '#f0f9ff',
+          padding: '20px',
+          borderRadius: '20px',
+          boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.05)',
+          border: '1px solid #e0f2fe',
+          display: 'flex',
+          flexDirection: 'column',
+          justifyContent: 'space-between',
+          minHeight: '100px'
+        }}>
+          <span className="intel-label" style={{ fontSize: '9px', fontWeight: 900, color: '#0369a1', letterSpacing: '1px', textTransform: 'uppercase' }}>Delivered Reports</span>
+          <div className="intel-value" style={{ fontSize: '28px', fontWeight: 950, margin: '6px 0', color: '#0284c7', fontFamily: 'monospace' }}>{stats.delivered}</div>
+          <div className="intel-trend" style={{ fontSize: '10px', color: '#0369a1', fontWeight: 800 }}>
+            Handed Over ({completionRate}% Efficacy)
           </div>
         </div>
       </div>

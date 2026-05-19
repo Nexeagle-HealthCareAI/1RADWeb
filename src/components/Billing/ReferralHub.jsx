@@ -121,23 +121,32 @@ const ReferralHub = ({
     });
   };
 
-  const isAllDrawerSelected = activePartner && activePartner.cuts.length > 0 &&
-    activePartner.cuts.every(c => drawerSelectedIds.has(c.id));
+  // Only cuts that are genuinely eligible for bulk mark-as-paid drive "Select All".
+  // Criteria must mirror openBulkPaidConfirm exactly so count/total in the popup
+  // always match what the user selected.
+  const selectableDrawerCuts = activePartner
+    ? activePartner.cuts.filter(c =>
+        c.type === 'STRATEGIC' && c.status !== 'PAID' && c.patientPaymentStatus === 'PAID'
+      )
+    : [];
+
+  const isAllDrawerSelected = selectableDrawerCuts.length > 0 &&
+    selectableDrawerCuts.every(c => drawerSelectedIds.has(c.id));
 
   const toggleSelectAllInDrawer = () => {
     if (!activePartner) return;
     if (isAllDrawerSelected) {
       setDrawerSelectedIds(new Set());
     } else {
-      setDrawerSelectedIds(new Set(activePartner.cuts.map(c => c.id)));
+      setDrawerSelectedIds(new Set(selectableDrawerCuts.map(c => c.id)));
     }
   };
 
-  // "Mark selected as PAID" — only strategic + currently unpaid cuts are eligible.
+  // "Mark selected as PAID" — only strategic + currently unpaid + patient payment received cuts are eligible.
   const openBulkPaidConfirm = () => {
     if (!activePartner) return;
     const eligible = activePartner.cuts.filter(c =>
-      drawerSelectedIds.has(c.id) && c.type === 'STRATEGIC' && c.status !== 'PAID'
+      drawerSelectedIds.has(c.id) && c.type === 'STRATEGIC' && c.status !== 'PAID' && c.patientPaymentStatus === 'PAID'
     );
     const total = eligible.reduce((s, c) => s + (Number(c.amount) || 0), 0);
     setBulkConfirmModal({
@@ -491,7 +500,7 @@ const ReferralHub = ({
        </div>
 
        <div style={{ background: 'white', borderRadius: isMobile ? '16px' : '24px', border: '1px solid #e2e8f0', overflow: 'hidden' }}>
-          {/* Table-level search */}
+          {/* Partner-grid search header */}
           <div style={{ padding: isMobile ? '15px' : '18px 24px', borderBottom: '1px solid #f1f5f9', display: 'flex', flexDirection: isMobile ? 'column' : 'row', alignItems: isMobile ? 'stretch' : 'center', justifyContent: 'space-between', gap: '12px', background: '#fff5f6' }}>
             <div style={{ position: 'relative', width: isMobile ? '100%' : '380px' }}>
               <span style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', fontSize: '14px', color: '#94a3b8', pointerEvents: 'none' }}>🔍</span>
@@ -525,142 +534,350 @@ const ReferralHub = ({
               )}
             </div>
             <span style={{ fontSize: '10px', fontWeight: 950, color: '#e11d48', letterSpacing: '1px', whiteSpace: 'nowrap' }}>
-              {filteredReferralCuts.length} {filteredReferralCuts.length === 1 ? 'PAYOUT' : 'PAYOUTS'}
+              {partnerGroups.length} {partnerGroups.length === 1 ? 'PARTNER' : 'PARTNERS'} · {filteredReferralCuts.length} {filteredReferralCuts.length === 1 ? 'PAYOUT' : 'PAYOUTS'}
             </span>
           </div>
-          <div style={{ overflowX: 'auto' }}>
-            <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: isMobile ? '1000px' : 'auto' }}>
-               <thead style={{ background: '#fff1f2' }}>
-                  <tr>
-                     <th style={{ padding: '20px 30px', width: '40px', textAlign: 'center' }}>
-                        <input 
-                          type="checkbox" 
-                          checked={isAllVisibleSelected} 
-                          onChange={toggleSelectAllVisible}
-                          style={{ cursor: 'pointer', width: '15px', height: '15px', accentColor: '#e11d48', borderRadius: '4px' }}
-                        />
-                     </th>
-                     <th onClick={() => handleSort('date')} style={{ cursor: 'pointer', padding: '20px 30px', textAlign: 'left', fontSize: '10px', fontWeight: 950, color: '#e11d48', letterSpacing: '1px' }}>PAYOUT_DATE {getSortIcon('date')}</th>
-                     <th onClick={() => handleSort('name')} style={{ cursor: 'pointer', padding: '20px 30px', textAlign: 'left', fontSize: '10px', fontWeight: 950, color: '#e11d48', letterSpacing: '1px' }}>PARTNER {getSortIcon('name')}</th>
-                     <th style={{ padding: '20px 30px', textAlign: 'left', fontSize: '10px', fontWeight: 950, color: '#e11d48', letterSpacing: '1px' }}>PATIENT</th>
-                     <th style={{ padding: '20px 30px', textAlign: 'left', fontSize: '10px', fontWeight: 950, color: '#e11d48', letterSpacing: '1px' }}>STUDY</th>
-                     <th style={{ padding: '20px 30px', textAlign: 'left', fontSize: '10px', fontWeight: 950, color: '#e11d48', letterSpacing: '1px' }}>REF_ID</th>
-                     <th onClick={() => handleSort('amount')} style={{ cursor: 'pointer', padding: '20px 30px', textAlign: 'right', fontSize: '10px', fontWeight: 950, color: '#e11d48', letterSpacing: '1px' }}>PAYOUT_AMOUNT {getSortIcon('amount')}</th>
-                     <th style={{ padding: '20px 30px', textAlign: 'center', fontSize: '10px', fontWeight: 950, color: '#e11d48', letterSpacing: '1px' }}>STATUS</th>
-                     <th style={{ padding: '20px 30px', textAlign: 'center', fontSize: '10px', fontWeight: 950, color: '#e11d48', letterSpacing: '1px' }}>PMT_RECV</th>
-                     <th style={{ padding: '20px 30px', textAlign: 'right', fontSize: '10px', fontWeight: 950, color: '#e11d48', letterSpacing: '1px' }}>ACTION</th>
-                  </tr>
-               </thead>
-             <tbody>
-                {filteredReferralCuts.length === 0 ? (
-                   <tr><td colSpan="10" style={{ padding: '100px', textAlign: 'center', color: '#94a3b8', fontSize: '12px', fontWeight: 700 }}>NO REFERRAL PAYOUTS DETECTED</td></tr>
-                ) : (
-                   paginatedReferralCuts.map(cut => (
-                      <tr key={cut?.id} style={{ borderBottom: '1px solid #f1f5f9' }}>
-                         <td style={{ padding: '20px 30px', textAlign: 'center' }}>
-                             <input 
-                               type="checkbox" 
-                               checked={selectedIds.has(cut?.id)} 
-                               onChange={() => toggleSelectRow(cut?.id)}
-                               style={{ cursor: 'pointer', width: '14px', height: '14px', accentColor: '#e11d48' }}
-                             />
-                          </td>
-                         <td style={{ padding: '20px 30px', fontSize: '11px', fontWeight: 800, color: '#1e293b' }}>{formatDate(cut?.date, true)}</td>
-                         <td style={{ padding: '20px 30px' }}>
-                            <div style={{ fontSize: '11.5px', fontWeight: 950, color: '#e11d48' }}>{(cut?.name || 'DIRECT').toUpperCase()}</div>
-                         </td>
-                         <td style={{ padding: '20px 30px', fontSize: '11.5px', fontWeight: 850, color: '#1e293b' }}>{(cut?.patientName || 'N/A').toUpperCase()}</td>
-                         <td style={{ padding: '20px 30px' }}>
-                            <div style={{ fontSize: '9.5px', fontWeight: 950, color: '#0f52ba' }}>{(cut?.modality || 'MRI').toUpperCase()}</div>
-                            {cut?.description && <div style={{ fontSize: '8px', color: '#94a3b8', marginTop: '2px' }}>{cut.description}</div>}
-                         </td>
-                         <td style={{ padding: '20px 30px' }}>
-                            <div style={{ padding: '4px 8px', background: '#f1f5f9', borderRadius: '6px', fontSize: '9px', fontWeight: 950, color: '#1e293b', display: 'inline-block', fontFamily: 'monospace' }}>{cut?.reference || 'N/A'}</div>
-                         </td>
-                         <td style={{ padding: '20px 30px', textAlign: 'right' }}>
-                            <div style={{ fontSize: '12px', fontWeight: 950, color: '#e11d48' }}>₹{(Number(cut?.amount) || 0).toLocaleString()}</div>
-                         </td>
-                         <td style={{ padding: '20px 30px', textAlign: 'center' }}>
-                             <button 
-                               onClick={() => {
-                                 if (cut?.type === 'STRATEGIC') {
-                                   setConfirmModal({
-                                     isOpen: true,
-                                     cutId: cut?.id,
-                                     currentStatus: cut?.status || 'UNPAID',
-                                     patientName: cut?.patientName || 'N/A',
-                                     amount: cut?.amount || 0
-                                   });
-                                 }
-                               }}
-                               disabled={cut?.type === 'LEGACY'}
-                               style={{ 
-                                 padding: '6px 12px', borderRadius: '8px', border: 'none', fontSize: '8.5px', fontWeight: 950,
-                                 background: cut?.status === 'PAID' ? '#dcfce7' : '#fee2e2',
-                                 color: cut?.status === 'PAID' ? '#166534' : '#991b1b',
-                                 cursor: cut?.type === 'STRATEGIC' ? 'pointer' : 'default',
-                                 boxShadow: 'inset 0 2px 4px rgba(0,0,0,0.05)'
-                               }}
-                             >
-                               {cut?.status || 'UNPAID'}
-                             </button>
-                         </td>
-                         <td style={{ padding: '20px 30px', textAlign: 'center' }}>
-                             {cut?.patientPaymentStatus === 'PAID' ? (
-                               <span title="Patient has paid" style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: '28px', height: '28px', borderRadius: '50%', background: '#dcfce7', fontSize: '14px' }}>✓</span>
-                             ) : cut?.patientPaymentStatus === 'PARTIAL' ? (
-                               <span title="Partial payment received" style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: '28px', height: '28px', borderRadius: '50%', background: '#fef3c7', fontSize: '11px', fontWeight: 950, color: '#92400e' }}>½</span>
-                             ) : cut?.patientPaymentStatus === 'PENDING' ? (
-                               <span title="Payment pending" style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: '28px', height: '28px', borderRadius: '50%', background: '#fee2e2', fontSize: '14px' }}>✗</span>
-                             ) : (
-                               <span title="Status unknown" style={{ fontSize: '11px', color: '#cbd5e1', fontWeight: 700 }}>—</span>
-                             )}
-                             {cut?.paymentReceived !== undefined && cut?.paymentReceived !== null && (
-                               <div style={{ display: 'block', fontSize: '9.5px', fontWeight: 950, color: '#475569', marginTop: '4px', fontFamily: 'monospace' }}>
-                                 ₹{(Number(cut.paymentReceived) || 0).toLocaleString()}
-                               </div>
-                             )}
-                         </td>
-                         <td style={{ padding: '20px 30px', textAlign: 'right' }}>
-                             {cut.type === 'LEGACY' ? (
-                                <button 
-                                   onClick={() => handleDeleteExpense(cut.id)}
-                                   style={{ padding: '6px 10px', borderRadius: '8px', border: 'none', background: '#fee2e2', color: '#ef4444', fontSize: '8.5px', fontWeight: 950, cursor: 'pointer' }}
-                                >DELETE</button>
-                             ) : (
-                                <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end', alignItems: 'center' }}>
-                                   <button 
-                                      onClick={() => {
-                                         setEditPayout({
-                                           commissionId: cut.id,
-                                           referrerId: cut.referrerId,
-                                           referrerName: cut.name,
-                                           amount: cut.amount,
-                                           modality: cut.modality || 'MRI',
-                                           remarks: (cut.description || '').includes(' - ') ? cut.description.split(' - ')[1] : '',
-                                           invoiceId: cut.reference,
-                                           status: cut.status
-                                         });
-                                         setIsPayoutDrawerOpen(true);
-                                      }}
-                                      style={{ padding: '6px 12px', borderRadius: '8px', border: 'none', background: '#f0f4ff', color: '#0f52ba', fontSize: '8.5px', fontWeight: 950, cursor: 'pointer' }}
-                                   >UPDATE PAYOUT</button>
-                                   <span style={{ fontSize: '8px', fontWeight: 950, color: '#94a3b8', letterSpacing: '0.5px' }}>LOCKED</span>
-                                </div>
-                             )}
-                         </td>
-                      </tr>
-                   ))
-                )}
-             </tbody>
-          </table>
-        </div>
-        <div style={{ padding: '20px', borderTop: '1px solid #f1f5f9', display: 'flex', justifyContent: 'center' }}>
-            {Array.from({ length: Math.ceil(filteredReferralCuts.length / itemsPerPage) }).map((_, i) => (
-                <button key={i} onClick={() => setCurrentPage(i + 1)} style={{ padding: '5px 10px', margin: '0 2px', background: currentPage === i + 1 ? '#e11d48' : '#f1f5f9', color: currentPage === i + 1 ? 'white' : '#64748b', border: 'none', borderRadius: '4px', fontSize: '10px', fontWeight: 950, cursor: 'pointer' }}>{i + 1}</button>
-            ))}
-        </div>
+
+          {/* Partner card grid */}
+          <div style={{ padding: isMobile ? '15px' : '24px' }}>
+            {partnerGroups.length === 0 ? (
+              <div style={{ padding: '80px', textAlign: 'center', color: '#94a3b8', fontSize: '12px', fontWeight: 700 }}>NO REFERRAL PAYOUTS DETECTED</div>
+            ) : (
+              <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : 'repeat(auto-fill, minmax(280px, 1fr))', gap: '16px' }}>
+                {partnerGroups.map(group => (
+                  <button
+                    key={group.id}
+                    type="button"
+                    onClick={() => setActivePartnerId(group.id)}
+                    style={{
+                      textAlign: 'left',
+                      padding: '20px',
+                      borderRadius: '18px',
+                      border: group.unpaid > 0 ? '1px solid #fecdd3' : '1px solid #e2e8f0',
+                      background: group.unpaid > 0 ? 'linear-gradient(135deg, #fff5f6 0%, white 70%)' : 'white',
+                      cursor: 'pointer',
+                      transition: 'transform 0.15s, box-shadow 0.15s, border-color 0.15s',
+                      boxShadow: '0 2px 8px rgba(0,0,0,0.03)',
+                      display: 'flex',
+                      flexDirection: 'column',
+                      gap: '14px',
+                    }}
+                    onMouseEnter={e => {
+                      e.currentTarget.style.transform = 'translateY(-2px)';
+                      e.currentTarget.style.boxShadow = group.unpaid > 0
+                        ? '0 10px 24px rgba(225,29,72,0.12)'
+                        : '0 10px 24px rgba(15,82,186,0.08)';
+                      e.currentTarget.style.borderColor = group.unpaid > 0 ? '#e11d48' : '#0f52ba';
+                    }}
+                    onMouseLeave={e => {
+                      e.currentTarget.style.transform = 'none';
+                      e.currentTarget.style.boxShadow = '0 2px 8px rgba(0,0,0,0.03)';
+                      e.currentTarget.style.borderColor = group.unpaid > 0 ? '#fecdd3' : '#e2e8f0';
+                    }}
+                  >
+                    <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: '10px' }}>
+                      <div style={{ fontSize: '12.5px', fontWeight: 950, color: '#1e293b', letterSpacing: '0.5px', lineHeight: 1.3, wordBreak: 'break-word' }}>
+                        {group.name}
+                      </div>
+                      {group.unpaid > 0 && (
+                        <span style={{ padding: '3px 8px', borderRadius: '6px', background: '#fee2e2', color: '#991b1b', fontSize: '8.5px', fontWeight: 950, letterSpacing: '0.5px', flexShrink: 0, whiteSpace: 'nowrap' }}>
+                          OUTSTANDING
+                        </span>
+                      )}
+                    </div>
+                    <div>
+                      <div style={{ fontSize: '9px', fontWeight: 950, color: '#94a3b8', letterSpacing: '1px', marginBottom: '4px' }}>TOTAL PAYOUTS</div>
+                      <div style={{ fontSize: '22px', fontWeight: 950, color: '#1e293b' }}>₹{group.total.toLocaleString()}</div>
+                    </div>
+                    <div style={{ display: 'flex', gap: '12px' }}>
+                      <div style={{ flex: 1 }}>
+                        <div style={{ fontSize: '8.5px', fontWeight: 950, color: '#166534', letterSpacing: '0.5px' }}>SETTLED</div>
+                        <div style={{ fontSize: '12px', fontWeight: 950, color: '#14532d', marginTop: '2px' }}>₹{group.paid.toLocaleString()}</div>
+                      </div>
+                      <div style={{ flex: 1 }}>
+                        <div style={{ fontSize: '8.5px', fontWeight: 950, color: '#991b1b', letterSpacing: '0.5px' }}>UNPAID</div>
+                        <div style={{ fontSize: '12px', fontWeight: 950, color: group.unpaid > 0 ? '#e11d48' : '#cbd5e1', marginTop: '2px' }}>₹{group.unpaid.toLocaleString()}</div>
+                      </div>
+                    </div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderTop: '1px solid #f1f5f9', paddingTop: '10px', fontSize: '10px', color: '#94a3b8', fontWeight: 700 }}>
+                      <span>{group.count} payout{group.count !== 1 ? 's' : ''}</span>
+                      <span style={{ color: '#e11d48', fontWeight: 950, letterSpacing: '0.5px' }}>VIEW →</span>
+                    </div>
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
       </div>
+
+      {/* ── Drill-down Drawer: per-partner payout list with bulk select ── */}
+      {activePartner && (
+        <div
+          style={{
+            position: 'fixed', inset: 0, zIndex: 9999,
+            background: 'rgba(15, 23, 42, 0.5)', backdropFilter: 'blur(8px)',
+            WebkitBackdropFilter: 'blur(8px)',
+            display: 'flex', justifyContent: 'flex-end',
+            animation: 'fadeIn 0.2s ease-out forwards'
+          }}
+          onClick={closeDrawer}
+        >
+          <div
+            style={{
+              width: isMobile ? '100%' : '640px',
+              height: '100%', background: 'white',
+              boxShadow: '-20px 0 50px -10px rgba(15,23,42,0.4)',
+              display: 'flex', flexDirection: 'column',
+              animation: 'slideInRight 0.3s cubic-bezier(0.16, 1, 0.3, 1)'
+            }}
+            onClick={e => e.stopPropagation()}
+          >
+            {/* Drawer header */}
+            <div style={{ padding: '24px 28px', background: 'linear-gradient(135deg, #e11d48 0%, #881337 100%)', color: 'white', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexShrink: 0 }}>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ fontSize: '10px', fontWeight: 950, color: 'rgba(255,255,255,0.7)', letterSpacing: '1.5px', marginBottom: '6px' }}>PARTNER PAYOUTS</div>
+                <div style={{ fontSize: '20px', fontWeight: 950, wordBreak: 'break-word' }}>{activePartner.name}</div>
+                <div style={{ marginTop: '14px', display: 'flex', gap: '20px', flexWrap: 'wrap' }}>
+                  <div>
+                    <div style={{ fontSize: '9px', fontWeight: 950, opacity: 0.75, letterSpacing: '0.5px' }}>TOTAL</div>
+                    <div style={{ fontSize: '14px', fontWeight: 950 }}>₹{activePartner.total.toLocaleString()}</div>
+                  </div>
+                  <div>
+                    <div style={{ fontSize: '9px', fontWeight: 950, opacity: 0.75, letterSpacing: '0.5px', color: '#bbf7d0' }}>SETTLED</div>
+                    <div style={{ fontSize: '14px', fontWeight: 950, color: '#bbf7d0' }}>₹{activePartner.paid.toLocaleString()}</div>
+                  </div>
+                  <div>
+                    <div style={{ fontSize: '9px', fontWeight: 950, opacity: 0.75, letterSpacing: '0.5px', color: '#fed7d7' }}>UNPAID</div>
+                    <div style={{ fontSize: '14px', fontWeight: 950, color: '#fed7d7' }}>₹{activePartner.unpaid.toLocaleString()}</div>
+                  </div>
+                </div>
+              </div>
+              <button
+                onClick={closeDrawer}
+                aria-label="Close"
+                style={{ background: 'rgba(255,255,255,0.15)', border: 'none', color: 'white', width: '34px', height: '34px', borderRadius: '50%', cursor: 'pointer', fontSize: '20px', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}
+              >×</button>
+            </div>
+
+            {/* Bulk action bar */}
+            {drawerSelectedIds.size > 0 && (
+              <div style={{ padding: '12px 28px', background: '#fff5f6', borderBottom: '1px solid #fecdd3', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
+                <span style={{ fontSize: '11px', fontWeight: 900, color: '#881337', letterSpacing: '0.5px' }}>
+                  {drawerSelectedIds.size} of {activePartner.cuts.length} selected
+                </span>
+                <div style={{ display: 'flex', gap: '8px' }}>
+                  <button
+                    type="button"
+                    onClick={handleBulkExport}
+                    style={{ padding: '7px 14px', borderRadius: '8px', border: '1px solid #e11d48', background: 'white', color: '#e11d48', fontSize: '10px', fontWeight: 950, cursor: 'pointer', letterSpacing: '0.5px' }}
+                  >📥 EXPORT</button>
+                  <button
+                    type="button"
+                    onClick={openBulkPaidConfirm}
+                    style={{ padding: '7px 14px', borderRadius: '8px', border: 'none', background: 'linear-gradient(135deg, #16a34a, #15803d)', color: 'white', fontSize: '10px', fontWeight: 950, cursor: 'pointer', letterSpacing: '0.5px', boxShadow: '0 4px 10px rgba(22,163,74,0.25)' }}
+                  >✓ MARK AS PAID</button>
+                </div>
+              </div>
+            )}
+
+            {/* Payouts table */}
+            <div style={{ flex: 1, overflow: 'auto', background: '#fafbfc' }}>
+              <table style={{ width: '100%', borderCollapse: 'collapse', background: 'white' }}>
+                <thead style={{ background: '#fff1f2', position: 'sticky', top: 0, zIndex: 1 }}>
+                  <tr>
+                    <th style={{ padding: '14px 12px', width: '40px', textAlign: 'center' }}>
+                      <input
+                        type="checkbox"
+                        checked={isAllDrawerSelected}
+                        onChange={toggleSelectAllInDrawer}
+                        title="Select all payouts for this partner"
+                        style={{ cursor: 'pointer', width: '15px', height: '15px', accentColor: '#e11d48' }}
+                      />
+                    </th>
+                    <th style={{ padding: '14px 8px', fontSize: '9px', fontWeight: 950, color: '#e11d48', letterSpacing: '1px', textAlign: 'left' }}>DATE</th>
+                    <th style={{ padding: '14px 8px', fontSize: '9px', fontWeight: 950, color: '#e11d48', letterSpacing: '1px', textAlign: 'left' }}>PATIENT / STUDY</th>
+                    <th style={{ padding: '14px 8px', fontSize: '9px', fontWeight: 950, color: '#e11d48', letterSpacing: '1px', textAlign: 'center' }}>PATIENT PAYMENT</th>
+                    <th style={{ padding: '14px 8px', fontSize: '9px', fontWeight: 950, color: '#e11d48', letterSpacing: '1px', textAlign: 'right' }}>AMOUNT</th>
+                    <th style={{ padding: '14px 8px', fontSize: '9px', fontWeight: 950, color: '#e11d48', letterSpacing: '1px', textAlign: 'center' }}>STATUS</th>
+                    <th style={{ padding: '14px 8px', fontSize: '9px', fontWeight: 950, color: '#e11d48', letterSpacing: '1px', textAlign: 'right' }}>ACTION</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {activePartner.cuts.map(cut => (
+                    <tr key={cut?.id} style={{ borderBottom: '1px solid #f1f5f9', opacity: (cut?.status !== 'PAID' && cut?.patientPaymentStatus !== 'PAID') ? 0.55 : 1 }}>
+                      <td style={{ padding: '12px', textAlign: 'center' }}>
+                        <input
+                          type="checkbox"
+                          checked={drawerSelectedIds.has(cut?.id)}
+                          onChange={() => toggleDrawerSelectRow(cut?.id)}
+                          disabled={cut?.status === 'PAID' || cut?.patientPaymentStatus !== 'PAID'}
+                          title={cut?.status === 'PAID' ? 'Commission already paid' : cut?.patientPaymentStatus !== 'PAID' ? 'Patient payment not yet received' : undefined}
+                          style={{ width: '14px', height: '14px', accentColor: '#e11d48', cursor: (cut?.status === 'PAID' || cut?.patientPaymentStatus !== 'PAID') ? 'not-allowed' : 'pointer' }}
+                        />
+                      </td>
+                      <td style={{ padding: '12px 8px', fontSize: '10.5px', fontWeight: 700, color: '#475569', whiteSpace: 'nowrap' }}>{formatDate(cut?.date, true)}</td>
+                      <td style={{ padding: '12px 8px' }}>
+                        <div style={{ fontSize: '11.5px', fontWeight: 850, color: '#1e293b' }}>{(cut?.patientName || 'N/A').toUpperCase()}</div>
+                        <div style={{ fontSize: '9px', fontWeight: 700, color: '#94a3b8', marginTop: '2px' }}>
+                          {(cut?.modality || 'MRI').toUpperCase()}{cut?.reference ? ` · ${cut.reference}` : ''}
+                        </div>
+                      </td>
+                      <td style={{ padding: '12px 8px', textAlign: 'center' }}>
+                        {cut?.patientPaymentStatus ? (
+                          <span style={{
+                            display: 'inline-flex', alignItems: 'center', gap: '3px',
+                            padding: '4px 9px', borderRadius: '7px',
+                            fontSize: '8.5px', fontWeight: 950, letterSpacing: '0.4px',
+                            background: cut.patientPaymentStatus === 'PAID'
+                              ? '#dcfce7'
+                              : cut.patientPaymentStatus === 'PARTIAL'
+                              ? '#fef9c3'
+                              : '#fee2e2',
+                            color: cut.patientPaymentStatus === 'PAID'
+                              ? '#166534'
+                              : cut.patientPaymentStatus === 'PARTIAL'
+                              ? '#713f12'
+                              : '#991b1b',
+                          }}>
+                            {cut.patientPaymentStatus === 'PAID'
+                              ? '✓ RECEIVED'
+                              : cut.patientPaymentStatus === 'PARTIAL'
+                              ? '½ PARTIAL PAYMENT'
+                              : '✗ NOT RECEIVED'}
+                          </span>
+                        ) : (
+                          <span style={{ fontSize: '10px', color: '#cbd5e1', fontWeight: 700 }}>—</span>
+                        )}
+                      </td>
+                      <td style={{ padding: '12px 8px', textAlign: 'right', fontSize: '12px', fontWeight: 950, color: '#e11d48', whiteSpace: 'nowrap' }}>₹{(Number(cut?.amount) || 0).toLocaleString()}</td>
+                      <td style={{ padding: '12px 8px', textAlign: 'center' }}>
+                        {(() => {
+                          const isLegacy = cut?.type === 'LEGACY';
+                          const blockPayment = cut?.status !== 'PAID' && cut?.patientPaymentStatus !== 'PAID';
+                          const isDisabled = isLegacy || blockPayment;
+                          return (
+                            <>
+                              <button
+                                onClick={() => {
+                                  if (cut?.type === 'STRATEGIC' && !blockPayment) {
+                                    setConfirmModal({
+                                      isOpen: true,
+                                      cutId: cut?.id,
+                                      currentStatus: cut?.status || 'UNPAID',
+                                      patientName: cut?.patientName || 'N/A',
+                                      amount: cut?.amount || 0
+                                    });
+                                  }
+                                }}
+                                disabled={isDisabled}
+                                title={blockPayment ? 'Patient payment not yet received' : undefined}
+                                style={{
+                                  padding: '5px 10px', borderRadius: '7px', border: 'none', fontSize: '8.5px', fontWeight: 950,
+                                  background: cut?.status === 'PAID' ? '#dcfce7' : isDisabled ? '#f1f5f9' : '#fee2e2',
+                                  color: cut?.status === 'PAID' ? '#166534' : isDisabled ? '#94a3b8' : '#991b1b',
+                                  cursor: isDisabled ? 'not-allowed' : 'pointer',
+                                  opacity: isDisabled && !isLegacy ? 0.7 : 1
+                                }}
+                              >
+                                {cut?.status || 'UNPAID'}
+                              </button>
+                              {blockPayment && (
+                                <div style={{ marginTop: '4px', fontSize: '8px', fontWeight: 800, color: '#f59e0b', letterSpacing: '0.2px' }}>⚠ PATIENT UNPAID</div>
+                              )}
+                            </>
+                          );
+                        })()}
+                      </td>
+                      <td style={{ padding: '12px 8px', textAlign: 'right' }}>
+                        {cut.type === 'LEGACY' ? (
+                          <button
+                            onClick={() => handleDeleteExpense(cut.id)}
+                            style={{ padding: '5px 9px', borderRadius: '7px', border: 'none', background: '#fee2e2', color: '#ef4444', fontSize: '8.5px', fontWeight: 950, cursor: 'pointer' }}
+                          >DEL</button>
+                        ) : (
+                          <button
+                            onClick={() => {
+                              setEditPayout({
+                                commissionId: cut.id,
+                                referrerId: cut.referrerId,
+                                referrerName: cut.name,
+                                amount: cut.amount,
+                                modality: cut.modality || 'MRI',
+                                remarks: (cut.description || '').includes(' - ') ? cut.description.split(' - ')[1] : '',
+                                invoiceId: cut.reference,
+                                status: cut.status
+                              });
+                              setIsPayoutDrawerOpen(true);
+                            }}
+                            style={{ padding: '5px 10px', borderRadius: '7px', border: 'none', background: '#f0f4ff', color: '#0f52ba', fontSize: '8.5px', fontWeight: 950, cursor: 'pointer' }}
+                          >UPDATE</button>
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Bulk Mark-as-Paid confirmation modal */}
+      {bulkConfirmModal.isOpen && (
+        <div
+          style={{
+            position: 'fixed', inset: 0,
+            background: 'rgba(15, 23, 42, 0.45)', backdropFilter: 'blur(10px)',
+            WebkitBackdropFilter: 'blur(10px)',
+            display: 'flex', justifyContent: 'center', alignItems: 'center',
+            zIndex: 100000, animation: 'fadeIn 0.2s ease-out forwards'
+          }}
+          onClick={() => setBulkConfirmModal({ isOpen: false, count: 0, total: 0, eligibleIds: [], partnerName: '' })}
+        >
+          <div
+            style={{
+              width: '90%', maxWidth: '460px',
+              background: 'linear-gradient(135deg, #ffffff 0%, #f8fafc 100%)',
+              borderRadius: '24px', border: '1px solid rgba(226, 232, 240, 0.8)',
+              boxShadow: '0 20px 40px -15px rgba(15, 23, 42, 0.15)',
+              padding: '32px 26px', textAlign: 'center',
+              animation: 'slideUp 0.25s cubic-bezier(0.34, 1.56, 0.64, 1) forwards'
+            }}
+            onClick={e => e.stopPropagation()}
+          >
+            <div style={{ width: '64px', height: '64px', borderRadius: '50%', background: 'linear-gradient(135deg, #dcfce7 0%, #bbf7d0 100%)', display: 'flex', justifyContent: 'center', alignItems: 'center', margin: '0 auto 20px auto', fontSize: '28px', boxShadow: '0 8px 20px -6px rgba(34, 197, 94, 0.25)' }}>✓</div>
+            <h3 style={{ margin: '0 0 12px 0', fontSize: '15px', fontWeight: 950, color: '#1e293b', letterSpacing: '0.8px', textTransform: 'uppercase' }}>
+              Mark {bulkConfirmModal.count} Payout{bulkConfirmModal.count !== 1 ? 's' : ''} as PAID?
+            </h3>
+            <p style={{ margin: '0 0 24px 0', fontSize: '12px', lineHeight: 1.6, color: '#475569', fontWeight: 700 }}>
+              You're settling <strong style={{ color: '#16a34a' }}>₹{bulkConfirmModal.total.toLocaleString()}</strong> across <strong style={{ color: '#e11d48' }}>{bulkConfirmModal.partnerName}</strong>'s outstanding payouts.
+              {bulkConfirmModal.count < drawerSelectedIds.size && (
+                <span style={{ display: 'block', marginTop: '8px', fontSize: '10.5px', color: '#92400e', background: '#fef3c7', padding: '8px 12px', borderRadius: '8px', fontWeight: 800 }}>
+                  ⚠ {drawerSelectedIds.size - bulkConfirmModal.count} of your selection are already PAID or legacy entries and will be skipped.
+                </span>
+              )}
+            </p>
+            <div style={{ display: 'flex', gap: '12px' }}>
+              <button
+                onClick={() => setBulkConfirmModal({ isOpen: false, count: 0, total: 0, eligibleIds: [], partnerName: '' })}
+                style={{ flex: 1, padding: '12px 20px', background: '#f1f5f9', color: '#475569', border: 'none', borderRadius: '12px', fontSize: '11px', fontWeight: 950, cursor: 'pointer' }}
+              >CANCEL</button>
+              <button
+                onClick={handleBulkMarkPaid}
+                disabled={bulkConfirmModal.count === 0}
+                style={{
+                  flex: 1, padding: '12px 20px',
+                  background: bulkConfirmModal.count === 0 ? '#cbd5e1' : 'linear-gradient(135deg, #16a34a 0%, #15803d 100%)',
+                  color: '#fff', border: 'none', borderRadius: '12px',
+                  fontSize: '11px', fontWeight: 950,
+                  cursor: bulkConfirmModal.count === 0 ? 'not-allowed' : 'pointer',
+                  boxShadow: bulkConfirmModal.count === 0 ? 'none' : '0 8px 18px -4px rgba(22, 163, 74, 0.35)'
+                }}
+              >CONFIRM</button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Premium Glassmorphic Confirmation Modal */}
       {confirmModal.isOpen && (
