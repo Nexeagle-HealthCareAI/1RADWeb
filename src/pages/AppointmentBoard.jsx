@@ -1339,8 +1339,8 @@ export default function AppointmentBoard() {
 
     if (isBookingOpen) return (
       <div className="drawer-overlay">
-        <div className="drawer-content" onClick={e => e.stopPropagation()}>
-          <div className="drawer-header" style={{ background: 'linear-gradient(135deg, #0a1628 0%, #0f52ba 100%)', color: 'white', padding: '28px 30px', border: 'none' }}>
+        <div className="drawer-content booking-drawer-width" onClick={e => e.stopPropagation()}>
+          <div className="drawer-header" style={{ background: 'linear-gradient(135deg, #0a1628 0%, #0f52ba 100%)', color: 'white', padding: '16px 30px', border: 'none' }}>
             <div style={{ display: 'flex', flexDirection: 'column' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '4px' }}>
                 <h2 style={{ fontSize: '18px', fontWeight: 900, margin: 0 }}>NEW APPOINTMENT</h2>
@@ -1350,7 +1350,7 @@ export default function AppointmentBoard() {
             <button className="btn-close" style={{ color: 'white', fontSize: '28px' }} onClick={() => setIsBookingOpen(false)}>✕</button>
           </div>
 
-          <div style={{ padding: '0 30px', marginTop: '20px' }}>
+          <div style={{ padding: '0 30px', marginTop: '12px' }}>
             <div style={{ display: 'flex', gap: '4px' }}>
               {[1,2].map(s => (
                 <div key={s} style={{
@@ -1365,176 +1365,204 @@ export default function AppointmentBoard() {
           <div className="drawer-body" style={{ paddingTop: '10px' }} ref={drawerBodyRef}>
             {isStep1 && (
               <div className="quest-step-container">
-                <div style={{ background: '#f8f9fa', padding: '18px', borderRadius: '14px', border: '1px solid #eee' }}>
-                  <label style={{ fontSize: '10px', color: '#0f52ba', fontWeight: 800, marginBottom: '10px', display: 'block', letterSpacing: '1px' }}>SEARCH PATIENT DATABASE</label>
-                  <div className="search-input-group" style={{ width: '100%' }}>
-                    <input type="text" placeholder="Search patient database..." value={drawerSearchQuery} onChange={(e) => setDrawerSearchQuery(e.target.value)} autoFocus style={{ paddingLeft: '15px' }} />
+                <div style={{
+                  display: 'flex',
+                  flexDirection: isMobile ? 'column' : 'row',
+                  gap: '24px',
+                  alignItems: 'stretch'
+                }}>
+                  {/* Column 1: Database Search */}
+                  <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '15px' }}>
+                    <div style={{ background: '#f8f9fa', padding: '18px', borderRadius: '14px', border: '1px solid #eee', height: '100%', display: 'flex', flexDirection: 'column' }}>
+                      <label style={{ fontSize: '10px', color: '#0f52ba', fontWeight: 800, marginBottom: '10px', display: 'block', letterSpacing: '1px' }}>SEARCH PATIENT DATABASE</label>
+                      <div className="search-input-group" style={{ width: '100%', marginBottom: '10px' }}>
+                        <input type="text" placeholder="Search patient database..." value={drawerSearchQuery} onChange={(e) => setDrawerSearchQuery(e.target.value)} autoFocus style={{ paddingLeft: '15px' }} />
+                      </div>
+
+                      <div style={{ flex: 1, maxHeight: isMobile ? '160px' : '450px', overflowY: 'auto' }}>
+                        {drawerSearchQuery ? (
+                          <>
+                            {patients.filter(p => 
+                              p.name.toLowerCase().includes(drawerSearchQuery.toLowerCase()) || 
+                              p.mobile.includes(drawerSearchQuery) || 
+                              p.id.toLowerCase().includes(drawerSearchQuery.toLowerCase()) ||
+                              (p.patientIdentifier && p.patientIdentifier.toLowerCase().includes(drawerSearchQuery.toLowerCase()))
+                            ).map(p => (
+                              <div key={p.id}
+                                className={`patient-search-result ${newBooking.patientId === p.id ? 'selected' : ''}`}
+                                onClick={() => { 
+                                  setNewBooking({...newBooking, patientId: p.id}); 
+                                  setNewPatient({
+                                    name: p.name,
+                                    mobile: p.mobile,
+                                    age: p.age || '',
+                                    gender: p.gender || 'Male',
+                                    village: p.village || '',
+                                    district: p.district || '',
+                                    address: p.address || '',
+                                    referredBy: p.referredBy || '',
+                                    sourceOfInfo: p.sourceOfInfo || ''
+                                  });
+                                  setDuplicatePatient(null); 
+                                }}
+                              >
+                                <div style={{
+                                  width: '32px', height: '32px', borderRadius: '10px',
+                                  background: newBooking.patientId === p.id ? '#0f52ba' : '#e8f0fe',
+                                  color: newBooking.patientId === p.id ? 'white' : '#0f52ba',
+                                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                  fontWeight: 900, fontSize: '12px', flexShrink: 0,
+                                }}>{p.name.charAt(0)}</div>
+                                <div style={{ flex: 1 }}>
+                                   <div style={{ fontWeight: 700, fontSize: '13px', color: '#1a1a2e' }}>{p.name}</div>
+                                   <div style={{ fontSize: '10px', color: '#888' }}>
+                                     <span style={{ color: '#0f52ba', fontWeight: 800 }}>{p.patientIdentifier || p.id}</span> {'\u00b7'} {p.mobile} {'\u00b7'} {p.age}y {p.gender}
+                                   </div>
+                                </div>
+                                {newBooking.patientId === p.id && <span style={{ color: '#0f52ba', fontWeight: 900, fontSize: '10px' }}>SELECTED</span>}
+                              </div>
+                            ))}
+                            {!patients.some(p => 
+                              p.name.toLowerCase().includes(drawerSearchQuery.toLowerCase()) || 
+                              p.mobile.includes(drawerSearchQuery) ||
+                              p.id.toLowerCase().includes(drawerSearchQuery.toLowerCase()) ||
+                              (p.patientIdentifier && p.patientIdentifier.toLowerCase().includes(drawerSearchQuery.toLowerCase()))
+                            ) && (
+                              <div style={{ padding: '12px', textAlign: 'center', color: '#999', fontSize: '12px' }}>No match found - fill details in Column 2</div>
+                            )}
+                          </>
+                        ) : (
+                          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100%', minHeight: '150px', color: '#94a3b8', textAlign: 'center', padding: '20px' }}>
+                            <span style={{ fontSize: '28px', marginBottom: '10px' }}>🔍</span>
+                            <span style={{ fontSize: '11px', fontWeight: 700 }}>Search database to import an existing patient profile quickly.</span>
+                          </div>
+                        )}
+                      </div>
+                    </div>
                   </div>
 
-                  {drawerSearchQuery && (
-                    <div style={{ marginTop: '10px', maxHeight: '160px', overflowY: 'auto' }}>
-                      {patients.filter(p => 
-                        p.name.toLowerCase().includes(drawerSearchQuery.toLowerCase()) || 
-                        p.mobile.includes(drawerSearchQuery) || 
-                        p.id.toLowerCase().includes(drawerSearchQuery.toLowerCase()) ||
-                        (p.patientIdentifier && p.patientIdentifier.toLowerCase().includes(drawerSearchQuery.toLowerCase()))
-                      ).map(p => (
-                        <div key={p.id}
-                          className={`patient-search-result ${newBooking.patientId === p.id ? 'selected' : ''}`}
-                          onClick={() => { 
-                            setNewBooking({...newBooking, patientId: p.id}); 
-                            setNewPatient({
-                              name: p.name,
-                              mobile: p.mobile,
-                              age: p.age || '',
-                              gender: p.gender || 'Male',
-                              village: p.village || '',
-                              district: p.district || '',
-                              address: p.address || '',
-                              referredBy: p.referredBy || '',
-                              sourceOfInfo: p.sourceOfInfo || ''
-                            });
-                            setDuplicatePatient(null); 
-                          }}
-                        >
-                          <div style={{
-                            width: '32px', height: '32px', borderRadius: '10px',
-                            background: newBooking.patientId === p.id ? '#0f52ba' : '#e8f0fe',
-                            color: newBooking.patientId === p.id ? 'white' : '#0f52ba',
-                            display: 'flex', alignItems: 'center', justifyContent: 'center',
-                            fontWeight: 900, fontSize: '12px', flexShrink: 0,
-                          }}>{p.name.charAt(0)}</div>
-                          <div style={{ flex: 1 }}>
-                             <div style={{ fontWeight: 700, fontSize: '13px', color: '#1a1a2e' }}>{p.name}</div>
-                             <div style={{ fontSize: '10px', color: '#888' }}>
-                               <span style={{ color: '#0f52ba', fontWeight: 800 }}>{p.patientIdentifier || p.id}</span> {'\u00B7'} {p.mobile} {'\u00B7'} {p.age}y {p.gender}
-                             </div>
+                  {/* Column 2: Patient Details */}
+                  <div style={{ flex: 1.2, display: 'flex', flexDirection: 'column', gap: '15px' }}>
+                    <div style={{ background: 'white', padding: '16px 20px', borderRadius: '14px', border: '2px dashed #dde5f5' }}>
+                      <label style={{ fontSize: '10px', color: '#0f52ba', fontWeight: 800, marginBottom: '18px', display: 'block', letterSpacing: '1px' }}>ENTER PATIENT DEMOGRAPHICS</label>
+                      
+                      <div style={{ 
+                        display: 'grid', 
+                        gridTemplateColumns: '1fr', 
+                        gap: '12px' 
+                      }}>
+                        <div className="form-group" style={{ marginBottom: '8px' }}>
+                          <label style={{ fontSize: '10px', fontWeight: 700 }}>FULL NAME <span style={{ color: '#e74c3c' }}>*</span></label>
+                          <input 
+                            type="text" 
+                            required 
+                            placeholder="e.g. Michael Thorne" 
+                            style={{ 
+                              width: '100%',
+                              fontSize: '13px', 
+                              padding: '12px 14px',
+                              borderRadius: '12px',
+                              border: showBookingValidation && !newPatient.name.trim() ? '1.5px solid #e74c3c' : '1.5px solid #dee2e6',
+                              background: showBookingValidation && !newPatient.name.trim() ? '#fff5f5' : 'white',
+                              outline: 'none', fontWeight: 600
+                            }} 
+                            value={newPatient.name} 
+                            onChange={e => { setNewPatient({...newPatient, name: e.target.value}); setNewBooking({...newBooking, patientId: ''}); }} 
+                          />
+                        </div>
+                        <div className="form-group" style={{ marginBottom: '8px' }}>
+                          <label style={{ fontSize: '10px', fontWeight: 700 }}>MOBILE <span style={{ color: '#e74c3c' }}>*</span></label>
+                          <input 
+                            type="tel" 
+                            required 
+                            placeholder="10-digit mobile..." 
+                            style={{ 
+                              width: '100%',
+                              fontSize: '13px', 
+                              padding: '12px 14px',
+                              borderRadius: '12px',
+                              borderColor: (newPatient.mobile.length > 0 && !isMobileValid) || (showBookingValidation && !isMobileValid) ? '#e74c3c' : '#dee2e6',
+                              background: (showBookingValidation && !isMobileValid) ? '#fff5f5' : 'white',
+                              boxShadow: (newPatient.mobile.length > 0 && !isMobileValid) || (showBookingValidation && !isMobileValid) ? '0 0 0 1px #e74c3c' : 'none',
+                              outline: 'none', fontWeight: 600
+                            }} 
+                            value={newPatient.mobile} 
+                            onChange={e => { 
+                              const val = e.target.value.replace(/\D/g, '').slice(0, 10);
+                              setNewPatient({...newPatient, mobile: val}); 
+                              setNewBooking({...newBooking, patientId: ''}); 
+                            }} 
+                          />
+                          {newPatient.mobile.length > 0 && !isMobileValid && (
+                            <div style={{ fontSize: '8px', color: '#e74c3c', fontWeight: 800, marginTop: '2px', letterSpacing: '0.5px' }}>
+                              IDENTITY PROTOCOL: Exactly 10 digits required.
+                            </div>
+                          )}
+                        </div>
+                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+                          <div className="form-group" style={{ marginBottom: '8px' }}>
+                            <label style={{ fontSize: '10px', fontWeight: 700 }}>AGE <span style={{ color: '#e74c3c' }}>*</span></label>
+                            <input 
+                              type="text" 
+                              required 
+                              placeholder="25" 
+                              style={{ 
+                                fontSize: '13px', 
+                                padding: '11px 12px',
+                                border: showBookingValidation && !newPatient.age.trim() ? '1.5px solid #e74c3c' : '1.5px solid #dee2e6',
+                                background: showBookingValidation && !newPatient.age.trim() ? '#fff5f5' : 'white'
+                              }} 
+                              value={newPatient.age} 
+                              onChange={e => setNewPatient({...newPatient, age: e.target.value})} 
+                            />
                           </div>
-                          {newBooking.patientId === p.id && <span style={{ color: '#0f52ba', fontWeight: 900, fontSize: '10px' }}>SELECTED</span>}
+                          <div className="form-group" style={{ marginBottom: '8px' }}>
+                            <label style={{ fontSize: '10px', fontWeight: 700, color: '#64748b' }}>GENDER</label>
+                            <select style={{ fontSize: '13px', padding: '11px', height: '44px' }} value={newPatient.gender} onChange={e => setNewPatient({...newPatient, gender: e.target.value})}>
+                              <option>Male</option><option>Female</option><option>Other</option>
+                            </select>
+                          </div>
                         </div>
-                      ))}
-                      {!patients.some(p => 
-                        p.name.toLowerCase().includes(drawerSearchQuery.toLowerCase()) || 
-                        p.mobile.includes(drawerSearchQuery) ||
-                        p.id.toLowerCase().includes(drawerSearchQuery.toLowerCase()) ||
-                        (p.patientIdentifier && p.patientIdentifier.toLowerCase().includes(drawerSearchQuery.toLowerCase()))
-                      ) && (
-                        <div style={{ padding: '12px', textAlign: 'center', color: '#999', fontSize: '12px' }}>New capture required - provide details below</div>
-                      )}
-                    </div>
-                  )}
-                </div>
-
-                <div style={{ background: 'white', padding: '22px', borderRadius: '14px', border: '2px dashed #dde5f5' }}>
-                  <label style={{ fontSize: '10px', color: '#0f52ba', fontWeight: 800, marginBottom: '18px', display: 'block', letterSpacing: '1px' }}>ENTER PATIENT DEMOGRAPHICS</label>
-                  
-                  <div style={{ 
-                    display: 'grid', 
-                    gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', 
-                    gap: isMobile ? '12px' : '16px' 
-                  }}>
-                    <div className="form-group" style={{ marginBottom: '8px' }}>
-                      <label style={{ fontSize: '10px', fontWeight: 700 }}>FULL NAME <span style={{ color: '#e74c3c' }}>*</span></label>
-                        <input 
-                          type="text" 
-                          required 
-                          placeholder="e.g. Michael Thorne" 
-                          style={{ 
-                            width: '100%',
-                            fontSize: '13px', 
-                            padding: '12px 14px',
-                            borderRadius: '12px',
-                            border: showBookingValidation && !newPatient.name.trim() ? '1.5px solid #e74c3c' : '1.5px solid #dee2e6',
-                            background: showBookingValidation && !newPatient.name.trim() ? '#fff5f5' : 'white',
-                            outline: 'none', fontWeight: 600
-                          }} 
-                          value={newPatient.name} 
-                          onChange={e => { setNewPatient({...newPatient, name: e.target.value}); setNewBooking({...newBooking, patientId: ''}); }} 
-                        />
-                    </div>
-                    <div className="form-group" style={{ marginBottom: '8px' }}>
-                      <label style={{ fontSize: '10px', fontWeight: 700 }}>MOBILE <span style={{ color: '#e74c3c' }}>*</span></label>
-                      <input 
-                        type="tel" 
-                        required 
-                        placeholder="10-digit mobile..." 
-                        style={{ 
-                          width: '100%',
-                          fontSize: '13px', 
-                          padding: '12px 14px',
-                          borderRadius: '12px',
-                          borderColor: (newPatient.mobile.length > 0 && !isMobileValid) || (showBookingValidation && !isMobileValid) ? '#e74c3c' : '#dee2e6',
-                          background: (showBookingValidation && !isMobileValid) ? '#fff5f5' : 'white',
-                          boxShadow: (newPatient.mobile.length > 0 && !isMobileValid) || (showBookingValidation && !isMobileValid) ? '0 0 0 1px #e74c3c' : 'none',
-                          outline: 'none', fontWeight: 600
-                        }} 
-                        value={newPatient.mobile} 
-                        onChange={e => { 
-                          const val = e.target.value.replace(/\D/g, '').slice(0, 10);
-                          setNewPatient({...newPatient, mobile: val}); 
-                          setNewBooking({...newBooking, patientId: ''}); 
-                        }} 
-                      />
-                      {newPatient.mobile.length > 0 && !isMobileValid && (
-                        <div style={{ fontSize: '8px', color: '#e74c3c', fontWeight: 800, marginTop: '2px', letterSpacing: '0.5px' }}>
-                          IDENTITY PROTOCOL: Exactly 10 digits required.
+                        <div className="form-group" style={{ marginBottom: '8px' }}>
+                          <label style={{ fontSize: '10px', fontWeight: 800, color: '#0f52ba', letterSpacing: '0.5px' }}>SOURCE OF INFORMATION</label>
+                          <input 
+                            type="text" 
+                            placeholder="Discovery source..." 
+                            style={{ width: '100%', fontSize: '13px', padding: '11px 12px', height: '44px', border: '1.5px solid #0f52ba20', background: '#f0f7ff', borderRadius: '12px', outline: 'none' }} 
+                            value={newPatient.sourceOfInfo} 
+                            onChange={e => setNewPatient({...newPatient, sourceOfInfo: e.target.value})} 
+                          />
                         </div>
-                      )}
-                    </div>
-                    <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: isMobile ? '12px' : '12px' }}>
-                      <div className="form-group" style={{ marginBottom: '8px' }}>
-                        <label style={{ fontSize: '10px', fontWeight: 700 }}>AGE <span style={{ color: '#e74c3c' }}>*</span></label>
-                        <input 
-                          type="text" 
-                          required 
-                          placeholder="25" 
-                          style={{ 
-                            fontSize: '13px', 
-                            padding: '11px 12px',
-                            border: showBookingValidation && !newPatient.age.trim() ? '1.5px solid #e74c3c' : '1.5px solid #dee2e6',
-                            background: showBookingValidation && !newPatient.age.trim() ? '#fff5f5' : 'white'
-                          }} 
-                          value={newPatient.age} 
-                          onChange={e => setNewPatient({...newPatient, age: e.target.value})} 
-                        />
-                      </div>
-                      <div className="form-group" style={{ marginBottom: '8px' }}>
-                        <label style={{ fontSize: '10px', fontWeight: 700, color: '#64748b' }}>GENDER</label>
-                        <select style={{ fontSize: '13px', padding: '11px', height: '44px' }} value={newPatient.gender} onChange={e => setNewPatient({...newPatient, gender: e.target.value})}>
-                          <option>Male</option><option>Female</option><option>Other</option>
-                        </select>
+                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+                          <div className="form-group" style={{ marginBottom: '8px' }}>
+                            <label style={{ fontSize: '10px', fontWeight: 700 }}>VILLAGE</label>
+                            <input type="text" placeholder="Village" style={{ fontSize: '13px', padding: '11px 12px' }} value={newPatient.village} onChange={e => setNewPatient({...newPatient, village: e.target.value})} />
+                          </div>
+                          <div className="form-group" style={{ marginBottom: '8px' }}>
+                            <label style={{ fontSize: '10px', fontWeight: 700 }}>DISTRICT</label>
+                            <input type="text" placeholder="District" style={{ fontSize: '13px', padding: '11px 12px' }} value={newPatient.district} onChange={e => setNewPatient({...newPatient, district: e.target.value})} />
+                          </div>
+                        </div>
+                        <div className="form-group" style={{ marginBottom: '8px' }}>
+                          <label style={{ fontSize: '10px', fontWeight: 700 }}>ADDRESS / RESIDENCE DATA</label>
+                          <input 
+                            type="text" 
+                            placeholder="Street, Landmark..." 
+                            style={{ width: '100%', fontSize: '13px', padding: '12px 14px', height: '44px', borderRadius: '12px', border: '1.5px solid #dee2e6' }} 
+                            value={newPatient.address} 
+                            onChange={e => setNewPatient({...newPatient, address: e.target.value})} 
+                          />
+                        </div>
                       </div>
                     </div>
-                    <div className="form-group" style={{ marginBottom: '8px' }}>
-                      <label style={{ fontSize: '10px', fontWeight: 800, color: '#0f52ba', letterSpacing: '0.5px' }}>SOURCE OF INFORMATION</label>
-                      <input 
-                        type="text" 
-                        placeholder="Discovery source..." 
-                        style={{ width: '100%', fontSize: '13px', padding: '11px 12px', height: '44px', border: '1.5px solid #0f52ba20', background: '#f0f7ff', borderRadius: '12px', outline: 'none' }} 
-                        value={newPatient.sourceOfInfo} 
-                        onChange={e => setNewPatient({...newPatient, sourceOfInfo: e.target.value})} 
-                      />
-                    </div>
-                    <div className="form-group" style={{ marginBottom: '8px' }}>
-                      <label style={{ fontSize: '10px', fontWeight: 700 }}>VILLAGE</label>
-                      <input type="text" placeholder="Village" style={{ fontSize: '13px', padding: '11px 12px' }} value={newPatient.village} onChange={e => setNewPatient({...newPatient, village: e.target.value})} />
-                    </div>
-                    <div className="form-group" style={{ marginBottom: '8px' }}>
-                      <label style={{ fontSize: '10px', fontWeight: 700 }}>DISTRICT</label>
-                      <input type="text" placeholder="District" style={{ fontSize: '13px', padding: '11px 12px' }} value={newPatient.district} onChange={e => setNewPatient({...newPatient, district: e.target.value})} />
-                    </div>
-                     <div className="form-group" style={{ marginBottom: '12px', gridColumn: isMobile ? 'span 1' : 'span 2' }}>
-                       <label style={{ fontSize: '10px', fontWeight: 700 }}>ADDRESS / RESIDENCE DATA</label>
-                       <input 
-                         type="text" 
-                         placeholder="Street, Landmark..." 
-                         style={{ width: '100%', fontSize: '13px', padding: '12px 14px', height: '44px', borderRadius: '12px', border: '1.5px solid #dee2e6' }} 
-                         value={newPatient.address} 
-                         onChange={e => setNewPatient({...newPatient, address: e.target.value})} 
-                       />
-                     </div>
+                  </div>
 
-                    <div className="form-group" style={{ gridColumn: isMobile ? 'span 1' : 'span 2', marginTop: '10px', position: 'relative' }}>
+                  {/* Column 3: Referred By & Proceed */}
+                  <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '15px' }}>
+                    <div style={{ background: 'white', padding: '16px 20px', borderRadius: '14px', border: '2px dashed #dde5f5', height: '100%', display: 'flex', flexDirection: 'column' }}>
+                      <label style={{ fontSize: '10px', color: '#0f52ba', fontWeight: 800, marginBottom: '18px', display: 'block', letterSpacing: '1px' }}>REFERRAL SOURCE</label>
+                      
+                      <div className="form-group" style={{ position: 'relative', flex: 1 }}>
                         <label style={{ fontSize: '10px', fontWeight: 800, color: '#64748b', marginBottom: '8px', display: 'block' }}>REFERRED BY</label>
                         <div style={{ 
                           display: 'flex', 
@@ -1544,7 +1572,7 @@ export default function AppointmentBoard() {
                           <div style={{ flex: 1, position: 'relative' }}>
                             <input 
                               type="text" 
-                              placeholder="Search or type referrer name..."
+                              placeholder="Search or type referrer..."
                               value={newPatient.referredBy} 
                               style={{
                                 width: '100%', padding: '12px 14px', borderRadius: '12px',
@@ -1604,358 +1632,368 @@ export default function AppointmentBoard() {
                             {isMobile ? '+ ADD NEW SPECIALIST' : '+'}
                           </button>
                         </div>
+                      </div>
+
+                      {newBooking.patientId && (
+                        <div style={{
+                          background: 'linear-gradient(90deg, #e8f0fe 0%, #fff 100%)',
+                          padding: '14px 18px', borderRadius: '12px',
+                          borderLeft: '4px solid #0f52ba',
+                          display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+                          marginTop: '20px', marginBottom: '20px'
+                        }}>
+                          <div>
+                            <div style={{ fontSize: '9px', color: '#0f52ba', fontWeight: 900, background: 'white', padding: '4px 8px', borderRadius: '6px', border: '1px solid #0f52ba' }}>MATCHED</div>
+                          </div>
+                        </div>
+                      )}
+
+                      <div className="drawer-footer" style={{ borderTop: 'none', paddingTop: '10px', marginTop: 'auto' }}>
+                        <button 
+                          className="gamified-btn" 
+                          style={{ 
+                            width: '100%', padding: '16px', borderRadius: '12px', fontSize: '13px',
+                            background: isNewPatientIncomplete && showBookingValidation ? '#94a3b8' : 'linear-gradient(90deg, #0f52ba, #00f2fe)',
+                            boxShadow: isNewPatientIncomplete && showBookingValidation ? 'none' : '0 10px 20px rgba(15, 82, 186, 0.2)',
+                          }} 
+                          onClick={async () => {
+                            if (isNewPatientIncomplete) {
+                              setShowBookingValidation(true);
+                              return;
+                            }
+
+                            // Case A: NEW PATIENT (Registration)
+                            if (!newBooking.patientId && newPatient.name && newPatient.mobile) {
+                              try {
+                                const response = await apiClient.post('/patients', {
+                                  fullName: newPatient.name,
+                                  mobile: newPatient.mobile,
+                                  age: newPatient.age || '0',
+                                  gender: newPatient.gender,
+                                  village: newPatient.village,
+                                  district: newPatient.district,
+                                  address: newPatient.address,
+                                  sourceOfInfo: newPatient.sourceOfInfo,
+                                  referrerId: newPatient.referrerId
+                                });
+                                const patientId = response.data.patientId;
+                                if (!patientId) throw new Error("API returned invalid patient identity");
+                                setNewBooking(prev => ({...prev, patientId}));
+                                fetchPatients('');
+                              } catch (error) {
+                                console.error('Failed to auto-register patient:', error);
+                                alert('Patient registration failed. Please try again.');
+                                return; 
+                              }
+                            } 
+                            // Case B: EXISTING PATIENT (Demographic Sync)
+                            else if (newBooking.patientId) {
+                              try {
+                                await apiClient.put(`/patients/${newBooking.patientId}`, {
+                                  fullName: newPatient.name,
+                                  mobile: newPatient.mobile,
+                                  age: newPatient.age || '0',
+                                  gender: newPatient.gender,
+                                  village: newPatient.village,
+                                  district: newPatient.district,
+                                  address: newPatient.address,
+                                  sourceOfInfo: newPatient.sourceOfInfo,
+                                  referrerId: newPatient.referrerId
+                                });
+                              } catch (error) {
+                                console.error('Failed to sync existing patient demographics:', error);
+                              }
+                            }
+                            
+                            // Advance to Clinical Configuration
+                            setBookingStep(2);
+                            setShowBookingValidation(false);
+                          }}
+                        >
+                          PROCEED {'\u2192'} CLINICAL CONFIG
+                        </button>
+                      </div>
                     </div>
                   </div>
-                </div>
-
-
-
-                {newBooking.patientId && (
-                  <div style={{
-                    background: 'linear-gradient(90deg, #e8f0fe 0%, #fff 100%)',
-                    padding: '14px 18px', borderRadius: '12px',
-                    borderLeft: '4px solid #0f52ba',
-                    display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-                    marginTop: '20px'
-                  }}>
-                    <div>
-                      <div style={{ fontSize: '9px', color: '#0f52ba', fontWeight: 900, background: 'white', padding: '4px 8px', borderRadius: '6px', border: '1px solid #0f52ba' }}>MATCHED</div>
-                    </div>
-                  </div>
-                )}
-
-                <div className="drawer-footer" style={{ borderTop: 'none', paddingTop: '20px' }}>
-                  <button 
-                    className="gamified-btn" 
-                    style={{ 
-                      width: '100%', padding: '16px', borderRadius: '12px', fontSize: '13px',
-                      background: isNewPatientIncomplete && showBookingValidation ? '#94a3b8' : 'linear-gradient(90deg, #0f52ba, #00f2fe)',
-                      boxShadow: isNewPatientIncomplete && showBookingValidation ? 'none' : '0 10px 20px rgba(15, 82, 186, 0.2)',
-                    }} 
-                    onClick={async () => {
-                      if (isNewPatientIncomplete) {
-                        setShowBookingValidation(true);
-                        // Optional: trigger a subtle haptic or visual shake
-                        return;
-                      }
-
-                      // Case A: NEW PATIENT (Registration)
-                      if (!newBooking.patientId && newPatient.name && newPatient.mobile) {
-                        try {
-                          const response = await apiClient.post('/patients', {
-                            fullName: newPatient.name,
-                            mobile: newPatient.mobile,
-                            age: newPatient.age || '0',
-                            gender: newPatient.gender,
-                            village: newPatient.village,
-                            district: newPatient.district,
-                            address: newPatient.address,
-                            sourceOfInfo: newPatient.sourceOfInfo,
-                            referrerId: newPatient.referrerId
-                          });
-                          const patientId = response.data.patientId;
-                          if (!patientId) throw new Error("API returned invalid patient identity");
-                          setNewBooking(prev => ({...prev, patientId}));
-                          fetchPatients('');
-                        } catch (error) {
-                          console.error('Failed to auto-register patient:', error);
-                          alert('Patient registration failed. Please try again.');
-                          return; 
-                        }
-                      } 
-                      // Case B: EXISTING PATIENT (Demographic Sync)
-                      else if (newBooking.patientId) {
-                        try {
-                          await apiClient.put(`/patients/${newBooking.patientId}`, {
-                            fullName: newPatient.name,
-                            mobile: newPatient.mobile,
-                            age: newPatient.age || '0',
-                            gender: newPatient.gender,
-                            village: newPatient.village,
-                            district: newPatient.district,
-                            address: newPatient.address,
-                            sourceOfInfo: newPatient.sourceOfInfo,
-                            referrerId: newPatient.referrerId
-                          });
-                        } catch (error) {
-                          console.error('Failed to sync existing patient demographics:', error);
-                          // We continue to Step 2 even if update fails to avoid blocking the workflow,
-                          // but the error is logged for diagnostic purposes.
-                        }
-                      }
-                      
-                      // Advance to Clinical Configuration
-                      setBookingStep(2);
-                      setShowBookingValidation(false);
-                    }}
-                  >
-                    PROCEED {'\u2192'} CLINICAL CONFIG
-                  </button>
                 </div>
               </div>
             )}
 
             {isStep2 && (
               <div className="quest-step-container">
-                <div style={{ marginBottom: '8px' }}>
-                  <h3 style={{ fontSize: '14px', fontWeight: 800, color: '#0a1628' }}>1. Select Study Modality</h3>
-                </div>
-
-                <div className="modality-grid" style={{ gridTemplateColumns: 'repeat(5, 1fr)', gap: '8px' }}>
-                  {MODALITIES.map(m => (
-                    <div key={m} className={`modality-card ${newBooking.modality === m ? 'active' : ''}`} 
-                      style={{ padding: '12px 8px', minHeight: 'auto' }}
-                      onClick={() => setNewBooking({...newBooking, modality: m, service: '', amount: '', referralCutValue: 0})}
-                    >
-                      <span className="modality-icon" style={{ fontSize: '14px', fontWeight: 900, marginBottom: '4px', color: newBooking.modality === m ? 'white' : '#0f52ba' }}>{MODALITY_ICONS[m] || 'MOD'}</span>
-                      <span className="modality-name" style={{ fontSize: '9px' }}>{m}</span>
-                    </div>
-                  ))}
-                </div>
-
-                <div className="form-group" style={{ marginTop: '16px', position: 'relative' }}>
-                  <label style={{ fontSize: '9px', fontWeight: 800, letterSpacing: '0.5px', color: '#888' }}>2. SERVICE / PROCEDURE <span style={{ color: '#e74c3c' }}>*</span></label>
-                  <input 
-                    type="text" 
-                    required 
-                    placeholder="e.g. Chest X-Ray with Lateral" 
-                    value={newBooking.service} 
-                    onChange={e => {
-                      const val = e.target.value;
-                      setNewBooking(prev => ({ ...prev, service: val }));
-                      const match = serviceRegistry.find(s => s.modality === newBooking.modality && s.serviceName.toLowerCase() === val.toLowerCase());
-                      if (match) {
-                        setNewBooking(prev => ({
-                          ...prev,
-                          amount: match.amount,
-                          referralCutValue: match.referralCutValue || 0
-                        }));
-
-                      }
-
-                    }} 
-                    style={{ fontSize: '13px', padding: '10px' }} 
-                  />
-
-                  {/* Service Suggestions Dropdown */}
-                  {newBooking.service.length > 0 && serviceRegistry.some(s => 
-                    s.modality === newBooking.modality && 
-                    s.serviceName.toLowerCase().includes(newBooking.service.toLowerCase()) && 
-                    s.serviceName !== newBooking.service
-                  ) && (
-                    <div style={{ 
-                      position: 'absolute', top: '100%', left: 0, right: 0, 
-                      background: 'white', border: '1px solid #e2e8f0', borderRadius: '12px', 
-                      boxShadow: '0 10px 30px rgba(0,0,0,0.1)', zIndex: 100, 
-                      maxHeight: '200px', overflowY: 'auto', marginTop: '4px' 
-                    }}>
-                      <div style={{ padding: '8px 12px', background: '#f8f9fa', borderBottom: '1px solid #eee', fontSize: '9px', fontWeight: 900, color: '#0f52ba', letterSpacing: '1px' }}>
-                        MATCHING SERVICES IN {newBooking.modality}
+                <div style={{
+                  display: 'flex',
+                  flexDirection: isMobile ? 'column' : 'row',
+                  gap: '24px',
+                  alignItems: 'stretch'
+                }}>
+                  {/* Left Column: Clinical Setup */}
+                  <div style={{ flex: 1.1, display: 'flex', flexDirection: 'column', gap: '15px' }}>
+                    <div style={{ background: '#f8f9fa', padding: '18px', borderRadius: '14px', border: '1px solid #eee' }}>
+                      <div style={{ marginBottom: '8px' }}>
+                        <h3 style={{ fontSize: '12px', fontWeight: 900, color: '#0f52ba', textTransform: 'uppercase', letterSpacing: '1px' }}>1. Select Study Modality</h3>
                       </div>
-                      {serviceRegistry
-                        .filter(s => s.modality === newBooking.modality && s.serviceName.toLowerCase().includes(newBooking.service.toLowerCase()))
-                        .map(s => (
-                          <div 
-                            key={s.id}
-                            onClick={() => setNewBooking({
-                              ...newBooking, 
-                              service: s.serviceName,
-                              amount: s.amount,
-                              referralCutValue: s.referralCutValue || 0
-                            })}
 
-
-                            style={{ padding: '12px 15px', borderBottom: '1px solid #f8fafc', cursor: 'pointer', transition: 'background 0.2s' }}
-                            onMouseOver={e => e.currentTarget.style.background = '#f0f4ff'}
-                            onMouseOut={e => e.currentTarget.style.background = 'white'}
+                      <div className="modality-grid" style={{ gridTemplateColumns: 'repeat(5, 1fr)', gap: '8px', marginBottom: '15px' }}>
+                        {MODALITIES.map(m => (
+                          <div key={m} className={`modality-card ${newBooking.modality === m ? 'active' : ''}`} 
+                            style={{ padding: '8px 4px', minHeight: 'auto', display: 'flex', flexDirection: 'column', alignItems: 'center' }}
+                            onClick={() => setNewBooking({...newBooking, modality: m, service: '', amount: '', referralCutValue: 0})}
                           >
-                             <div style={{ fontSize: '12px', fontWeight: 800, color: '#1e293b' }}>{s.serviceName}</div>
-                             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '2px' }}>
-                               <div style={{ fontSize: '10px', color: '#0f52ba', fontWeight: 950 }}>₹{(s.amount || 0).toLocaleString()}</div>
-                               {s.referralCutValue > 0 && (
-                                 <div style={{ fontSize: '9px', color: '#e67e22', fontWeight: 900, background: '#fff7ed', padding: '2px 6px', borderRadius: '4px', border: '1px solid #ffedd5' }}>
-                                   INCENTIVE: ₹{(s.referralCutValue || 0).toLocaleString()}
-                                 </div>
-
-                               )}
-                             </div>
+                            <span className="modality-icon" style={{ fontSize: '12px', fontWeight: 900, marginBottom: '2px', color: newBooking.modality === m ? 'white' : '#0f52ba' }}>{MODALITY_ICONS[m] || 'MOD'}</span>
+                            <span className="modality-name" style={{ fontSize: '8px' }}>{m}</span>
                           </div>
                         ))}
-                </div>
-              )}
-            </div>
-
-                <div className="form-group" style={{ marginTop: '16px' }}>
-                  <label style={{ fontSize: '9px', fontWeight: 800, letterSpacing: '0.5px', color: '#888' }}>3. SERVICE AMOUNT (₹)</label>
-                  <input 
-                    type="number" 
-                    placeholder="e.g. 500" 
-                    value={newBooking.amount} 
-                    onChange={e => setNewBooking({...newBooking, amount: e.target.value === '' ? '' : parseFloat(e.target.value)})} 
-                    style={{ fontSize: '13px', padding: '10px' }} 
-                  />
-                  {newBooking.referralCutValue > 0 && (
-                    <div style={{ fontSize: '10px', fontWeight: 800, color: '#0f52ba', marginTop: '6px', display: 'flex', alignItems: 'center', gap: '4px' }}>
-                      <span style={{ opacity: 0.6 }}>SYSTEM REFERRAL CUT:</span>
-                      <span>₹{newBooking.referralCutValue}</span>
-
-                    </div>
-                  )}
-                </div>
-
-                <div style={{ marginTop: '16px' }}>
-                  <label style={{ fontSize: '9px', fontWeight: 800, letterSpacing: '0.5px', color: '#888', display: 'block', marginBottom: '10px' }}>MISSION DATE <span style={{ color: '#e74c3c' }}>*</span></label>
-                  <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', marginBottom: '12px' }}>
-                    {[-2, -1, 0, 1, 2, 3].map(offset => {
-                      const d = new Date();
-                      d.setDate(d.getDate() + offset);
-                      const dateStr = d.toLocaleDateString('en-CA');
-                      let label = '';
-                      if (offset === 0) label = 'TODAY';
-                      else if (offset === 1) label = 'TOMORROW';
-                      else if (offset === -1) label = 'YESTERDAY';
-                      else if (offset === -2) label = 'DAY BEFORE';
-                      else label = d.toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric' }).toUpperCase();
-                      
-                      const isActive = newBooking.date === dateStr;
-                      return (
-                        <button
-                          key={dateStr}
-                          onClick={() => setNewBooking({...newBooking, date: dateStr})}
-                          style={{
-                            padding: '8px 14px',
-                            borderRadius: '10px',
-                            fontSize: '10px',
-                            fontWeight: 900,
-                            border: '1px solid',
-                            borderColor: isActive ? '#0f52ba' : '#e2e8f0',
-                            background: isActive ? '#0f52ba' : 'white',
-                            color: isActive ? 'white' : '#64748b',
-                            cursor: 'pointer',
-                            transition: 'all 0.2s',
-                            boxShadow: isActive ? '0 4px 12px rgba(15, 82, 186, 0.2)' : 'none'
-                          }}
-                        >
-                          {label}
-                        </button>
-                      );
-                    })}
-                    <div style={{ position: 'relative' }}>
-                      <button
-                        onClick={() => document.getElementById('custom-date-trigger').showPicker()}
-                        style={{
-                          padding: '8px 14px',
-                          borderRadius: '10px',
-                          fontSize: '10px',
-                          fontWeight: 900,
-                          border: '1px solid #e2e8f0',
-                          background: 'white',
-                          color: '#64748b',
-                          cursor: 'pointer'
-                        }}
-                      >
-                        CUSTOM...
-                      </button>
-                      <input 
-                        id="custom-date-trigger"
-                        type="date" 
-                        style={{ position: 'absolute', opacity: 0, pointerEvents: 'none', top: 0, left: 0, width: 1, height: 1 }}
-                        value={newBooking.date}
-                        onChange={e => setNewBooking({...newBooking, date: e.target.value})}
-                      />
-                    </div>
-                  </div>
-                  
-                  {/* Show specific custom date if selected and not in quick chips */}
-                  {![-2, -1, 0, 1, 2, 3].some(offset => {
-                    const d = new Date();
-                    d.setDate(d.getDate() + offset);
-                    return d.toLocaleDateString('en-CA') === newBooking.date;
-                  }) && (
-                    <div style={{ 
-                      display: 'flex', alignItems: 'center', gap: '8px', 
-                      background: '#f8fafc', padding: '8px 12px', borderRadius: '10px', 
-                      border: '1px solid #e2e8f0', width: 'fit-content'
-                    }}>
-                      <span style={{ fontSize: '9px', fontWeight: 950, color: '#0f52ba' }}>SELECTED: {newBooking.date}</span>
-                      <button 
-                        onClick={() => setNewBooking({...newBooking, date: getTodayString()})}
-                        style={{ border: 'none', background: 'none', color: '#ef4444', fontSize: '10px', fontWeight: 900, cursor: 'pointer' }}
-                      >RESET</button>
-                    </div>
-                  )}
-                </div>
-
-                <div style={{ marginTop: '16px', marginBottom: '8px' }}>
-                  <label style={{ fontSize: '9px', fontWeight: 800, letterSpacing: '0.5px', color: '#888', display: 'block', marginBottom: '10px' }}>3. ASSIGN LEAD SPECIALIST <span style={{ color: '#e74c3c' }}>*</span></label>
-                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '10px' }}>
-                    {doctors.map((d, idx) => (
-                      <div key={`${d}_${idx}`} className={`modality-card ${newBooking.doctor === d ? 'active' : ''}`}
-                        style={{ padding: '12px', position: 'relative', flexDirection: 'row', justifyContent: 'flex-start', gap: '10px', minHeight: 'auto' }}
-                        onClick={() => setNewBooking({...newBooking, doctor: d})}
-                      >
-                        <div style={{
-                          width: '28px', height: '28px', borderRadius: '8px',
-                          background: newBooking.doctor === d ? 'rgba(255,255,255,0.2)' : '#e8f0fe',
-                          display: 'flex', alignItems: 'center', justifyContent: 'center',
-                          fontWeight: 900, fontSize: '11px', color: newBooking.doctor === d ? 'white' : '#0f52ba', flexShrink: 0,
-                        }}>
-                          {d.includes('.') ? d.split('. ')[1]?.charAt(0) || d.charAt(0) : d.charAt(0)}
-                        </div>
-                        <div style={{ textAlign: 'left' }}>
-                          <div style={{ fontWeight: 800, fontSize: '11px', color: newBooking.doctor === d ? 'white' : '#1a1a2e' }}>{d}</div>
-                        </div>
-                        {newBooking.doctor === d && <span style={{ position: 'absolute', top: '8px', right: '8px', fontSize: '9px', fontWeight: 950, color: 'white' }}>SELECTED</span>}
                       </div>
-                    ))}
-                  </div>
-                </div>
 
-                <div className="form-group" style={{ marginTop: '12px' }}>
-                  <label style={{ fontSize: '9px', fontWeight: 800, letterSpacing: '0.5px', color: '#888' }}>4. NOTES (OPTIONAL)</label>
-                  <textarea rows="2" placeholder="Clinical notes..." style={{ width: '100%', padding: '10px', borderRadius: '10px', border: '1px solid #dee2e6', fontSize: '12px', resize: 'vertical' }} value={newBooking.notes} onChange={e => setNewBooking({...newBooking, notes: e.target.value})} />
-                </div>
+                      <div className="form-group" style={{ marginTop: '10px', position: 'relative' }}>
+                        <label style={{ fontSize: '9px', fontWeight: 800, letterSpacing: '0.5px', color: '#888' }}>2. SERVICE / PROCEDURE <span style={{ color: '#e74c3c' }}>*</span></label>
+                        <input 
+                          type="text" 
+                          required 
+                          placeholder="e.g. Chest X-Ray with Lateral" 
+                          value={newBooking.service} 
+                          onChange={e => {
+                            const val = e.target.value;
+                            setNewBooking(prev => ({ ...prev, service: val }));
+                            const match = serviceRegistry.find(s => s.modality === newBooking.modality && s.serviceName.toLowerCase() === val.toLowerCase());
+                            if (match) {
+                              setNewBooking(prev => ({
+                                ...prev,
+                                amount: match.amount,
+                                referralCutValue: match.referralCutValue || 0
+                              }));
+                            }
+                          }} 
+                          style={{ fontSize: '13px', padding: '10px' }} 
+                        />
 
-                <div style={{
-                  background: '#f0f4ff', padding: '14px', borderRadius: '12px',
-                  border: '1px solid #dde5f5', marginTop: '12px',
-                }}>
-                  <div style={{ fontSize: '8px', fontWeight: 900, color: '#0f52ba', textTransform: 'uppercase', letterSpacing: '1px', marginBottom: '8px' }}>Final Mission Briefing Summary</div>
-                  <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 1fr', gap: '8px' }}>
-                    <div><span style={{ fontSize: '8px', color: '#888', fontWeight: 700 }}>PATIENT</span><div style={{ fontWeight: 800, fontSize: '11px', color: '#1a1a2e' }}>{patients.find(p => p.id === newBooking.patientId)?.name}</div></div>
-                    <div><span style={{ fontSize: '8px', color: '#888', fontWeight: 700 }}>MODALITY</span><div style={{ fontWeight: 800, fontSize: '11px', color: '#1a1a2e' }}>{newBooking.modality}</div></div>
-                    <div style={{ gridColumn: 'span 2' }}>
-                      <span style={{ fontSize: '8px', color: '#888', fontWeight: 700 }}>SERVICE & BILLING</span>
-                      <div style={{ fontWeight: 800, fontSize: '11px', color: '#1a1a2e', display: 'flex', justifyContent: 'space-between' }}>
-                        <span>{newBooking.service || '\u2014'}</span>
-                        <div style={{ textAlign: 'right' }}>
-                          <div style={{ color: '#0f52ba' }}>₹{(newBooking.amount || 0).toLocaleString()}</div>
-                          {newBooking.referralCutValue > 0 && (
-                            <div style={{ fontSize: '8px', color: '#e67e22', fontWeight: 900, marginTop: '2px' }}>
-                              REFERRAL CUT: ₹{(newBooking.referralCutValue || 0).toLocaleString()}
+                        {/* Service Suggestions Dropdown */}
+                        {newBooking.service.length > 0 && serviceRegistry.some(s => 
+                          s.modality === newBooking.modality && 
+                          s.serviceName.toLowerCase().includes(newBooking.service.toLowerCase()) && 
+                          s.serviceName !== newBooking.service
+                        ) && (
+                          <div style={{ 
+                            position: 'absolute', top: '100%', left: 0, right: 0, 
+                            background: 'white', border: '1px solid #e2e8f0', borderRadius: '12px', 
+                            boxShadow: '0 10px 30px rgba(0,0,0,0.1)', zIndex: 100, 
+                            maxHeight: '160px', overflowY: 'auto', marginTop: '4px' 
+                          }}>
+                            <div style={{ padding: '8px 12px', background: '#f8f9fa', borderBottom: '1px solid #eee', fontSize: '9px', fontWeight: 900, color: '#0f52ba', letterSpacing: '1px' }}>
+                              MATCHING SERVICES IN {newBooking.modality}
                             </div>
+                            {serviceRegistry
+                              .filter(s => s.modality === newBooking.modality && s.serviceName.toLowerCase().includes(newBooking.service.toLowerCase()))
+                              .map(s => (
+                                <div 
+                                  key={s.id}
+                                  onClick={() => setNewBooking({
+                                    ...newBooking, 
+                                    service: s.serviceName,
+                                    amount: s.amount,
+                                    referralCutValue: s.referralCutValue || 0
+                                  })}
+                                  style={{ padding: '10px 15px', borderBottom: '1px solid #f8fafc', cursor: 'pointer', transition: 'background 0.2s' }}
+                                  onMouseOver={e => e.currentTarget.style.background = '#f0f4ff'}
+                                  onMouseOut={e => e.currentTarget.style.background = 'white'}
+                                >
+                                   <div style={{ fontSize: '12px', fontWeight: 800, color: '#1e293b' }}>{s.serviceName}</div>
+                                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '2px' }}>
+                                     <div style={{ fontSize: '10px', color: '#0f52ba', fontWeight: 950 }}>₹{(s.amount || 0).toLocaleString()}</div>
+                                     {s.referralCutValue > 0 && (
+                                       <div style={{ fontSize: '9px', color: '#e67e22', fontWeight: 900, background: '#fff7ed', padding: '2px 6px', borderRadius: '4px', border: '1px solid #ffedd5' }}>
+                                         INCENTIVE: ₹{(s.referralCutValue || 0).toLocaleString()}
+                                       </div>
+                                     )}
+                                   </div>
+                                </div>
+                              ))}
+                          </div>
+                        )}
+                      </div>
 
-                          )}
+                      <div className="form-group" style={{ marginTop: '12px' }}>
+                        <label style={{ fontSize: '9px', fontWeight: 800, letterSpacing: '0.5px', color: '#888' }}>3. SERVICE AMOUNT (₹)</label>
+                        <input 
+                          type="number" 
+                          placeholder="e.g. 500" 
+                          value={newBooking.amount} 
+                          onChange={e => setNewBooking({...newBooking, amount: e.target.value === '' ? '' : parseFloat(e.target.value)})} 
+                          style={{ fontSize: '13px', padding: '10px' }} 
+                        />
+                        {newBooking.referralCutValue > 0 && (
+                          <div style={{ fontSize: '10px', fontWeight: 800, color: '#0f52ba', marginTop: '6px', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                            <span style={{ opacity: 0.6 }}>SYSTEM REFERRAL CUT:</span>
+                            <span>₹{newBooking.referralCutValue}</span>
+                          </div>
+                        )}
+                      </div>
+
+                      <div className="form-group" style={{ marginTop: '12px' }}>
+                        <label style={{ fontSize: '9px', fontWeight: 800, letterSpacing: '0.5px', color: '#888' }}>4. NOTES (OPTIONAL)</label>
+                        <textarea rows="2" placeholder="Clinical notes..." style={{ width: '100%', padding: '10px', borderRadius: '10px', border: '1px solid #dee2e6', fontSize: '12px', resize: 'vertical' }} value={newBooking.notes} onChange={e => setNewBooking({...newBooking, notes: e.target.value})} />
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Right Column: Execution Schedule & Specialist */}
+                  <div style={{ flex: 1.3, display: 'flex', flexDirection: 'column', gap: '15px' }}>
+                    <div style={{ background: 'white', padding: '16px 20px', borderRadius: '14px', border: '2px dashed #dde5f5' }}>
+                      <div style={{ marginBottom: '8px' }}>
+                        <label style={{ fontSize: '9px', fontWeight: 800, letterSpacing: '0.5px', color: '#888', display: 'block', marginBottom: '8px' }}>5. MISSION DATE <span style={{ color: '#e74c3c' }}>*</span></label>
+                        <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', marginBottom: '12px' }}>
+                          {[-2, -1, 0, 1, 2, 3].map(offset => {
+                            const d = new Date();
+                            d.setDate(d.getDate() + offset);
+                            const dateStr = d.toLocaleDateString('en-CA');
+                            let label = '';
+                            if (offset === 0) label = 'TODAY';
+                            else if (offset === 1) label = 'TOMORROW';
+                            else if (offset === -1) label = 'YESTERDAY';
+                            else if (offset === -2) label = 'DAY BEFORE';
+                            else label = d.toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric' }).toUpperCase();
+                            
+                            const isActive = newBooking.date === dateStr;
+                            return (
+                              <button
+                                key={dateStr}
+                                onClick={() => setNewBooking({...newBooking, date: dateStr})}
+                                style={{
+                                  padding: '6px 10px',
+                                  borderRadius: '8px',
+                                  fontSize: '9px',
+                                  fontWeight: 900,
+                                  border: '1px solid',
+                                  borderColor: isActive ? '#0f52ba' : '#e2e8f0',
+                                  background: isActive ? '#0f52ba' : 'white',
+                                  color: isActive ? 'white' : '#64748b',
+                                  cursor: 'pointer',
+                                  transition: 'all 0.2s',
+                                  boxShadow: isActive ? '0 4px 12px rgba(15, 82, 186, 0.2)' : 'none'
+                                }}
+                              >
+                                {label}
+                              </button>
+                            );
+                          })}
+                          <div style={{ position: 'relative' }}>
+                            <button
+                              onClick={() => document.getElementById('custom-date-trigger').showPicker()}
+                              style={{
+                                padding: '6px 10px',
+                                borderRadius: '8px',
+                                fontSize: '9px',
+                                fontWeight: 900,
+                                border: '1px solid #e2e8f0',
+                                background: 'white',
+                                color: '#64748b',
+                                cursor: 'pointer'
+                              }}
+                            >
+                              CUSTOM...
+                            </button>
+                            <input 
+                              id="custom-date-trigger"
+                              type="date" 
+                              style={{ position: 'absolute', opacity: 0, pointerEvents: 'none', top: 0, left: 0, width: 1, height: 1 }}
+                              value={newBooking.date}
+                              onChange={e => setNewBooking({...newBooking, date: e.target.value})}
+                            />
+                          </div>
+                        </div>
+                        
+                        {/* Show specific custom date if selected and not in quick chips */}
+                        {![-2, -1, 0, 1, 2, 3].some(offset => {
+                          const d = new Date();
+                          d.setDate(d.getDate() + offset);
+                          return d.toLocaleDateString('en-CA') === newBooking.date;
+                        }) && (
+                          <div style={{ 
+                            display: 'flex', alignItems: 'center', gap: '8px', 
+                            background: '#f8fafc', padding: '6px 10px', borderRadius: '8px', 
+                            border: '1px solid #e2e8f0', width: 'fit-content'
+                          }}>
+                            <span style={{ fontSize: '8px', fontWeight: 950, color: '#0f52ba' }}>SELECTED: {newBooking.date}</span>
+                            <button 
+                              onClick={() => setNewBooking({...newBooking, date: getTodayString()})}
+                              style={{ border: 'none', background: 'none', color: '#ef4444', fontSize: '9px', fontWeight: 900, cursor: 'pointer' }}
+                            >RESET</button>
+                          </div>
+                        )}
+                      </div>
+
+                      <div style={{ marginTop: '12px', marginBottom: '8px' }}>
+                        <label style={{ fontSize: '9px', fontWeight: 800, letterSpacing: '0.5px', color: '#888', display: 'block', marginBottom: '6px' }}>6. ASSIGN LEAD SPECIALIST <span style={{ color: '#e74c3c' }}>*</span></label>
+                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '8px' }}>
+                          {doctors.map((d, idx) => (
+                            <div key={`${d}_${idx}`} className={`modality-card ${newBooking.doctor === d ? 'active' : ''}`}
+                              style={{ padding: '8px', position: 'relative', flexDirection: 'row', justifyContent: 'flex-start', gap: '8px', minHeight: 'auto' }}
+                              onClick={() => setNewBooking({...newBooking, doctor: d})}
+                            >
+                              <div style={{
+                                width: '24px', height: '24px', borderRadius: '6px',
+                                background: newBooking.doctor === d ? 'rgba(255,255,255,0.2)' : '#e8f0fe',
+                                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                fontWeight: 900, fontSize: '10px', color: newBooking.doctor === d ? 'white' : '#0f52ba', flexShrink: 0,
+                              }}>
+                                {d.includes('.') ? d.split('. ')[1]?.charAt(0) || d.charAt(0) : d.charAt(0)}
+                              </div>
+                              <div style={{ textAlign: 'left' }}>
+                                <div style={{ fontWeight: 800, fontSize: '10px', color: newBooking.doctor === d ? 'white' : '#1a1a2e' }}>{d}</div>
+                              </div>
+                              {newBooking.doctor === d && <span style={{ position: 'absolute', top: '6px', right: '6px', fontSize: '8px', fontWeight: 950, color: 'white' }}>SELECTED</span>}
+                            </div>
+                          ))}
                         </div>
                       </div>
                     </div>
-                    <div><span style={{ fontSize: '8px', color: '#888', fontWeight: 700 }}>SPECIALIST</span><div style={{ fontWeight: 800, fontSize: '11px', color: '#1a1a2e' }}>{newBooking.doctor || 'Unassigned'}</div></div>
-                    <div><span style={{ fontSize: '8px', color: '#888', fontWeight: 700 }}>SCHEDULED DATE</span><div style={{ fontWeight: 800, fontSize: '11px', color: '#0f52ba' }}>{newBooking.date}</div></div>
-                  </div>
-                </div>
 
-                <div className="drawer-footer" style={{ marginTop: '16px' }}>
-                  <button className="btn-logout" style={{ padding: '12px 20px', borderRadius: '10px', fontWeight: 800, fontSize: '12px' }} onClick={() => setBookingStep(1)}>{'\u2190'} Back</button>
-                  <button 
-                    className="gamified-btn" 
-                    style={{ 
-                      flex: 1, padding: '12px', borderRadius: '10px', fontSize: '13px',
-                      opacity: (!newBooking.patientId || !newBooking.service || !newBooking.doctor) ? 0.7 : 1
-                    }} 
-                    onClick={handleBookAppointment}
-                  >
-                    DEPLOY MISSION
-                  </button>
+                    <div style={{
+                      background: '#f0f4ff', padding: '12px 14px', borderRadius: '12px',
+                      border: '1px solid #dde5f5', marginTop: '0px',
+                    }}>
+                      <div style={{ fontSize: '8px', fontWeight: 900, color: '#0f52ba', textTransform: 'uppercase', letterSpacing: '1px', marginBottom: '6px' }}>Final Mission Briefing Summary</div>
+                      <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 1fr', gap: '6px' }}>
+                        <div><span style={{ fontSize: '8px', color: '#888', fontWeight: 700 }}>PATIENT</span><div style={{ fontWeight: 800, fontSize: '10px', color: '#1a1a2e' }}>{patients.find(p => p.id === newBooking.patientId)?.name}</div></div>
+                        <div><span style={{ fontSize: '8px', color: '#888', fontWeight: 700 }}>MODALITY</span><div style={{ fontWeight: 800, fontSize: '10px', color: '#1a1a2e' }}>{newBooking.modality}</div></div>
+                        <div style={{ gridColumn: 'span 2' }}>
+                          <span style={{ fontSize: '8px', color: '#888', fontWeight: 700 }}>SERVICE & BILLING</span>
+                          <div style={{ fontWeight: 800, fontSize: '10px', color: '#1a1a2e', display: 'flex', justifyContent: 'space-between' }}>
+                            <span>{newBooking.service || '\u2014'}</span>
+                            <div style={{ textAlign: 'right' }}>
+                              <div style={{ color: '#0f52ba' }}>₹{(newBooking.amount || 0).toLocaleString()}</div>
+                              {newBooking.referralCutValue > 0 && (
+                                <div style={{ fontSize: '8px', color: '#e67e22', fontWeight: 900, marginTop: '2px' }}>
+                                  REFERRAL CUT: ₹{(newBooking.referralCutValue || 0).toLocaleString()}
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+                        <div><span style={{ fontSize: '8px', color: '#888', fontWeight: 700 }}>SPECIALIST</span><div style={{ fontWeight: 800, fontSize: '10px', color: '#1a1a2e' }}>{newBooking.doctor || 'Unassigned'}</div></div>
+                        <div><span style={{ fontSize: '8px', color: '#888', fontWeight: 700 }}>SCHEDULED DATE</span><div style={{ fontWeight: 800, fontSize: '10px', color: '#0f52ba' }}>{newBooking.date}</div></div>
+                      </div>
+                    </div>
+
+                    <div className="drawer-footer" style={{ marginTop: '0px', paddingTop: '10px' }}>
+                      <button className="btn-logout" style={{ padding: '12px 20px', borderRadius: '10px', fontWeight: 800, fontSize: '12px' }} onClick={() => setBookingStep(1)}>{'\u2190'} Back</button>
+                      <button 
+                        className="gamified-btn" 
+                        style={{ 
+                          flex: 1, padding: '12px 20px', borderRadius: '10px', fontSize: '12px', fontWeight: 950,
+                          background: 'linear-gradient(90deg, #0f52ba, #00f2fe)',
+                          color: 'white', border: 'none', cursor: 'pointer',
+                          boxShadow: '0 4px 12px rgba(15, 82, 186, 0.2)',
+                          opacity: (!newBooking.patientId || !newBooking.service || !newBooking.doctor) ? 0.7 : 1
+                        }}
+                        disabled={!newBooking.patientId || !newBooking.service || !newBooking.doctor}
+                        onClick={handleBookAppointment}
+                      >
+                        🚀 DEPLOY MISSION
+                      </button>
+                    </div>
+                  </div>
                 </div>
               </div>
             )}

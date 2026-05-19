@@ -32,6 +32,7 @@ const FinanceManager = ({
   hideTabs = []
 }) => {
   const [financeViewMode, setFinanceViewMode] = useState('REGISTRY');
+  const [showAutoBillConfirm, setShowAutoBillConfirm] = useState(false);
 
   const [regModalityFilter, setRegModalityFilter] = useState('ALL');
   const [regSortConfig, setRegSortConfig] = useState({ key: 'modality', direction: 'asc' });
@@ -273,7 +274,7 @@ const FinanceManager = ({
                   <div style={{ fontSize: '12px', color: '#94a3b8', marginTop: '2px' }}>Create invoice on appointment completion</div>
                 </div>
                 <div
-                  onClick={handleToggleAutoBill}
+                  onClick={() => setShowAutoBillConfirm(true)}
                   style={{ width: '44px', height: '24px', background: billingSettings.autoBill ? '#1d4ed8' : '#cbd5e1', borderRadius: '12px', cursor: 'pointer', position: 'relative', transition: 'all 0.3s', flexShrink: 0 }}
                 >
                   <div style={{ position: 'absolute', top: '2px', left: billingSettings.autoBill ? '22px' : '2px', width: '20px', height: '20px', background: 'white', borderRadius: '50%', transition: 'all 0.3s' }}></div>
@@ -890,6 +891,113 @@ const FinanceManager = ({
                   </button>
                 </div>
               </form>
+            </div>
+          </div>
+        </div>
+      )}
+      {showAutoBillConfirm && (
+        <div style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          zIndex: 20000,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+        }}>
+          <div 
+            onClick={() => setShowAutoBillConfirm(false)}
+            style={{
+              position: 'absolute',
+              top: 0,
+              left: 0,
+              right: 0,
+              bottom: 0,
+              background: 'rgba(15, 23, 42, 0.4)',
+              backdropFilter: 'blur(8px)',
+              transition: 'all 0.3s'
+            }}
+          />
+          <div style={{
+            position: 'relative',
+            zIndex: 10,
+            background: 'white',
+            borderRadius: '24px',
+            border: '1px solid #e2e8f0',
+            boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04)',
+            padding: '32px',
+            width: isMobile ? '90%' : '440px',
+            maxWidth: '100%',
+            animation: 'fadeIn 0.2s ease-out'
+          }}>
+            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', textAlign: 'center', gap: '20px' }}>
+              <div style={{
+                width: '60px',
+                height: '60px',
+                borderRadius: '50%',
+                background: billingSettings.autoBill ? '#fff7ed' : '#eff6ff',
+                color: billingSettings.autoBill ? '#ea580c' : '#1d4ed8',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                fontSize: '28px'
+              }}>
+                {billingSettings.autoBill ? '⚠️' : 'ℹ️'}
+              </div>
+              <div>
+                <h3 style={{ fontSize: '18px', fontWeight: 950, color: '#1e293b', margin: 0 }}>
+                  {billingSettings.autoBill ? 'Disable Auto-Billing?' : 'Enable Auto-Billing?'}
+                </h3>
+                <p style={{ fontSize: '13px', color: '#64748b', marginTop: '10px', lineHeight: '1.5', fontWeight: 500 }}>
+                  {billingSettings.autoBill 
+                    ? 'Are you sure you want to disable auto-billing? Invoices will no longer be generated automatically when appointments are completed.' 
+                    : 'Are you sure you want to enable auto-billing? Invoices will be generated automatically when appointments are completed.'}
+                </p>
+              </div>
+              <div style={{ display: 'flex', gap: '12px', width: '100%', marginTop: '8px' }}>
+                <button
+                  type="button"
+                  onClick={() => setShowAutoBillConfirm(false)}
+                  style={{
+                    flex: 1,
+                    padding: '12px 18px',
+                    borderRadius: '12px',
+                    border: '1px solid #e2e8f0',
+                    background: '#f8fafc',
+                    color: '#475569',
+                    fontSize: '13px',
+                    fontWeight: 950,
+                    cursor: 'pointer',
+                    transition: 'all 0.2s'
+                  }}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    handleToggleAutoBill();
+                    setShowAutoBillConfirm(false);
+                  }}
+                  style={{
+                    flex: 1,
+                    padding: '12px 18px',
+                    borderRadius: '12px',
+                    border: 'none',
+                    background: billingSettings.autoBill ? '#ea580c' : '#1d4ed8',
+                    color: 'white',
+                    fontSize: '13px',
+                    fontWeight: 950,
+                    cursor: 'pointer',
+                    boxShadow: billingSettings.autoBill ? '0 4px 12px rgba(234,88,12,0.2)' : '0 4px 12px rgba(29,78,216,0.2)',
+                    transition: 'all 0.2s'
+                  }}
+                >
+                  Confirm
+                </button>
+              </div>
             </div>
           </div>
         </div>

@@ -701,3 +701,13 @@
     border: 1px solid #ccc;
   }
 }
+
+/* Booking Drawer Custom Width & Compact Spacing */
+@media (min-width: 1024px) {
+  .drawer-content.booking-drawer-width {
+    width: 80vw !important;
+    max-width: 1500px !important;
+    padding: 16px 24px !important;
+  }
+}
+
