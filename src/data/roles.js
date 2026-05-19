@@ -33,7 +33,7 @@ export const NAV_ITEMS = [
   {
     label: 'Configuration',
     route: '/configuration',
-    allowedRoles: ['admindoctor', 'admin'],
+    allowedRoles: ['admindoctor', 'admin', 'technician', 'doctor'],
   },
   {
     label: 'Dashboard',

@@ -2578,7 +2578,7 @@ const ReportingPage = () => {
             ].map(tab => (
               <button
                 key={tab.id}
-                onClick={() => setActiveMainTab(tab.id)}
+                onClick={() => handleSelectMainTab(tab.id)}
                 style={{
                   background: activeMainTab === tab.id ? 'linear-gradient(135deg, #0f52ba 0%, #1e3a8a 100%)' : 'transparent',
                   border: 'none', padding: '8px 18px', borderRadius: '12px', cursor: 'pointer',
@@ -3663,7 +3663,7 @@ const ReportingPage = () => {
                     }}
                     onViewDicom={(study) => {
                       handleLoadHistoricalDicom(study);
-                      setActiveMainTab('DICOM'); // Switch to DICOM tab to see the loaded study
+                      handleSelectMainTab('DICOM'); // Switch to DICOM tab and trigger hydration
                     }}
                   />
                 </div>

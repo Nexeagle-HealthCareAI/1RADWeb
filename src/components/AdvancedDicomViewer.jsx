@@ -116,7 +116,7 @@ async function initCornerstone() {
 
   const config = {
     maxWebWorkers: DICOM_CONFIG.USE_WEB_WORKERS ? DICOM_CONFIG.MAX_WEB_WORKERS : 0,
-    startWebWorkersOnDemand: true,
+    startWebWorkersOnDemand: false, // start workers eagerly so they're ready for first decode
     decodeConfig: {
       usePDFJS: false,
       strict: false,
@@ -413,6 +413,9 @@ const AdvancedDicomViewer = ({
   const [hounsFieldValue, setHounsFieldValue] = useState(null);
   const [imageStatistics, setImageStatistics] = useState(null);
   const [showMeasurementList, setShowMeasurementList] = useState(true);
+
+  // Pre-warm Cornerstone + codec workers on mount so they're ready when images arrive
+  useEffect(() => { initCornerstone(); }, []);
   const [showCrosshairs, setShowCrosshairs] = useState(false);
   const [showReferenceLines, setShowReferenceLines] = useState(false);
   
@@ -1033,13 +1036,7 @@ const AdvancedDicomViewer = ({
 
         // Load and assign Stack
         try {
-          console.log(`[DICOM] Validating Blob Accessibility: ${imageIds[0]}`);
-          const blobUrl = imageIds[0].replace('wadouri:', '');
-          const blobCheck = await fetch(blobUrl);
-          if (!blobCheck.ok) throw new Error("Blob URL is not accessible");
-          console.log(`[DICOM] Blob is accessible, size: ${blobCheck.headers.get('content-length')}`);
-
-          console.log(`[DICOM] Attempting decode (sync): ${imageIds[0]}`);
+          console.log(`[DICOM] Attempting decode: ${imageIds[0]}`);
           console.log(`[DICOM] Starting image load at: ${new Date().toISOString()}`);
           
           // Increased timeout for slow networks/large files

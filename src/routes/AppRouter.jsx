@@ -160,7 +160,7 @@ export default function AppRouter() {
         <Route
           path="/configuration"
           element={
-            <ProtectedRoute allowedRoles={['admindoctor', 'admin']}>
+            <ProtectedRoute allowedRoles={['admindoctor', 'admin', 'technician', 'doctor']}>
               <ConfigurationPage />
             </ProtectedRoute>
           }
