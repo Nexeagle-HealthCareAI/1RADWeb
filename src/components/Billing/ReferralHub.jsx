@@ -10,6 +10,8 @@ const ReferralHub = ({
   setStartDate,
   endDate,
   setEndDate,
+  referralSearch = '',
+  setReferralSearch = () => {},
   handleToggleCommissionStatus,
   handleDeleteExpense,
   setEditPayout,
@@ -36,11 +38,18 @@ const ReferralHub = ({
   }, [filteredReferralCuts]);
 
   const [selectedIds, setSelectedIds] = useState(new Set());
+  const [confirmModal, setConfirmModal] = useState({
+    isOpen: false,
+    cutId: null,
+    currentStatus: '',
+    patientName: '',
+    amount: 0
+  });
 
   // Clear selections on filter adjustments
   useEffect(() => {
     setSelectedIds(new Set());
-  }, [timeFilter, startDate, endDate, referrerFilter, modalityFilter]);
+  }, [timeFilter, startDate, endDate, referrerFilter, modalityFilter, referralSearch]);
 
   const toggleSelectRow = (id) => {
     setSelectedIds(prev => {
@@ -335,6 +344,43 @@ const ReferralHub = ({
        </div>
 
        <div style={{ background: 'white', borderRadius: isMobile ? '16px' : '24px', border: '1px solid #e2e8f0', overflow: 'hidden' }}>
+          {/* Table-level search */}
+          <div style={{ padding: isMobile ? '15px' : '18px 24px', borderBottom: '1px solid #f1f5f9', display: 'flex', flexDirection: isMobile ? 'column' : 'row', alignItems: isMobile ? 'stretch' : 'center', justifyContent: 'space-between', gap: '12px', background: '#fff5f6' }}>
+            <div style={{ position: 'relative', width: isMobile ? '100%' : '380px' }}>
+              <span style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', fontSize: '14px', color: '#94a3b8', pointerEvents: 'none' }}>🔍</span>
+              <input
+                type="text"
+                value={referralSearch || ''}
+                onChange={e => setReferralSearch(e.target.value)}
+                placeholder="Search by patient, partner, modality, or ref ID..."
+                style={{
+                  width: '100%',
+                  padding: '10px 36px 10px 36px',
+                  borderRadius: '10px',
+                  border: '1px solid #fecdd3',
+                  fontSize: '12px',
+                  fontWeight: 600,
+                  outline: 'none',
+                  background: 'white',
+                  boxSizing: 'border-box',
+                  transition: 'border-color 0.2s, box-shadow 0.2s',
+                }}
+                onFocus={e => { e.target.style.borderColor = '#e11d48'; e.target.style.boxShadow = '0 0 0 3px rgba(225, 29, 72, 0.1)'; }}
+                onBlur={e => { e.target.style.borderColor = '#fecdd3'; e.target.style.boxShadow = 'none'; }}
+              />
+              {referralSearch && (
+                <button
+                  type="button"
+                  onClick={() => setReferralSearch('')}
+                  aria-label="Clear search"
+                  style={{ position: 'absolute', right: '10px', top: '50%', transform: 'translateY(-50%)', background: 'transparent', border: 'none', cursor: 'pointer', color: '#94a3b8', fontSize: '16px', padding: 0, lineHeight: 1 }}
+                >×</button>
+              )}
+            </div>
+            <span style={{ fontSize: '10px', fontWeight: 950, color: '#e11d48', letterSpacing: '1px', whiteSpace: 'nowrap' }}>
+              {filteredReferralCuts.length} {filteredReferralCuts.length === 1 ? 'PAYOUT' : 'PAYOUTS'}
+            </span>
+          </div>
           <div style={{ overflowX: 'auto' }}>
             <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: isMobile ? '1000px' : 'auto' }}>
                <thead style={{ background: '#fff1f2' }}>
@@ -388,19 +434,29 @@ const ReferralHub = ({
                             <div style={{ fontSize: '12px', fontWeight: 950, color: '#e11d48' }}>₹{(Number(cut?.amount) || 0).toLocaleString()}</div>
                          </td>
                          <td style={{ padding: '20px 30px', textAlign: 'center' }}>
-                            <button 
-                              onClick={() => cut?.type === 'STRATEGIC' && handleToggleCommissionStatus(cut?.id, cut?.status)}
-                              disabled={cut?.type === 'LEGACY'}
-                              style={{ 
-                                padding: '6px 12px', borderRadius: '8px', border: 'none', fontSize: '8.5px', fontWeight: 950,
-                                background: cut?.status === 'PAID' ? '#dcfce7' : '#fee2e2',
-                                color: cut?.status === 'PAID' ? '#166534' : '#991b1b',
-                                cursor: cut?.type === 'STRATEGIC' ? 'pointer' : 'default',
-                                boxShadow: 'inset 0 2px 4px rgba(0,0,0,0.05)'
-                              }}
-                            >
-                              {cut?.status || 'UNPAID'}
-                            </button>
+                             <button 
+                               onClick={() => {
+                                 if (cut?.type === 'STRATEGIC') {
+                                   setConfirmModal({
+                                     isOpen: true,
+                                     cutId: cut?.id,
+                                     currentStatus: cut?.status || 'UNPAID',
+                                     patientName: cut?.patientName || 'N/A',
+                                     amount: cut?.amount || 0
+                                   });
+                                 }
+                               }}
+                               disabled={cut?.type === 'LEGACY'}
+                               style={{ 
+                                 padding: '6px 12px', borderRadius: '8px', border: 'none', fontSize: '8.5px', fontWeight: 950,
+                                 background: cut?.status === 'PAID' ? '#dcfce7' : '#fee2e2',
+                                 color: cut?.status === 'PAID' ? '#166534' : '#991b1b',
+                                 cursor: cut?.type === 'STRATEGIC' ? 'pointer' : 'default',
+                                 boxShadow: 'inset 0 2px 4px rgba(0,0,0,0.05)'
+                               }}
+                             >
+                               {cut?.status || 'UNPAID'}
+                             </button>
                          </td>
                          <td style={{ padding: '20px 30px', textAlign: 'center' }}>
                              {cut?.patientPaymentStatus === 'PAID' ? (
@@ -411,6 +467,11 @@ const ReferralHub = ({
                                <span title="Payment pending" style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: '28px', height: '28px', borderRadius: '50%', background: '#fee2e2', fontSize: '14px' }}>✗</span>
                              ) : (
                                <span title="Status unknown" style={{ fontSize: '11px', color: '#cbd5e1', fontWeight: 700 }}>—</span>
+                             )}
+                             {cut?.paymentReceived !== undefined && cut?.paymentReceived !== null && (
+                               <div style={{ display: 'block', fontSize: '9.5px', fontWeight: 950, color: '#475569', marginTop: '4px', fontFamily: 'monospace' }}>
+                                 ₹{(Number(cut.paymentReceived) || 0).toLocaleString()}
+                               </div>
                              )}
                          </td>
                          <td style={{ padding: '20px 30px', textAlign: 'right' }}>
@@ -453,6 +514,152 @@ const ReferralHub = ({
             ))}
         </div>
       </div>
+
+      {/* Premium Glassmorphic Confirmation Modal */}
+      {confirmModal.isOpen && (
+        <div 
+          style={{
+            position: 'fixed',
+            top: 0,
+            left: 0,
+            width: '100vw',
+            height: '100vh',
+            background: 'rgba(15, 23, 42, 0.4)',
+            backdropFilter: 'blur(10px)',
+            WebkitBackdropFilter: 'blur(10px)',
+            display: 'flex',
+            justifyContent: 'center',
+            alignItems: 'center',
+            zIndex: 99999,
+            animation: 'fadeIn 0.2s ease-out forwards'
+          }}
+          onClick={() => setConfirmModal({ ...confirmModal, isOpen: false })}
+        >
+          <div 
+            style={{
+              width: '90%',
+              maxWidth: '440px',
+              background: 'linear-gradient(135deg, #ffffff 0%, #f8fafc 100%)',
+              borderRadius: '24px',
+              border: '1px solid rgba(226, 232, 240, 0.8)',
+              boxShadow: '0 20px 40px -15px rgba(15, 23, 42, 0.15), 0 0 0 1px rgba(15, 23, 42, 0.04)',
+              padding: '30px 24px',
+              textAlign: 'center',
+              transform: 'scale(0.95)',
+              animation: 'slideUp 0.25s cubic-bezier(0.34, 1.56, 0.64, 1) forwards',
+              cursor: 'default'
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Dynamic Icon */}
+            <div 
+              style={{
+                width: '64px',
+                height: '64px',
+                borderRadius: '50%',
+                background: confirmModal.currentStatus === 'PAID' 
+                  ? 'linear-gradient(135deg, #fee2e2 0%, #fecdd3 100%)' 
+                  : 'linear-gradient(135deg, #dcfce7 0%, #bbf7d0 100%)',
+                display: 'flex',
+                justifyContent: 'center',
+                alignItems: 'center',
+                margin: '0 auto 20px auto',
+                boxShadow: confirmModal.currentStatus === 'PAID'
+                  ? '0 8px 20px -6px rgba(239, 68, 68, 0.2)'
+                  : '0 8px 20px -6px rgba(34, 197, 94, 0.2)',
+                fontSize: '24px'
+              }}
+            >
+              {confirmModal.currentStatus === 'PAID' ? '🔄' : '💰'}
+            </div>
+
+            {/* Title */}
+            <h3 
+              style={{
+                margin: '0 0 12px 0',
+                fontSize: '15px',
+                fontWeight: 950,
+                color: '#1e293b',
+                letterSpacing: '0.8px',
+                textTransform: 'uppercase',
+                fontFamily: 'system-ui, -apple-system, sans-serif'
+              }}
+            >
+              Confirm Status Transition
+            </h3>
+
+            {/* Description */}
+            <p 
+              style={{
+                margin: '0 0 24px 0',
+                fontSize: '12px',
+                lineHeight: 1.6,
+                color: '#475569',
+                fontWeight: 700,
+                fontFamily: 'system-ui, -apple-system, sans-serif'
+              }}
+            >
+              Are you sure you want to transition the commission status of the referral for <strong style={{ color: '#e11d48' }}>{confirmModal.patientName.toUpperCase()}</strong> (amounting to <strong style={{ color: '#10b981' }}>₹{confirmModal.amount.toLocaleString()}</strong>) from <span style={{ padding: '3px 8px', borderRadius: '6px', fontSize: '9px', fontWeight: 950, background: confirmModal.currentStatus === 'PAID' ? '#dcfce7' : '#fee2e2', color: confirmModal.currentStatus === 'PAID' ? '#166534' : '#991b1b' }}>{confirmModal.currentStatus}</span> to <span style={{ padding: '3px 8px', borderRadius: '6px', fontSize: '9px', fontWeight: 950, background: confirmModal.currentStatus === 'PAID' ? '#fee2e2' : '#dcfce7', color: confirmModal.currentStatus === 'PAID' ? '#991b1b' : '#166534' }}>{confirmModal.currentStatus === 'PAID' ? 'UNPAID' : 'PAID'}</span>? This will sync immediately with the ledger.
+            </p>
+
+            {/* Actions */}
+            <div style={{ display: 'flex', gap: '12px' }}>
+              <button 
+                onClick={() => setConfirmModal({ ...confirmModal, isOpen: false })}
+                style={{
+                  flex: 1,
+                  padding: '12px 20px',
+                  background: '#f1f5f9',
+                  color: '#475569',
+                  border: 'none',
+                  borderRadius: '12px',
+                  fontSize: '11px',
+                  fontWeight: 950,
+                  cursor: 'pointer',
+                  transition: 'background 0.2s'
+                }}
+                onMouseOver={(e) => { e.currentTarget.style.background = '#e2e8f0'; }}
+                onMouseOut={(e) => { e.currentTarget.style.background = '#f1f5f9'; }}
+              >
+                CANCEL
+              </button>
+              <button 
+                onClick={() => {
+                  handleToggleCommissionStatus(confirmModal.cutId, confirmModal.currentStatus);
+                  setConfirmModal({ ...confirmModal, isOpen: false });
+                }}
+                style={{
+                  flex: 1,
+                  padding: '12px 20px',
+                  background: 'linear-gradient(135deg, #e11d48 0%, #be123c 100%)',
+                  color: '#ffffff',
+                  border: 'none',
+                  borderRadius: '12px',
+                  fontSize: '11px',
+                  fontWeight: 950,
+                  cursor: 'pointer',
+                  boxShadow: '0 8px 18px -4px rgba(225, 29, 72, 0.3)',
+                  transition: 'filter 0.2s'
+                }}
+                onMouseOver={(e) => { e.currentTarget.style.filter = 'brightness(1.1)'; }}
+                onMouseOut={(e) => { e.currentTarget.style.filter = 'none'; }}
+              >
+                CONFIRM & CHANGE
+              </button>
+            </div>
+          </div>
+          <style>{`
+            @keyframes fadeIn {
+              from { opacity: 0; }
+              to { opacity: 1; }
+            }
+            @keyframes slideUp {
+              from { transform: scale(0.9) translateY(20px); opacity: 0; }
+              to { transform: scale(1) translateY(0); opacity: 1; }
+            }
+          `}</style>
+        </div>
+      )}
     </div>
   );
 };

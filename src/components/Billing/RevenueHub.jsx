@@ -1,4 +1,4 @@
-﻿import React, { useMemo, useState, useEffect } from 'react';
+import React, { useMemo, useState, useEffect } from 'react';
 
 const RevenueHub = ({
   filteredInvoices,
@@ -36,6 +36,8 @@ const RevenueHub = ({
   paginatedFutureAppointments,
   serviceRegistry
 }) => {
+  const [errorModal, setErrorModal] = useState({ isOpen: false, title: '', message: '' });
+
   const getSortIcon = (key) => {
     if (sortConfig.key !== key) return '↕';
     return sortConfig.direction === 'ASC' ? '↑' : '↓';
@@ -487,9 +489,43 @@ const RevenueHub = ({
 
       <div className="content-main" style={{ display: 'grid', gridTemplateColumns: '1fr', gap: '30px' }}>
         <div style={{ background: 'white', borderRadius: isMobile ? '16px' : '24px', border: '1px solid #e2e8f0', padding: isMobile ? '20px' : '30px', boxShadow: '0 4px 20px rgba(0,0,0,0.02)', overflow: 'hidden' }}>
-           <h3 style={{ fontSize: '14px', fontWeight: 950, marginBottom: '25px', letterSpacing: '1px' }}>
-             {timeFilter === 'FUTURE' ? 'UPCOMING REVENUE LEDGER' : 'GLOBAL TRANSACTION LEDGER'}
-           </h3>
+           <div style={{ display: 'flex', flexDirection: isMobile ? 'column' : 'row', alignItems: isMobile ? 'stretch' : 'center', justifyContent: 'space-between', gap: '15px', marginBottom: '25px' }}>
+             <h3 style={{ fontSize: '14px', fontWeight: 950, letterSpacing: '1px', margin: 0 }}>
+               {timeFilter === 'FUTURE' ? 'UPCOMING REVENUE LEDGER' : 'GLOBAL TRANSACTION LEDGER'}
+             </h3>
+             {/* Table-level search */}
+             <div style={{ position: 'relative', width: isMobile ? '100%' : '340px' }}>
+               <span style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', fontSize: '14px', color: '#94a3b8', pointerEvents: 'none' }}>🔍</span>
+               <input
+                 type="text"
+                 value={searchTerm || ''}
+                 onChange={e => setSearchTerm(e.target.value)}
+                 placeholder="Search by patient name or invoice ID..."
+                 style={{
+                   width: '100%',
+                   padding: '10px 36px 10px 36px',
+                   borderRadius: '10px',
+                   border: '1px solid #e2e8f0',
+                   fontSize: '12px',
+                   fontWeight: 600,
+                   outline: 'none',
+                   background: '#f8fafc',
+                   boxSizing: 'border-box',
+                   transition: 'border-color 0.2s, box-shadow 0.2s, background 0.2s',
+                 }}
+                 onFocus={e => { e.target.style.borderColor = '#0f52ba'; e.target.style.boxShadow = '0 0 0 3px rgba(15, 82, 186, 0.1)'; e.target.style.background = 'white'; }}
+                 onBlur={e => { e.target.style.borderColor = '#e2e8f0'; e.target.style.boxShadow = 'none'; e.target.style.background = '#f8fafc'; }}
+               />
+               {searchTerm && (
+                 <button
+                   type="button"
+                   onClick={() => setSearchTerm('')}
+                   aria-label="Clear search"
+                   style={{ position: 'absolute', right: '10px', top: '50%', transform: 'translateY(-50%)', background: 'transparent', border: 'none', cursor: 'pointer', color: '#94a3b8', fontSize: '16px', padding: 0, lineHeight: 1 }}
+                 >×</button>
+               )}
+             </div>
+           </div>
            <div style={{ overflowX: 'auto' }}>
             <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: isMobile ? '1000px' : 'auto' }}>
               <thead>
@@ -646,20 +682,28 @@ const RevenueHub = ({
                                 if (match) refId = match.referrerId || match.id;
                              }
 
-                             const existingCommission = (referralCommissions || []).find(c =>
-                               c.referenceNumber === inv.displayId ||
-                               c.referenceNumber === inv.invoiceId
-                             );
-                             setEditPayout({
-                                commissionId: existingCommission?.id || '',
-                                referrerId: existingCommission?.referrerId || refId || '',
-                                referrerName: existingCommission?.referrerName || inv.referrerName || 'DIRECT',
-                                amount: existingCommission != null ? existingCommission.amount : (cutAmount === 0 ? '' : cutAmount),
-                                modality: existingCommission?.modality || inv.modality || 'MRI',
-                                remarks: existingCommission?.remarks || `Commission for ${inv.displayId} (${inv.patientName})`,
-                                invoiceId: inv.displayId,
-                                status: existingCommission?.status || 'UNPAID'
-                             });
+                             if (!inv.commissionId) {
+                                setErrorModal({
+                                  isOpen: true,
+                                  title: "FISCAL COMPLIANCE WARNING",
+                                  message: `No active commission record found for invoice ${inv.displayId}. Update is not permitted until a referrer setting is configured.`
+                                });
+                                return;
+                              }
+
+                              const existingCommission = (referralCommissions || []).find(c =>
+                                c.id === inv.commissionId
+                              );
+                              setEditPayout({
+                                 commissionId: inv.commissionId,
+                                 referrerId: existingCommission?.referrerId || refId || '',
+                                 referrerName: existingCommission?.referrerName || inv.referrerName || 'DIRECT',
+                                 amount: existingCommission != null ? existingCommission.amount : (inv.commissionAmount || cutAmount || ''),
+                                 modality: existingCommission?.modality || inv.modality || 'MRI',
+                                 remarks: existingCommission?.remarks || `Commission for ${inv.displayId} (${inv.patientName})`,
+                                 invoiceId: inv.displayId,
+                                 status: existingCommission?.status || 'UNPAID'
+                              });
                              setIsPayoutDrawerOpen(true);
                           }}
                            style={{ 
@@ -714,12 +758,132 @@ const RevenueHub = ({
                 )}
              </tbody>
            </table>
-           {renderPagination()}
+            {renderPagination()}
+          </div>
+       </div>
+     </div>
+
+     {/* Premium Glassmorphic Error Dialog Modal */}
+     {errorModal.isOpen && (
+       <div 
+         style={{
+           position: 'fixed',
+           top: 0,
+           left: 0,
+           width: '100vw',
+           height: '100vh',
+           background: 'rgba(15, 23, 42, 0.45)',
+           backdropFilter: 'blur(12px)',
+           WebkitBackdropFilter: 'blur(12px)',
+           display: 'flex',
+           justifyContent: 'center',
+           alignItems: 'center',
+           zIndex: 99999,
+           animation: 'fadeIn 0.25s cubic-bezier(0.16, 1, 0.3, 1) forwards'
+         }}
+         onClick={() => setErrorModal({ ...errorModal, isOpen: false })}
+       >
+         <div 
+           style={{
+             width: '90%',
+             maxWidth: '420px',
+             background: 'linear-gradient(135deg, #ffffff 0%, #f8fafc 100%)',
+             borderRadius: '24px',
+             border: '1px solid rgba(226, 232, 240, 0.8)',
+             boxShadow: '0 25px 50px -12px rgba(15, 23, 42, 0.2), 0 0 0 1px rgba(15, 23, 42, 0.02)',
+             padding: '30px 24px',
+             textAlign: 'center',
+             transform: 'scale(0.95)',
+             animation: 'slideUp 0.3s cubic-bezier(0.34, 1.56, 0.64, 1) forwards',
+             cursor: 'default'
+           }}
+           onClick={(e) => e.stopPropagation()}
+         >
+           {/* Sleek Alert Warning Shield Icon */}
+           <div 
+             style={{
+               width: '60px',
+               height: '60px',
+               borderRadius: '50%',
+               background: 'linear-gradient(135deg, #ffe4e6 0%, #fecdd3 100%)',
+               display: 'flex',
+               justifyContent: 'center',
+               alignItems: 'center',
+               margin: '0 auto 20px auto',
+               boxShadow: '0 8px 20px -6px rgba(225, 29, 72, 0.25)',
+               fontSize: '24px'
+             }}
+           >
+             ⚠️
+           </div>
+
+           {/* Title */}
+           <h3 
+             style={{
+               margin: '0 0 12px 0',
+               fontSize: '15px',
+               fontWeight: 950,
+               color: '#e11d48',
+               letterSpacing: '0.8px',
+               textTransform: 'uppercase',
+               fontFamily: 'system-ui, -apple-system, sans-serif'
+             }}
+           >
+             {errorModal.title}
+           </h3>
+
+           {/* Message */}
+           <p 
+             style={{
+               margin: '0 0 24px 0',
+               fontSize: '12px',
+               lineHeight: 1.6,
+               color: '#475569',
+               fontWeight: 700,
+               fontFamily: 'system-ui, -apple-system, sans-serif'
+             }}
+           >
+             {errorModal.message}
+           </p>
+
+           {/* Action Button */}
+           <button 
+             onClick={() => setErrorModal({ ...errorModal, isOpen: false })}
+             style={{
+               width: '100%',
+               padding: '12px 20px',
+               background: 'linear-gradient(135deg, #0f52ba 0%, #0a3d91 100%)',
+               color: '#ffffff',
+               border: 'none',
+               borderRadius: '14px',
+               fontSize: '11px',
+               fontWeight: 950,
+               cursor: 'pointer',
+               boxShadow: '0 8px 18px -4px rgba(15, 82, 186, 0.35)',
+               transition: 'transform 0.15s, filter 0.15s'
+             }}
+             onMouseOver={(e) => { e.currentTarget.style.filter = 'brightness(1.1)'; }}
+             onMouseOut={(e) => { e.currentTarget.style.filter = 'none'; }}
+           >
+             ACKNOWLEDGE & CLOSE
+           </button>
          </div>
-      </div>
-    </div>
-  </div>
-  );
+         
+         {/* Inject Dynamic Keyframe Animations */}
+         <style>{`
+           @keyframes fadeIn {
+             from { opacity: 0; }
+             to { opacity: 1; }
+           }
+           @keyframes slideUp {
+             from { transform: scale(0.9) translateY(20px); opacity: 0; }
+             to { transform: scale(1) translateY(0); opacity: 1; }
+           }
+         `}</style>
+       </div>
+     )}
+   </div>
+   );
 };
 
 export default RevenueHub;

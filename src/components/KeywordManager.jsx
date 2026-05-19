@@ -77,17 +77,38 @@ const KeywordManager = ({
           display: 'flex', flexDirection: isMobile ? 'column' : 'row',
           justifyContent: 'space-between', alignItems: isMobile ? 'stretch' : 'center', gap: '12px'
         }}>
-          <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
-            <label style={{ fontSize: '12px', fontWeight: 500, color: '#6b7280', flexShrink: 0 }}>Search</label>
+          <div style={{ position: 'relative', flex: 1, maxWidth: isMobile ? '100%' : '420px' }}>
+            <span style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', fontSize: '14px', color: '#94a3b8', pointerEvents: 'none' }}>🔍</span>
             <input
               type="text"
               value={keywordSearch}
               onChange={e => setKeywordSearch(e.target.value)}
-              placeholder="Search by trigger or content..."
-              style={{ flex: 1, padding: '7px 12px', borderRadius: '8px', border: '1px solid #e2e8f0', fontSize: '13px', outline: 'none', width: isMobile ? '100%' : '280px' }}
+              placeholder="Search keywords by trigger, category, or content..."
+              style={{
+                width: '100%',
+                padding: '10px 36px 10px 36px',
+                borderRadius: '8px',
+                border: '1px solid #e2e8f0',
+                fontSize: '13px',
+                fontWeight: 500,
+                outline: 'none',
+                background: 'white',
+                boxSizing: 'border-box',
+                transition: 'border-color 0.2s, box-shadow 0.2s',
+              }}
+              onFocus={e => { e.target.style.borderColor = '#1d4ed8'; e.target.style.boxShadow = '0 0 0 3px rgba(29, 78, 216, 0.1)'; }}
+              onBlur={e => { e.target.style.borderColor = '#e2e8f0'; e.target.style.boxShadow = 'none'; }}
             />
+            {keywordSearch && (
+              <button
+                type="button"
+                onClick={() => setKeywordSearch('')}
+                aria-label="Clear search"
+                style={{ position: 'absolute', right: '10px', top: '50%', transform: 'translateY(-50%)', background: 'transparent', border: 'none', cursor: 'pointer', color: '#94a3b8', fontSize: '16px', padding: 0, lineHeight: 1 }}
+              >×</button>
+            )}
           </div>
-          <span style={{ fontSize: '12px', color: '#94a3b8' }}>{filteredKeywords.length} entries</span>
+          <span style={{ fontSize: '12px', color: '#94a3b8', fontWeight: 500, whiteSpace: 'nowrap' }}>{filteredKeywords.length} entries</span>
         </div>
 
         {/* Table */}

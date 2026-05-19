@@ -62,27 +62,49 @@ const TemplateManager = ({
           justifyContent: 'space-between', alignItems: isMobile ? 'stretch' : 'center',
           flexShrink: 0, gap: '12px'
         }}>
-          <div style={{ display: 'flex', flexDirection: isMobile ? 'column' : 'row', gap: '12px', alignItems: isMobile ? 'stretch' : 'center' }}>
+          <div style={{ display: 'flex', flexDirection: isMobile ? 'column' : 'row', gap: '12px', alignItems: isMobile ? 'stretch' : 'center', flex: 1 }}>
+            {/* Prominent search box */}
+            <div style={{ position: 'relative', flex: isMobile ? 'none' : 1, maxWidth: isMobile ? '100%' : '380px' }}>
+              <span style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', fontSize: '14px', color: '#94a3b8', pointerEvents: 'none' }}>🔍</span>
+              <input
+                type="text"
+                value={searchTerm}
+                onChange={e => setSearchTerm(e.target.value)}
+                placeholder="Search templates by name..."
+                style={{
+                  width: '100%',
+                  padding: '10px 36px 10px 36px',
+                  borderRadius: '8px',
+                  border: '1px solid #e2e8f0',
+                  fontSize: '13px',
+                  fontWeight: 500,
+                  outline: 'none',
+                  background: 'white',
+                  boxSizing: 'border-box',
+                  transition: 'border-color 0.2s, box-shadow 0.2s',
+                }}
+                onFocus={e => { e.target.style.borderColor = '#1d4ed8'; e.target.style.boxShadow = '0 0 0 3px rgba(29, 78, 216, 0.1)'; }}
+                onBlur={e => { e.target.style.borderColor = '#e2e8f0'; e.target.style.boxShadow = 'none'; }}
+              />
+              {searchTerm && (
+                <button
+                  type="button"
+                  onClick={() => setSearchTerm('')}
+                  aria-label="Clear search"
+                  style={{ position: 'absolute', right: '10px', top: '50%', transform: 'translateY(-50%)', background: 'transparent', border: 'none', cursor: 'pointer', color: '#94a3b8', fontSize: '16px', padding: 0, lineHeight: 1 }}
+                >×</button>
+              )}
+            </div>
             <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
               <label style={{ fontSize: '12px', fontWeight: 500, color: '#6b7280', whiteSpace: 'nowrap' }}>Modality</label>
               <select
                 value={modalityFilter}
                 onChange={e => setModalityFilter(e.target.value)}
-                style={{ padding: '7px 10px', borderRadius: '7px', border: '1px solid #e2e8f0', fontSize: '12px', fontWeight: 500, color: '#1d4ed8', outline: 'none', background: 'white' }}
+                style={{ padding: '9px 10px', borderRadius: '8px', border: '1px solid #e2e8f0', fontSize: '12px', fontWeight: 500, color: '#1d4ed8', outline: 'none', background: 'white' }}
               >
                 <option value="ALL">All Modalities</option>
                 {['X-RAY', 'MRI', 'CT', 'ULTRASOUND', 'DEXA', 'MAMMOGRAPHY', 'PET-CT'].map(m => <option key={m} value={m}>{m}</option>)}
               </select>
-            </div>
-            <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-              <label style={{ fontSize: '12px', fontWeight: 500, color: '#6b7280', whiteSpace: 'nowrap' }}>Search</label>
-              <input
-                type="text"
-                value={searchTerm}
-                onChange={e => setSearchTerm(e.target.value)}
-                placeholder="Search by name..."
-                style={{ padding: '7px 12px', borderRadius: '7px', border: '1px solid #e2e8f0', fontSize: '13px', outline: 'none', width: isMobile ? '100%' : '200px' }}
-              />
             </div>
           </div>
         </div>

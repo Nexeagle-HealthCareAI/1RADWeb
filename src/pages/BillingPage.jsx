@@ -63,6 +63,7 @@ export default function BillingPage() {
   });
   const [paymentMethod, setPaymentMethod] = useState('CASH');
   const [searchTerm, setSearchTerm] = useState('');
+  const [referralSearch, setReferralSearch] = useState('');
   const [timeFilter, setTimeFilter] = useState('TODAY'); // 'TODAY', 'PAST', 'ALL'
   const [statusFilter, setStatusFilter] = useState('ALL'); // 'ALL', 'PAID', 'PENDING'
   const [modalityFilter, setModalityFilter] = useState('ALL'); // 'ALL', 'MRI', 'CT', 'X-RAY', etc.
@@ -217,7 +218,7 @@ export default function BillingPage() {
 
   const fetchCommissions = useCallback(async () => {
     try {
-      const res = await apiClient.get('/referrers/commissions');
+      const res = await apiClient.get('/referrers/ledger');
       setReferralCommissions(res.data);
       await nativeStorage.set('1rad_cache_commissions', res.data);
     } catch (err) {
@@ -736,20 +737,20 @@ export default function BillingPage() {
         };
     });
     const strategicCuts = referralCommissions.filter(c => c).map(c => {
-        const inv = (invoices || []).find(i => i.displayId === c.referenceNumber || i.invoiceId === c.referenceNumber);
         return {
-            id: c.id,
-            date: c.transactionDate,
-            name: c.referrerName,
-            description: `Commission [${c.modality}] ${c.remarks ? `- ${c.remarks}` : ''}`,
+            id: c.commissionId || c.id,
+            date: c.payoutDate || c.transactionDate,
+            name: c.partnerName || c.referrerName,
+            description: c.studyAndServices || `Commission [${c.modality || 'MRI'}] ${c.remarks ? `- ${c.remarks}` : ''}`,
             reference: c.referenceNumber,
-            amount: c.amount,
+            amount: c.payoutAmount !== undefined ? c.payoutAmount : c.amount,
             type: 'STRATEGIC',
-            status: (c.status || 'UNPAID').toUpperCase(),
+            status: (c.commissionStatus || c.status || 'UNPAID').toUpperCase(),
             referrerId: c.referrerId,
             modality: c.modality || 'MRI',
             patientName: c.patientName || 'N/A',
-            patientPaymentStatus: inv?.status || null
+            patientPaymentStatus: c.patientPaymentStatus || null,
+            paymentReceived: c.paymentReceived !== undefined ? c.paymentReceived : 0
         };
     });
 
@@ -863,6 +864,7 @@ export default function BillingPage() {
 
   const filteredReferralCuts = useMemo(() => {
     const today = new Date().toLocaleDateString('en-CA');
+    const q = referralSearch.trim().toLowerCase();
     return combinedReferralCuts.filter(cut => {
         const cutDate = cut.date ? new Date(cut.date).toLocaleDateString('en-CA') : null;
         if (timeFilter === 'TODAY' && cutDate !== today) return false;
@@ -884,6 +886,18 @@ export default function BillingPage() {
             if (cut.referrerId !== referrerFilter) return false;
         }
 
+        // Free-text search across patient, partner, reference, modality, description
+        if (q) {
+            const haystack = [
+                cut.patientName,
+                cut.name,
+                cut.reference,
+                cut.modality,
+                cut.description
+            ].filter(Boolean).join(' ').toLowerCase();
+            if (!haystack.includes(q)) return false;
+        }
+
         return true;
     }).sort((a, b) => {
         if (!sortConfig.key) return new Date(b.date) - new Date(a.date);
@@ -893,7 +907,7 @@ export default function BillingPage() {
         if (valA > valB) return sortConfig.direction === 'ASC' ? 1 : -1;
         return 0;
     });
-  }, [combinedReferralCuts, timeFilter, startDate, endDate, modalityFilter, referrerFilter, sortConfig]);
+  }, [combinedReferralCuts, timeFilter, startDate, endDate, modalityFilter, referrerFilter, sortConfig, referralSearch]);
 
 
   const totalPages = Math.ceil(
@@ -941,7 +955,7 @@ export default function BillingPage() {
 
   useEffect(() => {
     setCurrentPage(1);
-  }, [searchTerm, timeFilter, statusFilter, modalityFilter, startDate, endDate]);
+  }, [searchTerm, referralSearch, timeFilter, statusFilter, modalityFilter, startDate, endDate]);
 
   // --- PATIENT LOOKUP ---
   const fetchPatients = useCallback(async (query) => {
@@ -1603,7 +1617,7 @@ export default function BillingPage() {
 
 
       {billingViewMode === 'REFERRAL_CUTS' && (
-        <ReferralHub 
+        <ReferralHub
           isMobile={isMobile}
           filteredReferralCuts={filteredReferralCuts}
           paginatedReferralCuts={paginatedReferralCuts}
@@ -1613,6 +1627,8 @@ export default function BillingPage() {
           setStartDate={setStartDate}
           endDate={endDate}
           setEndDate={setEndDate}
+          referralSearch={referralSearch}
+          setReferralSearch={setReferralSearch}
           handleToggleCommissionStatus={handleToggleCommissionStatus}
           handleDeleteExpense={handleDeleteExpense}
           setEditPayout={setEditPayout}
