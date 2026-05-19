@@ -273,10 +273,10 @@ export default function AdminBoard() {
   };
 
   const handleExportRoster = () => {
-    if (!referralAggregated) return;
+    if (!caseLedgerList) return;
     let csv = "RANK,REFERRAL SOURCE,CONTACT,ADDRESS,TOTAL STUDIES,PAID COMMISSION,UNPAID COMMISSION,TOTAL REVENUE\n";
-    referralAggregated.forEach((s, i) => {
-      csv += `${i+1},"${s.name}","${s.contact}","${s.address || ''}",${s.patients.length},${s.paidCommission || 0},${s.unpaidCommission || 0},${s.totalRevenue || 0}\n`;
+    caseLedgerList.forEach((s, i) => {
+      csv += `${i+1},"${s.name}","${s.contact}","${s.address || ''}",${s.patients?.length || 0},${s.paidCommission || 0},${s.unpaidCommission || 0},${s.totalRevenue || 0}\n`;
     });
     const blob = new Blob([csv], { type: 'text/csv' });
     const url = window.URL.createObjectURL(blob);
@@ -595,22 +595,45 @@ export default function AdminBoard() {
     e.preventDefault();
     if (!editingReferrer) return;
 
+    // Validate and sanitize Indian Mobile number (10 digits starting with 6-9)
+    let rawContact = (editingReferrer.contact || '').trim();
+    let digits = rawContact.replace(/\D/g, '');
+    if (digits.startsWith('91') && digits.length === 12) {
+      digits = digits.substring(2);
+    } else if (digits.startsWith('0') && digits.length === 11) {
+      digits = digits.substring(1);
+    }
+
+    if (digits.length !== 10 || !/^[6-9]\d{9}$/.test(digits)) {
+      alert('Error: Please enter a valid 10-digit Indian mobile number (e.g., 9876543210).');
+      return;
+    }
+
     try {
       setIsSavingReferrer(true);
-      await apiClient.put(`/referrers/${editingReferrer.referrerId}`, {
-        referrerId: editingReferrer.referrerId,
-        name: editingReferrer.name,
-        contact: editingReferrer.contact,
-        address: editingReferrer.address
-      });
+      if (editingReferrer.referrerId) {
+        await apiClient.put(`/referrers/${editingReferrer.referrerId}`, {
+          referrerId: editingReferrer.referrerId,
+          name: editingReferrer.name,
+          contact: digits,
+          address: editingReferrer.address
+        });
+      } else {
+        await apiClient.post('/referrers', {
+          name: editingReferrer.name,
+          contact: digits,
+          address: editingReferrer.address
+        });
+      }
       
       // Refresh data
       fetchReferralIntelligence();
       setIsReferrerEditDrawerOpen(false);
       setEditingReferrer(null);
     } catch (err) {
-      console.error('[REFERRER] Update failed', err);
-      alert('Error: Could not save partner details.');
+      console.error('[REFERRER] Save failed', err);
+      const backendError = err.response?.data?.error || err.response?.data?.message;
+      alert(backendError ? `Error: ${backendError}` : 'Error: Could not save partner details.');
     } finally {
       setIsSavingReferrer(false);
     }
@@ -1035,6 +1058,7 @@ export default function AdminBoard() {
       }, {});
 
       return {
+        referrerId: ref.referrerId,
         name: ref.name,
         contact: ref.contact,
         address: ref.address,
@@ -3643,12 +3667,23 @@ export default function AdminBoard() {
               }}>
                 <div style={{ padding: '25px 30px', borderBottom: '1px solid #e2e8f0', display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: '#fcfdfe', minWidth: isMobile ? '800px' : '100%' }}>
                    <div style={{ fontSize: '12px', fontWeight: 950, color: '#1e293b', letterSpacing: '1px' }}>PARTNER NETWORK ROSTER</div>
-                   <button 
-                     onClick={handleExportRoster}
-                     style={{ padding: '8px 16px', borderRadius: '12px', background: '#f0f3fd', border: '1px solid #0f52ba30', color: '#0f52ba', fontSize: '10px', fontWeight: 950, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '8px' }}
-                   >
-                     📥 DOWNLOAD PARTNER ROSTER (CSV)
-                   </button>
+                   <div style={{ display: 'flex', gap: '10px' }}>
+                     <button 
+                       onClick={() => {
+                         setEditingReferrer({ name: '', contact: '', address: '' });
+                         setIsReferrerEditDrawerOpen(true);
+                       }}
+                       style={{ padding: '8px 16px', borderRadius: '12px', background: '#0f52ba', color: 'white', fontSize: '10px', fontWeight: 950, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '8px', border: 'none' }}
+                     >
+                       ➕ ADD NEW PARTNER
+                     </button>
+                     <button 
+                       onClick={handleExportRoster}
+                       style={{ padding: '8px 16px', borderRadius: '12px', background: '#f0f3fd', border: '1px solid #0f52ba30', color: '#0f52ba', fontSize: '10px', fontWeight: 950, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '8px' }}
+                     >
+                       📥 DOWNLOAD PARTNER ROSTER (CSV)
+                     </button>
+                   </div>
                 </div>
                 <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: isMobile ? '800px' : '100%' }}>
                   <thead style={{ background: '#f8fafc', borderBottom: '1px solid #e2e8f0' }}>
@@ -3662,15 +3697,15 @@ export default function AdminBoard() {
                     </tr>
                   </thead>
                   <tbody>
-                    {referralAggregated.length === 0 ? (
+                    {caseLedgerList.length === 0 ? (
                       <tr>
                         <td colSpan="6" style={{ padding: '60px', textAlign: 'center', color: '#94a3b8', fontSize: '12px', fontWeight: 700 }}>NO RECONNAISSANCE DATA AVAILABLE FOR THIS PERIOD</td>
                       </tr>
                     ) : (
-                      referralAggregated
+                      caseLedgerList
                         .filter(s => !referralRosterSearch || s.name.toLowerCase().includes(referralRosterSearch.toLowerCase()))
                         .map((s, i) => (
-                        <tr key={s.name} style={{ borderBottom: '1px solid #f1f5f9', transition: 'all 0.2s' }}>
+                        <tr key={s.name || s.referrerId} style={{ borderBottom: '1px solid #f1f5f9', transition: 'all 0.2s' }}>
                           <td style={{ padding: '20px 30px' }}>
                             <div style={{ width: '28px', height: '28px', borderRadius: '8px', background: i < 3 ? '#f0f3fd' : '#f8fafc', color: i < 3 ? '#0f52ba' : '#64748b', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '11px', fontWeight: 950 }}>#{i + 1}</div>
                           </td>
@@ -3684,7 +3719,7 @@ export default function AdminBoard() {
                             <div style={{ fontSize: '10px', fontWeight: 800, color: '#1e293b', textTransform: 'uppercase' }}>{s.address || 'GLOBAL'}</div>
                           </td>
                           <td style={{ padding: '20px 30px', textAlign: 'right' }}>
-                            <div style={{ fontSize: '16px', fontWeight: 950, color: '#0f52ba' }}>{s.patients.length}</div>
+                            <div style={{ fontSize: '16px', fontWeight: 950, color: '#0f52ba' }}>{s.patients?.length || 0}</div>
                             <div style={{ fontSize: '9px', fontWeight: 800, color: '#94a3b8', letterSpacing: '0.5px' }}>UNITS</div>
                           </td>
                           <td style={{ padding: '20px 30px', textAlign: 'right' }}>
@@ -4487,8 +4522,12 @@ return (
         boxShadow: '-20px 0 60px rgba(0,0,0,0.1)', display: 'flex', flexDirection: 'column'
       }}>
         <div style={{ padding: '35px 40px', borderBottom: '1px solid #f1f5f9', background: '#fcfdfe' }}>
-          <div style={{ fontSize: '10px', fontWeight: 950, color: '#0f52ba', letterSpacing: '3px', marginBottom: '8px' }}>PARTNER RECONFIGURATION</div>
-          <h2 style={{ fontSize: '20px', fontWeight: 950, color: '#1e293b', margin: 0 }}>EDIT PARTNER DETAILS</h2>
+          <div style={{ fontSize: '10px', fontWeight: 950, color: '#0f52ba', letterSpacing: '3px', marginBottom: '8px' }}>
+            {editingReferrer?.referrerId ? 'PARTNER RECONFIGURATION' : 'NEW PARTNER ENROLLMENT'}
+          </div>
+          <h2 style={{ fontSize: '20px', fontWeight: 950, color: '#1e293b', margin: 0 }}>
+            {editingReferrer?.referrerId ? 'EDIT PARTNER DETAILS' : 'ADD NEW PARTNER'}
+          </h2>
         </div>
 
         <form onSubmit={handleUpdateReferrer} style={{ padding: '40px', flex: 1, overflowY: 'auto' }}>
@@ -4505,14 +4544,16 @@ return (
             </div>
 
             <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-              <label style={{ fontSize: '9px', fontWeight: 950, color: '#94a3b8', letterSpacing: '1px' }}>CONTACT IDENTIFIER</label>
+              <label style={{ fontSize: '9px', fontWeight: 950, color: '#94a3b8', letterSpacing: '1px' }}>CONTACT IDENTIFIER (MOBILE)</label>
               <input 
-                type="text"
+                type="tel"
                 required
+                placeholder="e.g., 9876543210"
                 value={editingReferrer?.contact || ''}
                 onChange={e => setEditingReferrer(prev => ({ ...prev, contact: e.target.value }))}
                 style={{ width: '100%', padding: '15px', borderRadius: '12px', border: '1px solid #e2e8f0', fontSize: '13px', fontWeight: 800, color: '#1e293b', outline: 'none' }}
               />
+              <span style={{ fontSize: '9px', color: '#64748b', marginTop: '2px', fontWeight: 700 }}>Must be a 10-digit Indian mobile number starting with 6, 7, 8, or 9.</span>
             </div>
 
             <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
@@ -4532,7 +4573,7 @@ return (
                disabled={isSavingReferrer}
                style={{ flex: 1, padding: '16px', borderRadius: '14px', background: '#0f52ba', color: 'white', fontWeight: 950, fontSize: '11px', border: 'none', cursor: 'pointer', letterSpacing: '1px' }}
              >
-               {isSavingReferrer ? 'Saving...' : 'Save Changes'}
+               {isSavingReferrer ? 'Saving...' : (editingReferrer?.referrerId ? 'Save Changes' : 'Add Partner')}
              </button>
              <button 
                type="button"

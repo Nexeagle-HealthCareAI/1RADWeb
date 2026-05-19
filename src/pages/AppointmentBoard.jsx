@@ -359,6 +359,16 @@ export default function AppointmentBoard() {
   const isNewPatientIncomplete = !newBooking.patientId && 
     (!newPatient.name.trim() || !isMobileValid || !newPatient.age.trim());
 
+  // Referrer contact validation derived state
+  const cleanReferrerContactDigits = (newReferrer.contact || '').trim().replace(/\D/g, '');
+  let sanitizedReferrerContact = cleanReferrerContactDigits;
+  if (sanitizedReferrerContact.startsWith('91') && sanitizedReferrerContact.length === 12) {
+    sanitizedReferrerContact = sanitizedReferrerContact.substring(2);
+  } else if (sanitizedReferrerContact.startsWith('0') && sanitizedReferrerContact.length === 11) {
+    sanitizedReferrerContact = sanitizedReferrerContact.substring(1);
+  }
+  const isReferrerContactValid = sanitizedReferrerContact.length === 10 && /^[6-9]\d{9}$/.test(sanitizedReferrerContact);
+
   // Reset page on filter change
   useEffect(() => {
     setCurrentPage(1);
@@ -646,36 +656,56 @@ export default function AppointmentBoard() {
   const handleAddReferrer = async (e) => {
     e.preventDefault();
     
-    // Validation Logic
-    const cleanContact = newReferrer.contact.replace(/[\s\-\+\(\)]/g, '');
-    const contactRegex = /^[0-9]{10,15}$/;
-    
+    // Validation & Sanitization Logic (Indian Mobile number - 10 digits starting with 6-9)
+    let rawContact = (newReferrer.contact || '').trim();
+    let digits = rawContact.replace(/\D/g, '');
+    if (digits.startsWith('91') && digits.length === 12) {
+      digits = digits.substring(2);
+    } else if (digits.startsWith('0') && digits.length === 11) {
+      digits = digits.substring(1);
+    }
+
     if (!newReferrer.name || newReferrer.name.trim().length < 3) {
       alert('VALIDATION ERROR: Referrer name must be at least 3 characters.');
       return;
     }
     
-    if (!cleanContact || !contactRegex.test(cleanContact)) {
-      alert('VALIDATION ERROR: Please provide a valid numeric contact number (10-15 digits).');
+    if (digits.length !== 10 || !/^[6-9]\d{9}$/.test(digits)) {
+      alert('VALIDATION ERROR: Please enter a valid 10-digit Indian mobile number (e.g., 9876543210).');
       return;
     }
 
     try {
       const response = await apiClient.post('/referrers', {
         name: newReferrer.name,
-        contact: cleanContact,
+        contact: digits,
         address: newReferrer.address
       });
       
-      const savedReferrer = response.data;
+      const referrerId = response.data.referrerId || response.data.id;
+      const savedReferrer = {
+        referrerId: referrerId,
+        id: referrerId,
+        name: newReferrer.name,
+        contact: digits,
+        address: newReferrer.address
+      };
       
       // Update local state
       setReferrers(prev => [...prev, savedReferrer]);
       
       // Select the newly added referrer in both possible contexts
-      setNewPatient(prev => ({ ...prev, referredBy: savedReferrer.name }));
+      setNewPatient(prev => ({ 
+        ...prev, 
+        referredBy: savedReferrer.name,
+        referrerId: savedReferrer.referrerId
+      }));
       if (editingAppointment) {
-        setEditingAppointment(prev => ({ ...prev, referredBy: savedReferrer.name }));
+        setEditingAppointment(prev => ({ 
+          ...prev, 
+          referredBy: savedReferrer.name,
+          referrerId: savedReferrer.referrerId
+        }));
       }
       
       // Close modal and reset
@@ -684,7 +714,8 @@ export default function AppointmentBoard() {
       
     } catch (error) {
       console.error('Failed to add referrer:', error);
-      alert('ERROR: Could not save referrer. Please verify your connection and try again.');
+      const backendError = error.response?.data?.error || error.response?.data?.message;
+      alert(backendError ? `ERROR: ${backendError}` : 'ERROR: Could not save referrer. Please verify your connection and try again.');
     }
   };
 
@@ -1364,93 +1395,103 @@ export default function AppointmentBoard() {
 
           <div className="drawer-body" style={{ paddingTop: '10px' }} ref={drawerBodyRef}>
             {isStep1 && (
-              <div className="quest-step-container">
+              <div className="quest-step-container" style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+                
+                {/* Search Patient Database at Top */}
+                <div style={{ background: '#f8f9fa', padding: '16px 20px', borderRadius: '14px', border: '1px solid #eef2f6' }}>
+                  <label style={{ fontSize: '10px', color: '#0f52ba', fontWeight: 800, marginBottom: '8px', display: 'block', letterSpacing: '1px' }}>SEARCH PATIENT DATABASE</label>
+                  <div className="search-input-group" style={{ width: '100%', marginBottom: '8px' }}>
+                    <input 
+                      type="text" 
+                      placeholder="Search patient database by name, mobile, or ID..." 
+                      value={drawerSearchQuery} 
+                      onChange={(e) => setDrawerSearchQuery(e.target.value)} 
+                      autoFocus 
+                      style={{ paddingLeft: '15px', height: '40px', fontSize: '13px', width: '100%', borderRadius: '10px', border: '1px solid #cbd5e1' }} 
+                    />
+                  </div>
+
+                  {drawerSearchQuery && (
+                    <div style={{ 
+                      maxHeight: '150px', 
+                      overflowY: 'auto', 
+                      marginTop: '8px', 
+                      background: 'white', 
+                      border: '1px solid #e2e8f0', 
+                      borderRadius: '10px', 
+                      boxShadow: '0 4px 12px rgba(0,0,0,0.05)' 
+                    }}>
+                      {patients.filter(p => 
+                        p.name.toLowerCase().includes(drawerSearchQuery.toLowerCase()) || 
+                        p.mobile.includes(drawerSearchQuery) || 
+                        p.id.toLowerCase().includes(drawerSearchQuery.toLowerCase()) ||
+                        (p.patientIdentifier && p.patientIdentifier.toLowerCase().includes(drawerSearchQuery.toLowerCase()))
+                      ).map(p => (
+                        <div key={p.id}
+                          className={`patient-search-result ${newBooking.patientId === p.id ? 'selected' : ''}`}
+                          onClick={() => { 
+                            setNewBooking({...newBooking, patientId: p.id}); 
+                            setNewPatient({
+                              name: p.name,
+                              mobile: p.mobile,
+                              age: p.age || '',
+                              gender: p.gender || 'Male',
+                              village: p.village || '',
+                              district: p.district || '',
+                              address: p.address || '',
+                              referredBy: p.referredBy || '',
+                              sourceOfInfo: p.sourceOfInfo || ''
+                            });
+                            setDuplicatePatient(null); 
+                          }}
+                          style={{ padding: '10px 15px', display: 'flex', alignItems: 'center', gap: '10px', borderBottom: '1px solid #f1f5f9', cursor: 'pointer' }}
+                          onMouseOver={e => e.currentTarget.style.background = '#f8fafd'}
+                          onMouseOut={e => e.currentTarget.style.background = 'white'}
+                        >
+                          <div style={{
+                            width: '28px', height: '28px', borderRadius: '8px',
+                            background: newBooking.patientId === p.id ? '#0f52ba' : '#e8f0fe',
+                            color: newBooking.patientId === p.id ? 'white' : '#0f52ba',
+                            display: 'flex', alignItems: 'center', justifyContent: 'center',
+                            fontWeight: 900, fontSize: '11px', flexShrink: 0,
+                          }}>{p.name.charAt(0)}</div>
+                          <div style={{ flex: 1 }}>
+                             <div style={{ fontWeight: 700, fontSize: '12px', color: '#1a1a2e' }}>{p.name}</div>
+                             <div style={{ fontSize: '9px', color: '#888' }}>
+                               <span style={{ color: '#0f52ba', fontWeight: 800 }}>{p.patientIdentifier || p.id}</span> {'\u00b7'} {p.mobile} {'\u00b7'} {p.age}y {p.gender}
+                             </div>
+                          </div>
+                          {newBooking.patientId === p.id && <span style={{ color: '#0f52ba', fontWeight: 900, fontSize: '9px' }}>SELECTED</span>}
+                        </div>
+                      ))}
+                      {!patients.some(p => 
+                        p.name.toLowerCase().includes(drawerSearchQuery.toLowerCase()) || 
+                        p.mobile.includes(drawerSearchQuery) ||
+                        p.id.toLowerCase().includes(drawerSearchQuery.toLowerCase()) ||
+                        (p.patientIdentifier && p.patientIdentifier.toLowerCase().includes(drawerSearchQuery.toLowerCase()))
+                      ) && (
+                        <div style={{ padding: '12px', textAlign: 'center', color: '#999', fontSize: '11px' }}>No match found - fill details below</div>
+                      )}
+                    </div>
+                  )}
+                </div>
+
+                {/* Remaining Form in Two Columns */}
                 <div style={{
                   display: 'flex',
                   flexDirection: isMobile ? 'column' : 'row',
                   gap: '24px',
                   alignItems: 'stretch'
                 }}>
-                  {/* Column 1: Database Search */}
-                  <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '15px' }}>
-                    <div style={{ background: '#f8f9fa', padding: '14px 18px', borderRadius: '14px', border: '1px solid #eee', height: '100%', display: 'flex', flexDirection: 'column' }}>
-                      <label style={{ fontSize: '10px', color: '#0f52ba', fontWeight: 800, marginBottom: '8px', display: 'block', letterSpacing: '1px' }}>SEARCH PATIENT DATABASE</label>
-                      <div className="search-input-group" style={{ width: '100%', marginBottom: '8px' }}>
-                        <input type="text" placeholder="Search patient database..." value={drawerSearchQuery} onChange={(e) => setDrawerSearchQuery(e.target.value)} autoFocus style={{ paddingLeft: '15px', height: '36px', fontSize: '13px' }} />
-                      </div>
-
-                      <div style={{ flex: 1, maxHeight: isMobile ? '160px' : '220px', overflowY: 'auto' }}>
-                        {drawerSearchQuery ? (
-                          <>
-                            {patients.filter(p => 
-                              p.name.toLowerCase().includes(drawerSearchQuery.toLowerCase()) || 
-                              p.mobile.includes(drawerSearchQuery) || 
-                              p.id.toLowerCase().includes(drawerSearchQuery.toLowerCase()) ||
-                              (p.patientIdentifier && p.patientIdentifier.toLowerCase().includes(drawerSearchQuery.toLowerCase()))
-                            ).map(p => (
-                              <div key={p.id}
-                                className={`patient-search-result ${newBooking.patientId === p.id ? 'selected' : ''}`}
-                                onClick={() => { 
-                                  setNewBooking({...newBooking, patientId: p.id}); 
-                                  setNewPatient({
-                                    name: p.name,
-                                    mobile: p.mobile,
-                                    age: p.age || '',
-                                    gender: p.gender || 'Male',
-                                    village: p.village || '',
-                                    district: p.district || '',
-                                    address: p.address || '',
-                                    referredBy: p.referredBy || '',
-                                    sourceOfInfo: p.sourceOfInfo || ''
-                                  });
-                                  setDuplicatePatient(null); 
-                                }}
-                                style={{ padding: '8px 10px', gap: '8px', marginBottom: '4px' }}
-                              >
-                                <div style={{
-                                  width: '28px', height: '28px', borderRadius: '8px',
-                                  background: newBooking.patientId === p.id ? '#0f52ba' : '#e8f0fe',
-                                  color: newBooking.patientId === p.id ? 'white' : '#0f52ba',
-                                  display: 'flex', alignItems: 'center', justifyContent: 'center',
-                                  fontWeight: 900, fontSize: '11px', flexShrink: 0,
-                                }}>{p.name.charAt(0)}</div>
-                                <div style={{ flex: 1 }}>
-                                   <div style={{ fontWeight: 700, fontSize: '12px', color: '#1a1a2e' }}>{p.name}</div>
-                                   <div style={{ fontSize: '9px', color: '#888' }}>
-                                     <span style={{ color: '#0f52ba', fontWeight: 800 }}>{p.patientIdentifier || p.id}</span> {'\u00b7'} {p.mobile} {'\u00b7'} {p.age}y {p.gender}
-                                   </div>
-                                </div>
-                                {newBooking.patientId === p.id && <span style={{ color: '#0f52ba', fontWeight: 900, fontSize: '9px' }}>SELECTED</span>}
-                              </div>
-                            ))}
-                            {!patients.some(p => 
-                              p.name.toLowerCase().includes(drawerSearchQuery.toLowerCase()) || 
-                              p.mobile.includes(drawerSearchQuery) ||
-                              p.id.toLowerCase().includes(drawerSearchQuery.toLowerCase()) ||
-                              (p.patientIdentifier && p.patientIdentifier.toLowerCase().includes(drawerSearchQuery.toLowerCase()))
-                            ) && (
-                              <div style={{ padding: '8px', textAlign: 'center', color: '#999', fontSize: '11px' }}>No match found - fill details in Column 2</div>
-                            )}
-                          </>
-                        ) : (
-                          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100%', minHeight: '120px', color: '#94a3b8', textAlign: 'center', padding: '15px' }}>
-                            <span style={{ fontSize: '24px', marginBottom: '8px' }}>🔍</span>
-                            <span style={{ fontSize: '10px', fontWeight: 700 }}>Search database to import an existing patient profile quickly.</span>
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Column 2: Patient Details */}
+                  {/* Left Column: Patient Details */}
                   <div style={{ flex: 1.2, display: 'flex', flexDirection: 'column', gap: '15px' }}>
-                    <div style={{ background: 'white', padding: '12px 16px', borderRadius: '14px', border: '2px dashed #dde5f5' }}>
-                      <label style={{ fontSize: '10px', color: '#0f52ba', fontWeight: 800, marginBottom: '10px', display: 'block', letterSpacing: '1px' }}>ENTER PATIENT DEMOGRAPHICS</label>
+                    <div style={{ background: 'white', padding: '16px 20px', borderRadius: '14px', border: '2px dashed #dde5f5' }}>
+                      <label style={{ fontSize: '10px', color: '#0f52ba', fontWeight: 800, marginBottom: '12px', display: 'block', letterSpacing: '1px' }}>ENTER PATIENT DEMOGRAPHICS</label>
                       
                       <div style={{ 
                         display: 'grid', 
                         gridTemplateColumns: '1fr', 
-                        gap: '8px' 
+                        gap: '10px' 
                       }}>
                         <div className="form-group" style={{ marginBottom: '4px' }}>
                           <label style={{ fontSize: '10px', fontWeight: 700, marginBottom: '4px', display: 'block' }}>FULL NAME <span style={{ color: '#e74c3c' }}>*</span></label>
@@ -1559,10 +1600,10 @@ export default function AppointmentBoard() {
                     </div>
                   </div>
 
-                  {/* Column 3: Referred By & Proceed */}
+                  {/* Right Column: Referred By & Proceed */}
                   <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '15px' }}>
-                    <div style={{ background: 'white', padding: '12px 16px', borderRadius: '14px', border: '2px dashed #dde5f5', height: '100%', display: 'flex', flexDirection: 'column' }}>
-                      <label style={{ fontSize: '10px', color: '#0f52ba', fontWeight: 800, marginBottom: '10px', display: 'block', letterSpacing: '1px' }}>REFERRAL SOURCE</label>
+                    <div style={{ background: 'white', padding: '16px 20px', borderRadius: '14px', border: '2px dashed #dde5f5', height: '100%', display: 'flex', flexDirection: 'column' }}>
+                      <label style={{ fontSize: '10px', color: '#0f52ba', fontWeight: 800, marginBottom: '12px', display: 'block', letterSpacing: '1px' }}>REFERRAL SOURCE</label>
                       
                       <div className="form-group" style={{ position: 'relative', flex: 1 }}>
                         <label style={{ fontSize: '10px', fontWeight: 800, color: '#64748b', marginBottom: '6px', display: 'block' }}>REFERRED BY</label>
@@ -2640,14 +2681,27 @@ export default function AppointmentBoard() {
                 />
               </div>
               <div className="form-group" style={{ marginBottom: '15px' }}>
-                <label style={{ fontSize: '10px', fontWeight: 800, color: '#64748b' }}>CONTACT NUMBER</label>
+                <label style={{ fontSize: '10px', fontWeight: 800, color: '#64748b' }}>CONTACT NUMBER (MOBILE)</label>
                 <input 
                   type="tel" 
+                  required
                   placeholder="e.g. 9876543210"
-                  style={{ width: '100%', padding: '10px', borderRadius: '8px', border: '1px solid #cbd5e1' }}
+                  style={{ 
+                    width: '100%', 
+                    padding: '10px', 
+                    borderRadius: '8px', 
+                    border: '1.5px solid',
+                    borderColor: (newReferrer.contact.length > 0 && !isReferrerContactValid) ? '#e74c3c' : '#cbd5e1',
+                    marginBottom: '4px',
+                    outline: 'none',
+                    transition: 'border-color 0.2s'
+                  }}
                   value={newReferrer.contact}
                   onChange={e => setNewReferrer({...newReferrer, contact: e.target.value})}
                 />
+                <span style={{ fontSize: '9px', color: (newReferrer.contact.length > 0 && !isReferrerContactValid) ? '#e74c3c' : '#64748b', display: 'block', fontWeight: 700 }}>
+                  Must be a 10-digit Indian mobile number.
+                </span>
               </div>
               <div className="form-group" style={{ marginBottom: '20px' }}>
                 <label style={{ fontSize: '10px', fontWeight: 800, color: '#64748b' }}>ADDRESS / CLINIC</label>

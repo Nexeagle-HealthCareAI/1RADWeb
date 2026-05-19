@@ -3284,17 +3284,34 @@ const ReportingPage = () => {
                 )}
 
                 {/* SERIES LIBRARY MINI-SIDEBAR */}
-                {uploadedFiles.length > 1 && (
-                  <div style={{ width: '60px', background: '#0f172a', borderRight: '1px solid #1e293b', display: 'flex', flexDirection: 'column', gap: '10px', padding: '10px 5px', zIndex: 10 }}>
+                {uploadedFiles.length > 0 && (
+                  <div style={{ width: '60px', background: '#0f172a', borderRight: '1px solid #1e293b', display: 'flex', flexDirection: 'column', gap: '10px', padding: '10px 5px', zIndex: 100, position: 'relative' }}>
                     {uploadedFiles.map((f, i) => (
                       <button
                         key={i}
-                        onClick={() => setActiveAssetIndex(i)}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setActiveAssetIndex(i);
+                        }}
+                        onMouseDown={(e) => {
+                          e.preventDefault();
+                        }}
                         title={f.name}
                         style={{
-                          width: '100%', height: '50px', background: activeAssetIndex === i ? '#3b82f6' : 'rgba(255,255,255,0.05)',
-                          border: 'none', borderRadius: '8px', cursor: 'pointer', display: 'flex', flexDirection: 'column',
-                          alignItems: 'center', justifyContent: 'center', transition: '0.2s', gap: '4px'
+                          width: '100%', height: '50px', background: activeAssetIndex === i ? 'linear-gradient(135deg, #3b82f6, #2563eb)' : 'rgba(255,255,255,0.05)',
+                          border: activeAssetIndex === i ? '2px solid #1d4ed8' : 'none', borderRadius: '8px', cursor: 'pointer', display: 'flex', flexDirection: 'column',
+                          alignItems: 'center', justifyContent: 'center', transition: 'all 0.2s ease', gap: '4px', boxShadow: activeAssetIndex === i ? '0 4px 12px rgba(59, 130, 246, 0.4)' : 'none',
+                          transform: activeAssetIndex === i ? 'scale(1.05)' : 'scale(1)'
+                        }}
+                        onMouseEnter={(e) => {
+                          if (activeAssetIndex !== i) {
+                            e.currentTarget.style.background = 'rgba(255,255,255,0.15)';
+                          }
+                        }}
+                        onMouseLeave={(e) => {
+                          if (activeAssetIndex !== i) {
+                            e.currentTarget.style.background = 'rgba(255,255,255,0.05)';
+                          }
                         }}
                       >
                         <div style={{ fontSize: '12px' }}>🎞️</div>
