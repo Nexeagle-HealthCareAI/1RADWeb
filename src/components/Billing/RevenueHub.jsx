@@ -43,11 +43,30 @@ const RevenueHub = ({
   const formatDate = (dateStr) => {
     if (!dateStr) return 'N/A';
     const date = new Date(dateStr);
+    if (isNaN(date.getTime())) return dateStr;
     const day = date.getDate();
     const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
     const month = months[date.getMonth()];
     const year = date.getFullYear();
-    return `${day} ${month.toUpperCase()}, ${year}`;
+
+    const dateStrStr = String(dateStr);
+    const hasTime = dateStrStr.includes('T') || dateStrStr.includes(':') || dateStrStr.includes(' ');
+    
+    if (!hasTime) {
+      return `${day} ${month.toUpperCase()}, ${year}`;
+    }
+
+    try {
+      const timeStr = date.toLocaleTimeString('en-US', {
+        timeZone: 'Asia/Kolkata',
+        hour: '2-digit',
+        minute: '2-digit',
+        hour12: true
+      });
+      return `${day} ${month.toUpperCase()}, ${year} - ${timeStr} IST`;
+    } catch (e) {
+      return `${day} ${month.toUpperCase()}, ${year}`;
+    }
   };
 
   const getServicePrice = (serviceName) => {

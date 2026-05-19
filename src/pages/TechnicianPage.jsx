@@ -921,8 +921,8 @@ export default function TechnicianPage() {
                        </div>
                     </td>
                     <td style={{ padding: '8px 15px' }}>
-                        <div style={{ fontWeight: 800, color: '#1e293b', fontSize: '12px' }}>{study.dateTime ? new Date(study.dateTime).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }).toUpperCase() : 'N/A'}</div>
-                        <div style={{ fontSize: '9px', color: '#94a3b8', fontWeight: 800, marginTop: '2px' }}>{study.appointmentTime || '09:00 AM'}</div>
+                        <div style={{ fontWeight: 800, color: '#1e293b', fontSize: '12px' }}>{study.dateTime ? new Date(study.dateTime).toLocaleDateString('en-GB', { timeZone: 'Asia/Kolkata', day: '2-digit', month: 'short', year: 'numeric' }).toUpperCase() : 'N/A'}</div>
+                        <div style={{ fontSize: '9px', color: '#94a3b8', fontWeight: 800, marginTop: '2px' }}>{study.dateTime ? `${new Date(study.dateTime).toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata', hour: '2-digit', minute: '2-digit', hour12: true })} IST` : (study.appointmentTime || '09:00 AM')}</div>
                     </td>
                     <td style={{ padding: '8px 15px' }}>
                         <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>

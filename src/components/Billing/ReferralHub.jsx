@@ -35,6 +35,35 @@ const ReferralHub = ({
     };
   }, [filteredReferralCuts]);
 
+  const formatDate = (dateStr) => {
+    if (!dateStr) return 'N/A';
+    const date = new Date(dateStr);
+    if (isNaN(date.getTime())) return dateStr;
+    const day = date.getDate();
+    const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    const month = months[date.getMonth()];
+    const year = date.getFullYear();
+
+    const dateStrStr = String(dateStr);
+    const hasTime = dateStrStr.includes('T') || dateStrStr.includes(':') || dateStrStr.includes(' ');
+    
+    if (!hasTime) {
+      return `${day} ${month.toUpperCase()}, ${year}`;
+    }
+
+    try {
+      const timeStr = date.toLocaleTimeString('en-US', {
+        timeZone: 'Asia/Kolkata',
+        hour: '2-digit',
+        minute: '2-digit',
+        hour12: true
+      });
+      return `${day} ${month.toUpperCase()}, ${year} - ${timeStr} IST`;
+    } catch (e) {
+      return `${day} ${month.toUpperCase()}, ${year}`;
+    }
+  };
+
   const getSortIcon = (key) => {
     if (sortConfig.key !== key) return '↕';
     return sortConfig.direction === 'ASC' ? '↑' : '↓';
@@ -170,7 +199,7 @@ const ReferralHub = ({
                 ) : (
                    paginatedReferralCuts.map(cut => (
                       <tr key={cut?.id} style={{ borderBottom: '1px solid #f1f5f9' }}>
-                         <td style={{ padding: '20px 30px', fontSize: '11px', fontWeight: 800, color: '#1e293b' }}>{cut?.date ? new Date(cut.date).toLocaleDateString() : 'N/A'}</td>
+                         <td style={{ padding: '20px 30px', fontSize: '11px', fontWeight: 800, color: '#1e293b' }}>{formatDate(cut?.date)}</td>
                          <td style={{ padding: '20px 30px' }}>
                             <div style={{ fontSize: '11.5px', fontWeight: 950, color: '#e11d48' }}>{(cut?.name || 'DIRECT').toUpperCase()}</div>
                          </td>

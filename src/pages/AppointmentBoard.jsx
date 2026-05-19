@@ -509,11 +509,16 @@ export default function AppointmentBoard() {
       return;
     }
 
+    const now = new Date();
+    const pad = (num) => String(num).padStart(2, '0');
+    const timePart = `${pad(now.getHours())}:${pad(now.getMinutes())}:${pad(now.getSeconds())}`;
+    const localDateTimeStr = `${newBooking.date}T${timePart}`;
+
     const payload = {
       patientId: newBooking.patientId,
       service: newBooking.service,
       modality: newBooking.modality,
-      dateTime: new Date(`${newBooking.date}T12:00:00`).toISOString(),
+      dateTime: localDateTimeStr,
       type: 'scheduled',
       doctor: newBooking.doctor,
       referredBy: newPatient.referredBy || '',
@@ -1162,8 +1167,8 @@ export default function AppointmentBoard() {
     const next = getNextAction(app.status);
 
     // Formatting date
-    const appDate = app.dateTime ? new Date(app.dateTime).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) : '—';
-    const appTime = app.dateTime ? new Date(app.dateTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '';
+    const appDate = app.dateTime ? new Date(app.dateTime).toLocaleDateString('en-GB', { timeZone: 'Asia/Kolkata', day: '2-digit', month: 'short', year: 'numeric' }) : '—';
+    const appTime = app.dateTime ? `${new Date(app.dateTime).toLocaleTimeString('en-US', { timeZone: 'Asia/Kolkata', hour: '2-digit', minute: '2-digit', hour12: true })} IST` : '';
 
     return (
       <div key={app.appointmentId} className="appointments-table-wrapper" style={{ 
@@ -2067,7 +2072,11 @@ export default function AppointmentBoard() {
                 value={editingAppointment.dateTime ? editingAppointment.dateTime.split('T')[0] : (editingAppointment.date || '')} 
                 onChange={e => {
                   const newDate = e.target.value;
-                  const currentTime = editingAppointment.dateTime ? editingAppointment.dateTime.split('T')[1] : '12:00:00Z';
+                  let currentTime = '12:00:00';
+                  if (editingAppointment.dateTime && editingAppointment.dateTime.includes('T')) {
+                    const timePart = editingAppointment.dateTime.split('T')[1];
+                    currentTime = timePart.replace('Z', '');
+                  }
                   setEditingAppointment({
                     ...editingAppointment, 
                     dateTime: `${newDate}T${currentTime}`,
@@ -2330,7 +2339,7 @@ export default function AppointmentBoard() {
                 </div>
                 <div style={{ display: 'flex', justifyContent: 'space-between' }}>
                   <span style={{ fontSize: '8px', fontWeight: 700 }}>DATE:</span>
-                  <span style={{ fontSize: '10px', fontWeight: 900 }}>{new Date(tokenPrintData.dateTime).toLocaleDateString()}</span>
+                  <span style={{ fontSize: '10px', fontWeight: 900 }}>{new Date(tokenPrintData.dateTime).toLocaleDateString('en-GB', { timeZone: 'Asia/Kolkata', day: '2-digit', month: 'short', year: 'numeric' })} - {new Date(tokenPrintData.dateTime).toLocaleTimeString('en-US', { timeZone: 'Asia/Kolkata', hour: '2-digit', minute: '2-digit', hour12: true })} IST</span>
                 </div>
               </div>
               <div style={{ marginTop: '8px', textAlign: 'left' }}>
@@ -2353,7 +2362,7 @@ export default function AppointmentBoard() {
                 </div>
               </div>
 
-              <div style={{ marginTop: '10px', fontSize: '8px', fontWeight: 700, color: '#94a3b8' }}>PRINTED: {new Date().toLocaleTimeString()}</div>
+              <div style={{ marginTop: '10px', fontSize: '8px', fontWeight: 700, color: '#94a3b8' }}>PRINTED: {new Date().toLocaleTimeString('en-US', { timeZone: 'Asia/Kolkata', hour: '2-digit', minute: '2-digit', hour12: true })} IST</div>
             </div>
           </div>
           <div style={{ padding: '20px', display: 'flex', gap: '10px' }}>

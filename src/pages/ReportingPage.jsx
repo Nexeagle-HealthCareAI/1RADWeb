@@ -54,9 +54,20 @@ const ReportingPage = () => {
   const [isTablet, setIsTablet] = useState(window.innerWidth < 1100);
   const [isMobile, setIsMobile] = useState(window.innerWidth < 768);
   const [activeMainTab, setActiveMainTab] = useState('REPORTING'); // 'DICOM', 'REPORTING', 'TIMELINE'
+  // True only while the DICOM tab is visible — defers ZIP download until the user
+  // actually needs the viewer, avoiding a 200-500 MB download on every page open.
+  const dicomTabActiveRef = useRef(false);
+  // True while hydrateZipAsset is running — used to pause live polling so it
+  // does not compete for bandwidth during the ZIP download + DICOM processing.
+  const isHydratingRef = useRef(false);
 
   const handleSelectMainTab = (tabId) => {
     setActiveMainTab(tabId);
+    dicomTabActiveRef.current = tabId === 'DICOM';
+    // Trigger DICOM loading on-demand — only when the doctor opens the DICOM tab.
+    if (tabId === 'DICOM' && uploadedFiles[activeAssetIndex]?.needsHydration) {
+      hydrateZipAsset(activeAssetIndex);
+    }
     if (!isTablet) {
       if (tabId === 'DICOM') {
         setEditorState('collapsed');
@@ -425,22 +436,9 @@ const ReportingPage = () => {
         setUploadedFiles(hydAssets);
         setOriginalAssets(hydAssets);
 
-        // Auto-hydrate first asset if it's a ZIP
-        if (hydAssets.length > 0 && hydAssets[0].needsHydration) {
-          console.info(`[1RAD] Auto-hydrating first asset: ${hydAssets[0].name}`);
-          console.info(`[1RAD] Asset remoteUrl: ${hydAssets[0].remoteUrl}`);
-
-          // Validate URL before attempting hydration
-          if (!hydAssets[0].remoteUrl) {
-            console.error(`[1RAD] Cannot hydrate asset - missing remoteUrl`);
-            alert('ASSET_ERROR: Study file URL is missing. Please contact support.');
-            return;
-          }
-
-          // Trigger hydration after React flushes the uploadedFiles state update
-          setTimeout(() => {
-            setActiveAssetIndex(0);
-          }, 0);
+        // DICOM hydration is deferred — triggered only when the doctor opens the DICOM tab.
+        if (hydAssets.length > 0 && hydAssets[0].needsHydration && !hydAssets[0].remoteUrl) {
+          console.error(`[1RAD] Asset missing remoteUrl:`, hydAssets[0]);
         }
       } else {
         console.info(`[1RAD] No existing study assets found`);
@@ -532,42 +530,37 @@ const ReportingPage = () => {
           });
         }
 
-        // 2. Fetch assets to see if new DICOM files have been uploaded by technician
-        const assetRes = await apiClient.get(`/Study/${appointmentId}/assets`).catch(() => null);
-        if (assetRes?.data) {
-          setUploadedFiles(prev => {
-            const currentIds = prev.map(a => String(a.id));
-            const hasNewAssets = assetRes.data.some(asset => !currentIds.includes(String(asset.id)));
-            const hasRemovedAssets = currentIds.some(id => !assetRes.data.some(asset => String(asset.id) === id));
+        // 2. Fetch assets — skip while DICOM is downloading to avoid bandwidth competition
+        if (!isHydratingRef.current) {
+          const assetRes = await apiClient.get(`/Study/${appointmentId}/assets`).catch(() => null);
+          if (assetRes?.data) {
+            setUploadedFiles(prev => {
+              const currentIds = prev.map(a => String(a.id));
+              const hasNewAssets = assetRes.data.some(asset => !currentIds.includes(String(asset.id)));
+              const hasRemovedAssets = currentIds.some(id => !assetRes.data.some(asset => String(asset.id) === id));
 
-            if (hasNewAssets || hasRemovedAssets || prev.length !== assetRes.data.length) {
-              console.log('[LIVE_UPDATE] Assets changed, reloading study library...');
-              const hydAssets = assetRes.data.map((asset, index) => {
-                const existing = prev.find(p => String(p.id) === String(asset.id));
-                return {
-                  id: asset.id,
-                  name: asset.fileName || `Asset ${index + 1}`,
-                  type: (asset.fileType || 'unknown').toUpperCase(),
-                  remoteUrl: asset.blobUrl,
-                  needsHydration: (asset.fileType || '').toLowerCase() === 'zip' && (!existing || existing.rawFiles?.length === 0),
-                  rawFiles: existing?.rawFiles || [],
-                  originalAsset: asset
-                };
-              });
+              if (hasNewAssets || hasRemovedAssets || prev.length !== assetRes.data.length) {
+                console.log('[LIVE_UPDATE] Assets changed, reloading study library...');
+                const hydAssets = assetRes.data.map((asset, index) => {
+                  const existing = prev.find(p => String(p.id) === String(asset.id));
+                  return {
+                    id: asset.id,
+                    name: asset.fileName || `Asset ${index + 1}`,
+                    type: (asset.fileType || 'unknown').toUpperCase(),
+                    remoteUrl: asset.blobUrl,
+                    needsHydration: (asset.fileType || '').toLowerCase() === 'zip' && (!existing || existing.rawFiles?.length === 0),
+                    rawFiles: existing?.rawFiles || [],
+                    originalAsset: asset
+                  };
+                });
 
-              // Trigger auto-hydration for the newly added ZIP asset if needed
-              if (hydAssets.length > 0 && hydAssets[0].needsHydration && hydAssets[0].rawFiles.length === 0) {
-                console.log('[LIVE_UPDATE] Triggering auto-hydration for new active asset:', hydAssets[0].name);
-                setTimeout(() => {
-                  setActiveAssetIndex(0);
-                }, 100);
+                // Hydration is triggered on-demand when user opens the DICOM tab.
+                setOriginalAssets(hydAssets);
+                return hydAssets;
               }
-
-              setOriginalAssets(hydAssets);
-              return hydAssets;
-            }
-            return prev;
-          });
+              return prev;
+            });
+          }
         }
       } catch (err) {
         console.warn('[LIVE_UPDATE] Failed to poll updates:', err);
@@ -817,6 +810,7 @@ const ReportingPage = () => {
     const asset = uploadedFiles[index];
     if (!asset || !asset.needsHydration || !asset.remoteUrl || asset.rawFiles?.length > 0) return;
 
+    isHydratingRef.current = true;
     setLoading(true);
     setProcessingStatus('Initializing optimized DICOM processor...');
 
@@ -872,7 +866,7 @@ const ReportingPage = () => {
           method: 'GET',
           headers: { 'Accept': 'application/zip, application/octet-stream, */*' },
           credentials: 'same-origin',
-          cache: 'no-store',
+          cache: 'default', // allow browser HTTP cache — avoids re-downloading unchanged studies
         });
       } catch (fetchError) {
         // CORS / network failure → proxy fallback
@@ -1096,6 +1090,7 @@ const ReportingPage = () => {
 
       alert(errorMessage);
     } finally {
+      isHydratingRef.current = false;
       setLoading(false);
       setProcessingStatus('');
       setLoadingProgress({ stage: '', current: 0, total: 0 });
@@ -1103,7 +1098,8 @@ const ReportingPage = () => {
   };
 
   useEffect(() => {
-    if (uploadedFiles[activeAssetIndex]?.needsHydration) {
+    // Only hydrate if the DICOM tab is currently open — avoids downloading on page load.
+    if (dicomTabActiveRef.current && uploadedFiles[activeAssetIndex]?.needsHydration) {
       hydrateZipAsset(activeAssetIndex);
     }
   }, [activeAssetIndex, uploadedFiles]);
