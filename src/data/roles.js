@@ -70,4 +70,9 @@ export const NAV_ITEMS = [
     route: '/dicom-bridge',
     allowedRoles: ['admindoctor', 'admin'],
   },
+  {
+    label: 'Operations Board',
+    route: '/operations-board',
+    allowedRoles: ['admindoctor', 'admin', 'receptionist', 'technician', 'doctor', 'accountant'],
+  }
 ];

@@ -20,6 +20,7 @@ import SubscriptionPage from '../pages/SubscriptionPage';
 import PatientTimelinePage from '../pages/PatientTimelinePage';
 import DicomBridgePage from '../pages/DicomBridgePage';
 import ConfigurationPage from '../pages/ConfigurationPage';
+import OperationsBoard from '../pages/OperationsBoard';
 
 function RootRedirect() {
   const { currentUser } = useAuth();
@@ -162,6 +163,14 @@ export default function AppRouter() {
           element={
             <ProtectedRoute allowedRoles={['admindoctor', 'admin', 'technician', 'doctor']}>
               <ConfigurationPage />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/operations-board"
+          element={
+            <ProtectedRoute allowedRoles={['admindoctor', 'admin', 'receptionist', 'technician', 'doctor', 'accountant']}>
+              <OperationsBoard />
             </ProtectedRoute>
           }
         />

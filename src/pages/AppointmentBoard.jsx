@@ -395,6 +395,7 @@ export default function AppointmentBoard() {
   const stats = {
     total: appointmentsForTab.length,
     expected: appointmentsForTab.filter(a => ['scheduled', 'booked'].includes(a.status?.toLowerCase())).length,
+    noShow: appointmentsForTab.filter(a => ['no_show', 'noshow'].includes(a.status?.toLowerCase())).length,
     arrived: appointmentsForTab.filter(a => a.status?.toLowerCase() === 'confirmed').length,
     scanning: appointmentsForTab.filter(a => a.status?.toLowerCase() === 'in_progress').length,
     scanned: appointmentsForTab.filter(a => ['scanned', 'completed'].includes(a.status?.toLowerCase())).length,
@@ -2539,13 +2540,13 @@ export default function AppointmentBoard() {
                 className={`appt-tab-btn ${activeTab === 'PAST' ? 'active' : ''}`}
                 onClick={() => setActiveTab('PAST')}
               >
-                Archive
+                Past
               </button>
               <button 
                 className={`appt-tab-btn ${activeTab === 'FUTURE' ? 'active' : ''}`}
                 onClick={() => setActiveTab('FUTURE')}
               >
-                Schedule
+                Future
               </button>
             </div>
             
@@ -2559,7 +2560,7 @@ export default function AppointmentBoard() {
       {/* --- INTEL CARDS --- */}
       <div className="intel-cards-grid" style={{
         display: 'grid',
-        gridTemplateColumns: isMobile ? '1fr 1fr' : 'repeat(6, 1fr)',
+        gridTemplateColumns: isMobile ? '1fr 1fr' : (activeTab === 'FUTURE' ? 'repeat(6, 1fr)' : 'repeat(7, 1fr)'),
         gap: '16px',
         marginBottom: '24px'
       }}>
@@ -2595,10 +2596,10 @@ export default function AppointmentBoard() {
           justifyContent: 'space-between',
           minHeight: '100px'
         }}>
-          <span className="intel-label" style={{ fontSize: '9px', fontWeight: 900, color: '#64748b', letterSpacing: '1px', textTransform: 'uppercase' }}>Expected Today</span>
-          <div className="intel-value" style={{ fontSize: '28px', fontWeight: 950, margin: '6px 0', color: '#475569', fontFamily: 'monospace' }}>{stats.expected}</div>
+          <span className="intel-label" style={{ fontSize: '9px', fontWeight: 900, color: '#64748b', letterSpacing: '1px', textTransform: 'uppercase' }}>{activeTab === 'PAST' ? 'No Show' : 'Expected Today'}</span>
+          <div className="intel-value" style={{ fontSize: '28px', fontWeight: 950, margin: '6px 0', color: activeTab === 'PAST' ? '#dc2626' : '#475569', fontFamily: 'monospace' }}>{activeTab === 'PAST' ? stats.noShow : stats.expected}</div>
           <div className="intel-trend" style={{ fontSize: '10px', color: '#64748b', fontWeight: 800 }}>
-            Intake Pending
+            {activeTab === 'PAST' ? 'Did Not Attend' : 'Intake Pending'}
           </div>
         </div>
 
@@ -2681,6 +2682,27 @@ export default function AppointmentBoard() {
             Handed Over ({completionRate}% Efficacy)
           </div>
         </div>
+
+        {/* Card 7: Cancelled — Today & Past only */}
+        {activeTab !== 'FUTURE' && (
+          <div className="intel-card" style={{
+            background: '#fff1f2',
+            padding: '20px',
+            borderRadius: '20px',
+            boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.05)',
+            border: '1px solid #fecdd3',
+            display: 'flex',
+            flexDirection: 'column',
+            justifyContent: 'space-between',
+            minHeight: '100px'
+          }}>
+            <span className="intel-label" style={{ fontSize: '9px', fontWeight: 900, color: '#be123c', letterSpacing: '1px', textTransform: 'uppercase' }}>Cancelled</span>
+            <div className="intel-value" style={{ fontSize: '28px', fontWeight: 950, margin: '6px 0', color: '#e11d48', fontFamily: 'monospace' }}>{stats.cancelled}</div>
+            <div className="intel-trend" style={{ fontSize: '10px', color: '#be123c', fontWeight: 800 }}>
+              Aborted Missions
+            </div>
+          </div>
+        )}
       </div>
 
       {/* --- FILTER BAR --- */}

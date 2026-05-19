@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { StudyPrefetcher } from '../utils/StudyPrefetcher';
 import { PrefetchSettings } from '../utils/PrefetchSettings';
 
@@ -13,6 +13,32 @@ export default function PrefetchStatusIndicator() {
   const [status, setStatus] = useState(StudyPrefetcher.getStatus());
   const [settings, setSettings] = useState(PrefetchSettings.get());
 
+  // Draggable position — default top-right
+  const [pos, setPos] = useState({ top: 16, right: 16, left: null, bottom: null });
+  const dragging = useRef(false);
+  const offset = useRef({ x: 0, y: 0 });
+  const panelRef = useRef(null);
+
+  const onPointerDown = (e) => {
+    // Only drag from the handle row, not buttons/inputs
+    if (e.target.closest('button') || e.target.closest('input') || e.target.closest('label')) return;
+    dragging.current = true;
+    const rect = panelRef.current.getBoundingClientRect();
+    offset.current = { x: e.clientX - rect.left, y: e.clientY - rect.top };
+    e.currentTarget.setPointerCapture(e.pointerId);
+  };
+
+  const onPointerMove = (e) => {
+    if (!dragging.current) return;
+    const x = e.clientX - offset.current.x;
+    const y = e.clientY - offset.current.y;
+    const maxX = window.innerWidth  - (panelRef.current?.offsetWidth  || 300);
+    const maxY = window.innerHeight - (panelRef.current?.offsetHeight || 120);
+    setPos({ top: Math.max(0, Math.min(y, maxY)), left: Math.max(0, Math.min(x, maxX)), right: null, bottom: null });
+  };
+
+  const onPointerUp = () => { dragging.current = false; };
+
   useEffect(() => StudyPrefetcher.subscribe(setStatus), []);
   useEffect(() => PrefetchSettings.subscribe(setSettings), []);
 
@@ -26,10 +52,16 @@ export default function PrefetchStatusIndicator() {
 
   return (
     <div
+      ref={panelRef}
+      onPointerDown={onPointerDown}
+      onPointerMove={onPointerMove}
+      onPointerUp={onPointerUp}
       style={{
         position: 'fixed',
-        bottom: '16px',
-        right: '16px',
+        top:    pos.top    != null ? pos.top    : undefined,
+        left:   pos.left   != null ? pos.left   : undefined,
+        right:  pos.right  != null ? pos.right  : undefined,
+        bottom: pos.bottom != null ? pos.bottom : undefined,
         zIndex: 9000,
         background: 'rgba(15, 23, 42, 0.92)',
         color: '#e2e8f0',
@@ -44,14 +76,18 @@ export default function PrefetchStatusIndicator() {
         flexDirection: 'column',
         gap: '6px',
         backdropFilter: 'blur(8px)',
+        userSelect: 'none',
+        touchAction: 'none',
       }}
-      title="Pre-loading studies for offline use"
+      title="Drag to reposition"
     >
-      <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+      {/* Drag handle row */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'grab' }}>
         <span style={{ fontSize: '14px' }}>{paused ? '⏸️' : '🔽'}</span>
-        <span style={{ color: '#60a5fa', fontWeight: 900, letterSpacing: '0.5px' }}>
+        <span style={{ color: '#60a5fa', fontWeight: 900, letterSpacing: '0.5px', flex: 1 }}>
           {paused ? 'PREFETCH PAUSED' : 'PRE-LOADING STUDIES'}
         </span>
+        <span style={{ fontSize: '10px', color: '#475569', cursor: 'grab' }}>⠿</span>
       </div>
 
       {currentName && !paused && (
