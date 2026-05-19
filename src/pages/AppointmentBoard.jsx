@@ -1373,13 +1373,13 @@ export default function AppointmentBoard() {
                 }}>
                   {/* Column 1: Database Search */}
                   <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '15px' }}>
-                    <div style={{ background: '#f8f9fa', padding: '18px', borderRadius: '14px', border: '1px solid #eee', height: '100%', display: 'flex', flexDirection: 'column' }}>
-                      <label style={{ fontSize: '10px', color: '#0f52ba', fontWeight: 800, marginBottom: '10px', display: 'block', letterSpacing: '1px' }}>SEARCH PATIENT DATABASE</label>
-                      <div className="search-input-group" style={{ width: '100%', marginBottom: '10px' }}>
-                        <input type="text" placeholder="Search patient database..." value={drawerSearchQuery} onChange={(e) => setDrawerSearchQuery(e.target.value)} autoFocus style={{ paddingLeft: '15px' }} />
+                    <div style={{ background: '#f8f9fa', padding: '14px 18px', borderRadius: '14px', border: '1px solid #eee', height: '100%', display: 'flex', flexDirection: 'column' }}>
+                      <label style={{ fontSize: '10px', color: '#0f52ba', fontWeight: 800, marginBottom: '8px', display: 'block', letterSpacing: '1px' }}>SEARCH PATIENT DATABASE</label>
+                      <div className="search-input-group" style={{ width: '100%', marginBottom: '8px' }}>
+                        <input type="text" placeholder="Search patient database..." value={drawerSearchQuery} onChange={(e) => setDrawerSearchQuery(e.target.value)} autoFocus style={{ paddingLeft: '15px', height: '36px', fontSize: '13px' }} />
                       </div>
 
-                      <div style={{ flex: 1, maxHeight: isMobile ? '160px' : '450px', overflowY: 'auto' }}>
+                      <div style={{ flex: 1, maxHeight: isMobile ? '160px' : '220px', overflowY: 'auto' }}>
                         {drawerSearchQuery ? (
                           <>
                             {patients.filter(p => 
@@ -1405,21 +1405,22 @@ export default function AppointmentBoard() {
                                   });
                                   setDuplicatePatient(null); 
                                 }}
+                                style={{ padding: '8px 10px', gap: '8px', marginBottom: '4px' }}
                               >
                                 <div style={{
-                                  width: '32px', height: '32px', borderRadius: '10px',
+                                  width: '28px', height: '28px', borderRadius: '8px',
                                   background: newBooking.patientId === p.id ? '#0f52ba' : '#e8f0fe',
                                   color: newBooking.patientId === p.id ? 'white' : '#0f52ba',
                                   display: 'flex', alignItems: 'center', justifyContent: 'center',
-                                  fontWeight: 900, fontSize: '12px', flexShrink: 0,
+                                  fontWeight: 900, fontSize: '11px', flexShrink: 0,
                                 }}>{p.name.charAt(0)}</div>
                                 <div style={{ flex: 1 }}>
-                                   <div style={{ fontWeight: 700, fontSize: '13px', color: '#1a1a2e' }}>{p.name}</div>
-                                   <div style={{ fontSize: '10px', color: '#888' }}>
+                                   <div style={{ fontWeight: 700, fontSize: '12px', color: '#1a1a2e' }}>{p.name}</div>
+                                   <div style={{ fontSize: '9px', color: '#888' }}>
                                      <span style={{ color: '#0f52ba', fontWeight: 800 }}>{p.patientIdentifier || p.id}</span> {'\u00b7'} {p.mobile} {'\u00b7'} {p.age}y {p.gender}
                                    </div>
                                 </div>
-                                {newBooking.patientId === p.id && <span style={{ color: '#0f52ba', fontWeight: 900, fontSize: '10px' }}>SELECTED</span>}
+                                {newBooking.patientId === p.id && <span style={{ color: '#0f52ba', fontWeight: 900, fontSize: '9px' }}>SELECTED</span>}
                               </div>
                             ))}
                             {!patients.some(p => 
@@ -1428,13 +1429,13 @@ export default function AppointmentBoard() {
                               p.id.toLowerCase().includes(drawerSearchQuery.toLowerCase()) ||
                               (p.patientIdentifier && p.patientIdentifier.toLowerCase().includes(drawerSearchQuery.toLowerCase()))
                             ) && (
-                              <div style={{ padding: '12px', textAlign: 'center', color: '#999', fontSize: '12px' }}>No match found - fill details in Column 2</div>
+                              <div style={{ padding: '8px', textAlign: 'center', color: '#999', fontSize: '11px' }}>No match found - fill details in Column 2</div>
                             )}
                           </>
                         ) : (
-                          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100%', minHeight: '150px', color: '#94a3b8', textAlign: 'center', padding: '20px' }}>
-                            <span style={{ fontSize: '28px', marginBottom: '10px' }}>🔍</span>
-                            <span style={{ fontSize: '11px', fontWeight: 700 }}>Search database to import an existing patient profile quickly.</span>
+                          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100%', minHeight: '120px', color: '#94a3b8', textAlign: 'center', padding: '15px' }}>
+                            <span style={{ fontSize: '24px', marginBottom: '8px' }}>🔍</span>
+                            <span style={{ fontSize: '10px', fontWeight: 700 }}>Search database to import an existing patient profile quickly.</span>
                           </div>
                         )}
                       </div>
@@ -1443,16 +1444,16 @@ export default function AppointmentBoard() {
 
                   {/* Column 2: Patient Details */}
                   <div style={{ flex: 1.2, display: 'flex', flexDirection: 'column', gap: '15px' }}>
-                    <div style={{ background: 'white', padding: '16px 20px', borderRadius: '14px', border: '2px dashed #dde5f5' }}>
-                      <label style={{ fontSize: '10px', color: '#0f52ba', fontWeight: 800, marginBottom: '18px', display: 'block', letterSpacing: '1px' }}>ENTER PATIENT DEMOGRAPHICS</label>
+                    <div style={{ background: 'white', padding: '12px 16px', borderRadius: '14px', border: '2px dashed #dde5f5' }}>
+                      <label style={{ fontSize: '10px', color: '#0f52ba', fontWeight: 800, marginBottom: '10px', display: 'block', letterSpacing: '1px' }}>ENTER PATIENT DEMOGRAPHICS</label>
                       
                       <div style={{ 
                         display: 'grid', 
                         gridTemplateColumns: '1fr', 
-                        gap: '12px' 
+                        gap: '8px' 
                       }}>
-                        <div className="form-group" style={{ marginBottom: '8px' }}>
-                          <label style={{ fontSize: '10px', fontWeight: 700 }}>FULL NAME <span style={{ color: '#e74c3c' }}>*</span></label>
+                        <div className="form-group" style={{ marginBottom: '4px' }}>
+                          <label style={{ fontSize: '10px', fontWeight: 700, marginBottom: '4px', display: 'block' }}>FULL NAME <span style={{ color: '#e74c3c' }}>*</span></label>
                           <input 
                             type="text" 
                             required 
@@ -1460,8 +1461,8 @@ export default function AppointmentBoard() {
                             style={{ 
                               width: '100%',
                               fontSize: '13px', 
-                              padding: '12px 14px',
-                              borderRadius: '12px',
+                              padding: '8px 12px',
+                              borderRadius: '10px',
                               border: showBookingValidation && !newPatient.name.trim() ? '1.5px solid #e74c3c' : '1.5px solid #dee2e6',
                               background: showBookingValidation && !newPatient.name.trim() ? '#fff5f5' : 'white',
                               outline: 'none', fontWeight: 600
@@ -1470,8 +1471,8 @@ export default function AppointmentBoard() {
                             onChange={e => { setNewPatient({...newPatient, name: e.target.value}); setNewBooking({...newBooking, patientId: ''}); }} 
                           />
                         </div>
-                        <div className="form-group" style={{ marginBottom: '8px' }}>
-                          <label style={{ fontSize: '10px', fontWeight: 700 }}>MOBILE <span style={{ color: '#e74c3c' }}>*</span></label>
+                        <div className="form-group" style={{ marginBottom: '4px' }}>
+                          <label style={{ fontSize: '10px', fontWeight: 700, marginBottom: '4px', display: 'block' }}>MOBILE <span style={{ color: '#e74c3c' }}>*</span></label>
                           <input 
                             type="tel" 
                             required 
@@ -1479,8 +1480,8 @@ export default function AppointmentBoard() {
                             style={{ 
                               width: '100%',
                               fontSize: '13px', 
-                              padding: '12px 14px',
-                              borderRadius: '12px',
+                              padding: '8px 12px',
+                              borderRadius: '10px',
                               borderColor: (newPatient.mobile.length > 0 && !isMobileValid) || (showBookingValidation && !isMobileValid) ? '#e74c3c' : '#dee2e6',
                               background: (showBookingValidation && !isMobileValid) ? '#fff5f5' : 'white',
                               boxShadow: (newPatient.mobile.length > 0 && !isMobileValid) || (showBookingValidation && !isMobileValid) ? '0 0 0 1px #e74c3c' : 'none',
@@ -1499,16 +1500,17 @@ export default function AppointmentBoard() {
                             </div>
                           )}
                         </div>
-                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
-                          <div className="form-group" style={{ marginBottom: '8px' }}>
-                            <label style={{ fontSize: '10px', fontWeight: 700 }}>AGE <span style={{ color: '#e74c3c' }}>*</span></label>
+                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
+                          <div className="form-group" style={{ marginBottom: '4px' }}>
+                            <label style={{ fontSize: '10px', fontWeight: 700, marginBottom: '4px', display: 'block' }}>AGE <span style={{ color: '#e74c3c' }}>*</span></label>
                             <input 
                               type="text" 
                               required 
                               placeholder="25" 
                               style={{ 
                                 fontSize: '13px', 
-                                padding: '11px 12px',
+                                padding: '8px 10px',
+                                borderRadius: '10px',
                                 border: showBookingValidation && !newPatient.age.trim() ? '1.5px solid #e74c3c' : '1.5px solid #dee2e6',
                                 background: showBookingValidation && !newPatient.age.trim() ? '#fff5f5' : 'white'
                               }} 
@@ -1516,39 +1518,39 @@ export default function AppointmentBoard() {
                               onChange={e => setNewPatient({...newPatient, age: e.target.value})} 
                             />
                           </div>
-                          <div className="form-group" style={{ marginBottom: '8px' }}>
-                            <label style={{ fontSize: '10px', fontWeight: 700, color: '#64748b' }}>GENDER</label>
-                            <select style={{ fontSize: '13px', padding: '11px', height: '44px' }} value={newPatient.gender} onChange={e => setNewPatient({...newPatient, gender: e.target.value})}>
+                          <div className="form-group" style={{ marginBottom: '4px' }}>
+                            <label style={{ fontSize: '10px', fontWeight: 700, color: '#64748b', marginBottom: '4px', display: 'block' }}>GENDER</label>
+                            <select style={{ fontSize: '13px', padding: '6px', height: '38px', borderRadius: '10px' }} value={newPatient.gender} onChange={e => setNewPatient({...newPatient, gender: e.target.value})}>
                               <option>Male</option><option>Female</option><option>Other</option>
                             </select>
                           </div>
                         </div>
-                        <div className="form-group" style={{ marginBottom: '8px' }}>
-                          <label style={{ fontSize: '10px', fontWeight: 800, color: '#0f52ba', letterSpacing: '0.5px' }}>SOURCE OF INFORMATION</label>
+                        <div className="form-group" style={{ marginBottom: '4px' }}>
+                          <label style={{ fontSize: '10px', fontWeight: 800, color: '#0f52ba', letterSpacing: '0.5px', marginBottom: '4px', display: 'block' }}>SOURCE OF INFORMATION</label>
                           <input 
                             type="text" 
                             placeholder="Discovery source..." 
-                            style={{ width: '100%', fontSize: '13px', padding: '11px 12px', height: '44px', border: '1.5px solid #0f52ba20', background: '#f0f7ff', borderRadius: '12px', outline: 'none' }} 
+                            style={{ width: '100%', fontSize: '13px', padding: '8px 10px', height: '38px', border: '1.5px solid #0f52ba20', background: '#f0f7ff', borderRadius: '10px', outline: 'none' }} 
                             value={newPatient.sourceOfInfo} 
                             onChange={e => setNewPatient({...newPatient, sourceOfInfo: e.target.value})} 
                           />
                         </div>
-                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
-                          <div className="form-group" style={{ marginBottom: '8px' }}>
-                            <label style={{ fontSize: '10px', fontWeight: 700 }}>VILLAGE</label>
-                            <input type="text" placeholder="Village" style={{ fontSize: '13px', padding: '11px 12px' }} value={newPatient.village} onChange={e => setNewPatient({...newPatient, village: e.target.value})} />
+                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
+                          <div className="form-group" style={{ marginBottom: '4px' }}>
+                            <label style={{ fontSize: '10px', fontWeight: 700, marginBottom: '4px', display: 'block' }}>VILLAGE</label>
+                            <input type="text" placeholder="Village" style={{ fontSize: '13px', padding: '8px 10px', borderRadius: '10px' }} value={newPatient.village} onChange={e => setNewPatient({...newPatient, village: e.target.value})} />
                           </div>
-                          <div className="form-group" style={{ marginBottom: '8px' }}>
-                            <label style={{ fontSize: '10px', fontWeight: 700 }}>DISTRICT</label>
-                            <input type="text" placeholder="District" style={{ fontSize: '13px', padding: '11px 12px' }} value={newPatient.district} onChange={e => setNewPatient({...newPatient, district: e.target.value})} />
+                          <div className="form-group" style={{ marginBottom: '4px' }}>
+                            <label style={{ fontSize: '10px', fontWeight: 700, marginBottom: '4px', display: 'block' }}>DISTRICT</label>
+                            <input type="text" placeholder="District" style={{ fontSize: '13px', padding: '8px 10px', borderRadius: '10px' }} value={newPatient.district} onChange={e => setNewPatient({...newPatient, district: e.target.value})} />
                           </div>
                         </div>
-                        <div className="form-group" style={{ marginBottom: '8px' }}>
-                          <label style={{ fontSize: '10px', fontWeight: 700 }}>ADDRESS / RESIDENCE DATA</label>
+                        <div className="form-group" style={{ marginBottom: '4px' }}>
+                          <label style={{ fontSize: '10px', fontWeight: 700, marginBottom: '4px', display: 'block' }}>ADDRESS / RESIDENCE DATA</label>
                           <input 
                             type="text" 
                             placeholder="Street, Landmark..." 
-                            style={{ width: '100%', fontSize: '13px', padding: '12px 14px', height: '44px', borderRadius: '12px', border: '1.5px solid #dee2e6' }} 
+                            style={{ width: '100%', fontSize: '13px', padding: '8px 10px', height: '38px', borderRadius: '10px', border: '1.5px solid #dee2e6' }} 
                             value={newPatient.address} 
                             onChange={e => setNewPatient({...newPatient, address: e.target.value})} 
                           />
@@ -1559,11 +1561,11 @@ export default function AppointmentBoard() {
 
                   {/* Column 3: Referred By & Proceed */}
                   <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '15px' }}>
-                    <div style={{ background: 'white', padding: '16px 20px', borderRadius: '14px', border: '2px dashed #dde5f5', height: '100%', display: 'flex', flexDirection: 'column' }}>
-                      <label style={{ fontSize: '10px', color: '#0f52ba', fontWeight: 800, marginBottom: '18px', display: 'block', letterSpacing: '1px' }}>REFERRAL SOURCE</label>
+                    <div style={{ background: 'white', padding: '12px 16px', borderRadius: '14px', border: '2px dashed #dde5f5', height: '100%', display: 'flex', flexDirection: 'column' }}>
+                      <label style={{ fontSize: '10px', color: '#0f52ba', fontWeight: 800, marginBottom: '10px', display: 'block', letterSpacing: '1px' }}>REFERRAL SOURCE</label>
                       
                       <div className="form-group" style={{ position: 'relative', flex: 1 }}>
-                        <label style={{ fontSize: '10px', fontWeight: 800, color: '#64748b', marginBottom: '8px', display: 'block' }}>REFERRED BY</label>
+                        <label style={{ fontSize: '10px', fontWeight: 800, color: '#64748b', marginBottom: '6px', display: 'block' }}>REFERRED BY</label>
                         <div style={{ 
                           display: 'flex', 
                           flexDirection: isMobile ? 'column' : 'row',
@@ -1575,7 +1577,7 @@ export default function AppointmentBoard() {
                               placeholder="Search or type referrer..."
                               value={newPatient.referredBy} 
                               style={{
-                                width: '100%', padding: '12px 14px', borderRadius: '12px',
+                                width: '100%', padding: '8px 12px', borderRadius: '10px',
                                 border: '1.5px solid #dee2e6', fontSize: '13px', fontWeight: 600,
                                 outline: 'none', background: '#f8fafc'
                               }}
@@ -1614,9 +1616,9 @@ export default function AppointmentBoard() {
                             type="button" 
                             onClick={() => setIsAddingReferrer(true)}
                             style={{ 
-                              width: isMobile ? '100%' : '44px', 
-                              height: '44px', 
-                              borderRadius: '12px', 
+                              width: isMobile ? '100%' : '36px', 
+                              height: '36px', 
+                              borderRadius: '10px', 
                               border: '1px dashed #cbd5e1', 
                               background: '#f8fafc', 
                               color: '#0f52ba', 
@@ -1637,10 +1639,10 @@ export default function AppointmentBoard() {
                       {newBooking.patientId && (
                         <div style={{
                           background: 'linear-gradient(90deg, #e8f0fe 0%, #fff 100%)',
-                          padding: '14px 18px', borderRadius: '12px',
+                          padding: '10px 14px', borderRadius: '12px',
                           borderLeft: '4px solid #0f52ba',
                           display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-                          marginTop: '20px', marginBottom: '20px'
+                          marginTop: '12px', marginBottom: '12px'
                         }}>
                           <div>
                             <div style={{ fontSize: '9px', color: '#0f52ba', fontWeight: 900, background: 'white', padding: '4px 8px', borderRadius: '6px', border: '1px solid #0f52ba' }}>MATCHED</div>
@@ -1652,7 +1654,7 @@ export default function AppointmentBoard() {
                         <button 
                           className="gamified-btn" 
                           style={{ 
-                            width: '100%', padding: '16px', borderRadius: '12px', fontSize: '13px',
+                            width: '100%', padding: '12px', borderRadius: '10px', fontSize: '13px',
                             background: isNewPatientIncomplete && showBookingValidation ? '#94a3b8' : 'linear-gradient(90deg, #0f52ba, #00f2fe)',
                             boxShadow: isNewPatientIncomplete && showBookingValidation ? 'none' : '0 10px 20px rgba(15, 82, 186, 0.2)',
                           }} 
@@ -1724,30 +1726,30 @@ export default function AppointmentBoard() {
                 <div style={{
                   display: 'flex',
                   flexDirection: isMobile ? 'column' : 'row',
-                  gap: '24px',
+                  gap: '20px',
                   alignItems: 'stretch'
                 }}>
                   {/* Left Column: Clinical Setup */}
-                  <div style={{ flex: 1.1, display: 'flex', flexDirection: 'column', gap: '15px' }}>
-                    <div style={{ background: '#f8f9fa', padding: '18px', borderRadius: '14px', border: '1px solid #eee' }}>
-                      <div style={{ marginBottom: '8px' }}>
-                        <h3 style={{ fontSize: '12px', fontWeight: 900, color: '#0f52ba', textTransform: 'uppercase', letterSpacing: '1px' }}>1. Select Study Modality</h3>
+                  <div style={{ flex: 1.1, display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                    <div style={{ background: '#f8f9fa', padding: '12px 14px', borderRadius: '14px', border: '1px solid #eee' }}>
+                      <div style={{ marginBottom: '6px' }}>
+                        <h3 style={{ fontSize: '11px', fontWeight: 900, color: '#0f52ba', textTransform: 'uppercase', letterSpacing: '1px' }}>1. Select Study Modality</h3>
                       </div>
 
-                      <div className="modality-grid" style={{ gridTemplateColumns: 'repeat(5, 1fr)', gap: '8px', marginBottom: '15px' }}>
+                      <div className="modality-grid" style={{ gridTemplateColumns: 'repeat(5, 1fr)', gap: '6px', marginBottom: '10px' }}>
                         {MODALITIES.map(m => (
                           <div key={m} className={`modality-card ${newBooking.modality === m ? 'active' : ''}`} 
-                            style={{ padding: '8px 4px', minHeight: 'auto', display: 'flex', flexDirection: 'column', alignItems: 'center' }}
+                            style={{ padding: '6px 2px', minHeight: 'auto', display: 'flex', flexDirection: 'column', alignItems: 'center' }}
                             onClick={() => setNewBooking({...newBooking, modality: m, service: '', amount: '', referralCutValue: 0})}
                           >
-                            <span className="modality-icon" style={{ fontSize: '12px', fontWeight: 900, marginBottom: '2px', color: newBooking.modality === m ? 'white' : '#0f52ba' }}>{MODALITY_ICONS[m] || 'MOD'}</span>
+                            <span className="modality-icon" style={{ fontSize: '11px', fontWeight: 900, marginBottom: '2px', color: newBooking.modality === m ? 'white' : '#0f52ba' }}>{MODALITY_ICONS[m] || 'MOD'}</span>
                             <span className="modality-name" style={{ fontSize: '8px' }}>{m}</span>
                           </div>
                         ))}
                       </div>
 
-                      <div className="form-group" style={{ marginTop: '10px', position: 'relative' }}>
-                        <label style={{ fontSize: '9px', fontWeight: 800, letterSpacing: '0.5px', color: '#888' }}>2. SERVICE / PROCEDURE <span style={{ color: '#e74c3c' }}>*</span></label>
+                      <div className="form-group" style={{ marginTop: '6px', position: 'relative' }}>
+                        <label style={{ fontSize: '9px', fontWeight: 800, letterSpacing: '0.5px', color: '#888', marginBottom: '4px', display: 'block' }}>2. SERVICE / PROCEDURE <span style={{ color: '#e74c3c' }}>*</span></label>
                         <input 
                           type="text" 
                           required 
@@ -1765,7 +1767,7 @@ export default function AppointmentBoard() {
                               }));
                             }
                           }} 
-                          style={{ fontSize: '13px', padding: '10px' }} 
+                          style={{ fontSize: '13px', padding: '8px 10px', height: '36px', borderRadius: '10px' }} 
                         />
 
                         {/* Service Suggestions Dropdown */}
@@ -1813,36 +1815,36 @@ export default function AppointmentBoard() {
                         )}
                       </div>
 
-                      <div className="form-group" style={{ marginTop: '12px' }}>
-                        <label style={{ fontSize: '9px', fontWeight: 800, letterSpacing: '0.5px', color: '#888' }}>3. SERVICE AMOUNT (₹)</label>
+                      <div className="form-group" style={{ marginTop: '8px' }}>
+                        <label style={{ fontSize: '9px', fontWeight: 800, letterSpacing: '0.5px', color: '#888', marginBottom: '4px', display: 'block' }}>3. SERVICE AMOUNT (₹)</label>
                         <input 
                           type="number" 
                           placeholder="e.g. 500" 
                           value={newBooking.amount} 
                           onChange={e => setNewBooking({...newBooking, amount: e.target.value === '' ? '' : parseFloat(e.target.value)})} 
-                          style={{ fontSize: '13px', padding: '10px' }} 
+                          style={{ fontSize: '13px', padding: '8px 10px', height: '36px', borderRadius: '10px' }} 
                         />
                         {newBooking.referralCutValue > 0 && (
-                          <div style={{ fontSize: '10px', fontWeight: 800, color: '#0f52ba', marginTop: '6px', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                          <div style={{ fontSize: '9px', fontWeight: 800, color: '#0f52ba', marginTop: '4px', display: 'flex', alignItems: 'center', gap: '4px' }}>
                             <span style={{ opacity: 0.6 }}>SYSTEM REFERRAL CUT:</span>
                             <span>₹{newBooking.referralCutValue}</span>
                           </div>
                         )}
                       </div>
 
-                      <div className="form-group" style={{ marginTop: '12px' }}>
-                        <label style={{ fontSize: '9px', fontWeight: 800, letterSpacing: '0.5px', color: '#888' }}>4. NOTES (OPTIONAL)</label>
-                        <textarea rows="2" placeholder="Clinical notes..." style={{ width: '100%', padding: '10px', borderRadius: '10px', border: '1px solid #dee2e6', fontSize: '12px', resize: 'vertical' }} value={newBooking.notes} onChange={e => setNewBooking({...newBooking, notes: e.target.value})} />
+                      <div className="form-group" style={{ marginTop: '8px' }}>
+                        <label style={{ fontSize: '9px', fontWeight: 800, letterSpacing: '0.5px', color: '#888', marginBottom: '4px', display: 'block' }}>4. NOTES (OPTIONAL)</label>
+                        <textarea rows="1" placeholder="Clinical notes..." style={{ width: '100%', padding: '8px 10px', borderRadius: '10px', border: '1px solid #dee2e6', fontSize: '12px', resize: 'vertical' }} value={newBooking.notes} onChange={e => setNewBooking({...newBooking, notes: e.target.value})} />
                       </div>
                     </div>
                   </div>
 
                   {/* Right Column: Execution Schedule & Specialist */}
-                  <div style={{ flex: 1.3, display: 'flex', flexDirection: 'column', gap: '15px' }}>
-                    <div style={{ background: 'white', padding: '16px 20px', borderRadius: '14px', border: '2px dashed #dde5f5' }}>
-                      <div style={{ marginBottom: '8px' }}>
-                        <label style={{ fontSize: '9px', fontWeight: 800, letterSpacing: '0.5px', color: '#888', display: 'block', marginBottom: '8px' }}>5. MISSION DATE <span style={{ color: '#e74c3c' }}>*</span></label>
-                        <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', marginBottom: '12px' }}>
+                  <div style={{ flex: 1.3, display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                    <div style={{ background: 'white', padding: '12px 14px', borderRadius: '14px', border: '2px dashed #dde5f5' }}>
+                      <div style={{ marginBottom: '6px' }}>
+                        <label style={{ fontSize: '9px', fontWeight: 800, letterSpacing: '0.5px', color: '#888', display: 'block', marginBottom: '4px' }}>5. MISSION DATE <span style={{ color: '#e74c3c' }}>*</span></label>
+                        <div style={{ display: 'flex', gap: '4px', flexWrap: 'wrap', marginBottom: '8px' }}>
                           {[-2, -1, 0, 1, 2, 3].map(offset => {
                             const d = new Date();
                             d.setDate(d.getDate() + offset);
@@ -1860,8 +1862,8 @@ export default function AppointmentBoard() {
                                 key={dateStr}
                                 onClick={() => setNewBooking({...newBooking, date: dateStr})}
                                 style={{
-                                  padding: '6px 10px',
-                                  borderRadius: '8px',
+                                  padding: '4px 8px',
+                                  borderRadius: '6px',
                                   fontSize: '9px',
                                   fontWeight: 900,
                                   border: '1px solid',
@@ -1881,8 +1883,8 @@ export default function AppointmentBoard() {
                             <button
                               onClick={() => document.getElementById('custom-date-trigger').showPicker()}
                               style={{
-                                padding: '6px 10px',
-                                borderRadius: '8px',
+                                padding: '4px 8px',
+                                borderRadius: '6px',
                                 fontSize: '9px',
                                 fontWeight: 900,
                                 border: '1px solid #e2e8f0',
@@ -1910,8 +1912,8 @@ export default function AppointmentBoard() {
                           return d.toLocaleDateString('en-CA') === newBooking.date;
                         }) && (
                           <div style={{ 
-                            display: 'flex', alignItems: 'center', gap: '8px', 
-                            background: '#f8fafc', padding: '6px 10px', borderRadius: '8px', 
+                            display: 'flex', alignItems: 'center', gap: '6px', 
+                            background: '#f8fafc', padding: '4px 8px', borderRadius: '6px', 
                             border: '1px solid #e2e8f0', width: 'fit-content'
                           }}>
                             <span style={{ fontSize: '8px', fontWeight: 950, color: '#0f52ba' }}>SELECTED: {newBooking.date}</span>
@@ -1923,26 +1925,26 @@ export default function AppointmentBoard() {
                         )}
                       </div>
 
-                      <div style={{ marginTop: '12px', marginBottom: '8px' }}>
-                        <label style={{ fontSize: '9px', fontWeight: 800, letterSpacing: '0.5px', color: '#888', display: 'block', marginBottom: '6px' }}>6. ASSIGN LEAD SPECIALIST <span style={{ color: '#e74c3c' }}>*</span></label>
-                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '8px' }}>
+                      <div style={{ marginTop: '8px', marginBottom: '4px' }}>
+                        <label style={{ fontSize: '9px', fontWeight: 800, letterSpacing: '0.5px', color: '#888', display: 'block', marginBottom: '4px' }}>6. ASSIGN LEAD SPECIALIST <span style={{ color: '#e74c3c' }}>*</span></label>
+                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '6px' }}>
                           {doctors.map((d, idx) => (
                             <div key={`${d}_${idx}`} className={`modality-card ${newBooking.doctor === d ? 'active' : ''}`}
-                              style={{ padding: '8px', position: 'relative', flexDirection: 'row', justifyContent: 'flex-start', gap: '8px', minHeight: 'auto' }}
+                              style={{ padding: '6px', position: 'relative', flexDirection: 'row', justifyContent: 'flex-start', gap: '6px', minHeight: 'auto' }}
                               onClick={() => setNewBooking({...newBooking, doctor: d})}
                             >
                               <div style={{
-                                width: '24px', height: '24px', borderRadius: '6px',
+                                width: '20px', height: '20px', borderRadius: '6px',
                                 background: newBooking.doctor === d ? 'rgba(255,255,255,0.2)' : '#e8f0fe',
                                 display: 'flex', alignItems: 'center', justifyContent: 'center',
-                                fontWeight: 900, fontSize: '10px', color: newBooking.doctor === d ? 'white' : '#0f52ba', flexShrink: 0,
+                                fontWeight: 900, fontSize: '9px', color: newBooking.doctor === d ? 'white' : '#0f52ba', flexShrink: 0,
                               }}>
                                 {d.includes('.') ? d.split('. ')[1]?.charAt(0) || d.charAt(0) : d.charAt(0)}
                               </div>
                               <div style={{ textAlign: 'left' }}>
                                 <div style={{ fontWeight: 800, fontSize: '10px', color: newBooking.doctor === d ? 'white' : '#1a1a2e' }}>{d}</div>
                               </div>
-                              {newBooking.doctor === d && <span style={{ position: 'absolute', top: '6px', right: '6px', fontSize: '8px', fontWeight: 950, color: 'white' }}>SELECTED</span>}
+                              {newBooking.doctor === d && <span style={{ position: 'absolute', top: '4px', right: '4px', fontSize: '8px', fontWeight: 950, color: 'white' }}>SELECTED</span>}
                             </div>
                           ))}
                         </div>
@@ -1950,11 +1952,11 @@ export default function AppointmentBoard() {
                     </div>
 
                     <div style={{
-                      background: '#f0f4ff', padding: '12px 14px', borderRadius: '12px',
+                      background: '#f0f4ff', padding: '10px 12px', borderRadius: '12px',
                       border: '1px solid #dde5f5', marginTop: '0px',
                     }}>
-                      <div style={{ fontSize: '8px', fontWeight: 900, color: '#0f52ba', textTransform: 'uppercase', letterSpacing: '1px', marginBottom: '6px' }}>Final Mission Briefing Summary</div>
-                      <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 1fr', gap: '6px' }}>
+                      <div style={{ fontSize: '8px', fontWeight: 900, color: '#0f52ba', textTransform: 'uppercase', letterSpacing: '1px', marginBottom: '4px' }}>Final Mission Briefing Summary</div>
+                      <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 1fr', gap: '4px' }}>
                         <div><span style={{ fontSize: '8px', color: '#888', fontWeight: 700 }}>PATIENT</span><div style={{ fontWeight: 800, fontSize: '10px', color: '#1a1a2e' }}>{patients.find(p => p.id === newBooking.patientId)?.name}</div></div>
                         <div><span style={{ fontSize: '8px', color: '#888', fontWeight: 700 }}>MODALITY</span><div style={{ fontWeight: 800, fontSize: '10px', color: '#1a1a2e' }}>{newBooking.modality}</div></div>
                         <div style={{ gridColumn: 'span 2' }}>
@@ -1977,11 +1979,11 @@ export default function AppointmentBoard() {
                     </div>
 
                     <div className="drawer-footer" style={{ marginTop: '0px', paddingTop: '10px' }}>
-                      <button className="btn-logout" style={{ padding: '12px 20px', borderRadius: '10px', fontWeight: 800, fontSize: '12px' }} onClick={() => setBookingStep(1)}>{'\u2190'} Back</button>
+                      <button className="btn-logout" style={{ padding: '10px 16px', borderRadius: '10px', fontWeight: 800, fontSize: '12px' }} onClick={() => setBookingStep(1)}>{'\u2190'} Back</button>
                       <button 
                         className="gamified-btn" 
                         style={{ 
-                          flex: 1, padding: '12px 20px', borderRadius: '10px', fontSize: '12px', fontWeight: 950,
+                          flex: 1, padding: '10px 16px', borderRadius: '10px', fontSize: '12px', fontWeight: 950,
                           background: 'linear-gradient(90deg, #0f52ba, #00f2fe)',
                           color: 'white', border: 'none', cursor: 'pointer',
                           boxShadow: '0 4px 12px rgba(15, 82, 186, 0.2)',

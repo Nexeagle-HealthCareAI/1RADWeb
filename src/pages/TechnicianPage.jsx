@@ -507,6 +507,10 @@ export default function TechnicianPage() {
     }
   }, [activeAssetIndex, uploadedFiles]);
 
+  useEffect(() => {
+    setCurrentSlice(1);
+  }, [activeAssetIndex]);
+
   const reloadAssetsFromBackend = async () => {
     if (!activeStudy?.appointmentId) return;
     try {
