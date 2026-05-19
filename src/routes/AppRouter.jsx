@@ -112,7 +112,7 @@ export default function AppRouter() {
         <Route
           path="/doctor-board"
           element={
-            <ProtectedRoute allowedRoles={['admindoctor', 'doctor']}>
+            <ProtectedRoute allowedRoles={['admindoctor', 'doctor', 'technician']}>
               <DoctorBoard />
             </ProtectedRoute>
           }
@@ -136,7 +136,7 @@ export default function AppRouter() {
         <Route
           path="/reporting/:id"
           element={
-            <ProtectedRoute allowedRoles={['admindoctor', 'doctor']}>
+            <ProtectedRoute allowedRoles={['admindoctor', 'doctor', 'technician']}>
               <ReportingPage />
             </ProtectedRoute>
           }
@@ -168,7 +168,7 @@ export default function AppRouter() {
         <Route
           path="/patient-timeline/:appointmentId"
           element={
-            <ProtectedRoute allowedRoles={['admindoctor', 'doctor']}>
+            <ProtectedRoute allowedRoles={['admindoctor', 'doctor', 'technician']}>
               <PatientTimelinePage />
             </ProtectedRoute>
           }

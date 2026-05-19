@@ -58,7 +58,7 @@ export const NAV_ITEMS = [
   {
     label: 'Reporting',
     route: '/doctor-board',
-    allowedRoles: ['admindoctor', 'doctor'],
+    allowedRoles: ['admindoctor', 'doctor', 'technician'],
   },
   {
     label: 'Subscription',
