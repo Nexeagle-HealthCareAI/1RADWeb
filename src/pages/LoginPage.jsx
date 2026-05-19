@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useNavigate, useLocation, Navigate, Link } from 'react-router-dom';
 import useAuth from '../auth/useAuth';
-import { ROLE_HOME, ROLE_LABELS } from '../data/roles';
+import { ROLE_HOME, ROLE_LABELS, NAV_ITEMS } from '../data/roles';
 import RadiologyWorkflowBG from '../components/RadiologyWorkflowBG';
 import TacticalWorkflow from '../components/TacticalWorkflow';
 import '../styles/global.css';
@@ -74,6 +74,27 @@ export default function LoginPage() {
     }
   };
 
+  const resolveRedirectPath = (userRoles) => {
+    const rolesList = userRoles || [];
+    const home = ROLE_HOME[rolesList[0]] || '/';
+    if (from === '/') return home;
+    
+    // Check if the user is allowed to access the 'from' path
+    const matchingNavItem = NAV_ITEMS.find(item => from.startsWith(item.route));
+    if (matchingNavItem) {
+      const isAllowed = matchingNavItem.allowedRoles.some(role => rolesList.includes(role));
+      if (!isAllowed) return home;
+    } else {
+      // Safe fallback for custom routes/endpoints (e.g. admin actions)
+      const isAdminRoute = from.startsWith('/admin-board') || from.startsWith('/subscription') || from.startsWith('/dicom-bridge');
+      const hasAdminRole = rolesList.includes('admin') || rolesList.includes('admindoctor');
+      if (isAdminRoute && !hasAdminRole) {
+        return home;
+      }
+    }
+    return from;
+  };
+
   const handleLogin = async (id, pwd) => {
     setLoading(true);
     setErrorCode(null);
@@ -81,8 +102,8 @@ export default function LoginPage() {
     const result = await login(id, pwd);
     setLoading(false);
     if (result.success) {
-      const home = ROLE_HOME[result.user.roles?.[0]] || '/';
-      navigate(from === '/' ? home : from, { replace: true });
+      const targetPath = resolveRedirectPath(result.user?.roles);
+      navigate(targetPath, { replace: true });
     } else {
       setError(result.error);
       setErrorCode(result.errorCode);
@@ -110,8 +131,8 @@ export default function LoginPage() {
     setLoading(false);
     if (result.success) {
       if (result.isRegistered) {
-        const home = ROLE_HOME[currentUser?.roles?.[0]] || '/';
-        navigate(from === '/' ? home : from, { replace: true });
+        const targetPath = resolveRedirectPath(result.user?.roles);
+        navigate(targetPath, { replace: true });
       } else {
         // Dual-path: New user detected, route to registration
         navigate('/register', { state: { identifier, isFromLogin: true } });
