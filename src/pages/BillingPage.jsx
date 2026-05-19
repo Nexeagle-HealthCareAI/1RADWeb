@@ -1508,17 +1508,6 @@ export default function BillingPage() {
               />
            </div>
           <div style={{ display: 'flex', flexDirection: isMobile ? 'column' : 'row', gap: '10px' }}>
-             <button
-               onClick={() => setIsExportDrawerOpen(true)}
-               style={{
-                 padding: '10px 20px', borderRadius: '8px', border: '1px solid #e2e8f0',
-                 background: '#10b981', color: 'white', fontSize: '13px', fontWeight: 600, cursor: 'pointer',
-                 boxShadow: '0 4px 12px rgba(16,185,129,0.2)',
-                 width: isMobile ? '100%' : 'auto'
-               }}
-             >
-               Export
-             </button>
              {localStorage.getItem('1rad_invoices') && (
                <button
                  onClick={handleSyncLegacyData}
