@@ -1,4 +1,4 @@
-import React, { useMemo } from 'react';
+import React, { useMemo, useState, useEffect } from 'react';
 
 const RevenueHub = ({
   filteredInvoices,
@@ -122,6 +122,182 @@ const RevenueHub = ({
     };
   }, [futureAppointments, serviceRegistry]);
 
+  const [selectedIds, setSelectedIds] = useState(new Set());
+
+  // Reset selected rows whenever filters change
+  useEffect(() => {
+    setSelectedIds(new Set());
+  }, [timeFilter, statusFilter, modalityFilter, searchTerm, startDate, endDate]);
+
+  const toggleSelectRow = (id) => {
+    setSelectedIds(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) {
+        next.delete(id);
+      } else {
+        next.add(id);
+      }
+      return next;
+    });
+  };
+
+  const visibleRows = useMemo(() => {
+    if (timeFilter === 'FUTURE') {
+      const apps = paginatedFutureAppointments || [];
+      const invs = paginatedInvoices || [];
+      return [
+        ...apps.map(a => ({ id: a.appointmentId, type: 'app' })),
+        ...invs.map(i => ({ id: i.invoiceId, type: 'inv' }))
+      ];
+    } else {
+      return (paginatedInvoices || []).map(i => ({ id: i.invoiceId, type: 'inv' }));
+    }
+  }, [timeFilter, paginatedFutureAppointments, paginatedInvoices]);
+
+  const isAllVisibleSelected = useMemo(() => {
+    if (visibleRows.length === 0) return false;
+    return visibleRows.every(row => selectedIds.has(row.id));
+  }, [visibleRows, selectedIds]);
+
+  const toggleSelectAllVisible = () => {
+    if (isAllVisibleSelected) {
+      setSelectedIds(prev => {
+        const next = new Set(prev);
+        visibleRows.forEach(row => next.delete(row.id));
+        return next;
+      });
+    } else {
+      setSelectedIds(prev => {
+        const next = new Set(prev);
+        visibleRows.forEach(row => next.add(row.id));
+        return next;
+      });
+    }
+  };
+
+  const handleExportToExcel = () => {
+    let headers = [];
+    let rows = [];
+    const timestampStr = new Date().toISOString().replace(/[:.]/g, '-');
+    const isExportingSelected = selectedIds.size > 0;
+    const fileName = `1RAD_Financial_Report_${timeFilter}_${isExportingSelected ? 'Selected' : 'All'}_${timestampStr}`;
+
+    if (timeFilter === 'FUTURE') {
+      headers = [
+        'Appointment ID',
+        'Patient Name',
+        'Scheduled For',
+        'Modality',
+        'Service Name',
+        'Projected Revenue (INR)',
+        'Estimated Referral Cut (INR)',
+        'Estimated Net (INR)'
+      ];
+
+      // Future appointments
+      const apps = futureAppointments || [];
+      const filteredApps = isExportingSelected 
+        ? apps.filter(app => selectedIds.has(app.appointmentId)) 
+        : apps;
+
+      filteredApps.forEach(app => {
+        const price = getServicePrice(app.service);
+        const cut = getServiceCut(app);
+        rows.push([
+          app.displayId || 'N/A',
+          app.patientName || 'UNKNOWN',
+          formatDate(app.date || app.dateTime),
+          app.modality || 'US',
+          app.service || 'N/A',
+          price,
+          cut,
+          price - cut
+        ]);
+      });
+
+      // Pre-billed future transactions
+      const preBilled = filteredInvoices || [];
+      const filteredPreBilled = isExportingSelected 
+        ? preBilled.filter(inv => selectedIds.has(inv.invoiceId)) 
+        : preBilled;
+
+      filteredPreBilled.forEach(inv => {
+        rows.push([
+          inv.displayId || 'N/A',
+          inv.patientName || 'UNKNOWN',
+          'PRE-BILLED',
+          inv.modality || 'US',
+          'MANUAL_INVOICE_LEDGER',
+          inv.totalAmount || 0,
+          inv.commissionAmount || 0,
+          (inv.totalAmount || 0) - (inv.commissionAmount || 0)
+        ]);
+      });
+    } else {
+      headers = [
+        'Invoice ID',
+        'Patient Name',
+        'Timestamp',
+        'Modality',
+        'Gross Amount (INR)',
+        'Discount Amount (INR)',
+        'Net Payable (INR)',
+        'Referral Cut (INR)',
+        'Net Clinic Income (INR)',
+        'Status'
+      ];
+
+      const invoicesToExport = filteredInvoices || [];
+      const filteredInvoicesToExport = isExportingSelected 
+        ? invoicesToExport.filter(inv => selectedIds.has(inv.invoiceId)) 
+        : invoicesToExport;
+
+      filteredInvoicesToExport.forEach(inv => {
+        rows.push([
+          inv.displayId || 'N/A',
+          inv.patientName || 'UNKNOWN',
+          formatDate(inv.createdAt, true),
+          inv.modality || 'US',
+          inv.grossAmount || 0,
+          inv.discountAmount || 0,
+          inv.totalAmount || 0,
+          inv.commissionAmount || 0,
+          (inv.totalAmount || 0) - (inv.commissionAmount || 0),
+          inv.status || 'PENDING'
+        ]);
+      });
+    }
+
+    // Convert rows to CSV formatted string
+    const escapeCsvCell = (cell) => {
+      if (cell === null || cell === undefined) return '';
+      const cellStr = String(cell);
+      if (cellStr.includes(',') || cellStr.includes('"') || cellStr.includes('\n')) {
+        return `"${cellStr.replace(/"/g, '""')}"`;
+      }
+      return cellStr;
+    };
+
+    const csvContent = [
+      headers.map(escapeCsvCell).join(','),
+      ...rows.map(row => row.map(escapeCsvCell).join(','))
+    ].join('\n');
+
+    // Excel compatibility UTF-8 BOM
+    const BOM = '\uFEFF';
+    const blob = new Blob([BOM + csvContent], { type: 'text/csv;charset=utf-8;' });
+    
+    // Trigger download
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.setAttribute('href', url);
+    link.setAttribute('download', `${fileName}.csv`);
+    link.style.visibility = 'hidden';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
   return (
     <div className="invoices-main" style={{ animation: 'fadeIn 0.3s' }}>
       <div className="filter-matrix" style={{ 
@@ -220,11 +396,43 @@ const RevenueHub = ({
             </div>
          </div>
 
-          <div style={{ marginLeft: isMobile ? '0' : 'auto', display: 'flex', alignItems: 'center', gap: '10px', justifyContent: isMobile ? 'center' : 'flex-end' }}>
-            <span style={{ fontSize: '10px', fontWeight: 950, color: '#94a3b8' }}>RECORDS:</span>
-            <span style={{ background: '#0f52ba', color: 'white', padding: '2px 8px', borderRadius: '6px', fontSize: '11px', fontWeight: 950 }}>
-              {timeFilter === 'FUTURE' ? ((futureAppointments?.length || 0) + (filteredInvoices?.length || 0)) : (filteredInvoices?.length || 0)}
-            </span>
+          <div style={{ marginLeft: isMobile ? '0' : 'auto', display: 'flex', alignItems: 'center', gap: '15px', justifyContent: isMobile ? 'center' : 'flex-end', flexWrap: isMobile ? 'wrap' : 'nowrap' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <span style={{ fontSize: '10px', fontWeight: 950, color: '#94a3b8' }}>RECORDS:</span>
+              <span style={{ background: '#0f52ba', color: 'white', padding: '2px 8px', borderRadius: '6px', fontSize: '11px', fontWeight: 950 }}>
+                {timeFilter === 'FUTURE' ? ((futureAppointments?.length || 0) + (filteredInvoices?.length || 0)) : (filteredInvoices?.length || 0)}
+              </span>
+            </div>
+
+            <button
+              onClick={handleExportToExcel}
+              style={{
+                background: 'linear-gradient(135deg, #10b981 0%, #059669 100%)',
+                color: 'white',
+                border: 'none',
+                padding: '8px 16px',
+                borderRadius: '10px',
+                fontSize: '9px',
+                fontWeight: 950,
+                cursor: 'pointer',
+                boxShadow: '0 4px 12px rgba(16, 185, 129, 0.15)',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '6px',
+                transition: 'all 0.2s',
+                whiteSpace: 'nowrap'
+              }}
+              onMouseEnter={e => {
+                e.currentTarget.style.transform = 'translateY(-1px)';
+                e.currentTarget.style.boxShadow = '0 6px 16px rgba(16, 185, 129, 0.25)';
+              }}
+              onMouseLeave={e => {
+                e.currentTarget.style.transform = 'none';
+                e.currentTarget.style.boxShadow = '0 4px 12px rgba(16, 185, 129, 0.15)';
+              }}
+            >
+              <span>{selectedIds.size > 0 ? `📥 EXPORT SELECTED (${selectedIds.size})` : '📥 EXPORT EXCEL'}</span>
+            </button>
           </div>
       </div>
 
@@ -280,6 +488,14 @@ const RevenueHub = ({
             <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: isMobile ? '1000px' : 'auto' }}>
               <thead>
                 <tr style={{ textAlign: 'left', borderBottom: '1px solid #f1f5f9' }}>
+                  <th style={{ padding: '15px 10px', width: '40px', textAlign: 'center' }}>
+                    <input 
+                      type="checkbox" 
+                      checked={isAllVisibleSelected} 
+                      onChange={toggleSelectAllVisible}
+                      style={{ cursor: 'pointer', width: '15px', height: '15px', accentColor: '#0f52ba', borderRadius: '4px' }}
+                    />
+                  </th>
                   {timeFilter === 'FUTURE' ? (
                     <>
                        <th style={{ padding: '15px 10px', fontSize: '10px', fontWeight: 950, color: '#94a3b8', letterSpacing: '1px' }}>APPT_ID</th>
@@ -313,6 +529,14 @@ const RevenueHub = ({
                  <>
                    {paginatedFutureAppointments.map(app => (
                      <tr key={app.appointmentId} style={{ borderBottom: '1px solid #f8fafc' }}>
+                        <td style={{ padding: '20px 10px', textAlign: 'center' }}>
+                          <input 
+                            type="checkbox" 
+                            checked={selectedIds.has(app.appointmentId)} 
+                            onChange={() => toggleSelectRow(app.appointmentId)}
+                            style={{ cursor: 'pointer', width: '14px', height: '14px', accentColor: '#0f52ba' }}
+                          />
+                        </td>
                         <td style={{ padding: '20px 10px', fontSize: '11px', fontWeight: 900, color: '#64748b', fontFamily: 'monospace' }}>{app.displayId}</td>
                         <td style={{ padding: '20px 10px', fontSize: '11.5px', fontWeight: 800, color: '#1e293b' }}>{(app.patientName || 'UNKNOWN').toUpperCase()}</td>
                         <td style={{ padding: '20px 10px', fontSize: '11px', color: '#64748b', fontWeight: 600 }}>{formatDate(app.date || app.dateTime)}</td>
@@ -331,11 +555,19 @@ const RevenueHub = ({
                    ))}
                    {paginatedInvoices.length > 0 && (
                      <tr style={{ background: '#f1f5f9' }}>
-                       <td colSpan="8" style={{ padding: '12px 20px', fontSize: '9px', fontWeight: 950, color: '#0f52ba', letterSpacing: '2px' }}>PRE-BILLED_FUTURE_TRANSACTIONS</td>
+                       <td colSpan="9" style={{ padding: '12px 20px', fontSize: '9px', fontWeight: 950, color: '#0f52ba', letterSpacing: '2px' }}>PRE-BILLED_FUTURE_TRANSACTIONS</td>
                      </tr>
                    )}
                    {paginatedInvoices.map(inv => (
                      <tr key={inv.invoiceId} style={{ borderBottom: '1px solid #f1f5f9', background: '#f8fafc', opacity: 0.85 }}>
+                        <td style={{ padding: '15px 10px', textAlign: 'center' }}>
+                          <input 
+                            type="checkbox" 
+                            checked={selectedIds.has(inv.invoiceId)} 
+                            onChange={() => toggleSelectRow(inv.invoiceId)}
+                            style={{ cursor: 'pointer', width: '14px', height: '14px', accentColor: '#0f52ba' }}
+                          />
+                        </td>
                         <td style={{ padding: '15px 10px', fontSize: '10px', fontWeight: 900, color: '#64748b', fontFamily: 'monospace' }}>{inv.displayId}</td>
                         <td style={{ padding: '15px 10px', fontSize: '11px', fontWeight: 800, color: '#1e293b' }}>{(inv.patientName || 'UNKNOWN').toUpperCase()}</td>
                         <td style={{ padding: '15px 10px', fontSize: '10px', color: '#0f52ba', fontWeight: 900 }}>BILLED</td>
@@ -349,6 +581,14 @@ const RevenueHub = ({
                ) : (
                  paginatedInvoices.map(inv => (
                    <tr key={inv.invoiceId} style={{ borderBottom: '1px solid #f8fafc', transition: 'background 0.2s' }}>
+                     <td style={{ padding: '20px 10px', textAlign: 'center' }}>
+                       <input 
+                         type="checkbox" 
+                         checked={selectedIds.has(inv.invoiceId)} 
+                         onChange={() => toggleSelectRow(inv.invoiceId)}
+                         style={{ cursor: 'pointer', width: '14px', height: '14px', accentColor: '#0f52ba' }}
+                       />
+                     </td>
                      <td style={{ padding: '20px 10px', fontSize: '11px', fontWeight: 900, color: '#0f52ba', fontFamily: 'monospace' }}>{inv?.displayId || 'N/A'}</td>
                      <td style={{ padding: '20px 10px', fontSize: '11.5px', fontWeight: 800, color: '#1e293b' }}>{(inv?.patientName || 'UNKNOWN').toUpperCase()}</td>
                      <td style={{ padding: '20px 10px', fontSize: '11px', color: '#64748b', fontWeight: 600 }}>{formatDate(inv?.createdAt, true)}</td>
@@ -445,7 +685,7 @@ const RevenueHub = ({
                )}
                 {(timeFilter === 'FUTURE' ? ((futureAppointments?.length || 0) + (filteredInvoices?.length || 0)) : (filteredInvoices?.length || 0)) === 0 && (
                   <tr>
-                    <td colSpan="11" style={{ padding: '80px', textAlign: 'center', color: '#94a3b8', fontSize: '12px', fontWeight: 700 }}>NO DATA DETECTED IN ACTIVE SCOPE</td>
+                    <td colSpan="12" style={{ padding: '80px', textAlign: 'center', color: '#94a3b8', fontSize: '12px', fontWeight: 700 }}>NO DATA DETECTED IN ACTIVE SCOPE</td>
                   </tr>
                 )}
              </tbody>

@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 
 const ReferralHub = ({
   isMobile,
@@ -25,7 +25,7 @@ const ReferralHub = ({
   modalityFilter,
   setModalityFilter
 }) => {
-  const referralStats = React.useMemo(() => {
+  const referralStats = useMemo(() => {
     const cuts = filteredReferralCuts || [];
     return {
       total: cuts.reduce((sum, c) => sum + (Number(c?.amount) || 0), 0),
@@ -34,6 +34,109 @@ const ReferralHub = ({
       count: cuts.length
     };
   }, [filteredReferralCuts]);
+
+  const [selectedIds, setSelectedIds] = useState(new Set());
+
+  // Clear selections on filter adjustments
+  useEffect(() => {
+    setSelectedIds(new Set());
+  }, [timeFilter, startDate, endDate, referrerFilter, modalityFilter]);
+
+  const toggleSelectRow = (id) => {
+    setSelectedIds(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) {
+        next.delete(id);
+      } else {
+        next.add(id);
+      }
+      return next;
+    });
+  };
+
+  const visibleRows = useMemo(() => {
+    return paginatedReferralCuts || [];
+  }, [paginatedReferralCuts]);
+
+  const isAllVisibleSelected = useMemo(() => {
+    if (visibleRows.length === 0) return false;
+    return visibleRows.every(row => selectedIds.has(row.id));
+  }, [visibleRows, selectedIds]);
+
+  const toggleSelectAllVisible = () => {
+    if (isAllVisibleSelected) {
+      setSelectedIds(prev => {
+        const next = new Set(prev);
+        visibleRows.forEach(row => next.delete(row.id));
+        return next;
+      });
+    } else {
+      setSelectedIds(prev => {
+        const next = new Set(prev);
+        visibleRows.forEach(row => next.add(row.id));
+        return next;
+      });
+    }
+  };
+
+  const handleExportToExcel = () => {
+    const isExportingSelected = selectedIds.size > 0;
+    const timestampStr = new Date().toISOString().replace(/[:.]/g, '-');
+    const fileName = `1RAD_Referral_Payouts_${timeFilter}_${isExportingSelected ? 'Selected' : 'All'}_${timestampStr}`;
+
+    const headers = [
+      'Payout Date',
+      'Partner Name',
+      'Patient Name',
+      'Modality',
+      'Reference ID',
+      'Payout Amount (INR)',
+      'Status'
+    ];
+
+    const cutsToExport = filteredReferralCuts || [];
+    const filteredCuts = isExportingSelected
+      ? cutsToExport.filter(cut => selectedIds.has(cut.id))
+      : cutsToExport;
+
+    const rows = filteredCuts.map(cut => [
+      formatDate(cut?.date, true),
+      cut?.name || 'DIRECT',
+      cut?.patientName || 'N/A',
+      cut?.modality || 'MRI',
+      cut?.reference || 'N/A',
+      Number(cut?.amount) || 0,
+      cut?.status || 'UNPAID'
+    ]);
+
+    const escapeCsvCell = (cell) => {
+      if (cell === null || cell === undefined) return '';
+      const cellStr = String(cell);
+      if (cellStr.includes(',') || cellStr.includes('"') || cellStr.includes('\n')) {
+        return `"${cellStr.replace(/"/g, '""')}"`;
+      }
+      return cellStr;
+    };
+
+    const csvContent = [
+      headers.map(escapeCsvCell).join(','),
+      ...rows.map(row => row.map(escapeCsvCell).join(','))
+    ].join('\n');
+
+    // Excel compatibility UTF-8 BOM
+    const BOM = '\uFEFF';
+    const blob = new Blob([BOM + csvContent], { type: 'text/csv;charset=utf-8;' });
+    
+    // Trigger download
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.setAttribute('href', url);
+    link.setAttribute('download', `${fileName}.csv`);
+    link.style.visibility = 'hidden';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
 
   const formatDate = (dateStr, isUtc = false) => {
     if (!dateStr) return 'N/A';
@@ -100,10 +203,42 @@ const ReferralHub = ({
          gap: isMobile ? '20px' : '0',
          marginBottom: '35px' 
        }}>
-          <div>
-             <h3 style={{ fontSize: isMobile ? '16px' : '20px', fontWeight: 950, color: '#1e293b', letterSpacing: '-0.5px' }}>REFERRAL PAYOUT COMMAND</h3>
-             <p style={{ fontSize: '10px', color: '#64748b', fontWeight: 600 }}>Real-time partner clinical concessions.</p>
-          </div>
+           <div style={{ display: 'flex', alignItems: 'center', gap: '20px', flexWrap: 'wrap' }}>
+              <div>
+                 <h3 style={{ fontSize: isMobile ? '16px' : '20px', fontWeight: 950, color: '#1e293b', letterSpacing: '-0.5px' }}>REFERRAL PAYOUT COMMAND</h3>
+                 <p style={{ fontSize: '10px', color: '#64748b', fontWeight: 600 }}>Real-time partner clinical concessions.</p>
+              </div>
+
+              <button
+                onClick={handleExportToExcel}
+                style={{
+                  background: 'linear-gradient(135deg, #10b981 0%, #059669 100%)',
+                  color: 'white',
+                  border: 'none',
+                  padding: '8px 16px',
+                  borderRadius: '10px',
+                  fontSize: '9px',
+                  fontWeight: 950,
+                  cursor: 'pointer',
+                  boxShadow: '0 4px 12px rgba(16, 185, 129, 0.15)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '6px',
+                  transition: 'all 0.2s',
+                  whiteSpace: 'nowrap'
+                }}
+                onMouseEnter={e => {
+                  e.currentTarget.style.transform = 'translateY(-1px)';
+                  e.currentTarget.style.boxShadow = '0 6px 16px rgba(16, 185, 129, 0.25)';
+                }}
+                onMouseLeave={e => {
+                  e.currentTarget.style.transform = 'none';
+                  e.currentTarget.style.boxShadow = '0 4px 12px rgba(16, 185, 129, 0.15)';
+                }}
+              >
+                <span>{selectedIds.size > 0 ? `📥 EXPORT SELECTED (${selectedIds.size})` : '📥 EXPORT ALL'}</span>
+              </button>
+           </div>
           
           <div style={{ display: 'flex', flexDirection: isMobile ? 'column' : 'row', alignItems: isMobile ? 'stretch' : 'center', gap: isMobile ? '15px' : '20px' }}>
              <div style={{ position: 'relative' }}>
@@ -204,6 +339,14 @@ const ReferralHub = ({
             <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: isMobile ? '1000px' : 'auto' }}>
                <thead style={{ background: '#fff1f2' }}>
                   <tr>
+                     <th style={{ padding: '20px 30px', width: '40px', textAlign: 'center' }}>
+                        <input 
+                          type="checkbox" 
+                          checked={isAllVisibleSelected} 
+                          onChange={toggleSelectAllVisible}
+                          style={{ cursor: 'pointer', width: '15px', height: '15px', accentColor: '#e11d48', borderRadius: '4px' }}
+                        />
+                     </th>
                      <th onClick={() => handleSort('date')} style={{ cursor: 'pointer', padding: '20px 30px', textAlign: 'left', fontSize: '10px', fontWeight: 950, color: '#e11d48', letterSpacing: '1px' }}>PAYOUT_DATE {getSortIcon('date')}</th>
                      <th onClick={() => handleSort('name')} style={{ cursor: 'pointer', padding: '20px 30px', textAlign: 'left', fontSize: '10px', fontWeight: 950, color: '#e11d48', letterSpacing: '1px' }}>PARTNER {getSortIcon('name')}</th>
                      <th style={{ padding: '20px 30px', textAlign: 'left', fontSize: '10px', fontWeight: 950, color: '#e11d48', letterSpacing: '1px' }}>PATIENT</th>
@@ -216,10 +359,18 @@ const ReferralHub = ({
                </thead>
              <tbody>
                 {filteredReferralCuts.length === 0 ? (
-                   <tr><td colSpan="8" style={{ padding: '100px', textAlign: 'center', color: '#94a3b8', fontSize: '12px', fontWeight: 700 }}>NO REFERRAL PAYOUTS DETECTED</td></tr>
+                   <tr><td colSpan="9" style={{ padding: '100px', textAlign: 'center', color: '#94a3b8', fontSize: '12px', fontWeight: 700 }}>NO REFERRAL PAYOUTS DETECTED</td></tr>
                 ) : (
                    paginatedReferralCuts.map(cut => (
                       <tr key={cut?.id} style={{ borderBottom: '1px solid #f1f5f9' }}>
+                         <td style={{ padding: '20px 30px', textAlign: 'center' }}>
+                             <input 
+                               type="checkbox" 
+                               checked={selectedIds.has(cut?.id)} 
+                               onChange={() => toggleSelectRow(cut?.id)}
+                               style={{ cursor: 'pointer', width: '14px', height: '14px', accentColor: '#e11d48' }}
+                             />
+                          </td>
                          <td style={{ padding: '20px 30px', fontSize: '11px', fontWeight: 800, color: '#1e293b' }}>{formatDate(cut?.date, true)}</td>
                          <td style={{ padding: '20px 30px' }}>
                             <div style={{ fontSize: '11.5px', fontWeight: 950, color: '#e11d48' }}>{(cut?.name || 'DIRECT').toUpperCase()}</div>

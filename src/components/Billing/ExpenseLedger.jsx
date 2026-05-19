@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 
 const ExpenseLedger = ({
   isMobile,
@@ -23,6 +23,107 @@ const ExpenseLedger = ({
   handleSort,
   handleToggleExpenseStatus
 }) => {
+  const [selectedIds, setSelectedIds] = useState(new Set());
+
+  // Clear selections on filter updates
+  useEffect(() => {
+    setSelectedIds(new Set());
+  }, [timeFilter, startDate, endDate]);
+
+  const toggleSelectRow = (id) => {
+    setSelectedIds(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) {
+        next.delete(id);
+      } else {
+        next.add(id);
+      }
+      return next;
+    });
+  };
+
+  const visibleRows = useMemo(() => {
+    return paginatedOutflow || [];
+  }, [paginatedOutflow]);
+
+  const isAllVisibleSelected = useMemo(() => {
+    if (visibleRows.length === 0) return false;
+    return visibleRows.every(row => selectedIds.has(row.id));
+  }, [visibleRows, selectedIds]);
+
+  const toggleSelectAllVisible = () => {
+    if (isAllVisibleSelected) {
+      setSelectedIds(prev => {
+        const next = new Set(prev);
+        visibleRows.forEach(row => next.delete(row.id));
+        return next;
+      });
+    } else {
+      setSelectedIds(prev => {
+        const next = new Set(prev);
+        visibleRows.forEach(row => next.add(row.id));
+        return next;
+      });
+    }
+  };
+
+  const handleExportToExcel = () => {
+    const isExportingSelected = selectedIds.size > 0;
+    const timestampStr = new Date().toISOString().replace(/[:.]/g, '-');
+    const fileName = `1RAD_Expense_Ledger_${timeFilter}_${isExportingSelected ? 'Selected' : 'All'}_${timestampStr}`;
+
+    const headers = [
+      'Date',
+      'Description',
+      'Vendor/Partner Name',
+      'Category',
+      'Amount (INR)',
+      'Status'
+    ];
+
+    const expensesToExport = filteredOutflow || [];
+    const filteredExpenses = isExportingSelected
+      ? expensesToExport.filter(exp => selectedIds.has(exp.id))
+      : expensesToExport;
+
+    const rows = filteredExpenses.map(exp => [
+      exp.date ? new Date(exp.date).toLocaleDateString('en-US', { day: 'numeric', month: 'short', year: 'numeric' }) : 'N/A',
+      exp.description || 'N/A',
+      exp.name || 'N/A',
+      exp.category || 'General',
+      Number(exp.amount) || 0,
+      exp.status || 'UNPAID'
+    ]);
+
+    const escapeCsvCell = (cell) => {
+      if (cell === null || cell === undefined) return '';
+      const cellStr = String(cell);
+      if (cellStr.includes(',') || cellStr.includes('"') || cellStr.includes('\n')) {
+        return `"${cellStr.replace(/"/g, '""')}"`;
+      }
+      return cellStr;
+    };
+
+    const csvContent = [
+      headers.map(escapeCsvCell).join(','),
+      ...rows.map(row => row.map(escapeCsvCell).join(','))
+    ].join('\n');
+
+    // Excel compatibility UTF-8 BOM
+    const BOM = '\uFEFF';
+    const blob = new Blob([BOM + csvContent], { type: 'text/csv;charset=utf-8;' });
+    
+    // Trigger download
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.setAttribute('href', url);
+    link.setAttribute('download', `${fileName}.csv`);
+    link.style.visibility = 'hidden';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
   const getSortIcon = (key) => {
 
     if (sortConfig.key !== key) return '↕';
@@ -85,17 +186,49 @@ const ExpenseLedger = ({
               )}
             </div>
 
-            <button 
-              onClick={() => { 
-                setEditExpense({ 
-                  description: '', category: 'Maintenance', amount: 0, taxAmount: 0,
-                  transactionDate: TODAY, paymentMode: 'Cash', referenceNumber: '',
-                  vendorName: '', status: 'Paid'
-                }); 
-                setIsExpenseDrawerOpen(true); 
-              }}
-              style={{ padding: '12px 20px', borderRadius: '12px', border: 'none', background: '#dc2626', color: 'white', fontSize: '10px', fontWeight: 950, cursor: 'pointer' }}
-            >+ LOG EXPENSE</button>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
+              <button
+                onClick={handleExportToExcel}
+                style={{
+                  background: 'linear-gradient(135deg, #10b981 0%, #059669 100%)',
+                  color: 'white',
+                  border: 'none',
+                  padding: '12px 20px',
+                  borderRadius: '12px',
+                  fontSize: '10px',
+                  fontWeight: 950,
+                  cursor: 'pointer',
+                  boxShadow: '0 4px 12px rgba(16, 185, 129, 0.15)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '6px',
+                  transition: 'all 0.2s',
+                  whiteSpace: 'nowrap'
+                }}
+                onMouseEnter={e => {
+                  e.currentTarget.style.transform = 'translateY(-1px)';
+                  e.currentTarget.style.boxShadow = '0 6px 16px rgba(16, 185, 129, 0.25)';
+                }}
+                onMouseLeave={e => {
+                  e.currentTarget.style.transform = 'none';
+                  e.currentTarget.style.boxShadow = '0 4px 12px rgba(16, 185, 129, 0.15)';
+                }}
+              >
+                <span>{selectedIds.size > 0 ? `📥 EXPORT SELECTED (${selectedIds.size})` : '📥 EXPORT ALL'}</span>
+              </button>
+
+              <button 
+                onClick={() => { 
+                  setEditExpense({ 
+                    description: '', category: 'Maintenance', amount: 0, taxAmount: 0,
+                    transactionDate: TODAY, paymentMode: 'Cash', referenceNumber: '',
+                    vendorName: '', status: 'Paid'
+                  }); 
+                  setIsExpenseDrawerOpen(true); 
+                }}
+                style={{ padding: '12px 20px', borderRadius: '12px', border: 'none', background: '#dc2626', color: 'white', fontSize: '10px', fontWeight: 950, cursor: 'pointer' }}
+              >+ LOG EXPENSE</button>
+            </div>
           </div>
         </div>
 
@@ -142,6 +275,14 @@ const ExpenseLedger = ({
 
                 <thead style={{ background: '#f8fafc' }}>
                   <tr style={{ borderBottom: '1px solid #f1f5f9' }}>
+                    <th style={{ padding: '20px 30px', width: '40px', textAlign: 'center' }}>
+                      <input 
+                        type="checkbox" 
+                        checked={isAllVisibleSelected} 
+                        onChange={toggleSelectAllVisible}
+                        style={{ cursor: 'pointer', width: '15px', height: '15px', accentColor: '#dc2626', borderRadius: '4px' }}
+                      />
+                    </th>
                     <th onClick={() => handleSort('date')} style={{ cursor: 'pointer', padding: '20px 30px', textAlign: 'left', fontSize: '10px', fontWeight: 950, color: '#94a3b8', letterSpacing: '2px' }}>DATE {getSortIcon('date')}</th>
                     <th onClick={() => handleSort('description')} style={{ cursor: 'pointer', padding: '20px 30px', textAlign: 'left', fontSize: '10px', fontWeight: 950, color: '#94a3b8', letterSpacing: '2px' }}>DESCRIPTION {getSortIcon('description')}</th>
                     <th onClick={() => handleSort('category')} style={{ cursor: 'pointer', padding: '20px 30px', textAlign: 'left', fontSize: '10px', fontWeight: 950, color: '#94a3b8', letterSpacing: '2px' }}>CATEGORY {getSortIcon('category')}</th>
@@ -153,6 +294,14 @@ const ExpenseLedger = ({
                 <tbody>
                   {(paginatedOutflow || []).map(exp => (
                     <tr key={exp.id} style={{ borderBottom: '1px solid #f8fafc', transition: 'background 0.2s' }}>
+                      <td style={{ padding: '20px 30px', textAlign: 'center' }}>
+                        <input 
+                          type="checkbox" 
+                          checked={selectedIds.has(exp.id)} 
+                          onChange={() => toggleSelectRow(exp.id)}
+                          style={{ cursor: 'pointer', width: '14px', height: '14px', accentColor: '#dc2626' }}
+                        />
+                      </td>
                       <td style={{ padding: '20px 30px', fontSize: '11px', fontWeight: 800, color: '#1e293b' }}>{exp.date ? new Date(exp.date).toLocaleDateString('en-US', { day: 'numeric', month: 'short', year: 'numeric' }) : 'N/A'}</td>
                       <td style={{ padding: '20px 30px' }}>
                         <div style={{ fontSize: '11.5px', fontWeight: 850, color: '#1e293b' }}>{exp.description}</div>
@@ -212,7 +361,7 @@ const ExpenseLedger = ({
                     </tr>
                   ))}
                   {(filteredOutflow || []).length === 0 && (
-                    <tr><td colSpan="6" style={{ padding: '50px', textAlign: 'center', color: '#94a3b8', fontSize: '12px', fontWeight: 600 }}>No expenditure records found.</td></tr>
+                    <tr><td colSpan="7" style={{ padding: '50px', textAlign: 'center', color: '#94a3b8', fontSize: '12px', fontWeight: 600 }}>No expenditure records found.</td></tr>
                   )}
 
                 </tbody>

@@ -23,33 +23,35 @@ export default function AppointmentCard({
   return (
     <div className="appointment-card">
       {/* Status Bar */}
-      <div className="card-status-bar" style={{ 
+      <div className="card-status-bar" style={{
         background: `linear-gradient(90deg, ${meta.color} 0%, ${meta.color}88 100%)`
       }} />
 
-      {/* Header */}
-      <div className="card-header">
-        <div className="card-token">
-          <div className="token-number">#{appointment.tokenNo || appointment.id.split('-')[1] || '—'}</div>
-          <div className="token-label">Token ID</div>
-        </div>
-        <div className="card-status-badge" style={{ 
-          backgroundColor: meta.bg, 
-          color: meta.color,
-          borderColor: `${meta.color}33`
-        }}>
-          <span style={{ fontSize: '12px', lineHeight: '1', display: 'flex', alignItems: 'center' }}>{meta.icon}</span>
-          <span style={{ lineHeight: '1', display: 'flex', alignItems: 'center', fontWeight: 800 }}>{meta.label}</span>
+      {/* Token & Status Section */}
+      <div className="card-section">
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
+          <div className="card-token">
+            <div className="token-number">TOKEN #{appointment.tokenNo || appointment.id?.split('-')[1] || '—'}</div>
+            <div className="token-label">Mission ID</div>
+          </div>
+          <div className="card-status-badge" style={{
+            backgroundColor: meta.bg,
+            color: meta.color,
+            borderColor: `${meta.color}33`
+          }}>
+            <span style={{ fontSize: '12px', lineHeight: '1', display: 'flex', alignItems: 'center' }}>{meta.icon}</span>
+            <span style={{ lineHeight: '1', display: 'flex', alignItems: 'center', fontWeight: 800 }}>{meta.label}</span>
+          </div>
         </div>
       </div>
 
       {/* Patient Section */}
       <div className="card-section">
-        <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '8px' }}>
           <div className="patient-avatar">
             {appointment.patientName.charAt(0).toUpperCase()}
           </div>
-          <div>
+          <div style={{ flex: 1, minWidth: 0 }}>
             <div className="patient-name">{appointment.patientName.toUpperCase()}</div>
             <div className="patient-meta">
               {appointment.mobile} • {appointment.patientAge}Y {appointment.patientGender?.toUpperCase()}
@@ -63,14 +65,18 @@ export default function AppointmentCard({
 
       {/* Info Grid */}
       <div className="card-section">
-        <div className="info-grid" style={{ gridTemplateColumns: 'repeat(3, 1fr)' }}>
+        <div className="info-grid">
+          <div className="info-item">
+            <span className="label">Service</span>
+            <div className="value">{appointment.service || '—'}</div>
+          </div>
           <div className="info-item">
             <span className="label">Modality</span>
             <div className="value">{appointment.modality || '—'}</div>
           </div>
           <div className="info-item">
-            <span className="label">Referrer</span>
-            <div className="value">{appointment.referredBy || 'Direct'}</div>
+            <span className="label">Specialist</span>
+            <div className="value">{appointment.doctor || 'UNASSIGNED'}</div>
           </div>
           <div className="info-item">
             <span className="label">Mission Date</span>
