@@ -1244,9 +1244,12 @@ export default function TechnicianPage() {
 
             <label style={{ fontSize: '11px', fontWeight: 600, color: '#94a3b8', marginBottom: '10px', display: 'block' }}>Series ({uploadedFiles.length})</label>
             {uploadedFiles.map((f, i) => (
-              <div 
-                key={i} 
-                onClick={() => setActiveAssetIndex(i)}
+              <div
+                key={i}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setActiveAssetIndex(i);
+                }}
                 style={{ 
                   background: activeAssetIndex === i ? '#eff6ff' : 'white', 
                   padding: '12px', 
