@@ -49,6 +49,9 @@ export default function TechnicianPage() {
   const [previewAppointment, setPreviewAppointment] = useState(null);
   const [previewReport, setPreviewReport] = useState({ mode: 'Narrative Editor', text: '', impression: '', isFinalized: false });
 
+  // File input ref for resetting after upload
+  const fileInputRef = useRef(null);
+
   // Pagination & Archive Filtering
   const [archivePage, setArchivePage] = useState(1);
   const [archiveFilterMode, setArchiveFilterMode] = useState('ALL'); // 'ALL' or 'RANGE'
@@ -74,6 +77,14 @@ export default function TechnicianPage() {
   const [screenshotData, setScreenshotData] = useState(null);
   const [keyImages, setKeyImages] = useState([]);
   const [isSyncEnabled, setIsSyncEnabled] = useState(false);
+  const [windowWidth, setWindowWidth] = useState(window.innerWidth);
+  const isMobile = windowWidth < 768;
+
+  useEffect(() => {
+    const handleResize = () => setWindowWidth(window.innerWidth);
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
 
 
 
@@ -87,7 +98,7 @@ export default function TechnicianPage() {
     try {
       // Fetch today's missions for the main bay, and past missions if in archive
       const res = await apiClient.get('/appointments');
-      
+
       // Sort ASCENDING for correct sequential token number calculation
       const sortedData = res.data.sort((a, b) => new Date(a.dateTime || 0).getTime() - new Date(b.dateTime || 0).getTime());
       const dailyCounters = {};
@@ -106,7 +117,13 @@ export default function TechnicianPage() {
           tokenNo: a.dailyTokenNumber ?? dailyCounters[dateKey]
         };
       });
-      setStudies(worklist);
+
+      // Only update state if data has actually changed to prevent unnecessary re-renders
+      setStudies(prev => {
+        const prevJSON = JSON.stringify(prev);
+        const newJSON = JSON.stringify(worklist);
+        return prevJSON === newJSON ? prev : worklist;
+      });
     } catch (err) {
       console.error('[TECH] Worklist fetch failed', err);
     } finally {
@@ -116,7 +133,8 @@ export default function TechnicianPage() {
 
   useEffect(() => {
     fetchWorklist();
-    const interval = setInterval(fetchWorklist, 5000); 
+    // Increased from 5s to 30s to reduce UI flicker and improve performance
+    const interval = setInterval(fetchWorklist, 30000);
     return () => clearInterval(interval);
   }, [fetchWorklist]);
 
@@ -489,15 +507,44 @@ export default function TechnicianPage() {
     }
   }, [activeAssetIndex, uploadedFiles]);
 
+  const reloadAssetsFromBackend = async () => {
+    if (!activeStudy?.appointmentId) return;
+    try {
+      console.log(`[TECH] 🔄 Reloading assets from backend for appointment: ${activeStudy.appointmentId}`);
+      const res = await apiClient.get(`/Study/${activeStudy.appointmentId}/assets`);
+      if (res.data && res.data.length > 0) {
+        const hydAssets = res.data.map(asset => ({
+          id: asset.id,
+          name: asset.fileName,
+          type: asset.fileType.toUpperCase(),
+          remoteUrl: asset.blobUrl,
+          needsHydration: asset.fileType === 'zip',
+          rawFiles: []
+        }));
+        setUploadedFiles(hydAssets);
+        console.log(`[TECH] ✅ Assets reloaded: ${hydAssets.length} files now available`);
+      }
+    } catch (err) {
+      console.error('[TECH] Failed to reload assets from backend', err);
+    }
+  };
+
   const persistStudyAsset = async (file) => {
     try {
       const formData = new FormData();
       formData.append('AppointmentId', activeStudy.appointmentId);
       formData.append('File', file);
+      console.log(`[TECH] 📤 Uploading to backend: ${file.name}`);
       await apiClient.post('/Study/upload', formData, {
         headers: { 'Content-Type': 'multipart/form-data' }
       });
+      console.log(`[TECH] ✅ Backend save completed: ${file.name}`);
       fetchWorklist();
+
+      // Reload assets after backend processes the file
+      setTimeout(() => {
+        reloadAssetsFromBackend();
+      }, 1500);
     } catch (err) {
       console.error('[TECH] Persistence failed', err);
     }
@@ -516,16 +563,22 @@ export default function TechnicianPage() {
     setKeyImages(prev => prev.includes(key) ? prev.filter(k => k !== key) : [...prev, key]);
   };
 
+  const resetFileInput = () => {
+    if (fileInputRef.current) {
+      fileInputRef.current.value = '';
+    }
+  };
+
   const handleFileChange = async (e) => {
     const file = e.target.files[0];
     if (!file) return;
 
     const isZip = file.name.toLowerCase().endsWith('.zip') || file.type === 'application/zip' || file.type === 'application/x-zip-compressed';
-    
+
     if (isZip) {
       setLoading(true);
       setProcessingStatus('Initializing optimized ZIP processor...');
-      
+
       try {
         // Use optimized processor for local file uploads
         const processingResult = await dicomOptimizer.processZipFileOptimized(
@@ -557,12 +610,12 @@ export default function TechnicianPage() {
 
         if (classifiedAssets.length === 0) {
           console.warn(`[TECH] No valid DICOM series found in the archive`);
-          
+
           // Check if there were corrupted files
           if (processingResult?.stats?.corruptedFiles > 0) {
             throw new Error(`NO_DICOM_SERIES: Found ${processingResult.stats.corruptedFiles} corrupted files. No valid DICOM images could be extracted.`);
           }
-          
+
           throw new Error('NO_DICOM_SERIES: No valid DICOM image series found in the uploaded file');
         }
 
@@ -588,14 +641,18 @@ export default function TechnicianPage() {
         }));
 
         if (newAssets.length > 0) {
-          setUploadedFiles(prev => [...prev, ...newAssets]);
+          setUploadedFiles(prev => {
+            const updated = [...prev, ...newAssets];
+            console.log(`[TECH] ✅ Files uploaded successfully! Total files: ${updated.length}`, updated);
+            return updated;
+          });
           setActiveAssetIndex(0); // Auto-focus first extracted asset stack
           setIsDicomImage(true);
-          
+
           // Log processing statistics
           if (processingResult?.stats) {
             console.log(`[TECH] Processing statistics:`, processingResult.stats);
-            
+
             // Show warning if corrupted files were found
             if (processingResult.stats.corruptedFiles > 0) {
               console.warn(`[TECH] WARNING: Eliminated ${processingResult.stats.corruptedFiles} corrupted files from upload`);
@@ -610,7 +667,7 @@ export default function TechnicianPage() {
       } catch (err) {
         console.error('[TECH] Optimized ZIP extraction failed', err);
         setProcessingStatus(`Error: ${err.message}`);
-        
+
         // Provide user-friendly error messages
         let userMessage = 'Failed to extract ZIP archive: ';
         if (err.message.includes('NO_DICOM_SERIES')) {
@@ -620,27 +677,34 @@ export default function TechnicianPage() {
         } else {
           userMessage += err.message;
         }
-        
+
         alert(userMessage);
       } finally {
         setLoading(false);
         setProcessingStatus('');
         setLoadingProgress({ stage: '', current: 0, total: 0 });
+        resetFileInput(); // Reset file input after upload completes
       }
     } else {
       const isDicom = file.name.toLowerCase().endsWith('.dcm') || file.name.toLowerCase().includes('dicom') || file.type === 'application/dicom';
-      
+
       persistStudyAsset(file);
 
-      setUploadedFiles(prev => [...prev, {
-        name: file.name,
-        type: isDicom ? 'DICOM' : (file.type || 'UNKNOWN'),
-        size: (file.size / 1024 / 1024).toFixed(2) + ' MB',
-        time: new Date().toLocaleTimeString(),
-        previewUrl: isDicom ? null : URL.createObjectURL(file), // Don't use standard img tag for DICOM
-        isZip: false,
-        rawFiles: isDicom ? [file] : null
-      }]);
+      setUploadedFiles(prev => {
+        const updated = [...prev, {
+          name: file.name,
+          type: isDicom ? 'DICOM' : (file.type || 'UNKNOWN'),
+          size: (file.size / 1024 / 1024).toFixed(2) + ' MB',
+          time: new Date().toLocaleTimeString(),
+          previewUrl: isDicom ? null : URL.createObjectURL(file),
+          isZip: false,
+          rawFiles: isDicom ? [file] : null
+        }];
+        console.log(`[TECH] ✅ File uploaded: ${file.name}. Total files: ${updated.length}`);
+        return updated;
+      });
+
+      resetFileInput(); // Reset file input after upload
     }
   };
 
@@ -1075,71 +1139,110 @@ export default function TechnicianPage() {
         >
           <span>Import DICOM</span>
         </button>
-        <input id="tech-study-up" type="file" style={{ display: 'none' }} accept=".dcm,.zip" onChange={handleFileChange} />
+        <input
+          ref={fileInputRef}
+          id="tech-study-up"
+          type="file"
+          style={{ display: 'none' }}
+          accept=".dcm,.zip"
+          onChange={handleFileChange}
+        />
         
         <div style={{ width: '1px', height: '24px', background: '#e2e8f0', margin: '0 8px' }}></div>
 
-        {/* VIEWER TOOLS */}
-        {[
-          { id: 'WindowLevel', label: 'W/L' },
-          { id: 'Zoom', label: 'Zoom' },
-          { id: 'Pan', label: 'Pan' },
-          { id: 'StackScroll', label: 'Scroll' },
-          { id: 'Length', label: 'Length' },
-          { id: 'Angle', label: 'Angle' },
-          { id: 'ArrowAnnotate', label: 'Annotate' }
-        ].map(t => (
-          <button 
-            key={t.id}
-            onClick={() => setActiveTool(t.id)}
-            className={`toolbar-btn light ${activeTool === t.id ? 'active' : ''}`}
-            title={t.label}
-            style={{ width: 'auto', height: '28px', fontSize: '8px', padding: '0 8px', fontWeight: 950 }}
-          >{t.label.toUpperCase()}</button>
-        ))}
+        {/* VIEWER TOOLS - HIDDEN ON MOBILE */}
+        {!isMobile && (
+          <>
+            {[
+              { id: 'WindowLevel', label: 'W/L' },
+              { id: 'Zoom', label: 'Zoom' },
+              { id: 'Pan', label: 'Pan' },
+              { id: 'StackScroll', label: 'Scroll' },
+              { id: 'Length', label: 'Length' },
+              { id: 'Angle', label: 'Angle' },
+              { id: 'ArrowAnnotate', label: 'Annotate' }
+            ].map(t => (
+              <button
+                key={t.id}
+                onClick={() => setActiveTool(t.id)}
+                className={`toolbar-btn light ${activeTool === t.id ? 'active' : ''}`}
+                title={t.label}
+                style={{ width: 'auto', height: '28px', fontSize: '8px', padding: '0 8px', fontWeight: 950 }}
+              >{t.label.toUpperCase()}</button>
+            ))}
 
-        <div style={{ width: '1px', height: '24px', background: '#e2e8f0', margin: '0 8px' }}></div>
+            <div style={{ width: '1px', height: '24px', background: '#e2e8f0', margin: '0 8px' }}></div>
 
-        {/* SPECIAL TOOLS */}
-        <button onClick={() => setCineEnabled(!cineEnabled)} className={`toolbar-btn light ${cineEnabled ? 'active' : ''}`} title="Cine Loop" style={{ fontSize: '10px', padding: '0 10px', height: '28px', fontWeight: 500 }}>Cine</button>
+            {/* SPECIAL TOOLS */}
+            <button onClick={() => setCineEnabled(!cineEnabled)} className={`toolbar-btn light ${cineEnabled ? 'active' : ''}`} title="Cine Loop" style={{ fontSize: '10px', padding: '0 10px', height: '28px', fontWeight: 500 }}>Cine</button>
+            <button
+              onClick={() => setIsSyncEnabled(!isSyncEnabled)}
+              className={`toolbar-btn light ${isSyncEnabled ? 'active' : ''}`}
+              title="Synchronize Viewports"
+              style={{ fontSize: '10px', padding: '0 10px', height: '28px', fontWeight: 500 }}
+            >
+              Sync
+            </button>
+
+            <div style={{ flex: 1 }}></div>
+
+            <select
+               value={layoutMode}
+               onChange={e => setLayoutMode(e.target.value)}
+               style={{ background: 'white', color: '#1e293b', border: '1px solid #e2e8f0', padding: '6px 12px', borderRadius: '8px', fontSize: '11px', fontWeight: 950 }}
+            >
+               <option value="1x1">1×1</option>
+               <option value="2x2">2×2</option>
+            </select>
+
+            <div style={{ width: '1px', height: '24px', background: '#e2e8f0', margin: '0 8px' }}></div>
+            <button onClick={() => toggleKeyImage()} className={`toolbar-btn light ${keyImages.includes(`${activeAssetIndex}_${currentSlice}`) ? 'active' : ''}`} title="Mark Key Image" style={{ width: 'auto', height: '32px', fontSize: '10px', fontWeight: 500, padding: '0 10px' }}>Key</button>
+            <button onClick={() => setScreenshotData(true)} className="toolbar-btn light" title="Screenshot" style={{ width: 'auto', height: '32px', fontSize: '10px', fontWeight: 500, padding: '0 10px' }}>Screenshot</button>
+            <button onClick={() => { setResetTrigger(t => t + 1); setViewportProps({ invert: false, flipHorizontal: false, flipVertical: false, rotation: 0 }); }} className="toolbar-btn light" title="Reset Viewer" style={{ width: 'auto', height: '32px', fontSize: '10px', fontWeight: 500, padding: '0 10px' }}>Reset</button>
+
+            <div style={{ width: '1px', height: '30px', background: '#e2e8f0', margin: '0 10px' }}></div>
+
+            <div style={{ flex: 1 }}></div>
+          </>
+        )}
+
+        {/* MOBILE: SIMPLE SERIES/SLICE NAV */}
+        {isMobile && uploadedFiles.length > 0 && (
+          <div style={{ display: 'flex', gap: '10px', alignItems: 'center', flex: 1 }}>
+            <select
+              value={activeAssetIndex}
+              onChange={e => setActiveAssetIndex(Number(e.target.value))}
+              style={{ padding: '6px 10px', borderRadius: '6px', border: '1px solid #e2e8f0', fontSize: '12px', fontWeight: 600 }}
+            >
+              {uploadedFiles.map((f, i) => (
+                <option key={i} value={i}>Series {i + 1}: {f.name}</option>
+              ))}
+            </select>
+            <input
+              type="range"
+              min="1"
+              max={uploadedFiles[activeAssetIndex]?.rawFiles?.length || 1}
+              value={currentSlice}
+              onChange={e => setCurrentSlice(Number(e.target.value))}
+              style={{ flex: 1, height: '24px', borderRadius: '4px' }}
+              title="Slice Navigation"
+            />
+            <span style={{ fontSize: '11px', fontWeight: 600, color: '#1e293b', minWidth: '40px' }}>
+              {currentSlice} / {uploadedFiles[activeAssetIndex]?.rawFiles?.length || 0}
+            </span>
+          </div>
+        )}
+
         <button
-          onClick={() => setIsSyncEnabled(!isSyncEnabled)}
-          className={`toolbar-btn light ${isSyncEnabled ? 'active' : ''}`}
-          title="Synchronize Viewports"
-          style={{ fontSize: '10px', padding: '0 10px', height: '28px', fontWeight: 500 }}
-        >
-          Sync
-        </button>
-
-        <div style={{ flex: 1 }}></div>
-
-        <select 
-           value={layoutMode} 
-           onChange={e => setLayoutMode(e.target.value)}
-           style={{ background: 'white', color: '#1e293b', border: '1px solid #e2e8f0', padding: '6px 12px', borderRadius: '8px', fontSize: '11px', fontWeight: 950 }}
-        >
-           <option value="1x1">1×1</option>
-           <option value="2x2">2×2</option>
-        </select>
-        
-        <div style={{ width: '1px', height: '24px', background: '#e2e8f0', margin: '0 8px' }}></div>
-        <button onClick={() => toggleKeyImage()} className={`toolbar-btn light ${keyImages.includes(`${activeAssetIndex}_${currentSlice}`) ? 'active' : ''}`} title="Mark Key Image" style={{ width: 'auto', height: '32px', fontSize: '10px', fontWeight: 500, padding: '0 10px' }}>Key</button>
-        <button onClick={() => setScreenshotData(true)} className="toolbar-btn light" title="Screenshot" style={{ width: 'auto', height: '32px', fontSize: '10px', fontWeight: 500, padding: '0 10px' }}>Screenshot</button>
-        <button onClick={() => { setResetTrigger(t => t + 1); setViewportProps({ invert: false, flipHorizontal: false, flipVertical: false, rotation: 0 }); }} className="toolbar-btn light" title="Reset Viewer" style={{ width: 'auto', height: '32px', fontSize: '10px', fontWeight: 500, padding: '0 10px' }}>Reset</button>
-        
-        <div style={{ width: '1px', height: '30px', background: '#e2e8f0', margin: '0 10px' }}></div>
-        
-        <div style={{ flex: 1 }}></div>
-
-        <button 
           onClick={handleCompleteStudy}
-          className="gamified-btn" style={{ padding: '10px 25px', borderRadius: '12px', fontSize: '11px', textTransform: 'uppercase', letterSpacing: '1px', fontWeight: 950 }}
-        >Mark as Scanned</button>
+          className="gamified-btn" style={{ padding: isMobile ? '8px 16px' : '10px 25px', borderRadius: '12px', fontSize: isMobile ? '10px' : '11px', textTransform: 'uppercase', letterSpacing: '1px', fontWeight: 950 }}
+        >{isMobile ? 'Done' : 'Mark as Scanned'}</button>
       </div>
 
-      <div style={{ flex: 1, display: 'flex', minHeight: 0, padding: '10px', gap: '10px' }}>
-        
-        {/* LEFT SIDEBAR: STUDY TREE */}
+      <div style={{ flex: 1, display: 'flex', minHeight: 0, padding: isMobile ? '8px' : '10px', gap: isMobile ? '0' : '10px', flexDirection: isMobile ? 'column' : 'row' }}>
+
+        {/* LEFT SIDEBAR: STUDY TREE - HIDDEN ON MOBILE */}
+        {!isMobile && (
         <div style={{ width: '280px', background: 'white', borderRadius: '16px', border: '1px solid #e2e8f0', display: 'flex', flexDirection: 'column', padding: '15px', boxShadow: '0 4px 20px rgba(0,0,0,0.02)' }}>
           <label style={{ fontSize: '10px', fontWeight: 950, color: '#94a3b8', letterSpacing: '1px', marginBottom: '15px', display: 'block', textTransform: 'uppercase' }}>Series Library</label>
           
@@ -1187,6 +1290,7 @@ export default function TechnicianPage() {
             />
           </div>
         </div>
+        )}
 
         {/* CENTER MAIN VIEWPORT */}
         <div style={{ flex: 1, position: 'relative', background: '#f1f5f9', display: 'flex', flexDirection: 'column' }}>
