@@ -535,23 +535,24 @@ export default function BillingPage() {
     }
   };
 
-  const handleDeleteInvoice = async (id) => {
+  const handleDeleteInvoice = async (id, commissionId) => {
     if (!window.confirm('Are you sure you want to delete this invoice? This action is irreversible.')) return;
     
     if (!isOnline) {
-      await addToOutbox('INVOICE_DELETE', { id });
+      await addToOutbox('INVOICE_DELETE', { id, commissionId });
       alert('OFFLINE_MODE: Invoice deletion queued.');
       setInvoices(prev => prev.filter(inv => inv.invoiceId !== id)); // Optimistic UI
       return;
     }
 
     try {
-      await apiClient.delete(`/finance/invoices/${id}`);
+      const url = commissionId ? `/finance/invoices/${id}?commissionId=${commissionId}` : `/finance/invoices/${id}`;
+      await apiClient.delete(url);
       refreshAllFinancialData();
     } catch (err) {
       console.error('[FINANCE] Failed to delete invoice', err);
       if (!err.response) {
-        await addToOutbox('INVOICE_DELETE', { id });
+        await addToOutbox('INVOICE_DELETE', { id, commissionId });
         alert('NETWORK_ERROR: Deletion added to offline queue.');
         setInvoices(prev => prev.filter(inv => inv.invoiceId !== id)); // Optimistic UI
       } else {

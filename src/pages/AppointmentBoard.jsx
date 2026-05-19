@@ -419,6 +419,9 @@ export default function AppointmentBoard() {
     }
     else newStatus = actionOrStatus.toLowerCase(); // Direct status update
 
+    // Cache original status to enable rollback if the API request is rejected by the server
+    const originalStatus = app.status;
+
     // Optimistic UI Update
     setAppointments(prev => prev.map(a => (a.id === id || a.appointmentId === id) ? { ...a, status: newStatus } : a));
 
@@ -434,7 +437,18 @@ export default function AppointmentBoard() {
       fetchAppointments();
     } catch (error) {
       console.error('Failed to update status:', error);
-      if (!error.response) {
+      
+      // Rollback the optimistic UI state immediately to restore dashboard consistency
+      setAppointments(prev => prev.map(a => (a.id === id || a.appointmentId === id) ? { ...a, status: originalStatus } : a));
+
+      if (error.response) {
+        const serverMessage = error.response.data?.error || error.response.data?.message || error.response.data;
+        if (serverMessage?.toLowerCase().includes("payment")) {
+          alert("🔒 CANCELLATION LOCKED: Payment is done. Not allowed to cancel for now.");
+        } else {
+          alert(`VALIDATION FAILURE: ${serverMessage || 'Could not update status.'}`);
+        }
+      } else {
         await addToOutbox('APPOINTMENT_STATUS', { id: app.appointmentId, status: newStatus });
       }
     }
