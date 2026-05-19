@@ -528,9 +528,17 @@ export function AuthProvider({ children }) {
     return true;
   }, []);
 
+  const contextualUser = useMemo(() => {
+    if (!currentUser) return null;
+    return {
+      ...currentUser,
+      roles: activeCenter?.roles || currentUser.roles || []
+    };
+  }, [currentUser, activeCenter]);
+
   return (
     <AuthContext.Provider value={{ 
-      currentUser, 
+      currentUser: contextualUser, 
       centers,
       activeCenter,
       switchCenter,
