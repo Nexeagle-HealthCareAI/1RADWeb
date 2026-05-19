@@ -354,12 +354,13 @@ const ReferralHub = ({
                      <th style={{ padding: '20px 30px', textAlign: 'left', fontSize: '10px', fontWeight: 950, color: '#e11d48', letterSpacing: '1px' }}>REF_ID</th>
                      <th onClick={() => handleSort('amount')} style={{ cursor: 'pointer', padding: '20px 30px', textAlign: 'right', fontSize: '10px', fontWeight: 950, color: '#e11d48', letterSpacing: '1px' }}>PAYOUT_AMOUNT {getSortIcon('amount')}</th>
                      <th style={{ padding: '20px 30px', textAlign: 'center', fontSize: '10px', fontWeight: 950, color: '#e11d48', letterSpacing: '1px' }}>STATUS</th>
+                     <th style={{ padding: '20px 30px', textAlign: 'center', fontSize: '10px', fontWeight: 950, color: '#e11d48', letterSpacing: '1px' }}>PMT_RECV</th>
                      <th style={{ padding: '20px 30px', textAlign: 'right', fontSize: '10px', fontWeight: 950, color: '#e11d48', letterSpacing: '1px' }}>ACTION</th>
                   </tr>
                </thead>
              <tbody>
                 {filteredReferralCuts.length === 0 ? (
-                   <tr><td colSpan="9" style={{ padding: '100px', textAlign: 'center', color: '#94a3b8', fontSize: '12px', fontWeight: 700 }}>NO REFERRAL PAYOUTS DETECTED</td></tr>
+                   <tr><td colSpan="10" style={{ padding: '100px', textAlign: 'center', color: '#94a3b8', fontSize: '12px', fontWeight: 700 }}>NO REFERRAL PAYOUTS DETECTED</td></tr>
                 ) : (
                    paginatedReferralCuts.map(cut => (
                       <tr key={cut?.id} style={{ borderBottom: '1px solid #f1f5f9' }}>
@@ -400,6 +401,17 @@ const ReferralHub = ({
                             >
                               {cut?.status || 'UNPAID'}
                             </button>
+                         </td>
+                         <td style={{ padding: '20px 30px', textAlign: 'center' }}>
+                             {cut?.patientPaymentStatus === 'PAID' ? (
+                               <span title="Patient has paid" style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: '28px', height: '28px', borderRadius: '50%', background: '#dcfce7', fontSize: '14px' }}>✓</span>
+                             ) : cut?.patientPaymentStatus === 'PARTIAL' ? (
+                               <span title="Partial payment received" style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: '28px', height: '28px', borderRadius: '50%', background: '#fef3c7', fontSize: '11px', fontWeight: 950, color: '#92400e' }}>½</span>
+                             ) : cut?.patientPaymentStatus === 'PENDING' ? (
+                               <span title="Payment pending" style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: '28px', height: '28px', borderRadius: '50%', background: '#fee2e2', fontSize: '14px' }}>✗</span>
+                             ) : (
+                               <span title="Status unknown" style={{ fontSize: '11px', color: '#cbd5e1', fontWeight: 700 }}>—</span>
+                             )}
                          </td>
                          <td style={{ padding: '20px 30px', textAlign: 'right' }}>
                              {cut.type === 'LEGACY' ? (

@@ -574,7 +574,7 @@ export default function AppointmentBoard() {
       service: '', 
       modality: 'X-RAY', 
       date: getTodayString(), 
-      doctor: '', 
+      doctor: doctors && doctors.length > 0 ? doctors[0] : '', 
       notes: '',
       amount: '',
       referralCutValue: 0

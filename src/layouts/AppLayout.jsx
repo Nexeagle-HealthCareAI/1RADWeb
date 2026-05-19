@@ -7,6 +7,7 @@ import '../styles/global.css';
 
 import TopNav from './TopNav';
 import SessionTimeoutModal from '../components/SessionTimeoutModal';
+import PrefetchStatusIndicator from '../components/PrefetchStatusIndicator';
 import useOffline from '../hooks/useOffline';
 import apiClient from '../api/apiClient';
 
@@ -47,12 +48,15 @@ export default function AppLayout() {
   return (
     <div className="app-layout">
       {/* Session Inactivity Guard */}
-      <SessionTimeoutModal 
+      <SessionTimeoutModal
         isOpen={showTimeoutModal}
         timeLeft={timeoutCountdown}
         onStayConnected={resetIdleTimer}
         onLogout={logout}
       />
+
+      {/* Background DICOM Prefetch Status */}
+      <PrefetchStatusIndicator />
 
       {/* Mobile Backdrop Overlay */}
       {isMobileSidebarOpen && (

@@ -721,32 +721,40 @@ export default function BillingPage() {
     return { totalRevenue, pendingRevenue, pendingCount, realizationRate, averageTicket, totalGross, totalDiscount, totalCommission, netProfit, totalBilled };
   }, [filteredInvoices]);
   const combinedReferralCuts = useMemo(() => {
-    const legacyCuts = expenses.filter(e => e && (e.category === 'Referral' || (e.description || '').toLowerCase().includes('referral'))).map(e => ({
-        id: e.id,
-        date: e.transactionDate,
-        name: e.vendorName || 'DIRECT',
-        description: e.description,
-        reference: e.referenceNumber,
-        amount: e.amount,
-        type: 'LEGACY',
-        status: e.status?.toUpperCase() === 'PAID' ? 'PAID' : 'PAID' // Legacy expenses are usually paid
-    }));
-    const strategicCuts = referralCommissions.filter(c => c).map(c => ({
-        id: c.id,
-        date: c.transactionDate,
-        name: c.referrerName,
-        description: `Commission [${c.modality}] ${c.remarks ? `- ${c.remarks}` : ''}`,
-        reference: c.referenceNumber,
-        amount: c.amount,
-        type: 'STRATEGIC',
-        status: (c.status || 'UNPAID').toUpperCase(),
-        referrerId: c.referrerId,
-        modality: c.modality || 'MRI',
-        patientName: c.patientName || 'N/A'
-    }));
+    const legacyCuts = expenses.filter(e => e && (e.category === 'Referral' || (e.description || '').toLowerCase().includes('referral'))).map(e => {
+        const inv = (invoices || []).find(i => i.displayId === e.referenceNumber || i.invoiceId === e.referenceNumber);
+        return {
+            id: e.id,
+            date: e.transactionDate,
+            name: e.vendorName || 'DIRECT',
+            description: e.description,
+            reference: e.referenceNumber,
+            amount: e.amount,
+            type: 'LEGACY',
+            status: e.status?.toUpperCase() === 'PAID' ? 'PAID' : 'PAID', // Legacy expenses are usually paid
+            patientPaymentStatus: inv?.status || null
+        };
+    });
+    const strategicCuts = referralCommissions.filter(c => c).map(c => {
+        const inv = (invoices || []).find(i => i.displayId === c.referenceNumber || i.invoiceId === c.referenceNumber);
+        return {
+            id: c.id,
+            date: c.transactionDate,
+            name: c.referrerName,
+            description: `Commission [${c.modality}] ${c.remarks ? `- ${c.remarks}` : ''}`,
+            reference: c.referenceNumber,
+            amount: c.amount,
+            type: 'STRATEGIC',
+            status: (c.status || 'UNPAID').toUpperCase(),
+            referrerId: c.referrerId,
+            modality: c.modality || 'MRI',
+            patientName: c.patientName || 'N/A',
+            patientPaymentStatus: inv?.status || null
+        };
+    });
 
     return [...legacyCuts, ...strategicCuts].sort((a, b) => new Date(b.date) - new Date(a.date));
-  }, [expenses, referralCommissions]);
+  }, [expenses, referralCommissions, invoices]);
 
   const recordedPayouts = useMemo(() => {
     return new Set(combinedReferralCuts.map(c => c.reference).filter(Boolean));

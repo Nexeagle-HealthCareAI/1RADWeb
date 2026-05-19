@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { StudyPrefetcher } from '../utils/StudyPrefetcher';
+import { PrefetchSettings } from '../utils/PrefetchSettings';
 
 const REASON_LABELS = {
   cellular: 'Paused — on mobile data',
@@ -10,8 +11,10 @@ const REASON_LABELS = {
 
 export default function PrefetchStatusIndicator() {
   const [status, setStatus] = useState(StudyPrefetcher.getStatus());
+  const [settings, setSettings] = useState(PrefetchSettings.get());
 
   useEffect(() => StudyPrefetcher.subscribe(setStatus), []);
+  useEffect(() => PrefetchSettings.subscribe(setSettings), []);
 
   if (!status.active) return null;
   const { pending, done, failed, currentName, paused, reason } = status;
@@ -65,6 +68,31 @@ export default function PrefetchStatusIndicator() {
         <div style={{ fontSize: '10px', color: '#fbbf24', fontWeight: 600 }}>
           {reasonText}
         </div>
+      )}
+
+      {/* Cellular override: only show when relevant — currently blocked on cellular
+          OR already opted in (so the user can turn it back off). */}
+      {(reason === 'cellular' || reason === 'save-data' || settings.allowCellular) && (
+        <label
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: '6px',
+            fontSize: '10px',
+            color: '#cbd5e1',
+            fontWeight: 600,
+            cursor: 'pointer',
+            marginTop: '2px',
+          }}
+        >
+          <input
+            type="checkbox"
+            checked={settings.allowCellular}
+            onChange={e => PrefetchSettings.set({ allowCellular: e.target.checked })}
+            style={{ cursor: 'pointer' }}
+          />
+          Allow on mobile data
+        </label>
       )}
 
       <div style={{ display: 'flex', gap: '6px', marginTop: '2px' }}>
