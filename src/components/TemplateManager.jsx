@@ -15,6 +15,7 @@ const TemplateManager = ({
   const [modalityFilter, setModalityFilter] = useState('ALL');
   const [searchTerm, setSearchTerm] = useState('');
   const [isMobile, setIsMobile] = useState(window.innerWidth < 1024);
+  const [currentPage, setCurrentPage] = useState(1);
   const editorRef = useRef(null);
 
   React.useEffect(() => {
@@ -22,6 +23,10 @@ const TemplateManager = ({
     window.addEventListener('resize', handleResize);
     return () => window.removeEventListener('resize', handleResize);
   }, []);
+
+  React.useEffect(() => {
+    setCurrentPage(1);
+  }, [modalityFilter, searchTerm]);
 
   const safeTemplates = Array.isArray(templates) ? templates : [];
   const filteredTemplates = safeTemplates.filter(t => {
@@ -32,7 +37,13 @@ const TemplateManager = ({
     return matchesModality && matchesSearch;
   });
 
-  const thStyle = { padding: '14px 24px', textAlign: 'left', fontSize: '11px', fontWeight: 600, color: '#6b7280', letterSpacing: '0.3px' };
+  const itemsPerPage = 5;
+  const totalPages = Math.ceil(filteredTemplates.length / itemsPerPage);
+  const startIdx = (currentPage - 1) * itemsPerPage;
+  const endIdx = startIdx + itemsPerPage;
+  const pagedTemplates = filteredTemplates.slice(startIdx, endIdx);
+
+  const thStyle = { padding: '10px 16px', textAlign: 'left', fontSize: '10px', fontWeight: 600, color: '#6b7280', letterSpacing: '0.3px' };
 
   return (
     <div
@@ -45,7 +56,7 @@ const TemplateManager = ({
 
         {/* Toolbar row */}
         <div style={{
-          padding: isMobile ? '15px' : '16px 24px',
+          padding: isMobile ? '10px' : '12px 16px',
           background: '#f8fafc', borderBottom: '1px solid #f1f5f9',
           display: 'flex', flexDirection: isMobile ? 'column' : 'row',
           justifyContent: 'space-between', alignItems: isMobile ? 'stretch' : 'center',
@@ -77,46 +88,85 @@ const TemplateManager = ({
         </div>
 
         {/* Table */}
-        <div style={{ flex: 1, overflowX: 'auto' }}>
-          <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: isMobile ? '500px' : 'auto' }}>
-            <thead style={{ background: '#f8fafc', position: 'sticky', top: 0, zIndex: 10 }}>
-              <tr style={{ borderBottom: '1px solid #f1f5f9' }}>
-                <th style={thStyle}>Modality</th>
-                <th style={thStyle}>Template Name</th>
-                <th style={{ ...thStyle, textAlign: 'right' }}>Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              {filteredTemplates.map((t, idx) => {
-                const tName = t.name || t.Name || '';
-                const tModality = t.modality || t.Modality || '';
-                const tId = t.id || t.Id;
-                return (
-                  <tr key={tId || idx} style={{ borderBottom: '1px solid #f8fafc' }}>
-                    <td style={{ padding: '14px 24px' }}>
-                      <span style={{ fontSize: '11px', fontWeight: 600, color: 'white', background: '#334155', padding: '3px 8px', borderRadius: '5px' }}>{tModality}</span>
-                    </td>
-                    <td style={{ padding: '14px 24px', fontSize: '13px', fontWeight: 500, color: '#1e293b' }}>{tName}</td>
-                    <td style={{ padding: '14px 24px', textAlign: 'right' }}>
-                      <div style={{ display: 'flex', gap: '6px', justifyContent: 'flex-end' }}>
-                        <button
-                          onClick={() => { setEditTemplate({ id: tId, name: tName, modality: tModality, content: t.content || t.Content || '' }); setIsTemplateDrawerOpen(true); }}
-                          style={{ padding: '5px 12px', borderRadius: '6px', border: '1px solid #e2e8f0', background: 'white', cursor: 'pointer', fontSize: '12px', fontWeight: 500 }}
-                        >Edit</button>
-                        <button
-                          onClick={() => handleDeleteTemplate(tId)}
-                          style={{ padding: '5px 12px', borderRadius: '6px', border: '1px solid #fee2e2', background: '#fef2f2', color: '#dc2626', cursor: 'pointer', fontSize: '12px', fontWeight: 500 }}
-                        >Delete</button>
-                      </div>
-                    </td>
-                  </tr>
-                );
-              })}
-              {filteredTemplates.length === 0 && (
-                <tr><td colSpan="3" style={{ padding: '48px', textAlign: 'center', color: '#94a3b8', fontSize: '13px' }}>No templates found</td></tr>
-              )}
-            </tbody>
-          </table>
+        <div style={{ display: 'flex', flexDirection: 'column', minHeight: 0 }}>
+          <div style={{ flex: 1, overflowY: pagedTemplates.length === 0 ? 'visible' : 'auto' }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: isMobile ? '500px' : 'auto' }}>
+              <thead style={{ background: '#f8fafc', position: 'sticky', top: 0, zIndex: 10 }}>
+                <tr style={{ borderBottom: '1px solid #f1f5f9' }}>
+                  <th style={thStyle}>Modality</th>
+                  <th style={thStyle}>Template Name</th>
+                  <th style={{ ...thStyle, textAlign: 'right' }}>Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {pagedTemplates.map((t, idx) => {
+                  const tName = t.name || t.Name || '';
+                  const tModality = t.modality || t.Modality || '';
+                  const tId = t.id || t.Id;
+                  return (
+                    <tr key={tId || idx} style={{ borderBottom: '1px solid #f8fafc' }}>
+                      <td style={{ padding: '10px 16px' }}>
+                        <span style={{ fontSize: '10px', fontWeight: 600, color: 'white', background: '#334155', padding: '2px 6px', borderRadius: '4px' }}>{tModality}</span>
+                      </td>
+                      <td style={{ padding: '10px 16px', fontSize: '12px', fontWeight: 500, color: '#1e293b' }}>{tName}</td>
+                      <td style={{ padding: '10px 16px', textAlign: 'right' }}>
+                        <div style={{ display: 'flex', gap: '5px', justifyContent: 'flex-end' }}>
+                          <button
+                            onClick={() => { setEditTemplate({ id: tId, name: tName, modality: tModality, content: t.content || t.Content || '' }); setIsTemplateDrawerOpen(true); }}
+                            style={{ padding: '4px 10px', borderRadius: '5px', border: '1px solid #e2e8f0', background: 'white', cursor: 'pointer', fontSize: '11px', fontWeight: 500 }}
+                          >Edit</button>
+                          <button
+                            onClick={() => handleDeleteTemplate(tId)}
+                            style={{ padding: '4px 10px', borderRadius: '5px', border: '1px solid #fee2e2', background: '#fef2f2', color: '#dc2626', cursor: 'pointer', fontSize: '11px', fontWeight: 500 }}
+                          >Delete</button>
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
+                {filteredTemplates.length === 0 && (
+                  <tr><td colSpan="3" style={{ padding: '48px', textAlign: 'center', color: '#94a3b8', fontSize: '13px' }}>No templates found</td></tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+
+          {/* Pagination controls */}
+          {filteredTemplates.length > 0 && (
+            <div style={{
+              padding: '8px 16px', background: '#f8fafc', borderTop: '1px solid #f1f5f9',
+              display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+              flexShrink: 0
+            }}>
+              <span style={{ fontSize: '11px', color: '#6b7280', fontWeight: 500 }}>
+                {filteredTemplates.length} templates • Page {currentPage} of {totalPages}
+              </span>
+              <div style={{ display: 'flex', gap: '6px' }}>
+                <button
+                  onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+                  disabled={currentPage === 1}
+                  style={{
+                    padding: '4px 10px', borderRadius: '5px', border: '1px solid #e2e8f0',
+                    background: currentPage === 1 ? '#f1f5f9' : 'white',
+                    color: currentPage === 1 ? '#94a3b8' : '#374151',
+                    cursor: currentPage === 1 ? 'not-allowed' : 'pointer',
+                    fontSize: '11px', fontWeight: 500
+                  }}
+                >← Prev</button>
+                <button
+                  onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
+                  disabled={currentPage === totalPages}
+                  style={{
+                    padding: '4px 10px', borderRadius: '5px', border: '1px solid #e2e8f0',
+                    background: currentPage === totalPages ? '#f1f5f9' : 'white',
+                    color: currentPage === totalPages ? '#94a3b8' : '#374151',
+                    cursor: currentPage === totalPages ? 'not-allowed' : 'pointer',
+                    fontSize: '11px', fontWeight: 500
+                  }}
+                >Next →</button>
+              </div>
+            </div>
+          )}
         </div>
       </div>
 

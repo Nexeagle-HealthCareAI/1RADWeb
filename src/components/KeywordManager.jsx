@@ -23,7 +23,7 @@ const KeywordManager = ({
   }, []);
 
   const [page, setPage] = useState(1);
-  const itemsPerPage = isMobile ? 6 : 8;
+  const itemsPerPage = 10;
   const [sortConfig, setSortConfig] = useState({ key: 'category', direction: 'asc' });
 
   const filteredKeywords = useMemo(() => {
@@ -91,63 +91,91 @@ const KeywordManager = ({
         </div>
 
         {/* Table */}
-        <div style={{ flex: 1, overflowX: 'auto' }}>
-          <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: isMobile ? '600px' : 'auto' }}>
-            <thead style={{ background: '#f8fafc', position: 'sticky', top: 0, zIndex: 10 }}>
-              <tr>
-                <th onClick={() => handleSort('category')} style={thStyle}>Category {getSortIcon('category')}</th>
-                <th onClick={() => handleSort('trigger')} style={thStyle}>Trigger {getSortIcon('trigger')}</th>
-                <th onClick={() => handleSort('replacementText')} style={thStyle}>Expansion Text {getSortIcon('replacementText')}</th>
-                <th style={{ ...thStyle, textAlign: 'right' }}>Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              {paginatedKeywords.map((k, idx) => (
-                <tr key={k.id || idx} style={{ borderBottom: '1px solid #f8fafc' }}>
-                  <td style={{ padding: '16px 24px' }}>
-                    <span style={{ fontSize: '11px', fontWeight: 600, color: 'white', background: '#334155', padding: '3px 8px', borderRadius: '5px' }}>
-                      {(k.category || k.Category || 'General').toUpperCase()}
-                    </span>
-                  </td>
-                  <td style={{ padding: '16px 24px' }}>
-                    <span style={{ fontSize: '12px', fontWeight: 600, color: '#1d4ed8', background: '#eff6ff', padding: '4px 10px', borderRadius: '6px', fontFamily: 'monospace' }}>
-                      /{k.trigger || k.keyword}
-                    </span>
-                  </td>
-                  <td style={{ padding: '16px 24px' }}>
-                    <div style={{ fontSize: '12px', color: '#6b7280', maxWidth: '560px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                      {k.replacementText?.replace(/<[^>]*>?/gm, '') || 'Empty…'}
-                    </div>
-                  </td>
-                  <td style={{ padding: '16px 24px', textAlign: 'right' }}>
-                    <div style={{ display: 'flex', gap: '6px', justifyContent: 'flex-end' }}>
-                      <button
-                        onClick={() => {
-                          setSelectedKeywordId(k.id);
-                          setNewMacro({ trigger: k.trigger || k.keyword, replacementText: k.replacementText, category: k.category || k.Category || '' });
-                        }}
-                        style={{ padding: '5px 12px', borderRadius: '6px', border: '1px solid #e2e8f0', background: 'white', cursor: 'pointer', fontSize: '12px', fontWeight: 500 }}
-                      >Edit</button>
-                      <button
-                        onClick={() => handleDeleteKeyword(k.id)}
-                        style={{ padding: '5px 12px', borderRadius: '6px', border: '1px solid #fee2e2', background: '#fef2f2', color: '#dc2626', cursor: 'pointer', fontSize: '12px', fontWeight: 500 }}
-                      >Delete</button>
-                    </div>
-                  </td>
+        <div style={{ display: 'flex', flexDirection: 'column', minHeight: 0 }}>
+          <div style={{ flex: 1, overflowY: paginatedKeywords.length === 0 ? 'visible' : 'auto' }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: isMobile ? '600px' : 'auto' }}>
+              <thead style={{ background: '#f8fafc', position: 'sticky', top: 0, zIndex: 10 }}>
+                <tr>
+                  <th onClick={() => handleSort('category')} style={thStyle}>Category {getSortIcon('category')}</th>
+                  <th onClick={() => handleSort('trigger')} style={thStyle}>Trigger {getSortIcon('trigger')}</th>
+                  <th onClick={() => handleSort('replacementText')} style={thStyle}>Expansion Text {getSortIcon('replacementText')}</th>
+                  <th style={{ ...thStyle, textAlign: 'right' }}>Actions</th>
                 </tr>
-              ))}
-              {paginatedKeywords.length === 0 && (
-                <tr><td colSpan="4" style={{ padding: '48px', textAlign: 'center', color: '#94a3b8', fontSize: '13px' }}>No keywords found</td></tr>
-              )}
-            </tbody>
-          </table>
-        </div>
+              </thead>
+              <tbody>
+                {paginatedKeywords.map((k, idx) => (
+                  <tr key={k.id || idx} style={{ borderBottom: '1px solid #f8fafc' }}>
+                    <td style={{ padding: '16px 24px' }}>
+                      <span style={{ fontSize: '11px', fontWeight: 600, color: 'white', background: '#334155', padding: '3px 8px', borderRadius: '5px' }}>
+                        {(k.category || k.Category || 'General').toUpperCase()}
+                      </span>
+                    </td>
+                    <td style={{ padding: '16px 24px' }}>
+                      <span style={{ fontSize: '12px', fontWeight: 600, color: '#1d4ed8', background: '#eff6ff', padding: '4px 10px', borderRadius: '6px', fontFamily: 'monospace' }}>
+                        /{k.trigger || k.keyword}
+                      </span>
+                    </td>
+                    <td style={{ padding: '16px 24px' }}>
+                      <div style={{ fontSize: '12px', color: '#6b7280', maxWidth: '560px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                        {k.replacementText?.replace(/<[^>]*>?/gm, '') || 'Empty…'}
+                      </div>
+                    </td>
+                    <td style={{ padding: '16px 24px', textAlign: 'right' }}>
+                      <div style={{ display: 'flex', gap: '6px', justifyContent: 'flex-end' }}>
+                        <button
+                          onClick={() => {
+                            setSelectedKeywordId(k.id);
+                            setNewMacro({ trigger: k.trigger || k.keyword, replacementText: k.replacementText, category: k.category || k.Category || '' });
+                          }}
+                          style={{ padding: '5px 12px', borderRadius: '6px', border: '1px solid #e2e8f0', background: 'white', cursor: 'pointer', fontSize: '12px', fontWeight: 500 }}
+                        >Edit</button>
+                        <button
+                          onClick={() => handleDeleteKeyword(k.id)}
+                          style={{ padding: '5px 12px', borderRadius: '6px', border: '1px solid #fee2e2', background: '#fef2f2', color: '#dc2626', cursor: 'pointer', fontSize: '12px', fontWeight: 500 }}
+                        >Delete</button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+                {paginatedKeywords.length === 0 && (
+                  <tr><td colSpan="4" style={{ padding: '48px', textAlign: 'center', color: '#94a3b8', fontSize: '13px' }}>No keywords found</td></tr>
+                )}
+              </tbody>
+            </table>
+          </div>
 
-        {/* Pagination */}
-        <div style={{ padding: '14px 24px', borderTop: '1px solid #f1f5f9', display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: '#f8fafc' }}>
-          <button disabled={page === 1} onClick={() => setPage(p => p - 1)} style={{ padding: '7px 14px', borderRadius: '7px', border: '1px solid #e2e8f0', background: 'white', fontSize: '12px', fontWeight: 500, cursor: page === 1 ? 'not-allowed' : 'pointer', opacity: page === 1 ? 0.5 : 1 }}>Previous</button>
-          <span style={{ fontSize: '12px', fontWeight: 500, color: '#6b7280' }}>Page {page} of {totalPages || 1}</span>
-          <button disabled={page >= totalPages} onClick={() => setPage(p => p + 1)} style={{ padding: '7px 14px', borderRadius: '7px', border: '1px solid #e2e8f0', background: 'white', fontSize: '12px', fontWeight: 500, cursor: page >= totalPages ? 'not-allowed' : 'pointer', opacity: page >= totalPages ? 0.5 : 1 }}>Next</button>
+          {/* Pagination */}
+          {filteredKeywords.length > 0 && (
+            <div style={{ padding: '12px 24px', borderTop: '1px solid #f1f5f9', display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: '#f8fafc', flexShrink: 0 }}>
+              <span style={{ fontSize: '12px', color: '#6b7280', fontWeight: 500 }}>
+                {filteredKeywords.length} keywords • Page {page} of {totalPages || 1}
+              </span>
+              <div style={{ display: 'flex', gap: '8px' }}>
+                <button
+                  onClick={() => setPage(p => Math.max(1, p - 1))}
+                  disabled={page === 1}
+                  style={{
+                    padding: '6px 12px', borderRadius: '6px', border: '1px solid #e2e8f0',
+                    background: page === 1 ? '#f1f5f9' : 'white',
+                    color: page === 1 ? '#94a3b8' : '#374151',
+                    cursor: page === 1 ? 'not-allowed' : 'pointer',
+                    fontSize: '12px', fontWeight: 500
+                  }}
+                >← Previous</button>
+                <button
+                  onClick={() => setPage(p => Math.min(totalPages, p + 1))}
+                  disabled={page >= totalPages}
+                  style={{
+                    padding: '6px 12px', borderRadius: '6px', border: '1px solid #e2e8f0',
+                    background: page >= totalPages ? '#f1f5f9' : 'white',
+                    color: page >= totalPages ? '#94a3b8' : '#374151',
+                    cursor: page >= totalPages ? 'not-allowed' : 'pointer',
+                    fontSize: '12px', fontWeight: 500
+                  }}
+                >Next →</button>
+              </div>
+            </div>
+          )}
         </div>
       </div>
 
