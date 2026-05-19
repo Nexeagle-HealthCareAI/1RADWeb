@@ -40,14 +40,35 @@ const RevenueHub = ({
     return sortConfig.direction === 'ASC' ? '↑' : '↓';
   };
 
-  const formatDate = (dateStr) => {
+  const formatDate = (dateStr, isUtc = false) => {
     if (!dateStr) return 'N/A';
-    const date = new Date(dateStr);
+    
+    let parsedStr = dateStr;
+    if (isUtc && typeof dateStr === 'string' && dateStr.includes('T') && !dateStr.endsWith('Z') && !dateStr.includes('+') && !/-\d{2}:\d{2}$/.test(dateStr)) {
+      parsedStr = `${dateStr}Z`;
+    }
+
+    const date = new Date(parsedStr);
     if (isNaN(date.getTime())) return dateStr;
-    const day = date.getDate();
-    const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-    const month = months[date.getMonth()];
-    const year = date.getFullYear();
+
+    let day, month, year;
+    try {
+      const formatter = new Intl.DateTimeFormat('en-US', {
+        timeZone: 'Asia/Kolkata',
+        day: 'numeric',
+        month: 'short',
+        year: 'numeric'
+      });
+      const parts = formatter.formatToParts(date);
+      day = parts.find(p => p.type === 'day').value;
+      month = parts.find(p => p.type === 'month').value;
+      year = parts.find(p => p.type === 'year').value;
+    } catch (err) {
+      day = date.getDate();
+      const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+      month = months[date.getMonth()];
+      year = date.getFullYear();
+    }
 
     const dateStrStr = String(dateStr);
     const hasTime = dateStrStr.includes('T') || dateStrStr.includes(':') || dateStrStr.includes(' ');
@@ -330,7 +351,7 @@ const RevenueHub = ({
                    <tr key={inv.invoiceId} style={{ borderBottom: '1px solid #f8fafc', transition: 'background 0.2s' }}>
                      <td style={{ padding: '20px 10px', fontSize: '11px', fontWeight: 900, color: '#0f52ba', fontFamily: 'monospace' }}>{inv?.displayId || 'N/A'}</td>
                      <td style={{ padding: '20px 10px', fontSize: '11.5px', fontWeight: 800, color: '#1e293b' }}>{(inv?.patientName || 'UNKNOWN').toUpperCase()}</td>
-                     <td style={{ padding: '20px 10px', fontSize: '11px', color: '#64748b', fontWeight: 600 }}>{formatDate(inv?.createdAt)}</td>
+                     <td style={{ padding: '20px 10px', fontSize: '11px', color: '#64748b', fontWeight: 600 }}>{formatDate(inv?.createdAt, true)}</td>
                      <td style={{ padding: '20px 10px' }}>
                        <span style={{ padding: '4px 8px', background: '#f1f5f9', borderRadius: '6px', fontSize: '9px', fontWeight: 950, color: '#0f52ba' }}>{(inv.modality || 'US').toUpperCase()}</span>
                      </td>
