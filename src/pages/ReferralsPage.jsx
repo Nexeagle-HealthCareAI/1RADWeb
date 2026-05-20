@@ -567,7 +567,7 @@ export default function ReferralsPage() {
   const fetchReferralIntelligence = useCallback(async (startDate = null, endDate = null, allTime = false) => {
     try {
       setReferralLoading(true);
-      const params = allTime
+      const params = (allTime || referralFilterMode === 'ALL')
         ? { allTime: true }
         : {
             startDate: startDate || referralRange.start,
@@ -1096,6 +1096,28 @@ export default function ReferralsPage() {
       };
     });
 
+    // When showing ALL records, include registered referrers with zero activity
+    if (referralFilterMode === 'ALL') {
+      const mappedIds = new Set(mapped.map(r => r.referrerId));
+      allReferrers.forEach(ref => {
+        if (!mappedIds.has(ref.referrerId)) {
+          mapped.push({
+            referrerId: ref.referrerId,
+            name: ref.name,
+            contact: ref.contact,
+            address: ref.address,
+            patients: [],
+            modalities: {},
+            totalCommission: 0,
+            paidCommission: 0,
+            unpaidCommission: 0,
+            totalRevenue: 0,
+            netProfit: 0
+          });
+        }
+      });
+    }
+
     let final = [...mapped];
     
     // Sort logic
@@ -1114,7 +1136,7 @@ export default function ReferralsPage() {
 
     const searchLow = referralMatrixSearch.toLowerCase();
     return final.filter(ref => ref.name.toLowerCase().includes(searchLow));
-  }, [referralIntelligence, referralViewMode, referralMatrixSearch, referralSort]);
+  }, [referralIntelligence, referralViewMode, referralMatrixSearch, referralSort, allReferrers, referralFilterMode]);
 
   // Auto-select first referrer in Matrix mode
   useEffect(() => {
@@ -3437,7 +3459,7 @@ export default function ReferralsPage() {
                     flex: isMobile ? '0 0 auto' : 1
                   }}
                 >
-                  {mode === 'MATRIX' ? 'SOURCE ANALYTICS' : mode === 'LOG' ? 'CASE LEDGER' : mode === 'ROSTER' ? 'PARTNER NETWORK' : 'MASTER INDEX'}
+                  {mode === 'MATRIX' ? 'Source Analytics' : mode === 'LOG' ? 'Case Ledger' : mode === 'ROSTER' ? 'Partner Network' : 'Master Index'}
                 </button>
               ))}
             </div>
@@ -3786,7 +3808,7 @@ export default function ReferralsPage() {
                              <div style={{ width: '32px', height: '32px', borderRadius: '10px', background: isSelected ? 'white' : '#f8fafc', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '14px', border: '1px solid #f1f5f9' }}>👤</div>
                              <div>
                                 <div style={{ fontSize: '12px', fontWeight: 950, color: isSelected ? '#0f52ba' : '#1e293b' }}>{(s.name || 'Anonymous').toUpperCase()}</div>
-                                <div style={{ fontSize: '9px', color: '#94a3b8', fontWeight: 800 }}>RANK #{i + 1} • {s.patients.length} UNITS</div>
+                                <div style={{ fontSize: '9px', color: '#94a3b8', fontWeight: 800 }}>RANK #{i + 1} • {s.patients.length} SCANS</div>
                                  <div style={{ display: 'flex', gap: '8px', marginTop: '5px' }}>
                                     <div style={{ fontSize: '8px', fontWeight: 950, color: '#059669' }}>₹{(s.paidCommission || 0).toLocaleString()} PAID</div>
                                     <div style={{ fontSize: '8px', fontWeight: 950, color: '#dc2626' }}>₹{(s.unpaidCommission || 0).toLocaleString()} PENDING</div>
@@ -3823,16 +3845,16 @@ return (
                                        {selected.patients.length} Studies
                                     </div>
                                     <div style={{ padding: '6px 12px', background: '#ecfdf5', borderRadius: '8px', fontSize: '10px', fontWeight: 950, color: '#059669' }}>
-                                       ₹{(selected.totalRevenue || 0).toLocaleString()} YIELD
+                                       ₹{(selected.totalRevenue || 0).toLocaleString()} Revenue
                                     </div>
                                     <div style={{ padding: '6px 12px', background: '#fffbeb', border: '1px solid #fde68a', borderRadius: '8px', fontSize: '10px', fontWeight: 950, color: '#d97706' }}>
                                        ₹{(selected.totalDiscount || 0).toLocaleString()} DISCOUNT
                                     </div>
                                     <div style={{ padding: '6px 12px', background: '#eff6ff', borderRadius: '8px', fontSize: '10px', fontWeight: 950, color: '#2563eb' }}>
-                                       ₹{(selected.paidCommission || 0).toLocaleString()} PAID
+                                       ₹{(selected.paidCommission || 0).toLocaleString()} Comm. Paid
                                     </div>
                                     <div style={{ padding: '6px 12px', background: '#fef2f2', borderRadius: '8px', fontSize: '10px', fontWeight: 950, color: '#dc2626' }}>
-                                       ₹{(selected.unpaidCommission || 0).toLocaleString()} PENDING
+                                       ₹{(selected.unpaidCommission || 0).toLocaleString()} Comm. Due
                                     </div>
                                     <div style={{ padding: '6px 12px', background: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: '8px', fontSize: '10px', fontWeight: 950, color: '#16a34a' }}>
                                        ₹{(selected.netProfit || 0).toLocaleString()} NET PROFIT
@@ -3842,7 +3864,7 @@ return (
                              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', justifyContent: isMobile ? 'flex-start' : 'flex-end', maxWidth: isMobile ? '100%' : '300px', marginTop: isMobile ? '20px' : 0 }}>
                                 <div style={{ textAlign: 'center', minWidth: '80px', padding: '10px', border: '1px solid #e2e8f0', borderRadius: '12px', background: '#f8fafc' }}>
                                    <div style={{ fontSize: '11px', fontWeight: 950, color: '#0f52ba' }}>₹{(selected.totalCommission || 0).toLocaleString()}</div>
-                                   <div style={{ fontSize: '8px', fontWeight: 800, color: '#94a3b8' }}>TOTAL PAYOUT</div>
+                                   <div style={{ fontSize: '8px', fontWeight: 800, color: '#94a3b8' }}>Commission Total</div>
                                 </div>
                                 {Object.entries(selected.modalities).map(([mod, count]) => (
                                    <div key={mod} style={{ textAlign: 'center', minWidth: '60px', padding: '10px', border: '1px solid #e2e8f0', borderRadius: '12px', background: 'white' }}>
@@ -3876,7 +3898,9 @@ return (
                                           <span style={{ fontSize: '10px', fontWeight: 700, color: '#94a3b8' }}>RETURN RATIO</span>
                                        </div>
                                        <div style={{ fontSize: '10px', color: '#64748b', fontWeight: 650, lineHeight: '1.4' }}>
-                                          This referring physician generates <strong style={{ color: '#1e293b' }}>₹{roiLabel === '∞ (Direct)' ? 'Infinite' : roiLabel}</strong> in gross billed diagnostics for every ₹1 paid in network payouts.
+                                          {isInfinite
+                                            ? 'This source generates revenue with no commission cost — a direct, zero-payout referral channel.'
+                                            : <>This source generates <strong style={{ color: '#1e293b' }}>₹{roiValue.toFixed(1)}</strong> in billed revenue for every ₹1 paid in commission.</>}
                                        </div>
                                     </div>
                                  );
@@ -3908,8 +3932,8 @@ return (
                                              <span>{uniqueCount} New • {repeatCount} Returning</span>
                                           </div>
                                           <div style={{ height: '6px', background: '#e2e8f0', borderRadius: '3px', overflow: 'hidden', display: 'flex' }}>
-                                             <div style={{ width: `${(uniqueCount / totalScans) * 100}%`, height: '100%', background: '#3b82f6' }}></div>
-                                             <div style={{ width: `${(repeatCount / totalScans) * 100}%`, height: '100%', background: '#10b981' }}></div>
+                                             <div style={{ width: `${totalScans > 0 ? (uniqueCount / totalScans) * 100 : 0}%`, height: '100%', background: '#3b82f6' }}></div>
+                                             <div style={{ width: `${totalScans > 0 ? (repeatCount / totalScans) * 100 : 0}%`, height: '100%', background: '#10b981' }}></div>
                                           </div>
                                        </div>
                                     </div>
@@ -3961,9 +3985,9 @@ return (
                                          />
                                       </th>
                                       <th style={{ padding: '15px 15px', textAlign: 'left', fontSize: '9px', fontWeight: 950, color: '#94a3b8', letterSpacing: '1px' }}>ID</th>
-                                      <th style={{ padding: '15px 25px', textAlign: 'left', fontSize: '9px', fontWeight: 950, color: '#94a3b8', letterSpacing: '1px' }}>TARGET_IDENTITY</th>
-                                      <th style={{ padding: '15px 25px', textAlign: 'left', fontSize: '9px', fontWeight: 950, color: '#94a3b8', letterSpacing: '1px' }}>CONTACT / SOURCE</th>
-                                      <th style={{ padding: '15px 25px', textAlign: 'left', fontSize: '9px', fontWeight: 950, color: '#94a3b8', letterSpacing: '1px' }}>CLINICAL PACKAGE</th>
+                                      <th style={{ padding: '15px 25px', textAlign: 'left', fontSize: '9px', fontWeight: 950, color: '#94a3b8', letterSpacing: '1px' }}>PATIENT</th>
+                                      <th style={{ padding: '15px 25px', textAlign: 'left', fontSize: '9px', fontWeight: 950, color: '#94a3b8', letterSpacing: '1px' }}>CONTACT</th>
+                                      <th style={{ padding: '15px 25px', textAlign: 'left', fontSize: '9px', fontWeight: 950, color: '#94a3b8', letterSpacing: '1px' }}>SCAN TYPE</th>
                                       <th style={{ padding: '15px 25px', textAlign: 'left', fontSize: '9px', fontWeight: 950, color: '#94a3b8', letterSpacing: '1px' }}>COMMISSION</th>
                                       <th style={{ padding: '15px 25px', textAlign: 'left', fontSize: '9px', fontWeight: 950, color: '#94a3b8', letterSpacing: '1px' }}>STATUS</th>
                                       <th style={{ padding: '15px 25px', textAlign: 'right', fontSize: '9px', fontWeight: 950, color: '#94a3b8', letterSpacing: '1px' }}>DATE</th>
@@ -4022,8 +4046,8 @@ return (
                   ) : (
                     <div style={{ padding: '100px', textAlign: 'center', background: 'white', borderRadius: '30px', border: '1px dashed #cbd5e1' }}>
                        <div style={{ fontSize: '50px', marginBottom: '20px' }}>🧭</div>
-                       <div style={{ fontSize: '14px', fontWeight: 950, color: '#1e293b' }}>SELECT A SOURCE FROM ROSTER</div>
-                       <p style={{ fontSize: '11px', color: '#94a3b8', marginTop: '10px' }}>Pick a referring target on the left to initialize the referral details.</p>
+                       <div style={{ fontSize: '14px', fontWeight: 950, color: '#1e293b' }}>SELECT A SOURCE</div>
+                       <p style={{ fontSize: '11px', color: '#94a3b8', marginTop: '10px' }}>Select a referral source from the list on the left to view their details.</p>
                     </div>
                   )}
                 </div>
@@ -4036,8 +4060,8 @@ return (
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: isMobile ? 'stretch' : 'center', marginBottom: '25px', flexDirection: isMobile ? 'column' : 'row', gap: '20px' }}>
                        <div style={{ display: 'flex', alignItems: isMobile ? 'stretch' : 'center', gap: '20px', flexDirection: isMobile ? 'column' : 'row' }}>
                          <div>
-                           <h3 style={{ fontSize: '14px', fontWeight: 950, color: '#1e293b', margin: 0 }}>SOURCE ANALYTICS MATRIX</h3>
-                           <p style={{ fontSize: '11px', color: '#64748b', marginTop: '4px' }}>Temporal volume density across all registered partners</p>
+                           <h3 style={{ fontSize: '14px', fontWeight: 950, color: '#1e293b', margin: 0 }}>Referral Volume Matrix</h3>
+                           <p style={{ fontSize: '11px', color: '#64748b', marginTop: '4px' }}>Study counts by referral source over time</p>
                          </div>
                          <button 
                            onClick={handleExportMatrix}

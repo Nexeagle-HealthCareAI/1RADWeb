@@ -13,6 +13,7 @@ import TechnicianPage from '../pages/TechnicianPage';
 import DoctorBoard from '../pages/DoctorBoard';
 import AdminBoard from '../pages/AdminBoard';
 import ReferralsPage from '../pages/ReferralsPage';
+import StaffPage from '../pages/StaffPage';
 import ViewerPage from '../pages/ViewerPage';
 import BillingPage from '../pages/BillingPage';
 import ReportingPage from '../pages/ReportingPage';
@@ -100,6 +101,14 @@ export default function AppRouter() {
           element={
             <ProtectedRoute allowedRoles={['admindoctor', 'admin']}>
               <ReferralsPage />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/staff"
+          element={
+            <ProtectedRoute allowedRoles={['admindoctor', 'admin']}>
+              <StaffPage />
             </ProtectedRoute>
           }
         />

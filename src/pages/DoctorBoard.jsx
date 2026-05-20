@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect, useCallback, useContext } from 'react';
+import { useState, useMemo, useEffect, useCallback, useContext, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import apiClient from '../api/apiClient';
 import { AuthContext } from '../auth/AuthContext';
@@ -19,6 +19,21 @@ const MODALITY_ICONS = {
 
 const TODAY = new Date().toLocaleDateString('en-CA');
 
+// Roles that are considered "doctor" for the purposes of the default filter
+const DOCTOR_ROLES = ['admindoctor', 'doctor'];
+
+/**
+ * Returns the default selectedDoctor value for the current user:
+ * - If the user is a doctor role → their own userId (so they see only their queue)
+ * - Otherwise (admin, technician, etc.) → 'ALL' (see everyone's queue)
+ */
+function getDefaultDoctorFilter(user) {
+  if (!user) return 'ALL';
+  const userRoles = (user.roles || []).map(r => String(r).toLowerCase());
+  const isDoctor = userRoles.some(r => DOCTOR_ROLES.includes(r));
+  return isDoctor ? user.id : 'ALL';
+}
+
 export default function DoctorBoard() {
   const { activeCenter, currentUser } = useContext(AuthContext);
   const { isOnline } = useOffline();
@@ -30,18 +45,27 @@ export default function DoctorBoard() {
   const [isPreviewOpen, setIsPreviewOpen] = useState(false);
   const [previewAppointment, setPreviewAppointment] = useState(null);
   const [previewReport, setPreviewReport] = useState({ mode: 'Narrative Editor', text: '', impression: '', isFinalized: false });
-  
-
 
   const [search, setSearch] = useState('');
   const [filters, setFilters] = useState({ modality: 'ALL', priority: 'ALL', clinicalStatus: 'ALL' });
-  const [selectedDoctor, setSelectedDoctor] = useState(currentUser?.id || 'ALL');
+  // Default: doctor users see their own queue; non-doctors see all
+  const [selectedDoctor, setSelectedDoctor] = useState(() => getDefaultDoctorFilter(currentUser));
   const [doctors, setDoctors] = useState([]);
   const [archivePage, setArchivePage] = useState(1);
   const [archiveFilterMode, setArchiveFilterMode] = useState('ALL'); // 'ALL' or 'RANGE'
   const [archiveDateRange, setArchiveDateRange] = useState({ start: TODAY, end: TODAY });
   const itemsPerPage = 5;
   const [sortConfig, setSortConfig] = useState({ key: 'dateTime', direction: 'asc' });
+
+  // Sync default doctor filter if currentUser loads asynchronously (e.g. session restore)
+  // Only auto-set on first load — don't override the user's manual selection after that.
+  const hasAutoSetDoctor = useRef(false);
+  useEffect(() => {
+    if (currentUser?.id && !hasAutoSetDoctor.current) {
+      hasAutoSetDoctor.current = true;
+      setSelectedDoctor(getDefaultDoctorFilter(currentUser));
+    }
+  }, [currentUser?.id]);
 
   const handleSort = (key) => {
     let direction = 'asc';
