@@ -52,8 +52,9 @@ export default function DoctorBoard() {
 
   const [search, setSearch] = useState('');
   const [filters, setFilters] = useState({ modality: 'ALL', priority: 'ALL', clinicalStatus: 'ALL' });
-  // Default: doctor users see their own queue; non-doctors see all
-  const [selectedDoctor, setSelectedDoctor] = useState(() => getDefaultDoctorFilter(currentUser));
+  // Always start with 'ALL' — auto-select the logged-in doctor ONLY after the doctors
+  // list has loaded, to avoid UUID race condition (empty list = zero matches).
+  const [selectedDoctor, setSelectedDoctor] = useState('ALL');
   const [doctors, setDoctors] = useState([]);
   const [archivePage, setArchivePage] = useState(1);
   const [archiveFilterMode, setArchiveFilterMode] = useState('ALL'); // 'ALL' or 'RANGE'
@@ -61,15 +62,24 @@ export default function DoctorBoard() {
   const itemsPerPage = 5;
   const [sortConfig, setSortConfig] = useState({ key: 'dateTime', direction: 'asc' });
 
-  // Sync default doctor filter if currentUser loads asynchronously (e.g. session restore)
-  // Only auto-set on first load — don't override the user's manual selection after that.
+  // After the doctors list loads, auto-select the logged-in doctor if they are one.
+  // We guard with a ref so this only fires once (doesn't override manual user changes).
   const hasAutoSetDoctor = useRef(false);
   useEffect(() => {
-    if (currentUser?.id && !hasAutoSetDoctor.current) {
-      hasAutoSetDoctor.current = true;
-      setSelectedDoctor(getDefaultDoctorFilter(currentUser));
-    }
-  }, [currentUser?.id]);
+    if (doctors.length === 0 || !currentUser?.id || hasAutoSetDoctor.current) return;
+    hasAutoSetDoctor.current = true;
+
+    const userRoles = (currentUser.roles || []).map(r => String(r).toLowerCase());
+    const isDoctor = userRoles.some(r => DOCTOR_ROLES.includes(r));
+    if (!isDoctor) return; // Non-doctor / custom role → stay on 'ALL'
+
+    // Find the exact ID from the doctors list (avoids UUID casing mismatches)
+    const match = doctors.find(d =>
+      d.id?.toLowerCase() === String(currentUser.id).toLowerCase()
+    );
+    if (match) setSelectedDoctor(match.id);
+    // If no match found the doctor isn't in the personnel list → stay on 'ALL'
+  }, [doctors, currentUser?.id]);
 
   const handleSort = (key) => {
     let direction = 'asc';
@@ -160,7 +170,12 @@ export default function DoctorBoard() {
       
       const status = c.status?.toLowerCase();
       const matchesStatus = filters.clinicalStatus === 'ALL' || status === filters.clinicalStatus.toLowerCase();
-      const matchesDoctor = selectedDoctor === 'ALL' || c.doctorId === selectedDoctor || c.doctor === doctors.find(d => d.id === selectedDoctor)?.name;
+      // Normalize UUIDs to lowercase before comparing to handle API casing differences
+      const normalizedSelected = selectedDoctor?.toLowerCase();
+      const matchesDoctor =
+        selectedDoctor === 'ALL' ||
+        (c.doctorId && c.doctorId.toLowerCase() === normalizedSelected) ||
+        c.doctor === doctors.find(d => d.id?.toLowerCase() === normalizedSelected)?.name;
 
       if (view === 'QUEUE') {
         return matchesDoctor && matchesSearch && matchesModality && matchesPriority && matchesStatus && c.isToday && ['scheduled', 'confirmed', 'in_progress', 'scanned', 'reporting', 'booked', 'reported', 'completed'].includes(status);
