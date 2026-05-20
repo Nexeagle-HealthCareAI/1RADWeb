@@ -84,12 +84,14 @@ const ReportPreviewModal = ({
 
           // 1. Fetch Full Appointment Context First
           if (appointmentId) {
+            let doctorName = null;
             try {
               console.info(`[ReportPreview] Synchronizing Context for Appointment: ${appointmentId}`);
               const appRes = await apiClient.get(`/appointments/${appointmentId}`); 
               const appData = appRes.data?.data || appRes.data;
               if (appData && typeof appData === 'object') {
                 setFullAppointment(appData);
+                doctorName = appData.doctor;
                 if (!resolvedDoctorId) {
                   resolvedDoctorId = appData.doctorUserId || appData.doctorId;
                 }
@@ -104,6 +106,27 @@ const ReportPreviewModal = ({
               }
             } catch (contextErr) {
               console.warn("[ReportPreview] Failed to fetch appointment context, falling back to local data:", contextErr.message);
+            }
+
+            // Fallback: If we have the doctor's name but no ID (e.g. report not created yet), look it up in the personnel directory
+            if (!resolvedDoctorId && doctorName && doctorName !== 'Unassigned' && doctorName !== 'Unknown') {
+              try {
+                const personnelRes = await apiClient.get('/personnel');
+                const personnelList = personnelRes.data?.data || personnelRes.data;
+                if (Array.isArray(personnelList)) {
+                  const matchedDoc = personnelList.find(d => 
+                    d.fullName === doctorName || 
+                    d.name === doctorName || 
+                    (d.fullName && d.fullName.includes(doctorName))
+                  );
+                  if (matchedDoc) {
+                    resolvedDoctorId = matchedDoc.userId || matchedDoc.id;
+                    console.info(`[ReportPreview] Resolved Doctor ID from Personnel directory: ${resolvedDoctorId}`);
+                  }
+                }
+              } catch (pErr) {
+                console.warn("[ReportPreview] Failed to resolve doctor ID from personnel:", pErr.message);
+              }
             }
           }
 
