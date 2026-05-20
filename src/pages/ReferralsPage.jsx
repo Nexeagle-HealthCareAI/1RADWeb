@@ -4457,7 +4457,7 @@ return (
                   padding: '6px 14px', borderRadius: '20px', background: roleMeta.bg, 
                   color: roleMeta.color, fontSize: '10px', fontWeight: 950, letterSpacing: '1px' 
                 }}>
-                  {(ROLE_LABELS[userRole] || getCustomRoles(activeCenter?.id).find(r => r.roleId === userRole)?.roleName || userRole)?.toUpperCase()}
+                  {(ROLE_LABELS[userRole] || getCustomRoles(activeCenter?.id).find(r => r.roleId === userRole || r.roleName === userRole)?.roleName || userRole)?.toUpperCase()}
                 </div>
               </div>
 
@@ -4984,7 +4984,7 @@ return (
                                 { id: 'accountant',   label: 'Accountant',   desc: 'Financial Comptroller', color: '#059669', icon: '📊'  },
                                 ...(currentUser.roles?.[0] === 'admindoctor' ? [{ id: 'admindoctor', label: 'AdminDoctor', desc: 'Master Authority', color: '#6366f1', icon: '⭐' }] : []),
                                 ...getCustomRoles(activeCenter?.id).map(cr => ({
-                                  id: cr.roleId,
+                                  id: cr.roleName,
                                   label: cr.roleName,
                                   desc: 'Custom Permission Set',
                                   color: '#319795',

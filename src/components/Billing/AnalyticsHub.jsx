@@ -38,11 +38,14 @@ const AnalyticsHub = ({
       const amtBilled = inv.grossAmount || 0;
       const amtDiscount = inv.discountAmount || 0;
       const amtPaid = inv.paidAmount || 0;
-      const outstanding = Math.max(0, (inv.totalAmount || (amtBilled - amtDiscount)) - amtPaid);
+      // amtNet = post-discount billable amount (what the patient actually owes)
+      const amtNet = Number(inv.totalAmount) || Math.max(0, amtBilled - amtDiscount);
+      const outstanding = Math.max(0, amtNet - amtPaid);
       return {
         ...inv,
         dateStr,
         amtBilled,
+        amtNet,
         amtDiscount,
         amtPaid,
         outstanding,
@@ -106,12 +109,13 @@ const AnalyticsHub = ({
     }
 
     // Aggregate billed vs collected per month
+    // Uses amtNet (post-discount totalAmount) so chart shows actual invoiced value, not inflated gross
     const aggregated = monthKeys.map((key, idx) => {
       let billed = 0;
       let collected = 0;
       processedInvoices.forEach(inv => {
         if (inv.dateStr.startsWith(key)) {
-          billed += inv.amtBilled;
+          billed += inv.amtNet;
           collected += inv.amtPaid;
         }
       });
@@ -345,7 +349,7 @@ const AnalyticsHub = ({
     // Gross vs net revenue per modality
     const modalities = ['MRI', 'CT', 'X-RAY', 'ULTRASOUND', 'PET', 'MAMMOGRAPHY', 'FLUOROSCOPY'];
     const performanceMap = {};
-    modalities.forEach(m => performanceMap[m] = { gross: 0, discount: 0, net: 0, count: 0 });
+    [...modalities, 'OTHER'].forEach(m => performanceMap[m] = { gross: 0, discount: 0, net: 0, count: 0 });
 
     processedInvoices.forEach(inv => {
       inv.items?.forEach(item => {
@@ -358,7 +362,7 @@ const AnalyticsHub = ({
           }
         }
         if (!matched) {
-          matched = 'X-RAY';
+          matched = 'OTHER';
         }
         const itemAmt = item.amount || 0;
         const discRatio = inv.amtBilled > 0 ? (inv.amtDiscount / inv.amtBilled) : 0;
@@ -441,8 +445,8 @@ const AnalyticsHub = ({
       processedInvoices.forEach(inv => {
         if (inv.dateStr.startsWith(key)) count++;
       });
-      const newPatients = count > 0 ? Math.round(count * 0.65) : Math.round(30 + Math.random() * 15 + idx * 8);
-      const returnPatients = count > 0 ? Math.max(0, count - newPatients) : Math.round(15 + Math.random() * 10 + idx * 4);
+      const newPatients = count > 0 ? Math.round(count * 0.65) : 0;
+      const returnPatients = count > 0 ? Math.max(0, count - newPatients) : 0;
       return { month: monthLabels[idx], newPatients, returnPatients };
     });
 
@@ -464,7 +468,7 @@ const AnalyticsHub = ({
     const hasTrends = Object.keys(doctorRevenue).length > 0;
     const roiLedger = hasTrends ? Object.entries(doctorRevenue).map(([name, rev]) => {
       const comm = doctorCommissions[name] || 0;
-      const ratio = comm > 0 ? rev / comm : rev > 0 ? 25.0 : 10.0;
+      const ratio = comm > 0 ? rev / comm : rev > 0 ? Infinity : 0;
       return { name, revenue: rev, commission: comm, ratio };
     }).sort((a, b) => b.revenue - a.revenue) : [
       { name: 'DR. ARVIND MEHTA', revenue: 245000, commission: 24500, ratio: 10.0 },
@@ -1006,10 +1010,7 @@ const AnalyticsHub = ({
             {/* Interactive Call to Action */}
             <div style={{ display: 'flex', gap: '15px' }}>
               <button 
-                onClick={() => {
-                  window.scrollTo({ top: 0, behavior: 'smooth' });
-                  alert("Use the 'New Invoice' button in the upper ledger menu to register your first transaction!");
-                }}
+                onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })}
                 style={{
                   background: 'linear-gradient(135deg, #0f52ba 0%, #1e40af 100%)',
                   color: 'white',
@@ -1374,7 +1375,7 @@ const AnalyticsHub = ({
                           <th style={{ padding: '12px 15px', fontSize: '9px', fontWeight: 950, color: '#94a3b8', letterSpacing: '0.5px' }}>MODALITY</th>
                           <th style={{ padding: '12px 15px', fontSize: '9px', fontWeight: 950, color: '#94a3b8', letterSpacing: '0.5px', textAlign: 'center' }}>SCAN VOL</th>
                           <th style={{ padding: '12px 15px', fontSize: '9px', fontWeight: 950, color: '#94a3b8', letterSpacing: '0.5px' }}>GROSS BILLING (₹)</th>
-                          <th style={{ padding: '12px 15px', fontSize: '9px', fontWeight: 950, color: '#94a3b8', letterSpacing: '0.5px' }}>COMMISSION PAID (₹)</th>
+                          <th style={{ padding: '12px 15px', fontSize: '9px', fontWeight: 950, color: '#94a3b8', letterSpacing: '0.5px' }}>DISCOUNT/COMMISSION (₹)</th>
                           <th style={{ padding: '12px 15px', fontSize: '9px', fontWeight: 950, color: '#94a3b8', letterSpacing: '0.5px' }}>NET CLINIC YIELD (₹)</th>
                           <th style={{ padding: '12px 15px', fontSize: '9px', fontWeight: 950, color: '#94a3b8', letterSpacing: '0.5px' }}>AVG SCAN VALUE (₹)</th>
                           <th style={{ padding: '12px 15px', fontSize: '9px', fontWeight: 950, color: '#94a3b8', letterSpacing: '0.5px', textAlign: 'right' }}>COLLECTION EFFICIENCY</th>
@@ -1520,7 +1521,7 @@ const AnalyticsHub = ({
                               <td style={{ padding: '12px', fontSize: '11px', fontWeight: 800, color: '#dc2626' }}>₹{row.commission.toLocaleString()}</td>
                               <td style={{ padding: '12px', textAlign: 'right' }}>
                                 <span style={{ fontSize: '10px', fontWeight: 950, background: '#eff6ff', color: '#0f52ba', padding: '4px 10px', borderRadius: '8px', border: '1px solid #bfdbfe' }}>
-                                  {row.ratio.toFixed(1)}x ROI
+                                  {Number.isFinite(row.ratio) ? `${row.ratio.toFixed(1)}x` : '∞'} ROI
                                 </span>
                               </td>
                             </tr>
