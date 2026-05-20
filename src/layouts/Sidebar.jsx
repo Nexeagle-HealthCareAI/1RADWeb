@@ -419,46 +419,7 @@ export default function Sidebar({ isMobileOpen, onMobileClose }) {
         transition: 'padding 0.22s cubic-bezier(0.4,0,0.2,1)',
       }}>
 
-        {/* User card */}
-        <div style={{
-          display: 'flex', alignItems: 'center',
-          gap: showCollapsed ? 0 : '10px',
-          padding: showCollapsed ? '5px 0' : '8px 10px',
-          borderRadius: '9px',
-          background: showCollapsed ? 'transparent' : T.surface,
-          justifyContent: showCollapsed ? 'center' : 'flex-start',
-          marginBottom: '3px',
-          overflow: 'hidden',
-          transition: 'padding 0.22s, background 0.22s',
-        }}>
-          {/* Avatar */}
-          <div style={{
-            width: '32px', height: '32px', borderRadius: '8px', flexShrink: 0,
-            background: 'linear-gradient(135deg, #3b82f6 0%, #1e40af 100%)',
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
-            fontSize: '13px', fontWeight: 700, color: 'white',
-            fontFamily: FF, letterSpacing: '0.3px',
-            boxShadow: '0 2px 8px rgba(59,130,246,0.3)',
-          }}>
-            {initial}
-          </div>
 
-          {/* Name + role */}
-          <div style={{
-            minWidth: 0, flex: 1, overflow: 'hidden',
-            maxWidth: showCollapsed ? 0 : '200px',
-            opacity: showCollapsed ? 0 : 1,
-            transition: 'max-width 0.24s cubic-bezier(0.4,0,0.2,1), opacity 0.18s ease',
-            whiteSpace: 'nowrap',
-          }}>
-            <div style={{ fontSize: '12px', fontWeight: 600, color: T.textHigh, fontFamily: FF, overflow: 'hidden', textOverflow: 'ellipsis' }}>
-              {displayName}
-            </div>
-            <div style={{ fontSize: '10px', color: T.textLow, fontFamily: FF, marginTop: '1px', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-              {roleLabel}
-            </div>
-          </div>
-        </div>
 
         {/* Sign out */}
         <button
