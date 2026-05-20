@@ -2164,7 +2164,7 @@ export default function AppointmentBoard() {
 
     return (
       <div className="drawer-overlay">
-        <div className="drawer-content" onClick={e => e.stopPropagation()} style={{ maxWidth: '600px' }}>
+        <div className="drawer-content booking-drawer-width" onClick={e => e.stopPropagation()}>
           <div className="drawer-header" style={{ background: 'linear-gradient(135deg, #f39c12 0%, #e67e22 100%)', color: 'white', padding: '28px 30px', border: 'none' }}>
             <div style={{ display: 'flex', flexDirection: 'column' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '4px' }}>

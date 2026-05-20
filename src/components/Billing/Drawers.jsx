@@ -296,11 +296,12 @@ export const NewInvoiceDrawer = ({
       <div className="drawer-content" style={{ 
         padding: 0, 
         width: isMobile ? '100%' : '550px', 
-        height: isMobile ? '100%' : 'auto',
+        height: '100%',
         background: 'white',
-        borderRadius: isMobile ? '0' : '24px',
-        maxHeight: isMobile ? '100%' : '95vh',
-        overflowY: 'auto'
+        borderRadius: isMobile ? '0' : '24px 0 0 24px',
+        overflowY: 'auto',
+        display: 'flex',
+        flexDirection: 'column'
       }} onClick={e => e.stopPropagation()}>
         <div style={{ padding: isMobile ? '25px' : '35px', background: 'linear-gradient(135deg, #0f52ba 0%, #061a40 100%)', color: 'white' }}>
            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
@@ -315,7 +316,7 @@ export const NewInvoiceDrawer = ({
            </div>
         </div>
 
-        <div style={{ padding: isMobile ? '20px' : '35px' }}>
+        <div style={{ padding: isMobile ? '20px' : '35px', flex: 1, overflowY: 'auto' }}>
            <form onSubmit={handleCreateManualInvoice}>
               <div style={{ marginBottom: '30px', position: 'relative' }}>
                  <label style={{ fontSize: '10px', fontWeight: 950, color: '#94a3b8', letterSpacing: '1px', display: 'block', marginBottom: '10px' }}>SEARCH_PATIENT_REGISTRY</label>

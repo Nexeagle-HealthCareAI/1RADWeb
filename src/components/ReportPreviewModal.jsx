@@ -77,35 +77,49 @@ const ReportPreviewModal = ({
 
   useEffect(() => {
     if (isOpen) {
-      const targetDoctorId = doctorId || patientData?.doctorId || patientData?.doctorUserId || sessionStorage.getItem('1rad_doctor_id');
-      console.log(`[ReportPreview] Syncing branding. Target Doctor: ${targetDoctorId || 'CURRENT_USER'}`);
-      
       const fetchData = async () => {
         setLoadingProtocol(true);
         try {
-          // 1. Fetch Branding & Signatory Profile (Authoritative Fallback)
-          const brandingUrl = targetDoctorId ? `/Prescription/${targetDoctorId}` : `/Prescription/me`;
-          const res = await apiClient.get(brandingUrl);
-          if (res.data?.success) {
-            console.info("[ReportPreview] Branding Data Received:", res.data.data);
-            setProtocol(res.data.data);
-          }
+          let resolvedDoctorId = doctorId || patientData?.doctorId || patientData?.doctorUserId;
 
-          // 2. Fetch Full Appointment Context (Enrich patientData)
+          // 1. Fetch Full Appointment Context First
           if (appointmentId) {
             console.info(`[ReportPreview] Synchronizing Context for Appointment: ${appointmentId}`);
             const appRes = await apiClient.get(`/appointments/${appointmentId}`); 
-            // Handle both wrapped {success, data} and direct object responses
             const appData = appRes.data?.data || appRes.data;
             if (appData && typeof appData === 'object') {
               setFullAppointment(appData);
+              // Extract doctor ID from appointment if we don't have it yet
+              if (!resolvedDoctorId) {
+                resolvedDoctorId = appData.doctorUserId || appData.doctorId;
+              }
             }
 
-            // 3. Fetch Saved Report Metadata (Finalization dates, etc.)
+            // Fetch Saved Report Metadata
             const reportRes = await apiClient.get(`/Reporting/report/${appointmentId}`);
             const reportData = reportRes.data?.data || reportRes.data;
-            if (reportData) setSavedMetadata(reportData);
+            if (reportData) {
+              setSavedMetadata(reportData);
+              if (!resolvedDoctorId) resolvedDoctorId = reportData.doctorId || reportData.doctorUserId;
+            }
           }
+
+          // Fallback to session if still not found
+          if (!resolvedDoctorId) resolvedDoctorId = sessionStorage.getItem('1rad_doctor_id');
+
+          console.log(`[ReportPreview] Syncing branding. Target Doctor: ${resolvedDoctorId || 'NONE'}`);
+
+          // 2. Fetch Branding & Signatory Profile using actual Doctor ID
+          if (resolvedDoctorId) {
+            const res = await apiClient.get(`/Prescription/${resolvedDoctorId}`);
+            if (res.data?.success) {
+              console.info("[ReportPreview] Branding Data Received:", res.data.data);
+              setProtocol(res.data.data);
+            }
+          } else {
+             console.warn("[ReportPreview] No Doctor ID found. Skipping custom branding.");
+          }
+
         } catch (err) {
           console.warn("[ReportPreview] Context sync partially failed:", err.message);
         } finally {

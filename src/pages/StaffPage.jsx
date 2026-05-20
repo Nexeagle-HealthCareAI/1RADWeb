@@ -70,6 +70,7 @@ export default function StaffPage() {
   const [salaryData,     setSalaryData]     = useState({}); // { staffId: { basicPay, hra, travel, otherAllowances, pfDeduction, tds, otherDeductions, disbursements:[] } }
   const [attendanceData, setAttendanceData] = useState({}); // { staffId: { 'YYYY-MM-DD': status } }
   const [leaveData,      setLeaveData]      = useState([]); // [{ id, staffId, type, from, to, days, reason, status, appliedOn }]
+  const [documentsData,  setDocumentsData]  = useState({}); // { staffId: [{ id, name, category, uploadedAt, fileData }] }
 
   // â”€â”€ UI state â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   const [selectedStaff,   setSelectedStaff]   = useState(null);
@@ -97,8 +98,9 @@ export default function StaffPage() {
 
   // Staff Add / Edit drawer
   const EMPTY_STAFF = {
-    id: null, name: '', email: '', mobile: '', password: '',
-    roles: ['receptionist'], specialization: '', degree: '', licenseNo: ''
+    id: null, name: '', email: '', mobile: '',
+    specialization: '', degree: '', licenseNo: '',
+    department: '', designation: '', joiningDate: '', employmentType: 'Full-Time',
   };
   const [staffDrawer, setStaffDrawer] = useState({ open: false, form: EMPTY_STAFF });
   const [savingStaff, setSavingStaff] = useState(false);
@@ -113,17 +115,22 @@ export default function StaffPage() {
   const fetchPersonnel = useCallback(async () => {
     try {
       setLoading(true);
-      const res = await apiClient.get('/personnel');
+      const res = await apiClient.get('/staff');
       const mapped = (res.data || []).map(p => ({
-        id:             p.userId,
+        id:             p.staffId,
         name:           p.fullName || 'Unknown',
         email:          p.email,
         mobile:         p.mobile,
-        roles:          (p.roles || []).map(r => String(r).toLowerCase()),
+        roles:          (p.roleNames || []).map(r => String(r).toLowerCase()),
         specialization: p.specialization,
         degree:         p.degree,
         licenseNo:      p.licenseNo,
-        status:         p.status || 'active',
+        designation:    p.designation,
+        department:     p.department,
+        employmentType: p.employmentType,
+        joiningDate:    p.joiningDate,
+        status:         p.status || 'Active',
+        boardAccessUserId: p.boardAccessUserId,
         createdAt:      p.createdAt,
       }));
       setPersonnel(mapped);
@@ -137,14 +144,16 @@ export default function StaffPage() {
   }, []);
 
   const loadLocalData = useCallback(async () => {
-    const [sal, att, lv] = await Promise.all([
+    const [sal, att, lv, docs] = await Promise.all([
       nativeStorage.get('1rad_staff_salary'),
       nativeStorage.get('1rad_staff_attendance'),
       nativeStorage.get('1rad_staff_leave'),
+      nativeStorage.get('1rad_staff_documents'),
     ]);
     setSalaryData(sal || {});
     setAttendanceData(att || {});
     setLeaveData(lv || []);
+    setDocumentsData(docs || {});
   }, []);
 
   useEffect(() => {
@@ -246,9 +255,9 @@ export default function StaffPage() {
     open: true,
     form: {
       id: staff.id, name: staff.name || '', email: staff.email || '', mobile: staff.mobile || '',
-      password: '',
-      roles: staff.roles?.length ? [...staff.roles] : ['receptionist'],
-      specialization: staff.specialization || '', degree: staff.degree || '', licenseNo: staff.licenseNo || ''
+      specialization: staff.specialization || '', degree: staff.degree || '', licenseNo: staff.licenseNo || '',
+      department: staff.department || '', designation: staff.designation || '',
+      joiningDate: staff.joiningDate || '', employmentType: staff.employmentType || 'Full-Time',
     }
   });
 
@@ -256,26 +265,16 @@ export default function StaffPage() {
     e?.preventDefault?.();
     const form = staffDrawer.form;
     if (!form.name?.trim()) return showNotif('warning', 'Missing name', 'Please enter the staff member’s full name.');
-    if (!form.email?.trim() && !form.mobile?.trim()) {
-      return showNotif('warning', 'Contact required', 'Provide at least an email or mobile number.');
-    }
-    if (!form.roles || form.roles.length === 0) {
-      return showNotif('warning', 'Role required', 'At least one role must be assigned.');
-    }
-    if (!form.id && !form.password?.trim()) {
-      return showNotif('warning', 'Password required', 'New staff need an initial password.');
-    }
 
     const payload = {
       fullName: form.name.trim(),
       email: form.email?.trim() || null,
       mobile: form.mobile?.trim() || null,
-      password: form.password || undefined,
-      // Backend expects the role NAMES (capitalised). Internal state holds lowercase ids.
-      roleNames: form.roles.map(r => {
-        const map = { admindoctor: 'AdminDoctor', admin: 'Admin', doctor: 'Doctor', technician: 'Technician', receptionist: 'Receptionist', accountant: 'Accountant' };
-        return map[r] || (r.charAt(0).toUpperCase() + r.slice(1));
-      }),
+      designation: form.designation?.trim() || null,
+      department: form.department?.trim() || null,
+      employmentType: form.employmentType || 'Full-Time',
+      joiningDate: form.joiningDate || null,
+      roleNames: [],
       specialization: form.specialization || null,
       degree: form.degree || null,
       licenseNo: form.licenseNo || null,
@@ -284,11 +283,11 @@ export default function StaffPage() {
     try {
       setSavingStaff(true);
       if (form.id) {
-        await apiClient.put(`/personnel/${form.id}`, payload);
+        await apiClient.put(`/staff/${form.id}`, payload);
         showNotif('success', 'Saved', 'Staff record updated.');
       } else {
-        await apiClient.post('/personnel', payload);
-        showNotif('success', 'Created', `${form.name} added to your team.`);
+        await apiClient.post('/staff', payload);
+        showNotif('success', 'Added', `${form.name} added to the team.`);
       }
       setStaffDrawer({ open: false, form: EMPTY_STAFF });
       fetchPersonnel();
@@ -309,7 +308,7 @@ export default function StaffPage() {
       danger: true,
       onConfirm: async () => {
         try {
-          await apiClient.delete(`/personnel/${staff.id}`);
+          await apiClient.delete(`/staff/${staff.id}`);
           showNotif('success', 'Removed', `${staff.name} has been removed from the team.`);
           if (selectedStaff?.id === staff.id) setSelectedStaff(null);
           fetchPersonnel();
@@ -344,7 +343,7 @@ export default function StaffPage() {
       licenseNo: staff.licenseNo || null,
     };
     try {
-      await apiClient.put(`/personnel/${staff.id}`, payload);
+      await apiClient.put(`/staff/${staff.id}`, payload);
       // Optimistic local update so the UI reflects immediately even before refetch.
       const updatedPersonnel = personnel.map(p => p.id === staff.id ? { ...p, roles: nextRoles } : p);
       setPersonnel(updatedPersonnel);
@@ -711,11 +710,164 @@ export default function StaffPage() {
   // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
   const DETAIL_TABS = [
     { id: 'profile',    label: 'Profile'    },
+    { id: 'documents',  label: 'Documents'  },
     { id: 'salary',     label: 'Salary'     },
     { id: 'attendance', label: 'Attendance' },
     { id: 'leave',      label: 'Leave'      },
     { id: 'access',     label: 'Access'     },
   ];
+
+  const DOC_CATEGORIES = ['ID Proof', 'Medical License', 'Degree / Certificate', 'Employment Contract', 'Background Check', 'Other'];
+
+  const renderDocumentsTab = (staff) => {
+    const docs = documentsData[staff.id] || [];
+
+    const handleFileSelect = async (e) => {
+      const file = e.target.files?.[0];
+      if (!file) return;
+      if (file.size > 5 * 1024 * 1024) {
+        showNotif('warning', 'File too large', 'Maximum file size is 5 MB.');
+        return;
+      }
+      const reader = new FileReader();
+      reader.onload = async (ev) => {
+        const entry = {
+          id: `doc_${Date.now()}`,
+          name: file.name,
+          category: 'Other',
+          size: file.size,
+          uploadedAt: new Date().toISOString(),
+          fileData: ev.target.result,
+        };
+        const staffDocs = [...(documentsData[staff.id] || []), entry];
+        const updated = { ...documentsData, [staff.id]: staffDocs };
+        setDocumentsData(updated);
+        await nativeStorage.set('1rad_staff_documents', updated);
+        showNotif('success', 'Document saved', `${file.name} uploaded successfully.`);
+      };
+      reader.readAsDataURL(file);
+      e.target.value = '';
+    };
+
+    const deleteDoc = async (docId) => {
+      const staffDocs = (documentsData[staff.id] || []).filter(d => d.id !== docId);
+      const updated = { ...documentsData, [staff.id]: staffDocs };
+      setDocumentsData(updated);
+      await nativeStorage.set('1rad_staff_documents', updated);
+    };
+
+    const changeCategory = async (docId, cat) => {
+      const staffDocs = (documentsData[staff.id] || []).map(d => d.id === docId ? { ...d, category: cat } : d);
+      const updated = { ...documentsData, [staff.id]: staffDocs };
+      setDocumentsData(updated);
+      await nativeStorage.set('1rad_staff_documents', updated);
+    };
+
+    const EXT_ICON = (name) => {
+      const ext = (name || '').split('.').pop().toLowerCase();
+      if (['jpg','jpeg','png','gif','webp'].includes(ext)) return { icon: '🖼', color: '#0891b2', bg: '#ecfeff' };
+      if (ext === 'pdf') return { icon: '📄', color: '#dc2626', bg: '#fef2f2' };
+      if (['doc','docx'].includes(ext)) return { icon: '📝', color: '#0f52ba', bg: '#eff6ff' };
+      return { icon: '📎', color: '#64748b', bg: '#f8fafc' };
+    };
+
+    return (
+      <div style={{ padding: '20px 24px 28px' }}>
+        {/* Verification summary */}
+        <div style={{ background: 'linear-gradient(135deg, #0a1628 0%, #1e3a5f 100%)', borderRadius: '14px', padding: '18px 20px', marginBottom: '22px', position: 'relative', overflow: 'hidden' }}>
+          <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: '2px', background: 'linear-gradient(90deg, transparent, #d4a017 40%, transparent)' }} />
+          <div style={{ fontSize: '9px', fontWeight: 800, color: '#d4a017', letterSpacing: '1.5px', textTransform: 'uppercase', marginBottom: '10px' }}>Verification Status</div>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '12px' }}>
+            {[
+              { label: 'ID Proof',    key: 'ID Proof',              icon: '🪪' },
+              { label: 'License',     key: 'Medical License',        icon: '🏥' },
+              { label: 'Contract',    key: 'Employment Contract',    icon: '📋' },
+            ].map(({ label, key, icon }) => {
+              const has = docs.some(d => d.category === key);
+              return (
+                <div key={key} style={{ textAlign: 'center' }}>
+                  <div style={{ fontSize: '20px', marginBottom: '4px' }}>{icon}</div>
+                  <div style={{ fontSize: '10px', fontWeight: 700, color: has ? '#86efac' : 'rgba(255,255,255,0.4)', marginBottom: '2px' }}>{label}</div>
+                  <div style={{ fontSize: '9px', fontWeight: 600, color: has ? '#4ade80' : '#ef4444' }}>{has ? '✓ On file' : 'Missing'}</div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+
+        {/* Upload button */}
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '14px' }}>
+          <div style={{ fontSize: '10px', fontWeight: 800, color: '#0a1628', letterSpacing: '1px', textTransform: 'uppercase' }}>
+            {docs.length} Document{docs.length !== 1 ? 's' : ''}
+          </div>
+          <label style={{
+            display: 'inline-flex', alignItems: 'center', gap: '6px',
+            padding: '8px 16px', borderRadius: '9px',
+            background: 'linear-gradient(135deg, #d4a017 0%, #b8860b 100%)',
+            color: '#0a1628', fontSize: '11px', fontWeight: 800,
+            cursor: 'pointer', letterSpacing: '0.3px',
+            boxShadow: '0 4px 12px rgba(212,160,23,0.3)',
+          }}>
+            + Upload
+            <input type="file" accept=".pdf,.doc,.docx,.jpg,.jpeg,.png,.webp" onChange={handleFileSelect} style={{ display: 'none' }} />
+          </label>
+        </div>
+
+        {/* Document list */}
+        {docs.length === 0 ? (
+          <div style={{ textAlign: 'center', padding: '40px 20px', background: '#f8fafc', borderRadius: '14px', border: '1.5px dashed #e2e8f0' }}>
+            <div style={{ fontSize: '28px', marginBottom: '10px' }}>📂</div>
+            <div style={{ fontSize: '13px', fontWeight: 700, color: '#64748b', marginBottom: '4px' }}>No documents yet</div>
+            <div style={{ fontSize: '11px', color: '#94a3b8' }}>Upload ID proofs, licenses, and contracts to keep everything in one place.</div>
+          </div>
+        ) : (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+            {docs.map(doc => {
+              const { icon, color, bg } = EXT_ICON(doc.name);
+              return (
+                <div key={doc.id} style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: '12px 14px', background: 'white', border: '1px solid #e8edf2', borderRadius: '12px', boxShadow: '0 1px 4px rgba(0,0,0,0.04)' }}>
+                  <div style={{ width: '38px', height: '38px', borderRadius: '9px', background: bg, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '16px', flexShrink: 0, border: `1px solid ${color}20` }}>
+                    {icon}
+                  </div>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontSize: '12px', fontWeight: 700, color: '#0f172a', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', marginBottom: '4px' }}>{doc.name}</div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                      <select
+                        value={doc.category}
+                        onChange={e => changeCategory(doc.id, e.target.value)}
+                        style={{ fontSize: '10px', fontWeight: 700, color, background: bg, border: `1px solid ${color}30`, borderRadius: '6px', padding: '2px 6px', outline: 'none', cursor: 'pointer' }}
+                      >
+                        {DOC_CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
+                      </select>
+                      <span style={{ fontSize: '9px', color: '#94a3b8', fontWeight: 600 }}>
+                        {new Date(doc.uploadedAt).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}
+                        {doc.size ? ` · ${(doc.size / 1024).toFixed(0)} KB` : ''}
+                      </span>
+                    </div>
+                  </div>
+                  <div style={{ display: 'flex', gap: '6px', flexShrink: 0 }}>
+                    {doc.fileData && (
+                      <a
+                        href={doc.fileData}
+                        download={doc.name}
+                        style={{ width: '30px', height: '30px', borderRadius: '7px', background: '#eff6ff', border: '1px solid #dbeafe', display: 'flex', alignItems: 'center', justifyContent: 'center', textDecoration: 'none', fontSize: '13px' }}
+                        title="Download"
+                      >⬇</a>
+                    )}
+                    <button
+                      onClick={() => askConfirm({ title: 'Delete document?', message: `Remove "${doc.name}" from records?`, confirmText: 'Delete', danger: true, onConfirm: () => deleteDoc(doc.id) })}
+                      style={{ width: '30px', height: '30px', borderRadius: '7px', background: '#fef2f2', border: '1px solid #fecaca', color: '#dc2626', cursor: 'pointer', fontSize: '13px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                      title="Remove"
+                    >✕</button>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
+    );
+  };
 
   // Role definitions surfaced in the Access tab.
   const ROLE_ACCESS = [
@@ -729,28 +881,58 @@ export default function StaffPage() {
 
   const renderAccessTab = (staff) => {
     const currentRoles = new Set((staff.roles || []).map(r => String(r).toLowerCase()));
+    const hasBoardAccess = !!staff.boardAccessUserId;
+
+    const grantBoardAccess = async () => {
+      const pw = window.prompt(`Set a login password for ${staff.name}.\n\nThis will create a board account and allow them to sign in.`);
+      if (!pw || pw.trim().length < 8) { showNotif('warning', 'Invalid password', 'Password must be at least 8 characters.'); return; }
+      try {
+        const roleNameMap = { admindoctor: 'AdminDoctor', admin: 'Admin', doctor: 'Doctor', technician: 'Technician', receptionist: 'Receptionist', accountant: 'Accountant' };
+        await apiClient.post(`/staff/${staff.id}/grant-access`, {
+          password: pw.trim(),
+          roleNames: (staff.roles || ['receptionist']).map(r => roleNameMap[r] || (r.charAt(0).toUpperCase() + r.slice(1))),
+        });
+        showNotif('success', 'Board access granted', `${staff.name} can now log in to the board.`);
+        fetchPersonnel();
+      } catch (err) {
+        showNotif('error', 'Failed', err.response?.data?.message || 'Could not grant board access.');
+      }
+    };
+
     return (
       <div style={{ padding: '20px 24px 24px' }}>
-        <div style={{
-          background: '#fff8e6', border: '1px solid #fbe5a3', borderRadius: '12px',
-          padding: '12px 14px', marginBottom: '18px', display: 'flex', alignItems: 'flex-start', gap: '10px',
-        }}>
-          <span style={{ fontSize: '16px', lineHeight: 1, marginTop: '1px' }}>🔑</span>
-          <div>
-            <div style={{ fontSize: '12px', fontWeight: 700, color: '#92400e' }}>Role-based access</div>
-            <div style={{ fontSize: '11px', color: '#92400e', opacity: 0.85, marginTop: '3px', lineHeight: 1.45 }}>
-              Toggle a role to instantly grant or revoke access to the corresponding boards and modules.
-              Each staff member must keep at least one role.
+        {!hasBoardAccess ? (
+          <div style={{ background: '#f8fafc', border: '1.5px dashed #e2e8f0', borderRadius: '14px', padding: '28px', textAlign: 'center' }}>
+            <div style={{ fontSize: '28px', marginBottom: '10px' }}>🔒</div>
+            <div style={{ fontSize: '14px', fontWeight: 700, color: '#0a1628', marginBottom: '6px' }}>No board access</div>
+            <div style={{ fontSize: '12px', color: '#64748b', marginBottom: '20px', maxWidth: '280px', margin: '0 auto 20px', lineHeight: 1.55 }}>
+              {staff.name} is an HR record only. Grant board access to allow them to sign in and use the system boards.
             </div>
+            <button
+              onClick={grantBoardAccess}
+              style={{ padding: '11px 28px', borderRadius: '11px', background: 'linear-gradient(135deg, #0a1628 0%, #1e3a5f 100%)', color: 'white', border: 'none', fontWeight: 800, fontSize: '13px', cursor: 'pointer', boxShadow: '0 6px 18px rgba(10,22,40,0.2)', letterSpacing: '0.3px' }}
+            >Grant Board Access</button>
           </div>
-        </div>
-
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-          {ROLE_ACCESS.map(role => {
-            const active = currentRoles.has(role.key);
-            const meta = getRoleMeta(role.key);
-            return (
-              <button
+        ) : (
+          <>
+            <div style={{
+              background: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: '12px',
+              padding: '12px 14px', marginBottom: '18px', display: 'flex', alignItems: 'flex-start', gap: '10px',
+            }}>
+              <span style={{ fontSize: '16px', lineHeight: 1, marginTop: '1px' }}>✓</span>
+              <div>
+                <div style={{ fontSize: '12px', fontWeight: 700, color: '#15803d' }}>Board access active</div>
+                <div style={{ fontSize: '11px', color: '#15803d', opacity: 0.85, marginTop: '3px', lineHeight: 1.45 }}>
+                  Toggle roles to grant or revoke access to specific boards and modules. At least one role is required.
+                </div>
+              </div>
+            </div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+              {ROLE_ACCESS.map(role => {
+                const active = currentRoles.has(role.key);
+                const meta = getRoleMeta(role.key);
+                return (
+                <button
                 key={role.key}
                 type="button"
                 onClick={() => toggleStaffRole(staff, role.key)}
@@ -801,6 +983,8 @@ export default function StaffPage() {
             );
           })}
         </div>
+          </>
+        )}
       </div>
     );
   };
@@ -1022,6 +1206,7 @@ export default function StaffPage() {
             {/* Tab content */}
             <div style={{ overflowY: 'auto', maxHeight: '60vh' }}>
               {detailTab === 'profile'    && renderProfileTab(selectedStaff)}
+              {detailTab === 'documents'  && renderDocumentsTab(selectedStaff)}
               {detailTab === 'salary'     && renderSalaryTab(selectedStaff)}
               {detailTab === 'attendance' && renderAttendanceTab(selectedStaff)}
               {detailTab === 'leave'      && renderLeaveTab(selectedStaff)}
@@ -1185,10 +1370,10 @@ export default function StaffPage() {
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '12px' }}>
                 <div>
                   <div style={{ fontSize: '10px', fontWeight: 700, color: '#d4a017', letterSpacing: '1.5px', textTransform: 'uppercase', marginBottom: '4px' }}>
-                    {staffDrawer.form.id ? 'Edit Staff' : 'New Staff'}
+                    {staffDrawer.form.id ? 'Edit Staff' : 'Add Staff'}
                   </div>
                   <h2 style={{ margin: 0, fontSize: '20px', fontWeight: 800, letterSpacing: '-0.3px' }}>
-                    {staffDrawer.form.id ? 'Update record' : 'Onboard team member'}
+                    {staffDrawer.form.id ? 'Update record' : 'Add staff member'}
                   </h2>
                 </div>
                 <button
@@ -1233,59 +1418,6 @@ export default function StaffPage() {
                   />
                 </FieldGroup>
               </div>
-              {!staffDrawer.form.id && (
-                <FieldGroup>
-                  <FieldLabel required>Initial password</FieldLabel>
-                  <TextInput
-                    type="password"
-                    value={staffDrawer.form.password}
-                    onChange={(v) => setStaffDrawer(p => ({ ...p, form: { ...p.form, password: v } }))}
-                    placeholder="Min. 8 chars; user can change after first login"
-                  />
-                </FieldGroup>
-              )}
-
-              {/* Roles */}
-              <SectionLabel>Roles &amp; access</SectionLabel>
-              <FieldGroup>
-                <FieldLabel required>Assign one or more roles</FieldLabel>
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '8px' }}>
-                  {ROLE_ACCESS.map(role => {
-                    const active = (staffDrawer.form.roles || []).includes(role.key);
-                    return (
-                      <button
-                        key={role.key}
-                        type="button"
-                        onClick={() => setStaffDrawer(p => {
-                          const set = new Set(p.form.roles || []);
-                          if (set.has(role.key)) set.delete(role.key); else set.add(role.key);
-                          return { ...p, form: { ...p.form, roles: Array.from(set) } };
-                        })}
-                        style={{
-                          padding: '10px 12px', borderRadius: '10px',
-                          border: `1px solid ${active ? '#d4a017' : '#e2e8f0'}`,
-                          background: active ? '#fffbeb' : 'white',
-                          color: active ? '#0a1628' : '#475569',
-                          fontSize: '12px', fontWeight: active ? 700 : 600,
-                          cursor: 'pointer', textAlign: 'left',
-                          display: 'flex', alignItems: 'center', gap: '8px',
-                          transition: 'all 0.15s',
-                        }}
-                      >
-                        <span style={{
-                          width: '14px', height: '14px', borderRadius: '4px',
-                          background: active ? '#d4a017' : 'white',
-                          border: `1px solid ${active ? '#d4a017' : '#cbd5e1'}`,
-                          color: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center',
-                          fontSize: '10px', flexShrink: 0,
-                        }}>{active ? '✓' : ''}</span>
-                        {role.label}
-                      </button>
-                    );
-                  })}
-                </div>
-              </FieldGroup>
-
               {/* Professional (collapsible? keep visible — short) */}
               <SectionLabel>Professional details <span style={{ color: '#94a3b8', fontWeight: 500, marginLeft: '6px', textTransform: 'none', letterSpacing: 0 }}>(optional)</span></SectionLabel>
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '14px' }}>
@@ -1314,6 +1446,56 @@ export default function StaffPage() {
                   placeholder="Medical council registration"
                 />
               </FieldGroup>
+
+              {/* Employment */}
+              <SectionLabel>Employment <span style={{ color: '#94a3b8', fontWeight: 500, marginLeft: '6px', textTransform: 'none', letterSpacing: 0 }}>(optional)</span></SectionLabel>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '14px' }}>
+                <FieldGroup>
+                  <FieldLabel>Department</FieldLabel>
+                  <TextInput
+                    value={staffDrawer.form.department}
+                    onChange={(v) => setStaffDrawer(p => ({ ...p, form: { ...p.form, department: v } }))}
+                    placeholder="e.g. Radiology, Admin"
+                  />
+                </FieldGroup>
+                <FieldGroup>
+                  <FieldLabel>Designation</FieldLabel>
+                  <TextInput
+                    value={staffDrawer.form.designation}
+                    onChange={(v) => setStaffDrawer(p => ({ ...p, form: { ...p.form, designation: v } }))}
+                    placeholder="e.g. Senior Radiologist"
+                  />
+                </FieldGroup>
+              </div>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '14px' }}>
+                <FieldGroup>
+                  <FieldLabel>Joining Date</FieldLabel>
+                  <input
+                    type="date"
+                    value={staffDrawer.form.joiningDate || ''}
+                    onChange={(e) => setStaffDrawer(p => ({ ...p, form: { ...p.form, joiningDate: e.target.value } }))}
+                    style={{ width: '100%', padding: '10px 12px', borderRadius: '10px', border: '1px solid #e2e8f0', fontSize: '13px', outline: 'none', boxSizing: 'border-box', color: '#0a1628' }}
+                  />
+                </FieldGroup>
+                <FieldGroup>
+                  <FieldLabel>Employment Type</FieldLabel>
+                  <select
+                    value={staffDrawer.form.employmentType || 'Full-Time'}
+                    onChange={(e) => setStaffDrawer(p => ({ ...p, form: { ...p.form, employmentType: e.target.value } }))}
+                    style={{ width: '100%', padding: '10px 12px', borderRadius: '10px', border: '1px solid #e2e8f0', fontSize: '13px', outline: 'none', boxSizing: 'border-box', color: '#0a1628', background: 'white' }}
+                  >
+                    {['Full-Time', 'Part-Time', 'Consultant', 'Contract'].map(t => <option key={t} value={t}>{t}</option>)}
+                  </select>
+                </FieldGroup>
+              </div>
+
+              {/* Board access note */}
+              <div style={{ background: '#fff8e6', border: '1px solid #fde68a', borderRadius: '12px', padding: '12px 14px', display: 'flex', gap: '10px', alignItems: 'flex-start' }}>
+                <span style={{ fontSize: '16px', lineHeight: 1 }}>ℹ️</span>
+                <div style={{ fontSize: '11px', color: '#92400e', lineHeight: 1.5 }}>
+                  <strong>No board access is granted here.</strong> This only creates an HR record. To give this staff member login access to the board, use the <strong>Access</strong> tab after adding them.
+                </div>
+              </div>
             </div>
 
             {/* Sticky footer */}
