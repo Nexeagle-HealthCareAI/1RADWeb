@@ -97,6 +97,8 @@ export default function AppointmentBoard() {
   const [previewReport, setPreviewReport] = useState({ mode: 'Narrative Editor', text: '', impression: '', isFinalized: false });
   const [errorModal, setErrorModal] = useState({ isOpen: false, title: '', message: '' });
   const [cancelConfirmModal, setCancelConfirmModal] = useState({ isOpen: false, appointmentId: null, patientName: '' });
+  const [notifModal, setNotifModal] = useState({ isOpen: false, type: 'info', title: '', message: '' });
+  const showNotif = (type, title, message) => setNotifModal({ isOpen: true, type, title, message });
   const [tokenPrintData, setTokenPrintData] = useState(null);
   const [printDropdownId, setPrintDropdownId] = useState(null);
 
@@ -501,7 +503,7 @@ export default function AppointmentBoard() {
     if (!isOnline) {
       const tempId = `temp-${Date.now()}`;
       await addToOutbox('PATIENT_CREATE', { ...payload, tempId });
-      alert('OFFLINE_MODE: Patient profile queued for synchronization.');
+      showNotif('info', 'QUEUED FOR SYNC', 'Patient profile has been saved and will synchronize automatically when connection is restored.');
       setNewBooking(prev => ({ ...prev, patientId: tempId }));
       setIsAddPatientOpen(false);
       return;
@@ -528,26 +530,26 @@ export default function AppointmentBoard() {
   const handleBookAppointment = async () => {
     // 1. Validate Patient Identity
     if (!newBooking.patientId) {
-      alert('DEPLOYMENT HALTED: Mission target (Patient) is not identified. Please select or add a patient in Phase 1.');
+      showNotif('error', 'PATIENT REQUIRED', 'No patient has been selected. Please select or add a patient in Phase 1 before proceeding.');
       setBookingStep(1);
       return;
     }
 
     // 2. Validate Service/Procedure
     if (!newBooking.service || newBooking.service.trim() === '') {
-      alert('DEPLOYMENT HALTED: Clinical Service/Procedure is missing. This field is mandatory for billing and reporting.');
+      showNotif('error', 'SERVICE REQUIRED', 'Clinical Service / Procedure is missing. This field is mandatory for billing and reporting.');
       return;
     }
 
     // 3. Validate Specialist
     if (!newBooking.doctor) {
-      alert('DEPLOYMENT HALTED: No Lead Specialist assigned. Every mission requires a supervising physician.');
+      showNotif('error', 'SPECIALIST REQUIRED', 'No Lead Specialist assigned. Every appointment requires a supervising physician.');
       return;
     }
 
     // 4. Validate Date (Safety Check)
     if (!newBooking.date) {
-      alert('DEPLOYMENT HALTED: Mission timeline is undefined. Please select a valid date.');
+      showNotif('error', 'DATE REQUIRED', 'Appointment date is undefined. Please select a valid appointment date.');
       return;
     }
 
@@ -574,7 +576,7 @@ export default function AppointmentBoard() {
 
     if (!isOnline) {
       await addToOutbox('APPOINTMENT_CREATE', payload);
-      alert('OFFLINE_MODE: Mission deployment queued for synchronization.');
+      showNotif('info', 'QUEUED FOR SYNC', 'Appointment has been saved and will sync automatically when your connection is restored.');
       setIsBookingOpen(false);
       resetBooking();
       return;
@@ -594,7 +596,7 @@ export default function AppointmentBoard() {
         setIsBookingOpen(false);
         resetBooking();
       } else {
-        alert('CRITICAL ERROR: Mission deployment failed. Check backend telemetry.');
+        showNotif('error', 'BOOKING FAILED', 'Appointment could not be created. Please check your connection and try again.');
       }
     }
   };
@@ -649,11 +651,11 @@ export default function AppointmentBoard() {
     if (!editingAppointment) return;
     
     if (!editingAppointment.service) {
-      alert('WARNING: Service/Procedure details are missing. Field is mandatory.');
+      showNotif('warning', 'SERVICE REQUIRED', 'Service / Procedure details are missing. This field is mandatory before saving.');
       return;
     }
     if (!editingAppointment.doctor) {
-      alert('WARNING: No Lead Specialist assigned. Cannot proceed without a supervisor.');
+      showNotif('warning', 'SPECIALIST REQUIRED', 'No Lead Specialist assigned. Cannot save without a supervising physician.');
       return;
     }
 
@@ -681,7 +683,7 @@ export default function AppointmentBoard() {
       fetchAppointments();
     } catch (error) {
       console.error('Failed to update appointment:', error);
-      alert('ERROR: Failed to update appointment. Please try again.');
+      showNotif('error', 'UPDATE FAILED', 'Could not update the appointment. Please check your connection and try again.');
     }
   };
 
@@ -698,12 +700,12 @@ export default function AppointmentBoard() {
     }
 
     if (!newReferrer.name || newReferrer.name.trim().length < 3) {
-      alert('VALIDATION ERROR: Referrer name must be at least 3 characters.');
+      showNotif('error', 'INVALID NAME', 'Referrer name must be at least 3 characters long.');
       return;
     }
     
     if (digits.length !== 10 || !/^[6-9]\d{9}$/.test(digits)) {
-      alert('VALIDATION ERROR: Please enter a valid 10-digit Indian mobile number (e.g., 9876543210).');
+      showNotif('error', 'INVALID MOBILE', 'Please enter a valid 10-digit Indian mobile number starting with 6, 7, 8, or 9 (e.g., 9876543210).');
       return;
     }
 
@@ -747,7 +749,7 @@ export default function AppointmentBoard() {
     } catch (error) {
       console.error('Failed to add referrer:', error);
       const backendError = error.response?.data?.error || error.response?.data?.message;
-      alert(backendError ? `ERROR: ${backendError}` : 'ERROR: Could not save referrer. Please verify your connection and try again.');
+      showNotif('error', 'REFERRER SAVE FAILED', backendError || 'Could not save referrer. Please verify your connection and try again.');
     }
   };
 
@@ -770,7 +772,7 @@ export default function AppointmentBoard() {
           }, 1000);
         }, 500);
       } else {
-        alert('Please allow popups to print on mobile devices.');
+        showNotif('warning', 'POP-UPS BLOCKED', 'Please allow pop-ups for this site to enable printing on mobile devices.');
       }
     } else {
       const iframe = document.createElement('iframe');
@@ -1051,7 +1053,7 @@ export default function AppointmentBoard() {
       });
       const inv = res.data[0];
       if (!inv) {
-        alert('MISSION ALERT: No financial records found for this deployment.');
+        showNotif('warning', 'NO INVOICE FOUND', 'No financial records were found for this appointment. Please ensure billing has been completed first.');
         return;
       }
       
@@ -1060,7 +1062,7 @@ export default function AppointmentBoard() {
       else if (type === 'RECEIPT') handlePrintReceipt(inv);
     } catch (err) {
       console.error('Print protocol failed', err);
-      alert('CRITICAL ERROR: Financial telemetry extraction failed.');
+      showNotif('error', 'PRINT FAILED', 'Could not retrieve financial data for printing. Please try again.');
     } finally {
       setLoading(false);
     }
@@ -1784,7 +1786,7 @@ export default function AppointmentBoard() {
                                 fetchPatients('');
                               } catch (error) {
                                 console.error('Failed to auto-register patient:', error);
-                                alert('Patient registration failed. Please try again.');
+                                showNotif('error', 'REGISTRATION FAILED', 'Patient registration could not be completed. Please try again.');
                                 return; 
                               }
                             } 
@@ -3125,6 +3127,62 @@ export default function AppointmentBoard() {
           </div>
         </div>
       )}
+
+      {/* ── Universal Notification Modal ─────────────────────────────────────── */}
+      {notifModal.isOpen && (() => {
+        const NOTIF_CFG = {
+          success:  { gradient: 'linear-gradient(135deg,#dcfce7,#bbf7d0)', iconColor: '#16a34a', border: '#bbf7d0', titleColor: '#15803d', shadow: 'rgba(22,163,74,0.22)',   icon: '✓',  btnGrad: 'linear-gradient(135deg,#16a34a,#15803d)', btnShadow: 'rgba(22,163,74,0.4)'   },
+          error:    { gradient: 'linear-gradient(135deg,#fee2e2,#fecaca)', iconColor: '#dc2626', border: '#fecaca', titleColor: '#991b1b', shadow: 'rgba(220,38,38,0.22)',   icon: '✕',  btnGrad: 'linear-gradient(135deg,#e11d48,#be123c)', btnShadow: 'rgba(225,29,72,0.4)'   },
+          warning:  { gradient: 'linear-gradient(135deg,#fef3c7,#fde68a)', iconColor: '#d97706', border: '#fde68a', titleColor: '#92400e', shadow: 'rgba(217,119,6,0.22)',  icon: '⚠', btnGrad: 'linear-gradient(135deg,#d97706,#b45309)', btnShadow: 'rgba(217,119,6,0.4)'  },
+          info:     { gradient: 'linear-gradient(135deg,#dbeafe,#bfdbfe)', iconColor: '#0f52ba', border: '#bfdbfe', titleColor: '#1e40af', shadow: 'rgba(15,82,186,0.22)',  icon: '↻', btnGrad: 'linear-gradient(135deg,#0f52ba,#1e40af)', btnShadow: 'rgba(15,82,186,0.4)'  },
+        };
+        const cfg = NOTIF_CFG[notifModal.type] || NOTIF_CFG.info;
+        return (
+          <div
+            style={{ position: 'fixed', inset: 0, zIndex: 100001, background: 'rgba(10,22,40,0.6)', backdropFilter: 'blur(12px)', WebkitBackdropFilter: 'blur(12px)', display: 'flex', justifyContent: 'center', alignItems: 'center', animation: 'apptNoticeFade 0.2s ease-out' }}
+            onClick={() => setNotifModal(m => ({ ...m, isOpen: false }))}
+          >
+            <div
+              style={{ width: '90%', maxWidth: '440px', background: 'linear-gradient(160deg,#ffffff 0%,#f8fafc 100%)', borderRadius: '28px', border: `1px solid ${cfg.border}`, boxShadow: `0 24px 60px -12px ${cfg.shadow}, 0 0 0 1px rgba(0,0,0,0.04)`, padding: '40px 32px 32px', textAlign: 'center', animation: 'apptNoticePop 0.3s cubic-bezier(0.34,1.56,0.64,1)' }}
+              onClick={e => e.stopPropagation()}
+            >
+              {/* Icon circle */}
+              <div style={{ width: '76px', height: '76px', borderRadius: '50%', background: cfg.gradient, border: `2px solid ${cfg.border}`, display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 22px', fontSize: '30px', boxShadow: `0 12px 28px -8px ${cfg.shadow}` }}>
+                <span style={{ color: cfg.iconColor, fontWeight: 900, lineHeight: 1 }}>{cfg.icon}</span>
+              </div>
+              {/* Type badge */}
+              <div style={{ display: 'inline-block', background: cfg.gradient, border: `1px solid ${cfg.border}`, borderRadius: '8px', padding: '3px 12px', marginBottom: '12px' }}>
+                <span style={{ fontSize: '9px', fontWeight: 950, letterSpacing: '2px', color: cfg.titleColor, fontFamily: 'system-ui,sans-serif' }}>
+                  {notifModal.type.toUpperCase()}
+                </span>
+              </div>
+              {/* Title */}
+              <div style={{ fontSize: '13px', fontWeight: 950, letterSpacing: '1.5px', color: '#0f172a', marginBottom: '12px', fontFamily: 'system-ui,sans-serif', lineHeight: 1.3 }}>
+                {notifModal.title}
+              </div>
+              {/* Divider */}
+              <div style={{ width: '40px', height: '3px', background: cfg.gradient, borderRadius: '99px', margin: '0 auto 16px' }} />
+              {/* Message */}
+              <p style={{ fontSize: '13px', lineHeight: 1.75, color: '#475569', fontWeight: 500, margin: '0 0 28px', fontFamily: 'system-ui,sans-serif' }}>
+                {notifModal.message}
+              </p>
+              {/* Close button */}
+              <button
+                onClick={() => setNotifModal(m => ({ ...m, isOpen: false }))}
+                style={{ width: '100%', padding: '15px', background: cfg.btnGrad, color: 'white', border: 'none', borderRadius: '16px', fontSize: '11px', fontWeight: 950, letterSpacing: '1.5px', cursor: 'pointer', boxShadow: `0 8px 20px -6px ${cfg.btnShadow}`, fontFamily: 'system-ui,sans-serif' }}
+                onMouseEnter={e => { e.currentTarget.style.opacity = '0.88'; }}
+                onMouseLeave={e => { e.currentTarget.style.opacity = '1'; }}
+              >
+                UNDERSTOOD
+              </button>
+            </div>
+          </div>
+        );
+      })()}
+      <style>{`
+        @keyframes apptNoticeFade { from { opacity: 0 } to { opacity: 1 } }
+        @keyframes apptNoticePop  { from { transform: scale(0.88) translateY(20px); opacity: 0 } to { transform: scale(1) translateY(0); opacity: 1 } }
+      `}</style>
     </div>
   );
 }

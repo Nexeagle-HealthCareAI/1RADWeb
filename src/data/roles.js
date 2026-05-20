@@ -71,8 +71,56 @@ export const NAV_ITEMS = [
     allowedRoles: ['admindoctor', 'admin'],
   },
   {
+    label: 'Referrals',
+    route: '/referrals',
+    allowedRoles: ['admindoctor', 'admin'],
+  },
+  {
     label: 'Operations Board',
     route: '/operations-board',
     allowedRoles: ['admindoctor', 'admin', 'receptionist', 'technician', 'doctor', 'accountant'],
   }
 ];
+
+export const DEFAULT_SYSTEM_PERMISSIONS = {
+  admindoctor: ['/configuration', '/admin-board', '/referrals', '/appointment-board', '/billing', '/technician', '/doctor-board', '/subscription', '/dicom-bridge', '/operations-board'],
+  admin: ['/configuration', '/admin-board', '/referrals', '/appointment-board', '/billing', '/subscription', '/dicom-bridge', '/operations-board'],
+  receptionist: ['/appointment-board', '/operations-board'],
+  technician: ['/configuration', '/technician', '/doctor-board', '/operations-board'],
+  doctor: ['/configuration', '/doctor-board', '/operations-board'],
+  accountant: ['/billing', '/operations-board'],
+};
+
+export const getCustomRoles = (hospitalId) => {
+  if (!hospitalId) return [];
+  try {
+    const key = `1rad_custom_roles_${String(hospitalId).toLowerCase()}`;
+    const saved = localStorage.getItem(key);
+    return saved ? JSON.parse(saved) : [];
+  } catch (e) {
+    console.error('Failed to parse custom roles', e);
+    return [];
+  }
+};
+
+export const saveCustomRoles = (hospitalId, rolesList) => {
+  if (!hospitalId) return;
+  const key = `1rad_custom_roles_${String(hospitalId).toLowerCase()}`;
+  localStorage.setItem(key, JSON.stringify(rolesList));
+};
+
+export const getRolePermissions = (roleId, hospitalId) => {
+  // 1. Check system defaults first
+  const normalizedId = String(roleId).toLowerCase();
+  if (DEFAULT_SYSTEM_PERMISSIONS[normalizedId]) {
+    return DEFAULT_SYSTEM_PERMISSIONS[normalizedId];
+  }
+  // 2. Check custom roles stored locally
+  const customRoles = getCustomRoles(hospitalId);
+  const found = customRoles.find(r => 
+    String(r.roleId).toLowerCase() === normalizedId || 
+    String(r.roleName).toLowerCase() === normalizedId
+  );
+  return found ? found.allowedRoutes : [];
+};
+

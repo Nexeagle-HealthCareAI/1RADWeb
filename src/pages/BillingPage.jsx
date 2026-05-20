@@ -9,6 +9,7 @@ import '../styles/BillingPage.css';
 import RevenueHub from '../components/Billing/RevenueHub';
 import ExpenseLedger from '../components/Billing/ExpenseLedger';
 import ReferralHub from '../components/Billing/ReferralHub';
+import { useBillingNotice, BillingNoticeModal } from '../components/Billing/BillingNotice';
 import AnalyticsHub from '../components/Billing/AnalyticsHub';
 import FinanceManager from '../components/FinanceManager';
 
@@ -65,6 +66,9 @@ export default function BillingPage() {
   const [paymentMethod, setPaymentMethod] = useState('CASH');
   const [searchTerm, setSearchTerm] = useState('');
   const [referralSearch, setReferralSearch] = useState('');
+
+  // Unified notice/confirm modal — replaces window.alert / window.confirm.
+  const { notify, confirm: confirmModal, modalProps: noticeProps } = useBillingNotice();
   const [timeFilter, setTimeFilter] = useState('TODAY'); // 'TODAY', 'PAST', 'ALL'
   const [statusFilter, setStatusFilter] = useState('ALL'); // 'ALL', 'PAID', 'PENDING'
   const [modalityFilter, setModalityFilter] = useState('ALL'); // 'ALL', 'MRI', 'CT', 'X-RAY', etc.
@@ -304,18 +308,27 @@ export default function BillingPage() {
 
   const handleSaveExpense = async (e) => {
     e.preventDefault();
-    const payload = editExpense;
+    // API requires Description; form's "Item or vendor" field writes to vendorName.
+    // Use vendorName as fallback so saving never fails on a blank description.
+    const payload = {
+      ...editExpense,
+      description: (editExpense.description || '').trim() || (editExpense.vendorName || '').trim(),
+    };
 
     if (!isOnline) {
       await addToOutbox('EXPENSE', payload);
-      alert('Offline: Expense will sync when reconnected.');
+      notify({ type: 'info', title: 'Offline', message: 'Expense will sync when reconnected.' });
       setIsExpenseDrawerOpen(false);
       return;
     }
 
     try {
       setSavingExpense(true);
-      await apiClient.post('/finance/expense', payload);
+      if (payload.id) {
+        await apiClient.put(`/finance/expenses/${payload.id}`, payload);
+      } else {
+        await apiClient.post('/finance/expense', payload);
+      }
       setIsExpenseDrawerOpen(false);
       setEditExpense({
         description: '',
@@ -335,10 +348,10 @@ export default function BillingPage() {
       console.error('[FINANCE] Expense save failed', err);
       if (!err.response) {
         await addToOutbox('EXPENSE', payload);
-        alert('No connection: expense added to offline queue.');
+        notify({ type: 'info', title: 'No connection', message: 'Expense added to offline queue.' });
         setIsExpenseDrawerOpen(false);
       } else {
-        alert('Error: Failed to save expense.');
+        notify({ type: 'error', message: 'Failed to save expense.' });
       }
     } finally {
       setSavingExpense(false);
@@ -357,19 +370,26 @@ export default function BillingPage() {
       fetchRegistry();
     } catch (err) {
       console.error('[FINANCE] Price save failed', err);
-      alert('Error: Failed to save service price.');
+      notify({ type: 'error', message: 'Failed to save service price.' });
     }
   };
 
-  const handleDeletePrice = async (id) => {
-    if (!window.confirm('Delete this service price?')) return;
-    try {
-      await apiClient.delete(`/finance/registry/${id}`);
-      fetchRegistry();
-    } catch (err) {
-      console.error('[FINANCE] Price deletion failed', err);
-      alert('Error: Could not delete service price.');
-    }
+  const handleDeletePrice = (id) => {
+    confirmModal({
+      title: 'Delete service price?',
+      message: 'This action cannot be undone.',
+      confirmText: 'Delete',
+      danger: true,
+      onConfirm: async () => {
+        try {
+          await apiClient.delete(`/finance/registry/${id}`);
+          fetchRegistry();
+        } catch (err) {
+          console.error('[FINANCE] Price deletion failed', err);
+          notify({ type: 'error', message: 'Could not delete service price.' });
+        }
+      }
+    });
   };
 
   const handleToggleAutoBill = () => {
@@ -442,7 +462,7 @@ export default function BillingPage() {
     } catch (err) {
       console.error('[FINANCE] Status transition failed', err);
       const errorMsg = err.response?.data?.message || err.response?.data?.error || 'Could not update expense status.';
-      alert(`Error: ${errorMsg}`);
+      notify({ type: 'error', message: errorMsg });
     }
   };
 
@@ -459,14 +479,18 @@ export default function BillingPage() {
       const status = err.response?.status;
       const data = err.response?.data;
       const errorMsg = data?.message || data?.error || data?.title || err.message || 'Could not update expense status.';
-      alert(`Failed to set status to "${newStatus}"${status ? ` (HTTP ${status})` : ''}: ${errorMsg}`);
+      notify({
+        type: 'error',
+        title: `Failed to set status to "${newStatus}"${status ? ` (HTTP ${status})` : ''}`,
+        message: errorMsg,
+      });
     }
   };
 
   const handleSavePayout = async (e) => {
     e.preventDefault();
     if (!editPayout.referrerId) {
-      alert("Please select a referrer before saving.");
+      notify({ type: 'warning', message: 'Please select a referrer before saving.' });
       return;
     }
 
@@ -481,7 +505,7 @@ export default function BillingPage() {
 
     if (!isOnline) {
       await addToOutbox('PAYOUT', payload);
-      alert('Offline: Payout will sync when reconnected.');
+      notify({ type: 'info', title: 'Offline', message: 'Payout will sync when reconnected.' });
       setIsPayoutDrawerOpen(false);
       return;
     }
@@ -506,28 +530,25 @@ export default function BillingPage() {
       console.error('[PAYOUT] Transaction failure:', err);
       if (!err.response) {
         await addToOutbox('PAYOUT', payload);
-        alert('No connection: payout added to offline queue.');
+        notify({ type: 'info', title: 'No connection', message: 'Payout added to offline queue.' });
         setIsPayoutDrawerOpen(false);
       } else {
-        alert('Error: Could not save payout.');
+        notify({ type: 'error', message: 'Could not save payout.' });
       }
     } finally {
       setIsSavingPayout(false);
     }
   };
 
-  const handleDeleteExpense = async (id, options = {}) => {
-    // Callers performing a bulk delete can pass { skipConfirm: true } so they can
-    // show one consolidated confirm instead of one prompt per row.
-    if (!options.skipConfirm && !window.confirm('Are you sure you want to delete this expense?')) return;
-
+  // Internal deletion logic — no confirmation here. Use deleteExpenseConfirm()
+  // for the single-row UX, or pass { skipConfirm: true } from bulk callers.
+  const performDeleteExpense = async (id, options = {}) => {
     if (!isOnline) {
       await addToOutbox('EXPENSE_DELETE', { id });
-      if (!options.skipConfirm) alert('Offline: Deletion will sync when reconnected.');
+      if (!options.skipConfirm) notify({ type: 'info', title: 'Offline', message: 'Deletion will sync when reconnected.' });
       setExpenses(prev => prev.filter(e => e.id !== id));
       return;
     }
-
     try {
       await apiClient.delete(`/finance/expenses/${id}`);
       refreshAllFinancialData();
@@ -535,12 +556,26 @@ export default function BillingPage() {
       console.error('[FINANCE] Failed to delete expense', err);
       if (!err.response) {
         await addToOutbox('EXPENSE_DELETE', { id });
-        if (!options.skipConfirm) alert('No connection: deletion queued.');
+        if (!options.skipConfirm) notify({ type: 'info', title: 'No connection', message: 'Deletion queued.' });
         setExpenses(prev => prev.filter(e => e.id !== id));
       } else if (!options.skipConfirm) {
-        alert('Error: Could not delete expense.');
+        notify({ type: 'error', message: 'Could not delete expense.' });
       }
     }
+  };
+
+  const handleDeleteExpense = (id, options = {}) => {
+    if (options.skipConfirm) {
+      // Bulk callers handle their own batched confirm.
+      return performDeleteExpense(id, options);
+    }
+    confirmModal({
+      title: 'Delete this expense?',
+      message: 'This cannot be undone.',
+      confirmText: 'Delete',
+      danger: true,
+      onConfirm: () => performDeleteExpense(id, options),
+    });
   };
 
   const handleToggleCommissionStatus = async (id, currentStatus) => {
@@ -552,14 +587,14 @@ export default function BillingPage() {
       refreshAllFinancialData();
     } catch (err) {
       console.error('[FINANCE] Commission transition failed', err);
-      alert('Error: Could not update commission status.');
+      notify({ type: 'error', message: 'Could not update commission status.' });
     }
   };
 
   const handleDeleteInvoice = async (id, commissionId) => {
     if (!isOnline) {
       await addToOutbox('INVOICE_DELETE', { id, commissionId });
-      alert('OFFLINE_MODE: Invoice deletion queued.');
+      notify({ type: 'info', title: 'Offline', message: 'Invoice deletion queued.' });
       setInvoices(prev => prev.filter(inv => inv.invoiceId !== id)); // Optimistic UI
       return;
     }
@@ -572,11 +607,11 @@ export default function BillingPage() {
       console.error('[FINANCE] Failed to delete invoice', err);
       if (!err.response) {
         await addToOutbox('INVOICE_DELETE', { id, commissionId });
-        alert('NETWORK_ERROR: Deletion added to offline queue.');
+        notify({ type: 'info', title: 'No connection', message: 'Deletion added to offline queue.' });
         setInvoices(prev => prev.filter(inv => inv.invoiceId !== id)); // Optimistic UI
       } else {
         const errorMsg = err.response?.data?.error || err.response?.data?.message || 'Could not delete invoice.';
-        alert(`PROTOCOL FAILURE: ${errorMsg}`);
+        notify({ type: 'error', message: errorMsg });
       }
     }
   };
@@ -595,7 +630,7 @@ export default function BillingPage() {
 
   const handleSyncLegacyData = async () => {
     const legacy = JSON.parse(localStorage.getItem('1rad_invoices') || '[]');
-    if (legacy.length === 0) return alert('No legacy data detected in browser.');
+    if (legacy.length === 0) return notify({ type: 'info', message: 'No legacy data detected in browser.' });
     
     setIsSyncing(true);
     try {
@@ -616,10 +651,10 @@ export default function BillingPage() {
       await apiClient.post('/finance/sync', { invoices: payload });
       localStorage.removeItem('1rad_invoices');
       refreshAllFinancialData();
-      alert('Sync complete: local records merged.');
+      notify({ type: 'success', message: 'Sync complete: local records merged.' });
     } catch (err) {
       console.error('[FINANCE] Sync failed', err);
-      alert('Sync failed. Please try again.');
+      notify({ type: 'error', message: 'Sync failed. Please try again.' });
     } finally {
       setIsSyncing(false);
     }
@@ -646,7 +681,7 @@ export default function BillingPage() {
       setIsExportDrawerOpen(false);
     } catch (err) {
       console.error('[FINANCE] Export failed', err);
-      alert('Export failed. Please try again.');
+      notify({ type: 'error', title: 'Export Failed', message: 'Could not export data. Please try again.' });
     }
   };
 
@@ -1109,7 +1144,7 @@ export default function BillingPage() {
   const handleCreateManualInvoice = async (e) => {
     e.preventDefault();
     if (!selectedPatient || newInvoiceData.items.length === 0) {
-      alert("Please select a patient to continue.");
+      notify({ type: 'warning', title: 'Patient Required', message: 'Please select a patient before creating an invoice.' });
       return;
     }
     
@@ -1134,7 +1169,7 @@ export default function BillingPage() {
         await addToOutbox('INVOICE', payload);
         setIsNewInvoiceDrawerOpen(false);
         setNewInvoiceData({ patientName: '', items: [{ description: '', amount: 0, quantity: 1 }], centreDiscount: 0, referrerDiscount: 0, paymentMethod: 'CASH', referrerId: '' });
-        alert('Offline: Invoice will sync when reconnected.');
+        notify({ type: 'info', title: 'Queued for Sync', message: 'You are offline. Invoice has been saved and will sync automatically when connection is restored.' });
         return;
       }
 
@@ -1144,16 +1179,16 @@ export default function BillingPage() {
       setPatientSearchQuery('');
       setNewInvoiceData({ patientName: '', items: [{ description: '', amount: 0, quantity: 1 }], centreDiscount: 0, referrerDiscount: 0, paymentMethod: 'CASH', referrerId: '' });
       refreshAllFinancialData();
-      alert('Invoice created successfully.');
+      notify({ type: 'success', title: 'Invoice Created', message: 'The invoice has been created and recorded successfully.' });
     } catch (err) {
       console.error('[FINANCE] Invoice creation failed', err);
       if (!err.response) {
          await addToOutbox('INVOICE', payload);
-         alert('No connection: invoice queued.');
+         notify({ type: 'info', title: 'Queued for Sync', message: 'No connection detected. Invoice has been queued and will sync when back online.' });
          setIsNewInvoiceDrawerOpen(false);
       } else {
          const errorMsg = err.response?.data?.error || err.response?.data?.message || 'Failed to create invoice.';
-         alert(errorMsg);
+         notify({ type: 'error', title: 'Invoice Failed', message: errorMsg });
       }
     }
   };
@@ -1165,10 +1200,10 @@ export default function BillingPage() {
       });
       refreshAllFinancialData();
       setIsInvoiceDrawerOpen(false);
-      alert('Invoice updated successfully.');
+      notify({ type: 'success', title: 'Invoice Updated', message: 'Discount has been applied and the invoice updated successfully.' });
     } catch (err) {
       console.error('[FINANCE] Discount application failed', err);
-      alert('Error: Could not update invoice.');
+      notify({ type: 'error', title: 'Update Failed', message: 'Could not update the invoice. Please try again.' });
     }
   };
 
@@ -1180,10 +1215,10 @@ export default function BillingPage() {
       });
       refreshAllFinancialData();
       setIsInvoiceDrawerOpen(false);
-      alert(`Adjustment of ₹${amount} applied.`);
+      notify({ type: 'success', title: 'Adjustment Applied', message: `Adjustment of ₹${amount} has been applied to the invoice successfully.` });
     } catch (err) {
       console.error('[FINANCE] Adjustment failed', err);
-      alert('Error: ' + (err.response?.data?.message || 'Could not apply adjustment.'));
+      notify({ type: 'error', title: 'Adjustment Failed', message: err.response?.data?.message || 'Could not apply the adjustment. Please try again.' });
     }
   };
 
@@ -1203,7 +1238,7 @@ export default function BillingPage() {
           }, 1000);
         }, 500);
       } else {
-        alert('Please allow popups to print on mobile devices.');
+        notify({ type: 'warning', title: 'Pop-ups Blocked', message: 'Please allow pop-ups for this site to enable printing on mobile devices.' });
       }
     } else {
       const iframe = document.createElement('iframe');
@@ -1537,22 +1572,8 @@ export default function BillingPage() {
         </div>
 
         <div style={{ display: 'flex', flexDirection: 'column', gap: '15px' }}>
-           <div style={{ position: 'relative' }}>
-              <input 
-                type="text" 
-                placeholder="Search invoices or patients..."
-                value={searchTerm}
-                onChange={e => setSearchTerm(e.target.value)}
-                style={{ 
-                  padding: '12px 15px 12px 42px', 
-                  borderRadius: '12px', 
-                  border: '1px solid #e2e8f0', 
-                  width: isMobile ? '100%' : '280px', 
-                  fontSize: '11px', 
-                  fontWeight: 800 
-                }}
-              />
-           </div>
+          {/* Global "Search invoices or patients" removed — each tab (Revenue,
+              Referrals, Expenses) now has its own table-level search input. */}
           <div style={{ display: 'flex', flexDirection: isMobile ? 'column' : 'row', gap: '10px' }}>
              {localStorage.getItem('1rad_invoices') && (
                <button
@@ -1567,16 +1588,20 @@ export default function BillingPage() {
                  {isSyncing ? 'Syncing...' : 'Sync Local'}
                </button>
              )}
-             <button
-               onClick={() => setIsNewInvoiceDrawerOpen(true)}
-               style={{
-                 padding: '10px 20px', borderRadius: '8px', border: 'none', background: '#1d4ed8', color: 'white',
-                 fontWeight: 600, fontSize: '13px', cursor: 'pointer', boxShadow: '0 4px 12px rgba(29,78,216,0.2)',
-                 width: isMobile ? '100%' : 'auto'
-               }}
-             >
-               + New Invoice
-             </button>
+             {/* "+ New Invoice" only makes sense on the Revenue Hub (INVOICES) tab;
+                  hide it on Expenses, Referrals, Analytics, Finance. */}
+             {billingViewMode === 'INVOICES' && (
+               <button
+                 onClick={() => setIsNewInvoiceDrawerOpen(true)}
+                 style={{
+                   padding: '10px 20px', borderRadius: '8px', border: 'none', background: '#1d4ed8', color: 'white',
+                   fontWeight: 600, fontSize: '13px', cursor: 'pointer', boxShadow: '0 4px 12px rgba(29,78,216,0.2)',
+                   width: isMobile ? '100%' : 'auto'
+                 }}
+               >
+                 + New Invoice
+               </button>
+             )}
           </div>
         </div>
       </div>
@@ -1912,6 +1937,9 @@ export default function BillingPage() {
           `}</style>
         </div>
       )}
+
+      {/* ── Unified Billing Notice Modal ──────────────────────────────────── */}
+      <BillingNoticeModal {...noticeProps} />
     </div>
   );
 }

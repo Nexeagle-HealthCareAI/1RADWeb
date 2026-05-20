@@ -80,6 +80,9 @@ export default function TechnicianPage() {
   const [windowWidth, setWindowWidth] = useState(window.innerWidth);
   const isMobile = windowWidth < 768;
 
+  const [notifModal, setNotifModal] = useState({ isOpen: false, type: 'info', title: '', message: '' });
+  const showNotif = (type, title, message) => setNotifModal({ isOpen: true, type, title, message });
+
   useEffect(() => {
     const handleResize = () => setWindowWidth(window.innerWidth);
     window.addEventListener('resize', handleResize);
@@ -164,7 +167,7 @@ export default function TechnicianPage() {
       fetchWorklist();
     } catch (err) {
       console.error('[TECH] Status transition failed', err);
-      alert('Error: Failed to update status.');
+      showNotif('error', 'STATUS UPDATE FAILED', 'Could not update the appointment status. Please check your connection and try again.');
     }
   };
 
@@ -180,7 +183,7 @@ export default function TechnicianPage() {
       setCurrentView('QUEUE');
     } catch (err) {
       console.error('[TECH] Finalizing study failed', err);
-      alert('Error: Failed to save observations and finalize scanning study.');
+      showNotif('error', 'FINALIZATION FAILED', 'Could not save observations and finalize the scanning study. Please try again.');
     } finally {
       setLoading(false);
     }
@@ -493,7 +496,7 @@ export default function TechnicianPage() {
         }
       });
       
-      alert(userMessage);
+      showNotif('error', 'STUDY LOAD FAILED', userMessage);
     } finally {
       setLoading(false);
       setProcessingStatus('');
@@ -661,12 +664,12 @@ export default function TechnicianPage() {
             if (processingResult.stats.corruptedFiles > 0) {
               console.warn(`[TECH] WARNING: Eliminated ${processingResult.stats.corruptedFiles} corrupted files from upload`);
               setTimeout(() => {
-                alert(`Study loaded successfully!\n\nSUCCESS: Valid files: ${processingResult.stats.validFiles}\nWARNING: Corrupted files eliminated: ${processingResult.stats.corruptedFiles}\n\nCorrupted files have been automatically removed to ensure optimal viewing.`);
+                showNotif('warning', 'STUDY LOADED WITH WARNINGS', `Valid files imported: ${processingResult.stats.validFiles}\n${processingResult.stats.corruptedFiles} corrupted file(s) were automatically removed to ensure optimal viewing.`);
               }, 500);
             }
           }
         } else {
-          alert('No valid DICOM image series found in the ZIP archive.');
+          showNotif('warning', 'NO SERIES FOUND', 'No valid DICOM image series were found in the ZIP archive. Please verify the file contains valid DICOM images.');
         }
       } catch (err) {
         console.error('[TECH] Optimized ZIP extraction failed', err);
@@ -682,7 +685,7 @@ export default function TechnicianPage() {
           userMessage += err.message;
         }
 
-        alert(userMessage);
+        showNotif('error', 'ZIP EXTRACTION FAILED', userMessage);
       } finally {
         setLoading(false);
         setProcessingStatus('');
@@ -1545,6 +1548,48 @@ export default function TechnicianPage() {
           transform: none;
         }
       `}</style>
+
+      {/* ── Universal Notification Modal ─────────────────────────────────────── */}
+      {notifModal.isOpen && (() => {
+        const NOTIF_CFG = {
+          success: { gradient: 'linear-gradient(135deg,#dcfce7,#bbf7d0)', iconColor: '#16a34a', border: '#bbf7d0', titleColor: '#15803d', shadow: 'rgba(22,163,74,0.22)',  icon: '✓', btnGrad: 'linear-gradient(135deg,#16a34a,#15803d)', btnShadow: 'rgba(22,163,74,0.4)'  },
+          error:   { gradient: 'linear-gradient(135deg,#fee2e2,#fecaca)', iconColor: '#dc2626', border: '#fecaca', titleColor: '#991b1b', shadow: 'rgba(220,38,38,0.22)',  icon: '✕', btnGrad: 'linear-gradient(135deg,#e11d48,#be123c)', btnShadow: 'rgba(225,29,72,0.4)'  },
+          warning: { gradient: 'linear-gradient(135deg,#fef3c7,#fde68a)', iconColor: '#d97706', border: '#fde68a', titleColor: '#92400e', shadow: 'rgba(217,119,6,0.22)', icon: '⚠', btnGrad: 'linear-gradient(135deg,#d97706,#b45309)', btnShadow: 'rgba(217,119,6,0.4)' },
+          info:    { gradient: 'linear-gradient(135deg,#dbeafe,#bfdbfe)', iconColor: '#0f52ba', border: '#bfdbfe', titleColor: '#1e40af', shadow: 'rgba(15,82,186,0.22)', icon: '↻', btnGrad: 'linear-gradient(135deg,#0f52ba,#1e40af)', btnShadow: 'rgba(15,82,186,0.4)' },
+        };
+        const cfg = NOTIF_CFG[notifModal.type] || NOTIF_CFG.info;
+        return (
+          <div
+            style={{ position: 'fixed', inset: 0, zIndex: 100001, background: 'rgba(10,22,40,0.65)', backdropFilter: 'blur(12px)', WebkitBackdropFilter: 'blur(12px)', display: 'flex', justifyContent: 'center', alignItems: 'center', animation: 'techNoticeFade 0.2s ease-out' }}
+            onClick={() => setNotifModal(m => ({ ...m, isOpen: false }))}
+          >
+            <div
+              style={{ width: '90%', maxWidth: '440px', background: 'linear-gradient(160deg,#ffffff 0%,#f8fafc 100%)', borderRadius: '28px', border: `1px solid ${cfg.border}`, boxShadow: `0 24px 60px -12px ${cfg.shadow}, 0 0 0 1px rgba(0,0,0,0.04)`, padding: '40px 32px 32px', textAlign: 'center', animation: 'techNoticePop 0.3s cubic-bezier(0.34,1.56,0.64,1)' }}
+              onClick={e => e.stopPropagation()}
+            >
+              <div style={{ width: '76px', height: '76px', borderRadius: '50%', background: cfg.gradient, border: `2px solid ${cfg.border}`, display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 22px', fontSize: '30px', boxShadow: `0 12px 28px -8px ${cfg.shadow}` }}>
+                <span style={{ color: cfg.iconColor, fontWeight: 900, lineHeight: 1 }}>{cfg.icon}</span>
+              </div>
+              <div style={{ display: 'inline-block', background: cfg.gradient, border: `1px solid ${cfg.border}`, borderRadius: '8px', padding: '3px 12px', marginBottom: '12px' }}>
+                <span style={{ fontSize: '9px', fontWeight: 950, letterSpacing: '2px', color: cfg.titleColor, fontFamily: 'system-ui,sans-serif' }}>{notifModal.type.toUpperCase()}</span>
+              </div>
+              <div style={{ fontSize: '13px', fontWeight: 950, letterSpacing: '1.5px', color: '#0f172a', marginBottom: '12px', fontFamily: 'system-ui,sans-serif', lineHeight: 1.3 }}>{notifModal.title}</div>
+              <div style={{ width: '40px', height: '3px', background: cfg.gradient, borderRadius: '99px', margin: '0 auto 16px' }} />
+              <p style={{ fontSize: '13px', lineHeight: 1.75, color: '#475569', fontWeight: 500, margin: '0 0 28px', fontFamily: 'system-ui,sans-serif', whiteSpace: 'pre-wrap' }}>{notifModal.message}</p>
+              <button
+                onClick={() => setNotifModal(m => ({ ...m, isOpen: false }))}
+                style={{ width: '100%', padding: '15px', background: cfg.btnGrad, color: 'white', border: 'none', borderRadius: '16px', fontSize: '11px', fontWeight: 950, letterSpacing: '1.5px', cursor: 'pointer', boxShadow: `0 8px 20px -6px ${cfg.btnShadow}`, fontFamily: 'system-ui,sans-serif' }}
+                onMouseEnter={e => { e.currentTarget.style.opacity = '0.88'; }}
+                onMouseLeave={e => { e.currentTarget.style.opacity = '1'; }}
+              >UNDERSTOOD</button>
+            </div>
+            <style>{`
+              @keyframes techNoticeFade { from { opacity: 0 } to { opacity: 1 } }
+              @keyframes techNoticePop  { from { transform: scale(0.88) translateY(20px); opacity: 0 } to { transform: scale(1) translateY(0); opacity: 1 } }
+            `}</style>
+          </div>
+        );
+      })()}
     </div>
   );
 }

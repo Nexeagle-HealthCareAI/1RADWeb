@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useMemo, useRef, useLayoutEffect } from 'react';
 import { createPortal } from 'react-dom';
+import * as XLSX from 'xlsx';
 
 // ─── Design tokens ────────────────────────────────────────────────────────
 const C = {
@@ -160,7 +161,58 @@ const ExpenseLedger = ({
     setSelectedIds(new Set());
   };
 
-  // ─── Export (unchanged behavior, cleaner code) ─────────────────────────
+  // ─── Range label for export filenames ──────────────────────────────────
+  const rangeLabel = () => {
+    if (timeFilter === 'CUSTOM' && (startDate || endDate)) {
+      return `${startDate || 'start'}_to_${endDate || 'today'}`;
+    }
+    return timeFilter; // TODAY / PAST / ALL
+  };
+
+  // ─── Export to Excel (.xlsx) — respects the currently selected date range
+  // (whatever the time filter + custom dates are set to). ────────────────
+  const handleExportXlsx = () => {
+    const useSelection = selectedIds.size > 0;
+    const list = useSelection
+      ? (filteredOutflow || []).filter(e => selectedIds.has(e.id))
+      : (filteredOutflow || []);
+
+    if (list.length === 0) {
+      alert('No expenses in the current view to export.');
+      return;
+    }
+
+    const rows = list.map(e => ({
+      'Date':         formatDate(e.date),
+      'Description':  e.description || '',
+      'Vendor / Item': e.name || '',
+      'Category':     e.category || 'General',
+      'Type':         e.type || '',
+      'Amount (INR)': Number(e.amount) || 0,
+      'Status':       e.status || 'UNPAID',
+    }));
+
+    const ws = XLSX.utils.json_to_sheet(rows);
+    // Sensible column widths.
+    ws['!cols'] = [
+      { wch: 14 }, // Date
+      { wch: 36 }, // Description
+      { wch: 22 }, // Vendor
+      { wch: 14 }, // Category
+      { wch: 12 }, // Type
+      { wch: 14 }, // Amount
+      { wch: 12 }, // Status
+    ];
+
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'Expenses');
+
+    const dateStr = new Date().toISOString().split('T')[0];
+    const fileName = `1RAD_Expense_Ledger_${rangeLabel()}${useSelection ? '_Selected' : ''}_${dateStr}.xlsx`;
+    XLSX.writeFile(wb, fileName);
+  };
+
+  // ─── Export (CSV — unchanged behavior, cleaner code) ───────────────────
   const handleExportToExcel = () => {
     const useSelection = selectedIds.size > 0;
     const list = useSelection
@@ -347,21 +399,41 @@ const ExpenseLedger = ({
             >Clear filters</button>
           )}
 
-          <button
-            type="button"
-            onClick={handleExportToExcel}
-            style={{
-              padding: '7px 12px', borderRadius: '8px',
-              border: `1px solid ${C.border}`, background: C.surface,
-              color: C.textPrimary, fontSize: '12px', fontWeight: 600,
-              cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: '6px',
-            }}
-            onMouseEnter={e => { e.currentTarget.style.background = C.surfaceHover; }}
-            onMouseLeave={e => { e.currentTarget.style.background = C.surface; }}
-          >
-            <span>↓</span>
-            <span>{selectedIds.size > 0 ? `Export selected (${selectedIds.size})` : 'Export all'}</span>
-          </button>
+          <div style={{ display: 'inline-flex', gap: '6px' }}>
+            <button
+              type="button"
+              onClick={handleExportToExcel}
+              title="Download as CSV"
+              style={{
+                padding: '7px 12px', borderRadius: '8px',
+                border: `1px solid ${C.border}`, background: C.surface,
+                color: C.textPrimary, fontSize: '12px', fontWeight: 600,
+                cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: '6px',
+              }}
+              onMouseEnter={e => { e.currentTarget.style.background = C.surfaceHover; }}
+              onMouseLeave={e => { e.currentTarget.style.background = C.surface; }}
+            >
+              <span>↓</span>
+              <span>{selectedIds.size > 0 ? `CSV (${selectedIds.size})` : 'CSV'}</span>
+            </button>
+            <button
+              type="button"
+              onClick={handleExportXlsx}
+              title="Download as Excel for the selected date range"
+              style={{
+                padding: '7px 12px', borderRadius: '8px',
+                border: '1px solid #15803d', background: '#15803d',
+                color: 'white', fontSize: '12px', fontWeight: 600,
+                cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: '6px',
+                boxShadow: '0 1px 2px rgba(21,128,61,0.2)',
+              }}
+              onMouseEnter={e => { e.currentTarget.style.background = '#14532d'; }}
+              onMouseLeave={e => { e.currentTarget.style.background = '#15803d'; }}
+            >
+              <span>📊</span>
+              <span>{selectedIds.size > 0 ? `Excel (${selectedIds.size})` : 'Excel'}</span>
+            </button>
+          </div>
         </div>
       </div>
 
@@ -431,10 +503,11 @@ const ExpenseLedger = ({
                     style={{ cursor: 'pointer', width: '14px', height: '14px', accentColor: C.textPrimary }}
                   />
                 </th>
-                <SortHeader label="Date"        k="date"        sortConfig={sortConfig} onClick={handleSort} />
-                <SortHeader label="Description" k="description" sortConfig={sortConfig} onClick={handleSort} />
-                <SortHeader label="Category"    k="category"    sortConfig={sortConfig} onClick={handleSort} />
-                <SortHeader label="Amount"      k="amount"      sortConfig={sortConfig} onClick={handleSort} align="right" />
+                <SortHeader label="Date"          k="date"        sortConfig={sortConfig} onClick={handleSort} />
+                <SortHeader label="Description"   k="description" sortConfig={sortConfig} onClick={handleSort} />
+                <SortHeader label="Item / Vendor" k="name"        sortConfig={sortConfig} onClick={handleSort} />
+                <SortHeader label="Category"      k="category"    sortConfig={sortConfig} onClick={handleSort} />
+                <SortHeader label="Amount"        k="amount"      sortConfig={sortConfig} onClick={handleSort} align="right" />
                 <th style={{ ...th, textAlign: 'center' }}>Status</th>
                 <th style={{ ...th, textAlign: 'right' }}>Actions</th>
               </tr>
@@ -472,7 +545,7 @@ const ExpenseLedger = ({
               ))}
               {totalRecords === 0 && (
                 <tr>
-                  <td colSpan="7" style={{ padding: 0 }}>
+                  <td colSpan="8" style={{ padding: 0 }}>
                     <EmptyState
                       hasActiveFilters={hasActiveFilters}
                       onClearFilters={clearAllFilters}
@@ -695,24 +768,22 @@ const ExpenseRow = ({
         {formatDate(exp.date)}
       </td>
       <td style={{ ...td }}>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
-          <div style={{ fontSize: '13px', fontWeight: 500, color: C.textPrimary }}>
-            {exp.description || '—'}
-          </div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-            {exp.name && (
-              <span style={{ fontSize: '11px', color: C.textTertiary }}>
-                {exp.name}
-              </span>
-            )}
-            {exp.type === 'STRATEGIC' && (
-              <span style={{
-                fontSize: '10px', fontWeight: 600, color: C.accent,
-                background: C.accentSoft, padding: '2px 6px', borderRadius: '4px',
-                border: `1px solid ${C.accent}22`,
-              }}>Strategic</span>
-            )}
-          </div>
+        <div style={{ fontSize: '13px', fontWeight: 500, color: C.textPrimary }}>
+          {exp.description || '—'}
+        </div>
+      </td>
+      <td style={{ ...td }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
+          <span style={{ fontSize: '12px', fontWeight: 500, color: C.textPrimary }}>
+            {exp.name || '—'}
+          </span>
+          {exp.type === 'STRATEGIC' && (
+            <span style={{
+              fontSize: '10px', fontWeight: 600, color: C.accent,
+              background: C.accentSoft, padding: '2px 6px', borderRadius: '4px',
+              border: `1px solid ${C.accent}22`,
+            }}>Strategic</span>
+          )}
         </div>
       </td>
       <td style={{ ...td }}>

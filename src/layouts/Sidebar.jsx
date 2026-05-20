@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { NavLink, useNavigate, useLocation } from 'react-router-dom';
 import useAuth from '../auth/useAuth';
-import { NAV_ITEMS, ROLE_LABELS } from '../data/roles';
+import { NAV_ITEMS, ROLE_LABELS, getRolePermissions } from '../data/roles';
 import '../styles/global.css';
 
 // ── Design tokens ─────────────────────────────────────────────────────────────
@@ -52,6 +52,12 @@ const ICONS = {
   '/dicom-bridge': <>
     <path d="M4.715 6.542 3.343 7.914a3 3 0 1 0 4.243 4.243l1.828-1.829A3 3 0 0 0 8.586 5.5L8 6.086a1.002 1.002 0 0 0-.154.199 2 2 0 0 1 .861 3.337L6.88 11.45a2 2 0 1 1-2.83-2.83l.793-.792a4.018 4.018 0 0 1-.128-1.287z"/>
     <path d="M6.586 4.672A3 3 0 0 0 7.414 9.5l.823-.823a2 2 0 0 1-.451-2.587l1.328-1.372a2 2 0 1 1 2.83 2.83l-.793.792c.112.42.155.855.128 1.287l1.372-1.372a3 3 0 1 0-4.242-4.243z"/>
+  </>,
+  '/referrals': <>
+    <path d="M12.5 16a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7zM11 12.5a1.5 1.5 0 1 1 3 0 1.5 1.5 0 0 1-3 0z"/>
+    <path d="M3.5 7a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7zM2 3.5a1.5 1.5 0 1 1 3 0 1.5 1.5 0 0 1-3 0z"/>
+    <path d="M12.5 7a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7zm-1.5-3.5a1.5 1.5 0 1 1 3 0 1.5 1.5 0 0 1-3 0z"/>
+    <path d="M3.5 16a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7zm-1.5-3.5a1.5 1.5 0 1 1 3 0 1.5 1.5 0 0 1-3 0z"/>
   </>,
   '/operations-board': <>
     <path d="M4 1.5H3a2 2 0 0 0-2 2V14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V3.5a2 2 0 0 0-2-2h-1v1h1a1 1 0 0 1 1 1V14a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1V3.5a1 1 0 0 1 1-1h1v-1z"/>
@@ -195,7 +201,7 @@ const SignOutIcon = () => (
 
 // ── Main Sidebar ──────────────────────────────────────────────────────────────
 export default function Sidebar({ isMobileOpen, onMobileClose }) {
-  const { currentUser, logout } = useAuth();
+  const { currentUser, logout, activeCenter } = useAuth();
   const [collapsed, setCollapsed] = useState(false);
   const [soHov, setSoHov] = useState(false);
   const [toggleHov, setToggleHov] = useState(false);
@@ -203,10 +209,17 @@ export default function Sidebar({ isMobileOpen, onMobileClose }) {
   const [viewW, setViewW] = useState(window.innerWidth);
   const navigate = useNavigate();
 
+  const [refreshKey, setRefreshKey] = useState(0);
+
   useEffect(() => {
     const onResize = () => setViewW(window.innerWidth);
+    const onPermissionsUpdate = () => setRefreshKey(prev => prev + 1);
     window.addEventListener('resize', onResize);
-    return () => window.removeEventListener('resize', onResize);
+    window.addEventListener('1rad_permissions_updated', onPermissionsUpdate);
+    return () => {
+      window.removeEventListener('resize', onResize);
+      window.removeEventListener('1rad_permissions_updated', onPermissionsUpdate);
+    };
   }, []);
 
   const isMobile = viewW < 640;
@@ -225,8 +238,14 @@ export default function Sidebar({ isMobileOpen, onMobileClose }) {
     currentUser.email?.split('@')[0] || 'User';
   const initial = displayName.slice(0, 1).toUpperCase();
 
+  // Dynamically resolve permitted routes based on user roles and active hospital context
+  const allowedRoutes = userRoles.reduce((acc, role) => {
+    const permissions = getRolePermissions(role, activeCenter?.id);
+    return [...acc, ...permissions];
+  }, []);
+
   const navItems = NAV_ITEMS.filter(item =>
-    item.allowedRoles.some(r => userRoles.includes(r))
+    allowedRoutes.includes(item.route)
   );
 
   const handleLogout = () => { logout(); navigate('/login'); };

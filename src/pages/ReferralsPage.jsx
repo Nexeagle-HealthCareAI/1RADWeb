@@ -64,11 +64,11 @@ const getOverviewDates = (timeframe) => {
   return { start, end };
 };
 
-export default function AdminBoard() {
+export default function ReferralsPage() {
   const { currentUser, logout, activeCenter, centers, switchCenter, refreshCenters, createCenter, subscription, refreshSubscription } = useAuth();
   const { isOnline, addToOutbox } = useOffline();
   const navigate = useNavigate();
-  const [activeTab, setActiveTab] = useState('Overview');
+  const [activeTab, setActiveTab] = useState('Referrals');
   const [layouts, setLayouts] = useState(INITIAL_LAYOUTS);
   const [patients, setPatients] = useState([]);
   const [patientSearch, setPatientSearch] = useState('');
@@ -4735,8 +4735,8 @@ return (
       }}>
         <div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-            <h1 style={{ fontSize: isMobile ? '20px' : '24px', fontWeight: 700, color: '#0a1628', letterSpacing: '-0.5px', margin: 0 }}>Admin Panel</h1>
-            <span style={{ fontSize: '12px', color: '#6b7280', fontWeight: 400, letterSpacing: '0' }}>Manage your workspace</span>
+            <h1 style={{ fontSize: isMobile ? '20px' : '24px', fontWeight: 700, color: '#0a1628', letterSpacing: '-0.5px', margin: 0 }}>Referral Intelligence</h1>
+            <span style={{ fontSize: '12px', color: '#6b7280', fontWeight: 400, letterSpacing: '0' }}>Strategic networks & payouts</span>
           </div>
         </div>
 
@@ -4836,111 +4836,13 @@ return (
               </>
             )}
           </div>
-
-          <button 
-            onClick={() => setIsChainDrawerOpen(true)}
-            style={{ 
-              padding: '12px 20px', borderRadius: '16px', background: 'linear-gradient(135deg, #0f52ba 0%, #061a40 100%)', 
-              border: 'none', color: 'white', display: 'flex', gap: '8px', 
-              alignItems: 'center', justifyContent: 'center', cursor: 'pointer', transition: 'all 0.2s',
-              fontSize: '10px', fontWeight: 950, letterSpacing: '1px',
-              boxShadow: '0 8px 25px rgba(15, 82, 186, 0.25)',
-              width: isMobile ? '100%' : 'auto',
-              whiteSpace: 'nowrap'
-            }}
-          >
-            <span style={{ fontSize: '14px' }}>📡</span> REGISTER NEW CHAIN
-          </button>
         </div>
       </div>
-      
-      {/* Hub Controller Navigation */}
-      <div className="admin-tabs" style={{ 
-        background: '#f8fafc', 
-        padding: '4px', 
-        borderRadius: '16px', 
-        border: '1px solid #e2e8f0', 
-        marginBottom: '30px', 
-        display: 'flex',
-        overflowX: 'auto',
-        scrollbarWidth: 'none',
-        msOverflowStyle: 'none',
-        gap: '4px'
-      }}>
-        {['Overview', 'Staff', 'Roles', 'Hospitals', 'Finance', 'Letterhead', 'Plan'].map(tab => (
-          <button
-            key={tab}
-            className={`admin-tab ${activeTab === tab ? 'active' : ''}`}
-            onClick={() => setActiveTab(tab)}
-            style={{
-              flex: isMobile ? '0 0 auto' : 1,
-              borderRadius: '8px',
-              border: 'none',
-              padding: isMobile ? '10px 18px' : '11px 12px',
-              fontWeight: 600,
-              letterSpacing: '0.2px',
-              background: activeTab === tab ? 'white' : 'transparent',
-              color: activeTab === tab ? '#1d4ed8' : '#6b7280',
-              boxShadow: activeTab === tab ? '0 2px 8px rgba(0,0,0,0.08)' : 'none',
-              fontSize: '13px',
-              transition: 'all 0.2s ease',
-              cursor: 'pointer',
-              whiteSpace: 'nowrap'
-            }}
-          >
-            {tab}
-          </button>
-        ))}
-      </div>
 
-      {activeTab === 'Overview' && renderAnalytics()}
-      {activeTab === 'Staff' && renderUserManagement()}
-      {activeTab === 'Roles' && (
-        <div style={{ background: '#f8fafc', padding: '24px', borderRadius: '24px', border: '1px solid #edf2f7' }}>
-          <RolesAndPermissions hospitalId={activeCenter?.id} />
-        </div>
-      )}
-      {activeTab === 'Hospitals' && renderHospitalSettings()}
-      {activeTab === 'Finance' && (
-        <FinanceManager 
-          isMobile={isMobile}
-          servicePrices={servicePrices}
-          fetchServicePrices={fetchServicePrices}
-          financialMatrix={financialMatrix}
-          fetchFinancialMatrix={fetchFinancialMatrix}
-          expenses={expenses}
-          fetchExpenses={fetchExpenses}
-          billingSettings={billingSettings}
-          setBillingSettings={setBillingSettings}
-          handleToggleAutoBill={handleToggleAutoBill}
-          isOnline={isOnline}
-          activeCenter={activeCenter}
-          isPriceDrawerOpen={isPriceDrawerOpen}
-          setIsPriceDrawerOpen={setIsPriceDrawerOpen}
-          editPrice={editPrice}
-          setEditPrice={setEditPrice}
-          handleSavePrice={handleSavePrice}
-          handleDeletePrice={handleDeletePrice}
-          isExpenseDrawerOpen={isExpenseDrawerOpen}
-          setIsExpenseDrawerOpen={setIsExpenseDrawerOpen}
-          editExpense={editExpense}
-          setEditExpense={setEditExpense}
-          handleSaveExpense={handleSaveExpense}
-          handleDeleteExpense={handleDeleteExpense}
-          savingExpense={savingExpense}
-          isTestMode={isTestMode}
-          TODAY={TODAY}
-        />
-      )}
-      {activeTab === 'Letterhead' && renderPrescriptionArchitect()}
-      {activeTab === 'Plan' && renderSubscription()}
+      {renderReferralIntel()}
 
-      {isHospitalDrawerOpen && renderHospitalSettingsDrawer()}
-      {isChainDrawerOpen && renderChainDrawer()}
       {isReferrerEditDrawerOpen && renderReferrerEditDrawer()}
       {isPatientEditDrawerOpen && renderPatientEditDrawer()}
-
-      {/* Personnel Roster Drawer: Redesigned Tactical HUD */}
       {isUserDrawerOpen && (
         <div className="drawer-overlay" onClick={() => { setIsUserDrawerOpen(false); setUserRegStep(1); }} style={{ backdropFilter: 'blur(8px)', background: 'rgba(10, 22, 40, 0.4)' }}>
            <div className="drawer-content" style={{ 

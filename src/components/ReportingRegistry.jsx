@@ -26,6 +26,9 @@ const ReportingRegistry = ({
   const [newMacro, setNewMacro] = useState({ trigger: '', replacementText: '' });
   const [isKeywordSaving, setIsKeywordSaving] = useState(false);
 
+  const [notifModal, setNotifModal] = useState({ isOpen: false, type: 'info', title: '', message: '' });
+  const showNotif = (type, title, message) => setNotifModal({ isOpen: true, type, title, message });
+
   const macroTextareaRef = React.useRef(null);
 
   const [windowWidth, setWindowWidth] = useState(window.innerWidth);
@@ -56,7 +59,10 @@ const ReportingRegistry = ({
   };
 
   const handleSaveTemplate = async () => {
-    if (!editTemplate.name) return alert('Please enter a template name.');
+    if (!editTemplate.name) {
+      showNotif('error', 'NAME REQUIRED', 'Please enter a template name before saving.');
+      return;
+    }
 
     // Prevent duplicate template name for a given modality (case-insensitive check)
     const isDuplicate = templates.some(t => {
@@ -69,7 +75,8 @@ const ReportingRegistry = ({
     });
 
     if (isDuplicate) {
-      return alert(`A template with the name "${editTemplate.name}" already exists for modality "${editTemplate.modality}".`);
+      showNotif('warning', 'DUPLICATE TEMPLATE', `A template named "${editTemplate.name}" already exists for modality "${editTemplate.modality}". Please use a unique name.`);
+      return;
     }
 
     setIsTemplateSaving(true);
@@ -86,7 +93,7 @@ const ReportingRegistry = ({
       
       const res = await apiClient.post('/reporting/templates/upsert', payload);
       if (res.data.success) {
-        alert('Template saved.');
+        showNotif('success', 'TEMPLATE SAVED', 'Report template has been saved and is ready for use in the narrative editor.');
         setIsTemplateDrawerOpen(false);
         fetchRegistry();
         if (onRefresh) onRefresh();
@@ -94,7 +101,7 @@ const ReportingRegistry = ({
     } catch (err) {
       console.error('[TEMPLATE] Save failed', err);
       const errMsg = err.response?.data?.error || 'An unexpected error occurred while saving the template.';
-      alert(errMsg);
+      showNotif('error', 'SAVE FAILED', errMsg);
     } finally {
       setIsTemplateSaving(false);
     }
@@ -122,7 +129,10 @@ const ReportingRegistry = ({
   const paginatedKeywords = filteredKeywords.slice((keywordPage - 1) * 10, keywordPage * 10);
 
   const handleSaveMacro = async () => {
-    if (!newMacro.trigger) return alert('Please enter a trigger word.');
+    if (!newMacro.trigger) {
+      showNotif('error', 'TRIGGER REQUIRED', 'Please enter a trigger word for the keyword macro.');
+      return;
+    }
 
     // Prevent duplicate trigger word (case-insensitive check)
     const isDuplicate = keywordLibrary.some(k => {
@@ -133,7 +143,8 @@ const ReportingRegistry = ({
     });
 
     if (isDuplicate) {
-      return alert(`A keyword with the trigger "/${newMacro.trigger}" already exists.`);
+      showNotif('warning', 'DUPLICATE KEYWORD', `A keyword with the trigger "/${newMacro.trigger}" already exists. Please use a unique trigger word.`);
+      return;
     }
 
     setIsKeywordSaving(true);
@@ -149,7 +160,7 @@ const ReportingRegistry = ({
 
       const res = await apiClient.post('/reporting/keywords/upsert', payload);
       if (res.data.success) {
-        alert('Keyword saved.');
+        showNotif('success', 'KEYWORD SAVED', 'Shorthand macro has been saved and is active in the narrative editor.');
         setSelectedKeywordId(null);
         fetchRegistry();
         if (onRefresh) onRefresh();
@@ -157,7 +168,7 @@ const ReportingRegistry = ({
     } catch (err) {
       console.error('[KEYWORD] Save failed', err);
       const errMsg = err.response?.data?.error || 'An unexpected error occurred while saving the keyword.';
-      alert(errMsg);
+      showNotif('error', 'SAVE FAILED', errMsg);
     } finally {
       setIsKeywordSaving(false);
     }
@@ -271,6 +282,45 @@ const ReportingRegistry = ({
           />
         )}
       </div>
+
+      {/* ── Universal Notification Modal ────────────────────────────────────── */}
+      {notifModal.isOpen && (() => {
+        const NOTIF_CFG = {
+          success: { gradient: 'linear-gradient(135deg,#dcfce7,#bbf7d0)', iconColor: '#16a34a', border: '#bbf7d0', titleColor: '#15803d', shadow: 'rgba(22,163,74,0.22)',  icon: '✓', btnGrad: 'linear-gradient(135deg,#16a34a,#15803d)', btnShadow: 'rgba(22,163,74,0.4)'  },
+          error:   { gradient: 'linear-gradient(135deg,#fee2e2,#fecaca)', iconColor: '#dc2626', border: '#fecaca', titleColor: '#991b1b', shadow: 'rgba(220,38,38,0.22)',  icon: '✕', btnGrad: 'linear-gradient(135deg,#e11d48,#be123c)', btnShadow: 'rgba(225,29,72,0.4)'  },
+          warning: { gradient: 'linear-gradient(135deg,#fef3c7,#fde68a)', iconColor: '#d97706', border: '#fde68a', titleColor: '#92400e', shadow: 'rgba(217,119,6,0.22)', icon: '⚠', btnGrad: 'linear-gradient(135deg,#d97706,#b45309)', btnShadow: 'rgba(217,119,6,0.4)' },
+          info:    { gradient: 'linear-gradient(135deg,#dbeafe,#bfdbfe)', iconColor: '#0f52ba', border: '#bfdbfe', titleColor: '#1e40af', shadow: 'rgba(15,82,186,0.22)', icon: 'ℹ', btnGrad: 'linear-gradient(135deg,#0f52ba,#1e40af)', btnShadow: 'rgba(15,82,186,0.4)' },
+        };
+        const cfg = NOTIF_CFG[notifModal.type] || NOTIF_CFG.info;
+        return (
+          <div
+            style={{ position: 'fixed', inset: 0, zIndex: 99999, background: 'rgba(10,22,40,0.6)', backdropFilter: 'blur(12px)', WebkitBackdropFilter: 'blur(12px)', display: 'flex', justifyContent: 'center', alignItems: 'center' }}
+            onClick={() => setNotifModal(m => ({ ...m, isOpen: false }))}
+          >
+            <div
+              style={{ width: '90%', maxWidth: '440px', background: 'linear-gradient(160deg,#ffffff 0%,#f8fafc 100%)', borderRadius: '28px', border: `1px solid ${cfg.border}`, boxShadow: `0 24px 60px -12px ${cfg.shadow}, 0 0 0 1px rgba(0,0,0,0.04)`, padding: '40px 32px 32px', textAlign: 'center', animation: 'regNoticePop 0.3s cubic-bezier(0.34,1.56,0.64,1)' }}
+              onClick={e => e.stopPropagation()}
+            >
+              <div style={{ width: '72px', height: '72px', borderRadius: '50%', background: cfg.gradient, border: `2px solid ${cfg.border}`, display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 20px', fontSize: '28px', boxShadow: `0 12px 28px -8px ${cfg.shadow}` }}>
+                <span style={{ color: cfg.iconColor, fontWeight: 900 }}>{cfg.icon}</span>
+              </div>
+              <div style={{ display: 'inline-block', background: cfg.gradient, border: `1px solid ${cfg.border}`, borderRadius: '8px', padding: '3px 12px', marginBottom: '12px' }}>
+                <span style={{ fontSize: '9px', fontWeight: 950, letterSpacing: '2px', color: cfg.titleColor, fontFamily: 'system-ui,sans-serif' }}>{notifModal.type.toUpperCase()}</span>
+              </div>
+              <div style={{ fontSize: '13px', fontWeight: 950, letterSpacing: '1.5px', color: '#0f172a', marginBottom: '10px', fontFamily: 'system-ui,sans-serif' }}>{notifModal.title}</div>
+              <div style={{ width: '36px', height: '3px', background: cfg.gradient, borderRadius: '99px', margin: '0 auto 14px' }} />
+              <p style={{ fontSize: '13px', lineHeight: 1.7, color: '#475569', fontWeight: 500, margin: '0 0 26px', fontFamily: 'system-ui,sans-serif' }}>{notifModal.message}</p>
+              <button
+                onClick={() => setNotifModal(m => ({ ...m, isOpen: false }))}
+                style={{ width: '100%', padding: '14px', background: cfg.btnGrad, color: 'white', border: 'none', borderRadius: '14px', fontSize: '11px', fontWeight: 950, letterSpacing: '1.5px', cursor: 'pointer', boxShadow: `0 8px 20px -6px ${cfg.btnShadow}`, fontFamily: 'system-ui,sans-serif' }}
+                onMouseEnter={e => { e.currentTarget.style.opacity = '0.88'; }}
+                onMouseLeave={e => { e.currentTarget.style.opacity = '1'; }}
+              >UNDERSTOOD</button>
+            </div>
+            <style>{`@keyframes regNoticePop { from { transform: scale(0.88) translateY(20px); opacity: 0 } to { transform: scale(1) translateY(0); opacity: 1 } }`}</style>
+          </div>
+        );
+      })()}
     </div>
   );
 };

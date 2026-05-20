@@ -67,6 +67,30 @@ export function AuthProvider({ children }) {
     }
   }, [centers, activeCenterId]);
 
+  // Sync custom roles from backend to local cache whenever the active center changes
+  useEffect(() => {
+    if (activeCenterId && (sessionStorage.getItem('1rad_token') || sessionStorage.getItem('1rad_initiation_token'))) {
+      const syncCustomRoles = async () => {
+        try {
+          const res = await apiClient.get('/CustomRoles');
+          const mapped = res.data.map(r => ({
+            roleId: r.roleId,
+            roleName: r.roleName,
+            description: r.description,
+            allowedRoutes: r.permissions
+          }));
+          const key = `1rad_custom_roles_${String(activeCenterId).toLowerCase()}`;
+          localStorage.setItem(key, JSON.stringify(mapped));
+          // Notify any listening components
+          window.dispatchEvent(new Event('1rad_permissions_updated'));
+        } catch (err) {
+          console.warn('[AUTH] Background custom roles sync failed:', err);
+        }
+      };
+      syncCustomRoles();
+    }
+  }, [activeCenterId]);
+
   const activeCenter = useMemo(() => {
     return centers.find(c => c.id === activeCenterId) || centers[0];
   }, [centers, activeCenterId]);

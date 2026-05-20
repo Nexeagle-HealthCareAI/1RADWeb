@@ -111,6 +111,9 @@ const ReportingPage = () => {
   const [saveStatus, setSaveStatus] = useState('IDLE'); // 'IDLE', 'DIRTY', 'SAVING', 'SUCCESS'
   const [isCloudSyncing, setIsCloudSyncing] = useState(false);
 
+  const [notifModal, setNotifModal] = useState({ isOpen: false, type: 'info', title: '', message: '' });
+  const showNotif = (type, title, message) => setNotifModal({ isOpen: true, type, title, message });
+
   useEffect(() => {
     const handleResize = () => {
       const width = window.innerWidth;
@@ -319,11 +322,11 @@ const ReportingPage = () => {
 
         console.info(`[1RAD] Historical Context Injected: ${historicalId}`);
       } else {
-        alert("No imaging assets found for this historical study.");
+        showNotif('warning', 'NO IMAGING ASSETS', 'No imaging assets were found for this historical study.');
       }
     } catch (err) {
       console.error("[1RAD] Historical load failure:", err);
-      alert("System Error: Could not synchronize historical study assets.");
+      showNotif('error', 'SYNC ERROR', 'Could not synchronize historical study assets. Please try again.');
     } finally {
       setLoading(false);
       setProcessingStatus('');
@@ -610,7 +613,7 @@ const ReportingPage = () => {
 
   const handleSaveReport = async (finalizing = false) => {
     if (!appointmentId) {
-      alert('APPOINTMENT CONTEXT MISSING: Cannot save report.');
+      showNotif('error', 'CONTEXT MISSING', 'Cannot save the report — appointment context is missing. Please reload the page.');
       return;
     }
 
@@ -632,7 +635,7 @@ const ReportingPage = () => {
 
     if (!isOnline) {
       await addToOutbox('REPORT', payload);
-      alert(finalizing ? 'OFFLINE_MODE: Finalized report queued for sync.' : 'OFFLINE_MODE: Draft cached locally.');
+      showNotif('warning', finalizing ? 'QUEUED FOR SYNC' : 'CACHED LOCALLY', finalizing ? 'You are offline. The finalized report has been queued and will sync automatically when reconnected.' : 'You are offline. Draft has been saved locally and will sync when reconnected.');
       if (finalizing) {
         setIsFinalized(true);
         navigate('/doctor-board');
@@ -644,7 +647,7 @@ const ReportingPage = () => {
     try {
       const res = await apiClient.post('/reporting/save', payload);
       if (res.data?.success) {
-        alert(finalizing ? 'STRATEGIC DISPATCH COMPLETE: Report finalized.' : 'DRAFT PERSISTED: Changes saved.');
+        showNotif('success', finalizing ? 'REPORT FINALIZED' : 'DRAFT SAVED', finalizing ? 'Report has been finalized and dispatched successfully.' : 'Your changes have been saved successfully.');
         if (finalizing) {
           setIsFinalized(true);
           // Clear local draft on success
@@ -656,13 +659,13 @@ const ReportingPage = () => {
       console.error('[REPORTING] Save failed', err);
       if (!err.response) {
         await addToOutbox('REPORT', payload);
-        alert('NETWORK_ERROR: Report saved to offline outbox.');
+        showNotif('warning', 'SAVED TO OUTBOX', 'Network error encountered. Report has been saved to the offline outbox and will sync automatically.');
         if (finalizing) {
           setIsFinalized(true);
           navigate('/doctor-board');
         }
       } else {
-        alert(`SAVE FAILURE: ${err.response?.data?.error || err.message}`);
+        showNotif('error', 'SAVE FAILED', `Could not save the report: ${err.response?.data?.error || err.message}`);
       }
     } finally {
       setIsSaving(false);
@@ -1027,7 +1030,7 @@ const ReportingPage = () => {
         // Show user notification
         setTimeout(() => {
           if (stats.corruptedFiles > 0) {
-            alert(`Study loaded successfully!\n\n✅ Valid files: ${stats.validFiles}\n⚠️ Corrupted files eliminated: ${stats.corruptedFiles}\n\nCorrupted files have been automatically removed to ensure optimal viewing.`);
+            showNotif('warning', 'STUDY LOADED WITH WARNINGS', `Valid files imported: ${stats.validFiles}\n${stats.corruptedFiles} corrupted file(s) were automatically removed to ensure optimal viewing.`);
           }
         }, 1000);
       }
@@ -1142,7 +1145,7 @@ const ReportingPage = () => {
           `Suggested Actions:\n${errorDetails.suggestions.join('\n')}\n\n` : '') +
         `Technical Details: ${errorDetails.technicalDetails}`;
 
-      alert(errorMessage);
+      showNotif('error', 'DIAGNOSTIC SIGNAL FAILURE', errorMessage);
     } finally {
       isHydratingRef.current = false;
       setLoading(false);
@@ -1697,7 +1700,7 @@ const ReportingPage = () => {
   };
 
   const handleSaveTable = () => {
-    if (!newTable.name) return alert('Enter table name');
+    if (!newTable.name) { showNotif('warning', 'TABLE NAME REQUIRED', 'Please enter a name for the table before saving.'); return; }
     setTablePresets([...tablePresets, { id: Date.now(), ...newTable }]);
     setShowTableBuilder(false);
     setNewTable({ name: '', columns: [''] });
@@ -1734,7 +1737,7 @@ const ReportingPage = () => {
   const handleSlashCommand = (cmd) => {
     if (cmd === 'table') setShowTableModal(true);
     else if (cmd === 'image') fileInputRef.current.click();
-    else if (cmd === 'diagram') alert('DIAGRAM_NODE: Integrated Flowchart engine coming soon.');
+    else if (cmd === 'diagram') showNotif('info', 'COMING SOON', 'The integrated flowchart / diagram engine is currently under development and will be available soon.');
     setShowSlashMenu(false);
   };
 
@@ -1814,6 +1817,7 @@ const ReportingPage = () => {
   }
 
   return (
+    <>
     <div className="reporting-app-container">
       {/* SCOPED CSS */}
       <style>{`
@@ -2771,7 +2775,7 @@ const ReportingPage = () => {
                     </button>
                     <button
                       onClick={() => {
-                        alert('Touch Gestures:\n\n🤏 Pinch to zoom in/out\n👆 Single finger to pan\n👆👆 Double tap to reset\n🖱️ Use toolbar for measurements\n\nKeyboard shortcuts available when connected to external keyboard.');
+                        showNotif('info', 'TOUCH GESTURE GUIDE', 'Pinch to zoom in/out  •  Single finger to pan  •  Double tap to reset view  •  Use toolbar for measurements  •  Keyboard shortcuts available with external keyboard.');
                       }}
                       style={{
                         background: 'linear-gradient(135deg, #8b5cf6, #7c3aed)',
@@ -3212,7 +3216,7 @@ const ReportingPage = () => {
                           replace: false
                         });
                       } else {
-                        alert('No DICOM files available for full-screen viewing. Please ensure DICOM files are loaded first.');
+                        showNotif('warning', 'NO DICOM FILES', 'No DICOM files are available for full-screen viewing. Please ensure DICOM files are loaded in the viewer first.');
                       }
                     }}
                     title="Open Full Screen DICOM Viewer"
@@ -3658,11 +3662,11 @@ const ReportingPage = () => {
                       </div>
                     )}
                   </div>
-                    )}
-                  </div>
-                </div>
+                )}
               </div>
-            )}
+            </div>
+          </div>
+        )}
 
             {/* REPORTING TAB */}
             {activeMainTab === 'REPORTING' && (
@@ -3792,7 +3796,7 @@ const ReportingPage = () => {
             )}
           </div>
       
-      {/* --- MODALS & DRAWERS --- */}
+
 
         {/* Insert Table Modal */}
         {showTableModal && (
@@ -3886,6 +3890,49 @@ const ReportingPage = () => {
         />
         {renderShortcutsHelp()}
       </div>
+
+      {/* ── Universal Notification Modal ─────────────────────────── */}
+      {notifModal.isOpen && (() => {
+        const NOTIF_CFG = {
+          success: { gradient: 'linear-gradient(135deg,#dcfce7,#bbf7d0)', iconColor: '#16a34a', border: '#bbf7d0', titleColor: '#15803d', shadow: 'rgba(22,163,74,0.22)',  icon: '✓', btnGrad: 'linear-gradient(135deg,#16a34a,#15803d)', btnShadow: 'rgba(22,163,74,0.4)'  },
+          error:   { gradient: 'linear-gradient(135deg,#fee2e2,#fecaca)', iconColor: '#dc2626', border: '#fecaca', titleColor: '#991b1b', shadow: 'rgba(220,38,38,0.22)',  icon: '✕', btnGrad: 'linear-gradient(135deg,#e11d48,#be123c)', btnShadow: 'rgba(225,29,72,0.4)'  },
+          warning: { gradient: 'linear-gradient(135deg,#fef3c7,#fde68a)', iconColor: '#d97706', border: '#fde68a', titleColor: '#92400e', shadow: 'rgba(217,119,6,0.22)', icon: '⚠', btnGrad: 'linear-gradient(135deg,#d97706,#b45309)', btnShadow: 'rgba(217,119,6,0.4)' },
+          info:    { gradient: 'linear-gradient(135deg,#dbeafe,#bfdbfe)', iconColor: '#0f52ba', border: '#bfdbfe', titleColor: '#1e40af', shadow: 'rgba(15,82,186,0.22)', icon: '↻', btnGrad: 'linear-gradient(135deg,#0f52ba,#1e40af)', btnShadow: 'rgba(15,82,186,0.4)' },
+        };
+        const cfg = NOTIF_CFG[notifModal.type] || NOTIF_CFG.info;
+        return (
+          <div
+            style={{ position: 'fixed', inset: 0, zIndex: 100002, background: 'rgba(10,22,40,0.65)', backdropFilter: 'blur(12px)', WebkitBackdropFilter: 'blur(12px)', display: 'flex', justifyContent: 'center', alignItems: 'center', animation: 'rpNoticeFade 0.2s ease-out' }}
+            onClick={() => setNotifModal(m => ({ ...m, isOpen: false }))}
+          >
+            <div
+              style={{ width: '90%', maxWidth: '460px', background: 'linear-gradient(160deg,#ffffff 0%,#f8fafc 100%)', borderRadius: '28px', border: `1px solid ${cfg.border}`, boxShadow: `0 24px 60px -12px ${cfg.shadow}, 0 0 0 1px rgba(0,0,0,0.04)`, padding: '40px 32px 32px', textAlign: 'center', animation: 'rpNoticePop 0.3s cubic-bezier(0.34,1.56,0.64,1)' }}
+              onClick={e => e.stopPropagation()}
+            >
+              <div style={{ width: '76px', height: '76px', borderRadius: '50%', background: cfg.gradient, border: `2px solid ${cfg.border}`, display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 22px', fontSize: '30px', boxShadow: `0 12px 28px -8px ${cfg.shadow}` }}>
+                <span style={{ color: cfg.iconColor, fontWeight: 900, lineHeight: 1 }}>{cfg.icon}</span>
+              </div>
+              <div style={{ display: 'inline-block', background: cfg.gradient, border: `1px solid ${cfg.border}`, borderRadius: '8px', padding: '3px 12px', marginBottom: '12px' }}>
+                <span style={{ fontSize: '9px', fontWeight: 950, letterSpacing: '2px', color: cfg.titleColor, fontFamily: 'system-ui,sans-serif' }}>{notifModal.type.toUpperCase()}</span>
+              </div>
+              <div style={{ fontSize: '13px', fontWeight: 950, letterSpacing: '1.5px', color: '#0f172a', marginBottom: '12px', fontFamily: 'system-ui,sans-serif', lineHeight: 1.3 }}>{notifModal.title}</div>
+              <div style={{ width: '40px', height: '3px', background: cfg.gradient, borderRadius: '99px', margin: '0 auto 16px' }} />
+              <p style={{ fontSize: '13px', lineHeight: 1.75, color: '#475569', fontWeight: 500, margin: '0 0 28px', fontFamily: 'system-ui,sans-serif', whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>{notifModal.message}</p>
+              <button
+                onClick={() => setNotifModal(m => ({ ...m, isOpen: false }))}
+                style={{ width: '100%', padding: '15px', background: cfg.btnGrad, color: 'white', border: 'none', borderRadius: '16px', fontSize: '11px', fontWeight: 950, letterSpacing: '1.5px', cursor: 'pointer', boxShadow: `0 8px 20px -6px ${cfg.btnShadow}`, fontFamily: 'system-ui,sans-serif' }}
+                onMouseEnter={e => { e.currentTarget.style.opacity = '0.88'; }}
+                onMouseLeave={e => { e.currentTarget.style.opacity = '1'; }}
+              >UNDERSTOOD</button>
+            </div>
+            <style>{`
+              @keyframes rpNoticeFade { from { opacity: 0 } to { opacity: 1 } }
+              @keyframes rpNoticePop  { from { transform: scale(0.88) translateY(20px); opacity: 0 } to { transform: scale(1) translateY(0); opacity: 1 } }
+            `}</style>
+          </div>
+        );
+      })()}
+    </>
   );
 
 };
