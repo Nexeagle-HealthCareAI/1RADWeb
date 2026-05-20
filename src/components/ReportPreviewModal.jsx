@@ -247,10 +247,13 @@ const ReportPreviewModal = ({
     const { mode: rcMode, text: rcText, data: rcData, impression: rcImpression, advice: rcAdvice } = reportContent;
     const _isPlain = !protocol?.letterheadBlobUrl;
     const _baseFontSize = protocol?.fontSize || (_isPlain ? 12 : 14);
-    const _topMm = _isPlain ? 15 : (protocol?.headerMargin || 45);
-    const _leftMm = protocol?.leftMargin || 20;
-    const _rightMm = protocol?.rightMargin || 20;
-    const _bottomMm = protocol?.bottomMargin || 20;
+    // Honor protocol-configured margins in both modes (?? so an explicit 0 is
+    // respected). Fall back to sensible defaults only when the setting is unset:
+    // blank A4 → 20mm uniform; letterhead → 45mm top to clear typical header art.
+    const _topMm    = protocol?.headerMargin ?? (_isPlain ? 20 : 45);
+    const _leftMm   = protocol?.leftMargin   ?? 20;
+    const _rightMm  = protocol?.rightMargin  ?? 20;
+    const _bottomMm = protocol?.bottomMargin ?? 20;
     const _contentStyle = `font-size: ${_baseFontSize}px; line-height: 1.6; color: ${protocol?.fontColor || '#1e293b'}; font-family: ${protocol?.fontFamily || 'inherit'};`;
 
     const _unwrapPages = (html) => {
@@ -339,11 +342,14 @@ const ReportPreviewModal = ({
   // Honor protocol.fontSize when provided; fall back per scenario
   const baseFontSize = protocol?.fontSize || (isPlain ? 12 : 14);
 
-  // Surgical Margin Resolution (mm to style) — drives both preview & print
-  const topMm    = isPlain ? 15 : (protocol?.headerMargin || 45);
-  const leftMm   = (protocol?.leftMargin || 20);
-  const rightMm  = (protocol?.rightMargin || 20);
-  const bottomMm = (protocol?.bottomMargin || 20);
+  // Surgical Margin Resolution (mm to style) — drives both preview & print.
+  // Honor protocol-configured margins in both modes (?? so an explicit 0 is
+  // respected). Fall back to sensible defaults only when the setting is unset:
+  // blank A4 → 20mm uniform; letterhead → 45mm top to clear typical header art.
+  const topMm    = protocol?.headerMargin ?? (isPlain ? 20 : 45);
+  const leftMm   = protocol?.leftMargin   ?? 20;
+  const rightMm  = protocol?.rightMargin  ?? 20;
+  const bottomMm = protocol?.bottomMargin ?? 20;
   const m = { top: `${topMm}mm`, left: `${leftMm}mm`, right: `${rightMm}mm`, bottom: `${bottomMm}mm` };
 
   // Helper to generate complete page HTML (with letterhead, margins, content)
@@ -357,19 +363,6 @@ const ReportPreviewModal = ({
     if (showLetterhead) {
       letterheadHtml = `<img src="${letterheadDataUrl}" style="position: absolute; top: 0; left: 0; width: 210mm; height: 297mm; z-index: 1; pointer-events: none; object-fit: fill; display: block;" alt="Letterhead" />`;
     }
-
-    const plainHeaderHtml = isPlain && pageIdx === 0 ? `
-      <div style="position: absolute; top: 10mm; left: 20mm; right: 20mm; border-bottom: 2px solid #0f52ba; padding-bottom: 10px; display: flex; justify-content: space-between; align-items: flex-end; z-index: 2;">
-        <div>
-          <div style="font-size: 18px; font-weight: 950; color: #0f52ba;">${fullAppointment?.hospitalName || 'DIAGNOSTIC CENTRE'}</div>
-          <div style="font-size: 9px; color: #64748b;">${fullAppointment?.hospitalAddress || 'Digital Medical Report'}</div>
-        </div>
-        <div style="text-align: right;">
-          <div style="font-size: 10px; font-weight: 700;">24/7 SUPPORT</div>
-          <div style="font-size: 9px; color: #64748b;">${fullAppointment?.hospitalPhone || ''}</div>
-        </div>
-      </div>
-    ` : '';
 
     return `
       <div style="
@@ -385,7 +378,6 @@ const ReportPreviewModal = ({
         box-sizing: border-box;
       ">
         ${letterheadHtml}
-        ${plainHeaderHtml}
         <div style="
           position: absolute;
           top: ${topMm}mm;
@@ -752,13 +744,6 @@ const ReportPreviewModal = ({
                     pageBreakAfter: isLast ? 'auto' : 'always',
                   }}
                 >
-                  {/* Watermark (page 1 only) */}
-                  {!isFinalized && pageIdx === 0 && (
-                    <div style={{ position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%, -50%) rotate(-45deg)', fontSize: '120px', color: 'rgba(241, 245, 249, 0.4)', fontWeight: 950, pointerEvents: 'none', zIndex: 3, letterSpacing: '20px', whiteSpace: 'nowrap' }}>
-                      DRAFT_PREVIEW
-                    </div>
-                  )}
-
                   {/* Letterhead layer for this page */}
                   {showLetterhead && (
                     <div className="letterhead-container" style={{ position: 'absolute', top: 0, left: 0, width: '210mm', height: '297mm', zIndex: 1, pointerEvents: 'none', overflow: 'hidden' }}>
@@ -786,20 +771,6 @@ const ReportPreviewModal = ({
                           onError={(e) => { e.target.style.opacity = 0; e.target.style.height = 0; }}
                         />
                       )}
-                    </div>
-                  )}
-
-                  {/* Plain Header (only when no letterhead and on page 1) */}
-                  {isPlain && pageIdx === 0 && (
-                    <div style={{ position: 'absolute', top: '10mm', left: '20mm', right: '20mm', borderBottom: '2px solid #0f52ba', paddingBottom: '10px', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', zIndex: 2 }}>
-                      <div>
-                        <div style={{ fontSize: '18px', fontWeight: 950, color: '#0f52ba' }}>{fullAppointment?.hospitalName || 'DIAGNOSTIC CENTRE'}</div>
-                        <div style={{ fontSize: '9px', color: '#64748b' }}>{fullAppointment?.hospitalAddress || 'Digital Medical Report'}</div>
-                      </div>
-                      <div style={{ textAlign: 'right' }}>
-                        <div style={{ fontSize: '10px', fontWeight: 700 }}>24/7 SUPPORT</div>
-                        <div style={{ fontSize: '9px', color: '#64748b' }}>{fullAppointment?.hospitalPhone || ''}</div>
-                      </div>
                     </div>
                   )}
 
@@ -1014,18 +985,6 @@ const ReportPreviewModal = ({
                 ) : (
                   <img src={resolvedAssetUrl} alt="Letterhead" style={{ width: '100%', height: '100%', objectFit: 'fill', display: 'block' }} />
                 )}
-              </div>
-            )}
-            {isPlain && pageIdx === 0 && (
-              <div style={{ position: 'absolute', top: '10mm', left: '20mm', right: '20mm', borderBottom: '2px solid #0f52ba', paddingBottom: '10px', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', zIndex: 2 }}>
-                <div>
-                  <div style={{ fontSize: '18px', fontWeight: 950, color: '#0f52ba' }}>{fullAppointment?.hospitalName || 'DIAGNOSTIC CENTRE'}</div>
-                  <div style={{ fontSize: '9px', color: '#64748b' }}>{fullAppointment?.hospitalAddress || 'Digital Medical Report'}</div>
-                </div>
-                <div style={{ textAlign: 'right' }}>
-                  <div style={{ fontSize: '10px', fontWeight: 700 }}>24/7 SUPPORT</div>
-                  <div style={{ fontSize: '9px', color: '#64748b' }}>{fullAppointment?.hospitalPhone || ''}</div>
-                </div>
               </div>
             )}
             <div style={{

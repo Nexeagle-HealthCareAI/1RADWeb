@@ -47,6 +47,14 @@ const PrescriptionPreview = ({
         flexShrink: 0,
         zIndex: 1
       }}>
+        {/* BLANK PAGE BACKGROUND — guarantees white frame when no letterhead */}
+        {!(prescriptionSettings.letterhead || prescriptionSettings.letterheadFile) && (
+          <div style={{
+            position: 'absolute', top: 0, left: 0, width: '100%', height: '100%',
+            background: 'white', zIndex: 1, pointerEvents: 'none'
+          }} />
+        )}
+
         {/* ASSET REFERENCE LAYER (PDF or IMAGE) */}
         {(prescriptionSettings.letterhead || prescriptionSettings.letterheadFile) && (
           (() => {
@@ -279,6 +287,11 @@ const PrescriptionPreview = ({
         ) : (
           /* REGULAR REPORT PREVIEW (Non-Test Mode) */
           <div style={{ 
+            position: 'relative',
+            zIndex: 10,
+            boxSizing: 'border-box',
+            background: 'transparent',
+            minHeight: '297mm',
             padding: `${prescriptionSettings.headerMargin}mm ${prescriptionSettings.rightMargin}mm ${prescriptionSettings.bottomMargin}mm ${prescriptionSettings.leftMargin}mm`,
             fontFamily: prescriptionSettings.fontFamily,
             fontSize: `${prescriptionSettings.fontSize}px`,

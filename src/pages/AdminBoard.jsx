@@ -891,12 +891,12 @@ export default function AdminBoard() {
     if (!targetHubId) return;
 
     const payload = {
-      hospitalName: activeCenter.name,
-      hospitalAddress: activeCenter.address || 'Metadata synchronization active.',
-      gstin: activeCenter.gstin || '',
-      registrationNumber: activeCenter.registrationNumber || '',
-      pan: activeCenter.pan || '',
-      nabhNumber: activeCenter.nabhNumber || '',
+      hospitalName: hospitalData.hospitalName || activeCenter.name,
+      hospitalAddress: hospitalData.hospitalAddress || 'Metadata synchronization active.',
+      gstin: hospitalData.gstin || '',
+      registrationNumber: hospitalData.registrationNumber || '',
+      pan: hospitalData.pan || '',
+      nabhNumber: hospitalData.nabhNumber || '',
       isAutoBillingEnabled: newAutoBill
     };
 
@@ -910,6 +910,7 @@ export default function AdminBoard() {
     try {
       await apiClient.put(`/hospitals/${targetHubId}`, payload);
       setBillingSettings(prev => ({ ...prev, autoBill: newAutoBill }));
+      setHospitalData(prev => ({ ...prev, isAutoBillingEnabled: newAutoBill }));
       await refreshCenters();
     } catch (err) {
       console.error('[FINANCE] Protocol update failed', err);
@@ -924,13 +925,35 @@ export default function AdminBoard() {
   };
 
   useEffect(() => {
-    if (activeCenter) {
-      setBillingSettings(prev => ({
-        ...prev,
-        autoBill: activeCenter.isAutoBillingEnabled || false
-      }));
+    if (activeCenter?.id) {
+      const loadActiveCenterDetails = async () => {
+        try {
+          const res = await apiClient.get(`/hospitals/${activeCenter.id}`);
+          const data = {
+            hospitalName: res.data.hospitalName || res.data.HospitalName || '',
+            hospitalAddress: res.data.hospitalAddress || res.data.HospitalAddress || '',
+            gstin: res.data.gstin || res.data.GSTIN || '',
+            registrationNumber: res.data.registrationNumber || res.data.RegistrationNumber || '',
+            pan: res.data.pan || res.data.PAN || '',
+            nabhNumber: res.data.nabhNumber || res.data.NABHNumber || '',
+            isAutoBillingEnabled: res.data.isAutoBillingEnabled || res.data.IsAutoBillingEnabled || false
+          };
+          setHospitalData(data);
+          setBillingSettings(prev => ({
+            ...prev,
+            autoBill: data.isAutoBillingEnabled
+          }));
+        } catch (err) {
+          console.error('[HOSPITAL] Failed to fetch active center details', err);
+          setBillingSettings(prev => ({
+            ...prev,
+            autoBill: activeCenter.isAutoBillingEnabled || false
+          }));
+        }
+      };
+      loadActiveCenterDetails();
     }
-  }, [activeCenter]);
+  }, [activeCenter?.id]);
 
   // Handle window resize for responsive layout
   useEffect(() => {

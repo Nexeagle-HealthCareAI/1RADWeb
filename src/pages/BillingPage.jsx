@@ -33,7 +33,8 @@ export default function BillingPage() {
   const [billingViewMode, setBillingViewMode] = useState('INVOICES'); // 'INVOICES', 'EXPENSES', 'FINANCE'
   const [expenses, setExpenses] = useState([]);
   const [referrers, setReferrers] = useState([]);
-  const [expenseFilter, setExpenseFilter] = useState('ALL'); // 'ALL' or 'REFERRAL'
+  const [expenseFilter, setExpenseFilter] = useState('ALL'); // 'ALL' | 'OPERATIONAL' | 'REFERRAL'
+  const [expenseSearch, setExpenseSearch] = useState('');
   const [isExpenseDrawerOpen, setIsExpenseDrawerOpen] = useState(false);
   const [savingExpense, setSavingExpense] = useState(false);
   const [editExpense, setEditExpense] = useState({ 
@@ -316,16 +317,17 @@ export default function BillingPage() {
       setSavingExpense(true);
       await apiClient.post('/finance/expense', payload);
       setIsExpenseDrawerOpen(false);
-      setEditExpense({ 
-        description: '', 
-        category: 'Maintenance', 
-        amount: 0, 
+      setEditExpense({
+        description: '',
+        category: 'Maintenance',
+        amount: 0,
         taxAmount: 0,
-        transactionDate: TODAY, 
-        paymentMode: 'Cash', 
+        transactionDate: TODAY,
+        paymentMode: 'Cash',
         referenceNumber: '',
         vendorName: '',
-        costCenter: 'Radiology',
+        // costCenter is no longer user-editable; default it to the active centre name.
+        costCenter: activeCenter?.name || activeCenter?.hospitalName || 'Default',
         status: 'Paid'
       });
       refreshAllFinancialData(); // Refresh all financial hubs
@@ -497,12 +499,14 @@ export default function BillingPage() {
     }
   };
 
-  const handleDeleteExpense = async (id) => {
-    if (!window.confirm('Are you sure you want to delete this expense?')) return;
-    
+  const handleDeleteExpense = async (id, options = {}) => {
+    // Callers performing a bulk delete can pass { skipConfirm: true } so they can
+    // show one consolidated confirm instead of one prompt per row.
+    if (!options.skipConfirm && !window.confirm('Are you sure you want to delete this expense?')) return;
+
     if (!isOnline) {
       await addToOutbox('EXPENSE_DELETE', { id });
-      alert('Offline: Deletion will sync when reconnected.');
+      if (!options.skipConfirm) alert('Offline: Deletion will sync when reconnected.');
       setExpenses(prev => prev.filter(e => e.id !== id));
       return;
     }
@@ -514,9 +518,9 @@ export default function BillingPage() {
       console.error('[FINANCE] Failed to delete expense', err);
       if (!err.response) {
         await addToOutbox('EXPENSE_DELETE', { id });
-        alert('No connection: deletion queued.');
+        if (!options.skipConfirm) alert('No connection: deletion queued.');
         setExpenses(prev => prev.filter(e => e.id !== id));
-      } else {
+      } else if (!options.skipConfirm) {
         alert('Error: Could not delete expense.');
       }
     }
@@ -731,7 +735,9 @@ export default function BillingPage() {
             reference: e.referenceNumber,
             amount: e.amount,
             type: 'LEGACY',
-            status: e.status?.toUpperCase() === 'PAID' ? 'PAID' : 'PAID', // Legacy expenses are usually paid
+            // Honor the actual stored status; default to PAID only when missing
+            // (legacy expenses are usually paid but UNPAID is a valid state).
+            status: (e.status || 'PAID').toUpperCase() === 'PAID' ? 'PAID' : 'UNPAID',
             patientPaymentStatus: inv?.status || null
         };
     });
@@ -811,11 +817,13 @@ export default function BillingPage() {
 
   const filteredOutflow = useMemo(() => {
     const today = new Date().toLocaleDateString('en-CA');
-    
+    const q = expenseSearch.trim().toLowerCase();
+
     return globalOutflow.filter(exp => {
         if (!exp) return false;
         // Category Filter
         if (expenseFilter === 'REFERRAL' && exp.category !== 'Referral') return false;
+        if (expenseFilter === 'OPERATIONAL' && exp.category === 'Referral') return false;
 
         // Time Filter
         const expDate = exp.date ? new Date(exp.date).toLocaleDateString('en-CA') : null;
@@ -834,9 +842,16 @@ export default function BillingPage() {
             if (exp.type !== 'STRATEGIC' && !(exp.description || '').includes(`[${modalityFilter}]`)) return false;
         }
 
+        // Free-text search across description, vendor name, category
+        if (q) {
+            const haystack = [exp.description, exp.name, exp.category]
+              .filter(Boolean).join(' ').toLowerCase();
+            if (!haystack.includes(q)) return false;
+        }
+
         return true;
     });
-  }, [globalOutflow, expenseFilter, timeFilter, startDate, endDate, modalityFilter]);
+  }, [globalOutflow, expenseFilter, timeFilter, startDate, endDate, modalityFilter, expenseSearch]);
 
   const outflowStats = useMemo(() => {
     const safeOutflow = filteredOutflow || [];
@@ -954,7 +969,7 @@ export default function BillingPage() {
 
   useEffect(() => {
     setCurrentPage(1);
-  }, [searchTerm, referralSearch, timeFilter, statusFilter, modalityFilter, startDate, endDate]);
+  }, [searchTerm, referralSearch, expenseSearch, expenseFilter, timeFilter, statusFilter, modalityFilter, startDate, endDate]);
 
   // --- PATIENT LOOKUP ---
   const fetchPatients = useCallback(async (query) => {
@@ -1549,18 +1564,21 @@ export default function BillingPage() {
       </div>
 
       {billingViewMode === 'EXPENSES' && (
-        <ExpenseLedger 
+        <ExpenseLedger
           isMobile={isMobile}
           outflowStats={outflowStats}
           filteredOutflow={filteredOutflow}
           paginatedOutflow={paginatedOutflow}
-          globalOutflow={globalOutflow}
           timeFilter={timeFilter}
           setTimeFilter={setTimeFilter}
           startDate={startDate}
           setStartDate={setStartDate}
           endDate={endDate}
           setEndDate={setEndDate}
+          expenseSearch={expenseSearch}
+          setExpenseSearch={setExpenseSearch}
+          expenseFilter={expenseFilter}
+          setExpenseFilter={setExpenseFilter}
           handleDeleteExpense={handleDeleteExpense}
           setEditExpense={setEditExpense}
           setIsExpenseDrawerOpen={setIsExpenseDrawerOpen}
@@ -1571,8 +1589,8 @@ export default function BillingPage() {
           handleSort={handleSort}
           TODAY={TODAY}
           handleToggleExpenseStatus={handleToggleExpenseStatus}
+          activeCenterName={activeCenter?.name || activeCenter?.hospitalName || 'Default'}
         />
-
       )}
 
       {billingViewMode === 'INVOICES' && (

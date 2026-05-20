@@ -1,4 +1,5 @@
 ﻿import { useState, useEffect, useMemo } from 'react';
+import * as XLSX from 'xlsx';
 import apiClient from '../api/apiClient';
 import '../styles/global.css';
 import '../styles/AppointmentBoard.css';
@@ -247,6 +248,30 @@ export default function OperationsBoard() {
     );
   };
 
+  // Excel export — exports current filtered appointments
+  const exportToExcel = () => {
+    if (!filteredAppointments.length) return;
+    const rows = filteredAppointments.map((a) => ({
+      Token: a.dailyTokenNumber ?? '',
+      'Patient ID': a.patientId ?? '',
+      'Patient Name': a.patientName ?? '',
+      Age: a.patientAge ?? '',
+      Gender: a.patientGender ?? '',
+      Mobile: a.mobile ?? '',
+      Modality: a.modality ?? '',
+      Service: a.service ?? '',
+      Status: a.status ?? '',
+      'Progress Status': a.reportProgressStatus ?? '',
+      'Delay Reason': a.delayReason ?? '',
+      Date: a.dateTime ? a.dateTime.split('T')[0] : '',
+      Time: a.dateTime ? a.dateTime.split('T')[1]?.slice(0, 5) : '',
+    }));
+    const ws = XLSX.utils.json_to_sheet(rows);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'Operations');
+    XLSX.writeFile(wb, `operations-${selectedDate}.xlsx`);
+  };
+
   // Date navigator helper
   const shiftDate = (days) => {
     const d = new Date(selectedDate);
@@ -279,6 +304,13 @@ export default function OperationsBoard() {
               <button onClick={() => setSelectedDate(new Date().toISOString().split('T')[0])} style={{ background: '#f1f5f9', border: '1px solid #e2e8f0', color: '#0f172a', fontSize: '10px', fontWeight: 950, padding: '6px 14px', borderRadius: '8px', cursor: 'pointer', letterSpacing: '0.5px' }}>TODAY</button>
             </div>
             <button className="appt-new-mission-btn" onClick={fetchAppointments}>↺ Refresh</button>
+            <button
+              className="appt-new-mission-btn"
+              onClick={exportToExcel}
+              disabled={!filteredAppointments.length}
+              style={{ background: '#15803d', borderColor: '#15803d' }}
+              title="Export visible records to Excel"
+            >⬇ Export Excel</button>
           </div>
         </div>
       </div>

@@ -1,17 +1,50 @@
 import React, { useState, useEffect, useMemo } from 'react';
 
+// ─── Design tokens ────────────────────────────────────────────────────────
+const C = {
+  textPrimary:    '#0f172a',
+  textSecondary:  '#475569',
+  textTertiary:   '#94a3b8',
+  border:         '#e2e8f0',
+  borderLight:    '#f1f5f9',
+  surface:        '#ffffff',
+  surfaceAlt:     '#f8fafc',
+  surfaceHover:   '#f1f5f9',
+  danger:         '#dc2626',
+  dangerSoft:     '#fef2f2',
+  dangerBorder:   '#fecaca',
+  success:        '#15803d',
+  successSoft:    '#f0fdf4',
+  successBorder:  '#bbf7d0',
+  warning:        '#b45309',
+  warningSoft:    '#fffbeb',
+  accent:         '#7c3aed', // strategic/referral — distinct from destructive red
+  accentSoft:     '#f5f3ff',
+};
+
+const isMutable = (exp) => exp?.type === 'OPERATIONAL' || exp?.type === 'LEGACY';
+
+const formatDate = (d) =>
+  d ? new Date(d).toLocaleDateString('en-US', { day: 'numeric', month: 'short', year: 'numeric' }) : '—';
+
+const formatINR = (n) => `₹${(Number(n) || 0).toLocaleString('en-IN')}`;
+
+// ─── Component ────────────────────────────────────────────────────────────
 const ExpenseLedger = ({
   isMobile,
   outflowStats,
   filteredOutflow,
   paginatedOutflow,
-  globalOutflow,
   timeFilter,
   setTimeFilter,
   startDate,
   setStartDate,
   endDate,
   setEndDate,
+  expenseSearch = '',
+  setExpenseSearch = () => {},
+  expenseFilter = 'ALL',
+  setExpenseFilter = () => {},
   handleDeleteExpense,
   setEditExpense,
   setIsExpenseDrawerOpen,
@@ -21,361 +54,718 @@ const ExpenseLedger = ({
   TODAY,
   sortConfig,
   handleSort,
-  handleToggleExpenseStatus
+  handleToggleExpenseStatus,
+  activeCenterName = 'Default',
 }) => {
   const [selectedIds, setSelectedIds] = useState(new Set());
 
-  // Clear selections on filter updates
   useEffect(() => {
     setSelectedIds(new Set());
-  }, [timeFilter, startDate, endDate]);
+  }, [timeFilter, startDate, endDate, expenseSearch, expenseFilter]);
+
+  const visibleRows = paginatedOutflow || [];
+  const isAllVisibleSelected =
+    visibleRows.length > 0 && visibleRows.every(row => selectedIds.has(row.id));
 
   const toggleSelectRow = (id) => {
     setSelectedIds(prev => {
       const next = new Set(prev);
-      if (next.has(id)) {
-        next.delete(id);
-      } else {
-        next.add(id);
-      }
+      if (next.has(id)) next.delete(id); else next.add(id);
       return next;
     });
   };
-
-  const visibleRows = useMemo(() => {
-    return paginatedOutflow || [];
-  }, [paginatedOutflow]);
-
-  const isAllVisibleSelected = useMemo(() => {
-    if (visibleRows.length === 0) return false;
-    return visibleRows.every(row => selectedIds.has(row.id));
-  }, [visibleRows, selectedIds]);
 
   const toggleSelectAllVisible = () => {
     if (isAllVisibleSelected) {
       setSelectedIds(prev => {
         const next = new Set(prev);
-        visibleRows.forEach(row => next.delete(row.id));
+        visibleRows.forEach(r => next.delete(r.id));
         return next;
       });
     } else {
       setSelectedIds(prev => {
         const next = new Set(prev);
-        visibleRows.forEach(row => next.add(row.id));
+        visibleRows.forEach(r => next.add(r.id));
         return next;
       });
     }
   };
 
+  const selectedExpenses = useMemo(
+    () => (filteredOutflow || []).filter(e => selectedIds.has(e.id)),
+    [filteredOutflow, selectedIds]
+  );
+
+  const bulkDeletable = selectedExpenses.filter(isMutable);
+  const bulkMarkable = selectedExpenses.filter(e => isMutable(e) && e.status !== 'PAID');
+
+  // ─── Bulk actions ──────────────────────────────────────────────────────
+  const handleBulkDelete = () => {
+    if (bulkDeletable.length === 0) return;
+    const ok = window.confirm(
+      `Delete ${bulkDeletable.length} expense${bulkDeletable.length > 1 ? 's' : ''}? This cannot be undone.`
+    );
+    if (!ok) return;
+    // Use the parent's skipConfirm flag so users see ONE prompt for the batch,
+    // not N prompts (one per row).
+    bulkDeletable.forEach(e => handleDeleteExpense(e.id, { skipConfirm: true }));
+    setSelectedIds(new Set());
+  };
+
+  const handleBulkMarkPaid = () => {
+    if (bulkMarkable.length === 0) return;
+    bulkMarkable.forEach(e => handleToggleExpenseStatus(e.id, e.status));
+    setSelectedIds(new Set());
+  };
+
+  // ─── Export (unchanged behavior, cleaner code) ─────────────────────────
   const handleExportToExcel = () => {
-    const isExportingSelected = selectedIds.size > 0;
-    const timestampStr = new Date().toISOString().replace(/[:.]/g, '-');
-    const fileName = `1RAD_Expense_Ledger_${timeFilter}_${isExportingSelected ? 'Selected' : 'All'}_${timestampStr}`;
+    const useSelection = selectedIds.size > 0;
+    const list = useSelection
+      ? (filteredOutflow || []).filter(e => selectedIds.has(e.id))
+      : (filteredOutflow || []);
 
-    const headers = [
-      'Date',
-      'Description',
-      'Vendor/Partner Name',
-      'Category',
-      'Amount (INR)',
-      'Status'
-    ];
-
-    const expensesToExport = filteredOutflow || [];
-    const filteredExpenses = isExportingSelected
-      ? expensesToExport.filter(exp => selectedIds.has(exp.id))
-      : expensesToExport;
-
-    const rows = filteredExpenses.map(exp => [
-      exp.date ? new Date(exp.date).toLocaleDateString('en-US', { day: 'numeric', month: 'short', year: 'numeric' }) : 'N/A',
-      exp.description || 'N/A',
-      exp.name || 'N/A',
-      exp.category || 'General',
-      Number(exp.amount) || 0,
-      exp.status || 'UNPAID'
+    const headers = ['Date', 'Description', 'Vendor/Partner Name', 'Category', 'Amount (INR)', 'Status'];
+    const rows = list.map(e => [
+      formatDate(e.date),
+      e.description || 'N/A',
+      e.name || 'N/A',
+      e.category || 'General',
+      Number(e.amount) || 0,
+      e.status || 'UNPAID',
     ]);
-
-    const escapeCsvCell = (cell) => {
-      if (cell === null || cell === undefined) return '';
-      const cellStr = String(cell);
-      if (cellStr.includes(',') || cellStr.includes('"') || cellStr.includes('\n')) {
-        return `"${cellStr.replace(/"/g, '""')}"`;
-      }
-      return cellStr;
+    const esc = (cell) => {
+      if (cell == null) return '';
+      const s = String(cell);
+      return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
     };
-
-    const csvContent = [
-      headers.map(escapeCsvCell).join(','),
-      ...rows.map(row => row.map(escapeCsvCell).join(','))
-    ].join('\n');
-
-    // Excel compatibility UTF-8 BOM
-    const BOM = '\uFEFF';
-    const blob = new Blob([BOM + csvContent], { type: 'text/csv;charset=utf-8;' });
-    
-    // Trigger download
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.setAttribute('href', url);
-    link.setAttribute('download', `${fileName}.csv`);
-    link.style.visibility = 'hidden';
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
+    const csv = '﻿' + [headers.map(esc).join(','), ...rows.map(r => r.map(esc).join(','))].join('\n');
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+    const ts = new Date().toISOString().replace(/[:.]/g, '-');
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = `1RAD_Expense_Ledger_${timeFilter}_${useSelection ? 'Selected' : 'All'}_${ts}.csv`;
+    a.style.visibility = 'hidden';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
   };
 
-  const getSortIcon = (key) => {
+  // ─── Filter chips helpers ──────────────────────────────────────────────
+  const hasActiveFilters =
+    expenseSearch || expenseFilter !== 'ALL' || timeFilter !== 'ALL';
 
-    if (sortConfig.key !== key) return '↕';
-    return sortConfig.direction === 'ASC' ? '↑' : '↓';
+  const clearAllFilters = () => {
+    setExpenseSearch('');
+    setExpenseFilter('ALL');
+    setTimeFilter('ALL');
   };
 
+  // ─── Pagination math ───────────────────────────────────────────────────
+  const totalRecords = (filteredOutflow || []).length;
+  const totalPages = Math.max(1, Math.ceil(totalRecords / itemsPerPage));
+  const showingFrom = totalRecords === 0 ? 0 : (currentPage - 1) * itemsPerPage + 1;
+  const showingTo = Math.min(currentPage * itemsPerPage, totalRecords);
+
+  // ─── Render ────────────────────────────────────────────────────────────
   return (
-    <div className="expenses-main" style={{ display: 'grid', gridTemplateColumns: '1fr', gap: '30px', animation: 'fadeIn 0.3s' }}>
-        <div style={{ background: 'white', borderRadius: isMobile ? '16px' : '24px', border: '1px solid #e2e8f0', overflow: 'hidden', boxShadow: '0 4px 20px rgba(0,0,0,0.01)' }}>
-          <div style={{ 
-            display: 'flex', 
-            flexDirection: isMobile ? 'column' : 'row', 
-            justifyContent: 'space-between', 
-            alignItems: isMobile ? 'stretch' : 'center', 
-            padding: isMobile ? '20px' : '20px 30px', 
-            background: '#f8fafc', 
-            borderBottom: '1px solid #f1f5f9',
-            gap: isMobile ? '20px' : '0'
-          }}>
-            <div style={{ display: 'flex', flexDirection: isMobile ? 'column' : 'row', alignItems: isMobile ? 'flex-start' : 'center', gap: isMobile ? '15px' : '20px' }}>
-              <div style={{ display: 'flex', flexDirection: isMobile ? 'column' : 'row', alignItems: isMobile ? 'flex-start' : 'center', gap: isMobile ? '8px' : '15px' }}>
-                <span style={{ fontSize: '10px', fontWeight: 950, color: '#64748b', letterSpacing: '1px' }}>TEMPORAL_SCOPE:</span>
-                <div style={{ 
-                  display: 'flex', 
-                  background: '#f1f5f9', 
-                  padding: '3px', 
-                  borderRadius: '10px', 
-                  border: '1px solid #e2e8f0',
-                  overflowX: 'auto',
-                  width: isMobile ? '100%' : 'auto'
-                }}>
-                  {['TODAY', 'PAST', 'ALL', 'CUSTOM'].map(t => (
-                    <button 
-                      key={t}
-                      onClick={() => setTimeFilter(t)}
-                      style={{ 
-                        padding: '8px 16px', borderRadius: '8px', border: 'none', fontSize: '9px', fontWeight: 950,
-                        background: timeFilter === t ? '#dc2626' : 'transparent',
-                        color: timeFilter === t ? 'white' : '#64748b',
-                        cursor: 'pointer', transition: 'all 0.2s',
-                        flex: isMobile ? 1 : 'none',
-                        whiteSpace: 'nowrap'
-                      }}
-                    >{t}</button>
-                  ))}
-                </div>
-              </div>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '20px', animation: 'fadeIn 0.25s' }}>
+      {/* ── Header row: title + primary action ───────────────────────── */}
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '16px', flexWrap: 'wrap' }}>
+        <div>
+          <h2 style={{ margin: 0, fontSize: '20px', fontWeight: 700, color: C.textPrimary, letterSpacing: '-0.3px' }}>
+            Expense Ledger
+          </h2>
+          <p style={{ margin: '4px 0 0', fontSize: '12px', color: C.textSecondary }}>
+            Operational and strategic payouts in one view.
+          </p>
+        </div>
+        <button
+          type="button"
+          onClick={() => {
+            setEditExpense({
+              description: '', category: 'Maintenance', amount: 0, taxAmount: 0,
+              transactionDate: TODAY, paymentMode: 'Cash', referenceNumber: '',
+              vendorName: '', costCenter: activeCenterName, status: 'Paid'
+            });
+            setIsExpenseDrawerOpen(true);
+          }}
+          style={{
+            padding: '10px 18px', borderRadius: '10px', border: 'none',
+            background: C.textPrimary, color: 'white', fontSize: '13px',
+            fontWeight: 600, cursor: 'pointer',
+            boxShadow: '0 1px 2px rgba(0,0,0,0.08)',
+          }}
+        >+ Log expense</button>
+      </div>
 
-              {timeFilter === 'CUSTOM' && (
-                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', animation: 'fadeIn 0.2s', width: isMobile ? '100%' : 'auto' }}>
-                  <input 
-                    type="date" value={startDate} onChange={e => setStartDate(e.target.value)}
-                    style={{ flex: 1, padding: '6px 10px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '11px', fontWeight: 700 }}
-                  />
-                  <input 
-                    type="date" value={endDate} onChange={e => setEndDate(e.target.value)}
-                    style={{ flex: 1, padding: '6px 10px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '11px', fontWeight: 700 }}
-                  />
-                </div>
-              )}
-            </div>
+      {/* ── KPI cards ────────────────────────────────────────────────── */}
+      <div style={{
+        display: 'grid',
+        gridTemplateColumns: isMobile ? '1fr 1fr' : 'repeat(4, 1fr)',
+        gap: '12px',
+      }}>
+        <KPICard label="Total expenditure" value={formatINR(outflowStats.totalOutflow)} accent={C.danger} />
+        <KPICard label="Operational" value={formatINR(outflowStats.operationalTotal)} />
+        <KPICard label="Strategic payouts" value={formatINR(outflowStats.referralTotal)} accent={C.accent} />
+        <KPICard label="Today's burn" value={formatINR(outflowStats.todayOutflow)} />
+      </div>
 
-            <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
-              <button
-                onClick={handleExportToExcel}
-                style={{
-                  background: 'linear-gradient(135deg, #10b981 0%, #059669 100%)',
-                  color: 'white',
-                  border: 'none',
-                  padding: '12px 20px',
-                  borderRadius: '12px',
-                  fontSize: '10px',
-                  fontWeight: 950,
-                  cursor: 'pointer',
-                  boxShadow: '0 4px 12px rgba(16, 185, 129, 0.15)',
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '6px',
-                  transition: 'all 0.2s',
-                  whiteSpace: 'nowrap'
-                }}
-                onMouseEnter={e => {
-                  e.currentTarget.style.transform = 'translateY(-1px)';
-                  e.currentTarget.style.boxShadow = '0 6px 16px rgba(16, 185, 129, 0.25)';
-                }}
-                onMouseLeave={e => {
-                  e.currentTarget.style.transform = 'none';
-                  e.currentTarget.style.boxShadow = '0 4px 12px rgba(16, 185, 129, 0.15)';
-                }}
-              >
-                <span>{selectedIds.size > 0 ? `📥 EXPORT SELECTED (${selectedIds.size})` : '📥 EXPORT ALL'}</span>
-              </button>
+      {/* ── Category breakdown strip (replaces "DISTRIBUTION" KPI) ───── */}
+      {outflowStats.categoryBreakdown && outflowStats.categoryBreakdown.length > 0 && (
+        <CategoryBreakdown
+          categories={outflowStats.categoryBreakdown}
+          total={outflowStats.totalOutflow}
+        />
+      )}
 
-              <button 
-                onClick={() => { 
-                  setEditExpense({ 
-                    description: '', category: 'Maintenance', amount: 0, taxAmount: 0,
-                    transactionDate: TODAY, paymentMode: 'Cash', referenceNumber: '',
-                    vendorName: '', status: 'Paid'
-                  }); 
-                  setIsExpenseDrawerOpen(true); 
-                }}
-                style={{ padding: '12px 20px', borderRadius: '12px', border: 'none', background: '#dc2626', color: 'white', fontSize: '10px', fontWeight: 950, cursor: 'pointer' }}
-              >+ LOG EXPENSE</button>
-            </div>
-          </div>
+      {/* ── Filter + search panel ───────────────────────────────────── */}
+      <div style={{
+        background: C.surface, border: `1px solid ${C.border}`, borderRadius: '12px',
+        padding: '14px 16px', display: 'flex', flexDirection: 'column', gap: '12px',
+      }}>
+        {/* Row 1: Search */}
+        <div style={{ position: 'relative', width: '100%' }}>
+          <span style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', fontSize: '14px', color: C.textTertiary, pointerEvents: 'none' }}>🔍</span>
+          <input
+            type="text"
+            value={expenseSearch}
+            onChange={e => setExpenseSearch(e.target.value)}
+            placeholder="Search description, vendor, or category"
+            style={{
+              width: '100%', padding: '10px 36px 10px 36px',
+              borderRadius: '8px', border: `1px solid ${C.border}`,
+              fontSize: '13px', outline: 'none', background: C.surface,
+              boxSizing: 'border-box', transition: 'border-color 0.15s, box-shadow 0.15s',
+              color: C.textPrimary,
+            }}
+            onFocus={e => { e.target.style.borderColor = C.textPrimary; e.target.style.boxShadow = `0 0 0 3px rgba(15,23,42,0.08)`; }}
+            onBlur={e => { e.target.style.borderColor = C.border; e.target.style.boxShadow = 'none'; }}
+          />
+          {expenseSearch && (
+            <button
+              type="button"
+              onClick={() => setExpenseSearch('')}
+              aria-label="Clear search"
+              style={{ position: 'absolute', right: '10px', top: '50%', transform: 'translateY(-50%)', background: 'transparent', border: 'none', cursor: 'pointer', color: C.textTertiary, fontSize: '18px', padding: 0, lineHeight: 1 }}
+            >×</button>
+          )}
         </div>
 
-       {/* KPI MATRIX */}
+        {/* Row 2: Filter chips */}
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', alignItems: 'center' }}>
+          <FilterGroup
+            label="Category"
+            value={expenseFilter}
+            onChange={setExpenseFilter}
+            options={[
+              { key: 'ALL', label: 'All' },
+              { key: 'OPERATIONAL', label: 'Operational' },
+              { key: 'REFERRAL', label: 'Referral' },
+            ]}
+          />
+          <FilterGroup
+            label="When"
+            value={timeFilter}
+            onChange={setTimeFilter}
+            options={[
+              { key: 'TODAY', label: 'Today' },
+              { key: 'PAST', label: 'Past' },
+              { key: 'ALL', label: 'All time' },
+              { key: 'CUSTOM', label: 'Custom' },
+            ]}
+          />
+          {timeFilter === 'CUSTOM' && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+              <input
+                type="date" value={startDate} onChange={e => setStartDate(e.target.value)}
+                style={{ padding: '6px 10px', borderRadius: '8px', border: `1px solid ${C.border}`, fontSize: '12px', color: C.textPrimary }}
+              />
+              <span style={{ fontSize: '11px', color: C.textTertiary }}>→</span>
+              <input
+                type="date" value={endDate} onChange={e => setEndDate(e.target.value)}
+                style={{ padding: '6px 10px', borderRadius: '8px', border: `1px solid ${C.border}`, fontSize: '12px', color: C.textPrimary }}
+              />
+            </div>
+          )}
 
-       <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : 'repeat(5, 1fr)', gap: isMobile ? '15px' : '20px' }}>
+          <div style={{ flex: 1 }} />
 
-          <div className="kpi-card" style={{ background: '#fff1f2', padding: '20px', borderRadius: '24px', border: '1px solid #fecdd3', boxShadow: '0 4px 20px rgba(225,29,72,0.05)' }}>
-            <p style={{ fontSize: '9px', fontWeight: 950, color: '#e11d48', letterSpacing: '1px', marginBottom: '10px' }}>TOTAL EXPENDITURE</p>
-            <div style={{ fontSize: isMobile ? '24px' : '22px', fontWeight: 950, color: '#881337' }}>₹{outflowStats.totalOutflow.toLocaleString()}</div>
+          {hasActiveFilters && (
+            <button
+              type="button"
+              onClick={clearAllFilters}
+              style={{
+                background: 'transparent', border: 'none', color: C.textSecondary,
+                cursor: 'pointer', fontSize: '12px', fontWeight: 600, padding: '6px 10px',
+                borderRadius: '6px',
+              }}
+              onMouseEnter={e => { e.currentTarget.style.background = C.surfaceHover; }}
+              onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; }}
+            >Clear filters</button>
+          )}
+
+          <button
+            type="button"
+            onClick={handleExportToExcel}
+            style={{
+              padding: '7px 12px', borderRadius: '8px',
+              border: `1px solid ${C.border}`, background: C.surface,
+              color: C.textPrimary, fontSize: '12px', fontWeight: 600,
+              cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: '6px',
+            }}
+            onMouseEnter={e => { e.currentTarget.style.background = C.surfaceHover; }}
+            onMouseLeave={e => { e.currentTarget.style.background = C.surface; }}
+          >
+            <span>↓</span>
+            <span>{selectedIds.size > 0 ? `Export selected (${selectedIds.size})` : 'Export all'}</span>
+          </button>
+        </div>
+      </div>
+
+      {/* ── Bulk action bar (only when ≥1 selected) ─────────────────── */}
+      {selectedIds.size > 0 && (
+        <div style={{
+          background: C.textPrimary, color: 'white', borderRadius: '10px',
+          padding: '10px 14px', display: 'flex', justifyContent: 'space-between',
+          alignItems: 'center', gap: '12px', flexWrap: 'wrap',
+          animation: 'slideDown 0.2s ease-out',
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+            <span style={{ fontSize: '12px', fontWeight: 600 }}>
+              {selectedIds.size} selected
+            </span>
+            <button
+              type="button"
+              onClick={() => setSelectedIds(new Set())}
+              style={{ background: 'transparent', border: 'none', color: 'rgba(255,255,255,0.7)', cursor: 'pointer', fontSize: '11px', textDecoration: 'underline', padding: 0 }}
+            >Clear</button>
           </div>
-          <div className="kpi-card" style={{ background: 'white', padding: '20px', borderRadius: '24px', border: '1px solid #e2e8f0', boxShadow: '0 4px 20px rgba(0,0,0,0.02)' }}>
-            <p style={{ fontSize: '9px', fontWeight: 950, color: '#94a3b8', letterSpacing: '1px', marginBottom: '10px' }}>OPERATIONAL COST</p>
-            <div style={{ fontSize: isMobile ? '24px' : '22px', fontWeight: 950, color: '#1e293b' }}>₹{outflowStats.operationalTotal.toLocaleString()}</div>
+          <div style={{ display: 'flex', gap: '8px' }}>
+            <button
+              type="button"
+              onClick={handleBulkMarkPaid}
+              disabled={bulkMarkable.length === 0}
+              title={bulkMarkable.length === 0 ? 'No selected rows are unpaid + editable' : `Mark ${bulkMarkable.length} as paid`}
+              style={{
+                padding: '6px 12px', borderRadius: '7px', border: 'none',
+                background: bulkMarkable.length === 0 ? 'rgba(255,255,255,0.1)' : C.success,
+                color: bulkMarkable.length === 0 ? 'rgba(255,255,255,0.4)' : 'white',
+                fontSize: '12px', fontWeight: 600,
+                cursor: bulkMarkable.length === 0 ? 'not-allowed' : 'pointer',
+              }}
+            >Mark as paid{bulkMarkable.length > 0 ? ` (${bulkMarkable.length})` : ''}</button>
+            <button
+              type="button"
+              onClick={handleBulkDelete}
+              disabled={bulkDeletable.length === 0}
+              title={bulkDeletable.length === 0 ? 'Strategic rows cannot be deleted here' : `Delete ${bulkDeletable.length}`}
+              style={{
+                padding: '6px 12px', borderRadius: '7px', border: 'none',
+                background: bulkDeletable.length === 0 ? 'rgba(255,255,255,0.1)' : C.danger,
+                color: bulkDeletable.length === 0 ? 'rgba(255,255,255,0.4)' : 'white',
+                fontSize: '12px', fontWeight: 600,
+                cursor: bulkDeletable.length === 0 ? 'not-allowed' : 'pointer',
+              }}
+            >Delete{bulkDeletable.length > 0 ? ` (${bulkDeletable.length})` : ''}</button>
           </div>
-          <div className="kpi-card" style={{ background: 'white', padding: '20px', borderRadius: '24px', border: '1px solid #e2e8f0', boxShadow: '0 4px 20px rgba(0,0,0,0.02)' }}>
-            <p style={{ fontSize: '9px', fontWeight: 950, color: '#94a3b8', letterSpacing: '1px', marginBottom: '10px' }}>STRATEGIC PAYOUTS</p>
-            <div style={{ fontSize: isMobile ? '24px' : '22px', fontWeight: 950, color: '#e11d48' }}>₹{outflowStats.referralTotal.toLocaleString()}</div>
+        </div>
+      )}
+
+      {/* ── Table card ──────────────────────────────────────────────── */}
+      <div style={{
+        background: C.surface, border: `1px solid ${C.border}`, borderRadius: '12px',
+        overflow: 'hidden',
+      }}>
+        <div style={{ overflowX: 'auto' }}>
+          <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: isMobile ? '900px' : 'auto' }}>
+            <thead style={{ background: C.surfaceAlt, position: 'sticky', top: 0, zIndex: 1 }}>
+              <tr style={{ borderBottom: `1px solid ${C.border}` }}>
+                <th style={{ ...th, width: '36px', textAlign: 'center' }}>
+                  <input
+                    type="checkbox"
+                    checked={isAllVisibleSelected}
+                    onChange={toggleSelectAllVisible}
+                    style={{ cursor: 'pointer', width: '14px', height: '14px', accentColor: C.textPrimary }}
+                  />
+                </th>
+                <SortHeader label="Date"        k="date"        sortConfig={sortConfig} onClick={handleSort} />
+                <SortHeader label="Description" k="description" sortConfig={sortConfig} onClick={handleSort} />
+                <SortHeader label="Category"    k="category"    sortConfig={sortConfig} onClick={handleSort} />
+                <SortHeader label="Amount"      k="amount"      sortConfig={sortConfig} onClick={handleSort} align="right" />
+                <th style={{ ...th, textAlign: 'center' }}>Status</th>
+                <th style={{ ...th, textAlign: 'right' }}>Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              {visibleRows.map((exp, idx) => (
+                <ExpenseRow
+                  key={exp.id}
+                  exp={exp}
+                  isSelected={selectedIds.has(exp.id)}
+                  onToggleSelect={() => toggleSelectRow(exp.id)}
+                  onToggleStatus={() => handleToggleExpenseStatus(exp.id, exp.status)}
+                  onEdit={() => {
+                    setEditExpense({
+                      id: exp.id,
+                      description: exp.description,
+                      category: exp.category,
+                      amount: exp.amount,
+                      transactionDate: exp.date,
+                      vendorName: exp.name,
+                      status: exp.status
+                    });
+                    setIsExpenseDrawerOpen(true);
+                  }}
+                  onDelete={() => handleDeleteExpense(exp.id)}
+                  zebra={idx % 2 === 1}
+                />
+              ))}
+              {totalRecords === 0 && (
+                <tr>
+                  <td colSpan="7" style={{ padding: 0 }}>
+                    <EmptyState
+                      hasActiveFilters={hasActiveFilters}
+                      onClearFilters={clearAllFilters}
+                      onLogExpense={() => {
+                        setEditExpense({
+                          description: '', category: 'Maintenance', amount: 0, taxAmount: 0,
+                          transactionDate: TODAY, paymentMode: 'Cash', referenceNumber: '',
+                          vendorName: '', status: 'Paid'
+                        });
+                        setIsExpenseDrawerOpen(true);
+                      }}
+                    />
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+
+        {/* Pagination footer */}
+        {totalRecords > 0 && (
+          <div style={{
+            padding: '10px 16px', borderTop: `1px solid ${C.borderLight}`,
+            background: C.surfaceAlt,
+            display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+            flexWrap: 'wrap', gap: '10px',
+          }}>
+            <span style={{ fontSize: '12px', color: C.textSecondary }}>
+              Showing <strong style={{ color: C.textPrimary }}>{showingFrom}–{showingTo}</strong> of <strong style={{ color: C.textPrimary }}>{totalRecords}</strong>
+            </span>
+            <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
+              <button
+                type="button"
+                onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+                disabled={currentPage <= 1}
+                style={pagerBtn(currentPage <= 1)}
+              >← Prev</button>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '12px', color: C.textSecondary }}>
+                Page
+                <input
+                  type="number" min={1} max={totalPages}
+                  value={currentPage}
+                  onChange={e => {
+                    const v = parseInt(e.target.value, 10);
+                    if (!isNaN(v)) setCurrentPage(Math.min(totalPages, Math.max(1, v)));
+                  }}
+                  style={{ width: '46px', padding: '4px 6px', textAlign: 'center', border: `1px solid ${C.border}`, borderRadius: '6px', fontSize: '12px', color: C.textPrimary }}
+                />
+                of {totalPages}
+              </div>
+              <button
+                type="button"
+                onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
+                disabled={currentPage >= totalPages}
+                style={pagerBtn(currentPage >= totalPages)}
+              >Next →</button>
+            </div>
           </div>
-          <div className="kpi-card" style={{ background: '#f8fafc', padding: '20px', borderRadius: '24px', border: '1px solid #e2e8f0', boxShadow: '0 4px 20px rgba(0,0,0,0.02)' }}>
-            <p style={{ fontSize: '9px', fontWeight: 950, color: '#64748b', letterSpacing: '1px', marginBottom: '10px' }}>TODAY'S BURN</p>
-            <div style={{ fontSize: isMobile ? '24px' : '22px', fontWeight: 950, color: '#0f172a' }}>₹{outflowStats.todayOutflow.toLocaleString()}</div>
-          </div>
+        )}
+      </div>
 
-          <div className="kpi-card" style={{ background: 'white', padding: '20px', borderRadius: '24px', border: '1px solid #e2e8f0', boxShadow: '0 4px 20px rgba(0,0,0,0.02)', display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
-             <h3 style={{ fontSize: '9px', fontWeight: 950, color: '#94a3b8', letterSpacing: '1.5px', marginBottom: '12px' }}>DISTRIBUTION</h3>
-             <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', maxHeight: '60px', overflowY: 'auto', paddingRight: '5px' }}>
-                {outflowStats.categoryBreakdown.map(cat => (
-                   <div key={cat.category} style={{ marginBottom: '4px' }}>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '2px' }}>
-                         <span style={{ fontSize: '8px', fontWeight: 900, color: '#64748b' }}>{cat.category.toUpperCase()}</span>
-                         <span style={{ fontSize: '9px', fontWeight: 950, color: '#1e293b' }}>₹{cat.amount.toLocaleString()}</span>
-                      </div>
-                   </div>
-                ))}
-             </div>
-          </div>
-       </div>
-
-
-       <div style={{ background: 'white', borderRadius: isMobile ? '16px' : '24px', border: '1px solid #e2e8f0', overflow: 'hidden', boxShadow: '0 4px 20px rgba(0,0,0,0.01)' }}>
-          <div style={{ overflowX: 'auto' }}>
-             <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: isMobile ? '1000px' : 'auto' }}>
-
-                <thead style={{ background: '#f8fafc' }}>
-                  <tr style={{ borderBottom: '1px solid #f1f5f9' }}>
-                    <th style={{ padding: '20px 30px', width: '40px', textAlign: 'center' }}>
-                      <input 
-                        type="checkbox" 
-                        checked={isAllVisibleSelected} 
-                        onChange={toggleSelectAllVisible}
-                        style={{ cursor: 'pointer', width: '15px', height: '15px', accentColor: '#dc2626', borderRadius: '4px' }}
-                      />
-                    </th>
-                    <th onClick={() => handleSort('date')} style={{ cursor: 'pointer', padding: '20px 30px', textAlign: 'left', fontSize: '10px', fontWeight: 950, color: '#94a3b8', letterSpacing: '2px' }}>DATE {getSortIcon('date')}</th>
-                    <th onClick={() => handleSort('description')} style={{ cursor: 'pointer', padding: '20px 30px', textAlign: 'left', fontSize: '10px', fontWeight: 950, color: '#94a3b8', letterSpacing: '2px' }}>DESCRIPTION {getSortIcon('description')}</th>
-                    <th onClick={() => handleSort('category')} style={{ cursor: 'pointer', padding: '20px 30px', textAlign: 'left', fontSize: '10px', fontWeight: 950, color: '#94a3b8', letterSpacing: '2px' }}>CATEGORY {getSortIcon('category')}</th>
-                    <th onClick={() => handleSort('amount')} style={{ cursor: 'pointer', padding: '20px 30px', textAlign: 'right', fontSize: '10px', fontWeight: 950, color: '#94a3b8', letterSpacing: '2px' }}>AMOUNT {getSortIcon('amount')}</th>
-                    <th style={{ padding: '20px 30px', textAlign: 'center', fontSize: '10px', fontWeight: 950, color: '#94a3b8', letterSpacing: '2px' }}>STATUS</th>
-                    <th style={{ padding: '20px 30px', textAlign: 'right', fontSize: '10px', fontWeight: 950, color: '#94a3b8', letterSpacing: '2px' }}>ACTION</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {(paginatedOutflow || []).map(exp => (
-                    <tr key={exp.id} style={{ borderBottom: '1px solid #f8fafc', transition: 'background 0.2s' }}>
-                      <td style={{ padding: '20px 30px', textAlign: 'center' }}>
-                        <input 
-                          type="checkbox" 
-                          checked={selectedIds.has(exp.id)} 
-                          onChange={() => toggleSelectRow(exp.id)}
-                          style={{ cursor: 'pointer', width: '14px', height: '14px', accentColor: '#dc2626' }}
-                        />
-                      </td>
-                      <td style={{ padding: '20px 30px', fontSize: '11px', fontWeight: 800, color: '#1e293b' }}>{exp.date ? new Date(exp.date).toLocaleDateString('en-US', { day: 'numeric', month: 'short', year: 'numeric' }) : 'N/A'}</td>
-                      <td style={{ padding: '20px 30px' }}>
-                        <div style={{ fontSize: '11.5px', fontWeight: 850, color: '#1e293b' }}>{exp.description}</div>
-                        <div style={{ fontSize: '8px', fontWeight: 900, color: '#94a3b8' }}>{(exp.name || 'N/A').toUpperCase()}</div>
-                      </td>
-                      <td style={{ padding: '20px 30px' }}>
-                        <span style={{ 
-                          fontSize: '9px', fontWeight: 950, color: 'white', 
-                          background: exp.category === 'Referral' ? '#e11d48' : '#dc2626', 
-                          padding: '5px 12px', borderRadius: '8px' 
-                        }}>{(exp.category || 'General').toUpperCase()}</span>
-                      </td>
-                      <td style={{ padding: '20px 30px', textAlign: 'right', fontSize: '12px', fontWeight: 950, color: '#dc2626' }}>₹{(Number(exp.amount) || 0).toLocaleString()}</td>
-                      <td style={{ padding: '20px 30px', textAlign: 'center' }}>
-                         {exp.type === 'OPERATIONAL' || exp.type === 'LEGACY' ? (
-                           <button 
-                             onClick={() => handleToggleExpenseStatus(exp.id, exp.status)}
-                             style={{ 
-                               padding: '6px 12px', borderRadius: '10px', border: 'none', 
-                               background: exp.status === 'PAID' ? '#dcfce7' : '#fee2e2',
-                               color: exp.status === 'PAID' ? '#166534' : '#991b1b',
-                               fontSize: '8.5px', fontWeight: 950, cursor: 'pointer', transition: 'all 0.2s'
-                             }}
-                           >{(exp.status || 'UNPAID').toUpperCase()}</button>
-                         ) : (
-                           <span style={{ fontSize: '8.5px', fontWeight: 950, color: '#10b981' }}>PAID</span>
-                         )}
-                      </td>
-                       <td style={{ padding: '20px 30px', textAlign: 'right' }}>
-                          {exp.type === 'OPERATIONAL' || exp.type === 'LEGACY' ? (
-                            <div style={{ display: 'flex', gap: '10px', justifyContent: 'flex-end', alignItems: 'center' }}>
-                               <button 
-                                 onClick={() => {
-                                   setEditExpense({ 
-                                     id: exp.id,
-                                     description: exp.description,
-                                     category: exp.category,
-                                     amount: exp.amount,
-                                     transactionDate: exp.date,
-                                     vendorName: exp.name,
-                                     status: exp.status
-                                   });
-                                   setIsExpenseDrawerOpen(true);
-                                 }}
-                                 style={{ padding: '6px 12px', borderRadius: '10px', border: 'none', background: '#f0f4ff', color: '#0f52ba', fontSize: '8.5px', fontWeight: 950, cursor: 'pointer' }}
-                               >EDIT</button>
-                               <button 
-                                 onClick={() => handleDeleteExpense(exp.id)}
-                                 style={{ padding: '6px 12px', borderRadius: '10px', border: 'none', background: '#fee2e2', color: '#ef4444', fontSize: '8.5px', fontWeight: 950, cursor: 'pointer' }}
-                               >DELETE</button>
-                            </div>
-                          ) : (
-                            <span style={{ fontSize: '8.5px', fontWeight: 950, color: '#94a3b8' }}>LOCKED (STRATEGIC)</span>
-                          )}
-                       </td>
-
-                    </tr>
-                  ))}
-                  {(filteredOutflow || []).length === 0 && (
-                    <tr><td colSpan="7" style={{ padding: '50px', textAlign: 'center', color: '#94a3b8', fontSize: '12px', fontWeight: 600 }}>No expenditure records found.</td></tr>
-                  )}
-
-                </tbody>
-             </table>
-          </div>
-          <div style={{ padding: '20px', borderTop: '1px solid #f1f5f9', display: 'flex', justifyContent: 'center', gap: '5px' }}>
-            {Array.from({ length: Math.ceil(filteredOutflow.length / itemsPerPage) }).map((_, i) => (
-              <button key={i} onClick={() => setCurrentPage(i + 1)} style={{ padding: '6px 12px', background: currentPage === i + 1 ? '#dc2626' : '#f1f5f9', color: currentPage === i + 1 ? 'white' : '#64748b', border: 'none', borderRadius: '8px', fontSize: '10px', fontWeight: 950, cursor: 'pointer', transition: 'all 0.2s' }}>{i + 1}</button>
-            ))}
-          </div>
-       </div>
+      <style>{`
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
+        @keyframes slideDown { from { opacity: 0; transform: translateY(-6px); } to { opacity: 1; transform: none; } }
+      `}</style>
     </div>
   );
 };
 
+// ─── Sub-components ────────────────────────────────────────────────────────
+
+const KPICard = ({ label, value, accent }) => (
+  <div style={{
+    background: C.surface, border: `1px solid ${C.border}`,
+    borderRadius: '12px', padding: '16px',
+    position: 'relative', overflow: 'hidden',
+  }}>
+    {accent && (
+      <div style={{ position: 'absolute', left: 0, top: 0, bottom: 0, width: '3px', background: accent }} />
+    )}
+    <div style={{ fontSize: '11px', fontWeight: 600, color: C.textSecondary, marginBottom: '6px' }}>
+      {label}
+    </div>
+    <div style={{ fontSize: '22px', fontWeight: 700, color: C.textPrimary, letterSpacing: '-0.3px' }}>
+      {value}
+    </div>
+  </div>
+);
+
+const CategoryBreakdown = ({ categories, total }) => {
+  const top = [...categories].sort((a, b) => b.amount - a.amount).slice(0, 5);
+  const max = top[0]?.amount || 1;
+  return (
+    <div style={{
+      background: C.surface, border: `1px solid ${C.border}`, borderRadius: '12px',
+      padding: '14px 16px',
+    }}>
+      <div style={{ fontSize: '12px', fontWeight: 600, color: C.textSecondary, marginBottom: '12px' }}>
+        Category breakdown
+      </div>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+        {top.map(cat => {
+          const pct = total > 0 ? Math.round((cat.amount / total) * 100) : 0;
+          const barPct = Math.max(2, (cat.amount / max) * 100);
+          return (
+            <div key={cat.category} style={{ display: 'grid', gridTemplateColumns: '140px 1fr 90px 50px', gap: '12px', alignItems: 'center' }}>
+              <span style={{ fontSize: '12px', color: C.textPrimary, fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                {cat.category}
+              </span>
+              <div style={{ background: C.surfaceHover, borderRadius: '99px', height: '8px', overflow: 'hidden' }}>
+                <div style={{ width: `${barPct}%`, height: '100%', background: C.textPrimary, borderRadius: '99px', transition: 'width 0.3s' }} />
+              </div>
+              <span style={{ fontSize: '12px', color: C.textPrimary, fontWeight: 600, textAlign: 'right' }}>
+                {formatINR(cat.amount)}
+              </span>
+              <span style={{ fontSize: '11px', color: C.textTertiary, textAlign: 'right' }}>
+                {pct}%
+              </span>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+};
+
+const FilterGroup = ({ label, value, onChange, options }) => (
+  <div style={{ display: 'inline-flex', alignItems: 'center', gap: '8px' }}>
+    <span style={{ fontSize: '11px', color: C.textSecondary, fontWeight: 600 }}>{label}:</span>
+    <div style={{ display: 'inline-flex', background: C.surfaceAlt, padding: '3px', borderRadius: '8px', border: `1px solid ${C.border}` }}>
+      {options.map(opt => {
+        const active = value === opt.key;
+        return (
+          <button
+            key={opt.key}
+            type="button"
+            onClick={() => onChange(opt.key)}
+            style={{
+              padding: '5px 10px', borderRadius: '6px', border: 'none',
+              background: active ? C.surface : 'transparent',
+              color: active ? C.textPrimary : C.textSecondary,
+              fontSize: '12px', fontWeight: active ? 600 : 500,
+              cursor: 'pointer', transition: 'all 0.15s',
+              boxShadow: active ? '0 1px 2px rgba(0,0,0,0.06)' : 'none',
+            }}
+          >{opt.label}</button>
+        );
+      })}
+    </div>
+  </div>
+);
+
+const th = {
+  padding: '12px 14px', textAlign: 'left',
+  fontSize: '11px', fontWeight: 600, color: C.textSecondary,
+};
+
+const SortHeader = ({ label, k, sortConfig, onClick, align = 'left' }) => {
+  const active = sortConfig.key === k;
+  const arrow = !active ? '↕' : sortConfig.direction === 'ASC' ? '↑' : '↓';
+  return (
+    <th
+      onClick={() => onClick(k)}
+      style={{
+        ...th, textAlign: align, cursor: 'pointer', userSelect: 'none',
+        color: active ? C.textPrimary : C.textSecondary,
+      }}
+      onMouseEnter={e => { e.currentTarget.style.color = C.textPrimary; }}
+      onMouseLeave={e => { e.currentTarget.style.color = active ? C.textPrimary : C.textSecondary; }}
+    >
+      {label} <span style={{ opacity: active ? 1 : 0.4, fontSize: '10px' }}>{arrow}</span>
+    </th>
+  );
+};
+
+const ExpenseRow = ({ exp, isSelected, onToggleSelect, onToggleStatus, onEdit, onDelete, zebra }) => {
+  const mutable = isMutable(exp);
+  const isReferral = exp.category === 'Referral';
+  const isPaid = exp.status === 'PAID';
+  return (
+    <tr style={{
+      background: isSelected ? '#fafbfc' : (zebra ? C.surfaceAlt : C.surface),
+      borderBottom: `1px solid ${C.borderLight}`,
+      transition: 'background 0.15s',
+    }}>
+      <td style={{ ...td, textAlign: 'center' }}>
+        <input
+          type="checkbox" checked={isSelected} onChange={onToggleSelect}
+          style={{ cursor: 'pointer', width: '14px', height: '14px', accentColor: C.textPrimary }}
+        />
+      </td>
+      <td style={{ ...td, fontSize: '12px', color: C.textPrimary, whiteSpace: 'nowrap' }}>
+        {formatDate(exp.date)}
+      </td>
+      <td style={{ ...td }}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+          <div style={{ fontSize: '13px', fontWeight: 500, color: C.textPrimary }}>
+            {exp.description || '—'}
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+            {exp.name && (
+              <span style={{ fontSize: '11px', color: C.textTertiary }}>
+                {exp.name}
+              </span>
+            )}
+            {exp.type === 'STRATEGIC' && (
+              <span style={{
+                fontSize: '10px', fontWeight: 600, color: C.accent,
+                background: C.accentSoft, padding: '2px 6px', borderRadius: '4px',
+                border: `1px solid ${C.accent}22`,
+              }}>Strategic</span>
+            )}
+          </div>
+        </div>
+      </td>
+      <td style={{ ...td }}>
+        <span style={{
+          fontSize: '11px', fontWeight: 600,
+          color: isReferral ? C.accent : C.textPrimary,
+          background: isReferral ? C.accentSoft : C.surfaceHover,
+          padding: '3px 8px', borderRadius: '6px',
+        }}>{exp.category || 'General'}</span>
+      </td>
+      <td style={{ ...td, textAlign: 'right', fontSize: '14px', fontWeight: 600, color: C.textPrimary, fontVariantNumeric: 'tabular-nums' }}>
+        {formatINR(exp.amount)}
+      </td>
+      <td style={{ ...td, textAlign: 'center' }}>
+        {mutable ? (
+          <button
+            type="button"
+            onClick={onToggleStatus}
+            title={`Click to mark as ${isPaid ? 'unpaid' : 'paid'}`}
+            style={{
+              padding: '3px 10px', borderRadius: '99px', border: '1px solid',
+              borderColor: isPaid ? C.successBorder : C.dangerBorder,
+              background: isPaid ? C.successSoft : C.dangerSoft,
+              color: isPaid ? C.success : C.danger,
+              fontSize: '11px', fontWeight: 600, cursor: 'pointer',
+              display: 'inline-flex', alignItems: 'center', gap: '4px',
+            }}
+          >
+            <span style={{ width: '6px', height: '6px', borderRadius: '50%', background: 'currentColor' }} />
+            {isPaid ? 'Paid' : 'Unpaid'}
+          </button>
+        ) : (
+          <span style={{
+            padding: '3px 10px', borderRadius: '99px',
+            background: C.successSoft, color: C.success,
+            fontSize: '11px', fontWeight: 600,
+            display: 'inline-flex', alignItems: 'center', gap: '4px',
+            border: `1px solid ${C.successBorder}`,
+          }}>
+            <span style={{ width: '6px', height: '6px', borderRadius: '50%', background: 'currentColor' }} />
+            Paid
+          </span>
+        )}
+      </td>
+      <td style={{ ...td, textAlign: 'right' }}>
+        {mutable ? (
+          <div style={{ display: 'inline-flex', gap: '4px' }}>
+            <button
+              type="button" onClick={onEdit}
+              style={iconBtn}
+              onMouseEnter={e => { e.currentTarget.style.background = C.surfaceHover; e.currentTarget.style.color = C.textPrimary; }}
+              onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = C.textSecondary; }}
+            >Edit</button>
+            <button
+              type="button" onClick={onDelete}
+              style={{ ...iconBtn, color: C.danger }}
+              onMouseEnter={e => { e.currentTarget.style.background = C.dangerSoft; }}
+              onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; }}
+            >Delete</button>
+          </div>
+        ) : (
+          <span style={{ fontSize: '11px', color: C.textTertiary, fontStyle: 'italic' }}>
+            Managed in Referrals
+          </span>
+        )}
+      </td>
+    </tr>
+  );
+};
+
+const td = { padding: '12px 14px', verticalAlign: 'middle' };
+
+const iconBtn = {
+  padding: '6px 10px', borderRadius: '6px', border: 'none',
+  background: 'transparent', color: C.textSecondary,
+  fontSize: '12px', fontWeight: 500, cursor: 'pointer',
+  transition: 'all 0.15s',
+};
+
+const pagerBtn = (disabled) => ({
+  padding: '6px 12px', borderRadius: '7px',
+  border: `1px solid ${disabled ? C.borderLight : C.border}`,
+  background: disabled ? C.surfaceAlt : C.surface,
+  color: disabled ? C.textTertiary : C.textPrimary,
+  cursor: disabled ? 'not-allowed' : 'pointer',
+  fontSize: '12px', fontWeight: 500,
+});
+
+const EmptyState = ({ hasActiveFilters, onClearFilters, onLogExpense }) => (
+  <div style={{
+    padding: '64px 32px', textAlign: 'center',
+    display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '12px',
+  }}>
+    <div style={{
+      width: '48px', height: '48px', borderRadius: '50%',
+      background: C.surfaceAlt, display: 'flex',
+      alignItems: 'center', justifyContent: 'center',
+      fontSize: '20px', color: C.textTertiary,
+    }}>{hasActiveFilters ? '🔍' : '📋'}</div>
+    <div style={{ fontSize: '14px', fontWeight: 600, color: C.textPrimary }}>
+      {hasActiveFilters ? 'No expenses match these filters' : 'No expenses logged yet'}
+    </div>
+    <div style={{ fontSize: '12px', color: C.textSecondary, maxWidth: '320px' }}>
+      {hasActiveFilters
+        ? 'Try widening your time range or clearing the filters.'
+        : 'Log your first operational expense to start tracking outflow.'}
+    </div>
+    <div style={{ display: 'flex', gap: '8px', marginTop: '4px' }}>
+      {hasActiveFilters && (
+        <button
+          type="button" onClick={onClearFilters}
+          style={{
+            padding: '8px 14px', borderRadius: '8px',
+            border: `1px solid ${C.border}`, background: C.surface,
+            color: C.textPrimary, fontSize: '12px', fontWeight: 600,
+            cursor: 'pointer',
+          }}
+        >Clear filters</button>
+      )}
+      <button
+        type="button" onClick={onLogExpense}
+        style={{
+          padding: '8px 14px', borderRadius: '8px', border: 'none',
+          background: C.textPrimary, color: 'white',
+          fontSize: '12px', fontWeight: 600, cursor: 'pointer',
+        }}
+      >+ Log expense</button>
+    </div>
+  </div>
+);
 
 export default ExpenseLedger;

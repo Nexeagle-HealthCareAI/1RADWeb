@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
+import * as XLSX from 'xlsx';
 
 const ReferralHub = ({
   isMobile,
@@ -172,39 +173,35 @@ const ReferralHub = ({
     if (!activePartner) return;
     const selectedCuts = activePartner.cuts.filter(c => drawerSelectedIds.has(c.id));
     if (selectedCuts.length === 0) return;
-    const timestampStr = new Date().toISOString().replace(/[:.]/g, '-');
+
+    const rows = selectedCuts.map(cut => ({
+      'Payout Date': formatDate(cut?.date, true),
+      'Patient ID': cut?.patientId || '',
+      'Patient Name': (cut?.patientName || 'N/A').toUpperCase(),
+      'Age': cut?.patientAge || '',
+      'Gender': cut?.patientGender || '',
+      'Mobile': cut?.mobile || cut?.patientMobile || '',
+      'Modality': (cut?.modality || '').toUpperCase(),
+      'Reference ID': cut?.reference || '',
+      'Payout Amount (INR)': Number(cut?.amount) || 0,
+      'Patient Payment': cut?.patientPaymentStatus || '',
+      'Commission Status': cut?.status || 'UNPAID',
+      'Commission Type': cut?.type || '',
+      'Remarks': cut?.description ? (cut.description.includes(' - ') ? cut.description.split(' - ')[1] : cut.description) : '',
+    }));
+
+    const ws = XLSX.utils.json_to_sheet(rows);
+    ws['!cols'] = [
+      { wch: 28 }, { wch: 14 }, { wch: 26 }, { wch: 6 }, { wch: 10 }, { wch: 16 },
+      { wch: 10 }, { wch: 16 }, { wch: 20 }, { wch: 18 }, { wch: 18 }, { wch: 16 }, { wch: 28 }
+    ];
+    const wb = XLSX.utils.book_new();
+    const sheetName = activePartner.name.slice(0, 31).replace(/[:\\/?*\[\]]/g, '_');
+    XLSX.utils.book_append_sheet(wb, ws, sheetName);
+
+    const dateStr = new Date().toISOString().split('T')[0];
     const safeName = activePartner.name.replace(/[^A-Z0-9]+/gi, '_');
-    const fileName = `1RAD_Partner_${safeName}_${timestampStr}`;
-    const headers = ['Payout Date', 'Patient Name', 'Modality', 'Reference ID', 'Payout Amount (INR)', 'Status'];
-    const rows = selectedCuts.map(cut => [
-      formatDate(cut?.date, true),
-      cut?.patientName || 'N/A',
-      cut?.modality || 'MRI',
-      cut?.reference || 'N/A',
-      Number(cut?.amount) || 0,
-      cut?.status || 'UNPAID'
-    ]);
-    const escapeCsvCell = (cell) => {
-      if (cell === null || cell === undefined) return '';
-      const cellStr = String(cell);
-      if (cellStr.includes(',') || cellStr.includes('"') || cellStr.includes('\n')) {
-        return `"${cellStr.replace(/"/g, '""')}"`;
-      }
-      return cellStr;
-    };
-    const csvContent = [
-      headers.map(escapeCsvCell).join(','),
-      ...rows.map(r => r.map(escapeCsvCell).join(','))
-    ].join('\n');
-    const blob = new Blob(['﻿' + csvContent], { type: 'text/csv;charset=utf-8;' });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.setAttribute('href', url);
-    link.setAttribute('download', `${fileName}.csv`);
-    link.style.visibility = 'hidden';
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
+    XLSX.writeFile(wb, `1RAD_Partner_${safeName}_${dateStr}.xlsx`);
   };
 
   const toggleSelectRow = (id) => {
@@ -245,62 +242,49 @@ const ReferralHub = ({
   };
 
   const handleExportToExcel = () => {
-    const isExportingSelected = selectedIds.size > 0;
-    const timestampStr = new Date().toISOString().replace(/[:.]/g, '-');
-    const fileName = `1RAD_Referral_Payouts_${timeFilter}_${isExportingSelected ? 'Selected' : 'All'}_${timestampStr}`;
+    if (!partnerGroups.length) return;
+    const wb = XLSX.utils.book_new();
 
-    const headers = [
-      'Payout Date',
-      'Partner Name',
-      'Patient Name',
-      'Modality',
-      'Reference ID',
-      'Payout Amount (INR)',
-      'Status'
-    ];
+    // ── Summary sheet ────────────────────────────────────────────────────
+    const summaryRows = partnerGroups.map(g => ({
+      'Partner': g.name,
+      'Total Payouts': g.count,
+      'Total Amount (INR)': g.total,
+      'Settled (INR)': g.paid,
+      'Outstanding (INR)': g.unpaid,
+    }));
+    const summaryWs = XLSX.utils.json_to_sheet(summaryRows);
+    summaryWs['!cols'] = [{ wch: 28 }, { wch: 15 }, { wch: 20 }, { wch: 16 }, { wch: 18 }];
+    XLSX.utils.book_append_sheet(wb, summaryWs, 'Summary');
 
-    const cutsToExport = filteredReferralCuts || [];
-    const filteredCuts = isExportingSelected
-      ? cutsToExport.filter(cut => selectedIds.has(cut.id))
-      : cutsToExport;
+    // ── One sheet per partner ────────────────────────────────────────────
+    partnerGroups.forEach(group => {
+      const rows = group.cuts.map(cut => ({
+        'Payout Date': formatDate(cut?.date, true),
+        'Patient ID': cut?.patientId || '',
+        'Patient Name': (cut?.patientName || 'N/A').toUpperCase(),
+        'Age': cut?.patientAge || '',
+        'Gender': cut?.patientGender || '',
+        'Mobile': cut?.mobile || cut?.patientMobile || '',
+        'Modality': (cut?.modality || '').toUpperCase(),
+        'Reference ID': cut?.reference || '',
+        'Payout Amount (INR)': Number(cut?.amount) || 0,
+        'Patient Payment': cut?.patientPaymentStatus || '',
+        'Commission Status': cut?.status || 'UNPAID',
+        'Commission Type': cut?.type || '',
+        'Remarks': cut?.description ? (cut.description.includes(' - ') ? cut.description.split(' - ')[1] : cut.description) : '',
+      }));
+      const ws = XLSX.utils.json_to_sheet(rows);
+      ws['!cols'] = [
+        { wch: 28 }, { wch: 14 }, { wch: 26 }, { wch: 6 }, { wch: 10 }, { wch: 16 },
+        { wch: 10 }, { wch: 16 }, { wch: 20 }, { wch: 18 }, { wch: 18 }, { wch: 16 }, { wch: 28 }
+      ];
+      const sheetName = group.name.slice(0, 31).replace(/[:\\/?*\[\]]/g, '_');
+      XLSX.utils.book_append_sheet(wb, ws, sheetName);
+    });
 
-    const rows = filteredCuts.map(cut => [
-      formatDate(cut?.date, true),
-      cut?.name || 'DIRECT',
-      cut?.patientName || 'N/A',
-      cut?.modality || 'MRI',
-      cut?.reference || 'N/A',
-      Number(cut?.amount) || 0,
-      cut?.status || 'UNPAID'
-    ]);
-
-    const escapeCsvCell = (cell) => {
-      if (cell === null || cell === undefined) return '';
-      const cellStr = String(cell);
-      if (cellStr.includes(',') || cellStr.includes('"') || cellStr.includes('\n')) {
-        return `"${cellStr.replace(/"/g, '""')}"`;
-      }
-      return cellStr;
-    };
-
-    const csvContent = [
-      headers.map(escapeCsvCell).join(','),
-      ...rows.map(row => row.map(escapeCsvCell).join(','))
-    ].join('\n');
-
-    // Excel compatibility UTF-8 BOM
-    const BOM = '\uFEFF';
-    const blob = new Blob([BOM + csvContent], { type: 'text/csv;charset=utf-8;' });
-    
-    // Trigger download
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.setAttribute('href', url);
-    link.setAttribute('download', `${fileName}.csv`);
-    link.style.visibility = 'hidden';
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
+    const dateStr = new Date().toISOString().split('T')[0];
+    XLSX.writeFile(wb, `1RAD_Referral_Payouts_${timeFilter}_${dateStr}.xlsx`);
   };
 
   const formatDate = (dateStr, isUtc = false) => {
@@ -401,7 +385,7 @@ const ReferralHub = ({
                   e.currentTarget.style.boxShadow = '0 4px 12px rgba(16, 185, 129, 0.15)';
                 }}
               >
-                <span>{selectedIds.size > 0 ? `📥 EXPORT SELECTED (${selectedIds.size})` : '📥 EXPORT ALL'}</span>
+                <span>📥 EXPORT EXCEL ({partnerGroups.length} PARTNER{partnerGroups.length !== 1 ? 'S' : ''})</span>
               </button>
            </div>
           

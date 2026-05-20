@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect, useMemo, useRef } from 'react';
 
 export const InvoiceDrawer = ({
   isMobile,
@@ -746,157 +746,7 @@ export const ExportDrawer = ({
   );
 };
 
-export const ExpenseDrawer = ({
-  setIsExpenseDrawerOpen,
-  handleSaveExpense,
-  editExpense,
-  setEditExpense,
-  savingExpense,
-  referrers,
-  expenses
-}) => {
-  return (
-    <div className="drawer-overlay" onClick={() => setIsExpenseDrawerOpen(false)} style={{ backdropFilter: 'blur(8px)', background: 'rgba(10, 22, 40, 0.4)', zIndex: 10000 }}>
-      <div className="drawer-content" style={{ padding: 0, width: '500px', background: 'white' }} onClick={e => e.stopPropagation()}>
-        <div style={{ padding: '35px', background: 'linear-gradient(135deg, #1e293b 0%, #0f172a 100%)', color: 'white' }}>
-           <h2 style={{ fontSize: '11px', fontWeight: 950, color: '#38bdf8', letterSpacing: '3px', textTransform: 'uppercase', marginBottom: '8px' }}>Strategic Fiscal Ledger</h2>
-           <div style={{ fontSize: '20px', fontWeight: 950, letterSpacing: '-1px' }}>INSTITUTIONAL_DEBIT_PROTOCOL</div>
-        </div>
-
-        <div style={{ padding: '35px', maxHeight: 'calc(100vh - 120px)', overflowY: 'auto' }}>
-           <form onSubmit={handleSaveExpense}>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '25px' }}>
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px' }}>
-                   <div className="form-group">
-                      <label style={{ display: 'block', fontSize: '9px', fontWeight: 950, color: '#94a3b8', letterSpacing: '2px', marginBottom: '10px' }}>TRANSACTION_DATE</label>
-                      <input 
-                         type="date" required 
-                         value={editExpense.transactionDate} 
-                         onChange={e => setEditExpense({...editExpense, transactionDate: e.target.value})}
-                         style={{ width: '100%', border: 'none', borderBottom: '2px solid #f0f0f0', fontSize: '14px', fontWeight: 700, padding: '10px 0', outline: 'none' }}
-                      />
-                   </div>
-                   <div className="form-group">
-                      <label style={{ display: 'block', fontSize: '9px', fontWeight: 950, color: '#94a3b8', letterSpacing: '2px', marginBottom: '10px' }}>APPROVAL_STATUS</label>
-                      <select 
-                         value={editExpense.status} 
-                         onChange={e => setEditExpense({...editExpense, status: e.target.value})}
-                         style={{ width: '100%', padding: '10px', borderRadius: '10px', border: '1px solid #eee', fontSize: '12px', fontWeight: 700, background: '#f8fafc' }}
-                      >
-                         {['Draft', 'Pending', 'Approved', 'Paid'].map(s => <option key={s} value={s}>{s}</option>)}
-                      </select>
-                   </div>
-                </div>
-
-                <div className="form-group">
-                   <label style={{ display: 'block', fontSize: '9px', fontWeight: 950, color: '#e11d48', letterSpacing: '2px', marginBottom: '10px' }}>PAYEE / REFERRER IDENTITY</label>
-                   <input 
-                      type="text" required 
-                      list="vendor-suggestions"
-                      value={editExpense.vendorName} 
-                      placeholder="Select a doctor or type vendor name..."
-                      onChange={e => setEditExpense({...editExpense, vendorName: e.target.value})}
-                      style={{ width: '100%', border: 'none', borderBottom: '2px solid #f0f0f0', fontSize: '15px', fontWeight: 800, padding: '10px 0', outline: 'none' }}
-                   />
-                   <datalist id="vendor-suggestions">
-                      {referrers.map(r => <option key={`ref-${r.referrerId || r.id}`} value={r.name || r.fullName} />)}
-                      {[...new Set(expenses.map(e => e.vendorName))].filter(v => v).map(v => (
-                         <option key={`hist-${v}`} value={v} />
-                      ))}
-                   </datalist>
-                </div>
-
-                <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 0.8fr', gap: '20px' }}>
-                   <div className="form-group">
-                      <label style={{ display: 'block', fontSize: '9px', fontWeight: 950, color: '#94a3b8', letterSpacing: '2px', marginBottom: '10px' }}>EXPENSE_CATEGORY</label>
-                      <select 
-                         value={editExpense.category} 
-                         onChange={e => setEditExpense({...editExpense, category: e.target.value})}
-                         style={{ width: '100%', padding: '14px', borderRadius: '12px', border: '1px solid #eee', fontSize: '12px', fontWeight: 700, background: 'white' }}
-                      >
-                        {['Maintenance', 'Staff Salary', 'Utilities', 'Reagents', 'Marketing', 'Rent', 'Consumables', 'Other'].map(m => <option key={m} value={m}>{m}</option>)}
-                      </select>
-                   </div>
-                   <div className="form-group">
-                      <label style={{ display: 'block', fontSize: '9px', fontWeight: 950, color: '#94a3b8', letterSpacing: '2px', marginBottom: '10px' }}>COST_CENTER</label>
-                      <select 
-                         value={editExpense.costCenter} 
-                         onChange={e => setEditExpense({...editExpense, costCenter: e.target.value})}
-                         style={{ width: '100%', padding: '14px', borderRadius: '12px', border: '1px solid #eee', fontSize: '12px', fontWeight: 700, background: 'white' }}
-                      >
-                        {['Radiology', 'Laboratory', 'Pharmacy', 'OPD', 'Administration', 'Logistics'].map(c => <option key={c} value={c}>{c}</option>)}
-                      </select>
-                   </div>
-                </div>
-
-                <div className="form-group">
-                   <label style={{ display: 'block', fontSize: '9px', fontWeight: 950, color: '#94a3b8', letterSpacing: '2px', marginBottom: '10px' }}>DESCRIPTION_LOG</label>
-                   <input 
-                      type="text" required 
-                      value={editExpense.description} 
-                      placeholder="Detailed breakdown of the expenditure..."
-                      onChange={e => setEditExpense({...editExpense, description: e.target.value})}
-                      style={{ width: '100%', border: 'none', borderBottom: '2px solid #f0f0f0', fontSize: '14px', fontWeight: 700, padding: '10px 0', outline: 'none' }}
-                   />
-                </div>
-
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px' }}>
-                   <div className="form-group">
-                      <label style={{ display: 'block', fontSize: '9px', fontWeight: 950, color: '#94a3b8', letterSpacing: '2px', marginBottom: '10px' }}>BASE_AMOUNT (₹)</label>
-                      <input 
-                         type="number" required 
-                         value={editExpense.amount} 
-                         onChange={e => setEditExpense({...editExpense, amount: parseFloat(e.target.value)})}
-                         style={{ width: '100%', border: 'none', borderBottom: '2px solid #f0f0f0', fontSize: '18px', fontWeight: 950, padding: '10px 0', outline: 'none', color: '#1e293b' }}
-                      />
-                   </div>
-                   <div className="form-group">
-                      <label style={{ display: 'block', fontSize: '9px', fontWeight: 950, color: '#94a3b8', letterSpacing: '2px', marginBottom: '10px' }}>TAX_GST (₹)</label>
-                      <input 
-                         type="number" 
-                         value={editExpense.taxAmount} 
-                         onChange={e => setEditExpense({...editExpense, taxAmount: parseFloat(e.target.value)})}
-                         style={{ width: '100%', border: 'none', borderBottom: '2px solid #f0f0f0', fontSize: '18px', fontWeight: 950, padding: '10px 0', outline: 'none', color: '#64748b' }}
-                      />
-                   </div>
-                </div>
-
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px' }}>
-                   <div className="form-group">
-                      <label style={{ display: 'block', fontSize: '9px', fontWeight: 950, color: '#94a3b8', letterSpacing: '2px', marginBottom: '10px' }}>PAYMENT_MODE</label>
-                      <select 
-                         value={editExpense.paymentMode} 
-                         onChange={e => setEditExpense({...editExpense, paymentMode: e.target.value})}
-                         style={{ width: '100%', padding: '10px', borderRadius: '10px', border: '1px solid #eee', fontSize: '12px', fontWeight: 700, background: 'white' }}
-                      >
-                         {['Cash', 'UPI', 'Bank Transfer', 'Cheque'].map(m => <option key={m} value={m}>{m}</option>)}
-                      </select>
-                   </div>
-                   <div className="form-group">
-                      <label style={{ display: 'block', fontSize: '9px', fontWeight: 950, color: '#94a3b8', letterSpacing: '2px', marginBottom: '10px' }}>REFERENCE_NO</label>
-                      <input 
-                         type="text" 
-                         value={editExpense.referenceNumber} 
-                         placeholder="TXN / BILL ID"
-                         onChange={e => setEditExpense({...editExpense, referenceNumber: e.target.value})}
-                         style={{ width: '100%', border: 'none', borderBottom: '2px solid #f0f0f0', fontSize: '13px', fontWeight: 700, padding: '8px 0', outline: 'none' }}
-                      />
-                   </div>
-                </div>
-              </div>
-
-              <div style={{ marginTop: '40px', display: 'flex', gap: '15px' }}>
-                 <button type="button" onClick={() => setIsExpenseDrawerOpen(false)} style={{ flex: 1, padding: '16px', borderRadius: '16px', border: '1px solid #eee', fontSize: '11px', fontWeight: 950, cursor: 'pointer' }}>CANCEL</button>
-                 <button type="submit" disabled={savingExpense} style={{ flex: 2, padding: '16px', borderRadius: '16px', border: 'none', background: '#0f172a', color: 'white', fontSize: '11px', fontWeight: 950, cursor: 'pointer' }}>
-                   {savingExpense ? 'RECORDING...' : 'COMMIT TO LEDGER →'}
-                 </button>
-              </div>
-           </form>
-        </div>
-      </div>
-    </div>
-  );
-};
+export const ExpenseDrawer = (props) => <ExpenseDrawerInner {...props} />;
 
 export const PayoutDrawer = ({
   setIsPayoutDrawerOpen,
@@ -978,4 +828,443 @@ export const PayoutDrawer = ({
       </div>
     </div>
   );
+};
+
+// ───────────────────────────────────────────────────────────────────────────
+// ExpenseDrawerInner — the rebuilt log-expense form.
+// Visual language matches the new ExpenseLedger (sentence case, slate accent,
+// chip-style segmented controls, live total preview, sticky save footer).
+// ───────────────────────────────────────────────────────────────────────────
+
+const EX = {
+  textPrimary:   '#0f172a',
+  textSecondary: '#475569',
+  textTertiary:  '#94a3b8',
+  border:        '#e2e8f0',
+  borderLight:   '#f1f5f9',
+  surface:       '#ffffff',
+  surfaceAlt:    '#f8fafc',
+  surfaceHover:  '#f1f5f9',
+  accent:        '#0f172a',  // primary action = slate
+  accentSoft:    '#e2e8f0',
+  success:       '#15803d',
+  successSoft:   '#dcfce7',
+  warning:       '#b45309',
+  warningSoft:   '#fef3c7',
+};
+
+const EXPENSE_CATEGORIES = [
+  { key: 'Maintenance',  icon: '🔧' },
+  { key: 'Staff Salary', icon: '💼' },
+  { key: 'Utilities',    icon: '💡' },
+  { key: 'Reagents',     icon: '🧪' },
+  { key: 'Marketing',    icon: '📣' },
+  { key: 'Rent',         icon: '🏢' },
+  { key: 'Consumables',  icon: '📦' },
+  { key: 'Other',        icon: '✨' },
+];
+
+const PAYMENT_MODES   = ['Cash', 'UPI', 'Bank Transfer', 'Cheque'];
+const STATUS_OPTIONS  = ['Draft', 'Pending', 'Approved', 'Paid'];
+const QUICK_AMOUNTS   = [100, 500, 1000, 5000];
+
+const fmtINR = (n) => `₹${(Number(n) || 0).toLocaleString('en-IN')}`;
+
+const ExpenseDrawerInner = ({
+  setIsExpenseDrawerOpen,
+  handleSaveExpense,
+  editExpense,
+  setEditExpense,
+  savingExpense,
+}) => {
+  const vendorRef = useRef(null);
+  const overlayRef = useRef(null);
+
+  // Autofocus the hero field when the drawer opens
+  useEffect(() => {
+    const t = setTimeout(() => { vendorRef.current?.focus(); }, 120);
+    return () => clearTimeout(t);
+  }, []);
+
+  // ESC to close
+  useEffect(() => {
+    const onKey = (e) => { if (e.key === 'Escape') setIsExpenseDrawerOpen(false); };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [setIsExpenseDrawerOpen]);
+
+  const isEdit = !!editExpense.id;
+  const baseAmt = Number(editExpense.amount) || 0;
+  const taxAmt  = Number(editExpense.taxAmount) || 0;
+  const total   = baseAmt + taxAmt;
+
+  const canSave = useMemo(
+    () => (editExpense.vendorName || '').trim().length > 0 && baseAmt > 0 && !savingExpense,
+    [editExpense.vendorName, baseAmt, savingExpense]
+  );
+
+  const set = (patch) => setEditExpense({ ...editExpense, ...patch });
+
+  return (
+    <div
+      ref={overlayRef}
+      onClick={(e) => { if (e.target === overlayRef.current) setIsExpenseDrawerOpen(false); }}
+      style={{
+        position: 'fixed', inset: 0, zIndex: 10000,
+        background: 'rgba(15, 23, 42, 0.45)',
+        backdropFilter: 'blur(6px)', WebkitBackdropFilter: 'blur(6px)',
+        display: 'flex', justifyContent: 'flex-end',
+        animation: 'expFadeIn 0.18s ease-out',
+      }}
+    >
+      <div
+        onClick={(e) => e.stopPropagation()}
+        style={{
+          width: '520px', maxWidth: '100vw', height: '100%',
+          background: EX.surface,
+          display: 'flex', flexDirection: 'column',
+          boxShadow: '-12px 0 32px rgba(15,23,42,0.18)',
+          animation: 'expSlideIn 0.28s cubic-bezier(0.16, 1, 0.3, 1)',
+        }}
+      >
+        {/* ── Header ─────────────────────────────────────────────── */}
+        <div style={{ padding: '20px 24px', borderBottom: `1px solid ${EX.borderLight}`, display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '12px' }}>
+          <div>
+            <div style={{ fontSize: '11px', fontWeight: 600, color: EX.textTertiary, marginBottom: '4px' }}>
+              {isEdit ? 'Edit expense' : 'New expense'}
+            </div>
+            <h2 style={{ margin: 0, fontSize: '20px', fontWeight: 700, color: EX.textPrimary, letterSpacing: '-0.3px' }}>
+              {isEdit ? 'Update entry' : 'Log expense'}
+            </h2>
+          </div>
+          <button
+            type="button" aria-label="Close"
+            onClick={() => setIsExpenseDrawerOpen(false)}
+            style={{
+              width: '34px', height: '34px', borderRadius: '50%',
+              border: `1px solid ${EX.border}`, background: EX.surface,
+              cursor: 'pointer', fontSize: '18px', color: EX.textSecondary,
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              transition: 'all 0.15s',
+            }}
+            onMouseEnter={(e) => { e.currentTarget.style.background = EX.surfaceHover; e.currentTarget.style.color = EX.textPrimary; }}
+            onMouseLeave={(e) => { e.currentTarget.style.background = EX.surface; e.currentTarget.style.color = EX.textSecondary; }}
+          >×</button>
+        </div>
+
+        {/* ── Form body ─────────────────────────────────────────── */}
+        <form
+          onSubmit={(e) => { if (!canSave) { e.preventDefault(); return; } handleSaveExpense(e); }}
+          style={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0 }}
+        >
+          <div style={{ flex: 1, overflowY: 'auto', padding: '20px 24px', display: 'flex', flexDirection: 'column', gap: '22px' }}>
+
+            {/* Hero: item / vendor name */}
+            <Field label="Item or vendor" required>
+              <TextInput
+                inputRef={vendorRef}
+                value={editExpense.vendorName || ''}
+                onChange={(v) => set({ vendorName: v })}
+                placeholder="e.g. Tea, biscuits, stationery, ABC Suppliers…"
+                large
+              />
+            </Field>
+
+            {/* Category — chip grid with icons */}
+            <Field label="Category">
+              <div style={{
+                display: 'grid',
+                gridTemplateColumns: 'repeat(auto-fill, minmax(118px, 1fr))',
+                gap: '8px',
+              }}>
+                {EXPENSE_CATEGORIES.map(cat => {
+                  const active = editExpense.category === cat.key;
+                  return (
+                    <button
+                      key={cat.key}
+                      type="button"
+                      onClick={() => set({ category: cat.key })}
+                      style={{
+                        padding: '10px 12px', borderRadius: '10px',
+                        border: `1px solid ${active ? EX.accent : EX.border}`,
+                        background: active ? EX.accent : EX.surface,
+                        color: active ? 'white' : EX.textPrimary,
+                        fontSize: '12px', fontWeight: active ? 600 : 500,
+                        cursor: 'pointer', textAlign: 'left',
+                        display: 'flex', alignItems: 'center', gap: '8px',
+                        transition: 'all 0.15s',
+                      }}
+                      onMouseEnter={(e) => { if (!active) e.currentTarget.style.background = EX.surfaceHover; }}
+                      onMouseLeave={(e) => { if (!active) e.currentTarget.style.background = EX.surface; }}
+                    >
+                      <span style={{ fontSize: '14px' }}>{cat.icon}</span>
+                      <span>{cat.key}</span>
+                    </button>
+                  );
+                })}
+              </div>
+            </Field>
+
+            {/* Description */}
+            <Field label="Description">
+              <TextInput
+                value={editExpense.description || ''}
+                onChange={(v) => set({ description: v })}
+                placeholder="Brief note (optional)"
+              />
+            </Field>
+
+            {/* Amount + tax + live total */}
+            <div style={{
+              background: EX.surfaceAlt, borderRadius: '12px',
+              padding: '16px', display: 'flex', flexDirection: 'column', gap: '14px',
+              border: `1px solid ${EX.borderLight}`,
+            }}>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '14px' }}>
+                <Field label="Amount (₹)" required compact>
+                  <input
+                    type="number" required min="0" step="0.01"
+                    value={editExpense.amount ?? ''}
+                    onChange={(e) => set({ amount: e.target.value === '' ? '' : parseFloat(e.target.value) })}
+                    onFocus={(e) => { e.target.style.borderColor = EX.accent; e.target.style.boxShadow = '0 0 0 3px rgba(15,23,42,0.08)'; }}
+                    onBlur={(e) => { e.target.style.borderColor = EX.border; e.target.style.boxShadow = 'none'; }}
+                    placeholder="0"
+                    style={amountInputStyle}
+                  />
+                </Field>
+                <Field label="Tax / GST (₹)" compact>
+                  <input
+                    type="number" min="0" step="0.01"
+                    value={editExpense.taxAmount ?? ''}
+                    onChange={(e) => set({ taxAmount: e.target.value === '' ? '' : parseFloat(e.target.value) })}
+                    onFocus={(e) => { e.target.style.borderColor = EX.accent; e.target.style.boxShadow = '0 0 0 3px rgba(15,23,42,0.08)'; }}
+                    onBlur={(e) => { e.target.style.borderColor = EX.border; e.target.style.boxShadow = 'none'; }}
+                    placeholder="0"
+                    style={amountInputStyle}
+                  />
+                </Field>
+              </div>
+
+              {/* Quick amount chips */}
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', alignItems: 'center' }}>
+                <span style={{ fontSize: '10px', color: EX.textTertiary, fontWeight: 600, marginRight: '2px' }}>Quick:</span>
+                {QUICK_AMOUNTS.map(amt => (
+                  <button
+                    key={amt}
+                    type="button"
+                    onClick={() => set({ amount: amt })}
+                    style={{
+                      padding: '5px 11px', borderRadius: '99px',
+                      border: `1px solid ${EX.border}`, background: EX.surface,
+                      color: EX.textSecondary, fontSize: '11px', fontWeight: 600,
+                      cursor: 'pointer', transition: 'all 0.15s',
+                      fontVariantNumeric: 'tabular-nums',
+                    }}
+                    onMouseEnter={(e) => { e.currentTarget.style.background = EX.accent; e.currentTarget.style.color = 'white'; e.currentTarget.style.borderColor = EX.accent; }}
+                    onMouseLeave={(e) => { e.currentTarget.style.background = EX.surface; e.currentTarget.style.color = EX.textSecondary; e.currentTarget.style.borderColor = EX.border; }}
+                  >₹{amt.toLocaleString('en-IN')}</button>
+                ))}
+              </div>
+
+              {/* Live total preview */}
+              <div style={{
+                display: 'flex', justifyContent: 'space-between', alignItems: 'baseline',
+                paddingTop: '10px', borderTop: `1px dashed ${EX.border}`,
+              }}>
+                <span style={{ fontSize: '12px', color: EX.textSecondary, fontWeight: 600 }}>Total</span>
+                <span style={{
+                  fontSize: '22px', fontWeight: 700, color: EX.textPrimary,
+                  letterSpacing: '-0.3px', fontVariantNumeric: 'tabular-nums',
+                }}>{fmtINR(total)}</span>
+              </div>
+            </div>
+
+            {/* Payment mode — segmented */}
+            <Field label="Payment mode">
+              <SegmentedControl
+                value={editExpense.paymentMode || 'Cash'}
+                onChange={(v) => set({ paymentMode: v })}
+                options={PAYMENT_MODES}
+              />
+            </Field>
+
+            {/* Date + Reference */}
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '14px' }}>
+              <Field label="Date">
+                <input
+                  type="date" required
+                  value={editExpense.transactionDate || ''}
+                  onChange={(e) => set({ transactionDate: e.target.value })}
+                  onFocus={(e) => { e.target.style.borderColor = EX.accent; e.target.style.boxShadow = '0 0 0 3px rgba(15,23,42,0.08)'; }}
+                  onBlur={(e) => { e.target.style.borderColor = EX.border; e.target.style.boxShadow = 'none'; }}
+                  style={standardInputStyle}
+                />
+              </Field>
+              <Field label="Reference no">
+                <TextInput
+                  value={editExpense.referenceNumber || ''}
+                  onChange={(v) => set({ referenceNumber: v })}
+                  placeholder="TXN / Bill ID (optional)"
+                />
+              </Field>
+            </div>
+
+            {/* Status — segmented */}
+            <Field label="Status">
+              <SegmentedControl
+                value={editExpense.status || 'Paid'}
+                onChange={(v) => set({ status: v })}
+                options={STATUS_OPTIONS}
+              />
+            </Field>
+          </div>
+
+          {/* ── Sticky footer ────────────────────────────────────── */}
+          <div style={{
+            padding: '14px 24px', borderTop: `1px solid ${EX.border}`,
+            background: EX.surface, display: 'flex', gap: '10px',
+            alignItems: 'center',
+          }}>
+            <button
+              type="button"
+              onClick={() => setIsExpenseDrawerOpen(false)}
+              style={{
+                padding: '11px 18px', borderRadius: '10px',
+                border: `1px solid ${EX.border}`, background: EX.surface,
+                color: EX.textPrimary, fontSize: '13px', fontWeight: 600,
+                cursor: 'pointer', transition: 'all 0.15s',
+              }}
+              onMouseEnter={(e) => { e.currentTarget.style.background = EX.surfaceHover; }}
+              onMouseLeave={(e) => { e.currentTarget.style.background = EX.surface; }}
+            >Cancel</button>
+            <button
+              type="submit"
+              disabled={!canSave}
+              style={{
+                flex: 1, padding: '11px 18px', borderRadius: '10px',
+                border: 'none',
+                background: canSave ? EX.accent : EX.surfaceHover,
+                color: canSave ? 'white' : EX.textTertiary,
+                fontSize: '13px', fontWeight: 700,
+                cursor: canSave ? 'pointer' : 'not-allowed',
+                transition: 'all 0.15s',
+                display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: '6px',
+                boxShadow: canSave ? '0 1px 2px rgba(0,0,0,0.08)' : 'none',
+              }}
+              onMouseEnter={(e) => { if (canSave) e.currentTarget.style.transform = 'translateY(-1px)'; }}
+              onMouseLeave={(e) => { e.currentTarget.style.transform = 'none'; }}
+            >
+              {savingExpense
+                ? 'Saving…'
+                : (total > 0 ? `${isEdit ? 'Save' : 'Log'} ${fmtINR(total)}` : (isEdit ? 'Save' : 'Log expense'))}
+            </button>
+          </div>
+        </form>
+      </div>
+
+      <style>{`
+        @keyframes expFadeIn { from { opacity: 0; } to { opacity: 1; } }
+        @keyframes expSlideIn { from { transform: translateX(24px); opacity: 0; } to { transform: none; opacity: 1; } }
+      `}</style>
+    </div>
+  );
+};
+
+// ─── Drawer subcomponents ──────────────────────────────────────────────────
+
+const Field = ({ label, required, compact, children }) => (
+  <div>
+    <label style={{
+      display: 'block',
+      fontSize: '11px', fontWeight: 600,
+      color: EX.textSecondary,
+      marginBottom: compact ? '6px' : '8px',
+    }}>
+      {label}
+      {required && <span style={{ color: '#dc2626', marginLeft: '4px' }}>*</span>}
+    </label>
+    {children}
+  </div>
+);
+
+const TextInput = ({ value, onChange, placeholder, inputRef, large }) => (
+  <input
+    ref={inputRef}
+    type="text"
+    value={value}
+    onChange={(e) => onChange(e.target.value)}
+    placeholder={placeholder}
+    style={{
+      width: '100%',
+      padding: large ? '12px 14px' : '10px 12px',
+      borderRadius: '10px',
+      border: `1px solid ${EX.border}`,
+      fontSize: large ? '15px' : '13px',
+      fontWeight: large ? 600 : 500,
+      color: EX.textPrimary,
+      background: EX.surface,
+      outline: 'none',
+      boxSizing: 'border-box',
+      transition: 'border-color 0.15s, box-shadow 0.15s',
+    }}
+    onFocus={(e) => { e.target.style.borderColor = EX.accent; e.target.style.boxShadow = '0 0 0 3px rgba(15,23,42,0.08)'; }}
+    onBlur={(e) => { e.target.style.borderColor = EX.border; e.target.style.boxShadow = 'none'; }}
+  />
+);
+
+const SegmentedControl = ({ value, onChange, options }) => (
+  <div style={{
+    display: 'inline-flex', flexWrap: 'wrap', gap: '4px',
+    padding: '3px', background: EX.surfaceAlt,
+    border: `1px solid ${EX.border}`, borderRadius: '10px',
+    width: 'fit-content', maxWidth: '100%',
+  }}>
+    {options.map(opt => {
+      const active = value === opt;
+      return (
+        <button
+          key={opt}
+          type="button"
+          onClick={() => onChange(opt)}
+          style={{
+            padding: '6px 12px', borderRadius: '7px', border: 'none',
+            background: active ? EX.surface : 'transparent',
+            color: active ? EX.textPrimary : EX.textSecondary,
+            fontSize: '12px', fontWeight: active ? 600 : 500,
+            cursor: 'pointer', transition: 'all 0.15s',
+            boxShadow: active ? '0 1px 2px rgba(0,0,0,0.06)' : 'none',
+          }}
+        >{opt}</button>
+      );
+    })}
+  </div>
+);
+
+const standardInputStyle = {
+  width: '100%',
+  padding: '10px 12px',
+  borderRadius: '10px',
+  border: `1px solid ${EX.border}`,
+  fontSize: '13px',
+  fontWeight: 500,
+  color: EX.textPrimary,
+  background: EX.surface,
+  outline: 'none',
+  boxSizing: 'border-box',
+  transition: 'border-color 0.15s, box-shadow 0.15s',
+};
+
+const amountInputStyle = {
+  width: '100%',
+  padding: '12px 14px',
+  borderRadius: '10px',
+  border: `1px solid ${EX.border}`,
+  fontSize: '18px',
+  fontWeight: 700,
+  color: EX.textPrimary,
+  background: EX.surface,
+  outline: 'none',
+  boxSizing: 'border-box',
+  transition: 'border-color 0.15s, box-shadow 0.15s',
+  fontVariantNumeric: 'tabular-nums',
 };
