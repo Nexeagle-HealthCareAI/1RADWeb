@@ -19,13 +19,17 @@ const MODALITY_ICONS = {
 
 const TODAY = new Date().toLocaleDateString('en-CA');
 
-// Roles that are considered "doctor" for the purposes of the default filter
+// Only these exact system roles get their own queue pre-selected by default.
+// Custom roles, Admin, Technician, Receptionist, Accountant → all default to 'ALL'.
 const DOCTOR_ROLES = ['admindoctor', 'doctor'];
 
 /**
  * Returns the default selectedDoctor value for the current user:
- * - If the user is a doctor role → their own userId (so they see only their queue)
- * - Otherwise (admin, technician, etc.) → 'ALL' (see everyone's queue)
+ *  - 'admindoctor' or 'doctor' system role  → their own userId (see own queue first)
+ *  - Admin, Technician, Receptionist, etc.  → 'ALL' (see all doctors)
+ *  - Custom role users                      → 'ALL' (custom role names are never in
+ *                                              DOCTOR_ROLES, so they always fall through)
+ *  - No user / not loaded yet               → 'ALL'
  */
 function getDefaultDoctorFilter(user) {
   if (!user) return 'ALL';
