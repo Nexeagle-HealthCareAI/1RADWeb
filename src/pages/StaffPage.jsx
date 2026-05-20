@@ -70,7 +70,9 @@ export default function StaffPage() {
   const [salaryData,     setSalaryData]     = useState({}); // { staffId: { basicPay, hra, travel, otherAllowances, pfDeduction, tds, otherDeductions, disbursements:[] } }
   const [attendanceData, setAttendanceData] = useState({}); // { staffId: { 'YYYY-MM-DD': status } }
   const [leaveData,      setLeaveData]      = useState([]); // [{ id, staffId, type, from, to, days, reason, status, appliedOn }]
-  const [documentsData,  setDocumentsData]  = useState({}); // { staffId: [{ id, name, category, uploadedAt, fileData }] }
+  const [documentsData,  setDocumentsData]  = useState({}); // { staffId: [{ id, name, category, size, uploadedAt, blobUrl }] }
+  const [docsLoadingMap, setDocsLoadingMap] = useState({}); // { staffId: bool }
+  const [uploadCategory, setUploadCategory] = useState('Other');
 
   // â”€â”€ UI state â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   const [selectedStaff,   setSelectedStaff]   = useState(null);
@@ -144,22 +146,40 @@ export default function StaffPage() {
   }, []);
 
   const loadLocalData = useCallback(async () => {
-    const [sal, att, lv, docs] = await Promise.all([
+    const [sal, att, lv] = await Promise.all([
       nativeStorage.get('1rad_staff_salary'),
       nativeStorage.get('1rad_staff_attendance'),
       nativeStorage.get('1rad_staff_leave'),
-      nativeStorage.get('1rad_staff_documents'),
     ]);
     setSalaryData(sal || {});
     setAttendanceData(att || {});
     setLeaveData(lv || []);
-    setDocumentsData(docs || {});
   }, []);
+
+  const mapDocs = (raw) => (raw || []).map(d => ({
+    id: d.documentId, name: d.fileName, category: d.category,
+    size: d.fileSizeBytes, uploadedAt: d.uploadedAt, blobUrl: d.blobUrl,
+  }));
+
+  const loadStaffDocs = useCallback(async (staffId) => {
+    if (!staffId || docsLoadingMap[staffId]) return;
+    setDocsLoadingMap(p => ({ ...p, [staffId]: true }));
+    try {
+      const res = await apiClient.get(`/staff/${staffId}/documents`);
+      setDocumentsData(p => ({ ...p, [staffId]: mapDocs(res.data) }));
+    } catch { /* silent */ }
+    finally { setDocsLoadingMap(p => ({ ...p, [staffId]: false })); }
+  }, [docsLoadingMap]);
 
   useEffect(() => {
     fetchPersonnel();
     loadLocalData();
   }, [fetchPersonnel, loadLocalData, activeCenter?.id]);
+
+  useEffect(() => {
+    if (detailTab === 'documents' && selectedStaff?.id)
+      loadStaffDocs(selectedStaff.id);
+  }, [detailTab, selectedStaff?.id]);  // eslint-disable-line
 
   // â”€â”€ Salary helpers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   const getSalaryInfo = useCallback((staffId) => {
@@ -721,46 +741,39 @@ export default function StaffPage() {
 
   const renderDocumentsTab = (staff) => {
     const docs = documentsData[staff.id] || [];
+    const isDocsLoading = docsLoadingMap[staff.id];
 
     const handleFileSelect = async (e) => {
       const file = e.target.files?.[0];
       if (!file) return;
-      if (file.size > 5 * 1024 * 1024) {
-        showNotif('warning', 'File too large', 'Maximum file size is 5 MB.');
+      e.target.value = '';
+      if (file.size > 10 * 1024 * 1024) {
+        showNotif('warning', 'File too large', 'Maximum file size is 10 MB.');
         return;
       }
-      const reader = new FileReader();
-      reader.onload = async (ev) => {
-        const entry = {
-          id: `doc_${Date.now()}`,
-          name: file.name,
-          category: 'Other',
-          size: file.size,
-          uploadedAt: new Date().toISOString(),
-          fileData: ev.target.result,
-        };
-        const staffDocs = [...(documentsData[staff.id] || []), entry];
-        const updated = { ...documentsData, [staff.id]: staffDocs };
-        setDocumentsData(updated);
-        await nativeStorage.set('1rad_staff_documents', updated);
-        showNotif('success', 'Document saved', `${file.name} uploaded successfully.`);
-      };
-      reader.readAsDataURL(file);
-      e.target.value = '';
+      const formData = new FormData();
+      formData.append('file', file);
+      formData.append('category', uploadCategory);
+      try {
+        await apiClient.post(`/staff/${staff.id}/documents`, formData, {
+          headers: { 'Content-Type': 'multipart/form-data' },
+        });
+        showNotif('success', 'Uploaded', `${file.name} saved to records.`);
+        const res = await apiClient.get(`/staff/${staff.id}/documents`);
+        setDocumentsData(p => ({ ...p, [staff.id]: mapDocs(res.data) }));
+      } catch (err) {
+        showNotif('error', 'Upload failed', err.response?.data?.message || 'Could not upload document.');
+      }
     };
 
-    const deleteDoc = async (docId) => {
-      const staffDocs = (documentsData[staff.id] || []).filter(d => d.id !== docId);
-      const updated = { ...documentsData, [staff.id]: staffDocs };
-      setDocumentsData(updated);
-      await nativeStorage.set('1rad_staff_documents', updated);
-    };
-
-    const changeCategory = async (docId, cat) => {
-      const staffDocs = (documentsData[staff.id] || []).map(d => d.id === docId ? { ...d, category: cat } : d);
-      const updated = { ...documentsData, [staff.id]: staffDocs };
-      setDocumentsData(updated);
-      await nativeStorage.set('1rad_staff_documents', updated);
+    const deleteDoc = async (docId, docName) => {
+      try {
+        await apiClient.delete(`/staff/${staff.id}/documents/${docId}`);
+        setDocumentsData(p => ({ ...p, [staff.id]: (p[staff.id] || []).filter(d => d.id !== docId) }));
+        showNotif('success', 'Deleted', `${docName} removed.`);
+      } catch (err) {
+        showNotif('error', 'Delete failed', err.response?.data?.message || 'Could not delete document.');
+      }
     };
 
     const EXT_ICON = (name) => {
@@ -796,25 +809,36 @@ export default function StaffPage() {
         </div>
 
         {/* Upload button */}
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '14px' }}>
+<div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '14px', gap: '10px' }}>
           <div style={{ fontSize: '10px', fontWeight: 800, color: '#0a1628', letterSpacing: '1px', textTransform: 'uppercase' }}>
-            {docs.length} Document{docs.length !== 1 ? 's' : ''}
+            {isDocsLoading ? 'Loading…' : `${docs.length} Document${docs.length !== 1 ? 's' : ''}`}
           </div>
-          <label style={{
-            display: 'inline-flex', alignItems: 'center', gap: '6px',
-            padding: '8px 16px', borderRadius: '9px',
-            background: 'linear-gradient(135deg, #d4a017 0%, #b8860b 100%)',
-            color: '#0a1628', fontSize: '11px', fontWeight: 800,
-            cursor: 'pointer', letterSpacing: '0.3px',
-            boxShadow: '0 4px 12px rgba(212,160,23,0.3)',
-          }}>
-            + Upload
-            <input type="file" accept=".pdf,.doc,.docx,.jpg,.jpeg,.png,.webp" onChange={handleFileSelect} style={{ display: 'none' }} />
-          </label>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <select
+              value={uploadCategory}
+              onChange={e => setUploadCategory(e.target.value)}
+              style={{ fontSize: '11px', fontWeight: 600, border: '1px solid #e2e8f0', borderRadius: '8px', padding: '6px 10px', background: 'white', color: '#334155', outline: 'none', cursor: 'pointer' }}
+            >
+              {DOC_CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
+            </select>
+            <label style={{
+              display: 'inline-flex', alignItems: 'center', gap: '6px',
+              padding: '8px 16px', borderRadius: '9px',
+              background: 'linear-gradient(135deg, #d4a017 0%, #b8860b 100%)',
+              color: '#0a1628', fontSize: '11px', fontWeight: 800,
+              cursor: 'pointer', letterSpacing: '0.3px',
+              boxShadow: '0 4px 12px rgba(212,160,23,0.3)',
+            }}>
+              + Upload
+              <input type="file" accept=".pdf,.doc,.docx,.jpg,.jpeg,.png,.webp" onChange={handleFileSelect} style={{ display: 'none' }} />
+            </label>
+          </div>
         </div>
 
         {/* Document list */}
-        {docs.length === 0 ? (
+        {isDocsLoading ? (
+          <div style={{ textAlign: 'center', padding: '30px', color: '#94a3b8', fontSize: '12px' }}>Loading documents…</div>
+        ) : docs.length === 0 ? (
           <div style={{ textAlign: 'center', padding: '40px 20px', background: '#f8fafc', borderRadius: '14px', border: '1.5px dashed #e2e8f0' }}>
             <div style={{ fontSize: '28px', marginBottom: '10px' }}>📂</div>
             <div style={{ fontSize: '13px', fontWeight: 700, color: '#64748b', marginBottom: '4px' }}>No documents yet</div>
@@ -832,13 +856,7 @@ export default function StaffPage() {
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <div style={{ fontSize: '12px', fontWeight: 700, color: '#0f172a', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', marginBottom: '4px' }}>{doc.name}</div>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
-                      <select
-                        value={doc.category}
-                        onChange={e => changeCategory(doc.id, e.target.value)}
-                        style={{ fontSize: '10px', fontWeight: 700, color, background: bg, border: `1px solid ${color}30`, borderRadius: '6px', padding: '2px 6px', outline: 'none', cursor: 'pointer' }}
-                      >
-                        {DOC_CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
-                      </select>
+                      <span style={{ fontSize: '10px', fontWeight: 700, color, background: bg, border: `1px solid ${color}30`, borderRadius: '6px', padding: '2px 6px' }}>{doc.category}</span>
                       <span style={{ fontSize: '9px', color: '#94a3b8', fontWeight: 600 }}>
                         {new Date(doc.uploadedAt).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}
                         {doc.size ? ` · ${(doc.size / 1024).toFixed(0)} KB` : ''}
@@ -846,16 +864,17 @@ export default function StaffPage() {
                     </div>
                   </div>
                   <div style={{ display: 'flex', gap: '6px', flexShrink: 0 }}>
-                    {doc.fileData && (
+                    {doc.blobUrl && (
                       <a
-                        href={doc.fileData}
-                        download={doc.name}
+                        href={doc.blobUrl}
+                        target="_blank"
+                        rel="noreferrer"
                         style={{ width: '30px', height: '30px', borderRadius: '7px', background: '#eff6ff', border: '1px solid #dbeafe', display: 'flex', alignItems: 'center', justifyContent: 'center', textDecoration: 'none', fontSize: '13px' }}
-                        title="Download"
+                        title="Open / Download"
                       >⬇</a>
                     )}
                     <button
-                      onClick={() => askConfirm({ title: 'Delete document?', message: `Remove "${doc.name}" from records?`, confirmText: 'Delete', danger: true, onConfirm: () => deleteDoc(doc.id) })}
+                      onClick={() => askConfirm({ title: 'Delete document?', message: `Remove "${doc.name}" from records?`, confirmText: 'Delete', danger: true, onConfirm: () => deleteDoc(doc.id, doc.name) })}
                       style={{ width: '30px', height: '30px', borderRadius: '7px', background: '#fef2f2', border: '1px solid #fecaca', color: '#dc2626', cursor: 'pointer', fontSize: '13px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
                       title="Remove"
                     >✕</button>

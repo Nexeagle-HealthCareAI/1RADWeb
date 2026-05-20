@@ -84,23 +84,26 @@ const ReportPreviewModal = ({
 
           // 1. Fetch Full Appointment Context First
           if (appointmentId) {
-            console.info(`[ReportPreview] Synchronizing Context for Appointment: ${appointmentId}`);
-            const appRes = await apiClient.get(`/appointments/${appointmentId}`); 
-            const appData = appRes.data?.data || appRes.data;
-            if (appData && typeof appData === 'object') {
-              setFullAppointment(appData);
-              // Extract doctor ID from appointment if we don't have it yet
-              if (!resolvedDoctorId) {
-                resolvedDoctorId = appData.doctorUserId || appData.doctorId;
+            try {
+              console.info(`[ReportPreview] Synchronizing Context for Appointment: ${appointmentId}`);
+              const appRes = await apiClient.get(`/appointments/${appointmentId}`); 
+              const appData = appRes.data?.data || appRes.data;
+              if (appData && typeof appData === 'object') {
+                setFullAppointment(appData);
+                if (!resolvedDoctorId) {
+                  resolvedDoctorId = appData.doctorUserId || appData.doctorId;
+                }
               }
-            }
 
-            // Fetch Saved Report Metadata
-            const reportRes = await apiClient.get(`/Reporting/report/${appointmentId}`);
-            const reportData = reportRes.data?.data || reportRes.data;
-            if (reportData) {
-              setSavedMetadata(reportData);
-              if (!resolvedDoctorId) resolvedDoctorId = reportData.doctorId || reportData.doctorUserId;
+              // Fetch Saved Report Metadata
+              const reportRes = await apiClient.get(`/Reporting/report/${appointmentId}`);
+              const reportData = reportRes.data?.data || reportRes.data;
+              if (reportData) {
+                setSavedMetadata(reportData);
+                if (!resolvedDoctorId) resolvedDoctorId = reportData.doctorId || reportData.doctorUserId;
+              }
+            } catch (contextErr) {
+              console.warn("[ReportPreview] Failed to fetch appointment context, falling back to local data:", contextErr.message);
             }
           }
 
@@ -121,7 +124,7 @@ const ReportPreviewModal = ({
           }
 
         } catch (err) {
-          console.warn("[ReportPreview] Context sync partially failed:", err.message);
+          console.warn("[ReportPreview] Prescription sync partially failed:", err.message);
         } finally {
           setLoadingProtocol(false);
         }
