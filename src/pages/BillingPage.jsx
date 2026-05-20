@@ -1634,6 +1634,8 @@ export default function BillingPage() {
           handleToggleExpenseStatus={handleToggleExpenseStatus}
           handleSetExpenseStatus={handleSetExpenseStatus}
           activeCenterName={activeCenter?.name || activeCenter?.hospitalName || 'Default'}
+          notify={notify}
+          confirmDialog={confirmModal}
         />
       )}
 
@@ -1828,7 +1830,7 @@ export default function BillingPage() {
         />
       )}
       {isPayoutDrawerOpen && (
-        <PayoutDrawer 
+        <PayoutDrawer
           isMobile={isMobile}
           setIsPayoutDrawerOpen={setIsPayoutDrawerOpen}
           handleSavePayout={handleSavePayout}
@@ -1837,6 +1839,9 @@ export default function BillingPage() {
           isSavingPayout={isSavingPayout}
         />
       )}
+
+      {/* Unified Notice / Confirm modal — replaces window.alert / window.confirm */}
+      <BillingNoticeModal {...noticeProps} />
 
       {/* ── Payment Success Modal ─────────────────────────────────────────── */}
       {paymentSuccess && (

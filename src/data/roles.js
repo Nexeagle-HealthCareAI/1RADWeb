@@ -31,11 +31,6 @@ export const ROLE_HOME = {
 // Sidebar navigation items with strict RBAC
 export const NAV_ITEMS = [
   {
-    label: 'Configuration',
-    route: '/configuration',
-    allowedRoles: ['admindoctor', 'admin', 'technician', 'doctor'],
-  },
-  {
     label: 'Dashboard',
     route: '/admin-board',
     allowedRoles: ['admindoctor', 'admin'],
@@ -61,6 +56,26 @@ export const NAV_ITEMS = [
     allowedRoles: ['admindoctor', 'doctor', 'technician'],
   },
   {
+    label: 'Referrals',
+    route: '/referrals',
+    allowedRoles: ['admindoctor', 'admin'],
+  },
+  {
+    label: 'Staff & Payroll',
+    route: '/staff',
+    allowedRoles: ['admindoctor', 'admin'],
+  },
+  {
+    label: 'Operations Board',
+    route: '/operations-board',
+    allowedRoles: ['admindoctor', 'admin', 'receptionist', 'technician', 'doctor', 'accountant'],
+  },
+  {
+    label: 'Configuration',
+    route: '/configuration',
+    allowedRoles: ['admindoctor', 'admin', 'technician', 'doctor'],
+  },
+  {
     label: 'Subscription',
     route: '/subscription',
     allowedRoles: ['admindoctor', 'admin'],
@@ -69,21 +84,6 @@ export const NAV_ITEMS = [
     label: 'DICOM Bridge',
     route: '/dicom-bridge',
     allowedRoles: ['admindoctor', 'admin'],
-  },
-  {
-    label: 'Referrals',
-    route: '/referrals',
-    allowedRoles: ['admindoctor', 'admin'],
-  },
-  {
-    label: 'Staff Management',
-    route: '/staff',
-    allowedRoles: ['admindoctor', 'admin'],
-  },
-  {
-    label: 'Operations Board',
-    route: '/operations-board',
-    allowedRoles: ['admindoctor', 'admin', 'receptionist', 'technician', 'doctor', 'accountant'],
   }
 ];
 

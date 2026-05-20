@@ -1,4 +1,4 @@
-﻿import React, { useState, useMemo, useEffect, useCallback } from 'react';
+import React, { useState, useMemo, useEffect, useCallback } from 'react';
 import apiClient from '../api/apiClient';
 import useAuth from '../auth/useAuth';
 import { ROLE_LABELS } from '../data/roles';
@@ -20,6 +20,45 @@ const ATT_META = {
   late:     { color: '#0891b2', bg: '#f0faff', label: 'Late'     },
   leave:    { color: '#6366f1', bg: '#f0f0ff', label: 'On Leave' },
 };
+
+// ─── Drawer field primitives (used by Add/Edit Staff drawer) ──────────────
+const SectionLabel = ({ children }) => (
+  <div style={{
+    fontSize: '10px', fontWeight: 800, color: '#0a1628',
+    letterSpacing: '1.5px', textTransform: 'uppercase',
+    paddingBottom: '6px', borderBottom: '1px solid #f1f5f9', marginBottom: '4px',
+  }}>{children}</div>
+);
+
+const FieldGroup = ({ children }) => (
+  <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>{children}</div>
+);
+
+const FieldLabel = ({ children, required }) => (
+  <label style={{ fontSize: '11px', fontWeight: 700, color: '#475569' }}>
+    {children}
+    {required && <span style={{ color: '#dc2626', marginLeft: '4px' }}>*</span>}
+  </label>
+);
+
+const TextInput = ({ value, onChange, type = 'text', placeholder, autoFocus }) => (
+  <input
+    type={type}
+    autoFocus={autoFocus}
+    value={value || ''}
+    onChange={(e) => onChange(e.target.value)}
+    placeholder={placeholder}
+    style={{
+      width: '100%', padding: '10px 12px', borderRadius: '10px',
+      border: '1px solid #e2e8f0', background: 'white',
+      fontSize: '13px', color: '#0a1628', fontWeight: 500,
+      outline: 'none', boxSizing: 'border-box',
+      transition: 'border-color 0.15s, box-shadow 0.15s',
+    }}
+    onFocus={(e) => { e.target.style.borderColor = '#d4a017'; e.target.style.boxShadow = '0 0 0 3px rgba(212, 160, 23, 0.15)'; }}
+    onBlur={(e) => { e.target.style.borderColor = '#e2e8f0'; e.target.style.boxShadow = 'none'; }}
+  />
+);
 
 // â”€â”€â”€ Component â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 export default function StaffPage() {
@@ -50,9 +89,19 @@ export default function StaffPage() {
   // Leave application form
   const [leaveForm, setLeaveForm] = useState({ open: false, type: 'Sick', from: '', to: '', reason: '' });
 
-  // Notification modal
+  // Notification + confirm modal (unified)
   const [notifModal, setNotifModal] = useState({ isOpen: false, type: 'info', title: '', message: '' });
   const showNotif = (type, title, message) => setNotifModal({ isOpen: true, type, title, message });
+  const askConfirm = ({ title, message, confirmText = 'Confirm', danger = false, onConfirm }) =>
+    setNotifModal({ isOpen: true, type: danger ? 'error' : 'info', title, message, isConfirm: true, confirmText, danger, onConfirm });
+
+  // Staff Add / Edit drawer
+  const EMPTY_STAFF = {
+    id: null, name: '', email: '', mobile: '', password: '',
+    roles: ['receptionist'], specialization: '', degree: '', licenseNo: ''
+  };
+  const [staffDrawer, setStaffDrawer] = useState({ open: false, form: EMPTY_STAFF });
+  const [savingStaff, setSavingStaff] = useState(false);
 
   useEffect(() => {
     const h = () => setIsMobile(window.innerWidth < 1024);
@@ -131,7 +180,7 @@ export default function StaffPage() {
     const updated = { ...salaryData, [staffId]: { ...existing, disbursements: [...disb, entry] } };
     setSalaryData(updated);
     await nativeStorage.set('1rad_staff_salary', updated);
-    showNotif('success', 'Salary Disbursed', `â‚¹${info.net.toLocaleString()} net salary marked as paid for ${month}.`);
+    showNotif('success', 'Salary Disbursed', `₹${info.net.toLocaleString()} net salary marked as paid for ${month}.`);
   };
 
   // â”€â”€ Attendance helpers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
@@ -189,6 +238,122 @@ export default function StaffPage() {
     setLeaveData(updated);
     await nativeStorage.set('1rad_staff_leave', updated);
     showNotif('success', 'Leave Updated', `Leave request ${status}.`);
+  };
+
+  // ── Staff Add / Edit / Delete + Role Assignment ────────────────────────
+  const openAddStaff = () => setStaffDrawer({ open: true, form: { ...EMPTY_STAFF } });
+  const openEditStaff = (staff) => setStaffDrawer({
+    open: true,
+    form: {
+      id: staff.id, name: staff.name || '', email: staff.email || '', mobile: staff.mobile || '',
+      password: '',
+      roles: staff.roles?.length ? [...staff.roles] : ['receptionist'],
+      specialization: staff.specialization || '', degree: staff.degree || '', licenseNo: staff.licenseNo || ''
+    }
+  });
+
+  const handleSaveStaff = async (e) => {
+    e?.preventDefault?.();
+    const form = staffDrawer.form;
+    if (!form.name?.trim()) return showNotif('warning', 'Missing name', 'Please enter the staff member’s full name.');
+    if (!form.email?.trim() && !form.mobile?.trim()) {
+      return showNotif('warning', 'Contact required', 'Provide at least an email or mobile number.');
+    }
+    if (!form.roles || form.roles.length === 0) {
+      return showNotif('warning', 'Role required', 'At least one role must be assigned.');
+    }
+    if (!form.id && !form.password?.trim()) {
+      return showNotif('warning', 'Password required', 'New staff need an initial password.');
+    }
+
+    const payload = {
+      fullName: form.name.trim(),
+      email: form.email?.trim() || null,
+      mobile: form.mobile?.trim() || null,
+      password: form.password || undefined,
+      // Backend expects the role NAMES (capitalised). Internal state holds lowercase ids.
+      roleNames: form.roles.map(r => {
+        const map = { admindoctor: 'AdminDoctor', admin: 'Admin', doctor: 'Doctor', technician: 'Technician', receptionist: 'Receptionist', accountant: 'Accountant' };
+        return map[r] || (r.charAt(0).toUpperCase() + r.slice(1));
+      }),
+      specialization: form.specialization || null,
+      degree: form.degree || null,
+      licenseNo: form.licenseNo || null,
+    };
+
+    try {
+      setSavingStaff(true);
+      if (form.id) {
+        await apiClient.put(`/personnel/${form.id}`, payload);
+        showNotif('success', 'Saved', 'Staff record updated.');
+      } else {
+        await apiClient.post('/personnel', payload);
+        showNotif('success', 'Created', `${form.name} added to your team.`);
+      }
+      setStaffDrawer({ open: false, form: EMPTY_STAFF });
+      fetchPersonnel();
+    } catch (err) {
+      console.error('[STAFF] Save failed', err);
+      const msg = err.response?.data?.message || err.response?.data?.error || 'Failed to save staff record.';
+      showNotif('error', 'Save failed', msg);
+    } finally {
+      setSavingStaff(false);
+    }
+  };
+
+  const handleDeleteStaff = (staff) => {
+    askConfirm({
+      title: `Remove ${staff.name}?`,
+      message: 'This will deactivate their account. Their historical records (payouts, attendance) are preserved.',
+      confirmText: 'Remove',
+      danger: true,
+      onConfirm: async () => {
+        try {
+          await apiClient.delete(`/personnel/${staff.id}`);
+          showNotif('success', 'Removed', `${staff.name} has been removed from the team.`);
+          if (selectedStaff?.id === staff.id) setSelectedStaff(null);
+          fetchPersonnel();
+        } catch (err) {
+          console.error('[STAFF] Delete failed', err);
+          const msg = err.response?.data?.message || 'Failed to remove staff.';
+          showNotif('error', 'Could not remove', msg);
+        }
+      }
+    });
+  };
+
+  // Toggle a role on an existing staff member (Access tab).
+  // Persists immediately via PUT /personnel/{id}.
+  const toggleStaffRole = async (staff, roleKey) => {
+    const current = new Set((staff.roles || []).map(r => String(r).toLowerCase()));
+    if (current.has(roleKey)) current.delete(roleKey);
+    else current.add(roleKey);
+    const nextRoles = Array.from(current);
+    if (nextRoles.length === 0) {
+      showNotif('warning', 'At least one role', 'A staff member must keep at least one role.');
+      return;
+    }
+    const roleNameMap = { admindoctor: 'AdminDoctor', admin: 'Admin', doctor: 'Doctor', technician: 'Technician', receptionist: 'Receptionist', accountant: 'Accountant' };
+    const payload = {
+      fullName: staff.name,
+      email: staff.email || null,
+      mobile: staff.mobile || null,
+      roleNames: nextRoles.map(r => roleNameMap[r] || (r.charAt(0).toUpperCase() + r.slice(1))),
+      specialization: staff.specialization || null,
+      degree: staff.degree || null,
+      licenseNo: staff.licenseNo || null,
+    };
+    try {
+      await apiClient.put(`/personnel/${staff.id}`, payload);
+      // Optimistic local update so the UI reflects immediately even before refetch.
+      const updatedPersonnel = personnel.map(p => p.id === staff.id ? { ...p, roles: nextRoles } : p);
+      setPersonnel(updatedPersonnel);
+      if (selectedStaff?.id === staff.id) setSelectedStaff({ ...selectedStaff, roles: nextRoles });
+      fetchPersonnel();
+    } catch (err) {
+      console.error('[STAFF] Role toggle failed', err);
+      showNotif('error', 'Update failed', err.response?.data?.message || 'Could not update roles.');
+    }
   };
 
   // â”€â”€ Computed â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
@@ -309,13 +474,13 @@ export default function StaffPage() {
               <div key={key} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '7px' }}>
                 <span style={{ fontSize: '10px', color: '#64748b', fontWeight: 600 }}>{label}</span>
                 <span style={{ fontSize: '11px', fontWeight: 800, color: raw[key] ? '#15803d' : '#cbd5e1' }}>
-                  {raw[key] ? `â‚¹${Number(raw[key]).toLocaleString()}` : 'â€”'}
+                  {raw[key] ? `₹${Number(raw[key]).toLocaleString()}` : 'â€”'}
                 </span>
               </div>
             ))}
             <div style={{ borderTop: '1px dashed #86efac', marginTop: '10px', paddingTop: '10px', display: 'flex', justifyContent: 'space-between' }}>
               <span style={{ fontSize: '10px', fontWeight: 700, color: '#15803d' }}>Gross</span>
-              <span style={{ fontSize: '14px', fontWeight: 900, color: '#15803d' }}>â‚¹{info.gross.toLocaleString()}</span>
+              <span style={{ fontSize: '14px', fontWeight: 900, color: '#15803d' }}>₹{info.gross.toLocaleString()}</span>
             </div>
           </div>
 
@@ -332,13 +497,13 @@ export default function StaffPage() {
               <div key={key} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '7px' }}>
                 <span style={{ fontSize: '10px', color: '#64748b', fontWeight: 600 }}>{label}</span>
                 <span style={{ fontSize: '11px', fontWeight: 800, color: raw[key] ? '#dc2626' : '#cbd5e1' }}>
-                  {raw[key] ? `â‚¹${Number(raw[key]).toLocaleString()}` : 'â€”'}
+                  {raw[key] ? `₹${Number(raw[key]).toLocaleString()}` : 'â€”'}
                 </span>
               </div>
             ))}
             <div style={{ borderTop: '1px dashed #fca5a5', marginTop: '10px', paddingTop: '10px', display: 'flex', justifyContent: 'space-between' }}>
               <span style={{ fontSize: '10px', fontWeight: 700, color: '#b91c1c' }}>Deductions</span>
-              <span style={{ fontSize: '14px', fontWeight: 900, color: '#b91c1c' }}>â‚¹{info.deductions.toLocaleString()}</span>
+              <span style={{ fontSize: '14px', fontWeight: 900, color: '#b91c1c' }}>₹{info.deductions.toLocaleString()}</span>
             </div>
           </div>
         </div>
@@ -347,12 +512,12 @@ export default function StaffPage() {
         <div style={{ background: 'linear-gradient(135deg,#0f52ba,#083889)', borderRadius: '14px', padding: '18px 22px', marginBottom: '14px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
           <div>
             <div style={{ fontSize: '9px', fontWeight: 800, color: 'rgba(255,255,255,0.55)', letterSpacing: '1px', marginBottom: '4px' }}>NET PAY / MONTH</div>
-            <div style={{ fontSize: '26px', fontWeight: 900, color: 'white', letterSpacing: '-0.5px' }}>â‚¹{info.net.toLocaleString()}</div>
+            <div style={{ fontSize: '26px', fontWeight: 900, color: 'white', letterSpacing: '-0.5px' }}>₹{info.net.toLocaleString()}</div>
           </div>
           <div style={{ textAlign: 'right' }}>
             <div style={{ fontSize: '9px', color: 'rgba(255,255,255,0.45)', marginBottom: '3px' }}>Gross âˆ’ Deductions</div>
             <div style={{ fontSize: '11px', color: 'rgba(255,255,255,0.65)', fontWeight: 600 }}>
-              â‚¹{info.gross.toLocaleString()} âˆ’ â‚¹{info.deductions.toLocaleString()}
+              ₹{info.gross.toLocaleString()} âˆ’ ₹{info.deductions.toLocaleString()}
             </div>
           </div>
         </div>
@@ -363,7 +528,7 @@ export default function StaffPage() {
             <div style={{ fontSize: '10px', fontWeight: 600, color: '#64748b' }}>{MONTHS[TODAY.getMonth()]} {TODAY.getFullYear()}</div>
             <div style={{ fontSize: '13px', fontWeight: 800, color: '#0f172a', marginTop: '2px' }}>
               {paidThisMonth
-                ? <span style={{ color: '#16a34a' }}>âœ“ Disbursed Â· â‚¹{info.net.toLocaleString()}</span>
+                ? <span style={{ color: '#16a34a' }}>âœ“ Disbursed · ₹{info.net.toLocaleString()}</span>
                 : <span style={{ color: '#92400e' }}>Pending disbursement</span>}
             </div>
           </div>
@@ -383,10 +548,10 @@ export default function StaffPage() {
             <div key={d.month} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '11px 14px', background: '#f8fafc', borderRadius: '10px', border: '1px solid #f1f5f9', marginBottom: '6px' }}>
               <div>
                 <div style={{ fontSize: '12px', fontWeight: 700, color: '#0f172a' }}>{d.month}</div>
-                <div style={{ fontSize: '10px', color: '#94a3b8', marginTop: '1px' }}>Gross â‚¹{(d.grossPay || 0).toLocaleString()}</div>
+                <div style={{ fontSize: '10px', color: '#94a3b8', marginTop: '1px' }}>Gross ₹{(d.grossPay || 0).toLocaleString()}</div>
               </div>
               <div style={{ textAlign: 'right' }}>
-                <div style={{ fontSize: '13px', fontWeight: 800, color: '#16a34a' }}>â‚¹{(d.netPay || 0).toLocaleString()}</div>
+                <div style={{ fontSize: '13px', fontWeight: 800, color: '#16a34a' }}>₹{(d.netPay || 0).toLocaleString()}</div>
                 <span style={{ fontSize: '9px', background: '#dcfce7', color: '#16a34a', padding: '2px 7px', borderRadius: '4px', fontWeight: 700, letterSpacing: '0.5px' }}>PAID</span>
               </div>
             </div>
@@ -549,7 +714,96 @@ export default function StaffPage() {
     { id: 'salary',     label: 'Salary'     },
     { id: 'attendance', label: 'Attendance' },
     { id: 'leave',      label: 'Leave'      },
+    { id: 'access',     label: 'Access'     },
   ];
+
+  // Role definitions surfaced in the Access tab.
+  const ROLE_ACCESS = [
+    { key: 'admindoctor',  label: 'Admin Doctor',       desc: 'Full clinical + operations control' },
+    { key: 'admin',        label: 'Operations Admin',   desc: 'Operations, billing, configuration' },
+    { key: 'doctor',       label: 'Reporting Doctor',   desc: 'Reads and reports on studies' },
+    { key: 'technician',   label: 'Imaging Technician', desc: 'Acquires images, manages modality' },
+    { key: 'receptionist', label: 'Receptionist',       desc: 'Appointments and patient intake' },
+    { key: 'accountant',   label: 'Accountant',         desc: 'Billing and financial ledger' },
+  ];
+
+  const renderAccessTab = (staff) => {
+    const currentRoles = new Set((staff.roles || []).map(r => String(r).toLowerCase()));
+    return (
+      <div style={{ padding: '20px 24px 24px' }}>
+        <div style={{
+          background: '#fff8e6', border: '1px solid #fbe5a3', borderRadius: '12px',
+          padding: '12px 14px', marginBottom: '18px', display: 'flex', alignItems: 'flex-start', gap: '10px',
+        }}>
+          <span style={{ fontSize: '16px', lineHeight: 1, marginTop: '1px' }}>🔑</span>
+          <div>
+            <div style={{ fontSize: '12px', fontWeight: 700, color: '#92400e' }}>Role-based access</div>
+            <div style={{ fontSize: '11px', color: '#92400e', opacity: 0.85, marginTop: '3px', lineHeight: 1.45 }}>
+              Toggle a role to instantly grant or revoke access to the corresponding boards and modules.
+              Each staff member must keep at least one role.
+            </div>
+          </div>
+        </div>
+
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+          {ROLE_ACCESS.map(role => {
+            const active = currentRoles.has(role.key);
+            const meta = getRoleMeta(role.key);
+            return (
+              <button
+                key={role.key}
+                type="button"
+                onClick={() => toggleStaffRole(staff, role.key)}
+                style={{
+                  textAlign: 'left',
+                  display: 'flex', alignItems: 'center', gap: '14px',
+                  padding: '14px 16px',
+                  background: active ? '#fffbeb' : 'white',
+                  border: `1px solid ${active ? '#d4a017' : '#e2e8f0'}`,
+                  borderRadius: '12px',
+                  cursor: 'pointer',
+                  transition: 'all 0.15s',
+                  boxShadow: active ? '0 4px 12px rgba(212, 160, 23, 0.15)' : '0 1px 2px rgba(0,0,0,0.03)',
+                }}
+                onMouseEnter={(e) => { if (!active) e.currentTarget.style.background = '#fafbfc'; }}
+                onMouseLeave={(e) => { if (!active) e.currentTarget.style.background = 'white'; }}
+              >
+                <div style={{
+                  width: '40px', height: '40px', borderRadius: '10px',
+                  background: meta.bg, color: meta.color,
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  fontSize: '14px', fontWeight: 900, flexShrink: 0,
+                  border: `1px solid ${meta.color}25`,
+                }}>{(meta.label || role.label).slice(0, 1).toUpperCase()}</div>
+
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontSize: '13px', fontWeight: 700, color: '#0a1628', marginBottom: '2px' }}>
+                    {role.label}
+                  </div>
+                  <div style={{ fontSize: '11px', color: '#64748b', lineHeight: 1.4 }}>
+                    {role.desc}
+                  </div>
+                </div>
+
+                <div style={{
+                  width: '38px', height: '22px', borderRadius: '99px',
+                  background: active ? '#d4a017' : '#e2e8f0',
+                  position: 'relative', transition: 'background 0.2s', flexShrink: 0,
+                }}>
+                  <div style={{
+                    position: 'absolute', top: '2px',
+                    left: active ? '18px' : '2px',
+                    width: '18px', height: '18px', borderRadius: '50%', background: 'white',
+                    boxShadow: '0 1px 3px rgba(0,0,0,0.2)', transition: 'left 0.2s',
+                  }} />
+                </div>
+              </button>
+            );
+          })}
+        </div>
+      </div>
+    );
+  };
 
   // SVG icons for KPI bar (no emoji)
   const IconUsers   = () => <svg width="18" height="18" fill="none" stroke="currentColor" strokeWidth="1.8" viewBox="0 0 24 24"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 00-3-3.87M16 3.13a4 4 0 010 7.75"/></svg>;
@@ -564,17 +818,58 @@ export default function StaffPage() {
     <div style={{ padding: '28px 28px 48px', fontFamily: '"Inter", "Segoe UI", system-ui, sans-serif', minHeight: '100vh', background: '#f1f5f9' }}>
 
       {/* â”€â”€ Page header â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '24px' }}>
-        <div>
-          <h1 style={{ fontSize: '20px', fontWeight: 800, color: '#0a1628', margin: 0, letterSpacing: '-0.3px' }}>Staff Management</h1>
-          <span style={{ fontSize: '12px', color: '#94a3b8', fontWeight: 500 }}>{activeCenter?.name || 'Your facility'} Â· HR & Payroll</span>
+      {/* Premium HR hero — deep navy with gold accent line */}
+      <div style={{
+        position: 'relative',
+        background: 'linear-gradient(135deg, #0a1628 0%, #1e3a5f 100%)',
+        borderRadius: '18px',
+        padding: '24px 28px',
+        marginBottom: '24px',
+        boxShadow: '0 10px 30px rgba(10, 22, 40, 0.18)',
+        overflow: 'hidden',
+      }}>
+        {/* Decorative gold strip */}
+        <div style={{
+          position: 'absolute', top: 0, left: 0, right: 0, height: '3px',
+          background: 'linear-gradient(90deg, transparent, #d4a017 30%, #f5d76e 50%, #d4a017 70%, transparent)',
+        }} />
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '16px' }}>
+          <div>
+            <div style={{ fontSize: '10px', fontWeight: 700, color: '#d4a017', letterSpacing: '2px', textTransform: 'uppercase', marginBottom: '6px' }}>
+              Human Resources
+            </div>
+            <h1 style={{ fontSize: '24px', fontWeight: 800, color: 'white', margin: 0, letterSpacing: '-0.4px' }}>Staff &amp; Payroll</h1>
+            <span style={{ fontSize: '12px', color: 'rgba(255,255,255,0.65)', fontWeight: 500, marginTop: '4px', display: 'block' }}>
+              {activeCenter?.name || 'Your facility'} · Roster, roles, attendance, and disbursements
+            </span>
+          </div>
+          <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+            <button
+              onClick={() => { fetchPersonnel(); loadLocalData(); }}
+              style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '9px 16px', borderRadius: '10px', background: 'rgba(255,255,255,0.08)', border: '1px solid rgba(255,255,255,0.18)', fontSize: '12px', fontWeight: 700, color: 'rgba(255,255,255,0.85)', cursor: 'pointer', backdropFilter: 'blur(8px)' }}
+              onMouseEnter={(e) => { e.currentTarget.style.background = 'rgba(255,255,255,0.14)'; }}
+              onMouseLeave={(e) => { e.currentTarget.style.background = 'rgba(255,255,255,0.08)'; }}
+            >
+              <IconRefresh /> Refresh
+            </button>
+            <button
+              onClick={openAddStaff}
+              style={{
+                display: 'flex', alignItems: 'center', gap: '6px',
+                padding: '10px 20px', borderRadius: '10px',
+                background: 'linear-gradient(135deg, #d4a017 0%, #b8860b 100%)',
+                color: '#0a1628', border: 'none',
+                fontSize: '12px', fontWeight: 800, cursor: 'pointer',
+                boxShadow: '0 6px 18px rgba(212, 160, 23, 0.35)',
+                letterSpacing: '0.3px',
+              }}
+              onMouseEnter={(e) => { e.currentTarget.style.transform = 'translateY(-1px)'; e.currentTarget.style.boxShadow = '0 8px 22px rgba(212, 160, 23, 0.5)'; }}
+              onMouseLeave={(e) => { e.currentTarget.style.transform = 'none'; e.currentTarget.style.boxShadow = '0 6px 18px rgba(212, 160, 23, 0.35)'; }}
+            >
+              + Add staff
+            </button>
+          </div>
         </div>
-        <button
-          onClick={() => { fetchPersonnel(); loadLocalData(); }}
-          style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '8px 16px', borderRadius: '10px', background: 'white', border: '1px solid #e2e8f0', fontSize: '12px', fontWeight: 700, color: '#475569', cursor: 'pointer', boxShadow: '0 1px 4px rgba(0,0,0,0.04)' }}
-        >
-          <IconRefresh /> Refresh
-        </button>
       </div>
 
       {/* â”€â”€ KPI bar â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
@@ -583,7 +878,7 @@ export default function StaffPage() {
           { label: 'Total Staff',     value: metrics.total,                               Icon: IconUsers,  accent: '#0f52ba', bg: '#eff6ff', border: '#dbeafe' },
           { label: 'Doctors',         value: metrics.doctors,                             Icon: IconDoctor, accent: '#0891b2', bg: '#ecfeff', border: '#a5f3fc' },
           { label: 'On Leave Today',  value: metrics.onLeave,                             Icon: IconCal,    accent: '#d97706', bg: '#fffbeb', border: '#fde68a' },
-          { label: 'Monthly Payroll', value: `â‚¹${metrics.totalPayroll.toLocaleString()}`, Icon: IconRupee,  accent: '#16a34a', bg: '#f0fdf4', border: '#bbf7d0' },
+          { label: 'Monthly Payroll', value: `₹${metrics.totalPayroll.toLocaleString()}`, Icon: IconRupee,  accent: '#16a34a', bg: '#f0fdf4', border: '#bbf7d0' },
         ].map(({ label, value, Icon, accent, bg, border }) => (
           <div key={label} style={{ background: 'white', border: `1px solid ${border}`, borderRadius: '16px', padding: '18px 20px', display: 'flex', alignItems: 'center', gap: '14px', boxShadow: '0 2px 8px rgba(0,0,0,0.03)' }}>
             <div style={{ width: '42px', height: '42px', borderRadius: '11px', background: bg, display: 'flex', alignItems: 'center', justifyContent: 'center', color: accent, flexShrink: 0 }}>
@@ -671,7 +966,7 @@ export default function StaffPage() {
                             <div style={{ width: '7px', height: '7px', borderRadius: '50%', background: ATT_META[attToday]?.color }} title={ATT_META[attToday]?.label} />
                           )}
                           {salNet > 0 && (
-                            <div style={{ fontSize: '9px', color: '#94a3b8', fontWeight: 600 }}>â‚¹{(salNet / 1000).toFixed(0)}k</div>
+                            <div style={{ fontSize: '9px', color: '#94a3b8', fontWeight: 600 }}>₹{(salNet / 1000).toFixed(0)}k</div>
                           )}
                         </div>
                       </div>
@@ -696,17 +991,29 @@ export default function StaffPage() {
               </div>
               <div style={{ flex: 1, overflow: 'hidden' }}>
                 <div style={{ fontSize: '16px', fontWeight: 800, color: 'white', letterSpacing: '-0.2px', whiteSpace: 'nowrap', textOverflow: 'ellipsis', overflow: 'hidden' }}>{selectedStaff.name}</div>
-                <div style={{ fontSize: '11px', color: 'rgba(255,255,255,0.55)', marginTop: '2px', whiteSpace: 'nowrap', textOverflow: 'ellipsis', overflow: 'hidden' }}>{getRoleMeta(selectedStaff.roles?.[0]).label} Â· {selectedStaff.email || 'No email'}</div>
+                <div style={{ fontSize: '11px', color: 'rgba(255,255,255,0.55)', marginTop: '2px', whiteSpace: 'nowrap', textOverflow: 'ellipsis', overflow: 'hidden' }}>{getRoleMeta(selectedStaff.roles?.[0]).label} · {selectedStaff.email || 'No email'}</div>
               </div>
               <span style={{ padding: '4px 11px', borderRadius: '7px', background: selectedStaff.status === 'inactive' ? 'rgba(239,68,68,0.18)' : 'rgba(34,197,94,0.18)', color: selectedStaff.status === 'inactive' ? '#fca5a5' : '#86efac', fontSize: '9px', fontWeight: 900, letterSpacing: '1px', flexShrink: 0 }}>
                 {(selectedStaff.status || 'ACTIVE').toUpperCase()}
               </span>
+              <button
+                onClick={() => openEditStaff(selectedStaff)}
+                title="Edit staff record"
+                style={{
+                  background: 'linear-gradient(135deg, #d4a017 0%, #b8860b 100%)',
+                  border: 'none', borderRadius: '8px',
+                  padding: '6px 14px', color: '#0a1628',
+                  fontSize: '11px', fontWeight: 800, cursor: 'pointer',
+                  letterSpacing: '0.3px', flexShrink: 0,
+                  boxShadow: '0 4px 12px rgba(212, 160, 23, 0.3)',
+                }}
+              >Edit</button>
             </div>
 
             {/* Tab bar */}
             <div style={{ display: 'flex', borderBottom: '1px solid #f1f5f9', background: '#fafbfc' }}>
               {DETAIL_TABS.map(tab => (
-                <button key={tab.id} onClick={() => setDetailTab(tab.id)} style={{ padding: '13px 22px', border: 'none', background: 'none', cursor: 'pointer', fontSize: '12px', fontWeight: detailTab === tab.id ? 800 : 600, color: detailTab === tab.id ? '#0f52ba' : '#94a3b8', borderBottom: `2px solid ${detailTab === tab.id ? '#0f52ba' : 'transparent'}`, transition: 'all 0.12s', letterSpacing: '0.2px' }}>
+                <button key={tab.id} onClick={() => setDetailTab(tab.id)} style={{ padding: '13px 22px', border: 'none', background: 'none', cursor: 'pointer', fontSize: '12px', fontWeight: detailTab === tab.id ? 800 : 600, color: detailTab === tab.id ? '#0a1628' : '#94a3b8', borderBottom: `2px solid ${detailTab === tab.id ? '#d4a017' : 'transparent'}`, transition: 'all 0.12s', letterSpacing: '0.2px' }}>
                   {tab.label}
                 </button>
               ))}
@@ -718,6 +1025,7 @@ export default function StaffPage() {
               {detailTab === 'salary'     && renderSalaryTab(selectedStaff)}
               {detailTab === 'attendance' && renderAttendanceTab(selectedStaff)}
               {detailTab === 'leave'      && renderLeaveTab(selectedStaff)}
+              {detailTab === 'access'     && renderAccessTab(selectedStaff)}
             </div>
           </div>
         ) : !isMobile && (
@@ -760,7 +1068,7 @@ export default function StaffPage() {
                 <div key={key}>
                   <label style={{ fontSize: '9px', fontWeight: 800, color: isDeduct ? '#dc2626' : '#16a34a', textTransform: 'uppercase', letterSpacing: '0.5px', display: 'block', marginBottom: '6px' }}>{label}</label>
                   <div style={{ display: 'flex', alignItems: 'center', border: `1px solid ${isDeduct ? '#fecaca' : '#bbf7d0'}`, borderRadius: '9px', overflow: 'hidden', background: isDeduct ? '#fff7f7' : '#f0fdf4' }}>
-                    <span style={{ padding: '0 9px', fontSize: '12px', fontWeight: 700, color: isDeduct ? '#dc2626' : '#16a34a', borderRight: `1px solid ${isDeduct ? '#fecaca' : '#bbf7d0'}`, height: '38px', display: 'flex', alignItems: 'center' }}>â‚¹</span>
+                    <span style={{ padding: '0 9px', fontSize: '12px', fontWeight: 700, color: isDeduct ? '#dc2626' : '#16a34a', borderRight: `1px solid ${isDeduct ? '#fecaca' : '#bbf7d0'}`, height: '38px', display: 'flex', alignItems: 'center' }}>₹</span>
                     <input
                       type="number" min="0"
                       value={salaryDrawer.form[key]}
@@ -787,7 +1095,7 @@ export default function StaffPage() {
         >
           <div style={{ background: 'white', borderRadius: '20px', padding: '26px', width: '90%', maxWidth: '320px', boxShadow: '0 24px 80px rgba(0,0,0,0.18)' }} onClick={e => e.stopPropagation()}>
             <div style={{ fontSize: '15px', fontWeight: 800, color: '#0a1628', marginBottom: '3px' }}>Mark Attendance</div>
-            <div style={{ fontSize: '11px', color: '#94a3b8', marginBottom: '18px', fontWeight: 500 }}>{attPicker.date} Â· {selectedStaff.name}</div>
+            <div style={{ fontSize: '11px', color: '#94a3b8', marginBottom: '18px', fontWeight: 500 }}>{attPicker.date} · {selectedStaff.name}</div>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', marginBottom: '18px' }}>
               {Object.entries(ATT_META).map(([s, m]) => (
                 <button
@@ -850,7 +1158,215 @@ export default function StaffPage() {
         </div>
       )}
 
-      {/* â”€â”€ NOTIFICATION MODAL â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
+      {/* ── ADD / EDIT STAFF DRAWER ─────────────────────────────────────── */}
+      {staffDrawer.open && (
+        <div
+          onClick={() => setStaffDrawer(p => ({ ...p, open: false }))}
+          style={{
+            position: 'fixed', inset: 0, zIndex: 10001,
+            background: 'rgba(10, 22, 40, 0.55)', backdropFilter: 'blur(6px)',
+            display: 'flex', justifyContent: 'flex-end',
+            animation: 'staffFadeIn 0.18s ease-out',
+          }}
+        >
+          <form
+            onSubmit={handleSaveStaff}
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              width: '560px', maxWidth: '100vw', height: '100%',
+              background: 'white', display: 'flex', flexDirection: 'column',
+              boxShadow: '-12px 0 32px rgba(15,23,42,0.22)',
+              animation: 'staffSlideIn 0.28s cubic-bezier(0.16, 1, 0.3, 1)',
+            }}
+          >
+            {/* Drawer header — navy hero */}
+            <div style={{ padding: '22px 28px', background: 'linear-gradient(135deg, #0a1628 0%, #1e3a5f 100%)', color: 'white', position: 'relative', overflow: 'hidden' }}>
+              <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: '3px', background: 'linear-gradient(90deg, transparent, #d4a017 30%, #f5d76e 50%, #d4a017 70%, transparent)' }} />
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '12px' }}>
+                <div>
+                  <div style={{ fontSize: '10px', fontWeight: 700, color: '#d4a017', letterSpacing: '1.5px', textTransform: 'uppercase', marginBottom: '4px' }}>
+                    {staffDrawer.form.id ? 'Edit Staff' : 'New Staff'}
+                  </div>
+                  <h2 style={{ margin: 0, fontSize: '20px', fontWeight: 800, letterSpacing: '-0.3px' }}>
+                    {staffDrawer.form.id ? 'Update record' : 'Onboard team member'}
+                  </h2>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setStaffDrawer(p => ({ ...p, open: false }))}
+                  aria-label="Close"
+                  style={{ width: '32px', height: '32px', borderRadius: '50%', background: 'rgba(255,255,255,0.1)', border: '1px solid rgba(255,255,255,0.2)', color: 'white', cursor: 'pointer', fontSize: '16px' }}
+                >×</button>
+              </div>
+            </div>
+
+            {/* Form body */}
+            <div style={{ flex: 1, overflowY: 'auto', padding: '22px 28px', display: 'flex', flexDirection: 'column', gap: '18px' }}>
+
+              {/* Identity */}
+              <SectionLabel>Identity</SectionLabel>
+              <FieldGroup>
+                <FieldLabel required>Full name</FieldLabel>
+                <TextInput
+                  autoFocus
+                  value={staffDrawer.form.name}
+                  onChange={(v) => setStaffDrawer(p => ({ ...p, form: { ...p.form, name: v } }))}
+                  placeholder="e.g. Dr. Aditi Sharma"
+                />
+              </FieldGroup>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '14px' }}>
+                <FieldGroup>
+                  <FieldLabel>Email</FieldLabel>
+                  <TextInput
+                    type="email"
+                    value={staffDrawer.form.email}
+                    onChange={(v) => setStaffDrawer(p => ({ ...p, form: { ...p.form, email: v } }))}
+                    placeholder="name@centre.in"
+                  />
+                </FieldGroup>
+                <FieldGroup>
+                  <FieldLabel>Mobile</FieldLabel>
+                  <TextInput
+                    value={staffDrawer.form.mobile}
+                    onChange={(v) => setStaffDrawer(p => ({ ...p, form: { ...p.form, mobile: v } }))}
+                    placeholder="+91 XXXXXXXXXX"
+                  />
+                </FieldGroup>
+              </div>
+              {!staffDrawer.form.id && (
+                <FieldGroup>
+                  <FieldLabel required>Initial password</FieldLabel>
+                  <TextInput
+                    type="password"
+                    value={staffDrawer.form.password}
+                    onChange={(v) => setStaffDrawer(p => ({ ...p, form: { ...p.form, password: v } }))}
+                    placeholder="Min. 8 chars; user can change after first login"
+                  />
+                </FieldGroup>
+              )}
+
+              {/* Roles */}
+              <SectionLabel>Roles &amp; access</SectionLabel>
+              <FieldGroup>
+                <FieldLabel required>Assign one or more roles</FieldLabel>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '8px' }}>
+                  {ROLE_ACCESS.map(role => {
+                    const active = (staffDrawer.form.roles || []).includes(role.key);
+                    return (
+                      <button
+                        key={role.key}
+                        type="button"
+                        onClick={() => setStaffDrawer(p => {
+                          const set = new Set(p.form.roles || []);
+                          if (set.has(role.key)) set.delete(role.key); else set.add(role.key);
+                          return { ...p, form: { ...p.form, roles: Array.from(set) } };
+                        })}
+                        style={{
+                          padding: '10px 12px', borderRadius: '10px',
+                          border: `1px solid ${active ? '#d4a017' : '#e2e8f0'}`,
+                          background: active ? '#fffbeb' : 'white',
+                          color: active ? '#0a1628' : '#475569',
+                          fontSize: '12px', fontWeight: active ? 700 : 600,
+                          cursor: 'pointer', textAlign: 'left',
+                          display: 'flex', alignItems: 'center', gap: '8px',
+                          transition: 'all 0.15s',
+                        }}
+                      >
+                        <span style={{
+                          width: '14px', height: '14px', borderRadius: '4px',
+                          background: active ? '#d4a017' : 'white',
+                          border: `1px solid ${active ? '#d4a017' : '#cbd5e1'}`,
+                          color: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center',
+                          fontSize: '10px', flexShrink: 0,
+                        }}>{active ? '✓' : ''}</span>
+                        {role.label}
+                      </button>
+                    );
+                  })}
+                </div>
+              </FieldGroup>
+
+              {/* Professional (collapsible? keep visible — short) */}
+              <SectionLabel>Professional details <span style={{ color: '#94a3b8', fontWeight: 500, marginLeft: '6px', textTransform: 'none', letterSpacing: 0 }}>(optional)</span></SectionLabel>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '14px' }}>
+                <FieldGroup>
+                  <FieldLabel>Specialization</FieldLabel>
+                  <TextInput
+                    value={staffDrawer.form.specialization}
+                    onChange={(v) => setStaffDrawer(p => ({ ...p, form: { ...p.form, specialization: v } }))}
+                    placeholder="e.g. Radiology"
+                  />
+                </FieldGroup>
+                <FieldGroup>
+                  <FieldLabel>Degree</FieldLabel>
+                  <TextInput
+                    value={staffDrawer.form.degree}
+                    onChange={(v) => setStaffDrawer(p => ({ ...p, form: { ...p.form, degree: v } }))}
+                    placeholder="e.g. MD, MBBS"
+                  />
+                </FieldGroup>
+              </div>
+              <FieldGroup>
+                <FieldLabel>License number</FieldLabel>
+                <TextInput
+                  value={staffDrawer.form.licenseNo}
+                  onChange={(v) => setStaffDrawer(p => ({ ...p, form: { ...p.form, licenseNo: v } }))}
+                  placeholder="Medical council registration"
+                />
+              </FieldGroup>
+            </div>
+
+            {/* Sticky footer */}
+            <div style={{
+              padding: '14px 28px', borderTop: '1px solid #e2e8f0',
+              display: 'flex', gap: '10px', alignItems: 'center', background: 'white',
+            }}>
+              {staffDrawer.form.id && (
+                <button
+                  type="button"
+                  onClick={() => handleDeleteStaff({ id: staffDrawer.form.id, name: staffDrawer.form.name })}
+                  style={{
+                    padding: '10px 14px', borderRadius: '10px',
+                    border: '1px solid #fecaca', background: 'white',
+                    color: '#dc2626', fontSize: '12px', fontWeight: 700, cursor: 'pointer',
+                  }}
+                >Remove</button>
+              )}
+              <div style={{ flex: 1 }} />
+              <button
+                type="button"
+                onClick={() => setStaffDrawer(p => ({ ...p, open: false }))}
+                style={{
+                  padding: '10px 16px', borderRadius: '10px',
+                  border: '1px solid #e2e8f0', background: 'white',
+                  color: '#0a1628', fontSize: '12px', fontWeight: 700, cursor: 'pointer',
+                }}
+              >Cancel</button>
+              <button
+                type="submit"
+                disabled={savingStaff}
+                style={{
+                  padding: '10px 22px', borderRadius: '10px', border: 'none',
+                  background: savingStaff ? '#cbd5e1' : 'linear-gradient(135deg, #d4a017 0%, #b8860b 100%)',
+                  color: savingStaff ? '#94a3b8' : '#0a1628',
+                  fontSize: '12px', fontWeight: 800, cursor: savingStaff ? 'not-allowed' : 'pointer',
+                  letterSpacing: '0.3px',
+                  boxShadow: savingStaff ? 'none' : '0 6px 18px rgba(212, 160, 23, 0.35)',
+                }}
+              >
+                {savingStaff ? 'Saving…' : (staffDrawer.form.id ? 'Save changes' : 'Add staff')}
+              </button>
+            </div>
+          </form>
+
+          <style>{`
+            @keyframes staffFadeIn { from { opacity: 0; } to { opacity: 1; } }
+            @keyframes staffSlideIn { from { transform: translateX(24px); opacity: 0; } to { transform: none; opacity: 1; } }
+          `}</style>
+        </div>
+      )}
+
+      {/* ── NOTIFICATION / CONFIRM MODAL ─────────────────────────────────── */}
       {notifModal.isOpen && (() => {
         const COLORS = { success: '#16a34a', error: '#dc2626', warning: '#d97706', info: '#0f52ba' };
         const ICONS  = { success: 'âœ“', error: 'âœ•', warning: 'âš ', info: 'â„¹' };
@@ -861,13 +1377,33 @@ export default function StaffPage() {
             onClick={() => setNotifModal(p => ({ ...p, isOpen: false }))}
           >
             <div
-              style={{ background: 'rgba(255,255,255,0.97)', borderRadius: '22px', padding: '32px', maxWidth: '380px', width: '90%', boxShadow: `0 24px 60px ${c}20`, border: `1px solid ${c}25`, textAlign: 'center', animation: 'staffNoticePop 0.4s cubic-bezier(0.34,1.56,0.64,1)' }}
+              style={{ background: 'rgba(255,255,255,0.98)', borderRadius: '22px', padding: '32px', maxWidth: '420px', width: '90%', boxShadow: `0 24px 60px ${c}20`, border: `1px solid ${c}25`, textAlign: 'center', animation: 'staffNoticePop 0.4s cubic-bezier(0.34,1.56,0.64,1)' }}
               onClick={e => e.stopPropagation()}
             >
               <div style={{ width: '50px', height: '50px', borderRadius: '50%', background: `${c}12`, border: `2px solid ${c}25`, display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 16px', fontSize: '20px', color: c, fontWeight: 900 }}>{ICONS[notifModal.type]}</div>
               <div style={{ fontSize: '16px', fontWeight: 800, color: '#0a1628', marginBottom: '8px' }}>{notifModal.title}</div>
-              <div style={{ fontSize: '13px', color: '#6b7280', lineHeight: 1.6 }}>{notifModal.message}</div>
-              <button onClick={() => setNotifModal(p => ({ ...p, isOpen: false }))} style={{ marginTop: '20px', padding: '10px 30px', borderRadius: '11px', background: c, color: 'white', border: 'none', fontWeight: 800, cursor: 'pointer', fontSize: '12px', letterSpacing: '0.5px' }}>OK</button>
+              <div style={{ fontSize: '13px', color: '#6b7280', lineHeight: 1.6, whiteSpace: 'pre-wrap' }}>{notifModal.message}</div>
+
+              {notifModal.isConfirm ? (
+                <div style={{ display: 'flex', gap: '10px', marginTop: '22px' }}>
+                  <button
+                    onClick={() => setNotifModal(p => ({ ...p, isOpen: false }))}
+                    style={{ flex: 1, padding: '11px 18px', borderRadius: '11px', background: 'white', border: '1px solid #e2e8f0', color: '#0a1628', fontWeight: 700, cursor: 'pointer', fontSize: '12px' }}
+                  >Cancel</button>
+                  <button
+                    onClick={() => { const fn = notifModal.onConfirm; setNotifModal(p => ({ ...p, isOpen: false })); if (fn) fn(); }}
+                    style={{
+                      flex: 1, padding: '11px 18px', borderRadius: '11px',
+                      background: notifModal.danger ? '#dc2626' : '#0a1628',
+                      color: 'white', border: 'none', fontWeight: 800, cursor: 'pointer', fontSize: '12px',
+                      letterSpacing: '0.3px',
+                      boxShadow: notifModal.danger ? '0 6px 18px rgba(220,38,38,0.35)' : '0 6px 18px rgba(10,22,40,0.2)',
+                    }}
+                  >{notifModal.confirmText || 'Confirm'}</button>
+                </div>
+              ) : (
+                <button onClick={() => setNotifModal(p => ({ ...p, isOpen: false }))} style={{ marginTop: '20px', padding: '10px 30px', borderRadius: '11px', background: c, color: 'white', border: 'none', fontWeight: 800, cursor: 'pointer', fontSize: '12px', letterSpacing: '0.5px' }}>OK</button>
+              )}
             </div>
           </div>
         );

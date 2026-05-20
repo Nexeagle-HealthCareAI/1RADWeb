@@ -256,12 +256,12 @@ export default function AppointmentBoard() {
       const allPersonnel = response.data;
       
       let owner = allPersonnel.find(u => {
-        const roles = (u.roles || u.Roles || []).map(r => r.toLowerCase());
+        const roles = (u.roles || u.Roles || []).map(r => String(r).toLowerCase());
         return roles.includes('admindoctor');
       });
       if (!owner) {
         owner = allPersonnel.find(u => {
-          const roles = (u.roles || u.Roles || []).map(r => r.toLowerCase());
+          const roles = (u.roles || u.Roles || []).map(r => String(r).toLowerCase());
           return roles.includes('admin');
         });
       }
@@ -273,12 +273,22 @@ export default function AppointmentBoard() {
         });
       }
 
-      // Filter for roles: admindoctor or doctor (case-insensitive)
-      const specialists = allPersonnel.filter(p => 
-        p.roles && p.roles.some(role => 
-          role.toLowerCase() === 'doctor' || role.toLowerCase() === 'admindoctor'
-        )
-      ).map(p => p.fullName);
+      // Filter for roles: admindoctor, doctor, or custom roles (excluding non-doctors)
+      const standardNonDoctors = ['admin', 'technician', 'receptionist', 'accountant'];
+      
+      let specialists = allPersonnel.filter(p => {
+        const rawRoles = p.roles || p.Roles || [];
+        return rawRoles.some(r => {
+          const lower = String(r).toLowerCase();
+          return lower.includes('doctor') || !standardNonDoctors.includes(lower);
+        });
+      }).map(p => p.fullName || p.FullName || 'UNKNOWN_STAFF');
+      
+      // Fallback: If strict role filtering returns nobody, list everyone (preventing a blocked UI)
+      if (specialists.length === 0) {
+        specialists = allPersonnel.map(p => p.fullName || p.FullName || 'UNKNOWN_STAFF');
+      }
+      
       setDoctors(specialists);
     } catch (error) {
       console.error('Failed to fetch doctors:', error);

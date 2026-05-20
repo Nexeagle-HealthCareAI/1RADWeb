@@ -138,7 +138,7 @@ export default function DoctorBoard() {
       
       const standardNonDoctors = ['admin', 'technician', 'receptionist', 'accountant'];
       
-      const docList = (res.data || []).map(p => {
+      let docList = (res.data || []).map(p => {
         const rawRoles = p.roles || p.Roles || [];
         return {
           id: p.userId || p.UserId,
@@ -146,6 +146,14 @@ export default function DoctorBoard() {
           roles: rawRoles.map(r => String(r).toLowerCase())
         };
       }).filter(p => p.roles.some(r => r.includes('doctor') || !standardNonDoctors.includes(r)));
+      
+      if (docList.length === 0 && (res.data || []).length > 0) {
+        docList = (res.data || []).map(p => ({
+          id: p.userId || p.UserId,
+          name: p.fullName || p.FullName || 'UNKNOWN_STAFF',
+          roles: (p.roles || p.Roles || []).map(r => String(r).toLowerCase())
+        }));
+      }
       
       setDoctors(docList);
     } catch (err) {

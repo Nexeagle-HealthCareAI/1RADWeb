@@ -77,6 +77,8 @@ const ExpenseLedger = ({
   handleToggleExpenseStatus,
   handleSetExpenseStatus,
   activeCenterName = 'Default',
+  notify = (msg) => (typeof msg === 'string' ? window.alert(msg) : window.alert(msg?.message || '')),
+  confirmDialog = ({ message, onConfirm }) => { if (window.confirm(message)) onConfirm?.(); },
 }) => {
   const [selectedIds, setSelectedIds] = useState(new Set());
   const [openStatusMenuId, setOpenStatusMenuId] = useState(null);
@@ -141,14 +143,18 @@ const ExpenseLedger = ({
   // ─── Bulk actions ──────────────────────────────────────────────────────
   const handleBulkDelete = () => {
     if (bulkDeletable.length === 0) return;
-    const ok = window.confirm(
-      `Delete ${bulkDeletable.length} expense${bulkDeletable.length > 1 ? 's' : ''}? This cannot be undone.`
-    );
-    if (!ok) return;
-    // Use the parent's skipConfirm flag so users see ONE prompt for the batch,
-    // not N prompts (one per row).
-    bulkDeletable.forEach(e => handleDeleteExpense(e.id, { skipConfirm: true }));
-    setSelectedIds(new Set());
+    const count = bulkDeletable.length;
+    confirmDialog({
+      title: `Delete ${count} expense${count > 1 ? 's' : ''}?`,
+      message: 'This cannot be undone.',
+      confirmText: 'Delete',
+      danger: true,
+      onConfirm: () => {
+        // Use the parent's skipConfirm flag so this single confirm covers the batch.
+        bulkDeletable.forEach(e => handleDeleteExpense(e.id, { skipConfirm: true }));
+        setSelectedIds(new Set());
+      },
+    });
   };
 
   const handleBulkMarkPaid = () => {
@@ -178,7 +184,7 @@ const ExpenseLedger = ({
       : (filteredOutflow || []);
 
     if (list.length === 0) {
-      alert('No expenses in the current view to export.');
+      notify({ type: 'info', message: 'No expenses in the current view to export.' });
       return;
     }
 
