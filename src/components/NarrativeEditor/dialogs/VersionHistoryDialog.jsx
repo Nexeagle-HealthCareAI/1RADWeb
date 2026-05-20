@@ -348,5 +348,5 @@ export default function VersionHistoryDialog({
     </div>
   );
 
-  return createPortal(panel, document.body);
+  return createPortal(panel, (document.fullscreenElement || document.body));
 }

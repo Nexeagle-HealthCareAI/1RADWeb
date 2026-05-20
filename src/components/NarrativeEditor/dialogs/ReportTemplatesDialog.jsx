@@ -325,5 +325,5 @@ export default function ReportTemplatesDialog({ open, onClose, onInsert, onRepla
     </div>
   );
 
-  return createPortal(panel, document.body);
+  return createPortal(panel, (document.fullscreenElement || document.body));
 }

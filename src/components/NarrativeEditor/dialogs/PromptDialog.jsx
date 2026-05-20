@@ -34,6 +34,15 @@ export default function PromptDialog({
 }) {
   const [value, setValue] = useState(defaultValue);
   const inputRef = useRef(null);
+  const [portalTarget, setPortalTarget] = useState(() =>
+    (typeof document !== 'undefined' ? (document.fullscreenElement || document.body) : null)
+  );
+
+  useEffect(() => {
+    const onFs = () => setPortalTarget(document.fullscreenElement || document.body);
+    document.addEventListener('fullscreenchange', onFs);
+    return () => document.removeEventListener('fullscreenchange', onFs);
+  }, []);
 
   useEffect(() => {
     if (open) {
@@ -45,7 +54,7 @@ export default function PromptDialog({
     }
   }, [open, defaultValue]);
 
-  if (!open) return null;
+  if (!open || !portalTarget) return null;
 
   const submit = () => onConfirm?.(value);
 
@@ -122,5 +131,5 @@ export default function PromptDialog({
     </div>
   );
 
-  return createPortal(panel, document.body);
+  return createPortal(panel, portalTarget);
 }

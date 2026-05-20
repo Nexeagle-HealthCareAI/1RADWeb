@@ -184,5 +184,5 @@ export default function ShortcutsDialog({ open, onClose }) {
     </div>
   );
 
-  return createPortal(panel, document.body);
+  return createPortal(panel, (document.fullscreenElement || document.body));
 }
