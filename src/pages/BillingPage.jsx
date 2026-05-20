@@ -446,6 +446,23 @@ export default function BillingPage() {
     }
   };
 
+  // Direct status setter — lets the ledger drop-down pick any status
+  // (Draft / Pending / Approved / Paid) instead of just toggling.
+  const handleSetExpenseStatus = async (id, newStatus) => {
+    console.log(`[FINANCE] Setting expense ${id} status → ${newStatus}`);
+    try {
+      const resp = await apiClient.put(`/finance/expenses/${id}/status`, { status: newStatus });
+      console.log('[FINANCE] Status update OK:', resp.status, resp.data);
+      refreshAllFinancialData();
+    } catch (err) {
+      console.error('[FINANCE] Status transition failed', err);
+      const status = err.response?.status;
+      const data = err.response?.data;
+      const errorMsg = data?.message || data?.error || data?.title || err.message || 'Could not update expense status.';
+      alert(`Failed to set status to "${newStatus}"${status ? ` (HTTP ${status})` : ''}: ${errorMsg}`);
+    }
+  };
+
   const handleSavePayout = async (e) => {
     e.preventDefault();
     if (!editPayout.referrerId) {
@@ -558,7 +575,8 @@ export default function BillingPage() {
         alert('NETWORK_ERROR: Deletion added to offline queue.');
         setInvoices(prev => prev.filter(inv => inv.invoiceId !== id)); // Optimistic UI
       } else {
-        alert('PROTOCOL FAILURE: Could not delete invoice.');
+        const errorMsg = err.response?.data?.error || err.response?.data?.message || 'Could not delete invoice.';
+        alert(`PROTOCOL FAILURE: ${errorMsg}`);
       }
     }
   };
@@ -1589,6 +1607,7 @@ export default function BillingPage() {
           handleSort={handleSort}
           TODAY={TODAY}
           handleToggleExpenseStatus={handleToggleExpenseStatus}
+          handleSetExpenseStatus={handleSetExpenseStatus}
           activeCenterName={activeCenter?.name || activeCenter?.hospitalName || 'Default'}
         />
       )}

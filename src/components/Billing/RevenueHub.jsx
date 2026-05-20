@@ -742,6 +742,16 @@ const RevenueHub = ({
 
                         {inv?.status === 'PAID' ? (
                            <span title="Cannot delete a paid invoice" style={{ padding: '6px 10px', borderRadius: '10px', background: '#f1f5f9', color: '#cbd5e1', fontSize: '9px', fontWeight: 950, cursor: 'not-allowed', userSelect: 'none' }}>🔒 LOCKED</span>
+                         ) : ['scanned', 'reporting', 'reported', 'completed'].includes(inv?.appointmentStatus?.toLowerCase()) ? (
+                           <button
+                             onClick={() => setErrorModal({
+                               isOpen: true,
+                               title: "DELETION BLOCK",
+                               message: `Cannot delete unpaid invoice ${inv.displayId || 'N/A'} because the associated study status is "${inv.appointmentStatus.toUpperCase()}". Deletion is only allowed for expected or arrived studies.`
+                             })}
+                             style={{ padding: '6px 10px', borderRadius: '10px', border: 'none', background: '#f1f5f9', color: '#94a3b8', fontSize: '9px', fontWeight: 950, cursor: 'pointer' }}
+                             title="Delete option blocked for scanned/processed studies"
+                           >DEL</button>
                          ) : (
                            <button
                              onClick={() => setDeleteConfirmModal({ isOpen: true, invoiceId: inv.invoiceId, commissionId: inv.commissionId, displayId: inv.displayId || 'N/A' })}

@@ -866,6 +866,12 @@ const EXPENSE_CATEGORIES = [
 
 const PAYMENT_MODES   = ['Cash', 'UPI', 'Bank Transfer', 'Cheque'];
 const STATUS_OPTIONS  = ['Draft', 'Pending', 'Approved', 'Paid'];
+const STATUS_COLORS   = {
+  Draft:    '#64748b', // slate — uncommitted
+  Pending:  '#f59e0b', // amber — needs review
+  Approved: '#2563eb', // blue  — sanctioned
+  Paid:     '#16a34a', // green — settled
+};
 const QUICK_AMOUNTS   = [100, 500, 1000, 5000];
 
 const fmtINR = (n) => `₹${(Number(n) || 0).toLocaleString('en-IN')}`;
@@ -1109,12 +1115,13 @@ const ExpenseDrawerInner = ({
               </Field>
             </div>
 
-            {/* Status — segmented */}
+            {/* Status — segmented with semantic colors */}
             <Field label="Status">
               <SegmentedControl
                 value={editExpense.status || 'Paid'}
                 onChange={(v) => set({ status: v })}
                 options={STATUS_OPTIONS}
+                colorMap={STATUS_COLORS}
               />
             </Field>
           </div>
@@ -1212,7 +1219,7 @@ const TextInput = ({ value, onChange, placeholder, inputRef, large }) => (
   />
 );
 
-const SegmentedControl = ({ value, onChange, options }) => (
+const SegmentedControl = ({ value, onChange, options, colorMap }) => (
   <div style={{
     display: 'inline-flex', flexWrap: 'wrap', gap: '4px',
     padding: '3px', background: EX.surfaceAlt,
@@ -1221,6 +1228,12 @@ const SegmentedControl = ({ value, onChange, options }) => (
   }}>
     {options.map(opt => {
       const active = value === opt;
+      const tint = colorMap?.[opt];
+      // When a colorMap is provided, the active option fills with its semantic
+      // color and inactive options show a small leading dot so the user can
+      // preview each status's color before picking.
+      const activeBg    = tint || EX.surface;
+      const activeColor = tint ? '#ffffff' : EX.textPrimary;
       return (
         <button
           key={opt}
@@ -1228,13 +1241,24 @@ const SegmentedControl = ({ value, onChange, options }) => (
           onClick={() => onChange(opt)}
           style={{
             padding: '6px 12px', borderRadius: '7px', border: 'none',
-            background: active ? EX.surface : 'transparent',
-            color: active ? EX.textPrimary : EX.textSecondary,
+            background: active ? activeBg : 'transparent',
+            color: active ? activeColor : EX.textSecondary,
             fontSize: '12px', fontWeight: active ? 600 : 500,
             cursor: 'pointer', transition: 'all 0.15s',
-            boxShadow: active ? '0 1px 2px rgba(0,0,0,0.06)' : 'none',
+            boxShadow: active
+              ? (tint ? `0 1px 2px ${tint}55` : '0 1px 2px rgba(0,0,0,0.06)')
+              : 'none',
+            display: 'inline-flex', alignItems: 'center', gap: '6px',
           }}
-        >{opt}</button>
+        >
+          {tint && !active && (
+            <span style={{
+              width: '7px', height: '7px', borderRadius: '50%',
+              background: tint, flexShrink: 0,
+            }} />
+          )}
+          <span>{opt}</span>
+        </button>
       );
     })}
   </div>

@@ -1,4 +1,5 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef, useLayoutEffect } from 'react';
+import { createPortal } from 'react-dom';
 
 // ─── Design tokens ────────────────────────────────────────────────────────
 const C = {
@@ -29,6 +30,24 @@ const formatDate = (d) =>
 
 const formatINR = (n) => `₹${(Number(n) || 0).toLocaleString('en-IN')}`;
 
+// Status options surfaced in the row drop-down (match the drawer).
+const STATUS_OPTIONS = ['Draft', 'Pending', 'Approved', 'Paid'];
+
+// Canonical color + label for every status value we may receive from the API.
+// Keys are uppercase so lookup is case-insensitive.
+const STATUS_META = {
+  DRAFT:    { color: '#64748b', soft: '#f1f5f9', label: 'Draft' },
+  PENDING:  { color: '#f59e0b', soft: '#fef3c7', label: 'Pending' },
+  APPROVED: { color: '#2563eb', soft: '#dbeafe', label: 'Approved' },
+  PAID:     { color: '#15803d', soft: '#dcfce7', label: 'Paid' },
+  UNPAID:   { color: '#dc2626', soft: '#fef2f2', label: 'Unpaid' }, // legacy data
+};
+
+const metaFor = (status) => {
+  const key = String(status || 'UNPAID').toUpperCase();
+  return STATUS_META[key] || STATUS_META.UNPAID;
+};
+
 // ─── Component ────────────────────────────────────────────────────────────
 const ExpenseLedger = ({
   isMobile,
@@ -55,13 +74,32 @@ const ExpenseLedger = ({
   sortConfig,
   handleSort,
   handleToggleExpenseStatus,
+  handleSetExpenseStatus,
   activeCenterName = 'Default',
 }) => {
   const [selectedIds, setSelectedIds] = useState(new Set());
+  const [openStatusMenuId, setOpenStatusMenuId] = useState(null);
 
   useEffect(() => {
     setSelectedIds(new Set());
   }, [timeFilter, startDate, endDate, expenseSearch, expenseFilter]);
+
+  // Close the row's status menu when clicking outside it. The trigger pill AND
+  // the portal-rendered menu both carry [data-status-menu]; either path keeps
+  // the menu open.
+  useEffect(() => {
+    if (!openStatusMenuId) return;
+    const onDocClick = (e) => {
+      if (!e.target.closest?.('[data-status-menu]')) setOpenStatusMenuId(null);
+    };
+    // Use 'click' (not mousedown) so the option's own onClick gets to fire
+    // before this handler considers closing.
+    const t = setTimeout(() => document.addEventListener('click', onDocClick), 0);
+    return () => {
+      clearTimeout(t);
+      document.removeEventListener('click', onDocClick);
+    };
+  }, [openStatusMenuId]);
 
   const visibleRows = paginatedOutflow || [];
   const isAllVisibleSelected =
@@ -114,7 +152,11 @@ const ExpenseLedger = ({
 
   const handleBulkMarkPaid = () => {
     if (bulkMarkable.length === 0) return;
-    bulkMarkable.forEach(e => handleToggleExpenseStatus(e.id, e.status));
+    // Use direct setter when available; fall back to toggle for old data paths.
+    const setter = handleSetExpenseStatus
+      ? (id) => handleSetExpenseStatus(id, 'Paid')
+      : (id, status) => handleToggleExpenseStatus(id, status);
+    bulkMarkable.forEach(e => setter(e.id, e.status));
     setSelectedIds(new Set());
   };
 
@@ -205,10 +247,10 @@ const ExpenseLedger = ({
         gridTemplateColumns: isMobile ? '1fr 1fr' : 'repeat(4, 1fr)',
         gap: '12px',
       }}>
-        <KPICard label="Total expenditure" value={formatINR(outflowStats.totalOutflow)} accent={C.danger} />
-        <KPICard label="Operational" value={formatINR(outflowStats.operationalTotal)} />
-        <KPICard label="Strategic payouts" value={formatINR(outflowStats.referralTotal)} accent={C.accent} />
-        <KPICard label="Today's burn" value={formatINR(outflowStats.todayOutflow)} />
+        <KPICard tone="red"    label="Total expenditure" value={formatINR(outflowStats.totalOutflow)} />
+        <KPICard tone="blue"   label="Operational"       value={formatINR(outflowStats.operationalTotal)} />
+        <KPICard tone="purple" label="Strategic payouts" value={formatINR(outflowStats.referralTotal)} />
+        <KPICard tone="amber"  label="Today's burn"      value={formatINR(outflowStats.todayOutflow)} />
       </div>
 
       {/* ── Category breakdown strip (replaces "DISTRIBUTION" KPI) ───── */}
@@ -405,6 +447,13 @@ const ExpenseLedger = ({
                   isSelected={selectedIds.has(exp.id)}
                   onToggleSelect={() => toggleSelectRow(exp.id)}
                   onToggleStatus={() => handleToggleExpenseStatus(exp.id, exp.status)}
+                  onSetStatus={(newStatus) => {
+                    if (handleSetExpenseStatus) handleSetExpenseStatus(exp.id, newStatus);
+                    else handleToggleExpenseStatus(exp.id, exp.status);
+                  }}
+                  isStatusMenuOpen={openStatusMenuId === exp.id}
+                  onOpenStatusMenu={() => setOpenStatusMenuId(prev => prev === exp.id ? null : exp.id)}
+                  onCloseStatusMenu={() => setOpenStatusMenuId(null)}
                   onEdit={() => {
                     setEditExpense({
                       id: exp.id,
@@ -495,23 +544,45 @@ const ExpenseLedger = ({
 
 // ─── Sub-components ────────────────────────────────────────────────────────
 
-const KPICard = ({ label, value, accent }) => (
-  <div style={{
-    background: C.surface, border: `1px solid ${C.border}`,
-    borderRadius: '12px', padding: '16px',
-    position: 'relative', overflow: 'hidden',
-  }}>
-    {accent && (
-      <div style={{ position: 'absolute', left: 0, top: 0, bottom: 0, width: '3px', background: accent }} />
-    )}
-    <div style={{ fontSize: '11px', fontWeight: 600, color: C.textSecondary, marginBottom: '6px' }}>
-      {label}
+// Tinted palettes for KPI cards. Each tone provides a soft background, a
+// matching border, a mid-tone label, and a deep number color — mirrors the
+// look in RevenueHub.
+const KPI_TONES = {
+  red:     { bg: '#fef2f2', border: '#fecaca', label: '#991b1b', value: '#7f1d1d' },
+  blue:    { bg: '#eff6ff', border: '#bfdbfe', label: '#1e40af', value: '#1e3a8a' },
+  purple:  { bg: '#f5f3ff', border: '#ddd6fe', label: '#6d28d9', value: '#5b21b6' },
+  amber:   { bg: '#fffbeb', border: '#fde68a', label: '#b45309', value: '#92400e' },
+  neutral: { bg: '#ffffff', border: C.border,  label: C.textSecondary, value: C.textPrimary },
+};
+
+const KPICard = ({ label, value, tone = 'neutral' }) => {
+  const t = KPI_TONES[tone] || KPI_TONES.neutral;
+  return (
+    <div style={{
+      background: t.bg,
+      border: `1px solid ${t.border}`,
+      borderRadius: '12px',
+      padding: '16px',
+      boxShadow: `0 4px 16px ${t.border}66`,
+    }}>
+      <div style={{
+        fontSize: '11px', fontWeight: 700,
+        color: t.label, letterSpacing: '0.5px',
+        textTransform: 'uppercase',
+        marginBottom: '8px',
+      }}>
+        {label}
+      </div>
+      <div style={{
+        fontSize: '22px', fontWeight: 800,
+        color: t.value, letterSpacing: '-0.3px',
+        fontVariantNumeric: 'tabular-nums',
+      }}>
+        {value}
+      </div>
     </div>
-    <div style={{ fontSize: '22px', fontWeight: 700, color: C.textPrimary, letterSpacing: '-0.3px' }}>
-      {value}
-    </div>
-  </div>
-);
+  );
+};
 
 const CategoryBreakdown = ({ categories, total }) => {
   const top = [...categories].sort((a, b) => b.amount - a.amount).slice(0, 5);
@@ -599,10 +670,15 @@ const SortHeader = ({ label, k, sortConfig, onClick, align = 'left' }) => {
   );
 };
 
-const ExpenseRow = ({ exp, isSelected, onToggleSelect, onToggleStatus, onEdit, onDelete, zebra }) => {
+const ExpenseRow = ({
+  exp, isSelected, onToggleSelect,
+  onToggleStatus, onSetStatus,
+  isStatusMenuOpen, onOpenStatusMenu, onCloseStatusMenu,
+  onEdit, onDelete, zebra,
+}) => {
   const mutable = isMutable(exp);
   const isReferral = exp.category === 'Referral';
-  const isPaid = exp.status === 'PAID';
+  const m = metaFor(exp.status);
   return (
     <tr style={{
       background: isSelected ? '#fafbfc' : (zebra ? C.surfaceAlt : C.surface),
@@ -652,32 +728,28 @@ const ExpenseRow = ({ exp, isSelected, onToggleSelect, onToggleStatus, onEdit, o
       </td>
       <td style={{ ...td, textAlign: 'center' }}>
         {mutable ? (
-          <button
-            type="button"
-            onClick={onToggleStatus}
-            title={`Click to mark as ${isPaid ? 'unpaid' : 'paid'}`}
-            style={{
-              padding: '3px 10px', borderRadius: '99px', border: '1px solid',
-              borderColor: isPaid ? C.successBorder : C.dangerBorder,
-              background: isPaid ? C.successSoft : C.dangerSoft,
-              color: isPaid ? C.success : C.danger,
-              fontSize: '11px', fontWeight: 600, cursor: 'pointer',
-              display: 'inline-flex', alignItems: 'center', gap: '4px',
+          <StatusPill
+            meta={m}
+            currentStatus={exp.status}
+            isMenuOpen={isStatusMenuOpen}
+            onOpenMenu={onOpenStatusMenu}
+            onCloseMenu={onCloseStatusMenu}
+            onPick={(s) => {
+              onCloseStatusMenu();
+              // Always fire the API even if same status — user expects feedback.
+              onSetStatus(s);
             }}
-          >
-            <span style={{ width: '6px', height: '6px', borderRadius: '50%', background: 'currentColor' }} />
-            {isPaid ? 'Paid' : 'Unpaid'}
-          </button>
+          />
         ) : (
           <span style={{
             padding: '3px 10px', borderRadius: '99px',
-            background: C.successSoft, color: C.success,
+            background: m.soft, color: m.color,
             fontSize: '11px', fontWeight: 600,
             display: 'inline-flex', alignItems: 'center', gap: '4px',
-            border: `1px solid ${C.successBorder}`,
+            border: `1px solid ${m.color}55`,
           }}>
             <span style={{ width: '6px', height: '6px', borderRadius: '50%', background: 'currentColor' }} />
-            Paid
+            {m.label}
           </span>
         )}
       </td>
@@ -724,6 +796,111 @@ const pagerBtn = (disabled) => ({
   cursor: disabled ? 'not-allowed' : 'pointer',
   fontSize: '12px', fontWeight: 500,
 });
+
+// Status pill + portal-rendered dropdown. Position is captured at click time
+// from the click event itself, then re-tracked on scroll/resize while open.
+// Portal renders into document.body so the table's overflow can never clip it.
+const StatusPill = ({ meta, isMenuOpen, onOpenMenu, onPick }) => {
+  const btnRef = useRef(null);
+  const [pos, setPos] = useState(null);
+
+  // Re-track on scroll/resize while open. Capture phase so any ancestor
+  // scroll container fires the update.
+  useEffect(() => {
+    if (!isMenuOpen) { setPos(null); return; }
+    const update = () => {
+      const r = btnRef.current?.getBoundingClientRect();
+      if (r) setPos({ top: r.bottom + 6, left: r.left + r.width / 2 });
+    };
+    // Run once on open in case useLayoutEffect missed.
+    update();
+    window.addEventListener('scroll', update, true);
+    window.addEventListener('resize', update);
+    return () => {
+      window.removeEventListener('scroll', update, true);
+      window.removeEventListener('resize', update);
+    };
+  }, [isMenuOpen]);
+
+  const handleClick = (e) => {
+    // Capture position from the click immediately (no extra render needed).
+    const r = e.currentTarget.getBoundingClientRect();
+    setPos({ top: r.bottom + 6, left: r.left + r.width / 2 });
+    console.log('[STATUS_PILL] clicked. rect:', r);
+    onOpenMenu();
+  };
+
+  return (
+    <>
+      <button
+        ref={btnRef}
+        data-status-menu
+        type="button"
+        onClick={handleClick}
+        title="Click to change status"
+        style={{
+          padding: '3px 8px 3px 10px', borderRadius: '99px', border: '1px solid',
+          borderColor: meta.color + '55',
+          background: meta.soft, color: meta.color,
+          fontSize: '11px', fontWeight: 600, cursor: 'pointer',
+          display: 'inline-flex', alignItems: 'center', gap: '5px',
+          transition: 'transform 0.1s',
+        }}
+        onMouseEnter={(e) => { e.currentTarget.style.transform = 'translateY(-1px)'; }}
+        onMouseLeave={(e) => { e.currentTarget.style.transform = 'none'; }}
+      >
+        <span style={{ width: '6px', height: '6px', borderRadius: '50%', background: 'currentColor' }} />
+        <span>{meta.label}</span>
+        <span style={{ fontSize: '9px', opacity: 0.7, marginLeft: '1px' }}>▾</span>
+      </button>
+
+      {isMenuOpen && pos && typeof document !== 'undefined' && createPortal(
+        <div
+          data-status-menu
+          style={{
+            position: 'fixed',
+            top: pos.top, left: pos.left,
+            transform: 'translateX(-50%)',
+            minWidth: '160px', zIndex: 100000,
+            background: C.surface, border: `1px solid ${C.border}`,
+            borderRadius: '10px', boxShadow: '0 12px 28px rgba(15,23,42,0.18)',
+            padding: '4px', display: 'flex', flexDirection: 'column',
+            animation: 'fadeIn 0.12s ease-out',
+          }}
+        >
+          {STATUS_OPTIONS.map(s => {
+            const optMeta = metaFor(s);
+            const isCurrent = optMeta.label === meta.label;
+            return (
+              <button
+                key={s}
+                type="button"
+                data-status-menu
+                onClick={() => onPick(s)}
+                style={{
+                  padding: '8px 10px', borderRadius: '7px', border: 'none',
+                  background: isCurrent ? C.surfaceHover : 'transparent',
+                  color: C.textPrimary,
+                  fontSize: '12px', fontWeight: isCurrent ? 600 : 500,
+                  cursor: 'pointer', textAlign: 'left',
+                  display: 'flex', alignItems: 'center', gap: '8px',
+                  transition: 'background 0.1s',
+                }}
+                onMouseEnter={(e) => { if (!isCurrent) e.currentTarget.style.background = C.surfaceHover; }}
+                onMouseLeave={(e) => { if (!isCurrent) e.currentTarget.style.background = 'transparent'; }}
+              >
+                <span style={{ width: '8px', height: '8px', borderRadius: '50%', background: optMeta.color, flexShrink: 0 }} />
+                <span style={{ flex: 1 }}>{optMeta.label}</span>
+                {isCurrent && <span style={{ fontSize: '10px', color: C.textTertiary }}>✓</span>}
+              </button>
+            );
+          })}
+        </div>,
+        document.body
+      )}
+    </>
+  );
+};
 
 const EmptyState = ({ hasActiveFilters, onClearFilters, onLogExpense }) => (
   <div style={{
