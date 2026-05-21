@@ -129,15 +129,22 @@ export default function StaffDashboardPage({ onSelectStaff, embedded = false }) 
       ]);
 
       const mapped = (staffRes.data || []).map(p => ({
-        id:           p.staffId,
-        employeeCode: p.employeeCode || '',
-        name:         p.fullName || 'Unknown',
-        email:        p.email,
-        mobile:       p.mobile,
-        roles:        (p.roleNames || []).map(r => String(r).toLowerCase()),
-        designation:  p.designation,
-        department:   p.department,
-        status:       p.status || 'Active',
+        id:             p.staffId,
+        employeeCode:   p.employeeCode || '',
+        name:           p.fullName || 'Unknown',
+        email:          p.email,
+        mobile:         p.mobile,
+        roles:          (p.roleNames || []).map(r => String(r).toLowerCase()),
+        designation:    p.designation,
+        department:     p.department,
+        employmentType: p.employmentType,
+        specialization: p.specialization,
+        degree:         p.degree,
+        licenseNo:      p.licenseNo,
+        joiningDate:    p.joiningDate,
+        status:         p.status || 'Active',
+        createdAt:      p.createdAt,
+        updatedAt:      p.updatedAt,
       }));
       setPersonnel(mapped);
       setAttendance(att || {});

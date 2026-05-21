@@ -173,8 +173,8 @@ export default function StaffPage() {
         employmentType: p.employmentType,
         joiningDate:    p.joiningDate,
         status:         p.status || 'Active',
-        boardAccessUserId: p.boardAccessUserId,
         createdAt:      p.createdAt,
+        updatedAt:      p.updatedAt,
       }));
       setPersonnel(mapped);
       await nativeStorage.set('1rad_cache_personnel', mapped);
@@ -651,9 +651,7 @@ export default function StaffPage() {
     });
   };
 
-  // Toggle a role on an existing staff member (Access tab).
-  // Persists immediately via PUT /personnel/{id}.
-  const toggleStaffRole = async (staff, roleKey) => {
+  const toggleStaffRole = async (staff, roleKey) => { // unused — access tab removed
     const current = new Set((staff.roles || []).map(r => String(r).toLowerCase()));
     if (current.has(roleKey)) current.delete(roleKey);
     else current.add(roleKey);
@@ -733,7 +731,7 @@ export default function StaffPage() {
         sectionColor: '#0f52ba',
         fields: [
           { label: 'Email',     value: staff.email,  accent: '#0f52ba', icon: '✉' },
-          { label: 'Mobile',    value: staff.phone,  accent: '#0d9488', icon: '📱' },
+          { label: 'Mobile',    value: staff.mobile, accent: '#0d9488', icon: '📱' },
         ],
       },
       {
@@ -754,15 +752,15 @@ export default function StaffPage() {
         fields: [
           { label: 'Employee ID',  value: staff.employeeCode,
             accent: '#d4a017', icon: '🪪', mono: true },
-          { label: 'Joining date', value: staff.joinDate
-              ? new Date(staff.joinDate).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })
+          { label: 'Joining date', value: staff.joiningDate
+              ? new Date(staff.joiningDate).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })
               : null,
             accent: '#6366f1', icon: '📅' },
           { label: 'Status',       value: (staff.status || 'Active'),
             accent: (staff.status || 'active').toLowerCase() === 'inactive' ? '#dc2626' : '#16a34a', icon: '●' },
           { label: 'Department',   value: staff.department,                              accent: '#7c3aed', icon: '🏢' },
           { label: 'Designation',  value: staff.designation,                             accent: '#0891b2', icon: '💼' },
-          { label: 'Employment',   value: staff.type,                                    accent: '#16a34a', icon: '🕒' },
+          { label: 'Employment',   value: staff.employmentType,                          accent: '#16a34a', icon: '🕒' },
         ],
       },
     ];
@@ -1648,7 +1646,6 @@ export default function StaffPage() {
     { id: 'salary',     label: 'Salary'     },
     { id: 'attendance', label: 'Attendance' },
     { id: 'leave',      label: 'Leave'      },
-    { id: 'access',     label: 'Access'     },
   ];
 
   const DOC_CATEGORIES = ['ID Proof', 'Medical License', 'Degree / Certificate', 'Employment Contract', 'Background Check', 'Other'];
@@ -1815,126 +1812,6 @@ export default function StaffPage() {
               );
             })}
           </div>
-        )}
-      </div>
-    );
-  };
-
-  // Role definitions surfaced in the Access tab.
-  const ROLE_ACCESS = [
-    { key: 'admindoctor',  label: 'Admin Doctor',       desc: 'Full clinical + operations control' },
-    { key: 'admin',        label: 'Operations Admin',   desc: 'Operations, billing, configuration' },
-    { key: 'doctor',       label: 'Reporting Doctor',   desc: 'Reads and reports on studies' },
-    { key: 'technician',   label: 'Imaging Technician', desc: 'Acquires images, manages modality' },
-    { key: 'receptionist', label: 'Receptionist',       desc: 'Appointments and patient intake' },
-    { key: 'accountant',   label: 'Accountant',         desc: 'Billing and financial ledger' },
-  ];
-
-  const renderAccessTab = (staff) => {
-    const currentRoles = new Set((staff.roles || []).map(r => String(r).toLowerCase()));
-    const hasBoardAccess = !!staff.boardAccessUserId;
-
-    const grantBoardAccess = async () => {
-      const pw = window.prompt(`Set a login password for ${staff.name}.\n\nThis will create a board account and allow them to sign in.`);
-      if (!pw || pw.trim().length < 8) { showNotif('warning', 'Invalid password', 'Password must be at least 8 characters.'); return; }
-      try {
-        const roleNameMap = { admindoctor: 'AdminDoctor', admin: 'Admin', doctor: 'Doctor', technician: 'Technician', receptionist: 'Receptionist', accountant: 'Accountant' };
-        await apiClient.post(`/staff/${staff.id}/grant-access`, {
-          password: pw.trim(),
-          roleNames: (staff.roles || ['receptionist']).map(r => roleNameMap[r] || (r.charAt(0).toUpperCase() + r.slice(1))),
-        });
-        showNotif('success', 'Board access granted', `${staff.name} can now log in to the board.`);
-        fetchPersonnel();
-      } catch (err) {
-        showNotif('error', 'Failed', err.response?.data?.message || 'Could not grant board access.');
-      }
-    };
-
-    return (
-      <div style={{ padding: '20px 24px 24px' }}>
-        {!hasBoardAccess ? (
-          <div style={{ background: '#f8fafc', border: '1.5px dashed #e2e8f0', borderRadius: '14px', padding: '28px', textAlign: 'center' }}>
-            <div style={{ fontSize: '28px', marginBottom: '10px' }}>🔒</div>
-            <div style={{ fontSize: '14px', fontWeight: 700, color: '#0a1628', marginBottom: '6px' }}>No board access</div>
-            <div style={{ fontSize: '12px', color: '#64748b', marginBottom: '20px', maxWidth: '280px', margin: '0 auto 20px', lineHeight: 1.55 }}>
-              {staff.name} is an HR record only. Grant board access to allow them to sign in and use the system boards.
-            </div>
-            <button
-              onClick={grantBoardAccess}
-              style={{ padding: '11px 28px', borderRadius: '11px', background: 'linear-gradient(135deg, #0a1628 0%, #1e3a5f 100%)', color: 'white', border: 'none', fontWeight: 800, fontSize: '13px', cursor: 'pointer', boxShadow: '0 6px 18px rgba(10,22,40,0.2)', letterSpacing: '0.3px' }}
-            >Grant Board Access</button>
-          </div>
-        ) : (
-          <>
-            <div style={{
-              background: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: '12px',
-              padding: '12px 14px', marginBottom: '18px', display: 'flex', alignItems: 'flex-start', gap: '10px',
-            }}>
-              <span style={{ fontSize: '16px', lineHeight: 1, marginTop: '1px' }}>✓</span>
-              <div>
-                <div style={{ fontSize: '12px', fontWeight: 700, color: '#15803d' }}>Board access active</div>
-                <div style={{ fontSize: '11px', color: '#15803d', opacity: 0.85, marginTop: '3px', lineHeight: 1.45 }}>
-                  Toggle roles to grant or revoke access to specific boards and modules. At least one role is required.
-                </div>
-              </div>
-            </div>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-              {ROLE_ACCESS.map(role => {
-                const active = currentRoles.has(role.key);
-                const meta = getRoleMeta(role.key);
-                return (
-                <button
-                key={role.key}
-                type="button"
-                onClick={() => toggleStaffRole(staff, role.key)}
-                style={{
-                  textAlign: 'left',
-                  display: 'flex', alignItems: 'center', gap: '14px',
-                  padding: '14px 16px',
-                  background: active ? '#fffbeb' : 'white',
-                  border: `1px solid ${active ? '#d4a017' : '#e2e8f0'}`,
-                  borderRadius: '12px',
-                  cursor: 'pointer',
-                  transition: 'all 0.15s',
-                  boxShadow: active ? '0 4px 12px rgba(212, 160, 23, 0.15)' : '0 1px 2px rgba(0,0,0,0.03)',
-                }}
-                onMouseEnter={(e) => { if (!active) e.currentTarget.style.background = '#fafbfc'; }}
-                onMouseLeave={(e) => { if (!active) e.currentTarget.style.background = 'white'; }}
-              >
-                <div style={{
-                  width: '40px', height: '40px', borderRadius: '10px',
-                  background: meta.bg, color: meta.color,
-                  display: 'flex', alignItems: 'center', justifyContent: 'center',
-                  fontSize: '14px', fontWeight: 900, flexShrink: 0,
-                  border: `1px solid ${meta.color}25`,
-                }}>{(meta.label || role.label).slice(0, 1).toUpperCase()}</div>
-
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ fontSize: '13px', fontWeight: 700, color: '#0a1628', marginBottom: '2px' }}>
-                    {role.label}
-                  </div>
-                  <div style={{ fontSize: '11px', color: '#64748b', lineHeight: 1.4 }}>
-                    {role.desc}
-                  </div>
-                </div>
-
-                <div style={{
-                  width: '38px', height: '22px', borderRadius: '99px',
-                  background: active ? '#d4a017' : '#e2e8f0',
-                  position: 'relative', transition: 'background 0.2s', flexShrink: 0,
-                }}>
-                  <div style={{
-                    position: 'absolute', top: '2px',
-                    left: active ? '18px' : '2px',
-                    width: '18px', height: '18px', borderRadius: '50%', background: 'white',
-                    boxShadow: '0 1px 3px rgba(0,0,0,0.2)', transition: 'left 0.2s',
-                  }} />
-                </div>
-              </button>
-            );
-          })}
-        </div>
-          </>
         )}
       </div>
     );
@@ -2330,7 +2207,6 @@ export default function StaffPage() {
               {detailTab === 'salary'     && renderSalaryTab(selectedStaff)}
               {detailTab === 'attendance' && renderAttendanceTab(selectedStaff)}
               {detailTab === 'leave'      && renderLeaveTab(selectedStaff)}
-              {detailTab === 'access'     && renderAccessTab(selectedStaff)}
             </div>
           </div>
           );
@@ -2992,13 +2868,7 @@ export default function StaffPage() {
                 </FieldGroup>
               </div>
 
-              {/* Board access note */}
-              <div style={{ background: '#fff8e6', border: '1px solid #fde68a', borderRadius: '12px', padding: '12px 14px', display: 'flex', gap: '10px', alignItems: 'flex-start' }}>
-                <span style={{ fontSize: '16px', lineHeight: 1 }}>ℹ️</span>
-                <div style={{ fontSize: '11px', color: '#92400e', lineHeight: 1.5 }}>
-                  <strong>No board access is granted here.</strong> This only creates an HR record. To give this staff member login access to the board, use the <strong>Access</strong> tab after adding them.
-                </div>
-              </div>
+
             </div>
 
             {/* Sticky footer */}
