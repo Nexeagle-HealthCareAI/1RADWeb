@@ -68,26 +68,28 @@ export function AuthProvider({ children }) {
   }, [centers, activeCenterId]);
 
   // Sync custom roles from backend to local cache whenever the active center changes
+  const syncCustomRoles = async (hospitalId, tokenOverride) => {
+    try {
+      const headers = tokenOverride ? { Authorization: `Bearer ${tokenOverride}` } : {};
+      const res = await apiClient.get('/CustomRoles', { headers });
+      const mapped = res.data.map(r => ({
+        roleId: r.roleId ?? r.RoleId,
+        roleName: r.roleName ?? r.RoleName ?? '',
+        description: r.description ?? r.Description ?? '',
+        allowedRoutes: r.permissions ?? r.Permissions ?? []
+      }));
+      const key = `1rad_custom_roles_${String(hospitalId).toLowerCase()}`;
+      localStorage.setItem(key, JSON.stringify(mapped));
+      // Notify any listening components
+      window.dispatchEvent(new Event('1rad_permissions_updated'));
+    } catch (err) {
+      console.warn('[AUTH] Background custom roles sync failed:', err);
+    }
+  };
+
   useEffect(() => {
     if (activeCenterId && (sessionStorage.getItem('1rad_token') || sessionStorage.getItem('1rad_initiation_token'))) {
-      const syncCustomRoles = async () => {
-        try {
-          const res = await apiClient.get('/CustomRoles');
-          const mapped = res.data.map(r => ({
-            roleId: r.roleId,
-            roleName: r.roleName,
-            description: r.description,
-            allowedRoutes: r.permissions
-          }));
-          const key = `1rad_custom_roles_${String(activeCenterId).toLowerCase()}`;
-          localStorage.setItem(key, JSON.stringify(mapped));
-          // Notify any listening components
-          window.dispatchEvent(new Event('1rad_permissions_updated'));
-        } catch (err) {
-          console.warn('[AUTH] Background custom roles sync failed:', err);
-        }
-      };
-      syncCustomRoles();
+      syncCustomRoles(activeCenterId);
     }
   }, [activeCenterId]);
 
@@ -123,6 +125,9 @@ export function AuthProvider({ children }) {
       
       setCurrentUser(updatedUser);
       sessionStorage.setItem('1rad_user', JSON.stringify(updatedUser));
+      
+      // Ensure roles are synced before redirecting/resolving
+      await syncCustomRoles(id, accessToken);
 
       return { success: true, roles: normalizedRoles };
     } catch (err) {
@@ -280,7 +285,12 @@ export function AuthProvider({ children }) {
 
       setCurrentUser(user);
       setCenters(mappedCenters);
-      if (mappedCenters.length > 0) setActiveCenterId(mappedCenters[0].id);
+      let defaultCenterId = mappedCenters.length > 0 ? mappedCenters[0].id : null;
+      if (defaultCenterId) {
+        setActiveCenterId(defaultCenterId);
+        // Ensure roles are fully downloaded before login resolves
+        await syncCustomRoles(defaultCenterId, accessToken);
+      }
 
       sessionStorage.setItem('1rad_user', JSON.stringify(user));
       
@@ -494,6 +504,8 @@ export function AuthProvider({ children }) {
         if (mappedCenters.length > 0) {
           const defaultCenter = mappedCenters.find(c => c.isDefault) || mappedCenters[0];
           setActiveCenterId(defaultCenter.id);
+          // Block until custom roles are populated so immediate router checks pass
+          await syncCustomRoles(defaultCenter.id, token);
         }
 
         sessionStorage.setItem('1rad_user', JSON.stringify(user));
