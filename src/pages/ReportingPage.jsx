@@ -3717,60 +3717,66 @@ const ReportingPage = () => {
 
             {/* REPORTING TAB */}
             {activeMainTab === 'REPORTING' && (
-              <div className="panel panel-right" style={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0, background: 'white', padding: 0 }}>
+              <div className="panel panel-right" style={{ flex: 1, display: 'flex', flexDirection: 'row', minHeight: 0, background: '#f1f5f9', padding: '16px', gap: '16px', overflow: 'hidden' }}>
+
+                {/* ── LEFT: editor card (full height, premium feel) ───────────── */}
                 <div style={{
-                  width: '100%',
-                  display: 'flex',
-                  flexDirection: 'column',
-                  flex: 1,
-                  background: 'white',
-                  overflow: 'hidden'
+                  flex: 1, minWidth: 0,
+                  display: 'flex', flexDirection: 'column',
+                  background: 'white', borderRadius: '14px',
+                  border: '1px solid #e8edf2',
+                  boxShadow: '0 4px 20px rgba(15, 23, 42, 0.05)',
+                  overflow: 'hidden',
                 }}>
-                  {/* Top Editor Actions bar */}
+                  <NarrativeEditor
+                    ref={editorRef}
+                    content={editorText}
+                    onChange={(html) => setEditorText(html)}
+                    placeholder="Start typing your radiology report…"
+                    onSave={() => handleSaveReport(false)}
+                    style={{ flex: 1, minHeight: 0 }}
+                    keywordLibrary={keywordLibrary}
+                  />
+                </div>
+
+                {/* ── RIGHT: action sidebar (status, template, save/finalize) ── */}
+                <aside style={{
+                  width: '280px', flexShrink: 0,
+                  display: 'flex', flexDirection: 'column', gap: '12px',
+                  overflowY: 'auto',
+                  paddingRight: '2px', /* room for scrollbar */
+                }}>
+                  {/* Status card — connection + autosave indicator */}
                   <div style={{
-                    display: 'flex',
-                    justifyContent: 'space-between',
-                    alignItems: 'center',
-                    padding: '16px 24px',
-                    background: '#f8fafc',
-                    borderBottom: '1px solid #e2e8f0',
-                    flexShrink: 0
+                    background: 'white', borderRadius: '14px',
+                    border: '1px solid #e8edf2',
+                    boxShadow: '0 2px 8px rgba(15, 23, 42, 0.04)',
+                    padding: '14px 16px',
                   }}>
-                    <div style={{ display: 'flex', gap: '10px' }}>
-                      <div style={{ padding: '6px 12px', background: '#f0f7ff', borderRadius: '8px', border: '1px solid #dbeafe' }}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                          <div style={{ width: '6px', height: '6px', borderRadius: '50%', background: isOnline ? '#10b981' : '#f59e0b', animation: 'pulse 1.5s infinite' }}></div>
-                          <span style={{ fontSize: '10px', fontWeight: 900, color: '#0f52ba' }}>
-                            {isOnline ? 'CLOUD_CONNECTED' : 'OFFLINE_CACHE_ACTIVE'}
-                          </span>
-                        </div>
-                      </div>
-
-                      <div style={{ padding: '6px 12px', background: '#f8fafc', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
-                        <span style={{ fontSize: '10px', fontWeight: 800, color: '#475569' }}>
-                          {saveStatus === 'SAVING' ? '📡 SYNCING...' : saveStatus === 'SUCCESS' ? `✅ SAVED AT ${lastSaved}` : '💤 MONITORING'}
-                        </span>
-                      </div>
+                    <div style={{ fontSize: '9px', fontWeight: 800, color: '#94a3b8', letterSpacing: '1.2px', textTransform: 'uppercase', marginBottom: '10px' }}>Status</div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px' }}>
+                      <div style={{ width: '8px', height: '8px', borderRadius: '50%', background: isOnline ? '#10b981' : '#f59e0b', boxShadow: `0 0 0 3px ${isOnline ? '#10b98125' : '#f59e0b25'}`, animation: 'pulse 1.5s infinite' }} />
+                      <span style={{ fontSize: '11px', fontWeight: 800, color: isOnline ? '#15803d' : '#92400e', letterSpacing: '0.3px' }}>
+                        {isOnline ? 'Cloud connected' : 'Offline cache active'}
+                      </span>
                     </div>
-
-                    <div style={{ display: 'flex', gap: '8px' }}>
-                      <button className="btn btn-outline" style={{ padding: '8px 16px', fontSize: '11px', fontWeight: 800 }} onClick={() => handleSaveReport(false)}>💾 Save Draft</button>
-                      <button className="btn btn-outline" style={{ padding: '8px 16px', fontSize: '11px', fontWeight: 800 }} onClick={handlePreviewPrint}>👁️ Preview</button>
-                      <button className="btn btn-success" style={{ padding: '10px 24px', fontSize: '11px', fontWeight: 900 }} onClick={() => handleSaveReport(true)}>Finalize & Sign</button>
+                    <div style={{ fontSize: '11px', fontWeight: 600, color: '#64748b' }}>
+                      {saveStatus === 'SAVING'
+                        ? <><span style={{ marginRight: '4px' }}>📡</span>Syncing…</>
+                        : saveStatus === 'SUCCESS'
+                          ? <><span style={{ marginRight: '4px', color: '#16a34a' }}>✓</span>Saved at {lastSaved}</>
+                          : <><span style={{ marginRight: '4px' }}>💤</span>Monitoring for changes</>}
                     </div>
                   </div>
 
-                  {/* Template selection row */}
+                  {/* Template selector card */}
                   <div style={{
-                    padding: '12px 24px',
-                    background: 'white',
-                    borderBottom: '1px solid #f1f5f9',
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '15px',
-                    flexShrink: 0
+                    background: 'white', borderRadius: '14px',
+                    border: '1px solid #e8edf2',
+                    boxShadow: '0 2px 8px rgba(15, 23, 42, 0.04)',
+                    padding: '14px 16px',
                   }}>
-                    <label style={{ fontSize: '12px', fontWeight: 800, color: '#475569', whiteSpace: 'nowrap' }}>📁 SELECT REPORT TEMPLATE</label>
+                    <div style={{ fontSize: '9px', fontWeight: 800, color: '#94a3b8', letterSpacing: '1.2px', textTransform: 'uppercase', marginBottom: '10px' }}>Report Template</div>
                     <select
                       className="template-selector"
                       value={selectedTemplateId || ''}
@@ -3781,44 +3787,93 @@ const ReportingPage = () => {
                           setEditorText(tpl.content || '');
                         }
                       }}
-                      style={{ flex: 1, padding: '8px 12px', borderRadius: '6px', border: '1px solid #cbd5e1', outline: 'none', fontSize: '13px' }}
+                      style={{
+                        width: '100%',
+                        padding: '10px 12px',
+                        borderRadius: '9px',
+                        border: '1px solid #e2e8f0',
+                        outline: 'none',
+                        fontSize: '12px',
+                        fontWeight: 600,
+                        color: '#0a1628',
+                        background: 'white',
+                        cursor: 'pointer',
+                      }}
                     >
-                      <option value="">Select a template...</option>
+                      <option value="">Select a template…</option>
                       {templates.map(tpl => (
                         <option key={tpl.id} value={tpl.id}>{tpl.name}</option>
                       ))}
                     </select>
+                    {selectedTemplateId && (
+                      <div style={{ fontSize: '10px', color: '#16a34a', fontWeight: 700, marginTop: '8px', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                        <span>✓</span> Template applied
+                      </div>
+                    )}
                   </div>
 
-                  {/* Main Editor Text Area */}
-                  <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0 }}>
-                    <NarrativeEditor
-                      ref={editorRef}
-                      content={editorText}
-                      onChange={(html) => setEditorText(html)}
-                      placeholder="Start typing your radiology report..."
-                      onSave={() => handleSaveReport(false)}
-                      style={{ flex: 1, minHeight: 0 }}
-                      keywordLibrary={keywordLibrary}
-                    />
-                  </div>
-
-                  {/* Signature row */}
+                  {/* Actions card */}
                   <div style={{
-                    padding: '16px 24px',
-                    background: '#f8fafc',
-                    borderTop: '1px solid #e2e8f0',
-                    display: 'flex',
-                    justifyContent: 'flex-end',
-                    alignItems: 'center',
-                    flexShrink: 0
+                    background: 'white', borderRadius: '14px',
+                    border: '1px solid #e8edf2',
+                    boxShadow: '0 2px 8px rgba(15, 23, 42, 0.04)',
+                    padding: '14px 16px',
+                    display: 'flex', flexDirection: 'column', gap: '8px',
                   }}>
-                    <div style={{ textAlign: 'right' }}>
-                      <div style={{ fontWeight: 800, fontSize: '12px', color: '#0f172a' }}>{protocol?.hospital?.name || 'Authorized Diagnostic Center'}</div>
-                      <div style={{ fontSize: '10px', color: '#64748b', fontWeight: 600 }}>Digital Medical Record Signature</div>
+                    <div style={{ fontSize: '9px', fontWeight: 800, color: '#94a3b8', letterSpacing: '1.2px', textTransform: 'uppercase', marginBottom: '4px' }}>Actions</div>
+
+                    <button
+                      onClick={() => handleSaveReport(false)}
+                      style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', padding: '10px 14px', borderRadius: '10px', background: 'white', border: '1px solid #e2e8f0', color: '#0a1628', fontSize: '12px', fontWeight: 700, cursor: 'pointer', transition: 'all 0.15s' }}
+                      onMouseEnter={(e) => { e.currentTarget.style.background = '#f8fafc'; e.currentTarget.style.borderColor = '#cbd5e1'; }}
+                      onMouseLeave={(e) => { e.currentTarget.style.background = 'white'; e.currentTarget.style.borderColor = '#e2e8f0'; }}
+                    >💾 Save draft</button>
+
+                    <button
+                      onClick={handlePreviewPrint}
+                      style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', padding: '10px 14px', borderRadius: '10px', background: 'white', border: '1px solid #e2e8f0', color: '#0a1628', fontSize: '12px', fontWeight: 700, cursor: 'pointer', transition: 'all 0.15s' }}
+                      onMouseEnter={(e) => { e.currentTarget.style.background = '#f8fafc'; e.currentTarget.style.borderColor = '#cbd5e1'; }}
+                      onMouseLeave={(e) => { e.currentTarget.style.background = 'white'; e.currentTarget.style.borderColor = '#e2e8f0'; }}
+                    >👁️ Preview</button>
+
+                    <button
+                      onClick={() => handleSaveReport(true)}
+                      style={{
+                        marginTop: '4px',
+                        display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px',
+                        padding: '12px 14px', borderRadius: '10px',
+                        background: 'linear-gradient(135deg, #16a34a 0%, #15803d 100%)',
+                        border: 'none', color: 'white',
+                        fontSize: '12px', fontWeight: 800, cursor: 'pointer',
+                        letterSpacing: '0.3px',
+                        boxShadow: '0 6px 16px rgba(22, 163, 74, 0.3)',
+                        transition: 'all 0.15s',
+                      }}
+                      onMouseEnter={(e) => { e.currentTarget.style.transform = 'translateY(-1px)'; e.currentTarget.style.boxShadow = '0 8px 20px rgba(22, 163, 74, 0.4)'; }}
+                      onMouseLeave={(e) => { e.currentTarget.style.transform = 'none'; e.currentTarget.style.boxShadow = '0 6px 16px rgba(22, 163, 74, 0.3)'; }}
+                    >🖊 Finalize &amp; Sign</button>
+                  </div>
+
+                  {/* Signature card */}
+                  <div style={{
+                    background: 'linear-gradient(135deg, #0a1628 0%, #1e3a5f 100%)',
+                    borderRadius: '14px',
+                    padding: '14px 16px',
+                    color: 'white',
+                    position: 'relative', overflow: 'hidden',
+                    boxShadow: '0 4px 14px rgba(10, 22, 40, 0.15)',
+                  }}>
+                    <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: '2px', background: 'linear-gradient(90deg, transparent, #d4a017 50%, transparent)' }} />
+                    <div style={{ fontSize: '9px', fontWeight: 800, color: '#d4a017', letterSpacing: '1.2px', textTransform: 'uppercase', marginBottom: '8px' }}>Signature</div>
+                    <div style={{ fontWeight: 800, fontSize: '13px', color: 'white', lineHeight: 1.3, marginBottom: '4px' }}>
+                      {protocol?.hospital?.name || 'Authorized Diagnostic Center'}
+                    </div>
+                    <div style={{ fontSize: '10px', color: 'rgba(255,255,255,0.55)', fontWeight: 500 }}>
+                      Digital Medical Record Signature
                     </div>
                   </div>
-                </div>
+                </aside>
+
               </div>
             )}
 
