@@ -18,15 +18,6 @@ const PALETTE = [
   '#0a1628', // navy
 ];
 
-// Quick-add templates — common Indian payroll leave types.
-const TEMPLATES = [
-  { name: 'Maternity Leave',   annualQuota: 26, isPaid: true,  color: '#e84393' },
-  { name: 'Paternity Leave',   annualQuota: 15, isPaid: true,  color: '#6366f1' },
-  { name: 'Bereavement Leave', annualQuota: 5,  isPaid: true,  color: '#64748b' },
-  { name: 'Compensatory Off',  annualQuota: 0,  isPaid: true,  color: '#0d9488' },
-  { name: 'Loss of Pay',       annualQuota: 0,  isPaid: false, color: '#94a3b8' },
-];
-
 const slugify = (s) => (s || '').toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, '') || `type_${Date.now()}`;
 
 export default function LeavePolicyEditor({ hospitalId, currentUserName, embedded = false }) {
@@ -37,7 +28,6 @@ export default function LeavePolicyEditor({ hospitalId, currentUserName, embedde
   const [lastSaved, setLastSaved] = useState(null);
   const [notice, setNotice]       = useState(null);
   const [openColor, setOpenColor] = useState(null); // index of currently-open color picker
-  const [showTemplates, setShowTemplates] = useState(false);
 
   const cacheKey = hospitalId ? `1rad_leave_policy_${hospitalId}` : null;
 
@@ -92,12 +82,6 @@ export default function LeavePolicyEditor({ hospitalId, currentUserName, embedde
     }]);
     setDirty(true);
   };
-  const addTemplate = (template) => {
-    setTypes(prev => [...prev, { ...template, id: slugify(template.name) }]);
-    setDirty(true);
-    setShowTemplates(false);
-  };
-
   // ── Save ────────────────────────────────────────────────────────────
   const save = async () => {
     const cleaned = types
@@ -390,80 +374,22 @@ export default function LeavePolicyEditor({ hospitalId, currentUserName, embedde
         ))}
       </div>
 
-      {/* Add row + Templates */}
+      {/* Add row */}
       {!embedded && (
-        <div style={{ marginTop: '14px', display: 'flex', gap: '8px' }}>
-          <button
-            type="button"
-            onClick={addRow}
-            style={{
-              flex: 1, padding: '12px',
-              borderRadius: '12px', border: '1.5px dashed #cbd5e1',
-              background: '#fafbfc', color: '#0a1628',
-              fontSize: '12px', fontWeight: 800, cursor: 'pointer',
-              letterSpacing: '0.3px',
-              transition: 'all 0.15s',
-            }}
-            onMouseEnter={(e) => { e.currentTarget.style.borderColor = '#d4a017'; e.currentTarget.style.background = '#fff8e6'; }}
-            onMouseLeave={(e) => { e.currentTarget.style.borderColor = '#cbd5e1'; e.currentTarget.style.background = '#fafbfc'; }}
-          >+ Add leave type</button>
-
-          <div style={{ position: 'relative' }}>
-            <button
-              type="button"
-              onClick={() => setShowTemplates(!showTemplates)}
-              style={{
-                padding: '12px 18px',
-                borderRadius: '12px', border: '1.5px dashed #cbd5e1',
-                background: showTemplates ? '#fff8e6' : '#fafbfc',
-                color: '#0a1628',
-                fontSize: '12px', fontWeight: 800, cursor: 'pointer',
-                letterSpacing: '0.3px', whiteSpace: 'nowrap',
-                display: 'flex', alignItems: 'center', gap: '6px',
-              }}
-            >📋 Templates {showTemplates ? '▴' : '▾'}</button>
-            {showTemplates && (
-              <>
-                <div onClick={() => setShowTemplates(false)} style={{ position: 'fixed', inset: 0, zIndex: 50 }} />
-                <div style={{
-                  position: 'absolute', top: '52px', right: 0, zIndex: 51,
-                  background: 'white', borderRadius: '14px', padding: '8px',
-                  boxShadow: '0 12px 32px rgba(15, 23, 42, 0.15)',
-                  border: '1px solid #e8edf2', width: '280px',
-                }}>
-                  <div style={{ padding: '8px 10px 6px', fontSize: '9px', fontWeight: 800, color: '#94a3b8', letterSpacing: '1px', textTransform: 'uppercase' }}>Common templates</div>
-                  {TEMPLATES.map(tmpl => {
-                    const exists = types.some(t => t.name.toLowerCase() === tmpl.name.toLowerCase());
-                    return (
-                      <button
-                        key={tmpl.name}
-                        type="button"
-                        onClick={() => !exists && addTemplate(tmpl)}
-                        disabled={exists}
-                        style={{
-                          width: '100%', display: 'flex', alignItems: 'center', gap: '10px',
-                          padding: '9px 10px', borderRadius: '9px',
-                          border: 'none', background: 'transparent',
-                          cursor: exists ? 'not-allowed' : 'pointer',
-                          opacity: exists ? 0.45 : 1,
-                          textAlign: 'left', transition: 'background 0.12s',
-                        }}
-                        onMouseEnter={(e) => { if (!exists) e.currentTarget.style.background = '#fafbfc'; }}
-                        onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; }}
-                      >
-                        <span style={{ width: '8px', height: '8px', borderRadius: '50%', background: tmpl.color, flexShrink: 0 }} />
-                        <span style={{ flex: 1, fontSize: '12px', fontWeight: 700, color: '#0a1628' }}>{tmpl.name}</span>
-                        <span style={{ fontSize: '10px', fontWeight: 600, color: '#94a3b8' }}>
-                          {exists ? 'Added' : `${tmpl.annualQuota}d · ${tmpl.isPaid ? 'paid' : 'unpaid'}`}
-                        </span>
-                      </button>
-                    );
-                  })}
-                </div>
-              </>
-            )}
-          </div>
-        </div>
+        <button
+          type="button"
+          onClick={addRow}
+          style={{
+            marginTop: '14px', width: '100%', padding: '12px',
+            borderRadius: '12px', border: '1.5px dashed #cbd5e1',
+            background: '#fafbfc', color: '#0a1628',
+            fontSize: '12px', fontWeight: 800, cursor: 'pointer',
+            letterSpacing: '0.3px',
+            transition: 'all 0.15s',
+          }}
+          onMouseEnter={(e) => { e.currentTarget.style.borderColor = '#d4a017'; e.currentTarget.style.background = '#fff8e6'; }}
+          onMouseLeave={(e) => { e.currentTarget.style.borderColor = '#cbd5e1'; e.currentTarget.style.background = '#fafbfc'; }}
+        >+ Add leave type</button>
       )}
 
       {/* Footer actions */}

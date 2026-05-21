@@ -53,6 +53,7 @@ function mapApiSalary(dto) {
     })),
     disbursements: (dto.disbursements || []).map(d => ({
       id: d.disbursementId, revisionId: d.revisionId, month: d.month,
+      status: d.status || 'Paid',
       grossPay: d.grossPay, netPay: d.netPay,
       lwpDays: d.lwpDays, lwpDeduction: d.lwpDeduction,
       mode: d.paymentMode, reference: d.reference,
@@ -219,6 +220,7 @@ export default function StaffDashboardPage({ onSelectStaff, embedded = false }) 
     const proRatedNet = Math.max(0, net - lwpDeduction);
 
     const disbThisMonth = (record?.disbursements || []).find(d => d.month === month);
+    const disbStatus = disbThisMonth?.status || null;
     return {
       hasStructure: !!active,
       structureNet: net,
@@ -231,7 +233,12 @@ export default function StaffDashboardPage({ onSelectStaff, embedded = false }) 
       lwpDays,
       lwpDeduction,
       proRatedNet,
-      disbursed: !!disbThisMonth,
+      hasDisbursement: !!disbThisMonth,
+      disbursementStatus: disbStatus,                 // 'Paid' | 'Draft' | null
+      paid: disbStatus === 'Paid',
+      draft: disbStatus === 'Draft',
+      // Back-compat name used elsewhere — only TRUE when actually paid
+      disbursed: disbStatus === 'Paid',
       disbursedNet: disbThisMonth?.netPay || 0,
     };
   }, [salaryByStaff, attendance, leaves, leavePolicy]);
@@ -272,11 +279,18 @@ export default function StaffDashboardPage({ onSelectStaff, embedded = false }) 
 
   // ── KPI summary ────────────────────────────────────────────────────────
   const kpis = useMemo(() => {
-    const totalPayrollDue = rows.reduce((s, r) => s + (r.payroll.disbursed ? 0 : r.payroll.proRatedNet), 0);
-    const totalDisbursed  = rows.reduce((s, r) => s + (r.payroll.disbursed ? r.payroll.disbursedNet : 0), 0);
-    const pending = rows.filter(r => !r.payroll.disbursed && r.payroll.hasStructure).length;
-    const paid    = rows.filter(r => r.payroll.disbursed).length;
-    return { total: rows.length, pending, paid, totalPayrollDue, totalDisbursed };
+    // What's owed: anything with a structure and not yet PAID (drafts + no-row).
+    // Drafts already have a fixed amount; for no-row cases we use the pro-rated estimate.
+    const totalPayrollDue = rows.reduce((s, r) => {
+      if (!r.payroll.hasStructure || r.payroll.paid) return s;
+      if (r.payroll.draft) return s + r.payroll.disbursedNet;
+      return s + r.payroll.proRatedNet;
+    }, 0);
+    const totalDisbursed = rows.reduce((s, r) => s + (r.payroll.paid ? r.payroll.disbursedNet : 0), 0);
+    const paid    = rows.filter(r => r.payroll.paid).length;
+    const draft   = rows.filter(r => r.payroll.draft).length;
+    const pending = rows.filter(r => !r.payroll.hasDisbursement && r.payroll.hasStructure).length;
+    return { total: rows.length, pending, draft, paid, totalPayrollDue, totalDisbursed };
   }, [rows]);
 
   // ════════════════════════════════════════════════════════════════════
@@ -332,7 +346,14 @@ export default function StaffDashboardPage({ onSelectStaff, embedded = false }) 
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '12px', marginBottom: '14px' }}>
         <KpiCard label="Total staff" value={kpis.total} tone="blue" />
         <KpiCard label={`Paid in ${selectedMonthLabel}`} value={kpis.paid} sub={`₹${kpis.totalDisbursed.toLocaleString()}`} tone="green" />
-        <KpiCard label="Pending disbursement" value={kpis.pending} sub={`₹${kpis.totalPayrollDue.toLocaleString()} due`} tone="amber" />
+        <KpiCard
+          label="Awaiting payment"
+          value={kpis.pending + kpis.draft}
+          sub={kpis.draft > 0
+            ? `₹${kpis.totalPayrollDue.toLocaleString()} due · ${kpis.draft} draft${kpis.draft !== 1 ? 's' : ''}`
+            : `₹${kpis.totalPayrollDue.toLocaleString()} due`}
+          tone="amber"
+        />
         <KpiCard label="Active leave policy" value={`${leavePolicy.length} types`} sub={`${leavePolicy.reduce((s,t)=>s+t.annualQuota,0)} days/yr`} tone="purple" />
       </div>
 
@@ -422,10 +443,23 @@ export default function StaffDashboardPage({ onSelectStaff, embedded = false }) 
                   >
                     {/* Employee */}
                     <div style={{ display: 'flex', alignItems: 'center', gap: '12px', minWidth: 0 }}>
-                      <div style={{ width: '34px', height: '34px', borderRadius: '10px', background: staff.photoUrl ? '#f1f5f9' : meta.bg, color: meta.color, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '13px', fontWeight: 800, flexShrink: 0, overflow: 'hidden' }}>
-                        {staff.photoUrl
-                          ? <img src={staff.photoUrl} alt="" referrerPolicy="no-referrer" style={{ width: '100%', height: '100%', objectFit: 'cover' }} onError={(e) => { e.currentTarget.style.display = 'none'; }} />
-                          : (staff.name || '?').charAt(0).toUpperCase()}
+                      <div style={{ width: '34px', height: '34px', borderRadius: '10px', background: meta.bg, flexShrink: 0, overflow: 'hidden', position: 'relative' }}>
+                        {staff.photoUrl && (
+                          <img
+                            key={staff.photoUrl}
+                            src={staff.photoUrl}
+                            alt=""
+                            crossOrigin="anonymous"
+                            referrerPolicy="no-referrer"
+                            style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover', display: 'block' }}
+                            onError={(e) => { e.currentTarget.style.display = 'none'; }}
+                          />
+                        )}
+                        {!staff.photoUrl && (
+                          <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', color: meta.color, fontSize: '13px', fontWeight: 800 }}>
+                            {(staff.name || '?').charAt(0).toUpperCase()}
+                          </div>
+                        )}
                       </div>
                       <div style={{ minWidth: 0 }}>
                         <div style={{ fontSize: '13px', fontWeight: 700, color: '#0f172a', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{staff.name}</div>
@@ -480,10 +514,15 @@ export default function StaffDashboardPage({ onSelectStaff, embedded = false }) 
                     <div style={{ textAlign: 'right' }}>
                       {!payroll.hasStructure ? (
                         <span style={{ fontSize: '10px', color: '#94a3b8', fontWeight: 600 }}>—</span>
-                      ) : payroll.disbursed ? (
+                      ) : payroll.paid ? (
                         <>
                           <div style={{ fontSize: '13px', fontWeight: 800, color: '#16a34a' }}>₹{payroll.disbursedNet.toLocaleString()}</div>
                           <div style={{ fontSize: '8px', color: '#15803d', fontWeight: 700, marginTop: '1px', letterSpacing: '0.5px' }}>DISBURSED</div>
+                        </>
+                      ) : payroll.draft ? (
+                        <>
+                          <div style={{ fontSize: '13px', fontWeight: 800, color: '#1d4ed8' }}>₹{payroll.disbursedNet.toLocaleString()}</div>
+                          <div style={{ fontSize: '8px', color: '#1d4ed8', fontWeight: 700, marginTop: '1px', letterSpacing: '0.5px' }}>AWAITING PAYMENT</div>
                         </>
                       ) : (
                         <>
@@ -500,9 +539,13 @@ export default function StaffDashboardPage({ onSelectStaff, embedded = false }) 
                     <div style={{ textAlign: 'center' }}>
                       {!payroll.hasStructure ? (
                         <span style={{ fontSize: '9px', background: '#f1f5f9', color: '#64748b', padding: '4px 10px', borderRadius: '999px', fontWeight: 800, letterSpacing: '0.5px' }}>NO STRUCTURE</span>
-                      ) : payroll.disbursed ? (
+                      ) : payroll.paid ? (
                         <span style={{ display: 'inline-flex', alignItems: 'center', gap: '5px', fontSize: '9px', background: '#dcfce7', color: '#15803d', padding: '4px 10px', borderRadius: '999px', fontWeight: 800, letterSpacing: '0.5px', border: '1px solid #bbf7d0' }}>
                           <span style={{ width: '6px', height: '6px', borderRadius: '50%', background: '#16a34a' }} /> PAID
+                        </span>
+                      ) : payroll.draft ? (
+                        <span style={{ display: 'inline-flex', alignItems: 'center', gap: '5px', fontSize: '9px', background: '#dbeafe', color: '#1d4ed8', padding: '4px 10px', borderRadius: '999px', fontWeight: 800, letterSpacing: '0.5px', border: '1px solid #bfdbfe' }}>
+                          <span style={{ width: '6px', height: '6px', borderRadius: '50%', background: '#1d4ed8' }} /> DRAFT
                         </span>
                       ) : (
                         <span style={{ display: 'inline-flex', alignItems: 'center', gap: '5px', fontSize: '9px', background: '#fef3c7', color: '#92400e', padding: '4px 10px', borderRadius: '999px', fontWeight: 800, letterSpacing: '0.5px', border: '1px solid #fde68a' }}>

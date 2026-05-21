@@ -72,6 +72,31 @@ const TextInput = ({ value, onChange, type = 'text', placeholder, autoFocus }) =
   />
 );
 
+// ── ₹ input used in the salary drawer. Defined at module scope so React preserves
+// the input element across re-renders (otherwise focus would be lost on every keystroke).
+const NumberInput = ({ value, onChange, accent }) => (
+  <div style={{
+    display: 'flex', alignItems: 'center',
+    border: `1px solid ${accent === 'red' ? '#fecaca' : '#bbf7d0'}`,
+    borderRadius: '10px', overflow: 'hidden',
+    background: accent === 'red' ? '#fff7f7' : '#f0fdf4',
+    transition: 'border-color 0.15s, box-shadow 0.15s',
+  }}>
+    <span style={{
+      padding: '0 11px', fontSize: '13px', fontWeight: 800,
+      color: accent === 'red' ? '#dc2626' : '#16a34a',
+      borderRight: `1px solid ${accent === 'red' ? '#fecaca' : '#bbf7d0'}`,
+      height: '40px', display: 'flex', alignItems: 'center',
+    }}>₹</span>
+    <input
+      type="number" min="0" placeholder="0"
+      value={value}
+      onChange={(e) => onChange(e.target.value)}
+      style={{ flex: 1, padding: '10px 12px', border: 'none', fontSize: '14px', fontWeight: 700, outline: 'none', background: 'transparent', color: '#0f172a', minWidth: 0, width: '100%' }}
+    />
+  </div>
+);
+
 // ─── Component ────────────────────────────────────────────────────────────────
 export default function StaffPage() {
   const { currentUser, activeCenter } = useAuth();
@@ -2164,17 +2189,28 @@ export default function StaffPage() {
                     <div style={{ position: 'relative', flexShrink: 0 }}>
                       <div style={{
                         width: '40px', height: '40px', borderRadius: '12px',
-                        background: u.photoUrl ? '#f1f5f9' : (isSelected ? 'linear-gradient(135deg, #0a1628 0%, #1e3a5f 100%)' : meta.bg),
-                        color: isSelected ? '#d4a017' : meta.color,
-                        display: 'flex', alignItems: 'center', justifyContent: 'center',
-                        fontSize: '13px', fontWeight: 800, letterSpacing: '0.5px',
+                        background: isSelected ? 'linear-gradient(135deg, #0a1628 0%, #1e3a5f 100%)' : meta.bg,
                         transition: 'all 0.15s',
                         boxShadow: isSelected ? '0 4px 10px rgba(10,22,40,0.18)' : 'none',
                         overflow: 'hidden',
+                        position: 'relative',
                       }}>
-                        {u.photoUrl
-                          ? <img src={u.photoUrl} alt="" referrerPolicy="no-referrer" style={{ width: '100%', height: '100%', objectFit: 'cover' }} onError={(e) => { e.currentTarget.style.display = 'none'; e.currentTarget.parentNode.textContent = initials; }} />
-                          : initials}
+                        {u.photoUrl && (
+                          <img
+                            key={u.photoUrl}
+                            src={u.photoUrl}
+                            alt=""
+                            crossOrigin="anonymous"
+                            referrerPolicy="no-referrer"
+                            style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover', display: 'block' }}
+                            onError={(e) => { e.currentTarget.style.display = 'none'; }}
+                          />
+                        )}
+                        {!u.photoUrl && (
+                          <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', color: isSelected ? '#d4a017' : meta.color, fontSize: '13px', fontWeight: 800, letterSpacing: '0.5px' }}>
+                            {initials}
+                          </div>
+                        )}
                       </div>
                       {attToday && (
                         <div
@@ -2248,17 +2284,28 @@ export default function StaffPage() {
               <label style={{ position: 'relative', flexShrink: 0, cursor: 'pointer', display: 'block' }} title="Click to change photo">
                 <div style={{
                   width: '56px', height: '56px', borderRadius: '14px',
-                  background: selectedStaff.photoUrl ? 'rgba(0,0,0,0.2)' : 'linear-gradient(135deg, rgba(212,160,23,0.22) 0%, rgba(212,160,23,0.08) 100%)',
-                  color: '#f5d76e',
-                  display: 'flex', alignItems: 'center', justifyContent: 'center',
-                  fontSize: '20px', fontWeight: 800, letterSpacing: '0.5px',
+                  background: 'linear-gradient(135deg, rgba(212,160,23,0.22) 0%, rgba(212,160,23,0.08) 100%)',
                   border: '1.5px solid rgba(212,160,23,0.35)',
                   boxShadow: '0 6px 18px rgba(0,0,0,0.25)',
                   overflow: 'hidden',
+                  position: 'relative',
                 }}>
-                  {selectedStaff.photoUrl
-                    ? <img src={selectedStaff.photoUrl} alt="" referrerPolicy="no-referrer" style={{ width: '100%', height: '100%', objectFit: 'cover' }} onError={(e) => { e.currentTarget.style.display = 'none'; }} />
-                    : initials}
+                  {selectedStaff.photoUrl && (
+                    <img
+                      key={selectedStaff.photoUrl}
+                      src={selectedStaff.photoUrl}
+                      alt=""
+                      crossOrigin="anonymous"
+                      referrerPolicy="no-referrer"
+                      style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover', display: 'block' }}
+                      onError={(e) => { e.currentTarget.style.display = 'none'; }}
+                    />
+                  )}
+                  {!selectedStaff.photoUrl && (
+                    <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#f5d76e', fontSize: '20px', fontWeight: 800, letterSpacing: '0.5px' }}>
+                      {initials}
+                    </div>
+                  )}
                 </div>
                 <div style={{
                   position: 'absolute', inset: 0, borderRadius: '14px',
@@ -2271,14 +2318,6 @@ export default function StaffPage() {
                 <input type="file" accept="image/jpeg,image/png,image/webp,image/gif"
                   onChange={(e) => { const f = e.target.files?.[0]; e.target.value = ''; if (f) uploadStaffPhoto(selectedStaff.id, f); }}
                   style={{ display: 'none' }} />
-                {selectedStaff.photoUrl && (
-                  <button
-                    type="button"
-                    onClick={(e) => { e.preventDefault(); e.stopPropagation(); askConfirm({ title: 'Remove photo?', message: 'The current profile photo will be removed.', confirmText: 'Remove', danger: true, onConfirm: () => removeStaffPhoto(selectedStaff.id) }); }}
-                    title="Remove photo"
-                    style={{ position: 'absolute', bottom: '-6px', right: '-6px', width: '22px', height: '22px', borderRadius: '50%', background: '#dc2626', color: 'white', border: '2px solid white', cursor: 'pointer', fontSize: '11px', fontWeight: 900, display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 2px 6px rgba(0,0,0,0.3)', padding: 0, lineHeight: 1 }}
-                  >✕</button>
-                )}
               </label>
 
               {/* Name + meta */}
@@ -2432,29 +2471,6 @@ export default function StaffPage() {
         const deductPreview = DEDUCT_FIELDS.reduce((s, [, k]) => s + (Number(f[k]) || 0), 0);
         const netPreview    = Math.max(0, grossPreview - deductPreview);
         const existingRevCount = (normalizeStaffSalary(salaryData[selectedStaff.id]).revisions || []).length;
-
-        const NumberInput = ({ value, onChange, accent }) => (
-          <div style={{
-            display: 'flex', alignItems: 'center',
-            border: `1px solid ${accent === 'red' ? '#fecaca' : '#bbf7d0'}`,
-            borderRadius: '10px', overflow: 'hidden',
-            background: accent === 'red' ? '#fff7f7' : '#f0fdf4',
-            transition: 'border-color 0.15s, box-shadow 0.15s',
-          }}>
-            <span style={{
-              padding: '0 11px', fontSize: '13px', fontWeight: 800,
-              color: accent === 'red' ? '#dc2626' : '#16a34a',
-              borderRight: `1px solid ${accent === 'red' ? '#fecaca' : '#bbf7d0'}`,
-              height: '40px', display: 'flex', alignItems: 'center',
-            }}>₹</span>
-            <input
-              type="number" min="0" placeholder="0"
-              value={value}
-              onChange={(e) => onChange(e.target.value)}
-              style={{ flex: 1, padding: '10px 12px', border: 'none', fontSize: '14px', fontWeight: 700, outline: 'none', background: 'transparent', color: '#0f172a', minWidth: 0, width: '100%' }}
-            />
-          </div>
-        );
 
         return (
           <div
@@ -2936,15 +2952,27 @@ export default function StaffPage() {
                   <div style={{ display: 'flex', alignItems: 'center', gap: '16px', padding: '14px', background: '#fafbfc', border: '1px solid #e8edf2', borderRadius: '14px' }}>
                     <div style={{
                       width: '72px', height: '72px', borderRadius: '14px',
-                      background: staffDrawer.form.photoUrl ? '#f1f5f9' : '#fff8e6',
+                      background: '#fff8e6',
                       border: '1.5px solid #fde68a',
-                      display: 'flex', alignItems: 'center', justifyContent: 'center',
                       overflow: 'hidden', flexShrink: 0,
-                      color: '#d4a017', fontSize: '24px', fontWeight: 800,
+                      position: 'relative',
                     }}>
-                      {staffDrawer.form.photoUrl
-                        ? <img src={staffDrawer.form.photoUrl} alt="" referrerPolicy="no-referrer" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-                        : (staffDrawer.form.name || '?').trim().split(/\s+/).map(w => w[0]).slice(0, 2).join('').toUpperCase()}
+                      {staffDrawer.form.photoUrl && (
+                        <img
+                          key={staffDrawer.form.photoUrl}
+                          src={staffDrawer.form.photoUrl}
+                          alt=""
+                          crossOrigin="anonymous"
+                          referrerPolicy="no-referrer"
+                          style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover', display: 'block' }}
+                          onError={(e) => { e.currentTarget.style.display = 'none'; }}
+                        />
+                      )}
+                      {!staffDrawer.form.photoUrl && (
+                        <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#d4a017', fontSize: '24px', fontWeight: 800 }}>
+                          {(staffDrawer.form.name || '?').trim().split(/\s+/).map(w => w[0]).slice(0, 2).join('').toUpperCase()}
+                        </div>
+                      )}
                     </div>
                     <div style={{ flex: 1, minWidth: 0 }}>
                       <div style={{ fontSize: '12px', fontWeight: 700, color: '#0a1628', marginBottom: '2px' }}>
