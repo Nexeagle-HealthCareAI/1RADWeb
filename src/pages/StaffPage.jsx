@@ -13,12 +13,8 @@ const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov
 const TODAY      = new Date();
 const TODAY_STR  = TODAY.toISOString().split('T')[0];
 const THIS_MONTH = `${TODAY.getFullYear()}-${String(TODAY.getMonth()+1).padStart(2,'0')}`;
-// Default leave policy — used when nothing has been configured at /configuration yet.
-const DEFAULT_LEAVE_TYPES = [
-  { id: 'sick',    name: 'Sick',    annualQuota: 6,  isPaid: true, color: '#dc2626' },
-  { id: 'casual',  name: 'Casual',  annualQuota: 6,  isPaid: true, color: '#0891b2' },
-  { id: 'earned',  name: 'Earned',  annualQuota: 12, isPaid: true, color: '#16a34a' },
-];
+// Leave types come exclusively from the hospital's configured policy
+// (Staff & Payroll → Leave Policy). No hardcoded defaults.
 const ATT_META = {
   present:  { color: '#16a34a', bg: '#f0fdf4', label: 'Present'  },
   absent:   { color: '#dc2626', bg: '#fef2f2', label: 'Absent'   },
@@ -86,7 +82,7 @@ export default function StaffPage() {
   const [salaryData,     setSalaryData]     = useState({}); // { staffId: { basicPay, hra, travel, otherAllowances, pfDeduction, tds, otherDeductions, disbursements:[] } }
   const [attendanceData, setAttendanceData] = useState({}); // { staffId: { 'YYYY-MM-DD': status } }
   const [leaveData,      setLeaveData]      = useState([]); // [{ id, staffId, type, from, to, days, reason, status, appliedOn }]
-  const [leavePolicy,    setLeavePolicy]    = useState(DEFAULT_LEAVE_TYPES);
+  const [leavePolicy,    setLeavePolicy]    = useState([]);
   // Derived: { typeName: annualQuota } map for fast lookups, and a flat name list.
   const LEAVE_TYPES = useMemo(() => leavePolicy.map(t => t.name), [leavePolicy]);
   const LEAVE_DEFAULTS = useMemo(
@@ -127,7 +123,7 @@ export default function StaffPage() {
   const [attPicker, setAttPicker] = useState({ open: false, date: TODAY_STR, status: 'present' });
 
   // Leave application form
-  const [leaveForm, setLeaveForm] = useState({ open: false, type: 'Sick', from: '', to: '', reason: '' });
+  const [leaveForm, setLeaveForm] = useState({ open: false, type: '', from: '', to: '', reason: '' });
 
   // Notification + confirm modal (unified)
   const [notifModal, setNotifModal] = useState({ isOpen: false, type: 'info', title: '', message: '' });
@@ -173,6 +169,7 @@ export default function StaffPage() {
         employmentType: p.employmentType,
         joiningDate:    p.joiningDate,
         status:         p.status || 'Active',
+        photoUrl:       p.photoUrl || null,
         createdAt:      p.createdAt,
         updatedAt:      p.updatedAt,
       }));
@@ -237,7 +234,7 @@ export default function StaffPage() {
     try {
       const res = await apiClient.get('/leave-policy');
       const parsed = safeParseJson(res.data?.leaveTypesJson);
-      const list = Array.isArray(parsed) && parsed.length > 0 ? normalizeLeaveTypes(parsed) : DEFAULT_LEAVE_TYPES;
+      const list = Array.isArray(parsed) && parsed.length > 0 ? normalizeLeaveTypes(parsed) : [];
       setLeavePolicy(list);
       if (cacheKey) await nativeStorage.set(cacheKey, list);
     } catch {
@@ -248,7 +245,7 @@ export default function StaffPage() {
           return;
         }
       }
-      setLeavePolicy(DEFAULT_LEAVE_TYPES);
+      setLeavePolicy([]);
     }
   }, [activeCenter?.id]);
 
@@ -678,8 +675,51 @@ export default function StaffPage() {
       specialization: staff.specialization || '', degree: staff.degree || '', licenseNo: staff.licenseNo || '',
       department: staff.department || '', designation: staff.designation || '',
       joiningDate: staff.joiningDate || '', employmentType: staff.employmentType || 'Full-Time',
+      photoUrl: staff.photoUrl || null,
     }
   });
+
+  // ── Photo upload / delete ──────────────────────────────────────────
+  const uploadStaffPhoto = async (staffId, file) => {
+    if (!file) return null;
+    if (!file.type?.startsWith('image/')) {
+      showNotif('warning', 'Invalid file', 'Please choose an image (JPEG, PNG, WebP).');
+      return null;
+    }
+    if (file.size > 5 * 1024 * 1024) {
+      showNotif('warning', 'File too large', 'Maximum photo size is 5 MB.');
+      return null;
+    }
+    const formData = new FormData();
+    formData.append('photo', file);
+    try {
+      const res = await apiClient.post(`/staff/${staffId}/photo`, formData, {
+        headers: { 'Content-Type': 'multipart/form-data' },
+      });
+      const url = res.data?.photoUrl || null;
+      // Update local state immediately so UI reflects the new photo
+      setPersonnel(prev => prev.map(p => p.id === staffId ? { ...p, photoUrl: url } : p));
+      setSelectedStaff(prev => (prev && prev.id === staffId ? { ...prev, photoUrl: url } : prev));
+      setStaffDrawer(p => (p.form?.id === staffId ? { ...p, form: { ...p.form, photoUrl: url } } : p));
+      showNotif('success', 'Photo updated', 'Profile photo saved.');
+      return url;
+    } catch (err) {
+      showNotif('error', 'Upload failed', err.response?.data?.message || 'Could not upload photo.');
+      return null;
+    }
+  };
+
+  const removeStaffPhoto = async (staffId) => {
+    try {
+      await apiClient.delete(`/staff/${staffId}/photo`);
+      setPersonnel(prev => prev.map(p => p.id === staffId ? { ...p, photoUrl: null } : p));
+      setSelectedStaff(prev => (prev && prev.id === staffId ? { ...prev, photoUrl: null } : prev));
+      setStaffDrawer(p => (p.form?.id === staffId ? { ...p, form: { ...p.form, photoUrl: null } } : p));
+      showNotif('success', 'Photo removed', 'Profile photo removed.');
+    } catch (err) {
+      showNotif('error', 'Delete failed', err.response?.data?.message || 'Could not remove photo.');
+    }
+  };
 
   const handleSaveStaff = async (e) => {
     e?.preventDefault?.();
@@ -1689,7 +1729,13 @@ export default function StaffPage() {
         </div>
 
         <button
-          onClick={() => setLeaveForm({ open: true, type: LEAVE_TYPES[0] || 'Sick', from: '', to: '', reason: '' })}
+          onClick={() => {
+            if (!LEAVE_TYPES.length) {
+              showNotif('warning', 'No leave policy', 'Configure leave types in Staff & Payroll → Leave Policy before applying.');
+              return;
+            }
+            setLeaveForm({ open: true, type: LEAVE_TYPES[0], from: '', to: '', reason: '' });
+          }}
           style={{ width: '100%', padding: '11px', borderRadius: '12px', background: 'linear-gradient(135deg,#0f52ba,#083889)', color: 'white', border: 'none', fontWeight: 800, fontSize: '12px', cursor: 'pointer', marginBottom: '20px', letterSpacing: '0.5px' }}
         >+ Apply Leave</button>
 
@@ -2114,18 +2160,21 @@ export default function StaffPage() {
                   }}
                 >
                   <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                    {/* Avatar with status ring */}
+                    {/* Avatar with status ring — photo if available, initials otherwise */}
                     <div style={{ position: 'relative', flexShrink: 0 }}>
                       <div style={{
                         width: '40px', height: '40px', borderRadius: '12px',
-                        background: isSelected ? 'linear-gradient(135deg, #0a1628 0%, #1e3a5f 100%)' : meta.bg,
+                        background: u.photoUrl ? '#f1f5f9' : (isSelected ? 'linear-gradient(135deg, #0a1628 0%, #1e3a5f 100%)' : meta.bg),
                         color: isSelected ? '#d4a017' : meta.color,
                         display: 'flex', alignItems: 'center', justifyContent: 'center',
                         fontSize: '13px', fontWeight: 800, letterSpacing: '0.5px',
                         transition: 'all 0.15s',
                         boxShadow: isSelected ? '0 4px 10px rgba(10,22,40,0.18)' : 'none',
+                        overflow: 'hidden',
                       }}>
-                        {initials}
+                        {u.photoUrl
+                          ? <img src={u.photoUrl} alt="" referrerPolicy="no-referrer" style={{ width: '100%', height: '100%', objectFit: 'cover' }} onError={(e) => { e.currentTarget.style.display = 'none'; e.currentTarget.parentNode.textContent = initials; }} />
+                          : initials}
                       </div>
                       {attToday && (
                         <div
@@ -2195,18 +2244,42 @@ export default function StaffPage() {
                 >← Back</button>
               )}
 
-              {/* Avatar with gold ring */}
-              <div style={{ position: 'relative', flexShrink: 0 }}>
+              {/* Avatar with gold ring — photo or initials. Hover reveals "Change photo" overlay. */}
+              <label style={{ position: 'relative', flexShrink: 0, cursor: 'pointer', display: 'block' }} title="Click to change photo">
                 <div style={{
                   width: '56px', height: '56px', borderRadius: '14px',
-                  background: 'linear-gradient(135deg, rgba(212,160,23,0.22) 0%, rgba(212,160,23,0.08) 100%)',
+                  background: selectedStaff.photoUrl ? 'rgba(0,0,0,0.2)' : 'linear-gradient(135deg, rgba(212,160,23,0.22) 0%, rgba(212,160,23,0.08) 100%)',
                   color: '#f5d76e',
                   display: 'flex', alignItems: 'center', justifyContent: 'center',
                   fontSize: '20px', fontWeight: 800, letterSpacing: '0.5px',
                   border: '1.5px solid rgba(212,160,23,0.35)',
                   boxShadow: '0 6px 18px rgba(0,0,0,0.25)',
-                }}>{initials}</div>
-              </div>
+                  overflow: 'hidden',
+                }}>
+                  {selectedStaff.photoUrl
+                    ? <img src={selectedStaff.photoUrl} alt="" referrerPolicy="no-referrer" style={{ width: '100%', height: '100%', objectFit: 'cover' }} onError={(e) => { e.currentTarget.style.display = 'none'; }} />
+                    : initials}
+                </div>
+                <div style={{
+                  position: 'absolute', inset: 0, borderRadius: '14px',
+                  background: 'rgba(10,22,40,0.55)', color: 'white',
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  fontSize: '9px', fontWeight: 800, letterSpacing: '0.5px',
+                  opacity: 0, transition: 'opacity 0.15s', pointerEvents: 'none',
+                  textAlign: 'center', padding: '4px',
+                }} className="staff-photo-hover">📷 EDIT</div>
+                <input type="file" accept="image/jpeg,image/png,image/webp,image/gif"
+                  onChange={(e) => { const f = e.target.files?.[0]; e.target.value = ''; if (f) uploadStaffPhoto(selectedStaff.id, f); }}
+                  style={{ display: 'none' }} />
+                {selectedStaff.photoUrl && (
+                  <button
+                    type="button"
+                    onClick={(e) => { e.preventDefault(); e.stopPropagation(); askConfirm({ title: 'Remove photo?', message: 'The current profile photo will be removed.', confirmText: 'Remove', danger: true, onConfirm: () => removeStaffPhoto(selectedStaff.id) }); }}
+                    title="Remove photo"
+                    style={{ position: 'absolute', bottom: '-6px', right: '-6px', width: '22px', height: '22px', borderRadius: '50%', background: '#dc2626', color: 'white', border: '2px solid white', cursor: 'pointer', fontSize: '11px', fontWeight: 900, display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 2px 6px rgba(0,0,0,0.3)', padding: 0, lineHeight: 1 }}
+                  >✕</button>
+                )}
+              </label>
 
               {/* Name + meta */}
               <div style={{ flex: 1, overflow: 'hidden', position: 'relative', zIndex: 1 }}>
@@ -2856,6 +2929,53 @@ export default function StaffPage() {
             {/* Form body */}
             <div style={{ flex: 1, overflowY: 'auto', padding: '22px 28px', display: 'flex', flexDirection: 'column', gap: '18px' }}>
 
+              {/* Photo — only available on edit (need staffId to upload against) */}
+              {staffDrawer.form.id && (
+                <>
+                  <SectionLabel>Profile photo</SectionLabel>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '16px', padding: '14px', background: '#fafbfc', border: '1px solid #e8edf2', borderRadius: '14px' }}>
+                    <div style={{
+                      width: '72px', height: '72px', borderRadius: '14px',
+                      background: staffDrawer.form.photoUrl ? '#f1f5f9' : '#fff8e6',
+                      border: '1.5px solid #fde68a',
+                      display: 'flex', alignItems: 'center', justifyContent: 'center',
+                      overflow: 'hidden', flexShrink: 0,
+                      color: '#d4a017', fontSize: '24px', fontWeight: 800,
+                    }}>
+                      {staffDrawer.form.photoUrl
+                        ? <img src={staffDrawer.form.photoUrl} alt="" referrerPolicy="no-referrer" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                        : (staffDrawer.form.name || '?').trim().split(/\s+/).map(w => w[0]).slice(0, 2).join('').toUpperCase()}
+                    </div>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ fontSize: '12px', fontWeight: 700, color: '#0a1628', marginBottom: '2px' }}>
+                        {staffDrawer.form.photoUrl ? 'Photo on file' : 'No photo yet'}
+                      </div>
+                      <div style={{ fontSize: '10px', color: '#64748b', lineHeight: 1.5 }}>
+                        JPEG, PNG, WebP · max 5 MB · shown in roster, dashboard and payslips.
+                      </div>
+                    </div>
+                    <div style={{ display: 'flex', gap: '8px', flexShrink: 0 }}>
+                      <label style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', padding: '7px 13px', borderRadius: '9px', background: 'linear-gradient(135deg, #d4a017 0%, #b8860b 100%)', color: '#0a1628', fontSize: '11px', fontWeight: 800, cursor: 'pointer', letterSpacing: '0.3px', boxShadow: '0 4px 12px rgba(212,160,23,0.3)' }}>
+                        {staffDrawer.form.photoUrl ? 'Change' : 'Upload photo'}
+                        <input
+                          type="file"
+                          accept="image/jpeg,image/png,image/webp,image/gif"
+                          onChange={(e) => { const f = e.target.files?.[0]; e.target.value = ''; if (f) uploadStaffPhoto(staffDrawer.form.id, f); }}
+                          style={{ display: 'none' }}
+                        />
+                      </label>
+                      {staffDrawer.form.photoUrl && (
+                        <button
+                          type="button"
+                          onClick={() => askConfirm({ title: 'Remove photo?', message: 'The current profile photo will be removed.', confirmText: 'Remove', danger: true, onConfirm: () => removeStaffPhoto(staffDrawer.form.id) })}
+                          style={{ padding: '7px 13px', borderRadius: '9px', background: 'white', border: '1px solid #fecaca', color: '#dc2626', fontSize: '11px', fontWeight: 700, cursor: 'pointer' }}
+                        >Remove</button>
+                      )}
+                    </div>
+                  </div>
+                </>
+              )}
+
               {/* Identity */}
               <SectionLabel>Identity</SectionLabel>
               <FieldGroup>
@@ -3061,6 +3181,7 @@ export default function StaffPage() {
         @keyframes staffSpin {
           to { transform: rotate(360deg); }
         }
+        label:hover > .staff-photo-hover { opacity: 1 !important; }
       `}</style>
     </div>
   );

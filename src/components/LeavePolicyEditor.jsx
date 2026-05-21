@@ -2,13 +2,6 @@ import React, { useEffect, useMemo, useState } from 'react';
 import apiClient from '../api/apiClient';
 import { nativeStorage } from '../hooks/useElectron';
 
-// Default policy used when nothing has been configured yet.
-const DEFAULT_TYPES = [
-  { id: 'sick',    name: 'Sick Leave',    annualQuota: 6,  isPaid: true, color: '#dc2626' },
-  { id: 'casual',  name: 'Casual Leave',  annualQuota: 6,  isPaid: true, color: '#0891b2' },
-  { id: 'earned',  name: 'Earned Leave',  annualQuota: 12, isPaid: true, color: '#16a34a' },
-];
-
 // Curated palette — accessible, distinguishable, professional.
 const PALETTE = [
   '#dc2626', // red
@@ -37,7 +30,7 @@ const TEMPLATES = [
 const slugify = (s) => (s || '').toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, '') || `type_${Date.now()}`;
 
 export default function LeavePolicyEditor({ hospitalId, currentUserName, embedded = false }) {
-  const [types, setTypes]         = useState(DEFAULT_TYPES);
+  const [types, setTypes]         = useState([]);
   const [loading, setLoading]     = useState(true);
   const [saving, setSaving]       = useState(false);
   const [dirty, setDirty]         = useState(false);
@@ -56,7 +49,7 @@ export default function LeavePolicyEditor({ hospitalId, currentUserName, embedde
       try {
         const res = await apiClient.get('/leave-policy');
         if (cancelled) return;
-        const parsed = safeParse(res.data?.leaveTypesJson) || DEFAULT_TYPES;
+        const parsed = safeParse(res.data?.leaveTypesJson) || [];
         setTypes(normalize(parsed));
         setLastSaved(res.data?.updatedAt ? new Date(res.data.updatedAt) : null);
         if (cacheKey) await nativeStorage.set(cacheKey, parsed);
@@ -66,7 +59,7 @@ export default function LeavePolicyEditor({ hospitalId, currentUserName, embedde
           const cached = await nativeStorage.get(cacheKey);
           if (cached) { setTypes(normalize(cached)); setLoading(false); return; }
         }
-        setTypes(DEFAULT_TYPES);
+        setTypes([]);
       } finally {
         if (!cancelled) setLoading(false);
       }
@@ -104,7 +97,6 @@ export default function LeavePolicyEditor({ hospitalId, currentUserName, embedde
     setDirty(true);
     setShowTemplates(false);
   };
-  const resetToDefaults = () => { setTypes(DEFAULT_TYPES); setDirty(true); };
 
   // ── Save ────────────────────────────────────────────────────────────
   const save = async () => {
@@ -499,11 +491,6 @@ export default function LeavePolicyEditor({ hospitalId, currentUserName, embedde
           <div style={{ display: 'flex', gap: '10px' }}>
             <button
               type="button"
-              onClick={resetToDefaults}
-              style={{ padding: '11px 18px', borderRadius: '11px', border: '1px solid #e2e8f0', background: 'white', color: '#475569', fontSize: '12px', fontWeight: 700, cursor: 'pointer' }}
-            >Reset to defaults</button>
-            <button
-              type="button"
               onClick={save}
               disabled={saving || !dirty}
               style={{
@@ -550,7 +537,7 @@ function StatTile({ label, value, sub, tone }) {
 function safeParse(json) { if (!json) return null; try { return JSON.parse(json); } catch { return null; } }
 
 function normalize(arr) {
-  if (!Array.isArray(arr)) return DEFAULT_TYPES;
+  if (!Array.isArray(arr)) return [];
   return arr.map(t => ({
     id: t.id || slugify(t.name),
     name: t.name || '',

@@ -10,11 +10,8 @@ const TODAY     = new Date();
 const TODAY_STR = TODAY.toISOString().split('T')[0];
 const THIS_MONTH = `${TODAY.getFullYear()}-${String(TODAY.getMonth()+1).padStart(2,'0')}`;
 
-const DEFAULT_LEAVE_TYPES = [
-  { id: 'sick',   name: 'Sick',   annualQuota: 6,  isPaid: true, color: '#dc2626' },
-  { id: 'casual', name: 'Casual', annualQuota: 6,  isPaid: true, color: '#0891b2' },
-  { id: 'earned', name: 'Earned', annualQuota: 12, isPaid: true, color: '#16a34a' },
-];
+// Leave types come from /leave-policy. Until that returns a populated array,
+// the dashboard treats the policy as empty (no quota).
 
 // ── Pure payroll math (kept local — small surface, no need to share yet) ────
 const SAL_FIELDS = ['basicPay','hra','travel','otherAllowances','pfDeduction','tds','otherDeductions'];
@@ -87,7 +84,7 @@ export default function StaffDashboardPage({ onSelectStaff, embedded = false }) 
   const [salaryByStaff, setSalaryByStaff] = useState({}); // { staffId: normalized salary record }
   const [attendance,    setAttendance]   = useState({});
   const [leaves,        setLeaves]       = useState([]);
-  const [leavePolicy,   setLeavePolicy]  = useState(DEFAULT_LEAVE_TYPES);
+  const [leavePolicy,   setLeavePolicy]  = useState([]);
   const [loading,       setLoading]      = useState(false);
   const [search,        setSearch]       = useState('');
   const [selectedMonth, setSelectedMonth] = useState(THIS_MONTH);
@@ -143,6 +140,7 @@ export default function StaffDashboardPage({ onSelectStaff, embedded = false }) 
         licenseNo:      p.licenseNo,
         joiningDate:    p.joiningDate,
         status:         p.status || 'Active',
+        photoUrl:       p.photoUrl || null,
         createdAt:      p.createdAt,
         updatedAt:      p.updatedAt,
       }));
@@ -424,8 +422,10 @@ export default function StaffDashboardPage({ onSelectStaff, embedded = false }) 
                   >
                     {/* Employee */}
                     <div style={{ display: 'flex', alignItems: 'center', gap: '12px', minWidth: 0 }}>
-                      <div style={{ width: '34px', height: '34px', borderRadius: '10px', background: meta.bg, color: meta.color, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '13px', fontWeight: 800, flexShrink: 0 }}>
-                        {(staff.name || '?').charAt(0).toUpperCase()}
+                      <div style={{ width: '34px', height: '34px', borderRadius: '10px', background: staff.photoUrl ? '#f1f5f9' : meta.bg, color: meta.color, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '13px', fontWeight: 800, flexShrink: 0, overflow: 'hidden' }}>
+                        {staff.photoUrl
+                          ? <img src={staff.photoUrl} alt="" referrerPolicy="no-referrer" style={{ width: '100%', height: '100%', objectFit: 'cover' }} onError={(e) => { e.currentTarget.style.display = 'none'; }} />
+                          : (staff.name || '?').charAt(0).toUpperCase()}
                       </div>
                       <div style={{ minWidth: 0 }}>
                         <div style={{ fontSize: '13px', fontWeight: 700, color: '#0f172a', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{staff.name}</div>
