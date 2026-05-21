@@ -706,6 +706,27 @@ const ReportingPage = () => {
     setKeyImages(prev => prev.includes(key) ? prev.filter(k => k !== key) : [...prev, key]);
   };
 
+  // Persist a freshly-uploaded ZIP / DICOM file to the backend so other devices and
+  // the technician/admin board can see it. Mirrors the flow used in TechnicianPage.
+  const persistStudyAsset = async (file) => {
+    if (!appointmentId) {
+      console.warn('[REPORTING] No appointmentId — skipping backend persistence.');
+      return;
+    }
+    try {
+      const formData = new FormData();
+      formData.append('AppointmentId', appointmentId);
+      formData.append('File', file);
+      console.log(`[REPORTING] 📤 Uploading to backend: ${file.name}`);
+      await apiClient.post('/Study/upload', formData, {
+        headers: { 'Content-Type': 'multipart/form-data' },
+      });
+      console.log(`[REPORTING] ✅ Backend save completed: ${file.name}`);
+    } catch (err) {
+      console.error('[REPORTING] Persistence failed', err);
+    }
+  };
+
   const handleFileChange = async (e) => {
     const file = e.target.files[0];
     if (!file) return;
@@ -747,6 +768,10 @@ const ReportingPage = () => {
         if (!Array.isArray(classifiedAssets) || classifiedAssets.length === 0) {
           throw new Error('NO_DICOM_SERIES: No valid DICOM image series found in the uploaded file');
         }
+
+        // Background persist the ZIP to the backend (fire-and-forget — local extraction
+        // already succeeded, so the user can keep working while the upload finishes).
+        persistStudyAsset(file);
 
         const newAssets = classifiedAssets.map(series => ({
           name: `${series.patientName} - ${series.seriesDesc}`,
@@ -797,7 +822,29 @@ const ReportingPage = () => {
         setProcessingStatus('');
         setLoadingProgress({ stage: '', current: 0, total: 0 });
       }
+    } else {
+      // Plain DICOM (.dcm/.dicom) — persist to backend + add to local stack.
+      const isDicom = file.name.toLowerCase().endsWith('.dcm') || file.name.toLowerCase().includes('dicom') || file.type === 'application/dicom';
+
+      persistStudyAsset(file);
+
+      setUploadedFiles(prev => [...prev, {
+        name: file.name,
+        type: isDicom ? 'DICOM' : (file.type || 'UNKNOWN'),
+        size: (file.size / 1024 / 1024).toFixed(2) + ' MB',
+        time: new Date().toLocaleTimeString(),
+        previewUrl: isDicom ? null : URL.createObjectURL(file),
+        isZip: false,
+        rawFiles: isDicom ? [file] : null,
+      }]);
+      if (isDicom) {
+        setIsDicomImage(true);
+        setActiveAssetIndex(prev => prev || 0);
+      }
     }
+
+    // Reset the file input so the same file can be re-uploaded if needed.
+    if (e.target) e.target.value = '';
   };
 
   const testAssetConnection = async (asset) => {

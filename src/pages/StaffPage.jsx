@@ -846,6 +846,15 @@ export default function StaffPage() {
     );
   }, [personnel, search]);
 
+  // Auto-select the first staff member on initial load (desktop only — mobile shows the
+  // roster list first so the user can pick). Doesn't override an existing selection.
+  useEffect(() => {
+    if (!isMobile && !selectedStaff && filteredPersonnel.length > 0) {
+      setSelectedStaff(filteredPersonnel[0]);
+      setDetailTab('profile');
+    }
+  }, [filteredPersonnel, selectedStaff, isMobile]);
+
   const metrics = useMemo(() => {
     const totalPayroll = personnel.reduce((s, u) => s + getSalaryInfo(u.id).net, 0);
     const onLeave = new Set(

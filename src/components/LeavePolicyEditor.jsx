@@ -79,6 +79,7 @@ export default function LeavePolicyEditor({ hospitalId, currentUserName, embedde
       annualQuota: 0,
       isPaid: true,
       color: PALETTE[prev.length % PALETTE.length],
+      _persisted: false, // new row — name editable until Save
     }]);
     setDirty(true);
   };
@@ -109,7 +110,8 @@ export default function LeavePolicyEditor({ hospitalId, currentUserName, embedde
     try {
       await apiClient.put('/leave-policy', { leaveTypesJson: JSON.stringify(cleaned) });
       if (cacheKey) await nativeStorage.set(cacheKey, cleaned);
-      setTypes(cleaned);
+      // After save, every type is persisted → name locked from this point on.
+      setTypes(cleaned.map(t => ({ ...t, _persisted: true })));
       setLastSaved(new Date());
       setDirty(false);
       setNotice({ kind: 'success', text: 'Policy saved. Changes apply to every employee immediately.' });
@@ -199,7 +201,7 @@ export default function LeavePolicyEditor({ hospitalId, currentUserName, embedde
       </div>
 
       {/* Type cards — responsive grid, 2 columns on wide screens */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(440px, 1fr))', gap: '10px' }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(560px, 1fr))', gap: '10px' }}>
         {types.length === 0 && (
           <div style={{ padding: '40px 20px', textAlign: 'center', color: '#94a3b8', fontSize: '12px', background: '#fafbfc', border: '1.5px dashed #e2e8f0', borderRadius: '14px' }}>
             <div style={{ fontSize: '13px', fontWeight: 700, color: '#64748b', marginBottom: '4px' }}>No leave types yet</div>
@@ -265,28 +267,35 @@ export default function LeavePolicyEditor({ hospitalId, currentUserName, embedde
               )}
             </div>
 
-            {/* Name */}
+            {/* Name — editable when new, locked after save (changing the name would
+                orphan existing leave applications referencing it). */}
             <div style={{ flex: 1, minWidth: 0 }}>
-              <label style={{ display: 'block', fontSize: '9px', fontWeight: 800, color: '#94a3b8', letterSpacing: '0.8px', textTransform: 'uppercase', marginBottom: '6px' }}>Leave Name</label>
-              {embedded ? (
-                <div style={{ padding: '9px 12px', fontSize: '14px', fontWeight: 700, color: '#0a1628' }}>{t.name}</div>
-              ) : (
-                <input
-                  type="text"
-                  value={t.name}
-                  onChange={(e) => update(i, { name: e.target.value })}
-                  placeholder="e.g. Maternity Leave"
-                  style={{
-                    width: '100%', padding: '9px 12px',
-                    borderRadius: '10px', border: '1px solid #e2e8f0',
-                    fontSize: '14px', fontWeight: 700, color: '#0a1628',
-                    outline: 'none', boxSizing: 'border-box',
-                    transition: 'border-color 0.15s, box-shadow 0.15s',
-                  }}
-                  onFocus={(e) => { e.target.style.borderColor = '#0a1628'; e.target.style.boxShadow = '0 0 0 3px rgba(10,22,40,0.08)'; }}
-                  onBlur={(e) => { e.target.style.borderColor = '#e2e8f0'; e.target.style.boxShadow = 'none'; }}
-                />
-              )}
+              <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '9px', fontWeight: 800, color: '#94a3b8', letterSpacing: '0.8px', textTransform: 'uppercase', marginBottom: '6px' }}>
+                Leave Name
+                {t._persisted && (
+                  <span title="Name is locked once saved — applies to historical records" style={{ fontSize: '10px', color: '#64748b' }}>🔒</span>
+                )}
+              </label>
+              <input
+                type="text"
+                value={t.name}
+                readOnly={!!t._persisted}
+                onChange={(e) => update(i, { name: e.target.value })}
+                placeholder="e.g. Maternity Leave"
+                title={t._persisted ? 'Name is locked. Delete this row and add a new one if you need to rename.' : ''}
+                style={{
+                  width: '100%', padding: '9px 12px',
+                  borderRadius: '10px',
+                  border: `1px solid ${t._persisted ? '#e2e8f0' : '#e2e8f0'}`,
+                  fontSize: '14px', fontWeight: 700, color: '#0a1628',
+                  outline: 'none', boxSizing: 'border-box',
+                  background: t._persisted ? '#f8fafc' : 'white',
+                  cursor: t._persisted ? 'not-allowed' : 'text',
+                  transition: 'border-color 0.15s, box-shadow 0.15s',
+                }}
+                onFocus={(e) => { if (!t._persisted) { e.target.style.borderColor = '#0a1628'; e.target.style.boxShadow = '0 0 0 3px rgba(10,22,40,0.08)'; } }}
+                onBlur={(e) => { e.target.style.borderColor = '#e2e8f0'; e.target.style.boxShadow = 'none'; }}
+              />
               {t.name && (
                 <div style={{ fontSize: '9px', color: '#94a3b8', fontWeight: 600, marginTop: '4px', fontFamily: 'ui-monospace, "SF Mono", Menlo, monospace', letterSpacing: '0.3px', paddingLeft: '4px' }}>
                   id: {slugify(t.id || t.name)}
@@ -470,5 +479,6 @@ function normalize(arr) {
     annualQuota: Number(t.annualQuota) || 0,
     isPaid: t.isPaid !== false,
     color: t.color || '#64748b',
+    _persisted: true,  // loaded from API/cache → name locked
   })).filter(t => t.name);
 }
