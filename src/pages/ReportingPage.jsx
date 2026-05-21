@@ -394,7 +394,17 @@ const ReportingPage = () => {
         apiClient.get(`/Study/${appId}/assets`).catch(() => ({ data: [] }))
       ]);
 
-      if (templRes.data?.success) setTemplates(templRes.data.data);
+      if (templRes.data?.success) {
+        // Normalize PascalCase API response (Id/Name/Content) to camelCase so
+        // the rest of the UI can use consistent tpl.id / tpl.name / tpl.content.
+        const normalizedTemplates = (templRes.data.data || []).map(t => ({
+          id:       t.id       ?? t.Id,
+          name:     t.name     ?? t.Name     ?? '',
+          modality: t.modality ?? t.Modality ?? '',
+          content:  t.content  ?? t.Content  ?? '',
+        }));
+        setTemplates(normalizedTemplates);
+      }
       if (keyRes.data?.success) {
         const mapped = keyRes.data.data.map(k => ({
           ...k,
@@ -474,14 +484,17 @@ const ReportingPage = () => {
         console.info(`[1RAD] New Case Detected. Searching for default protocol for service: ${appointmentData.service}`);
 
         if (templRes.data?.success && appointmentData.service) {
-          const serviceMatch = templRes.data.data.find(t =>
-            t.name?.toLowerCase().trim() === appointmentData.service.toLowerCase().trim()
+          // Use PascalCase fallbacks because normalization hasn't run yet here
+          const serviceMatch = (templRes.data.data || []).find(t =>
+            (t.name ?? t.Name ?? '').toLowerCase().trim() === appointmentData.service.toLowerCase().trim()
           );
 
           if (serviceMatch) {
-            console.info(`[1RAD] Intelligent Match Found: ${serviceMatch.name}`);
-            setSelectedTemplateId(String(serviceMatch.id));
-            setEditorText(serviceMatch.content || '');
+            const matchId = serviceMatch.id ?? serviceMatch.Id;
+            const matchContent = serviceMatch.content ?? serviceMatch.Content ?? '';
+            console.info(`[1RAD] Intelligent Match Found: ${serviceMatch.name ?? serviceMatch.Name}`);
+            setSelectedTemplateId(String(matchId));
+            setEditorText(matchContent);
           }
         }
       }
@@ -3784,7 +3797,14 @@ const ReportingPage = () => {
                         const tpl = templates.find(t => String(t.id) === String(e.target.value));
                         if (tpl) {
                           setSelectedTemplateId(tpl.id);
-                          setEditorText(tpl.content || '');
+                          const html = tpl.content || tpl.Content || '';
+                          // Push directly into the editor via the imperative handle so the
+                          // content is applied regardless of focus state (the NarrativeEditor
+                          // sync effect skips updates when the editor is focused and non-empty).
+                          if (editorRef.current?.setContent) {
+                            editorRef.current.setContent(html);
+                          }
+                          setEditorText(html);
                         }
                       }}
                       style={{
@@ -3802,7 +3822,7 @@ const ReportingPage = () => {
                     >
                       <option value="">Select a template…</option>
                       {templates.map(tpl => (
-                        <option key={tpl.id} value={tpl.id}>{tpl.name}</option>
+                        <option key={tpl.id} value={String(tpl.id)}>{tpl.name || tpl.Name}</option>
                       ))}
                     </select>
                     {selectedTemplateId && (

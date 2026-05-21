@@ -10,12 +10,12 @@ export const ROLES = {
 };
 
 export const ROLE_LABELS = {
-  admindoctor: 'Chief Medical Officer',
-  admin: 'Operations Director',
-  receptionist: 'Intake Coordinator',
-  technician: 'Imaging Specialist',
-  doctor: 'Diagnostic Consultant',
-  accountant: 'Financial Comptroller',
+  admindoctor: 'Admin Doctor',
+  admin: 'Admin',
+  receptionist: 'Receptionist',
+  technician: 'Technician',
+  doctor: 'Doctor',
+  accountant: 'Accountant',
 };
 
 // Default landing route for each role

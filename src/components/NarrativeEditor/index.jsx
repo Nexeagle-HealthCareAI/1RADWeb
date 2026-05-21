@@ -772,7 +772,7 @@ const NarrativeEditor = React.forwardRef(function NarrativeEditor({
     },
     setContent: (html) => {
       if (editor) {
-        editor.commands.setContent(html);
+        editor.commands.setContent(ensurePagedHTML(html), false);
       }
     },
     getHTML: () => editor?.getHTML() || '',
@@ -780,12 +780,21 @@ const NarrativeEditor = React.forwardRef(function NarrativeEditor({
     editor
   }));
 
-  // Sync content prop on initial load
+  // Sync content prop → editor whenever it changes from the outside
+  // (initial load, template selection, draft restore, etc.).
+  // Guard: skip if the editor is focused AND already has the same text length —
+  // this avoids clobbering live typing while still applying external changes.
   useEffect(() => {
-    if (editor && content !== undefined && content !== editor.getHTML()) {
-      if (!editor.isFocused || editor.isEmpty) {
-        editor.commands.setContent(ensurePagedHTML(content), false);
-      }
+    if (!editor || content === undefined) return;
+    const currentHTML = editor.getHTML();
+    if (content === currentHTML) return; // nothing to do
+    // Always sync when the editor is empty or unfocused.
+    // Also sync when the content length differs by more than 20 chars —
+    // this covers template application (large delta) while ignoring the
+    // tiny differences caused by Tiptap's HTML serialisation.
+    const lengthDelta = Math.abs((content?.length ?? 0) - (currentHTML?.length ?? 0));
+    if (!editor.isFocused || editor.isEmpty || lengthDelta > 20) {
+      editor.commands.setContent(ensurePagedHTML(content), false);
     }
   }, [content, editor]);
 

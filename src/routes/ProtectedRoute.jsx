@@ -1,8 +1,9 @@
 import { Navigate, useLocation } from 'react-router-dom';
 import useAuth from '../auth/useAuth';
+import { getRolePermissions } from '../data/roles';
 
-export default function ProtectedRoute({ allowedRoles, children }) {
-  const { currentUser, hasAdminDoctor } = useAuth();
+export default function ProtectedRoute({ allowedRoles, moduleRoutes, children }) {
+  const { currentUser, hasAdminDoctor, activeCenter } = useAuth();
   const location = useLocation();
 
   // 1. Initial Launch Check: If no AdminDoctor exists, force to /register
@@ -15,9 +16,19 @@ export default function ProtectedRoute({ allowedRoles, children }) {
     return <Navigate to="/login" replace state={{ from: location }} />;
   }
 
-  // 3. Role Authorization Check: If the user's roles are not allowed for this route
+  // 3. Permission Authorization Check:
   const userRoles = currentUser.roles || [];
-  if (allowedRoles && !userRoles.some(role => allowedRoles.includes(role))) {
+  
+  // Routes to check: explicitly provided module routes, or the exact current path
+  const routesToCheck = moduleRoutes || [location.pathname];
+  
+  const hasAccess = userRoles.some(role => {
+    // getRolePermissions handles BOTH system roles and custom roles seamlessly
+    const permissions = getRolePermissions(role, activeCenter?.id);
+    return routesToCheck.some(route => permissions.includes(route));
+  });
+
+  if (!hasAccess) {
     return <Navigate to="/access-denied" replace />;
   }
 

@@ -1,405 +1,465 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { getCustomRoles, saveCustomRoles, DEFAULT_SYSTEM_PERMISSIONS, ROLE_LABELS, NAV_ITEMS } from '../data/roles';
 import apiClient from '../api/apiClient';
 
+const NAVY  = '#0a1628';
+const GOLD  = '#d4a017';
+const GOLD2 = '#f5d76e';
+
+
+
+const SYSTEM_ROLE_COLORS = {
+  admindoctor:   { bg: 'linear-gradient(135deg,#0a1628,#1e3a5f)', text: '#f5d76e', dot: '#d4a017' },
+  admin:         { bg: 'linear-gradient(135deg,#1e3a5f,#0f52ba)', text: '#bfdbfe', dot: '#3b82f6' },
+  receptionist:  { bg: 'linear-gradient(135deg,#0d9488,#0f766e)', text: '#ccfbf1', dot: '#2dd4bf' },
+  technician:    { bg: 'linear-gradient(135deg,#7c3aed,#6d28d9)', text: '#ede9fe', dot: '#a78bfa' },
+  doctor:        { bg: 'linear-gradient(135deg,#059669,#047857)', text: '#d1fae5', dot: '#34d399' },
+  accountant:    { bg: 'linear-gradient(135deg,#d97706,#b45309)', text: '#fef3c7', dot: '#fbbf24' },
+};
+
+// ── Toast ────────────────────────────────────────────────────────────────────
+function Toast({ toast, onClose }) {
+  useEffect(() => { if (!toast) return; const t = setTimeout(onClose, 3000); return () => clearTimeout(t); }, [toast, onClose]);
+  if (!toast) return null;
+  const C = { success: { bg:'#f0fdf4',border:'#bbf7d0',color:'#15803d',icon:'✓' }, error: { bg:'#fef2f2',border:'#fecaca',color:'#dc2626',icon:'✕' }, warning: { bg:'#fffbeb',border:'#fde68a',color:'#d97706',icon:'⚠' } }[toast.type] || { bg:'#eff6ff',border:'#bfdbfe',color:'#2563eb',icon:'ℹ' };
+  return (
+    <div style={{ position:'fixed',bottom:'28px',right:'28px',zIndex:99999,display:'flex',alignItems:'center',gap:'10px',background:C.bg,border:`1px solid ${C.border}`,borderRadius:'12px',padding:'12px 18px',boxShadow:'0 8px 28px rgba(0,0,0,0.14)',animation:'toastIn 0.28s cubic-bezier(0.16,1,0.3,1)',maxWidth:'340px' }}>
+      <span style={{ fontSize:'16px',color:C.color,fontWeight:900 }}>{C.icon}</span>
+      <span style={{ fontSize:'13px',fontWeight:600,color:'#0f172a' }}>{toast.message}</span>
+      <button onClick={onClose} style={{ border:'none',background:'transparent',cursor:'pointer',color:'#94a3b8',fontSize:'16px',marginLeft:'4px',lineHeight:1 }}>×</button>
+      <style>{`@keyframes toastIn{from{transform:translateY(14px);opacity:0}to{transform:none;opacity:1}}`}</style>
+    </div>
+  );
+}
+
+// ── Confirm dialog ───────────────────────────────────────────────────────────
+function ConfirmDialog({ open, title, message, onConfirm, onCancel }) {
+  if (!open) return null;
+  return (
+    <div style={{ position:'fixed',inset:0,zIndex:10001,background:'rgba(10,22,40,0.6)',backdropFilter:'blur(6px)',display:'flex',alignItems:'center',justifyContent:'center' }}>
+      <div style={{ background:'white',borderRadius:'20px',padding:'32px 28px',width:'360px',boxShadow:'0 24px 60px rgba(0,0,0,0.2)',border:'1px solid #fecaca',textAlign:'center',animation:'popIn 0.22s cubic-bezier(0.16,1,0.3,1)' }}>
+        <div style={{ width:'52px',height:'52px',borderRadius:'50%',background:'#fef2f2',border:'2px solid #fecaca',display:'flex',alignItems:'center',justifyContent:'center',margin:'0 auto 16px',fontSize:'22px' }}>⚠️</div>
+        <div style={{ fontWeight:800,fontSize:'15px',color:'#0f172a',marginBottom:'8px' }}>{title}</div>
+        <p style={{ fontSize:'13px',color:'#64748b',marginBottom:'24px',lineHeight:1.6 }}>{message}</p>
+        <div style={{ display:'flex',gap:'10px' }}>
+          <button onClick={onCancel} style={{ flex:1,padding:'11px',borderRadius:'10px',border:'1px solid #e2e8f0',background:'white',fontWeight:700,fontSize:'13px',cursor:'pointer',color:'#475569',fontFamily:'inherit' }}>Cancel</button>
+          <button onClick={onConfirm} style={{ flex:1,padding:'11px',borderRadius:'10px',border:'none',background:'linear-gradient(135deg,#dc2626,#b91c1c)',color:'white',fontWeight:700,fontSize:'13px',cursor:'pointer',fontFamily:'inherit' }}>Delete</button>
+        </div>
+        <style>{`@keyframes popIn{from{transform:scale(0.88);opacity:0}to{transform:none;opacity:1}}`}</style>
+      </div>
+    </div>
+  );
+}
+
+// ── Main ─────────────────────────────────────────────────────────────────────
 export default function RolesAndPermissions({ hospitalId }) {
-  const [customRoles, setCustomRoles] = useState([]);
-  const [isDrawerOpen, setIsDrawerOpen] = useState(false);
-  const [roleName, setRoleName] = useState('');
-  const [selectedRoutes, setSelectedRoutes] = useState([]);
+  const [customRoles,   setCustomRoles]   = useState([]);
+  const [isDrawerOpen,  setIsDrawerOpen]  = useState(false);
+  const [roleName,      setRoleName]      = useState('');
+  const [selectedRoutes,setSelectedRoutes]= useState([]);
   const [editingRoleId, setEditingRoleId] = useState(null);
+  const [saving,        setSaving]        = useState(false);
+  const [toast,         setToast]         = useState(null);
+  const [confirm,       setConfirm]       = useState(null);
+  const nameRef = useRef(null);
+  const showToast = (type, msg) => setToast({ type, message: msg });
 
   const loadRoles = async () => {
     if (!hospitalId) return;
     try {
-      const response = await apiClient.get('/CustomRoles');
-      const mapped = response.data.map(r => ({
-        roleId: r.roleId,
-        roleName: r.roleName,
-        allowedRoutes: r.permissions
+      const res = await apiClient.get('/CustomRoles');
+      const mapped = res.data.map(r => ({
+        roleId:        r.roleId        ?? r.RoleId,
+        roleName:      r.roleName      ?? r.RoleName      ?? '',
+        description:   r.description   ?? r.Description   ?? '',
+        allowedRoutes: r.permissions   ?? r.Permissions   ?? [],
       }));
       setCustomRoles(mapped);
       saveCustomRoles(hospitalId, mapped);
       window.dispatchEvent(new Event('1rad_permissions_updated'));
-    } catch (error) {
-      console.error('Failed to load custom roles from API', error);
-    }
+    } catch (e) { console.error('Failed to load custom roles', e); }
   };
 
-  // Load custom roles when component mounts or hospital changes
-  useEffect(() => {
-    loadRoles();
-  }, [hospitalId]);
+  useEffect(() => { loadRoles(); }, [hospitalId]); // eslint-disable-line
+  useEffect(() => { if (isDrawerOpen) setTimeout(() => nameRef.current?.focus(), 80); }, [isDrawerOpen]);
 
-  // Combine system default roles with custom roles for display
-  const systemRolesList = Object.keys(DEFAULT_SYSTEM_PERMISSIONS).map(roleId => ({
-    roleId,
-    roleName: ROLE_LABELS[roleId] || roleId,
-    allowedRoutes: DEFAULT_SYSTEM_PERMISSIONS[roleId],
-    isSystem: true
+  const systemRoles = Object.keys(DEFAULT_SYSTEM_PERMISSIONS).map(roleId => ({
+    roleId, roleName: ROLE_LABELS[roleId] || roleId,
+    allowedRoutes: DEFAULT_SYSTEM_PERMISSIONS[roleId], isSystem: true,
   }));
+  const allRoles = [...systemRoles, ...customRoles.map(r => ({ ...r, isSystem: false }))];
 
-  const customRolesList = customRoles.map(r => ({
-    ...r,
-    isSystem: false
-  }));
+  const hasAccess = (role, route) => (role.allowedRoutes || []).includes(route);
 
-  const allRoles = [...systemRolesList, ...customRolesList];
-
-  const handleOpenCreate = () => {
-    setEditingRoleId(null);
-    setRoleName('');
-    setSelectedRoutes([]);
-    setIsDrawerOpen(true);
-  };
-
-  const handleOpenEdit = (role) => {
-    setEditingRoleId(role.roleId);
-    setRoleName(role.roleName);
-    setSelectedRoutes(role.allowedRoutes || []);
-    setIsDrawerOpen(true);
-  };
-
-  const handleToggleRoute = (route) => {
-    setSelectedRoutes(prev =>
-      prev.includes(route) ? prev.filter(r => r !== route) : [...prev, route]
-    );
-  };
+  const openCreate = () => { setEditingRoleId(null); setRoleName(''); setSelectedRoutes([]); setIsDrawerOpen(true); };
+  const openEdit   = (role) => { setEditingRoleId(role.roleId); setRoleName(role.roleName); setSelectedRoutes(role.allowedRoutes || []); setIsDrawerOpen(true); };
 
   const handleSaveRole = async () => {
-    if (!roleName.trim()) {
-      alert('Please enter a role name.');
-      return;
+    if (!roleName.trim()) { showToast('warning', 'Please enter a role name.'); return; }
+    if (!editingRoleId && customRoles.some(r => r.roleName.toLowerCase() === roleName.trim().toLowerCase())) {
+      showToast('warning', `A role named "${roleName.trim()}" already exists.`); return;
     }
-
-    if (editingRoleId) {
-      // Edit existing role
-      try {
-        await apiClient.put(`/CustomRoles/${editingRoleId}`, {
-          roleName: roleName.trim(),
-          description: '',
-          permissions: selectedRoutes
-        });
-        await loadRoles();
-        setIsDrawerOpen(false);
-      } catch (error) {
-        alert(error.response?.data?.message || 'Failed to update custom role.');
-      }
-    } else {
-      // Create new role
-      if (customRoles.some(r => r.roleName.toLowerCase() === roleName.trim().toLowerCase())) {
-        alert('A custom role with this name already exists.');
-        return;
-      }
-      try {
-        await apiClient.post('/CustomRoles', {
-          roleName: roleName.trim(),
-          description: '',
-          permissions: selectedRoutes
-        });
-        await loadRoles();
-        setIsDrawerOpen(false);
-      } catch (error) {
-        alert(error.response?.data?.message || 'Failed to create custom role.');
-      }
-    }
-  };
-
-  const handleDeleteRole = async (roleId) => {
-    if (!window.confirm('Are you sure you want to delete this custom role?')) return;
-
+    setSaving(true);
     try {
-      await apiClient.delete(`/CustomRoles/${roleId}`);
-      await loadRoles();
-    } catch (error) {
-      alert(error.response?.data?.message || 'Failed to delete custom role.');
-    }
+      const payload = { roleName: roleName.trim(), description: '', permissions: selectedRoutes };
+      if (editingRoleId) {
+        await apiClient.put(`/CustomRoles/${editingRoleId}`, payload);
+        showToast('success', `"${roleName.trim()}" updated.`);
+      } else {
+        await apiClient.post('/CustomRoles', payload);
+        showToast('success', `"${roleName.trim()}" created.`);
+      }
+      await loadRoles(); setIsDrawerOpen(false);
+    } catch (e) { showToast('error', e.response?.data?.message || 'Failed to save role.'); }
+    finally { setSaving(false); }
   };
 
-  // Modern Premium Styling Palette
-  const S = {
-    card: {
-      background: '#ffffff',
-      borderRadius: '16px',
-      padding: '24px',
-      boxShadow: '0 4px 20px rgba(0,0,0,0.03)',
-      border: '1px solid #edf2f7',
-      fontFamily: '"Segoe UI", system-ui, sans-serif',
-    },
-    table: {
-      width: '100%',
-      borderCollapse: 'collapse',
-      marginTop: '16px',
-    },
-    th: {
-      textAlign: 'left',
-      padding: '12px 16px',
-      fontSize: '11px',
-      fontWeight: '700',
-      textTransform: 'uppercase',
-      letterSpacing: '0.5px',
-      color: '#718096',
-      borderBottom: '1px solid #edf2f7',
-      background: '#f8fafc',
-    },
-    td: {
-      padding: '16px',
-      borderBottom: '1px solid #edf2f7',
-      fontSize: '13.5px',
-      color: '#2d3748',
-      verticalAlign: 'middle',
-    },
-    badge: {
-      display: 'inline-flex',
-      alignItems: 'center',
-      padding: '4px 10px',
-      borderRadius: '20px',
-      fontSize: '11px',
-      fontWeight: '600',
-      margin: '2px 4px 2px 0',
-      background: '#ebf8ff',
-      color: '#2b6cb0',
-    },
-    badgeSystem: {
-      padding: '3px 8px',
-      borderRadius: '6px',
-      fontSize: '10.5px',
-      fontWeight: '600',
-      background: '#e2e8f0',
-      color: '#4a5568',
-      textTransform: 'uppercase',
-      letterSpacing: '0.5px',
-    },
-    badgeCustom: {
-      padding: '3px 8px',
-      borderRadius: '6px',
-      fontSize: '10.5px',
-      fontWeight: '600',
-      background: '#e6fffa',
-      color: '#319795',
-      textTransform: 'uppercase',
-      letterSpacing: '0.5px',
-    },
-    btnPrimary: {
-      padding: '10px 18px',
-      borderRadius: '8px',
-      background: 'linear-gradient(135deg, #0f52ba 0%, #061a40 100%)',
-      color: '#ffffff',
-      border: 'none',
-      fontWeight: '600',
-      fontSize: '12px',
-      cursor: 'pointer',
-      boxShadow: '0 4px 12px rgba(15, 82, 186, 0.15)',
-      transition: 'opacity 0.2s',
-    },
-    btnSecondary: {
-      padding: '6px 12px',
-      borderRadius: '6px',
-      background: 'transparent',
-      color: '#4a5568',
-      border: '1px solid #cbd5e0',
-      fontWeight: '500',
-      fontSize: '12px',
-      cursor: 'pointer',
-      marginRight: '8px',
-    },
-    btnDanger: {
-      padding: '6px 12px',
-      borderRadius: '6px',
-      background: '#fff5f5',
-      color: '#e53e3e',
-      border: '1px solid #feb2b2',
-      fontWeight: '500',
-      fontSize: '12px',
-      cursor: 'pointer',
-    },
-    drawer: {
-      position: 'fixed',
-      right: isDrawerOpen ? 0 : '-420px',
-      top: 0,
-      width: '380px',
-      height: '100%',
-      background: '#ffffff',
-      boxShadow: '-4px 0 24px rgba(0,0,0,0.1)',
-      transition: 'right 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
-      zIndex: 1000,
-      display: 'flex',
-      flexDirection: 'column',
-      padding: '24px',
-      borderLeft: '1px solid #e2e8f0',
-    },
-    overlay: {
-      position: 'fixed',
-      top: 0,
-      left: 0,
-      width: '100%',
-      height: '100%',
-      background: 'rgba(10, 22, 40, 0.4)',
-      backdropFilter: 'blur(2px)',
-      display: isDrawerOpen ? 'block' : 'none',
-      zIndex: 999,
-    }
+  const handleDeleteConfirmed = async () => {
+    const { roleId, roleName: rn } = confirm; setConfirm(null);
+    try { await apiClient.delete(`/CustomRoles/${roleId}`); await loadRoles(); showToast('success', `"${rn}" deleted.`); }
+    catch (e) { showToast('error', e.response?.data?.message || 'Failed to delete role.'); }
   };
+
+  // count granted modules per role
+  const grantCount = (role) => (role.allowedRoutes || []).filter(r => NAV_ITEMS.some(n => n.route === r)).length;
 
   return (
-    <div style={S.card}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
+    <div style={{ fontFamily:'"Inter","Segoe UI",system-ui,sans-serif' }}>
+
+      {/* ── Header bar ── */}
+      <div style={{ display:'flex', justifyContent:'space-between', alignItems:'flex-start', marginBottom:'24px', flexWrap:'wrap', gap:'12px' }}>
         <div>
-          <h2 style={{ fontSize: '18px', fontWeight: '700', color: '#1a202c', margin: 0 }}>Roles & System Permissions</h2>
-          <p style={{ fontSize: '12px', color: '#718096', marginTop: '4px' }}>
-            Define custom roles and manually delegate access permissions to side-navigation paths.
+          <h2 style={{ fontSize:'17px', fontWeight:800, color:NAVY, margin:0, letterSpacing:'-0.2px' }}>Roles &amp; Permissions Matrix</h2>
+          <p style={{ fontSize:'12px', color:'#64748b', marginTop:'4px', fontWeight:500 }}>
+            Access control across all modules — tick means access granted.
           </p>
         </div>
-        <button style={S.btnPrimary} onClick={handleOpenCreate}>
-          + Create Custom Role
+        <button
+          onClick={openCreate}
+          style={{ display:'flex',alignItems:'center',gap:'7px',padding:'10px 18px',borderRadius:'10px',border:'none',background:`linear-gradient(135deg,${NAVY} 0%,#1e3a5f 100%)`,color:'white',fontWeight:700,fontSize:'12px',cursor:'pointer',boxShadow:'0 4px 14px rgba(10,22,40,0.2)',transition:'box-shadow 0.15s' }}
+          onMouseEnter={e=>e.currentTarget.style.boxShadow='0 6px 20px rgba(10,22,40,0.32)'}
+          onMouseLeave={e=>e.currentTarget.style.boxShadow='0 4px 14px rgba(10,22,40,0.2)'}
+        >
+          <span style={{ fontSize:'17px',lineHeight:1 }}>+</span> Create Custom Role
         </button>
       </div>
 
-      <div style={{ overflowX: 'auto' }}>
-        <table style={S.table}>
-          <thead>
-            <tr>
-              <th style={S.th}>Role Name</th>
-              <th style={S.th}>Scope</th>
-              <th style={S.th}>Permitted Side-Navs</th>
-              <th style={S.th} style={{ ...S.th, width: '140px', textAlign: 'right' }}>Actions</th>
-            </tr>
-          </thead>
-          <tbody>
-            {allRoles.map(role => (
-              <tr key={role.roleId}>
-                <td style={{ ...S.td, fontWeight: '600' }}>{role.roleName}</td>
-                <td style={S.td}>
-                  {role.isSystem ? (
-                    <span style={S.badgeSystem}>System Default</span>
-                  ) : (
-                    <span style={S.badgeCustom}>Custom Role</span>
-                  )}
-                </td>
-                <td style={S.td}>
-                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px' }}>
-                    {role.allowedRoutes && role.allowedRoutes.length > 0 ? (
-                      role.allowedRoutes.map(route => {
-                        const nav = NAV_ITEMS.find(n => n.route === route);
-                        return nav ? (
-                          <span key={route} style={S.badge}>
-                            {nav.label}
+      {/* ── Matrix Table ── */}
+      <div style={{ borderRadius:'16px', border:'1px solid #e2e8f0', overflow:'hidden', boxShadow:'0 4px 24px rgba(15,23,42,0.06)' }}>
+        <div style={{ overflowX:'auto' }}>
+          <table style={{ width:'100%', borderCollapse:'collapse', minWidth:'820px' }}>
+
+            {/* ── Column headers (module names) ── */}
+            <thead>
+              <tr>
+                {/* Sticky role-name header cell */}
+                <th style={{
+                  position:'sticky', left:0, zIndex:3,
+                  background:`linear-gradient(135deg,${NAVY} 0%,#1e3a5f 100%)`,
+                  padding:'18px 20px', textAlign:'left', minWidth:'200px',
+                  borderRight:'1px solid rgba(255,255,255,0.1)',
+                }}>
+                  <div style={{ fontSize:'10px',fontWeight:700,color:GOLD,letterSpacing:'1.2px',textTransform:'uppercase' }}>Role</div>
+                  <div style={{ fontSize:'12px',fontWeight:600,color:'rgba(255,255,255,0.55)',marginTop:'2px' }}>
+                    {allRoles.length} roles · {NAV_ITEMS.length} modules
+                  </div>
+                </th>
+
+                {/* One column per nav module */}
+                {NAV_ITEMS.map((item, i) => (
+                  <th key={item.route} style={{
+                    background: i % 2 === 0 ? '#0d1f38' : '#0a1628',
+                    padding:'12px 8px', minWidth:'88px', textAlign:'center',
+                    borderRight:'1px solid rgba(255,255,255,0.06)',
+                  }}>
+                    <div style={{ fontSize:'10px',fontWeight:700,color:'rgba(255,255,255,0.75)',letterSpacing:'0.3px',lineHeight:1.3,whiteSpace:'nowrap' }}>
+                      {item.label}
+                    </div>
+                  </th>
+                ))}
+
+                {/* Actions column */}
+                <th style={{
+                  position:'sticky', right:0, zIndex:3,
+                  background:`linear-gradient(135deg,#1e3a5f 0%,${NAVY} 100%)`,
+                  padding:'12px 16px', minWidth:'100px', textAlign:'center',
+                  borderLeft:'1px solid rgba(255,255,255,0.1)',
+                }}>
+                  <div style={{ fontSize:'10px',fontWeight:700,color:GOLD,letterSpacing:'1.2px',textTransform:'uppercase' }}>Actions</div>
+                </th>
+              </tr>
+            </thead>
+
+            <tbody>
+              {allRoles.map((role, rowIdx) => {
+                const isSystem = role.isSystem;
+                const color = isSystem ? (SYSTEM_ROLE_COLORS[role.roleId] || SYSTEM_ROLE_COLORS.admin) : null;
+                const granted = grantCount(role);
+                const isEven = rowIdx % 2 === 0;
+
+                return (
+                  <tr
+                    key={role.roleId}
+                    style={{ transition:'background 0.12s' }}
+                    onMouseEnter={e => { e.currentTarget.style.background='#f0f6ff'; }}
+                    onMouseLeave={e => { e.currentTarget.style.background='transparent'; }}
+                  >
+                    {/* ── Role name cell (sticky) ── */}
+                    <td style={{
+                      position:'sticky', left:0, zIndex:2,
+                      background: isEven ? '#ffffff' : '#f8fafc',
+                      padding:'14px 20px', borderBottom:'1px solid #f1f5f9',
+                      borderRight:'2px solid #e2e8f0',
+                    }}>
+                      <div style={{ display:'flex', alignItems:'center', gap:'11px' }}>
+                        {/* Color dot / avatar */}
+                        <div style={{
+                          width:'36px', height:'36px', borderRadius:'10px', flexShrink:0,
+                          background: isSystem ? color.bg : 'linear-gradient(135deg,#64748b,#475569)',
+                          display:'flex', alignItems:'center', justifyContent:'center',
+                          boxShadow:'0 2px 8px rgba(0,0,0,0.12)',
+                        }}>
+                          <span style={{ fontSize:'13px', fontWeight:900, color: isSystem ? color.text : '#e2e8f0' }}>
+                            {role.roleName.charAt(0).toUpperCase()}
                           </span>
-                        ) : null;
-                      })
-                    ) : (
-                      <span style={{ fontSize: '12px', color: '#a0aec0', fontStyle: 'italic' }}>No access granted</span>
-                    )}
+                        </div>
+                        <div>
+                          <div style={{ fontWeight:800, fontSize:'13px', color:NAVY, lineHeight:1.2 }}>
+                            {role.roleName}
+                          </div>
+                          <div style={{ display:'flex', alignItems:'center', gap:'5px', marginTop:'3px' }}>
+                            {isSystem ? (
+                              <span style={{ fontSize:'9.5px',fontWeight:700,color:'#64748b',background:'#f1f5f9',border:'1px solid #e2e8f0',borderRadius:'4px',padding:'1px 6px',letterSpacing:'0.5px',textTransform:'uppercase' }}>
+                                🔒 System
+                              </span>
+                            ) : (
+                              <span style={{ fontSize:'9.5px',fontWeight:700,color:'#0d9488',background:'#f0fdfa',border:'1px solid #99f6e4',borderRadius:'4px',padding:'1px 6px',letterSpacing:'0.5px',textTransform:'uppercase' }}>
+                                ✦ Custom
+                              </span>
+                            )}
+                            <span style={{ fontSize:'10px',color:'#94a3b8',fontWeight:600 }}>
+                              {granted}/{NAV_ITEMS.length} modules
+                            </span>
+                          </div>
+                        </div>
+                      </div>
+                    </td>
+
+                    {/* ── Access cells ── */}
+                    {NAV_ITEMS.map((item, colIdx) => {
+                      const access = hasAccess(role, item.route);
+                      return (
+                        <td key={item.route} style={{
+                          textAlign:'center', padding:'12px 6px',
+                          borderBottom:'1px solid #f1f5f9',
+                          borderRight:'1px solid #f1f5f9',
+                          background: access
+                            ? (colIdx % 2 === 0 ? '#f0fdf4' : '#ecfdf5')
+                            : (colIdx % 2 === 0 ? 'transparent' : '#fafbfc'),
+                        }}>
+                          {access ? (
+                            <div style={{
+                              display:'inline-flex', alignItems:'center', justifyContent:'center',
+                              width:'26px', height:'26px', borderRadius:'50%',
+                              background:'linear-gradient(135deg,#16a34a,#15803d)',
+                              boxShadow:'0 2px 6px rgba(22,163,74,0.35)',
+                            }}>
+                              <span style={{ color:'white',fontSize:'13px',fontWeight:900,lineHeight:1 }}>✓</span>
+                            </div>
+                          ) : (
+                            <div style={{
+                              display:'inline-flex', alignItems:'center', justifyContent:'center',
+                              width:'26px', height:'26px', borderRadius:'50%',
+                              background:'#f1f5f9',
+                            }}>
+                              <span style={{ color:'#cbd5e1',fontSize:'13px',fontWeight:700,lineHeight:1 }}>✕</span>
+                            </div>
+                          )}
+                        </td>
+                      );
+                    })}
+
+                    {/* ── Actions cell (sticky right) ── */}
+                    <td style={{
+                      position:'sticky', right:0, zIndex:2,
+                      background: isEven ? '#ffffff' : '#f8fafc',
+                      borderBottom:'1px solid #f1f5f9',
+                      borderLeft:'2px solid #e2e8f0',
+                      padding:'10px 14px', textAlign:'center',
+                    }}>
+                      {isSystem ? (
+                        <span style={{ fontSize:'11px',color:'#cbd5e1',fontStyle:'italic',fontWeight:500 }}>Read-only</span>
+                      ) : (
+                        <div style={{ display:'flex', gap:'6px', justifyContent:'center' }}>
+                          <button
+                            onClick={() => openEdit(role)}
+                            title="Edit role"
+                            style={{ width:'30px',height:'30px',borderRadius:'8px',border:'1px solid #e2e8f0',background:'white',cursor:'pointer',fontSize:'13px',display:'flex',alignItems:'center',justifyContent:'center',transition:'all 0.14s' }}
+                            onMouseEnter={e=>{ e.currentTarget.style.background='#eff6ff'; e.currentTarget.style.borderColor='#bfdbfe'; }}
+                            onMouseLeave={e=>{ e.currentTarget.style.background='white'; e.currentTarget.style.borderColor='#e2e8f0'; }}
+                          >✏️</button>
+                          <button
+                            onClick={() => setConfirm({ roleId: role.roleId, roleName: role.roleName })}
+                            title="Delete role"
+                            style={{ width:'30px',height:'30px',borderRadius:'8px',border:'1px solid #fecaca',background:'#fef2f2',cursor:'pointer',fontSize:'13px',display:'flex',alignItems:'center',justifyContent:'center',transition:'all 0.14s' }}
+                            onMouseEnter={e=>{ e.currentTarget.style.background='#fee2e2'; }}
+                            onMouseLeave={e=>{ e.currentTarget.style.background='#fef2f2'; }}
+                          >🗑️</button>
+                        </div>
+                      )}
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+
+            {/* ── Legend footer row ── */}
+            <tfoot>
+              <tr>
+                <td colSpan={NAV_ITEMS.length + 2} style={{ background:'#f8fafc',padding:'10px 20px',borderTop:'1px solid #e2e8f0' }}>
+                  <div style={{ display:'flex',alignItems:'center',gap:'20px',flexWrap:'wrap' }}>
+                    <span style={{ fontSize:'11px',fontWeight:700,color:'#94a3b8',letterSpacing:'0.5px',textTransform:'uppercase' }}>Legend</span>
+                    <span style={{ display:'flex',alignItems:'center',gap:'6px',fontSize:'11.5px',color:'#475569',fontWeight:600 }}>
+                      <span style={{ width:'18px',height:'18px',borderRadius:'50%',background:'linear-gradient(135deg,#16a34a,#15803d)',display:'inline-flex',alignItems:'center',justifyContent:'center',color:'white',fontSize:'10px',fontWeight:900 }}>✓</span>
+                      Access granted
+                    </span>
+                    <span style={{ display:'flex',alignItems:'center',gap:'6px',fontSize:'11.5px',color:'#475569',fontWeight:600 }}>
+                      <span style={{ width:'18px',height:'18px',borderRadius:'50%',background:'#f1f5f9',display:'inline-flex',alignItems:'center',justifyContent:'center',color:'#cbd5e1',fontSize:'10px',fontWeight:900 }}>✕</span>
+                      No access
+                    </span>
+                    <span style={{ display:'flex',alignItems:'center',gap:'6px',fontSize:'11.5px',color:'#475569',fontWeight:600 }}>
+                      <span style={{ fontSize:'10px',fontWeight:700,color:'#64748b',background:'#f1f5f9',border:'1px solid #e2e8f0',borderRadius:'4px',padding:'1px 6px' }}>🔒 System</span>
+                      Built-in role (read-only)
+                    </span>
+                    <span style={{ display:'flex',alignItems:'center',gap:'6px',fontSize:'11.5px',color:'#475569',fontWeight:600 }}>
+                      <span style={{ fontSize:'10px',fontWeight:700,color:'#0d9488',background:'#f0fdfa',border:'1px solid #99f6e4',borderRadius:'4px',padding:'1px 6px' }}>✦ Custom</span>
+                      Your defined role
+                    </span>
                   </div>
                 </td>
-                <td style={{ ...S.td, textAlign: 'right' }}>
-                  {role.isSystem ? (
-                    <span style={{ fontSize: '11px', color: '#a0aec0', fontStyle: 'italic' }}>ReadOnly</span>
-                  ) : (
-                    <div>
-                      <button style={S.btnSecondary} onClick={() => handleOpenEdit(role)}>Edit</button>
-                      <button style={S.btnDanger} onClick={() => handleDeleteRole(role.roleId)}>Delete</button>
-                    </div>
-                  )}
-                </td>
               </tr>
-            ))}
-          </tbody>
-        </table>
+            </tfoot>
+          </table>
+        </div>
       </div>
 
-      {/* Drawer Overlay */}
-      <div style={S.overlay} onClick={() => setIsDrawerOpen(false)} />
+      {/* ── Drawer overlay ── */}
+      {isDrawerOpen && (
+        <div onClick={() => setIsDrawerOpen(false)} style={{ position:'fixed',inset:0,zIndex:2000,background:'rgba(10,22,40,0.45)',backdropFilter:'blur(4px)' }} />
+      )}
 
-      {/* Slide-out Drawer */}
-      <div style={S.drawer}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid #edf2f7', paddingBottom: '16px', marginBottom: '20px' }}>
-          <h3 style={{ fontSize: '16px', fontWeight: '700', color: '#1a202c', margin: 0 }}>
-            {editingRoleId ? 'Modify Custom Role' : 'Create Custom Role'}
-          </h3>
-          <button 
-            onClick={() => setIsDrawerOpen(false)}
-            style={{ border: 'none', background: 'transparent', fontSize: '18px', cursor: 'pointer', color: '#a0aec0' }}
-          >
-            &times;
-          </button>
+      {/* ── Slide-out Drawer ── */}
+      <div style={{
+        position:'fixed', top:0, right:0, width:'420px', maxWidth:'100vw', height:'100%',
+        background:'white', zIndex:2001, display:'flex', flexDirection:'column',
+        boxShadow:'-12px 0 40px rgba(10,22,40,0.18)',
+        transform: isDrawerOpen ? 'translateX(0)' : 'translateX(100%)',
+        transition:'transform 0.28s cubic-bezier(0.16,1,0.3,1)',
+      }}>
+        {/* Hero header */}
+        <div style={{ padding:'22px 24px 20px', background:`linear-gradient(135deg,${NAVY} 0%,#1e3a5f 100%)`, position:'relative', overflow:'hidden', flexShrink:0 }}>
+          <div style={{ position:'absolute',top:0,left:0,right:0,height:'3px',background:`linear-gradient(90deg,transparent,${GOLD} 30%,${GOLD2} 50%,${GOLD} 70%,transparent)` }} />
+          <div style={{ display:'flex',justifyContent:'space-between',alignItems:'flex-start' }}>
+            <div>
+              <div style={{ fontSize:'10px',fontWeight:700,color:GOLD,letterSpacing:'1.5px',textTransform:'uppercase',marginBottom:'4px' }}>
+                {editingRoleId ? 'Edit Role' : 'New Role'}
+              </div>
+              <h3 style={{ margin:0,fontSize:'18px',fontWeight:800,color:'white',letterSpacing:'-0.2px' }}>
+                {editingRoleId ? 'Modify Custom Role' : 'Create Custom Role'}
+              </h3>
+              <p style={{ margin:'5px 0 0',fontSize:'12px',color:'rgba(255,255,255,0.5)',fontWeight:500 }}>
+                Name the role and select the modules it can access.
+              </p>
+            </div>
+            <button onClick={() => setIsDrawerOpen(false)} style={{ width:'32px',height:'32px',borderRadius:'50%',background:'rgba(255,255,255,0.1)',border:'1px solid rgba(255,255,255,0.15)',color:'white',cursor:'pointer',fontSize:'16px',display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0 }}>×</button>
+          </div>
         </div>
 
-        <div style={{ flex: 1, overflowY: 'auto' }}>
+        {/* Drawer body */}
+        <div style={{ flex:1, overflowY:'auto', padding:'22px 24px', display:'flex', flexDirection:'column', gap:'20px' }}>
+
           {/* Role Name */}
-          <div style={{ marginBottom: '20px' }}>
-            <label style={{ display: 'block', fontSize: '12px', fontWeight: '600', color: '#4a5568', marginBottom: '8px' }}>
-              Role Name
+          <div>
+            <label style={{ display:'block',fontSize:'11px',fontWeight:700,color:'#475569',letterSpacing:'0.5px',textTransform:'uppercase',marginBottom:'7px' }}>
+              Role Name <span style={{ color:'#dc2626' }}>*</span>
             </label>
-            <input 
-              type="text" 
-              placeholder="e.g. Night Shift Intake"
+            <input
+              ref={nameRef} type="text"
+              placeholder="e.g. Night Shift, Front Desk, Auditor"
               value={roleName}
-              onChange={(e) => setRoleName(e.target.value)}
-              style={{
-                width: '100%',
-                padding: '10px 14px',
-                borderRadius: '8px',
-                border: '1px solid #cbd5e0',
-                fontSize: '13.5px',
-                outline: 'none',
-                boxSizing: 'border-box'
-              }}
+              onChange={e => setRoleName(e.target.value)}
+              onKeyDown={e => e.key === 'Enter' && handleSaveRole()}
+              style={{ width:'100%',padding:'11px 14px',borderRadius:'10px',border:'1.5px solid #e2e8f0',fontSize:'13px',outline:'none',boxSizing:'border-box',color:NAVY,fontWeight:600,transition:'border-color 0.15s',fontFamily:'inherit' }}
+              onFocus={e => e.target.style.borderColor='#0f52ba'}
+              onBlur={e => e.target.style.borderColor='#e2e8f0'}
             />
           </div>
 
-          {/* Route Checklist */}
+          {/* Module Access Checklist */}
           <div>
-            <label style={{ display: 'block', fontSize: '12px', fontWeight: '600', color: '#4a5568', marginBottom: '12px' }}>
-              Assign Side-Navigation Access
-            </label>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-              {NAV_ITEMS.map(item => (
-                <label 
-                  key={item.route}
-                  style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '10px',
-                    padding: '12px',
-                    borderRadius: '8px',
-                    border: '1px solid #edf2f7',
-                    background: selectedRoutes.includes(item.route) ? '#f0fdf4' : '#ffffff',
-                    cursor: 'pointer',
-                    transition: 'all 0.2s',
-                    fontSize: '13px',
-                    fontWeight: selectedRoutes.includes(item.route) ? '600' : '400'
-                  }}
-                >
-                  <input 
-                    type="checkbox"
-                    checked={selectedRoutes.includes(item.route)}
-                    onChange={() => handleToggleRoute(item.route)}
-                    style={{ cursor: 'pointer' }}
-                  />
-                  <span>{item.label}</span>
-                </label>
-              ))}
+            <div style={{ display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:'10px' }}>
+              <label style={{ fontSize:'11px',fontWeight:700,color:'#475569',letterSpacing:'0.5px',textTransform:'uppercase' }}>
+                Module Access
+              </label>
+              <div style={{ display:'flex',gap:'8px' }}>
+                <button onClick={() => setSelectedRoutes(NAV_ITEMS.map(n=>n.route))} style={{ fontSize:'11px',fontWeight:700,color:'#3b82f6',background:'#eff6ff',border:'1px solid #bfdbfe',borderRadius:'6px',padding:'3px 9px',cursor:'pointer' }}>
+                  All
+                </button>
+                <button onClick={() => setSelectedRoutes([])} style={{ fontSize:'11px',fontWeight:700,color:'#64748b',background:'#f1f5f9',border:'1px solid #e2e8f0',borderRadius:'6px',padding:'3px 9px',cursor:'pointer' }}>
+                  None
+                </button>
+              </div>
+            </div>
+
+            <div style={{ display:'flex',flexDirection:'column',gap:'6px' }}>
+              {NAV_ITEMS.map(item => {
+                const checked = selectedRoutes.includes(item.route);
+                return (
+                  <label key={item.route} style={{ display:'flex',alignItems:'center',gap:'12px',padding:'10px 13px',borderRadius:'10px',cursor:'pointer',border:`1.5px solid ${checked?'#bfdbfe':'#e8edf2'}`,background:checked?'#eff6ff':'white',transition:'all 0.14s',userSelect:'none' }}>
+                    {/* Custom checkbox */}
+                    <div style={{ width:'18px',height:'18px',borderRadius:'5px',flexShrink:0,border:`2px solid ${checked?'#3b82f6':'#cbd5e1'}`,background:checked?'#3b82f6':'white',display:'flex',alignItems:'center',justifyContent:'center',transition:'all 0.14s' }}>
+                      {checked && <span style={{ color:'white',fontSize:'11px',fontWeight:900 }}>✓</span>}
+                    </div>
+                    <input type="checkbox" checked={checked} onChange={() => setSelectedRoutes(prev => prev.includes(item.route) ? prev.filter(r=>r!==item.route) : [...prev,item.route])} style={{ position:'absolute',opacity:0,width:0,height:0 }} />
+                    <div style={{ flex:1 }}>
+                      <div style={{ fontSize:'13px',fontWeight:checked?700:500,color:checked?'#1d4ed8':'#374151' }}>{item.label}</div>
+                      <div style={{ fontSize:'10.5px',color:'#94a3b8',marginTop:'1px' }}>{item.route}</div>
+                    </div>
+                  </label>
+                );
+              })}
+            </div>
+
+            {/* Count summary */}
+            <div style={{ marginTop:'10px',padding:'8px 13px',borderRadius:'8px',background:'#f8fafc',border:'1px solid #e2e8f0',display:'flex',alignItems:'center',gap:'8px' }}>
+              <span style={{ fontSize:'13px' }}>📋</span>
+              <span style={{ fontSize:'12px',fontWeight:600,color:'#475569' }}>
+                {selectedRoutes.length === 0 ? 'No modules selected — role will have no access.' : `${selectedRoutes.length} of ${NAV_ITEMS.length} modules selected`}
+              </span>
             </div>
           </div>
         </div>
 
-        {/* Footer Actions */}
-        <div style={{ borderTop: '1px solid #edf2f7', paddingTop: '16px', display: 'flex', justifyContent: 'flex-end', gap: '10px', marginTop: '20px' }}>
-          <button 
-            style={{ ...S.btnSecondary, margin: 0 }} 
-            onClick={() => setIsDrawerOpen(false)}
-          >
+        {/* Footer */}
+        <div style={{ padding:'16px 24px',borderTop:'1px solid #e8edf2',display:'flex',gap:'10px',background:'white',flexShrink:0 }}>
+          <button onClick={() => setIsDrawerOpen(false)} style={{ flex:1,padding:'11px',borderRadius:'10px',border:'1.5px solid #e2e8f0',background:'white',fontWeight:700,fontSize:'13px',cursor:'pointer',color:'#475569',fontFamily:'inherit' }}
+            onMouseEnter={e=>e.currentTarget.style.background='#f8fafc'} onMouseLeave={e=>e.currentTarget.style.background='white'}>
             Cancel
           </button>
-          <button 
-            style={S.btnPrimary} 
-            onClick={handleSaveRole}
-          >
-            {editingRoleId ? 'Save Changes' : 'Create Role'}
+          <button onClick={handleSaveRole} disabled={saving} style={{ flex:2,padding:'11px',borderRadius:'10px',border:'none',background:saving?'#e2e8f0':`linear-gradient(135deg,${NAVY},#1e3a5f)`,color:saving?'#94a3b8':'white',fontWeight:800,fontSize:'13px',cursor:saving?'not-allowed':'pointer',fontFamily:'inherit',boxShadow:saving?'none':'0 4px 14px rgba(10,22,40,0.25)',transition:'all 0.15s' }}>
+            {saving ? 'Saving…' : (editingRoleId ? '💾 Save Changes' : '✨ Create Role')}
           </button>
         </div>
       </div>
+
+      <ConfirmDialog
+        open={!!confirm}
+        title="Delete Role"
+        message={`Delete "${confirm?.roleName}"? This cannot be undone and users with this role will lose access.`}
+        onConfirm={handleDeleteConfirmed}
+        onCancel={() => setConfirm(null)}
+      />
+      <Toast toast={toast} onClose={() => setToast(null)} />
     </div>
   );
 }

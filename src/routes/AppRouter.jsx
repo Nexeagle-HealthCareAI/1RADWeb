@@ -25,27 +25,37 @@ import DicomBridgePage from '../pages/DicomBridgePage';
 import ConfigurationPage from '../pages/ConfigurationPage';
 import OperationsBoard from '../pages/OperationsBoard';
 
+import { getRolePermissions } from '../data/roles';
+
 function RootRedirect() {
-  const { currentUser } = useAuth();
+  const { currentUser, activeCenter } = useAuth();
   const location = useLocation();
   
   if (!currentUser) return <Navigate to="/login" replace />;
   
   const userRoles = currentUser.roles || [];
   
-  // Find first role with a defined home
-  const homeRole = userRoles.find(role => ROLE_HOME[role]);
-  const homePath = ROLE_HOME[homeRole];
-
-  if (!homePath) {
-    console.warn('User has no assigned dashboard home for roles:', userRoles);
-    // If we are already at /access-denied, don't redirect again
-    if (location.pathname === '/access-denied') return null;
-    return <Navigate to="/access-denied" replace />;
+  // 1. Try to find the standard role home path
+  let homePath = null;
+  const standardHomeRole = userRoles.find(role => ROLE_HOME[role]);
+  if (standardHomeRole) {
+    homePath = ROLE_HOME[standardHomeRole];
   }
 
-  // Prevent infinite loop if home is /
-  if (homePath === '/') {
+  // 2. If no standard home (e.g., custom role), pick the first permitted route
+  if (!homePath) {
+    for (const role of userRoles) {
+      const permissions = getRolePermissions(role, activeCenter?.id);
+      if (permissions && permissions.length > 0) {
+        homePath = permissions[0];
+        break;
+      }
+    }
+  }
+
+  if (!homePath || homePath === '/') {
+    console.warn('User has no permitted modules assigned:', userRoles);
+    if (location.pathname === '/access-denied') return null;
     return <Navigate to="/access-denied" replace />;
   }
 
@@ -75,7 +85,7 @@ export default function AppRouter() {
       <Route
         path="/dicom-viewer"
         element={
-          <ProtectedRoute allowedRoles={['admindoctor', 'doctor', 'technician']}>
+          <ProtectedRoute allowedRoles={['admindoctor', 'doctor', 'technician']} moduleRoutes={['/doctor-board', '/technician']}>
             <DicomViewerPage />
           </ProtectedRoute>
         }
@@ -116,7 +126,7 @@ export default function AppRouter() {
         <Route
           path="/staff/dashboard"
           element={
-            <ProtectedRoute allowedRoles={['admindoctor', 'admin']}>
+            <ProtectedRoute allowedRoles={['admindoctor', 'admin']} moduleRoutes={['/staff']}>
               <StaffDashboardPage />
             </ProtectedRoute>
           }
@@ -156,7 +166,7 @@ export default function AppRouter() {
         <Route
           path="/viewer"
           element={
-            <ProtectedRoute allowedRoles={['admindoctor', 'doctor', 'technician']}>
+            <ProtectedRoute allowedRoles={['admindoctor', 'doctor', 'technician']} moduleRoutes={['/doctor-board', '/technician']}>
               <ViewerPage />
             </ProtectedRoute>
           }
@@ -164,7 +174,7 @@ export default function AppRouter() {
         <Route
           path="/reporting/:id"
           element={
-            <ProtectedRoute allowedRoles={['admindoctor', 'doctor', 'technician']}>
+            <ProtectedRoute allowedRoles={['admindoctor', 'doctor', 'technician']} moduleRoutes={['/doctor-board', '/technician']}>
               <ReportingPage />
             </ProtectedRoute>
           }
@@ -204,7 +214,7 @@ export default function AppRouter() {
         <Route
           path="/patient-timeline/:appointmentId"
           element={
-            <ProtectedRoute allowedRoles={['admindoctor', 'doctor', 'technician']}>
+            <ProtectedRoute allowedRoles={['admindoctor', 'doctor', 'technician']} moduleRoutes={['/doctor-board', '/technician', '/appointment-board', '/admin-board']}>
               <PatientTimelinePage />
             </ProtectedRoute>
           }
