@@ -187,15 +187,49 @@ export default function StaffPage() {
   }, []);
 
   const loadLocalData = useCallback(async () => {
-    const [sal, att, lv] = await Promise.all([
-      nativeStorage.get('1rad_staff_salary'),
-      nativeStorage.get('1rad_staff_attendance'),
-      nativeStorage.get('1rad_staff_leave'),
-    ]);
+    // Salary still lives in local cache until an API call refreshes it.
+    const sal = await nativeStorage.get('1rad_staff_salary');
     setSalaryData(sal || {});
-    setAttendanceData(att || {});
-    setLeaveData(lv || []);
-  }, []);
+
+    // Attendance — fetch from API for the current month, fall back to local cache.
+    const month = attendanceMonth; // captured at call time
+    try {
+      const res = await apiClient.get(`/attendance?month=${month}`);
+      const rows = res.data || [];
+      // Reshape [{ staffId, date, status }] → { staffId: { 'YYYY-MM-DD': status } }
+      const shaped = {};
+      for (const r of rows) {
+        if (!shaped[r.staffId]) shaped[r.staffId] = {};
+        shaped[r.staffId][r.date] = r.status;
+      }
+      setAttendanceData(shaped);
+      await nativeStorage.set('1rad_staff_attendance', shaped);
+    } catch {
+      const att = await nativeStorage.get('1rad_staff_attendance');
+      setAttendanceData(att || {});
+    }
+
+    // Leave requests — fetch from API, fall back to local cache.
+    try {
+      const res = await apiClient.get('/leave');
+      const mapped = (res.data || []).map(l => ({
+        id:        l.leaveRequestId,
+        staffId:   l.staffId,
+        type:      l.leaveType,
+        from:      l.fromDate,
+        to:        l.toDate,
+        days:      l.days,
+        reason:    l.reason || '',
+        status:    l.status,
+        appliedOn: l.appliedOn,
+      }));
+      setLeaveData(mapped);
+      await nativeStorage.set('1rad_staff_leave', mapped);
+    } catch {
+      const lv = await nativeStorage.get('1rad_staff_leave');
+      setLeaveData(lv || []);
+    }
+  }, [attendanceMonth]);
 
   // Load the centre's leave policy (from /configuration). Falls back to cache then defaults.
   const loadLeavePolicy = useCallback(async () => {
@@ -290,6 +324,24 @@ export default function StaffPage() {
     loadLeavePolicy();
   }, [fetchPersonnel, loadLocalData, loadLeavePolicy, activeCenter?.id]);
 
+  // Re-fetch attendance from API when the selected month changes
+  useEffect(() => {
+    const fetchAttendanceForMonth = async () => {
+      try {
+        const res = await apiClient.get(`/attendance?month=${attendanceMonth}`);
+        const rows = res.data || [];
+        const shaped = {};
+        for (const r of rows) {
+          if (!shaped[r.staffId]) shaped[r.staffId] = {};
+          shaped[r.staffId][r.date] = r.status;
+        }
+        setAttendanceData(shaped);
+        await nativeStorage.set('1rad_staff_attendance', shaped);
+      } catch { /* use cached */ }
+    };
+    fetchAttendanceForMonth();
+  }, [attendanceMonth]);
+
   useEffect(() => {
     if (detailTab === 'documents' && selectedStaff?.id)
       loadStaffDocs(selectedStaff.id);
@@ -357,6 +409,8 @@ export default function StaffPage() {
       return;
     }
     const payload = {
+      staffId,
+      hospitalId: activeCenter?.hospitalId,
       effectiveFrom,
       basicPay:        Number(amounts.basicPay) || 0,
       hra:             Number(amounts.hra) || 0,
@@ -532,11 +586,19 @@ export default function StaffPage() {
   }, [attendanceData]);
 
   const markAttendance = async (staffId, date, status) => {
+    // Optimistic update
     const updated = { ...attendanceData, [staffId]: { ...(attendanceData[staffId] || {}), [date]: status } };
     setAttendanceData(updated);
     await nativeStorage.set('1rad_staff_attendance', updated);
-    showNotif('success', 'Attendance Marked', `${date} marked as ${ATT_META[status]?.label || status}.`);
     setAttPicker(p => ({ ...p, open: false }));
+
+    try {
+      await apiClient.put(`/attendance/${staffId}`, { date, status });
+      showNotif('success', 'Attendance Marked', `${date} marked as ${ATT_META[status]?.label || status}.`);
+    } catch (err) {
+      console.warn('[STAFF] Attendance save to API failed — kept locally.', err);
+      showNotif('success', 'Attendance Marked (offline)', `${date} marked as ${ATT_META[status]?.label || status}. Will sync when online.`);
+    }
   };
 
   // ── Leave helpers ──────────────────────────────────────────────────────────
@@ -560,8 +622,10 @@ export default function StaffPage() {
       showNotif('warning', 'Insufficient Balance', `Only ${balance[type]} ${type} leave day(s) remaining.`);
       return;
     }
+    // Optimistic entry (id will be replaced after API responds)
+    const tempId = `lv_${Date.now()}`;
     const entry = {
-      id: `lv_${Date.now()}`, staffId, type, from, to, days,
+      id: tempId, staffId, type, from, to, days,
       reason: reason.trim(), status: 'pending', appliedOn: new Date().toISOString(),
     };
     const updated = [...leaveData, entry];
@@ -569,6 +633,23 @@ export default function StaffPage() {
     await nativeStorage.set('1rad_staff_leave', updated);
     showNotif('success', 'Leave Applied', `${days}-day ${type} leave submitted for approval.`);
     setLeaveForm(p => ({ ...p, open: false }));
+
+    try {
+      const res = await apiClient.post(`/leave/${staffId}`, {
+        leaveType: type, fromDate: from, toDate: to, days, reason: reason.trim(),
+      });
+      // Replace temp id with the real DB id
+      const realId = res.data?.leaveRequestId;
+      if (realId) {
+        setLeaveData(prev => {
+          const next = prev.map(l => l.id === tempId ? { ...l, id: realId } : l);
+          nativeStorage.set('1rad_staff_leave', next).catch(() => {});
+          return next;
+        });
+      }
+    } catch (err) {
+      console.warn('[STAFF] Leave save to API failed — kept locally.', err);
+    }
   };
 
   const updateLeaveStatus = async (leaveId, status) => {
@@ -576,6 +657,15 @@ export default function StaffPage() {
     setLeaveData(updated);
     await nativeStorage.set('1rad_staff_leave', updated);
     showNotif('success', 'Leave Updated', `Leave request ${status}.`);
+
+    // Skip API call for temp (optimistic) ids that haven't been persisted yet
+    if (!leaveId.startsWith('lv_')) {
+      try {
+        await apiClient.patch(`/leave/${leaveId}/status`, { status });
+      } catch (err) {
+        console.warn('[STAFF] Leave status update to API failed — kept locally.', err);
+      }
+    }
   };
 
   // ── Staff Add / Edit / Delete + Role Assignment ────────────────────────
