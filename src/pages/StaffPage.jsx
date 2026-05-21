@@ -2021,7 +2021,6 @@ export default function StaffPage() {
       {mainTab === 'leave' && (
         <div style={{ flex: 1, overflowY: 'auto', minHeight: 0, background: 'white', borderRadius: '14px', border: '1px solid #e8edf2', boxShadow: '0 2px 8px rgba(0,0,0,0.04)' }}>
           <LeavePolicyEditor
-            embedded
             hospitalId={activeCenter?.id}
             currentUserName={currentUser?.fullName || currentUser?.email}
           />
