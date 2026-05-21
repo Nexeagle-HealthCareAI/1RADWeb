@@ -1,4 +1,4 @@
-﻿import React, { useState, useMemo, useEffect, useCallback } from 'react';
+import React, { useState, useMemo, useEffect, useCallback } from 'react';
 import apiClient from '../api/apiClient';
 import useAuth from '../auth/useAuth';
 import { ROLE_LABELS } from '../data/roles';
@@ -8,7 +8,7 @@ import LeavePolicyEditor from '../components/LeavePolicyEditor';
 import '../styles/global.css';
 import '../styles/AdminBoard.css';
 
-// â”€â”€â”€ Constants â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ─── Constants ────────────────────────────────────────────────────────────────
 const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
 const TODAY      = new Date();
 const TODAY_STR  = TODAY.toISOString().split('T')[0];
@@ -76,11 +76,11 @@ const TextInput = ({ value, onChange, type = 'text', placeholder, autoFocus }) =
   />
 );
 
-// â”€â”€â”€ Component â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ─── Component ────────────────────────────────────────────────────────────────
 export default function StaffPage() {
   const { currentUser, activeCenter } = useAuth();
 
-  // â”€â”€ Core data â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ── Core data ──────────────────────────────────────────────────────────────
   const [personnel,      setPersonnel]      = useState([]);
   const [loading,        setLoading]        = useState(false);
   const [salaryData,     setSalaryData]     = useState({}); // { staffId: { basicPay, hra, travel, otherAllowances, pfDeduction, tds, otherDeductions, disbursements:[] } }
@@ -97,7 +97,7 @@ export default function StaffPage() {
   const [docsLoadingMap, setDocsLoadingMap] = useState({}); // { staffId: bool }
   const [uploadCategory, setUploadCategory] = useState('Other');
 
-  // â”€â”€ UI state â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ── UI state ───────────────────────────────────────────────────────────────
   const [mainTab,         setMainTab]         = useState('dashboard'); // dashboard | roster | leave
   const [selectedStaff,   setSelectedStaff]   = useState(null);
   const [detailTab,       setDetailTab]       = useState('profile');
@@ -120,7 +120,7 @@ export default function StaffPage() {
     { id: 'upi',    label: 'UPI',           icon: '📱' },
     { id: 'cheque', label: 'Cheque',        icon: '📃' },
   ];
-  const EMPTY_DISB = { mode: 'bank', reference: '', paidOnDate: TODAY_STR, notes: '' };
+  const EMPTY_DISB = { mode: 'bank', reference: '', paidOnDate: TODAY_STR, notes: '', status: 'Paid' };
   const [disbDrawer, setDisbDrawer] = useState({ open: false, month: THIS_MONTH, form: EMPTY_DISB });
 
   // Attendance picker
@@ -153,7 +153,7 @@ export default function StaffPage() {
     return () => window.removeEventListener('resize', h);
   }, []);
 
-  // â”€â”€ Data loading â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ── Data loading ───────────────────────────────────────────────────────────
   const fetchPersonnel = useCallback(async () => {
     try {
       setLoading(true);
@@ -238,6 +238,7 @@ export default function StaffPage() {
         id: d.disbursementId,
         revisionId: d.revisionId,
         month: d.month,
+        status: d.status || 'Paid',
         grossPay: d.grossPay, netPay: d.netPay,
         structureGross: d.structureGross, structureNet: d.structureNet,
         lwpDays: d.lwpDays, lwpDeduction: d.lwpDeduction, perDayRate: d.perDayRate,
@@ -464,7 +465,7 @@ export default function StaffPage() {
   const disburseSalary = async (staffId, month, paymentDetails = {}) => {
     const existing = normalizeStaffSalary(salaryData[staffId]);
     if (existing.disbursements.find(d => d.month === month)) {
-      showNotif('warning', 'Already disbursed', `Salary for ${month} is already marked as paid.`);
+      showNotif('warning', 'Already recorded', `Salary for ${month} is already in the ledger.`);
       return;
     }
     const payroll = computeMonthlyPayroll(staffId, month);
@@ -472,6 +473,7 @@ export default function StaffPage() {
       showNotif('warning', 'No structure', 'Set up a salary structure before disbursing.');
       return;
     }
+    const status = paymentDetails.status === 'Draft' ? 'Draft' : 'Paid';
     const payload = {
       revisionId:       payroll.activeRevision.id,
       month,
@@ -489,18 +491,37 @@ export default function StaffPage() {
       reference:        paymentDetails.reference || null,
       paidOnDate:       paymentDetails.paidOnDate || TODAY_STR,
       notes:            paymentDetails.notes || null,
+      status,
     };
     try {
       await apiClient.post(`/staff/${staffId}/salary/disbursements`, payload);
       await loadStaffSalary(staffId);
-      showNotif('success', 'Salary disbursed', `₹${payroll.proRatedNet.toLocaleString()} marked as paid for ${month}.`);
+      const verb = status === 'Paid' ? 'marked as paid' : 'saved as draft';
+      showNotif('success', `Salary ${status === 'Paid' ? 'disbursed' : 'drafted'}`, `₹${payroll.proRatedNet.toLocaleString()} ${verb} for ${month}.`);
     } catch (err) {
       console.error('[STAFF] Disburse failed', err);
       showNotif('error', 'Disbursement failed', err.response?.data?.message || 'Could not record disbursement.');
     }
   };
 
-  // â”€â”€ Attendance helpers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // Toggle an existing disbursement between Draft and Paid (used from history row + dashboard).
+  const setDisbursementStatus = async (staffId, disbursementId, nextStatus, extra = {}) => {
+    try {
+      await apiClient.patch(`/staff/${staffId}/salary/disbursements/${disbursementId}/status`, {
+        status: nextStatus,
+        paymentMode: extra.mode || null,
+        reference:   extra.reference ?? null,
+        paidOnDate:  extra.paidOnDate || null,
+      });
+      await loadStaffSalary(staffId);
+      showNotif('success', `Marked as ${nextStatus}`, `Status updated successfully.`);
+    } catch (err) {
+      console.error('[STAFF] Status change failed', err);
+      showNotif('error', 'Update failed', err.response?.data?.message || 'Could not change status.');
+    }
+  };
+
+  // ── Attendance helpers ─────────────────────────────────────────────────────
   const getAttSummary = useCallback((staffId, month) => {
     const rec    = attendanceData[staffId] || {};
     const counts = Object.fromEntries(Object.keys(ATT_META).map(k => [k, 0]));
@@ -518,7 +539,7 @@ export default function StaffPage() {
     setAttPicker(p => ({ ...p, open: false }));
   };
 
-  // â”€â”€ Leave helpers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ── Leave helpers ──────────────────────────────────────────────────────────
   const getLeaveBalance = useCallback((staffId) => {
     const year = TODAY.getFullYear();
     const used = Object.fromEntries(LEAVE_TYPES.map(t => [t, 0]));
@@ -664,7 +685,7 @@ export default function StaffPage() {
     }
   };
 
-  // â”€â”€ Computed â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ── Computed ───────────────────────────────────────────────────────────────
   const filteredPersonnel = useMemo(() => {
     const q = search.toLowerCase();
     return personnel.filter(u =>
@@ -687,7 +708,7 @@ export default function StaffPage() {
     };
   }, [personnel, leaveData, getSalaryInfo]);
 
-  // â”€â”€ Role meta â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ── Role meta ──────────────────────────────────────────────────────────────
   const getRoleMeta = (role) => ({
     doctor:       { color: '#0891b2', bg: '#f0faff',  label: 'Doctor'        },
     admindoctor:  { color: '#6366f1', bg: '#f0f5ff',  label: 'Admin Doctor'  },
@@ -712,7 +733,7 @@ export default function StaffPage() {
         sectionColor: '#0f52ba',
         fields: [
           { label: 'Email',     value: staff.email,  accent: '#0f52ba', icon: '✉' },
-          { label: 'Mobile',    value: staff.mobile, accent: '#0d9488', icon: '📱' },
+          { label: 'Mobile',    value: staff.phone,  accent: '#0d9488', icon: '📱' },
         ],
       },
       {
@@ -733,15 +754,15 @@ export default function StaffPage() {
         fields: [
           { label: 'Employee ID',  value: staff.employeeCode,
             accent: '#d4a017', icon: '🪪', mono: true },
-          { label: 'Joining date', value: staff.createdAt
-              ? new Date(staff.createdAt).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })
+          { label: 'Joining date', value: staff.joinDate
+              ? new Date(staff.joinDate).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })
               : null,
             accent: '#6366f1', icon: '📅' },
           { label: 'Status',       value: (staff.status || 'Active'),
             accent: (staff.status || 'active').toLowerCase() === 'inactive' ? '#dc2626' : '#16a34a', icon: '●' },
           { label: 'Department',   value: staff.department,                              accent: '#7c3aed', icon: '🏢' },
           { label: 'Designation',  value: staff.designation,                             accent: '#0891b2', icon: '💼' },
-          { label: 'Employment',   value: staff.employmentType,                          accent: '#16a34a', icon: '🕒' },
+          { label: 'Employment',   value: staff.type,                                    accent: '#16a34a', icon: '🕒' },
         ],
       },
     ];
@@ -1021,16 +1042,19 @@ export default function StaffPage() {
     printWindow.focus();
   };
 
-  const submitDisbursement = async (printAfter) => {
+  const submitDisbursement = async (printAfter, statusOverride) => {
     if (!selectedStaff) return;
     const { mode, reference, paidOnDate, notes } = disbDrawer.form;
-    if ((mode === 'bank' || mode === 'cheque' || mode === 'upi') && !reference.trim()) {
+    const status = statusOverride || disbDrawer.form.status || 'Paid';
+    // Reference is required only when actually paying (status=Paid) via bank/cheque/upi.
+    if (status === 'Paid' && (mode === 'bank' || mode === 'cheque' || mode === 'upi') && !reference.trim()) {
       showNotif('warning', 'Reference required', `Please enter a ${mode === 'cheque' ? 'cheque' : (mode === 'upi' ? 'UPI transaction' : 'bank reference')} number.`);
       return;
     }
     await disburseSalary(selectedStaff.id, disbDrawer.month, {
       mode, reference: reference.trim(), paidOnDate, notes: notes.trim(),
       paidOn: new Date(paidOnDate + 'T00:00:00').toISOString(),
+      status,
     });
     // Compose the disbursal we just inserted for the payslip
     if (printAfter) {
@@ -1077,7 +1101,9 @@ export default function StaffPage() {
 
   const renderSalaryTab = (staff) => {
     const info          = getSalaryInfo(staff.id);
-    const paidThisMonth = info.disbursements.find(x => x.month === THIS_MONTH);
+    const thisMonthDisb = info.disbursements.find(x => x.month === THIS_MONTH);
+    const paidThisMonth = thisMonthDisb && thisMonthDisb.status === 'Paid' ? thisMonthDisb : null;
+    const draftThisMonth = thisMonthDisb && thisMonthDisb.status === 'Draft' ? thisMonthDisb : null;
     const earningRows   = [['Basic Pay', 'basicPay'], ['HRA', 'hra'], ['Travel', 'travel'], ['Other Allow.', 'otherAllowances']];
     const deductRows    = [['PF', 'pfDeduction'], ['TDS', 'tds'], ['Others', 'otherDeductions']];
     const active        = info.activeRevision;
@@ -1207,33 +1233,49 @@ export default function StaffPage() {
         {(() => {
           const monthlyPayroll = computeMonthlyPayroll(staff.id, THIS_MONTH);
           const hasLwp = monthlyPayroll.lwpDays > 0;
+          // 3-state palette: Paid (green), Draft (blue), No record / Pending (amber/orange when LWP)
+          const palette = paidThisMonth
+            ? { border: '#bbf7d0', bg: '#f0fdf4' }
+            : draftThisMonth
+              ? { border: '#bfdbfe', bg: '#eff6ff' }
+              : (hasLwp ? { border: '#fed7aa', bg: '#fff7ed' } : { border: '#fde68a', bg: '#fffbeb' });
           return (
-            <div style={{ borderRadius: '12px', border: `1px solid ${paidThisMonth ? '#bbf7d0' : (hasLwp ? '#fed7aa' : '#fde68a')}`, background: paidThisMonth ? '#f0fdf4' : (hasLwp ? '#fff7ed' : '#fffbeb'), marginBottom: '22px', overflow: 'hidden' }}>
+            <div style={{ borderRadius: '12px', border: `1px solid ${palette.border}`, background: palette.bg, marginBottom: '22px', overflow: 'hidden' }}>
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '14px 18px' }}>
                 <div>
                   <div style={{ fontSize: '10px', fontWeight: 600, color: '#64748b' }}>{MONTHS[TODAY.getMonth()]} {TODAY.getFullYear()} · {monthlyPayroll.daysInMonth} days</div>
                   <div style={{ fontSize: '13px', fontWeight: 800, color: '#0f172a', marginTop: '2px' }}>
-                    {paidThisMonth
-                      ? <span style={{ color: '#16a34a' }}>✓ Disbursed · ₹{(paidThisMonth.netPay || 0).toLocaleString()}</span>
-                      : <span style={{ color: hasLwp ? '#9a3412' : '#92400e' }}>
-                          Pending · ₹{monthlyPayroll.proRatedNet.toLocaleString()}
-                          {hasLwp && <span style={{ fontSize: '10px', fontWeight: 600, color: '#9a3412', marginLeft: '6px' }}>(after LWP)</span>}
-                        </span>}
+                    {paidThisMonth ? (
+                      <span style={{ color: '#16a34a' }}>✓ Paid · ₹{(paidThisMonth.netPay || 0).toLocaleString()}</span>
+                    ) : draftThisMonth ? (
+                      <span style={{ color: '#1d4ed8' }}>● Draft · ₹{(draftThisMonth.netPay || 0).toLocaleString()} <span style={{ fontSize: '10px', fontWeight: 600, color: '#1d4ed8', marginLeft: '4px' }}>(awaiting payment)</span></span>
+                    ) : (
+                      <span style={{ color: hasLwp ? '#9a3412' : '#92400e' }}>
+                        Pending · ₹{monthlyPayroll.proRatedNet.toLocaleString()}
+                        {hasLwp && <span style={{ fontSize: '10px', fontWeight: 600, color: '#9a3412', marginLeft: '6px' }}>(after LWP)</span>}
+                      </span>
+                    )}
                   </div>
                 </div>
-                {!paidThisMonth
-                  ? <button onClick={() => openDisbursalDrawer(staff, THIS_MONTH)} style={{ padding: '8px 18px', borderRadius: '9px', background: '#16a34a', color: 'white', border: 'none', fontWeight: 800, fontSize: '11px', cursor: 'pointer', letterSpacing: '0.5px' }}>MARK PAID</button>
-                  : <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                      <span style={{ fontSize: '10px', color: '#16a34a', fontWeight: 700 }}>
-                        Paid {new Date(paidThisMonth.paidOn).toLocaleDateString('en-IN', { day: '2-digit', month: 'short' })}
-                      </span>
-                      <button onClick={() => printPayslip(staff, paidThisMonth)} title="Print payslip" style={{ padding: '5px 10px', borderRadius: '7px', background: 'white', border: '1px solid #bbf7d0', color: '#15803d', cursor: 'pointer', fontSize: '10px', fontWeight: 700 }}>🖨 Slip</button>
-                    </div>
-                }
+                {paidThisMonth ? (
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <span style={{ fontSize: '10px', color: '#16a34a', fontWeight: 700 }}>
+                      Paid {new Date(paidThisMonth.paidOnDate || paidThisMonth.paidOn).toLocaleDateString('en-IN', { day: '2-digit', month: 'short' })}
+                    </span>
+                    <button onClick={() => printPayslip(staff, paidThisMonth)} title="Print payslip" style={{ padding: '5px 10px', borderRadius: '7px', background: 'white', border: '1px solid #bbf7d0', color: '#15803d', cursor: 'pointer', fontSize: '10px', fontWeight: 700 }}>🖨 Slip</button>
+                  </div>
+                ) : draftThisMonth ? (
+                  <button
+                    onClick={() => setDisbursementStatus(staff.id, draftThisMonth.id, 'Paid', { mode: draftThisMonth.mode, reference: draftThisMonth.reference, paidOnDate: TODAY_STR })}
+                    style={{ padding: '8px 18px', borderRadius: '9px', background: '#16a34a', color: 'white', border: 'none', fontWeight: 800, fontSize: '11px', cursor: 'pointer', letterSpacing: '0.5px' }}
+                  >MARK AS PAID</button>
+                ) : (
+                  <button onClick={() => openDisbursalDrawer(staff, THIS_MONTH)} style={{ padding: '8px 18px', borderRadius: '9px', background: '#16a34a', color: 'white', border: 'none', fontWeight: 800, fontSize: '11px', cursor: 'pointer', letterSpacing: '0.5px' }}>GENERATE</button>
+                )}
               </div>
 
               {/* Attendance / LWP breakdown */}
-              {!paidThisMonth && (
+              {!paidThisMonth && !draftThisMonth && (
                 <div style={{ borderTop: `1px dashed ${hasLwp ? '#fed7aa' : '#fde68a'}`, padding: '10px 18px 12px', background: 'rgba(255,255,255,0.5)' }}>
                   <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: '6px', marginBottom: hasLwp ? '10px' : 0 }}>
                     {[
@@ -1302,10 +1344,14 @@ export default function StaffPage() {
           ? <div style={{ textAlign: 'center', padding: '20px', color: '#cbd5e1', fontSize: '12px', background: '#f8fafc', borderRadius: '10px' }}>No disbursements recorded.</div>
           : [...info.disbursements].reverse().map(d => {
             const modeMeta = PAYMENT_MODES.find(m => m.id === d.mode);
+            const isDraft  = d.status === 'Draft';
+            const amountColor = isDraft ? '#1d4ed8' : '#16a34a';
+            const statusBg    = isDraft ? '#dbeafe' : '#dcfce7';
+            const statusColor = isDraft ? '#1d4ed8' : '#16a34a';
             return (
-              <div key={d.id || d.month} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '11px 14px', background: '#f8fafc', borderRadius: '10px', border: '1px solid #f1f5f9', marginBottom: '6px' }}>
+              <div key={d.id || d.month} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '11px 14px', background: isDraft ? '#eff6ff' : '#f8fafc', borderRadius: '10px', border: `1px solid ${isDraft ? '#bfdbfe' : '#f1f5f9'}`, marginBottom: '6px' }}>
                 <div style={{ minWidth: 0, flex: 1 }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
                     <span style={{ fontSize: '12px', fontWeight: 700, color: '#0f172a' }}>{d.month}</span>
                     {modeMeta && <span style={{ fontSize: '9px', background: '#eff6ff', color: '#0f52ba', padding: '2px 6px', borderRadius: '4px', fontWeight: 700 }}>{modeMeta.icon} {modeMeta.label}</span>}
                     {d.lwpDays > 0 && <span style={{ fontSize: '9px', background: '#fff7ed', color: '#9a3412', padding: '2px 6px', borderRadius: '4px', fontWeight: 700 }}>{d.lwpDays}d LWP</span>}
@@ -1316,9 +1362,18 @@ export default function StaffPage() {
                 </div>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
                   <div style={{ textAlign: 'right' }}>
-                    <div style={{ fontSize: '13px', fontWeight: 800, color: '#16a34a' }}>₹{(d.netPay || 0).toLocaleString()}</div>
-                    <span style={{ fontSize: '9px', background: '#dcfce7', color: '#16a34a', padding: '2px 7px', borderRadius: '4px', fontWeight: 700, letterSpacing: '0.5px' }}>PAID</span>
+                    <div style={{ fontSize: '13px', fontWeight: 800, color: amountColor }}>₹{(d.netPay || 0).toLocaleString()}</div>
+                    <span style={{ fontSize: '9px', background: statusBg, color: statusColor, padding: '2px 7px', borderRadius: '4px', fontWeight: 800, letterSpacing: '0.5px' }}>
+                      {isDraft ? 'DRAFT' : 'PAID'}
+                    </span>
                   </div>
+                  {isDraft && (
+                    <button
+                      onClick={() => setDisbursementStatus(staff.id, d.id, 'Paid', { mode: d.mode, reference: d.reference, paidOnDate: TODAY_STR })}
+                      title="Mark as paid"
+                      style={{ padding: '6px 12px', borderRadius: '8px', background: '#16a34a', border: 'none', color: 'white', cursor: 'pointer', fontSize: '10px', fontWeight: 800, letterSpacing: '0.3px' }}
+                    >Mark Paid</button>
+                  )}
                   <button
                     onClick={() => printPayslip(staff, d)}
                     title="Print payslip"
@@ -1560,18 +1615,18 @@ export default function StaffPage() {
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '8px' }}>
                   <div style={{ flex: 1 }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '4px' }}>
-                      <span style={{ fontSize: '12px', fontWeight: 800, color: '#0f172a' }}>{l.type} Leave</span>
+                      <span style={{ fontSize: '12px', fontWeight: 800, color: '#0f172a' }}>{l.type}{l.type.toLowerCase().endsWith('leave') ? '' : ' Leave'}</span>
                       <span style={{ fontSize: '10px', background: '#f1f5f9', color: '#64748b', padding: '1px 7px', borderRadius: '5px', fontWeight: 700 }}>{l.days}d</span>
                     </div>
-                    <div style={{ fontSize: '10px', color: '#94a3b8', fontWeight: 600 }}>{l.from} â†’ {l.to}</div>
+                    <div style={{ fontSize: '10px', color: '#94a3b8', fontWeight: 600 }}>{l.from} → {l.to}</div>
                     {l.reason && <div style={{ fontSize: '10px', color: '#64748b', marginTop: '4px', fontStyle: 'italic' }}>"{l.reason}"</div>}
                   </div>
                   <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '6px' }}>
                     <span style={{ fontSize: '9px', fontWeight: 800, color: sm.color, background: sm.bg, padding: '3px 9px', borderRadius: '6px', letterSpacing: '0.5px' }}>{sm.label.toUpperCase()}</span>
                     {l.status === 'pending' && (
                       <div style={{ display: 'flex', gap: '4px' }}>
-                        <button onClick={() => updateLeaveStatus(l.id, 'approved')} style={{ fontSize: '10px', padding: '3px 10px', borderRadius: '5px', background: '#f0fdf4', color: '#16a34a', border: '1px solid #bbf7d0', cursor: 'pointer', fontWeight: 800 }}>âœ“</button>
-                        <button onClick={() => updateLeaveStatus(l.id, 'rejected')} style={{ fontSize: '10px', padding: '3px 10px', borderRadius: '5px', background: '#fef2f2', color: '#dc2626', border: '1px solid #fecaca', cursor: 'pointer', fontWeight: 800 }}>âœ•</button>
+                        <button onClick={() => updateLeaveStatus(l.id, 'approved')} style={{ fontSize: '10px', padding: '3px 10px', borderRadius: '5px', background: '#f0fdf4', color: '#16a34a', border: '1px solid #bbf7d0', cursor: 'pointer', fontWeight: 800 }}>✓</button>
+                        <button onClick={() => updateLeaveStatus(l.id, 'rejected')} style={{ fontSize: '10px', padding: '3px 10px', borderRadius: '5px', background: '#fef2f2', color: '#dc2626', border: '1px solid #fecaca', cursor: 'pointer', fontWeight: 800 }}>✕</button>
                       </div>
                     )}
                   </div>
@@ -2006,7 +2061,7 @@ export default function StaffPage() {
         </div>
       )}
 
-      {/* â”€â”€ Split layout (Roster tab) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
+      {/* ── Split layout (Roster tab) ──────────────────────────────────── */}
       {mainTab === 'roster' && (
       <div style={{ display: isMobile ? 'block' : 'flex', gap: '14px', flex: 1, overflow: 'hidden', alignItems: 'stretch', minHeight: 0 }}>
 
@@ -2681,20 +2736,26 @@ export default function StaffPage() {
 
               {/* Sticky footer */}
               <div style={{ padding: '14px 28px', borderTop: '1px solid #e2e8f0', display: 'flex', gap: '10px', alignItems: 'center', background: 'white' }}>
-                <div style={{ flex: 1 }} />
                 <button
                   type="button"
                   onClick={() => setDisbDrawer(p => ({ ...p, open: false }))}
                   style={{ padding: '10px 16px', borderRadius: '10px', border: '1px solid #e2e8f0', background: 'white', color: '#0a1628', fontSize: '12px', fontWeight: 700, cursor: 'pointer' }}
                 >Cancel</button>
+                <div style={{ flex: 1 }} />
                 <button
                   type="button"
-                  onClick={() => submitDisbursement(false)}
+                  onClick={() => submitDisbursement(false, 'Draft')}
+                  title="Save as Draft — appears in expense ledger as Pending. You or the accountant can mark it Paid later."
+                  style={{ padding: '10px 16px', borderRadius: '10px', border: '1px solid #e2e8f0', background: 'white', color: '#0a1628', fontSize: '12px', fontWeight: 700, cursor: 'pointer', letterSpacing: '0.3px' }}
+                >Save as Draft</button>
+                <button
+                  type="button"
+                  onClick={() => submitDisbursement(false, 'Paid')}
                   style={{ padding: '10px 16px', borderRadius: '10px', border: '1px solid #d4a017', background: 'white', color: '#0a1628', fontSize: '12px', fontWeight: 800, cursor: 'pointer', letterSpacing: '0.3px' }}
-                >Mark paid</button>
+                >Pay now</button>
                 <button
                   type="button"
-                  onClick={() => submitDisbursement(true)}
+                  onClick={() => submitDisbursement(true, 'Paid')}
                   style={{
                     padding: '10px 18px', borderRadius: '10px', border: 'none',
                     background: 'linear-gradient(135deg, #d4a017 0%, #b8860b 100%)',
@@ -2709,7 +2770,7 @@ export default function StaffPage() {
         );
       })()}
 
-      {/* â”€â”€ ATTENDANCE PICKER â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
+      {/* ── ATTENDANCE PICKER ────────────────────────────────────────── */}
       {attPicker.open && selectedStaff && (
         <div
           style={{ position: 'fixed', inset: 0, zIndex: 10000, backdropFilter: 'blur(10px)', background: 'rgba(10,22,40,0.45)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
@@ -2735,7 +2796,7 @@ export default function StaffPage() {
         </div>
       )}
 
-      {/* â”€â”€ LEAVE APPLICATION FORM â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
+      {/* ── LEAVE APPLICATION FORM ───────────────────────────────────── */}
       {leaveForm.open && selectedStaff && (
         <div
           style={{ position: 'fixed', inset: 0, zIndex: 10000, backdropFilter: 'blur(10px)', background: 'rgba(10,22,40,0.45)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
@@ -2747,9 +2808,9 @@ export default function StaffPage() {
 
             <div style={{ marginBottom: '16px' }}>
               <label style={{ fontSize: '9px', fontWeight: 900, color: '#94a3b8', letterSpacing: '0.8px', textTransform: 'uppercase', display: 'block', marginBottom: '8px' }}>Leave Type</label>
-              <div style={{ display: 'flex', gap: '6px' }}>
+              <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
                 {LEAVE_TYPES.map(t => (
-                  <button key={t} onClick={() => setLeaveForm(p => ({ ...p, type: t }))} style={{ flex: 1, padding: '8px', borderRadius: '9px', border: `1.5px solid ${leaveForm.type === t ? '#0f52ba' : '#e2e8f0'}`, background: leaveForm.type === t ? '#eff6ff' : 'white', color: leaveForm.type === t ? '#0f52ba' : '#64748b', fontWeight: 700, fontSize: '11px', cursor: 'pointer', transition: 'all 0.12s' }}>
+                  <button key={t} onClick={() => setLeaveForm(p => ({ ...p, type: t }))} style={{ flex: '1 1 auto', padding: '8px', borderRadius: '9px', border: `1.5px solid ${leaveForm.type === t ? '#0f52ba' : '#e2e8f0'}`, background: leaveForm.type === t ? '#eff6ff' : 'white', color: leaveForm.type === t ? '#0f52ba' : '#64748b', fontWeight: 700, fontSize: '11px', cursor: 'pointer', transition: 'all 0.12s', whiteSpace: 'nowrap' }}>
                     {t}
                   </button>
                 ))}
@@ -2769,7 +2830,7 @@ export default function StaffPage() {
               <label style={{ fontSize: '9px', fontWeight: 900, color: '#94a3b8', letterSpacing: '0.8px', textTransform: 'uppercase', display: 'block', marginBottom: '6px' }}>
                 Reason <span style={{ fontWeight: 500, textTransform: 'none', letterSpacing: 0 }}>(optional)</span>
               </label>
-              <textarea value={leaveForm.reason} onChange={e => setLeaveForm(p => ({ ...p, reason: e.target.value }))} rows={2} placeholder="Brief reasonâ€¦" style={{ width: '100%', padding: '10px', borderRadius: '9px', border: '1px solid #e2e8f0', fontSize: '12px', outline: 'none', resize: 'none', boxSizing: 'border-box', color: '#0f172a', fontFamily: 'inherit' }} />
+              <textarea value={leaveForm.reason} onChange={e => setLeaveForm(p => ({ ...p, reason: e.target.value }))} rows={2} placeholder="Brief reason…" style={{ width: '100%', padding: '10px', borderRadius: '9px', border: '1px solid #e2e8f0', fontSize: '12px', outline: 'none', resize: 'none', boxSizing: 'border-box', color: '#0f172a', fontFamily: 'inherit' }} />
             </div>
 
             <div style={{ display: 'flex', gap: '10px' }}>
@@ -2993,7 +3054,7 @@ export default function StaffPage() {
       {/* ── NOTIFICATION / CONFIRM MODAL ─────────────────────────────────── */}
       {notifModal.isOpen && (() => {
         const COLORS = { success: '#16a34a', error: '#dc2626', warning: '#d97706', info: '#0f52ba' };
-        const ICONS  = { success: 'âœ“', error: 'âœ•', warning: 'âš ', info: 'â„¹' };
+        const ICONS  = { success: '✓', error: '✕', warning: '⚠', info: 'ℹ' };
         const c = COLORS[notifModal.type];
         return (
           <div

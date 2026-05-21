@@ -282,7 +282,7 @@ export default function OperationsBoard() {
   return (
     <div className="appointment-board-container">
 
-      {/* â”€â”€ PAGE HEADER â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
+      {/* ── PAGE HEADER ────────────────────────────────────────────────── */}
       <div className="appt-page-top">
         <div className="appt-page-header">
           <div className="appt-page-title-block">
@@ -315,7 +315,7 @@ export default function OperationsBoard() {
         </div>
       </div>
 
-      {/* â”€â”€ KPI INTEL CARDS â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
+      {/* ── KPI INTEL CARDS ────────────────────────────────────────────── */}
       <div className="intel-cards-grid" style={{ gridTemplateColumns: isMobile ? '1fr 1fr' : 'repeat(auto-fit, minmax(155px, 1fr))' }}>
 
         <div className="intel-card dark">
@@ -356,7 +356,7 @@ export default function OperationsBoard() {
 
       </div>
 
-      {/* â”€â”€ FILTER BAR â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
+      {/* ── FILTER BAR ─────────────────────────────────────────────────── */}
       <div className="filter-bar-responsive">
         <div className="filter-search-group">
           <span style={{ fontSize: '16px', color: '#94a3b8', flexShrink: 0 }}>🔍</span>
@@ -388,7 +388,7 @@ export default function OperationsBoard() {
         </div>
       </div>
 
-      {/* â”€â”€ OPERATIONS LEDGER TABLE â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
+      {/* ── OPERATIONS LEDGER TABLE ────────────────────────────────────── */}
       <div className="appointments-table-wrapper">
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '20px 24px', borderBottom: '1px solid #e2e8f0' }}>
           <h3 style={{ fontSize: '13px', fontWeight: 950, letterSpacing: '1px', margin: 0, color: '#0a1628' }}>CLINICAL OPERATIONS REGISTRY</h3>
@@ -563,7 +563,7 @@ export default function OperationsBoard() {
         )}
       </div>
 
-      {/* â”€â”€ OVERRIDE MODAL â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
+      {/* ── OVERRIDE MODAL ─────────────────────────────────────────────── */}
       {modalOpen && selectedItem && (
         <div style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.4)', backdropFilter: 'blur(12px)', WebkitBackdropFilter: 'blur(12px)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 10000, animation: 'fadeIn 0.25s ease-out' }}>
           <div style={{ width: '90%', maxWidth: '420px', background: 'linear-gradient(135deg, #ffffff 0%, #f8fafc 100%)', borderRadius: '24px', border: '1px solid rgba(226,232,240,0.8)', boxShadow: '0 25px 50px -12px rgba(15,23,42,0.2)', padding: '30px 24px', display: 'flex', flexDirection: 'column', gap: '20px', animation: 'scaleIn 0.3s cubic-bezier(0.34,1.56,0.64,1)', boxSizing: 'border-box' }}>
@@ -634,7 +634,7 @@ export default function OperationsBoard() {
         </div>
       )}
 
-      {/* â”€â”€ TOAST CONTAINER â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
+      {/* ── TOAST CONTAINER ────────────────────────────────────────────── */}
       <div style={{ position: 'fixed', bottom: '30px', right: '16px', left: isMobile ? '16px' : 'auto', zIndex: 99999, display: 'flex', flexDirection: 'column', gap: '10px', pointerEvents: 'none' }}>
         {toasts.map(t => (
           <div key={t.id} style={{ background: t.type === 'success' ? '#10b981' : '#ef4444', color: 'white', padding: '14px 24px', borderRadius: '14px', fontSize: '11px', fontWeight: 950, boxShadow: '0 10px 30px rgba(0,0,0,0.12)', animation: 'fadeIn 0.2s ease-out', pointerEvents: 'auto', minWidth: isMobile ? 'unset' : '280px', border: t.type === 'success' ? '1px solid rgba(52,211,153,0.2)' : '1px solid rgba(248,113,113,0.2)' }}>
@@ -643,7 +643,7 @@ export default function OperationsBoard() {
         ))}
       </div>
 
-      {/* â”€â”€ KEYFRAMES â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
+      {/* ── KEYFRAMES ──────────────────────────────────────────────────── */}
       <style>{`
         @keyframes spin    { to { transform: rotate(360deg); } }
         @keyframes fadeIn  { from { opacity: 0; } to { opacity: 1; } }

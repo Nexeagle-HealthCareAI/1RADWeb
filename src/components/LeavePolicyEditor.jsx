@@ -249,18 +249,18 @@ export default function LeavePolicyEditor({ hospitalId, currentUserName, embedde
             <div style={{ position: 'relative', flexShrink: 0 }}>
               <button
                 type="button"
-                onClick={() => setOpenColor(openColor === i ? null : i)}
-                title="Choose colour"
+                onClick={() => !embedded && setOpenColor(openColor === i ? null : i)}
+                title={embedded ? '' : 'Choose colour'}
                 style={{
                   width: '44px', height: '44px', borderRadius: '12px',
-                  background: t.color, border: 'none', cursor: 'pointer',
+                  background: t.color, border: 'none', cursor: embedded ? 'default' : 'pointer',
                   boxShadow: `0 4px 12px ${t.color}40, inset 0 1px 0 rgba(255,255,255,0.2)`,
                   position: 'relative',
                 }}
               >
-                <span style={{ position: 'absolute', bottom: '-4px', right: '-4px', width: '14px', height: '14px', borderRadius: '50%', background: 'white', border: '1.5px solid #e2e8f0', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '8px', color: '#64748b' }}>▾</span>
+                {!embedded && <span style={{ position: 'absolute', bottom: '-4px', right: '-4px', width: '14px', height: '14px', borderRadius: '50%', background: 'white', border: '1.5px solid #e2e8f0', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '8px', color: '#64748b' }}>▾</span>}
               </button>
-              {openColor === i && (
+              {!embedded && openColor === i && (
                 <>
                   <div onClick={() => setOpenColor(null)} style={{ position: 'fixed', inset: 0, zIndex: 50 }} />
                   <div style={{
@@ -291,21 +291,26 @@ export default function LeavePolicyEditor({ hospitalId, currentUserName, embedde
 
             {/* Name */}
             <div style={{ flex: 1, minWidth: 0 }}>
-              <input
-                type="text"
-                value={t.name}
-                onChange={(e) => update(i, { name: e.target.value })}
-                placeholder="e.g. Maternity Leave"
-                style={{
-                  width: '100%', padding: '9px 12px',
-                  borderRadius: '10px', border: '1px solid #e2e8f0',
-                  fontSize: '14px', fontWeight: 700, color: '#0a1628',
-                  outline: 'none', boxSizing: 'border-box',
-                  transition: 'border-color 0.15s, box-shadow 0.15s',
-                }}
-                onFocus={(e) => { e.target.style.borderColor = '#0a1628'; e.target.style.boxShadow = '0 0 0 3px rgba(10,22,40,0.08)'; }}
-                onBlur={(e) => { e.target.style.borderColor = '#e2e8f0'; e.target.style.boxShadow = 'none'; }}
-              />
+              <label style={{ display: 'block', fontSize: '9px', fontWeight: 800, color: '#94a3b8', letterSpacing: '0.8px', textTransform: 'uppercase', marginBottom: '6px' }}>Leave Name</label>
+              {embedded ? (
+                <div style={{ padding: '9px 12px', fontSize: '14px', fontWeight: 700, color: '#0a1628' }}>{t.name}</div>
+              ) : (
+                <input
+                  type="text"
+                  value={t.name}
+                  onChange={(e) => update(i, { name: e.target.value })}
+                  placeholder="e.g. Maternity Leave"
+                  style={{
+                    width: '100%', padding: '9px 12px',
+                    borderRadius: '10px', border: '1px solid #e2e8f0',
+                    fontSize: '14px', fontWeight: 700, color: '#0a1628',
+                    outline: 'none', boxSizing: 'border-box',
+                    transition: 'border-color 0.15s, box-shadow 0.15s',
+                  }}
+                  onFocus={(e) => { e.target.style.borderColor = '#0a1628'; e.target.style.boxShadow = '0 0 0 3px rgba(10,22,40,0.08)'; }}
+                  onBlur={(e) => { e.target.style.borderColor = '#e2e8f0'; e.target.style.boxShadow = 'none'; }}
+                />
+              )}
               {t.name && (
                 <div style={{ fontSize: '9px', color: '#94a3b8', fontWeight: 600, marginTop: '4px', fontFamily: 'ui-monospace, "SF Mono", Menlo, monospace', letterSpacing: '0.3px', paddingLeft: '4px' }}>
                   id: {slugify(t.id || t.name)}
@@ -314,39 +319,50 @@ export default function LeavePolicyEditor({ hospitalId, currentUserName, embedde
             </div>
 
             {/* Quota stepper */}
-            <div style={{ display: 'flex', alignItems: 'center', flexShrink: 0 }}>
-              <div style={{ display: 'flex', alignItems: 'center', border: '1px solid #e2e8f0', borderRadius: '10px', overflow: 'hidden', background: 'white' }}>
-                <button
-                  type="button"
-                  onClick={() => stepQuota(i, -1)}
-                  style={{ width: '32px', height: '36px', border: 'none', background: '#fafbfc', color: '#475569', fontSize: '16px', fontWeight: 700, cursor: 'pointer' }}
-                >−</button>
-                <input
-                  type="number" min="0"
-                  value={t.annualQuota}
-                  onChange={(e) => update(i, { annualQuota: e.target.value })}
-                  style={{ width: '50px', height: '36px', padding: '0', border: 'none', borderLeft: '1px solid #e2e8f0', borderRight: '1px solid #e2e8f0', fontSize: '14px', fontWeight: 800, color: '#0a1628', outline: 'none', textAlign: 'center', background: 'white' }}
-                />
-                <button
-                  type="button"
-                  onClick={() => stepQuota(i, 1)}
-                  style={{ width: '32px', height: '36px', border: 'none', background: '#fafbfc', color: '#475569', fontSize: '16px', fontWeight: 700, cursor: 'pointer' }}
-                >+</button>
+            <div style={{ display: 'flex', flexDirection: 'column', flexShrink: 0 }}>
+              <label style={{ fontSize: '9px', fontWeight: 800, color: '#94a3b8', letterSpacing: '0.8px', textTransform: 'uppercase', marginBottom: '6px' }}>Annual Quota</label>
+              <div style={{ display: 'flex', alignItems: 'center' }}>
+                <div style={{ display: 'flex', alignItems: 'center', border: embedded ? 'none' : '1px solid #e2e8f0', borderRadius: '10px', overflow: 'hidden', background: 'transparent' }}>
+                  {!embedded && (
+                    <button
+                      type="button"
+                      onClick={() => stepQuota(i, -1)}
+                      style={{ width: '32px', height: '36px', border: 'none', background: '#fafbfc', color: '#475569', fontSize: '16px', fontWeight: 700, cursor: 'pointer' }}
+                    >−</button>
+                  )}
+                  {embedded ? (
+                    <div style={{ fontSize: '14px', fontWeight: 800, color: '#0a1628', padding: '0 8px' }}>{t.annualQuota}</div>
+                  ) : (
+                    <input
+                      type="number" min="0"
+                      value={t.annualQuota}
+                      onChange={(e) => update(i, { annualQuota: e.target.value })}
+                      style={{ width: '50px', height: '36px', padding: '0', border: 'none', borderLeft: '1px solid #e2e8f0', borderRight: '1px solid #e2e8f0', fontSize: '14px', fontWeight: 800, color: '#0a1628', outline: 'none', textAlign: 'center', background: 'white' }}
+                    />
+                  )}
+                  {!embedded && (
+                    <button
+                      type="button"
+                      onClick={() => stepQuota(i, 1)}
+                      style={{ width: '32px', height: '36px', border: 'none', background: '#fafbfc', color: '#475569', fontSize: '16px', fontWeight: 700, cursor: 'pointer' }}
+                    >+</button>
+                  )}
+                </div>
+                <span style={{ fontSize: '10px', fontWeight: 700, color: '#94a3b8', marginLeft: '8px', letterSpacing: '0.3px' }}>DAYS / YR</span>
               </div>
-              <span style={{ fontSize: '10px', fontWeight: 700, color: '#94a3b8', marginLeft: '8px', letterSpacing: '0.3px' }}>DAYS / YR</span>
             </div>
 
             {/* Paid switch */}
             <button
               type="button"
-              onClick={() => update(i, { isPaid: !t.isPaid })}
+              onClick={() => !embedded && update(i, { isPaid: !t.isPaid })}
               title={t.isPaid ? 'Paid leave — does not deduct from salary' : 'Unpaid leave — deducts from monthly pay'}
               style={{
                 display: 'flex', alignItems: 'center', gap: '8px',
                 padding: '7px 11px 7px 8px', borderRadius: '999px',
                 border: `1px solid ${t.isPaid ? '#bbf7d0' : '#e2e8f0'}`,
                 background: t.isPaid ? '#f0fdf4' : '#f8fafc',
-                cursor: 'pointer', flexShrink: 0,
+                cursor: embedded ? 'default' : 'pointer', flexShrink: 0,
                 transition: 'all 0.15s',
               }}
             >
@@ -368,91 +384,95 @@ export default function LeavePolicyEditor({ hospitalId, currentUserName, embedde
             </button>
 
             {/* Remove */}
-            <button
-              type="button"
-              onClick={() => remove(i)}
-              title="Remove leave type"
-              style={{ width: '32px', height: '32px', borderRadius: '9px', background: 'transparent', border: '1px solid transparent', color: '#94a3b8', cursor: 'pointer', fontSize: '14px', flexShrink: 0, transition: 'all 0.15s' }}
-              onMouseEnter={(e) => { e.currentTarget.style.background = '#fef2f2'; e.currentTarget.style.color = '#dc2626'; e.currentTarget.style.borderColor = '#fecaca'; }}
-              onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = '#94a3b8'; e.currentTarget.style.borderColor = 'transparent'; }}
-            >✕</button>
+            {!embedded && (
+              <button
+                type="button"
+                onClick={() => remove(i)}
+                title="Remove leave type"
+                style={{ width: '32px', height: '32px', borderRadius: '9px', background: 'transparent', border: '1px solid transparent', color: '#94a3b8', cursor: 'pointer', fontSize: '14px', flexShrink: 0, transition: 'all 0.15s' }}
+                onMouseEnter={(e) => { e.currentTarget.style.background = '#fef2f2'; e.currentTarget.style.color = '#dc2626'; e.currentTarget.style.borderColor = '#fecaca'; }}
+                onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = '#94a3b8'; e.currentTarget.style.borderColor = 'transparent'; }}
+              >✕</button>
+            )}
           </div>
         ))}
       </div>
 
       {/* Add row + Templates */}
-      <div style={{ marginTop: '14px', display: 'flex', gap: '8px' }}>
-        <button
-          type="button"
-          onClick={addRow}
-          style={{
-            flex: 1, padding: '12px',
-            borderRadius: '12px', border: '1.5px dashed #cbd5e1',
-            background: '#fafbfc', color: '#0a1628',
-            fontSize: '12px', fontWeight: 800, cursor: 'pointer',
-            letterSpacing: '0.3px',
-            transition: 'all 0.15s',
-          }}
-          onMouseEnter={(e) => { e.currentTarget.style.borderColor = '#d4a017'; e.currentTarget.style.background = '#fff8e6'; }}
-          onMouseLeave={(e) => { e.currentTarget.style.borderColor = '#cbd5e1'; e.currentTarget.style.background = '#fafbfc'; }}
-        >+ Add leave type</button>
-
-        <div style={{ position: 'relative' }}>
+      {!embedded && (
+        <div style={{ marginTop: '14px', display: 'flex', gap: '8px' }}>
           <button
             type="button"
-            onClick={() => setShowTemplates(!showTemplates)}
+            onClick={addRow}
             style={{
-              padding: '12px 18px',
+              flex: 1, padding: '12px',
               borderRadius: '12px', border: '1.5px dashed #cbd5e1',
-              background: showTemplates ? '#fff8e6' : '#fafbfc',
-              color: '#0a1628',
+              background: '#fafbfc', color: '#0a1628',
               fontSize: '12px', fontWeight: 800, cursor: 'pointer',
-              letterSpacing: '0.3px', whiteSpace: 'nowrap',
-              display: 'flex', alignItems: 'center', gap: '6px',
+              letterSpacing: '0.3px',
+              transition: 'all 0.15s',
             }}
-          >📋 Templates {showTemplates ? '▴' : '▾'}</button>
-          {showTemplates && (
-            <>
-              <div onClick={() => setShowTemplates(false)} style={{ position: 'fixed', inset: 0, zIndex: 50 }} />
-              <div style={{
-                position: 'absolute', top: '52px', right: 0, zIndex: 51,
-                background: 'white', borderRadius: '14px', padding: '8px',
-                boxShadow: '0 12px 32px rgba(15, 23, 42, 0.15)',
-                border: '1px solid #e8edf2', width: '280px',
-              }}>
-                <div style={{ padding: '8px 10px 6px', fontSize: '9px', fontWeight: 800, color: '#94a3b8', letterSpacing: '1px', textTransform: 'uppercase' }}>Common templates</div>
-                {TEMPLATES.map(tmpl => {
-                  const exists = types.some(t => t.name.toLowerCase() === tmpl.name.toLowerCase());
-                  return (
-                    <button
-                      key={tmpl.name}
-                      type="button"
-                      onClick={() => !exists && addTemplate(tmpl)}
-                      disabled={exists}
-                      style={{
-                        width: '100%', display: 'flex', alignItems: 'center', gap: '10px',
-                        padding: '9px 10px', borderRadius: '9px',
-                        border: 'none', background: 'transparent',
-                        cursor: exists ? 'not-allowed' : 'pointer',
-                        opacity: exists ? 0.45 : 1,
-                        textAlign: 'left', transition: 'background 0.12s',
-                      }}
-                      onMouseEnter={(e) => { if (!exists) e.currentTarget.style.background = '#fafbfc'; }}
-                      onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; }}
-                    >
-                      <span style={{ width: '8px', height: '8px', borderRadius: '50%', background: tmpl.color, flexShrink: 0 }} />
-                      <span style={{ flex: 1, fontSize: '12px', fontWeight: 700, color: '#0a1628' }}>{tmpl.name}</span>
-                      <span style={{ fontSize: '10px', fontWeight: 600, color: '#94a3b8' }}>
-                        {exists ? 'Added' : `${tmpl.annualQuota}d · ${tmpl.isPaid ? 'paid' : 'unpaid'}`}
-                      </span>
-                    </button>
-                  );
-                })}
-              </div>
-            </>
-          )}
+            onMouseEnter={(e) => { e.currentTarget.style.borderColor = '#d4a017'; e.currentTarget.style.background = '#fff8e6'; }}
+            onMouseLeave={(e) => { e.currentTarget.style.borderColor = '#cbd5e1'; e.currentTarget.style.background = '#fafbfc'; }}
+          >+ Add leave type</button>
+
+          <div style={{ position: 'relative' }}>
+            <button
+              type="button"
+              onClick={() => setShowTemplates(!showTemplates)}
+              style={{
+                padding: '12px 18px',
+                borderRadius: '12px', border: '1.5px dashed #cbd5e1',
+                background: showTemplates ? '#fff8e6' : '#fafbfc',
+                color: '#0a1628',
+                fontSize: '12px', fontWeight: 800, cursor: 'pointer',
+                letterSpacing: '0.3px', whiteSpace: 'nowrap',
+                display: 'flex', alignItems: 'center', gap: '6px',
+              }}
+            >📋 Templates {showTemplates ? '▴' : '▾'}</button>
+            {showTemplates && (
+              <>
+                <div onClick={() => setShowTemplates(false)} style={{ position: 'fixed', inset: 0, zIndex: 50 }} />
+                <div style={{
+                  position: 'absolute', top: '52px', right: 0, zIndex: 51,
+                  background: 'white', borderRadius: '14px', padding: '8px',
+                  boxShadow: '0 12px 32px rgba(15, 23, 42, 0.15)',
+                  border: '1px solid #e8edf2', width: '280px',
+                }}>
+                  <div style={{ padding: '8px 10px 6px', fontSize: '9px', fontWeight: 800, color: '#94a3b8', letterSpacing: '1px', textTransform: 'uppercase' }}>Common templates</div>
+                  {TEMPLATES.map(tmpl => {
+                    const exists = types.some(t => t.name.toLowerCase() === tmpl.name.toLowerCase());
+                    return (
+                      <button
+                        key={tmpl.name}
+                        type="button"
+                        onClick={() => !exists && addTemplate(tmpl)}
+                        disabled={exists}
+                        style={{
+                          width: '100%', display: 'flex', alignItems: 'center', gap: '10px',
+                          padding: '9px 10px', borderRadius: '9px',
+                          border: 'none', background: 'transparent',
+                          cursor: exists ? 'not-allowed' : 'pointer',
+                          opacity: exists ? 0.45 : 1,
+                          textAlign: 'left', transition: 'background 0.12s',
+                        }}
+                        onMouseEnter={(e) => { if (!exists) e.currentTarget.style.background = '#fafbfc'; }}
+                        onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; }}
+                      >
+                        <span style={{ width: '8px', height: '8px', borderRadius: '50%', background: tmpl.color, flexShrink: 0 }} />
+                        <span style={{ flex: 1, fontSize: '12px', fontWeight: 700, color: '#0a1628' }}>{tmpl.name}</span>
+                        <span style={{ fontSize: '10px', fontWeight: 600, color: '#94a3b8' }}>
+                          {exists ? 'Added' : `${tmpl.annualQuota}d · ${tmpl.isPaid ? 'paid' : 'unpaid'}`}
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </>
+            )}
+          </div>
         </div>
-      </div>
+      )}
 
       {/* Footer actions */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '24px', paddingTop: '20px', borderTop: '1px solid #e8edf2', flexWrap: 'wrap', gap: '12px' }}>
@@ -475,28 +495,30 @@ export default function LeavePolicyEditor({ hospitalId, currentUserName, embedde
             </span>
           )}
         </div>
-        <div style={{ display: 'flex', gap: '10px' }}>
-          <button
-            type="button"
-            onClick={resetToDefaults}
-            style={{ padding: '11px 18px', borderRadius: '11px', border: '1px solid #e2e8f0', background: 'white', color: '#475569', fontSize: '12px', fontWeight: 700, cursor: 'pointer' }}
-          >Reset to defaults</button>
-          <button
-            type="button"
-            onClick={save}
-            disabled={saving || !dirty}
-            style={{
-              padding: '11px 26px', borderRadius: '11px', border: 'none',
-              background: saving || !dirty ? '#e2e8f0' : 'linear-gradient(135deg, #d4a017 0%, #b8860b 100%)',
-              color: saving || !dirty ? '#94a3b8' : '#0a1628',
-              fontSize: '12px', fontWeight: 800,
-              cursor: saving || !dirty ? 'not-allowed' : 'pointer',
-              letterSpacing: '0.3px',
-              boxShadow: saving || !dirty ? 'none' : '0 6px 18px rgba(212, 160, 23, 0.35)',
-              transition: 'all 0.15s',
-            }}
-          >{saving ? 'Saving…' : 'Save policy'}</button>
-        </div>
+        {!embedded && (
+          <div style={{ display: 'flex', gap: '10px' }}>
+            <button
+              type="button"
+              onClick={resetToDefaults}
+              style={{ padding: '11px 18px', borderRadius: '11px', border: '1px solid #e2e8f0', background: 'white', color: '#475569', fontSize: '12px', fontWeight: 700, cursor: 'pointer' }}
+            >Reset to defaults</button>
+            <button
+              type="button"
+              onClick={save}
+              disabled={saving || !dirty}
+              style={{
+                padding: '11px 26px', borderRadius: '11px', border: 'none',
+                background: saving || !dirty ? '#e2e8f0' : 'linear-gradient(135deg, #d4a017 0%, #b8860b 100%)',
+                color: saving || !dirty ? '#94a3b8' : '#0a1628',
+                fontSize: '12px', fontWeight: 800,
+                cursor: saving || !dirty ? 'not-allowed' : 'pointer',
+                letterSpacing: '0.3px',
+                boxShadow: saving || !dirty ? 'none' : '0 6px 18px rgba(212, 160, 23, 0.35)',
+                transition: 'all 0.15s',
+              }}
+            >{saving ? 'Saving…' : 'Save policy'}</button>
+          </div>
+        )}
       </div>
 
       <style>{`
