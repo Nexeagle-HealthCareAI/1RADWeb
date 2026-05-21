@@ -88,8 +88,8 @@ export const NAV_ITEMS = [
 ];
 
 export const DEFAULT_SYSTEM_PERMISSIONS = {
-  admindoctor: ['/configuration', '/admin-board', '/referrals', '/staff', '/appointment-board', '/billing', '/technician', '/doctor-board', '/subscription', '/dicom-bridge', '/operations-board'],
-  admin: ['/configuration', '/admin-board', '/referrals', '/staff', '/appointment-board', '/billing', '/subscription', '/dicom-bridge', '/operations-board'],
+  admindoctor: ['/configuration', '/admin-board', '/referrals', '/staff', '/staff/dashboard', '/appointment-board', '/billing', '/technician', '/doctor-board', '/subscription', '/dicom-bridge', '/operations-board'],
+  admin: ['/configuration', '/admin-board', '/referrals', '/staff', '/staff/dashboard', '/appointment-board', '/billing', '/subscription', '/dicom-bridge', '/operations-board'],
   receptionist: ['/appointment-board', '/operations-board'],
   technician: ['/configuration', '/technician', '/doctor-board', '/operations-board'],
   doctor: ['/configuration', '/doctor-board', '/operations-board'],

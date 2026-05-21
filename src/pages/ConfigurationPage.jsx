@@ -14,9 +14,9 @@ export default function ConfigurationPage() {
           Manage report templates and shorthand macros for {activeCenter?.name || 'the current facility'}.
         </p>
       </div>
-      
+
       <div style={{ flex: 1, background: 'white', borderRadius: '24px', boxShadow: '0 10px 30px rgba(0,0,0,0.02)', border: '1px solid #e2e8f0', overflow: 'hidden' }}>
-        <ReportingRegistry 
+        <ReportingRegistry
           apiClient={apiClient}
           hospitalId={activeCenter?.id}
           doctorId={currentUser?.id}
