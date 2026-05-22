@@ -2720,7 +2720,8 @@ const ReportingPage = () => {
         {/* DICOM TAB */}
         {activeMainTab === 'DICOM' && (
           <div className="panel panel-center" style={{ display: 'flex', flex: 1, padding: 0 }}>
-            {/* LEFT TOOLBAR - Tablet Optimized */}
+            {/* LEFT TOOLBAR - Tablet Optimized — hidden on mobile */}
+            {!isMobile && (
             <div
               id="dicom-toolbar"
               style={{
@@ -3154,6 +3155,7 @@ const ReportingPage = () => {
                 </button>
               </div>
             </div>
+            )}
 
             {/* MAIN VIEWER AREA */}
             <div style={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
@@ -3575,7 +3577,8 @@ const ReportingPage = () => {
                               )}
                             </div>
 
-                            {/* ACTIVE TOOL INDICATOR */}
+                            {/* ACTIVE TOOL INDICATOR — hidden on mobile */}
+                            {!isMobile && (
                             <div style={{ position: 'absolute', top: '15px', right: '15px', zIndex: 10 }}>
                               <div style={{
                                 background: 'rgba(59, 130, 246, 0.9)',
@@ -3617,8 +3620,10 @@ const ReportingPage = () => {
                                 </span>
                               </div>
                             </div>
+                            )}
 
-                            {/* Windowing Presets - Bottom Right */}
+                            {/* Windowing Presets - Bottom Right — hidden on mobile */}
+                            {!isMobile && (
                             <div style={{ position: 'absolute', bottom: '15px', right: '15px', zIndex: 10 }}>
                               <select
                                 onChange={(e) => {
@@ -3647,6 +3652,7 @@ const ReportingPage = () => {
                                 <option value="Angio">ANGIO</option>
                               </select>
                             </div>
+                            )}
 
                             {/* Key Images Indicator */}
                             {keyImages.includes(`${activeAssetIndex + idx}_${currentSlice}`) && (
@@ -3657,7 +3663,8 @@ const ReportingPage = () => {
                               </div>
                             )}
 
-                            {/* Active Tool & Instructions - Bottom Left */}
+                            {/* Active Tool & Instructions - Bottom Left — hidden on mobile */}
+                            {!isMobile && (
                             <div style={{ position: 'absolute', bottom: '15px', left: '15px', zIndex: 10, display: 'flex', flexDirection: 'column', gap: '4px' }}>
                               <div style={{ background: 'rgba(15, 23, 42, 0.8)', backdropFilter: 'blur(8px)', padding: '4px 10px', borderRadius: '6px', fontSize: '9px', color: '#94a3b8', fontWeight: 900, letterSpacing: '1px', border: '1px solid rgba(255,255,255,0.1)' }}>
                                 ACTIVE: {activeTool?.replace('Tool', '').toUpperCase() || 'WINDOW_LEVEL'}
@@ -3674,9 +3681,10 @@ const ReportingPage = () => {
                                 </div>
                               )}
                             </div>
+                            )}
 
-                            {/* Measurement Results - Bottom Right */}
-                            {idx === 0 && (
+                            {/* Measurement Results - Bottom Right — hidden on mobile */}
+                            {!isMobile && idx === 0 && (
                               <div style={{ position: 'absolute', bottom: '15px', right: '15px', zIndex: 10, maxWidth: '250px' }}>
                                 <div style={{ background: 'rgba(15, 23, 42, 0.9)', backdropFilter: 'blur(8px)', padding: '8px 12px', borderRadius: '8px', border: '1px solid rgba(255,255,255,0.1)' }}>
                                   <div style={{ fontSize: '8px', color: '#94a3b8', fontWeight: 900, marginBottom: '4px', letterSpacing: '1px' }}>MEASUREMENTS</div>
