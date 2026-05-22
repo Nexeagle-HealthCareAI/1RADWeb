@@ -1018,62 +1018,104 @@ const ReportingPage = () => {
         throw new Error(`HTTP_ERROR: Server returned ${response.status} ${response.statusText}.`);
       }
 
-      // ── Streaming read with real download progress ─────────────────────────
-      if (response && !blob) {
-        const contentLength = parseInt(response.headers.get('Content-Length') || '0', 10);
-        const reader = response.body.getReader();
-        const chunks = [];
-        let received = 0;
-
-        while (true) {
-          const { done, value } = await reader.read();
-          if (done) break;
-          chunks.push(value);
-          received += value.length;
-          const mb = (received / 1048576).toFixed(1);
-          if (contentLength > 0) {
-            const pct = Math.round((received / contentLength) * 100);
-            const total = (contentLength / 1048576).toFixed(1);
-            setProcessingStatus(`Downloading: ${mb} / ${total} MB (${pct}%)`);
-            setLoadingProgress({ stage: 'Downloading', current: pct, total: 100 });
-          } else {
-            setProcessingStatus(`Downloading: ${mb} MB received...`);
-          }
-        }
-
-        blob = new Blob(chunks);
-        console.log(`[DICOM_LOAD] Download complete. ${(blob.size / 1048576).toFixed(2)} MB`);
-      }
-
-      if (!blob || blob.size === 0) {
-        throw new Error('EMPTY_FILE: The downloaded study file is empty (0 bytes).');
-      }
-
-      // Use optimized processor with progress tracking and corruption detection
+      // ── STREAMING decode: extract ZIP entries while bytes are still arriving ─
+      // This overlaps the Azure → browser download with JS-side DICOM parsing,
+      // eliminating the post-download "extract + scan" wait.
       let result;
-      try {
-        console.log(`[DICOM_LOAD] Starting DICOM processing...`);
-        result = await dicomOptimizer.processZipFileOptimized(
-          blob,
-          (progress) => {
-            setLoadingProgress(progress);
-            const statusParts = [`${progress.stage}: ${progress.current}/${progress.total} files`];
-            if (progress.seriesCount) statusParts.push(`(${progress.seriesCount} series found)`);
-            if (progress.corruptedFiles > 0) statusParts.push(`⚠️ ${progress.corruptedFiles} corrupted`);
-            setProcessingStatus(statusParts.join(' '));
-          },
-          (seriesInfo) => {
-            console.log(`[DICOM_LOAD] New series discovered: ${seriesInfo.seriesDesc}`);
+      let earlyFlushedFile = null; // The File handed to viewer on first-slice-early
+      if (response && !blob) {
+        try {
+          result = await dicomOptimizer.processStreamingZipResponse(response, {
+            onProgress: (p) => {
+              if (p.stage === 'downloading') {
+                const mb = (p.bytesReceived / 1048576).toFixed(1);
+                if (p.totalBytes > 0) {
+                  const pct = Math.round((p.bytesReceived / p.totalBytes) * 100);
+                  const total = (p.totalBytes / 1048576).toFixed(1);
+                  setProcessingStatus(`Downloading: ${mb} / ${total} MB (${pct}%) · ${p.validFiles} slices extracted`);
+                  setLoadingProgress({ stage: 'Downloading', current: pct, total: 100 });
+                } else {
+                  setProcessingStatus(`Downloading: ${mb} MB · ${p.validFiles} slices extracted`);
+                }
+              } else if (p.stage === 'extracting') {
+                setProcessingStatus(`Extracting: ${p.entriesDone} entries · ${p.validFiles} valid slices`);
+              }
+            },
+            onSeriesFound: (info) => {
+              console.log(`[DICOM_LOAD] New series discovered: ${info.seriesDesc}`);
+            },
+            // FIRST-SLICE-EARLY: as soon as fflate decodes the first DICOM entry,
+            // hand it to the viewer so the user can start reading while the rest
+            // of the ZIP keeps streaming. When streaming completes the viewer's
+            // append-detection picks up the full stack without resetting.
+            onFirstDicom: ({ file, metadata }) => {
+              earlyFlushedFile = file;
+              console.log('[DICOM_LOAD] ⚡ First slice ready — flushing 1-file preview to viewer');
+              const previewSeries = {
+                ...asset,
+                name: `${metadata.patientName || 'Study'} - ${metadata.seriesDesc || 'Series'}`,
+                rawFiles: [file],
+                needsHydration: false,
+                seriesUID: metadata.seriesUID,
+                modality: metadata.modality,
+                metadata: { ...metadata },
+                streamingInProgress: true,
+              };
+              setUploadedFiles(prev => {
+                const newFiles = [...prev];
+                newFiles.splice(index, 1, previewSeries);
+                return newFiles;
+              });
+              setIsDicomImage(true);
+              setLoading(false);
+              setProcessingStatus(`Streaming remaining slices in background…`);
+            },
+          });
+          if (!result || !result.series) {
+            throw new Error('PROCESSING_FAILED: streaming processor returned invalid result.');
           }
-        );
-
-        if (!result || !result.series) {
-          throw new Error('PROCESSING_FAILED: DICOM processor returned invalid result.');
+        } catch (streamErr) {
+          console.warn('[DICOM_LOAD] Streaming decode failed, falling back to full-blob path:', streamErr);
+          result = null;
         }
+      }
 
-      } catch (processingError) {
-        console.error(`[DICOM_LOAD] Processing error:`, processingError);
-        throw new Error(`DICOM_PROCESSING_ERROR: Failed to process study files. ${processingError.message}`);
+      // Fallback path: proxy gave us a Blob (no streaming possible) OR streaming threw.
+      if (!result) {
+        if (!blob && response) {
+          // Stream wasn't consumed yet (only true if streaming branch didn't run) — collect chunks.
+          const reader = response.body.getReader();
+          const chunks = [];
+          let received = 0;
+          while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+            chunks.push(value);
+            received += value.length;
+            const mb = (received / 1048576).toFixed(1);
+            setProcessingStatus(`Downloading (fallback): ${mb} MB received...`);
+          }
+          blob = new Blob(chunks);
+        }
+        if (!blob || blob.size === 0) {
+          throw new Error('EMPTY_FILE: The downloaded study file is empty (0 bytes).');
+        }
+        try {
+          result = await dicomOptimizer.processZipFileOptimized(
+            blob,
+            (progress) => {
+              setLoadingProgress(progress);
+              const parts = [`${progress.stage}: ${progress.current}/${progress.total} files`];
+              if (progress.seriesCount) parts.push(`(${progress.seriesCount} series)`);
+              setProcessingStatus(parts.join(' '));
+            },
+            (seriesInfo) => console.log(`[DICOM_LOAD] New series discovered: ${seriesInfo.seriesDesc}`)
+          );
+          if (!result || !result.series) throw new Error('PROCESSING_FAILED: invalid result.');
+        } catch (processingError) {
+          console.error(`[DICOM_LOAD] Processing error:`, processingError);
+          throw new Error(`DICOM_PROCESSING_ERROR: Failed to process study files. ${processingError.message}`);
+        }
       }
 
       const classifiedAssets = result.series;
@@ -2714,11 +2756,314 @@ const ReportingPage = () => {
       {/* --- MAIN LAYOUT --- */}
       <div className="main-layout" style={{ flex: 1, display: 'flex', minHeight: 0, overflow: 'hidden' }}>
 
-        {/* DICOM TAB */}
-        {activeMainTab === 'DICOM' && (
+        {/* DICOM TAB — MOBILE: simplified TechnicianPage-style layout.
+            Intentionally does NOT use the .panel-center class — that class has a
+            mobile media-query rule forcing height: 65vh + flex-row that fights
+            this layout. We give the wrapper its own inline-only styles instead. */}
+        {activeMainTab === 'DICOM' && isMobile && (() => {
+          const activeAsset = uploadedFiles[activeAssetIndex];
+          const hasRawFiles = !!(activeAsset?.rawFiles?.length);
+          const needsLoad = !!activeAsset?.needsHydration && !hasRawFiles;
+          return (
+          <div style={{
+            display: 'flex',
+            flexDirection: 'column',
+            flex: '1 1 auto',
+            width: '100%',
+            // Explicit height — flex chain to this point is unreliable on mobile
+            // browsers (the .reporting-app-container has top-margin + calc-height,
+            // .main-layout is forced column by media query, and 'height: 100%'
+            // collapses to 0 because no ancestor sets an explicit height).
+            // Using dvh accounts for dynamic browser chrome (URL bar showing/hiding).
+            // 80px = 20px container top margin + 60px page header.
+            height: 'calc(100dvh - 80px)',
+            minHeight: '480px',
+            padding: 0,
+            background: '#0a0a0f',
+            overflow: 'hidden',
+          }}>
+            {/* Top strip — slice counter + count of series */}
+            <div style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '8px',
+              padding: '8px 10px',
+              background: 'linear-gradient(180deg, #0f172a 0%, #1e293b 100%)',
+              borderBottom: '1px solid #334155',
+              flexShrink: 0,
+              minHeight: '40px',
+            }}>
+              <div style={{ color: '#94a3b8', fontSize: '10px', fontWeight: 900, letterSpacing: '1.5px' }}>
+                {uploadedFiles.length} SERIES
+              </div>
+              <div style={{ flex: 1 }} />
+              {hasRawFiles && (
+                <>
+                  {/* Zoom out */}
+                  <button
+                    type="button"
+                    onClick={() => window.dispatchEvent(new CustomEvent('dicom-viewer:zoom', { detail: { delta: 0.8 } }))}
+                    title="Zoom out"
+                    style={{
+                      width: '32px', height: '32px',
+                      background: 'rgba(255,255,255,0.08)',
+                      border: '1px solid rgba(255,255,255,0.15)',
+                      color: 'white', borderRadius: '6px',
+                      fontSize: '15px', fontWeight: 900,
+                      cursor: 'pointer', touchAction: 'manipulation',
+                      WebkitTapHighlightColor: 'transparent',
+                      display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    }}
+                  >−</button>
+                  {/* Zoom in */}
+                  <button
+                    type="button"
+                    onClick={() => window.dispatchEvent(new CustomEvent('dicom-viewer:zoom', { detail: { delta: 1.25 } }))}
+                    title="Zoom in"
+                    style={{
+                      width: '32px', height: '32px',
+                      background: 'rgba(255,255,255,0.08)',
+                      border: '1px solid rgba(255,255,255,0.15)',
+                      color: 'white', borderRadius: '6px',
+                      fontSize: '14px', fontWeight: 900,
+                      cursor: 'pointer', touchAction: 'manipulation',
+                      WebkitTapHighlightColor: 'transparent',
+                      display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    }}
+                  >+</button>
+                  {/* Reset zoom */}
+                  <button
+                    type="button"
+                    onClick={() => window.dispatchEvent(new CustomEvent('dicom-viewer:zoom', { detail: { reset: true } }))}
+                    title="Reset zoom"
+                    style={{
+                      height: '32px', padding: '0 8px',
+                      background: 'rgba(255,255,255,0.08)',
+                      border: '1px solid rgba(255,255,255,0.15)',
+                      color: 'white', borderRadius: '6px',
+                      fontSize: '10px', fontWeight: 800, letterSpacing: '1px',
+                      cursor: 'pointer', touchAction: 'manipulation',
+                      WebkitTapHighlightColor: 'transparent',
+                    }}
+                  >FIT</button>
+                  {/* Full-screen DICOM viewer (dedicated page) */}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const validSeries = uploadedFiles.filter(f => f.rawFiles && f.rawFiles.length > 0);
+                      if (validSeries.length === 0) {
+                        showNotif('warning', 'NO DICOM FILES', 'Wait for the study to finish loading.');
+                        return;
+                      }
+                      const allSeries = validSeries.map(series => ({
+                        name: series.name,
+                        files: series.rawFiles,
+                        seriesUID: series.seriesUID,
+                        modality: series.modality,
+                      }));
+                      const activeValidIdx = validSeries.findIndex(s => s.name === uploadedFiles[activeAssetIndex]?.name);
+                      navigate('/dicom-viewer', {
+                        state: {
+                          allSeries,
+                          files: validSeries[0].rawFiles,
+                          seriesName: uploadedFiles[activeAssetIndex]?.name || 'DICOM STUDY',
+                          activeSeriesIndex: activeValidIdx >= 0 ? activeValidIdx : 0,
+                          layoutMode: '1x1',
+                          appointmentData: { ...activeAppointment, appointmentId, id: appointmentId },
+                        },
+                      });
+                    }}
+                    title="Open full-screen DICOM viewer"
+                    style={{
+                      height: '32px', padding: '0 10px',
+                      background: 'linear-gradient(135deg, #10b981, #059669)',
+                      border: '1px solid #34d399',
+                      color: 'white', borderRadius: '6px',
+                      fontSize: '10px', fontWeight: 900, letterSpacing: '1px',
+                      cursor: 'pointer', touchAction: 'manipulation',
+                      WebkitTapHighlightColor: 'transparent',
+                      display: 'flex', alignItems: 'center', gap: '4px',
+                      boxShadow: '0 2px 8px rgba(16, 185, 129, 0.35)',
+                    }}
+                  >⛶ FULL</button>
+                  <div style={{
+                    background: 'rgba(59, 130, 246, 0.25)',
+                    border: '1px solid rgba(59, 130, 246, 0.5)',
+                    padding: '5px 10px', borderRadius: '6px',
+                    fontSize: '11px', fontWeight: 800, color: 'white', whiteSpace: 'nowrap',
+                  }}>
+                    {currentSlice} / {activeAsset.rawFiles.length}
+                  </div>
+                </>
+              )}
+            </div>
+
+            {/* Horizontal scrolling series strip — all series visible at once */}
+            {uploadedFiles.length > 0 && (
+              <div style={{
+                display: 'flex',
+                flexDirection: 'row',
+                gap: '8px',
+                padding: '8px 10px',
+                background: '#0f172a',
+                borderBottom: '1px solid #334155',
+                overflowX: 'auto',
+                overflowY: 'hidden',
+                WebkitOverflowScrolling: 'touch',
+                flexShrink: 0,
+                minHeight: '72px',
+              }}>
+                {uploadedFiles.map((f, i) => {
+                  const isActive = activeAssetIndex === i;
+                  const sliceCount = f.rawFiles?.length || 0;
+                  return (
+                    <button
+                      key={i}
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setActiveAssetIndex(i);
+                      }}
+                      title={f.name}
+                      style={{
+                        flexShrink: 0,
+                        minWidth: '90px',
+                        maxWidth: '120px',
+                        height: '56px',
+                        padding: '6px 8px',
+                        borderRadius: '8px',
+                        border: isActive ? '2px solid #3b82f6' : '1px solid rgba(255,255,255,0.1)',
+                        background: isActive
+                          ? 'linear-gradient(135deg, #3b82f6, #1d4ed8)'
+                          : 'rgba(255,255,255,0.05)',
+                        color: isActive ? 'white' : '#cbd5e1',
+                        cursor: 'pointer',
+                        display: 'flex',
+                        flexDirection: 'column',
+                        justifyContent: 'center',
+                        alignItems: 'flex-start',
+                        gap: '3px',
+                        touchAction: 'manipulation',
+                        WebkitTapHighlightColor: 'transparent',
+                        boxShadow: isActive ? '0 4px 12px rgba(59, 130, 246, 0.4)' : 'none',
+                      }}
+                    >
+                      <div style={{ fontSize: '11px', fontWeight: 950, letterSpacing: '0.5px' }}>
+                        🎞️ S{i + 1}
+                      </div>
+                      <div style={{
+                        fontSize: '9px',
+                        fontWeight: 600,
+                        opacity: 0.85,
+                        overflow: 'hidden',
+                        textOverflow: 'ellipsis',
+                        whiteSpace: 'nowrap',
+                        width: '100%',
+                      }}>
+                        {sliceCount > 0 ? `${sliceCount} slc` : 'load...'}
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+
+            {/* Viewer / state area — explicit min-height so flex never collapses to 0 */}
+            <div style={{
+              flex: '1 1 auto',
+              position: 'relative',
+              background: '#000',
+              minHeight: '300px',
+              overflow: 'hidden',
+            }}>
+              {loading && (
+                <div style={{
+                  position: 'absolute', inset: 0,
+                  background: 'rgba(15, 23, 42, 0.95)',
+                  backdropFilter: 'blur(8px)', zIndex: 100,
+                  display: 'flex', flexDirection: 'column',
+                  alignItems: 'center', justifyContent: 'center',
+                  color: 'white', padding: '20px', textAlign: 'center',
+                }}>
+                  <div style={{ width: '40px', height: '40px', border: '3px solid rgba(59,130,246,0.2)', borderTopColor: '#3b82f6', borderRadius: '50%', animation: 'spin 1s linear infinite' }} />
+                  <div style={{ fontSize: '12px', fontWeight: 900, marginTop: '14px', letterSpacing: '1px' }}>PROCESSING DICOM</div>
+                  <div style={{ fontSize: '10px', color: '#94a3b8', marginTop: '6px', maxWidth: '90%', wordBreak: 'break-word' }}>{processingStatus || 'Initializing…'}</div>
+                  <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
+                </div>
+              )}
+
+              {uploadedFiles.length === 0 ? (
+                /* No assets at all for this study */
+                <div style={{ height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#94a3b8', fontSize: '11px', fontWeight: 800, letterSpacing: '1.5px', flexDirection: 'column', gap: '16px', padding: '20px', textAlign: 'center' }}>
+                  <div style={{ fontSize: '36px', opacity: 0.3 }}>📡</div>
+                  <div>NO DICOM ASSETS FOR THIS STUDY</div>
+                  <input type="file" multiple accept=".dcm,.dicom,.zip" onChange={handleFileChange} style={{ fontSize: '11px', color: '#3b82f6' }} />
+                </div>
+              ) : needsLoad && !loading ? (
+                /* Asset metadata exists but rawFiles not yet downloaded */
+                <div style={{ height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#cbd5e1', fontSize: '12px', fontWeight: 800, flexDirection: 'column', gap: '14px', padding: '20px', textAlign: 'center' }}>
+                  <div style={{ fontSize: '36px', opacity: 0.4 }}>☁️</div>
+                  <div style={{ letterSpacing: '1px' }}>STUDY READY TO LOAD</div>
+                  <div style={{ fontSize: '10px', color: '#94a3b8', maxWidth: '260px', lineHeight: '1.4' }}>
+                    Tap to download imaging data from cloud storage and start viewing.
+                  </div>
+                  <button
+                    onClick={() => hydrateZipAsset(activeAssetIndex)}
+                    style={{
+                      marginTop: '8px',
+                      padding: '10px 20px',
+                      borderRadius: '10px',
+                      border: '1px solid #3b82f6',
+                      background: 'linear-gradient(135deg, #3b82f6, #1d4ed8)',
+                      color: 'white',
+                      fontSize: '12px',
+                      fontWeight: 900,
+                      letterSpacing: '1px',
+                      cursor: 'pointer',
+                    }}
+                  >
+                    ▼ LOAD STUDY
+                  </button>
+                </div>
+              ) : !hasRawFiles ? (
+                /* Files prop will be empty — show a neutral state instead of mounting the viewer with [] */
+                <div style={{ height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#475569', fontSize: '11px', fontWeight: 800, letterSpacing: '1.5px' }}>
+                  WAITING FOR DATA…
+                </div>
+              ) : (
+                <AdvancedDicomViewer
+                  key={`mobile-${activeAssetIndex}_${resetTrigger}`}
+                  files={activeAsset.rawFiles}
+                  preParsedMetadata={activeAsset.metadata}
+                  activeTool={activeTool}
+                  isCine={cineEnabled}
+                  isSynced={false}
+                  keyImages={keyImages}
+                  onKeyImageToggle={toggleKeyImage}
+                  onSliceChange={(idx) => setCurrentSlice(idx + 1)}
+                  enableFullscreen={false}
+                  showMetadata={false}
+                  showMeasurements={false}
+                  showWindowingPresets={false}
+                  enableAdvancedTools={false}
+                  onMetadata={setActiveMetadata}
+                  invert={viewportProps.invert}
+                  flipHorizontal={viewportProps.flipHorizontal}
+                  flipVertical={viewportProps.flipVertical}
+                  rotation={viewportProps.rotation}
+                  resetTrigger={resetTrigger}
+                />
+              )}
+            </div>
+          </div>
+          );
+        })()}
+
+        {/* DICOM TAB — DESKTOP / TABLET (existing complex layout) */}
+        {activeMainTab === 'DICOM' && !isMobile && (
           <div className="panel panel-center" style={{ display: 'flex', flex: 1, padding: 0 }}>
-            {/* LEFT TOOLBAR - Tablet Optimized — hidden on mobile */}
-            {!isMobile && (
+            {/* LEFT TOOLBAR - Tablet Optimized */}
+            {true && (
             <div
               id="dicom-toolbar"
               style={{

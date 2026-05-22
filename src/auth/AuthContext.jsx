@@ -1,9 +1,15 @@
-import { createContext, useState, useCallback, useEffect, useMemo, useRef } from 'react';
+import { createContext, useContext, useState, useCallback, useEffect, useMemo, useRef } from 'react';
 import apiClient from '../api/apiClient';
 import { StudyPrefetcher } from '../utils/StudyPrefetcher';
 import { DicomCache } from '../utils/DicomCache';
 
 export const AuthContext = createContext(null);
+
+// Backward-compat named export — some files import { useAuth } from 'AuthContext'.
+// The canonical hook lives in './useAuth.js' as a default export.
+export function useAuth() {
+  return useContext(AuthContext);
+}
 
 
 const handleUserRoles = (profile) => {
@@ -215,7 +221,10 @@ export function AuthProvider({ children }) {
       const resp = await apiClient.get('subscriptions/status');
       setSubscription(resp.data);
     } catch (err) {
-      if (err.response?.status === 404) {
+      if (err.response?.status === 402 && err.response?.data) {
+        // API returns the subscription details even on 402, so we must set them to render the lock screen correctly
+        setSubscription(err.response.data);
+      } else if (err.response?.status === 404) {
         console.warn('[AUTH] Subscription endpoint not found. Ensure backend is deployed with SubscriptionsController.');
       } else {
         console.error('[AUTH] Subscription sync failure', err);

@@ -149,7 +149,7 @@ const PaymentRequestDrawer = ({ isOpen, plan, billingCycle, onClose, onSuccess, 
                 <div style={{ textAlign:'right' }}>
                   <div style={{ fontSize:'10px',fontWeight:800,color:'#94a3b8',letterSpacing:'1px',textTransform:'uppercase' }}>Pay To</div>
                   <div style={{ fontSize:'13px',fontWeight:700,color:'#0f172a' }}>1Rad by Nexeagle</div>
-                  <div style={{ fontSize:'11px',color:'#64748b',fontWeight:600 }}>UPI: payments@nexeagle</div>
+                  <div style={{ fontSize:'11px',color:'#64748b',fontWeight:600 }}>Contact Admin for UPI</div>
                 </div>
               </div>
 
@@ -288,8 +288,26 @@ const SubscriptionPage = () => {
   const [paymentModal, setPaymentModal] = useState(null);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [activeTab, setActiveTab] = useState('status');
+  const [transactions, setTransactions] = useState([]);
+  const [loadingTx, setLoadingTx] = useState(false);
   const { subscription, refreshSubscription, currentUser } = useAuth();
   const navigate = useNavigate();
+
+  useEffect(() => {
+    const fetchTransactions = async () => {
+      setLoadingTx(true);
+      try {
+        const res = await apiClient.get('/subscriptions/invoices');
+        if (res.data?.success) {
+          setTransactions(res.data.data);
+        }
+      } catch (err) {
+        console.error('Failed to load transactions:', err);
+      }
+      setLoadingTx(false);
+    };
+    fetchTransactions();
+  }, []);
 
   const daysLeft = subscription?.daysRemaining ?? 0;
   const isActive = subscription?.isActive ?? false;
@@ -308,18 +326,36 @@ const SubscriptionPage = () => {
   const handleRefresh = async () => {
     setIsRefreshing(true);
     await refreshSubscription();
+    try {
+      const res = await apiClient.get('/subscriptions/invoices');
+      if (res.data?.success) setTransactions(res.data.data);
+    } catch (e) {}
     setIsRefreshing(false);
   };
 
-  const onPaymentSuccess = () => {
-    refreshSubscription();
+  const onPaymentSuccess = async () => {
+    await refreshSubscription();
+    try {
+      const res = await apiClient.get('/subscriptions/invoices');
+      if (res.data?.success) setTransactions(res.data.data);
+    } catch (e) {}
   };
 
   const premiumPlan = {
     name: '1Rad Premium',
     price: billingCycle === 'monthly' ? '4,999' : '53,988',
     priceMonthly: billingCycle === 'yearly' ? '4,499' : '4,999',
-    features: ['Unlimited Studies', 'Advanced DICOM Viewer', 'AI Reporting Tools', 'Priority Support', 'Multi-Clinic Sync', 'Automated Billing'],
+    features: [
+      'Unlimited DICOM Studies & Storage', 
+      'Advanced Diagnostic Viewer', 
+      'AI-Powered Reporting', 
+      'Teleradiology & Referral Portal', 
+      'Multi-Clinic Synchronization', 
+      'Automated Billing & Invoicing',
+      'Custom Roles & Permissions',
+      'Payroll & Leave Management',
+      'Priority 24/7 Support'
+    ],
   };
 
   const statusColor = {
@@ -404,7 +440,7 @@ const SubscriptionPage = () => {
 
       {/* ── Status Tab ── */}
       {activeTab === 'status' && (
-        <div style={{ maxWidth: '800px' }}>
+        <div style={{ width: '100%' }}>
 
           {/* ── TRIAL ACTIVE CARD ── */}
           {isTrial && (subStatus === 'Active' || subStatus === 'Expiring') && (
@@ -493,6 +529,19 @@ const SubscriptionPage = () => {
                     <div style={{ height: '100%', borderRadius: '99px', background: 'linear-gradient(90deg, #38bdf8, #1d4ed8)', width: `${Math.min(100, (daysLeft / (billingCycleFromServer === 'Yearly' ? 365 : 30)) * 100)}%`, transition: 'width 0.6s ease' }} />
                   </div>
                 </div>
+
+                {/* Features List */}
+                <div style={{ marginTop: '24px', paddingTop: '20px', borderTop: '1px solid rgba(255,255,255,0.08)' }}>
+                  <p style={{ fontSize: '10px', fontWeight: 900, color: '#64748b', letterSpacing: '1px', textTransform: 'uppercase', margin: '0 0 16px' }}>Current Features</p>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))', gap: '12px' }}>
+                    {premiumPlan.features.map(f => (
+                      <div key={f} style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                        <div style={{ color: '#10b981', flexShrink: 0 }}><Icons.Check /></div>
+                        <span style={{ fontSize: '13px', color: '#e2e8f0', fontWeight: 500 }}>{f}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
               </div>
             </div>
           )}
@@ -557,12 +606,64 @@ const SubscriptionPage = () => {
               ))}
             </div>
           </div>
+
+          {/* ── TRANSACTIONS TABLE ── */}
+          <div className="sub-card" style={{ marginTop: '20px' }}>
+            <p style={{ fontSize: '10px', fontWeight: 900, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '1.5px', margin: '0 0 16px' }}>Transaction History</p>
+            {loadingTx ? (
+              <div style={{ padding: '20px', textAlign: 'center', color: '#64748b', fontSize: '13px' }}>Loading transactions...</div>
+            ) : transactions.length === 0 ? (
+              <div style={{ padding: '30px', textAlign: 'center', background: '#f8fafc', borderRadius: '12px', border: '1px dashed #e2e8f0', color: '#64748b', fontSize: '13px', fontWeight: 500 }}>
+                No payment transactions found.
+              </div>
+            ) : (
+              <div style={{ overflowX: 'auto' }}>
+                <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', minWidth: '600px' }}>
+                  <thead>
+                    <tr style={{ borderBottom: '2px solid #f1f5f9' }}>
+                      <th style={{ padding: '12px 16px', fontSize: '10px', fontWeight: 800, color: '#94a3b8', textTransform: 'uppercase' }}>Date</th>
+                      <th style={{ padding: '12px 16px', fontSize: '10px', fontWeight: 800, color: '#94a3b8', textTransform: 'uppercase' }}>Plan</th>
+                      <th style={{ padding: '12px 16px', fontSize: '10px', fontWeight: 800, color: '#94a3b8', textTransform: 'uppercase' }}>Amount</th>
+                      <th style={{ padding: '12px 16px', fontSize: '10px', fontWeight: 800, color: '#94a3b8', textTransform: 'uppercase' }}>Reference</th>
+                      <th style={{ padding: '12px 16px', fontSize: '10px', fontWeight: 800, color: '#94a3b8', textTransform: 'uppercase' }}>Status</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {transactions.map(tx => (
+                      <tr key={tx.requestId} style={{ borderBottom: '1px solid #f1f5f9', transition: 'background 0.2s' }} onMouseEnter={e => e.currentTarget.style.background = '#f8fafc'} onMouseLeave={e => e.currentTarget.style.background = 'transparent'}>
+                        <td style={{ padding: '14px 16px', fontSize: '13px', fontWeight: 700, color: '#0a1628' }}>{new Date(tx.createdAt).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}</td>
+                        <td style={{ padding: '14px 16px' }}>
+                          <div style={{ fontSize: '13px', fontWeight: 700, color: '#0a1628' }}>{tx.planName || 'Premium'}</div>
+                          <div style={{ fontSize: '11px', color: '#64748b', fontWeight: 500, marginTop: '2px' }}>{tx.billingCycle}</div>
+                        </td>
+                        <td style={{ padding: '14px 16px', fontSize: '13px', fontWeight: 800, color: '#0a1628' }}>₹{tx.amount.toLocaleString('en-IN')}</td>
+                        <td style={{ padding: '14px 16px' }}>
+                          <div style={{ fontSize: '13px', fontWeight: 700, color: '#334155' }}>{tx.transactionReference}</div>
+                          <div style={{ fontSize: '11px', color: '#64748b', fontWeight: 500, marginTop: '2px' }}>{tx.paymentMode}</div>
+                        </td>
+                        <td style={{ padding: '14px 16px' }}>
+                          <span style={{ 
+                            padding: '4px 10px', borderRadius: '20px', fontSize: '10px', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.5px',
+                            background: tx.status === 'Approved' ? '#dcfce7' : tx.status === 'Rejected' ? '#fee2e2' : '#fef9c3',
+                            color: tx.status === 'Approved' ? '#166534' : tx.status === 'Rejected' ? '#991b1b' : '#854d0e'
+                          }}>
+                            {tx.status}
+                          </span>
+                          {tx.reviewNote && <div style={{ fontSize: '11px', color: '#ef4444', marginTop: '6px', maxWidth: '200px', fontWeight: 500, lineHeight: 1.4 }}>Reason: {tx.reviewNote}</div>}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
         </div>
       )}
 
       {/* ── Upgrade Tab ── */}
       {activeTab === 'upgrade' && (
-        <div style={{ maxWidth: '900px' }}>
+        <div style={{ width: '100%' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px', flexWrap: 'wrap', gap: '12px' }}>
             <div>
               <h3 style={{ fontSize: '18px', fontWeight: 700, color: '#0a1628', margin: '0 0 4px', letterSpacing: '-0.3px' }}>Choose a Plan</h3>
@@ -631,9 +732,10 @@ const SubscriptionPage = () => {
               <div style={{ background: 'rgba(255,255,255,0.05)', borderRadius: '12px', padding: '14px', marginBottom: '16px', border: '1px solid rgba(255,255,255,0.08)' }}>
                 <div style={{ fontSize: '10px', fontWeight: 800, color: '#64748b', textTransform: 'uppercase', letterSpacing: '1px', marginBottom: '8px' }}>How it works</div>
                 <div style={{ fontSize: '12px', color: '#94a3b8', lineHeight: 1.7 }}>
-                  1. Pay ₹{billingCycle === 'yearly' ? '53,988' : '4,999'} to our UPI: <strong style={{ color: '#38bdf8' }}>payments@nexeagle</strong><br />
-                  2. Click "Submit Payment" and enter your transaction details<br />
-                  3. Our team reviews and activates within 24 hours
+                  1. Contact Nexeagle Administrator to get the official UPI ID for payment<br />
+                  2. Pay ₹{billingCycle === 'yearly' ? '53,988' : '4,999'} to the provided UPI ID<br />
+                  3. Click "Submit Payment" and enter your transaction details<br />
+                  4. Our team reviews and activates within 24 hours
                 </div>
               </div>
 

@@ -419,6 +419,7 @@ const AdvancedDicomViewer = ({
   const toolGroupRef = useRef(null);
   const fullscreenContainerRef = useRef(null);
   const filesRef = useRef(null); // Keep files in ref to prevent garbage collection
+  const prevFilesRef = useRef(null); // Previous files reference, for detecting append-vs-replace
   
   const uniqueId = useId().replace(/[^a-zA-Z0-9]/g, '');
   const engineId = `ENGINE_${uniqueId}`;
@@ -443,6 +444,34 @@ const AdvancedDicomViewer = ({
 
   // Pre-warm Cornerstone + codec workers on mount so they're ready when images arrive
   useEffect(() => { initCornerstone(); }, []);
+
+  // Suppress a single, harmless cornerstone3D error that fires when a touch drag
+  // arrives at the WindowLevelTool while the viewport is mid-transition (e.g.
+  // immediately after a streaming stack-append). The drag still ends safely;
+  // we just don't want the unhandled-error noise in the console.
+  useEffect(() => {
+    const onError = (e) => {
+      const msg = e?.error?.message || e?.message || '';
+      if (typeof msg === 'string' && msg.includes('Viewport is not a valid type')) {
+        e.preventDefault?.();
+        e.stopImmediatePropagation?.();
+        return false;
+      }
+    };
+    const onUnhandledRejection = (e) => {
+      const msg = e?.reason?.message || '';
+      if (typeof msg === 'string' && msg.includes('Viewport is not a valid type')) {
+        e.preventDefault?.();
+        return false;
+      }
+    };
+    window.addEventListener('error', onError, true);
+    window.addEventListener('unhandledrejection', onUnhandledRejection);
+    return () => {
+      window.removeEventListener('error', onError, true);
+      window.removeEventListener('unhandledrejection', onUnhandledRejection);
+    };
+  }, []);
   const [showCrosshairs, setShowCrosshairs] = useState(false);
   const [showReferenceLines, setShowReferenceLines] = useState(false);
   
@@ -454,15 +483,48 @@ const AdvancedDicomViewer = ({
   const [lastTouchTime, setLastTouchTime] = useState(0);
   const [showToolbar, setShowToolbar] = useState(true);
 
-  // CRITICAL: Reset currentImageIndex when files change (e.g., switching series)
+  // Reset currentImageIndex when files change (e.g., switching series).
+  // BUT: if the new files array is a strict extension of the previous (same
+  // file references at indices 0..prev.length-1, plus more after), we treat
+  // this as a streaming append — keep the engine alive and just update the
+  // viewport's stack so the user doesn't see a flash + reload.
   useEffect(() => {
+    const prev = prevFilesRef.current;
+    const isStrictAppend =
+      prev && Array.isArray(prev) && Array.isArray(files) &&
+      prev.length > 0 && files.length > prev.length &&
+      prev.every((f, i) => files[i] === f);
+
+    if (isStrictAppend && renderingEngineRef.current && isReady) {
+      console.log(`[DICOM] Files appended (${prev.length} → ${files.length}), updating stack in place`);
+      filesRef.current = files;
+      prevFilesRef.current = files;
+      try {
+        const viewport = renderingEngineRef.current.getViewport(viewportId);
+        if (viewport) {
+          const newImageIds = files.map(f => `wadouri:${getOrCreateBlobUrl(f)}`);
+          // Preserve current slice — setStack defaults to index 0, so we re-seek after.
+          const prevIndex = currentImageIndex;
+          viewport.setStack(newImageIds).then(() => {
+            if (prevIndex > 0 && prevIndex < newImageIds.length) {
+              viewport.setImageIdIndex(prevIndex).catch(() => {});
+            }
+            renderingEngineRef.current?.renderViewports([viewportId]);
+          }).catch(err => console.warn('[DICOM] In-place setStack failed:', err));
+        }
+      } catch (e) {
+        console.warn('[DICOM] Append-mode update threw, falling back to full reset on next change:', e);
+      }
+      return;
+    }
+
     console.log('[DICOM] Files prop changed, resetting currentImageIndex to 0');
     console.log('[DICOM] New files count:', files?.length);
     setCurrentImageIndex(0);
     setIsReady(false); // Force re-initialization
     setHasRenderedFirstImage(false); // Force loader until pixels are on screen
-    // Store files in ref to prevent garbage collection of Blob URLs
     filesRef.current = files;
+    prevFilesRef.current = files;
   }, [files]);
 
   // --- DESKTOP KEYBOARD NAVIGATION FOR SLICE NAVIGATION ---
@@ -657,9 +719,10 @@ const AdvancedDicomViewer = ({
     };
   }, [onFullscreenChange]);
 
-  // --- TOUCH GESTURE SUPPORT FOR TABLETS ---
+  // --- TOUCH GESTURE SUPPORT FOR TABLETS AND PHONES ---
+  // Pinch-zoom (2 fingers), pan (1 finger), slice-scroll (3 fingers), double-tap reset.
   useEffect(() => {
-    if (!elementRef.current || !isTablet) return;
+    if (!elementRef.current || (!isTablet && !isMobile)) return;
     
     const element = elementRef.current;
     let initialPinchDistance = 0;
@@ -894,7 +957,36 @@ const AdvancedDicomViewer = ({
       element.removeEventListener('touchcancel', handleTouchCancel);
       element.removeEventListener('contextmenu', (e) => e.preventDefault());
     };
-  }, [isTablet, lastTouchTime, viewportId]);
+  }, [isTablet, isMobile, lastTouchTime, viewportId]);
+
+  // Programmatic zoom via window CustomEvent — used by mobile top-strip buttons
+  // that live outside this component. Dispatchers pass detail: { delta: 1.2 }
+  // for zoom in (>1) or { delta: 0.8 } for zoom out, or { reset: true }.
+  useEffect(() => {
+    const handler = (e) => {
+      const engine = renderingEngineRef.current;
+      if (!engine) return;
+      try {
+        const vp = engine.getViewport(viewportId);
+        if (!vp) return;
+        if (e.detail?.reset) {
+          vp.resetCamera();
+          vp.resetProperties();
+        } else {
+          const delta = e.detail?.delta || 1;
+          const camera = vp.getCamera();
+          if (camera?.parallelScale) {
+            vp.setCamera({ ...camera, parallelScale: camera.parallelScale / delta });
+          }
+        }
+        vp.render();
+      } catch (err) {
+        console.warn('[DICOM] zoom event handler failed', err);
+      }
+    };
+    window.addEventListener('dicom-viewer:zoom', handler);
+    return () => window.removeEventListener('dicom-viewer:zoom', handler);
+  }, [viewportId]);
 
   // Auto-hide toolbar in fullscreen mode (show on mouse move/touch)
   useEffect(() => {
@@ -2624,10 +2716,34 @@ const AdvancedDicomViewer = ({
            )}
            
            <div style={{ flex: 1, position: 'relative', width: '100%', display: 'flex', justifyContent: 'center' }}>
-             <input 
-               type="range" 
-               min="0" 
-               max={files.length - 1} 
+             {isTablet && (
+               <style>{`
+                 .dicom-slice-slider::-webkit-slider-thumb {
+                   appearance: none;
+                   -webkit-appearance: none;
+                   width: 20px;
+                   height: 20px;
+                   border-radius: 50%;
+                   background: #3b82f6;
+                   cursor: grab;
+                   box-shadow: 0 2px 6px rgba(0,0,0,0.3);
+                 }
+                 .dicom-slice-slider::-moz-range-thumb {
+                   width: 20px;
+                   height: 20px;
+                   border-radius: 50%;
+                   background: #3b82f6;
+                   border: none;
+                   cursor: grab;
+                   box-shadow: 0 2px 6px rgba(0,0,0,0.3);
+                 }
+               `}</style>
+             )}
+             <input
+               className="dicom-slice-slider"
+               type="range"
+               min="0"
+               max={files.length - 1}
                value={currentImageIndex}
                onChange={(e) => {
                   const index = parseInt(e.target.value);
@@ -2667,24 +2783,16 @@ const AdvancedDicomViewer = ({
                  marginTop: isTablet ? '-3px' : '-1px',
                  marginLeft: isTablet ? '-110px' : '-90px',
                  touchAction: 'manipulation',
-                 // Enhanced tablet-specific styling
+                 // Enhanced tablet-specific styling (thumb styles live in the
+                 // injected <style> block above — React inline styles can't target
+                 // ::-webkit-slider-thumb pseudo-elements).
                  ...(isTablet && {
                    WebkitAppearance: 'none',
                    outline: 'none',
                    border: 'none',
                    boxShadow: '0 2px 8px rgba(59, 130, 246, 0.3)',
-                   // Custom thumb styling for tablets
-                   '&::-webkit-slider-thumb': {
-                     appearance: 'none',
-                     width: '20px',
-                     height: '20px',
-                     borderRadius: '50%',
-                     background: '#3b82f6',
-                     cursor: 'grab',
-                     boxShadow: '0 2px 6px rgba(0,0,0,0.3)'
-                   }
                  })
-               }} 
+               }}
              />
            </div>
            

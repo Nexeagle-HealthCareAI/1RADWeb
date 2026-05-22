@@ -769,10 +769,10 @@ export default function HomeTab({ editor, showFormattingMarks, onToggleFormattin
 
       {/* ── History group ───────────────────────────────── */}
       <Group label="History">
-        <Btn onClick={() => editor.chain().focus().undo().run()} disabled={!editor.can().undo()} title="Undo (Ctrl+Z)">
+        <Btn onClick={() => editor?.chain().focus().undo().run()} disabled={!editor?.can?.()?.undo?.()} title="Undo (Ctrl+Z)">
           <Icon d={ICONS.undo} />
         </Btn>
-        <Btn onClick={() => editor.chain().focus().redo().run()} disabled={!editor.can().redo()} title="Redo (Ctrl+Y)">
+        <Btn onClick={() => editor?.chain().focus().redo().run()} disabled={!editor?.can?.()?.redo?.()} title="Redo (Ctrl+Y)">
           <Icon d={ICONS.redo} />
         </Btn>
       </Group>

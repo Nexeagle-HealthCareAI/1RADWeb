@@ -12,6 +12,7 @@ const DicomViewerPage = () => {
   const [hydrating, setHydrating] = useState(false);
   const [hydrationError, setHydrationError] = useState(null);
   const [hydratedSeries, setHydratedSeries] = useState(null); // array of series objects when fetched by appointmentId
+  const [hydrationProgress, setHydrationProgress] = useState({ phase: '', current: 0, total: 0, elapsedMs: 0 });
   const [activeTool, setActiveTool] = useState('WindowLevelTool');
   const [currentSlice, setCurrentSlice] = useState(1);
   const [activeMetadata, setActiveMetadata] = useState(null);
@@ -47,8 +48,10 @@ const DicomViewerPage = () => {
 
     let cancelled = false;
     const hydrate = async () => {
+      const t0 = performance.now();
       setHydrating(true);
       setHydrationError(null);
+      setHydrationProgress({ phase: 'fetching-asset-list', current: 0, total: 0, elapsedMs: 0 });
       try {
         const res = await apiClient.get(`/Study/${urlAppointmentId}/assets`);
         const assets = res.data || [];
@@ -58,9 +61,11 @@ const DicomViewerPage = () => {
 
         // For each remote asset (typically one ZIP per study), download as Blob and extract.
         const allExtracted = [];
-        for (const asset of assets) {
+        for (let assetIdx = 0; assetIdx < assets.length; assetIdx++) {
+          const asset = assets[assetIdx];
           if (!asset.blobUrl) continue;
           try {
+            setHydrationProgress({ phase: `downloading-asset-${assetIdx + 1}-of-${assets.length}`, current: 0, total: 0, elapsedMs: Math.round(performance.now() - t0) });
             const fileRes = await fetch(asset.blobUrl);
             if (!fileRes.ok) throw new Error(`Fetch ${fileRes.status}`);
             const blob = await fileRes.blob();
@@ -68,7 +73,15 @@ const DicomViewerPage = () => {
 
             if (isZip) {
               const file = new File([blob], asset.fileName || `study-${asset.id}.zip`, { type: 'application/zip' });
-              const result = await dicomOptimizer.processZipFileOptimized(file);
+              const result = await dicomOptimizer.processZipFileOptimized(file, (p) => {
+                if (cancelled) return;
+                setHydrationProgress({
+                  phase: p.stage || 'processing',
+                  current: p.current || 0,
+                  total: p.total || 0,
+                  elapsedMs: Math.round(performance.now() - t0),
+                });
+              });
               const series = result?.series || [];
               series.forEach(s => allExtracted.push(s));
             } else {
@@ -720,11 +733,28 @@ const DicomViewerPage = () => {
 
   // Show loading screen while hydrating from /Study/{id}/assets (URL-launched mode)
   if (hydrating) {
+    const phaseLabel = (hydrationProgress.phase || 'preparing').replace(/-/g, ' ').toUpperCase();
+    const pct = hydrationProgress.total > 0
+      ? Math.min(100, Math.round((hydrationProgress.current / hydrationProgress.total) * 100))
+      : 0;
     return (
       <div style={{ height: '100vh', width: '100vw', background: '#0a0a0f', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', color: 'white', padding: '40px' }}>
         <div style={{ width: '40px', height: '40px', border: '3px solid rgba(59,130,246,0.2)', borderTopColor: '#3b82f6', borderRadius: '50%', animation: 'dvspin 0.8s linear infinite', marginBottom: '20px' }} />
         <div style={{ fontSize: '14px', fontWeight: 800, color: '#3b82f6', letterSpacing: '2px' }}>LOADING STUDY ASSETS</div>
-        <div style={{ fontSize: '11px', color: '#94a3b8', marginTop: '8px' }}>Appointment {urlAppointmentId}</div>
+        <div style={{ fontSize: '11px', color: '#94a3b8', marginTop: '12px', letterSpacing: '1.5px', fontWeight: 700 }}>{phaseLabel}</div>
+        {hydrationProgress.total > 0 && (
+          <>
+            <div style={{ width: '260px', height: '6px', background: 'rgba(255,255,255,0.1)', borderRadius: '3px', marginTop: '14px', overflow: 'hidden' }}>
+              <div style={{ width: `${pct}%`, height: '100%', background: 'linear-gradient(90deg, #3b82f6, #1d4ed8)', transition: 'width 0.2s ease' }} />
+            </div>
+            <div style={{ fontSize: '11px', color: '#cbd5e1', marginTop: '8px', fontWeight: 600 }}>
+              {hydrationProgress.current} / {hydrationProgress.total} files · {pct}%
+            </div>
+          </>
+        )}
+        <div style={{ fontSize: '10px', color: '#475569', marginTop: '12px' }}>
+          Appointment {urlAppointmentId} · {(hydrationProgress.elapsedMs / 1000).toFixed(1)}s
+        </div>
         <style>{`@keyframes dvspin { to { transform: rotate(360deg); } }`}</style>
       </div>
     );

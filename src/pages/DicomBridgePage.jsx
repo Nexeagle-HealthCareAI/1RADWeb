@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
+import useAuth from '../auth/useAuth';
 
 const BRIDGE_URL = 'http://localhost:3001';
 const POLL_MS    = 5000;
@@ -21,11 +22,13 @@ function StatCard({ label, value, color = '#0f52ba', icon }) {
 }
 
 export default function DicomBridgePage() {
+  const { currentUser } = useAuth();
   const [status, setStatus]         = useState(null);
   const [connected, setConnected]   = useState(null); // null=checking, true, false
   const [lastFetch, setLastFetch]   = useState(null);
   const [filterStatus, setFilter]   = useState('ALL');
   const [search, setSearch]         = useState('');
+  const [activeTab, setActiveTab]   = useState('monitor'); // 'monitor' | 'setup'
 
   const fetchStatus = useCallback(async () => {
     try {
@@ -94,32 +97,52 @@ export default function DicomBridgePage() {
               style={{ background: 'rgba(255,255,255,0.1)', border: '1px solid rgba(255,255,255,0.2)', borderRadius: '10px', padding: '8px 14px', color: 'white', cursor: 'pointer', fontSize: '13px' }}
               title="Refresh now"
             >
-              ↻
+              🔄
             </button>
+            {connected === false && (
+              <div style={{ marginLeft: '16px' }}>
+                <div style={{ fontSize: '14px', fontWeight: 950, color: '#f87171', marginBottom: '6px' }}>Bridge service is not reachable</div>
+                <div style={{ fontSize: '12px', color: '#cbd5e1', fontWeight: 600, lineHeight: '1.6' }}>
+                  Make sure the bridge is running:<br />
+                  <code style={{ background: 'rgba(0,0,0,0.2)', padding: '2px 8px', borderRadius: '6px', fontSize: '11px', fontFamily: 'monospace' }}>
+                    cd nexegale-dicom-bridge &amp;&amp; node src/index.js
+                  </code>
+                </div>
+              </div>
+            )}
           </div>
         </div>
       </div>
 
-      {/* ── Body ── */}
-      <div style={{ padding: '36px 50px', maxWidth: '1200px', margin: '0 auto' }}>
+        {/* TAB BAR */}
+        <div style={{ display: 'flex', gap: '8px', padding: '20px 50px 16px' }}>
+          {[
+            { id: 'monitor', label: 'Activity Monitor' },
+            { id: 'setup',   label: 'Setup Guide' },
+          ].map(t => (
+            <button
+              key={t.id}
+              onClick={() => setActiveTab(t.id)}
+              style={{
+                padding: '8px 16px',
+                borderRadius: '10px',
+                border: '1px solid ' + (activeTab === t.id ? '#0f52ba' : '#e2e8f0'),
+                background: activeTab === t.id ? '#0f52ba' : 'white',
+                color: activeTab === t.id ? 'white' : '#475569',
+                fontSize: '12px',
+                fontWeight: 800,
+                cursor: 'pointer',
+                letterSpacing: '0.5px',
+              }}
+            >
+              {t.label}
+            </button>
+          ))}
+        </div>
 
-        {/* Bridge offline message */}
-        {connected === false && (
-          <div style={{ background: '#fef2f2', border: '1px solid #fecaca', borderRadius: '16px', padding: '24px 28px', marginBottom: '32px', display: 'flex', gap: '16px', alignItems: 'flex-start' }}>
-            <span style={{ fontSize: '24px' }}>⚠️</span>
-            <div>
-              <div style={{ fontSize: '14px', fontWeight: 950, color: '#dc2626', marginBottom: '6px' }}>Bridge service is not reachable</div>
-              <div style={{ fontSize: '12px', color: '#64748b', fontWeight: 600, lineHeight: '1.6' }}>
-                Make sure the bridge is running:<br />
-                <code style={{ background: '#f1f5f9', padding: '2px 8px', borderRadius: '6px', fontSize: '11px', fontFamily: 'monospace' }}>
-                  cd nexegale-dicom-bridge &amp;&amp; node src/index.js
-                </code>
-                <br />The bridge exposes a status API on <strong>http://localhost:3001</strong>
-              </div>
-            </div>
-          </div>
-        )}
-
+        <div style={{ padding: '32px 50px 80px' }}>
+        {/* TAB: ACTIVITY MONITOR */}
+        {activeTab === 'monitor' && (<>
         {/* Stats row */}
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '16px', marginBottom: '36px' }}>
           <StatCard label="Uploaded"      value={status?.uploaded     ?? '—'} color="#16a34a" icon="✅" />
@@ -229,26 +252,126 @@ export default function DicomBridgePage() {
             </table>
           )}
         </div>
+        </>
+        )}
 
-        {/* Setup instructions (shown when offline) */}
-        {connected === false && (
-          <div style={{ background: 'white', borderRadius: '20px', border: '1px solid #e8edf2', padding: '28px 32px', marginTop: '24px', boxShadow: '0 2px 12px rgba(0,0,0,0.04)' }}>
-            <div style={{ fontSize: '12px', fontWeight: 950, color: '#1e293b', textTransform: 'uppercase', letterSpacing: '1px', marginBottom: '18px' }}>Quick Setup</div>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-              {[
-                { step: '1', text: 'Open a terminal and navigate to the bridge folder', code: 'cd C:\\Users\\mtnoo\\OneDrive\\Desktop\\1Rad\\nexegale-dicom-bridge' },
-                { step: '2', text: 'Make sure .env is configured with your Orthanc and 1Rad credentials', code: 'notepad .env' },
-                { step: '3', text: 'Start the bridge service', code: 'node src/index.js' },
-                { step: '4', text: 'This page auto-refreshes every 5 seconds', code: null },
-              ].map(({ step, text, code }) => (
-                <div key={step} style={{ display: 'flex', gap: '14px', alignItems: 'flex-start' }}>
-                  <div style={{ width: '24px', height: '24px', borderRadius: '50%', background: '#eff6ff', color: '#0f52ba', fontSize: '10px', fontWeight: 950, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>{step}</div>
-                  <div>
-                    <div style={{ fontSize: '12px', fontWeight: 700, color: '#334155', marginBottom: code ? '4px' : 0 }}>{text}</div>
-                    {code && <code style={{ fontSize: '11px', background: '#f8fafc', border: '1px solid #e2e8f0', padding: '4px 10px', borderRadius: '6px', display: 'inline-block', fontFamily: 'monospace', color: '#0f52ba' }}>{code}</code>}
+        {/* TAB: SETUP GUIDE */}
+        {activeTab === 'setup' && (
+          <div style={{ background: 'white', borderRadius: '20px', border: '1px solid #e8edf2', padding: '40px', boxShadow: '0 4px 20px rgba(0,0,0,0.04)', maxWidth: '900px', margin: '0 auto' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px' }}>
+              <div>
+                <div style={{ fontSize: '14px', fontWeight: 950, color: '#0a1628', textTransform: 'uppercase', letterSpacing: '1px' }}>Bridge Setup Guide</div>
+                <div style={{ fontSize: '12px', color: '#64748b', marginTop: '4px' }}>Follow these steps to connect your clinic's Orthanc PACS to 1Rad.</div>
+              </div>
+              <button onClick={() => alert('Downloading nexegale-dicom-bridge.zip...')} style={{ background: '#0a1628', color: 'white', border: 'none', padding: '10px 20px', borderRadius: '10px', fontSize: '12px', fontWeight: 800, cursor: 'pointer', boxShadow: '0 4px 14px rgba(10,22,40,0.15)' }}>
+                Download Bridge Software (.zip)
+              </button>
+            </div>
+
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '32px' }}>
+              
+              {/* Step 1 */}
+              <div style={{ display: 'flex', gap: '20px', alignItems: 'flex-start' }}>
+                <div style={{ width: '32px', height: '32px', borderRadius: '50%', background: '#eff6ff', color: '#0f52ba', fontSize: '14px', fontWeight: 950, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>1</div>
+                <div>
+                  <div style={{ fontSize: '15px', fontWeight: 800, color: '#0a1628', marginBottom: '6px' }}>Install Prerequisites</div>
+                  <div style={{ fontSize: '13px', color: '#475569', lineHeight: 1.6 }}>
+                    The bridge requires Node.js to run. Download and install the <a href="https://nodejs.org/" target="_blank" rel="noreferrer" style={{ color: '#0f52ba', fontWeight: 700, textDecoration: 'none' }}>Node.js LTS (Long Term Support) version</a> for Windows. 
+                    During installation, ensure the option to add Node to PATH is checked.
                   </div>
                 </div>
-              ))}
+              </div>
+
+              {/* Step 2 */}
+              <div style={{ display: 'flex', gap: '20px', alignItems: 'flex-start' }}>
+                <div style={{ width: '32px', height: '32px', borderRadius: '50%', background: '#eff6ff', color: '#0f52ba', fontSize: '14px', fontWeight: 950, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>2</div>
+                <div>
+                  <div style={{ fontSize: '15px', fontWeight: 800, color: '#0a1628', marginBottom: '6px' }}>Download and Extract the Bridge Software</div>
+                  <div style={{ fontSize: '13px', color: '#475569', lineHeight: 1.6 }}>
+                    Download the `nexegale-dicom-bridge.zip` file using the button above. Extract this ZIP file to a permanent location on your local server, such as <code>C:\1Rad-Bridge\</code>.
+                  </div>
+                </div>
+              </div>
+
+              {/* Step 3 */}
+              <div style={{ display: 'flex', gap: '20px', alignItems: 'flex-start' }}>
+                <div style={{ width: '32px', height: '32px', borderRadius: '50%', background: '#eff6ff', color: '#0f52ba', fontSize: '14px', fontWeight: 950, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>3</div>
+                <div style={{ width: '100%' }}>
+                  <div style={{ fontSize: '15px', fontWeight: 800, color: '#0a1628', marginBottom: '6px' }}>Configure the Environment</div>
+                  <div style={{ fontSize: '13px', color: '#475569', lineHeight: 1.6, marginBottom: '16px' }}>
+                    Create a new file named exactly <code>.env</code> inside your extracted bridge folder. 
+                    Download the pre-filled configuration file below, open it with Notepad, and replace <strong>your_password_here</strong> with your 1Rad administrator password.
+                  </div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px 16px', background: '#1e293b', borderBottom: '1px solid #334155' }}>
+                  <span style={{ fontSize: '11px', color: '#94a3b8', fontWeight: 700, fontFamily: 'monospace' }}>.env</span>
+                  <button 
+                    onClick={() => {
+                      const envText = `ORTHANC_URL=http://localhost:8042\nONERAD_API_URL=https://1radapi-bch4ere7a6cmgkap.centralindia-01.azurewebsites.net/api/v1\nONERAD_IDENTIFIER=${currentUser?.email || 'your-email@example.com'}\nONERAD_PASSWORD=your_password_here\nMATCH_CONFIDENCE_THRESHOLD=0.6\nPOLL_INTERVAL_SECONDS=30`;
+                      const blob = new Blob([envText], { type: 'text/plain' });
+                      const a = document.createElement('a');
+                      a.href = URL.createObjectURL(blob);
+                      a.download = '.env';
+                      a.click();
+                    }}
+                    style={{ background: 'transparent', border: '1px solid #475569', color: '#e2e8f0', padding: '4px 12px', borderRadius: '6px', fontSize: '10px', fontWeight: 800, cursor: 'pointer' }}>
+                    Download .env
+                  </button>
+                </div>
+                <div style={{ padding: '16px', color: '#38bdf8', fontFamily: 'monospace', fontSize: '12px', whiteSpace: 'pre-wrap', lineHeight: 1.6 }}>
+                  ORTHANC_URL=http://localhost:8042<br />
+                  ONERAD_API_URL=https://1radapi-bch4ere7a6cmgkap.centralindia-01.azurewebsites.net/api/v1<br />
+                  ONERAD_IDENTIFIER={currentUser?.email || 'your-email@example.com'}<br />
+                  <span style={{ color: '#f87171' }}>ONERAD_PASSWORD=your_password_here</span><br />
+                  <span style={{ color: '#94a3b8' }}>MATCH_CONFIDENCE_THRESHOLD=0.6</span><br />
+                  <span style={{ color: '#94a3b8' }}>POLL_INTERVAL_SECONDS=30</span>
+                </div>
+              </div>
+              </div>
+
+              {/* Step 4 */}
+              <div style={{ display: 'flex', gap: '20px', alignItems: 'flex-start' }}>
+                <div style={{ width: '32px', height: '32px', borderRadius: '50%', background: '#eff6ff', color: '#0f52ba', fontSize: '14px', fontWeight: 950, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>4</div>
+                <div>
+                  <div style={{ fontSize: '15px', fontWeight: 800, color: '#0a1628', marginBottom: '6px' }}>Install Dependencies</div>
+                  <div style={{ fontSize: '13px', color: '#475569', lineHeight: 1.6 }}>
+                    Open Command Prompt (cmd.exe) as an Administrator. Navigate to your bridge folder and run the install command to download the required Node.js packages.
+                  </div>
+                  <div style={{ marginTop: '12px' }}>
+                    <code style={{ fontSize: '12px', background: '#f8fafc', border: '1px solid #e2e8f0', padding: '10px 14px', borderRadius: '8px', display: 'block', fontFamily: 'monospace', color: '#0f52ba' }}>
+                      cd C:\1Rad-Bridge<br/>
+                      npm install
+                    </code>
+                  </div>
+                </div>
+              </div>
+
+              {/* Step 5 */}
+              <div style={{ display: 'flex', gap: '20px', alignItems: 'flex-start' }}>
+                <div style={{ width: '32px', height: '32px', borderRadius: '50%', background: '#eff6ff', color: '#0f52ba', fontSize: '14px', fontWeight: 950, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>5</div>
+                <div>
+                  <div style={{ fontSize: '15px', fontWeight: 800, color: '#0a1628', marginBottom: '6px' }}>Install Windows Background Service</div>
+                  <div style={{ fontSize: '13px', color: '#475569', lineHeight: 1.6 }}>
+                    To ensure the bridge runs automatically in the background (even after server reboots), install it as a Windows Service using the provided script.
+                  </div>
+                  <div style={{ marginTop: '12px' }}>
+                    <code style={{ fontSize: '12px', background: '#f8fafc', border: '1px solid #e2e8f0', padding: '10px 14px', borderRadius: '8px', display: 'block', fontFamily: 'monospace', color: '#0f52ba' }}>
+                      node scripts/install-service.js
+                    </code>
+                  </div>
+                </div>
+              </div>
+              
+              {/* Step 6 */}
+              <div style={{ display: 'flex', gap: '20px', alignItems: 'flex-start' }}>
+                <div style={{ width: '32px', height: '32px', borderRadius: '50%', background: '#22c55e', color: 'white', fontSize: '14px', fontWeight: 950, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>✓</div>
+                <div>
+                  <div style={{ fontSize: '15px', fontWeight: 800, color: '#0a1628', marginBottom: '6px' }}>Verify Connection</div>
+                  <div style={{ fontSize: '13px', color: '#475569', lineHeight: 1.6 }}>
+                    Once the service starts, open <code>services.msc</code> in Windows to verify that the <strong>Nexegale DICOM Bridge</strong> service is "Running". 
+                    After a few seconds, return to the <strong>Activity Monitor</strong> tab on this page; the status indicator at the top will automatically turn green ("BRIDGE ONLINE").
+                  </div>
+                </div>
+              </div>
             </div>
           </div>
         )}

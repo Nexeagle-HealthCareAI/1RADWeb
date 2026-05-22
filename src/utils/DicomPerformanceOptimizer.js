@@ -5,6 +5,7 @@
 
 import JSZip from 'jszip';
 import dicomParser from 'dicom-parser';
+import { Unzip, UnzipInflate } from 'fflate';
 
 // Vite-bundled worker — dicom-parser is included at build time (no CDN fetch).
 const createDicomWorker = () => {
@@ -548,6 +549,191 @@ export class DicomPerformanceOptimizer {
       console.error('[DICOM_OPTIMIZER] ZIP processing failed:', error);
       throw error;
     }
+  }
+
+  /**
+   * Streams a fetch Response of a ZIP, decoding entries as bytes arrive (fflate).
+   * Phases overlap: download + entry-decode + DICOM-parse all run concurrently,
+   * so the post-download wait is ~0. Also emits the first DICOM file as soon as
+   * its entry is fully decoded, so the caller can hand it to the viewer early.
+   *
+   * Callbacks: { onProgress({ stage, bytesReceived, totalBytes, entriesDone, validFiles }),
+   *              onFirstDicom({ file, metadata }),
+   *              onSeriesFound(seriesInfo) }
+   */
+  async processStreamingZipResponse(response, callbacks = {}) {
+    const { onProgress, onFirstDicom, onSeriesFound } = callbacks;
+    const startTime = performance.now();
+    const stats = { totalFiles: 0, validFiles: 0, corruptedFiles: 0, skippedFiles: 0 };
+
+    const collected = []; // { file, metadata }
+    const seenSeries = new Set();
+    let firstDicomEmitted = false;
+    let firstEmittedFile = null;
+    let entriesDone = 0;
+
+    // Promise resolves when fflate has finished decoding everything we pushed.
+    let zipDoneResolve;
+    const zipDone = new Promise(r => { zipDoneResolve = r; });
+    let pendingEntries = 0;       // entries still streaming chunks
+    let zipFinishedFeeding = false; // we've called unzip.push(_, true)
+    const maybeFinish = () => {
+      if (zipFinishedFeeding && pendingEntries === 0) zipDoneResolve();
+    };
+
+    const unzip = new Unzip(entry => {
+      // Skip junk
+      if (
+        !entry.name ||
+        entry.name.endsWith('/') ||
+        entry.name.includes('__MACOSX') ||
+        entry.name.endsWith('.DS_Store') ||
+        entry.name.split('/').pop().startsWith('.')
+      ) {
+        return;
+      }
+
+      pendingEntries++;
+      stats.totalFiles++;
+      const chunks = [];
+      let totalLen = 0;
+      entry.ondata = (err, data, final) => {
+        if (err) {
+          console.warn(`[STREAM_ZIP] Entry error: ${entry.name}`, err);
+          pendingEntries--;
+          maybeFinish();
+          return;
+        }
+        if (data && data.length) {
+          chunks.push(data);
+          totalLen += data.length;
+        }
+        if (!final) return;
+
+        // Entry complete — concatenate
+        const merged = new Uint8Array(totalLen);
+        let off = 0;
+        for (const c of chunks) { merged.set(c, off); off += c.length; }
+
+        const meta = this.quickMetadataExtract(merged, entry.name);
+        if (meta) {
+          const file = new File([merged], entry.name, { type: 'application/dicom' });
+          collected.push({ file, metadata: meta });
+          stats.validFiles++;
+
+          // Notify new series
+          if (meta.seriesUID && !seenSeries.has(meta.seriesUID)) {
+            seenSeries.add(meta.seriesUID);
+            if (onSeriesFound) onSeriesFound({
+              seriesUID: meta.seriesUID,
+              seriesDesc: meta.seriesDesc,
+              patientName: meta.patientName,
+              modality: meta.modality,
+            });
+          }
+
+          // First-slice emit
+          if (!firstDicomEmitted) {
+            firstDicomEmitted = true;
+            firstEmittedFile = file;
+            if (onFirstDicom) {
+              try { onFirstDicom({ file, metadata: meta }); } catch (e) { console.warn('[STREAM_ZIP] onFirstDicom threw', e); }
+            }
+          }
+        } else {
+          stats.skippedFiles++;
+        }
+        entriesDone++;
+        if (onProgress) {
+          onProgress({
+            stage: 'extracting',
+            entriesDone,
+            validFiles: stats.validFiles,
+          });
+        }
+        pendingEntries--;
+        maybeFinish();
+      };
+      entry.start();
+    });
+    unzip.register(UnzipInflate);
+
+    // Stream the body
+    const reader = response.body.getReader();
+    const contentLength = parseInt(response.headers.get('Content-Length') || '0', 10);
+    let received = 0;
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      received += value.length;
+      try {
+        unzip.push(value, false);
+      } catch (e) {
+        console.error('[STREAM_ZIP] unzip.push failed', e);
+        throw e;
+      }
+      if (onProgress) {
+        onProgress({
+          stage: 'downloading',
+          bytesReceived: received,
+          totalBytes: contentLength,
+          entriesDone,
+          validFiles: stats.validFiles,
+        });
+      }
+    }
+    // Final flush
+    try { unzip.push(new Uint8Array(0), true); } catch (e) { console.warn('[STREAM_ZIP] final push failed', e); }
+    zipFinishedFeeding = true;
+    maybeFinish();
+    await zipDone;
+
+    // Group + sort
+    const seriesGroups = {};
+    for (const { file, metadata } of collected) {
+      const sid = metadata.seriesUID || 'default';
+      if (!seriesGroups[sid]) {
+        seriesGroups[sid] = {
+          seriesUID: sid,
+          seriesDesc: metadata.seriesDesc,
+          patientName: metadata.patientName,
+          modality: metadata.modality,
+          metadata,
+          files: [],
+        };
+      }
+      seriesGroups[sid].files.push({ file, instanceNum: metadata.instanceNum });
+    }
+    let sortedSeries = Object.values(seriesGroups).map(s => {
+      let files = s.files.sort((a, b) => (a.instanceNum || 0) - (b.instanceNum || 0)).map(f => f.file);
+      // If the file we emitted as the "first slice" is in this series but isn't at index 0
+      // after sorting, move it to index 0. This keeps the streamed-first-slice and the
+      // final-stack first-slice the same File reference, which lets the viewer's
+      // append-detection treat the final emit as an in-place extension rather than a reset.
+      if (firstEmittedFile) {
+        const idx = files.indexOf(firstEmittedFile);
+        if (idx > 0) {
+          files = [firstEmittedFile, ...files.slice(0, idx), ...files.slice(idx + 1)];
+        }
+      }
+      return { ...s, files };
+    });
+
+    // Reorder series so the one containing the first-emitted file lands at index 0.
+    // Without this, the caller's splice replaces the 1-file preview with a DIFFERENT
+    // series, causing the viewer to fully reset and the user to wait for re-decode.
+    if (firstEmittedFile && sortedSeries.length > 1) {
+      const previewSeriesIdx = sortedSeries.findIndex(s => s.files.indexOf(firstEmittedFile) >= 0);
+      if (previewSeriesIdx > 0) {
+        const [previewSeries] = sortedSeries.splice(previewSeriesIdx, 1);
+        sortedSeries = [previewSeries, ...sortedSeries];
+      }
+    }
+
+    const totalMs = performance.now() - startTime;
+    console.log(`[STREAM_ZIP] ⚡ Streaming complete in ${totalMs.toFixed(0)}ms — ${stats.validFiles} files across ${sortedSeries.length} series`);
+
+    return { series: sortedSeries, stats };
   }
 
   /**

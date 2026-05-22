@@ -72,14 +72,14 @@ export default function Ribbon(props) {
         />
         <QATBtn
           title="Undo (Ctrl+Z)"
-          disabled={!editor.can().undo()}
-          onClick={() => editor.chain().focus().undo().run()}
+          disabled={!editor?.can?.()?.undo?.()}
+          onClick={() => editor?.chain().focus().undo().run()}
           icon={<Icon d={ICONS.undo} size={13} />}
         />
         <QATBtn
           title="Redo (Ctrl+Y)"
-          disabled={!editor.can().redo()}
-          onClick={() => editor.chain().focus().redo().run()}
+          disabled={!editor?.can?.()?.redo?.()}
+          onClick={() => editor?.chain().focus().redo().run()}
           icon={<Icon d={ICONS.redo} size={13} />}
         />
         <style>{`
