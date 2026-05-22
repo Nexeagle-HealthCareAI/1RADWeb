@@ -3995,8 +3995,14 @@ const ReportingPage = () => {
                     loading={loadingTimeline}
                     activeAppointmentId={appointmentId}
                     onViewDicom={(study) => {
-                      handleLoadHistoricalDicom(study);
-                      handleSelectMainTab('DICOM'); // Switch to DICOM tab and trigger hydration
+                      // Open the historical study in the full-screen DICOM viewer in a new tab.
+                      // The viewer hydrates from /Study/{id}/assets when launched via ?appointmentId=.
+                      const historicalId = study.appointmentId || study.AppointmentId || study.id || study.Id;
+                      if (!historicalId) {
+                        showNotif('warning', 'NO_STUDY_ID', 'Could not determine the study to load.');
+                        return;
+                      }
+                      window.open(`/dicom-viewer?appointmentId=${encodeURIComponent(historicalId)}`, '_blank', 'noopener');
                     }}
                   />
                 </div>

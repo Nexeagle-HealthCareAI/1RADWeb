@@ -390,15 +390,13 @@ export default function AppointmentBoard() {
 
   const isInitialMount = useRef(true);
   // Auto-scroll on page change
-  useEffect(() => {
-    if (isInitialMount.current) {
-      isInitialMount.current = false;
-      return;
-    }
+
+  const handlePageChange = (newPage) => {
+    setCurrentPage(newPage);
     if (listTopRef.current) {
       listTopRef.current.scrollIntoView({ behavior: 'smooth' });
     }
-  }, [currentPage]);
+  };
 
   const itemsPerPage = 5;
   const totalPages = Math.ceil(filteredAppointments.length / itemsPerPage);
@@ -1221,14 +1219,14 @@ export default function AppointmentBoard() {
         <div className="pagination-pages">
           <button
             className="pagination-btn pagination-nav"
-            onClick={() => setCurrentPage(1)}
+            onClick={() => handlePageChange(1)}
             disabled={currentPage === 1}
             title="First page"
           >«</button>
 
           <button
             className="pagination-btn pagination-nav"
-            onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
+            onClick={() => handlePageChange(Math.max(1, currentPage - 1))}
             disabled={currentPage === 1}
           ><span className="nav-label">Prev</span></button>
 
@@ -1238,19 +1236,19 @@ export default function AppointmentBoard() {
               : <button
                   key={page}
                   className={`pagination-btn${currentPage === page ? ' active' : ''}`}
-                  onClick={() => setCurrentPage(page)}
+                  onClick={() => handlePageChange(page)}
                 >{page}</button>
           )}
 
           <button
             className="pagination-btn pagination-nav"
-            onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
+            onClick={() => handlePageChange(Math.min(totalPages, currentPage + 1))}
             disabled={currentPage === totalPages}
           ><span className="nav-label">Next</span></button>
 
           <button
             className="pagination-btn pagination-nav"
-            onClick={() => setCurrentPage(totalPages)}
+            onClick={() => handlePageChange(totalPages)}
             disabled={currentPage === totalPages}
             title="Last page"
           >»</button>

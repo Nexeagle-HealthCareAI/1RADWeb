@@ -502,7 +502,41 @@ function ReportPreviewModal({ modal, onClose }) {
         </div>
 
         {/* Footer */}
-        <div style={{ padding: '14px 26px', borderTop: '1px solid #e8edf2', background: 'white', display: 'flex', justifyContent: 'flex-end' }}>
+        <div style={{ padding: '14px 26px', borderTop: '1px solid #e8edf2', background: 'white', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
+          <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+            {/* Download as .html file — admin can later print/share */}
+            <button
+              onClick={() => downloadReport({ study, data, plainFindings, htmlFindings, formattedDate, modality, service, patient, referrer })}
+              disabled={!data || (!plainFindings && !data?.impression)}
+              title={!data || (!plainFindings && !data?.impression) ? 'No content to download' : 'Download as HTML file'}
+              style={{
+                padding: '10px 16px', borderRadius: '10px',
+                border: '1px solid #e2e8f0', background: 'white',
+                color: (!data || (!plainFindings && !data?.impression)) ? '#cbd5e1' : '#0a1628',
+                fontSize: '12px', fontWeight: 700,
+                cursor: (!data || (!plainFindings && !data?.impression)) ? 'not-allowed' : 'pointer',
+                display: 'inline-flex', alignItems: 'center', gap: '6px',
+              }}
+            >📥 Download</button>
+
+            {/* Print / Save as PDF */}
+            <button
+              onClick={() => printReport({ study, data, plainFindings, htmlFindings, formattedDate, modality, service, patient, referrer })}
+              disabled={!data || (!plainFindings && !data?.impression)}
+              title={!data || (!plainFindings && !data?.impression) ? 'No content to print' : 'Print or save as PDF'}
+              style={{
+                padding: '10px 18px', borderRadius: '10px', border: 'none',
+                background: (!data || (!plainFindings && !data?.impression)) ? '#e2e8f0' : 'linear-gradient(135deg, #0a1628 0%, #1e3a5f 100%)',
+                color: (!data || (!plainFindings && !data?.impression)) ? '#94a3b8' : 'white',
+                fontSize: '12px', fontWeight: 800,
+                cursor: (!data || (!plainFindings && !data?.impression)) ? 'not-allowed' : 'pointer',
+                letterSpacing: '0.3px',
+                boxShadow: (!data || (!plainFindings && !data?.impression)) ? 'none' : '0 4px 12px rgba(10, 22, 40, 0.18)',
+                display: 'inline-flex', alignItems: 'center', gap: '6px',
+              }}
+            >🖨 Print / Save as PDF</button>
+          </div>
+
           <button
             onClick={onClose}
             style={{ padding: '10px 22px', borderRadius: '10px', border: '1px solid #e2e8f0', background: 'white', color: '#0a1628', fontSize: '12px', fontWeight: 700, cursor: 'pointer' }}
@@ -517,6 +551,123 @@ function ReportPreviewModal({ modal, onClose }) {
       `}</style>
     </div>
   );
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// Print + Download helpers — share a single HTML template
+// ════════════════════════════════════════════════════════════════════════════
+function buildReportHtml({ study, data, plainFindings, htmlFindings, formattedDate, modality, service, patient, referrer }) {
+  const sanitisedFindings = DOMPurify.sanitize(htmlFindings || '');
+  const impressionHtml = data?.impression ? DOMPurify.sanitize(data.impression).replace(/\n/g, '<br/>') : '';
+  const adviceHtml = data?.advice ? DOMPurify.sanitize(data.advice).replace(/\n/g, '<br/>') : '';
+
+  return `<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>Report · ${patient || service} · ${formattedDate}</title>
+<style>
+  * { box-sizing: border-box; }
+  body { margin: 0; padding: 36px 48px; font-family: 'Inter', -apple-system, 'Segoe UI', Roboto, sans-serif; color: #0a1628; background: white; }
+  .header { border-bottom: 2px solid #0a1628; padding-bottom: 18px; margin-bottom: 22px; }
+  .header .eyebrow { font-size: 10px; font-weight: 800; color: #d4a017; letter-spacing: 1.5px; text-transform: uppercase; margin-bottom: 6px; }
+  .header h1 { margin: 0 0 4px; font-size: 22px; font-weight: 800; letter-spacing: -0.3px; }
+  .header .meta { display: flex; gap: 18px; flex-wrap: wrap; font-size: 12px; color: #475569; margin-top: 10px; }
+  .header .meta span { display: inline-flex; align-items: center; gap: 6px; }
+  .header .meta strong { color: #0a1628; font-weight: 700; }
+  .section { margin-bottom: 22px; page-break-inside: avoid; }
+  .section h2 { font-size: 11px; font-weight: 800; letter-spacing: 1.2px; text-transform: uppercase; color: #0f52ba; margin: 0 0 10px; padding-bottom: 6px; border-bottom: 1px solid #e8edf2; }
+  .section.impression h2 { color: #15803d; }
+  .section.advice h2 { color: #7c3aed; }
+  .section .body { font-size: 13px; line-height: 1.6; color: #0a1628; }
+  .section.impression .body { background: #f0fdf4; border: 1px solid #bbf7d0; padding: 12px 14px; border-radius: 8px; font-weight: 600; }
+  .section.advice .body { background: #faf5ff; border: 1px solid #e9d5ff; padding: 12px 14px; border-radius: 8px; font-style: italic; color: #581c87; }
+  .verified { display: inline-block; margin-top: 10px; padding: 6px 14px; background: #dcfce7; border: 1px solid #bbf7d0; border-radius: 999px; color: #15803d; font-size: 10px; font-weight: 800; letter-spacing: 0.5px; }
+  .footer { margin-top: 30px; padding-top: 14px; border-top: 1px solid #e8edf2; font-size: 10px; color: #94a3b8; }
+  .toolbar { position: fixed; top: 16px; right: 16px; display: flex; gap: 8px; z-index: 1000; }
+  .toolbar button { padding: 9px 16px; border-radius: 8px; border: 1px solid #e2e8f0; background: white; color: #0a1628; font-size: 12px; font-weight: 700; cursor: pointer; box-shadow: 0 4px 12px rgba(15,23,42,0.1); }
+  .toolbar .primary { background: linear-gradient(135deg, #0a1628 0%, #1e3a5f 100%); color: white; border: none; }
+  @media print {
+    .toolbar { display: none; }
+    body { padding: 0; }
+  }
+</style>
+</head>
+<body>
+  <div class="toolbar">
+    <button onclick="window.close()">Close</button>
+    <button class="primary" onclick="window.print()">🖨 Print</button>
+  </div>
+
+  <div class="header">
+    <div class="eyebrow">${modality.toUpperCase()} · Historical Report</div>
+    <h1>${service}</h1>
+    <div class="meta">
+      ${patient ? `<span>👤 <strong>${patient}</strong></span>` : ''}
+      <span>📅 <strong>${formattedDate}</strong></span>
+      ${referrer ? `<span>↗ Referred by <strong>${referrer}</strong></span>` : ''}
+    </div>
+  </div>
+
+  ${sanitisedFindings ? `
+  <div class="section findings">
+    <h2>Findings</h2>
+    <div class="body">${sanitisedFindings}</div>
+  </div>` : ''}
+
+  ${impressionHtml ? `
+  <div class="section impression">
+    <h2>Impression</h2>
+    <div class="body">${impressionHtml}</div>
+  </div>` : ''}
+
+  ${adviceHtml ? `
+  <div class="section advice">
+    <h2>Advice</h2>
+    <div class="body">${adviceHtml}</div>
+  </div>` : ''}
+
+  ${data?.isFinalized ? `<div class="verified">✓ VERIFIED &amp; SIGNED REPORT</div>` : ''}
+
+  <div class="footer">
+    Generated from 1Rad patient timeline · ${new Date().toLocaleString('en-IN', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
+  </div>
+
+  <script>
+    // Auto-trigger print dialog when opened in a popup window (helpful for "Save as PDF").
+    if (window.opener && window.name === 'rep-print') {
+      window.addEventListener('load', () => setTimeout(() => window.print(), 250));
+    }
+  </script>
+</body>
+</html>`;
+}
+
+function printReport(args) {
+  const html = buildReportHtml(args);
+  const w = window.open('', 'rep-print', 'width=900,height=900');
+  if (!w) {
+    alert('Pop-up was blocked. Please allow pop-ups for this site and try again.');
+    return;
+  }
+  w.document.write(html);
+  w.document.close();
+  w.focus();
+}
+
+function downloadReport(args) {
+  const html = buildReportHtml(args);
+  const blob = new Blob([html], { type: 'text/html;charset=utf-8' });
+  const url  = URL.createObjectURL(blob);
+  const safeName = (args.patient || 'patient').replace(/[^a-z0-9]+/gi, '_').toLowerCase();
+  const safeDate = args.formattedDate.replace(/[^a-z0-9]+/gi, '-');
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `report-${safeName}-${safeDate}.html`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
 export default PatientTimeline;

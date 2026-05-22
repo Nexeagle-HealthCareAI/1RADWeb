@@ -1,10 +1,17 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { useNavigate, useLocation } from 'react-router-dom';
+import { useNavigate, useLocation, useSearchParams } from 'react-router-dom';
 import AdvancedDicomViewer from '../components/AdvancedDicomViewer';
+import apiClient from '../api/apiClient';
+import { dicomOptimizer } from '../utils/DicomPerformanceOptimizer';
 
 const DicomViewerPage = () => {
   const navigate = useNavigate();
   const location = useLocation();
+  const [searchParams] = useSearchParams();
+  const urlAppointmentId = searchParams.get('appointmentId');
+  const [hydrating, setHydrating] = useState(false);
+  const [hydrationError, setHydrationError] = useState(null);
+  const [hydratedSeries, setHydratedSeries] = useState(null); // array of series objects when fetched by appointmentId
   const [activeTool, setActiveTool] = useState('WindowLevelTool');
   const [currentSlice, setCurrentSlice] = useState(1);
   const [activeMetadata, setActiveMetadata] = useState(null);
@@ -24,13 +31,98 @@ const DicomViewerPage = () => {
   const [isMobile, setIsMobile] = useState(typeof window !== 'undefined' && window.innerWidth < 768);
   
   // Get data from navigation state - support both single and multi-series
-  const { files, seriesName, appointmentData, allSeries, activeSeriesIndex: initialSeriesIndex, layoutMode: initialLayoutMode } = location.state || {};
-  
+  const stateFiles = location.state?.files;
+  const stateSeriesName = location.state?.seriesName;
+  const stateAppointmentData = location.state?.appointmentData;
+  const stateAllSeries = location.state?.allSeries;
+  const stateInitialSeriesIndex = location.state?.activeSeriesIndex;
+  const stateInitialLayoutMode = location.state?.layoutMode;
+
+  // If we were opened via ?appointmentId=… (e.g. from the timeline), hydrate the assets
+  // ourselves: download the ZIPs from the backend, extract them, classify into series.
+  useEffect(() => {
+    if (!urlAppointmentId) return;
+    if (stateFiles || stateAllSeries) return; // navigation state already supplied data
+    if (hydratedSeries) return;
+
+    let cancelled = false;
+    const hydrate = async () => {
+      setHydrating(true);
+      setHydrationError(null);
+      try {
+        const res = await apiClient.get(`/Study/${urlAppointmentId}/assets`);
+        const assets = res.data || [];
+        if (!Array.isArray(assets) || assets.length === 0) {
+          throw new Error('No imaging assets are available for this study.');
+        }
+
+        // For each remote asset (typically one ZIP per study), download as Blob and extract.
+        const allExtracted = [];
+        for (const asset of assets) {
+          if (!asset.blobUrl) continue;
+          try {
+            const fileRes = await fetch(asset.blobUrl);
+            if (!fileRes.ok) throw new Error(`Fetch ${fileRes.status}`);
+            const blob = await fileRes.blob();
+            const isZip = (asset.fileType || '').toLowerCase() === 'zip' || (asset.fileName || '').toLowerCase().endsWith('.zip');
+
+            if (isZip) {
+              const file = new File([blob], asset.fileName || `study-${asset.id}.zip`, { type: 'application/zip' });
+              const result = await dicomOptimizer.processZipFileOptimized(file);
+              const series = result?.series || [];
+              series.forEach(s => allExtracted.push(s));
+            } else {
+              // Single DICOM file
+              const file = new File([blob], asset.fileName || `image-${asset.id}.dcm`, { type: 'application/dicom' });
+              allExtracted.push({
+                name: asset.fileName || `Asset ${asset.id}`,
+                seriesDesc: asset.fileName || 'Image',
+                patientName: '',
+                modality: '',
+                seriesUID: asset.id,
+                files: [file],
+                metadata: {},
+              });
+            }
+          } catch (err) {
+            console.warn(`[DICOM VIEWER] Failed to process asset ${asset.id}:`, err);
+          }
+        }
+
+        if (cancelled) return;
+        if (allExtracted.length === 0) {
+          throw new Error('No DICOM images could be extracted from this study.');
+        }
+
+        // Shape the hydrated series to match what the viewer expects.
+        const series = allExtracted.map((s, idx) => ({
+          name: s.patientName ? `${s.patientName} — ${s.seriesDesc}` : (s.seriesDesc || `Series ${idx + 1}`),
+          files: s.files,
+          modality: s.modality,
+          seriesUID: s.seriesUID,
+        }));
+        setHydratedSeries(series);
+      } catch (err) {
+        if (!cancelled) setHydrationError(err.message || 'Failed to load study assets.');
+      } finally {
+        if (!cancelled) setHydrating(false);
+      }
+    };
+    hydrate();
+    return () => { cancelled = true; };
+  }, [urlAppointmentId, stateFiles, stateAllSeries, hydratedSeries]);
+
+  // Effective sources — prefer navigation state, fall back to hydrated assets.
+  const files          = stateFiles || (hydratedSeries && hydratedSeries.length === 1 ? hydratedSeries[0].files : null);
+  const seriesName     = stateSeriesName || (hydratedSeries && hydratedSeries.length === 1 ? hydratedSeries[0].name : null);
+  const appointmentData = stateAppointmentData || (urlAppointmentId ? { appointmentId: urlAppointmentId } : null);
+  const allSeries      = stateAllSeries || (hydratedSeries && hydratedSeries.length > 1 ? hydratedSeries : null);
+
   // Multi-series support - use local state, initialized from navigation state
-  const [activeSeriesIndex, setActiveSeriesIndex] = useState(initialSeriesIndex || 0);
-  
-  const [layoutMode, setLayoutMode] = useState(initialLayoutMode || '1x1');
-  
+  const [activeSeriesIndex, setActiveSeriesIndex] = useState(stateInitialSeriesIndex || 0);
+
+  const [layoutMode, setLayoutMode] = useState(stateInitialLayoutMode || '1x1');
+
   // Determine if we have multiple series
   const hasMultipleSeries = allSeries && allSeries.length > 1;
   const currentSeries = hasMultipleSeries ? allSeries[activeSeriesIndex] : null;
@@ -622,6 +714,30 @@ const DicomViewerPage = () => {
             </button>
           </div>
         </div>
+      </div>
+    );
+  }
+
+  // Show loading screen while hydrating from /Study/{id}/assets (URL-launched mode)
+  if (hydrating) {
+    return (
+      <div style={{ height: '100vh', width: '100vw', background: '#0a0a0f', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', color: 'white', padding: '40px' }}>
+        <div style={{ width: '40px', height: '40px', border: '3px solid rgba(59,130,246,0.2)', borderTopColor: '#3b82f6', borderRadius: '50%', animation: 'dvspin 0.8s linear infinite', marginBottom: '20px' }} />
+        <div style={{ fontSize: '14px', fontWeight: 800, color: '#3b82f6', letterSpacing: '2px' }}>LOADING STUDY ASSETS</div>
+        <div style={{ fontSize: '11px', color: '#94a3b8', marginTop: '8px' }}>Appointment {urlAppointmentId}</div>
+        <style>{`@keyframes dvspin { to { transform: rotate(360deg); } }`}</style>
+      </div>
+    );
+  }
+
+  // Show hydration error if appointmentId-mode failed
+  if (hydrationError) {
+    return (
+      <div style={{ height: '100vh', width: '100vw', background: '#0a0a0f', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', color: 'white', padding: '40px' }}>
+        <div style={{ fontSize: '48px', marginBottom: '16px' }}>⚠️</div>
+        <div style={{ fontSize: '18px', fontWeight: 800, color: '#ef4444', marginBottom: '8px' }}>COULD NOT LOAD STUDY</div>
+        <div style={{ fontSize: '13px', color: '#94a3b8', marginBottom: '20px', textAlign: 'center', maxWidth: '420px' }}>{hydrationError}</div>
+        <button onClick={() => window.close()} style={{ padding: '10px 22px', borderRadius: '10px', border: '1px solid rgba(255,255,255,0.2)', background: 'rgba(255,255,255,0.1)', color: 'white', fontSize: '12px', fontWeight: 700, cursor: 'pointer' }}>Close</button>
       </div>
     );
   }
