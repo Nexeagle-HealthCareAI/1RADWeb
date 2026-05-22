@@ -557,8 +557,9 @@ const AdvancedDicomViewer = ({
       const isIPad = /iPad|Macintosh/.test(navigator.userAgent) && 'ontouchstart' in document;
       const isTabletSize = (width >= 768 && width <= 1366) || (height >= 768 && height <= 1366);
       
-      setIsTablet(isTouchDevice && (isTabletSize || isIPad));
-      setIsMobile(isTouchDevice && width < 768);
+      const mobile = width < 768;
+      setIsMobile(mobile);
+      setIsTablet(!mobile && (isTouchDevice && (isTabletSize || isIPad)));
       
       // Log device info for debugging
       console.log('[DICOM] Device detection:', {
@@ -2162,8 +2163,8 @@ const AdvancedDicomViewer = ({
         }
       `}</style>
 
-      {/* ADVANCED WINDOWING PRESETS TOOLBAR */}
-      {isReady && showWindowingPresets && (
+      {/* ADVANCED WINDOWING PRESETS TOOLBAR — hidden on mobile (tool-free view) */}
+      {isReady && showWindowingPresets && !isMobile && (
         <div className="dicom-viewer-presets" style={{
           position: 'absolute',
           top: '15px',
@@ -2329,8 +2330,8 @@ const AdvancedDicomViewer = ({
         </div>
       )}
 
-      {/* IMAGE STATISTICS PANEL - Only show if calculated */}
-      {imageStatistics && showMetadata && (
+      {/* IMAGE STATISTICS PANEL — desktop/tablet only */}
+      {imageStatistics && showMetadata && !isMobile && (
         <div className="dicom-viewer-stats" style={{
           position: 'absolute',
           bottom: '15px',
@@ -2369,8 +2370,8 @@ const AdvancedDicomViewer = ({
         </div>
       )}
 
-      {/* CALCULATE STATS BUTTON - Show when stats not calculated */}
-      {!imageStatistics && showMetadata && isReady && (
+      {/* CALCULATE STATS BUTTON — desktop/tablet only */}
+      {!imageStatistics && showMetadata && isReady && !isMobile && (
         <div style={{
           position: 'absolute',
           bottom: '15px',
@@ -2395,8 +2396,8 @@ const AdvancedDicomViewer = ({
         </div>
       )}
 
-      {/* MEASUREMENTS PANEL */}
-      {measurements.length > 0 && showMeasurements && (
+      {/* MEASUREMENTS PANEL — hidden on mobile */}
+      {measurements.length > 0 && showMeasurements && !isMobile && (
         <div className="dicom-viewer-measurements" style={{
           position: 'absolute',
           top: '80px',
@@ -2881,8 +2882,8 @@ const AdvancedDicomViewer = ({
         </div>
       )}
 
-      {/* KEY IMAGE TOGGLE */}
-      {isReady && onKeyImageToggle && (
+      {/* KEY IMAGE TOGGLE — desktop/tablet only */}
+      {isReady && onKeyImageToggle && !isMobile && (
         <button className="dicom-viewer-key-image-btn"
           onClick={() => {
             const viewport = renderingEngineRef.current.getViewport(viewportId);

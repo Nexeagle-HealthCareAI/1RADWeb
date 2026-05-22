@@ -1468,8 +1468,9 @@ export default function AdminBoard() {
         // Auto-generate a default reporting template for new services
         if (!payload.id) {
           try {
-            await apiClient.post('/reporting/templates', {
-              name: payload.serviceName,
+            await apiClient.post('/reporting/templates/upsert', {
+                name: payload.serviceName,
+                modality: payload.modality,
               content: `<p><strong>CLINICAL HISTORY:</strong></p><p><br></p><p><strong>TECHNIQUE:</strong></p><p>Routine protocol for ${payload.serviceName}.</p><p><br></p><p><strong>FINDINGS:</strong></p><p><br></p><p><strong>IMPRESSION:</strong></p><p><br></p>`
             });
           } catch (tplErr) {

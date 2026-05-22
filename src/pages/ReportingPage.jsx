@@ -3730,11 +3730,20 @@ const ReportingPage = () => {
 
             {/* REPORTING TAB */}
             {activeMainTab === 'REPORTING' && (
-              <div className="panel panel-right" style={{ flex: 1, display: 'flex', flexDirection: 'row', minHeight: 0, background: '#f1f5f9', padding: '16px', gap: '16px', overflow: 'hidden' }}>
+              <div className="panel panel-right" style={{
+                flex: 1,
+                display: 'flex',
+                flexDirection: isMobile ? 'column-reverse' : 'row',
+                minHeight: 0,
+                background: '#f1f5f9',
+                padding: isMobile ? '10px' : (isTablet ? '12px' : '16px'),
+                gap: isMobile ? '10px' : (isTablet ? '12px' : '16px'),
+                overflow: 'hidden',
+              }}>
 
-                {/* ── LEFT: editor card (full height, premium feel) ───────────── */}
+                {/* ── LEFT (or BOTTOM on mobile): editor card ────────────────── */}
                 <div style={{
-                  flex: 1, minWidth: 0,
+                  flex: 1, minWidth: 0, minHeight: 0,
                   display: 'flex', flexDirection: 'column',
                   background: 'white', borderRadius: '14px',
                   border: '1px solid #e8edf2',
@@ -3752,12 +3761,79 @@ const ReportingPage = () => {
                   />
                 </div>
 
-                {/* ── RIGHT: action sidebar (status, template, save/finalize) ── */}
+                {/* ── MOBILE: compact action bar (replaces the full sidebar) ──── */}
+                {isMobile ? (
+                  <div style={{
+                    flexShrink: 0,
+                    display: 'flex', alignItems: 'center', gap: '8px',
+                    background: 'white', borderRadius: '12px',
+                    border: '1px solid #e8edf2',
+                    boxShadow: '0 2px 8px rgba(15, 23, 42, 0.04)',
+                    padding: '8px 10px',
+                  }}>
+                    {/* Status dot */}
+                    <div title={isOnline ? 'Cloud connected' : 'Offline'} style={{ width: '10px', height: '10px', borderRadius: '50%', background: isOnline ? '#10b981' : '#f59e0b', boxShadow: `0 0 0 3px ${isOnline ? '#10b98125' : '#f59e0b25'}`, flexShrink: 0 }} />
+
+                    {/* Template selector — compact */}
+                    <select
+                      className="template-selector"
+                      value={selectedTemplateId || ''}
+                      onChange={(e) => {
+                        const tpl = templates.find(t => String(t.id) === String(e.target.value));
+                        if (!tpl) return;
+                        const html = tpl.content || tpl.Content || '';
+                        setSelectedTemplateId(tpl.id);
+                        setEditorText(html);
+                        const apply = () => {
+                          const handle = editorRef.current;
+                          if (handle?.setContent) handle.setContent(html);
+                          else if (handle?.editor) { try { handle.editor.commands.setContent(html, false); } catch {} }
+                        };
+                        requestAnimationFrame(apply);
+                      }}
+                      style={{
+                        flex: 1, minWidth: 0,
+                        padding: '8px 10px', borderRadius: '8px',
+                        border: '1px solid #e2e8f0', outline: 'none',
+                        fontSize: '12px', fontWeight: 700, color: '#0a1628',
+                        background: 'white', cursor: 'pointer',
+                      }}
+                    >
+                      <option value="">Pick template…</option>
+                      {templates.map(tpl => (
+                        <option key={tpl.id} value={tpl.id}>{tpl.name}</option>
+                      ))}
+                    </select>
+
+                    {/* Save draft (icon-only) */}
+                    <button
+                      onClick={() => handleSaveReport(false)}
+                      title="Save draft"
+                      style={{ flexShrink: 0, padding: '8px 10px', borderRadius: '8px', background: 'white', border: '1px solid #e2e8f0', color: '#0a1628', fontSize: '14px', cursor: 'pointer' }}
+                    >💾</button>
+
+                    {/* Preview (icon-only) */}
+                    <button
+                      onClick={handlePreviewPrint}
+                      title="Preview"
+                      style={{ flexShrink: 0, padding: '8px 10px', borderRadius: '8px', background: 'white', border: '1px solid #e2e8f0', color: '#0a1628', fontSize: '14px', cursor: 'pointer' }}
+                    >👁️</button>
+
+                    {/* Finalize */}
+                    <button
+                      onClick={() => handleSaveReport(true)}
+                      style={{ flexShrink: 0, padding: '8px 14px', borderRadius: '8px', background: 'linear-gradient(135deg, #16a34a 0%, #15803d 100%)', border: 'none', color: 'white', fontSize: '11px', fontWeight: 800, cursor: 'pointer', letterSpacing: '0.3px', boxShadow: '0 4px 12px rgba(22, 163, 74, 0.3)' }}
+                    >🖊 Sign</button>
+                  </div>
+                ) : (
                 <aside style={{
-                  width: '280px', flexShrink: 0,
-                  display: 'flex', flexDirection: 'column', gap: '12px',
+                  width: isTablet ? '240px' : '280px',
+                  flexShrink: 0,
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: '12px',
                   overflowY: 'auto',
-                  paddingRight: '2px', /* room for scrollbar */
+                  paddingRight: '2px',
                 }}>
                   {/* Status card — connection + autosave indicator */}
                   <div style={{
@@ -3795,16 +3871,28 @@ const ReportingPage = () => {
                       value={selectedTemplateId || ''}
                       onChange={(e) => {
                         const tpl = templates.find(t => String(t.id) === String(e.target.value));
-                        if (tpl) {
-                          setSelectedTemplateId(tpl.id);
-                          const html = tpl.content || tpl.Content || '';
-                          // Push directly into the editor via the imperative handle so the
-                          // content is applied regardless of focus state (the NarrativeEditor
-                          // sync effect skips updates when the editor is focused and non-empty).
-                          if (editorRef.current?.setContent) {
-                            editorRef.current.setContent(html);
+                        if (!tpl) return;
+                        const html = tpl.content || tpl.Content || '';
+                        // Update state first so the prop sync covers any future remount.
+                        setSelectedTemplateId(tpl.id);
+                        setEditorText(html);
+                        // Then push directly into the editor via the imperative handle, so the
+                        // content is applied this tick regardless of focus state (the
+                        // NarrativeEditor sync effect skips updates when the editor is
+                        // focused with non-empty content). requestAnimationFrame defers until
+                        // after the prop update has flushed so we don't fight with it.
+                        const apply = () => {
+                          const handle = editorRef.current;
+                          if (handle?.setContent) {
+                            handle.setContent(html);
+                          } else if (handle?.editor) {
+                            try { handle.editor.commands.setContent(html, false); } catch {}
                           }
-                          setEditorText(html);
+                        };
+                        if (typeof requestAnimationFrame === 'function') {
+                          requestAnimationFrame(apply);
+                        } else {
+                          apply();
                         }
                       }}
                       style={{
@@ -3893,6 +3981,7 @@ const ReportingPage = () => {
                     </div>
                   </div>
                 </aside>
+                )}
 
               </div>
             )}
