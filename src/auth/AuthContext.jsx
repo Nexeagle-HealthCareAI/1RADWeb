@@ -17,7 +17,7 @@ const handleUserRoles = (profile) => {
     
     if (Array.isArray(rawRoles)) {
       rawRoles.forEach(r => {
-        if (r) roles.add(String(r).trim().toLowerCase());
+        if (r) roles.add(String(r).replace(/\s+/g, '').toLowerCase());
       });
     }
   });
@@ -116,7 +116,7 @@ export function AuthProvider({ children }) {
       
       // 3. Synchronize currentUser with roles returned by the backend
       // We normalize roles to lowercase to match the application's security checks
-      const normalizedRoles = (roles || []).map(r => String(r).trim().toLowerCase()).filter(Boolean);
+      const normalizedRoles = (roles || []).map(r => String(r).replace(/\s+/g, '').toLowerCase()).filter(Boolean);
       
       const updatedUser = { 
         ...currentUser, 
@@ -162,7 +162,7 @@ export function AuthProvider({ children }) {
         if (!h) return null;
         const rawRoles = h.roleNames || h.RoleNames || h.roles || h.Roles || (h.roleName || h.RoleName ? (h.roleName || h.RoleName).split(',') : []);
         const normalizedRoles = Array.isArray(rawRoles) 
-          ? rawRoles.map(r => String(r).trim().toLowerCase()).filter(Boolean)
+          ? rawRoles.map(r => String(r).replace(/\s+/g, '').toLowerCase()).filter(Boolean)
           : [];
           
         allRoles.push(...normalizedRoles);
@@ -264,7 +264,7 @@ export function AuthProvider({ children }) {
 
       const mappedCenters = (userProfile.authorizedHospitals || userProfile.AuthorizedHospitals || []).map(h => {
         const centerRoles = h.roleNames || h.RoleNames || h.roles || h.Roles || (h.roleName || h.RoleName ? (h.roleName || h.RoleName).split(',') : []);
-        const normalizedCenterRoles = centerRoles.map(r => String(r).trim().toLowerCase()).filter(Boolean);
+        const normalizedCenterRoles = centerRoles.map(r => String(r).replace(/\s+/g, '').toLowerCase()).filter(Boolean);
         
         return {
           id: String(h.hospitalId || h.HospitalId).toLowerCase(),
@@ -478,7 +478,7 @@ export function AuthProvider({ children }) {
         const allRoles = handleUserRoles(backendUser);
         const mappedCenters = (backendUser.authorizedHospitals || backendUser.AuthorizedHospitals || []).map(h => {
           const centerRoles = h.roleNames || h.RoleNames || h.roles || h.Roles || (h.roleName || h.RoleName ? (h.roleName || h.RoleName).split(',') : []);
-          const normalizedCenterRoles = centerRoles.map(r => String(r).trim().toLowerCase()).filter(Boolean);
+          const normalizedCenterRoles = centerRoles.map(r => String(r).replace(/\s+/g, '').toLowerCase()).filter(Boolean);
 
           return {
             id: String(h.hospitalId || h.HospitalId).toLowerCase(),

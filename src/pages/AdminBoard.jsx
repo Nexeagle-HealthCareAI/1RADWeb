@@ -73,6 +73,9 @@ export default function AdminBoard() {
   const [patients, setPatients] = useState([]);
   const [patientSearch, setPatientSearch] = useState('');
   const [personnelSearch, setPersonnelSearch] = useState('');
+  const [staffCurrentPage, setStaffCurrentPage] = useState(1);
+  const staffItemsPerPage = 5;
+  const [revealedPasswords, setRevealedPasswords] = useState({});
   const [referralMatrixSearch, setReferralMatrixSearch] = useState('');
   const [referralLogSearch, setReferralLogSearch] = useState('');
   const [referralRosterSearch, setReferralRosterSearch] = useState('');
@@ -93,6 +96,7 @@ export default function AdminBoard() {
 
   // User Management State
   const [isUserDrawerOpen, setIsUserDrawerOpen] = useState(false);
+  const [revokeUser, setRevokeUser] = useState(null);
   const [isHospitalDrawerOpen, setIsHospitalDrawerOpen] = useState(false);
   const [isChainDrawerOpen, setIsChainDrawerOpen] = useState(false);
   const [isDeployingChain, setIsDeployingChain] = useState(false);
@@ -1221,7 +1225,8 @@ export default function AdminBoard() {
       alert('SECURITY PROTOCOL: Self-decommissioning blocked. You cannot remove your own deployment from this hub to prevent lockout.');
       return;
     }
-    if (window.confirm('Are you sure you want to remove this staff member from the current hub?')) {
+    // Now handled by modal confirmation without window.confirm check:
+    {
       if (!isOnline) {
         await addToOutbox('PERSONNEL_DELETE', { id });
         alert('OFFLINE_MODE: Personnel decommissioning queued for sync.');
@@ -1447,21 +1452,34 @@ export default function AdminBoard() {
 
   // --- PRICE MGMT ---
   const handleSavePrice = async (e) => {
-    e.preventDefault();
-    const payload = editPrice;
-    
-    if (!isOnline) {
-      await addToOutbox('PRICE_UPDATE', payload);
-      alert('OFFLINE_MODE: Service price update queued for sync.');
-      setIsPriceDrawerOpen(false);
-      return;
-    }
+      e.preventDefault();
+      const payload = editPrice;
+      
+      if (!isOnline) {
+        await addToOutbox('PRICE_UPDATE', payload);
+        alert('OFFLINE_MODE: Service price update queued for sync.');
+        setIsPriceDrawerOpen(false);
+        return;
+      }
+  
+      try {
+        await apiClient.post('/finance/registry', payload);
+        
+        // Auto-generate a default reporting template for new services
+        if (!payload.id) {
+          try {
+            await apiClient.post('/reporting/templates', {
+              name: payload.serviceName,
+              content: `<p><strong>CLINICAL HISTORY:</strong></p><p><br></p><p><strong>TECHNIQUE:</strong></p><p>Routine protocol for ${payload.serviceName}.</p><p><br></p><p><strong>FINDINGS:</strong></p><p><br></p><p><strong>IMPRESSION:</strong></p><p><br></p>`
+            });
+          } catch (tplErr) {
+            console.error('[FINANCE] Failed to auto-generate template for new service:', tplErr);
+          }
+        }
 
-    try {
-      await apiClient.post('/finance/registry', payload);
-      setIsPriceDrawerOpen(false);
-      fetchServicePrices();
-    } catch (err) {
+        setIsPriceDrawerOpen(false);
+        fetchServicePrices();
+      } catch (err) {
       console.error('[FINANCE] Save failed', err);
       if (!err.response) {
         await addToOutbox('PRICE_UPDATE', payload);
@@ -1714,63 +1732,53 @@ export default function AdminBoard() {
             flexDirection: isMobile ? 'column' : 'row',
             justifyContent: 'space-between', 
             alignItems: isMobile ? 'flex-start' : 'center', 
-            marginBottom: '35px',
-            gap: '20px'
+            marginBottom: '25px',
+            gap: '15px'
           }}>
-            <div style={{ display: 'flex', gap: '20px', alignItems: 'center' }}>
+            <div style={{ display: 'flex', gap: '15px', alignItems: 'center' }}>
                <button 
                  onClick={() => setViewingHubId(null)}
-                 style={{ width: 'auto', height: '40px', borderRadius: '12px', border: '1px solid #eee', background: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', fontSize: '10px', fontWeight: 950, padding: '0 15px' }}
+                 style={{ padding: '8px 16px', borderRadius: '8px', border: '1px solid #e2e8f0', background: 'white', cursor: 'pointer', fontSize: '13px', fontWeight: 700, color: '#475569' }}
+                 onMouseEnter={e => e.currentTarget.style.background = '#f8fafc'}
+                 onMouseLeave={e => e.currentTarget.style.background = 'white'}
                >
-                 BACK
+                 Back
                </button>
                <div>
-                 <h2 style={{ fontSize: '12px', fontWeight: 900, textTransform: 'uppercase', letterSpacing: '2px', color: '#0f52ba', marginBottom: '4px' }}>Hub Configuration</h2>
-                 <p style={{ fontSize: '11px', color: '#888', fontWeight: 600 }}>Managing physical node metadata and compliance parameters.</p>
+                 <h2 style={{ fontSize: '18px', fontWeight: 800, color: '#1e293b', margin: 0 }}>Hospital Details</h2>
+                 <p style={{ fontSize: '13px', color: '#64748b', margin: 0 }}>View and manage hospital information</p>
                </div>
             </div>
             <button 
               onClick={() => setIsHospitalDrawerOpen(true)}
               style={{ 
-                width: isMobile ? '100%' : 'auto',
-                padding: '12px 24px', borderRadius: '12px', border: 'none', 
-                background: 'linear-gradient(90deg, #0f52ba 0%, #00f2fe 100%)', 
-                color: 'white', fontSize: '11px', fontWeight: 950, cursor: 'pointer',
-                boxShadow: '0 8px 20px rgba(15, 82, 186, 0.2)'
+                padding: '10px 20px', borderRadius: '10px', border: 'none', 
+                background: 'linear-gradient(135deg, #0a1628 0%, #1e3a5f 100%)', 
+                color: 'white', fontSize: '13px', fontWeight: 700, cursor: 'pointer',
+                boxShadow: '0 4px 14px rgba(10,22,40,0.2)'
               }}
             >
-              EDIT CONFIGURATION
+              Edit Details
             </button>
           </div>
 
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '30px' }}>
-            <div style={{ background: 'white', padding: isMobile ? '25px' : '40px', borderRadius: '24px', border: '1px solid #eee', boxShadow: '0 10px 40px rgba(0,0,0,0.02)', position: 'relative', overflow: 'hidden' }}>
-              <div style={{ position: 'absolute', top: 0, right: 0, width: '150px', height: '150px', background: 'linear-gradient(135deg, transparent 50%, rgba(15, 82, 186, 0.03) 50%)', borderRadius: '0 24px 0 0' }}></div>
-              <div style={{ display: 'flex', flexDirection: isMobile ? 'column' : 'row', gap: isMobile ? '25px' : '40px' }}>
-                <div style={{ width: '120px', height: '120px', background: '#f8fbfc', borderRadius: '20px', border: '1px solid #edf2f7', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '10px', fontWeight: 950, color: '#0f52ba', flexShrink: 0 }}>HUB_IMAGE</div>
-                <div style={{ flex: 1 }}>
-                  <span style={{ fontSize: '10px', fontWeight: 950, color: '#0f52ba', letterSpacing: '3px', textTransform: 'uppercase' }}>INSTITUTIONAL_IDENTITY</span>
-                  <h1 style={{ fontSize: isMobile ? '24px' : '32px', fontWeight: 950, color: '#1a1a2e', marginTop: '8px', marginBottom: '4px' }}>{(hospitalData.hospitalName || 'UNCONFIGURED_HUB').toUpperCase()}</h1>
-                  <p style={{ fontSize: '14px', color: '#64748b', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '8px' }}>
-                    <span>ADR:</span> {hospitalData.hospitalAddress || 'Address not synchronized.'}
-                  </p>
-                </div>
-              </div>
+          <div style={{ background: 'white', padding: '30px', borderRadius: '16px', border: '1px solid #e2e8f0', boxShadow: '0 4px 24px rgba(0,0,0,0.02)' }}>
+            <div style={{ marginBottom: '30px' }}>
+              <div style={{ fontSize: '12px', fontWeight: 700, color: '#64748b', textTransform: 'uppercase', marginBottom: '4px' }}>Hospital Name</div>
+              <h3 style={{ fontSize: '24px', fontWeight: 800, color: '#0f172a', margin: 0 }}>{hospitalData.hospitalName || 'Unnamed Hospital'}</h3>
+              <div style={{ fontSize: '14px', color: '#475569', marginTop: '8px' }}>{hospitalData.hospitalAddress || 'No address provided'}</div>
             </div>
 
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '20px' }}>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(250px, 1fr))', gap: '20px' }}>
               {[
-                { label: 'GSTIN MODULE', value: hospitalData.gstin, icon: '📄' },
-                { label: 'REGISTRATION #', value: hospitalData.registrationNumber, icon: '🔖' },
-                { label: 'TAX PAN NODE', value: hospitalData.pan, icon: '💳' },
-                { label: 'QUALITY ACCREDIT', value: hospitalData.nabhNumber, icon: '🏆' }
+                { label: 'GSTIN', value: hospitalData.gstin },
+                { label: 'Registration Number', value: hospitalData.registrationNumber },
+                { label: 'PAN', value: hospitalData.pan },
+                { label: 'Accreditation (NABH)', value: hospitalData.nabhNumber }
               ].map(item => (
-                <div key={item.label} style={{ background: 'white', padding: '25px', borderRadius: '20px', border: '1px solid #eee', display: 'flex', alignItems: 'center', gap: '20px' }}>
-                  <div style={{ width: '45px', height: '45px', borderRadius: '12px', background: '#f8fafc', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '10px', fontWeight: 950, color: '#94a3b8' }}>{item.label.slice(0, 3)}</div>
-                  <div>
-                    <div style={{ fontSize: '9px', fontWeight: 950, color: '#94a3b8', letterSpacing: '1px' }}>{item.label}</div>
-                    <div style={{ fontSize: '15px', fontWeight: 800, color: '#1e293b', marginTop: '2px' }}>{item.value || 'NOT_SYNCHRONIZED'}</div>
-                  </div>
+                <div key={item.label} style={{ background: '#f8fafc', padding: '20px', borderRadius: '12px', border: '1px solid #f1f5f9' }}>
+                  <div style={{ fontSize: '11px', fontWeight: 700, color: '#64748b', textTransform: 'uppercase', marginBottom: '4px' }}>{item.label}</div>
+                  <div style={{ fontSize: '15px', fontWeight: 700, color: '#0f172a' }}>{item.value || 'Not provided'}</div>
                 </div>
               ))}
             </div>
@@ -1786,178 +1794,72 @@ export default function AdminBoard() {
           flexDirection: isMobile ? 'column' : 'row',
           justifyContent: 'space-between', 
           alignItems: isMobile ? 'flex-start' : 'center', 
-          marginBottom: '35px',
-          gap: '20px'
+          marginBottom: '25px',
+          gap: '15px'
         }}>
           <div>
-            <h2 style={{ fontSize: '12px', fontWeight: 900, textTransform: 'uppercase', letterSpacing: '2px', color: '#0f52ba', marginBottom: '4px' }}>Institutional Hub Registry</h2>
-            <p style={{ fontSize: '11px', color: '#888', fontWeight: 600 }}>Overview of mapped physical centers within your authorized expansion zone.</p>
-          </div>
-          <div style={{ background: '#f8f9fa', padding: '8px 16px', borderRadius: '10px', fontSize: '9px', fontWeight: 900, color: '#64748b', border: '1px solid #eee' }}>
-            PROTOCOL: ACTIVE_MAPPING_ONLY
+            <h2 style={{ fontSize: '18px', fontWeight: 800, color: '#1e293b', margin: 0 }}>Hospital Board</h2>
+            <p style={{ fontSize: '13px', color: '#64748b', margin: 0 }}>Manage hospitals and centers in your network</p>
           </div>
         </div>
 
         {hospitalLoading ? (
-          <div style={{ padding: '100px', textAlign: 'center' }}>
-             <div className="pulse-loader"></div>
-             <p style={{ fontSize: '11px', fontWeight: 900, color: '#0f52ba', marginTop: '20px' }}>SCANNING NETWORK NODES...</p>
+          <div style={{ padding: '60px', textAlign: 'center', color: '#64748b', fontSize: '14px', fontWeight: 600 }}>
+             Loading hospitals...
+          </div>
+        ) : mappedHospitals.length === 0 ? (
+          <div style={{ padding: '60px', textAlign: 'center', background: 'white', borderRadius: '16px', border: '1px solid #e2e8f0' }}>
+             <h3 style={{ fontSize: '16px', fontWeight: 700, color: '#1e293b', margin: 0 }}>No Hospitals Found</h3>
+             <p style={{ fontSize: '13px', color: '#64748b', marginTop: '8px' }}>You don't have any mapped hospitals in your network.</p>
           </div>
         ) : (
-          <div className="topology-registry" style={{ display: 'flex', flexDirection: 'column', gap: '50px' }}>
-            {(() => {
-              // 1. Grouping logic
-              const chains = {};
-              const soloHubs = [];
-
-              mappedHospitals.forEach(hub => {
-                if (hub.groupId && hub.groupId.trim()) {
-                  if (!chains[hub.groupId]) {
-                    chains[hub.groupId] = {
-                      name: hub.groupName || 'UNNAMED_CHAIN',
-                      hubs: []
-                    };
-                  }
-                  chains[hub.groupId].hubs.push(hub);
-                } else {
-                  soloHubs.push(hub);
-                }
-              });
-
-              return (
-                <>
-                  {/* --- SECTION: LINKED CHAINS --- */}
-                  {Object.entries(chains).map(([groupId, chain]) => (
-                    <div key={groupId} className="tactical-chain-block" style={{ position: 'relative' }}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '15px', marginBottom: '25px' }}>
-                        <div style={{ width: '32px', height: '2px', background: 'linear-gradient(90deg, #0f52ba, transparent)' }}></div>
-                        <h3 style={{ fontSize: '12px', fontWeight: 950, color: '#0f52ba', letterSpacing: '2px', textTransform: 'uppercase' }}>
-                          CHAIN_PROTOCOL: {chain.name}
-                        </h3>
-                        <div style={{ flex: 1, height: '1px', background: '#f1f5f9' }}></div>
-                      </div>
-
-                      <div style={{ position: 'relative', paddingLeft: '40px', display: 'flex', flexDirection: 'column', gap: '20px' }}>
-                        {/* The Vertical Backbone Line */}
-                        <div style={{ 
-                          position: 'absolute', left: '15px', top: '25px', bottom: '25px', 
-                          width: '2px', background: 'rgba(15, 82, 186, 0.1)', borderLeft: '2px dashed rgba(15, 82, 186, 0.2)' 
-                        }}></div>
-
-                        {chain.hubs.map((hub, idx) => {
-                          const isActive = hub.hospitalId === activeCenter.id;
-                          return (
-                            <div key={hub.hospitalId} style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
-                              {/* Horizontal Link to Backbone */}
-                              <div style={{ 
-                                position: 'absolute', left: '-25px', width: '25px', height: '2px', 
-                                background: isActive ? '#0f52ba30' : 'rgba(0,0,0,0.05)' 
-                              }}></div>
-                              
-                              <div 
-                                style={{ 
-                                  flex: 1, background: 'white', border: isActive ? '2px solid #0f52ba' : '1px solid #eee', 
-                                  borderRadius: '24px', padding: '25px', display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-                                  boxShadow: isActive ? '0 15px 40px rgba(15, 82, 186, 0.1)' : '0 4px 20px rgba(0,0,0,0.02)',
-                                  transition: 'all 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275)'
-                                }}
-                              >
-                                <div style={{ display: 'flex', alignItems: 'center', gap: '20px' }}>
-                                   {/* The Connected Dot */}
-                                   <div style={{ 
-                                     width: '12px', height: '12px', borderRadius: '50%', 
-                                     background: isActive ? '#0f52ba' : '#cbd5e1',
-                                     marginLeft: '-35px', marginRight: '23px', zIndex: 2,
-                                     boxShadow: isActive ? '0 0 10px rgba(15, 82, 186, 0.4)' : 'none',
-                                     border: '3px solid white'
-                                   }}></div>
-                                   
-                                   <div style={{ width: '45px', height: '45px', borderRadius: '14px', background: isActive ? '#f0f7ff' : '#f8fafc', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '10px', fontWeight: 950, color: isActive ? '#0f52ba' : '#64748b' }}>HUB</div>
-                                   <div>
-                                      <h4 style={{ fontSize: '15px', fontWeight: 950, color: '#1a1a2e', marginBottom: '4px' }}>{hub.hospitalName.toUpperCase()}</h4>
-                                      <div style={{ fontSize: '10px', color: '#64748b', fontWeight: 700 }}>NODE_IDENTITY: {hub.hospitalId.split('-')[0].toUpperCase()}</div>
-                                   </div>
-                                </div>
-
-                                <div style={{ display: 'flex', gap: '30px', alignItems: 'center' }}>
-                                   <div style={{ textAlign: 'right' }}>
-                                      <div style={{ fontSize: '8px', fontWeight: 950, color: '#94a3b8', letterSpacing: '1px' }}>STATUS</div>
-                                      <div style={{ fontSize: '10px', fontWeight: 950, color: '#2ecc71', marginTop: '2px' }}>{hub.status.toUpperCase()}</div>
-                                   </div>
-                                   <button 
-                                     onClick={() => fetchHospitalData(hub.hospitalId)}
-                                     style={{ 
-                                       padding: '10px 20px', borderRadius: '12px', background: isActive ? '#0f52ba' : '#f8fafc', 
-                                       color: isActive ? 'white' : '#64748b', border: isActive ? 'none' : '1px solid #e2e8f0', 
-                                       fontSize: '10px', fontWeight: 950, cursor: 'pointer'
-                                     }}
-                                   >
-                                     MANAGE NODE
-                                   </button>
-                                </div>
-                              </div>
-                            </div>
-                          );
-                        })}
-                      </div>
-                    </div>
-                  ))}
-
-                  {/* --- SECTION: SOLO STRATEGIC NODES --- */}
-                  {soloHubs.length > 0 && (
-                    <div className="solo-nodes-block">
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '15px', marginBottom: '25px' }}>
-                        <div style={{ width: '32px', height: '2px', background: 'linear-gradient(90deg, #64748b, transparent)' }}></div>
-                        <h3 style={{ fontSize: '12px', fontWeight: 950, color: '#64748b', letterSpacing: '2px', textTransform: 'uppercase' }}>
-                          INDEPENDENT_NODES
-                        </h3>
-                        <div style={{ flex: 1, height: '1px', background: '#f1f5f9' }}></div>
-                      </div>
-
-                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(350px, 1fr))', gap: '25px' }}>
-                        {soloHubs.map(hub => {
-                           const isActive = hub.hospitalId === activeCenter.id;
-                           return (
-                             <div 
-                               key={hub.hospitalId}
-                               style={{ 
-                                 background: 'white', border: isActive ? '2px solid #0f52ba' : '1px solid #eee', 
-                                 borderRadius: '24px', padding: '30px', boxShadow: '0 4px 20px rgba(0,0,0,0.02)',
-                                 position: 'relative', overflow: 'hidden'
-                               }}
-                             >
-                               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '20px' }}>
-                                  <div style={{ width: '50px', height: '50px', borderRadius: '14px', background: '#f8fafc', border: '1px solid #e0efff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '10px', fontWeight: 950, color: '#0f52ba' }}>NODE</div>
-                                  <div style={{ width: '10px', height: '10px', borderRadius: '50%', background: isActive ? '#0f52ba' : '#cbd5e1' }}></div>
-                               </div>
-                               <h3 style={{ fontSize: '18px', fontWeight: 950, color: '#1a1a2e', marginBottom: '8px' }}>{hub.hospitalName.toUpperCase()}</h3>
-                               <p style={{ fontSize: '11px', color: '#64748b', fontWeight: 600, marginBottom: '25px' }}>{hub.hospitalAddress}</p>
-                               <button 
-                                 onClick={() => fetchHospitalData(hub.hospitalId)}
-                                 style={{ 
-                                   width: '100%', padding: '14px', borderRadius: '14px', border: 'none', 
-                                   background: isActive ? '#0f52ba' : '#f8fafc', color: isActive ? 'white' : '#64748b', 
-                                   fontWeight: 950, fontSize: '10px', cursor: 'pointer'
-                                 }}
-                               >
-                                 HUB CONFIGURATION →
-                               </button>
-                             </div>
-                           );
-                        })}
-                      </div>
-                    </div>
-                  )}
-
-                  {mappedHospitals.length === 0 && (
-                    <div style={{ padding: '100px', textAlign: 'center', border: '1px dashed #eee', borderRadius: '30px' }}>
-                       <div style={{ fontSize: '50px', marginBottom: '20px' }}>🏙️</div>
-                       <h3 style={{ fontSize: '15px', fontWeight: 950, color: '#1a1a2e' }}>NO MAPPED CENTERS DETECTED</h3>
-                    </div>
-                  )}
-                </>
-              );
-            })()}
+          <div style={{ background: 'white', borderRadius: '16px', border: '1px solid #e2e8f0', overflow: 'hidden', boxShadow: '0 4px 24px rgba(0,0,0,0.02)' }}>
+            <div style={{ overflowX: 'auto' }}>
+              <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left' }}>
+                <thead>
+                  <tr style={{ background: '#f8fafc', borderBottom: '1px solid #e2e8f0' }}>
+                    <th style={{ padding: '16px 20px', fontSize: '12px', fontWeight: 700, color: '#475569', textTransform: 'uppercase' }}>Hospital Name</th>
+                    <th style={{ padding: '16px 20px', fontSize: '12px', fontWeight: 700, color: '#475569', textTransform: 'uppercase' }}>Group / Chain</th>
+                    <th style={{ padding: '16px 20px', fontSize: '12px', fontWeight: 700, color: '#475569', textTransform: 'uppercase' }}>Status</th>
+                    <th style={{ padding: '16px 20px', fontSize: '12px', fontWeight: 700, color: '#475569', textTransform: 'uppercase', textAlign: 'right' }}>Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {mappedHospitals.map((hub, idx) => {
+                    const isActive = hub.hospitalId === activeCenter?.id;
+                    return (
+                      <tr key={hub.hospitalId} style={{ borderBottom: idx === mappedHospitals.length - 1 ? 'none' : '1px solid #f1f5f9', background: isActive ? '#f0fdf4' : 'transparent', transition: 'background 0.2s' }} onMouseEnter={e => e.currentTarget.style.background = isActive ? '#f0fdf4' : '#f8fafc'} onMouseLeave={e => e.currentTarget.style.background = isActive ? '#f0fdf4' : 'transparent'}>
+                        <td style={{ padding: '16px 20px' }}>
+                          <div style={{ fontSize: '14px', fontWeight: 700, color: '#0f172a' }}>{hub.hospitalName}</div>
+                          <div style={{ fontSize: '12px', color: '#64748b', marginTop: '2px' }}>ID: {hub.hospitalId.split('-')[0].toUpperCase()}</div>
+                        </td>
+                        <td style={{ padding: '16px 20px' }}>
+                          <span style={{ fontSize: '13px', fontWeight: 600, color: '#475569', background: '#f1f5f9', padding: '4px 10px', borderRadius: '6px' }}>
+                            {hub.groupName || 'Independent'}
+                          </span>
+                        </td>
+                        <td style={{ padding: '16px 20px' }}>
+                          <span style={{ fontSize: '12px', fontWeight: 700, color: hub.status === 'active' ? '#16a34a' : '#94a3b8', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                            <span style={{ width: '6px', height: '6px', borderRadius: '50%', background: hub.status === 'active' ? '#2ecc71' : '#cbd5e1' }}></span>
+                            {(hub.status || 'Active').toUpperCase()}
+                          </span>
+                        </td>
+                        <td style={{ padding: '16px 20px', textAlign: 'right' }}>
+                          <button 
+                            onClick={() => fetchHospitalData(hub.hospitalId)}
+                            style={{ padding: '8px 16px', borderRadius: '8px', border: 'none', background: '#eff6ff', color: '#3b82f6', fontSize: '12px', fontWeight: 700, cursor: 'pointer', transition: 'all 0.2s' }}
+                            onMouseEnter={e => { e.currentTarget.style.background = '#dbeafe'; e.currentTarget.style.color = '#2563eb'; }}
+                            onMouseLeave={e => { e.currentTarget.style.background = '#eff6ff'; e.currentTarget.style.color = '#3b82f6'; }}
+                          >
+                            Manage
+                          </button>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
           </div>
         )}
       </div>
@@ -1965,71 +1867,75 @@ export default function AdminBoard() {
   };
 
 
+
   const renderHospitalSettingsDrawer = () => (
-    <div className="drawer-overlay" onClick={() => setIsHospitalDrawerOpen(false)} style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backdropFilter: 'blur(8px)', background: 'rgba(10, 22, 40, 0.4)', zIndex: 3001 }}>
-      <div className="drawer-content" style={{ position: 'absolute', right: 0, top: 0, height: '100%', padding: 0, width: isMobile ? '100%' : '500px', borderRadius: isMobile ? 0 : '24px 0 0 24px', background: '#fff', display: 'flex', flexDirection: 'column' }} onClick={e => e.stopPropagation()}>
-        <div className="drawer-header" style={{ background: 'linear-gradient(135deg, #0f52ba 0%, #061a40 100%)', color: 'white', padding: '40px 30px' }}>
+    <div  onClick={() => setIsHospitalDrawerOpen(false)} style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backdropFilter: 'blur(4px)', background: 'rgba(10, 22, 40, 0.45)', zIndex: 3001 }}>
+      <div  style={{ position: 'absolute', right: 0, top: 0, height: '100%', padding: 0, width: isMobile ? '100%' : '420px', background: '#fff', display: 'flex', flexDirection: 'column', boxShadow: '-12px 0 40px rgba(10,22,40,0.18)' }} onClick={e => e.stopPropagation()}>
+        <div  style={{ background: `linear-gradient(135deg, #0a1628 0%, #1e3a5f 100%)`, color: 'white', padding: '22px 24px 20px', position: 'relative' }}>
            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                  <span style={{ fontSize: '10px', fontWeight: 950, letterSpacing: '3px', color: 'var(--tactical-cyan)', textTransform: 'uppercase' }}>Config Infrastructure</span>
-                  <h2 style={{ fontWeight: 950, fontSize: '24px', letterSpacing: '-0.5px' }}>SYNC_METADATA</h2>
+              <div>
+                  <div style={{ fontSize: '10px', fontWeight: 700, letterSpacing: '1.5px', color: '#d4a017', textTransform: 'uppercase', marginBottom: '4px' }}>Edit Details</div>
+                  <h3 style={{ margin: 0, fontSize: '18px', fontWeight: 800, letterSpacing: '-0.2px' }}>Hospital Configuration</h3>
               </div>
-              <button className="btn-close" style={{ color: 'white', opacity: 0.6, fontSize: '28px' }} onClick={() => setIsHospitalDrawerOpen(false)}>&times;</button>
+              <button style={{ width: '32px', height: '32px', borderRadius: '50%', background: 'rgba(255,255,255,0.1)', border: '1px solid rgba(255,255,255,0.15)', color: 'white', cursor: 'pointer', fontSize: '16px', display: 'flex', alignItems: 'center', justifyContent: 'center' }} onClick={() => setIsHospitalDrawerOpen(false)}>&times;</button>
            </div>
         </div>
 
-        <div style={{ flex: 1, overflowY: 'auto', padding: '40px 30px' }}>
-           <form onSubmit={handleSaveHospital}>
-              <div className="form-group" style={{ marginBottom: '30px' }}>
-                  <label style={{ fontSize: '10px', fontWeight: 950, color: '#aaa', textTransform: 'uppercase', letterSpacing: '1px', display: 'block', marginBottom: '12px' }}>Institutional Identity</label>
+        <div style={{ flex: 1, overflowY: 'auto', padding: '22px 24px' }}>
+           <form onSubmit={handleSaveHospital} style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+              <div>
+                  <label style={{ fontSize: '11px', fontWeight: 700, color: '#475569', textTransform: 'uppercase', letterSpacing: '0.5px', display: 'block', marginBottom: '7px' }}>Hospital Name</label>
                   <input 
                       type="text" required value={hospitalData.hospitalName} 
                       onChange={e => setHospitalData({...hospitalData, hospitalName: e.target.value})} 
-                      style={{ width: '100%', border: 'none', borderBottom: '2px solid #f0f0f0', fontSize: '18px', fontWeight: 950, padding: '10px 0', outline: 'none' }} 
+                      style={{ width: '100%', padding: '11px 14px', borderRadius: '10px', border: '1.5px solid #e2e8f0', fontSize: '13px', fontWeight: 600, color: '#0a1628', outline: 'none', boxSizing: 'border-box' }} 
+                      onFocus={e => e.target.style.borderColor = '#0f52ba'} onBlur={e => e.target.style.borderColor = '#e2e8f0'}
                   />
               </div>
 
-              <div className="form-group" style={{ marginBottom: '30px' }}>
-                  <label style={{ fontSize: '10px', fontWeight: 950, color: '#aaa', textTransform: 'uppercase', letterSpacing: '1px', display: 'block', marginBottom: '12px' }}>Physical Infrastructure Node (Address)</label>
+              <div>
+                  <label style={{ fontSize: '11px', fontWeight: 700, color: '#475569', textTransform: 'uppercase', letterSpacing: '0.5px', display: 'block', marginBottom: '7px' }}>Address</label>
                   <textarea 
                       required value={hospitalData.hospitalAddress} 
                       onChange={e => setHospitalData({...hospitalData, hospitalAddress: e.target.value})} 
-                      style={{ width: '100%', border: 'none', borderBottom: '2px solid #f0f0f0', fontSize: '14px', fontWeight: 600, padding: '10px 0', outline: 'none', resize: 'none', height: '60px' }} 
+                      style={{ width: '100%', padding: '11px 14px', borderRadius: '10px', border: '1.5px solid #e2e8f0', fontSize: '13px', fontWeight: 500, outline: 'none', resize: 'none', height: '80px', color: '#1e293b', boxSizing: 'border-box' }} 
+                      onFocus={e => e.target.style.borderColor = '#0f52ba'} onBlur={e => e.target.style.borderColor = '#e2e8f0'}
                   />
               </div>
 
-              <div style={{ background: '#f8f9fc', padding: '25px', borderRadius: '20px', marginBottom: '30px' }}>
-                  <p style={{ fontSize: '10px', fontWeight: 950, color: '#0f52ba', letterSpacing: '2px', marginBottom: '20px' }}>COMPLIANCE NODES</p>
-                  <div className="form-group" style={{ marginBottom: '20px' }}>
-                      <label style={{ fontSize: '9px', fontWeight: 850, color: '#888', textTransform: 'uppercase', marginBottom: '8px', display: 'block' }}>Operational License #</label>
-                      <input type="text" value={hospitalData.registrationNumber} onChange={e => setHospitalData({...hospitalData, registrationNumber: e.target.value.toUpperCase()})} style={{ width: '100%', border: 'none', borderBottom: '1px solid #ddd', fontSize: '13px', fontWeight: 800, padding: '8px 0', outline: 'none', background: 'transparent' }} />
-                  </div>
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px' }}>
-                      <div className="form-group">
-                          <label style={{ fontSize: '9px', fontWeight: 850, color: '#888', textTransform: 'uppercase', marginBottom: '8px', display: 'block' }}>GSTIN Module</label>
-                          <input type="text" value={hospitalData.gstin} onChange={e => setHospitalData({...hospitalData, gstin: e.target.value.toUpperCase()})} maxLength="15" style={{ width: '100%', border: 'none', borderBottom: '1px solid #ddd', fontSize: '13px', fontWeight: 800, padding: '8px 0', outline: 'none', background: 'transparent' }} />
-                      </div>
-                      <div className="form-group">
-                          <label style={{ fontSize: '9px', fontWeight: 850, color: '#888', textTransform: 'uppercase', marginBottom: '8px', display: 'block' }}>IT PAN Node</label>
-                          <input type="text" value={hospitalData.pan} onChange={e => setHospitalData({...hospitalData, pan: e.target.value.toUpperCase()})} maxLength="10" style={{ width: '100%', border: 'none', borderBottom: '1px solid #ddd', fontSize: '13px', fontWeight: 800, padding: '8px 0', outline: 'none', background: 'transparent' }} />
-                      </div>
-                  </div>
-                  <div className="form-group" style={{ marginTop: '20px' }}>
-                      <label style={{ fontSize: '9px', fontWeight: 850, color: '#888', textTransform: 'uppercase', marginBottom: '8px', display: 'block' }}>Quality Accreditation (NABH/NABL)</label>
-                      <input type="text" value={hospitalData.nabhNumber} onChange={e => setHospitalData({...hospitalData, nabhNumber: e.target.value.toUpperCase()})} style={{ width: '100%', border: 'none', borderBottom: '1px solid #ddd', fontSize: '13px', fontWeight: 800, padding: '8px 0', outline: 'none', background: 'transparent' }} />
+              <div style={{ background: '#f8fafc', padding: '16px', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
+                  <div style={{ fontSize: '11px', fontWeight: 700, color: '#475569', letterSpacing: '0.5px', marginBottom: '16px', textTransform: 'uppercase' }}>Registration Details</div>
+                  
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                    <div>
+                        <label style={{ fontSize: '11px', fontWeight: 600, color: '#64748b', display: 'block', marginBottom: '4px' }}>Registration Number</label>
+                        <input type="text" value={hospitalData.registrationNumber} onChange={e => setHospitalData({...hospitalData, registrationNumber: e.target.value})} style={{ width: '100%', padding: '9px 12px', borderRadius: '8px', border: '1px solid #e2e8f0', fontSize: '13px', outline: 'none', boxSizing: 'border-box' }} onFocus={e => e.target.style.borderColor = '#3b82f6'} onBlur={e => e.target.style.borderColor = '#e2e8f0'} />
+                    </div>
+                    <div>
+                        <label style={{ fontSize: '11px', fontWeight: 600, color: '#64748b', display: 'block', marginBottom: '4px' }}>GSTIN</label>
+                        <input type="text" value={hospitalData.gstin} onChange={e => setHospitalData({...hospitalData, gstin: e.target.value.toUpperCase()})} maxLength="15" style={{ width: '100%', padding: '9px 12px', borderRadius: '8px', border: '1px solid #e2e8f0', fontSize: '13px', outline: 'none', boxSizing: 'border-box' }} onFocus={e => e.target.style.borderColor = '#3b82f6'} onBlur={e => e.target.style.borderColor = '#e2e8f0'} />
+                    </div>
+                    <div>
+                        <label style={{ fontSize: '11px', fontWeight: 600, color: '#64748b', display: 'block', marginBottom: '4px' }}>PAN</label>
+                        <input type="text" value={hospitalData.pan} onChange={e => setHospitalData({...hospitalData, pan: e.target.value.toUpperCase()})} maxLength="10" style={{ width: '100%', padding: '9px 12px', borderRadius: '8px', border: '1px solid #e2e8f0', fontSize: '13px', outline: 'none', boxSizing: 'border-box' }} onFocus={e => e.target.style.borderColor = '#3b82f6'} onBlur={e => e.target.style.borderColor = '#e2e8f0'} />
+                    </div>
+                    <div>
+                        <label style={{ fontSize: '11px', fontWeight: 600, color: '#64748b', display: 'block', marginBottom: '4px' }}>NABH / NABL Number</label>
+                        <input type="text" value={hospitalData.nabhNumber} onChange={e => setHospitalData({...hospitalData, nabhNumber: e.target.value})} style={{ width: '100%', padding: '9px 12px', borderRadius: '8px', border: '1px solid #e2e8f0', fontSize: '13px', outline: 'none', boxSizing: 'border-box' }} onFocus={e => e.target.style.borderColor = '#3b82f6'} onBlur={e => e.target.style.borderColor = '#e2e8f0'} />
+                    </div>
                   </div>
               </div>
 
               {hospitalMessage.text && (
-                  <div style={{ padding: '15px', borderRadius: '12px', marginBottom: '25px', fontSize: '11px', fontWeight: 900, background: hospitalMessage.type === 'success' ? '#e9f7ef' : '#fdeded', color: hospitalMessage.type === 'success' ? '#155724' : '#721c24', border: `1px solid ${hospitalMessage.type === 'success' ? '#c3e6cb' : '#f5c6cb'}`, display: 'flex', alignItems: 'center', gap: '10px' }}>
-                      <span>{hospitalMessage.type === 'success' ? '🛡️' : '⚠️'}</span>
+                  <div style={{ padding: '12px 14px', borderRadius: '8px', fontSize: '12px', fontWeight: 600, background: hospitalMessage.type === 'success' ? '#f0fdf4' : '#fef2f2', color: hospitalMessage.type === 'success' ? '#16a34a' : '#dc2626', border: `1px solid ${hospitalMessage.type === 'success' ? '#bbf7d0' : '#fecaca'}`, display: 'flex', alignItems: 'center', gap: '8px' }}>
+                      <span style={{ fontSize: '14px', fontWeight: 900 }}>{hospitalMessage.type === 'success' ? '✓' : '!'}</span>
                       {hospitalMessage.text}
                   </div>
               )}
 
-              <div className="drawer-footer" style={{ marginTop: '20px', display: 'flex', gap: '15px' }}>
-                <button type="button" className="btn-logout" style={{ flex: 1, padding: '16px', borderRadius: '16px', border: '1px solid #eee' }} onClick={() => setIsHospitalDrawerOpen(false)}>ABORT</button>
-                <button type="submit" disabled={savingHospital} style={{ flex: 2, padding: '16px', borderRadius: '16px', background: '#0f52ba', color: 'white', fontWeight: 950, fontSize: '11px', letterSpacing: '1px', border: 'none', cursor: 'pointer' }}>
+              <div style={{ display: 'flex', gap: '10px', marginTop: '10px' }}>
+                <button type="button" onClick={() => setIsHospitalDrawerOpen(false)} style={{ flex: 1, padding: '11px', borderRadius: '10px', border: '1.5px solid #e2e8f0', background: 'white', fontWeight: 700, fontSize: '13px', cursor: 'pointer', color: '#475569' }} onMouseEnter={e => e.currentTarget.style.background = '#f8fafc'} onMouseLeave={e => e.currentTarget.style.background = 'white'}>Cancel</button>
+                <button type="submit" disabled={savingHospital} style={{ flex: 2, padding: '11px', borderRadius: '10px', border: 'none', background: savingHospital ? '#e2e8f0' : `linear-gradient(135deg, #0a1628, #1e3a5f)`, color: savingHospital ? '#94a3b8' : 'white', fontWeight: 800, fontSize: '13px', cursor: savingHospital ? 'not-allowed' : 'pointer', boxShadow: savingHospital ? 'none' : '0 4px 14px rgba(10,22,40,0.25)', transition: 'all 0.15s' }}>
                     {savingHospital ? 'Saving...' : 'Save Changes'}
                 </button>
               </div>
@@ -2038,6 +1944,7 @@ export default function AdminBoard() {
       </div>
     </div>
   );
+
 
   const renderPrescriptionArchitect = () => {
     const doctors = personnel.filter(p => p.roles.includes('doctor') || p.roles.includes('radiologist') || p.roles.includes('admindoctor'));
@@ -4371,7 +4278,10 @@ return (
               type="text" 
               placeholder="SEARCH BY IDENTITY / ROLE..." 
               value={personnelSearch}
-              onChange={e => setPersonnelSearch(e.target.value)}
+              onChange={e => {
+                setPersonnelSearch(e.target.value);
+                setStaffCurrentPage(1);
+              }}
               style={{ 
                 width: '100%', padding: '12px 15px 12px 45px', borderRadius: '12px', border: '1px solid #eee', 
                 fontSize: '10px', fontWeight: 950, letterSpacing: '1px', outline: 'none',
@@ -4397,140 +4307,179 @@ return (
         </div>
       </div>
 
-      <div className="personnel-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))', gap: '25px' }}>
+      <div className="personnel-table-container" style={{ overflowX: 'auto', background: 'white', borderRadius: '24px', border: '1px solid #e2e8f0', boxShadow: '0 4px 20px rgba(0,0,0,0.02)' }}>
         {personnelLoading && (
-          <div style={{ gridColumn: '1/-1', textAlign: 'center', padding: '60px' }}>
+          <div style={{ textAlign: 'center', padding: '60px' }}>
             <div className="pulse-loader"></div>
             <p style={{ fontSize: '12px', fontWeight: 500, color: '#0f52ba', marginTop: '20px' }}>Loading staff...</p>
           </div>
         )}
         
         {!personnelLoading && filteredPersonnel.length === 0 && (
-          <div style={{ gridColumn: '1/-1', textAlign: 'center', padding: '100px 20px', border: '1px dashed #eee', borderRadius: '24px' }}>
+          <div style={{ textAlign: 'center', padding: '100px 20px' }}>
              <div style={{ fontSize: '40px', marginBottom: '15px' }}>👤</div>
              <div style={{ fontSize: '14px', fontWeight: 950, color: '#1a1a2e' }}>NO PERSONNEL MATCHED</div>
              <p style={{ fontSize: '11px', color: '#888', marginTop: '5px' }}>Your search query did not return any active staff signatures.</p>
           </div>
         )}
 
-        {!personnelLoading && filteredPersonnel.map(u => {
-          const userRole = u.roles?.[0];
-          const isSuper = userRole === 'admindoctor';
-          const currentRole = currentUser.roles?.[0];
-          const canAdminEdit = currentRole === 'admindoctor' || (currentRole === 'admin' && !isSuper);
-          
-          const roleMeta = {
-            doctor: { color: 'var(--tactical-cyan)', bg: '#f0faff', icon: '🩺' },
-            admindoctor: { color: 'var(--tactical-indigo)', bg: '#f0f5ff', icon: '🔱' },
-            technician: { color: '#f39c12', bg: '#fef9e7', icon: '🛠️' },
-            receptionist: { color: '#e84393', bg: '#fdf0f6', icon: '📅' },
-            admin: { color: '#0f52ba', bg: '#e8f0fe', icon: '🔑' }
-          }[userRole] || { color: '#64748b', bg: '#f1f5f9', icon: '👤' };
+        {!personnelLoading && filteredPersonnel.length > 0 && (
+          <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: '900px' }}>
+            <thead>
+              <tr>
+                <th style={{ padding: '20px', textAlign: 'left', fontSize: '11px', fontWeight: 900, color: '#94a3b8', borderBottom: '2px solid #f1f5f9', background: '#f8fafc', textTransform: 'uppercase', letterSpacing: '1px' }}>Personnel</th>
+                <th style={{ padding: '20px', textAlign: 'left', fontSize: '11px', fontWeight: 900, color: '#94a3b8', borderBottom: '2px solid #f1f5f9', background: '#f8fafc', textTransform: 'uppercase', letterSpacing: '1px' }}>Contact & Credentials</th>
+                <th style={{ padding: '20px', textAlign: 'left', fontSize: '11px', fontWeight: 900, color: '#94a3b8', borderBottom: '2px solid #f1f5f9', background: '#f8fafc', textTransform: 'uppercase', letterSpacing: '1px' }}>Role</th>
+                <th style={{ padding: '20px', textAlign: 'left', fontSize: '11px', fontWeight: 900, color: '#94a3b8', borderBottom: '2px solid #f1f5f9', background: '#f8fafc', textTransform: 'uppercase', letterSpacing: '1px' }}>Activity & Status</th>
+                <th style={{ padding: '20px', textAlign: 'right', fontSize: '11px', fontWeight: 900, color: '#94a3b8', borderBottom: '2px solid #f1f5f9', background: '#f8fafc', textTransform: 'uppercase', letterSpacing: '1px' }}>Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              {filteredPersonnel.slice((staffCurrentPage - 1) * staffItemsPerPage, staffCurrentPage * staffItemsPerPage).map(u => {
+                const userRole = u.roles?.[0];
+                const isSuper = userRole === 'admindoctor';
+                const currentRole = currentUser.roles?.[0];
+                const canAdminEdit = currentRole === 'admindoctor' || (currentRole === 'admin' && !isSuper);
+                
+                const roleMeta = {
+                  doctor: { color: 'var(--tactical-cyan)', bg: '#f0faff', icon: '🩺' },
+                  admindoctor: { color: 'var(--tactical-indigo)', bg: '#f0f5ff', icon: '🔱' },
+                  technician: { color: '#f39c12', bg: '#fef9e7', icon: '🛠️' },
+                  receptionist: { color: '#e84393', bg: '#fdf0f6', icon: '📅' },
+                  admin: { color: '#0f52ba', bg: '#e8f0fe', icon: '🔑' }
+                }[userRole] || { color: '#64748b', bg: '#f1f5f9', icon: '👤' };
 
-          return (
-            <div key={u.id} className="personnel-card" style={{ 
-              background: 'white', borderRadius: '24px', border: '1px solid #eee', 
-              padding: '30px', position: 'relative', overflow: isTestMode ? 'visible' : 'hidden',
-              boxShadow: '0 4px 20px rgba(0,0,0,0.02)', transition: 'all 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275)',
-              cursor: 'default'
-            }}>
-              {/* Tactical Accent */}
-              <div style={{ position: 'absolute', top: 0, left: 0, width: '6px', bottom: 0, background: roleMeta.color }}></div>
-              
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '25px' }}>
-                <div style={{ display: 'flex', gap: '18px', alignItems: 'center' }}>
-                  <div style={{ 
-                    width: '60px', height: '60px', borderRadius: '18px', 
-                    background: roleMeta.bg, color: roleMeta.color,
-                    display: 'flex', alignItems: 'center', justifyContent: 'center',
-                    fontSize: '24px', border: `1px solid ${roleMeta.color}20`,
-                    boxShadow: `0 8px 20px ${roleMeta.color}10`
-                  }}>
-                    {u.name.charAt(0)}
-                  </div>
-                  <div>
-                    <div style={{ fontWeight: 950, color: '#1a1a2e', fontSize: '18px', letterSpacing: '-0.5px' }}>{(u.name || 'Unknown Staff').toUpperCase()}</div>
-                    <span style={{ marginTop: '4px', fontSize: '9px', color: '#94a3b8', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '1px' }}>HUB_NODE_{u.id?.split('-')[0]}</span>
-                  </div>
-                </div>
-                <div style={{ 
-                  padding: '6px 14px', borderRadius: '20px', background: roleMeta.bg, 
-                  color: roleMeta.color, fontSize: '10px', fontWeight: 950, letterSpacing: '1px' 
-                }}>
-                  {(ROLE_LABELS[userRole] || getCustomRoles(activeCenter?.id).find(r => r.roleId === userRole || r.roleName === userRole)?.roleName || userRole)?.toUpperCase()}
-                </div>
-              </div>
+                return (
+                  <tr key={u.id} style={{ borderBottom: '1px solid #f1f5f9', transition: 'background 0.2s' }} onMouseEnter={e => e.currentTarget.style.background = '#f8fafc'} onMouseLeave={e => e.currentTarget.style.background = 'transparent'}>
+                    <td style={{ padding: '20px' }}>
+                      <div style={{ display: 'flex', gap: '15px', alignItems: 'center' }}>
+                        <div style={{ 
+                          width: '42px', height: '42px', borderRadius: '12px', 
+                          background: roleMeta.bg, color: roleMeta.color,
+                          display: 'flex', alignItems: 'center', justifyContent: 'center',
+                          fontSize: '18px', border: `1px solid ${roleMeta.color}30`
+                        }}>
+                          {u.name.charAt(0)}
+                        </div>
+                        <div>
+                          <div style={{ fontWeight: 800, color: '#1a1a2e', fontSize: '14px' }}>{(u.name || 'Unknown Staff').toUpperCase()}</div>
+                          <div style={{ fontSize: '10px', color: '#94a3b8', fontWeight: 700, letterSpacing: '0.5px' }}>HUB_NODE_{u.id?.split('-')[0]}</div>
+                        </div>
+                      </div>
+                    </td>
+                    <td style={{ padding: '20px' }}>
+                      <div style={{ fontSize: '13px', fontWeight: 700, color: '#334155' }}>{u.email}</div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginTop: '4px' }}>
+                        <span style={{ fontSize: '11px', color: '#94a3b8', fontFamily: 'monospace' }}>
+                          {(u.password && revealedPasswords[u.id]) ? u.password : '••••••••'}
+                        </span>
+                        {u.password && (
+                          <button 
+                            onClick={() => setRevealedPasswords(prev => ({ ...prev, [u.id]: !prev[u.id] }))}
+                            style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '2px', fontSize: '12px', opacity: 0.6, display: 'flex', alignItems: 'center', transition: 'opacity 0.2s' }}
+                            onMouseEnter={e => e.currentTarget.style.opacity = 1}
+                            onMouseLeave={e => e.currentTarget.style.opacity = 0.6}
+                            title={revealedPasswords[u.id] ? "Hide password" : "Show password"}
+                          >
+                            <span style={{ fontSize: '10px', fontWeight: 700 }}>{revealedPasswords[u.id] ? 'HIDE' : 'SHOW'}</span>
+                          </button>
+                        )}
+                        {copyFeedback === u.id && <span style={{ fontSize: '9px', color: '#2ecc71', fontWeight: 900 }}>COPIED!</span>}
+                      </div>
+                    </td>
+                    <td style={{ padding: '20px' }}>
+                      <div style={{ 
+                        display: 'inline-block', padding: '6px 12px', borderRadius: '20px', background: roleMeta.bg, 
+                        color: roleMeta.color, fontSize: '10px', fontWeight: 800, letterSpacing: '0.5px' 
+                      }}>
+                        {(ROLE_LABELS[userRole] || getCustomRoles(activeCenter?.id).find(r => r.roleId === userRole || r.roleName === userRole)?.roleName || userRole)?.toUpperCase()}
+                      </div>
+                    </td>
+                    <td style={{ padding: '20px' }}>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+                        <span style={{ fontSize: '12px', fontWeight: 700, color: u.status === 'active' ? '#16a34a' : '#94a3b8', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                          <span style={{ width: '6px', height: '6px', borderRadius: '50%', background: u.status === 'active' ? '#2ecc71' : '#cbd5e1' }}></span>
+                          {(u.status || 'ACTIVE').toUpperCase()}
+                        </span>
+                        <span style={{ fontSize: '10px', color: '#64748b' }}>Last: {u.lastLogin ? new Date(u.lastLogin).toLocaleDateString() : 'Offline'}</span>
+                      </div>
+                    </td>
+                    <td style={{ padding: '20px', textAlign: 'right' }}>
+                      <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
+                        {canAdminEdit && (
+                          <>
+                            <button 
+                              title="Copy Credentials"
+                              style={{ padding: '6px 12px', height: '32px', borderRadius: '8px', background: '#f1f5f9', border: 'none', color: '#64748b', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '12px', fontWeight: 700, transition: 'all 0.2s' }}
+                              onMouseEnter={e => { e.currentTarget.style.background = '#e2e8f0'; e.currentTarget.style.color = '#334155'; }}
+                              onMouseLeave={e => { e.currentTarget.style.background = '#f1f5f9'; e.currentTarget.style.color = '#64748b'; }}
+                              onClick={() => handleCopyCredentials(u)}
+                            >
+                              COPY
+                            </button>
+                            <button 
+                              title="Share on WhatsApp"
+                              style={{ padding: '6px 12px', height: '32px', borderRadius: '8px', background: '#f0fdf4', border: 'none', color: '#22c55e', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '12px', fontWeight: 700, transition: 'all 0.2s' }}
+                              onMouseEnter={e => { e.currentTarget.style.background = '#dcfce7'; e.currentTarget.style.color = '#16a34a'; }}
+                              onMouseLeave={e => { e.currentTarget.style.background = '#f0fdf4'; e.currentTarget.style.color = '#22c55e'; }}
+                              onClick={() => handleWhatsAppShare(u)}
+                            >
+                              SHARE
+                            </button>
+                            <button 
+                              title="Edit Profile"
+                              style={{ padding: '6px 12px', height: '32px', borderRadius: '8px', background: '#eff6ff', border: 'none', color: '#3b82f6', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '12px', fontWeight: 700, transition: 'all 0.2s' }}
+                              onMouseEnter={e => { e.currentTarget.style.background = '#dbeafe'; e.currentTarget.style.color = '#2563eb'; }}
+                              onMouseLeave={e => { e.currentTarget.style.background = '#eff6ff'; e.currentTarget.style.color = '#3b82f6'; }}
+                              onClick={() => handleOpenUserDrawer(u)}
+                            >
+                              EDIT
+                            </button>
+                            {u.id !== currentUser.id && (
+                              <button 
+                                title="Revoke Access"
+                                style={{ padding: '6px 12px', height: '32px', borderRadius: '8px', background: '#fef2f2', border: 'none', color: '#ef4444', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '12px', fontWeight: 700, transition: 'all 0.2s' }}
+                                onMouseEnter={e => { e.currentTarget.style.background = '#fee2e2'; e.currentTarget.style.color = '#dc2626'; }}
+                                onMouseLeave={e => { e.currentTarget.style.background = '#fef2f2'; e.currentTarget.style.color = '#ef4444'; }}
+                                onClick={() => setRevokeUser(u)}
+                              >
+                                REVOKE
+                              </button>
+                            )}
+                          </>
+                        )}
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        )}
 
-              <div style={{ background: '#f8fafc', borderRadius: '16px', padding: '20px', marginBottom: '25px', border: '1px solid #f1f5f9' }}>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                    <span style={{ fontSize: '10px', fontWeight: 950, color: '#94a3b8', letterSpacing: '1px' }}>SYSTEM IDENTITY</span>
-                    <span style={{ fontSize: '12px', fontWeight: 800, color: '#1e293b' }}>{u.email}</span>
-                  </div>
-                  <div style={{ borderTop: '1px solid #edf2f7', paddingTop: '12px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                    <span style={{ fontSize: '10px', fontWeight: 950, color: '#94a3b8', letterSpacing: '1px' }}>ACCESS KEY</span>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                      <span style={{ fontSize: '12px', fontWeight: 950, color: u.password ? '#0f52ba' : '#cbd5e1', fontFamily: 'monospace' }}>
-                        {u.password || '••••••••'}
-                      </span>
-                      {copyFeedback === u.id && <span style={{ fontSize: '8px', color: '#2ecc71', fontWeight: 900 }}>COPIED!</span>}
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <div style={{ display: 'flex', gap: '20px' }}>
-                  <div style={{ display: 'flex', flexDirection: 'column' }}>
-                     <span style={{ fontSize: '9px', fontWeight: 950, color: '#cbd5e1', letterSpacing: '0.5px' }}>LAST ACTIVE</span>
-                     <span style={{ fontSize: '11px', fontWeight: 950, color: u.lastLogin ? '#1e293b' : '#cbd5e1' }}>{u.lastLogin ? new Date(u.lastLogin).toLocaleDateString() : 'OFFLINE'}</span>
-                  </div>
-                  <div style={{ width: '1px', height: '24px', background: '#edf2f7' }}></div>
-                  <div style={{ display: 'flex', flexDirection: 'column' }}>
-                     <span style={{ fontSize: '9px', fontWeight: 950, color: '#cbd5e1', letterSpacing: '0.5px' }}>STATUS</span>
-                     <span style={{ fontSize: '11px', fontWeight: 950, color: u.status === 'active' ? '#2ecc71' : '#cbd5e1' }}>{(u.status || 'ACTIVE').toUpperCase()}</span>
-                  </div>
-                </div>
-
-                <div style={{ display: 'flex', gap: '8px' }}>
-                  {canAdminEdit && (
-                    <>
-                      <button 
-                        title="Copy Credentials"
-                        style={{ width: '38px', height: '38px', borderRadius: '12px', background: '#f8fafc', border: '1px solid #e2e8f0', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '16px' }} 
-                        onClick={() => handleCopyCredentials(u)}
-                      >
-                        📋
-                      </button>
-                      <button 
-                        title="Share on WhatsApp"
-                        style={{ width: '38px', height: '38px', borderRadius: '12px', background: '#e9f7ef', border: '1px solid #c3e6cb', color: '#27ae60', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '16px' }} 
-                        onClick={() => handleWhatsAppShare(u)}
-                      >
-                        💬
-                      </button>
-                      <button 
-                        className="btn-logout" 
-                        style={{ padding: '0 15px', height: '38px', borderRadius: '12px', fontSize: '10px', fontWeight: 950, border: '1px solid #f1f5f9', background: 'white', cursor: 'pointer' }} 
-                        onClick={() => handleOpenUserDrawer(u)}
-                      >
-                        EDIT
-                      </button>
-                      {u.id !== currentUser.id && (
-                        <button 
-                          style={{ width: '38px', height: '38px', borderRadius: '12px', background: '#fff5f5', border: '1px solid #fecaca', color: '#e74c3c', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '16px' }} 
-                          onClick={() => handleDeleteUser(u.id, u.roles)}
-                        >
-                          🗑️
-                        </button>
-                      )}
-                    </>
-                  )}
-                </div>
-              </div>
+        {!personnelLoading && filteredPersonnel.length > staffItemsPerPage && (
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '20px', borderTop: '1px solid #f1f5f9', background: '#fcfdfe', borderBottomLeftRadius: '24px', borderBottomRightRadius: '24px' }}>
+            <span style={{ fontSize: '11px', fontWeight: 700, color: '#94a3b8' }}>
+              Showing {((staffCurrentPage - 1) * staffItemsPerPage) + 1} - {Math.min(staffCurrentPage * staffItemsPerPage, filteredPersonnel.length)} of {filteredPersonnel.length} personnel
+            </span>
+            <div style={{ display: 'flex', gap: '8px' }}>
+              <button 
+                onClick={() => setStaffCurrentPage(p => Math.max(1, p - 1))}
+                disabled={staffCurrentPage === 1}
+                style={{ padding: '8px 16px', borderRadius: '8px', background: staffCurrentPage === 1 ? '#f1f5f9' : 'white', border: '1px solid #e2e8f0', color: staffCurrentPage === 1 ? '#cbd5e1' : '#0f52ba', fontSize: '11px', fontWeight: 900, cursor: staffCurrentPage === 1 ? 'not-allowed' : 'pointer', transition: 'all 0.2s' }}
+              >
+                PREV
+              </button>
+              <button 
+                onClick={() => setStaffCurrentPage(p => Math.min(Math.ceil(filteredPersonnel.length / staffItemsPerPage), p + 1))}
+                disabled={staffCurrentPage === Math.ceil(filteredPersonnel.length / staffItemsPerPage)}
+                style={{ padding: '8px 16px', borderRadius: '8px', background: staffCurrentPage === Math.ceil(filteredPersonnel.length / staffItemsPerPage) ? '#f1f5f9' : 'white', border: '1px solid #e2e8f0', color: staffCurrentPage === Math.ceil(filteredPersonnel.length / staffItemsPerPage) ? '#cbd5e1' : '#0f52ba', fontSize: '11px', fontWeight: 900, cursor: staffCurrentPage === Math.ceil(filteredPersonnel.length / staffItemsPerPage) ? 'not-allowed' : 'pointer', transition: 'all 0.2s' }}
+              >
+                NEXT
+              </button>
             </div>
-          );
-        })}
+          </div>
+        )}
       </div>
     </div>
   );
@@ -4940,82 +4889,54 @@ return (
       {isReferrerEditDrawerOpen && renderReferrerEditDrawer()}
       {isPatientEditDrawerOpen && renderPatientEditDrawer()}
 
-      {/* Personnel Roster Drawer: Redesigned Tactical HUD */}
+      {/* Personnel Roster Drawer: Redesigned Premium UI */}
       {isUserDrawerOpen && (
-        <div className="drawer-overlay" onClick={() => { setIsUserDrawerOpen(false); setUserRegStep(1); }} style={{ backdropFilter: 'blur(8px)', background: 'rgba(10, 22, 40, 0.4)' }}>
-           <div className="drawer-content" style={{ 
-             padding: 0, 
-             width: isMobile ? '100%' : '500px',
-             borderRadius: isMobile ? 0 : '24px 0 0 24px', 
-             background: '#fff',
-             boxShadow: '-20px 0 60px rgba(0,0,0,0.1)',
-             display: 'flex',
-             flexDirection: 'column'
-           }} onClick={e => e.stopPropagation()}>
+        <div onClick={() => { setIsUserDrawerOpen(false); setUserRegStep(1); }} style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backdropFilter: 'blur(4px)', background: 'rgba(10, 22, 40, 0.45)', zIndex: 10000 }}>
+             <div style={{ position: 'absolute', right: 0, top: 0, height: '100%', padding: 0, width: isMobile ? '100%' : '560px', background: '#fff', display: 'flex', flexDirection: 'column', boxShadow: '-12px 0 40px rgba(10,22,40,0.18)' }} onClick={e => e.stopPropagation()}>
               
-              {/* Tactical Header */}
-              <div className="drawer-header" style={{ 
-                background: 'linear-gradient(135deg, #0f52ba 0%, #061a40 100%)', 
-                color: 'white', 
-                padding: '40px 30px',
-                position: 'relative',
-                overflow: 'hidden'
-              }}>
-                 {/* Decorative HUD Lines */}
-                 <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: '1px', background: 'rgba(255,255,255,0.1)' }}></div>
-                 <div style={{ position: 'absolute', top: '10px', left: '30px', width: '20px', height: '2px', background: 'var(--tactical-cyan)' }}></div>
-                 
-                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                        <span style={{ fontSize: '10px', fontWeight: 950, letterSpacing: '3px', color: 'var(--tactical-cyan)', textTransform: 'uppercase' }}>Personnel Deployment</span>
-                        <h2 style={{ fontWeight: 950, fontSize: '24px', letterSpacing: '-0.5px' }}>{editUser?.id ? 'CONFIG_IDENTITY' : 'INIT_REGISTRATION'}</h2>
+              {/* Tactical Header matching Custom Roles */}
+              <div style={{ padding:'22px 24px 20px', background:`linear-gradient(135deg,#0a1628 0%,#1e3a5f 100%)`, position:'relative', overflow:'hidden', flexShrink:0 }}>
+                <div style={{ position:'absolute',top:0,left:0,right:0,height:'3px',background:`linear-gradient(90deg,transparent,#d4af37 30%,#ffd700 50%,#d4af37 70%,transparent)` }} />
+                <div style={{ display:'flex',justifyContent:'space-between',alignItems:'flex-start' }}>
+                  <div>
+                    <div style={{ fontSize:'10px',fontWeight:700,color:'#d4af37',letterSpacing:'1.5px',textTransform:'uppercase',marginBottom:'4px' }}>
+                      {editUser?.id ? 'Edit Profile' : 'New Personnel'}
                     </div>
-                    <button className="btn-close" style={{ color: 'white', opacity: 0.6, fontSize: '28px' }} onClick={() => { setIsUserDrawerOpen(false); setUserRegStep(1); }}>&times;</button>
-                 </div>
-
-                 {/* Pulse Badge */}
-                 <div style={{ 
-                   marginTop: '20px',
-                   display: 'inline-flex',
-                   alignItems: 'center',
-                   gap: '8px',
-                   padding: '6px 14px',
-                   background: 'rgba(255,255,255,0.1)',
-                   borderRadius: '20px',
-                   border: '1px solid rgba(255,255,255,0.1)'
-                 }}>
-                    <div className="tactical-node-active" style={{ width: '6px', height: '6px' }}></div>
-                    <span style={{ fontSize: '11px', fontWeight: 500, letterSpacing: '0' }}>Step {userRegStep}: {(userRegStep === 1 ? 'Basic Info' : 'Credentials')}</span>
-                 </div>
+                    <h3 style={{ margin:0,fontSize:'18px',fontWeight:800,color:'white',letterSpacing:'-0.2px' }}>
+                      {editUser?.id ? 'Modify Staff Profile' : 'Add New Staff'}
+                    </h3>
+                    <p style={{ margin:'5px 0 0',fontSize:'12px',color:'rgba(255,255,255,0.5)',fontWeight:500 }}>
+                      Enter the details for this staff member below.
+                    </p>
+                  </div>
+                  <button onClick={() => { setIsUserDrawerOpen(false); setUserRegStep(1); }} style={{ width:'32px',height:'32px',borderRadius:'50%',background:'rgba(255,255,255,0.1)',border:'1px solid rgba(255,255,255,0.15)',color:'white',cursor:'pointer',fontSize:'16px',display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0 }}>×</button>
+                </div>
               </div>
 
-              <div style={{ flex: 1, overflowY: 'auto', padding: '40px 30px' }}>
+              {/* Step Indicator */}
+              <div style={{ padding: '20px 40px 0 40px' }}>
+                <div style={{ 
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '8px',
+                  padding: '6px 14px',
+                  background: '#f8fafc',
+                  borderRadius: '20px',
+                  border: '1px solid #e2e8f0',
+                  color: '#64748b'
+                }}>
+                   <div style={{ width: '6px', height: '6px', borderRadius: '50%', background: '#3b82f6' }}></div>
+                   <span style={{ fontSize: '11px', fontWeight: 700 }}>Step {userRegStep} of 2: {(userRegStep === 1 ? 'Basic Info' : 'Credentials')}</span>
+                </div>
+              </div>
+
+              <div style={{ flex: 1, overflowY: 'auto', padding: '30px 40px 40px 40px' }}>
                  <form onSubmit={handleSaveUser}>
                     {userRegStep === 1 && (
                       <div className="wizard-step" style={{ animation: 'slideRight 0.4s ease' }}>
                         
-                        {/* Validation HUD Summary */}
-                        {(!editUser.name || !editUser.email || editUser.roles.length === 0) && (
-                          <div style={{ 
-                            background: '#fff9f0', 
-                            border: '1px solid #ffe8cc', 
-                            padding: '16px', 
-                            borderRadius: '16px', 
-                            marginBottom: '30px',
-                            display: 'flex',
-                            gap: '12px',
-                            alignItems: 'center'
-                          }}>
-                            <span style={{ fontSize: '20px' }}>⚠️</span>
-                            <div>
-                              <div style={{ fontSize: '11px', fontWeight: 950, color: '#f39c12' }}>ACTION REQUIRED</div>
-                              <div style={{ fontSize: '10px', color: '#888' }}>Personnel profile core parameters missing or invalid.</div>
-                            </div>
-                          </div>
-                        )}
-
-                        <div className="form-group" style={{ marginBottom: '30px' }}>
-                           <label style={{ fontSize: '10px', fontWeight: 950, color: '#aaa', textTransform: 'uppercase', letterSpacing: '1px', display: 'block', marginBottom: '12px' }}>Operational Alias (Full Name)</label>
+                        <div className="form-group" style={{ marginBottom: '25px' }}>
+                           <label style={{ fontSize: '11px', fontWeight: 800, color: '#475569', display: 'block', marginBottom: '8px' }}>Full Name <span style={{ color: '#ef4444' }}>*</span></label>
                            <input 
                              type="text" 
                              required 
@@ -5024,69 +4945,91 @@ return (
                              onChange={e => setEditUser({...editUser, name: e.target.value})} 
                              style={{ 
                                width: '100%', 
-                               border: 'none', 
-                               borderBottom: '2px solid #f0f0f0', 
-                               fontSize: '18px', 
-                               fontWeight: 800, 
-                               padding: '12px 0', 
+                               border: '1px solid #e2e8f0', 
+                               borderRadius: '12px',
+                               background: '#f8fafc',
+                               fontSize: '15px', 
+                               fontWeight: 700, 
+                               padding: '14px 16px', 
                                outline: 'none',
-                               color: '#1a1a2e',
-                               transition: 'border-color 0.3s ease'
+                               color: '#1e293b',
+                               transition: 'all 0.3s ease'
                              }} 
-                             onFocus={(e) => e.target.style.borderBottomColor = 'var(--tactical-cyan)'}
-                             onBlur={(e) => e.target.style.borderBottomColor = '#f0f0f0'}
+                             onFocus={(e) => { e.target.style.borderColor = '#3b82f6'; e.target.style.background = '#ffffff'; e.target.style.boxShadow = '0 0 0 4px rgba(59, 130, 246, 0.1)'; }}
+                             onBlur={(e) => { e.target.style.borderColor = '#e2e8f0'; e.target.style.background = '#f8fafc'; e.target.style.boxShadow = 'none'; }}
                            />
                         </div>
                         
-                        <div style={{ display: 'flex', gap: '30px', marginBottom: '35px' }}>
+                        <div style={{ display: 'flex', gap: '20px', marginBottom: '25px' }}>
                            <div className="form-group" style={{ flex: 1 }}>
-                               <label style={{ fontSize: '10px', fontWeight: 950, color: '#aaa', textTransform: 'uppercase', letterSpacing: '1px', display: 'block', marginBottom: '10px' }}>System UID (Email)</label>
-                               <input type="email" required value={editUser?.email} onChange={e => setEditUser({...editUser, email: e.target.value})} style={{ width: '100%', border: 'none', borderBottom: '1px solid #f0f0f0', fontSize: '14px', fontWeight: 700, padding: '10px 0', outline: 'none' }} />
+                               <label style={{ fontSize: '11px', fontWeight: 800, color: '#475569', display: 'block', marginBottom: '8px' }}>Email Address <span style={{ color: '#ef4444' }}>*</span></label>
+                               <input type="email" required placeholder="name@example.com" value={editUser?.email} onChange={e => setEditUser({...editUser, email: e.target.value})} 
+                                style={{ width: '100%', border: '1px solid #e2e8f0', borderRadius: '12px', background: '#f8fafc', fontSize: '14px', fontWeight: 600, padding: '12px 16px', outline: 'none', color: '#1e293b', transition: 'all 0.3s ease' }} 
+                                onFocus={(e) => { e.target.style.borderColor = '#3b82f6'; e.target.style.background = '#ffffff'; e.target.style.boxShadow = '0 0 0 4px rgba(59, 130, 246, 0.1)'; }}
+                                onBlur={(e) => { e.target.style.borderColor = '#e2e8f0'; e.target.style.background = '#f8fafc'; e.target.style.boxShadow = 'none'; }}
+                               />
                            </div>
                            <div className="form-group" style={{ flex: 1 }}>
-                               <label style={{ fontSize: '10px', fontWeight: 950, color: '#aaa', textTransform: 'uppercase', letterSpacing: '1px', display: 'block', marginBottom: '10px' }}>Mobile Contact</label>
-                               <input type="tel" required placeholder="+91 000-000-0000" value={editUser?.mobile} onChange={e => setEditUser({...editUser, mobile: e.target.value})} style={{ width: '100%', border: 'none', borderBottom: '1px solid #f0f0f0', fontSize: '14px', fontWeight: 700, padding: '10px 0', outline: 'none' }} />
+                               <label style={{ fontSize: '11px', fontWeight: 800, color: '#475569', display: 'block', marginBottom: '8px' }}>Mobile Number <span style={{ color: '#ef4444' }}>*</span></label>
+                               <input type="tel" required placeholder="+91 000-000-0000" value={editUser?.mobile} onChange={e => setEditUser({...editUser, mobile: e.target.value})} 
+                                style={{ width: '100%', border: '1px solid #e2e8f0', borderRadius: '12px', background: '#f8fafc', fontSize: '14px', fontWeight: 600, padding: '12px 16px', outline: 'none', color: '#1e293b', transition: 'all 0.3s ease' }} 
+                                onFocus={(e) => { e.target.style.borderColor = '#3b82f6'; e.target.style.background = '#ffffff'; e.target.style.boxShadow = '0 0 0 4px rgba(59, 130, 246, 0.1)'; }}
+                                onBlur={(e) => { e.target.style.borderColor = '#e2e8f0'; e.target.style.background = '#f8fafc'; e.target.style.boxShadow = 'none'; }}
+                               />
                            </div>
                         </div>
 
-                        <div style={{ display: 'flex', gap: '30px', marginBottom: '35px' }}>
+                        <div style={{ display: 'flex', gap: '20px', marginBottom: '25px' }}>
                            <div className="form-group" style={{ flex: 1, position: 'relative' }}>
-                               <label style={{ fontSize: '10px', fontWeight: 950, color: '#aaa', textTransform: 'uppercase', letterSpacing: '1px', display: 'block', marginBottom: '10px' }}>Access Crypt (Password)</label>
-                               <input type={showPasswords ? "text" : "password"} required autoComplete="new-password" value={editUser?.password} onChange={e => setEditUser({...editUser, password: e.target.value})} style={{ width: '100%', border: 'none', borderBottom: '1px solid #f0f0f0', fontSize: '14px', fontWeight: 700, padding: '10px 0', outline: 'none' }} />
+                               <label style={{ fontSize: '11px', fontWeight: 800, color: '#475569', display: 'block', marginBottom: '8px' }}>Password <span style={{ color: '#ef4444' }}>*</span></label>
+                               <input type={showPasswords ? "text" : "password"} required autoComplete="new-password" placeholder="Create password" value={editUser?.password} onChange={e => setEditUser({...editUser, password: e.target.value})} 
+                                style={{ width: '100%', border: '1px solid #e2e8f0', borderRadius: '12px', background: '#f8fafc', fontSize: '14px', fontWeight: 600, padding: '12px 16px', outline: 'none', color: '#1e293b', transition: 'all 0.3s ease' }} 
+                                onFocus={(e) => { e.target.style.borderColor = '#3b82f6'; e.target.style.background = '#ffffff'; e.target.style.boxShadow = '0 0 0 4px rgba(59, 130, 246, 0.1)'; }}
+                                onBlur={(e) => { e.target.style.borderColor = '#e2e8f0'; e.target.style.background = '#f8fafc'; e.target.style.boxShadow = 'none'; }}
+                               />
                                <button 
                                  type="button" 
                                  onClick={() => setShowPasswords(!showPasswords)}
-                                 style={{ position: 'absolute', right: 0, bottom: '10px', background: 'none', border: 'none', cursor: 'pointer', fontSize: '12px', opacity: 0.5 }}
+                                 style={{ position: 'absolute', right: '12px', bottom: '12px', background: 'none', border: 'none', cursor: 'pointer', fontSize: '14px', opacity: 0.5, transition: 'opacity 0.2s' }}
+                                 onMouseEnter={e => e.currentTarget.style.opacity = 1}
+                                 onMouseLeave={e => e.currentTarget.style.opacity = 0.5}
+                                 title={showPasswords ? "Hide" : "Show"}
                                >
-                                 {showPasswords ? 'HIDE' : 'SHOW'}
+                                 <span style={{ fontSize: '10px', fontWeight: 700 }}>{showPasswords ? 'HIDE' : 'SHOW'}</span>
                                </button>
                            </div>
                            <div className="form-group" style={{ flex: 1 }}>
-                               <label style={{ fontSize: '10px', fontWeight: 950, color: '#aaa', textTransform: 'uppercase', letterSpacing: '1px', display: 'block', marginBottom: '10px' }}>Confirm Crypt</label>
-                               <input type={showPasswords ? "text" : "password"} required autoComplete="new-password" value={editUser?.confirmPassword} onChange={e => setEditUser({...editUser, confirmPassword: e.target.value})} style={{ width: '100%', border: 'none', borderBottom: '1px solid #f0f0f0', fontSize: '14px', fontWeight: 700, padding: '10px 0', outline: 'none' }} />
+                               <label style={{ fontSize: '11px', fontWeight: 800, color: '#475569', display: 'block', marginBottom: '8px' }}>Confirm Password <span style={{ color: '#ef4444' }}>*</span></label>
+                               <input type={showPasswords ? "text" : "password"} required autoComplete="new-password" placeholder="Re-enter password" value={editUser?.confirmPassword} onChange={e => setEditUser({...editUser, confirmPassword: e.target.value})} 
+                                style={{ width: '100%', border: editUser.password && editUser.confirmPassword && editUser.password !== editUser.confirmPassword ? '1px solid #ef4444' : '1px solid #e2e8f0', borderRadius: '12px', background: '#f8fafc', fontSize: '14px', fontWeight: 600, padding: '12px 16px', outline: 'none', color: '#1e293b', transition: 'all 0.3s ease' }} 
+                                onFocus={(e) => { if (!(editUser.password && editUser.confirmPassword && editUser.password !== editUser.confirmPassword)) { e.target.style.borderColor = '#3b82f6'; e.target.style.background = '#ffffff'; e.target.style.boxShadow = '0 0 0 4px rgba(59, 130, 246, 0.1)'; } }}
+                                onBlur={(e) => { if (!(editUser.password && editUser.confirmPassword && editUser.password !== editUser.confirmPassword)) { e.target.style.borderColor = '#e2e8f0'; e.target.style.background = '#f8fafc'; e.target.style.boxShadow = 'none'; } }}
+                               />
                                {editUser.password && editUser.confirmPassword && editUser.password !== editUser.confirmPassword && (
-                                 <div style={{ fontSize: '8px', color: '#e74c3c', fontWeight: 900, marginTop: '4px' }}>MISMATCH DETECTED</div>
+                                 <div style={{ fontSize: '10px', color: '#ef4444', fontWeight: 700, marginTop: '6px', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                                   Passwords do not match
+                                 </div>
                                )}
                            </div>
                         </div>
 
                         <div className="form-group" style={{ marginBottom: '30px' }}>
-                           <label style={{ fontSize: '10px', fontWeight: 950, color: '#aaa', textTransform: 'uppercase', letterSpacing: '1px', display: 'block', marginBottom: '15px' }}>Assigned Directives (Multi-Role Select)</label>
+                           <label style={{ fontSize: '11px', fontWeight: 800, color: '#475569', display: 'block', marginBottom: '12px' }}>Assigned Roles <span style={{ color: '#ef4444' }}>*</span></label>
                            
                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
                               {[
-                                { id: 'doctor',       label: 'Doctor',       desc: 'Precision Reporting',  color: '#0891b2', icon: '👨‍⚕️' },
-                                { id: 'technician',   label: 'Technician',   desc: 'Ops & Acquisition',    color: '#f39c12', icon: '🩻'  },
-                                { id: 'receptionist', label: 'Receptionist', desc: 'Patient Dispatch',      color: '#e84393', icon: '📋'  },
-                                { id: 'admin',        label: 'Admin',        desc: 'Governance Control',    color: '#0f52ba', icon: '🏢'  },
-                                { id: 'accountant',   label: 'Accountant',   desc: 'Financial Comptroller', color: '#059669', icon: '📊'  },
-                                ...(currentUser.roles?.[0] === 'admindoctor' ? [{ id: 'admindoctor', label: 'AdminDoctor', desc: 'Master Authority', color: '#6366f1', icon: '⭐' }] : []),
+                                { id: 'doctor',       label: 'Doctor',       desc: 'Precision Reporting',  color: '#0891b2', icon: '' },
+                                { id: 'technician',   label: 'Technician',   desc: 'Ops & Acquisition',    color: '#f39c12', icon: ''  },
+                                { id: 'receptionist', label: 'Receptionist', desc: 'Patient Dispatch',      color: '#e84393', icon: ''  },
+                                { id: 'admin',        label: 'Admin',        desc: 'Governance Control',    color: '#0f52ba', icon: ''  },
+                                { id: 'accountant',   label: 'Accountant',   desc: 'Financial Comptroller', color: '#059669', icon: ''  },
+                                ...(currentUser.roles?.[0] === 'admindoctor' ? [{ id: 'admindoctor', label: 'AdminDoctor', desc: 'Master Authority', color: '#6366f1', icon: '' }] : []),
                                 ...getCustomRoles(activeCenter?.id).map(cr => ({
                                   id: cr.roleName,
                                   label: cr.roleName,
                                   desc: 'Custom Permission Set',
                                   color: '#319795',
-                                  icon: '👤'
+                                  icon: ''
                                 }))
                               ].map(role => {
                                 const isSelected = editUser.roles.includes(role.id);
@@ -5102,30 +5045,31 @@ return (
                                     style={{ 
                                       padding: '12px 16px',
                                       borderRadius: '16px',
-                                      border: `1px solid ${isSelected ? role.color : '#eee'}`,
-                                      background: isSelected ? `${role.color}05` : 'white',
+                                      border: `1px solid ${isSelected ? role.color : '#e2e8f0'}`,
+                                      background: isSelected ? `${role.color}08` : 'white',
                                       cursor: 'pointer',
                                       transition: 'all 0.2s cubic-bezier(0.175, 0.885, 0.32, 1.275)',
                                       display: 'flex',
                                       alignItems: 'center',
                                       gap: '12px',
-                                      boxShadow: isSelected ? `0 4px 12px ${role.color}15` : 'none'
+                                      boxShadow: isSelected ? `0 4px 12px ${role.color}15` : '0 2px 4px rgba(0,0,0,0.02)'
                                     }}
                                   >
                                     <div style={{ 
                                       width: '32px', height: '32px', borderRadius: '10px', 
-                                      background: isSelected ? role.color : '#f8f9fa',
-                                      color: isSelected ? 'white' : '#888',
+                                      background: isSelected ? role.color : '#f8fafc',
+                                      color: isSelected ? 'white' : '#94a3b8',
                                       display: 'flex', alignItems: 'center', justifyContent: 'center',
-                                      fontSize: '16px'
+                                      fontSize: '16px',
+                                      border: `1px solid ${isSelected ? role.color : '#f1f5f9'}`
                                     }}>
                                       {role.icon}
                                     </div>
                                     <div style={{ flex: 1 }}>
-                                      <div style={{ fontSize: '12px', fontWeight: 950, color: isSelected ? role.color : '#1a1a2e' }}>{role.label.toUpperCase()}</div>
-                                      <div style={{ fontSize: '8px', color: '#aaa', fontWeight: 700 }}>{role.desc.toUpperCase()}</div>
+                                      <div style={{ fontSize: '13px', fontWeight: 800, color: isSelected ? role.color : '#334155' }}>{role.label}</div>
+                                      <div style={{ fontSize: '10px', color: '#94a3b8', fontWeight: 600 }}>{role.desc}</div>
                                     </div>
-                                    {isSelected && <div style={{ color: role.color, fontSize: '10px' }}>[x]</div>}
+                                    {isSelected && <div style={{ color: role.color, fontSize: '16px', fontWeight: 900 }}>✓</div>}
                                   </div>
                                 );
                               })}
@@ -5134,17 +5078,19 @@ return (
 
                         {(editUser.roles.includes('doctor') || editUser.roles.includes('admindoctor')) && (
                           <div style={{ 
-                            background: 'rgba(15, 82, 186, 0.05)', 
-                            padding: '16px', 
+                            background: '#eff6ff', 
+                            padding: '16px 20px', 
                             borderRadius: '16px', 
-                            border: '1px dashed #0f52ba', 
+                            border: '1px solid #bfdbfe', 
                             marginTop: '20px',
                             display: 'flex',
-                            gap: '12px'
+                            gap: '12px',
+                            alignItems: 'flex-start'
                           }}>
-                             <div style={{ fontSize: '10px', color: '#0f52ba', fontWeight: 800, lineHeight: 1.4 }}>
-                                CLINICAL ACTIVATION DETECTED: <br/>
-                                <span style={{ opacity: 0.7 }}>Phase 2 will initiate clinical credential syncing for reporting authorization.</span>
+                             <span style={{ fontSize: '18px' }}>🩺</span>
+                             <div style={{ fontSize: '12px', color: '#1e40af', fontWeight: 800, lineHeight: 1.5 }}>
+                                Doctor Role Selected <br/>
+                                <span style={{ opacity: 0.8, fontWeight: 500, fontSize: '11px' }}>You will need to provide medical credentials in the next step to complete the registration.</span>
                              </div>
                           </div>
                         )}
@@ -5154,61 +5100,69 @@ return (
                     {userRegStep === 2 && (
                       <div className="wizard-step" style={{ animation: 'slideLeft 0.4s ease' }}>
                         <div style={{ 
-                          background: '#f0faff', 
+                          background: '#f8fafc', 
                           padding: '24px', 
-                          borderRadius: '20px', 
-                          marginBottom: '35px', 
-                          border: '1px solid #e0f2fe',
-                          position: 'relative',
-                          overflow: 'hidden'
+                          borderRadius: '16px', 
+                          marginBottom: '30px', 
+                          border: '1px solid #e2e8f0',
                         }}>
-                          <p style={{ fontSize: '10px', fontWeight: 950, color: '#0f52ba', letterSpacing: '2px', marginBottom: '8px' }}>CLINICAL REGISTRY</p>
-                          <p style={{ fontSize: '12px', color: '#64748b', fontWeight: 600, lineHeight: 1.5 }}>Authorized clinical reporting requires verified professional credentials and licensing data.</p>
+                          <p style={{ fontSize: '13px', fontWeight: 800, color: '#334155', margin: '0 0 6px 0' }}>Doctor Credentials</p>
+                          <p style={{ fontSize: '12px', color: '#64748b', fontWeight: 500, lineHeight: 1.5, margin: 0 }}>Please provide the verified professional credentials and licensing data for this doctor.</p>
                         </div>
 
-                        <div className="form-group" style={{ marginBottom: '30px' }}>
-                           <label style={{ fontSize: '10px', fontWeight: 950, color: '#aaa', textTransform: 'uppercase', letterSpacing: '1px', display: 'block', marginBottom: '10px' }}>Core Specialization / Wing</label>
-                           <input type="text" placeholder="e.g. Neuroradiologist" value={editUser?.specialization} onChange={e => setEditUser({...editUser, specialization: e.target.value})} style={{ width: '100%', border: 'none', borderBottom: '1px solid #f0f0f0', fontSize: '15px', fontWeight: 700, padding: '10px 0', outline: 'none' }} />
+                        <div className="form-group" style={{ marginBottom: '25px' }}>
+                           <label style={{ fontSize: '11px', fontWeight: 800, color: '#475569', display: 'block', marginBottom: '8px' }}>Specialization</label>
+                           <input type="text" placeholder="e.g. Neuroradiologist" value={editUser?.specialization} onChange={e => setEditUser({...editUser, specialization: e.target.value})} 
+                             style={{ width: '100%', border: '1px solid #e2e8f0', borderRadius: '12px', background: '#f8fafc', fontSize: '14px', fontWeight: 600, padding: '12px 16px', outline: 'none', color: '#1e293b', transition: 'all 0.3s ease' }} 
+                             onFocus={(e) => { e.target.style.borderColor = '#3b82f6'; e.target.style.background = '#ffffff'; e.target.style.boxShadow = '0 0 0 4px rgba(59, 130, 246, 0.1)'; }}
+                             onBlur={(e) => { e.target.style.borderColor = '#e2e8f0'; e.target.style.background = '#f8fafc'; e.target.style.boxShadow = 'none'; }}
+                           />
                         </div>
 
-                        <div style={{ display: 'flex', gap: '30px', marginBottom: '30px' }}>
+                        <div style={{ display: 'flex', gap: '20px', marginBottom: '25px' }}>
                            <div className="form-group" style={{ flex: 1 }}>
-                               <label style={{ fontSize: '10px', fontWeight: 950, color: '#aaa', textTransform: 'uppercase', letterSpacing: '1px', display: 'block', marginBottom: '10px' }}>Registration License #</label>
-                               <input type="text" placeholder="Ex: PMC-894-0" value={editUser?.licenseNo} onChange={e => setEditUser({...editUser, licenseNo: e.target.value})} style={{ width: '100%', border: 'none', borderBottom: '1px solid #f0f0f0', fontSize: '14px', fontWeight: 700, padding: '10px 0', outline: 'none' }} />
+                               <label style={{ fontSize: '11px', fontWeight: 800, color: '#475569', display: 'block', marginBottom: '8px' }}>Medical License Number</label>
+                               <input type="text" placeholder="Ex: PMC-894-0" value={editUser?.licenseNo} onChange={e => setEditUser({...editUser, licenseNo: e.target.value})} 
+                                 style={{ width: '100%', border: '1px solid #e2e8f0', borderRadius: '12px', background: '#f8fafc', fontSize: '14px', fontWeight: 600, padding: '12px 16px', outline: 'none', color: '#1e293b', transition: 'all 0.3s ease' }} 
+                                 onFocus={(e) => { e.target.style.borderColor = '#3b82f6'; e.target.style.background = '#ffffff'; e.target.style.boxShadow = '0 0 0 4px rgba(59, 130, 246, 0.1)'; }}
+                                 onBlur={(e) => { e.target.style.borderColor = '#e2e8f0'; e.target.style.background = '#f8fafc'; e.target.style.boxShadow = 'none'; }}
+                               />
                            </div>
                            <div className="form-group" style={{ flex: 1 }}>
-                               <label style={{ fontSize: '10px', fontWeight: 950, color: '#aaa', textTransform: 'uppercase', letterSpacing: '1px', display: 'block', marginBottom: '10px' }}>Primary Professional Degree</label>
-                               <input type="text" placeholder="MBBS, MD" value={editUser?.degree} onChange={e => setEditUser({...editUser, degree: e.target.value})} style={{ width: '100%', border: 'none', borderBottom: '1px solid #f0f0f0', fontSize: '14px', fontWeight: 700, padding: '10px 0', outline: 'none' }} />
+                               <label style={{ fontSize: '11px', fontWeight: 800, color: '#475569', display: 'block', marginBottom: '8px' }}>Degree / Qualification</label>
+                               <input type="text" placeholder="MBBS, MD" value={editUser?.degree} onChange={e => setEditUser({...editUser, degree: e.target.value})} 
+                                 style={{ width: '100%', border: '1px solid #e2e8f0', borderRadius: '12px', background: '#f8fafc', fontSize: '14px', fontWeight: 600, padding: '12px 16px', outline: 'none', color: '#1e293b', transition: 'all 0.3s ease' }} 
+                                 onFocus={(e) => { e.target.style.borderColor = '#3b82f6'; e.target.style.background = '#ffffff'; e.target.style.boxShadow = '0 0 0 4px rgba(59, 130, 246, 0.1)'; }}
+                                 onBlur={(e) => { e.target.style.borderColor = '#e2e8f0'; e.target.style.background = '#f8fafc'; e.target.style.boxShadow = 'none'; }}
+                               />
                            </div>
                         </div>
                       </div>
                     )}
 
-                    <div className="drawer-footer" style={{ marginTop: '40px', display: 'flex', gap: '15px' }}>
-                      {userRegStep === 1 ? (
-                        <>
-                          <button type="button" className="btn-logout" style={{ flex: 1, padding: '18px', borderRadius: '16px', border: '1px solid #eee' }} onClick={() => { setIsUserDrawerOpen(false); setUserRegStep(1); }}>ABORT</button>
-                          <button 
-                            type="submit" 
-                            className="btn-primary" 
-                            style={{ flex: 2, padding: '18px', borderRadius: '16px', background: '#0f52ba', color: 'white', fontWeight: 950, fontSize: '11px', letterSpacing: '1px' }}
-                          >
-                            {(editUser.roles.includes('doctor') || editUser.roles.includes('admindoctor')) ? 'NEXT: CREDENTIALS' : 'FINALIZE DEPLOYMENT'}
-                          </button>
-                        </>
-                      ) : (
-                        <>
-                          <button type="button" className="btn-logout" style={{ flex: 1, padding: '18px', borderRadius: '16px', border: '1px solid #eee' }} onClick={() => setUserRegStep(1)}>REVERT</button>
-                          <button 
-                            type="submit" 
-                            className="btn-primary" 
-                            style={{ flex: 2, padding: '18px', borderRadius: '16px', background: 'var(--tactical-indigo)', color: 'white', fontWeight: 950, fontSize: '11px', letterSpacing: '1px' }}
-                          >
-                            COMPLETE DOCTOR SYNC
-                          </button>
-                        </>
-                      )}
-                    </div>
+                      <div className="drawer-footer" style={{ padding:'16px 24px',borderTop:'1px solid #e8edf2',display:'flex',gap:'10px',background:'white',flexShrink:0, marginTop: '20px' }}>
+                        {userRegStep === 1 ? (
+                          <>
+                            <button type="button" style={{ flex:1,padding:'11px',borderRadius:'10px',border:'1.5px solid #e2e8f0',background:'white',fontWeight:700,fontSize:'13px',cursor:'pointer',color:'#475569',fontFamily:'inherit' }} onMouseEnter={e => e.currentTarget.style.background = '#f8fafc'} onMouseLeave={e => e.currentTarget.style.background = 'white'} onClick={() => { setIsUserDrawerOpen(false); setUserRegStep(1); }}>Cancel</button>
+                            <button 
+                              type="submit" 
+                              style={{ flex:2,padding:'11px',borderRadius:'10px',border:'none',background:`linear-gradient(135deg,#0a1628,#1e3a5f)`,color:'white',fontWeight:800,fontSize:'13px',cursor:'pointer',fontFamily:'inherit',boxShadow:'0 4px 14px rgba(10,22,40,0.25)',transition:'all 0.15s' }}
+                            >
+                              {(editUser.roles.includes('doctor') || editUser.roles.includes('admindoctor')) ? 'Next: Credentials' : 'Save Profile'}
+                            </button>
+                          </>
+                        ) : (
+                          <>
+                            <button type="button" style={{ flex:1,padding:'11px',borderRadius:'10px',border:'1.5px solid #e2e8f0',background:'white',fontWeight:700,fontSize:'13px',cursor:'pointer',color:'#475569',fontFamily:'inherit' }} onMouseEnter={e => e.currentTarget.style.background = '#f8fafc'} onMouseLeave={e => e.currentTarget.style.background = 'white'} onClick={() => setUserRegStep(1)}>Back</button>
+                            <button 
+                              type="submit" 
+                              style={{ flex:2,padding:'11px',borderRadius:'10px',border:'none',background:`linear-gradient(135deg,#0a1628,#1e3a5f)`,color:'white',fontWeight:800,fontSize:'13px',cursor:'pointer',fontFamily:'inherit',boxShadow:'0 4px 14px rgba(10,22,40,0.25)',transition:'all 0.15s' }}
+                            >
+                              Save Doctor Profile
+                            </button>
+                          </>
+                        )}
+                      </div>
                  </form>
               </div>
            </div>
@@ -5217,9 +5171,9 @@ return (
 
       {/* Layout Builder Drawer (Original) */}
       {isLayoutDrawerOpen && (
-        <div className="drawer-overlay" onClick={() => setIsLayoutDrawerOpen(false)}>
-           <div className="drawer-content" style={{ width: isMobile ? '100%' : '500px', borderRadius: isMobile ? 0 : '24px 0 0 24px' }} onClick={e => e.stopPropagation()}>
-              <div className="drawer-header">
+        <div onClick={() => setIsLayoutDrawerOpen(false)} style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backdropFilter: 'blur(4px)', background: 'rgba(10, 22, 40, 0.45)', zIndex: 10000 }}>
+             <div style={{ position: 'absolute', right: 0, top: 0, height: '100%', padding: 0, width: isMobile ? '100%' : '500px', background: '#fff', display: 'flex', flexDirection: 'column', boxShadow: '-12px 0 40px rgba(10,22,40,0.18)' }} onClick={e => e.stopPropagation()}>
+              <div >
                  <h2>{editLayout.id ? 'Edit Layout' : 'New Reporting Layout'}</h2>
                  <button className="btn-close" onClick={() => setIsLayoutDrawerOpen(false)}>&times;</button>
               </div>
@@ -5330,13 +5284,51 @@ return (
       )}
 
 
-    </div>
+    
+      {/* ── BEAUTIFUL REVOKE MODAL ── */}
+      {revokeUser && (
+        <div style={{ position: 'fixed', inset: 0, zIndex: 100000, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(10, 22, 40, 0.6)', backdropFilter: 'blur(8px)', padding: '20px' }} onClick={() => setRevokeUser(null)}>
+          <div style={{ width: '100%', maxWidth: '420px', background: 'white', borderRadius: '24px', overflow: 'hidden', boxShadow: '0 24px 60px rgba(0,0,0,0.2)', animation: 'popIn 0.3s cubic-bezier(0.16,1,0.3,1)' }} onClick={e => e.stopPropagation()}>
+            <div style={{ padding: '32px 32px 24px', textAlign: 'center' }}>
+              <div style={{ width: '64px', height: '64px', borderRadius: '50%', background: '#fef2f2', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 20px', border: '4px solid #fee2e2' }}>
+                <span style={{ fontSize: '28px' }}>⚠️</span>
+              </div>
+              <h3 style={{ margin: '0 0 8px 0', fontSize: '20px', fontWeight: 800, color: '#0f172a', letterSpacing: '-0.3px' }}>Revoke Access</h3>
+              <p style={{ margin: 0, fontSize: '14px', color: '#64748b', lineHeight: 1.5 }}>
+                Are you absolutely sure you want to revoke access for <strong style={{ color: '#0f172a' }}>{revokeUser.name || 'this user'}</strong>? They will no longer be able to log in or access this hub's data.
+              </p>
+            </div>
+            
+            <div style={{ padding: '20px 32px 32px', display: 'flex', gap: '12px' }}>
+              <button 
+                onClick={() => setRevokeUser(null)}
+                style={{ flex: 1, padding: '12px', borderRadius: '12px', border: '1.5px solid #e2e8f0', background: 'white', color: '#475569', fontSize: '14px', fontWeight: 700, cursor: 'pointer', transition: 'all 0.2s' }}
+                onMouseEnter={e => e.currentTarget.style.background = '#f8fafc'}
+                onMouseLeave={e => e.currentTarget.style.background = 'white'}
+              >
+                Cancel
+              </button>
+              <button 
+                onClick={async () => {
+                  await handleDeleteUser(revokeUser.id);
+                  setRevokeUser(null);
+                }}
+                style={{ flex: 1, padding: '12px', borderRadius: '12px', border: 'none', background: 'linear-gradient(135deg, #ef4444 0%, #dc2626 100%)', color: 'white', fontSize: '14px', fontWeight: 800, cursor: 'pointer', boxShadow: '0 4px 14px rgba(220, 38, 38, 0.25)', transition: 'all 0.2s' }}
+              >
+                Yes, Revoke
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+</div>
   );
 
   function renderChainDrawer() {
     return (
-      <div className="drawer-overlay" onClick={() => setIsChainDrawerOpen(false)} style={{ backdropFilter: 'blur(8px)', background: 'rgba(10, 22, 40, 0.4)', zIndex: 10000 }}>
-        <div className="drawer-content" style={{ padding: 0, width: isMobile ? '100%' : '450px', borderRadius: isMobile ? 0 : '24px 0 0 24px', background: 'white', display: 'flex', flexDirection: 'column' }} onClick={e => e.stopPropagation()}>
+      <div onClick={() => setIsChainDrawerOpen(false)} style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backdropFilter: 'blur(4px)', background: 'rgba(10, 22, 40, 0.45)', zIndex: 10000 }}>
+          <div style={{ position: 'absolute', right: 0, top: 0, height: '100%', padding: 0, width: isMobile ? '100%' : '450px', background: '#fff', display: 'flex', flexDirection: 'column', boxShadow: '-12px 0 40px rgba(10,22,40,0.18)' }} onClick={e => e.stopPropagation()}>
           <div style={{ padding: '35px', background: 'linear-gradient(135deg, #0f52ba 0%, #061a40 100%)', color: 'white' }}>
              <h2 style={{ fontSize: '11px', fontWeight: 950, color: 'var(--tactical-cyan)', letterSpacing: '3px', textTransform: 'uppercase', marginBottom: '8px' }}>Infrastructure Deployment</h2>
              <div style={{ fontSize: '20px', fontWeight: 950, letterSpacing: '-1px' }}>REGISTER NEW CHAIN</div>

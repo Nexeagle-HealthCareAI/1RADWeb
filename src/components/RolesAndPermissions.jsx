@@ -38,7 +38,7 @@ function ConfirmDialog({ open, title, message, onConfirm, onCancel }) {
   return (
     <div style={{ position:'fixed',inset:0,zIndex:10001,background:'rgba(10,22,40,0.6)',backdropFilter:'blur(6px)',display:'flex',alignItems:'center',justifyContent:'center' }}>
       <div style={{ background:'white',borderRadius:'20px',padding:'32px 28px',width:'360px',boxShadow:'0 24px 60px rgba(0,0,0,0.2)',border:'1px solid #fecaca',textAlign:'center',animation:'popIn 0.22s cubic-bezier(0.16,1,0.3,1)' }}>
-        <div style={{ width:'52px',height:'52px',borderRadius:'50%',background:'#fef2f2',border:'2px solid #fecaca',display:'flex',alignItems:'center',justifyContent:'center',margin:'0 auto 16px',fontSize:'22px' }}>⚠️</div>
+        <div style={{ width:'52px',height:'52px',borderRadius:'50%',background:'#fef2f2',border:'2px solid #fecaca',display:'flex',alignItems:'center',justifyContent:'center',margin:'0 auto 16px',fontSize:'22px',fontWeight:900,color:'#dc2626' }}>!</div>
         <div style={{ fontWeight:800,fontSize:'15px',color:'#0f172a',marginBottom:'8px' }}>{title}</div>
         <p style={{ fontSize:'13px',color:'#64748b',marginBottom:'24px',lineHeight:1.6 }}>{message}</p>
         <div style={{ display:'flex',gap:'10px' }}>
@@ -229,12 +229,12 @@ export default function RolesAndPermissions({ hospitalId }) {
                           </div>
                           <div style={{ display:'flex', alignItems:'center', gap:'5px', marginTop:'3px' }}>
                             {isSystem ? (
-                              <span style={{ fontSize:'9.5px',fontWeight:700,color:'#64748b',background:'#f1f5f9',border:'1px solid #e2e8f0',borderRadius:'4px',padding:'1px 6px',letterSpacing:'0.5px',textTransform:'uppercase' }}>
-                                🔒 System
+                              <span style={{ fontSize:'9.5px',fontWeight:700,color:'#64748b',background:'#f1f5f9',border:'1px solid #e2e8f0',borderRadius:'4px',padding:'2px 6px',letterSpacing:'0.5px',textTransform:'uppercase' }}>
+                                SYSTEM
                               </span>
                             ) : (
-                              <span style={{ fontSize:'9.5px',fontWeight:700,color:'#0d9488',background:'#f0fdfa',border:'1px solid #99f6e4',borderRadius:'4px',padding:'1px 6px',letterSpacing:'0.5px',textTransform:'uppercase' }}>
-                                ✦ Custom
+                              <span style={{ fontSize:'9.5px',fontWeight:700,color:'#0d9488',background:'#f0fdfa',border:'1px solid #99f6e4',borderRadius:'4px',padding:'2px 6px',letterSpacing:'0.5px',textTransform:'uppercase' }}>
+                                CUSTOM
                               </span>
                             )}
                             <span style={{ fontSize:'10px',color:'#94a3b8',fontWeight:600 }}>
@@ -294,17 +294,17 @@ export default function RolesAndPermissions({ hospitalId }) {
                           <button
                             onClick={() => openEdit(role)}
                             title="Edit role"
-                            style={{ width:'30px',height:'30px',borderRadius:'8px',border:'1px solid #e2e8f0',background:'white',cursor:'pointer',fontSize:'13px',display:'flex',alignItems:'center',justifyContent:'center',transition:'all 0.14s' }}
-                            onMouseEnter={e=>{ e.currentTarget.style.background='#eff6ff'; e.currentTarget.style.borderColor='#bfdbfe'; }}
-                            onMouseLeave={e=>{ e.currentTarget.style.background='white'; e.currentTarget.style.borderColor='#e2e8f0'; }}
-                          >✏️</button>
+                            style={{ padding:'6px 12px',height:'30px',borderRadius:'8px',border:'1px solid #e2e8f0',background:'white',cursor:'pointer',fontSize:'11px',fontWeight:700,color:'#64748b',display:'flex',alignItems:'center',justifyContent:'center',transition:'all 0.14s' }}
+                            onMouseEnter={e=>{ e.currentTarget.style.background='#eff6ff'; e.currentTarget.style.borderColor='#bfdbfe'; e.currentTarget.style.color='#3b82f6'; }}
+                            onMouseLeave={e=>{ e.currentTarget.style.background='white'; e.currentTarget.style.borderColor='#e2e8f0'; e.currentTarget.style.color='#64748b'; }}
+                          >EDIT</button>
                           <button
                             onClick={() => setConfirm({ roleId: role.roleId, roleName: role.roleName })}
                             title="Delete role"
-                            style={{ width:'30px',height:'30px',borderRadius:'8px',border:'1px solid #fecaca',background:'#fef2f2',cursor:'pointer',fontSize:'13px',display:'flex',alignItems:'center',justifyContent:'center',transition:'all 0.14s' }}
-                            onMouseEnter={e=>{ e.currentTarget.style.background='#fee2e2'; }}
-                            onMouseLeave={e=>{ e.currentTarget.style.background='#fef2f2'; }}
-                          >🗑️</button>
+                            style={{ padding:'6px 12px',height:'30px',borderRadius:'8px',border:'1px solid #fecaca',background:'#fef2f2',cursor:'pointer',fontSize:'11px',fontWeight:700,color:'#dc2626',display:'flex',alignItems:'center',justifyContent:'center',transition:'all 0.14s' }}
+                            onMouseEnter={e=>{ e.currentTarget.style.background='#fee2e2'; e.currentTarget.style.borderColor='#fca5a5'; }}
+                            onMouseLeave={e=>{ e.currentTarget.style.background='#fef2f2'; e.currentTarget.style.borderColor='#fecaca'; }}
+                          >DELETE</button>
                         </div>
                       )}
                     </td>
@@ -328,11 +328,11 @@ export default function RolesAndPermissions({ hospitalId }) {
                       No access
                     </span>
                     <span style={{ display:'flex',alignItems:'center',gap:'6px',fontSize:'11.5px',color:'#475569',fontWeight:600 }}>
-                      <span style={{ fontSize:'10px',fontWeight:700,color:'#64748b',background:'#f1f5f9',border:'1px solid #e2e8f0',borderRadius:'4px',padding:'1px 6px' }}>🔒 System</span>
+                      <span style={{ fontSize:'9.5px',fontWeight:700,color:'#64748b',background:'#f1f5f9',border:'1px solid #e2e8f0',borderRadius:'4px',padding:'2px 6px' }}>SYSTEM</span>
                       Built-in role (read-only)
                     </span>
                     <span style={{ display:'flex',alignItems:'center',gap:'6px',fontSize:'11.5px',color:'#475569',fontWeight:600 }}>
-                      <span style={{ fontSize:'10px',fontWeight:700,color:'#0d9488',background:'#f0fdfa',border:'1px solid #99f6e4',borderRadius:'4px',padding:'1px 6px' }}>✦ Custom</span>
+                      <span style={{ fontSize:'9.5px',fontWeight:700,color:'#0d9488',background:'#f0fdfa',border:'1px solid #99f6e4',borderRadius:'4px',padding:'2px 6px' }}>CUSTOM</span>
                       Your defined role
                     </span>
                   </div>
@@ -432,7 +432,6 @@ export default function RolesAndPermissions({ hospitalId }) {
 
             {/* Count summary */}
             <div style={{ marginTop:'10px',padding:'8px 13px',borderRadius:'8px',background:'#f8fafc',border:'1px solid #e2e8f0',display:'flex',alignItems:'center',gap:'8px' }}>
-              <span style={{ fontSize:'13px' }}>📋</span>
               <span style={{ fontSize:'12px',fontWeight:600,color:'#475569' }}>
                 {selectedRoutes.length === 0 ? 'No modules selected — role will have no access.' : `${selectedRoutes.length} of ${NAV_ITEMS.length} modules selected`}
               </span>
@@ -447,7 +446,7 @@ export default function RolesAndPermissions({ hospitalId }) {
             Cancel
           </button>
           <button onClick={handleSaveRole} disabled={saving} style={{ flex:2,padding:'11px',borderRadius:'10px',border:'none',background:saving?'#e2e8f0':`linear-gradient(135deg,${NAVY},#1e3a5f)`,color:saving?'#94a3b8':'white',fontWeight:800,fontSize:'13px',cursor:saving?'not-allowed':'pointer',fontFamily:'inherit',boxShadow:saving?'none':'0 4px 14px rgba(10,22,40,0.25)',transition:'all 0.15s' }}>
-            {saving ? 'Saving…' : (editingRoleId ? '💾 Save Changes' : '✨ Create Role')}
+            {saving ? 'Saving…' : (editingRoleId ? 'Save Changes' : 'Create Role')}
           </button>
         </div>
       </div>

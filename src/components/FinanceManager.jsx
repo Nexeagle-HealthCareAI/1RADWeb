@@ -616,48 +616,49 @@ const FinanceManager = ({
 
       {/* ── SERVICE PRICE DRAWER ── */}
       {isPriceDrawerOpen && (
-        <div className="drawer-overlay" onClick={() => setIsPriceDrawerOpen(false)} style={{ backdropFilter: 'blur(6px)', background: 'rgba(10,22,40,0.4)', zIndex: 10000 }}>
-          <div className="drawer-content" style={{ padding: 0, width: isMobile ? '100%' : '720px', background: 'white' }} onClick={e => e.stopPropagation()}>
+        <div  onClick={() => setIsPriceDrawerOpen(false)} style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backdropFilter: 'blur(4px)', background: 'rgba(10, 22, 40, 0.45)', zIndex: 10000 }}>
+          <div  style={{ position: 'absolute', right: 0, top: 0, height: '100%', padding: 0, width: isMobile ? '100%' : '540px', background: '#fff', display: 'flex', flexDirection: 'column', boxShadow: '-12px 0 40px rgba(10,22,40,0.18)' }} onClick={e => e.stopPropagation()}>
 
-            <div style={{ padding: '28px 30px', background: 'linear-gradient(135deg, #1d4ed8 0%, #0a1628 100%)', color: 'white', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <div>
-                <div style={{ fontSize: '11px', fontWeight: 500, color: 'rgba(255,255,255,0.6)', marginBottom: '4px' }}>Finance → Services</div>
-                <div style={{ fontSize: '18px', fontWeight: 700 }}>{editPrice.id ? 'Edit Service' : 'New Service'}</div>
-              </div>
-              <button onClick={() => setIsPriceDrawerOpen(false)} style={{ background: 'rgba(255,255,255,0.12)', border: 'none', color: 'white', width: '32px', height: '32px', borderRadius: '50%', cursor: 'pointer', fontSize: '18px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>&times;</button>
+            <div  style={{ background: `linear-gradient(135deg, #0a1628 0%, #1e3a5f 100%)`, color: 'white', padding: '22px 24px 20px', position: 'relative' }}>
+               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                  <div>
+                      <div style={{ fontSize: '10px', fontWeight: 700, letterSpacing: '1.5px', color: '#d4a017', textTransform: 'uppercase', marginBottom: '4px' }}>Finance → Services</div>
+                      <h3 style={{ margin: 0, fontSize: '18px', fontWeight: 800, letterSpacing: '-0.2px' }}>{editPrice.id ? 'Edit Service' : 'New Service'}</h3>
+                  </div>
+                  <button style={{ width: '32px', height: '32px', borderRadius: '50%', background: 'rgba(255,255,255,0.1)', border: '1px solid rgba(255,255,255,0.15)', color: 'white', cursor: 'pointer', fontSize: '16px', display: 'flex', alignItems: 'center', justifyContent: 'center' }} onClick={() => setIsPriceDrawerOpen(false)}>&times;</button>
+               </div>
             </div>
 
-            <div style={{ padding: '30px', overflowY: 'auto', maxHeight: 'calc(100vh - 120px)' }}>
-              <form onSubmit={handleSavePrice}>
-                <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: isMobile ? '20px' : '36px', alignItems: 'flex-start' }}>
-
-                  {/* Left: core fields */}
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
-                    <div className="form-group">
-                      <label style={labelStyle}>Modality</label>
+            <div style={{ flex: 1, overflowY: 'auto', padding: '24px' }}>
+              <form onSubmit={handleSavePrice} style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
+                  
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+                    <div>
+                      <label style={{ fontSize: '11px', fontWeight: 700, color: '#475569', textTransform: 'uppercase', letterSpacing: '0.5px', display: 'block', marginBottom: '7px' }}>Modality</label>
                       <select
                         value={editPrice.modality}
                         onChange={e => setEditPrice({...editPrice, modality: e.target.value})}
-                        style={{ width: '100%', padding: '10px 12px', borderRadius: '8px', border: '1px solid #e2e8f0', fontSize: '13px', fontWeight: 500, background: 'white', outline: 'none' }}
+                        style={{ width: '100%', padding: '11px 14px', borderRadius: '10px', border: '1.5px solid #e2e8f0', fontSize: '13px', fontWeight: 600, color: '#0a1628', outline: 'none', background: 'white' }}
                       >
                         <option value="">Select modality</option>
                         {['X-RAY', 'MRI', 'CT', 'ULTRASOUND', 'DEXA', 'MAMMOGRAPHY', 'PET-CT'].map(m => <option key={m} value={m}>{m}</option>)}
                       </select>
                     </div>
 
-                    <div className="form-group" style={{ opacity: editPrice.modality ? 1 : 0.5, pointerEvents: editPrice.modality ? 'auto' : 'none', transition: 'opacity 0.2s' }}>
-                      <label style={labelStyle}>Service Name</label>
+                    <div style={{ opacity: editPrice.modality ? 1 : 0.5, pointerEvents: editPrice.modality ? 'auto' : 'none', transition: 'opacity 0.2s' }}>
+                      <label style={{ fontSize: '11px', fontWeight: 700, color: '#475569', textTransform: 'uppercase', letterSpacing: '0.5px', display: 'block', marginBottom: '7px' }}>Service Name</label>
                       <input
                         type="text" required
                         value={editPrice.serviceName}
                         placeholder={editPrice.modality ? 'e.g. Brain Scan' : 'Select modality first'}
                         onChange={e => setEditPrice({...editPrice, serviceName: e.target.value})}
-                        style={{ width: '100%', border: 'none', borderBottom: '2px solid #e2e8f0', fontSize: '15px', fontWeight: 600, padding: '8px 0', outline: 'none', boxSizing: 'border-box' }}
+                        style={{ width: '100%', padding: '11px 14px', borderRadius: '10px', border: '1.5px solid #e2e8f0', fontSize: '13px', fontWeight: 600, color: '#0a1628', outline: 'none', boxSizing: 'border-box' }}
+                        onFocus={e => e.target.style.borderColor = '#0f52ba'} onBlur={e => e.target.style.borderColor = '#e2e8f0'}
                       />
                     </div>
 
-                    <div className="form-group" style={{ opacity: editPrice.serviceName ? 1 : 0.5, pointerEvents: editPrice.serviceName ? 'auto' : 'none', transition: 'opacity 0.2s' }}>
-                      <label style={labelStyle}>Charge Amount (₹)</label>
+                    <div style={{ opacity: editPrice.serviceName ? 1 : 0.5, pointerEvents: editPrice.serviceName ? 'auto' : 'none', transition: 'opacity 0.2s' }}>
+                      <label style={{ fontSize: '11px', fontWeight: 700, color: '#475569', textTransform: 'uppercase', letterSpacing: '0.5px', display: 'block', marginBottom: '7px' }}>Charge Amount (₹)</label>
                       <input
                         type="number" required
                         value={editPrice.amount || ''}
@@ -669,25 +670,25 @@ const FinanceManager = ({
                           const calculatedPct = val > 0 ? (clampedCut / val) * 100 : 0;
                           setEditPrice({ ...editPrice, amount: val, referralCutValue: clampedCut, referralCutInput: calculatedPct.toFixed(2) });
                         }}
-                        style={{ width: '100%', border: 'none', borderBottom: '2px solid #e2e8f0', fontSize: '22px', fontWeight: 700, padding: '8px 0', outline: 'none', color: '#1d4ed8', boxSizing: 'border-box' }}
+                        style={{ width: '100%', padding: '11px 14px', borderRadius: '10px', border: '1.5px solid #e2e8f0', fontSize: '16px', fontWeight: 700, color: '#1d4ed8', outline: 'none', boxSizing: 'border-box' }}
+                        onFocus={e => e.target.style.borderColor = '#1d4ed8'} onBlur={e => e.target.style.borderColor = '#e2e8f0'}
                       />
                     </div>
                   </div>
 
-                  {/* Right: referral commission */}
                   <div style={{
                     background: editPrice.amount > 0 ? '#f8fafc' : '#f1f5f9',
-                    padding: '22px', borderRadius: '14px', border: '1px solid #e2e8f0',
+                    padding: '20px', borderRadius: '14px', border: '1px solid #e2e8f0',
                     opacity: editPrice.amount > 0 ? 1 : 0.6,
                     pointerEvents: editPrice.amount > 0 ? 'auto' : 'none',
-                    transition: 'all 0.3s', position: 'relative'
+                    transition: 'all 0.3s', position: 'relative', marginTop: '10px'
                   }}>
                     {editPrice.amount <= 0 && (
                       <div style={{ position: 'absolute', top: '10px', right: '12px', fontSize: '10px', fontWeight: 600, color: '#d97706', background: '#fffbeb', padding: '3px 8px', borderRadius: '5px', border: '1px solid #fef3c7' }}>
                         Optional
                       </div>
                     )}
-                    <label style={{ ...labelStyle, color: '#1d4ed8', fontSize: '12px' }}>Referral Commission</label>
+                    <label style={{ fontSize: '11px', fontWeight: 700, color: '#1d4ed8', textTransform: 'uppercase', letterSpacing: '0.5px', display: 'block', marginBottom: '16px' }}>Referral Commission</label>
 
                     <div style={{ marginBottom: '20px' }}>
                       <input
@@ -705,8 +706,8 @@ const FinanceManager = ({
                     </div>
 
                     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '14px' }}>
-                      <div className="form-group">
-                        <label style={{ ...labelStyle, fontSize: '10px' }}>Percent (%)</label>
+                      <div>
+                        <label style={{ fontSize: '10px', fontWeight: 700, color: '#64748b', display: 'block', marginBottom: '6px' }}>Percent (%)</label>
                         <input
                           type="number"
                           value={editPrice.referralCutInput}
@@ -718,11 +719,11 @@ const FinanceManager = ({
                             const clamped = Math.min(calculated, editPrice.amount);
                             setEditPrice({...editPrice, referralCutInput: val, referralCutValue: clamped});
                           }}
-                          style={{ width: '100%', border: 'none', borderBottom: '1px solid #e2e8f0', fontSize: '14px', fontWeight: 600, padding: '8px 0', outline: 'none', background: 'transparent', boxSizing: 'border-box' }}
+                          style={{ width: '100%', padding: '9px 12px', borderRadius: '8px', border: '1px solid #e2e8f0', fontSize: '13px', fontWeight: 600, outline: 'none', background: 'white', boxSizing: 'border-box' }}
                         />
                       </div>
-                      <div className="form-group">
-                        <label style={{ ...labelStyle, fontSize: '10px' }}>Amount (₹)</label>
+                      <div>
+                        <label style={{ fontSize: '10px', fontWeight: 700, color: '#64748b', display: 'block', marginBottom: '6px' }}>Amount (₹)</label>
                         <input
                           type="number"
                           value={editPrice.referralCutValue}
@@ -734,7 +735,7 @@ const FinanceManager = ({
                             const calculatedPct = editPrice.amount > 0 ? (clamped / editPrice.amount) * 100 : 0;
                             setEditPrice({...editPrice, referralCutValue: val === '' ? '' : clamped, referralCutInput: calculatedPct.toFixed(2)});
                           }}
-                          style={{ width: '100%', border: 'none', borderBottom: '1px solid #e2e8f0', fontSize: '14px', fontWeight: 600, padding: '8px 0', outline: 'none', color: '#1d4ed8', background: 'transparent', boxSizing: 'border-box' }}
+                          style={{ width: '100%', padding: '9px 12px', borderRadius: '8px', border: '1px solid #e2e8f0', fontSize: '13px', fontWeight: 600, outline: 'none', color: '#1d4ed8', background: 'white', boxSizing: 'border-box' }}
                         />
                       </div>
                     </div>
@@ -744,11 +745,12 @@ const FinanceManager = ({
                       <span style={{ fontSize: '14px' }}>₹{(editPrice.referralCutValue || 0).toLocaleString()}</span>
                     </div>
                   </div>
-                </div>
 
-                <div style={{ marginTop: '32px', display: 'flex', gap: '12px', justifyContent: 'flex-end' }}>
-                  <button type="button" onClick={() => setIsPriceDrawerOpen(false)} style={{ padding: '11px 24px', borderRadius: '8px', border: '1px solid #e2e8f0', fontSize: '13px', fontWeight: 600, cursor: 'pointer', background: 'white', color: '#374151' }}>Cancel</button>
-                  <button type="submit" style={{ padding: '11px 28px', borderRadius: '8px', border: 'none', background: '#1d4ed8', color: 'white', fontSize: '13px', fontWeight: 600, cursor: 'pointer', boxShadow: '0 4px 12px rgba(29,78,216,0.2)' }}>Save Service</button>
+                <div style={{ display: 'flex', gap: '10px', marginTop: '10px' }}>
+                  <button type="button" onClick={() => setIsPriceDrawerOpen(false)} style={{ flex: 1, padding: '11px', borderRadius: '10px', border: '1.5px solid #e2e8f0', background: 'white', fontWeight: 700, fontSize: '13px', cursor: 'pointer', color: '#475569' }} onMouseEnter={e => e.currentTarget.style.background = '#f8fafc'} onMouseLeave={e => e.currentTarget.style.background = 'white'}>Cancel</button>
+                  <button type="submit" style={{ flex: 2, padding: '11px', borderRadius: '10px', border: 'none', background: `linear-gradient(135deg, #0a1628, #1e3a5f)`, color: 'white', fontWeight: 800, fontSize: '13px', cursor: 'pointer', boxShadow: '0 4px 14px rgba(10,22,40,0.25)', transition: 'all 0.15s' }}>
+                      Save Service
+                  </button>
                 </div>
               </form>
             </div>
@@ -758,136 +760,151 @@ const FinanceManager = ({
 
       {/* ── EXPENSE DRAWER ── */}
       {isExpenseDrawerOpen && (
-        <div className="drawer-overlay" onClick={() => setIsExpenseDrawerOpen(false)} style={{ backdropFilter: 'blur(6px)', background: 'rgba(10,22,40,0.4)', zIndex: 10000 }}>
-          <div className="drawer-content" style={{ padding: 0, width: isMobile ? '100%' : '480px', background: 'white' }} onClick={e => e.stopPropagation()}>
+        <div  onClick={() => setIsExpenseDrawerOpen(false)} style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backdropFilter: 'blur(4px)', background: 'rgba(10, 22, 40, 0.45)', zIndex: 10000 }}>
+          <div  style={{ position: 'absolute', right: 0, top: 0, height: '100%', padding: 0, width: isMobile ? '100%' : '480px', background: '#fff', display: 'flex', flexDirection: 'column', boxShadow: '-12px 0 40px rgba(10,22,40,0.18)' }} onClick={e => e.stopPropagation()}>
 
-            <div style={{ padding: '28px 30px', background: 'linear-gradient(135deg, #1e293b 0%, #0f172a 100%)', color: 'white', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <div>
-                <div style={{ fontSize: '11px', fontWeight: 500, color: 'rgba(255,255,255,0.6)', marginBottom: '4px' }}>Finance → Expenses</div>
-                <div style={{ fontSize: '18px', fontWeight: 700 }}>{editExpense.id ? 'Edit Expense' : 'Add Expense'}</div>
-              </div>
-              <button onClick={() => setIsExpenseDrawerOpen(false)} style={{ background: 'rgba(255,255,255,0.12)', border: 'none', color: 'white', width: '32px', height: '32px', borderRadius: '50%', cursor: 'pointer', fontSize: '18px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>&times;</button>
+            <div  style={{ background: `linear-gradient(135deg, #0a1628 0%, #1e3a5f 100%)`, color: 'white', padding: '22px 24px 20px', position: 'relative' }}>
+               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                  <div>
+                      <div style={{ fontSize: '10px', fontWeight: 700, letterSpacing: '1.5px', color: '#d4a017', textTransform: 'uppercase', marginBottom: '4px' }}>Finance → Expenses</div>
+                      <h3 style={{ margin: 0, fontSize: '18px', fontWeight: 800, letterSpacing: '-0.2px' }}>{editExpense.id ? 'Edit Expense' : 'Add Expense'}</h3>
+                  </div>
+                  <button style={{ width: '32px', height: '32px', borderRadius: '50%', background: 'rgba(255,255,255,0.1)', border: '1px solid rgba(255,255,255,0.15)', color: 'white', cursor: 'pointer', fontSize: '16px', display: 'flex', alignItems: 'center', justifyContent: 'center' }} onClick={() => setIsExpenseDrawerOpen(false)}>&times;</button>
+               </div>
             </div>
 
-            <div style={{ padding: '28px 30px', maxHeight: 'calc(100vh - 120px)', overflowY: 'auto' }}>
-              <form onSubmit={handleSaveExpense}>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '22px' }}>
+            <div style={{ flex: 1, overflowY: 'auto', padding: '24px' }}>
+              <form onSubmit={handleSaveExpense} style={{ display: 'flex', flexDirection: 'column', gap: '22px' }}>
+                
                   <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '18px' }}>
-                    <div className="form-group">
-                      <label style={labelStyle}>Date</label>
+                    <div>
+                      <label style={{ fontSize: '11px', fontWeight: 700, color: '#475569', textTransform: 'uppercase', letterSpacing: '0.5px', display: 'block', marginBottom: '7px' }}>Date</label>
                       <input
                         type="date" required
                         value={editExpense.transactionDate}
                         onChange={e => setEditExpense({...editExpense, transactionDate: e.target.value})}
-                        style={{ width: '100%', border: 'none', borderBottom: '2px solid #e2e8f0', fontSize: '14px', fontWeight: 500, padding: '8px 0', outline: 'none', boxSizing: 'border-box' }}
+                        style={{ width: '100%', padding: '11px 14px', borderRadius: '10px', border: '1.5px solid #e2e8f0', fontSize: '13px', fontWeight: 600, color: '#0a1628', outline: 'none', boxSizing: 'border-box' }}
+                        onFocus={e => e.target.style.borderColor = '#0f52ba'} onBlur={e => e.target.style.borderColor = '#e2e8f0'}
                       />
                     </div>
-                    <div className="form-group">
-                      <label style={labelStyle}>Status</label>
+                    <div>
+                      <label style={{ fontSize: '11px', fontWeight: 700, color: '#475569', textTransform: 'uppercase', letterSpacing: '0.5px', display: 'block', marginBottom: '7px' }}>Status</label>
                       <select
                         value={editExpense.status}
                         onChange={e => setEditExpense({...editExpense, status: e.target.value})}
-                        style={{ width: '100%', padding: '8px 10px', borderRadius: '8px', border: '1px solid #e2e8f0', fontSize: '13px', fontWeight: 500, background: 'white', outline: 'none' }}
+                        style={{ width: '100%', padding: '11px 14px', borderRadius: '10px', border: '1.5px solid #e2e8f0', fontSize: '13px', fontWeight: 600, color: '#0a1628', outline: 'none', background: 'white' }}
                       >
                         {['Draft', 'Pending', 'Approved', 'Paid'].map(s => <option key={s} value={s}>{s}</option>)}
                       </select>
                     </div>
                   </div>
 
-                  <div className="form-group">
-                    <label style={labelStyle}>Vendor / Payee</label>
+                  <div>
+                    <label style={{ fontSize: '11px', fontWeight: 700, color: '#475569', textTransform: 'uppercase', letterSpacing: '0.5px', display: 'block', marginBottom: '7px' }}>Vendor / Payee</label>
                     <input
                       type="text" required
                       value={editExpense.vendorName}
                       placeholder="e.g. Reliance Energy or Global Reagents Ltd"
                       onChange={e => setEditExpense({...editExpense, vendorName: e.target.value})}
-                      style={{ width: '100%', border: 'none', borderBottom: '2px solid #e2e8f0', fontSize: '15px', fontWeight: 600, padding: '8px 0', outline: 'none', boxSizing: 'border-box' }}
+                      style={{ width: '100%', padding: '11px 14px', borderRadius: '10px', border: '1.5px solid #e2e8f0', fontSize: '13px', fontWeight: 600, color: '#0a1628', outline: 'none', boxSizing: 'border-box' }}
+                      onFocus={e => e.target.style.borderColor = '#0f52ba'} onBlur={e => e.target.style.borderColor = '#e2e8f0'}
                     />
                   </div>
 
                   <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 0.8fr', gap: '18px' }}>
-                    <div className="form-group">
-                      <label style={labelStyle}>Category</label>
+                    <div>
+                      <label style={{ fontSize: '11px', fontWeight: 700, color: '#475569', textTransform: 'uppercase', letterSpacing: '0.5px', display: 'block', marginBottom: '7px' }}>Category</label>
                       <select
                         value={editExpense.category}
                         onChange={e => setEditExpense({...editExpense, category: e.target.value})}
-                        style={{ width: '100%', padding: '10px 12px', borderRadius: '8px', border: '1px solid #e2e8f0', fontSize: '13px', fontWeight: 500, background: 'white', outline: 'none' }}
+                        style={{ width: '100%', padding: '11px 14px', borderRadius: '10px', border: '1.5px solid #e2e8f0', fontSize: '13px', fontWeight: 600, color: '#0a1628', outline: 'none', background: 'white' }}
                       >
                         {['Maintenance', 'Staff Salary', 'Utilities', 'Reagents', 'Marketing', 'Rent', 'Consumables', 'Other'].map(m => <option key={m} value={m}>{m}</option>)}
                       </select>
                     </div>
-                    <div className="form-group">
-                      <label style={labelStyle}>Cost Center</label>
+                    <div>
+                      <label style={{ fontSize: '11px', fontWeight: 700, color: '#475569', textTransform: 'uppercase', letterSpacing: '0.5px', display: 'block', marginBottom: '7px' }}>Cost Center</label>
                       <select
                         value={editExpense.costCenter}
                         onChange={e => setEditExpense({...editExpense, costCenter: e.target.value})}
-                        style={{ width: '100%', padding: '10px 12px', borderRadius: '8px', border: '1px solid #e2e8f0', fontSize: '13px', fontWeight: 500, background: 'white', outline: 'none' }}
+                        style={{ width: '100%', padding: '11px 14px', borderRadius: '10px', border: '1.5px solid #e2e8f0', fontSize: '13px', fontWeight: 600, color: '#0a1628', outline: 'none', background: 'white' }}
                       >
                         {['Radiology', 'Laboratory', 'Pharmacy', 'OPD', 'Administration', 'Logistics'].map(c => <option key={c} value={c}>{c}</option>)}
                       </select>
                     </div>
                   </div>
 
-                  <div className="form-group">
-                    <label style={labelStyle}>Description</label>
-                    <input
-                      type="text" required
+                  <div>
+                    <label style={{ fontSize: '11px', fontWeight: 700, color: '#475569', textTransform: 'uppercase', letterSpacing: '0.5px', display: 'block', marginBottom: '7px' }}>Description</label>
+                    <textarea
                       value={editExpense.description}
-                      placeholder="Detailed breakdown of the expenditure..."
+                      placeholder="Brief details about the expense"
                       onChange={e => setEditExpense({...editExpense, description: e.target.value})}
-                      style={{ width: '100%', border: 'none', borderBottom: '2px solid #e2e8f0', fontSize: '14px', fontWeight: 500, padding: '8px 0', outline: 'none', boxSizing: 'border-box' }}
+                      style={{ width: '100%', padding: '11px 14px', borderRadius: '10px', border: '1.5px solid #e2e8f0', fontSize: '13px', fontWeight: 500, outline: 'none', resize: 'none', height: '60px', color: '#1e293b', boxSizing: 'border-box' }}
+                      onFocus={e => e.target.style.borderColor = '#0f52ba'} onBlur={e => e.target.style.borderColor = '#e2e8f0'}
                     />
                   </div>
 
                   <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '18px' }}>
-                    <div className="form-group">
-                      <label style={labelStyle}>Amount (₹)</label>
-                      <input
-                        type="number" required
-                        value={editExpense.amount}
-                        onChange={e => setEditExpense({...editExpense, amount: parseFloat(e.target.value)})}
-                        style={{ width: '100%', border: 'none', borderBottom: '2px solid #e2e8f0', fontSize: '18px', fontWeight: 700, padding: '8px 0', outline: 'none', color: '#1e293b', boxSizing: 'border-box' }}
-                      />
-                    </div>
-                    <div className="form-group">
-                      <label style={labelStyle}>Tax / GST (₹)</label>
-                      <input
-                        type="number"
-                        value={editExpense.taxAmount}
-                        onChange={e => setEditExpense({...editExpense, taxAmount: parseFloat(e.target.value)})}
-                        style={{ width: '100%', border: 'none', borderBottom: '2px solid #e2e8f0', fontSize: '18px', fontWeight: 700, padding: '8px 0', outline: 'none', color: '#6b7280', boxSizing: 'border-box' }}
-                      />
-                    </div>
-                  </div>
-
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '18px' }}>
-                    <div className="form-group">
-                      <label style={labelStyle}>Payment Mode</label>
+                    <div>
+                      <label style={{ fontSize: '11px', fontWeight: 700, color: '#475569', textTransform: 'uppercase', letterSpacing: '0.5px', display: 'block', marginBottom: '7px' }}>Payment Mode</label>
                       <select
                         value={editExpense.paymentMode}
                         onChange={e => setEditExpense({...editExpense, paymentMode: e.target.value})}
-                        style={{ width: '100%', padding: '8px 10px', borderRadius: '8px', border: '1px solid #e2e8f0', fontSize: '13px', fontWeight: 500, background: 'white', outline: 'none' }}
+                        style={{ width: '100%', padding: '11px 14px', borderRadius: '10px', border: '1.5px solid #e2e8f0', fontSize: '13px', fontWeight: 600, color: '#0a1628', outline: 'none', background: 'white' }}
                       >
-                        {['Cash', 'UPI', 'Bank Transfer', 'Cheque'].map(m => <option key={m} value={m}>{m}</option>)}
+                        {['Cash', 'Bank Transfer', 'Credit Card', 'Cheque', 'UPI'].map(m => <option key={m} value={m}>{m}</option>)}
                       </select>
                     </div>
-                    <div className="form-group">
-                      <label style={labelStyle}>Reference No.</label>
+                    <div>
+                      <label style={{ fontSize: '11px', fontWeight: 700, color: '#475569', textTransform: 'uppercase', letterSpacing: '0.5px', display: 'block', marginBottom: '7px' }}>Ref / Cheque #</label>
                       <input
                         type="text"
                         value={editExpense.referenceNumber}
-                        placeholder="TXN / Bill ID"
+                        placeholder="Optional"
                         onChange={e => setEditExpense({...editExpense, referenceNumber: e.target.value})}
-                        style={{ width: '100%', border: 'none', borderBottom: '2px solid #e2e8f0', fontSize: '13px', fontWeight: 500, padding: '8px 0', outline: 'none', boxSizing: 'border-box' }}
+                        style={{ width: '100%', padding: '11px 14px', borderRadius: '10px', border: '1.5px solid #e2e8f0', fontSize: '13px', fontWeight: 600, color: '#0a1628', outline: 'none', boxSizing: 'border-box' }}
+                        onFocus={e => e.target.style.borderColor = '#0f52ba'} onBlur={e => e.target.style.borderColor = '#e2e8f0'}
                       />
                     </div>
                   </div>
-                </div>
 
-                <div style={{ marginTop: '32px', display: 'flex', gap: '12px' }}>
-                  <button type="button" onClick={() => setIsExpenseDrawerOpen(false)} style={{ flex: 1, padding: '12px', borderRadius: '8px', border: '1px solid #e2e8f0', fontSize: '13px', fontWeight: 600, cursor: 'pointer', background: 'white', color: '#374151' }}>Cancel</button>
-                  <button type="submit" disabled={savingExpense} style={{ flex: 2, padding: '12px', borderRadius: '8px', border: 'none', background: '#1e293b', color: 'white', fontSize: '13px', fontWeight: 600, cursor: 'pointer' }}>
-                    {savingExpense ? 'Saving...' : 'Save Expense'}
+                  <div style={{ background: '#f8fafc', padding: '20px', borderRadius: '14px', border: '1px solid #e2e8f0' }}>
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '18px', marginBottom: '16px' }}>
+                      <div>
+                        <label style={{ fontSize: '11px', fontWeight: 700, color: '#475569', textTransform: 'uppercase', letterSpacing: '0.5px', display: 'block', marginBottom: '7px' }}>Base Amount (₹)</label>
+                        <input
+                          type="number" required
+                          value={editExpense.amount || ''}
+                          placeholder="0"
+                          onChange={e => setEditExpense({...editExpense, amount: parseFloat(e.target.value) || 0})}
+                          style={{ width: '100%', padding: '11px 14px', borderRadius: '10px', border: '1.5px solid #e2e8f0', fontSize: '16px', fontWeight: 700, color: '#1d4ed8', outline: 'none', boxSizing: 'border-box' }}
+                          onFocus={e => e.target.style.borderColor = '#1d4ed8'} onBlur={e => e.target.style.borderColor = '#e2e8f0'}
+                        />
+                      </div>
+                      <div>
+                        <label style={{ fontSize: '11px', fontWeight: 700, color: '#475569', textTransform: 'uppercase', letterSpacing: '0.5px', display: 'block', marginBottom: '7px' }}>Tax Amount (₹)</label>
+                        <input
+                          type="number"
+                          value={editExpense.taxAmount || ''}
+                          placeholder="0"
+                          onChange={e => setEditExpense({...editExpense, taxAmount: parseFloat(e.target.value) || 0})}
+                          style={{ width: '100%', padding: '11px 14px', borderRadius: '10px', border: '1.5px solid #e2e8f0', fontSize: '14px', fontWeight: 600, color: '#ef4444', outline: 'none', boxSizing: 'border-box' }}
+                          onFocus={e => e.target.style.borderColor = '#ef4444'} onBlur={e => e.target.style.borderColor = '#e2e8f0'}
+                        />
+                      </div>
+                    </div>
+                    
+                    <div style={{ borderTop: '1px dashed #cbd5e1', paddingTop: '16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <span style={{ fontSize: '12px', fontWeight: 700, color: '#64748b', textTransform: 'uppercase' }}>Total Outflow</span>
+                      <span style={{ fontSize: '20px', fontWeight: 800, color: '#0f172a' }}>₹{((Number(editExpense.amount)||0) + (Number(editExpense.taxAmount)||0)).toLocaleString()}</span>
+                    </div>
+                  </div>
+
+                <div style={{ display: 'flex', gap: '10px', marginTop: '10px' }}>
+                  <button type="button" onClick={() => setIsExpenseDrawerOpen(false)} style={{ flex: 1, padding: '11px', borderRadius: '10px', border: '1.5px solid #e2e8f0', background: 'white', fontWeight: 700, fontSize: '13px', cursor: 'pointer', color: '#475569' }} onMouseEnter={e => e.currentTarget.style.background = '#f8fafc'} onMouseLeave={e => e.currentTarget.style.background = 'white'}>Cancel</button>
+                  <button type="submit" disabled={savingExpense} style={{ flex: 2, padding: '11px', borderRadius: '10px', border: 'none', background: savingExpense ? '#e2e8f0' : `linear-gradient(135deg, #0a1628, #1e3a5f)`, color: savingExpense ? '#94a3b8' : 'white', fontWeight: 800, fontSize: '13px', cursor: savingExpense ? 'not-allowed' : 'pointer', boxShadow: savingExpense ? 'none' : '0 4px 14px rgba(10,22,40,0.25)', transition: 'all 0.15s' }}>
+                      {savingExpense ? 'Saving...' : 'Save Expense'}
                   </button>
                 </div>
               </form>

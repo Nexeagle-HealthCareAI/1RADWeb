@@ -421,6 +421,7 @@ const AdvancedDicomViewer = ({
 
   const [error, setError] = useState(null);
   const [isReady, setIsReady] = useState(false);
+  const [hasRenderedFirstImage, setHasRenderedFirstImage] = useState(false);
   const [metadata, setMetadata] = useState(null);
   const [currentImageIndex, setCurrentImageIndex] = useState(0);
   
@@ -453,7 +454,7 @@ const AdvancedDicomViewer = ({
     console.log('[DICOM] New files count:', files?.length);
     setCurrentImageIndex(0);
     setIsReady(false); // Force re-initialization
-    
+    setHasRenderedFirstImage(false); // Force loader until pixels are on screen
     // Store files in ref to prevent garbage collection of Blob URLs
     filesRef.current = files;
   }, [files]);
@@ -1220,8 +1221,13 @@ const AdvancedDicomViewer = ({
                }); 
                
                renderingEngine.renderViewports([viewportId]);
-               
-               // Double-flush render for some browser engines
+
+               // Pixels are now committed to the canvas — drop the loader on the next frame.
+               requestAnimationFrame(() => {
+                 if (isMounted) setHasRenderedFirstImage(true);
+               });
+
+               // Double-flush render for some browser engines (lower-priority safety net)
                setTimeout(() => {
                  if (isMounted) renderingEngine.renderViewports([viewportId]);
                }, 150);
@@ -1909,10 +1915,17 @@ const AdvancedDicomViewer = ({
       }}
     >
       <div ref={containerRef} style={{ width: '100%', height: '100%', position: 'relative', display: 'flex', flexDirection: 'column', background: '#000' }}>
-      {!isReady && (
+      {(!isReady || !hasRenderedFirstImage) && (
         <div style={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', zIndex: 10, background: '#000' }}>
-           <div className="dicom-loader"></div>
-           <p style={{ color: '#0f52ba', fontSize: '10px', fontWeight: 950, marginTop: '20px', letterSpacing: '3px' }}>PARSING_DIAGNOSTIC_DATA</p>
+          <div className="dicom-loader" />
+          <p style={{ color: '#0f52ba', fontSize: '10px', fontWeight: 950, marginTop: '20px', letterSpacing: '3px' }}>
+            {!isReady ? 'PARSING_DIAGNOSTIC_DATA' : 'RENDERING_IMAGE'}
+          </p>
+          {files && files.length > 0 && (
+            <p style={{ color: '#475569', fontSize: '9px', marginTop: '6px', fontWeight: 700, letterSpacing: '1px' }}>
+              {files.length} {files.length === 1 ? 'slice' : 'slices'}
+            </p>
+          )}
         </div>
       )}
 

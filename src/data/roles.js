@@ -116,7 +116,7 @@ export const saveCustomRoles = (hospitalId, rolesList) => {
 
 export const getRolePermissions = (roleId, hospitalId) => {
   // 1. Check system defaults first
-  const normalizedId = String(roleId).toLowerCase();
+  const normalizedId = String(roleId).replace(/\s+/g, '').toLowerCase();
   if (DEFAULT_SYSTEM_PERMISSIONS[normalizedId]) {
     return DEFAULT_SYSTEM_PERMISSIONS[normalizedId];
   }

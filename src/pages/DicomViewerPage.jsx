@@ -21,6 +21,7 @@ const DicomViewerPage = () => {
   const [showShortcutsHelp, setShowShortcutsHelp] = useState(false);
   const [showLeftToolbar, setShowLeftToolbar] = useState(true);
   const [isTablet, setIsTablet] = useState(false);
+  const [isMobile, setIsMobile] = useState(typeof window !== 'undefined' && window.innerWidth < 768);
   
   // Get data from navigation state - support both single and multi-series
   const { files, seriesName, appointmentData, allSeries, activeSeriesIndex: initialSeriesIndex, layoutMode: initialLayoutMode } = location.state || {};
@@ -45,7 +46,7 @@ const DicomViewerPage = () => {
     console.log('[DICOM VIEWER] Triggering viewer reset');
   }, [activeSeriesIndex]);
 
-  // Tablet/iPad detection
+  // Device detection — distinguish phone (< 768px) from tablet (768–1366px touch)
   useEffect(() => {
     const checkDevice = () => {
       const width = window.innerWidth;
@@ -53,17 +54,20 @@ const DicomViewerPage = () => {
       const isTouchDevice = 'ontouchstart' in window || navigator.maxTouchPoints > 0;
       const isIPad = /iPad|Macintosh/.test(navigator.userAgent) && 'ontouchstart' in document;
       const isTabletSize = (width >= 768 && width <= 1366) || (height >= 768 && height <= 1366);
-      
-      const tablet = isTouchDevice && (isTabletSize || isIPad);
+
+      const mobile = width < 768;
+      const tablet = !mobile && isTouchDevice && (isTabletSize || isIPad);
+
+      setIsMobile(mobile);
       setIsTablet(tablet);
-      
-      // Auto-hide left toolbar on tablets for more screen space
-      if (tablet) {
+
+      // Auto-hide left toolbar on tablets AND phones for more viewing area.
+      if (tablet || mobile) {
         setShowLeftToolbar(false);
       }
-      
+
       console.log('[DICOM VIEWER] Device detection:', {
-        width, height, isTouchDevice, isIPad, isTabletSize, tablet,
+        width, height, isTouchDevice, isIPad, isTabletSize, mobile, tablet,
         userAgent: navigator.userAgent,
         maxTouchPoints: navigator.maxTouchPoints
       });
@@ -700,69 +704,69 @@ const DicomViewerPage = () => {
       width: '100vw',
       background: '#000',
       display: 'flex',
-      flexDirection: isTablet && hasMultipleSeries ? 'column' : 'row',
+      flexDirection: (isTablet || isMobile) && hasMultipleSeries ? 'column' : 'row',
       overflow: 'hidden'
     }}>
       {/* Left Series List Panel (always show if series data exists) */}
       {(hasMultipleSeries || allSeries?.length > 0) && (
         <div style={{
-          width: isTablet ? '100%' : '280px',
-          minWidth: isTablet ? 'auto' : '280px',
-          maxWidth: isTablet ? '100%' : '280px',
-          height: isTablet ? 'auto' : '100%',
-          maxHeight: isTablet ? '30vh' : '100%',
+          width: (isTablet || isMobile) ? '100%' : '280px',
+          minWidth: (isTablet || isMobile) ? 'auto' : '280px',
+          maxWidth: (isTablet || isMobile) ? '100%' : '280px',
+          height: (isTablet || isMobile) ? 'auto' : '100%',
+          maxHeight: isMobile ? '22vh' : (isTablet ? '30vh' : '100%'),
           background: 'linear-gradient(180deg, #0f172a 0%, #1e293b 100%)',
-          borderRight: isTablet ? 'none' : '2px solid #334155',
-          borderBottom: isTablet ? '2px solid #334155' : 'none',
+          borderRight: (isTablet || isMobile) ? 'none' : '2px solid #334155',
+          borderBottom: (isTablet || isMobile) ? '2px solid #334155' : 'none',
           display: 'flex',
-          flexDirection: isTablet ? 'row' : 'column',
+          flexDirection: (isTablet || isMobile) ? 'row' : 'column',
           overflow: 'hidden',
-          boxShadow: isTablet ? '0 4px 20px rgba(0, 0, 0, 0.3)' : '4px 0 20px rgba(0, 0, 0, 0.3)',
-          position: isTablet ? 'relative' : 'static',
-          zIndex: isTablet ? 100 : 'auto',
+          boxShadow: (isTablet || isMobile) ? '0 4px 20px rgba(0, 0, 0, 0.3)' : '4px 0 20px rgba(0, 0, 0, 0.3)',
+          position: (isTablet || isMobile) ? 'relative' : 'static',
+          zIndex: (isTablet || isMobile) ? 100 : 'auto',
           flexShrink: 0
         }}>
           {/* Series List Header */}
           <div style={{
-            padding: isTablet ? '15px 20px' : '20px',
-            borderBottom: isTablet ? 'none' : '2px solid #334155',
-            borderRight: isTablet ? '2px solid #334155' : 'none',
+            padding: (isTablet || isMobile) ? '10px 14px' : '20px',
+            borderBottom: (isTablet || isMobile) ? 'none' : '2px solid #334155',
+            borderRight: (isTablet || isMobile) ? '2px solid #334155' : 'none',
             background: 'linear-gradient(135deg, #8b5cf6, #6366f1)',
-            minWidth: isTablet ? '200px' : 'auto',
+            minWidth: isMobile ? '120px' : ((isTablet) ? '200px' : 'auto'),
             display: 'flex',
             flexDirection: 'column',
             justifyContent: 'center'
           }}>
             <div style={{
               color: 'white',
-              fontSize: isTablet ? '14px' : '16px',
+              fontSize: isMobile ? '12px' : (isTablet ? '14px' : '16px'),
               fontWeight: 900,
               letterSpacing: '1px',
               display: 'flex',
               alignItems: 'center',
-              gap: '10px'
+              gap: '8px'
             }}>
-              <span style={{ fontSize: isTablet ? '18px' : '20px' }}>📊</span>
-              ALL SERIES
+              <span style={{ fontSize: isMobile ? '14px' : (isTablet ? '18px' : '20px') }}>📊</span>
+              SERIES
             </div>
             <div style={{
               color: 'rgba(255,255,255,0.8)',
-              fontSize: isTablet ? '10px' : '11px',
-              marginTop: '5px',
+              fontSize: isMobile ? '9px' : (isTablet ? '10px' : '11px'),
+              marginTop: '3px',
               fontWeight: 600
             }}>
-              {allSeries.length} Series Available
+              {allSeries.length} available
             </div>
           </div>
 
           {/* Series List */}
-          <div style={{ 
-            flex: 1, 
-            overflowY: isTablet ? 'hidden' : 'auto',
-            overflowX: isTablet ? 'auto' : 'hidden',
-            padding: isTablet ? '15px' : '10px',
-            display: isTablet ? 'flex' : 'block',
-            gap: isTablet ? '10px' : '0',
+          <div style={{
+            flex: 1,
+            overflowY: (isTablet || isMobile) ? 'hidden' : 'auto',
+            overflowX: (isTablet || isMobile) ? 'auto' : 'hidden',
+            padding: (isTablet || isMobile) ? '10px' : '10px',
+            display: (isTablet || isMobile) ? 'flex' : 'block',
+            gap: (isTablet || isMobile) ? '8px' : '0',
             WebkitOverflowScrolling: 'touch' // Smooth scrolling on iOS
           }}>
             {allSeries.map((series, index) => (
@@ -777,26 +781,26 @@ const DicomViewerPage = () => {
                   e.preventDefault();
                 }}
                 style={{
-                  width: isTablet ? '200px' : '100%',
-                  minWidth: isTablet ? '200px' : 'auto',
-                  flexShrink: isTablet ? 0 : 'auto',
-                  background: activeSeriesIndex === index 
-                    ? 'linear-gradient(135deg, #8b5cf6, #6366f1)' 
+                  width: isMobile ? '150px' : (isTablet ? '200px' : '100%'),
+                  minWidth: isMobile ? '150px' : (isTablet ? '200px' : 'auto'),
+                  flexShrink: (isTablet || isMobile) ? 0 : 'auto',
+                  background: activeSeriesIndex === index
+                    ? 'linear-gradient(135deg, #8b5cf6, #6366f1)'
                     : 'rgba(255,255,255,0.05)',
-                  border: activeSeriesIndex === index 
-                    ? '2px solid #8b5cf6' 
+                  border: activeSeriesIndex === index
+                    ? '2px solid #8b5cf6'
                     : '2px solid transparent',
                   color: activeSeriesIndex === index ? 'white' : '#e2e8f0',
-                  padding: isTablet ? '16px 14px' : '12px',
+                  padding: isMobile ? '10px 10px' : (isTablet ? '16px 14px' : '12px'),
                   borderRadius: '8px',
                   cursor: 'pointer',
-                  marginBottom: isTablet ? '0' : '8px',
+                  marginBottom: (isTablet || isMobile) ? '0' : '8px',
                   textAlign: 'left',
                   transition: 'all 0.2s ease',
-                  boxShadow: activeSeriesIndex === index 
-                    ? '0 4px 12px rgba(139, 92, 246, 0.4)' 
+                  boxShadow: activeSeriesIndex === index
+                    ? '0 4px 12px rgba(139, 92, 246, 0.4)'
                     : 'none',
-                  transform: activeSeriesIndex === index ? (isTablet ? 'translateY(-2px)' : 'translateX(4px)') : 'none',
+                  transform: activeSeriesIndex === index ? ((isTablet || isMobile) ? 'translateY(-2px)' : 'translateX(4px)') : 'none',
                   touchAction: 'manipulation', // Better touch response
                   WebkitTapHighlightColor: 'transparent' // Remove tap highlight on iOS
                 }}
@@ -853,16 +857,17 @@ const DicomViewerPage = () => {
       <div style={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
         {/* Top Header */}
         <div style={{
-          height: isTablet ? '70px' : '60px',
+          height: isMobile ? '54px' : (isTablet ? '70px' : '60px'),
           background: 'linear-gradient(135deg, #0f172a, #1e293b)',
           borderBottom: '2px solid #334155',
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'space-between',
-          padding: isTablet ? '0 15px' : '0 20px',
+          padding: isMobile ? '0 10px' : (isTablet ? '0 15px' : '0 20px'),
           color: 'white',
-          flexWrap: isTablet ? 'nowrap' : 'wrap',
-          gap: isTablet ? '10px' : '0'
+          flexWrap: 'nowrap',
+          gap: '8px',
+          flexShrink: 0,
         }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: isTablet ? '10px' : '15px' }}>
             <button
@@ -908,8 +913,8 @@ const DicomViewerPage = () => {
             flexWrap: 'wrap',
             justifyContent: 'flex-end'
           }}>
-            {/* Slice Counter Display */}
-            {!isTablet && (
+            {/* Slice Counter Display — desktop only */}
+            {!isTablet && !isMobile && (
               <div style={{
                 background: 'linear-gradient(135deg, #0f52ba, #3b82f6)',
                 border: '2px solid rgba(59, 130, 246, 0.5)',
@@ -923,20 +928,36 @@ const DicomViewerPage = () => {
               </div>
             )}
 
-            {/* Active Tool Display - Compact on tablet */}
-            <div style={{
-              background: 'rgba(59, 130, 246, 0.2)',
-              border: '1px solid rgba(59, 130, 246, 0.5)',
-              padding: isTablet ? '6px 12px' : '8px 16px',
-              borderRadius: '6px',
-              fontSize: isTablet ? '10px' : '12px',
-              fontWeight: 900
-            }}>
-              {isTablet ? activeTool.replace('Tool', '').substring(0, 8) : `ACTIVE: ${activeTool.replace('Tool', '').toUpperCase()}`}
-            </div>
+            {/* Compact slice counter for mobile — keeps the count visible without taking too much room */}
+            {isMobile && (
+              <div style={{
+                background: 'rgba(59, 130, 246, 0.2)',
+                border: '1px solid rgba(59, 130, 246, 0.5)',
+                padding: '6px 10px',
+                borderRadius: '6px',
+                fontSize: '11px',
+                fontWeight: 800,
+              }}>
+                {currentSlice} / {currentFiles?.length || 0}
+              </div>
+            )}
 
-            {/* Layout Controls - Hidden on tablet in single view */}
-            {!isTablet && (
+            {/* Active Tool Display — hidden on mobile (no tools panel to control it) */}
+            {!isMobile && (
+              <div style={{
+                background: 'rgba(59, 130, 246, 0.2)',
+                border: '1px solid rgba(59, 130, 246, 0.5)',
+                padding: isTablet ? '6px 12px' : '8px 16px',
+                borderRadius: '6px',
+                fontSize: isTablet ? '10px' : '12px',
+                fontWeight: 900
+              }}>
+                {isTablet ? activeTool.replace('Tool', '').substring(0, 8) : `ACTIVE: ${activeTool.replace('Tool', '').toUpperCase()}`}
+              </div>
+            )}
+
+            {/* Layout Controls — desktop only */}
+            {!isTablet && !isMobile && (
               <select
                 value={layoutMode}
                 onChange={e => setLayoutMode(e.target.value)}
@@ -957,24 +978,26 @@ const DicomViewerPage = () => {
               </select>
             )}
 
-            {/* Toolbar Toggle */}
-            <button
-              onClick={() => setShowLeftToolbar(!showLeftToolbar)}
-              style={{
-                background: showLeftToolbar ? '#10b981' : 'rgba(255,255,255,0.1)',
-                border: '1px solid ' + (showLeftToolbar ? '#10b981' : 'rgba(255,255,255,0.2)'),
-                color: 'white',
-                padding: isTablet ? '8px 14px' : '8px 12px',
-                borderRadius: '6px',
-                cursor: 'pointer',
-                fontSize: isTablet ? '11px' : '12px',
-                fontWeight: 700,
-                touchAction: 'manipulation',
-                WebkitTapHighlightColor: 'transparent'
-              }}
-            >
-              {showLeftToolbar ? '🛠️ HIDE' : '🛠️ TOOLS'}
-            </button>
+            {/* Toolbar Toggle — hidden on mobile (tools panel is desktop/tablet only) */}
+            {!isMobile && (
+              <button
+                onClick={() => setShowLeftToolbar(!showLeftToolbar)}
+                style={{
+                  background: showLeftToolbar ? '#10b981' : 'rgba(255,255,255,0.1)',
+                  border: '1px solid ' + (showLeftToolbar ? '#10b981' : 'rgba(255,255,255,0.2)'),
+                  color: 'white',
+                  padding: isTablet ? '8px 14px' : '8px 12px',
+                  borderRadius: '6px',
+                  cursor: 'pointer',
+                  fontSize: isTablet ? '11px' : '12px',
+                  fontWeight: 700,
+                  touchAction: 'manipulation',
+                  WebkitTapHighlightColor: 'transparent'
+                }}
+              >
+                {showLeftToolbar ? '🛠️ HIDE' : '🛠️ TOOLS'}
+              </button>
+            )}
           </div>
         </div>
 

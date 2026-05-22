@@ -2,7 +2,7 @@ import { Navigate, useLocation } from 'react-router-dom';
 import useAuth from '../auth/useAuth';
 import { getRolePermissions } from '../data/roles';
 
-export default function ProtectedRoute({ allowedRoles, moduleRoutes, children }) {
+export default function ProtectedRoute({ allowedRoles, moduleRoutes, authOnly, children }) {
   const { currentUser, hasAdminDoctor, activeCenter } = useAuth();
   const location = useLocation();
 
@@ -15,6 +15,9 @@ export default function ProtectedRoute({ allowedRoles, moduleRoutes, children })
   if (!currentUser) {
     return <Navigate to="/login" replace state={{ from: location }} />;
   }
+
+  // If authOnly is true, skip RBAC checks
+  if (authOnly) return children;
 
   // 3. Permission Authorization Check:
   const userRoles = currentUser.roles || [];

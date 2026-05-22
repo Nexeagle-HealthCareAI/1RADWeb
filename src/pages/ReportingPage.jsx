@@ -3899,15 +3899,12 @@ const ReportingPage = () => {
 
             {/* TIMELINE TAB */}
             {activeMainTab === 'TIMELINE' && (
-              <div style={{ flex: 1, overflowY: 'auto', background: '#f8fafc', padding: '24px' }}>
-                <div style={{ width: '100%', background: 'white', borderRadius: '16px', padding: '24px', boxShadow: '0 4px 20px rgba(0,0,0,0.05)', border: '1px solid #e2e8f0' }}>
+              <div style={{ flex: 1, overflowY: 'auto', background: '#f1f5f9', padding: '24px 28px' }}>
+                <div style={{ width: '100%', maxWidth: '1100px', margin: '0 auto' }}>
                   <PatientTimeline
                     history={patientHistory}
                     loading={loadingTimeline}
                     activeAppointmentId={appointmentId}
-                    onViewReport={(study) => {
-                      navigate(`/patient-timeline/${appointmentId}`, { state: { patient: activeAppointment, returnPath: `/reporting/${appointmentId}` } });
-                    }}
                     onViewDicom={(study) => {
                       handleLoadHistoricalDicom(study);
                       handleSelectMainTab('DICOM'); // Switch to DICOM tab and trigger hydration
