@@ -37,6 +37,9 @@ apiClient.interceptors.response.use(
       } else {
         console.warn('[API] Login failed: Invalid credentials.');
       }
+    } else if (error.response?.status === 402) {
+      console.warn('[API] Subscription Expired or Locked.');
+      window.dispatchEvent(new Event('1rad_subscription_locked'));
     }
     return Promise.reject(error);
   }

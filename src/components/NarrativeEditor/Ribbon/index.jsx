@@ -197,7 +197,8 @@ export default function Ribbon(props) {
           {/* Full Screen */}
           {toggleFullscreen && (
             <button
-              onMouseDown={e => { e.preventDefault(); toggleFullscreen(); }}
+              type="button"
+              onClick={e => { e.preventDefault(); e.stopPropagation(); toggleFullscreen(); }}
               title={isFullscreen ? 'Exit Full Screen (F11)' : 'Enter Full Screen (F11)'}
               aria-pressed={isFullscreen}
               style={{

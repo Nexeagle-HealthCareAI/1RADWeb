@@ -2,8 +2,12 @@ import { Navigate, useLocation } from 'react-router-dom';
 import useAuth from '../auth/useAuth';
 import { getRolePermissions } from '../data/roles';
 
+// Routes that must remain accessible even when subscription is expired/locked,
+// so admins can resolve payment without being caught in a redirect loop.
+const SUBSCRIPTION_EXEMPT_ROUTES = ['/subscription'];
+
 export default function ProtectedRoute({ allowedRoles, moduleRoutes, authOnly, children }) {
-  const { currentUser, hasAdminDoctor, activeCenter } = useAuth();
+  const { currentUser, hasAdminDoctor, activeCenter, subscription } = useAuth();
   const location = useLocation();
 
   // 1. Initial Launch Check: If no AdminDoctor exists, force to /register
@@ -16,15 +20,25 @@ export default function ProtectedRoute({ allowedRoles, moduleRoutes, authOnly, c
     return <Navigate to="/login" replace state={{ from: location }} />;
   }
 
+  // 3. Subscription Enforcement: Block access when subscription is confirmed inactive.
+  //    'null' means still loading — we allow through to avoid blocking the initial render.
+  //    Only redirect if we have a definitive isActive === false response from the backend.
+  const isSubscriptionExempt = SUBSCRIPTION_EXEMPT_ROUTES.some(
+    exempt => location.pathname.startsWith(exempt)
+  );
+  if (!isSubscriptionExempt && subscription !== null && subscription.isActive === false) {
+    return <Navigate to="/subscription" replace />;
+  }
+
   // If authOnly is true, skip RBAC checks
   if (authOnly) return children;
 
-  // 3. Permission Authorization Check:
+  // 4. Permission Authorization Check:
   const userRoles = currentUser.roles || [];
-  
+
   // Routes to check: explicitly provided module routes, or the exact current path
   const routesToCheck = moduleRoutes || [location.pathname];
-  
+
   const hasAccess = userRoles.some(role => {
     // getRolePermissions handles BOTH system roles and custom roles seamlessly
     const permissions = getRolePermissions(role, activeCenter?.id);

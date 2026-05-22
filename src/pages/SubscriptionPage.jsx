@@ -3,75 +3,280 @@ import { useNavigate } from 'react-router-dom';
 import useAuth from '../auth/useAuth';
 import apiClient from '../api/apiClient';
 
-// ─── Upgrade Request Modal ───────────────────────────────────────────────────
-const UpgradeModal = ({ plan, billingCycle, onClose, onSuccess }) => {
-  const [step, setStep] = useState('confirm'); // 'confirm' | 'sending' | 'done'
-  
-  const handleRequest = async () => {
-    setStep('sending');
+// ─── SVG Icons ────────────────────────────────────────────────────────────────
+const Icons = {
+  Check: () => (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
+      <polyline points="20 6 9 17 4 12"></polyline>
+    </svg>
+  ),
+  Shield: () => (
+    <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path>
+    </svg>
+  ),
+  Clock: () => (
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <circle cx="12" cy="12" r="10"></circle>
+      <polyline points="12 6 12 12 16 14"></polyline>
+    </svg>
+  ),
+  Star: () => (
+    <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="url(#premiumGrad)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <defs>
+        <linearGradient id="premiumGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+          <stop offset="0%" stopColor="#38bdf8" />
+          <stop offset="100%" stopColor="#3b82f6" />
+        </linearGradient>
+      </defs>
+      <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon>
+    </svg>
+  ),
+  Refresh: ({ spinning }) => (
+    <svg style={{ animation: spinning ? 'spin 1s linear infinite' : 'none' }} width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/>
+      <path d="M3 3v5h5"/>
+    </svg>
+  ),
+};
+
+// ─── Theme Constants ──────────────────────────────────────────────────────────
+const NAVY  = '#0a1628';
+const GOLD  = '#d4a017';
+const GOLD2 = '#f5d76e';
+
+// ─── Payment Request Side Drawer ──────────────────────────────────────────────
+const PaymentRequestDrawer = ({ isOpen, plan, billingCycle, onClose, onSuccess, currentUser }) => {
+  const [step, setStep] = useState('form'); // 'form' | 'submitting' | 'done' | 'error'
+  const [form, setForm] = useState({
+    payerName: currentUser?.name || '',
+    payerContact: '',
+    paymentMode: 'UPI',
+    transactionReference: '',
+    paidAt: new Date().toISOString().slice(0, 10),
+  });
+  const [errors, setErrors] = useState({});
+
+  useEffect(() => {
+    if (isOpen) {
+      setStep('form');
+      setForm(f => ({ ...f, payerName: currentUser?.name || '' }));
+      setErrors({});
+    }
+  }, [isOpen, currentUser]);
+
+  const priceMap = { monthly: 4999, yearly: 53988 };
+  const amount = priceMap[billingCycle] || priceMap.monthly;
+
+  const validate = () => {
+    const e = {};
+    if (!form.payerName.trim()) e.payerName = 'Required';
+    if (!form.payerContact.trim()) e.payerContact = 'Required';
+    if (!form.transactionReference.trim()) e.transactionReference = 'Required — enter your UTR / reference number';
+    if (!form.paidAt) e.paidAt = 'Required';
+    setErrors(e);
+    return Object.keys(e).length === 0;
+  };
+
+  const handleSubmit = async () => {
+    if (!validate()) return;
+    setStep('submitting');
     try {
-      await apiClient.post('/subscriptions/upgrade-request', {
+      await apiClient.post('/subscriptions/payment-request', {
         planName: plan.name,
-        billingCycle,
-        requestedAt: new Date().toISOString(),
+        billingCycle: billingCycle.charAt(0).toUpperCase() + billingCycle.slice(1),
+        amount,
+        payerName: form.payerName,
+        payerContact: form.payerContact,
+        transactionReference: form.transactionReference,
+        paymentMode: form.paymentMode,
+        paidAt: form.paidAt,
       });
       setStep('done');
-      setTimeout(() => { onSuccess(); onClose(); }, 2000);
+      setTimeout(() => { onSuccess(); onClose(); }, 2500);
     } catch {
-      setStep('done');
-      setTimeout(() => { onSuccess(); onClose(); }, 2000);
+      setStep('error');
     }
   };
 
-  return (
-    <div style={{ position: 'fixed', inset: 0, background: 'rgba(10, 22, 40, 0.4)', zIndex: 9999, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '20px', backdropFilter: 'blur(8px)' }}>
-      <div style={{ background: 'white', borderRadius: '16px', width: '100%', maxWidth: '440px', overflow: 'hidden', boxShadow: '0 20px 50px rgba(0,0,0,0.1)' }}>
-        <div style={{ padding: '30px' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '20px' }}>
-            <div>
-              <h3 style={{ margin: 0, fontSize: '18px', fontWeight: 800, color: '#1e293b' }}>Upgrade Protocol</h3>
-              <p style={{ margin: '4px 0 0', fontSize: '13px', color: '#64748b' }}>Confirm your request for {plan.name}</p>
-            </div>
-            <button onClick={onClose} style={{ background: 'none', border: 'none', color: '#94a3b8', cursor: 'pointer', fontSize: '20px', padding: 0 }}>&times;</button>
-          </div>
+  const labelStyle = { display:'block',fontSize:'11px',fontWeight:700,color:'#475569',letterSpacing:'0.5px',textTransform:'uppercase',marginBottom:'7px' };
 
-          {step === 'confirm' && (
+  return (
+    <>
+      {/* ── Drawer overlay ── */}
+      {isOpen && (
+        <div onClick={onClose} style={{ position:'fixed',inset:0,zIndex:2000,background:'rgba(10,22,40,0.45)',backdropFilter:'blur(4px)' }} />
+      )}
+
+      {/* ── Slide-out Drawer ── */}
+      <div style={{
+        position:'fixed', top:0, right:0, width:'420px', maxWidth:'100vw', height:'100%',
+        background:'white', zIndex:2001, display:'flex', flexDirection:'column',
+        boxShadow:'-12px 0 40px rgba(10,22,40,0.18)',
+        transform: isOpen ? 'translateX(0)' : 'translateX(100%)',
+        transition:'transform 0.28s cubic-bezier(0.16,1,0.3,1)',
+      }}>
+        {/* Hero header */}
+        <div style={{ padding:'22px 24px 20px', background:`linear-gradient(135deg,${NAVY} 0%,#1e3a5f 100%)`, position:'relative', overflow:'hidden', flexShrink:0 }}>
+          <div style={{ position:'absolute',top:0,left:0,right:0,height:'3px',background:`linear-gradient(90deg,transparent,${GOLD} 30%,${GOLD2} 50%,${GOLD} 70%,transparent)` }} />
+          <div style={{ display:'flex',justifyContent:'space-between',alignItems:'flex-start' }}>
+            <div>
+              <div style={{ fontSize:'10px',fontWeight:700,color:GOLD,letterSpacing:'1.5px',textTransform:'uppercase',marginBottom:'4px' }}>
+                {billingCycle === 'yearly' ? 'Yearly Plan' : 'Monthly Plan'}
+              </div>
+              <h3 style={{ margin:0,fontSize:'18px',fontWeight:800,color:'white',letterSpacing:'-0.2px' }}>
+                Submit Payment Details
+              </h3>
+              <p style={{ margin:'5px 0 0',fontSize:'12px',color:'rgba(255,255,255,0.5)',fontWeight:500 }}>
+                ₹{amount.toLocaleString('en-IN')} via 1Rad Premium
+              </p>
+            </div>
+            <button onClick={onClose} style={{ width:'32px',height:'32px',borderRadius:'50%',background:'rgba(255,255,255,0.1)',border:'1px solid rgba(255,255,255,0.15)',color:'white',cursor:'pointer',fontSize:'16px',display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0 }}>×</button>
+          </div>
+        </div>
+
+        {/* Drawer body */}
+        <div style={{ flex:1, overflowY:'auto', padding:'22px 24px', display:'flex', flexDirection:'column', gap:'20px' }}>
+          
+          {step === 'form' && (
             <>
-              <div style={{ background: '#f8fafc', padding: '20px', borderRadius: '12px', border: '1px solid #e2e8f0', marginBottom: '20px' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px' }}>
-                  <span style={{ fontSize: '12px', color: '#64748b', fontWeight: 600 }}>Billing Cycle</span>
-                  <span style={{ fontSize: '12px', color: '#1e293b', fontWeight: 800, textTransform: 'capitalize' }}>{billingCycle}</span>
+              {/* Summary strip */}
+              <div style={{ background:'#f8fafc',borderRadius:'12px',padding:'14px 16px',display:'flex',justifyContent:'space-between',alignItems:'center',border:'1px solid #e2e8f0' }}>
+                <div>
+                  <div style={{ fontSize:'10px',fontWeight:800,color:'#94a3b8',letterSpacing:'1px',textTransform:'uppercase' }}>Amount to Pay</div>
+                  <div style={{ fontSize:'22px',fontWeight:900,color:'#0ea5e9',letterSpacing:'-1px' }}>₹{amount.toLocaleString('en-IN')}</div>
                 </div>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
-                  <span style={{ fontSize: '12px', color: '#64748b', fontWeight: 600 }}>Monthly Cost</span>
-                  <span style={{ fontSize: '20px', color: '#0f52ba', fontWeight: 900 }}>₹{plan.price}</span>
+                <div style={{ textAlign:'right' }}>
+                  <div style={{ fontSize:'10px',fontWeight:800,color:'#94a3b8',letterSpacing:'1px',textTransform:'uppercase' }}>Pay To</div>
+                  <div style={{ fontSize:'13px',fontWeight:700,color:'#0f172a' }}>1Rad by Nexeagle</div>
+                  <div style={{ fontSize:'11px',color:'#64748b',fontWeight:600 }}>UPI: payments@nexeagle</div>
                 </div>
               </div>
-              <p style={{ fontSize: '12px', color: '#64748b', lineHeight: 1.6, marginBottom: '25px' }}>
-                Submitting this request will notify our institutional deployment team. They will contact you to finalize the billing details within 24 business hours.
-              </p>
-              <div style={{ display: 'flex', gap: '10px' }}>
-                <button onClick={onClose} style={{ flex: 1, padding: '12px', borderRadius: '10px', border: '1px solid #e2e8f0', background: 'white', color: '#64748b', fontSize: '12px', fontWeight: 800, cursor: 'pointer' }}>Cancel</button>
-                <button onClick={handleRequest} style={{ flex: 2, padding: '12px', borderRadius: '10px', border: 'none', background: '#0f52ba', color: 'white', fontSize: '12px', fontWeight: 800, cursor: 'pointer' }}>Confirm Request</button>
+
+              {/* Payer Name */}
+              <div>
+                <label style={labelStyle}>Your Name <span style={{ color:'#dc2626' }}>*</span></label>
+                <input type="text" placeholder="Full name of the person who paid" value={form.payerName} onChange={e => setForm(f => ({ ...f, payerName: e.target.value }))}
+                  style={{ width:'100%',padding:'11px 14px',borderRadius:'10px',border:`1.5px solid ${errors.payerName?'#fca5a5':'#e2e8f0'}`,fontSize:'13px',outline:'none',boxSizing:'border-box',color:NAVY,fontWeight:600,transition:'border-color 0.15s',fontFamily:'inherit',background:errors.payerName?'#fef2f2':'white' }}
+                  onFocus={e => e.target.style.borderColor='#0f52ba'} onBlur={e => e.target.style.borderColor=errors.payerName?'#fca5a5':'#e2e8f0'} />
+                {errors.payerName && <span style={{ fontSize:'11px',color:'#dc2626',marginTop:'4px',display:'block' }}>{errors.payerName}</span>}
+              </div>
+
+              {/* Contact */}
+              <div>
+                <label style={labelStyle}>Contact (Mobile / Email) <span style={{ color:'#dc2626' }}>*</span></label>
+                <input type="text" placeholder="Mobile or email for confirmation" value={form.payerContact} onChange={e => setForm(f => ({ ...f, payerContact: e.target.value }))}
+                  style={{ width:'100%',padding:'11px 14px',borderRadius:'10px',border:`1.5px solid ${errors.payerContact?'#fca5a5':'#e2e8f0'}`,fontSize:'13px',outline:'none',boxSizing:'border-box',color:NAVY,fontWeight:600,transition:'border-color 0.15s',fontFamily:'inherit',background:errors.payerContact?'#fef2f2':'white' }}
+                  onFocus={e => e.target.style.borderColor='#0f52ba'} onBlur={e => e.target.style.borderColor=errors.payerContact?'#fca5a5':'#e2e8f0'} />
+                {errors.payerContact && <span style={{ fontSize:'11px',color:'#dc2626',marginTop:'4px',display:'block' }}>{errors.payerContact}</span>}
+              </div>
+
+              {/* Payment Mode */}
+              <div>
+                <label style={labelStyle}>Payment Mode</label>
+                <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                  {['UPI', 'NEFT/RTGS', 'Bank Transfer', 'Cheque'].map(mode => (
+                    <button key={mode} onClick={() => setForm(f => ({ ...f, paymentMode: mode }))}
+                      style={{ padding:'7px 14px',borderRadius:'8px',border:`1px solid ${form.paymentMode===mode?NAVY:'#e2e8f0'}`,background:form.paymentMode===mode?NAVY:'white',color:form.paymentMode===mode?'white':'#64748b',fontSize:'12px',fontWeight:700,cursor:'pointer',transition:'all 0.15s' }}>
+                      {mode}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Transaction Reference */}
+              <div>
+                <label style={labelStyle}>Transaction Reference / UTR Number <span style={{ color:'#dc2626' }}>*</span></label>
+                <input type="text" placeholder="e.g. UPI ref, UTR, Cheque No, NEFT ref" value={form.transactionReference} onChange={e => setForm(f => ({ ...f, transactionReference: e.target.value }))}
+                  style={{ width:'100%',padding:'11px 14px',borderRadius:'10px',border:`1.5px solid ${errors.transactionReference?'#fca5a5':'#e2e8f0'}`,fontSize:'13px',outline:'none',boxSizing:'border-box',color:NAVY,fontWeight:600,transition:'border-color 0.15s',fontFamily:'inherit',background:errors.transactionReference?'#fef2f2':'white' }}
+                  onFocus={e => e.target.style.borderColor='#0f52ba'} onBlur={e => e.target.style.borderColor=errors.transactionReference?'#fca5a5':'#e2e8f0'} />
+                {errors.transactionReference && <span style={{ fontSize:'11px',color:'#dc2626',marginTop:'4px',display:'block' }}>{errors.transactionReference}</span>}
+              </div>
+
+              {/* Date of Payment */}
+              <div>
+                <label style={labelStyle}>Date of Payment <span style={{ color:'#dc2626' }}>*</span></label>
+                <input type="date" max={new Date().toISOString().slice(0, 10)} value={form.paidAt} onChange={e => setForm(f => ({ ...f, paidAt: e.target.value }))}
+                  style={{ width:'100%',padding:'11px 14px',borderRadius:'10px',border:`1.5px solid ${errors.paidAt?'#fca5a5':'#e2e8f0'}`,fontSize:'13px',outline:'none',boxSizing:'border-box',color:NAVY,fontWeight:600,transition:'border-color 0.15s',fontFamily:'inherit',background:errors.paidAt?'#fef2f2':'white' }}
+                  onFocus={e => e.target.style.borderColor='#0f52ba'} onBlur={e => e.target.style.borderColor=errors.paidAt?'#fca5a5':'#e2e8f0'} />
+                {errors.paidAt && <span style={{ fontSize:'11px',color:'#dc2626',marginTop:'4px',display:'block' }}>{errors.paidAt}</span>}
+              </div>
+              
+              <div style={{ marginTop:'10px',padding:'12px 14px',borderRadius:'10px',background:'#f0fdf4',border:'1px solid #bbf7d0',display:'flex',gap:'10px' }}>
+                <span style={{ color:'#16a34a',fontSize:'16px' }}>ℹ️</span>
+                <p style={{ margin:0,fontSize:'11.5px',color:'#166534',lineHeight:1.5,fontWeight:500 }}>
+                  After submitting, our team will verify your payment within 24 hours and activate your plan. You'll see the status update on this page.
+                </p>
               </div>
             </>
           )}
 
-          {step === 'sending' && (
-            <div style={{ textAlign: 'center', padding: '20px 0' }}>
-              <div className="spinner" style={{ width: '32px', height: '32px', border: '3px solid #f1f5f9', borderTopColor: '#0f52ba', borderRadius: '50%', margin: '0 auto 15px', animation: 'spin 0.8s linear infinite' }} />
-              <p style={{ fontSize: '14px', color: '#1e293b', fontWeight: 600 }}>Transmitting Request...</p>
+          {step === 'submitting' && (
+            <div style={{ textAlign:'center',padding:'40px 0',flex:1,display:'flex',flexDirection:'column',justifyContent:'center' }}>
+              <div className="spinner" style={{ width:'36px',height:'36px',border:'3px solid #f1f5f9',borderTopColor:'#0ea5e9',borderRadius:'50%',margin:'0 auto 20px',animation:'spin 0.8s linear infinite' }} />
+              <h4 style={{ margin:'0 0 8px',color:NAVY,fontSize:'16px',fontWeight:800 }}>Submitting...</h4>
+              <p style={{ margin:0,fontSize:'13px',color:'#64748b' }}>Please wait while we record your details.</p>
             </div>
           )}
 
           {step === 'done' && (
-            <div style={{ textAlign: 'center', padding: '10px 0' }}>
-              <div style={{ width: '48px', height: '48px', background: '#f0fdf4', color: '#16a34a', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '20px', margin: '0 auto 15px' }}>✓</div>
-              <h4 style={{ margin: '0 0 4px', color: '#1e293b' }}>Request Submitted</h4>
-              <p style={{ margin: 0, fontSize: '12px', color: '#64748b' }}>Our team will contact you shortly.</p>
+            <div style={{ textAlign:'center',padding:'40px 0',flex:1,display:'flex',flexDirection:'column',justifyContent:'center' }}>
+              <div style={{ width:'60px',height:'60px',background:'#f0fdf4',color:'#10b981',borderRadius:'50%',display:'flex',alignItems:'center',justifyContent:'center',margin:'0 auto 20px',fontSize:'28px',boxShadow:'0 4px 14px rgba(16,185,129,0.2)' }}>✓</div>
+              <h4 style={{ margin:'0 0 8px',color:NAVY,fontSize:'20px',fontWeight:800 }}>Payment Submitted</h4>
+              <p style={{ margin:'0',fontSize:'13px',color:'#64748b',lineHeight:1.6 }}>
+                Our team has received your details.<br/>We'll verify and activate within 24 hours.
+              </p>
+            </div>
+          )}
+
+          {step === 'error' && (
+            <div style={{ textAlign:'center',padding:'40px 0',flex:1,display:'flex',flexDirection:'column',justifyContent:'center' }}>
+              <div style={{ width:'60px',height:'60px',background:'#fef2f2',color:'#ef4444',borderRadius:'50%',display:'flex',alignItems:'center',justifyContent:'center',margin:'0 auto 20px',fontSize:'28px',boxShadow:'0 4px 14px rgba(239,68,68,0.2)' }}>✕</div>
+              <h4 style={{ margin:'0 0 8px',color:NAVY,fontSize:'20px',fontWeight:800 }}>Submission Failed</h4>
+              <p style={{ margin:'0 0 24px',fontSize:'13px',color:'#64748b',lineHeight:1.6 }}>
+                Couldn't reach our servers. Please check your connection and try again.
+              </p>
+              <button onClick={() => setStep('form')} style={{ padding:'10px 20px',borderRadius:'10px',border:'1px solid #e2e8f0',background:'white',color:NAVY,fontSize:'13px',fontWeight:700,cursor:'pointer',boxShadow:'0 2px 6px rgba(0,0,0,0.05)' }}>
+                Try Again
+              </button>
             </div>
           )}
         </div>
+
+        {/* Footer */}
+        {step === 'form' && (
+          <div style={{ padding:'16px 24px',borderTop:'1px solid #e8edf2',display:'flex',gap:'10px',background:'white',flexShrink:0 }}>
+            <button onClick={onClose} style={{ flex:1,padding:'11px',borderRadius:'10px',border:'1.5px solid #e2e8f0',background:'white',fontWeight:700,fontSize:'13px',cursor:'pointer',color:'#475569',fontFamily:'inherit' }}
+              onMouseEnter={e=>e.currentTarget.style.background='#f8fafc'} onMouseLeave={e=>e.currentTarget.style.background='white'}>
+              Cancel
+            </button>
+            <button onClick={handleSubmit} style={{ flex:2,padding:'11px',borderRadius:'10px',border:'none',background:`linear-gradient(135deg,${NAVY},#1e3a5f)`,color:'white',fontWeight:800,fontSize:'13px',cursor:'pointer',fontFamily:'inherit',boxShadow:'0 4px 14px rgba(10,22,40,0.25)',transition:'all 0.15s' }}>
+              Submit for Review
+            </button>
+          </div>
+        )}
+      </div>
+    </>
+  );
+};
+
+// ─── Trial Countdown Ring ─────────────────────────────────────────────────────
+const TrialCountdownRing = ({ daysLeft, totalDays = 14 }) => {
+  const pct = Math.max(0, Math.min(1, daysLeft / totalDays));
+  const r = 42, circ = 2 * Math.PI * r;
+  const dash = pct * circ;
+  const color = daysLeft <= 3 ? '#ef4444' : daysLeft <= 7 ? '#f59e0b' : '#10b981';
+  return (
+    <div style={{ position: 'relative', width: '100px', height: '100px', flexShrink: 0 }}>
+      <svg width="100" height="100" viewBox="0 0 100 100">
+        <circle cx="50" cy="50" r={r} fill="none" stroke="#e2e8f0" strokeWidth="8" />
+        <circle cx="50" cy="50" r={r} fill="none" stroke={color} strokeWidth="8"
+          strokeDasharray={`${dash} ${circ}`} strokeDashoffset={circ / 4}
+          strokeLinecap="round" style={{ transition: 'stroke-dasharray 0.6s ease' }} />
+      </svg>
+      <div style={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
+        <span style={{ fontSize: '22px', fontWeight: 900, color, lineHeight: 1 }}>{daysLeft}</span>
+        <span style={{ fontSize: '9px', fontWeight: 700, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.5px' }}>days</span>
       </div>
     </div>
   );
@@ -80,15 +285,20 @@ const UpgradeModal = ({ plan, billingCycle, onClose, onSuccess }) => {
 // ─── Main Page ────────────────────────────────────────────────────────────────
 const SubscriptionPage = () => {
   const [billingCycle, setBillingCycle] = useState(() => localStorage.getItem('1rad_billing_pref') || 'monthly');
-  const [upgradeModal, setUpgradeModal] = useState(null);
+  const [paymentModal, setPaymentModal] = useState(null);
   const [isRefreshing, setIsRefreshing] = useState(false);
-  const [invoices, setInvoices] = useState([]);
-  const [invoicesLoading, setInvoicesLoading] = useState(false);
-  const { subscription, refreshSubscription } = useAuth();
+  const [activeTab, setActiveTab] = useState('status');
+  const { subscription, refreshSubscription, currentUser } = useAuth();
   const navigate = useNavigate();
 
-  const isActive = subscription?.isActive;
   const daysLeft = subscription?.daysRemaining ?? 0;
+  const isActive = subscription?.isActive ?? false;
+  const isTrial = subscription?.isTrial ?? false;
+  const subStatus = subscription?.status ?? 'Unknown';
+  const billingCycleFromServer = subscription?.billingCycle ?? 'Trial';
+  const hasPending = subscription?.hasPendingPaymentRequest ?? false;
+  const pendingStatus = subscription?.pendingRequestStatus ?? null;
+  const isPaidPlan = !isTrial && (subStatus === 'Active' || subStatus === 'Expiring');
 
   const handleBillingCycle = (cycle) => {
     setBillingCycle(cycle);
@@ -101,201 +311,351 @@ const SubscriptionPage = () => {
     setIsRefreshing(false);
   };
 
-  const fetchInvoices = useCallback(async () => {
-    setInvoicesLoading(true);
-    try {
-      const res = await apiClient.get('/subscriptions/invoices');
-      setInvoices(Array.isArray(res.data) ? res.data : res.data?.data || []);
-    } catch {
-      setInvoices([]);
-    } finally {
-      setInvoicesLoading(false);
-    }
-  }, []);
+  const onPaymentSuccess = () => {
+    refreshSubscription();
+  };
 
-  useEffect(() => { fetchInvoices(); }, [fetchInvoices]);
+  const premiumPlan = {
+    name: '1Rad Premium',
+    price: billingCycle === 'monthly' ? '4,999' : '53,988',
+    priceMonthly: billingCycle === 'yearly' ? '4,499' : '4,999',
+    features: ['Unlimited Studies', 'Advanced DICOM Viewer', 'AI Reporting Tools', 'Priority Support', 'Multi-Clinic Sync', 'Automated Billing'],
+  };
 
-  const plans = [
-    {
-      name: 'Starter Trial',
-      price: '0',
-      priceNote: '15 Days Free',
-      description: 'Zero-commitment access to core radiology modules.',
-      features: ['Full Reporting Engine', 'DICOM Viewer', 'Appointment Management', '24/7 Support'],
-      icon: '⏳',
-      buttonText: 'Start Trial',
-      highlight: false
-    },
-    {
-      name: 'Professional',
-      price: billingCycle === 'monthly' ? '4,999' : '4,499',
-      priceNote: billingCycle === 'monthly' ? 'per month' : 'per month, billed yearly',
-      description: 'Advanced features for high-volume diagnostic hubs.',
-      features: ['Priority Support', 'Multi-Facility Sync', 'Custom Branding', 'Advanced Analytics'],
-      icon: '🚀',
-      buttonText: 'Upgrade Protocol',
-      highlight: true
-    }
-  ];
+  const statusColor = {
+    Active: '#10b981', Expiring: '#f59e0b', Expired: '#ef4444',
+    Locked: '#ef4444', Trial: '#3b82f6', Unknown: '#94a3b8',
+  }[subStatus] || '#94a3b8';
 
-  const currentPlanName = subscription?.planName?.toLowerCase() || '';
-  const isOnPlan = (plan) => currentPlanName.includes(plan.name.toLowerCase().split(' ')[0]);
+  const statusLabel = isTrial
+    ? (subStatus === 'Active' ? 'Free Trial Active' : subStatus === 'Expiring' ? 'Trial Expiring' : subStatus)
+    : subStatus;
 
   return (
-    <div style={{ background: '#f8fafc', minHeight: '100vh', padding: '40px' }}>
+    <div className="sub-page">
       <style>{`
         @keyframes spin { to { transform: rotate(360deg); } }
-        .card-hover { transition: all 0.3s ease; }
-        .card-hover:hover { transform: translateY(-4px); box-shadow: 0 12px 30px rgba(0,0,0,0.05); }
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
+        @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.5; } }
+
+        .sub-page { background: #f8fafc; min-height: 100vh; padding: 40px; box-sizing: border-box; }
+
+        .sub-header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 36px; gap: 20px; flex-wrap: wrap; }
+
+        .sub-tabs { display: flex; gap: 6px; margin-top: 12px; flex-wrap: wrap; }
+        .sub-tab-btn { padding: 7px 16px; border-radius: 8px; border: 1px solid #e2e8f0; font-size: 13px; font-weight: 600; cursor: pointer; transition: all 0.2s; }
+
+        .sub-card { background: white; border-radius: 24px; border: 1px solid #e2e8f0; padding: 30px; box-shadow: 0 4px 20px rgba(0,0,0,0.02); box-sizing: border-box; animation: fadeIn 0.3s ease; }
+
+        .status-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; margin-top: 24px; }
+        .status-cell { padding: 18px; background: #f8fafc; border-radius: 14px; border: 1px solid #e2e8f0; }
+
+        .plans-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; align-items: start; }
+
+        .billing-toggle { background: white; padding: 4px; border-radius: 10px; display: flex; gap: 4px; border: 1px solid #e2e8f0; }
+
+        .pending-badge { display: inline-flex; align-items: center; gap: 6px; padding: 5px 12px; border-radius: 20px; background: #eff6ff; color: #3b82f6; font-size: 11px; font-weight: 800; letter-spacing: 0.5px; text-transform: uppercase; animation: pulse 2s infinite; }
+
+        @media (max-width: 639px) {
+          .sub-page { padding: 20px 16px; }
+          .sub-header { margin-bottom: 20px; flex-direction: column; align-items: flex-start; }
+          .sub-header h1 { font-size: 18px !important; }
+          .status-grid { grid-template-columns: 1fr 1fr; gap: 10px; }
+          .plans-grid { grid-template-columns: 1fr; }
+          .sub-card { padding: 20px; }
+        }
+
+        @media (min-width: 640px) and (max-width: 1023px) {
+          .sub-page { padding: 30px 20px; }
+          .plans-grid { grid-template-columns: 1fr; }
+          .status-grid { grid-template-columns: 1fr 1fr; }
+        }
       `}</style>
 
-      {/* Header Section */}
-      <div style={{ maxWidth: '1100px', margin: '0 auto', marginBottom: '40px' }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '30px' }}>
-          <div>
-            <button onClick={() => navigate(-1)} style={{ background: 'none', border: 'none', color: '#64748b', fontSize: '13px', fontWeight: 700, cursor: 'pointer', padding: 0, marginBottom: '8px', display: 'block' }}>← Return to Dashboard</button>
-            <h1 style={{ fontSize: '28px', fontWeight: 900, color: '#1e293b', margin: 0 }}>Subscription & Billing</h1>
-          </div>
-          <button 
-            onClick={handleRefresh} 
-            disabled={isRefreshing}
-            style={{ padding: '10px 20px', borderRadius: '10px', background: 'white', border: '1px solid #e2e8f0', color: '#1e293b', fontSize: '13px', fontWeight: 700, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '8px' }}
-          >
-            <span style={{ display: 'inline-block', animation: isRefreshing ? 'spin 1s linear infinite' : 'none' }}>↻</span>
-            {isRefreshing ? 'Refreshing...' : 'Refresh Status'}
-          </button>
-        </div>
+      <PaymentRequestDrawer
+        isOpen={!!paymentModal}
+        plan={premiumPlan}
+        billingCycle={paymentModal || 'monthly'}
+        currentUser={currentUser}
+        onClose={() => setPaymentModal(null)}
+        onSuccess={onPaymentSuccess}
+      />
 
-        {/* Status Dashboard */}
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '20px', marginBottom: '50px' }}>
-          <div style={{ background: 'white', padding: '24px', borderRadius: '16px', border: '1px solid #e2e8f0' }}>
-            <span style={{ fontSize: '11px', fontWeight: 800, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '1px' }}>Current Plan</span>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginTop: '8px' }}>
-              <div style={{ width: '8px', height: '8px', borderRadius: '50%', background: isActive ? '#10b981' : '#ef4444' }} />
-              <span style={{ fontSize: '18px', fontWeight: 800, color: '#1e293b' }}>{subscription?.planName || 'No Active Plan'}</span>
-            </div>
-          </div>
-          <div style={{ background: 'white', padding: '24px', borderRadius: '16px', border: '1px solid #e2e8f0' }}>
-            <span style={{ fontSize: '11px', fontWeight: 800, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '1px' }}>Protocol Status</span>
-            <div style={{ marginTop: '8px', fontSize: '18px', fontWeight: 800, color: isActive ? '#10b981' : '#ef4444' }}>
-              {isActive ? 'Verified & Active' : 'Action Required'}
-            </div>
-          </div>
-          <div style={{ background: 'white', padding: '24px', borderRadius: '16px', border: '1px solid #e2e8f0' }}>
-            <span style={{ fontSize: '11px', fontWeight: 800, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '1px' }}>Timeline</span>
-            <div style={{ marginTop: '8px', fontSize: '18px', fontWeight: 800, color: '#1e293b' }}>
-              {daysLeft} Days Remaining
-            </div>
-          </div>
-        </div>
-
-        {/* Billing Toggle */}
-        <div style={{ display: 'flex', justifyContent: 'center', marginBottom: '40px' }}>
-          <div style={{ background: '#f1f5f9', padding: '4px', borderRadius: '12px', display: 'flex', gap: '4px' }}>
-            {['monthly', 'yearly'].map(cycle => (
-              <button
-                key={cycle}
-                onClick={() => handleBillingCycle(cycle)}
-                style={{ padding: '8px 24px', borderRadius: '10px', border: 'none', background: billingCycle === cycle ? 'white' : 'transparent', color: billingCycle === cycle ? '#0f52ba' : '#64748b', fontSize: '13px', fontWeight: 800, cursor: 'pointer', transition: 'all 0.2s', boxShadow: billingCycle === cycle ? '0 2px 8px rgba(0,0,0,0.05)' : 'none' }}
-              >
-                {cycle.charAt(0).toUpperCase() + cycle.slice(1)}
-                {cycle === 'yearly' && <span style={{ marginLeft: '8px', fontSize: '10px', color: '#10b981' }}>-10%</span>}
+      {/* ── Header ── */}
+      <div className="sub-header">
+        <div>
+          <h1 style={{ fontSize: '24px', fontWeight: 700, color: '#0a1628', letterSpacing: '-0.5px', margin: 0, marginBottom: '4px' }}>Subscription</h1>
+          <div style={{ fontSize: '12px', color: '#6b7280', marginBottom: '2px' }}>Manage your plan and billing</div>
+          <div className="sub-tabs">
+            {[{ key: 'status', label: 'Current Plan' }, { key: 'upgrade', label: 'Upgrade Plan' }].map(t => (
+              <button key={t.key} className="sub-tab-btn" onClick={() => setActiveTab(t.key)}
+                style={{ background: activeTab === t.key ? '#0a1628' : 'white', color: activeTab === t.key ? 'white' : '#6b7280' }}>
+                {t.label}
               </button>
             ))}
           </div>
         </div>
+        <button onClick={handleRefresh} disabled={isRefreshing}
+          style={{ padding: '10px 20px', borderRadius: '8px', border: '1px solid #e2e8f0', background: 'white', color: '#0a1628', fontSize: '13px', fontWeight: 600, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '8px', transition: 'all 0.2s' }}>
+          <Icons.Refresh spinning={isRefreshing} />
+          {isRefreshing ? 'Syncing...' : 'Sync Data'}
+        </button>
+      </div>
 
-        {/* Pricing Cards */}
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '30px', marginBottom: '60px' }}>
-          {plans.map((plan, idx) => {
-            const onThisPlan = isOnPlan(plan);
-            return (
-              <div key={idx} className="card-hover" style={{ background: 'white', padding: '40px', borderRadius: '24px', border: plan.highlight ? '2px solid #0f52ba' : '1px solid #e2e8f0', position: 'relative' }}>
-                {plan.highlight && <div style={{ position: 'absolute', top: '-15px', left: '40px', background: '#0f52ba', color: 'white', padding: '6px 16px', borderRadius: '20px', fontSize: '11px', fontWeight: 900 }}>RECOMMENDED</div>}
-                <div style={{ fontSize: '32px', marginBottom: '20px' }}>{plan.icon}</div>
-                <h3 style={{ fontSize: '24px', fontWeight: 900, color: '#1e293b', margin: '0 0 10px' }}>{plan.name}</h3>
-                <p style={{ color: '#64748b', fontSize: '14px', lineHeight: 1.6, marginBottom: '25px', minHeight: '45px' }}>{plan.description}</p>
-                <div style={{ marginBottom: '30px' }}>
-                  <span style={{ fontSize: '36px', fontWeight: 900, color: '#1e293b' }}>₹{plan.price}</span>
-                  <span style={{ fontSize: '14px', color: '#94a3b8', fontWeight: 600, marginLeft: '8px' }}>/ {billingCycle === 'monthly' ? 'mo' : 'mo billed yearly'}</span>
+      {/* ── Status Tab ── */}
+      {activeTab === 'status' && (
+        <div style={{ maxWidth: '800px' }}>
+
+          {/* ── TRIAL ACTIVE CARD ── */}
+          {isTrial && (subStatus === 'Active' || subStatus === 'Expiring') && (
+            <div className="sub-card" style={{ marginBottom: '20px' }}>
+              <div style={{ display: 'flex', alignItems: 'flex-start', gap: '24px', flexWrap: 'wrap' }}>
+                <TrialCountdownRing daysLeft={daysLeft} />
+                <div style={{ flex: 1 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '8px', flexWrap: 'wrap' }}>
+                    <span style={{ fontSize: '10px', fontWeight: 900, color: '#3b82f6', textTransform: 'uppercase', letterSpacing: '1.5px' }}>Free Trial</span>
+                    <span style={{ padding: '3px 10px', borderRadius: '20px', background: statusColor + '15', color: statusColor, fontSize: '11px', fontWeight: 800 }}>{statusLabel}</span>
+                  </div>
+                  <h2 style={{ margin: '0 0 6px', fontSize: '20px', fontWeight: 800, color: '#0a1628', letterSpacing: '-0.3px' }}>
+                    {daysLeft > 0 ? `${daysLeft} day${daysLeft !== 1 ? 's' : ''} remaining in your free trial` : 'Trial period has ended'}
+                  </h2>
+                  <p style={{ margin: '0 0 16px', fontSize: '13px', color: '#64748b', lineHeight: 1.6 }}>
+                    {daysLeft <= 3 && daysLeft > 0
+                      ? 'Your trial is ending very soon. Upgrade now to avoid service interruption. You have a 2-day grace period after expiry.'
+                      : daysLeft === 0
+                      ? 'Your trial has ended. You have a 2-day grace period before access is restricted. Upgrade now.'
+                      : 'Explore all features during your trial. Upgrade anytime to continue uninterrupted access.'}
+                  </p>
+                  {hasPending ? (
+                    <div className="pending-badge">⏳ Payment under review — we'll activate within 24 hrs</div>
+                  ) : (
+                    <button onClick={() => setActiveTab('upgrade')}
+                      style={{ padding: '10px 22px', borderRadius: '10px', border: 'none', background: '#0a1628', color: 'white', fontSize: '13px', fontWeight: 700, cursor: 'pointer', boxShadow: '0 4px 14px rgba(10,22,40,0.15)', transition: 'all 0.2s' }}>
+                      Upgrade Now →
+                    </button>
+                  )}
                 </div>
-                <div style={{ marginBottom: '40px' }}>
-                  {plan.features.map((f, fi) => (
-                    <div key={fi} style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '12px' }}>
-                      <div style={{ color: '#10b981', fontSize: '14px' }}>✓</div>
-                      <span style={{ fontSize: '14px', color: '#475569', fontWeight: 600 }}>{f}</span>
+              </div>
+
+              <div className="status-grid">
+                {[
+                  { label: 'Trial Start', value: subscription?.startDate ? new Date(subscription.startDate).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }) : '—' },
+                  { label: 'Trial End', value: subscription?.endDate ? new Date(subscription.endDate).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }) : '—' },
+                  { label: 'Grace Period Ends', value: subscription?.endDate ? new Date(new Date(subscription.endDate).getTime() + 2 * 86400000).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }) : '—' },
+                ].map(c => (
+                  <div key={c.label} className="status-cell">
+                    <p style={{ fontSize: '10px', fontWeight: 900, color: '#94a3b8', letterSpacing: '1px', textTransform: 'uppercase', margin: '0 0 6px' }}>{c.label}</p>
+                    <div style={{ fontSize: '14px', fontWeight: 700, color: '#0a1628' }}>{c.value}</div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* ── PAID ACTIVE PLAN CARD ── */}
+          {isPaidPlan && (
+            <div className="sub-card" style={{ background: '#0a1628', border: '1px solid #1e293b', marginBottom: '20px' }}>
+              <div style={{ position: 'relative', overflow: 'hidden' }}>
+                <div style={{ position: 'absolute', top: '-30px', right: '-30px', width: '120px', height: '120px', borderRadius: '50%', background: 'rgba(56,189,248,0.05)' }} />
+                <div style={{ display: 'flex', alignItems: 'center', gap: '16px', marginBottom: '24px' }}>
+                  <div style={{ width: '56px', height: '56px', borderRadius: '16px', background: 'linear-gradient(135deg, #38bdf8, #1d4ed8)', display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 8px 20px rgba(56,189,248,0.25)', flexShrink: 0 }}>
+                    <Icons.Star />
+                  </div>
+                  <div>
+                    <div style={{ fontSize: '10px', fontWeight: 900, color: '#38bdf8', textTransform: 'uppercase', letterSpacing: '1.5px', marginBottom: '4px' }}>Active Plan</div>
+                    <div style={{ fontSize: '22px', fontWeight: 800, color: 'white', letterSpacing: '-0.5px' }}>
+                      1Rad Premium — {billingCycleFromServer}
+                    </div>
+                  </div>
+                  <span style={{ marginLeft: 'auto', padding: '4px 12px', borderRadius: '20px', background: '#10b981', color: 'white', fontSize: '11px', fontWeight: 800 }}>ACTIVE</span>
+                </div>
+
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '14px' }}>
+                  {[
+                    { label: 'Valid From', value: subscription?.startDate ? new Date(subscription.startDate).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }) : '—' },
+                    { label: 'Valid Until', value: subscription?.endDate ? new Date(subscription.endDate).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }) : '—' },
+                    { label: 'Days Left', value: `${daysLeft} day${daysLeft !== 1 ? 's' : ''}` },
+                  ].map(c => (
+                    <div key={c.label} style={{ padding: '14px 16px', background: 'rgba(255,255,255,0.05)', borderRadius: '12px', border: '1px solid rgba(255,255,255,0.08)' }}>
+                      <p style={{ fontSize: '10px', fontWeight: 900, color: '#64748b', letterSpacing: '1px', textTransform: 'uppercase', margin: '0 0 6px' }}>{c.label}</p>
+                      <div style={{ fontSize: '14px', fontWeight: 700, color: 'white' }}>{c.value}</div>
                     </div>
                   ))}
                 </div>
-                <button
-                  onClick={() => !onThisPlan && setUpgradeModal(plan)}
-                  disabled={onThisPlan}
-                  style={{ width: '100%', padding: '16px', borderRadius: '14px', border: plan.highlight ? 'none' : '1px solid #e2e8f0', background: onThisPlan ? '#f0fdf4' : plan.highlight ? '#0f52ba' : 'white', color: onThisPlan ? '#10b981' : plan.highlight ? 'white' : '#1e293b', fontSize: '14px', fontWeight: 800, cursor: onThisPlan ? 'default' : 'pointer' }}
-                >
-                  {onThisPlan ? 'Current Active Protocol' : plan.buttonText}
-                </button>
-              </div>
-            );
-          })}
-        </div>
 
-        {/* Invoice History */}
-        <div style={{ background: 'white', borderRadius: '20px', border: '1px solid #e2e8f0', overflow: 'hidden' }}>
-          <div style={{ padding: '24px 30px', borderBottom: '1px solid #f1f5f9' }}>
-            <h3 style={{ margin: 0, fontSize: '16px', fontWeight: 800, color: '#1e293b' }}>Transaction History</h3>
-          </div>
-          {invoicesLoading ? (
-            <div style={{ padding: '40px', textAlign: 'center', color: '#94a3b8' }}>Loading...</div>
-          ) : invoices.length > 0 ? (
-            <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-              <thead>
-                <tr style={{ background: '#f8fafc', textAlign: 'left' }}>
-                  {['ID', 'Description', 'Amount', 'Date', 'Status'].map(h => (
-                    <th key={h} style={{ padding: '15px 30px', fontSize: '11px', fontWeight: 800, color: '#94a3b8', textTransform: 'uppercase' }}>{h}</th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {invoices.map((inv, i) => (
-                  <tr key={i} style={{ borderTop: '1px solid #f1f5f9' }}>
-                    <td style={{ padding: '20px 30px', fontSize: '13px', fontWeight: 700, color: '#0f52ba' }}>{inv.id || `INV-${i}`}</td>
-                    <td style={{ padding: '20px 30px', fontSize: '13px', color: '#1e293b' }}>{inv.planName || 'Service Fee'}</td>
-                    <td style={{ padding: '20px 30px', fontSize: '13px', fontWeight: 800, color: '#1e293b' }}>₹{(inv.amount || 0).toLocaleString()}</td>
-                    <td style={{ padding: '20px 30px', fontSize: '13px', color: '#64748b' }}>{inv.date || '—'}</td>
-                    <td style={{ padding: '20px 30px' }}>
-                      <span style={{ background: '#f0fdf4', color: '#10b981', padding: '4px 12px', borderRadius: '20px', fontSize: '11px', fontWeight: 800 }}>PAID</span>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          ) : (
-            <div style={{ padding: '60px', textAlign: 'center' }}>
-              <div style={{ fontSize: '40px', marginBottom: '15px' }}>🧾</div>
-              <p style={{ color: '#64748b', fontSize: '14px', margin: 0 }}>No payment history available.</p>
+                {/* Days remaining bar */}
+                <div style={{ marginTop: '20px' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '6px' }}>
+                    <span style={{ fontSize: '11px', color: '#64748b', fontWeight: 600 }}>Plan usage</span>
+                    <span style={{ fontSize: '11px', color: '#94a3b8', fontWeight: 600 }}>{daysLeft} / {billingCycleFromServer === 'Yearly' ? 365 : 30} days remaining</span>
+                  </div>
+                  <div style={{ height: '6px', background: 'rgba(255,255,255,0.08)', borderRadius: '99px', overflow: 'hidden' }}>
+                    <div style={{ height: '100%', borderRadius: '99px', background: 'linear-gradient(90deg, #38bdf8, #1d4ed8)', width: `${Math.min(100, (daysLeft / (billingCycleFromServer === 'Yearly' ? 365 : 30)) * 100)}%`, transition: 'width 0.6s ease' }} />
+                  </div>
+                </div>
+              </div>
             </div>
           )}
-        </div>
 
-        {/* Support Section */}
-        <div style={{ marginTop: '50px', padding: '30px', background: '#e0f2fe', borderRadius: '20px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-          <div>
-            <h4 style={{ margin: '0 0 4px', color: '#0369a1', fontSize: '16px' }}>Need assistance with your plan?</h4>
-            <p style={{ margin: 0, color: '#075985', fontSize: '14px' }}>Our technical support team is available 24/7 for administrative guidance.</p>
+          {/* ── PAYMENT UNDER REVIEW CARD ── */}
+          {hasPending && !isPaidPlan && (
+            <div className="sub-card" style={{ border: '1px solid #bfdbfe', background: '#eff6ff', marginBottom: '20px' }}>
+              <div style={{ display: 'flex', gap: '16px', alignItems: 'flex-start' }}>
+                <div style={{ width: '48px', height: '48px', borderRadius: '14px', background: '#dbeafe', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '22px', flexShrink: 0 }}>⏳</div>
+                <div>
+                  <div style={{ fontSize: '10px', fontWeight: 900, color: '#3b82f6', textTransform: 'uppercase', letterSpacing: '1.5px', marginBottom: '4px' }}>Payment Under Review</div>
+                  <h3 style={{ margin: '0 0 6px', fontSize: '16px', fontWeight: 800, color: '#1e3a8a' }}>Your payment details have been submitted</h3>
+                  <p style={{ margin: '0 0 12px', fontSize: '13px', color: '#3b82f6', lineHeight: 1.6 }}>
+                    Our team is verifying your payment. Your plan will be activated within 24 hours of confirmation. No action needed.
+                  </p>
+                  <button onClick={handleRefresh} style={{ padding: '8px 16px', borderRadius: '8px', border: '1px solid #bfdbfe', background: 'white', color: '#1d4ed8', fontSize: '12px', fontWeight: 700, cursor: 'pointer' }}>
+                    Check Status
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* ── EXPIRED / LOCKED CARD ── */}
+          {(subStatus === 'Expired' || subStatus === 'Locked') && !hasPending && (
+            <div className="sub-card" style={{ border: '1px solid #fecaca', background: '#fef2f2', marginBottom: '20px' }}>
+              <div style={{ display: 'flex', gap: '16px', alignItems: 'flex-start' }}>
+                <div style={{ width: '48px', height: '48px', borderRadius: '14px', background: '#fee2e2', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '22px', flexShrink: 0 }}>🔒</div>
+                <div>
+                  <div style={{ fontSize: '10px', fontWeight: 900, color: '#ef4444', textTransform: 'uppercase', letterSpacing: '1.5px', marginBottom: '4px' }}>{subStatus === 'Locked' ? 'Access Locked' : 'Grace Period Active'}</div>
+                  <h3 style={{ margin: '0 0 6px', fontSize: '16px', fontWeight: 800, color: '#7f1d1d' }}>
+                    {subStatus === 'Locked' ? 'Your subscription has expired and access is restricted' : 'Trial ended — 2-day grace period in progress'}
+                  </h3>
+                  <p style={{ margin: '0 0 12px', fontSize: '13px', color: '#b91c1c', lineHeight: 1.6 }}>
+                    {subStatus === 'Locked'
+                      ? 'Upgrade to a paid plan to restore full access for all users in your facility.'
+                      : 'You have a short grace window. Upgrade now to avoid access being restricted.'}
+                  </p>
+                  <button onClick={() => setActiveTab('upgrade')}
+                    style={{ padding: '10px 20px', borderRadius: '10px', border: 'none', background: '#dc2626', color: 'white', fontSize: '13px', fontWeight: 700, cursor: 'pointer' }}>
+                    Upgrade Now →
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Base info row */}
+          <div className="sub-card">
+            <p style={{ fontSize: '10px', fontWeight: 900, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '1.5px', margin: '0 0 16px' }}>Subscription Details</p>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+              {[
+                { label: 'Plan Type', value: subStatus === 'None' ? 'No Active Plan' : (isTrial ? 'Free Trial' : `Premium — ${billingCycleFromServer}`) },
+                { label: 'Status', value: statusLabel, color: statusColor },
+                { label: 'Valid Until', value: (subscription?.endDate && !subscription.endDate.startsWith('0001')) ? new Date(subscription.endDate).toLocaleDateString('en-IN', { day: 'numeric', month: 'long', year: 'numeric' }) : 'N/A' },
+                { label: 'Days Remaining', value: subStatus === 'None' ? '—' : `${daysLeft} day${daysLeft !== 1 ? 's' : ''}`, color: (daysLeft <= 3 && subStatus !== 'None') ? '#ef4444' : undefined },
+              ].map(c => (
+                <div key={c.label} style={{ padding: '14px 16px', background: '#f8fafc', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
+                  <p style={{ fontSize: '10px', fontWeight: 900, color: '#94a3b8', letterSpacing: '1px', textTransform: 'uppercase', margin: '0 0 6px' }}>{c.label}</p>
+                  <div style={{ fontSize: '14px', fontWeight: 700, color: c.color || '#0a1628' }}>{c.value}</div>
+                </div>
+              ))}
+            </div>
           </div>
-          <button style={{ padding: '12px 24px', borderRadius: '12px', background: '#0f52ba', color: 'white', border: 'none', fontWeight: 800, cursor: 'pointer' }}>Contact Support</button>
         </div>
-      </div>
-
-      {upgradeModal && (
-        <UpgradeModal
-          plan={upgradeModal}
-          billingCycle={billingCycle}
-          onClose={() => setUpgradeModal(null)}
-          onSuccess={() => handleRefresh()}
-        />
       )}
-      <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
+
+      {/* ── Upgrade Tab ── */}
+      {activeTab === 'upgrade' && (
+        <div style={{ maxWidth: '900px' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px', flexWrap: 'wrap', gap: '12px' }}>
+            <div>
+              <h3 style={{ fontSize: '18px', fontWeight: 700, color: '#0a1628', margin: '0 0 4px', letterSpacing: '-0.3px' }}>Choose a Plan</h3>
+              <p style={{ margin: 0, fontSize: '12px', color: '#6b7280' }}>Pay directly to our account — activated within 24 hours of review.</p>
+            </div>
+            <div className="billing-toggle">
+              {[{ key: 'monthly', label: 'Monthly' }, { key: 'yearly', label: 'Yearly', badge: '10% off' }].map(c => (
+                <button key={c.key} onClick={() => handleBillingCycle(c.key)}
+                  style={{ padding: '7px 16px', borderRadius: '7px', border: 'none', background: billingCycle === c.key ? '#0a1628' : 'transparent', color: billingCycle === c.key ? 'white' : '#6b7280', fontSize: '13px', fontWeight: 600, cursor: 'pointer', transition: 'all 0.2s', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  {c.label}
+                  {c.badge && <span style={{ background: '#ecfdf5', color: '#10b981', fontSize: '10px', padding: '1px 6px', borderRadius: '20px', fontWeight: 700 }}>{c.badge}</span>}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div className="plans-grid">
+            {/* Free Trial Card */}
+            <div className="sub-card">
+              <p style={{ fontSize: '10px', fontWeight: 900, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '1.5px', margin: '0 0 12px' }}>Free Trial</p>
+              <div style={{ display: 'flex', alignItems: 'baseline', gap: '4px', marginBottom: '8px' }}>
+                <span style={{ fontSize: '36px', fontWeight: 700, color: '#0a1628', letterSpacing: '-1px' }}>₹0</span>
+                <span style={{ fontSize: '13px', color: '#6b7280', fontWeight: 500 }}>/ 14 days</span>
+              </div>
+              <p style={{ margin: '0 0 20px', color: '#6b7280', fontSize: '13px', lineHeight: 1.6 }}>Get started with all features for 14 days. No payment needed.</p>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', marginBottom: '24px' }}>
+                {['All modules included', 'Basic DICOM Viewer', 'Single Clinic', 'Email Support'].map(f => (
+                  <div key={f} style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                    <div style={{ color: '#94a3b8', flexShrink: 0 }}><Icons.Check /></div>
+                    <span style={{ fontSize: '13px', color: '#374151', fontWeight: 500 }}>{f}</span>
+                  </div>
+                ))}
+              </div>
+              <button disabled style={{ padding: '10px 20px', borderRadius: '8px', border: '1px solid #e2e8f0', background: '#f8fafc', color: '#94a3b8', fontSize: '13px', fontWeight: 600, cursor: 'default', width: '100%' }}>
+                {isTrial ? 'Current Plan' : 'Trial Used'}
+              </button>
+            </div>
+
+            {/* Premium Card */}
+            <div style={{ background: '#0a1628', padding: '30px', borderRadius: '24px', border: '1px solid #1e293b', boxShadow: '0 20px 40px -10px rgba(10,22,40,0.3)', position: 'relative', overflow: 'hidden' }}>
+              <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: '3px', background: 'linear-gradient(90deg, #38bdf8, #1d4ed8)' }} />
+              <div style={{ position: 'absolute', top: '16px', right: '16px', background: '#1d4ed8', color: 'white', fontSize: '10px', fontWeight: 700, padding: '3px 10px', borderRadius: '20px' }}>POPULAR</div>
+
+              <p style={{ fontSize: '10px', fontWeight: 900, color: '#38bdf8', textTransform: 'uppercase', letterSpacing: '1.5px', margin: '0 0 12px' }}>1Rad Premium</p>
+              <div style={{ display: 'flex', alignItems: 'baseline', gap: '4px', marginBottom: '4px' }}>
+                <span style={{ fontSize: '36px', fontWeight: 700, color: 'white', letterSpacing: '-1px' }}>₹{premiumPlan.priceMonthly}</span>
+                <span style={{ fontSize: '13px', color: '#94a3b8', fontWeight: 500 }}>/ mo</span>
+              </div>
+              {billingCycle === 'yearly' && (
+                <div style={{ fontSize: '12px', fontWeight: 700, color: '#10b981', marginBottom: '8px' }}>
+                  ✓ Billed yearly — ₹{premiumPlan.price} total (save ₹5,988)
+                </div>
+              )}
+              <p style={{ margin: '0 0 20px', color: '#94a3b8', fontSize: '13px', lineHeight: 1.6 }}>Unlimited access to all advanced features and priority support.</p>
+
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', marginBottom: '24px' }}>
+                {premiumPlan.features.map(f => (
+                  <div key={f} style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                    <div style={{ color: '#38bdf8', flexShrink: 0 }}><Icons.Check /></div>
+                    <span style={{ fontSize: '13px', color: '#e2e8f0', fontWeight: 500 }}>{f}</span>
+                  </div>
+                ))}
+              </div>
+
+              {/* Payment info strip */}
+              <div style={{ background: 'rgba(255,255,255,0.05)', borderRadius: '12px', padding: '14px', marginBottom: '16px', border: '1px solid rgba(255,255,255,0.08)' }}>
+                <div style={{ fontSize: '10px', fontWeight: 800, color: '#64748b', textTransform: 'uppercase', letterSpacing: '1px', marginBottom: '8px' }}>How it works</div>
+                <div style={{ fontSize: '12px', color: '#94a3b8', lineHeight: 1.7 }}>
+                  1. Pay ₹{billingCycle === 'yearly' ? '53,988' : '4,999'} to our UPI: <strong style={{ color: '#38bdf8' }}>payments@nexeagle</strong><br />
+                  2. Click "Submit Payment" and enter your transaction details<br />
+                  3. Our team reviews and activates within 24 hours
+                </div>
+              </div>
+
+              {hasPending ? (
+                <div style={{ padding: '12px', borderRadius: '10px', background: 'rgba(59,130,246,0.15)', color: '#93c5fd', fontSize: '13px', fontWeight: 700, textAlign: 'center', border: '1px solid rgba(59,130,246,0.2)' }}>
+                  ⏳ Payment Under Review
+                </div>
+              ) : isPaidPlan ? (
+                <div style={{ padding: '12px', borderRadius: '10px', background: 'rgba(16,185,129,0.15)', color: '#34d399', fontSize: '13px', fontWeight: 700, textAlign: 'center', border: '1px solid rgba(16,185,129,0.2)' }}>
+                  ✓ Current Plan Active
+                </div>
+              ) : (
+                <button
+                  onClick={() => setPaymentModal(billingCycle)}
+                  style={{ padding: '12px 20px', borderRadius: '10px', border: 'none', background: '#1d4ed8', color: 'white', fontSize: '13px', fontWeight: 700, cursor: 'pointer', boxShadow: '0 4px 14px rgba(29,78,216,0.3)', transition: 'all 0.2s', width: '100%' }}>
+                  Submit Payment →
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

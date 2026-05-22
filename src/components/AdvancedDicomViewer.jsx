@@ -218,6 +218,12 @@ async function initCornerstone() {
   imageLoader.registerImageLoader('wadouri', (imageId, options) => {
     if (DICOM_CONFIG.DEBUG_LOGGING) console.log(`[DICOM] Loader triggered for: ${imageId}`);
 
+    // Web-worker decode path (Path A/B) has been racing slower than the manual
+    // dicomParser path (Path C) in this environment on every device, so we always
+    // prefer the manual path. Set PREFER_WORKER_DECODE=true to opt back in to
+    // workers (useful only if the studies use JPEG2000/JPEG-LS compression).
+    const PREFER_WORKER_DECODE = false;
+
     const promise = new Promise(async (resolve, reject) => {
       const loaderTimeout = setTimeout(() => {
         console.error(`[DICOM] Loader internal timeout for: ${imageId}`);
@@ -227,10 +233,10 @@ async function initCornerstone() {
       try {
         let loadPromise;
 
-        if (cornerstoneDICOMImageLoader.wadouri && cornerstoneDICOMImageLoader.wadouri.loadImage) {
+        if (PREFER_WORKER_DECODE && cornerstoneDICOMImageLoader.wadouri && cornerstoneDICOMImageLoader.wadouri.loadImage) {
           loadPromise = cornerstoneDICOMImageLoader.wadouri.loadImage(imageId, options);
           if (loadPromise && loadPromise.promise) loadPromise = loadPromise.promise;
-        } else if (cornerstoneDICOMImageLoader.loadImage) {
+        } else if (PREFER_WORKER_DECODE && cornerstoneDICOMImageLoader.loadImage) {
           loadPromise = cornerstoneDICOMImageLoader.loadImage(imageId, options);
           if (loadPromise && loadPromise.promise) loadPromise = loadPromise.promise;
         } else {
@@ -279,8 +285,8 @@ async function initCornerstone() {
           return;
         }
         
-        const fastFailTimeout = new Promise((_, reject) => 
-          setTimeout(() => reject(new Error('FAST_FAIL')), 8000) // Reduced from 20s to 8s for faster recovery
+        const fastFailTimeout = new Promise((_, reject) =>
+          setTimeout(() => reject(new Error('FAST_FAIL')), 2500)
         );
 
         Promise.race([
@@ -1383,7 +1389,7 @@ const AdvancedDicomViewer = ({
         // they reach first.
         if (elementRef.current) {
           utilities.stackPrefetch.enable(elementRef.current, {
-            maxImagesToPrefetch: 100,
+            maxImagesToPrefetch: isMobile ? 20 : 60,
             preserveOrder: true,
             displaySetId: viewportId
           });

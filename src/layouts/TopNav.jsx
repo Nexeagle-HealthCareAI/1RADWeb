@@ -7,7 +7,17 @@ import '../styles/global.css';
 export default function TopNav({ currentTime }) {
   const { currentUser, activeCenter, subscription } = useAuth();
   const navigate = useNavigate();
-  const [bannerDismissed, setBannerDismissed] = useState(false);
+
+  // Fix #9: Persist dismiss to sessionStorage keyed by date so the banner stays
+  // dismissed across page navigations for the entire working day.
+  const todayKey = `1rad_sub_banner_dismissed_${new Date().toISOString().slice(0, 10)}`;
+  const [bannerDismissed, setBannerDismissed] = useState(
+    () => sessionStorage.getItem(todayKey) === 'true'
+  );
+  const dismissBanner = () => {
+    sessionStorage.setItem(todayKey, 'true');
+    setBannerDismissed(true);
+  };
 
   if (!currentUser) return null;
 
@@ -18,9 +28,45 @@ export default function TopNav({ currentTime }) {
 
   const roles = currentUser.roles || [];
   const canSeeSubscription = roles.includes('admindoctor') || roles.includes('admin');
+
+  // ── Subscription badge state machine ──────────────────────────────────────
   const daysLeft = subscription?.daysRemaining ?? null;
-  const showBanner = canSeeSubscription && !bannerDismissed && daysLeft !== null && daysLeft <= 7;
-  const isExpired = daysLeft !== null && daysLeft <= 0;
+  const subStatus = subscription?.status ?? null;
+  const isTrial = subscription?.isTrial ?? false;
+  const isLocked = subscription?.isLocked ?? false;
+  const hasPending = subscription?.hasPendingPaymentRequest ?? false;
+  const isActivePaid = !isTrial && subscription?.isActive && (subStatus === 'Active' || subStatus === 'Expiring');
+
+  // Determine which banner to show (priority order)
+  let bannerState = null;
+  if (canSeeSubscription && subscription !== null) {
+    if (isLocked || subStatus === 'Locked') {
+      bannerState = 'locked';
+    } else if (hasPending) {
+      bannerState = 'pending';
+    } else if (subStatus === 'Expired') {
+      bannerState = 'grace';
+    } else if (isTrial && subStatus === 'Expiring') {
+      bannerState = 'expiring';
+    } else if (isTrial && subStatus === 'Active' && daysLeft !== null) {
+      bannerState = 'trial';
+    } else if (isActivePaid && daysLeft !== null && daysLeft <= 30) {
+      bannerState = 'premium_expiring';
+    }
+  }
+
+  const showBanner = bannerState !== null && !bannerDismissed;
+
+  const bannerConfig = {
+    locked:          { bg: '#dc2626', badge: 'CRITICAL',  badgeBg: 'rgba(255,255,255,0.2)', text: 'SUBSCRIPTION LOCKED — Access to clinical modules is restricted. Resolve payment immediately.', cta: 'RESOLVE NOW →', ctaColor: '#dc2626' },
+    grace:           { bg: '#b45309', badge: 'GRACE',     badgeBg: '#d97706',               text: `Trial ended — ${daysLeft === 0 ? 'grace period active today' : `${daysLeft} day${daysLeft !== 1 ? 's' : ''} left in grace period`}. Upgrade to avoid lockout.`, cta: 'UPGRADE →', ctaColor: '#b45309' },
+    expiring:        { bg: '#92400e', badge: 'NOTICE',    badgeBg: '#d97706',               text: `Trial ends in ${daysLeft} day${daysLeft !== 1 ? 's' : ''}. Upgrade now to maintain access.`, cta: 'UPGRADE →', ctaColor: '#92400e' },
+    trial:           { bg: '#0f172a', badge: 'FREE TRIAL', badgeBg: '#1d4ed8',              text: `Free trial active — ${daysLeft} day${daysLeft !== 1 ? 's' : ''} remaining. Upgrade anytime to keep full access.`, cta: 'VIEW PLANS →', ctaColor: '#0f172a' },
+    pending:         { bg: '#1e3a8a', badge: 'REVIEW',    badgeBg: '#3b82f6',               text: 'Your payment is under review. Plan will be activated within 24 hours of confirmation.', cta: 'VIEW STATUS →', ctaColor: '#1e3a8a' },
+    premium_expiring:{ bg: '#0f172a', badge: 'NOTICE',    badgeBg: '#0f52ba',               text: `Premium plan renews in ${daysLeft} day${daysLeft !== 1 ? 's' : ''}. Contact us to renew.`, cta: 'RENEW →', ctaColor: '#0f172a' },
+  };
+
+  const cfg = bannerConfig[bannerState] || null;
 
   return (
     <>
@@ -85,36 +131,32 @@ export default function TopNav({ currentTime }) {
         }
       `}</style>
 
-      {/* Expiry Warning Banner - Modern Streamlined Design */}
-      {showBanner && (
+      {/* ── Subscription Status Banner ── */}
+      {showBanner && cfg && (
         <div style={{
-          background: isExpired ? '#dc2626' : '#0f172a',
+          background: cfg.bg,
           padding: '8px 30px',
           display: 'flex', alignItems: 'center', justifyContent: 'center',
           zIndex: 1001, position: 'relative',
-          borderBottom: '1px solid rgba(255,255,255,0.1)'
+          borderBottom: '1px solid rgba(255,255,255,0.08)',
+          animation: bannerState === 'pending' ? 'none' : undefined,
         }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '15px' }}>
-            <div style={{ 
-              background: isExpired ? 'rgba(255,255,255,0.2)' : '#0f52ba', 
-              padding: '2px 8px', borderRadius: '4px', fontSize: '9px', fontWeight: 950, color: 'white', letterSpacing: '1px'
-            }}>
-              {isExpired ? 'CRITICAL' : 'NOTICE'}
+          <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+            <div style={{ background: cfg.badgeBg, padding: '2px 8px', borderRadius: '4px', fontSize: '9px', fontWeight: 950, color: 'white', letterSpacing: '1px', flexShrink: 0 }}>
+              {cfg.badge}
             </div>
             <span style={{ fontSize: '11px', fontWeight: 700, color: 'white', letterSpacing: '0.3px' }}>
-              {isExpired
-                ? 'SUBSCRIPTION EXPIRED: Access to clinical modules is now restricted.'
-                : `Subscription protocol ending in ${daysLeft} days. Renew to maintain operational continuity.`}
+              {cfg.text}
             </span>
             <button
               onClick={() => navigate('/subscription')}
-              style={{ background: 'white', border: 'none', borderRadius: '6px', padding: '4px 12px', color: isExpired ? '#dc2626' : '#0f172a', fontSize: '10px', fontWeight: 950, cursor: 'pointer', transition: 'all 0.2s' }}
+              style={{ background: 'white', border: 'none', borderRadius: '6px', padding: '4px 12px', color: cfg.ctaColor, fontSize: '10px', fontWeight: 950, cursor: 'pointer', transition: 'all 0.2s', flexShrink: 0 }}
             >
-              RESOLVE NOW →
+              {cfg.cta}
             </button>
           </div>
           <button
-            onClick={() => setBannerDismissed(true)}
+            onClick={dismissBanner}
             style={{ position: 'absolute', right: '20px', background: 'none', border: 'none', color: 'rgba(255,255,255,0.5)', fontSize: '14px', cursor: 'pointer' }}
           >
             ✕

@@ -231,6 +231,15 @@ export function AuthProvider({ children }) {
       // Kick off background pre-download of today's worklist for radiologists.
       // Guardrails (role, network, storage) live inside the prefetcher.
       StudyPrefetcher.start(currentUser);
+
+      // Fix #3: Periodically re-check subscription status every 20 minutes so that
+      // expiry is caught during long active sessions without requiring a page reload.
+      const SUBSCRIPTION_POLL_INTERVAL = 20 * 60 * 1000; // 20 minutes
+      const subscriptionPoller = setInterval(() => {
+        refreshSubscription();
+      }, SUBSCRIPTION_POLL_INTERVAL);
+
+      return () => clearInterval(subscriptionPoller);
     } else {
       StudyPrefetcher.stop();
     }

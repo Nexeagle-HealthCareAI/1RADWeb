@@ -1507,43 +1507,6 @@ const NarrativeEditor = React.forwardRef(function NarrativeEditor({
 
   return (
     <div ref={containerRef} className={`narrative-editor-container${isFinalized ? ' is-finalized' : ''}${cssFullscreen ? ' ne--css-fullscreen' : ''} ${className}`} style={style}>
-      {/* Floating EXIT button — shown whenever the editor is in fullscreen.
-          On iPad/tablet there is no Escape key, so this is the only reliable
-          way for the user to leave fullscreen mode. Uses onPointerDown so it
-          fires before any touch-scroll suppression in the canvas. */}
-      {(isFullscreen || cssFullscreen) && (
-        <button
-          onPointerDown={(e) => { e.stopPropagation(); toggleFullscreen(); }}
-          style={{
-            position: 'fixed',
-            top: '12px',
-            right: '12px',
-            zIndex: 99999,
-            background: 'rgba(15, 23, 42, 0.88)',
-            backdropFilter: 'blur(10px)',
-            WebkitBackdropFilter: 'blur(10px)',
-            color: 'white',
-            border: '1.5px solid rgba(255, 255, 255, 0.25)',
-            borderRadius: '10px',
-            padding: '10px 18px',
-            fontSize: '13px',
-            fontWeight: 800,
-            letterSpacing: '0.5px',
-            cursor: 'pointer',
-            display: 'flex',
-            alignItems: 'center',
-            gap: '7px',
-            boxShadow: '0 4px 20px rgba(0, 0, 0, 0.45)',
-            touchAction: 'manipulation',
-            WebkitTapHighlightColor: 'transparent',
-            userSelect: 'none',
-            WebkitUserSelect: 'none',
-          }}
-          aria-label="Exit fullscreen"
-        >
-          ✕ Exit Fullscreen
-        </button>
-      )}
       {!previewMode && (
         <Ribbon
           editor={editor}

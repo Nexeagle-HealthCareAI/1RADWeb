@@ -2100,8 +2100,7 @@ const ReportingPage = () => {
           and (max-device-width: 1366px) 
           and (-webkit-min-device-pixel-ratio: 2) {
           
-          #dicom-toolbar,
-          .panel-center > div:first-child { 
+          #dicom-toolbar {
             width: 350px !important;
             display: flex !important; /* Force toolbar to show on iPad Pro */
             transform: translateX(0) !important;
@@ -2125,8 +2124,7 @@ const ReportingPage = () => {
           and (max-device-width: 1024px) 
           and (-webkit-min-device-pixel-ratio: 1) {
           
-          #dicom-toolbar,
-          .panel-center > div:first-child { 
+          #dicom-toolbar {
             width: 300px !important;
             display: flex !important; /* Force toolbar to show on iPad */
             transform: translateX(0) !important;
