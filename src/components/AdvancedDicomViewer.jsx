@@ -1178,15 +1178,24 @@ const AdvancedDicomViewer = ({
         }
 
         await viewport.setStack(imageIds);
+        if (!isMounted || !elementRef.current) return;
         console.log(`[DICOM] Stack assigned to ${viewportId}. Total: ${imageIds.length}`);
-        
+
         // Explicitly set to first image
         await viewport.setImageIdIndex(0);
+        if (!isMounted || !elementRef.current) return;
         setCurrentImageIndex(0);
         console.log(`[DICOM] Image index set to 0 for ${viewportId}`);
 
+        // Safety net: hide the loader after a short delay regardless of the render
+        // path below, so a silent failure on mobile doesn't leave RENDERING_IMAGE up.
+        setTimeout(() => {
+          if (isMounted) setHasRenderedFirstImage(true);
+        }, 1500);
+
         // Wait a frame to ensure internal state is stable
         requestAnimationFrame(() => {
+          if (!isMounted || !elementRef.current) return;
           if (viewport.getCurrentImageId()) {
              try {
                const canvas = viewport.getCanvas();
@@ -1208,13 +1217,14 @@ const AdvancedDicomViewer = ({
                 // Store handler for cleanup
                 renderingEngineRef.current._stackNewImageHandler = stackNewImageHandler;
 
-                // Verify viewport stack data
-                const stackData = viewport.getStackData();
-                console.log(`[DICOM] Viewport stack data:`, {
-                  currentImageIdIndex: stackData.currentImageIdIndex,
-                  imageIds: stackData.imageIds?.length,
-                  numImages: stackData.numImages
-                });
+                // Verify viewport stack data (debug-only; API varies across cornerstone versions)
+                try {
+                  const ids = typeof viewport.getImageIds === 'function' ? viewport.getImageIds() : null;
+                  console.log(`[DICOM] Viewport stack data:`, {
+                    currentImageIdIndex: typeof viewport.getCurrentImageIdIndex === 'function' ? viewport.getCurrentImageIdIndex() : undefined,
+                    numImages: ids?.length
+                  });
+                } catch (_dbg) { /* debug-only, ignore */ }
 
                 // Use default DICOM VOI if available, otherwise fallback
                viewport.setProperties({ 
@@ -1255,8 +1265,10 @@ const AdvancedDicomViewer = ({
           console.error("[DICOM] Image Load Failed Event:", evt.detail);
           setError(`LOAD_ERROR: ${evt.detail.error?.message || "Check file format"}`);
         };
-        elementRef.current.addEventListener(Enums.Events.IMAGE_LOAD_FAILED, onImageLoadFailed);
-        renderingEngineRef.current._onImageLoadFailed = onImageLoadFailed;
+        if (elementRef.current) {
+          elementRef.current.addEventListener(Enums.Events.IMAGE_LOAD_FAILED, onImageLoadFailed);
+          renderingEngineRef.current._onImageLoadFailed = onImageLoadFailed;
+        }
 
         // Setup Tool Group
         let toolGroup = ToolGroupManager.getToolGroup(toolGroupId);
@@ -1369,11 +1381,13 @@ const AdvancedDicomViewer = ({
         // preserveOrder=true loads slices sequentially from the current index outward,
         // matching how users actually scroll. Cuts perceived load time on the slices
         // they reach first.
-        utilities.stackPrefetch.enable(elementRef.current, {
-          maxImagesToPrefetch: 100,
-          preserveOrder: true,
-          displaySetId: viewportId
-        });
+        if (elementRef.current) {
+          utilities.stackPrefetch.enable(elementRef.current, {
+            maxImagesToPrefetch: 100,
+            preserveOrder: true,
+            displaySetId: viewportId
+          });
+        }
         
         // DEBUGGING: Expose references for console testing
         if (typeof window !== 'undefined') {
@@ -1406,9 +1420,11 @@ const AdvancedDicomViewer = ({
           
           cameraSync.add({ renderingEngineId: engineId, viewportId });
           scrollSync.add({ renderingEngineId: engineId, viewportId });
-          
-          elementRef.current._cameraSyncId = CAMERA_SYNC_ID;
-          elementRef.current._scrollSyncId = SCROLL_SYNC_ID;
+
+          if (elementRef.current) {
+            elementRef.current._cameraSyncId = CAMERA_SYNC_ID;
+            elementRef.current._scrollSyncId = SCROLL_SYNC_ID;
+          }
         }
 
       } catch (err) {
@@ -2521,19 +2537,19 @@ const AdvancedDicomViewer = ({
       )}
 
       {/* WEBGL CANVAS CONTAINER */}
-      <div 
-        ref={elementRef} 
+      <div
+        ref={elementRef}
         onContextMenu={(e) => e.preventDefault()}
-        style={{ 
-          flex: 1, 
-          width: '100%', 
-          height: '100%', 
-          minHeight: '400px', 
-          background: '#111', 
-          borderRadius: '10px', 
+        style={{
+          flex: 1,
+          width: '100%',
+          height: '100%',
+          minHeight: isMobile ? '240px' : '400px',
+          background: '#111',
+          borderRadius: '10px',
           overflow: 'hidden',
           position: 'relative',
-          border: '2px solid #0f52ba' 
+          border: '2px solid #0f52ba'
         }}
       />
 

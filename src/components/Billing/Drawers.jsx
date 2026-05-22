@@ -292,32 +292,41 @@ export const NewInvoiceDrawer = ({
   referrers
 }) => {
   return (
-    <div className="drawer-overlay" onClick={() => setIsNewInvoiceDrawerOpen(false)} style={{ backdropFilter: 'blur(8px)', background: 'rgba(10, 22, 40, 0.4)', zIndex: 10000 }}>
+    <div className="drawer-overlay" onClick={() => setIsNewInvoiceDrawerOpen(false)} style={{ backdropFilter: 'blur(4px)', background: 'rgba(10, 22, 40, 0.45)', zIndex: 10000 }}>
       <div className="drawer-content" style={{ 
         padding: 0, 
-        width: isMobile ? '100%' : '550px', 
+        width: isMobile ? '100%' : '560px', 
         height: '100%',
         background: 'white',
-        borderRadius: isMobile ? '0' : '24px 0 0 24px',
+        boxShadow: '-12px 0 40px rgba(10,22,40,0.18)',
         overflowY: 'auto',
         display: 'flex',
         flexDirection: 'column'
       }} onClick={e => e.stopPropagation()}>
-        <div style={{ padding: isMobile ? '25px' : '35px', background: 'linear-gradient(135deg, #0f52ba 0%, #061a40 100%)', color: 'white' }}>
-           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-              <div>
-                 <h2 style={{ fontSize: '9px', fontWeight: 950, color: 'rgba(255,255,255,0.7)', letterSpacing: '3px', textTransform: 'uppercase', marginBottom: '8px' }}>Manual Revenue</h2>
-                 <div style={{ fontSize: isMobile ? '20px' : '24px', fontWeight: 950, letterSpacing: '-1px' }}>NEW INVOICE</div>
+        
+        {/* Tactical Header */}
+        <div style={{ padding:'22px 24px 20px', background:`linear-gradient(135deg,#0a1628 0%,#1e3a5f 100%)`, position:'relative', overflow:'hidden', flexShrink:0 }}>
+          <div style={{ position:'absolute',top:0,left:0,right:0,height:'3px',background:`linear-gradient(90deg,transparent,#d4af37 30%,#ffd700 50%,#d4af37 70%,transparent)` }} />
+          <div style={{ display:'flex',justifyContent:'space-between',alignItems:'flex-start' }}>
+            <div>
+              <div style={{ fontSize:'10px',fontWeight:700,color:'#d4af37',letterSpacing:'1.5px',textTransform:'uppercase',marginBottom:'4px' }}>
+                Manual Revenue
               </div>
-              <button 
-                onClick={() => setIsNewInvoiceDrawerOpen(false)}
-                style={{ background: 'none', border: 'none', color: 'white', fontSize: '24px', cursor: 'pointer', opacity: 0.7, padding: '5px' }}
-              >✕</button>
-           </div>
+              <h3 style={{ margin:0,fontSize:'18px',fontWeight:800,color:'white',letterSpacing:'-0.2px' }}>
+                Create New Invoice
+              </h3>
+              <p style={{ margin:'5px 0 0',fontSize:'12px',color:'rgba(255,255,255,0.5)',fontWeight:500 }}>
+                Enter the billing details and services below.
+              </p>
+            </div>
+            <button type="button" onClick={() => setIsNewInvoiceDrawerOpen(false)} style={{ width:'32px',height:'32px',borderRadius:'50%',background:'rgba(255,255,255,0.1)',border:'1px solid rgba(255,255,255,0.15)',color:'white',cursor:'pointer',fontSize:'16px',display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0 }}>✕</button>
+          </div>
         </div>
 
+        {/* Form Body */}
         <div style={{ padding: isMobile ? '20px' : '35px', flex: 1, overflowY: 'auto' }}>
-           <form onSubmit={handleCreateManualInvoice}>
+           <form onSubmit={handleCreateManualInvoice} id="manualInvoiceForm">
+             
               <div style={{ marginBottom: '30px', position: 'relative' }}>
                  <label style={{ fontSize: '10px', fontWeight: 950, color: '#94a3b8', letterSpacing: '1px', display: 'block', marginBottom: '10px' }}>SEARCH_PATIENT_REGISTRY</label>
                  
@@ -630,8 +639,21 @@ export const NewInvoiceDrawer = ({
                <button type="submit" disabled={!selectedPatient} style={{ width: '100%', padding: '18px', borderRadius: '16px', border: 'none', background: selectedPatient ? '#0f52ba' : '#cbd5e1', color: 'white', fontWeight: 950, cursor: selectedPatient ? 'pointer' : 'not-allowed', marginTop: '10px' }}>
                   AUTHORIZE INVOICE
                </button>
-            </form>
-         </div>
+            
+           </form>
+        </div>
+
+        {/* Sticky Footer */}
+        <div style={{ padding: '16px 24px', borderTop: '1px solid #e8edf2', display: 'flex', gap: '10px', background: 'white', flexShrink: 0 }}>
+          <button type="button" onClick={() => setIsNewInvoiceDrawerOpen(false)} style={{ flex: 1, padding: '11px', borderRadius: '10px', border: '1.5px solid #e2e8f0', background: 'white', fontWeight: 700, fontSize: '13px', cursor: 'pointer', color: '#475569' }}>Cancel</button>
+          <button 
+            type="submit" 
+            form="manualInvoiceForm" 
+            disabled={!selectedPatient || newInvoiceData.items.length === 0}
+            style={{ flex: 2, padding: '11px', borderRadius: '10px', border: 'none', background: (!selectedPatient || newInvoiceData.items.length === 0) ? '#94a3b8' : 'linear-gradient(135deg,#0a1628,#1e3a5f)', color: 'white', fontWeight: 800, fontSize: '13px', cursor: (!selectedPatient || newInvoiceData.items.length === 0) ? 'not-allowed' : 'pointer', boxShadow: (!selectedPatient || newInvoiceData.items.length === 0) ? 'none' : '0 4px 14px rgba(10,22,40,0.25)' }}
+          >Generate Invoice</button>
+        </div>
+
       </div>
     </div>
   );

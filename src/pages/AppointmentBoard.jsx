@@ -2157,304 +2157,163 @@ export default function AppointmentBoard() {
   // ============================================================
   //  EDIT APPOINTMENT MODAL
   // ============================================================
-  const renderEditModal = () => {
+  
+  // PREMIUM EDIT APPOINTMENT DRAWER
+  const renderEditDrawer = () => {
     if (!isEditingOpen || !editingAppointment) return null;
 
     return (
-      <div className="drawer-overlay">
-        <div className="drawer-content booking-drawer-width" onClick={e => e.stopPropagation()}>
-          <div className="drawer-header" style={{ background: 'linear-gradient(135deg, #f39c12 0%, #e67e22 100%)', color: 'white', padding: '28px 30px', border: 'none' }}>
-            <div style={{ display: 'flex', flexDirection: 'column' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '4px' }}>
-                <h2 style={{ fontSize: '18px', fontWeight: 900, margin: 0 }}>EDIT APPOINTMENT</h2>
+      <div 
+        onClick={() => setIsEditingOpen(false)} 
+        style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backdropFilter: 'blur(4px)', background: 'rgba(10, 22, 40, 0.45)', zIndex: 10000 }}
+      >
+        <div 
+          style={{ position: 'absolute', right: 0, top: 0, height: '100%', padding: 0, width: '560px', maxWidth: '100%', background: '#fff', display: 'flex', flexDirection: 'column', boxShadow: '-12px 0 40px rgba(10,22,40,0.18)' }} 
+          onClick={e => e.stopPropagation()}
+        >
+          {/* Tactical Header */}
+          <div style={{ padding:'22px 24px 20px', background:`linear-gradient(135deg,#0a1628 0%,#1e3a5f 100%)`, position:'relative', overflow:'hidden', flexShrink:0 }}>
+            <div style={{ position:'absolute',top:0,left:0,right:0,height:'3px',background:`linear-gradient(90deg,transparent,#d4af37 30%,#ffd700 50%,#d4af37 70%,transparent)` }} />
+            <div style={{ display:'flex', justifyContent:'space-between', alignItems:'flex-start' }}>
+              <div>
+                <div style={{ display:'inline-block', padding:'4px 8px', background:'rgba(255,255,255,0.1)', borderRadius:'6px', fontSize:'9px', fontWeight:950, color:'#d4af37', letterSpacing:'1px', textTransform:'uppercase', marginBottom:'10px' }}>
+                  ID: {editingAppointment.id || editingAppointment.displayId || editingAppointment.appointmentId}
+                </div>
+                <h3 style={{ margin:0,fontSize:'18px',fontWeight:800,color:'white',letterSpacing:'-0.2px' }}>
+                  Modify Appointment
+                </h3>
+                <p style={{ margin:'5px 0 0',fontSize:'12px',color:'rgba(255,255,255,0.5)',fontWeight:500 }}>
+                  Update clinical or financial details below.
+                </p>
               </div>
-              <p style={{ fontSize: '11px', opacity: 0.7, textTransform: 'uppercase', letterSpacing: '1px' }}>
-                Appointment ID: {editingAppointment.id}
-              </p>
+              <button 
+                onClick={() => setIsEditingOpen(false)} 
+                style={{ width:'32px',height:'32px',borderRadius:'50%',background:'rgba(255,255,255,0.1)',border:'1px solid rgba(255,255,255,0.15)',color:'white',cursor:'pointer',fontSize:'16px',display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0 }}
+              >
+                &times;
+              </button>
             </div>
-            <button className="btn-close" style={{ color: 'white', fontSize: '28px' }} onClick={() => setIsEditingOpen(false)}>✕</button>
           </div>
 
-          <div className="drawer-body" style={{ padding: '30px' }}>
-            {/* Patient Identity (Editable) */}
-            <div style={{ background: '#f8f9fa', padding: '20px', borderRadius: '16px', border: '1px solid #e2e8f0', marginBottom: '24px' }}>
-              <label style={{ fontSize: '10px', color: '#0f52ba', fontWeight: 800, marginBottom: '15px', display: 'block', letterSpacing: '1px' }}>PATIENT IDENTITY</label>
+          {/* Body */}
+          <div style={{ flex: 1, overflowY: 'auto', padding: '30px 40px 40px 40px' }}>
+            <form onSubmit={(e) => { e.preventDefault(); handleEditAppointment(); }}>
               
-              <div className="form-group" style={{ marginBottom: '12px' }}>
-                <label style={{ fontSize: '9px', fontWeight: 700, color: '#64748b' }}>FULL NAME</label>
-                <input 
-                  type="text" 
-                  style={{ fontSize: '13px', padding: '10px', width: '100%', borderRadius: '10px', border: '1px solid #cbd5e1' }}
-                  value={editingAppointment.patientName || ''}
-                  onChange={e => setEditingAppointment({...editingAppointment, patientName: e.target.value})}
-                />
-              </div>
-
-              <div style={{ display: 'grid', gridTemplateColumns: '1.5fr 1fr', gap: '12px' }}>
-                <div className="form-group">
-                  <label style={{ fontSize: '9px', fontWeight: 700, color: '#64748b' }}>MOBILE</label>
-                  <input 
-                    type="tel" 
-                    style={{ fontSize: '13px', padding: '10px', width: '100%', borderRadius: '10px', border: '1px solid #cbd5e1' }}
-                    value={editingAppointment.mobile || ''}
-                    onChange={e => setEditingAppointment({...editingAppointment, mobile: e.target.value})}
-                  />
+              <div style={{ marginBottom: '25px' }}>
+                <h4 style={{ fontSize: '13px', fontWeight: 800, color: '#1e293b', marginBottom: '15px', borderBottom: '1px solid #e2e8f0', paddingBottom: '8px' }}>Patient Details</h4>
+                
+                <div style={{ marginBottom: '15px' }}>
+                  <label style={{ fontSize: '11px', fontWeight: 800, color: '#475569', display: 'block', marginBottom: '8px' }}>Patient Name <span style={{ color: '#ef4444' }}>*</span></label>
+                  <input type="text" required value={editingAppointment.patientName || ''} onChange={e => setEditingAppointment({...editingAppointment, patientName: e.target.value})} style={{ width: '100%', border: '1px solid #e2e8f0', borderRadius: '12px', background: '#f8fafc', fontSize: '13px', fontWeight: 700, padding: '12px 16px', outline: 'none', color: '#1e293b' }} />
                 </div>
-                <div className="form-group">
-                  <label style={{ fontSize: '9px', fontWeight: 700, color: '#64748b' }}>AGE (Y)</label>
-                  <input 
-                    type="text" 
-                    style={{ fontSize: '13px', padding: '10px', width: '100%', borderRadius: '10px', border: '1px solid #cbd5e1' }}
-                    value={editingAppointment.patientAge || ''}
-                    onChange={e => setEditingAppointment({...editingAppointment, patientAge: e.target.value})}
-                  />
+                
+                <div style={{ display: 'flex', gap: '15px', marginBottom: '15px' }}>
+                  <div style={{ flex: 1 }}>
+                    <label style={{ fontSize: '11px', fontWeight: 800, color: '#475569', display: 'block', marginBottom: '8px' }}>Mobile <span style={{ color: '#ef4444' }}>*</span></label>
+                    <input type="text" required value={editingAppointment.mobile || ''} onChange={e => setEditingAppointment({...editingAppointment, mobile: e.target.value})} style={{ width: '100%', border: '1px solid #e2e8f0', borderRadius: '12px', background: '#f8fafc', fontSize: '13px', fontWeight: 700, padding: '12px 16px', outline: 'none', color: '#1e293b' }} />
+                  </div>
+                  <div style={{ flex: 1 }}>
+                    <label style={{ fontSize: '11px', fontWeight: 800, color: '#475569', display: 'block', marginBottom: '8px' }}>Age <span style={{ color: '#ef4444' }}>*</span></label>
+                    <input type="text" required value={editingAppointment.patientAge || ''} onChange={e => setEditingAppointment({...editingAppointment, patientAge: e.target.value})} style={{ width: '100%', border: '1px solid #e2e8f0', borderRadius: '12px', background: '#f8fafc', fontSize: '13px', fontWeight: 700, padding: '12px 16px', outline: 'none', color: '#1e293b' }} />
+                  </div>
                 </div>
               </div>
-            </div>
 
-            {/* Mission Date */}
-            <div className="form-group" style={{ marginBottom: '16px' }}>
-              <label style={{ fontSize: '10px', fontWeight: 700 }}>MISSION DATE <span style={{ color: '#e74c3c' }}>*</span></label>
-              <input 
-                type="date" 
-                required 
-                style={{ fontSize: '13px', padding: '11px 12px', width: '100%', borderRadius: '10px', border: '1px solid #e2e8f0' }} 
-                value={editingAppointment.dateTime ? editingAppointment.dateTime.split('T')[0] : (editingAppointment.date || '')} 
-                onChange={e => {
-                  const newDate = e.target.value;
-                  let currentTime = '12:00:00';
-                  if (editingAppointment.dateTime && editingAppointment.dateTime.includes('T')) {
-                    const timePart = editingAppointment.dateTime.split('T')[1];
-                    currentTime = timePart.replace('Z', '');
-                  }
-                  setEditingAppointment({
-                    ...editingAppointment, 
-                    dateTime: `${newDate}T${currentTime}`,
-                    date: newDate
-                  });
-                }} 
-              />
-            </div>
+              <div style={{ marginBottom: '25px' }}>
+                <h4 style={{ fontSize: '13px', fontWeight: 800, color: '#1e293b', marginBottom: '15px', borderBottom: '1px solid #e2e8f0', paddingBottom: '8px' }}>Service Details</h4>
+                
+                <div style={{ marginBottom: '15px' }}>
+                  <label style={{ fontSize: '11px', fontWeight: 800, color: '#475569', display: 'block', marginBottom: '8px' }}>Scheduled Date <span style={{ color: '#ef4444' }}>*</span></label>
+                  <input type="date" required value={editingAppointment.dateTime ? editingAppointment.dateTime.split('T')[0] : (editingAppointment.date || '')} onChange={e => { const newDate = e.target.value; let currentTime = '12:00:00'; if (editingAppointment.dateTime && editingAppointment.dateTime.includes('T')) { const timePart = editingAppointment.dateTime.split('T')[1]; currentTime = timePart.replace('Z', ''); } setEditingAppointment({...editingAppointment, dateTime: `${newDate}T${currentTime}`, date: newDate}); }} style={{ width: '100%', border: '1px solid #e2e8f0', borderRadius: '12px', background: '#f8fafc', fontSize: '13px', fontWeight: 700, padding: '12px 16px', outline: 'none', color: '#1e293b' }} />
+                </div>
 
-            {/* Modality */}
-            <div className="form-group" style={{ marginBottom: '16px' }}>
-              <label style={{ fontSize: '10px', fontWeight: 700 }}>MODALITY</label>
-              <select 
-                style={{ fontSize: '13px', padding: '11px', height: '44px', width: '100%', borderRadius: '10px', border: '1px solid #e2e8f0' }} 
-                value={editingAppointment.modality || 'X-RAY'} 
-                onChange={e => setEditingAppointment({...editingAppointment, modality: e.target.value, service: '', amount: 0, referralCutValue: 0})}
-              >
-                {MODALITIES.map(m => <option key={m} value={m}>{m}</option>)}
-              </select>
-            </div>
-
-            {/* Service/Procedure */}
-            <div className="form-group" style={{ marginBottom: '16px', position: 'relative' }}>
-              <label style={{ fontSize: '10px', fontWeight: 700 }}>SERVICE / PROCEDURE <span style={{ color: '#e74c3c' }}>*</span></label>
-              <input 
-                type="text" 
-                required 
-                placeholder="e.g. Chest X-Ray with Lateral" 
-                style={{ fontSize: '13px', padding: '11px 12px', width: '100%', borderRadius: '10px', border: '1px solid #e2e8f0' }} 
-                value={editingAppointment.service || ''} 
-                onChange={e => {
-                  const val = e.target.value;
-                  setEditingAppointment(prev => ({ ...prev, service: val }));
-                  const match = serviceRegistry.find(s => s.modality === editingAppointment.modality && s.serviceName.toLowerCase() === val.toLowerCase());
-                  if (match) {
-                    setEditingAppointment(prev => ({
-                      ...prev,
-                      amount: match.amount,
-                      referralCutValue: match.referralCutValue || 0
-                    }));
-
-                  }
-
-                }} 
-              />
-
-              {/* Service Suggestions in Edit Mode */}
-              {editingAppointment.service?.length > 0 && serviceRegistry.some(s => 
-                s.modality === editingAppointment.modality && 
-                s.serviceName.toLowerCase().includes(editingAppointment.service.toLowerCase()) && 
-                s.serviceName !== editingAppointment.service
-              ) && (
-                <div style={{ 
-                  position: 'absolute', top: '100%', left: 0, right: 0, 
-                  background: 'white', border: '1px solid #e2e8f0', borderRadius: '12px', 
-                  boxShadow: '0 10px 30px rgba(0,0,0,0.1)', zIndex: 100, 
-                  maxHeight: '150px', overflowY: 'auto', marginTop: '4px' 
-                }}>
-                  {serviceRegistry
-                    .filter(s => s.modality === editingAppointment.modality && s.serviceName.toLowerCase().includes(editingAppointment.service.toLowerCase()))
-                    .map(s => (
-                      <div 
-                        key={s.id}
-                        onClick={() => setEditingAppointment({
-                          ...editingAppointment, 
-                          service: s.serviceName,
-                          amount: s.amount,
-                          referralCutValue: s.referralCutValue || 0
-                        })}
-
-
-                        style={{ padding: '10px 15px', borderBottom: '1px solid #f8fafc', cursor: 'pointer' }}
-                        onMouseOver={e => e.currentTarget.style.background = '#f0f4ff'}
-                        onMouseOut={e => e.currentTarget.style.background = 'white'}
-                      >
-                         <div style={{ fontSize: '12px', fontWeight: 800 }}>{s.serviceName}</div>
-                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '2px' }}>
-                           <div style={{ fontSize: '10px', color: '#0f52ba', fontWeight: 950 }}>₹{(s.amount || 0).toLocaleString()}</div>
-                           {s.referralCutValue > 0 && (
-                             <div style={{ fontSize: '9px', color: '#e67e22', fontWeight: 900, background: '#fff7ed', padding: '2px 6px', borderRadius: '4px', border: '1px solid #ffedd5' }}>
-                               INCENTIVE: ₹{(s.referralCutValue || 0).toLocaleString()}
-                             </div>
-
-                           )}
-                         </div>
+                <div style={{ display: 'flex', gap: '15px', marginBottom: '15px' }}>
+                  <div style={{ flex: 1 }}>
+                    <label style={{ fontSize: '11px', fontWeight: 800, color: '#475569', display: 'block', marginBottom: '8px' }}>Modality <span style={{ color: '#ef4444' }}>*</span></label>
+                    <select required value={editingAppointment.modality || 'X-RAY'} onChange={e => setEditingAppointment({...editingAppointment, modality: e.target.value, service: '', amount: 0, referralCutValue: 0})} style={{ width: '100%', border: '1px solid #e2e8f0', borderRadius: '12px', background: '#f8fafc', fontSize: '13px', fontWeight: 700, padding: '12px 16px', outline: 'none', color: '#1e293b', height: '44px' }}>
+                      {MODALITIES.map(m => <option key={m} value={m}>{m}</option>)}
+                    </select>
+                  </div>
+                  <div style={{ flex: 2, position: 'relative' }}>
+                    <label style={{ fontSize: '11px', fontWeight: 800, color: '#475569', display: 'block', marginBottom: '8px' }}>Service / Procedure <span style={{ color: '#ef4444' }}>*</span></label>
+                    <input type="text" required placeholder="e.g. Chest X-Ray" value={editingAppointment.service || ''} onChange={e => { const val = e.target.value; setEditingAppointment(prev => ({ ...prev, service: val })); const match = serviceRegistry.find(s => s.modality === editingAppointment.modality && s.serviceName.toLowerCase() === val.toLowerCase()); if (match) { setEditingAppointment(prev => ({...prev, amount: match.amount, referralCutValue: match.referralCutValue || 0})); } }} style={{ width: '100%', border: '1px solid #e2e8f0', borderRadius: '12px', background: '#f8fafc', fontSize: '13px', fontWeight: 700, padding: '12px 16px', outline: 'none', color: '#1e293b' }} />
+                    
+                    {/* Auto-suggest dropdown */}
+                    {editingAppointment.service?.length > 0 && serviceRegistry.some(s => s.modality === editingAppointment.modality && s.serviceName.toLowerCase().includes(editingAppointment.service.toLowerCase()) && s.serviceName !== editingAppointment.service) && (
+                      <div style={{ position: 'absolute', top: '100%', left: 0, right: 0, background: 'white', border: '1px solid #e2e8f0', borderRadius: '12px', boxShadow: '0 10px 30px rgba(0,0,0,0.1)', zIndex: 100, maxHeight: '150px', overflowY: 'auto', marginTop: '4px' }}>
+                        {serviceRegistry.filter(s => s.modality === editingAppointment.modality && s.serviceName.toLowerCase().includes(editingAppointment.service.toLowerCase())).map(s => (
+                          <div key={s.id} onClick={() => setEditingAppointment({...editingAppointment, service: s.serviceName, amount: s.amount, referralCutValue: s.referralCutValue || 0})} style={{ padding: '10px 15px', borderBottom: '1px solid #f8fafc', cursor: 'pointer' }} onMouseOver={e => e.currentTarget.style.background = '#f0f4ff'} onMouseOut={e => e.currentTarget.style.background = 'white'}>
+                            <div style={{ fontSize: '12px', fontWeight: 800 }}>{s.serviceName}</div>
+                          </div>
+                        ))}
                       </div>
-                    ))}
+                    )}
+                  </div>
                 </div>
-              )}
-            </div>
 
-            {/* Service Amount */}
-            <div className="form-group" style={{ marginBottom: '16px' }}>
-              <label style={{ fontSize: '10px', fontWeight: 700 }}>SERVICE AMOUNT (₹)</label>
-              <input 
-                type="number" 
-                style={{ fontSize: '13px', padding: '11px 12px', width: '100%', borderRadius: '10px', border: '1px solid #e2e8f0' }} 
-                value={editingAppointment.amount || 0} 
-                onChange={e => setEditingAppointment({...editingAppointment, amount: parseFloat(e.target.value) || 0})}
-              />
-              {editingAppointment.referralCutValue > 0 && (
-                <div style={{ fontSize: '10px', fontWeight: 800, color: '#0f52ba', marginTop: '6px' }}>
-                  <span style={{ opacity: 0.6 }}>SYSTEM REFERRAL CUT: </span>
-                  ₹{(editingAppointment.referralCutValue || 0).toLocaleString()}
-                </div>
-              )}
-
-
-            </div>
-
-            {/* Doctor */}
-            <div className="form-group" style={{ marginBottom: '16px' }}>
-              <label style={{ fontSize: '10px', fontWeight: 700 }}>LEAD SPECIALIST <span style={{ color: '#e74c3c' }}>*</span></label>
-              <select 
-                style={{ fontSize: '13px', padding: '11px', height: '44px', width: '100%', borderRadius: '10px', border: '1px solid #e2e8f0' }} 
-                value={editingAppointment.doctor || ''} 
-                onChange={e => setEditingAppointment({...editingAppointment, doctor: e.target.value})}
-              >
-                <option value="">Select Specialist...</option>
-                {doctors.map(d => <option key={d} value={d}>{d}</option>)}
-              </select>
-            </div>
-
-            {/* Referrer */}
-            <div className="form-group" style={{ marginBottom: '16px' }}>
-              <label style={{ fontSize: '10px', fontWeight: 700 }}>REFERRED BY</label>
-              <div style={{ display: 'flex', gap: '8px' }}>
-                <div style={{ flex: 1, position: 'relative' }}>
-                  <input 
-                    type="text" 
-                    placeholder="Search referrers..."
-                    style={{ fontSize: '13px', padding: '11px 12px', width: '100%', borderRadius: '10px', border: '1px solid #e2e8f0' }} 
-                    value={editingAppointment.referredBy || ''} 
-                    onChange={e => {
-                      const val = e.target.value;
-                      setEditingAppointment({...editingAppointment, referredBy: val});
-                      fetchReferrers(val);
-                    }} 
-                  />
-                  {editingAppointment.referredBy && referrers.length > 0 && !referrers.some(r => r.name === editingAppointment.referredBy) && (
-                    <div style={{ 
-                      position: 'absolute', top: '100%', left: 0, right: 0, 
-                      background: 'white', border: '1px solid #e2e8f0', borderRadius: '10px', 
-                      boxShadow: '0 10px 30px rgba(0,0,0,0.1)', zIndex: 100, 
-                      maxHeight: '150px', overflowY: 'auto', marginTop: '4px' 
-                    }}>
-                      {referrers.map(r => (
-                        <div 
-                          key={r.referrerId || r.id}
-                          onClick={() => {
-                            setEditingAppointment({...editingAppointment, referredBy: r.name});
-                            setReferrers([]);
-                          }}
-                          style={{ padding: '10px 15px', borderBottom: '1px solid #f8fafc', cursor: 'pointer', fontSize: '12px' }}
-                          onMouseOver={e => e.currentTarget.style.background = '#f0f4ff'}
-                          onMouseOut={e => e.currentTarget.style.background = 'white'}
-                        >
-                          <strong>{r.name}</strong>
-                          <span style={{ marginLeft: '8px', color: '#888', fontSize: '10px' }}>{r.contact}</span>
-                        </div>
-                      ))}
+                <div style={{ marginBottom: '15px' }}>
+                  <label style={{ fontSize: '11px', fontWeight: 800, color: '#475569', display: 'block', marginBottom: '8px' }}>Service Amount (₹) <span style={{ color: '#ef4444' }}>*</span></label>
+                  <input type="number" required value={editingAppointment.amount || 0} onChange={e => setEditingAppointment({...editingAppointment, amount: parseFloat(e.target.value) || 0})} style={{ width: '100%', border: '1px solid #e2e8f0', borderRadius: '12px', background: '#f8fafc', fontSize: '13px', fontWeight: 700, padding: '12px 16px', outline: 'none', color: '#1e293b' }} />
+                  {editingAppointment.referralCutValue > 0 && (
+                    <div style={{ fontSize: '10px', fontWeight: 800, color: '#0f52ba', marginTop: '6px' }}>
+                      <span style={{ opacity: 0.6 }}>SYSTEM REFERRAL CUT: </span>₹{(editingAppointment.referralCutValue || 0).toLocaleString()}
                     </div>
                   )}
                 </div>
-                <button 
-                  type="button" 
-                  onClick={() => setIsAddingReferrer(true)}
-                  style={{ padding: '0 15px', borderRadius: '10px', border: '1px dashed #cbd5e1', background: '#f8fafc', color: '#0f52ba', fontSize: '20px', fontWeight: 700, cursor: 'pointer' }}
-                >
-                  +
-                </button>
               </div>
-            </div>
 
-            {/* Notes */}
-            <div className="form-group" style={{ marginBottom: '16px' }}>
-              <label style={{ fontSize: '10px', fontWeight: 700 }}>NOTES (OPTIONAL)</label>
-              <textarea 
-                placeholder="Clinical notes..." 
-                style={{ fontSize: '13px', padding: '11px 12px', width: '100%', minHeight: '80px', fontFamily: 'inherit' }} 
-                value={editingAppointment.notes || ''} 
-                onChange={e => setEditingAppointment({...editingAppointment, notes: e.target.value})} 
-              />
-            </div>
+              <div style={{ marginBottom: '25px' }}>
+                <h4 style={{ fontSize: '13px', fontWeight: 800, color: '#1e293b', marginBottom: '15px', borderBottom: '1px solid #e2e8f0', paddingBottom: '8px' }}>Routing & Notes</h4>
+                
+                <div style={{ display: 'flex', gap: '15px', marginBottom: '15px' }}>
+                  <div style={{ flex: 1 }}>
+                    <label style={{ fontSize: '11px', fontWeight: 800, color: '#475569', display: 'block', marginBottom: '8px' }}>Lead Specialist <span style={{ color: '#ef4444' }}>*</span></label>
+                    <select required value={editingAppointment.doctor || ''} onChange={e => setEditingAppointment({...editingAppointment, doctor: e.target.value})} style={{ width: '100%', border: '1px solid #e2e8f0', borderRadius: '12px', background: '#f8fafc', fontSize: '13px', fontWeight: 700, padding: '12px 16px', outline: 'none', color: '#1e293b', height: '44px' }}>
+                      <option value="">Select Specialist...</option>
+                      {doctors.map(d => <option key={d} value={d}>{d}</option>)}
+                    </select>
+                  </div>
+                  <div style={{ flex: 1 }}>
+                    <label style={{ fontSize: '11px', fontWeight: 800, color: '#475569', display: 'block', marginBottom: '8px' }}>Referred By</label>
+                    <div style={{ display: 'flex', gap: '8px' }}>
+                      <input type="text" placeholder="Search referrers..." value={editingAppointment.referredBy || ''} onChange={e => setEditingAppointment({...editingAppointment, referredBy: e.target.value})} style={{ width: '100%', border: '1px solid #e2e8f0', borderRadius: '12px', background: '#f8fafc', fontSize: '13px', fontWeight: 700, padding: '12px 16px', outline: 'none', color: '#1e293b' }} />
+                      <button type="button" onClick={() => setIsAddingReferrer(true)} style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '12px', width: '44px', color: '#0f52ba', fontSize: '18px', fontWeight: 900, cursor: 'pointer' }}>+</button>
+                    </div>
+                  </div>
+                </div>
 
-            {/* Action Buttons */}
-            <div style={{ display: 'flex', gap: '12px', marginTop: '24px' }}>
-              <button
-                onClick={() => setIsEditingOpen(false)}
-                style={{
-                  flex: 1,
-                  padding: '14px',
-                  borderRadius: '12px',
-                  border: '1px solid #dee2e6',
-                  background: 'white',
-                  fontSize: '12px',
-                  fontWeight: 800,
-                  color: '#64748b',
-                  cursor: 'pointer',
-                  transition: 'all 0.2s'
-                }}
-              >
-                CANCEL
-              </button>
-                <button
-                onClick={handleEditAppointment}
-                style={{
-                  flex: 2,
-                  padding: '14px',
-                  borderRadius: '12px',
-                  border: 'none',
-                  background: 'linear-gradient(135deg, #f39c12 0%, #e67e22 100%)',
-                  fontSize: '12px',
-                  fontWeight: 900,
-                  color: 'white',
-                  cursor: 'pointer',
-                  boxShadow: '0 4px 15px rgba(243, 156, 18, 0.3)',
-                  transition: 'all 0.2s'
-                }}
-              >
-                SAVE CHANGES
-              </button>
-            </div>
+                <div style={{ marginBottom: '15px' }}>
+                  <label style={{ fontSize: '11px', fontWeight: 800, color: '#475569', display: 'block', marginBottom: '8px' }}>Clinical Notes</label>
+                  <textarea placeholder="Any additional context..." value={editingAppointment.notes || ''} onChange={e => setEditingAppointment({...editingAppointment, notes: e.target.value})} style={{ width: '100%', border: '1px solid #e2e8f0', borderRadius: '12px', background: '#f8fafc', fontSize: '13px', fontWeight: 700, padding: '12px 16px', outline: 'none', color: '#1e293b', minHeight: '80px', resize: 'vertical' }} />
+                </div>
+              </div>
+
+            </form>
           </div>
+
+          {/* Footer */}
+          <div style={{ padding:'16px 24px', borderTop:'1px solid #e8edf2', display:'flex', gap:'10px', background:'white', flexShrink:0 }}>
+            <button 
+              type="button" 
+              onClick={() => setIsEditingOpen(false)}
+              style={{ flex:1, padding:'11px', borderRadius:'10px', border:'1.5px solid #e2e8f0', background:'white', fontWeight:700, fontSize:'13px', cursor:'pointer', color:'#475569' }}
+            >
+              Cancel
+            </button>
+            <button 
+              type="button"
+              onClick={handleEditAppointment}
+              style={{ flex:2, padding:'11px', borderRadius:'10px', border:'none', background:`linear-gradient(135deg,#0a1628,#1e3a5f)`, color:'white', fontWeight:800, fontSize:'13px', cursor:'pointer', boxShadow:'0 4px 14px rgba(10,22,40,0.25)' }}
+            >
+              Save Modifications
+            </button>
+          </div>
+
         </div>
       </div>
     );
   };
+;
 
   // ============================================================
   //  PRINT MODAL
@@ -2836,7 +2695,7 @@ export default function AppointmentBoard() {
       </div>
 
       {renderDrawer()}
-      {renderEditModal()}
+      {renderEditDrawer()}
       {renderTokenModal()}
 
       {/* Add New Referrer Modal */}

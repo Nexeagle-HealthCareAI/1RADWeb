@@ -2055,8 +2055,7 @@ const ReportingPage = () => {
           }
           
           /* CRITICAL: Force toolbar visibility on tablets */
-          #dicom-toolbar,
-          .panel-center > div:first-child { 
+          #dicom-toolbar {
             width: ${isTablet ? (window.innerWidth > 1024 ? '320px' : '280px') : '200px'} !important;
             height: 100% !important;
             box-shadow: 4px 0 20px rgba(0,0,0,0.3) !important;
@@ -3303,7 +3302,7 @@ const ReportingPage = () => {
                 </div>
               </div>
 
-              <div style={{ flex: 1, background: '#000', position: 'relative', display: 'flex', gap: '2px', padding: '2px' }}>
+              <div style={{ flex: 1, background: '#000', position: 'relative', display: 'flex', flexDirection: isMobile ? 'column' : 'row', gap: '2px', padding: '2px' }}>
                 {/* Floating Toolbar Toggle for Tablets */}
                 {isTablet && (
                   <button
@@ -3419,9 +3418,28 @@ const ReportingPage = () => {
                   </div>
                 )}
 
-                {/* SERIES LIBRARY MINI-SIDEBAR */}
+                {/* SERIES LIBRARY MINI-SIDEBAR — horizontal strip on mobile, vertical sidebar otherwise */}
                 {uploadedFiles.length > 0 && (
-                  <div style={{ width: '60px', minWidth: '60px', maxWidth: '60px', flexShrink: 0, background: '#0f172a', borderRight: '2px solid #334155', display: 'flex', flexDirection: 'column', gap: '10px', padding: '10px 5px', zIndex: 99999, position: 'relative', height: '100%', overflow: 'hidden', pointerEvents: 'auto' }}>
+                  <div style={{
+                    width: isMobile ? '100%' : '60px',
+                    minWidth: isMobile ? 'auto' : '60px',
+                    maxWidth: isMobile ? 'none' : '60px',
+                    height: isMobile ? '70px' : '100%',
+                    minHeight: isMobile ? '70px' : 'auto',
+                    flexShrink: 0,
+                    background: '#0f172a',
+                    borderRight: isMobile ? 'none' : '2px solid #334155',
+                    borderBottom: isMobile ? '2px solid #334155' : 'none',
+                    display: 'flex',
+                    flexDirection: isMobile ? 'row' : 'column',
+                    gap: isMobile ? '8px' : '10px',
+                    padding: isMobile ? '8px' : '10px 5px',
+                    zIndex: 99999,
+                    position: 'relative',
+                    overflow: isMobile ? 'auto' : 'hidden',
+                    WebkitOverflowScrolling: 'touch',
+                    pointerEvents: 'auto'
+                  }}>
                     {uploadedFiles.map((f, i) => (
                       <button
                         key={i}
@@ -3433,13 +3451,19 @@ const ReportingPage = () => {
                         }}
                         title={f.name}
                         style={{
-                          width: '100%', height: '50px', background: activeAssetIndex === i ? 'linear-gradient(135deg, #3b82f6, #2563eb)' : 'rgba(255,255,255,0.05)',
+                          width: isMobile ? '70px' : '100%',
+                          minWidth: isMobile ? '70px' : 'auto',
+                          height: isMobile ? '100%' : '50px',
+                          flexShrink: 0,
+                          background: activeAssetIndex === i ? 'linear-gradient(135deg, #3b82f6, #2563eb)' : 'rgba(255,255,255,0.05)',
                           border: activeAssetIndex === i ? '2px solid #1d4ed8' : 'none', borderRadius: '8px', cursor: 'pointer', display: 'flex', flexDirection: 'column',
                           alignItems: 'center', justifyContent: 'center', transition: 'all 0.2s ease', gap: '4px', boxShadow: activeAssetIndex === i ? '0 4px 12px rgba(59, 130, 246, 0.4)' : 'none',
                           transform: activeAssetIndex === i ? 'scale(1.05)' : 'scale(1)',
                           pointerEvents: 'auto',
                           position: 'relative',
-                          zIndex: 99999
+                          zIndex: 99999,
+                          touchAction: 'manipulation',
+                          WebkitTapHighlightColor: 'transparent'
                         }}
                         onMouseEnter={(e) => {
                           if (activeAssetIndex !== i) {
