@@ -845,20 +845,7 @@ export default function BillingPage() {
         status: e.status?.toUpperCase() || 'PAID'
     }));
     
-    const referralCuts = combinedReferralCuts.map(c => ({
-        id: c.id,
-        date: c.date,
-        name: c.name,
-        description: c.description,
-        category: 'Referral',
-        amount: c.amount,
-        type: c.type,
-        status: c.status,
-        modality: c.modality
-    }));
-
-
-    return [...operationalExpenses, ...referralCuts].sort((a, b) => {
+    return operationalExpenses.sort((a, b) => {
         if (!sortConfig.key) return new Date(b.date) - new Date(a.date);
         const valA = a[sortConfig.key];
         const valB = b[sortConfig.key];
@@ -875,8 +862,7 @@ export default function BillingPage() {
     return globalOutflow.filter(exp => {
         if (!exp) return false;
         // Category Filter
-        if (expenseFilter === 'REFERRAL' && exp.category !== 'Referral') return false;
-        if (expenseFilter === 'OPERATIONAL' && exp.category === 'Referral') return false;
+        
 
         // Time Filter
         const expDate = exp.date ? new Date(exp.date).toLocaleDateString('en-CA') : null;

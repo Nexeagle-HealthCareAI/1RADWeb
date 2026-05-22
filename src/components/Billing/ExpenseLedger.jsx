@@ -302,12 +302,12 @@ const ExpenseLedger = ({
       {/* ── KPI cards ────────────────────────────────────────────────── */}
       <div style={{
         display: 'grid',
-        gridTemplateColumns: isMobile ? '1fr 1fr' : 'repeat(4, 1fr)',
+        gridTemplateColumns: isMobile ? '1fr' : 'repeat(3, 1fr)',
         gap: '12px',
       }}>
         <KPICard tone="red"    label="Total expenditure" value={formatINR(outflowStats.totalOutflow)} />
         <KPICard tone="blue"   label="Operational"       value={formatINR(outflowStats.operationalTotal)} />
-        <KPICard tone="purple" label="Strategic payouts" value={formatINR(outflowStats.referralTotal)} />
+        
         <KPICard tone="amber"  label="Today's burn"      value={formatINR(outflowStats.todayOutflow)} />
       </div>
 
