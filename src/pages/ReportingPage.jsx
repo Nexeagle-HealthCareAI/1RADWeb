@@ -470,32 +470,76 @@ const ReportingPage = () => {
       const reportBody = reportRes.data;
       const r = (reportBody?.success && reportBody?.data) ? reportBody.data : reportBody;
 
+      // Helper to push HTML into the editor both via state AND imperatively
+      // through the editor handle. State alone relies on NarrativeEditor's
+      // content-sync useEffect, which is skipped if the editor is focused
+      // or if its `isEmpty` heuristic mis-fires. The imperative call inside
+      // requestAnimationFrame guarantees the editor catches up.
+      const applyEditorContent = (html) => {
+        setEditorText(html || '');
+        requestAnimationFrame(() => {
+          const handle = editorRef.current;
+          if (!handle) return;
+          if (handle.setContent) handle.setContent(html || '');
+          else if (handle.editor) {
+            try { handle.editor.commands.setContent(html || '', false); } catch {}
+          }
+        });
+      };
+
+      // Tolerant service-name match: tries exact (case/whitespace-insensitive),
+      // then substring both directions, so "CT Brain" matches "CT BRAIN PLAIN".
+      const findTemplateForService = (templatesArray, serviceName) => {
+        if (!serviceName) return null;
+        const target = serviceName.toLowerCase().trim();
+        const norm = (t) => (t?.name ?? t?.Name ?? '').toLowerCase().trim();
+        return (
+          templatesArray.find(t => norm(t) === target)
+          || templatesArray.find(t => norm(t) && (target.includes(norm(t)) || norm(t).includes(target)))
+          || null
+        );
+      };
+
       if (r && (r.findings !== undefined || r.impression !== undefined)) {
         console.info(`[1RAD] Found Existing Report.`);
 
-        // 1. Restore Findings Content
-        setEditorText(r.findings || '');
-
+        const findingsHtml = r.findings || '';
         setImpression(r.impression || '');
         setAdvice(r.advice || '');
         setIsFinalized(r.isFinalized);
         if (r.templateId) setSelectedTemplateId(String(r.templateId));
+
+        // If the saved report has a templateId but no findings written yet,
+        // re-apply the template content so the editor isn't blank with a
+        // template-selected dropdown — that's the "binding broken" symptom.
+        if (!findingsHtml && r.templateId && templRes.data?.success) {
+          const tpl = (templRes.data.data || []).find(t => String(t.id ?? t.Id) === String(r.templateId));
+          const tplHtml = tpl?.content ?? tpl?.Content ?? '';
+          if (tplHtml) {
+            console.info(`[1RAD] Saved report had templateId=${r.templateId} but empty findings — re-applying template content`);
+            applyEditorContent(tplHtml);
+          } else {
+            applyEditorContent('');
+          }
+        } else {
+          applyEditorContent(findingsHtml);
+        }
       } else {
         // FALLBACK: New Case. Attempt auto-matching template with service name.
         console.info(`[1RAD] New Case Detected. Searching for default protocol for service: ${appointmentData.service}`);
 
         if (templRes.data?.success && appointmentData.service) {
-          // Use PascalCase fallbacks because normalization hasn't run yet here
-          const serviceMatch = (templRes.data.data || []).find(t =>
-            (t.name ?? t.Name ?? '').toLowerCase().trim() === appointmentData.service.toLowerCase().trim()
-          );
+          const templatesList = templRes.data.data || [];
+          const serviceMatch = findTemplateForService(templatesList, appointmentData.service);
 
           if (serviceMatch) {
             const matchId = serviceMatch.id ?? serviceMatch.Id;
             const matchContent = serviceMatch.content ?? serviceMatch.Content ?? '';
-            console.info(`[1RAD] Intelligent Match Found: ${serviceMatch.name ?? serviceMatch.Name}`);
+            console.info(`[1RAD] Template matched: "${serviceMatch.name ?? serviceMatch.Name}" → ${matchContent.length} chars`);
             setSelectedTemplateId(String(matchId));
-            setEditorText(matchContent);
+            applyEditorContent(matchContent);
+          } else {
+            console.info(`[1RAD] No matching template for service "${appointmentData.service}". Available: ${templatesList.map(t => t.name ?? t.Name).join(', ')}`);
           }
         }
       }
@@ -510,7 +554,16 @@ const ReportingPage = () => {
       const draft = await nativeStorage.get(`1rad_draft_${appId}`);
       if (draft) {
         console.info('[1RAD] Reconstituting Workspace from Local Draft');
+        // Use the same imperative+state pattern so the editor catches up.
         setEditorText(draft.findings || '');
+        requestAnimationFrame(() => {
+          const handle = editorRef.current;
+          if (!handle) return;
+          if (handle.setContent) handle.setContent(draft.findings || '');
+          else if (handle.editor) {
+            try { handle.editor.commands.setContent(draft.findings || '', false); } catch {}
+          }
+        });
         setImpression(draft.impression || '');
         setAdvice(draft.advice || '');
         setSelectedTemplateId(draft.selectedTemplateId);
