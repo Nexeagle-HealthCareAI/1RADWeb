@@ -21,10 +21,21 @@ function measureChildHeights(pageDomEl) {
   // pageDomEl is <div class="word-page"> — its inner content holder is .word-page-inner
   const inner = pageDomEl.querySelector('.word-page-inner');
   if (!inner) return [];
-  return Array.from(inner.children).map(child => ({
-    el: child,
-    height: child.offsetHeight,
-  }));
+  const children = Array.from(inner.children);
+  if (children.length === 0) return [];
+  // Use offsetTop deltas so we count each child's visual footprint INCLUDING
+  // collapsed margins between siblings. `offsetHeight` alone misses the
+  // margin between paragraphs (default 8 px on <p>), causing pagination to
+  // under-count by ~8px per block and starve the split/merge passes.
+  const cs = window.getComputedStyle(inner);
+  const padBottom = parseFloat(cs.paddingBottom) || 0;
+  return children.map((child, i) => {
+    const top = child.offsetTop;
+    const nextTop = (i + 1 < children.length)
+      ? children[i + 1].offsetTop
+      : (inner.scrollHeight - padBottom);
+    return { el: child, height: Math.max(0, nextTop - top) };
+  });
 }
 
 /**
@@ -41,6 +52,61 @@ function getPageMaxHeight(pageDomEl, fallback) {
   const padBottom = parseFloat(cs.paddingBottom) || 0;
   const max = A4_HEIGHT - padTop - padBottom;
   return max > 50 ? max : fallback;
+}
+
+/**
+ * For an oversized text block, find the character offset in its textContent
+ * where the visual height first exceeds maxHeightPx. Walks back to the
+ * nearest whitespace so the break lands on a word boundary. Returns -1 if
+ * the block isn't a pure text block we can safely split.
+ */
+function findTextBreakOffset(blockEl, maxHeightPx) {
+  const fullText = blockEl.textContent || '';
+  if (!fullText.trim()) return -1;
+
+  // Build a flat list of text nodes and the cumulative offsets they span.
+  const walker = document.createTreeWalker(blockEl, NodeFilter.SHOW_TEXT, null);
+  const segs = [];
+  let cum = 0;
+  let n;
+  while ((n = walker.nextNode())) {
+    segs.push({ node: n, start: cum, length: n.nodeValue.length });
+    cum += n.nodeValue.length;
+  }
+  if (segs.length === 0) return -1;
+
+  const blockTop = blockEl.getBoundingClientRect().top;
+  const range = document.createRange();
+
+  const heightAt = (offset) => {
+    let seg = segs[segs.length - 1];
+    for (const s of segs) {
+      if (offset <= s.start + s.length) { seg = s; break; }
+    }
+    const localOffset = Math.max(0, Math.min(seg.length, offset - seg.start));
+    try {
+      range.setStart(segs[0].node, 0);
+      range.setEnd(seg.node, localOffset);
+    } catch {
+      return Infinity;
+    }
+    const rects = range.getClientRects();
+    if (!rects.length) return 0;
+    const last = rects[rects.length - 1];
+    return last.bottom - blockTop;
+  };
+
+  // Binary search for the largest offset still fitting within maxHeight.
+  let lo = 0, hi = cum, best = 0;
+  while (lo <= hi) {
+    const mid = (lo + hi) >> 1;
+    if (heightAt(mid) <= maxHeightPx) { best = mid; lo = mid + 1; }
+    else { hi = mid - 1; }
+  }
+
+  // Walk back to the nearest whitespace so the break is on a word boundary.
+  while (best > 0 && !/\s/.test(fullText[best - 1])) best--;
+  return best > 0 && best < fullText.length ? best : -1;
 }
 
 function findSplitIndex(childHeights, maxHeight) {
@@ -165,10 +231,34 @@ function paginate(view, fallbackMaxHeight) {
     const totalHeight = inner.scrollHeight - padTop - padBottom;
 
     if (totalHeight <= maxHeight + TOLERANCE) continue;
-    if (node.childCount <= 1) continue; // can't split a single block
 
     const childHeights = measureChildHeights(dom);
     if (childHeights.length === 0) continue;
+
+    // If the FIRST child alone exceeds maxHeight, no block-level split can
+    // help — we have to split that oversized text block at a word boundary.
+    if (childHeights[0].height > maxHeight + TOLERANCE) {
+      const firstChild = node.child(0);
+      const blockDom = childHeights[0].el;
+      if (firstChild.isTextblock && firstChild.textContent.length > 0) {
+        const breakOffset = findTextBreakOffset(blockDom, maxHeight);
+        if (breakOffset > 0) {
+          const splitPos = pos + 1 + 1 + breakOffset;
+          try {
+            const tr = state.tr.split(splitPos);
+            tr.setMeta('addToHistory', false);
+            tr.setMeta('pagination', true);
+            view.dispatch(tr);
+            return;
+          } catch (err) {
+            console.warn('[Pagination] text-split failed:', err);
+          }
+        }
+      }
+      continue;
+    }
+
+    if (node.childCount <= 1) continue; // can't split a single block
 
     const splitIdx = findSplitIndex(childHeights, maxHeight);
     if (splitIdx >= node.childCount) continue;
@@ -208,9 +298,9 @@ function paginate(view, fallbackMaxHeight) {
     const padBottom = parseFloat(cs.paddingBottom) || 0;
     const currentHeight = inner.scrollHeight - padTop - padBottom;
     const slack = maxHeight - currentHeight;
+    const next = pages[i + 1];
     if (slack <= TOLERANCE) continue;
 
-    const next = pages[i + 1];
     const nextChildHeights = measureChildHeights(next.dom);
     if (nextChildHeights.length === 0) continue;
 

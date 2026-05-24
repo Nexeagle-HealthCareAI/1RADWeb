@@ -700,7 +700,14 @@ const NarrativeEditor = React.forwardRef(function NarrativeEditor({
       AutoCorrect,
       Footnote,
       GrammarCheck,
-      TextAlign.configure({ types: ['heading', 'paragraph'] }),
+      // Cover every block type a user could place the cursor in. Without
+      // `listItem`/`tableCell`/`tableHeader`/`blockquote` the align buttons
+      // silently no-op inside those contexts.
+      TextAlign.configure({
+        types: ['heading', 'paragraph', 'listItem', 'blockquote', 'tableCell', 'tableHeader'],
+        alignments: ['left', 'center', 'right', 'justify'],
+        defaultAlignment: 'left',
+      }),
       TextStyle,
       Color,
       Highlight.configure({ multicolor: true }),

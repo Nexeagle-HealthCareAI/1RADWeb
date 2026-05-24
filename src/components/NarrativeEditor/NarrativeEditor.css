@@ -279,10 +279,15 @@
 .narrative-editor-content ul[data-list-style="dash"]      > li::marker { content: "—  "; color: #475569; }
 .narrative-editor-content ul[data-list-style="hand"]      > li::marker { content: "☞  "; color: #0f52ba; }
 
-/* Defensive: respect inline text-align even on the .report-content/word-page-inner.
-   The justify rule also forces text-align-last so single-line / last-line look
-   visually justified instead of looking left-aligned. */
-.narrative-editor-content [style*="text-align: justify"] { text-align-last: justify; }
+/* Defensive: inline text-align styles must always win, regardless of any
+   cascading rule (e.g., table-cell defaults, blockquote defaults). Covers
+   paragraphs, headings, list items, table cells, and blockquotes alike.
+   The justify rule also forces `text-align-last` so single-line / last-line
+   look visually justified instead of falling back to left. */
+.narrative-editor-content [style*="text-align: left"]    { text-align: left    !important; }
+.narrative-editor-content [style*="text-align: center"]  { text-align: center  !important; }
+.narrative-editor-content [style*="text-align: right"]   { text-align: right   !important; }
+.narrative-editor-content [style*="text-align: justify"] { text-align: justify !important; text-align-last: justify; }
 
 /* ── Tables ──────────────────────────────────────────────────────────────────── */
 .narrative-editor-content table {
