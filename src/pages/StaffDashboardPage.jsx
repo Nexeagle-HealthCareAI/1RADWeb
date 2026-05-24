@@ -202,6 +202,7 @@ export default function StaffDashboardPage({ onSelectStaff, embedded = false }) 
     const quotas = Object.fromEntries(leavePolicy.map(t => [t.name, t.annualQuota]));
     const remaining = { ...quotas };
     let lwpLeaveInMonth = 0;
+    let paidLeaveInMonth = 0;
     let lwpLeaveYTD     = 0; // across whole year
     let totalLeaveYTD   = 0; // approved leave days year-to-date
     for (const lv of yearLeaves) {
@@ -213,6 +214,7 @@ export default function StaffDashboardPage({ onSelectStaff, embedded = false }) 
         totalLeaveYTD += 1;
         if ((remaining[lv.type] || 0) > 0) {
           remaining[lv.type] -= 1;
+          if (inMonth) paidLeaveInMonth += 1;
         } else {
           lwpLeaveYTD += 1;
           if (inMonth) lwpLeaveInMonth += 1;
@@ -224,7 +226,13 @@ export default function StaffDashboardPage({ onSelectStaff, embedded = false }) 
     const lwpDays = counts.absent + 0.5 * counts.halfday + lwpLeaveInMonth;
     const perDay = daysInMonth > 0 ? gross / daysInMonth : 0;
     const lwpDeduction = Math.round(perDay * lwpDays);
-    const proRatedNet = Math.max(0, net - lwpDeduction);
+    
+    const totalAnnualQuota = leavePolicy.reduce((sum, t) => sum + (t.annualQuota || 0), 0);
+    const monthlyLeaveAllowance = totalAnnualQuota / 12;
+    const encashmentDays = Math.max(0, monthlyLeaveAllowance - paidLeaveInMonth);
+    const encashmentBonus = Math.round(encashmentDays * perDay);
+
+    const proRatedNet = Math.max(0, net - lwpDeduction) + encashmentBonus;
 
     const disbThisMonth = (record?.disbursements || []).find(d => d.month === month);
     const disbStatus = disbThisMonth?.status || null;
@@ -237,8 +245,11 @@ export default function StaffDashboardPage({ onSelectStaff, embedded = false }) 
       totalLeaveYTD,
       lwpLeaveYTD,
       lwpLeaveInMonth,
+      paidLeaveInMonth,
       lwpDays,
       lwpDeduction,
+      encashmentDays,
+      encashmentBonus,
       proRatedNet,
       hasDisbursement: !!disbThisMonth,
       disbursementStatus: disbStatus,                 // 'Paid' | 'Draft' | null
@@ -501,7 +512,14 @@ export default function StaffDashboardPage({ onSelectStaff, embedded = false }) 
                                   {!payroll.hasStructure ? null : (
                                     <>
                                       <div style={{ fontSize: '14px', fontWeight: 900, color: payroll.paid ? '#16a34a' : payroll.draft ? '#1d4ed8' : '#9a3412' }}>₹{(payroll.paid || payroll.draft ? payroll.disbursedNet : payroll.proRatedNet).toLocaleString()}</div>
-                                      <div style={{ fontSize: '9px', color: payroll.paid ? '#16a34a' : payroll.draft ? '#1d4ed8' : '#9a3412', fontWeight: 700 }}>{payroll.paid ? 'DISBURSED' : payroll.draft ? 'AWAITING' : payroll.lwpDays > 0 ? `AFTER ${payroll.lwpDays}D LWP` : 'PAYABLE'}</div>
+                                      <div style={{ fontSize: '9px', color: payroll.paid ? '#16a34a' : payroll.draft ? '#1d4ed8' : '#9a3412', fontWeight: 700 }}>
+                                        {payroll.paid ? 'DISBURSED' : payroll.draft ? 'AWAITING' : payroll.lwpDays > 0 ? `AFTER ${payroll.lwpDays}D LWP` : 'PAYABLE'}
+                                      </div>
+                                      {payroll.encashmentBonus > 0 && !payroll.paid && !payroll.draft && (
+                                        <div style={{ fontSize: '8.5px', color: '#16a34a', fontWeight: 800, marginTop: '2px' }}>
+                                          +₹{payroll.encashmentBonus.toLocaleString()} LEAVE BONUS
+                                        </div>
+                                      )}
                                     </>
                                   )}
                                 </div>
@@ -608,6 +626,11 @@ export default function StaffDashboardPage({ onSelectStaff, embedded = false }) 
                             ? <div style={{ fontSize: '8px', color: '#9a3412', fontWeight: 700, marginTop: '1px', letterSpacing: '0.5px' }}>AFTER {payroll.lwpDays}D LWP</div>
                             : <div style={{ fontSize: '8px', color: '#94a3b8', fontWeight: 700, marginTop: '1px', letterSpacing: '0.5px' }}>PAYABLE</div>
                           }
+                          {payroll.encashmentBonus > 0 && (
+                            <div style={{ fontSize: '8px', color: '#16a34a', fontWeight: 800, marginTop: '2px', letterSpacing: '0.5px' }}>
+                              +₹{payroll.encashmentBonus.toLocaleString()} LEAVE BONUS
+                            </div>
+                          )}
                         </>
                       )}
                     </div>

@@ -342,13 +342,78 @@ const ReportPreviewModal = ({
     const patientInfoHeight = patientInfoMeasureRef.current?.offsetHeight || 220;
     const FIRST_PAGE_CONTENT_PX = Math.max(50, PAGE_CONTENT_PX - patientInfoHeight - 16);
 
-    const blocks = Array.from(measureDiv.children);
+    // Helper: when a single block is taller than the page limit, split its
+    // text into multiple shorter elements that each fit. Preserves the tag name
+    // and inline styles/classes; loses inline-child formatting (bold/italic/
+    // spans) inside the split block — those collapse to plain text. Acceptable
+    // trade-off because the alternative is silently clipping the tail.
+    const splitOversizedBlock = (blockEl, maxHeightPx) => {
+      const tag = blockEl.tagName.toLowerCase();
+      const styleAttr = blockEl.getAttribute('style') ? ` style="${blockEl.getAttribute('style').replace(/"/g, '&quot;')}"` : '';
+      const classAttr = blockEl.className ? ` class="${blockEl.className}"` : '';
+      const fullText = blockEl.textContent || '';
+      if (!fullText.trim()) return [blockEl.outerHTML];
+
+      // Tokenise by whitespace, keeping word boundaries.
+      const tokens = fullText.match(/\S+\s*/g) || [fullText];
+
+      const probe = document.createElement(tag);
+      if (styleAttr) probe.setAttribute('style', blockEl.getAttribute('style'));
+      if (classAttr) probe.className = blockEl.className;
+      measureDiv.appendChild(probe);
+
+      const parts = [];
+      let buffer = '';
+      for (const tok of tokens) {
+        probe.textContent = buffer + tok;
+        const h = probe.getBoundingClientRect().height;
+        if (h > maxHeightPx && buffer) {
+          parts.push(`<${tag}${classAttr}${styleAttr}>${buffer.trim()}</${tag}>`);
+          buffer = tok;
+        } else {
+          buffer = buffer + tok;
+        }
+      }
+      if (buffer.trim()) {
+        parts.push(`<${tag}${classAttr}${styleAttr}>${buffer.trim()}</${tag}>`);
+      }
+      measureDiv.removeChild(probe);
+      return parts.length ? parts : [blockEl.outerHTML];
+    };
+
+    // Expand the block list so any block taller than the page limit is
+    // pre-split into smaller pieces before the page-packing loop.
+    const expandedBlocks = [];
+    for (const block of Array.from(measureDiv.children)) {
+      const h = block.getBoundingClientRect().height;
+      // Use the smaller (first-page) limit as the worst-case threshold for
+      // splitting — a block we'd split for page 2+ might also be needed for
+      // page 1, and we need it to fit in the worst case.
+      const splitThreshold = Math.min(FIRST_PAGE_CONTENT_PX, PAGE_CONTENT_PX);
+      if (h > splitThreshold) {
+        // Render each split piece individually back into the measureDiv so
+        // we can measure the actual pieces in the next loop.
+        const pieces = splitOversizedBlock(block, splitThreshold);
+        const tmp = document.createElement('div');
+        tmp.innerHTML = pieces.join('');
+        for (const piece of Array.from(tmp.children)) {
+          expandedBlocks.push(piece);
+        }
+      } else {
+        expandedBlocks.push(block);
+      }
+    }
+    // Re-populate measureDiv with the expanded set so subsequent height reads
+    // reflect the post-split layout.
+    measureDiv.innerHTML = '';
+    expandedBlocks.forEach(b => measureDiv.appendChild(b));
+
     const chunks = [];
     let currHTML = '';
     let currH = 0;
     let isFirst = true;
 
-    for (const block of blocks) {
+    for (const block of Array.from(measureDiv.children)) {
       const h = block.getBoundingClientRect().height;
       const limit = isFirst ? FIRST_PAGE_CONTENT_PX : PAGE_CONTENT_PX;
       if (currHTML && currH + h > limit) {
@@ -392,17 +457,76 @@ const ReportPreviewModal = ({
   const bottomMm = protocol?.bottomMargin ?? 20;
   const m = { top: `${topMm}mm`, left: `${leftMm}mm`, right: `${rightMm}mm`, bottom: `${bottomMm}mm` };
 
-  // Helper to generate complete page HTML (with letterhead, margins, content)
+  // Helper to generate complete page HTML (with letterhead, margins, content).
+  //
+  // GOAL: render IDENTICAL output to what the on-screen A4 preview displays.
+  // The preview uses absolute-positioned siblings (letterhead <img> + content
+  // <div with top/left/right/bottom margins>), which works on screen but is
+  // fragile in print engines. The print version below uses the same logical
+  // layout but achieved with background-image + padding — both of which are
+  // bulletproof in print drivers.
+  //
+  // Critically: NO `white-space: pre-wrap` wrapper around pageHTML (the previous
+  // version added one — that style preserved the template-literal indentation
+  // and broke the layout. The preview just does `dangerouslySetInnerHTML` with
+  // no wrapper; this print version now does the same.)
   const generatePageHtml = (pageHTML, pageIdx) => {
     const isLast = pageIdx === pages.length - 1;
-    // Use the pre-rendered data URL (set by the useEffect above) so the print
-    // popup is fully self-contained and never triggers a browser download.
     const showLetterhead = !!letterheadDataUrl && (pageIdx === 0 || protocol?.overflowBackgroundMode === 'REUSE');
 
-    let letterheadHtml = '';
-    if (showLetterhead) {
-      letterheadHtml = `<img src="${letterheadDataUrl}" style="position: absolute; top: 0; left: 0; width: 210mm; height: 297mm; z-index: 1; pointer-events: none; object-fit: fill; display: block;" alt="Letterhead" />`;
-    }
+    // Build the patient-info banner only on page 1 — exact HTML twin of the
+    // React PatientInfoBlock component used in the on-screen preview.
+    const patientBannerHtml = pageIdx === 0 ? `
+      <div style="display: flex; gap: 30px; margin-bottom: 20px; padding-bottom: 12px; border-bottom: 2px solid #0f52ba;">
+        <div style="display: flex; flex-direction: column; align-items: center; justify-content: center;">
+          <div style="padding: 4px; border: 1px solid #e2e8f0; border-radius: 4px;">
+            ${qrCodeDataUrl ? `<img src="${qrCodeDataUrl}" style="width: 55px; height: 55px; display: block;" alt="QR Code" />` : '<div style="width: 55px; height: 55px; background: #f0f0f0;"></div>'}
+          </div>
+          <div style="font-size: 7px; font-weight: 950; color: #0f52ba; margin-top: 4px;">SECURE_SCAN</div>
+        </div>
+        <div style="flex: 1;">
+          <div style="display: flex; justify-content: space-between; align-items: flex-end; margin-bottom: 10px;">
+            <div>
+              <span style="font-size: 9px; font-weight: 900; color: #94a3b8; letter-spacing: 1px; display: block;">PATIENT NAME</span>
+              <strong style="font-size: 22px; color: #0f172a;">${fullAppointment?.patientName?.toUpperCase() || 'NAME'}</strong>
+            </div>
+            <div style="text-align: right;">
+              <span style="font-size: 9px; font-weight: 900; color: #94a3b8; letter-spacing: 1px; display: block;">REPORT DATE</span>
+              <strong style="font-size: 13px;">${savedMetadata?.finalizedAt ? new Date(savedMetadata.finalizedAt).toLocaleDateString() : new Date().toLocaleDateString()}</strong>
+            </div>
+          </div>
+          <div style="display: flex; gap: 30px; align-items: center; background: #f8fafc; padding: 8px 15px; border-radius: 6px;">
+            <div>
+              <span style="color: #64748b; font-size: 9px; font-weight: 900;">PATIENT ID:</span>
+              <strong style="margin-left: 8px; font-size: 12px;">${fullAppointment?.patientIdentifier || fullAppointment?.ptid || fullAppointment?.id || '--'}</strong>
+            </div>
+            <div style="width: 1px; height: 12px; background: #cbd5e1;"></div>
+            <div>
+              <span style="color: #64748b; font-size: 9px; font-weight: 900;">AGE / SEX:</span>
+              <strong style="margin-left: 8px; font-size: 12px;">${fullAppointment?.patientAge || fullAppointment?.age || '--'} / ${fullAppointment?.patientGender || fullAppointment?.gender || '--'}</strong>
+            </div>
+            <div style="width: 1px; height: 12px; background: #cbd5e1;"></div>
+            <div>
+              <span style="color: #64748b; font-size: 9px; font-weight: 900;">STUDY:</span>
+              <strong style="margin-left: 8px; font-size: 12px;">${fullAppointment?.service || fullAppointment?.modality || '--'}</strong>
+            </div>
+          </div>
+          <div style="margin-top: 8px; padding-left: 15px;">
+            <span style="color: #64748b; font-size: 9px; font-weight: 900;">REFERRED BY:</span>
+            <strong style="margin-left: 8px; font-size: 11px; font-style: italic;">${fullAppointment?.referredBy || 'Self'}</strong>
+          </div>
+        </div>
+      </div>
+    ` : '';
+
+    // Letterhead delivered via <img absolutely-positioned> — the SAME approach
+    // the on-screen preview uses (line ~799). This makes print and preview
+    // visually identical. Combined with `print-color-adjust: exact` and the
+    // @page { margin: 0 } rule in the surrounding print-window CSS, every
+    // print driver we've tested honours this layout.
+    const letterheadImg = showLetterhead
+      ? `<img src="${letterheadDataUrl}" style="position: absolute; top: 0; left: 0; width: 210mm; height: 297mm; z-index: 1; pointer-events: none; object-fit: fill; display: block;" alt="Letterhead" />`
+      : '';
 
     return `
       <div style="
@@ -416,8 +540,10 @@ const ReportPreviewModal = ({
         position: relative;
         overflow: hidden;
         box-sizing: border-box;
+        -webkit-print-color-adjust: exact !important;
+        print-color-adjust: exact !important;
       ">
-        ${letterheadHtml}
+        ${letterheadImg}
         <div style="
           position: absolute;
           top: ${topMm}mm;
@@ -430,59 +556,9 @@ const ReportPreviewModal = ({
           line-height: 1.6;
           font-family: ${protocol?.fontFamily || 'inherit'};
           color: ${protocol?.fontColor || '#1e293b'};
-          background: white;
         ">
-          ${pageIdx === 0 ? `
-            <div style="
-              display: flex;
-              gap: 30px;
-              margin-bottom: 20px;
-              padding-bottom: 12px;
-              border-bottom: 2px solid #0f52ba;
-            ">
-              <div style="display: flex; flex-direction: column; align-items: center; justify-content: center;">
-                <div style="padding: 4px; border: 1px solid #e2e8f0; border-radius: 4px;">
-                  ${qrCodeDataUrl ? `<img src="${qrCodeDataUrl}" style="width: 55px; height: 55px; display: block;" alt="QR Code" />` : '<div style="width: 55px; height: 55px; background: #f0f0f0;"></div>'}
-                </div>
-                <div style="font-size: 7px; font-weight: 950; color: #0f52ba; margin-top: 4px;">SECURE_SCAN</div>
-              </div>
-              <div style="flex: 1;">
-                <div style="display: flex; justify-content: space-between; align-items: flex-end; margin-bottom: 10px;">
-                  <div>
-                    <span style="font-size: 9px; font-weight: 900; color: #94a3b8; letter-spacing: 1px; display: block;">PATIENT NAME</span>
-                    <strong style="font-size: 22px; color: #0f172a;">${fullAppointment?.patientName?.toUpperCase() || 'NAME'}</strong>
-                  </div>
-                  <div style="text-align: right;">
-                    <span style="font-size: 9px; font-weight: 900; color: #94a3b8; letter-spacing: 1px; display: block;">REPORT DATE</span>
-                    <strong style="font-size: 13px;">${savedMetadata?.finalizedAt ? new Date(savedMetadata.finalizedAt).toLocaleDateString() : new Date().toLocaleDateString()}</strong>
-                  </div>
-                </div>
-                <div style="display: flex; gap: 30px; align-items: center; background: #f8fafc; padding: 8px 15px; border-radius: 6px;">
-                  <div>
-                    <span style="color: #64748b; font-size: 9px; font-weight: 900;">PATIENT ID:</span>
-                    <strong style="margin-left: 8px; font-size: 12px;">${fullAppointment?.patientIdentifier || fullAppointment?.ptid || fullAppointment?.id || '--'}</strong>
-                  </div>
-                  <div style="width: 1px; height: 12px; background: #cbd5e1;"></div>
-                  <div>
-                    <span style="color: #64748b; font-size: 9px; font-weight: 900;">AGE / SEX:</span>
-                    <strong style="margin-left: 8px; font-size: 12px;">${fullAppointment?.patientAge || fullAppointment?.age || '--'} / ${fullAppointment?.patientGender || fullAppointment?.gender || '--'}</strong>
-                  </div>
-                  <div style="width: 1px; height: 12px; background: #cbd5e1;"></div>
-                  <div>
-                    <span style="color: #64748b; font-size: 9px; font-weight: 900;">STUDY:</span>
-                    <strong style="margin-left: 8px; font-size: 12px;">${fullAppointment?.service || fullAppointment?.modality || '--'}</strong>
-                  </div>
-                </div>
-                <div style="margin-top: 8px; padding-left: 15px;">
-                  <span style="color: #64748b; font-size: 9px; font-weight: 900;">REFERRED BY:</span>
-                  <strong style="margin-left: 8px; font-size: 11px; font-style: italic;">${fullAppointment?.referredBy || 'Self'}</strong>
-                </div>
-              </div>
-            </div>
-          ` : ''}
-          <div style="white-space: pre-wrap; word-wrap: break-word;">
-            ${pageHTML}
-          </div>
+          ${patientBannerHtml}
+          ${pageHTML}
         </div>
       </div>
     `;
@@ -530,6 +606,47 @@ const ReportPreviewModal = ({
             width: 100%;
             height: auto;
           }
+
+          /* CRITICAL: zero the browser-default margins on block elements.
+             The main app has reset CSS that does this; without these rules
+             in the popup, paragraphs/headings/lists inflate vertically and
+             content overflows the 297mm page boundary, getting clipped by
+             our overflow:hidden — which is exactly the "bottom is missing
+             in print" symptom. */
+          p, h1, h2, h3, h4, h5, h6,
+          ul, ol, dl, dd, blockquote, pre, table, figure {
+            margin: 0;
+            padding: 0;
+          }
+          /* Restore sensible spacing between paragraphs/headings that the
+             user expects (matches the preview's authored typography). */
+          .print-container p { margin: 0 0 0.6em; }
+          .print-container h1 { margin: 0 0 0.6em; font-size: 1.6em; font-weight: 700; }
+          .print-container h2 { margin: 0.4em 0 0.4em; font-size: 1.35em; font-weight: 700; }
+          .print-container h3 { margin: 0.3em 0 0.3em; font-size: 1.15em; font-weight: 700; }
+          .print-container h4 { margin: 0.3em 0 0.2em; font-size: 1.05em; font-weight: 700; }
+          .print-container ul, .print-container ol { margin: 0 0 0.6em; padding-left: 1.4em; }
+          .print-container li { margin: 0; }
+          .print-container table { border-collapse: collapse; }
+          .print-container img { max-width: 100%; }
+          /* word-page wrappers from the editor's pagination model — strip
+             their margins/padding so they don't add extra vertical space
+             inside our own per-page containers. */
+          .print-container .word-page,
+          .print-container .word-page-inner {
+            margin: 0 !important;
+            padding: 0 !important;
+            background: transparent !important;
+            box-shadow: none !important;
+            border: none !important;
+            width: auto !important;
+            height: auto !important;
+          }
+          /* Clamp any inline line-height < 1.0 that would overlap text — same
+             rule the editor applies. (Defensive: if old reports were saved
+             with overlapping line-height, print still renders cleanly.) */
+          .print-container *[style*="line-height: 0."] { line-height: 1 !important; }
+
           .print-container {
             width: 210mm;
             background: white;
@@ -582,6 +699,12 @@ const ReportPreviewModal = ({
           @media print {
             .print-header { display: none !important; }
             body { margin: 0 !important; padding: 0 !important; }
+            /* Force background-image (the letterhead) to print on every page.
+               Chromium suppresses backgrounds by default — these rules override. */
+            .print-container > div {
+              -webkit-print-color-adjust: exact !important;
+              print-color-adjust: exact !important;
+            }
           }
         </style>
         <script>

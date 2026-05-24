@@ -520,8 +520,14 @@ export default function StaffPage() {
     const lwpDays = counts.absent + 0.5 * counts.halfday + lwpLeaveInMonth;
     const perDay = daysInMonth > 0 ? gross / daysInMonth : 0;
     const lwpDeduction = Math.round(perDay * lwpDays);
-    const proRatedGross = Math.max(0, gross - lwpDeduction);
-    const proRatedNet = Math.max(0, net - lwpDeduction);
+    
+    const totalAnnualQuota = Object.values(LEAVE_DEFAULTS).reduce((s, v) => s + v, 0);
+    const monthlyLeaveAllowance = totalAnnualQuota / 12;
+    const encashmentDays = Math.max(0, monthlyLeaveAllowance - paidLeaveInMonth);
+    const encashmentBonus = Math.round(encashmentDays * perDay);
+
+    const proRatedGross = Math.max(0, gross - lwpDeduction) + encashmentBonus;
+    const proRatedNet = Math.max(0, net - lwpDeduction) + encashmentBonus;
 
     return {
       hasStructure: !!active,
@@ -533,6 +539,8 @@ export default function StaffPage() {
       lwpDays,
       perDayRate: Math.round(perDay),
       lwpDeduction,
+      encashmentDays,
+      encashmentBonus,
       gross, deductions, net,
       proRatedGross, proRatedNet,
     };
@@ -562,6 +570,7 @@ export default function StaffPage() {
       perDayRate:       payroll.perDayRate,
       paidLeaveInMonth: payroll.paidLeaveInMonth,
       lwpLeaveInMonth:  payroll.lwpLeaveInMonth,
+      encashmentBonus:  payroll.encashmentBonus,
       attendanceJson:   JSON.stringify(payroll.counts),
       paymentMode:      paymentDetails.mode || 'bank',
       reference:        paymentDetails.reference || null,
@@ -1074,6 +1083,9 @@ export default function StaffPage() {
       ['Travel',    Number(rev?.travel) || 0],
       ['Other',     Number(rev?.otherAllowances) || 0],
     ].filter(([, v]) => v > 0);
+    if ((disbursal.encashmentBonus || 0) > 0) {
+      earnings.push([`Leave Encashment (${disbursal.encashmentDays}d unused)`, disbursal.encashmentBonus]);
+    }
     const deductions = [
       ['PF',  Number(rev?.pfDeduction) || 0],
       ['TDS', Number(rev?.tds) || 0],
@@ -1455,12 +1467,20 @@ export default function StaffPage() {
                   </div>
 
                   {hasLwp && (
-                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontSize: '11px', color: '#9a3412', fontWeight: 600 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontSize: '11px', color: '#9a3412', fontWeight: 600, paddingBottom: monthlyPayroll.encashmentBonus > 0 ? '6px' : '0', borderBottom: monthlyPayroll.encashmentBonus > 0 ? '1px dashed #fed7aa' : 'none', marginBottom: monthlyPayroll.encashmentBonus > 0 ? '6px' : '0' }}>
                       <span>
                         LWP {monthlyPayroll.lwpDays}d × ₹{monthlyPayroll.perDayRate.toLocaleString()}/day
                         {monthlyPayroll.lwpLeaveInMonth > 0 && <span style={{ marginLeft: '4px', opacity: 0.7 }}>(incl. {monthlyPayroll.lwpLeaveInMonth}d leave over quota)</span>}
                       </span>
                       <span style={{ fontWeight: 800 }}>− ₹{monthlyPayroll.lwpDeduction.toLocaleString()}</span>
+                    </div>
+                  )}
+                  {monthlyPayroll.encashmentBonus > 0 && (
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontSize: '11px', color: '#16a34a', fontWeight: 600, paddingTop: hasLwp ? '4px' : '0' }}>
+                      <span>
+                        Unused Leave Bonus ({monthlyPayroll.encashmentDays}d)
+                      </span>
+                      <span style={{ fontWeight: 800 }}>+ ₹{monthlyPayroll.encashmentBonus.toLocaleString()}</span>
                     </div>
                   )}
                 </div>
