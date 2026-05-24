@@ -141,7 +141,7 @@ export default function StaffPage() {
     { id: 'upi',    label: 'UPI',           icon: '📱' },
     { id: 'cheque', label: 'Cheque',        icon: '📃' },
   ];
-  const EMPTY_DISB = { mode: 'bank', reference: '', paidOnDate: TODAY_STR, notes: '', status: 'Paid' };
+  const EMPTY_DISB = { mode: 'bank', reference: '', paidOnDate: TODAY_STR, notes: '', status: 'Paid', encashmentDays: '' };
   const [disbDrawer, setDisbDrawer] = useState({ open: false, month: THIS_MONTH, form: EMPTY_DISB });
 
   // Attendance picker
@@ -1218,7 +1218,7 @@ export default function StaffPage() {
 
   const submitDisbursement = async (printAfter, statusOverride) => {
     if (!selectedStaff) return;
-    const { mode, reference, paidOnDate, notes } = disbDrawer.form;
+    const { mode, reference, paidOnDate, notes, encashmentDays } = disbDrawer.form;
     const status = statusOverride || disbDrawer.form.status || 'Paid';
     // Reference is required only when actually paying (status=Paid) via bank/cheque/upi.
     if (status === 'Paid' && (mode === 'bank' || mode === 'cheque' || mode === 'upi') && !reference.trim()) {
@@ -1226,7 +1226,7 @@ export default function StaffPage() {
       return;
     }
     await disburseSalary(selectedStaff.id, disbDrawer.month, {
-      mode, reference: reference.trim(), paidOnDate, notes: notes.trim(),
+      mode, reference: reference.trim(), paidOnDate, notes: notes.trim(), encashmentDays,
       paidOn: new Date(paidOnDate + 'T00:00:00').toISOString(),
       status,
     });
@@ -1246,6 +1246,8 @@ export default function StaffPage() {
         attendanceBreakdown: payroll.counts,
         revisionId: payroll.activeRevision?.id,
         mode, reference: reference.trim(), paidOnDate, notes: notes.trim(),
+        encashmentDays: Number(encashmentDays) || 0,
+        encashmentBonus: Math.round((Number(encashmentDays) || 0) * payroll.perDayRate),
         paidOn: new Date().toISOString(),
       };
       printPayslip(selectedStaff, synth);
@@ -2687,6 +2689,9 @@ export default function StaffPage() {
         const monthLabel = `${MONTHS[mn - 1]} ${yr}`;
         const f = disbDrawer.form;
         const needsRef = ['bank', 'cheque', 'upi'].includes(f.mode);
+        const encashmentDaysNum = Number(f.encashmentDays) || 0;
+        const encashmentBonus = Math.round(encashmentDaysNum * payroll.perDayRate);
+        const finalPayable = payroll.proRatedNet + encashmentBonus;
         return (
           <div
             onClick={() => setDisbDrawer(p => ({ ...p, open: false }))}
@@ -2744,9 +2749,34 @@ export default function StaffPage() {
                       <span style={{ fontWeight: 700 }}>− ₹{payroll.lwpDeduction.toLocaleString()}</span>
                     </div>
                   )}
+                  {encashmentBonus > 0 && (
+                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', color: '#16a34a', marginBottom: '8px' }}>
+                      <span>Leave Encashment ({encashmentDaysNum}d unused)</span>
+                      <span style={{ fontWeight: 700 }}>+ ₹{encashmentBonus.toLocaleString()}</span>
+                    </div>
+                  )}
                   <div style={{ borderTop: '1px dashed #e2e8f0', marginTop: '8px', paddingTop: '10px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                     <span style={{ fontSize: '10px', fontWeight: 800, color: '#15803d', letterSpacing: '1px', textTransform: 'uppercase' }}>Payable now</span>
-                    <span style={{ fontSize: '20px', fontWeight: 900, color: '#15803d' }}>₹{payroll.proRatedNet.toLocaleString()}</span>
+                    <span style={{ fontSize: '20px', fontWeight: 900, color: '#15803d' }}>₹{finalPayable.toLocaleString()}</span>
+                  </div>
+                </div>
+
+                {/* Encashment Input */}
+                <div style={{ display: 'flex', gap: '14px', alignItems: 'flex-start' }}>
+                  <FieldGroup style={{ flex: 1 }}>
+                    <FieldLabel>Encash Unused Leaves (Days)</FieldLabel>
+                    <TextInput
+                      type="number"
+                      min="0"
+                      step="0.5"
+                      value={f.encashmentDays}
+                      onChange={(v) => setDisbDrawer(p => ({ ...p, form: { ...p.form, encashmentDays: v } }))}
+                      placeholder="e.g. 2"
+                    />
+                  </FieldGroup>
+                  <div style={{ flex: 1, padding: '12px', background: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: '10px', display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
+                    <div style={{ fontSize: '9px', fontWeight: 800, color: '#16a34a', textTransform: 'uppercase' }}>Cash Value</div>
+                    <div style={{ fontSize: '14px', fontWeight: 900, color: '#15803d' }}>₹{encashmentBonus.toLocaleString()}</div>
                   </div>
                 </div>
 
@@ -2880,49 +2910,61 @@ export default function StaffPage() {
       )}
 
       {/* ── LEAVE APPLICATION FORM ───────────────────────────────────── */}
-      {leaveForm.open && selectedStaff && (
-        <div
-          style={{ position: 'fixed', inset: 0, zIndex: 10000, backdropFilter: 'blur(10px)', background: 'rgba(10,22,40,0.45)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
-          onClick={() => setLeaveForm(p => ({ ...p, open: false }))}
-        >
-          <div style={{ background: 'white', borderRadius: '22px', padding: '30px', width: '90%', maxWidth: '380px', boxShadow: '0 24px 80px rgba(0,0,0,0.18)' }} onClick={e => e.stopPropagation()}>
-            <div style={{ fontSize: '15px', fontWeight: 800, color: '#0a1628', marginBottom: '3px' }}>Apply for Leave</div>
-            <div style={{ fontSize: '11px', color: '#94a3b8', marginBottom: '20px', fontWeight: 500 }}>{selectedStaff.name}</div>
+      {leaveForm.open && selectedStaff && (() => {
+        const year = TODAY.getFullYear();
+        const used = Object.fromEntries(LEAVE_TYPES.map(t => [t, 0]));
+        const staffLeaves = leaveData.filter(l => l.staffId === selectedStaff.id);
+        staffLeaves
+          .filter(l => l.status === 'approved' && l.from?.startsWith(String(year)))
+          .forEach(l => { if (used[l.type] !== undefined) used[l.type] += l.days; });
 
-            <div style={{ marginBottom: '16px' }}>
-              <label style={{ fontSize: '9px', fontWeight: 900, color: '#94a3b8', letterSpacing: '0.8px', textTransform: 'uppercase', display: 'block', marginBottom: '8px' }}>Leave Type</label>
-              <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
-                {LEAVE_TYPES.map(t => (
-                  <button key={t} onClick={() => setLeaveForm(p => ({ ...p, type: t }))} style={{ flex: '1 1 auto', padding: '8px', borderRadius: '9px', border: `1.5px solid ${leaveForm.type === t ? '#0f52ba' : '#e2e8f0'}`, background: leaveForm.type === t ? '#eff6ff' : 'white', color: leaveForm.type === t ? '#0f52ba' : '#64748b', fontWeight: 700, fontSize: '11px', cursor: 'pointer', transition: 'all 0.12s', whiteSpace: 'nowrap' }}>
-                    {t}
-                  </button>
+        const balance = Object.fromEntries(LEAVE_TYPES.map(t => [t, Math.max(0, (LEAVE_DEFAULTS[t] || 0) - used[t])]));
+
+        return (
+          <div
+            style={{ position: 'fixed', inset: 0, zIndex: 10000, backdropFilter: 'blur(10px)', background: 'rgba(10,22,40,0.45)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+            onClick={() => setLeaveForm(p => ({ ...p, open: false }))}
+          >
+            <div style={{ background: 'white', borderRadius: '22px', padding: '30px', width: '90%', maxWidth: '380px', boxShadow: '0 24px 80px rgba(0,0,0,0.18)' }} onClick={e => e.stopPropagation()}>
+              <div style={{ fontSize: '15px', fontWeight: 800, color: '#0a1628', marginBottom: '3px' }}>Apply for Leave</div>
+              <div style={{ fontSize: '11px', color: '#94a3b8', marginBottom: '20px', fontWeight: 500 }}>{selectedStaff.name}</div>
+  
+              <div style={{ marginBottom: '16px' }}>
+                <label style={{ fontSize: '9px', fontWeight: 900, color: '#94a3b8', letterSpacing: '0.8px', textTransform: 'uppercase', display: 'block', marginBottom: '8px' }}>Leave Type</label>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                  {LEAVE_TYPES.map(t => (
+                    <button key={t} onClick={() => setLeaveForm(p => ({ ...p, type: t }))} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px 14px', borderRadius: '9px', border: `1.5px solid ${leaveForm.type === t ? '#0f52ba' : '#e2e8f0'}`, background: leaveForm.type === t ? '#eff6ff' : 'white', color: leaveForm.type === t ? '#0f52ba' : '#64748b', fontWeight: 700, fontSize: '12px', cursor: 'pointer', transition: 'all 0.12s' }}>
+                      <span>{t}</span>
+                      <span style={{ fontSize: '10px', fontWeight: 800, color: balance[t] > 0 ? (leaveForm.type === t ? '#0f52ba' : '#16a34a') : '#dc2626', background: leaveForm.type === t ? 'white' : '#f8fafc', padding: '2px 8px', borderRadius: '6px' }}>{balance[t]} days left</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+  
+              <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: '10px', marginBottom: '14px' }}>
+                {[['FROM', 'from'], ['TO', 'to']].map(([lbl, key]) => (
+                  <div key={key}>
+                    <label style={{ fontSize: '9px', fontWeight: 900, color: '#94a3b8', letterSpacing: '0.8px', textTransform: 'uppercase', display: 'block', marginBottom: '6px' }}>{lbl}</label>
+                    <input type="date" value={leaveForm[key]} onChange={e => setLeaveForm(p => ({ ...p, [key]: e.target.value }))} style={{ width: '100%', padding: '9px 10px', borderRadius: '9px', border: '1px solid #e2e8f0', fontSize: '12px', outline: 'none', boxSizing: 'border-box', color: '#0f172a' }} />
+                  </div>
                 ))}
               </div>
-            </div>
-
-            <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: '10px', marginBottom: '14px' }}>
-              {[['FROM', 'from'], ['TO', 'to']].map(([lbl, key]) => (
-                <div key={key}>
-                  <label style={{ fontSize: '9px', fontWeight: 900, color: '#94a3b8', letterSpacing: '0.8px', textTransform: 'uppercase', display: 'block', marginBottom: '6px' }}>{lbl}</label>
-                  <input type="date" value={leaveForm[key]} onChange={e => setLeaveForm(p => ({ ...p, [key]: e.target.value }))} style={{ width: '100%', padding: '9px 10px', borderRadius: '9px', border: '1px solid #e2e8f0', fontSize: '12px', outline: 'none', boxSizing: 'border-box', color: '#0f172a' }} />
-                </div>
-              ))}
-            </div>
-
-            <div style={{ marginBottom: '20px' }}>
-              <label style={{ fontSize: '9px', fontWeight: 900, color: '#94a3b8', letterSpacing: '0.8px', textTransform: 'uppercase', display: 'block', marginBottom: '6px' }}>
-                Reason <span style={{ fontWeight: 500, textTransform: 'none', letterSpacing: 0 }}>(optional)</span>
-              </label>
-              <textarea value={leaveForm.reason} onChange={e => setLeaveForm(p => ({ ...p, reason: e.target.value }))} rows={2} placeholder="Brief reason…" style={{ width: '100%', padding: '10px', borderRadius: '9px', border: '1px solid #e2e8f0', fontSize: '12px', outline: 'none', resize: 'none', boxSizing: 'border-box', color: '#0f172a', fontFamily: 'inherit' }} />
-            </div>
-
-            <div style={{ display: 'flex', gap: '10px' }}>
-              <button onClick={() => setLeaveForm(p => ({ ...p, open: false }))} style={{ flex: 1, padding: '12px', borderRadius: '11px', border: '1px solid #e2e8f0', background: 'white', fontWeight: 700, cursor: 'pointer', fontSize: '12px', color: '#64748b' }}>Cancel</button>
-              <button onClick={() => submitLeave(selectedStaff.id)} style={{ flex: 2, padding: '12px', borderRadius: '11px', background: 'linear-gradient(135deg,#0f52ba,#083889)', color: 'white', border: 'none', fontWeight: 800, cursor: 'pointer', fontSize: '12px' }}>Submit Leave</button>
+  
+              <div style={{ marginBottom: '20px' }}>
+                <label style={{ fontSize: '9px', fontWeight: 900, color: '#94a3b8', letterSpacing: '0.8px', textTransform: 'uppercase', display: 'block', marginBottom: '6px' }}>
+                  Reason <span style={{ fontWeight: 500, textTransform: 'none', letterSpacing: 0 }}>(optional)</span>
+                </label>
+                <textarea value={leaveForm.reason} onChange={e => setLeaveForm(p => ({ ...p, reason: e.target.value }))} rows={2} placeholder="Brief reason…" style={{ width: '100%', padding: '10px', borderRadius: '9px', border: '1px solid #e2e8f0', fontSize: '12px', outline: 'none', resize: 'none', boxSizing: 'border-box', color: '#0f172a', fontFamily: 'inherit' }} />
+              </div>
+  
+              <div style={{ display: 'flex', gap: '10px' }}>
+                <button onClick={() => setLeaveForm(p => ({ ...p, open: false }))} style={{ flex: 1, padding: '12px', borderRadius: '11px', border: '1px solid #e2e8f0', background: 'white', fontWeight: 700, cursor: 'pointer', fontSize: '12px', color: '#64748b' }}>Cancel</button>
+                <button onClick={() => submitLeave(selectedStaff.id)} style={{ flex: 2, padding: '12px', borderRadius: '11px', background: 'linear-gradient(135deg,#0f52ba,#083889)', color: 'white', border: 'none', fontWeight: 800, cursor: 'pointer', fontSize: '12px' }}>Submit Leave</button>
+              </div>
             </div>
           </div>
-        </div>
-      )}
+        );
+      })()}
 
       {/* ── ADD / EDIT STAFF DRAWER ─────────────────────────────────────── */}
       {staffDrawer.open && (

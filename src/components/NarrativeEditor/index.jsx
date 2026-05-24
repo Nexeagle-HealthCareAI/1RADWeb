@@ -284,6 +284,13 @@ const NarrativeEditor = React.forwardRef(function NarrativeEditor({
   className = '',
   style = {},
   keywordLibrary = [],
+  // Accepted but unused — kept so callers don't need to remove them yet.
+  // The editor stays a stable A4 surface; the patient banner and the
+  // protocol-margin preview overlay are rendered by the caller above the
+  // editor (e.g., ReportingPage) so the editor itself doesn't get racy
+  // DOM mutations during typing.
+  pageMargins, // eslint-disable-line no-unused-vars
+  firstPageBanner, // eslint-disable-line no-unused-vars
 }, ref) {
   const containerRef = useRef(null);
   const [isFullscreen, setIsFullscreen] = useState(false);
@@ -803,6 +810,10 @@ const NarrativeEditor = React.forwardRef(function NarrativeEditor({
     if (!editor) return;
     editor.setEditable(!previewMode && editable);
   }, [editor, previewMode, editable]);
+
+  // (Patient banner / WYSIWYG margin overlays moved out of the editor — they
+  // now live as a sibling element above the editor in the caller. This keeps
+  // the editor a stable A4 surface and avoids Tiptap-vs-DOM race conditions.)
 
   // ── Footnote renumbering ──────────────────────────────────────────────────
   // Re-run whenever the doc changes and assign sequential [1], [2]… numbers to

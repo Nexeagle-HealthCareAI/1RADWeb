@@ -12,54 +12,105 @@ pdfjs.GlobalWorkerOptions.workerSrc = `https://unpkg.com/pdfjs-dist@${pdfjs.vers
 
 // Patient info header — renders on page 1 of the preview and inside the
 // hidden measurer so pagination can subtract its height from page-1 capacity.
-const PatientInfoBlock = ({ appointmentId, fullAppointment, savedMetadata }) => (
-  <div className="patient-info-block" style={{
-    display: 'flex',
-    gap: '30px',
-    marginBottom: '20px',
-    paddingBottom: '12px',
-    borderBottom: '2px solid #0f52ba',
-  }}>
-    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
-      <div style={{ padding: '4px', border: '1px solid #e2e8f0', borderRadius: '4px' }}>
-        <QRCodeCanvas value={`${window.location.origin}/track/${appointmentId}`} size={55} level="H" />
+// Premium patient-header card. Mirrored in `generatePageHtml` below so the
+// printed report visually matches what the doctor sees on screen.
+const PatientInfoBlock = ({ appointmentId, fullAppointment, savedMetadata }) => {
+  const name      = (fullAppointment?.patientName || '').toUpperCase() || '—';
+  const ptid      = fullAppointment?.patientIdentifier || fullAppointment?.ptid || fullAppointment?.id || '—';
+  const age       = fullAppointment?.patientAge || fullAppointment?.age || '—';
+  const sex       = fullAppointment?.patientGender || fullAppointment?.gender || '—';
+  const study     = fullAppointment?.service || fullAppointment?.modality || '—';
+  const modality  = fullAppointment?.modality || '—'; // used by the thank-you line
+  const refBy     = fullAppointment?.referredBy || 'Self';
+  const repDate   = savedMetadata?.finalizedAt
+    ? new Date(savedMetadata.finalizedAt).toLocaleDateString()
+    : new Date().toLocaleDateString();
+
+  // Compact patient header + a thank-you note to the prescribing doctor.
+  // Two-line header (name + dot-separated meta) keeps page-1 vertical space
+  // minimal; the thank-you note sits underneath as a small italic acknowledgement.
+  return (
+    <>
+      <div className="patient-info-block" style={{
+        position: 'relative',
+        display: 'flex',
+        alignItems: 'center',
+        gap: '14px',
+        background: 'linear-gradient(135deg, #ffffff 0%, #f8fafc 100%)',
+        border: '1px solid #e2e8f0',
+        borderRadius: '10px',
+        padding: '10px 14px 10px 12px',
+        marginBottom: '10px',
+        boxShadow: '0 1px 3px rgba(15, 23, 42, 0.04)',
+        overflow: 'hidden',
+      }}>
+        {/* Left accent bar */}
+        <div style={{
+          position: 'absolute', top: 0, bottom: 0, left: 0, width: '4px',
+          background: 'linear-gradient(180deg, #0f52ba 0%, #1e40af 50%, #0f52ba 100%)',
+        }} />
+
+        {/* QR code */}
+        <div style={{
+          marginLeft: '6px',
+          padding: '4px',
+          background: 'white',
+          border: '1px solid #e2e8f0',
+          borderRadius: '6px',
+          flexShrink: 0,
+        }}>
+          <QRCodeCanvas value={`${window.location.origin}/track/${appointmentId}`} size={42} level="H" />
+        </div>
+
+        {/* Patient identity + metadata stacked */}
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{
+            fontSize: '17px', fontWeight: 800, color: '#0a1628',
+            letterSpacing: '-0.2px', lineHeight: 1.2,
+            whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
+          }}>{name}</div>
+          <div style={{
+            fontSize: '10.5px', color: '#475569', marginTop: '3px',
+            display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap',
+          }}>
+            <span><span style={{ color: '#94a3b8', fontWeight: 700 }}>ID</span> <strong style={{ color: '#0f172a' }}>{ptid}</strong></span>
+            <span style={{ color: '#cbd5e1' }}>·</span>
+            <span><strong style={{ color: '#0f172a' }}>{age}</strong> / <strong style={{ color: '#0f172a' }}>{sex}</strong></span>
+            <span style={{ color: '#cbd5e1' }}>·</span>
+            <span style={{ color: '#0f52ba', fontWeight: 700 }}>{study}</span>
+            <span style={{ color: '#cbd5e1' }}>·</span>
+            <span style={{ fontStyle: 'italic' }}>
+              <span style={{ color: '#94a3b8', fontWeight: 700, fontStyle: 'normal' }}>Prescribed</span> {refBy}
+            </span>
+          </div>
+        </div>
+
+        {/* Right: report date */}
+        <div style={{ textAlign: 'right', flexShrink: 0, paddingLeft: '8px', borderLeft: '1px solid #e2e8f0', minWidth: '70px' }}>
+          <div style={{
+            fontSize: '8px', fontWeight: 800, color: '#94a3b8',
+            letterSpacing: '1.5px', textTransform: 'uppercase',
+          }}>Reported</div>
+          <div style={{
+            fontSize: '12px', fontWeight: 700, color: '#1e293b', marginTop: '2px',
+          }}>{repDate}</div>
+        </div>
       </div>
-      <div style={{ fontSize: '7px', fontWeight: 950, color: '#0f52ba', marginTop: '4px' }}>SECURE_SCAN</div>
-    </div>
-    <div style={{ flex: 1 }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', marginBottom: '10px' }}>
-        <div>
-          <span style={{ fontSize: '9px', fontWeight: 900, color: '#94a3b8', letterSpacing: '1px', display: 'block' }}>PATIENT NAME</span>
-          <strong style={{ fontSize: '22px', color: '#0f172a' }}>{fullAppointment?.patientName?.toUpperCase() || 'NAME'}</strong>
-        </div>
-        <div style={{ textAlign: 'right' }}>
-          <span style={{ fontSize: '9px', fontWeight: 900, color: '#94a3b8', letterSpacing: '1px', display: 'block' }}>REPORT DATE</span>
-          <strong style={{ fontSize: '13px' }}>{savedMetadata?.finalizedAt ? new Date(savedMetadata.finalizedAt).toLocaleDateString() : new Date().toLocaleDateString()}</strong>
-        </div>
+
+      {/* Acknowledgement line — centered, below the header card on page 1 only */}
+      <div style={{
+        fontSize: '10.5px',
+        fontStyle: 'italic',
+        color: '#475569',
+        marginBottom: '14px',
+        letterSpacing: '0.1px',
+        textAlign: 'center',
+      }}>
+        Thank you for referring the patient for <strong style={{ color: '#0f52ba', fontStyle: 'normal' }}>{modality}</strong>.
       </div>
-      <div style={{ display: 'flex', gap: '30px', alignItems: 'center', background: '#f8fafc', padding: '8px 15px', borderRadius: '6px' }}>
-        <div>
-          <span style={{ color: '#64748b', fontSize: '9px', fontWeight: 900 }}>PATIENT ID:</span>
-          <strong style={{ marginLeft: '8px', fontSize: '12px' }}>{fullAppointment?.patientIdentifier || fullAppointment?.ptid || fullAppointment?.id || '--'}</strong>
-        </div>
-        <div style={{ width: '1px', height: '12px', background: '#cbd5e1' }}></div>
-        <div>
-          <span style={{ color: '#64748b', fontSize: '9px', fontWeight: 900 }}>AGE / SEX:</span>
-          <strong style={{ marginLeft: '8px', fontSize: '12px' }}>{fullAppointment?.patientAge || fullAppointment?.age || '--'} / {fullAppointment?.patientGender || fullAppointment?.gender || '--'}</strong>
-        </div>
-        <div style={{ width: '1px', height: '12px', background: '#cbd5e1' }}></div>
-        <div>
-          <span style={{ color: '#64748b', fontSize: '9px', fontWeight: 900 }}>STUDY:</span>
-          <strong style={{ marginLeft: '8px', fontSize: '12px' }}>{fullAppointment?.service || fullAppointment?.modality || '--'}</strong>
-        </div>
-      </div>
-      <div style={{ marginTop: '8px', paddingLeft: '15px' }}>
-        <span style={{ color: '#64748b', fontSize: '9px', fontWeight: 900 }}>REFERRED BY:</span>
-        <strong style={{ marginLeft: '8px', fontSize: '11px', fontStyle: 'italic' }}>{fullAppointment?.referredBy || 'Self'}</strong>
-      </div>
-    </div>
-  </div>
-);
+    </>
+  );
+};
 
 const ReportPreviewModal = ({ 
   isOpen, 
@@ -476,46 +527,59 @@ const ReportPreviewModal = ({
 
     // Build the patient-info banner only on page 1 — exact HTML twin of the
     // React PatientInfoBlock component used in the on-screen preview.
+    const _ptName  = (fullAppointment?.patientName || '').toUpperCase() || '—';
+    const _ptId    = fullAppointment?.patientIdentifier || fullAppointment?.ptid || fullAppointment?.id || '—';
+    const _ptAge   = fullAppointment?.patientAge || fullAppointment?.age || '—';
+    const _ptSex   = fullAppointment?.patientGender || fullAppointment?.gender || '—';
+    const _ptSvc   = fullAppointment?.service || fullAppointment?.modality || '—';
+    const _ptMod   = fullAppointment?.modality || '—'; // used by thank-you line
+    const _ptRef   = fullAppointment?.referredBy || 'Self';
+    const _repDate = savedMetadata?.finalizedAt
+      ? new Date(savedMetadata.finalizedAt).toLocaleDateString()
+      : new Date().toLocaleDateString();
+
     const patientBannerHtml = pageIdx === 0 ? `
-      <div style="display: flex; gap: 30px; margin-bottom: 20px; padding-bottom: 12px; border-bottom: 2px solid #0f52ba;">
-        <div style="display: flex; flex-direction: column; align-items: center; justify-content: center;">
-          <div style="padding: 4px; border: 1px solid #e2e8f0; border-radius: 4px;">
-            ${qrCodeDataUrl ? `<img src="${qrCodeDataUrl}" style="width: 55px; height: 55px; display: block;" alt="QR Code" />` : '<div style="width: 55px; height: 55px; background: #f0f0f0;"></div>'}
-          </div>
-          <div style="font-size: 7px; font-weight: 950; color: #0f52ba; margin-top: 4px;">SECURE_SCAN</div>
+      <div style="
+        position: relative;
+        display: flex;
+        align-items: center;
+        gap: 14px;
+        background: linear-gradient(135deg, #ffffff 0%, #f8fafc 100%);
+        border: 1px solid #e2e8f0;
+        border-radius: 10px;
+        padding: 10px 14px 10px 12px;
+        margin-bottom: 10px;
+        box-shadow: 0 1px 3px rgba(15, 23, 42, 0.04);
+        overflow: hidden;
+      ">
+        <div style="position: absolute; top: 0; bottom: 0; left: 0; width: 4px; background: linear-gradient(180deg, #0f52ba 0%, #1e40af 50%, #0f52ba 100%);"></div>
+
+        <div style="margin-left: 6px; padding: 4px; background: white; border: 1px solid #e2e8f0; border-radius: 6px; flex-shrink: 0;">
+          ${qrCodeDataUrl
+            ? `<img src="${qrCodeDataUrl}" style="width: 42px; height: 42px; display: block;" alt="QR Code" />`
+            : `<div style="width: 42px; height: 42px; background: #f1f5f9;"></div>`}
         </div>
-        <div style="flex: 1;">
-          <div style="display: flex; justify-content: space-between; align-items: flex-end; margin-bottom: 10px;">
-            <div>
-              <span style="font-size: 9px; font-weight: 900; color: #94a3b8; letter-spacing: 1px; display: block;">PATIENT NAME</span>
-              <strong style="font-size: 22px; color: #0f172a;">${fullAppointment?.patientName?.toUpperCase() || 'NAME'}</strong>
-            </div>
-            <div style="text-align: right;">
-              <span style="font-size: 9px; font-weight: 900; color: #94a3b8; letter-spacing: 1px; display: block;">REPORT DATE</span>
-              <strong style="font-size: 13px;">${savedMetadata?.finalizedAt ? new Date(savedMetadata.finalizedAt).toLocaleDateString() : new Date().toLocaleDateString()}</strong>
-            </div>
-          </div>
-          <div style="display: flex; gap: 30px; align-items: center; background: #f8fafc; padding: 8px 15px; border-radius: 6px;">
-            <div>
-              <span style="color: #64748b; font-size: 9px; font-weight: 900;">PATIENT ID:</span>
-              <strong style="margin-left: 8px; font-size: 12px;">${fullAppointment?.patientIdentifier || fullAppointment?.ptid || fullAppointment?.id || '--'}</strong>
-            </div>
-            <div style="width: 1px; height: 12px; background: #cbd5e1;"></div>
-            <div>
-              <span style="color: #64748b; font-size: 9px; font-weight: 900;">AGE / SEX:</span>
-              <strong style="margin-left: 8px; font-size: 12px;">${fullAppointment?.patientAge || fullAppointment?.age || '--'} / ${fullAppointment?.patientGender || fullAppointment?.gender || '--'}</strong>
-            </div>
-            <div style="width: 1px; height: 12px; background: #cbd5e1;"></div>
-            <div>
-              <span style="color: #64748b; font-size: 9px; font-weight: 900;">STUDY:</span>
-              <strong style="margin-left: 8px; font-size: 12px;">${fullAppointment?.service || fullAppointment?.modality || '--'}</strong>
-            </div>
-          </div>
-          <div style="margin-top: 8px; padding-left: 15px;">
-            <span style="color: #64748b; font-size: 9px; font-weight: 900;">REFERRED BY:</span>
-            <strong style="margin-left: 8px; font-size: 11px; font-style: italic;">${fullAppointment?.referredBy || 'Self'}</strong>
+
+        <div style="flex: 1; min-width: 0;">
+          <div style="font-size: 17px; font-weight: 800; color: #0a1628; letter-spacing: -0.2px; line-height: 1.2; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">${_ptName}</div>
+          <div style="font-size: 10.5px; color: #475569; margin-top: 3px; display: flex; align-items: center; gap: 6px; flex-wrap: wrap;">
+            <span><span style="color: #94a3b8; font-weight: 700;">ID</span> <strong style="color: #0f172a;">${_ptId}</strong></span>
+            <span style="color: #cbd5e1;">·</span>
+            <span><strong style="color: #0f172a;">${_ptAge}</strong> / <strong style="color: #0f172a;">${_ptSex}</strong></span>
+            <span style="color: #cbd5e1;">·</span>
+            <span style="color: #0f52ba; font-weight: 700;">${_ptSvc}</span>
+            <span style="color: #cbd5e1;">·</span>
+            <span style="font-style: italic;"><span style="color: #94a3b8; font-weight: 700; font-style: normal;">Prescribed</span> ${_ptRef}</span>
           </div>
         </div>
+
+        <div style="text-align: right; flex-shrink: 0; padding-left: 8px; border-left: 1px solid #e2e8f0; min-width: 70px;">
+          <div style="font-size: 8px; font-weight: 800; color: #94a3b8; letter-spacing: 1.5px; text-transform: uppercase;">Reported</div>
+          <div style="font-size: 12px; font-weight: 700; color: #1e293b; margin-top: 2px;">${_repDate}</div>
+        </div>
+      </div>
+      <div style="font-size: 10.5px; font-style: italic; color: #475569; margin-bottom: 14px; letter-spacing: 0.1px; text-align: center;">
+        Thank you for referring the patient for <strong style="color: #0f52ba; font-style: normal;">${_ptMod}</strong>.
       </div>
     ` : '';
 

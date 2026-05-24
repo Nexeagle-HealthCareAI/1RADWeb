@@ -133,7 +133,10 @@
   margin-bottom: 0;
 }
 
-/* Inner content holder — applies the 1-inch margins (Word default) */
+/* Inner content holder — applies the 1-inch margins (Word default).
+   Fixed Word-defaults restored; the editor stays a stable 794×1123 px A4
+   sheet with consistent margins on every page. Protocol margins apply only
+   to preview/print rendering, not to the authoring view. */
 .word-page-inner {
   padding: 96px;
   min-height: 1123px;

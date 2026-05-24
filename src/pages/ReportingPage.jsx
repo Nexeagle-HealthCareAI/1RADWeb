@@ -365,6 +365,17 @@ const ReportingPage = () => {
 
       const appointmentData = appRes.data;
       setActiveAppointment(appointmentData);
+      // Surface available patient fields so the editor banner can verify which
+      // ones are present (helpful when payload shape varies dev vs prod).
+      console.info('[REPORTING][PATIENT_FIELDS]', {
+        patientName: appointmentData?.patientName,
+        patientId: appointmentData?.patientIdentifier ?? appointmentData?.ptid ?? appointmentData?.displayId,
+        age: appointmentData?.patientAge ?? appointmentData?.age,
+        gender: appointmentData?.patientGender ?? appointmentData?.gender,
+        service: appointmentData?.service ?? appointmentData?.modality,
+        referredBy: appointmentData?.referredBy,
+        allKeys: Object.keys(appointmentData || {}),
+      });
 
       // TACTICAL RESOLUTION: Try appointment first, then Auth Token fallback
       let doctorId = appointmentData.doctorId || appointmentData.doctorUserId || appointmentData.doctor?.userId;
