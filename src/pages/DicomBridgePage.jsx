@@ -7,6 +7,7 @@ const POLL_MS    = 5000;
 const STATUS_STYLE = {
   uploaded: { bg: '#f0fdf4', color: '#16a34a', border: '#bbf7d0', dot: '#22c55e' },
   failed:   { bg: '#fef2f2', color: '#dc2626', border: '#fecaca', dot: '#ef4444' },
+  pending:  { bg: '#fffbeb', color: '#d97706', border: '#fde68a', dot: '#f59e0b' },
 };
 
 function StatCard({ label, value, color = '#0f52ba', icon }) {
@@ -28,7 +29,8 @@ export default function DicomBridgePage() {
   const [lastFetch, setLastFetch]   = useState(null);
   const [filterStatus, setFilter]   = useState('ALL');
   const [search, setSearch]         = useState('');
-  const [activeTab, setActiveTab]   = useState('monitor'); // 'monitor' | 'setup'
+  const [activeTab, setActiveTab]   = useState('monitor'); // 'monitor' | 'setup' | 'settings'
+  const [localConfig, setLocalConfig] = useState({ uploadMode: 'auto', autoModalities: [] });
 
   const [isMobile, setIsMobile] = useState(window.innerWidth <= 768);
   useEffect(() => {
@@ -43,6 +45,14 @@ export default function DicomBridgePage() {
       if (!res.ok) throw new Error('bad response');
       const data = await res.json();
       setStatus(data);
+      if (data.config) {
+        // Only override localConfig if it's the first time or if we want to sync
+        setLocalConfig(prev => {
+          // simple check to avoid unnecessary state updates
+          if (JSON.stringify(prev) !== JSON.stringify(data.config)) return data.config;
+          return prev;
+        });
+      }
       setConnected(true);
       setLastFetch(new Date());
     } catch {
@@ -55,6 +65,30 @@ export default function DicomBridgePage() {
     const id = setInterval(fetchStatus, POLL_MS);
     return () => clearInterval(id);
   }, [fetchStatus]);
+
+  const updateConfig = async (newConfig) => {
+    setLocalConfig(newConfig);
+    try {
+      await fetch(`${BRIDGE_URL}/api/config`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(newConfig)
+      });
+      fetchStatus();
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  const handleManualUpload = async (uid) => {
+    try {
+      await fetch(`${BRIDGE_URL}/api/upload/${uid}`, { method: 'POST' });
+      fetchStatus();
+    } catch (err) {
+      console.error(err);
+      alert('Failed to trigger upload');
+    }
+  };
 
   const recent = (status?.recent || []).filter(r => {
     const okStatus   = filterStatus === 'ALL' || r.status === filterStatus;
@@ -125,6 +159,7 @@ export default function DicomBridgePage() {
         <div style={{ display: 'flex', gap: '8px', padding: isMobile ? '20px 20px 16px' : '20px 50px 16px', overflowX: 'auto', WebkitOverflowScrolling: 'touch' }}>
           {[
             { id: 'monitor', label: 'Activity Monitor' },
+            { id: 'settings', label: 'Bridge Settings' },
             { id: 'setup',   label: 'Setup Guide' },
           ].map(t => (
             <button
@@ -153,9 +188,9 @@ export default function DicomBridgePage() {
         {/* Stats row */}
         <div style={{ display: 'grid', gridTemplateColumns: isMobile ? 'repeat(2, 1fr)' : 'repeat(4, 1fr)', gap: '16px', marginBottom: '36px' }}>
           <StatCard label="Uploaded"      value={status?.uploaded     ?? '—'} color="#16a34a" icon="✅" />
+          <StatCard label="Pending"       value={status?.pending      ?? '—'} color="#d97706" icon="⏳" />
           <StatCard label="Failed"        value={status?.failed       ?? '—'} color="#dc2626" icon="❌" />
           <StatCard label="Change Cursor" value={status?.lastChangeId ?? '—'} color="#0f52ba" icon="📡" />
-          <StatCard label="Refresh Rate"  value="5s"                          color="#7c3aed" icon="⏱️" />
         </div>
 
         {/* Filters + table */}
@@ -183,6 +218,7 @@ export default function DicomBridgePage() {
                 style={{ padding: '8px 14px', borderRadius: '10px', border: '1px solid #e2e8f0', fontSize: '12px', fontWeight: 700, outline: 'none', background: 'white' }}
               >
                 <option value="ALL">All</option>
+                <option value="pending">Pending</option>
                 <option value="uploaded">Uploaded</option>
                 <option value="failed">Failed</option>
               </select>
@@ -249,6 +285,17 @@ export default function DicomBridgePage() {
                         </div>
                       </div>
 
+                      {r.status === 'pending' && (
+                        <div style={{ marginTop: '16px' }}>
+                          <button 
+                            onClick={() => handleManualUpload(r.study_uid)}
+                            style={{ width: '100%', background: '#0a1628', color: 'white', border: 'none', padding: '10px', borderRadius: '8px', fontSize: '12px', fontWeight: 800, cursor: 'pointer' }}
+                          >
+                            Upload Now
+                          </button>
+                        </div>
+                      )}
+
                       {r.error_message && (
                         <div style={{ marginTop: '12px', padding: '8px 12px', background: '#fef2f2', border: '1px solid #fecaca', borderRadius: '8px', fontSize: '10px', color: '#ef4444', fontWeight: 600 }}>
                           {r.error_message}
@@ -303,6 +350,14 @@ export default function DicomBridgePage() {
                           <span style={{ width: '5px', height: '5px', borderRadius: '50%', background: st.dot, flexShrink: 0 }} />
                           {r.status}
                         </span>
+                        {r.status === 'pending' && (
+                          <button 
+                            onClick={() => handleManualUpload(r.study_uid)}
+                            style={{ marginLeft: '10px', background: '#0a1628', color: 'white', border: 'none', padding: '4px 10px', borderRadius: '6px', fontSize: '10px', fontWeight: 800, cursor: 'pointer' }}
+                          >
+                            Upload Now
+                          </button>
+                        )}
                         {r.error_message && (
                           <div style={{ fontSize: '9px', color: '#ef4444', marginTop: '4px', maxWidth: '200px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }} title={r.error_message}>
                             {r.error_message}
@@ -317,6 +372,69 @@ export default function DicomBridgePage() {
           )}
         </div>
         </>
+        )}
+
+        {/* TAB: SETTINGS */}
+        {activeTab === 'settings' && (
+          <div style={{ background: 'white', borderRadius: '20px', border: '1px solid #e8edf2', padding: isMobile ? '24px' : '40px', boxShadow: '0 4px 20px rgba(0,0,0,0.04)', maxWidth: '900px', margin: '0 auto' }}>
+            <div style={{ marginBottom: '24px' }}>
+              <div style={{ fontSize: '14px', fontWeight: 950, color: '#0a1628', textTransform: 'uppercase', letterSpacing: '1px' }}>Bridge Settings</div>
+              <div style={{ fontSize: '12px', color: '#64748b', marginTop: '4px' }}>Configure how the DICOM bridge uploads studies from Orthanc.</div>
+            </div>
+
+            {!connected ? (
+              <div style={{ padding: '40px', textAlign: 'center', color: '#94a3b8' }}>
+                <div style={{ fontSize: '30px', marginBottom: '12px' }}>🔌</div>
+                <div style={{ fontSize: '13px', fontWeight: 800 }}>Bridge Offline</div>
+                <div style={{ fontSize: '11px', marginTop: '6px' }}>Settings can only be changed when the local bridge is running.</div>
+              </div>
+            ) : (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
+                {/* Upload Mode */}
+                <div>
+                  <div style={{ fontSize: '13px', fontWeight: 800, color: '#0a1628', marginBottom: '10px' }}>Upload Mode</div>
+                  <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap' }}>
+                    <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer' }}>
+                      <input type="radio" name="uploadMode" value="auto" checked={localConfig.uploadMode === 'auto'} onChange={() => updateConfig({ ...localConfig, uploadMode: 'auto' })} />
+                      <span style={{ fontSize: '13px', fontWeight: 600, color: '#334155' }}>Automatic</span>
+                    </label>
+                    <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer' }}>
+                      <input type="radio" name="uploadMode" value="manual" checked={localConfig.uploadMode === 'manual'} onChange={() => updateConfig({ ...localConfig, uploadMode: 'manual' })} />
+                      <span style={{ fontSize: '13px', fontWeight: 600, color: '#334155' }}>Manual</span>
+                    </label>
+                  </div>
+                  <div style={{ fontSize: '11px', color: '#94a3b8', marginTop: '8px' }}>
+                    {localConfig.uploadMode === 'auto' ? 'Studies are uploaded automatically when detected in Orthanc.' : 'Studies remain pending until you manually trigger the upload in Activity Monitor.'}
+                  </div>
+                </div>
+
+                {/* Modality Filter */}
+                {localConfig.uploadMode === 'auto' && (
+                  <div>
+                    <div style={{ fontSize: '13px', fontWeight: 800, color: '#0a1628', marginBottom: '10px' }}>Automatic Modalities</div>
+                    <div style={{ fontSize: '11px', color: '#64748b', marginBottom: '12px' }}>Select which modalities to auto-upload. If none are selected, ALL modalities will be uploaded automatically.</div>
+                    <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap' }}>
+                      {['CT', 'MR', 'CR', 'DX', 'US', 'PT', 'NM'].map(mod => (
+                        <label key={mod} style={{ display: 'flex', alignItems: 'center', gap: '6px', background: '#f8fafc', padding: '6px 12px', borderRadius: '8px', border: '1px solid #e2e8f0', cursor: 'pointer' }}>
+                          <input 
+                            type="checkbox" 
+                            checked={localConfig.autoModalities?.includes(mod)} 
+                            onChange={(e) => {
+                              let newMods = [...(localConfig.autoModalities || [])];
+                              if (e.target.checked) newMods.push(mod);
+                              else newMods = newMods.filter(m => m !== mod);
+                              updateConfig({ ...localConfig, autoModalities: newMods });
+                            }}
+                          />
+                          <span style={{ fontSize: '12px', fontWeight: 700, color: '#0f52ba' }}>{mod}</span>
+                        </label>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
         )}
 
         {/* TAB: SETUP GUIDE */}
