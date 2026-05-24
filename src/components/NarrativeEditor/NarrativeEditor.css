@@ -128,20 +128,60 @@
   position: relative;
   transform-origin: top center;
   box-sizing: border-box;
+  /* Fixed Word-default 1-inch (96 px) margins are non-editable.
+     The shaded ring below visually marks the protected margin zone
+     (top / right / bottom / left) on every page. */
 }
 .word-page:last-child {
   margin-bottom: 0;
 }
 
-/* Inner content holder — applies the 1-inch margins (Word default).
-   Fixed Word-defaults restored; the editor stays a stable 794×1123 px A4
-   sheet with consistent margins on every page. Protocol margins apply only
-   to preview/print rendering, not to the authoring view. */
+/* ── Margin guide — dark shaded ring on all 4 sides ───────────────────────
+   Four independent background bands so each margin can have a different
+   width (driven by the protocol/prescription API via CSS variables on the
+   .narrative-editor-container). Defaults fall back to 96 px (1 inch). */
+.word-page::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 0;
+  background:
+    linear-gradient(rgba(45, 55, 72, 0.10), rgba(45, 55, 72, 0.10)) top    /100% var(--page-margin-top,    96px) no-repeat,
+    linear-gradient(rgba(45, 55, 72, 0.10), rgba(45, 55, 72, 0.10)) bottom /100% var(--page-margin-bottom, 96px) no-repeat,
+    linear-gradient(rgba(45, 55, 72, 0.10), rgba(45, 55, 72, 0.10)) left   /var(--page-margin-left,  96px) 100% no-repeat,
+    linear-gradient(rgba(45, 55, 72, 0.10), rgba(45, 55, 72, 0.10)) right  /var(--page-margin-right, 96px) 100% no-repeat;
+}
+
+/* Thin dashed boundary marking the writable content edge — like Word's
+   "show text boundaries" guide. Tracks the protocol margins exactly. */
+.word-page::after {
+  content: '';
+  position: absolute;
+  top:    var(--page-margin-top,    96px);
+  right:  var(--page-margin-right,  96px);
+  bottom: var(--page-margin-bottom, 96px);
+  left:   var(--page-margin-left,   96px);
+  pointer-events: none;
+  z-index: 0;
+  border: 1px dashed rgba(0, 120, 212, 0.30);
+}
+
+/* Inner content holder — padding driven by the protocol margin variables.
+   The user cannot edit margins; they come from the prescription API and
+   the editor renders the writable area inside them. Defaults to 96 px on
+   all sides if no variables are set. */
 .word-page-inner {
-  padding: 96px;
+  padding:
+    var(--page-margin-top,    96px)
+    var(--page-margin-right,  96px)
+    var(--page-margin-bottom, 96px)
+    var(--page-margin-left,   96px);
   min-height: 1123px;
   box-sizing: border-box;
   outline: none;
+  position: relative;
+  z-index: 1;
 }
 
 /* ── Editor content (ProseMirror root element) ──────────────────────────────── */
@@ -230,6 +270,19 @@
 .narrative-editor-content li p {
   margin: 0;
 }
+
+/* ── Extended bullet markers (selected via Bullet List split-button caret) ── */
+.narrative-editor-content ul[data-list-style="checkmark"] > li::marker { content: "✓  "; color: #16a34a; font-weight: 700; }
+.narrative-editor-content ul[data-list-style="arrow"]     > li::marker { content: "▸  "; color: #0f52ba; }
+.narrative-editor-content ul[data-list-style="diamond"]   > li::marker { content: "◆  "; color: #475569; }
+.narrative-editor-content ul[data-list-style="star"]      > li::marker { content: "★  "; color: #f59e0b; }
+.narrative-editor-content ul[data-list-style="dash"]      > li::marker { content: "—  "; color: #475569; }
+.narrative-editor-content ul[data-list-style="hand"]      > li::marker { content: "☞  "; color: #0f52ba; }
+
+/* Defensive: respect inline text-align even on the .report-content/word-page-inner.
+   The justify rule also forces text-align-last so single-line / last-line look
+   visually justified instead of looking left-aligned. */
+.narrative-editor-content [style*="text-align: justify"] { text-align-last: justify; }
 
 /* ── Tables ──────────────────────────────────────────────────────────────────── */
 .narrative-editor-content table {
@@ -456,6 +509,33 @@
   cursor: default;
   user-select: none;
   vertical-align: baseline;
+}
+
+/* ── First-page patient banner ─────────────────────────────────────────────
+   Lives directly inside .word-canvas (outside ProseMirror's managed DOM)
+   and is absolutely positioned to overlay page 1's writable top area.
+   794 px page, centred via left: 50% / translateX(-50%). Width =
+   page minus left+right margins. Scrolls with canvas content. */
+.word-page-patient-banner {
+  position: absolute;
+  /* 40 px is the .word-canvas top padding. Add the protocol top margin so
+     the banner lands just inside the writable area, not in the margin. */
+  top: calc(40px + var(--page-margin-top, 96px));
+  /* The page is 794 px wide and centred in the canvas. Anchor the banner
+     to the page's writable left/right edges by offsetting from the canvas
+     centre (50%) by half the page width (397 px), then by the per-side
+     protocol margin. Works correctly even when left/right margins differ. */
+  left:  calc(50% - 397px + var(--page-margin-left,  96px));
+  right: calc(50% - 397px + var(--page-margin-right, 96px));
+  z-index: 5;
+  pointer-events: auto;
+  user-select: text;
+}
+
+/* Push page-1 editable content down by the measured banner height so the
+   user types BELOW the banner, never under it. */
+.word-page:first-child .word-page-inner {
+  padding-top: calc(var(--page-margin-top, 96px) + var(--patient-banner-height, 0px) + 8px);
 }
 
 /* ── Page Header & Footer ────────────────────────────────────────────────────── */
@@ -743,15 +823,23 @@
     min-width: 320px;
     box-shadow: 0 1px 2px rgba(0, 0, 0, 0.15);
   }
-  .word-page-inner {
-    padding: 40px 32px;
-    min-height: 0;
+  /* Override the protocol margins on small screens so content stays readable
+     even when the page width has collapsed to viewport width. */
+  .narrative-editor-container {
+    --page-margin-top:    40px;
+    --page-margin-right:  32px;
+    --page-margin-bottom: 40px;
+    --page-margin-left:   32px;
   }
+  .word-page-inner { min-height: 0; }
 }
 
 @media (max-width: 480px) {
-  .word-page-inner {
-    padding: 20px 15px;
+  .narrative-editor-container {
+    --page-margin-top:    20px;
+    --page-margin-right:  15px;
+    --page-margin-bottom: 20px;
+    --page-margin-left:   15px;
   }
   .word-canvas {
     padding: 10px 5px 40px;
@@ -783,6 +871,12 @@
   }
   .word-page:last-child {
     page-break-after: auto;
+  }
+
+  /* Hide on-screen margin guides during print — only the content shows on paper */
+  .word-page::before,
+  .word-page::after {
+    display: none;
   }
 
   .word-statusbar {

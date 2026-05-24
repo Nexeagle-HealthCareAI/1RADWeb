@@ -81,16 +81,18 @@ const ChangeCaseDropdown = ({ editor }) => {
         onMouseDown={e => { e.preventDefault(); setOpen(v => !v); }}
         title="Change Case"
         style={{
-          display: 'inline-flex', alignItems: 'center', gap: '2px',
-          minWidth: '34px', height: '24px', padding: '0 4px 0 6px',
-          background: open ? '#DEECF9' : 'transparent',
-          border: `1px solid ${open ? '#2B86CE' : 'transparent'}`,
-          borderRadius: '2px', cursor: 'pointer',
+          display: 'inline-flex', alignItems: 'center', gap: '3px',
+          minWidth: '34px', height: '26px', padding: '0 6px',
+          background: open ? '#CCE4F7' : 'transparent',
+          border: `1px solid ${open ? '#106EBE' : 'transparent'}`,
+          borderRadius: '3px', cursor: 'pointer',
           color: open ? '#004578' : '#1f1f1f',
           fontSize: '13px', fontFamily: '"Segoe UI", system-ui, sans-serif',
+          fontWeight: open ? 600 : 400,
           lineHeight: 1,
+          transition: 'background 0.08s, border-color 0.08s',
         }}
-        onMouseEnter={e => { if (!open) { e.currentTarget.style.background = '#DEECF9'; e.currentTarget.style.borderColor = '#C7E0F4'; } }}
+        onMouseEnter={e => { if (!open) { e.currentTarget.style.background = '#E5F1FB'; e.currentTarget.style.borderColor = '#A6CDEC'; } }}
         onMouseLeave={e => { if (!open) { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.borderColor = 'transparent'; } }}
       >
         <span style={{ fontWeight: 600 }}>Aa</span>
@@ -590,9 +592,15 @@ export default function HomeTab({ editor, showFormattingMarks, onToggleFormattin
                 anchor={bulletBtnRef.current}
                 onClose={() => setShowBullet(false)}
                 items={[
-                  { id: 'disc',   label: '•', desc: 'Disc (•)' },
-                  { id: 'circle', label: '◦', desc: 'Circle (○)' },
-                  { id: 'square', label: '▪', desc: 'Square (▪)' },
+                  { id: 'disc',      label: '•',  desc: 'Disc (•)' },
+                  { id: 'circle',    label: '◦',  desc: 'Circle (○)' },
+                  { id: 'square',    label: '▪',  desc: 'Square (▪)' },
+                  { id: 'arrow',     label: '▸',  desc: 'Arrow (▸)' },
+                  { id: 'checkmark', label: '✓',  desc: 'Checkmark (✓)' },
+                  { id: 'diamond',   label: '◆',  desc: 'Diamond (◆)' },
+                  { id: 'star',      label: '★',  desc: 'Star (★)' },
+                  { id: 'dash',      label: '—',  desc: 'Dash (—)' },
+                  { id: 'hand',      label: '☞',  desc: 'Hand (☞)' },
                 ]}
                 onPick={(s) => editor.chain().focus().setBulletStyle(s).run()}
               />

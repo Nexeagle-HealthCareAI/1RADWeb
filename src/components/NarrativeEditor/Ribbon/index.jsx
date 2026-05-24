@@ -298,7 +298,7 @@ export default function Ribbon(props) {
               flexShrink: 0,
               transition: 'background 0.1s, border-color 0.1s',
             }}
-            onMouseEnter={e => { e.currentTarget.style.background = '#DEECF9'; e.currentTarget.style.borderColor = '#C7E0F4'; }}
+            onMouseEnter={e => { e.currentTarget.style.background = '#E5F1FB'; e.currentTarget.style.borderColor = '#A6CDEC'; }}
             onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.borderColor = 'transparent'; }}
           >
             {ribbonCollapsed ? '⌄' : '⌃'}
@@ -347,7 +347,7 @@ const QATBtn = ({ title, onClick, disabled, icon }) => (
       fontFamily: 'inherit',
       transition: 'background 0.08s, border-color 0.08s',
     }}
-            onMouseEnter={e => { if (!disabled) { e.currentTarget.style.background = '#DEECF9'; e.currentTarget.style.borderColor = '#C7E0F4'; } }}
+            onMouseEnter={e => { if (!disabled) { e.currentTarget.style.background = '#E5F1FB'; e.currentTarget.style.borderColor = '#A6CDEC'; } }}
     onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.borderColor = 'transparent'; }}
   >
     {icon}

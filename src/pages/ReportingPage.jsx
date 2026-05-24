@@ -11,7 +11,7 @@ import { uploadStudyAssetDirect } from '../utils/azureUpload';
 import { jwtDecode } from 'jwt-decode';
 import useOffline from '../hooks/useOffline';
 import { nativeStorage } from '../hooks/useElectron';
-import ReportPreviewModal from '../components/ReportPreviewModal';
+import ReportPreviewModal, { PatientInfoBlock } from '../components/ReportPreviewModal';
 import PatientTimeline from '../components/PatientTimeline';
 
 const ReportingPage = () => {
@@ -4250,6 +4250,19 @@ const ReportingPage = () => {
                     onSave={() => handleSaveReport(false)}
                     style={{ flex: 1, minHeight: 0 }}
                     keywordLibrary={keywordLibrary}
+                    pageMargins={protocol ? {
+                      top:    protocol.headerMargin ?? 25,
+                      right:  protocol.rightMargin  ?? 20,
+                      bottom: protocol.bottomMargin ?? 20,
+                      left:   protocol.leftMargin   ?? 20,
+                    } : undefined}
+                    firstPageBanner={activeAppointment ? (
+                      <PatientInfoBlock
+                        appointmentId={appointmentId}
+                        fullAppointment={activeAppointment}
+                        savedMetadata={null}
+                      />
+                    ) : null}
                   />
                 </div>
 

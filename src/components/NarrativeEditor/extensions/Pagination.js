@@ -11,7 +11,8 @@ import { Plugin, PluginKey } from '@tiptap/pm/state';
  * Content area = 1123 - 192 = 931px (PAGE_CONTENT_HEIGHT).
  */
 
-const PAGE_CONTENT_HEIGHT = 931;
+const A4_HEIGHT = 1123;            // A4 at 96 dpi
+const FALLBACK_CONTENT_HEIGHT = 931; // = 1123 - 96*2 (default 1-inch margins)
 const TOLERANCE = 4; // px — avoids thrashing on subpixel differences
 
 export const PAGINATION_PLUGIN_KEY = new PluginKey('pagination');
@@ -24,6 +25,22 @@ function measureChildHeights(pageDomEl) {
     el: child,
     height: child.offsetHeight,
   }));
+}
+
+/**
+ * Per-page writable height = A4 page height − (top padding + bottom padding).
+ * Padding tracks the protocol-driven margin CSS variables and the first-page
+ * banner offset, so pagination always splits where the actual content area
+ * ends — matching what the preview/print pipeline will render.
+ */
+function getPageMaxHeight(pageDomEl, fallback) {
+  const inner = pageDomEl?.querySelector?.('.word-page-inner');
+  if (!inner) return fallback;
+  const cs = window.getComputedStyle(inner);
+  const padTop    = parseFloat(cs.paddingTop)    || 0;
+  const padBottom = parseFloat(cs.paddingBottom) || 0;
+  const max = A4_HEIGHT - padTop - padBottom;
+  return max > 50 ? max : fallback;
 }
 
 function findSplitIndex(childHeights, maxHeight) {
@@ -44,7 +61,10 @@ export const Pagination = Extension.create({
 
   addOptions() {
     return {
-      pageContentHeight: PAGE_CONTENT_HEIGHT,
+      // Fallback writable height used only if the live DOM measurement fails
+      // (e.g., during initial mount before CSS resolves). Real per-page max
+      // is computed from the page's padding-top + padding-bottom each tick.
+      pageContentHeight: FALLBACK_CONTENT_HEIGHT,
     };
   },
 
@@ -74,7 +94,25 @@ export const Pagination = Extension.create({
             });
           };
 
+          // Watch every .word-page-inner for size changes so pagination
+          // re-runs when protocol margins update or the first-page banner
+          // mounts/changes height — both change the per-page writable area.
+          const ro = new ResizeObserver(() => schedule());
+          const observed = new WeakSet();
+          const observeInners = () => {
+            editorView.dom.querySelectorAll('.word-page-inner').forEach(el => {
+              if (!observed.has(el)) {
+                ro.observe(el);
+                observed.add(el);
+              }
+            });
+          };
+          // MutationObserver picks up newly added .word-page DOM (after splits)
+          const mo = new MutationObserver(() => observeInners());
+          mo.observe(editorView.dom, { childList: true, subtree: true });
+
           // Run once on mount
+          observeInners();
           schedule();
 
           return {
@@ -83,6 +121,8 @@ export const Pagination = Extension.create({
             },
             destroy() {
               if (rafId) cancelAnimationFrame(rafId);
+              ro.disconnect();
+              mo.disconnect();
             },
           };
         },
@@ -94,7 +134,7 @@ export const Pagination = Extension.create({
 /**
  * Walk all <page> nodes; split when overflowing, merge when under-filled.
  */
-function paginate(view, maxHeight) {
+function paginate(view, fallbackMaxHeight) {
   const { state } = view;
   const { doc } = state;
   const pageType = state.schema.nodes.page;
@@ -115,7 +155,14 @@ function paginate(view, maxHeight) {
   for (let i = pages.length - 1; i >= 0; i--) {
     const { node, pos, dom } = pages[i];
     const inner = dom.querySelector('.word-page-inner') || dom;
-    const totalHeight = inner.scrollHeight;
+    // Per-page max — accounts for protocol margins + first-page banner offset.
+    // The writable area is the part of .word-page-inner NOT covered by padding.
+    const maxHeight = getPageMaxHeight(dom, fallbackMaxHeight);
+    // Content height = scrollHeight − (paddingTop + paddingBottom)
+    const cs = window.getComputedStyle(inner);
+    const padTop    = parseFloat(cs.paddingTop)    || 0;
+    const padBottom = parseFloat(cs.paddingBottom) || 0;
+    const totalHeight = inner.scrollHeight - padTop - padBottom;
 
     if (totalHeight <= maxHeight + TOLERANCE) continue;
     if (node.childCount <= 1) continue; // can't split a single block
@@ -155,7 +202,11 @@ function paginate(view, maxHeight) {
   for (let i = 0; i < pages.length - 1; i++) {
     const { node, pos, dom } = pages[i];
     const inner = dom.querySelector('.word-page-inner') || dom;
-    const currentHeight = inner.scrollHeight;
+    const maxHeight = getPageMaxHeight(dom, fallbackMaxHeight);
+    const cs = window.getComputedStyle(inner);
+    const padTop    = parseFloat(cs.paddingTop)    || 0;
+    const padBottom = parseFloat(cs.paddingBottom) || 0;
+    const currentHeight = inner.scrollHeight - padTop - padBottom;
     const slack = maxHeight - currentHeight;
     if (slack <= TOLERANCE) continue;
 

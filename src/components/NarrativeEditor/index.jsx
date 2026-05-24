@@ -284,13 +284,16 @@ const NarrativeEditor = React.forwardRef(function NarrativeEditor({
   className = '',
   style = {},
   keywordLibrary = [],
-  // Accepted but unused — kept so callers don't need to remove them yet.
-  // The editor stays a stable A4 surface; the patient banner and the
-  // protocol-margin preview overlay are rendered by the caller above the
-  // editor (e.g., ReportingPage) so the editor itself doesn't get racy
-  // DOM mutations during typing.
-  pageMargins, // eslint-disable-line no-unused-vars
-  firstPageBanner, // eslint-disable-line no-unused-vars
+  // Protocol-driven A4 margins in millimetres: { top, right, bottom, left }.
+  // When supplied, they override the default 1-inch (96 px) margins and drive
+  // both the writable area (.word-page-inner padding) and the dark margin
+  // guide overlay. Defaults match Word's "Normal" margins (~25/20/20/20 mm).
+  pageMargins,
+  // React node rendered into the first A4 page (above the editable content)
+  // as a hardcoded, non-editable banner. Portaled into a sibling slot inside
+  // .word-page so ProseMirror cannot overwrite it. The first page's inner
+  // padding-top is auto-extended to make room for the measured banner height.
+  firstPageBanner,
 }, ref) {
   const containerRef = useRef(null);
   const [isFullscreen, setIsFullscreen] = useState(false);
@@ -1395,6 +1398,29 @@ const NarrativeEditor = React.forwardRef(function NarrativeEditor({
     return () => editor?.off('update', applyToPages);
   }, [editor, headerState, footerState, previewMode]);
 
+  // ── Hardcoded first-page banner (patient header) ───────────────────────────
+  // Rendered directly in JSX inside .word-canvas (outside ProseMirror's
+  // managed DOM, so it cannot be wiped). Positioned absolutely to overlay
+  // page 1's writable area; scrolls with the canvas content. Height is
+  // measured and written to --patient-banner-height so page-1's inner
+  // padding-top expands and typed content never sits under the banner.
+  const bannerHostRef = useRef(null);
+  useEffect(() => {
+    const host = bannerHostRef.current;
+    if (!host) {
+      containerRef.current?.style.setProperty('--patient-banner-height', '0px');
+      return;
+    }
+    const apply = () => {
+      const h = host.offsetHeight || 0;
+      containerRef.current?.style.setProperty('--patient-banner-height', `${h}px`);
+    };
+    apply();
+    const ro = new ResizeObserver(apply);
+    ro.observe(host);
+    return () => ro.disconnect();
+  }, [firstPageBanner]);
+
   // Track current page (most visible) + total pages.
   useEffect(() => {
     if (!editor) return;
@@ -1542,8 +1568,17 @@ const NarrativeEditor = React.forwardRef(function NarrativeEditor({
   const wordCount = editor.storage.characterCount?.words() ?? 0;
   const charCount = editor.storage.characterCount?.characters() ?? 0;
 
+  // Convert mm → px at 96 dpi for the protocol-driven margin CSS variables.
+  const mmToPx = (mm) => `${(Number(mm) * 96 / 25.4).toFixed(2)}px`;
+  const marginVars = pageMargins ? {
+    '--page-margin-top':    mmToPx(pageMargins.top    ?? 25),
+    '--page-margin-right':  mmToPx(pageMargins.right  ?? 20),
+    '--page-margin-bottom': mmToPx(pageMargins.bottom ?? 20),
+    '--page-margin-left':   mmToPx(pageMargins.left   ?? 20),
+  } : {};
+
   return (
-    <div ref={containerRef} className={`narrative-editor-container${isFinalized ? ' is-finalized' : ''}${cssFullscreen ? ' ne--css-fullscreen' : ''} ${className}`} style={style}>
+    <div ref={containerRef} className={`narrative-editor-container${isFinalized ? ' is-finalized' : ''}${cssFullscreen ? ' ne--css-fullscreen' : ''} ${className}`} style={{ ...style, ...marginVars }}>
       {!previewMode && (
         <Ribbon
           editor={editor}
@@ -1633,6 +1668,11 @@ const NarrativeEditor = React.forwardRef(function NarrativeEditor({
           >
             ✏️ Exit Reading View
           </button>
+        )}
+        {firstPageBanner && (
+          <div ref={bannerHostRef} className="word-page-patient-banner">
+            {firstPageBanner}
+          </div>
         )}
         <EditorContent editor={editor} />
 

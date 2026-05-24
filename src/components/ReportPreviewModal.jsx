@@ -14,7 +14,7 @@ pdfjs.GlobalWorkerOptions.workerSrc = `https://unpkg.com/pdfjs-dist@${pdfjs.vers
 // hidden measurer so pagination can subtract its height from page-1 capacity.
 // Premium patient-header card. Mirrored in `generatePageHtml` below so the
 // printed report visually matches what the doctor sees on screen.
-const PatientInfoBlock = ({ appointmentId, fullAppointment, savedMetadata }) => {
+export const PatientInfoBlock = ({ appointmentId, fullAppointment, savedMetadata }) => {
   const name      = (fullAppointment?.patientName || '').toUpperCase() || '—';
   const ptid      = fullAppointment?.patientIdentifier || fullAppointment?.ptid || fullAppointment?.id || '—';
   const age       = fullAppointment?.patientAge || fullAppointment?.age || '—';
@@ -75,13 +75,19 @@ const PatientInfoBlock = ({ appointmentId, fullAppointment, savedMetadata }) => 
           }}>{name}</div>
           <div style={{
             fontSize: '10.5px', color: '#475569', marginTop: '3px',
-            display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap',
+            display: 'flex', alignItems: 'center', gap: '7px', flexWrap: 'wrap',
           }}>
-            <span><span style={{ color: '#94a3b8', fontWeight: 700 }}>ID</span> <strong style={{ color: '#0f172a' }}>{ptid}</strong></span>
+            <span>
+              <span style={{ color: '#94a3b8', fontWeight: 700 }}>Patient ID:</span> <strong style={{ color: '#0f172a' }}>{ptid}</strong>
+            </span>
             <span style={{ color: '#cbd5e1' }}>·</span>
-            <span><strong style={{ color: '#0f172a' }}>{age}</strong> / <strong style={{ color: '#0f172a' }}>{sex}</strong></span>
+            <span>
+              <span style={{ color: '#94a3b8', fontWeight: 700 }}>Age/Sex:</span> <strong style={{ color: '#0f172a' }}>{age} / {sex}</strong>
+            </span>
             <span style={{ color: '#cbd5e1' }}>·</span>
-            <span style={{ color: '#0f52ba', fontWeight: 700 }}>{study}</span>
+            <span>
+              <span style={{ color: '#94a3b8', fontWeight: 700 }}>Study:</span> <strong style={{ color: '#0f52ba' }}>{study}</strong>
+            </span>
             <span style={{ color: '#cbd5e1' }}>·</span>
             <span>
               <span style={{ color: '#94a3b8', fontWeight: 700 }}>Prescribed By:</span> <strong style={{ color: '#0f172a' }}>{refBy}</strong>
@@ -343,151 +349,58 @@ const ReportPreviewModal = ({
     const { mode: rcMode, text: rcText, data: rcData, impression: rcImpression, advice: rcAdvice } = reportContent;
     const _isPlain = !protocol?.letterheadBlobUrl;
     const _baseFontSize = protocol?.fontSize || (_isPlain ? 12 : 14);
-    // Honor protocol-configured margins in both modes (?? so an explicit 0 is
-    // respected). Fall back to sensible defaults only when the setting is unset:
-    // blank A4 → 20mm uniform; letterhead → 45mm top to clear typical header art.
-    const _topMm    = protocol?.headerMargin ?? (_isPlain ? 20 : 45);
-    const _leftMm   = protocol?.leftMargin   ?? 20;
-    const _rightMm  = protocol?.rightMargin  ?? 20;
-    const _bottomMm = protocol?.bottomMargin ?? 20;
     const _contentStyle = `font-size: ${_baseFontSize}px; line-height: 1.6; color: ${protocol?.fontColor || '#1e293b'}; font-family: ${protocol?.fontFamily || 'inherit'};`;
 
-    const _unwrapPages = (html) => {
-      if (!html) return '';
+    // ── WYSIWYG pagination ──────────────────────────────────────────────
+    // Honor the editor's own page splits. The editor has already paginated
+    // the report using the protocol margins and the patient-banner reserve,
+    // so we simply extract each <div class="word-page-inner"> as a ready
+    // preview-page chunk. Eliminates editor/preview divergence (different
+    // fonts, different metrics) entirely.
+    const _extractEditorPages = (html) => {
+      if (!html) return [];
       const tmp = document.createElement('div');
       tmp.innerHTML = html;
-      tmp.querySelectorAll('.word-page-inner, .word-page').forEach(el => {
-        const p = el.parentNode;
-        while (el.firstChild) p.insertBefore(el.firstChild, el);
-        el.remove();
-      });
-      return tmp.innerHTML;
+      const inners = tmp.querySelectorAll('.word-page-inner');
+      if (inners.length === 0) {
+        // Content has no .word-page wrappers (e.g., legacy data). Treat as a
+        // single page; pagination will be best-effort but won't split.
+        return [tmp.innerHTML];
+      }
+      return Array.from(inners).map(inner => inner.innerHTML);
     };
 
-    let body = '';
+    let chunks = [];
+
     if (rcMode === 'Structured' && rcData) {
-      body = Object.entries(rcData).map(([k, v]) => `
+      // Structured reports — render all sections on a single page chunk.
+      // (Structured layouts are usually short and don't span pages.)
+      const structured = Object.entries(rcData).map(([k, v]) => `
         <div style="margin-bottom: 25px;">
           <div style="font-size: 10px; font-weight: 950; color: #64748b; text-transform: uppercase; margin-bottom: 6px; letter-spacing: 1.5px; border-bottom: 1px solid #f1f5f9; padding-bottom: 2px;">${k.replace(/_/g, ' ')}</div>
-          <div style="${_contentStyle} white-space: pre-wrap;">${_unwrapPages(v)}</div>
+          <div style="${_contentStyle} white-space: pre-wrap;">${v}</div>
         </div>`).join('');
+      chunks = [structured];
     } else {
-      // IMPORTANT: do NOT wrap the freeform body in a single outer <div> —
-      // pagination needs the top-level paragraphs/headings as individual
-      // measurable blocks so it can split across pages. Font/color are set
-      // on the .a4-page content area and on the measurement container instead.
-      body = _unwrapPages(rcText);
+      // Freeform — take editor's already-paginated chunks as-is.
+      chunks = _extractEditorPages(rcText);
     }
+
+    // Impression + Advice attach to the LAST page so they always end the report.
+    let trailing = '';
     if (rcImpression) {
-      body += `<div class="impression-block" style="margin-top: 35px; background: rgba(15, 82, 186, 0.02); padding: 15px 20px; border-radius: 6px; border-left: 4px solid ${protocol?.fontColor || '#0f52ba'};"><div style="font-size: 10px; font-weight: 950; color: ${protocol?.fontColor || '#0f52ba'}; margin-bottom: 6px; letter-spacing: 1px;">IMPRESSION:</div><div style="font-size: ${_baseFontSize}px; font-weight: 900; color: ${protocol?.fontColor || '#1e293b'}; line-height: 1.5;">${rcImpression}</div></div>`;
+      trailing += `<div class="impression-block" style="margin-top: 35px; background: rgba(15, 82, 186, 0.02); padding: 15px 20px; border-radius: 6px; border-left: 4px solid ${protocol?.fontColor || '#0f52ba'};"><div style="font-size: 10px; font-weight: 950; color: ${protocol?.fontColor || '#0f52ba'}; margin-bottom: 6px; letter-spacing: 1px;">IMPRESSION:</div><div style="font-size: ${_baseFontSize}px; font-weight: 900; color: ${protocol?.fontColor || '#1e293b'}; line-height: 1.5;">${rcImpression}</div></div>`;
     }
     if (rcAdvice) {
-      body += `<div class="advice-block" style="margin-top: 20px; padding-left: 20px;"><div style="font-size: 10px; font-weight: 950; color: #64748b; margin-bottom: 4px; letter-spacing: 1px;">ADVICE:</div><div style="font-size: 11px; color: #475569; font-style: italic;">${rcAdvice}</div></div>`;
+      trailing += `<div class="advice-block" style="margin-top: 20px; padding-left: 20px;"><div style="font-size: 10px; font-weight: 950; color: #64748b; margin-bottom: 4px; letter-spacing: 1px;">ADVICE:</div><div style="font-size: 11px; color: #475569; font-style: italic;">${rcAdvice}</div></div>`;
+    }
+    if (trailing) {
+      if (chunks.length === 0) chunks = [trailing];
+      else chunks[chunks.length - 1] = (chunks[chunks.length - 1] || '') + trailing;
     }
 
-    // Measure each top-level block in a hidden container at the actual content width.
-    const measureDiv = document.createElement('div');
-    const contentWidthMm = 210 - _leftMm - _rightMm;
-    measureDiv.style.cssText = `position: fixed; left: -99999px; top: 0; width: ${contentWidthMm}mm; visibility: hidden; pointer-events: none; font-size: ${_baseFontSize}px; line-height: 1.6; font-family: ${protocol?.fontFamily || 'inherit'};`;
-    document.body.appendChild(measureDiv);
-    measureDiv.innerHTML = body;
-
-    const MM_TO_PX = 96 / 25.4;
-    const PAGE_CONTENT_PX = (297 - _topMm - _bottomMm) * MM_TO_PX;
-    // Page 1 also hosts the patient-info header — measure it (or default 220px)
-    const patientInfoHeight = patientInfoMeasureRef.current?.offsetHeight || 220;
-    const FIRST_PAGE_CONTENT_PX = Math.max(50, PAGE_CONTENT_PX - patientInfoHeight - 16);
-
-    // Helper: when a single block is taller than the page limit, split its
-    // text into multiple shorter elements that each fit. Preserves the tag name
-    // and inline styles/classes; loses inline-child formatting (bold/italic/
-    // spans) inside the split block — those collapse to plain text. Acceptable
-    // trade-off because the alternative is silently clipping the tail.
-    const splitOversizedBlock = (blockEl, maxHeightPx) => {
-      const tag = blockEl.tagName.toLowerCase();
-      const styleAttr = blockEl.getAttribute('style') ? ` style="${blockEl.getAttribute('style').replace(/"/g, '&quot;')}"` : '';
-      const classAttr = blockEl.className ? ` class="${blockEl.className}"` : '';
-      const fullText = blockEl.textContent || '';
-      if (!fullText.trim()) return [blockEl.outerHTML];
-
-      // Tokenise by whitespace, keeping word boundaries.
-      const tokens = fullText.match(/\S+\s*/g) || [fullText];
-
-      const probe = document.createElement(tag);
-      if (styleAttr) probe.setAttribute('style', blockEl.getAttribute('style'));
-      if (classAttr) probe.className = blockEl.className;
-      measureDiv.appendChild(probe);
-
-      const parts = [];
-      let buffer = '';
-      for (const tok of tokens) {
-        probe.textContent = buffer + tok;
-        const h = probe.getBoundingClientRect().height;
-        if (h > maxHeightPx && buffer) {
-          parts.push(`<${tag}${classAttr}${styleAttr}>${buffer.trim()}</${tag}>`);
-          buffer = tok;
-        } else {
-          buffer = buffer + tok;
-        }
-      }
-      if (buffer.trim()) {
-        parts.push(`<${tag}${classAttr}${styleAttr}>${buffer.trim()}</${tag}>`);
-      }
-      measureDiv.removeChild(probe);
-      return parts.length ? parts : [blockEl.outerHTML];
-    };
-
-    // Expand the block list so any block taller than the page limit is
-    // pre-split into smaller pieces before the page-packing loop.
-    const expandedBlocks = [];
-    for (const block of Array.from(measureDiv.children)) {
-      const h = block.getBoundingClientRect().height;
-      // Use the smaller (first-page) limit as the worst-case threshold for
-      // splitting — a block we'd split for page 2+ might also be needed for
-      // page 1, and we need it to fit in the worst case.
-      const splitThreshold = Math.min(FIRST_PAGE_CONTENT_PX, PAGE_CONTENT_PX);
-      if (h > splitThreshold) {
-        // Render each split piece individually back into the measureDiv so
-        // we can measure the actual pieces in the next loop.
-        const pieces = splitOversizedBlock(block, splitThreshold);
-        const tmp = document.createElement('div');
-        tmp.innerHTML = pieces.join('');
-        for (const piece of Array.from(tmp.children)) {
-          expandedBlocks.push(piece);
-        }
-      } else {
-        expandedBlocks.push(block);
-      }
-    }
-    // Re-populate measureDiv with the expanded set so subsequent height reads
-    // reflect the post-split layout.
-    measureDiv.innerHTML = '';
-    expandedBlocks.forEach(b => measureDiv.appendChild(b));
-
-    const chunks = [];
-    let currHTML = '';
-    let currH = 0;
-    let isFirst = true;
-
-    for (const block of Array.from(measureDiv.children)) {
-      const h = block.getBoundingClientRect().height;
-      const limit = isFirst ? FIRST_PAGE_CONTENT_PX : PAGE_CONTENT_PX;
-      if (currHTML && currH + h > limit) {
-        chunks.push(currHTML);
-        currHTML = block.outerHTML;
-        currH = h;
-        isFirst = false;
-      } else {
-        currHTML += block.outerHTML;
-        currH += h;
-      }
-    }
-    if (currHTML) chunks.push(currHTML);
-
-    measureDiv.remove();
     const pageCount = chunks.length ? chunks.length : 1;
-    console.log(`[ReportPreview] Pagination complete: ${pageCount} pages created`);
-    console.log(`[ReportPreview] Pages array:`, chunks);
+    console.log(`[ReportPreview] WYSIWYG pagination — ${pageCount} pages from editor chunks`);
     setPages(chunks.length ? chunks : ['']);
   }, [isOpen, reportContent, protocol, savedMetadata, fullAppointment]);
 
@@ -569,12 +482,12 @@ const ReportPreviewModal = ({
 
         <div style="flex: 1; min-width: 0;">
           <div style="font-size: 17px; font-weight: 800; color: #0a1628; letter-spacing: -0.2px; line-height: 1.2; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">${_ptName}</div>
-          <div style="font-size: 10.5px; color: #475569; margin-top: 3px; display: flex; align-items: center; gap: 6px; flex-wrap: wrap;">
-            <span><span style="color: #94a3b8; font-weight: 700;">ID</span> <strong style="color: #0f172a;">${_ptId}</strong></span>
+          <div style="font-size: 10.5px; color: #475569; margin-top: 3px; display: flex; align-items: center; gap: 7px; flex-wrap: wrap;">
+            <span><span style="color: #94a3b8; font-weight: 700;">Patient ID:</span> <strong style="color: #0f172a;">${_ptId}</strong></span>
             <span style="color: #cbd5e1;">·</span>
-            <span><strong style="color: #0f172a;">${_ptAge}</strong> / <strong style="color: #0f172a;">${_ptSex}</strong></span>
+            <span><span style="color: #94a3b8; font-weight: 700;">Age/Sex:</span> <strong style="color: #0f172a;">${_ptAge} / ${_ptSex}</strong></span>
             <span style="color: #cbd5e1;">·</span>
-            <span style="color: #0f52ba; font-weight: 700;">${_ptSvc}</span>
+            <span><span style="color: #94a3b8; font-weight: 700;">Study:</span> <strong style="color: #0f52ba;">${_ptSvc}</strong></span>
             <span style="color: #cbd5e1;">·</span>
             <span><span style="color: #94a3b8; font-weight: 700;">Prescribed By:</span> <strong style="color: #0f172a;">${_ptRef}</strong></span>
           </div>
@@ -711,6 +624,18 @@ const ReportPreviewModal = ({
           .report-content hr { border: none; border-top: 1px solid #c8c8c8; margin: 20px 0; }
           .report-content blockquote { border-left: 3px solid #4472c4; padding-left: 16px; margin: 12px 0; color: #555; font-style: italic; }
           .report-content a { color: #0078d4; text-decoration: underline; }
+          /* Alignment — see preview CSS above for rationale. */
+          .report-content [style*="text-align: right"]   { text-align: right !important; }
+          .report-content [style*="text-align: center"]  { text-align: center !important; }
+          .report-content [style*="text-align: justify"] { text-align: justify !important; text-align-last: justify; }
+          .report-content [style*="text-align: left"]    { text-align: left !important; }
+          /* Extended bullet markers */
+          .report-content ul[data-list-style="checkmark"] > li::marker  { content: "✓  "; color: #16a34a; font-weight: 700; }
+          .report-content ul[data-list-style="arrow"]     > li::marker  { content: "▸  "; color: #0f52ba; }
+          .report-content ul[data-list-style="diamond"]   > li::marker  { content: "◆  "; color: #475569; }
+          .report-content ul[data-list-style="star"]      > li::marker  { content: "★  "; color: #f59e0b; }
+          .report-content ul[data-list-style="dash"]      > li::marker  { content: "—  "; color: #475569; }
+          .report-content ul[data-list-style="hand"]      > li::marker  { content: "☞  "; color: #0f52ba; }
           /* word-page wrappers from the editor's pagination model — strip
              their margins/padding so they don't add extra vertical space
              inside our own per-page containers. */
@@ -1142,6 +1067,25 @@ const ReportPreviewModal = ({
           margin: 12px 0; color: #555; font-style: italic;
         }
         .report-content a { color: #0078d4; text-decoration: underline; }
+
+        /* Text alignment — defensively respect inline text-align even when
+           the parent has a stricter alignment, and make justify visually
+           distinct (the default only justifies when text wraps; we also
+           justify the LAST line so single-line paragraphs look aligned). */
+        .report-content [style*="text-align: right"]   { text-align: right !important; }
+        .report-content [style*="text-align: center"]  { text-align: center !important; }
+        .report-content [style*="text-align: justify"] { text-align: justify !important; text-align-last: justify; }
+        .report-content [style*="text-align: left"]    { text-align: left !important; }
+
+        /* ── Extended bullet markers (selected via the Bullet List split button).
+              These work on top of CSS list-style-type by overriding the marker
+              content for selected data-list-style values. */
+        .report-content ul[data-list-style="checkmark"] > li::marker  { content: "✓  "; color: #16a34a; font-weight: 700; }
+        .report-content ul[data-list-style="arrow"]     > li::marker  { content: "▸  "; color: #0f52ba; }
+        .report-content ul[data-list-style="diamond"]   > li::marker  { content: "◆  "; color: #475569; }
+        .report-content ul[data-list-style="star"]      > li::marker  { content: "★  "; color: #f59e0b; }
+        .report-content ul[data-list-style="dash"]      > li::marker  { content: "—  "; color: #475569; }
+        .report-content ul[data-list-style="hand"]      > li::marker  { content: "☞  "; color: #0f52ba; }
 
         @media print {
           /* Each .a4-page is already 297mm tall with its own safe-zone padding,
