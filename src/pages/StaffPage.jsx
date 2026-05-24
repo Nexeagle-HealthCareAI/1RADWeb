@@ -141,7 +141,7 @@ export default function StaffPage() {
     { id: 'upi',    label: 'UPI',           icon: '📱' },
     { id: 'cheque', label: 'Cheque',        icon: '📃' },
   ];
-  const EMPTY_DISB = { mode: 'bank', reference: '', paidOnDate: TODAY_STR, notes: '', status: 'Paid', encashmentDays: '', encashmentType: '', encashmentBonus: '' };
+  const EMPTY_DISB = { mode: 'bank', reference: '', paidOnDate: TODAY_STR, notes: '', status: 'Paid', encashmentDays: '', encashmentType: '', encashmentBonus: '', extraPay: '', extraPayReason: '' };
   const [disbDrawer, setDisbDrawer] = useState({ open: false, month: THIS_MONTH, form: EMPTY_DISB });
 
   // Attendance picker
@@ -495,7 +495,9 @@ export default function StaffPage() {
 
     // Approved leaves in the year (chronological) — allocate quota to find LWP days in target month.
     const yearLeaves = leaveData
-      .filter(l => l.staffId === staffId && l.status === 'approved' && l.from?.startsWith(String(yr)))
+      .filter(l => l.staffId === staffId && l.status === 'approved' && (
+         (l.from && l.from.startsWith(String(yr))) || (l.to && l.to.startsWith(String(yr)))
+      ))
       .sort((a, b) => (a.from || '').localeCompare(b.from || ''));
 
     const remaining = { ...LEAVE_DEFAULTS };
@@ -503,10 +505,27 @@ export default function StaffPage() {
     let lwpLeaveInMonth = 0;
 
     for (const lv of yearLeaves) {
-      const start = new Date(lv.from);
-      const end = new Date(lv.to);
-      for (let d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
-        const ds = d.toISOString().slice(0, 10);
+      if (lv.reason === 'Encashed during salary payout' || (lv.type && lv.type.includes('encash'))) {
+        const encashDays = Number(lv.days) || 0;
+        if ((remaining[lv.type] || 0) > 0) {
+          remaining[lv.type] -= encashDays;
+        }
+        continue;
+      }
+      if (!lv.from || !lv.to) continue;
+      const pS = lv.from.split('-').map(Number);
+      const pE = lv.to.split('-').map(Number);
+      const start = Date.UTC(pS[0], pS[1] - 1, pS[2]);
+      const end = Date.UTC(pE[0], pE[1] - 1, pE[2]);
+      
+      for (let t = start; t <= end; t += 86400000) {
+        const d = new Date(t);
+        const y = d.getUTCFullYear();
+        const m = String(d.getUTCMonth() + 1).padStart(2, '0');
+        const dStr = String(d.getUTCDate()).padStart(2, '0');
+        const ds = `${y}-${m}-${dStr}`;
+        if (y !== yr) continue; // Only consume quota for the target year
+        
         const inMonth = ds.startsWith(month);
         if ((remaining[lv.type] || 0) > 0) {
           remaining[lv.type] -= 1;
@@ -565,6 +584,8 @@ export default function StaffPage() {
       lwpLeaveInMonth:  payroll.lwpLeaveInMonth,
       encashmentBonus:  paymentDetails.encashmentBonus || 0,
       encashmentDays:   paymentDetails.encashmentDays || 0,
+      extraPay:         paymentDetails.extraPay || 0,
+      extraPayReason:   paymentDetails.extraPayReason || null,
       attendanceJson:   JSON.stringify(payroll.counts),
       paymentMode:      paymentDetails.mode || 'bank',
       reference:        paymentDetails.reference || null,
@@ -627,15 +648,30 @@ export default function StaffPage() {
   };
 
   // ── Leave helpers ──────────────────────────────────────────────────────────
-  const getLeaveBalance = useCallback((staffId) => {
-    const year = TODAY.getFullYear();
+  const getLeaveBalance = useCallback((staffId, targetYear = TODAY.getFullYear()) => {
     const used = Object.fromEntries(LEAVE_TYPES.map(t => [t, 0]));
     leaveData
-      .filter(l => l.staffId === staffId && l.status === 'approved' && l.from?.startsWith(String(year)))
-      .forEach(l => { if (l.type in used) used[l.type] += l.days; });
+      .filter(l => l.staffId === staffId && l.status === 'approved' && (
+         (l.from && l.from.startsWith(String(targetYear))) || (l.to && l.to.startsWith(String(targetYear)))
+      ))
+      .forEach(l => {
+         if (used[l.type] === undefined) return;
+         if (l.reason === 'Encashed during salary payout' || (l.type && l.type.includes('encash'))) {
+            used[l.type] += (Number(l.days) || 0);
+            return;
+         }
+         if (!l.from || !l.to) return;
+         const pS = l.from.split('-').map(Number);
+         const pE = l.to.split('-').map(Number);
+         const start = Date.UTC(pS[0], pS[1] - 1, pS[2]);
+         const end = Date.UTC(pE[0], pE[1] - 1, pE[2]);
+         for (let t = start; t <= end; t += 86400000) {
+            if (new Date(t).getUTCFullYear() === targetYear) used[l.type] += 1;
+         }
+      });
     const balance = Object.fromEntries(LEAVE_TYPES.map(t => [t, Math.max(0, LEAVE_DEFAULTS[t] - used[t])]));
     return { used, balance };
-  }, [leaveData]);
+  }, [leaveData, LEAVE_TYPES, LEAVE_DEFAULTS]);
 
   const submitLeave = async (staffId) => {
     const { type, from, to, reason } = leaveForm;
@@ -1080,6 +1116,9 @@ export default function StaffPage() {
     if ((disbursal.encashmentBonus || 0) > 0) {
       earnings.push([`Leave Encashment (${disbursal.encashmentDays}d unused)`, disbursal.encashmentBonus]);
     }
+    if ((disbursal.extraPay || 0) > 0) {
+      earnings.push([disbursal.extraPayReason || 'Extra Pay / Bonus', disbursal.extraPay]);
+    }
     const deductions = [
       ['PF',  Number(rev?.pfDeduction) || 0],
       ['TDS', Number(rev?.tds) || 0],
@@ -1212,8 +1251,9 @@ export default function StaffPage() {
 
   const submitDisbursement = async (printAfter, statusOverride) => {
     if (!selectedStaff) return;
-    const { mode, reference, paidOnDate, notes, encashmentDays, encashmentType, encashmentBonus } = disbDrawer.form;
+    const { mode, reference, paidOnDate, notes, encashmentDays, encashmentType, encashmentBonus, extraPay, extraPayReason } = disbDrawer.form;
     const finalEncashmentBonus = Number(encashmentBonus) || 0;
+    const finalExtraPay = Number(extraPay) || 0;
     const status = statusOverride || disbDrawer.form.status || 'Paid';
     // Reference is required only when actually paying (status=Paid) via bank/cheque/upi.
     if (status === 'Paid' && (mode === 'bank' || mode === 'cheque' || mode === 'upi') && !reference.trim()) {
@@ -1223,6 +1263,11 @@ export default function StaffPage() {
     
     // Deduct leave balance by creating a dummy approved leave record
     if (Number(encashmentDays) > 0 && encashmentType) {
+      const { balance } = getLeaveBalance(selectedStaff.id, new Date(paidOnDate).getFullYear());
+      if (Number(encashmentDays) > (balance[encashmentType] || 0)) {
+        showNotif('warning', 'Insufficient Balance', `Cannot encash ${encashmentDays} days of ${encashmentType}. Only ${balance[encashmentType] || 0} days available.`);
+        return;
+      }
       const tempId = `lv_encash_${Date.now()}`;
       const entry = {
         id: tempId, staffId: selectedStaff.id, type: encashmentType, from: paidOnDate, to: paidOnDate, days: Number(encashmentDays),
@@ -1234,7 +1279,7 @@ export default function StaffPage() {
     }
 
     await disburseSalary(selectedStaff.id, disbDrawer.month, {
-      mode, reference: reference.trim(), paidOnDate, notes: notes.trim(), encashmentDays, encashmentBonus: finalEncashmentBonus,
+      mode, reference: reference.trim(), paidOnDate, notes: notes.trim(), encashmentDays, encashmentBonus: finalEncashmentBonus, extraPay: finalExtraPay, extraPayReason: extraPayReason.trim(),
       paidOn: new Date(paidOnDate + 'T00:00:00').toISOString(),
       status,
     });
@@ -1256,6 +1301,8 @@ export default function StaffPage() {
         mode, reference: reference.trim(), paidOnDate, notes: notes.trim(),
         encashmentDays: Number(encashmentDays) || 0,
         encashmentBonus: finalEncashmentBonus,
+        extraPay: finalExtraPay,
+        extraPayReason: extraPayReason.trim(),
         paidOn: new Date().toISOString(),
       };
       printPayslip(selectedStaff, synth);
@@ -1417,6 +1464,9 @@ export default function StaffPage() {
         {(() => {
           const monthlyPayroll = computeMonthlyPayroll(staff.id, THIS_MONTH);
           const hasLwp = monthlyPayroll.lwpDays > 0;
+          const disbursalRecord = paidThisMonth || draftThisMonth;
+          const hasEncashment = disbursalRecord && (disbursalRecord.encashmentBonus || 0) > 0;
+          const hasExtraPay = disbursalRecord && (disbursalRecord.extraPay || 0) > 0;
           // 3-state palette: Paid (green), Draft (blue), No record / Pending (amber/orange when LWP)
           const palette = paidThisMonth
             ? { border: '#bbf7d0', bg: '#f0fdf4' }
@@ -1477,7 +1527,7 @@ export default function StaffPage() {
                   </div>
 
                   {hasLwp && (
-                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontSize: '11px', color: '#9a3412', fontWeight: 600, paddingBottom: monthlyPayroll.encashmentBonus > 0 ? '6px' : '0', borderBottom: monthlyPayroll.encashmentBonus > 0 ? '1px dashed #fed7aa' : 'none', marginBottom: monthlyPayroll.encashmentBonus > 0 ? '6px' : '0' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontSize: '11px', color: '#9a3412', fontWeight: 600, paddingBottom: hasEncashment || hasExtraPay ? '6px' : '0', borderBottom: hasEncashment || hasExtraPay ? '1px dashed #fed7aa' : 'none', marginBottom: hasEncashment || hasExtraPay ? '6px' : '0' }}>
                       <span>
                         LWP {monthlyPayroll.lwpDays}d × ₹{monthlyPayroll.perDayRate.toLocaleString()}/day
                         {monthlyPayroll.lwpLeaveInMonth > 0 && <span style={{ marginLeft: '4px', opacity: 0.7 }}>(incl. {monthlyPayroll.lwpLeaveInMonth}d leave over quota)</span>}
@@ -1485,12 +1535,20 @@ export default function StaffPage() {
                       <span style={{ fontWeight: 800 }}>− ₹{monthlyPayroll.lwpDeduction.toLocaleString()}</span>
                     </div>
                   )}
-                  {monthlyPayroll.encashmentBonus > 0 && (
-                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontSize: '11px', color: '#16a34a', fontWeight: 600, paddingTop: hasLwp ? '4px' : '0' }}>
+                  {hasEncashment && (
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontSize: '11px', color: '#16a34a', fontWeight: 600, paddingBottom: hasExtraPay ? '6px' : '0', borderBottom: hasExtraPay ? '1px dashed #fed7aa' : 'none', marginBottom: hasExtraPay ? '6px' : '0' }}>
                       <span>
-                        Unused Leave Bonus ({monthlyPayroll.encashmentDays}d)
+                        Leave Encashment ({disbursalRecord.encashmentDays}d)
                       </span>
-                      <span style={{ fontWeight: 800 }}>+ ₹{monthlyPayroll.encashmentBonus.toLocaleString()}</span>
+                      <span style={{ fontWeight: 800 }}>+ ₹{disbursalRecord.encashmentBonus.toLocaleString()}</span>
+                    </div>
+                  )}
+                  {hasExtraPay && (
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontSize: '11px', color: '#16a34a', fontWeight: 600 }}>
+                      <span>
+                        {disbursalRecord.extraPayReason || 'Extra Pay / Bonus'}
+                      </span>
+                      <span style={{ fontWeight: 800 }}>+ ₹{disbursalRecord.extraPay.toLocaleString()}</span>
                     </div>
                   )}
                 </div>
@@ -1547,6 +1605,8 @@ export default function StaffPage() {
                     <span style={{ fontSize: '12px', fontWeight: 700, color: '#0f172a' }}>{d.month}</span>
                     {modeMeta && <span style={{ fontSize: '9px', background: '#eff6ff', color: '#0f52ba', padding: '2px 6px', borderRadius: '4px', fontWeight: 700 }}>{modeMeta.icon} {modeMeta.label}</span>}
                     {d.lwpDays > 0 && <span style={{ fontSize: '9px', background: '#fff7ed', color: '#9a3412', padding: '2px 6px', borderRadius: '4px', fontWeight: 700 }}>{d.lwpDays}d LWP</span>}
+                    {(d.encashmentBonus || 0) > 0 && <span style={{ fontSize: '9px', background: '#f0fdf4', color: '#15803d', padding: '2px 6px', borderRadius: '4px', fontWeight: 700 }}>+{d.encashmentDays}d Encashed</span>}
+                    {(d.extraPay || 0) > 0 && <span style={{ fontSize: '9px', background: '#f0fdf4', color: '#15803d', padding: '2px 6px', borderRadius: '4px', fontWeight: 700 }}>+₹{d.extraPay} Extra</span>}
                   </div>
                   <div style={{ fontSize: '10px', color: '#94a3b8', marginTop: '2px' }}>
                     Gross ₹{(d.grossPay || 0).toLocaleString()}{d.reference ? ` · Ref ${d.reference}` : ''}
@@ -2699,15 +2759,11 @@ export default function StaffPage() {
         const needsRef = ['bank', 'cheque', 'upi'].includes(f.mode);
         const encashmentDaysNum = Number(f.encashmentDays) || 0;
         const encashmentBonus = Number(f.encashmentBonus) || 0;
-        const finalPayable = payroll.proRatedNet + encashmentBonus;
+        const extraPay = Number(f.extraPay) || 0;
+        const finalPayable = payroll.proRatedNet + encashmentBonus + extraPay;
 
         const year = TODAY.getFullYear();
-        const used = Object.fromEntries(LEAVE_TYPES.map(t => [t, 0]));
-        const staffLeaves = leaveData.filter(l => l.staffId === selectedStaff.id);
-        staffLeaves
-          .filter(l => l.status === 'approved' && l.from?.startsWith(String(year)))
-          .forEach(l => { if (used[l.type] !== undefined) used[l.type] += l.days; });
-        const leaveBalance = Object.fromEntries(LEAVE_TYPES.map(t => [t, Math.max(0, (LEAVE_DEFAULTS[t] || 0) - used[t])]));
+        const { balance: leaveBalance } = getLeaveBalance(selectedStaff.id, year);
         return (
           <div
             onClick={() => setDisbDrawer(p => ({ ...p, open: false }))}
@@ -2771,6 +2827,12 @@ export default function StaffPage() {
                       <span style={{ fontWeight: 700 }}>+ ₹{encashmentBonus.toLocaleString()}</span>
                     </div>
                   )}
+                  {extraPay > 0 && (
+                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', color: '#16a34a', marginBottom: '8px' }}>
+                      <span>{f.extraPayReason || 'Extra Pay / Bonus'}</span>
+                      <span style={{ fontWeight: 700 }}>+ ₹{extraPay.toLocaleString()}</span>
+                    </div>
+                  )}
                   <div style={{ borderTop: '1px dashed #e2e8f0', marginTop: '8px', paddingTop: '10px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                     <span style={{ fontSize: '10px', fontWeight: 800, color: '#15803d', letterSpacing: '1px', textTransform: 'uppercase' }}>Payable now</span>
                     <span style={{ fontSize: '20px', fontWeight: 900, color: '#15803d' }}>₹{finalPayable.toLocaleString()}</span>
@@ -2820,6 +2882,29 @@ export default function StaffPage() {
                       />
                     </FieldGroup>
                   </div>
+                </div>
+
+                {/* Extra Pay / Bonus Input */}
+                <div style={{ display: 'flex', gap: '14px', alignItems: 'flex-start' }}>
+                  <FieldGroup style={{ flex: 1.5 }}>
+                    <FieldLabel>Extra Pay Reason (Optional)</FieldLabel>
+                    <TextInput
+                      type="text"
+                      value={f.extraPayReason}
+                      onChange={(v) => setDisbDrawer(p => ({ ...p, form: { ...p.form, extraPayReason: v } }))}
+                      placeholder="e.g. Performance Bonus, Overtime"
+                    />
+                  </FieldGroup>
+                  <FieldGroup style={{ flex: 1 }}>
+                    <FieldLabel>Extra Pay Amount (₹)</FieldLabel>
+                    <TextInput
+                      type="number"
+                      min="0"
+                      value={f.extraPay}
+                      onChange={(v) => setDisbDrawer(p => ({ ...p, form: { ...p.form, extraPay: v } }))}
+                      placeholder="e.g. 5000"
+                    />
+                  </FieldGroup>
                 </div>
 
                 {/* Payment mode */}
@@ -2953,14 +3038,7 @@ export default function StaffPage() {
 
       {/* ── LEAVE APPLICATION FORM ───────────────────────────────────── */}
       {leaveForm.open && selectedStaff && (() => {
-        const year = TODAY.getFullYear();
-        const used = Object.fromEntries(LEAVE_TYPES.map(t => [t, 0]));
-        const staffLeaves = leaveData.filter(l => l.staffId === selectedStaff.id);
-        staffLeaves
-          .filter(l => l.status === 'approved' && l.from?.startsWith(String(year)))
-          .forEach(l => { if (used[l.type] !== undefined) used[l.type] += l.days; });
-
-        const balance = Object.fromEntries(LEAVE_TYPES.map(t => [t, Math.max(0, (LEAVE_DEFAULTS[t] || 0) - used[t])]));
+        const { used, balance } = getLeaveBalance(selectedStaff.id, TODAY.getFullYear());
 
         return (
           <div
