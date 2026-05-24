@@ -2109,7 +2109,7 @@ export default function StaffPage() {
 
       {/* ── Split layout (Roster tab) ──────────────────────────────────── */}
       {mainTab === 'roster' && (
-      <div style={{ display: isMobile ? 'block' : 'flex', gap: '14px', flex: 1, overflow: 'hidden', alignItems: 'stretch', minHeight: 0 }}>
+      <div style={{ display: 'flex', flexDirection: isMobile ? 'column' : 'row', gap: '14px', flex: 1, overflow: 'hidden', alignItems: 'stretch', minHeight: 0 }}>
 
         {/* LEFT: Staff roster — premium card */}
         <div style={{
@@ -2117,7 +2117,7 @@ export default function StaffPage() {
           background: 'white', borderRadius: '16px', border: '1px solid #e8edf2',
           boxShadow: '0 4px 20px rgba(15, 23, 42, 0.04)', overflow: 'hidden',
           display: 'flex', flexDirection: 'column',
-          ...(isMobile && selectedStaff ? { display: 'none' } : {}),
+          ...(isMobile && selectedStaff ? { display: 'none' } : { flex: isMobile ? 1 : undefined }),
         }}>
           {/* Roster header */}
           <div style={{ padding: '18px 18px 14px', borderBottom: '1px solid #f1f5f9', background: 'linear-gradient(180deg, #ffffff 0%, #fafbfc 100%)' }}>

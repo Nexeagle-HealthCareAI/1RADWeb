@@ -47,13 +47,13 @@ const DICOM_CONFIG = {
   // Maximum number of web workers based on CPU cores
   MAX_WEB_WORKERS: Math.min(navigator.hardwareConcurrency || 4, 8),
   
-  // Timeout for initial image load (milliseconds). Manual parse path should
-  // resolve in well under 1s; allow generous headroom for slow mobile CPUs
-  // but don't make the user wait 10 minutes if something is silently stuck.
-  INITIAL_LOAD_TIMEOUT: 30000, // 30 seconds
+  // Timeout for initial image load (milliseconds). Allows worker decode path
+  // (15s FAST_FAIL) to fail and Path C fallback (~1s) to complete inside the
+  // budget without the user staring at the loader for too long.
+  INITIAL_LOAD_TIMEOUT: 45000, // 45 seconds
 
   // Timeout for retry without workers (milliseconds)
-  RETRY_TIMEOUT: 20000, // 20 seconds
+  RETRY_TIMEOUT: 30000, // 30 seconds
   
   // Enable detailed console logging
   DEBUG_LOGGING: false // Reduced for performance
@@ -225,11 +225,12 @@ async function initCornerstone() {
   imageLoader.registerImageLoader('wadouri', (imageId, options) => {
     console.log(`[DICOM_TRACE] wadouri-loader CALLED for: ${imageId.slice(0, 80)}`);
 
-    // Web-worker decode path (Path A/B) has been racing slower than the manual
-    // dicomParser path (Path C) in this environment on every device, so we always
-    // prefer the manual path. Set PREFER_WORKER_DECODE=true to opt back in to
-    // workers (useful only if the studies use JPEG2000/JPEG-LS compression).
-    const PREFER_WORKER_DECODE = false;
+    // Strategy: try cornerstone's BUILT-IN wadouri loader first. It uses the
+    // codec workers and produces a fully-formed Image object that cornerstone3D's
+    // renderer accepts without quirks. Our hand-crafted Path C shim was missing
+    // pixel-format fields the renderer needs, leading to blank canvases.
+    // If the built-in path fails or hangs, we fall back to Path C.
+    const PREFER_WORKER_DECODE = true;
 
     const promise = new Promise(async (resolve, reject) => {
       const loaderTimeout = setTimeout(() => {
@@ -374,8 +375,11 @@ async function initCornerstone() {
           return;
         }
         
+        // Give the worker decode path 15s. Codec workers compile/warm up on the
+        // first call (~2-5s on cold cache). After that, subsequent slices are
+        // fast. If the worker path doesn't return in 15s we fall back to Path C.
         const fastFailTimeout = new Promise((_, reject) =>
-          setTimeout(() => reject(new Error('FAST_FAIL')), 2500)
+          setTimeout(() => reject(new Error('FAST_FAIL')), 15000)
         );
 
         Promise.race([

@@ -90,6 +90,13 @@ export default function StaffDashboardPage({ onSelectStaff, embedded = false }) 
   const [search,        setSearch]       = useState('');
   const [selectedMonth, setSelectedMonth] = useState(THIS_MONTH);
 
+  const [isMobile, setIsMobile] = useState(window.innerWidth <= 768);
+  useEffect(() => {
+    const handleResize = () => setIsMobile(window.innerWidth <= 768);
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
+
   // Last 24 months for the dropdown (most recent first).
   const monthOptions = useMemo(() => {
     const opts = [];
@@ -343,7 +350,7 @@ export default function StaffDashboardPage({ onSelectStaff, embedded = false }) 
       </div>}
 
       {/* KPI strip */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '12px', marginBottom: '14px' }}>
+      <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr 1fr' : 'repeat(4, 1fr)', gap: '12px', marginBottom: '14px' }}>
         <KpiCard label="Total staff" value={kpis.total} tone="blue" />
         <KpiCard label={`Paid in ${selectedMonthLabel}`} value={kpis.paid} sub={`₹${kpis.totalDisbursed.toLocaleString()}`} tone="green" />
         <KpiCard
@@ -407,22 +414,24 @@ export default function StaffDashboardPage({ onSelectStaff, embedded = false }) 
       </div>
 
       {/* Table */}
-      <div style={{ background: 'white', borderRadius: '14px', border: '1px solid #e8edf2', boxShadow: '0 2px 8px rgba(0,0,0,0.04)', overflow: 'auto' }}>
+      <div style={{ background: 'white', borderRadius: '14px', border: '1px solid #e8edf2', boxShadow: '0 2px 8px rgba(0,0,0,0.04)', overflow: isMobile ? 'hidden' : 'auto' }}>
         {(() => {
           const gridCols = '1.7fr 110px 90px 100px 120px 1.1fr 1.2fr 110px 70px';
           return (
             <>
-              <div style={{ display: 'grid', gridTemplateColumns: gridCols, padding: '12px 18px', background: '#fafbfc', borderBottom: '1px solid #f1f5f9', fontSize: '9px', fontWeight: 900, color: '#94a3b8', letterSpacing: '1px', textTransform: 'uppercase', minWidth: '1240px', gap: '10px' }}>
-                <span>Employee</span>
-                <span>Employee ID</span>
-                <span style={{ textAlign: 'center' }}>Attendance</span>
-                <span style={{ textAlign: 'center' }}>Leave applied</span>
-                <span style={{ textAlign: 'center' }}>Extra Loss of Pay</span>
-                <span style={{ textAlign: 'right' }}>Net pay / month</span>
-                <span style={{ textAlign: 'right' }}>Payroll this month</span>
-                <span style={{ textAlign: 'center' }}>Status</span>
-                <span></span>
-              </div>
+              {!isMobile && (
+                <div style={{ display: 'grid', gridTemplateColumns: gridCols, padding: '12px 18px', background: '#fafbfc', borderBottom: '1px solid #f1f5f9', fontSize: '9px', fontWeight: 900, color: '#94a3b8', letterSpacing: '1px', textTransform: 'uppercase', minWidth: '1240px', gap: '10px' }}>
+                  <span>Employee</span>
+                  <span>Employee ID</span>
+                  <span style={{ textAlign: 'center' }}>Attendance</span>
+                  <span style={{ textAlign: 'center' }}>Leave applied</span>
+                  <span style={{ textAlign: 'center' }}>Extra Loss of Pay</span>
+                  <span style={{ textAlign: 'right' }}>Net pay / month</span>
+                  <span style={{ textAlign: 'right' }}>Payroll this month</span>
+                  <span style={{ textAlign: 'center' }}>Status</span>
+                  <span></span>
+                </div>
+              )}
 
               {loading ? (
                 <div style={{ padding: '60px', textAlign: 'center', color: '#94a3b8', fontSize: '13px' }}>Loading dashboard…</div>
@@ -433,6 +442,74 @@ export default function StaffDashboardPage({ onSelectStaff, embedded = false }) 
                 const attDays      = +(payroll.attendanceDays || 0).toFixed(1);
                 const totalLeaveYTD = payroll.totalLeaveYTD || 0;
                 const extraLwpYTD   = payroll.lwpLeaveYTD || 0;
+                
+                if (isMobile) {
+                    return (
+                        <div key={staff.id} onClick={() => handleOpenStaff(staff)} style={{ padding: '16px', borderBottom: '1px solid #f8fafc', display: 'flex', flexDirection: 'column', gap: '12px', cursor: 'pointer' }}>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                                  <div style={{ width: '40px', height: '40px', borderRadius: '12px', background: meta.bg, flexShrink: 0, overflow: 'hidden', position: 'relative' }}>
+                                    {staff.photoUrl && (
+                                      <img src={staff.photoUrl} alt="" crossOrigin="anonymous" referrerPolicy="no-referrer" style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover' }} onError={(e) => { e.currentTarget.style.display = 'none'; }} />
+                                    )}
+                                    {!staff.photoUrl && (
+                                      <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', color: meta.color, fontSize: '15px', fontWeight: 800 }}>{(staff.name || '?').charAt(0).toUpperCase()}</div>
+                                    )}
+                                  </div>
+                                  <div>
+                                    <div style={{ fontSize: '14px', fontWeight: 800, color: '#0f172a' }}>{staff.name}</div>
+                                    <div style={{ fontSize: '11px', color: meta.color, fontWeight: 700 }}>{ROLE_LABELS?.[staff.roles?.[0]] || meta.label}</div>
+                                  </div>
+                                </div>
+                                <div style={{ textAlign: 'right' }}>
+                                  {!payroll.hasStructure ? (
+                                    <span style={{ fontSize: '9px', background: '#f1f5f9', color: '#64748b', padding: '4px 10px', borderRadius: '999px', fontWeight: 800 }}>NO STRUCTURE</span>
+                                  ) : payroll.paid ? (
+                                    <span style={{ fontSize: '9px', background: '#dcfce7', color: '#15803d', padding: '4px 10px', borderRadius: '999px', fontWeight: 800 }}>PAID</span>
+                                  ) : payroll.draft ? (
+                                    <span style={{ fontSize: '9px', background: '#dbeafe', color: '#1d4ed8', padding: '4px 10px', borderRadius: '999px', fontWeight: 800 }}>DRAFT</span>
+                                  ) : (
+                                    <span style={{ fontSize: '9px', background: '#fef3c7', color: '#92400e', padding: '4px 10px', borderRadius: '999px', fontWeight: 800 }}>PENDING</span>
+                                  )}
+                                </div>
+                            </div>
+                            
+                            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '8px', background: '#f8fafc', padding: '10px', borderRadius: '10px' }}>
+                              <div style={{ textAlign: 'center' }}>
+                                <div style={{ fontSize: '13px', fontWeight: 800, color: attDays > 0 ? '#15803d' : '#cbd5e1' }}>{attDays}</div>
+                                <div style={{ fontSize: '8px', color: '#94a3b8', fontWeight: 700, marginTop: '2px' }}>ATTENDANCE</div>
+                              </div>
+                              <div style={{ textAlign: 'center', borderLeft: '1px solid #e2e8f0', borderRight: '1px solid #e2e8f0' }}>
+                                <div style={{ fontSize: '13px', fontWeight: 800, color: totalLeaveYTD > 0 ? '#6366f1' : '#cbd5e1' }}>{totalLeaveYTD}</div>
+                                <div style={{ fontSize: '8px', color: '#94a3b8', fontWeight: 700, marginTop: '2px' }}>LEAVE YTD</div>
+                              </div>
+                              <div style={{ textAlign: 'center' }}>
+                                <div style={{ fontSize: '13px', fontWeight: 800, color: extraLwpYTD > 0 ? '#dc2626' : '#cbd5e1' }}>{extraLwpYTD}</div>
+                                <div style={{ fontSize: '8px', color: '#94a3b8', fontWeight: 700, marginTop: '2px' }}>LWP YTD</div>
+                              </div>
+                            </div>
+                            
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                <div>
+                                  {payroll.hasStructure ? (
+                                    <div style={{ fontSize: '12px', fontWeight: 800, color: '#0f172a' }}>₹{payroll.structureNet.toLocaleString()} / mo</div>
+                                  ) : (
+                                    <div style={{ fontSize: '12px', color: '#94a3b8', fontWeight: 600 }}>Structure not set</div>
+                                  )}
+                                </div>
+                                <div style={{ textAlign: 'right' }}>
+                                  {!payroll.hasStructure ? null : (
+                                    <>
+                                      <div style={{ fontSize: '14px', fontWeight: 900, color: payroll.paid ? '#16a34a' : payroll.draft ? '#1d4ed8' : '#9a3412' }}>₹{(payroll.paid || payroll.draft ? payroll.disbursedNet : payroll.proRatedNet).toLocaleString()}</div>
+                                      <div style={{ fontSize: '9px', color: payroll.paid ? '#16a34a' : payroll.draft ? '#1d4ed8' : '#9a3412', fontWeight: 700 }}>{payroll.paid ? 'DISBURSED' : payroll.draft ? 'AWAITING' : payroll.lwpDays > 0 ? `AFTER ${payroll.lwpDays}D LWP` : 'PAYABLE'}</div>
+                                    </>
+                                  )}
+                                </div>
+                            </div>
+                        </div>
+                    );
+                }
+
                 return (
                   <div
                     key={staff.id}
