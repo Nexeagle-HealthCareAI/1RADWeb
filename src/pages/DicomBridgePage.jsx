@@ -414,19 +414,29 @@ export default function DicomBridgePage() {
                     <div style={{ fontSize: '13px', fontWeight: 800, color: '#0a1628', marginBottom: '10px' }}>Automatic Modalities</div>
                     <div style={{ fontSize: '11px', color: '#64748b', marginBottom: '12px' }}>Select which modalities to auto-upload. If none are selected, ALL modalities will be uploaded automatically.</div>
                     <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap' }}>
-                      {['CT', 'MR', 'CR', 'DX', 'US', 'PT', 'NM'].map(mod => (
-                        <label key={mod} style={{ display: 'flex', alignItems: 'center', gap: '6px', background: '#f8fafc', padding: '6px 12px', borderRadius: '8px', border: '1px solid #e2e8f0', cursor: 'pointer' }}>
+                      {[
+                        { id: 'CT', label: 'Computed Tomography (CT)' },
+                        { id: 'MR', label: 'Magnetic Resonance (MR)' },
+                        { id: 'CR', label: 'X-Ray (CR)' },
+                        { id: 'DX', label: 'Digital X-Ray (DX)' },
+                        { id: 'US', label: 'Ultrasound (US)' },
+                        { id: 'PT', label: 'PET (PT)' },
+                        { id: 'NM', label: 'Nuclear Medicine (NM)' },
+                        { id: 'MG', label: 'Mammography (MG)' },
+                        { id: 'XA', label: 'X-Ray Angiography (XA)' }
+                      ].map(mod => (
+                        <label key={mod.id} style={{ display: 'flex', alignItems: 'center', gap: '6px', background: '#f8fafc', padding: '6px 12px', borderRadius: '8px', border: '1px solid #e2e8f0', cursor: 'pointer' }}>
                           <input 
                             type="checkbox" 
-                            checked={localConfig.autoModalities?.includes(mod)} 
+                            checked={localConfig.autoModalities?.includes(mod.id)} 
                             onChange={(e) => {
                               let newMods = [...(localConfig.autoModalities || [])];
-                              if (e.target.checked) newMods.push(mod);
-                              else newMods = newMods.filter(m => m !== mod);
+                              if (e.target.checked) newMods.push(mod.id);
+                              else newMods = newMods.filter(m => m !== mod.id);
                               updateConfig({ ...localConfig, autoModalities: newMods });
                             }}
                           />
-                          <span style={{ fontSize: '12px', fontWeight: 700, color: '#0f52ba' }}>{mod}</span>
+                          <span style={{ fontSize: '12px', fontWeight: 700, color: '#0f52ba' }}>{mod.label}</span>
                         </label>
                       ))}
                     </div>
