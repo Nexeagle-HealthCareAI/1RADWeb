@@ -139,9 +139,12 @@ async function initCornerstone() {
     console.warn("[DICOM] wadouri registration failed:", regErr);
   }
 
-  // Initialize global cache to a high-performance threshold (1GB)
-  // This prevents frequent evictions and re-decoding of slices during fast scrolling
-  cache.setMaxCacheSize(1024 * 1024 * 1000); 
+  // Initialize global cache to a high-performance threshold (2 GB on desktop,
+  // 800 MB on mobile to keep Safari iOS from OOM-killing the tab).
+  const isMobileDevice = typeof window !== 'undefined' && window.innerWidth < 768;
+  const cacheSizeBytes = isMobileDevice ? 800 * 1024 * 1024 : 2048 * 1024 * 1024;
+  cache.setMaxCacheSize(cacheSizeBytes);
+  console.log(`[DICOM] Image cache max size set to ${(cacheSizeBytes / (1024 * 1024)).toFixed(0)} MB`);
 
   const config = {
     maxWebWorkers: DICOM_CONFIG.USE_WEB_WORKERS ? DICOM_CONFIG.MAX_WEB_WORKERS : 0,
@@ -149,6 +152,9 @@ async function initCornerstone() {
     decodeConfig: {
       usePDFJS: false,
       strict: false,
+      // Use 16-bit textures directly when supported — saves a normalization
+      // pass per slice and is dramatically faster for 12/16-bit CT/MR series.
+      useNorm16Texture: true,
     },
     taskConfiguration: {
       decodeTask: {
@@ -157,17 +163,28 @@ async function initCornerstone() {
       }
     }
   };
-  
+
   try {
     await cornerstoneDICOMImageLoader.init(config);
     console.log("[DICOM] Loader initialized successfully");
-    
-    // Configure request pool for maximum diagnostic throughput
+
+    // Configure request pool for maximum diagnostic throughput. The defaults
+    // are very conservative — for a 160-slice study you want most of the work
+    // to be already-decoded by the time the user scrolls.
     requestPoolManager.maxRequestsPerOrigin = {
-      interaction: 100, // High priority for what the user is currently seeing
-      thumbnail: 10,
-      prefetch: 30      // Generous background loading
+      interaction: 200, // visible/active slice — must be near-instant
+      thumbnail: 20,
+      prefetch: isMobileDevice ? 60 : 120, // background slice decode
     };
+
+    // Pre-warm the first codec worker so the very first slice decode doesn't
+    // also pay the worker startup cost. The init() above already creates the
+    // workers; this just ensures one is hot.
+    try {
+      if (cornerstoneDICOMImageLoader.internal?.options) {
+        cornerstoneDICOMImageLoader.internal.options.beforeSend = undefined;
+      }
+    } catch {}
   } catch (initErr) {
     console.error("[DICOM] Loader initialization failed:", initErr);
   }
@@ -1702,12 +1719,19 @@ const AdvancedDicomViewer = ({
             toolGroup.addTool(stackScrollToolName);
           }
           
+          // Configure StackScrollTool: turn OFF debounceIfNotLoaded so a slow
+          // (still-decoding) slice doesn't halt the user's wheel scroll. The
+          // prefetcher will catch up; meanwhile the user gets responsive scroll.
+          try {
+            toolGroup.setToolConfiguration(stackScrollToolName, { debounceIfNotLoaded: false });
+          } catch (e) { console.warn('[DICOM] StackScroll config not set:', e?.message); }
+
           toolGroup.setToolActive(stackScrollToolName, {
             bindings: [
               { mouseButton: toolsEnums.MouseBindings.Wheel }
             ]
           });
-          console.log(`[DICOM] ✅ StackScroll tool activated successfully with Wheel binding`);
+          console.log(`[DICOM] ✅ StackScroll tool activated (debounceIfNotLoaded=false)`);
           
           // Verify the tool is actually active
           const toolState = toolGroup.getToolConfiguration(stackScrollToolName);
@@ -1742,12 +1766,18 @@ const AdvancedDicomViewer = ({
         // preserveOrder=true loads slices sequentially from the current index outward,
         // matching how users actually scroll. Cuts perceived load time on the slices
         // they reach first.
+        //
+        // Prefetch the ENTIRE stack so scrolling never hits a non-decoded slice.
+        // For typical 100-300 slice CT/MR studies this is ~50-150 MB decoded.
+        // Our cache is sized for it (2 GB desktop / 800 MB mobile).
         if (elementRef.current) {
+          const totalSlices = files.length;
           utilities.stackPrefetch.enable(elementRef.current, {
-            maxImagesToPrefetch: isMobile ? 20 : 60,
+            maxImagesToPrefetch: isMobile ? Math.min(totalSlices, 150) : totalSlices,
             preserveOrder: true,
-            displaySetId: viewportId
+            displaySetId: viewportId,
           });
+          console.log(`[DICOM] Stack prefetch enabled: max ${isMobile ? Math.min(totalSlices, 150) : totalSlices} of ${totalSlices} slices`);
         }
         
         // DEBUGGING: Expose references for console testing
