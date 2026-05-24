@@ -5,7 +5,10 @@ import {
   cache,
   init as csInit,
   imageLoader, // Added core imageLoader for manual registration
-  requestPoolManager
+  requestPoolManager,
+  volumeLoader,
+  setVolumesForViewports,
+  cornerstoneStreamingImageVolumeLoader,
 } from '@cornerstonejs/core';
 import {
   init as csToolsInit,
@@ -167,6 +170,18 @@ async function initCornerstone() {
   try {
     await cornerstoneDICOMImageLoader.init(config);
     console.log("[DICOM] Loader initialized successfully");
+
+    // Register cornerstoneStreamingImageVolume as a volume loader. This lets
+    // multi-slice series be uploaded to the GPU as a single 3D texture instead
+    // of swapping textures on every slice change. Scrolling becomes a shader
+    // uniform update (~0.1ms per slice) instead of a texture upload (~1-10ms).
+    try {
+      volumeLoader.registerVolumeLoader('cornerstoneStreamingImageVolume', cornerstoneStreamingImageVolumeLoader);
+      volumeLoader.registerUnknownVolumeLoader(cornerstoneStreamingImageVolumeLoader);
+      console.log("[DICOM] Volume loader (cornerstoneStreamingImageVolume) registered");
+    } catch (vlErr) {
+      console.warn("[DICOM] Volume loader registration failed (will fall back to stack viewport):", vlErr?.message);
+    }
 
     // Configure request pool for maximum diagnostic throughput. The defaults
     // are very conservative — for a 160-slice study you want most of the work
@@ -1315,23 +1330,79 @@ const AdvancedDicomViewer = ({
         const renderingEngine = new RenderingEngine(engineId);
         renderingEngineRef.current = renderingEngine;
 
-        // Configure Viewport
-        const viewportInput = {
-          viewportId,
-          element: elementRef.current,
-          type: Enums.ViewportType.STACK,
-        };
+        // ─── VIEWPORT TYPE DECISION ─────────────────────────────────────────
+        // Volume viewport uploads ALL slices to the GPU as a single 3D texture.
+        // Scrolling becomes a shader-uniform update (~0.1ms) instead of a
+        // texture upload (~1-10ms). HUGE smoothness win for multi-slice CT/MR.
+        //
+        // For single-slice or near-single-slice series (Scout Lateral, X-Ray,
+        // MG, etc.) the volume overhead isn't worth it — stay on Stack.
+        const VOLUME_VIEWPORT_THRESHOLD = 4;
+        const useVolumeViewport = files.length >= VOLUME_VIEWPORT_THRESHOLD;
+        let isVolumeMode = false;
 
-        renderingEngine.enableElement(viewportInput);
+        if (useVolumeViewport) {
+          try {
+            console.log(`[DICOM_TRACE] Attempting VOLUME viewport mode (${files.length} slices)`);
+            const viewportInput = {
+              viewportId,
+              element: elementRef.current,
+              type: Enums.ViewportType.ORTHOGRAPHIC,
+              defaultOptions: {
+                orientation: Enums.OrientationAxis.AXIAL,
+                background: [0, 0, 0],
+              },
+            };
+            renderingEngine.enableElement(viewportInput);
+
+            const volumeId = `cornerstoneStreamingImageVolume:vol_${engineId}_${Date.now()}`;
+            console.log(`[DICOM_TRACE] Creating volume ${volumeId}`);
+            const volume = await volumeLoader.createAndCacheVolume(volumeId, { imageIds });
+            console.log(`[DICOM_TRACE] Volume created, starting background load`);
+            // Volume's own internal prefetcher kicks in here. No need for stackPrefetch.
+            volume.load();
+
+            await setVolumesForViewports(renderingEngine, [{ volumeId }], [viewportId]);
+            console.log(`[DICOM_TRACE] Volume bound to viewport`);
+
+            // Mark engine ready & store volumeId for reference
+            engineStackReadyRef.current = true;
+            renderingEngineRef.current._volumeId = volumeId;
+            renderingEngineRef.current._viewportType = 'volume';
+            isVolumeMode = true;
+          } catch (volErr) {
+            console.warn(`[DICOM_TRACE] Volume mode failed, falling back to Stack:`, volErr?.message);
+            // Volume mode failed — clean up and fall through to stack
+            try { renderingEngine.disableElement(viewportId); } catch {}
+            isVolumeMode = false;
+          }
+        }
+
+        // ─── STACK VIEWPORT (fallback OR single-slice series) ───────────────
+        if (!isVolumeMode) {
+          const viewportInput = {
+            viewportId,
+            element: elementRef.current,
+            type: Enums.ViewportType.STACK,
+          };
+          renderingEngine.enableElement(viewportInput);
+          renderingEngineRef.current._viewportType = 'stack';
+        }
         const viewport = renderingEngine.getViewport(viewportId);
 
         // Load and assign Stack
+        // Volume viewports load their pixel data via the volume loader, not via
+        // loadAndCacheImage + setStack. Skip the entire stack-load+setStack block.
+        if (isVolumeMode) {
+          // engineStackReadyRef is already set true above; flow falls through
+          // to the tool setup + rAF render block below.
+        } else
         try {
           console.log(`[DICOM] Attempting decode: ${imageIds[0]}`);
           console.log(`[DICOM] Starting image load at: ${new Date().toISOString()}`);
-          
+
           // Increased timeout for slow networks/large files
-          const timeout = new Promise((_, reject) => 
+          const timeout = new Promise((_, reject) =>
             setTimeout(() => {
               console.error(`[DICOM] TIMEOUT after ${DICOM_CONFIG.INITIAL_LOAD_TIMEOUT/1000}s`);
               reject(new Error("Decoder timeout after " + (DICOM_CONFIG.INITIAL_LOAD_TIMEOUT/1000) + "s. File may be too large or compressed with unsupported codec."));
@@ -1426,31 +1497,35 @@ const AdvancedDicomViewer = ({
           return;
         }
 
-        console.log(`[DICOM_TRACE] setupEngine: calling viewport.setStack(${imageIds.length} ids)`);
-        await viewport.setStack(imageIds);
-        if (!isMounted || !elementRef.current) {
-          console.log('[DICOM_TRACE] setupEngine: BAILED after setStack — isMounted/elementRef gone');
-          return;
-        }
-        console.log(`[DICOM_TRACE] setupEngine: setStack resolved, marking engineStackReadyRef=true`);
-        engineStackReadyRef.current = true;
-
-        // If a streaming append fired BEFORE we got here, it was deferred. Apply it now.
-        if (pendingAppendFilesRef.current) {
-          const pending = pendingAppendFilesRef.current;
-          pendingAppendFilesRef.current = null;
-          console.log(`[DICOM_TRACE] setupEngine: applying deferred append (${pending.length} files)`);
-          try {
-            const pendingIds = pending.map(f => `wadouri:${getOrCreateBlobUrl(f)}`);
-            await viewport.setStack(pendingIds);
-            console.log('[DICOM_TRACE] setupEngine: deferred append setStack done');
-          } catch (e) {
-            console.warn('[DICOM_TRACE] setupEngine: deferred append failed:', e?.message);
+        // setStack / setImageIdIndex are STACK-only — volume viewport's slices
+        // are addressed via the 3D texture, not an imageId list.
+        if (!isVolumeMode) {
+          console.log(`[DICOM_TRACE] setupEngine: calling viewport.setStack(${imageIds.length} ids)`);
+          await viewport.setStack(imageIds);
+          if (!isMounted || !elementRef.current) {
+            console.log('[DICOM_TRACE] setupEngine: BAILED after setStack — isMounted/elementRef gone');
+            return;
           }
-        }
+          console.log(`[DICOM_TRACE] setupEngine: setStack resolved, marking engineStackReadyRef=true`);
+          engineStackReadyRef.current = true;
 
-        // Explicitly set to first image
-        await viewport.setImageIdIndex(0);
+          // If a streaming append fired BEFORE we got here, it was deferred. Apply it now.
+          if (pendingAppendFilesRef.current) {
+            const pending = pendingAppendFilesRef.current;
+            pendingAppendFilesRef.current = null;
+            console.log(`[DICOM_TRACE] setupEngine: applying deferred append (${pending.length} files)`);
+            try {
+              const pendingIds = pending.map(f => `wadouri:${getOrCreateBlobUrl(f)}`);
+              await viewport.setStack(pendingIds);
+              console.log('[DICOM_TRACE] setupEngine: deferred append setStack done');
+            } catch (e) {
+              console.warn('[DICOM_TRACE] setupEngine: deferred append failed:', e?.message);
+            }
+          }
+
+          // Explicitly set to first image
+          await viewport.setImageIdIndex(0);
+        }
         if (!isMounted || !elementRef.current) {
           console.log('[DICOM_TRACE] setupEngine: BAILED after setImageIdIndex');
           return;
@@ -1489,14 +1564,25 @@ const AdvancedDicomViewer = ({
                const canvas = viewport.getCanvas();
                 console.log(`[DICOM] Viewport type: ${viewport.type}, Canvas: ${canvas.width}x${canvas.height}`);
                 
-                // Store event handlers for cleanup
+                // Store event handlers for cleanup. The slice index is updated
+                // via rAF so a 60-tick/sec wheel scroll causes at most 60 React
+                // commits/sec instead of one per cornerstone event (cornerstone
+                // can fire 300+/sec on a fast trackpad). This is the single
+                // biggest contributor to scroll lag when all slices are cached.
+                let lastIndexAnimFrame = 0;
+                let pendingIndex = -1;
                 const stackNewImageHandler = (evt) => {
                    const index = evt.detail.imageIdIndex;
-                   setCurrentImageIndex(index);
-                   if (onSliceChange) onSliceChange(index, files.length);
-                   if (DICOM_CONFIG.DEBUG_LOGGING) {
-                     console.log(`[DICOM] STACK_NEW_IMAGE event: slice ${index + 1}/${files.length}`);
-                   }
+                   pendingIndex = index;
+                   if (lastIndexAnimFrame) return;
+                   lastIndexAnimFrame = requestAnimationFrame(() => {
+                     lastIndexAnimFrame = 0;
+                     if (pendingIndex < 0) return;
+                     const idx = pendingIndex;
+                     pendingIndex = -1;
+                     setCurrentImageIndex(idx);
+                     if (onSliceChange) onSliceChange(idx, files.length);
+                   });
                 };
 
                 // Add listener for stack scroll index changes
@@ -1582,38 +1668,50 @@ const AdvancedDicomViewer = ({
                console.log('[DICOM_TRACE] rAF inner: calling renderViewports');
                renderingEngine.renderViewports([viewportId]);
 
-               // Two-frame wait: cornerstone3D's WebGL paint isn't synchronous with
-               // renderViewports() — frame N just queues the GL commands, frame N+1
-               // is when the user actually sees pixels.
-               requestAnimationFrame(() => {
-                 requestAnimationFrame(() => {
-                   if (!isMounted) {
-                     console.log('[DICOM_TRACE] 2nd rAF: SKIPPED — isMounted=false');
-                     return;
-                   }
-                   // Final resize + render after layout has fully settled.
-                   // Catches the case where the initial render painted into a
-                   // stale-sized canvas. We call resize() because cornerstone's
-                   // ResizeObserver may not have fired yet (it's debounced).
+               // KEEP THE LOADER VISIBLE until cornerstone fires IMAGE_RENDERED —
+               // that's the canonical "pixels are now on the canvas" signal. With
+               // rAF-only flips, the loader could vanish before the actual paint
+               // landed, especially on volume viewports where setVolumesForViewports
+               // returns before the first slice is on-screen.
+               //
+               // We attach a one-shot IMAGE_RENDERED listener, then schedule the
+               // standard resize+render to actually cause the paint. The listener
+               // flips hasRenderedFirstImage when pixels are committed.
+               const onFirstImageRendered = () => {
+                 if (!isMounted) return;
+                 try { elementRef.current?.removeEventListener(Enums.Events.IMAGE_RENDERED, onFirstImageRendered); } catch {}
+                 console.log('[DICOM_TRACE] IMAGE_RENDERED received — flipping loader off');
+                 setHasRenderedFirstImage(true);
+                 // Belt-and-suspenders: a follow-up resize+render after layout settles
+                 // catches the case where the first paint was into a stale-sized canvas.
+                 setTimeout(() => {
+                   if (!isMounted) return;
                    try {
                      renderingEngine.resize(true, true);
                      renderingEngine.renderViewports([viewportId]);
-                     const cv = viewport.getCanvas?.();
-                     console.log(`[DICOM_TRACE] 2nd rAF: final canvas ${cv?.width}x${cv?.height}, container ${elementRef.current?.clientWidth}x${elementRef.current?.clientHeight}`);
-                   } catch (e) {
-                     console.warn('[DICOM_TRACE] 2nd rAF final resize/render failed:', e?.message);
-                   }
-                   console.log('[DICOM_TRACE] 2nd rAF: setHasRenderedFirstImage(true)');
-                   setHasRenderedFirstImage(true);
-                   // One more delayed kick for slow devices where layout settled even later.
-                   setTimeout(() => {
-                     if (!isMounted) return;
-                     try {
-                       renderingEngine.resize(true, true);
-                       renderingEngine.renderViewports([viewportId]);
-                     } catch {}
-                   }, 250);
-                 });
+                   } catch {}
+                 }, 250);
+               };
+               try {
+                 elementRef.current?.addEventListener(Enums.Events.IMAGE_RENDERED, onFirstImageRendered);
+                 // Store handler for cleanup
+                 renderingEngineRef.current._onFirstImageRendered = onFirstImageRendered;
+               } catch (e) {
+                 console.warn('[DICOM_TRACE] IMAGE_RENDERED listener attach failed:', e?.message);
+               }
+
+               // Trigger an additional render after a frame so the listener has a
+               // chance to fire on slower devices/volume mode.
+               requestAnimationFrame(() => {
+                 if (!isMounted) return;
+                 try {
+                   renderingEngine.resize(true, true);
+                   renderingEngine.renderViewports([viewportId]);
+                   const cv = viewport.getCanvas?.();
+                   console.log(`[DICOM_TRACE] post-resize render: canvas ${cv?.width}x${cv?.height}, container ${elementRef.current?.clientWidth}x${elementRef.current?.clientHeight}`);
+                 } catch (e) {
+                   console.warn('[DICOM_TRACE] post-resize render failed:', e?.message);
+                 }
                });
 
                // Double-flush render for some browser engines (lower-priority safety net)
@@ -1770,7 +1868,9 @@ const AdvancedDicomViewer = ({
         // Prefetch the ENTIRE stack so scrolling never hits a non-decoded slice.
         // For typical 100-300 slice CT/MR studies this is ~50-150 MB decoded.
         // Our cache is sized for it (2 GB desktop / 800 MB mobile).
-        if (elementRef.current) {
+        // Volume viewport has its own internal prefetcher (volume.load()) so
+        // we only attach stackPrefetch when in stack mode.
+        if (elementRef.current && !isVolumeMode) {
           const totalSlices = files.length;
           utilities.stackPrefetch.enable(elementRef.current, {
             maxImagesToPrefetch: isMobile ? Math.min(totalSlices, 150) : totalSlices,
@@ -1778,6 +1878,8 @@ const AdvancedDicomViewer = ({
             displaySetId: viewportId,
           });
           console.log(`[DICOM] Stack prefetch enabled: max ${isMobile ? Math.min(totalSlices, 150) : totalSlices} of ${totalSlices} slices`);
+        } else if (isVolumeMode) {
+          console.log(`[DICOM] Volume mode — internal volume.load() handles prefetch`);
         }
         
         // DEBUGGING: Expose references for console testing
@@ -1847,6 +1949,11 @@ const AdvancedDicomViewer = ({
           }
           if (renderingEngineRef.current._onImageLoadFailed && elementRef.current) {
             elementRef.current.removeEventListener(Enums.Events.IMAGE_LOAD_FAILED, renderingEngineRef.current._onImageLoadFailed);
+          }
+          if (renderingEngineRef.current._onFirstImageRendered && elementRef.current) {
+            try {
+              elementRef.current.removeEventListener(Enums.Events.IMAGE_RENDERED, renderingEngineRef.current._onFirstImageRendered);
+            } catch {}
           }
           if (renderingEngineRef.current._resizeObserver) {
             renderingEngineRef.current._resizeObserver.disconnect();

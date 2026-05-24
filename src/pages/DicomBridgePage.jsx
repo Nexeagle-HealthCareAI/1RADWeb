@@ -30,6 +30,13 @@ export default function DicomBridgePage() {
   const [search, setSearch]         = useState('');
   const [activeTab, setActiveTab]   = useState('monitor'); // 'monitor' | 'setup'
 
+  const [isMobile, setIsMobile] = useState(window.innerWidth <= 768);
+  useEffect(() => {
+    const handleResize = () => setIsMobile(window.innerWidth <= 768);
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
+
   const fetchStatus = useCallback(async () => {
     try {
       const res = await fetch(`${BRIDGE_URL}/api/status`, { signal: AbortSignal.timeout(3000) });
@@ -59,7 +66,7 @@ export default function DicomBridgePage() {
     <div style={{ background: '#f0f4f8', minHeight: '100vh' }}>
 
       {/* ── Hero Header ── */}
-      <div style={{ background: 'linear-gradient(135deg, #0a1628 0%, #0f2a5e 60%, #1e3a8a 100%)', padding: '36px 50px 46px', position: 'relative', overflow: 'hidden' }}>
+      <div style={{ background: 'linear-gradient(135deg, #0a1628 0%, #0f2a5e 60%, #1e3a8a 100%)', padding: isMobile ? '24px 20px 32px' : '36px 50px 46px', position: 'relative', overflow: 'hidden' }}>
         <div style={{ position: 'absolute', top: '-60px', right: '-60px', width: '280px', height: '280px', borderRadius: '50%', background: 'rgba(255,255,255,0.03)', pointerEvents: 'none' }} />
 
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', flexWrap: 'wrap', gap: '20px' }}>
@@ -115,7 +122,7 @@ export default function DicomBridgePage() {
       </div>
 
         {/* TAB BAR */}
-        <div style={{ display: 'flex', gap: '8px', padding: '20px 50px 16px' }}>
+        <div style={{ display: 'flex', gap: '8px', padding: isMobile ? '20px 20px 16px' : '20px 50px 16px', overflowX: 'auto', WebkitOverflowScrolling: 'touch' }}>
           {[
             { id: 'monitor', label: 'Activity Monitor' },
             { id: 'setup',   label: 'Setup Guide' },
@@ -140,11 +147,11 @@ export default function DicomBridgePage() {
           ))}
         </div>
 
-        <div style={{ padding: '32px 50px 80px' }}>
+        <div style={{ padding: isMobile ? '16px 20px 80px' : '32px 50px 80px' }}>
         {/* TAB: ACTIVITY MONITOR */}
         {activeTab === 'monitor' && (<>
         {/* Stats row */}
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '16px', marginBottom: '36px' }}>
+        <div style={{ display: 'grid', gridTemplateColumns: isMobile ? 'repeat(2, 1fr)' : 'repeat(4, 1fr)', gap: '16px', marginBottom: '36px' }}>
           <StatCard label="Uploaded"      value={status?.uploaded     ?? '—'} color="#16a34a" icon="✅" />
           <StatCard label="Failed"        value={status?.failed       ?? '—'} color="#dc2626" icon="❌" />
           <StatCard label="Change Cursor" value={status?.lastChangeId ?? '—'} color="#0f52ba" icon="📡" />
@@ -162,13 +169,13 @@ export default function DicomBridgePage() {
                 {connected ? `${recent.length} records` : 'Offline'}
               </div>
             </div>
-            <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
+            <div style={{ display: 'flex', gap: '10px', alignItems: 'center', width: isMobile ? '100%' : 'auto', flexWrap: isMobile ? 'wrap' : 'nowrap' }}>
               <input
                 type="text"
                 placeholder="Search patient..."
                 value={search}
                 onChange={e => setSearch(e.target.value)}
-                style={{ padding: '8px 14px', borderRadius: '10px', border: '1px solid #e2e8f0', fontSize: '12px', fontWeight: 600, outline: 'none', width: '180px' }}
+                style={{ padding: '8px 14px', borderRadius: '10px', border: '1px solid #e2e8f0', fontSize: '12px', fontWeight: 600, outline: 'none', flex: isMobile ? 1 : 'none', width: isMobile ? 'auto' : '180px' }}
               />
               <select
                 value={filterStatus}
@@ -194,6 +201,63 @@ export default function DicomBridgePage() {
               <div style={{ fontSize: '13px', fontWeight: 800 }}>No records yet</div>
               <div style={{ fontSize: '11px', marginTop: '6px' }}>Studies will appear here once the bridge processes them.</div>
             </div>
+          ) : isMobile ? (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', padding: '16px' }}>
+                {recent.map((r, i) => {
+                  const st = STATUS_STYLE[r.status] || STATUS_STYLE.failed;
+                  const conf = r.confidence != null ? `${(r.confidence * 100).toFixed(0)}%` : '—';
+                  const dt = r.uploaded_at ? new Date(r.uploaded_at).toLocaleString('en-IN', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' }) : '—';
+                  return (
+                    <div key={r.study_uid || i} style={{ background: '#f8fafc', borderRadius: '12px', padding: '16px', border: '1px solid #e2e8f0' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '12px' }}>
+                        <div>
+                          <div style={{ fontSize: '14px', fontWeight: 800, color: '#0a1628' }}>{r.patient_name || '—'}</div>
+                          <div style={{ fontSize: '10px', color: '#94a3b8', fontWeight: 700, marginTop: '2px', fontFamily: 'monospace', wordBreak: 'break-all' }}>{(r.study_uid || '').slice(0, 24)}...</div>
+                        </div>
+                        <span style={{ background: st.bg, color: st.color, border: `1px solid ${st.border}`, borderRadius: '99px', padding: '4px 10px', fontSize: '10px', fontWeight: 800, letterSpacing: '0.5px', textTransform: 'uppercase', display: 'flex', alignItems: 'center', gap: '5px' }}>
+                          <span style={{ width: '6px', height: '6px', borderRadius: '50%', background: st.dot }} />
+                          {r.status}
+                        </span>
+                      </div>
+                      
+                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', marginBottom: '12px' }}>
+                        <div>
+                          <div style={{ fontSize: '9px', fontWeight: 800, color: '#94a3b8', textTransform: 'uppercase', marginBottom: '2px' }}>Modality</div>
+                          <div style={{ fontSize: '13px', fontWeight: 800, color: '#0f52ba' }}>{r.modality || '—'}</div>
+                        </div>
+                        <div>
+                          <div style={{ fontSize: '9px', fontWeight: 800, color: '#94a3b8', textTransform: 'uppercase', marginBottom: '2px' }}>Study Date</div>
+                          <div style={{ fontSize: '12px', fontWeight: 700, color: '#334155' }}>{r.study_date ? `${r.study_date.slice(0,4)}-${r.study_date.slice(4,6)}-${r.study_date.slice(6,8)}` : '—'}</div>
+                        </div>
+                      </div>
+
+                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+                        <div>
+                          <div style={{ fontSize: '9px', fontWeight: 800, color: '#94a3b8', textTransform: 'uppercase', marginBottom: '2px' }}>Confidence</div>
+                          {r.confidence != null ? (
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                              <div style={{ flex: 1, height: '4px', background: '#e2e8f0', borderRadius: '10px', overflow: 'hidden' }}>
+                                <div style={{ height: '100%', width: conf, background: r.confidence >= 0.8 ? '#22c55e' : r.confidence >= 0.6 ? '#f59e0b' : '#ef4444', borderRadius: '10px' }} />
+                              </div>
+                              <span style={{ fontSize: '11px', fontWeight: 950, color: '#334155' }}>{conf}</span>
+                            </div>
+                          ) : <div style={{ fontSize: '12px', color: '#64748b' }}>—</div>}
+                        </div>
+                        <div>
+                          <div style={{ fontSize: '9px', fontWeight: 800, color: '#94a3b8', textTransform: 'uppercase', marginBottom: '2px' }}>Uploaded</div>
+                          <div style={{ fontSize: '11px', fontWeight: 600, color: '#64748b' }}>{dt}</div>
+                        </div>
+                      </div>
+
+                      {r.error_message && (
+                        <div style={{ marginTop: '12px', padding: '8px 12px', background: '#fef2f2', border: '1px solid #fecaca', borderRadius: '8px', fontSize: '10px', color: '#ef4444', fontWeight: 600 }}>
+                          {r.error_message}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
           ) : (
             <table style={{ width: '100%', borderCollapse: 'collapse' }}>
               <thead style={{ background: '#f8fafc' }}>
@@ -257,15 +321,19 @@ export default function DicomBridgePage() {
 
         {/* TAB: SETUP GUIDE */}
         {activeTab === 'setup' && (
-          <div style={{ background: 'white', borderRadius: '20px', border: '1px solid #e8edf2', padding: '40px', boxShadow: '0 4px 20px rgba(0,0,0,0.04)', maxWidth: '900px', margin: '0 auto' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px' }}>
+          <div style={{ background: 'white', borderRadius: '20px', border: '1px solid #e8edf2', padding: isMobile ? '24px' : '40px', boxShadow: '0 4px 20px rgba(0,0,0,0.04)', maxWidth: '900px', margin: '0 auto' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: isMobile ? 'flex-start' : 'center', marginBottom: '24px', flexDirection: isMobile ? 'column' : 'row', gap: '16px' }}>
               <div>
                 <div style={{ fontSize: '14px', fontWeight: 950, color: '#0a1628', textTransform: 'uppercase', letterSpacing: '1px' }}>Bridge Setup Guide</div>
                 <div style={{ fontSize: '12px', color: '#64748b', marginTop: '4px' }}>Follow these steps to connect your clinic's Orthanc PACS to 1Rad.</div>
               </div>
-              <button onClick={() => alert('Downloading nexegale-dicom-bridge.zip...')} style={{ background: '#0a1628', color: 'white', border: 'none', padding: '10px 20px', borderRadius: '10px', fontSize: '12px', fontWeight: 800, cursor: 'pointer', boxShadow: '0 4px 14px rgba(10,22,40,0.15)' }}>
+              <a 
+                href="/1rad-dicom-bridge.zip" 
+                download="1rad-dicom-bridge.zip"
+                style={{ background: '#0a1628', color: 'white', border: 'none', padding: '10px 20px', borderRadius: '10px', fontSize: '12px', fontWeight: 800, cursor: 'pointer', boxShadow: '0 4px 14px rgba(10,22,40,0.15)', textDecoration: 'none', display: 'inline-block' }}
+              >
                 Download Bridge Software (.zip)
-              </button>
+              </a>
             </div>
 
             <div style={{ display: 'flex', flexDirection: 'column', gap: '32px' }}>
