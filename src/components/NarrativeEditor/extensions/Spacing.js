@@ -4,7 +4,34 @@ import { Extension } from '@tiptap/core';
  * LineHeight — applies CSS line-height to paragraphs and headings.
  * Usage: editor.chain().focus().setLineHeight('1.5').run()
  *        editor.chain().focus().unsetLineHeight().run()
+ *
+ * Clinical-report safety: CSS line-height < 1.0 causes physically overlapping
+ * text rows. We clamp the *rendered* line-height to a minimum of 1.0 so a user
+ * typing "0.5" into the custom-spacing dialog doesn't produce an unreadable
+ * report. The attribute is stored as the user entered it (so the dropdown
+ * still shows their choice), but the visual minimum is enforced at render time.
  */
+const MIN_LINE_HEIGHT = 1.0;
+function clampLineHeightValue(value) {
+  if (value == null || value === '') return value;
+  const s = String(value).trim();
+  // Unitless numbers (e.g. "0.5", "1.5", "2") — treat as CSS multiplier and clamp.
+  if (/^-?\d*\.?\d+$/.test(s)) {
+    const n = parseFloat(s);
+    if (!Number.isFinite(n) || n < MIN_LINE_HEIGHT) return String(MIN_LINE_HEIGHT);
+    return s;
+  }
+  // % values, e.g. "150%"
+  const pctMatch = s.match(/^(-?\d*\.?\d+)\s*%$/);
+  if (pctMatch) {
+    const n = parseFloat(pctMatch[1]);
+    if (!Number.isFinite(n) || n < MIN_LINE_HEIGHT * 100) return `${MIN_LINE_HEIGHT * 100}%`;
+    return s;
+  }
+  // px/pt/em/rem values — allow as-is (user explicitly asked for absolute size)
+  return s;
+}
+
 export const LineHeight = Extension.create({
   name: 'lineHeight',
   addOptions() {
@@ -17,7 +44,11 @@ export const LineHeight = Extension.create({
         lineHeight: {
           default: null,
           parseHTML: el => el.style.lineHeight || null,
-          renderHTML: attrs => attrs.lineHeight ? { style: `line-height: ${attrs.lineHeight}` } : {},
+          renderHTML: attrs => {
+            if (!attrs.lineHeight) return {};
+            const safe = clampLineHeightValue(attrs.lineHeight);
+            return { style: `line-height: ${safe}` };
+          },
         },
       },
     }];

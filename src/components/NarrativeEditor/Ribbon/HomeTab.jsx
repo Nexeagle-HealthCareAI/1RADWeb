@@ -673,15 +673,23 @@ export default function HomeTab({ editor, showFormattingMarks, onToggleFormattin
                   const current = editor.getAttributes('paragraph').lineHeight || editor.getAttributes('heading').lineHeight || '1.6';
                   const input = await editorPrompt({
                     title: 'Custom Line Spacing',
-                    message: 'Enter a number (e.g. 1.75) or value with unit (e.g. 24px, 150%).',
+                    message: 'Enter a number (e.g. 1.75) or value with unit (e.g. 24px, 150%). Minimum is 1.0 — anything below would overlap text.',
                     defaultValue: String(current),
                     placeholder: '1.75',
                     confirmLabel: 'Apply',
                   });
                   if (input == null) return;
                   const trimmed = input.trim();
-                  if (!trimmed) editor.chain().focus().unsetLineHeight().run();
-                  else editor.chain().focus().setLineHeight(trimmed).run();
+                  if (!trimmed) {
+                    editor.chain().focus().unsetLineHeight().run();
+                  } else {
+                    // Show a one-line note if the value would have overlapped (clamped by the extension).
+                    const asNum = parseFloat(trimmed);
+                    if (Number.isFinite(asNum) && asNum < 1 && !/[a-z%]/i.test(trimmed)) {
+                      console.info(`[NarrativeEditor] Line-spacing ${trimmed} below safe minimum — clamped to 1.0 to avoid overlapping text.`);
+                    }
+                    editor.chain().focus().setLineHeight(trimmed).run();
+                  }
                   return;
                 }
                 if (v) editor.chain().focus().setLineHeight(v).run();
