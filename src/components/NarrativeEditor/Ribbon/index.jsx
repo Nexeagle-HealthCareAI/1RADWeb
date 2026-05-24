@@ -6,6 +6,20 @@ import ReviewTab from './ReviewTab';
 import ViewTab from './ViewTab';
 import { Icon, ICONS } from './RibbonControls';
 
+// Same safe-can wrapper as in HomeTab — tiptap's internal Editor.can() can throw
+// during concurrent rendering when the editor is mid-init.
+function safeCan(editor, commandName) {
+  if (!editor) return false;
+  try {
+    const can = editor.can?.();
+    if (!can) return false;
+    const fn = can[commandName];
+    return typeof fn === 'function' ? !!fn() : false;
+  } catch {
+    return false;
+  }
+}
+
 const TABS = [
   { id: 'home',   label: 'Home',   icon: '🏠' },
   { id: 'insert', label: 'Insert', icon: '➕' },
@@ -72,13 +86,13 @@ export default function Ribbon(props) {
         />
         <QATBtn
           title="Undo (Ctrl+Z)"
-          disabled={!editor?.can?.()?.undo?.()}
+          disabled={!safeCan(editor, 'undo')}
           onClick={() => editor?.chain().focus().undo().run()}
           icon={<Icon d={ICONS.undo} size={13} />}
         />
         <QATBtn
           title="Redo (Ctrl+Y)"
-          disabled={!editor?.can?.()?.redo?.()}
+          disabled={!safeCan(editor, 'redo')}
           onClick={() => editor?.chain().focus().redo().run()}
           icon={<Icon d={ICONS.redo} size={13} />}
         />

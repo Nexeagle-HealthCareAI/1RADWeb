@@ -250,8 +250,8 @@ async function initCornerstone() {
           console.log(`[DICOM] Path C (manual) triggered for: ${imageId.slice(0, 60)}...`);
           const blobUrl = imageId.replace('wadouri:', '');
           // Prefer reading the File object directly — fetch(blobUrl) can hang
-          // on some mobile browsers when the blob is large (>50 MB). Falling
-          // back to fetch only when the URL didn't come from getOrCreateBlobUrl.
+          // on some mobile browsers when the blob is large. Falling back to
+          // fetch only when the URL didn't come from getOrCreateBlobUrl.
           const file = urlToFile.get(blobUrl);
           let arrayBuffer;
           if (file && typeof file.arrayBuffer === 'function') {
@@ -263,37 +263,109 @@ async function initCornerstone() {
           const byteArray = new Uint8Array(arrayBuffer);
           const dataSet = dicomParser.parseDicom(byteArray);
           console.log(`[DICOM] Path C parsed ${byteArray.length} bytes in ${file ? 'direct File' : 'fetched blob'} mode`);
-          
+
+          // -- Pull all the pixel-format tags cornerstone3D's renderer actually needs --
+          const rows               = dataSet.uint16('x00280010') || 0;
+          const columns            = dataSet.uint16('x00280011') || 0;
+          const samplesPerPixel    = dataSet.uint16('x00280002') || 1;
+          const photometricInterp  = dataSet.string('x00280004') || 'MONOCHROME2';
+          const bitsAllocated      = dataSet.uint16('x00280100') || 16;
+          const bitsStored         = dataSet.uint16('x00280101') || bitsAllocated;
+          const highBit            = dataSet.uint16('x00280102') ?? (bitsStored - 1);
+          const pixelRepresentation= dataSet.uint16('x00280103') || 0; // 0 unsigned, 1 signed
+          const slope              = parseFloat(dataSet.floatString('x00281053')) || 1;
+          const intercept          = parseFloat(dataSet.floatString('x00281052')) || 0;
+          const wcRaw              = dataSet.string('x00281050');
+          const wwRaw              = dataSet.string('x00281051');
+          const windowCenter       = wcRaw ? parseFloat(wcRaw.split('\\')[0]) : undefined;
+          const windowWidth        = wwRaw ? parseFloat(wwRaw.split('\\')[0]) : undefined;
+          const pixelSpacing       = dataSet.string('x00280030');
+          const rowSpacing         = pixelSpacing ? parseFloat(pixelSpacing.split('\\')[0]) : 1;
+          const colSpacing         = pixelSpacing ? parseFloat(pixelSpacing.split('\\')[1] || pixelSpacing.split('\\')[0]) : 1;
+
+          // Build the pixel-data view ONCE so multiple cornerstone calls share
+          // it (avoids re-slicing the buffer on every call).
+          let pixelDataCache = null;
+          const buildPixelData = () => {
+            if (pixelDataCache) return pixelDataCache;
+            const el = dataSet.elements.x7fe00010;
+            if (!el) {
+              pixelDataCache = new Uint8Array(0);
+              return pixelDataCache;
+            }
+            const buf = byteArray.buffer.slice(el.dataOffset, el.dataOffset + el.length);
+            if (bitsAllocated === 16) {
+              pixelDataCache = pixelRepresentation === 1 ? new Int16Array(buf) : new Uint16Array(buf);
+            } else {
+              pixelDataCache = new Uint8Array(buf);
+            }
+            return pixelDataCache;
+          };
+          // Pre-build so min/max scan can use it
+          const pixelData = buildPixelData();
+
+          // Compute real min/max instead of guessing — critical when the DICOM
+          // tags for SmallestImagePixelValue / LargestImagePixelValue are absent
+          // (very common). Cornerstone3D uses these to scale the WebGL texture.
+          let minPixel = dataSet.int16('x00280106');
+          let maxPixel = dataSet.int16('x00280107');
+          if (!Number.isFinite(minPixel) || !Number.isFinite(maxPixel)) {
+            let lo = Number.POSITIVE_INFINITY, hi = Number.NEGATIVE_INFINITY;
+            // Sample to keep this O(N/4) on big images while still accurate
+            const step = Math.max(1, Math.floor(pixelData.length / 100000));
+            for (let i = 0; i < pixelData.length; i += step) {
+              const v = pixelData[i];
+              if (v < lo) lo = v;
+              if (v > hi) hi = v;
+            }
+            if (!Number.isFinite(lo) || !Number.isFinite(hi)) { lo = 0; hi = 255; }
+            minPixel = lo; maxPixel = hi;
+            console.log(`[DICOM] Path C derived min=${minPixel} max=${maxPixel} (DICOM tags absent)`);
+          }
+
+          // Window/Level default — if DICOM had no WC/WW tags, use the actual
+          // pixel range. Avoids the all-black scout-image case.
+          const effectiveWC = Number.isFinite(windowCenter) ? windowCenter : (minPixel + maxPixel) / 2;
+          const effectiveWW = Number.isFinite(windowWidth) && windowWidth > 0
+            ? windowWidth
+            : Math.max(1, maxPixel - minPixel);
+
+          const isColor = samplesPerPixel === 3 || /RGB/i.test(photometricInterp);
+          const sizeInBytes = pixelData.byteLength;
+
           const image = {
             imageId,
-            minPixelValue: dataSet.int16('x00280106') || 0,
-            maxPixelValue: dataSet.int16('x00280107') || 255,
-            slope: dataSet.floatString('x00281053') || 1,
-            intercept: dataSet.floatString('x00281052') || 0,
-            windowCenter: dataSet.floatString('x00281050') || 128,
-            windowWidth: dataSet.floatString('x00281051') || 256,
-            rows: dataSet.uint16('x00280010'),
-            columns: dataSet.uint16('x00280011'),
-            height: dataSet.uint16('x00280010'),
-            width: dataSet.uint16('x00280011'),
-            color: dataSet.uint16('x00280004') === 'RGB',
-            columnPixelSpacing: dataSet.string('x00280030')?.split('\\')[1] ? parseFloat(dataSet.string('x00280030').split('\\')[1]) : 1,
-            rowPixelSpacing: dataSet.string('x00280030')?.split('\\')[0] ? parseFloat(dataSet.string('x00280030').split('\\')[0]) : 1,
-            sizeInBytes: byteArray.length,
-            getPixelData: () => {
-              const pixelDataElement = dataSet.elements.x7fe00010;
-              if (!pixelDataElement) return new Uint8Array(0);
-              
-              const bitsAllocated = dataSet.uint16('x00280100') || 16;
-              const pixelRepresentation = dataSet.uint16('x00280103') || 0; // 0 = unsigned, 1 = signed
-              
-              const buffer = byteArray.buffer.slice(pixelDataElement.dataOffset, pixelDataElement.dataOffset + pixelDataElement.length);
-              
-              if (bitsAllocated === 16) {
-                return pixelRepresentation === 1 ? new Int16Array(buffer) : new Uint16Array(buffer);
-              }
-              return new Uint8Array(buffer);
-            }
+            // dimensions
+            rows, columns, height: rows, width: columns,
+            // pixel format — cornerstone3D's renderer reads these directly
+            samplesPerPixel,
+            photometricInterpretation: photometricInterp,
+            bitsAllocated,
+            bitsStored,
+            highBit,
+            pixelRepresentation,
+            // value mapping
+            minPixelValue: minPixel,
+            maxPixelValue: maxPixel,
+            slope,
+            intercept,
+            windowCenter: effectiveWC,
+            windowWidth: effectiveWW,
+            // spacing
+            rowPixelSpacing: rowSpacing,
+            columnPixelSpacing: colSpacing,
+            // misc
+            color: isColor,
+            invert: photometricInterp === 'MONOCHROME1',
+            sizeInBytes,
+            // Cornerstone3D + VTK expect these
+            voiLUTFunction: 'LINEAR',
+            preScale: { scaled: false, scalingParameters: { rescaleSlope: slope, rescaleIntercept: intercept } },
+            // Sync accessor (most cornerstone code paths assume sync) and async one
+            // (some adapters call .then on this).
+            getPixelData: () => buildPixelData(),
+            // Some cornerstone3D paths look for getCanvas / pixelData directly.
+            pixelData,
           };
           
           clearTimeout(loaderTimeout);
@@ -546,15 +618,21 @@ const AdvancedDicomViewer = ({
           const prevIndex = currentImageIndex;
           console.log(`[DICOM_TRACE] STRICT_APPEND calling setStack(${newImageIds.length} ids), prevIndex=${prevIndex}`);
           viewport.setStack(newImageIds).then(() => {
-            console.log(`[DICOM_TRACE] STRICT_APPEND setStack RESOLVED ok, stack now has ${newImageIds.length} images`);
+            console.log(`[DICOM_TRACE] STRICT_APPEND setStack RESOLVED, stack=${newImageIds.length}`);
+            // Seek back to the slice the user was viewing (if we had more than 1 before).
             if (prevIndex > 0 && prevIndex < newImageIds.length) {
               viewport.setImageIdIndex(prevIndex).catch((err) => {
                 console.warn(`[DICOM_TRACE] STRICT_APPEND setImageIdIndex(${prevIndex}) failed:`, err?.message);
               });
             }
+            // Render NOW so cornerstone schedules its WebGL flush.
             renderingEngineRef.current?.renderViewports([viewportId]);
-            console.log(`[DICOM_TRACE] STRICT_APPEND renderViewports called, flipping hasRenderedFirstImage`);
-            setHasRenderedFirstImage(true);
+            // Don't touch hasRenderedFirstImage here — the canvas already has the
+            // preview-slice pixels from setupEngine's render. Hiding then re-showing
+            // it would cause exactly the "loader, then blank" flash the user saw.
+            // The WebGL pixel state for the freshly-appended stack lands on the next
+            // frame; we just need to ensure render is queued, which it now is.
+            console.log('[DICOM_TRACE] STRICT_APPEND renderViewports queued');
           }).catch(err => console.warn('[DICOM_TRACE] STRICT_APPEND setStack REJECTED:', err?.message, err));
         } else {
           console.warn('[DICOM_TRACE] STRICT_APPEND viewport not retrievable');
@@ -1359,21 +1437,33 @@ const AdvancedDicomViewer = ({
         setCurrentImageIndex(0);
         console.log(`[DICOM_TRACE] setupEngine: imageIndex set to 0`);
 
-        // Safety net: hide the loader after a short delay regardless of the render
-        // path below, so a silent failure on mobile doesn't leave RENDERING_IMAGE up.
+        // Safety net: hide the loader after a longer delay regardless of the render
+        // path below, so a silent failure doesn't leave RENDERING_IMAGE up forever.
+        // 3 s is generous enough to never beat the 2-frame rAF chain to the punch
+        // on a normal device, but short enough to surface a real failure quickly.
         setTimeout(() => {
           if (isMounted) {
-            console.log('[DICOM_TRACE] safety-net timeout firing setHasRenderedFirstImage(true)');
+            console.log('[DICOM_TRACE] safety-net 3s timeout firing setHasRenderedFirstImage(true)');
             setHasRenderedFirstImage(true);
           } else {
             console.log('[DICOM_TRACE] safety-net timeout SKIPPED — isMounted=false');
           }
-        }, 1500);
+        }, 3000);
 
         // Wait a frame to ensure internal state is stable
         requestAnimationFrame(() => {
-          if (!isMounted || !elementRef.current) return;
-          if (viewport.getCurrentImageId()) {
+          if (!isMounted || !elementRef.current) {
+            console.log('[DICOM_TRACE] rAF outer: bailed (isMounted/elementRef gone)');
+            return;
+          }
+          // NOTE: do NOT gate the render block on viewport.getCurrentImageId().
+          // In cornerstone3D, getCurrentImageId() returns null until an image has
+          // already been *rendered*. The render is what we're about to do here.
+          // Gating on it was a chicken-and-egg: we never rendered because we never
+          // rendered, and the loader-clear safety-net fired at 3s, leaving the
+          // canvas blank. The block runs unconditionally now.
+          console.log(`[DICOM_TRACE] rAF outer fired, currentImageId=${viewport.getCurrentImageId?.() || '(not yet rendered)'}`);
+          {
              try {
                const canvas = viewport.getCanvas();
                 console.log(`[DICOM] Viewport type: ${viewport.type}, Canvas: ${canvas.width}x${canvas.height}`);
@@ -1403,22 +1493,106 @@ const AdvancedDicomViewer = ({
                   });
                 } catch (_dbg) { /* debug-only, ignore */ }
 
-                // Use default DICOM VOI if available, otherwise fallback
-               viewport.setProperties({ 
-                 invert: !!invert
-               }); 
-               
+                // Use default DICOM VOI if available, otherwise fallback.
+                // Critical for Path-C-loaded images: cornerstone's "default"
+                // windowing is often pitch-black or white-out for low-contrast
+                // scout/localizer images. We explicitly pull the DICOM window
+                // values from the image object and feed them as the voiRange.
+                try {
+                  const cs3d = renderingEngineRef.current;
+                  // The image object that our wadouri loader resolved with
+                  // already lives in cornerstone's cache. Read it back to get
+                  // the windowing tags we parsed in Path C.
+                  const currentId = viewport.getCurrentImageId?.() || imageIds[0];
+                  // cornerstone.cache exposes getImage or getImageLoadObject — try both.
+                  const img = (typeof cache?.getImage === 'function' && cache.getImage(currentId))
+                    || (typeof cache?.getImageLoadObject === 'function' && cache.getImageLoadObject(currentId)?.image)
+                    || null;
+                  const wc = img?.windowCenter;
+                  const ww = img?.windowWidth;
+                  const center = Array.isArray(wc) ? wc[0] : wc;
+                  const width = Array.isArray(ww) ? ww[0] : ww;
+                  if (Number.isFinite(center) && Number.isFinite(width) && width > 0) {
+                    const lower = center - width / 2;
+                    const upper = center + width / 2;
+                    console.log(`[DICOM_TRACE] applying voiRange ${lower}-${upper} (WC=${center} WW=${width})`);
+                    viewport.setProperties({
+                      voiRange: { lower, upper },
+                      invert: !!invert,
+                    });
+                  } else {
+                    console.log(`[DICOM_TRACE] no usable WC/WW on image; using cornerstone defaults`);
+                    viewport.setProperties({ invert: !!invert });
+                  }
+                } catch (voiErr) {
+                  console.warn('[DICOM_TRACE] VOI apply failed, falling back:', voiErr?.message);
+                  viewport.setProperties({ invert: !!invert });
+                }
+
+                // Camera fit — auto-zoom to fit the image into the canvas.
+                // Without this, a 670x459 image painted into a 634x773 canvas
+                // may render at wrong scale, leaving large black bands that
+                // look like "blank screen".
+                try {
+                  viewport.resetCamera?.();
+                  console.log('[DICOM_TRACE] resetCamera done');
+                } catch (camErr) {
+                  console.warn('[DICOM_TRACE] resetCamera failed:', camErr?.message);
+                }
+
+               // CRITICAL DIAGNOSTIC + FIX: Log container vs canvas dimensions, and
+               // force a resize before render. The most common cause of "logs say
+               // success but canvas is blank" is the canvas being created at 0×0
+               // (or stale size) because the container wasn't fully laid out yet.
+               // Calling resize() then renderViewports() picks up the current
+               // container dimensions and re-sizes the GL viewport accordingly.
+               try {
+                 const el = elementRef.current;
+                 const cw = el?.clientWidth, ch = el?.clientHeight;
+                 const cv = viewport.getCanvas?.();
+                 console.log(`[DICOM_TRACE] pre-resize: element ${cw}x${ch}, canvas ${cv?.width}x${cv?.height}`);
+                 renderingEngine.resize(true, true); // (immediate=true, keepCamera=true)
+                 const cv2 = viewport.getCanvas?.();
+                 console.log(`[DICOM_TRACE] post-resize: canvas ${cv2?.width}x${cv2?.height}`);
+               } catch (rsz) {
+                 console.warn('[DICOM_TRACE] resize failed:', rsz?.message);
+               }
+
                console.log('[DICOM_TRACE] rAF inner: calling renderViewports');
                renderingEngine.renderViewports([viewportId]);
 
-               // Pixels are now committed to the canvas — drop the loader on the next frame.
+               // Two-frame wait: cornerstone3D's WebGL paint isn't synchronous with
+               // renderViewports() — frame N just queues the GL commands, frame N+1
+               // is when the user actually sees pixels.
                requestAnimationFrame(() => {
-                 if (isMounted) {
-                   console.log('[DICOM_TRACE] rAF inner: setHasRenderedFirstImage(true) ← post-render path');
+                 requestAnimationFrame(() => {
+                   if (!isMounted) {
+                     console.log('[DICOM_TRACE] 2nd rAF: SKIPPED — isMounted=false');
+                     return;
+                   }
+                   // Final resize + render after layout has fully settled.
+                   // Catches the case where the initial render painted into a
+                   // stale-sized canvas. We call resize() because cornerstone's
+                   // ResizeObserver may not have fired yet (it's debounced).
+                   try {
+                     renderingEngine.resize(true, true);
+                     renderingEngine.renderViewports([viewportId]);
+                     const cv = viewport.getCanvas?.();
+                     console.log(`[DICOM_TRACE] 2nd rAF: final canvas ${cv?.width}x${cv?.height}, container ${elementRef.current?.clientWidth}x${elementRef.current?.clientHeight}`);
+                   } catch (e) {
+                     console.warn('[DICOM_TRACE] 2nd rAF final resize/render failed:', e?.message);
+                   }
+                   console.log('[DICOM_TRACE] 2nd rAF: setHasRenderedFirstImage(true)');
                    setHasRenderedFirstImage(true);
-                 } else {
-                   console.log('[DICOM_TRACE] rAF inner: SKIPPED setHasRenderedFirstImage — isMounted=false');
-                 }
+                   // One more delayed kick for slow devices where layout settled even later.
+                   setTimeout(() => {
+                     if (!isMounted) return;
+                     try {
+                       renderingEngine.resize(true, true);
+                       renderingEngine.renderViewports([viewportId]);
+                     } catch {}
+                   }, 250);
+                 });
                });
 
                // Double-flush render for some browser engines (lower-priority safety net)

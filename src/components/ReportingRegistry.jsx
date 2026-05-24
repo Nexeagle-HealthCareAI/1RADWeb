@@ -29,6 +29,8 @@ const ReportingRegistry = ({
   const [notifModal, setNotifModal] = useState({ isOpen: false, type: 'info', title: '', message: '' });
   const showNotif = (type, title, message) => setNotifModal({ isOpen: true, type, title, message });
 
+  const [confirmModal, setConfirmModal] = useState({ isOpen: false, title: '', message: '', onConfirm: null });
+
   const macroTextareaRef = React.useRef(null);
 
   const [windowWidth, setWindowWidth] = useState(window.innerWidth);
@@ -107,15 +109,23 @@ const ReportingRegistry = ({
     }
   };
 
-  const handleDeleteTemplate = async (id) => {
-    if (!window.confirm('Delete this template? This cannot be undone.')) return;
-    try {
-      await apiClient.delete(`/reporting/templates/${id}`);
-      fetchRegistry();
-      if (onRefresh) onRefresh();
-    } catch (err) {
-      console.error('[TEMPLATE] Delete failed', err);
-    }
+  const handleDeleteTemplate = (id) => {
+    setConfirmModal({
+      isOpen: true,
+      title: 'DELETE TEMPLATE',
+      message: 'Are you sure you want to delete this template? This cannot be undone.',
+      onConfirm: async () => {
+        try {
+          await apiClient.delete(`/reporting/templates/${id}`);
+          fetchRegistry();
+          if (onRefresh) onRefresh();
+          showNotif('success', 'TEMPLATE DELETED', 'The template has been permanently removed.');
+        } catch (err) {
+          console.error('[TEMPLATE] Delete failed', err);
+          showNotif('error', 'DELETE FAILED', 'Could not delete the template.');
+        }
+      }
+    });
   };
 
   // --- KEYWORD LOGIC ---
@@ -174,15 +184,23 @@ const ReportingRegistry = ({
     }
   };
 
-  const handleDeleteKeyword = async (id) => {
-    if (!window.confirm('DELETE MACRO?')) return;
-    try {
-      await apiClient.delete(`/reporting/keywords/${id}`);
-      fetchRegistry();
-      if (onRefresh) onRefresh();
-    } catch (err) {
-      console.error('[KEYWORD] Delete failed', err);
-    }
+  const handleDeleteKeyword = (id) => {
+    setConfirmModal({
+      isOpen: true,
+      title: 'DELETE MACRO',
+      message: 'Are you sure you want to delete this shorthand macro? This cannot be undone.',
+      onConfirm: async () => {
+        try {
+          await apiClient.delete(`/reporting/keywords/${id}`);
+          fetchRegistry();
+          if (onRefresh) onRefresh();
+          showNotif('success', 'MACRO DELETED', 'The shorthand macro has been permanently removed.');
+        } catch (err) {
+          console.error('[KEYWORD] Delete failed', err);
+          showNotif('error', 'DELETE FAILED', 'Could not delete the macro.');
+        }
+      }
+    });
   };
 
   const formatMacroText = (command) => {
@@ -321,6 +339,46 @@ const ReportingRegistry = ({
           </div>
         );
       })()}
+
+      {/* ── Universal Confirm Modal ────────────────────────────────────── */}
+      {confirmModal.isOpen && (
+        <div
+          style={{ position: 'fixed', inset: 0, zIndex: 99999, background: 'rgba(10,22,40,0.6)', backdropFilter: 'blur(12px)', WebkitBackdropFilter: 'blur(12px)', display: 'flex', justifyContent: 'center', alignItems: 'center' }}
+          onClick={() => setConfirmModal({ isOpen: false, title: '', message: '', onConfirm: null })}
+        >
+          <div
+            style={{ width: '90%', maxWidth: '440px', background: 'linear-gradient(160deg,#ffffff 0%,#f8fafc 100%)', borderRadius: '28px', border: '1px solid #fecaca', boxShadow: '0 24px 60px -12px rgba(220,38,38,0.22), 0 0 0 1px rgba(0,0,0,0.04)', padding: '40px 32px 32px', textAlign: 'center', animation: 'regNoticePop 0.3s cubic-bezier(0.34,1.56,0.64,1)' }}
+            onClick={e => e.stopPropagation()}
+          >
+            <div style={{ width: '72px', height: '72px', borderRadius: '50%', background: 'linear-gradient(135deg,#fee2e2,#fecaca)', border: '2px solid #fecaca', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 20px', fontSize: '28px', boxShadow: '0 12px 28px -8px rgba(220,38,38,0.22)' }}>
+              <span style={{ color: '#dc2626', fontWeight: 900 }}>?</span>
+            </div>
+            <div style={{ display: 'inline-block', background: 'linear-gradient(135deg,#fee2e2,#fecaca)', border: '1px solid #fecaca', borderRadius: '8px', padding: '3px 12px', marginBottom: '12px' }}>
+              <span style={{ fontSize: '9px', fontWeight: 950, letterSpacing: '2px', color: '#991b1b', fontFamily: 'system-ui,sans-serif' }}>CONFIRMATION</span>
+            </div>
+            <div style={{ fontSize: '13px', fontWeight: 950, letterSpacing: '1.5px', color: '#0f172a', marginBottom: '10px', fontFamily: 'system-ui,sans-serif' }}>{confirmModal.title}</div>
+            <div style={{ width: '36px', height: '3px', background: 'linear-gradient(135deg,#fee2e2,#fecaca)', borderRadius: '99px', margin: '0 auto 14px' }} />
+            <p style={{ fontSize: '13px', lineHeight: 1.7, color: '#475569', fontWeight: 500, margin: '0 0 26px', fontFamily: 'system-ui,sans-serif' }}>{confirmModal.message}</p>
+            <div style={{ display: 'flex', gap: '12px' }}>
+              <button
+                onClick={() => setConfirmModal({ isOpen: false, title: '', message: '', onConfirm: null })}
+                style={{ flex: 1, padding: '14px', background: 'white', color: '#475569', border: '1px solid #e2e8f0', borderRadius: '14px', fontSize: '11px', fontWeight: 950, letterSpacing: '1.5px', cursor: 'pointer', fontFamily: 'system-ui,sans-serif' }}
+                onMouseEnter={e => { e.currentTarget.style.background = '#f8fafc'; }}
+                onMouseLeave={e => { e.currentTarget.style.background = 'white'; }}
+              >CANCEL</button>
+              <button
+                onClick={() => {
+                  if (confirmModal.onConfirm) confirmModal.onConfirm();
+                  setConfirmModal({ isOpen: false, title: '', message: '', onConfirm: null });
+                }}
+                style={{ flex: 1, padding: '14px', background: 'linear-gradient(135deg,#e11d48,#be123c)', color: 'white', border: 'none', borderRadius: '14px', fontSize: '11px', fontWeight: 950, letterSpacing: '1.5px', cursor: 'pointer', boxShadow: '0 8px 20px -6px rgba(225,29,72,0.4)', fontFamily: 'system-ui,sans-serif' }}
+                onMouseEnter={e => { e.currentTarget.style.opacity = '0.88'; }}
+                onMouseLeave={e => { e.currentTarget.style.opacity = '1'; }}
+              >CONFIRM</button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

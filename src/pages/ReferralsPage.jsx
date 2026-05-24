@@ -3631,7 +3631,8 @@ export default function ReferralsPage() {
                 overflowX: 'auto',
                 WebkitOverflowScrolling: 'touch'
               }}>
-                <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: isMobile ? '800px' : '100%' }}>
+                {!isMobile ? (
+                <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: '100%' }}>
                   <thead style={{ background: '#f8fafc', borderBottom: '1px solid #e2e8f0' }}>
                     <tr>
                       <th style={{ padding: '20px 30px', textAlign: 'left', fontSize: '10px', fontWeight: 950, color: '#94a3b8', letterSpacing: '1px' }}>ID</th>
@@ -3701,6 +3702,52 @@ export default function ReferralsPage() {
                     )}
                   </tbody>
                 </table>
+                ) : (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', padding: '10px', background: '#f8fafc' }}>
+                    {loadingMaster ? (
+                       <div style={{ padding: '60px', textAlign: 'center' }}><div className="pulse-loader" style={{ margin: '0 auto' }}></div></div>
+                    ) : patientMasterList.length === 0 ? (
+                       <div style={{ padding: '60px', textAlign: 'center', color: '#94a3b8', fontSize: '12px', fontWeight: 700 }}>NO REGISTERED PATIENTS FOUND FOR THIS PERIOD</div>
+                    ) : (
+                       patientMasterList.map((p, i) => (
+                         <div key={p.patientId} style={{ background: 'white', borderRadius: '16px', border: '1px solid #e2e8f0', padding: '16px', display: 'flex', flexDirection: 'column', gap: '12px', boxShadow: '0 2px 10px rgba(0,0,0,0.02)' }}>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                               <div style={{ fontSize: '12px', fontWeight: 950, color: '#94a3b8' }}>#{i + 1}</div>
+                               <div style={{ padding: '4px 10px', background: '#f0f3fd', color: '#0f52ba', borderRadius: '6px', fontSize: '10px', fontWeight: 950 }}>{p.patientIdentifier || 'UNSET'}</div>
+                            </div>
+                            <div>
+                               <div style={{ fontSize: '14px', fontWeight: 850, color: '#1e293b' }}>{(p.fullName || 'Unknown').toUpperCase()}</div>
+                               <div style={{ fontSize: '12px', fontWeight: 800, color: '#1e293b', marginTop: '4px' }}>{p.age}Y / {(p.gender || 'U').toUpperCase()}</div>
+                               <div style={{ fontSize: '11px', fontWeight: 700, color: '#64748b', marginTop: '4px' }}>{p.mobile}</div>
+                            </div>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '4px', paddingTop: '12px', borderTop: '1px dashed #e2e8f0' }}>
+                               <div style={{ fontSize: '11px', fontWeight: 900, color: '#0f52ba' }}>{new Date(p.registeredAt).toLocaleDateString()}</div>
+                               <button 
+                                 onClick={() => {
+                                   setEditingPatient({
+                                     patientId: p.patientId,
+                                     fullName: p.fullName,
+                                     mobile: p.mobile,
+                                     age: p.age,
+                                     gender: p.gender,
+                                     village: p.village,
+                                     district: p.district,
+                                     address: p.address,
+                                     sourceOfInfo: p.sourceOfInfo
+                                   });
+                                   setIsPatientEditDrawerOpen(true);
+                                 }}
+                                 style={{ 
+                                   padding: '6px 14px', background: '#f8fafc', border: '1px solid #e2e8f0', 
+                                   borderRadius: '8px', fontSize: '10px', fontWeight: 950, color: '#0f52ba', cursor: 'pointer' 
+                                 }}
+                               >EDIT</button>
+                            </div>
+                         </div>
+                       ))
+                    )}
+                  </div>
+                )}
               </div>
             ) : referralViewMode === 'ROSTER' ? (
               <div style={{ 
@@ -3731,7 +3778,8 @@ export default function ReferralsPage() {
                      </button>
                    </div>
                 </div>
-                <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: isMobile ? '800px' : '100%' }}>
+                {!isMobile ? (
+                <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: '100%' }}>
                   <thead style={{ background: '#f8fafc', borderBottom: '1px solid #e2e8f0' }}>
                     <tr>
                       <th style={{ padding: '20px 30px', textAlign: 'left', fontSize: '10px', fontWeight: 950, color: '#94a3b8', letterSpacing: '1px' }}>RANK</th>
@@ -3784,6 +3832,43 @@ export default function ReferralsPage() {
                     )}
                   </tbody>
                 </table>
+                ) : (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', padding: '10px', background: '#f8fafc' }}>
+                    {caseLedgerList.length === 0 ? (
+                       <div style={{ padding: '60px', textAlign: 'center', color: '#94a3b8', fontSize: '12px', fontWeight: 700 }}>NO RECONNAISSANCE DATA AVAILABLE FOR THIS PERIOD</div>
+                    ) : (
+                       caseLedgerList
+                         .filter(s => !referralRosterSearch || s.name.toLowerCase().includes(referralRosterSearch.toLowerCase()))
+                         .map((s, i) => (
+                           <div key={s.name || s.referrerId} style={{ background: 'white', borderRadius: '16px', border: '1px solid #e2e8f0', padding: '16px', display: 'flex', flexDirection: 'column', gap: '12px', boxShadow: '0 2px 10px rgba(0,0,0,0.02)' }}>
+                              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                 <div style={{ width: '28px', height: '28px', borderRadius: '8px', background: i < 3 ? '#f0f3fd' : '#f8fafc', color: i < 3 ? '#0f52ba' : '#64748b', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '11px', fontWeight: 950 }}>#{i + 1}</div>
+                                 <div style={{ fontSize: '14px', fontWeight: 850, color: '#1e293b' }}>{(s.name || 'Anonymous').toUpperCase()}</div>
+                              </div>
+                              <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                                 <div style={{ fontSize: '11px', fontWeight: 700, color: '#64748b' }}>{s.contact}</div>
+                                 <div style={{ fontSize: '10px', fontWeight: 800, color: '#1e293b', textTransform: 'uppercase' }}>{s.address || 'GLOBAL'}</div>
+                              </div>
+                              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '4px', paddingTop: '12px', borderTop: '1px dashed #e2e8f0' }}>
+                                 <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                    <div style={{ fontSize: '16px', fontWeight: 950, color: '#0f52ba' }}>{s.patients?.length || 0}</div>
+                                    <div style={{ fontSize: '9px', fontWeight: 800, color: '#94a3b8', letterSpacing: '0.5px' }}>UNITS</div>
+                                 </div>
+                                 <button 
+                                   onClick={() => {
+                                      setEditingReferrer(s);
+                                      setIsReferrerEditDrawerOpen(true);
+                                   }}
+                                   style={{ padding: '6px 14px', borderRadius: '8px', border: '1px solid #e2e8f0', background: 'white', color: '#0f52ba', fontSize: '10px', fontWeight: 950, cursor: 'pointer' }}
+                                 >
+                                   EDIT
+                                 </button>
+                              </div>
+                           </div>
+                         ))
+                    )}
+                  </div>
+                )}
               </div>
             ) : referralViewMode === 'MATRIX' ? (
               <div style={{ display: 'grid', gridTemplateColumns: '350px 1fr', gap: '30px', alignItems: 'flex-start' }}>
@@ -3973,7 +4058,8 @@ return (
 
                              {/* Referral Case Table */}
                              <div style={{ borderRadius: '20px', border: '1px solid #f1f5f9', overflow: 'hidden', overflowX: 'auto', WebkitOverflowScrolling: 'touch' }}>
-                                <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: isMobile ? '900px' : '100%' }}>
+                            {!isMobile ? (
+                                <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: '100%' }}>
                                   <thead style={{ background: '#fcfdfe' }}>
                                     <tr style={{ borderBottom: '1px solid #f1f5f9' }}>
                                       <th style={{ padding: '15px 25px', textAlign: 'left', width: '40px' }}>
@@ -4038,6 +4124,58 @@ return (
                                     })}
                                   </tbody>
                                 </table>
+                            ) : (
+                                <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', padding: '10px', background: '#f8fafc' }}>
+                                  <div style={{ display: 'flex', gap: '10px', alignItems: 'center', padding: '10px 15px', background: 'white', borderRadius: '12px', border: '1px solid #e2e8f0', marginBottom: '4px' }}>
+                                    <input 
+                                       type="checkbox" 
+                                       checked={isAllLedgerSelected(selected.patients)} 
+                                       onChange={() => toggleAllLedger(selected.patients)} 
+                                       style={{ cursor: 'pointer', transform: 'scale(1.2)' }}
+                                    />
+                                    <span style={{ fontSize: '11px', fontWeight: 950, color: '#64748b' }}>SELECT ALL</span>
+                                  </div>
+                                  {selected.patients.map(p => {
+                                      const rowId = p.appointmentId || p.patientId;
+                                      const isSelected = selectedLedgerRows.includes(rowId);
+                                      return (
+                                        <div key={rowId} onClick={() => toggleLedgerSelection(rowId)} style={{ background: isSelected ? '#f0f7ff' : 'white', borderRadius: '16px', border: isSelected ? '1px solid #3b82f6' : '1px solid #e2e8f0', padding: '16px', display: 'flex', flexDirection: 'column', gap: '12px', boxShadow: '0 2px 10px rgba(0,0,0,0.02)', cursor: 'pointer', transition: 'all 0.2s' }}>
+                                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                             <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
+                                                <input 
+                                                  type="checkbox" 
+                                                  checked={isSelected} 
+                                                  readOnly
+                                                  style={{ cursor: 'pointer', transform: 'scale(1.2)' }}
+                                                />
+                                                <div style={{ fontSize: '11px', fontWeight: 950, color: '#0f52ba', fontFamily: 'monospace' }}>{p.patientIdentifier || 'UNSET'}</div>
+                                             </div>
+                                             <div style={{ fontSize: '11px', fontWeight: 900, color: '#64748b' }}>{p.registrationDate}</div>
+                                          </div>
+                                          <div>
+                                             <div style={{ fontSize: '14px', fontWeight: 850, color: '#1e293b' }}>{(p.name || 'Unknown').toUpperCase()}</div>
+                                             <div style={{ fontSize: '12px', fontWeight: 800, color: '#1e293b', marginTop: '4px' }}>{p.age}Y • {(p.gender || 'U').toUpperCase()}</div>
+                                             <div style={{ fontSize: '11px', fontWeight: 700, color: '#64748b', marginTop: '4px' }}>{p.mobile}</div>
+                                          </div>
+                                          <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
+                                              <span style={{ fontSize: '10px', color: 'white', background: '#334155', padding: '3px 8px', borderRadius: '6px', fontWeight: 950 }}>{p.modality}</span>
+                                              <span style={{ fontSize: '10px', color: '#475569', border: '1px solid #e2e8f0', padding: '2px 8px', borderRadius: '6px', fontWeight: 850 }}>{p.service}</span>
+                                          </div>
+                                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '4px', paddingTop: '12px', borderTop: '1px dashed #e2e8f0' }}>
+                                             <div>
+                                                <div style={{ fontSize: '14px', fontWeight: 950, color: '#1e293b' }}>₹{(p.commissionAmount || 0).toLocaleString()}</div>
+                                                <div style={{ fontSize: '9px', fontWeight: 900, color: p.commissionStatus === 'Paid' ? '#059669' : '#dc2626' }}>{(p.commissionStatus || 'Unpaid').toUpperCase()}</div>
+                                             </div>
+                                             {(() => {
+                                                const cfg = getStatusConfig(p.status);
+                                                return <span style={{ fontSize: '10px', fontWeight: 950, padding: '4px 10px', borderRadius: '8px', background: cfg.bg, color: cfg.color }}>{cfg.label}</span>
+                                             })()}
+                                          </div>
+                                        </div>
+                                      );
+                                  })}
+                                </div>
+                            )}
                              </div>
                           </div>
                         </div>

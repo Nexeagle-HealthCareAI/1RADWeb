@@ -286,6 +286,21 @@ const SmallRowBtn = ({ label, icon, title, active, onClick }) => (
   </button>
 );
 
+// Wrap tiptap's editor.can().xxx() so a transient null inside tiptap (which
+// happens during concurrent rendering when the editor is mid-init / mid-destroy)
+// doesn't crash the whole HomeTab render.
+function safeCan(editor, commandName) {
+  if (!editor) return false;
+  try {
+    const can = editor.can?.();
+    if (!can) return false;
+    const fn = can[commandName];
+    return typeof fn === 'function' ? !!fn() : false;
+  } catch {
+    return false;
+  }
+}
+
 /**
  * HomeTab — primary formatting controls.
  * Groups: Clipboard | Font | Paragraph | Styles | History
@@ -769,10 +784,10 @@ export default function HomeTab({ editor, showFormattingMarks, onToggleFormattin
 
       {/* ── History group ───────────────────────────────── */}
       <Group label="History">
-        <Btn onClick={() => editor?.chain().focus().undo().run()} disabled={!editor?.can?.()?.undo?.()} title="Undo (Ctrl+Z)">
+        <Btn onClick={() => editor?.chain().focus().undo().run()} disabled={!safeCan(editor, 'undo')} title="Undo (Ctrl+Z)">
           <Icon d={ICONS.undo} />
         </Btn>
-        <Btn onClick={() => editor?.chain().focus().redo().run()} disabled={!editor?.can?.()?.redo?.()} title="Redo (Ctrl+Y)">
+        <Btn onClick={() => editor?.chain().focus().redo().run()} disabled={!safeCan(editor, 'redo')} title="Redo (Ctrl+Y)">
           <Icon d={ICONS.redo} />
         </Btn>
       </Group>

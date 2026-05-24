@@ -43,7 +43,14 @@ function singlePutToAzure(sasUrl, file, contentType, onProgress) {
       if (xhr.status >= 200 && xhr.status < 300) resolve();
       else reject(new Error(`Azure PUT failed: ${xhr.status} ${xhr.statusText} — ${xhr.responseText?.slice(0, 200)}`));
     };
-    xhr.onerror = () => reject(new Error('Network error during Azure PUT'));
+    // A CORS failure shows up as a generic network error with status=0. Flag it
+    // explicitly so the caller knows to configure the storage account.
+    xhr.onerror = () => reject(new Error(
+      'AZURE_CORS_OR_NETWORK: PUT to Azure failed without a status code. ' +
+      'Almost always this means CORS is not configured on the storage account. ' +
+      'In Azure Portal → Storage Account → Resource sharing (CORS) → Blob service, ' +
+      'add an entry for this origin with PUT, GET, HEAD, POST, OPTIONS methods.'
+    ));
     xhr.ontimeout = () => reject(new Error('Azure PUT timed out'));
     xhr.send(file);
   });
@@ -127,7 +134,7 @@ export async function uploadStudyAssetDirect(file, appointmentId, onProgress) {
 
   const t0 = performance.now();
 
-  // 1. Request a SAS write URL (small + fast).
+  // 1. Request a SAS write URL (small + fast). No DB row created yet on the server.
   if (onProgress) onProgress({ loaded: 0, total: file.size, pct: 0, stage: 'requesting-token' });
   const tokenRes = await apiClient.post('/Study/upload-token', {
     AppointmentId: appointmentId,
@@ -138,7 +145,7 @@ export async function uploadStudyAssetDirect(file, appointmentId, onProgress) {
   if (!tokenRes?.data?.success || !tokenRes.data.data) {
     throw new Error('Backend did not return a SAS token: ' + JSON.stringify(tokenRes?.data));
   }
-  const { assetId, sasUrl, publicReadUrl } = tokenRes.data.data;
+  const { assetId, sasUrl, publicReadUrl, blobPath, containerName } = tokenRes.data.data;
   const t1 = performance.now();
   console.log(`[AZURE_UPLOAD] token issued in ${(t1 - t0).toFixed(0)}ms, asset=${assetId}`);
 
@@ -158,10 +165,15 @@ export async function uploadStudyAssetDirect(file, appointmentId, onProgress) {
   const t2 = performance.now();
   console.log(`[AZURE_UPLOAD] blob PUT done in ${((t2 - t1) / 1000).toFixed(1)}s`);
 
-  // 3. Tell backend to finalise the StudyAsset row.
+  // 3. Tell backend to CREATE the StudyAsset row (only after blob is in Azure).
   if (onProgress) onProgress({ loaded: file.size, total: file.size, pct: 1, stage: 'finalising' });
   const completeRes = await apiClient.post('/Study/upload-complete', {
     AssetId: assetId,
+    AppointmentId: appointmentId,
+    BlobPath: blobPath,
+    ContainerName: containerName,
+    PublicReadUrl: publicReadUrl,
+    FileName: file.name,
     ActualSize: file.size,
   });
   if (!completeRes?.data?.success) {

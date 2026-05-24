@@ -290,8 +290,15 @@ const SubscriptionPage = () => {
   const [activeTab, setActiveTab] = useState('status');
   const [transactions, setTransactions] = useState([]);
   const [loadingTx, setLoadingTx] = useState(false);
+  const [isMobile, setIsMobile] = useState(window.innerWidth < 640);
   const { subscription, refreshSubscription, currentUser } = useAuth();
   const navigate = useNavigate();
+
+  useEffect(() => {
+    const handleResize = () => setIsMobile(window.innerWidth < 640);
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
 
   useEffect(() => {
     const fetchTransactions = async () => {
@@ -506,7 +513,7 @@ const SubscriptionPage = () => {
                   <span style={{ marginLeft: 'auto', padding: '4px 12px', borderRadius: '20px', background: '#10b981', color: 'white', fontSize: '11px', fontWeight: 800 }}>ACTIVE</span>
                 </div>
 
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '14px' }}>
+                <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : 'repeat(3, 1fr)', gap: '14px' }}>
                   {[
                     { label: 'Valid From', value: subscription?.startDate ? new Date(subscription.startDate).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }) : '—' },
                     { label: 'Valid Until', value: subscription?.endDate ? new Date(subscription.endDate).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }) : '—' },
@@ -592,7 +599,7 @@ const SubscriptionPage = () => {
           {/* Base info row */}
           <div className="sub-card">
             <p style={{ fontSize: '10px', fontWeight: 900, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '1.5px', margin: '0 0 16px' }}>Subscription Details</p>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+            <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: '12px' }}>
               {[
                 { label: 'Plan Type', value: subStatus === 'None' ? 'No Active Plan' : (isTrial ? 'Free Trial' : `Premium — ${billingCycleFromServer}`) },
                 { label: 'Status', value: statusLabel, color: statusColor },
@@ -615,6 +622,35 @@ const SubscriptionPage = () => {
             ) : transactions.length === 0 ? (
               <div style={{ padding: '30px', textAlign: 'center', background: '#f8fafc', borderRadius: '12px', border: '1px dashed #e2e8f0', color: '#64748b', fontSize: '13px', fontWeight: 500 }}>
                 No payment transactions found.
+              </div>
+            ) : isMobile ? (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                {transactions.map(tx => (
+                  <div key={tx.requestId} style={{ background: 'white', borderRadius: '12px', padding: '16px', border: '1px solid #e8edf2', boxShadow: '0 1px 3px rgba(0,0,0,0.02)' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
+                      <span style={{ fontSize: '12px', fontWeight: 700, color: '#64748b' }}>{new Date(tx.createdAt).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}</span>
+                      <span style={{ 
+                        padding: '4px 10px', borderRadius: '20px', fontSize: '10px', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.5px',
+                        background: tx.status === 'Approved' ? '#dcfce7' : tx.status === 'Rejected' ? '#fee2e2' : '#fef9c3',
+                        color: tx.status === 'Approved' ? '#166534' : tx.status === 'Rejected' ? '#991b1b' : '#854d0e'
+                      }}>
+                        {tx.status}
+                      </span>
+                    </div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '8px' }}>
+                      <div>
+                        <div style={{ fontSize: '14px', fontWeight: 800, color: '#0a1628' }}>{tx.planName || 'Premium'}</div>
+                        <div style={{ fontSize: '12px', color: '#64748b', fontWeight: 500, marginTop: '2px' }}>{tx.billingCycle}</div>
+                      </div>
+                      <div style={{ fontSize: '16px', fontWeight: 900, color: '#0ea5e9' }}>₹{tx.amount.toLocaleString('en-IN')}</div>
+                    </div>
+                    <div style={{ padding: '10px 12px', background: '#f8fafc', borderRadius: '8px', border: '1px solid #f1f5f9' }}>
+                      <div style={{ fontSize: '12px', fontWeight: 700, color: '#334155' }}>Ref: {tx.transactionReference}</div>
+                      <div style={{ fontSize: '11px', color: '#64748b', fontWeight: 500, marginTop: '2px' }}>Mode: {tx.paymentMode}</div>
+                    </div>
+                    {tx.reviewNote && <div style={{ fontSize: '11px', color: '#ef4444', marginTop: '10px', fontWeight: 500, lineHeight: 1.4, padding: '8px 12px', background: '#fef2f2', borderRadius: '8px', border: '1px solid #fecaca' }}>Reason: {tx.reviewNote}</div>}
+                  </div>
+                ))}
               </div>
             ) : (
               <div style={{ overflowX: 'auto' }}>

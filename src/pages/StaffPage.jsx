@@ -979,7 +979,7 @@ export default function StaffPage() {
     return (
       <div style={{ padding: '24px 28px 28px' }}>
         {/* 3 section cards side-by-side on wide screens, stacked when narrow */}
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(340px, 1fr))', gap: '14px' }}>
+        <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : 'repeat(auto-fit, minmax(340px, 1fr))', gap: '14px' }}>
           {sections.map((sec) => {
             const secMissing = sec.fields.filter(f => !f.value || String(f.value).trim() === '').length;
             return (
@@ -1341,7 +1341,7 @@ export default function StaffPage() {
         </div>
 
         {/* Earnings / Deductions side-by-side */}
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', marginBottom: '14px' }}>
+        <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: '12px', marginBottom: '14px' }}>
           {/* Earnings */}
           <div style={{ background: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: '14px', padding: '16px' }}>
             <div style={{ fontSize: '9px', fontWeight: 900, color: '#16a34a', letterSpacing: '1px', marginBottom: '12px' }}>EARNINGS</div>
@@ -1599,7 +1599,7 @@ export default function StaffPage() {
         </div>
 
         {/* Side-by-side: Calendar (left) + Summary (right) on wide; stacked on narrow */}
-        <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) 280px', gap: '20px', alignItems: 'start' }}>
+        <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : 'minmax(0, 1fr) 280px', gap: '20px', alignItems: 'start' }}>
 
           {/* Calendar */}
           <div style={{ background: 'white', border: '1px solid #e8edf2', borderRadius: '14px', padding: '16px', boxShadow: '0 1px 3px rgba(15,23,42,0.03)' }}>
@@ -1743,7 +1743,7 @@ export default function StaffPage() {
     return (
       <div style={{ padding: '20px 24px 24px' }}>
         {/* Balance cards */}
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '10px', marginBottom: '16px' }}>
+        <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : 'repeat(3, 1fr)', gap: '10px', marginBottom: '16px' }}>
           {LEAVE_TYPES.map(type => {
             const pct = LEAVE_DEFAULTS[type] > 0 ? (balance[type] / LEAVE_DEFAULTS[type]) * 100 : 0;
             return (
@@ -2529,7 +2529,7 @@ export default function StaffPage() {
                     <span style={{ width: '6px', height: '20px', borderRadius: '3px', background: '#d4a017' }} />
                     <SectionLabel>Revision</SectionLabel>
                   </div>
-                  <div style={{ display: 'grid', gridTemplateColumns: '180px 1fr', gap: '14px' }}>
+                  <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '180px 1fr', gap: '14px' }}>
                     <FieldGroup>
                       <FieldLabel required>Effective from</FieldLabel>
                       <input
@@ -2559,7 +2559,7 @@ export default function StaffPage() {
                     <span style={{ width: '6px', height: '20px', borderRadius: '3px', background: '#16a34a' }} />
                     <SectionLabel>Earnings</SectionLabel>
                   </div>
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '14px' }}>
+                  <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: '14px' }}>
                     {EARNING_FIELDS.map(([label, key]) => (
                       <FieldGroup key={key}>
                         <FieldLabel>{label}</FieldLabel>
@@ -2583,7 +2583,7 @@ export default function StaffPage() {
                     <span style={{ width: '6px', height: '20px', borderRadius: '3px', background: '#dc2626' }} />
                     <SectionLabel>Deductions</SectionLabel>
                   </div>
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '14px' }}>
+                  <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: '14px' }}>
                     {DEDUCT_FIELDS.map(([label, key]) => (
                       <FieldGroup key={key}>
                         <FieldLabel>{label}</FieldLabel>
@@ -2736,7 +2736,7 @@ export default function StaffPage() {
                     <span style={{ width: '6px', height: '20px', borderRadius: '3px', background: '#0f52ba' }} />
                     <SectionLabel>Payment mode</SectionLabel>
                   </div>
-                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '8px' }}>
+                  <div style={{ display: 'grid', gridTemplateColumns: isMobile ? 'repeat(2, 1fr)' : 'repeat(4, 1fr)', gap: '8px' }}>
                     {PAYMENT_MODES.map(m => {
                       const active = f.mode === m.id;
                       return (
@@ -2762,7 +2762,7 @@ export default function StaffPage() {
                 </div>
 
                 {/* Reference + Paid On */}
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 180px', gap: '14px' }}>
+                <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 180px', gap: '14px' }}>
                   <FieldGroup>
                     <FieldLabel required={needsRef}>
                       {f.mode === 'bank' ? 'Bank reference / UTR' : f.mode === 'cheque' ? 'Cheque number' : f.mode === 'upi' ? 'UPI transaction ID' : 'Reference (optional)'}
@@ -2842,7 +2842,7 @@ export default function StaffPage() {
           <div style={{ background: 'white', borderRadius: '20px', padding: '26px', width: '90%', maxWidth: '320px', boxShadow: '0 24px 80px rgba(0,0,0,0.18)' }} onClick={e => e.stopPropagation()}>
             <div style={{ fontSize: '15px', fontWeight: 800, color: '#0a1628', marginBottom: '3px' }}>Mark Attendance</div>
             <div style={{ fontSize: '11px', color: '#94a3b8', marginBottom: '18px', fontWeight: 500 }}>{attPicker.date} · {selectedStaff.name}</div>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', marginBottom: '18px' }}>
+            <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: '8px', marginBottom: '18px' }}>
               {Object.entries(ATT_META).map(([s, m]) => (
                 <button
                   key={s}
@@ -2880,7 +2880,7 @@ export default function StaffPage() {
               </div>
             </div>
 
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', marginBottom: '14px' }}>
+            <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: '10px', marginBottom: '14px' }}>
               {[['FROM', 'from'], ['TO', 'to']].map(([lbl, key]) => (
                 <div key={key}>
                   <label style={{ fontSize: '9px', fontWeight: 900, color: '#94a3b8', letterSpacing: '0.8px', textTransform: 'uppercase', display: 'block', marginBottom: '6px' }}>{lbl}</label>
@@ -3024,7 +3024,7 @@ export default function StaffPage() {
                   placeholder="e.g. Dr. Aditi Sharma"
                 />
               </FieldGroup>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '14px' }}>
+              <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: '14px' }}>
                 <FieldGroup>
                   <FieldLabel>Email</FieldLabel>
                   <TextInput
@@ -3045,7 +3045,7 @@ export default function StaffPage() {
               </div>
               {/* Professional (collapsible? keep visible — short) */}
               <SectionLabel>Professional details <span style={{ color: '#94a3b8', fontWeight: 500, marginLeft: '6px', textTransform: 'none', letterSpacing: 0 }}>(optional)</span></SectionLabel>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '14px' }}>
+              <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: '14px' }}>
                 <FieldGroup>
                   <FieldLabel>Specialization</FieldLabel>
                   <TextInput
@@ -3074,7 +3074,7 @@ export default function StaffPage() {
 
               {/* Employment */}
               <SectionLabel>Employment <span style={{ color: '#94a3b8', fontWeight: 500, marginLeft: '6px', textTransform: 'none', letterSpacing: 0 }}>(optional)</span></SectionLabel>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '14px' }}>
+              <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: '14px' }}>
                 <FieldGroup>
                   <FieldLabel>Department</FieldLabel>
                   <TextInput
@@ -3092,7 +3092,7 @@ export default function StaffPage() {
                   />
                 </FieldGroup>
               </div>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '14px' }}>
+              <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: '14px' }}>
                 <FieldGroup>
                   <FieldLabel>Joining Date</FieldLabel>
                   <input
