@@ -488,17 +488,50 @@ const ReportingPage = () => {
       };
 
       // Tolerant service-name match: tries exact (case/whitespace-insensitive),
-      // then substring both directions, so "CT Brain" matches "CT BRAIN PLAIN".
+      // then substring both directions, then alphanumeric-only token-set match
+      // ("CT-Brain Plain" ↔ "ct brain plain"). The token-set tier specifically
+      // catches differences in punctuation/casing between dev and production
+      // databases.
+      const stripNonAlnum = (s) => (s || '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim().replace(/\s+/g, ' ');
       const findTemplateForService = (templatesArray, serviceName) => {
         if (!serviceName) return null;
         const target = serviceName.toLowerCase().trim();
+        const targetTokens = stripNonAlnum(serviceName);
         const norm = (t) => (t?.name ?? t?.Name ?? '').toLowerCase().trim();
-        return (
-          templatesArray.find(t => norm(t) === target)
-          || templatesArray.find(t => norm(t) && (target.includes(norm(t)) || norm(t).includes(target)))
-          || null
-        );
+        const tokenNorm = (t) => stripNonAlnum(t?.name ?? t?.Name ?? '');
+        const exact = templatesArray.find(t => norm(t) === target);
+        if (exact) return exact;
+        const tokenExact = templatesArray.find(t => tokenNorm(t) === targetTokens);
+        if (tokenExact) return tokenExact;
+        const substr = templatesArray.find(t => norm(t) && (target.includes(norm(t)) || norm(t).includes(target)));
+        if (substr) return substr;
+        const tokenSubstr = templatesArray.find(t => tokenNorm(t) && (targetTokens.includes(tokenNorm(t)) || tokenNorm(t).includes(targetTokens)));
+        return tokenSubstr || null;
       };
+
+      // Production diagnostic — log what we actually received from the API so
+      // mismatches between local and Azure environments are visible. These
+      // logs are intentionally always-on (not gated by DEBUG_LOGGING) since
+      // they only fire once per appointment open and the cost is negligible.
+      try {
+        const tplCount = (templRes?.data?.data || []).length;
+        const tplSample = (templRes?.data?.data || []).slice(0, 5).map(t => ({
+          id: t.id ?? t.Id,
+          name: t.name ?? t.Name,
+          contentLength: (t.content ?? t.Content ?? '').length,
+        }));
+        console.info('[1RAD][TEMPLATE_DEBUG]', {
+          appointmentService: appointmentData.service,
+          appointmentServiceLength: (appointmentData.service || '').length,
+          templatesReceived: tplCount,
+          templatesSample: tplSample,
+          existingReport: !!r,
+          existingTemplateId: r?.templateId,
+          existingFindingsLength: (r?.findings || '').length,
+        });
+      } catch (logErr) {
+        console.warn('[1RAD][TEMPLATE_DEBUG] log failed', logErr);
+      }
 
       if (r && (r.findings !== undefined || r.impression !== undefined)) {
         console.info(`[1RAD] Found Existing Report.`);
