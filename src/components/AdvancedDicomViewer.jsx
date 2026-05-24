@@ -47,11 +47,13 @@ const DICOM_CONFIG = {
   // Maximum number of web workers based on CPU cores
   MAX_WEB_WORKERS: Math.min(navigator.hardwareConcurrency || 4, 8),
   
-  // Timeout for initial image load (milliseconds)
-  INITIAL_LOAD_TIMEOUT: 600000, // 600 seconds for very large/compressed files
-  
+  // Timeout for initial image load (milliseconds). Manual parse path should
+  // resolve in well under 1s; allow generous headroom for slow mobile CPUs
+  // but don't make the user wait 10 minutes if something is silently stuck.
+  INITIAL_LOAD_TIMEOUT: 30000, // 30 seconds
+
   // Timeout for retry without workers (milliseconds)
-  RETRY_TIMEOUT: 300000, // 300 seconds
+  RETRY_TIMEOUT: 20000, // 20 seconds
   
   // Enable detailed console logging
   DEBUG_LOGGING: false // Reduced for performance
@@ -99,12 +101,17 @@ if (typeof SharedArrayBuffer === 'undefined') {
 const blobUrlCache = new WeakMap();
 // Parallel Map for revocation (WeakMap isn't iterable). Keyed by File too.
 const blobUrlTracker = new Map();
+// Reverse lookup: blob URL -> File. Lets the wadouri loader read pixel data
+// directly via file.arrayBuffer() instead of fetch(blobUrl), which can hang
+// on some mobile browsers when the blob is large.
+const urlToFile = new Map();
 function getOrCreateBlobUrl(file) {
   let url = blobUrlCache.get(file);
   if (!url) {
     url = URL.createObjectURL(file);
     blobUrlCache.set(file, url);
     blobUrlTracker.set(file, url);
+    urlToFile.set(url, file);
   }
   return url;
 }
@@ -216,7 +223,7 @@ async function initCornerstone() {
   console.log("[DICOM] Available loader methods:", Object.keys(cornerstoneDICOMImageLoader));
   
   imageLoader.registerImageLoader('wadouri', (imageId, options) => {
-    if (DICOM_CONFIG.DEBUG_LOGGING) console.log(`[DICOM] Loader triggered for: ${imageId}`);
+    console.log(`[DICOM_TRACE] wadouri-loader CALLED for: ${imageId.slice(0, 80)}`);
 
     // Web-worker decode path (Path A/B) has been racing slower than the manual
     // dicomParser path (Path C) in this environment on every device, so we always
@@ -240,12 +247,22 @@ async function initCornerstone() {
           loadPromise = cornerstoneDICOMImageLoader.loadImage(imageId, options);
           if (loadPromise && loadPromise.promise) loadPromise = loadPromise.promise;
         } else {
-          if (DICOM_CONFIG.DEBUG_LOGGING) console.log(`[DICOM] Path C: Manual fallback triggered`);
+          console.log(`[DICOM] Path C (manual) triggered for: ${imageId.slice(0, 60)}...`);
           const blobUrl = imageId.replace('wadouri:', '');
-          const response = await fetch(blobUrl);
-          const arrayBuffer = await response.arrayBuffer();
+          // Prefer reading the File object directly — fetch(blobUrl) can hang
+          // on some mobile browsers when the blob is large (>50 MB). Falling
+          // back to fetch only when the URL didn't come from getOrCreateBlobUrl.
+          const file = urlToFile.get(blobUrl);
+          let arrayBuffer;
+          if (file && typeof file.arrayBuffer === 'function') {
+            arrayBuffer = await file.arrayBuffer();
+          } else {
+            const response = await fetch(blobUrl);
+            arrayBuffer = await response.arrayBuffer();
+          }
           const byteArray = new Uint8Array(arrayBuffer);
           const dataSet = dicomParser.parseDicom(byteArray);
+          console.log(`[DICOM] Path C parsed ${byteArray.length} bytes in ${file ? 'direct File' : 'fetched blob'} mode`);
           
           const image = {
             imageId,
@@ -301,17 +318,23 @@ async function initCornerstone() {
           },
           async (error) => {
             if (error.message === 'FAST_FAIL') {
-               console.warn(`[DICOM] Path A/B timed out (10s), escalating to Path C (Manual)`);
+               console.warn(`[DICOM] Path A/B timed out, escalating to Path C (Manual)`);
                try {
                  const blobUrl = imageId.replace('wadouri:', '');
-                 const response = await fetch(blobUrl).catch(err => {
-                   if (err.name === 'TypeError' || err.message.includes('fetch')) {
-                     console.warn(`[DICOM] Blob fetch failed (likely revoked during cleanup): ${blobUrl}`);
-                     throw new Error("BLOB_REVOKED");
-                   }
-                   throw err;
-                 });
-                 const arrayBuffer = await response.arrayBuffer();
+                 const file = urlToFile.get(blobUrl);
+                 let arrayBuffer;
+                 if (file && typeof file.arrayBuffer === 'function') {
+                   arrayBuffer = await file.arrayBuffer();
+                 } else {
+                   const response = await fetch(blobUrl).catch(err => {
+                     if (err.name === 'TypeError' || err.message.includes('fetch')) {
+                       console.warn(`[DICOM] Blob fetch failed (likely revoked during cleanup): ${blobUrl}`);
+                       throw new Error("BLOB_REVOKED");
+                     }
+                     throw err;
+                   });
+                   arrayBuffer = await response.arrayBuffer();
+                 }
                  const byteArray = new Uint8Array(arrayBuffer);
                  const dataSet = dicomParser.parseDicom(byteArray);
                  const image = {
@@ -360,7 +383,12 @@ async function initCornerstone() {
       }
     });
 
-    return { promise, cancelFn: () => {} };
+    // Wrap the promise so we can log resolve/reject of OUR loader.
+    const tracedPromise = promise.then(
+      (img) => { console.log(`[DICOM_TRACE] wadouri-loader RESOLVED ${imageId.slice(0, 60)} → image ${img?.width}x${img?.height}`); return img; },
+      (err) => { console.error(`[DICOM_TRACE] wadouri-loader REJECTED ${imageId.slice(0, 60)}:`, err?.message, err); throw err; }
+    );
+    return { promise: tracedPromise, cancelFn: () => {} };
   });
 
   // Also register dicomfile just in case it's used internally
@@ -420,6 +448,8 @@ const AdvancedDicomViewer = ({
   const fullscreenContainerRef = useRef(null);
   const filesRef = useRef(null); // Keep files in ref to prevent garbage collection
   const prevFilesRef = useRef(null); // Previous files reference, for detecting append-vs-replace
+  const engineStackReadyRef = useRef(false); // Set true once initial viewport.setStack resolves
+  const pendingAppendFilesRef = useRef(null); // If strict-append fires before engine is ready, defer here
   
   const uniqueId = useId().replace(/[^a-zA-Z0-9]/g, '');
   const engineId = `ENGINE_${uniqueId}`;
@@ -494,26 +524,43 @@ const AdvancedDicomViewer = ({
       prev && Array.isArray(prev) && Array.isArray(files) &&
       prev.length > 0 && files.length > prev.length &&
       prev.every((f, i) => files[i] === f);
+    console.log(`[DICOM_TRACE] files-effect: prev=${prev?.length ?? 'null'}, new=${files?.length}, isStrictAppend=${isStrictAppend}, isReady=${isReady}, engineExists=${!!renderingEngineRef.current}`);
 
-    if (isStrictAppend && renderingEngineRef.current && isReady) {
-      console.log(`[DICOM] Files appended (${prev.length} → ${files.length}), updating stack in place`);
+    if (isStrictAppend) {
+      console.log(`[DICOM_TRACE] STRICT_APPEND fire: prev=${prev.length} → new=${files.length}, isReady=${isReady}, engineExists=${!!renderingEngineRef.current}, engineStackReady=${engineStackReadyRef.current}`);
       filesRef.current = files;
       prevFilesRef.current = files;
+      // If the engine hasn't finished its initial setStack yet, defer this append
+      // so setupEngine can pick it up after its own setStack resolves. Prevents the
+      // race where our append runs first, then setupEngine's setStack overwrites
+      // the bigger stack with the original 1-file preview stack.
+      if (!engineStackReadyRef.current || !renderingEngineRef.current) {
+        console.log('[DICOM_TRACE] STRICT_APPEND deferred — engine not ready, stashing for setupEngine to apply');
+        pendingAppendFilesRef.current = files;
+        return;
+      }
       try {
         const viewport = renderingEngineRef.current.getViewport(viewportId);
         if (viewport) {
           const newImageIds = files.map(f => `wadouri:${getOrCreateBlobUrl(f)}`);
-          // Preserve current slice — setStack defaults to index 0, so we re-seek after.
           const prevIndex = currentImageIndex;
+          console.log(`[DICOM_TRACE] STRICT_APPEND calling setStack(${newImageIds.length} ids), prevIndex=${prevIndex}`);
           viewport.setStack(newImageIds).then(() => {
+            console.log(`[DICOM_TRACE] STRICT_APPEND setStack RESOLVED ok, stack now has ${newImageIds.length} images`);
             if (prevIndex > 0 && prevIndex < newImageIds.length) {
-              viewport.setImageIdIndex(prevIndex).catch(() => {});
+              viewport.setImageIdIndex(prevIndex).catch((err) => {
+                console.warn(`[DICOM_TRACE] STRICT_APPEND setImageIdIndex(${prevIndex}) failed:`, err?.message);
+              });
             }
             renderingEngineRef.current?.renderViewports([viewportId]);
-          }).catch(err => console.warn('[DICOM] In-place setStack failed:', err));
+            console.log(`[DICOM_TRACE] STRICT_APPEND renderViewports called, flipping hasRenderedFirstImage`);
+            setHasRenderedFirstImage(true);
+          }).catch(err => console.warn('[DICOM_TRACE] STRICT_APPEND setStack REJECTED:', err?.message, err));
+        } else {
+          console.warn('[DICOM_TRACE] STRICT_APPEND viewport not retrievable');
         }
       } catch (e) {
-        console.warn('[DICOM] Append-mode update threw, falling back to full reset on next change:', e);
+        console.warn('[DICOM_TRACE] STRICT_APPEND threw:', e?.message, e);
       }
       return;
     }
@@ -1026,19 +1073,18 @@ const AdvancedDicomViewer = ({
   }, [isFullscreen]);
 
   useEffect(() => {
+    console.log(`[DICOM_TRACE] checkMetadata-effect: ENTER files=${files?.length}, hasPreParsed=${!!preParsedMetadata}`);
     // Silently bail out when no files are loaded yet (initial mount before upload)
     if (!files || files.length === 0) {
-      // Clear any previous state but don't set error (it's just empty initial state)
+      console.log('[DICOM_TRACE] checkMetadata-effect: no files, isReady→false');
       setIsReady(false);
       if (onImageStatus) onImageStatus(false);
       return;
     }
 
-    console.log('[DICOM METADATA] Starting metadata check for', files.length, 'files');
-
     // OPTIMIZATION: Use pre-parsed metadata if available
     if (preParsedMetadata) {
-      console.log('[DICOM METADATA] Using pre-parsed metadata');
+      console.log('[DICOM_TRACE] checkMetadata-effect: using pre-parsed metadata → setIsReady(true)');
       setMetadata(preParsedMetadata);
       if (onMetadata) onMetadata(preParsedMetadata);
       setIsReady(true);
@@ -1113,7 +1159,7 @@ const AdvancedDicomViewer = ({
         setMetadata(meta);
         if (onMetadata) onMetadata(meta);
 
-        console.log('[DICOM METADATA] ✅ Setting isReady = true');
+        console.log('[DICOM_TRACE] checkMetadata: parsed OK → setIsReady(true)');
         if (onImageStatus) onImageStatus(true);
         setIsReady(true);
       } catch (err) {
@@ -1134,10 +1180,16 @@ const AdvancedDicomViewer = ({
 
   // --- CORNERSTONE 3D ENGINE LIFECYCLE ---
   useEffect(() => {
-    if (!isReady || !files || files.length === 0 || !elementRef.current) return;
-    
+    console.log(`[DICOM_TRACE] engine-effect: ENTER isReady=${isReady}, files=${files?.length}, hasElement=${!!elementRef.current}`);
+    if (!isReady || !files || files.length === 0 || !elementRef.current) {
+      console.log('[DICOM_TRACE] engine-effect: skip (guards)');
+      return;
+    }
+
     let isMounted = true;
     let imageIds = [];
+    engineStackReadyRef.current = false;
+    pendingAppendFilesRef.current = null;
 
     const setupEngine = async () => {
       await initCornerstone();
@@ -1275,20 +1327,47 @@ const AdvancedDicomViewer = ({
           return;
         }
 
+        console.log(`[DICOM_TRACE] setupEngine: calling viewport.setStack(${imageIds.length} ids)`);
         await viewport.setStack(imageIds);
-        if (!isMounted || !elementRef.current) return;
-        console.log(`[DICOM] Stack assigned to ${viewportId}. Total: ${imageIds.length}`);
+        if (!isMounted || !elementRef.current) {
+          console.log('[DICOM_TRACE] setupEngine: BAILED after setStack — isMounted/elementRef gone');
+          return;
+        }
+        console.log(`[DICOM_TRACE] setupEngine: setStack resolved, marking engineStackReadyRef=true`);
+        engineStackReadyRef.current = true;
+
+        // If a streaming append fired BEFORE we got here, it was deferred. Apply it now.
+        if (pendingAppendFilesRef.current) {
+          const pending = pendingAppendFilesRef.current;
+          pendingAppendFilesRef.current = null;
+          console.log(`[DICOM_TRACE] setupEngine: applying deferred append (${pending.length} files)`);
+          try {
+            const pendingIds = pending.map(f => `wadouri:${getOrCreateBlobUrl(f)}`);
+            await viewport.setStack(pendingIds);
+            console.log('[DICOM_TRACE] setupEngine: deferred append setStack done');
+          } catch (e) {
+            console.warn('[DICOM_TRACE] setupEngine: deferred append failed:', e?.message);
+          }
+        }
 
         // Explicitly set to first image
         await viewport.setImageIdIndex(0);
-        if (!isMounted || !elementRef.current) return;
+        if (!isMounted || !elementRef.current) {
+          console.log('[DICOM_TRACE] setupEngine: BAILED after setImageIdIndex');
+          return;
+        }
         setCurrentImageIndex(0);
-        console.log(`[DICOM] Image index set to 0 for ${viewportId}`);
+        console.log(`[DICOM_TRACE] setupEngine: imageIndex set to 0`);
 
         // Safety net: hide the loader after a short delay regardless of the render
         // path below, so a silent failure on mobile doesn't leave RENDERING_IMAGE up.
         setTimeout(() => {
-          if (isMounted) setHasRenderedFirstImage(true);
+          if (isMounted) {
+            console.log('[DICOM_TRACE] safety-net timeout firing setHasRenderedFirstImage(true)');
+            setHasRenderedFirstImage(true);
+          } else {
+            console.log('[DICOM_TRACE] safety-net timeout SKIPPED — isMounted=false');
+          }
         }, 1500);
 
         // Wait a frame to ensure internal state is stable
@@ -1329,11 +1408,17 @@ const AdvancedDicomViewer = ({
                  invert: !!invert
                }); 
                
+               console.log('[DICOM_TRACE] rAF inner: calling renderViewports');
                renderingEngine.renderViewports([viewportId]);
 
                // Pixels are now committed to the canvas — drop the loader on the next frame.
                requestAnimationFrame(() => {
-                 if (isMounted) setHasRenderedFirstImage(true);
+                 if (isMounted) {
+                   console.log('[DICOM_TRACE] rAF inner: setHasRenderedFirstImage(true) ← post-render path');
+                   setHasRenderedFirstImage(true);
+                 } else {
+                   console.log('[DICOM_TRACE] rAF inner: SKIPPED setHasRenderedFirstImage — isMounted=false');
+                 }
                });
 
                // Double-flush render for some browser engines (lower-priority safety net)
@@ -1534,7 +1619,10 @@ const AdvancedDicomViewer = ({
     setupEngine();
 
     return () => {
+      console.log('[DICOM_TRACE] engine-effect: CLEANUP fired (isMounted→false, destroying engine)');
       isMounted = false;
+      engineStackReadyRef.current = false;
+      pendingAppendFilesRef.current = null;
       if (toolGroupRef.current) {
         try {
           toolGroupRef.current.removeViewports(engineId, viewportId);
@@ -1575,7 +1663,12 @@ const AdvancedDicomViewer = ({
       // Call clearDicomBlobUrlCache() if memory needs to be reclaimed.
       filesRef.current = null;
     };
-  }, [isReady, files, engineId, viewportId, toolGroupId]);
+    // Depend on the first File reference rather than the whole `files` array.
+    // - On streaming append (`[F1]` → `[F1, …]`), files[0] === F1 is unchanged
+    //   → engine effect does NOT re-run → no teardown → no race with the
+    //   dedicated files-change effect's in-place setStack.
+    // - On series switch, files[0] changes → engine effect cleanup + re-run.
+  }, [isReady, files?.[0], engineId, viewportId, toolGroupId]);
 
   // --- EXTERNAL TOOL SYNC ---
   useEffect(() => {

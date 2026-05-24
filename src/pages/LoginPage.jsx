@@ -6,6 +6,39 @@ import RadiologyWorkflowBG from '../components/RadiologyWorkflowBG';
 import TacticalWorkflow from '../components/TacticalWorkflow';
 import '../styles/global.css';
 
+const INDUSTRY_QUOTES = [
+  {
+    title: "Report delays",
+    problem: "You finished the scan hours ago. The report is still sitting in a queue — the surgeon is waiting, the patient is anxious.",
+    solution: "1rad's smart worklist prioritises critical cases automatically, cutting average report turnaround by up to 40%.",
+  },
+  {
+    title: "Radiologist shortage",
+    problem: "One radiologist for every 1,00,000 patients in India. The gap doesn't shrink — it just moves to the next shift.",
+    solution: "Teleradiology tools on 1rad connect Tier 2 & 3 hospitals to qualified radiologists anywhere in India, 24/7.",
+  },
+  {
+    title: "Burnout & overload",
+    problem: "100 scans before noon. You're reading fast, but you know speed and accuracy are at war with each other.",
+    solution: "AI-assisted pre-reads flag abnormalities first so you review what matters, not everything.",
+  },
+  {
+    title: "Integration chaos",
+    problem: "Three systems, two logins, one missing image. Every workaround you build today becomes tomorrow's bottleneck.",
+    solution: "1rad unifies RIS, PACS, and reporting in one platform — no toggling, no lost studies.",
+  },
+  {
+    title: "Tier 2/3 access gap",
+    problem: "In smaller cities, patients wait days for a specialist read that a metro hospital gets in 2 hours.",
+    solution: "Cloud-based remote reporting on 1rad brings specialist reads to any district hospital within the hour.",
+  },
+  {
+    title: "Career & earnings",
+    problem: "You trained for years, but your earnings don't reflect your expertise — and there's no visibility into your output.",
+    solution: "1rad's RVU dashboard gives radiologists transparent productivity tracking and data to negotiate fairly.",
+  },
+];
+
 export default function LoginPage() {
   const { login, hasAdminDoctor, sendOtp, verifyOtp, currentUser } = useAuth();
   const navigate = useNavigate();
@@ -31,6 +64,19 @@ export default function LoginPage() {
   const [errorCode, setErrorCode] = useState(null);
   const [accountStatus, setAccountStatus] = useState(null);
   const [successMessage, setSuccessMessage] = useState(null);
+  const [quoteIndex, setQuoteIndex] = useState(0);
+  const [quoteFading, setQuoteFading] = useState(false);
+
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setQuoteFading(true);
+      setTimeout(() => {
+        setQuoteIndex(prev => (prev + 1) % INDUSTRY_QUOTES.length);
+        setQuoteFading(false);
+      }, 400);
+    }, 6000);
+    return () => clearInterval(interval);
+  }, []);
 
   const startCountdown = () => {
     if (timerId) clearInterval(timerId);
@@ -147,26 +193,143 @@ export default function LoginPage() {
     <div className="auth-immersive-container">
       <RadiologyWorkflowBG />
       <div className="immersive-brand">
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-start', marginBottom: '15px' }}>
-          <img
-            src="/Logo.png"
-            alt="NexEagle"
-            style={{
-              width: '48px', height: '48px',
-              objectFit: 'contain', flexShrink: 0, borderRadius: '12px',
-              boxShadow: '0 8px 24px rgba(0, 242, 254, 0.3)'
-            }}
-          />
-          <div style={{ display: 'flex', flexDirection: 'column', lineHeight: 1.15, marginLeft: '16px' }}>
-            <span style={{ fontSize: '32px', fontWeight: 900, color: '#ffffff', letterSpacing: '-0.5px' }}>NexEagle</span>
-            <span style={{ fontSize: '14px', fontWeight: 700, color: '#00f2fe', letterSpacing: '2px', textTransform: 'uppercase' }}>1Rad</span>
+        {/* ── Brand — top ── */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: '14px', marginBottom: '6px' }}>
+          <img src="/Logo.png" alt="NexEagle" style={{
+            width: '40px', height: '40px', objectFit: 'contain',
+            borderRadius: '10px', boxShadow: '0 8px 24px rgba(0,242,254,0.3)',
+          }} />
+          <div style={{ display: 'flex', flexDirection: 'column', lineHeight: 1.15 }}>
+            <span style={{ fontSize: '26px', fontWeight: 900, color: '#fff', letterSpacing: '-0.5px' }}>NexEagle</span>
+            <span style={{ fontSize: '11px', fontWeight: 700, color: '#00f2fe', letterSpacing: '3px' }}>1RAD</span>
           </div>
         </div>
-        <div className="immersive-tagline">Radiology Management System</div>
-        
-        {/* Tactical Pipeline View */}
-        <TacticalWorkflow />
+        <div style={{ fontSize: '9px', fontWeight: 700, color: 'rgba(255,255,255,0.25)', letterSpacing: '3.5px', textTransform: 'uppercase', marginBottom: '0' }}>
+          Radiology Management System
+        </div>
+
+        {/* ── Hero Quote — takes all available centre space ── */}
+        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', justifyContent: 'center', paddingTop: '8px', paddingBottom: '24px' }}>
+
+          {/* Clickable quote card */}
+          <div
+            onClick={() => {
+              setQuoteFading(true);
+              setTimeout(() => {
+                setQuoteIndex(prev => (prev + 1) % INDUSTRY_QUOTES.length);
+                setQuoteFading(false);
+              }, 350);
+            }}
+            style={{
+              transition: 'opacity 0.35s ease',
+              opacity: quoteFading ? 0 : 1,
+              cursor: 'pointer',
+              userSelect: 'none',
+              display: 'flex',
+              flexDirection: 'column',
+              gap: '20px',
+            }}
+          >
+            {/* Category chip + next hint */}
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <div style={{
+                  width: '4px', height: '4px', borderRadius: '50%',
+                  background: '#00f2fe', boxShadow: '0 0 6px #00f2fe',
+                }} />
+                <span style={{
+                  fontSize: '9px', fontWeight: 800, letterSpacing: '2.5px',
+                  textTransform: 'uppercase', color: '#00f2fe', opacity: 0.8,
+                }}>
+                  {INDUSTRY_QUOTES[quoteIndex].title}
+                </span>
+              </div>
+              <span style={{ fontSize: '9px', color: 'rgba(0,242,254,0.35)', letterSpacing: '1px', display: 'flex', alignItems: 'center', gap: '2px' }}>
+                tap for next <span style={{ fontSize: '13px' }}>›</span>
+              </span>
+            </div>
+
+            {/* Big decorative quote */}
+            <div style={{ position: 'relative', paddingLeft: '18px' }}>
+              {/* Large " mark */}
+              <span style={{
+                position: 'absolute', top: '-18px', left: '-4px',
+                fontSize: '72px', fontFamily: 'Georgia, serif',
+                color: 'rgba(0,242,254,0.12)', lineHeight: 1,
+                userSelect: 'none', pointerEvents: 'none',
+              }}>&ldquo;</span>
+
+              {/* Left accent line */}
+              <div style={{
+                position: 'absolute', left: 0, top: '4px', bottom: '4px',
+                width: '2px', borderRadius: '2px',
+                background: 'linear-gradient(to bottom, #00f2fe, rgba(0,242,254,0.1))',
+              }} />
+
+              <p style={{
+                fontSize: '15px', fontStyle: 'italic', fontWeight: 400,
+                color: 'rgba(255,255,255,0.82)', lineHeight: 1.7,
+                margin: 0,
+              }}>
+                {INDUSTRY_QUOTES[quoteIndex].problem}
+              </p>
+            </div>
+
+            {/* Solution — highlighted box */}
+            <div style={{
+              background: 'rgba(0,242,254,0.06)',
+              border: '1px solid rgba(0,242,254,0.15)',
+              borderRadius: '10px',
+              padding: '14px 16px',
+              display: 'flex',
+              gap: '10px',
+              alignItems: 'flex-start',
+            }}>
+              <span style={{ color: '#00f2fe', fontSize: '15px', lineHeight: 1.4, flexShrink: 0, marginTop: '1px' }}>✦</span>
+              <p style={{
+                fontSize: '12px', color: 'rgba(255,255,255,0.7)',
+                lineHeight: 1.65, margin: 0, fontWeight: 400,
+              }}>
+                {INDUSTRY_QUOTES[quoteIndex].solution}
+              </p>
+            </div>
+
+            {/* Progress dots */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+              {INDUSTRY_QUOTES.map((_, i) => (
+                <div
+                  key={i}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setQuoteFading(true);
+                    setTimeout(() => { setQuoteIndex(i); setQuoteFading(false); }, 300);
+                  }}
+                  style={{
+                    width: i === quoteIndex ? '22px' : '5px',
+                    height: '4px', borderRadius: '2px',
+                    background: i === quoteIndex ? '#00f2fe' : 'rgba(0,242,254,0.18)',
+                    transition: 'all 0.4s ease', cursor: 'pointer',
+                    boxShadow: i === quoteIndex ? '0 0 8px rgba(0,242,254,0.5)' : 'none',
+                  }}
+                />
+              ))}
+              <span style={{ marginLeft: 'auto', fontSize: '9px', color: 'rgba(255,255,255,0.2)', fontVariantNumeric: 'tabular-nums' }}>
+                {quoteIndex + 1} / {INDUSTRY_QUOTES.length}
+              </span>
+            </div>
+          </div>
+        </div>
+        {/* end hero wrapper */}
+
+        {/* ── Pipeline strip — ambient footer ── */}
+        <div style={{
+          borderTop: '1px solid rgba(255,255,255,0.05)',
+          paddingTop: '16px',
+        }}>
+          <TacticalWorkflow />
+        </div>
       </div>
+      {/* end immersive-brand */}
 
       <div className="glass-card">
         <div className="auth-header" style={{ textAlign: 'center', marginBottom: '30px', display: 'flex', flexDirection: 'column', alignItems: 'center' }}>

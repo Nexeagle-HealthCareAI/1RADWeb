@@ -7,6 +7,7 @@ import AdvancedDicomViewer from '../components/AdvancedDicomViewer';
 import ReportPreviewModal from '../components/ReportPreviewModal';
 import { DicomCache } from '../utils/DicomCache';
 import { dicomOptimizer } from '../utils/DicomPerformanceOptimizer';
+import { uploadStudyAssetDirect } from '../utils/azureUpload';
 import '../styles/global.css';
 import '../styles/TechnicianPage.css';
 
@@ -537,23 +538,42 @@ export default function TechnicianPage() {
   };
 
   const persistStudyAsset = async (file) => {
+    const appointmentId = activeStudy?.appointmentId;
+    if (!appointmentId) {
+      console.warn('[TECH] No appointmentId — skipping backend persistence.');
+      return;
+    }
+    // Path A: direct browser → Azure via SAS (skips backend bytes hop).
+    try {
+      console.log(`[TECH] 📤 Direct SAS upload: ${file.name} (${(file.size / 1048576).toFixed(1)} MB)`);
+      await uploadStudyAssetDirect(file, appointmentId, (p) => {
+        if (p?.stage?.startsWith('uploading')) {
+          const mb = (p.loaded / 1048576).toFixed(1);
+          const total = (p.total / 1048576).toFixed(1);
+          console.log(`[TECH] upload ${p.stage}: ${mb} / ${total} MB (${(p.pct * 100).toFixed(0)}%)`);
+        }
+      });
+      console.log(`[TECH] ✅ Direct upload completed: ${file.name}`);
+      fetchWorklist();
+      setTimeout(() => { reloadAssetsFromBackend(); }, 1500);
+      return;
+    } catch (sasErr) {
+      console.warn('[TECH] Direct SAS upload failed, falling back to legacy multipart:', sasErr?.message);
+    }
+    // Path B fallback: legacy multipart POST.
     try {
       const formData = new FormData();
-      formData.append('AppointmentId', activeStudy.appointmentId);
+      formData.append('AppointmentId', appointmentId);
       formData.append('File', file);
-      console.log(`[TECH] 📤 Uploading to backend: ${file.name}`);
+      console.log(`[TECH] 📤 (fallback) multipart upload: ${file.name}`);
       await apiClient.post('/Study/upload', formData, {
         headers: { 'Content-Type': 'multipart/form-data' }
       });
-      console.log(`[TECH] ✅ Backend save completed: ${file.name}`);
+      console.log(`[TECH] ✅ (fallback) Backend save completed: ${file.name}`);
       fetchWorklist();
-
-      // Reload assets after backend processes the file
-      setTimeout(() => {
-        reloadAssetsFromBackend();
-      }, 1500);
+      setTimeout(() => { reloadAssetsFromBackend(); }, 1500);
     } catch (err) {
-      console.error('[TECH] Persistence failed', err);
+      console.error('[TECH] Persistence failed (both paths)', err);
     }
   };
 
