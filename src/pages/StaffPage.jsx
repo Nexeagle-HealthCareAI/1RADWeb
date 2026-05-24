@@ -484,7 +484,7 @@ export default function StaffPage() {
 
     const record = normalizeStaffSalary(salaryData[staffId]);
     const active = pickRevision(record, lastDay);
-    const { gross, deductions, net } = computeFromRevision(active);
+    const { gross: baseGross, net: baseNet } = computeFromRevision(active);
 
     // Attendance counts for this month
     const attRec = attendanceData[staffId] || {};
@@ -493,7 +493,7 @@ export default function StaffPage() {
       if (d.startsWith(month) && counts[s] !== undefined) counts[s]++;
     });
 
-    // Approved leaves in the year (chronological) — allocate quota to find LWP days in target month.
+    // Approved leaves in the year (chronological)
     const yearLeaves = leaveData
       .filter(l => l.staffId === staffId && l.status === 'approved' && (
          (l.from && l.from.startsWith(String(yr))) || (l.to && l.to.startsWith(String(yr)))
@@ -501,15 +501,12 @@ export default function StaffPage() {
       .sort((a, b) => (a.from || '').localeCompare(b.from || ''));
 
     const remaining = { ...LEAVE_DEFAULTS };
-    let paidLeaveInMonth = 0;
-    let lwpLeaveInMonth = 0;
+    const leaveStatusForDay = {}; // 'paid' or 'lwp'
 
     for (const lv of yearLeaves) {
       if (lv.reason === 'Encashed during salary payout' || (lv.type && lv.type.includes('encash'))) {
         const encashDays = Number(lv.days) || 0;
-        if ((remaining[lv.type] || 0) > 0) {
-          remaining[lv.type] -= encashDays;
-        }
+        if ((remaining[lv.type] || 0) > 0) remaining[lv.type] -= encashDays;
         continue;
       }
       if (!lv.from || !lv.to) continue;
@@ -521,27 +518,57 @@ export default function StaffPage() {
       for (let t = start; t <= end; t += 86400000) {
         const d = new Date(t);
         const y = d.getUTCFullYear();
-        const m = String(d.getUTCMonth() + 1).padStart(2, '0');
-        const dStr = String(d.getUTCDate()).padStart(2, '0');
-        const ds = `${y}-${m}-${dStr}`;
         if (y !== yr) continue; // Only consume quota for the target year
+        const ds = `${y}-${String(d.getUTCMonth() + 1).padStart(2, '0')}-${String(d.getUTCDate()).padStart(2, '0')}`;
         
-        const inMonth = ds.startsWith(month);
         if ((remaining[lv.type] || 0) > 0) {
           remaining[lv.type] -= 1;
-          if (inMonth) paidLeaveInMonth += 1;
-        } else if (inMonth) {
-          lwpLeaveInMonth += 1;
+          leaveStatusForDay[ds] = 'paid';
+        } else {
+          leaveStatusForDay[ds] = 'lwp';
         }
       }
     }
 
-    const lwpDays = counts.absent + 0.5 * counts.halfday + lwpLeaveInMonth;
-    const perDay = daysInMonth > 0 ? gross / daysInMonth : 0;
-    const lwpDeduction = Math.round(perDay * lwpDays);
-    
-    const proRatedGross = Math.max(0, gross - lwpDeduction);
-    const proRatedNet = Math.max(0, net - lwpDeduction);
+    let totalGross = 0;
+    let totalNet = 0;
+    let totalLwpDeduction = 0;
+    let totalLwpDays = 0;
+    let paidLeaveInMonth = 0;
+    let lwpLeaveInMonth = 0;
+
+    for (let day = 1; day <= daysInMonth; day++) {
+       const ds = `${month}-${String(day).padStart(2, '0')}`;
+       const rev = pickRevision(record, ds);
+       const { gross: revGross, net: revNet } = computeFromRevision(rev);
+       const dayGross = daysInMonth > 0 ? revGross / daysInMonth : 0;
+       const dayNet = daysInMonth > 0 ? revNet / daysInMonth : 0;
+
+       totalGross += dayGross;
+       totalNet += dayNet;
+
+       let isLwp = 0;
+       if (leaveStatusForDay[ds] === 'paid') {
+           paidLeaveInMonth += 1;
+       } else if (leaveStatusForDay[ds] === 'lwp') {
+           lwpLeaveInMonth += 1;
+           isLwp = 1;
+       } else {
+           const att = attRec[ds];
+           if (att === 'absent') isLwp = 1;
+           else if (att === 'halfday') isLwp = 0.5;
+       }
+
+       totalLwpDays += isLwp;
+       totalLwpDeduction += (dayGross * isLwp);
+    }
+
+    const gross = Math.round(totalGross);
+    const net = Math.round(totalNet);
+    const deductions = Math.round(totalGross - totalNet);
+    const proRatedGross = Math.max(0, Math.round(totalGross - totalLwpDeduction));
+    const proRatedNet = Math.max(0, Math.round(totalNet - totalLwpDeduction));
+    const lwpDeduction = Math.round(totalLwpDeduction);
 
     return {
       hasStructure: !!active,
@@ -550,8 +577,8 @@ export default function StaffPage() {
       counts,
       paidLeaveInMonth,
       lwpLeaveInMonth,
-      lwpDays,
-      perDayRate: Math.round(perDay),
+      lwpDays: totalLwpDays,
+      perDayRate: daysInMonth > 0 ? Math.round(baseGross / daysInMonth) : 0,
       lwpDeduction,
       gross, deductions, net,
       proRatedGross, proRatedNet,
@@ -584,6 +611,7 @@ export default function StaffPage() {
       lwpLeaveInMonth:  payroll.lwpLeaveInMonth,
       encashmentBonus:  paymentDetails.encashmentBonus || 0,
       encashmentDays:   paymentDetails.encashmentDays || 0,
+      encashmentType:   paymentDetails.encashmentType || null,
       extraPay:         paymentDetails.extraPay || 0,
       extraPayReason:   paymentDetails.extraPayReason || null,
       attendanceJson:   JSON.stringify(payroll.counts),
@@ -618,6 +646,18 @@ export default function StaffPage() {
     } catch (err) {
       console.error('[STAFF] Status change failed', err);
       showNotif('error', 'Update failed', err.response?.data?.message || 'Could not change status.');
+    }
+  };
+
+  const deleteDraftDisbursement = async (staffId, disbursementId) => {
+    if (!window.confirm("Are you sure you want to delete this draft disbursement? This action cannot be undone.")) return;
+    try {
+      await apiClient.delete(`/staff/${staffId}/salary/disbursements/${disbursementId}`);
+      await loadStaffSalary(staffId);
+      showNotif('success', 'Draft deleted', 'The draft disbursement was successfully removed.');
+    } catch (err) {
+      console.error('[STAFF] Delete draft failed', err);
+      showNotif('error', 'Delete failed', err.response?.data?.message || 'Could not delete draft disbursement.');
     }
   };
 
@@ -1620,11 +1660,18 @@ export default function StaffPage() {
                     </span>
                   </div>
                   {isDraft && (
-                    <button
-                      onClick={() => setDisbursementStatus(staff.id, d.id, 'Paid', { mode: d.mode, reference: d.reference, paidOnDate: TODAY_STR })}
-                      title="Mark as paid"
-                      style={{ padding: '6px 12px', borderRadius: '8px', background: '#16a34a', border: 'none', color: 'white', cursor: 'pointer', fontSize: '10px', fontWeight: 800, letterSpacing: '0.3px' }}
-                    >Mark Paid</button>
+                    <>
+                      <button
+                        onClick={() => setDisbursementStatus(staff.id, d.id, 'Paid', { mode: d.mode, reference: d.reference, paidOnDate: TODAY_STR })}
+                        title="Mark as paid"
+                        style={{ padding: '6px 12px', borderRadius: '8px', background: '#16a34a', border: 'none', color: 'white', cursor: 'pointer', fontSize: '10px', fontWeight: 800, letterSpacing: '0.3px' }}
+                      >Mark Paid</button>
+                      <button
+                        onClick={() => deleteDraftDisbursement(staff.id, d.id)}
+                        title="Delete draft"
+                        style={{ padding: '6px 12px', borderRadius: '8px', background: '#fee2e2', border: 'none', color: '#dc2626', cursor: 'pointer', fontSize: '10px', fontWeight: 800, letterSpacing: '0.3px', marginLeft: '6px' }}
+                      >Delete</button>
+                    </>
                   )}
                   <button
                     onClick={() => printPayslip(staff, d)}
