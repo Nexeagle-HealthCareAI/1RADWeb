@@ -141,7 +141,7 @@ export default function StaffPage() {
     { id: 'upi',    label: 'UPI',           icon: '📱' },
     { id: 'cheque', label: 'Cheque',        icon: '📃' },
   ];
-  const EMPTY_DISB = { mode: 'bank', reference: '', paidOnDate: TODAY_STR, notes: '', status: 'Paid', encashmentDays: '' };
+  const EMPTY_DISB = { mode: 'bank', reference: '', paidOnDate: TODAY_STR, notes: '', status: 'Paid', encashmentDays: '', encashmentType: '', encashmentBonus: '' };
   const [disbDrawer, setDisbDrawer] = useState({ open: false, month: THIS_MONTH, form: EMPTY_DISB });
 
   // Attendance picker
@@ -521,13 +521,8 @@ export default function StaffPage() {
     const perDay = daysInMonth > 0 ? gross / daysInMonth : 0;
     const lwpDeduction = Math.round(perDay * lwpDays);
     
-    const totalAnnualQuota = Object.values(LEAVE_DEFAULTS).reduce((s, v) => s + v, 0);
-    const monthlyLeaveAllowance = totalAnnualQuota / 12;
-    const encashmentDays = Math.max(0, monthlyLeaveAllowance - paidLeaveInMonth);
-    const encashmentBonus = Math.round(encashmentDays * perDay);
-
-    const proRatedGross = Math.max(0, gross - lwpDeduction) + encashmentBonus;
-    const proRatedNet = Math.max(0, net - lwpDeduction) + encashmentBonus;
+    const proRatedGross = Math.max(0, gross - lwpDeduction);
+    const proRatedNet = Math.max(0, net - lwpDeduction);
 
     return {
       hasStructure: !!active,
@@ -539,8 +534,6 @@ export default function StaffPage() {
       lwpDays,
       perDayRate: Math.round(perDay),
       lwpDeduction,
-      encashmentDays,
-      encashmentBonus,
       gross, deductions, net,
       proRatedGross, proRatedNet,
     };
@@ -570,7 +563,8 @@ export default function StaffPage() {
       perDayRate:       payroll.perDayRate,
       paidLeaveInMonth: payroll.paidLeaveInMonth,
       lwpLeaveInMonth:  payroll.lwpLeaveInMonth,
-      encashmentBonus:  payroll.encashmentBonus,
+      encashmentBonus:  paymentDetails.encashmentBonus || 0,
+      encashmentDays:   paymentDetails.encashmentDays || 0,
       attendanceJson:   JSON.stringify(payroll.counts),
       paymentMode:      paymentDetails.mode || 'bank',
       reference:        paymentDetails.reference || null,
@@ -1068,7 +1062,7 @@ export default function StaffPage() {
 
   // ── Disbursement drawer + payslip ───────────────────────────────
   const openDisbursalDrawer = (staff, month = THIS_MONTH) => {
-    setDisbDrawer({ open: true, month, form: { ...EMPTY_DISB, paidOnDate: TODAY_STR } });
+    setDisbDrawer({ open: true, month, form: { ...EMPTY_DISB, paidOnDate: TODAY_STR, encashmentType: LEAVE_TYPES[0] || '' } });
   };
 
   const printPayslip = (staff, disbursal) => {
@@ -1218,15 +1212,29 @@ export default function StaffPage() {
 
   const submitDisbursement = async (printAfter, statusOverride) => {
     if (!selectedStaff) return;
-    const { mode, reference, paidOnDate, notes, encashmentDays } = disbDrawer.form;
+    const { mode, reference, paidOnDate, notes, encashmentDays, encashmentType, encashmentBonus } = disbDrawer.form;
+    const finalEncashmentBonus = Number(encashmentBonus) || 0;
     const status = statusOverride || disbDrawer.form.status || 'Paid';
     // Reference is required only when actually paying (status=Paid) via bank/cheque/upi.
     if (status === 'Paid' && (mode === 'bank' || mode === 'cheque' || mode === 'upi') && !reference.trim()) {
       showNotif('warning', 'Reference required', `Please enter a ${mode === 'cheque' ? 'cheque' : (mode === 'upi' ? 'UPI transaction' : 'bank reference')} number.`);
       return;
     }
+    
+    // Deduct leave balance by creating a dummy approved leave record
+    if (Number(encashmentDays) > 0 && encashmentType) {
+      const tempId = `lv_encash_${Date.now()}`;
+      const entry = {
+        id: tempId, staffId: selectedStaff.id, type: encashmentType, from: paidOnDate, to: paidOnDate, days: Number(encashmentDays),
+        reason: 'Encashed during salary payout', status: 'approved', appliedOn: new Date().toISOString(),
+      };
+      const updated = [...leaveData, entry];
+      setLeaveData(updated);
+      nativeStorage.set('1rad_staff_leave', updated).catch(() => {});
+    }
+
     await disburseSalary(selectedStaff.id, disbDrawer.month, {
-      mode, reference: reference.trim(), paidOnDate, notes: notes.trim(), encashmentDays,
+      mode, reference: reference.trim(), paidOnDate, notes: notes.trim(), encashmentDays, encashmentBonus: finalEncashmentBonus,
       paidOn: new Date(paidOnDate + 'T00:00:00').toISOString(),
       status,
     });
@@ -1247,7 +1255,7 @@ export default function StaffPage() {
         revisionId: payroll.activeRevision?.id,
         mode, reference: reference.trim(), paidOnDate, notes: notes.trim(),
         encashmentDays: Number(encashmentDays) || 0,
-        encashmentBonus: Math.round((Number(encashmentDays) || 0) * payroll.perDayRate),
+        encashmentBonus: finalEncashmentBonus,
         paidOn: new Date().toISOString(),
       };
       printPayslip(selectedStaff, synth);
@@ -2690,8 +2698,16 @@ export default function StaffPage() {
         const f = disbDrawer.form;
         const needsRef = ['bank', 'cheque', 'upi'].includes(f.mode);
         const encashmentDaysNum = Number(f.encashmentDays) || 0;
-        const encashmentBonus = Math.round(encashmentDaysNum * payroll.perDayRate);
+        const encashmentBonus = Number(f.encashmentBonus) || 0;
         const finalPayable = payroll.proRatedNet + encashmentBonus;
+
+        const year = TODAY.getFullYear();
+        const used = Object.fromEntries(LEAVE_TYPES.map(t => [t, 0]));
+        const staffLeaves = leaveData.filter(l => l.staffId === selectedStaff.id);
+        staffLeaves
+          .filter(l => l.status === 'approved' && l.from?.startsWith(String(year)))
+          .forEach(l => { if (used[l.type] !== undefined) used[l.type] += l.days; });
+        const leaveBalance = Object.fromEntries(LEAVE_TYPES.map(t => [t, Math.max(0, (LEAVE_DEFAULTS[t] || 0) - used[t])]));
         return (
           <div
             onClick={() => setDisbDrawer(p => ({ ...p, open: false }))}
@@ -2762,21 +2778,47 @@ export default function StaffPage() {
                 </div>
 
                 {/* Encashment Input */}
-                <div style={{ display: 'flex', gap: '14px', alignItems: 'flex-start' }}>
-                  <FieldGroup style={{ flex: 1 }}>
-                    <FieldLabel>Encash Unused Leaves (Days)</FieldLabel>
-                    <TextInput
-                      type="number"
-                      min="0"
-                      step="0.5"
-                      value={f.encashmentDays}
-                      onChange={(v) => setDisbDrawer(p => ({ ...p, form: { ...p.form, encashmentDays: v } }))}
-                      placeholder="e.g. 2"
-                    />
-                  </FieldGroup>
-                  <div style={{ flex: 1, padding: '12px', background: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: '10px', display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
-                    <div style={{ fontSize: '9px', fontWeight: 800, color: '#16a34a', textTransform: 'uppercase' }}>Cash Value</div>
-                    <div style={{ fontSize: '14px', fontWeight: 900, color: '#15803d' }}>₹{encashmentBonus.toLocaleString()}</div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                  <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                    {LEAVE_TYPES.map(t => (
+                      <span key={t} style={{ fontSize: '10px', fontWeight: 800, color: leaveBalance[t] > 0 ? '#16a34a' : '#94a3b8', background: leaveBalance[t] > 0 ? '#f0fdf4' : '#f1f5f9', padding: '4px 8px', borderRadius: '6px' }}>
+                        {t}: {leaveBalance[t]} left
+                      </span>
+                    ))}
+                  </div>
+                  <div style={{ display: 'flex', gap: '14px', alignItems: 'flex-start' }}>
+                    <FieldGroup style={{ flex: 1.5 }}>
+                      <FieldLabel>Encash Leaves (Optional)</FieldLabel>
+                      <div style={{ display: 'flex', gap: '8px' }}>
+                        <TextInput
+                          type="number"
+                          min="0"
+                          step="0.5"
+                          value={f.encashmentDays}
+                          onChange={(v) => setDisbDrawer(p => ({ ...p, form: { ...p.form, encashmentDays: v } }))}
+                          placeholder="Days"
+                          style={{ width: '70px' }}
+                        />
+                        <select
+                          value={f.encashmentType}
+                          onChange={(e) => setDisbDrawer(p => ({ ...p, form: { ...p.form, encashmentType: e.target.value } }))}
+                          style={{ flex: 1, padding: '10px 12px', borderRadius: '10px', border: '1px solid #e2e8f0', fontSize: '13px', outline: 'none', background: 'white', color: '#0a1628' }}
+                        >
+                          <option value="">-- Select Type --</option>
+                          {LEAVE_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
+                        </select>
+                      </div>
+                    </FieldGroup>
+                    <FieldGroup style={{ flex: 1 }}>
+                      <FieldLabel>Cash Amount (₹)</FieldLabel>
+                      <TextInput
+                        type="number"
+                        min="0"
+                        value={f.encashmentBonus}
+                        onChange={(v) => setDisbDrawer(p => ({ ...p, form: { ...p.form, encashmentBonus: v } }))}
+                        placeholder="e.g. 1500"
+                      />
+                    </FieldGroup>
                   </div>
                 </div>
 
@@ -2932,12 +2974,20 @@ export default function StaffPage() {
               <div style={{ marginBottom: '16px' }}>
                 <label style={{ fontSize: '9px', fontWeight: 900, color: '#94a3b8', letterSpacing: '0.8px', textTransform: 'uppercase', display: 'block', marginBottom: '8px' }}>Leave Type</label>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                  {LEAVE_TYPES.map(t => (
-                    <button key={t} onClick={() => setLeaveForm(p => ({ ...p, type: t }))} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px 14px', borderRadius: '9px', border: `1.5px solid ${leaveForm.type === t ? '#0f52ba' : '#e2e8f0'}`, background: leaveForm.type === t ? '#eff6ff' : 'white', color: leaveForm.type === t ? '#0f52ba' : '#64748b', fontWeight: 700, fontSize: '12px', cursor: 'pointer', transition: 'all 0.12s' }}>
-                      <span>{t}</span>
-                      <span style={{ fontSize: '10px', fontWeight: 800, color: balance[t] > 0 ? (leaveForm.type === t ? '#0f52ba' : '#16a34a') : '#dc2626', background: leaveForm.type === t ? 'white' : '#f8fafc', padding: '2px 8px', borderRadius: '6px' }}>{balance[t]} days left</span>
-                    </button>
-                  ))}
+                  {[...LEAVE_TYPES, 'Unpaid Leave (LWP)'].map(t => {
+                    const isUnpaid = t === 'Unpaid Leave (LWP)';
+                    const isActive = leaveForm.type === t;
+                    return (
+                      <button key={t} onClick={() => setLeaveForm(p => ({ ...p, type: t }))} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px 14px', borderRadius: '9px', border: `1.5px solid ${isActive ? '#0f52ba' : '#e2e8f0'}`, background: isActive ? '#eff6ff' : 'white', color: isActive ? '#0f52ba' : '#64748b', fontWeight: 700, fontSize: '12px', cursor: 'pointer', transition: 'all 0.12s' }}>
+                        <span>{t}</span>
+                        {isUnpaid ? (
+                          <span style={{ fontSize: '10px', fontWeight: 800, color: isActive ? '#0f52ba' : '#94a3b8', background: isActive ? 'white' : '#f8fafc', padding: '2px 8px', borderRadius: '6px' }}>No limit</span>
+                        ) : (
+                          <span style={{ fontSize: '10px', fontWeight: 800, color: balance[t] > 0 ? (isActive ? '#0f52ba' : '#16a34a') : '#dc2626', background: isActive ? 'white' : '#f8fafc', padding: '2px 8px', borderRadius: '6px' }}>{balance[t]} days left</span>
+                        )}
+                      </button>
+                    );
+                  })}
                 </div>
               </div>
   

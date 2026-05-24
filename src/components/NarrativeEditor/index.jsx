@@ -972,20 +972,38 @@ const NarrativeEditor = React.forwardRef(function NarrativeEditor({
         e.preventDefault();
         e.stopImmediatePropagation();
 
-        if (e.shiftKey) {
-          // Shift+Tab: lift list item or decrease paragraph indent
-          if (editor.can().liftListItem('listItem')) {
-            editor.chain().focus().liftListItem('listItem').run();
+        // Safe accessor — tiptap's editor.can() can throw transient nulls in
+        // dev (concurrent rendering / mid-init). Without this, Tab silently
+        // does nothing because the thrown error happens AFTER preventDefault.
+        const canRun = (cmd) => {
+          try {
+            const c = editor?.can?.();
+            const fn = c && c[cmd];
+            return typeof fn === 'function' ? !!fn('listItem') : false;
+          } catch { return false; }
+        };
+
+        try {
+          if (e.shiftKey) {
+            // Shift+Tab: lift list item or decrease paragraph indent
+            if (canRun('liftListItem')) {
+              editor.chain().focus().liftListItem('listItem').run();
+            } else {
+              editor.chain().focus().decreaseParagraphIndent().run();
+            }
           } else {
-            editor.chain().focus().decreaseParagraphIndent().run();
+            // Tab: sink list item or increase paragraph indent
+            if (canRun('sinkListItem')) {
+              editor.chain().focus().sinkListItem('listItem').run();
+            } else {
+              editor.chain().focus().increaseParagraphIndent().run();
+            }
           }
-        } else {
-          // Tab: sink list item or increase paragraph indent
-          if (editor.can().sinkListItem('listItem')) {
-            editor.chain().focus().sinkListItem('listItem').run();
-          } else {
-            editor.chain().focus().increaseParagraphIndent().run();
-          }
+        } catch (tabErr) {
+          // Last-resort fallback — at minimum push the cursor forward so the
+          // user feels the key did something.
+          console.warn('[NarrativeEditor] Tab handler error:', tabErr?.message);
+          try { editor.chain().focus().insertContent('\t').run(); } catch {}
         }
         return;
       }
@@ -1128,13 +1146,21 @@ const NarrativeEditor = React.forwardRef(function NarrativeEditor({
       if (!e.shiftKey && !e.altKey && key === 'r') return run(() => editor.chain().focus().setTextAlign('right').run());
       if (!e.shiftKey && !e.altKey && key === 'j') return run(() => editor.chain().focus().setTextAlign('justify').run());
 
-      // Paragraph indent (Ctrl+M / Ctrl+Shift+M)
+      // Paragraph indent (Ctrl+M / Ctrl+Shift+M) — wrap can() so a transient
+      // tiptap null doesn't swallow the keystroke.
+      const _canList = (cmd) => {
+        try {
+          const c = editor?.can?.();
+          const fn = c && c[cmd];
+          return typeof fn === 'function' ? !!fn('listItem') : false;
+        } catch { return false; }
+      };
       if (key === 'm' && !e.shiftKey) return run(() => {
-        if (editor.can().sinkListItem('listItem')) editor.chain().focus().sinkListItem('listItem').run();
+        if (_canList('sinkListItem')) editor.chain().focus().sinkListItem('listItem').run();
         else editor.chain().focus().increaseParagraphIndent().run();
       });
       if (key === 'm' && e.shiftKey) return run(() => {
-        if (editor.can().liftListItem('listItem')) editor.chain().focus().liftListItem('listItem').run();
+        if (_canList('liftListItem')) editor.chain().focus().liftListItem('listItem').run();
         else editor.chain().focus().decreaseParagraphIndent().run();
       });
 

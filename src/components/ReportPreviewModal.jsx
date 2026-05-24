@@ -43,6 +43,10 @@ const PatientInfoBlock = ({ appointmentId, fullAppointment, savedMetadata }) => 
         marginBottom: '10px',
         boxShadow: '0 1px 3px rgba(15, 23, 42, 0.04)',
         overflow: 'hidden',
+        // Premium clinical-doc font stack — Inter for clean modern look,
+        // falls back through system fonts that all render well in print.
+        fontFamily: '"Inter", "Helvetica Neue", "Segoe UI", -apple-system, BlinkMacSystemFont, sans-serif',
+        fontFeatureSettings: '"tnum" 1, "lnum" 1', // tabular + lining numerals for IDs/dates
       }}>
         {/* Left accent bar */}
         <div style={{
@@ -79,8 +83,8 @@ const PatientInfoBlock = ({ appointmentId, fullAppointment, savedMetadata }) => 
             <span style={{ color: '#cbd5e1' }}>·</span>
             <span style={{ color: '#0f52ba', fontWeight: 700 }}>{study}</span>
             <span style={{ color: '#cbd5e1' }}>·</span>
-            <span style={{ fontStyle: 'italic' }}>
-              <span style={{ color: '#94a3b8', fontWeight: 700, fontStyle: 'normal' }}>Prescribed</span> {refBy}
+            <span>
+              <span style={{ color: '#94a3b8', fontWeight: 700 }}>Prescribed By:</span> <strong style={{ color: '#0f172a' }}>{refBy}</strong>
             </span>
           </div>
         </div>
@@ -99,6 +103,7 @@ const PatientInfoBlock = ({ appointmentId, fullAppointment, savedMetadata }) => 
 
       {/* Acknowledgement line — centered, below the header card on page 1 only */}
       <div style={{
+        fontFamily: '"Inter", "Helvetica Neue", "Segoe UI", -apple-system, BlinkMacSystemFont, sans-serif',
         fontSize: '10.5px',
         fontStyle: 'italic',
         color: '#475569',
@@ -551,6 +556,8 @@ const ReportPreviewModal = ({
         margin-bottom: 10px;
         box-shadow: 0 1px 3px rgba(15, 23, 42, 0.04);
         overflow: hidden;
+        font-family: 'Inter', 'Helvetica Neue', 'Segoe UI', -apple-system, BlinkMacSystemFont, sans-serif;
+        font-feature-settings: 'tnum' 1, 'lnum' 1;
       ">
         <div style="position: absolute; top: 0; bottom: 0; left: 0; width: 4px; background: linear-gradient(180deg, #0f52ba 0%, #1e40af 50%, #0f52ba 100%);"></div>
 
@@ -569,7 +576,7 @@ const ReportPreviewModal = ({
             <span style="color: #cbd5e1;">·</span>
             <span style="color: #0f52ba; font-weight: 700;">${_ptSvc}</span>
             <span style="color: #cbd5e1;">·</span>
-            <span style="font-style: italic;"><span style="color: #94a3b8; font-weight: 700; font-style: normal;">Prescribed</span> ${_ptRef}</span>
+            <span><span style="color: #94a3b8; font-weight: 700;">Prescribed By:</span> <strong style="color: #0f172a;">${_ptRef}</strong></span>
           </div>
         </div>
 
@@ -578,7 +585,7 @@ const ReportPreviewModal = ({
           <div style="font-size: 12px; font-weight: 700; color: #1e293b; margin-top: 2px;">${_repDate}</div>
         </div>
       </div>
-      <div style="font-size: 10.5px; font-style: italic; color: #475569; margin-bottom: 14px; letter-spacing: 0.1px; text-align: center;">
+      <div style="font-family: 'Inter', 'Helvetica Neue', 'Segoe UI', -apple-system, BlinkMacSystemFont, sans-serif; font-size: 10.5px; font-style: italic; color: #475569; margin-bottom: 14px; letter-spacing: 0.1px; text-align: center;">
         Thank you for referring the patient for <strong style="color: #0f52ba; font-style: normal;">${_ptMod}</strong>.
       </div>
     ` : '';
@@ -616,13 +623,9 @@ const ReportPreviewModal = ({
           bottom: ${bottomMm}mm;
           z-index: 2;
           overflow: hidden;
-          font-size: ${baseFontSize}px;
-          line-height: 1.6;
-          font-family: ${protocol?.fontFamily || 'inherit'};
-          color: ${protocol?.fontColor || '#1e293b'};
         ">
           ${patientBannerHtml}
-          ${pageHTML}
+          <div class="report-content">${pageHTML}</div>
         </div>
       </div>
     `;
@@ -671,28 +674,43 @@ const ReportPreviewModal = ({
             height: auto;
           }
 
-          /* CRITICAL: zero the browser-default margins on block elements.
-             The main app has reset CSS that does this; without these rules
-             in the popup, paragraphs/headings/lists inflate vertically and
-             content overflows the 297mm page boundary, getting clipped by
-             our overflow:hidden — which is exactly the "bottom is missing
-             in print" symptom. */
+          /* Zero browser-default block margins so they don't double-up with
+             the typography rules below. */
           p, h1, h2, h3, h4, h5, h6,
           ul, ol, dl, dd, blockquote, pre, table, figure {
             margin: 0;
             padding: 0;
           }
-          /* Restore sensible spacing between paragraphs/headings that the
-             user expects (matches the preview's authored typography). */
-          .print-container p { margin: 0 0 0.6em; }
-          .print-container h1 { margin: 0 0 0.6em; font-size: 1.6em; font-weight: 700; }
-          .print-container h2 { margin: 0.4em 0 0.4em; font-size: 1.35em; font-weight: 700; }
-          .print-container h3 { margin: 0.3em 0 0.3em; font-size: 1.15em; font-weight: 700; }
-          .print-container h4 { margin: 0.3em 0 0.2em; font-size: 1.05em; font-weight: 700; }
-          .print-container ul, .print-container ol { margin: 0 0 0.6em; padding-left: 1.4em; }
-          .print-container li { margin: 0; }
-          .print-container table { border-collapse: collapse; }
-          .print-container img { max-width: 100%; }
+
+          /* Typography mirror of the NarrativeEditor (.narrative-editor-content).
+             This is what makes the print popup look IDENTICAL to the editor and
+             the preview — same fonts, same heading sizes, same colours, same
+             list/table styling. Without this, the popup would fall back to the
+             browser's defaults and the report would look completely different. */
+          .report-content,
+          .print-container {
+            font-family: "Calibri", "Segoe UI", -apple-system, sans-serif;
+            font-size: 12pt;
+            line-height: 1.6;
+            color: #000000;
+            word-wrap: break-word;
+            overflow-wrap: break-word;
+          }
+          .report-content h1 { font-size: 26pt; font-weight: 700; line-height: 1.2; margin: 0 0 12px 0; color: #1f3864; border-bottom: 1px solid #4472c4; padding-bottom: 4px; }
+          .report-content h2 { font-size: 20pt; font-weight: 700; line-height: 1.3; margin: 18px 0 8px 0; color: #2e4d7b; }
+          .report-content h3 { font-size: 16pt; font-weight: 600; line-height: 1.4; margin: 14px 0 6px 0; color: #2e4d7b; }
+          .report-content h4 { font-size: 14pt; font-weight: 600; line-height: 1.4; margin: 12px 0 4px 0; color: #374151; }
+          .report-content p { margin: 0 0 8px 0; }
+          .report-content ul, .report-content ol { padding-left: 28px; margin: 6px 0 10px; }
+          .report-content li { margin: 3px 0; line-height: 1.6; }
+          .report-content li p { margin: 0; }
+          .report-content table { border-collapse: collapse; width: 100%; margin: 14px 0; border: 1px solid #c8c8c8; }
+          .report-content th { background: #d6e4f7; font-weight: 700; text-align: left; padding: 8px 12px; border: 1px solid #c8c8c8; font-size: 11pt; color: #1f3864; }
+          .report-content td { padding: 7px 12px; border: 1px solid #c8c8c8; vertical-align: top; font-size: 11pt; }
+          .report-content img { max-width: 100%; height: auto; display: block; margin: 14px 0; }
+          .report-content hr { border: none; border-top: 1px solid #c8c8c8; margin: 20px 0; }
+          .report-content blockquote { border-left: 3px solid #4472c4; padding-left: 16px; margin: 12px 0; color: #555; font-style: italic; }
+          .report-content a { color: #0078d4; text-decoration: underline; }
           /* word-page wrappers from the editor's pagination model — strip
              their margins/padding so they don't add extra vertical space
              inside our own per-page containers. */
@@ -1001,7 +1019,10 @@ const ReportPreviewModal = ({
                     </div>
                   )}
 
-                  {/* Per-page content area — sized to the safe zone */}
+                  {/* Per-page content area — sized to the safe zone.
+                      Typography intentionally NOT overridden inline — the
+                      .report-content class mirrors the editor's authored
+                      typography so the preview matches the editor. */}
                   <div style={{
                     position: 'absolute',
                     top: m.top,
@@ -1010,10 +1031,6 @@ const ReportPreviewModal = ({
                     bottom: m.bottom,
                     zIndex: 2,
                     overflow: 'hidden',
-                    fontSize: `${baseFontSize}px`,
-                    lineHeight: 1.6,
-                    fontFamily: protocol?.fontFamily || 'inherit',
-                    color: protocol?.fontColor || '#1e293b',
                   }}>
                     {pageIdx === 0 && (
                       <PatientInfoBlock
@@ -1022,7 +1039,7 @@ const ReportPreviewModal = ({
                         savedMetadata={savedMetadata}
                       />
                     )}
-                    <div dangerouslySetInnerHTML={{ __html: pageHTML }} />
+                    <div className="report-content" dangerouslySetInnerHTML={{ __html: pageHTML }} />
                   </div>
 
                   {/* Page indicator (preview only) */}
@@ -1050,6 +1067,82 @@ const ReportPreviewModal = ({
       </div>
     </div>
       <style>{`
+        /* ───────────────────────────────────────────────────────────────
+           .report-content — mirrors the NarrativeEditor's typography
+           rules so the preview and print render with the same fonts,
+           heading sizes, list/table styling, blockquotes, etc. that the
+           doctor saw while authoring. Replaces the previous hard-coded
+           overrides that made preview look completely different from
+           the editor.
+           ─────────────────────────────────────────────────────────────── */
+        .report-content {
+          font-family: "Calibri", "Segoe UI", -apple-system, sans-serif;
+          font-size: 12pt;
+          line-height: 1.6;
+          color: #000000;
+          word-wrap: break-word;
+          overflow-wrap: break-word;
+        }
+        .report-content h1 {
+          font-size: 26pt; font-weight: 700; line-height: 1.2;
+          margin: 0 0 12px 0; color: #1f3864;
+          border-bottom: 1px solid #4472c4; padding-bottom: 4px;
+        }
+        .report-content h2 {
+          font-size: 20pt; font-weight: 700; line-height: 1.3;
+          margin: 18px 0 8px 0; color: #2e4d7b;
+        }
+        .report-content h3 {
+          font-size: 16pt; font-weight: 600; line-height: 1.4;
+          margin: 14px 0 6px 0; color: #2e4d7b;
+        }
+        .report-content h4 {
+          font-size: 14pt; font-weight: 600; line-height: 1.4;
+          margin: 12px 0 4px 0; color: #374151;
+        }
+        .report-content p { margin: 0 0 8px 0; }
+        .report-content ul, .report-content ol {
+          padding-left: 28px; margin: 6px 0 10px;
+        }
+        .report-content li { margin: 3px 0; line-height: 1.6; }
+        .report-content li p { margin: 0; }
+        .report-content table {
+          border-collapse: collapse; width: 100%;
+          margin: 14px 0; border: 1px solid #c8c8c8;
+        }
+        .report-content th {
+          background: #d6e4f7; font-weight: 700; text-align: left;
+          padding: 8px 12px; border: 1px solid #c8c8c8;
+          font-size: 11pt; color: #1f3864;
+        }
+        .report-content td {
+          padding: 7px 12px; border: 1px solid #c8c8c8;
+          vertical-align: top; font-size: 11pt;
+        }
+        .report-content img {
+          max-width: 100%; height: auto;
+          display: block; margin: 14px 0;
+        }
+        .report-content hr {
+          border: none; border-top: 1px solid #c8c8c8; margin: 20px 0;
+        }
+        .report-content code {
+          background: #f3f2f1; padding: 1px 5px; border-radius: 3px;
+          font-family: "Cascadia Code", "Consolas", "Courier New", monospace;
+          font-size: 10.5pt; color: #c7254e;
+        }
+        .report-content pre {
+          background: #1e1e1e; color: #d4d4d4;
+          padding: 16px 20px; border-radius: 4px;
+          overflow-x: auto; margin: 14px 0; font-size: 10pt;
+        }
+        .report-content pre code { background: transparent; padding: 0; color: inherit; font-size: inherit; }
+        .report-content blockquote {
+          border-left: 3px solid #4472c4; padding-left: 16px;
+          margin: 12px 0; color: #555; font-style: italic;
+        }
+        .report-content a { color: #0078d4; text-decoration: underline; }
+
         @media print {
           /* Each .a4-page is already 297mm tall with its own safe-zone padding,
              so @page margin = 0 to avoid doubling. */
@@ -1222,10 +1315,6 @@ const ReportPreviewModal = ({
               bottom: m.bottom,
               zIndex: 2,
               overflow: 'hidden',
-              fontSize: `${baseFontSize}px`,
-              lineHeight: 1.6,
-              fontFamily: protocol?.fontFamily || 'inherit',
-              color: protocol?.fontColor || '#1e293b',
             }}>
               {pageIdx === 0 && (
                 <PatientInfoBlock
@@ -1234,7 +1323,7 @@ const ReportPreviewModal = ({
                   savedMetadata={savedMetadata}
                 />
               )}
-              <div dangerouslySetInnerHTML={{ __html: pageHTML }} />
+              <div className="report-content" dangerouslySetInnerHTML={{ __html: pageHTML }} />
             </div>
           </div>
         );
