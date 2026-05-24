@@ -1326,8 +1326,9 @@ const AdvancedDicomViewer = ({
 
         console.log(`[DICOM] Loading ${imageIds.length} images via Blob URIs into ${viewportId}`);
 
-        // Create Engine
-        const renderingEngine = new RenderingEngine(engineId);
+        // Create Engine (let, not const — we may re-create it if volume mode
+        // fails and we need to retry with stack).
+        let renderingEngine = new RenderingEngine(engineId);
         renderingEngineRef.current = renderingEngine;
 
         // ─── VIEWPORT TYPE DECISION ─────────────────────────────────────────
@@ -1337,9 +1338,23 @@ const AdvancedDicomViewer = ({
         //
         // For single-slice or near-single-slice series (Scout Lateral, X-Ray,
         // MG, etc.) the volume overhead isn't worth it — stay on Stack.
+        //
+        // DEVICE GUARDS:
+        //  - iOS Safari (iPad/iPhone) has stricter WebGL2/3D-texture support and
+        //    tighter GPU memory caps. Volume viewport regularly throws "engine
+        //    error" / blank-renders on iPad. Force stack mode there.
+        //  - Phones in general: prefer stack to keep GPU memory low.
         const VOLUME_VIEWPORT_THRESHOLD = 4;
-        const useVolumeViewport = files.length >= VOLUME_VIEWPORT_THRESHOLD;
+        const ua = typeof navigator !== 'undefined' ? navigator.userAgent : '';
+        const isIOSDevice = /iPad|iPhone|iPod/.test(ua)
+          || (/Macintosh/.test(ua) && typeof document !== 'undefined' && 'ontouchstart' in document); // iPadOS 13+ reports as Mac
+        const isPhone = typeof window !== 'undefined' && window.innerWidth < 768;
+        const allowVolumeViewport = !isIOSDevice && !isPhone;
+        const useVolumeViewport = allowVolumeViewport && files.length >= VOLUME_VIEWPORT_THRESHOLD;
         let isVolumeMode = false;
+        if (!allowVolumeViewport) {
+          console.log(`[DICOM_TRACE] Volume viewport disabled (iOS=${isIOSDevice}, phone=${isPhone}) — using stack mode`);
+        }
 
         if (useVolumeViewport) {
           try {
@@ -1371,9 +1386,16 @@ const AdvancedDicomViewer = ({
             renderingEngineRef.current._viewportType = 'volume';
             isVolumeMode = true;
           } catch (volErr) {
-            console.warn(`[DICOM_TRACE] Volume mode failed, falling back to Stack:`, volErr?.message);
-            // Volume mode failed — clean up and fall through to stack
-            try { renderingEngine.disableElement(viewportId); } catch {}
+            console.warn(`[DICOM_TRACE] Volume mode failed, falling back to Stack:`, volErr?.message, volErr);
+            // Volume mode failed — we need to clean up and DESTROY this engine
+            // before retrying with stack. Calling enableElement again on the
+            // same viewportId with a different type while the old element is
+            // still enabled causes cornerstone to throw.
+            try { renderingEngine.disableElement(viewportId); } catch (e) { console.warn('[DICOM] disableElement after volume fail:', e?.message); }
+            try { renderingEngine.destroy(); } catch (e) { console.warn('[DICOM] destroy after volume fail:', e?.message); }
+            // Re-create the engine fresh for the stack path
+            renderingEngine = new RenderingEngine(engineId);
+            renderingEngineRef.current = renderingEngine;
             isVolumeMode = false;
           }
         }
