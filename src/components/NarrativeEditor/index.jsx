@@ -967,7 +967,16 @@ const NarrativeEditor = React.forwardRef(function NarrativeEditor({
 
       // ── Tab — Word-style indent (no modifier required) ────
       if (e.key === 'Tab' && !e.ctrlKey && !e.metaKey && !e.altKey) {
-        if (!inEditor(e)) return;
+        // Only intercept when focus is in the actual editable surface.
+        // If focus is on a Ribbon button, a template dropdown, a dialog
+        // input, etc., let the browser handle Tab (focus navigation).
+        const target = e.target;
+        const inEditable =
+          (target?.isContentEditable === true) ||
+          !!target?.closest?.('.ProseMirror') ||
+          !!target?.closest?.('.word-page-inner') ||
+          (document.activeElement?.isContentEditable === true);
+        if (!inEditable) return;
 
         // Let the Table extension handle Tab inside table cells
         const { state } = editor;
