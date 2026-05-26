@@ -1,4 +1,5 @@
 import axios from 'axios';
+import { dispatchApiError } from './apiErrorEvents';
 
 export const BASE_URL = import.meta.env.VITE_API_URL || 'https://1radapi-bch4ere7a6cmgkap.centralindia-01.azurewebsites.net/api/v1';
 
@@ -47,6 +48,13 @@ apiClient.interceptors.response.use(
       console.warn('[API] Subscription Expired or Locked.');
       window.dispatchEvent(new Event('1rad_subscription_locked'));
     }
+
+    // Surface a user-friendly toast for non-suppressed errors. The dispatch
+    // helper itself decides what to suppress (login 401, validation, 402,
+    // cancelled requests, per-request opt-outs). Errors still propagate to
+    // the caller — this is purely an additive UX layer.
+    try { dispatchApiError(error); } catch (e) { /* never let UX break the flow */ }
+
     return Promise.reject(error);
   }
 );
