@@ -399,7 +399,10 @@ export default function AdminBoard() {
     registrationNumber: '',
     pan: '',
     nabhNumber: '',
-    isAutoBillingEnabled: false
+    isAutoBillingEnabled: false,
+    admin: null,          // { userId, fullName, email, mobile, role, status, registeredOn }
+    registeredOn: '',
+    status: 'Active',
   });
   const [mappedHospitals, setMappedHospitals] = useState([]);
   const [viewingHubId, setViewingHubId] = useState(null); // null = show list
@@ -500,14 +503,31 @@ export default function AdminBoard() {
     try {
       setHospitalLoading(true);
       const res = await apiClient.get(`/hospitals/${hubId}`);
+      const r = res.data || {};
+      // Read both camelCase (current API) and PascalCase (legacy fallback)
+      // so the binding survives backend casing changes.
+      const adminRaw = r.admin || r.Admin || null;
+      const admin = adminRaw ? {
+        userId:       adminRaw.userId       || adminRaw.UserId       || null,
+        fullName:     adminRaw.fullName     || adminRaw.FullName     || '—',
+        email:        adminRaw.email        || adminRaw.Email        || '—',
+        mobile:       adminRaw.mobile       || adminRaw.Mobile       || '—',
+        role:         adminRaw.role         || adminRaw.Role         || 'Staff',
+        status:       adminRaw.status       || adminRaw.Status       || 'Unknown',
+        registeredOn: adminRaw.registeredOn || adminRaw.RegisteredOn || '',
+      } : null;
+
       const data = {
-        hospitalName: res.data.hospitalName || res.data.HospitalName || '',
-        hospitalAddress: res.data.hospitalAddress || res.data.HospitalAddress || '',
-        gstin: res.data.gstin || res.data.GSTIN || '',
-        registrationNumber: res.data.registrationNumber || res.data.RegistrationNumber || '',
-        pan: res.data.pan || res.data.PAN || '',
-        nabhNumber: res.data.nabhNumber || res.data.NABHNumber || '',
-        isAutoBillingEnabled: res.data.isAutoBillingEnabled || res.data.IsAutoBillingEnabled || false
+        hospitalName:        r.hospitalName        || r.HospitalName        || r.name || r.Name || '',
+        hospitalAddress:     r.hospitalAddress     || r.HospitalAddress     || r.address || r.Address || '',
+        gstin:               r.gstin               || r.GSTIN               || '',
+        registrationNumber:  r.registrationNumber  || r.RegistrationNumber  || '',
+        pan:                 r.pan                 || r.PAN                 || '',
+        nabhNumber:          r.nabhNumber          || r.NABHNumber          || '',
+        isAutoBillingEnabled: r.isAutoBillingEnabled || r.IsAutoBillingEnabled || false,
+        admin,
+        registeredOn:        r.registeredOn        || r.RegisteredOn        || '',
+        status:              r.status              || r.Status              || 'Active',
       };
       setHospitalData(data);
       setViewingHubId(hubId);
@@ -1680,6 +1700,71 @@ export default function AdminBoard() {
               ))}
             </div>
           </div>
+
+          {/* ── Administrator Information ─────────────────────────────
+               Shows the primary admin user mapped to this hospital. The
+               API picks the first user with an Admin-role (AdminDoctor,
+               AdminOperator, etc.) and falls back to the first mapping. */}
+          {hospitalData.admin ? (
+            <div style={{
+              background: 'white', padding: '30px', borderRadius: '16px',
+              border: '1px solid #e2e8f0', boxShadow: '0 4px 24px rgba(0,0,0,0.02)',
+              marginTop: '20px',
+            }}>
+              <div style={{
+                display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                marginBottom: '20px',
+              }}>
+                <div>
+                  <div style={{ fontSize: '12px', fontWeight: 700, color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.6px', marginBottom: '4px' }}>
+                    Administrator
+                  </div>
+                  <h3 style={{ fontSize: '20px', fontWeight: 800, color: '#0f172a', margin: 0 }}>
+                    {hospitalData.admin.fullName}
+                  </h3>
+                </div>
+                <span style={{
+                  fontSize: '11px', fontWeight: 700,
+                  color: hospitalData.admin.status?.toLowerCase() === 'active' ? '#16a34a' : '#dc2626',
+                  background: hospitalData.admin.status?.toLowerCase() === 'active' ? '#dcfce7' : '#fee2e2',
+                  padding: '5px 12px', borderRadius: '999px',
+                  textTransform: 'uppercase', letterSpacing: '0.5px',
+                }}>
+                  {hospitalData.admin.status}
+                </span>
+              </div>
+
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '16px' }}>
+                {[
+                  { label: 'Email',         value: hospitalData.admin.email },
+                  { label: 'Mobile',        value: hospitalData.admin.mobile },
+                  { label: 'Role',          value: hospitalData.admin.role },
+                  { label: 'Registered',    value: hospitalData.admin.registeredOn },
+                ].map(item => (
+                  <div key={item.label} style={{ background: '#f8fafc', padding: '16px', borderRadius: '10px', border: '1px solid #f1f5f9' }}>
+                    <div style={{ fontSize: '10px', fontWeight: 700, color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.4px', marginBottom: '4px' }}>{item.label}</div>
+                    <div style={{ fontSize: '14px', fontWeight: 700, color: '#0f172a', wordBreak: 'break-all' }}>{item.value || '—'}</div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          ) : (
+            <div style={{
+              background: '#fffbeb', padding: '20px', borderRadius: '12px',
+              border: '1px solid #fde68a', marginTop: '20px',
+              display: 'flex', alignItems: 'center', gap: '12px',
+            }}>
+              <span style={{ fontSize: '20px' }}>⚠️</span>
+              <div>
+                <div style={{ fontSize: '13px', fontWeight: 700, color: '#92400e', marginBottom: '2px' }}>
+                  No administrator assigned
+                </div>
+                <div style={{ fontSize: '12px', color: '#a16207' }}>
+                  This hospital doesn't have a primary admin user mapped yet.
+                </div>
+              </div>
+            </div>
+          )}
         </div>
       );
     }
@@ -1779,6 +1864,59 @@ export default function AdminBoard() {
         </div>
 
         <div style={{ flex: 1, overflowY: 'auto', padding: '22px 24px' }}>
+           {/* Admin info — read-only snapshot at the top of the drawer.
+               Changes to the admin happen via the Personnel screen. */}
+           {hospitalData.admin && (
+             <div style={{
+               background: 'linear-gradient(135deg, #f0f9ff 0%, #eff6ff 100%)',
+               border: '1px solid #bfdbfe',
+               borderRadius: '12px',
+               padding: '16px',
+               marginBottom: '22px',
+             }}>
+               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '10px' }}>
+                 <div>
+                   <div style={{ fontSize: '10px', fontWeight: 700, color: '#1e40af', textTransform: 'uppercase', letterSpacing: '0.6px', marginBottom: '3px' }}>
+                     Administrator
+                   </div>
+                   <div style={{ fontSize: '15px', fontWeight: 800, color: '#0f172a' }}>
+                     {hospitalData.admin.fullName}
+                   </div>
+                 </div>
+                 <span style={{
+                   fontSize: '10px', fontWeight: 700,
+                   color: hospitalData.admin.status?.toLowerCase() === 'active' ? '#16a34a' : '#dc2626',
+                   background: 'rgba(255,255,255,0.7)',
+                   padding: '3px 10px', borderRadius: '999px',
+                   textTransform: 'uppercase', letterSpacing: '0.5px',
+                 }}>
+                   {hospitalData.admin.status}
+                 </span>
+               </div>
+               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px 16px', fontSize: '12px' }}>
+                 <div>
+                   <div style={{ color: '#64748b', fontWeight: 600, fontSize: '10px', textTransform: 'uppercase', marginBottom: '2px' }}>Email</div>
+                   <div style={{ color: '#0f172a', fontWeight: 600, wordBreak: 'break-all' }}>{hospitalData.admin.email}</div>
+                 </div>
+                 <div>
+                   <div style={{ color: '#64748b', fontWeight: 600, fontSize: '10px', textTransform: 'uppercase', marginBottom: '2px' }}>Mobile</div>
+                   <div style={{ color: '#0f172a', fontWeight: 600 }}>{hospitalData.admin.mobile}</div>
+                 </div>
+                 <div>
+                   <div style={{ color: '#64748b', fontWeight: 600, fontSize: '10px', textTransform: 'uppercase', marginBottom: '2px' }}>Role</div>
+                   <div style={{ color: '#0f172a', fontWeight: 600 }}>{hospitalData.admin.role}</div>
+                 </div>
+                 <div>
+                   <div style={{ color: '#64748b', fontWeight: 600, fontSize: '10px', textTransform: 'uppercase', marginBottom: '2px' }}>Registered</div>
+                   <div style={{ color: '#0f172a', fontWeight: 600 }}>{hospitalData.admin.registeredOn || '—'}</div>
+                 </div>
+               </div>
+               <div style={{ fontSize: '11px', color: '#64748b', marginTop: '12px', fontStyle: 'italic' }}>
+                 Edit admin profile from the Personnel screen.
+               </div>
+             </div>
+           )}
+
            <form onSubmit={handleSaveHospital} style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
               <div>
                   <label style={{ fontSize: '11px', fontWeight: 700, color: '#475569', textTransform: 'uppercase', letterSpacing: '0.5px', display: 'block', marginBottom: '7px' }}>Hospital Name</label>
