@@ -97,6 +97,10 @@ export default function RegisterPage() {
   const [showPassword,  setShowPassword] = useState(false);
   const [errorCode,     setErrorCode]    = useState(null);
   const [timerId,       setTimerId]      = useState(null);
+  // Celebration overlay shown after a successful registration.
+  // Holds the redirect on a beat so the user gets a moment of payoff
+  // before being sent to the login screen.
+  const [welcome,       setWelcome]      = useState({ open: false });
 
   const set = (key, val) => setFormData(p => ({ ...p, [key]: val }));
 
@@ -170,8 +174,16 @@ export default function RegisterPage() {
         degree: formData.degree, licenseNo: formData.licenseNo,
       });
       setLoading(false);
-      if (res.success) navigate('/login', { state: { message: 'Account created! Please sign in.' } });
-      else { setError(res.error); setErrorCode(res.errorCode); }
+      if (res.success) {
+        // Show celebration overlay — it auto-redirects after a short
+        // countdown OR when the user clicks "Sign in".
+        setWelcome({
+          open: true,
+          name: formData.name,
+          centerName: formData.centerName,
+          mobile: formData.mobile,
+        });
+      } else { setError(res.error); setErrorCode(res.errorCode); }
     }
   };
 
@@ -473,6 +485,232 @@ export default function RegisterPage() {
           </p>
         </form>
       </div>
+
+      {welcome.open && (
+        <WelcomeCelebration
+          name={welcome.name}
+          centerName={welcome.centerName}
+          onContinue={() =>
+            navigate('/login', {
+              state: {
+                identifier: welcome.mobile,
+                message: 'Account created! Please sign in.',
+              },
+            })
+          }
+        />
+      )}
+    </div>
+  );
+}
+
+/**
+ * WelcomeCelebration — full-screen success overlay shown after a brand-new
+ * account is created. Auto-redirects to /login after AUTO_REDIRECT_MS, OR
+ * immediately when the user clicks the CTA. Designed to feel like a moment
+ * of payoff: confetti, animated check, glow ring, premium typography.
+ */
+function WelcomeCelebration({ name, centerName, onContinue }) {
+  const AUTO_REDIRECT_MS = 8000;
+  const [remaining, setRemaining] = useState(Math.ceil(AUTO_REDIRECT_MS / 1000));
+
+  useEffect(() => {
+    if (remaining <= 0) { onContinue?.(); return; }
+    const t = setTimeout(() => setRemaining(r => r - 1), 1000);
+    return () => clearTimeout(t);
+  }, [remaining, onContinue]);
+
+  // Stable confetti pieces — generated once per mount.
+  const [confetti] = useState(() =>
+    Array.from({ length: 36 }, (_, i) => ({
+      id: i,
+      left:        Math.random() * 100,
+      delay:       Math.random() * 1.5,
+      duration:    2.5 + Math.random() * 2,
+      rotation:    Math.random() * 360,
+      color:       ['#60a5fa', '#34d399', '#fbbf24', '#f472b6', '#a78bfa', '#fb7185'][i % 6],
+      size:        6 + Math.random() * 6,
+      borderRadius: Math.random() > 0.5 ? '50%' : '2px',
+    }))
+  );
+
+  return (
+    <div
+      role="dialog"
+      aria-modal="true"
+      style={{
+        position: 'fixed', inset: 0, zIndex: 100050,
+        background: 'radial-gradient(ellipse at center, rgba(15,23,42,0.92) 0%, rgba(2,6,23,0.98) 100%)',
+        backdropFilter: 'blur(18px)', WebkitBackdropFilter: 'blur(18px)',
+        display: 'flex', alignItems: 'center', justifyContent: 'center',
+        animation: 'wcFade 320ms cubic-bezier(0.16, 1, 0.3, 1)',
+        overflow: 'hidden',
+        fontFamily: '"Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif',
+      }}
+    >
+      {/* ── Confetti layer ─────────────────────────────────────── */}
+      <div style={{ position: 'absolute', inset: 0, pointerEvents: 'none', overflow: 'hidden' }}>
+        {confetti.map(c => (
+          <span key={c.id} style={{
+            position: 'absolute',
+            top: '-20px',
+            left: `${c.left}%`,
+            width: `${c.size}px`, height: `${c.size}px`,
+            background: c.color,
+            borderRadius: c.borderRadius,
+            opacity: 0.9,
+            transform: `rotate(${c.rotation}deg)`,
+            animation: `wcConfetti ${c.duration}s ${c.delay}s cubic-bezier(0.25, 1, 0.5, 1) forwards`,
+          }} />
+        ))}
+      </div>
+
+      {/* ── Celebration card ───────────────────────────────────── */}
+      <div style={{
+        position: 'relative',
+        width: '90%', maxWidth: '480px',
+        background: 'linear-gradient(160deg, rgba(255,255,255,0.04) 0%, rgba(255,255,255,0.01) 100%)',
+        border: '1px solid rgba(255,255,255,0.10)',
+        borderRadius: '24px',
+        padding: '48px 36px 36px',
+        textAlign: 'center',
+        boxShadow:
+          '0 30px 70px -20px rgba(59, 130, 246, 0.35), ' +
+          '0 0 0 1px rgba(255,255,255,0.04), ' +
+          'inset 0 1px 0 rgba(255,255,255,0.06)',
+        animation: 'wcPop 480ms cubic-bezier(0.34, 1.56, 0.64, 1)',
+        backdropFilter: 'blur(8px)', WebkitBackdropFilter: 'blur(8px)',
+      }}>
+        {/* Animated glow ring + check */}
+        <div style={{
+          position: 'relative',
+          width: '88px', height: '88px',
+          margin: '0 auto 26px',
+        }}>
+          <div style={{
+            position: 'absolute', inset: '-12px',
+            borderRadius: '50%',
+            background: 'conic-gradient(from 90deg, #60a5fa, #a78bfa, #f472b6, #60a5fa)',
+            opacity: 0.35,
+            filter: 'blur(14px)',
+            animation: 'wcGlow 3s ease-in-out infinite',
+          }} />
+          <div style={{
+            position: 'relative',
+            width: '88px', height: '88px', borderRadius: '50%',
+            background: 'linear-gradient(135deg, #10b981 0%, #059669 100%)',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            boxShadow: '0 10px 30px -5px rgba(16, 185, 129, 0.55), inset 0 1px 0 rgba(255,255,255,0.25)',
+          }}>
+            <svg width="42" height="42" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="3.2" strokeLinecap="round" strokeLinejoin="round">
+              <polyline points="20 6 9 17 4 12" style={{
+                strokeDasharray: 28,
+                strokeDashoffset: 28,
+                animation: 'wcCheck 600ms 280ms cubic-bezier(0.65, 0, 0.35, 1) forwards',
+              }} />
+            </svg>
+          </div>
+        </div>
+
+        {/* "WELCOME ABOARD" badge */}
+        <div style={{
+          display: 'inline-block',
+          padding: '5px 14px',
+          background: 'linear-gradient(135deg, rgba(96,165,250,0.18), rgba(167,139,250,0.18))',
+          border: '1px solid rgba(96,165,250,0.30)',
+          borderRadius: '999px',
+          marginBottom: '14px',
+        }}>
+          <span style={{
+            fontSize: '10px', fontWeight: 800, color: '#93c5fd',
+            letterSpacing: '2px', textTransform: 'uppercase',
+          }}>
+            🎉  Welcome Aboard
+          </span>
+        </div>
+
+        <h1 style={{
+          fontSize: '26px', fontWeight: 800, color: '#ffffff',
+          margin: '0 0 10px',
+          letterSpacing: '-0.4px',
+          lineHeight: 1.2,
+        }}>
+          Hi {name?.split(' ')[0] || 'there'} — your workspace is ready
+        </h1>
+
+        <p style={{
+          fontSize: '14px', color: 'rgba(255,255,255,0.62)',
+          margin: '0 0 8px',
+          lineHeight: 1.55,
+        }}>
+          <strong style={{ color: '#a78bfa' }}>{centerName || 'Your clinical hub'}</strong> has been provisioned on the 1Rad grid.
+        </p>
+        <p style={{
+          fontSize: '13px', color: 'rgba(255,255,255,0.45)',
+          margin: '0 0 30px',
+          lineHeight: 1.55,
+        }}>
+          Sign in to start dictating reports, managing studies, and inviting your team.
+        </p>
+
+        {/* Primary CTA */}
+        <button
+          onClick={onContinue}
+          style={{
+            width: '100%', padding: '14px',
+            background: 'linear-gradient(135deg, #3b82f6 0%, #2563eb 100%)',
+            color: 'white', border: 'none',
+            borderRadius: '12px',
+            fontSize: '13px', fontWeight: 800,
+            letterSpacing: '0.8px',
+            cursor: 'pointer',
+            boxShadow: '0 10px 24px -6px rgba(59,130,246,0.55), inset 0 1px 0 rgba(255,255,255,0.20)',
+            transition: 'transform 0.18s, box-shadow 0.18s',
+            fontFamily: 'inherit',
+          }}
+          onMouseEnter={e => {
+            e.currentTarget.style.transform = 'translateY(-1px)';
+            e.currentTarget.style.boxShadow = '0 14px 30px -6px rgba(59,130,246,0.65), inset 0 1px 0 rgba(255,255,255,0.25)';
+          }}
+          onMouseLeave={e => {
+            e.currentTarget.style.transform = 'translateY(0)';
+            e.currentTarget.style.boxShadow = '0 10px 24px -6px rgba(59,130,246,0.55), inset 0 1px 0 rgba(255,255,255,0.20)';
+          }}
+        >
+          CONTINUE TO SIGN IN  →
+        </button>
+
+        {/* Auto-redirect hint */}
+        <div style={{
+          marginTop: '14px',
+          fontSize: '11px', color: 'rgba(255,255,255,0.35)',
+          letterSpacing: '0.4px',
+        }}>
+          Redirecting automatically in <span style={{ color: '#93c5fd', fontWeight: 700 }}>{remaining}s</span>
+        </div>
+      </div>
+
+      <style>{`
+        @keyframes wcFade {
+          from { opacity: 0; }
+          to   { opacity: 1; }
+        }
+        @keyframes wcPop {
+          0%   { opacity: 0; transform: scale(0.88) translateY(16px); }
+          100% { opacity: 1; transform: scale(1)    translateY(0); }
+        }
+        @keyframes wcCheck {
+          to { stroke-dashoffset: 0; }
+        }
+        @keyframes wcGlow {
+          0%, 100% { opacity: 0.30; transform: scale(1); }
+          50%      { opacity: 0.55; transform: scale(1.12); }
+        }
+        @keyframes wcConfetti {
+          0%   { transform: translateY(0)     rotate(0deg);   opacity: 1; }
+          100% { transform: translateY(110vh) rotate(720deg); opacity: 0; }
+        }
+      `}</style>
     </div>
   );
 }
