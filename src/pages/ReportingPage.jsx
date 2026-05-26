@@ -12,6 +12,7 @@ import { jwtDecode } from 'jwt-decode';
 import useOffline from '../hooks/useOffline';
 import { nativeStorage } from '../hooks/useElectron';
 import ReportPreviewModal, { PatientInfoBlock } from '../components/ReportPreviewModal';
+import SearchableTemplatePicker from '../components/SearchableTemplatePicker';
 import PatientTimeline from '../components/PatientTimeline';
 
 const ReportingPage = () => {
@@ -553,10 +554,44 @@ const ReportingPage = () => {
         setIsFinalized(r.isFinalized);
         if (r.templateId) setSelectedTemplateId(String(r.templateId));
 
-        // If the saved report has a templateId but no findings written yet,
-        // re-apply the template content so the editor isn't blank with a
-        // template-selected dropdown — that's the "binding broken" symptom.
-        if (!findingsHtml && r.templateId && templRes.data?.success) {
+        // ── Crash-recovery prompt ──────────────────────────────────────
+        // If a local draft exists AND is newer than the server's version,
+        // offer the user a chance to restore it instead of clobbering with
+        // the (potentially stale) server copy. Covers crashes, accidental
+        // refreshes, and "I forgot to click Save" mistakes.
+        let restored = false;
+        try {
+          const localDraft = await nativeStorage.get(`1rad_draft_${appId}`);
+          if (localDraft && localDraft.findings) {
+            const draftTs = new Date(localDraft.timestamp || 0).getTime();
+            const serverTs = new Date(r.updatedAt || r.UpdatedAt || r.modifiedAt || r.savedAt || 0).getTime();
+            const draftDiffers = (localDraft.findings || '') !== findingsHtml;
+            if (draftDiffers && draftTs > serverTs && !r.isFinalized) {
+              const ageMin = Math.max(1, Math.round((Date.now() - draftTs) / 60000));
+              const restore = window.confirm(
+                `An unsaved draft from ~${ageMin} min ago was found on this device.\n\n` +
+                `OK = Restore the unsaved draft\nCancel = Use the version saved on the server`
+              );
+              if (restore) {
+                console.info('[1RAD] Crash-recovery — restoring local draft');
+                applyEditorContent(localDraft.findings || '');
+                if (localDraft.impression) setImpression(localDraft.impression);
+                if (localDraft.advice) setAdvice(localDraft.advice);
+                if (localDraft.templateId) setSelectedTemplateId(String(localDraft.templateId));
+                restored = true;
+              }
+            }
+          }
+        } catch (recoverErr) {
+          console.warn('[1RAD] Crash-recovery check failed', recoverErr);
+        }
+
+        if (restored) {
+          // local draft already applied above
+        } else if (!findingsHtml && r.templateId && templRes.data?.success) {
+          // If the saved report has a templateId but no findings written yet,
+          // re-apply the template content so the editor isn't blank with a
+          // template-selected dropdown — that's the "binding broken" symptom.
           const tpl = (templRes.data.data || []).find(t => String(t.id ?? t.Id) === String(r.templateId));
           const tplHtml = tpl?.content ?? tpl?.Content ?? '';
           if (tplHtml) {
@@ -4279,36 +4314,25 @@ const ReportingPage = () => {
                     {/* Status dot */}
                     <div title={isOnline ? 'Cloud connected' : 'Offline'} style={{ width: '10px', height: '10px', borderRadius: '50%', background: isOnline ? '#10b981' : '#f59e0b', boxShadow: `0 0 0 3px ${isOnline ? '#10b98125' : '#f59e0b25'}`, flexShrink: 0 }} />
 
-                    {/* Template selector — compact */}
-                    <select
-                      className="template-selector"
-                      value={selectedTemplateId || ''}
-                      onChange={(e) => {
-                        const tpl = templates.find(t => String(t.id) === String(e.target.value));
-                        if (!tpl) return;
-                        const html = tpl.content || tpl.Content || '';
-                        setSelectedTemplateId(tpl.id);
-                        setEditorText(html);
-                        const apply = () => {
-                          const handle = editorRef.current;
-                          if (handle?.setContent) handle.setContent(html);
-                          else if (handle?.editor) { try { handle.editor.commands.setContent(html, false); } catch {} }
-                        };
-                        requestAnimationFrame(apply);
-                      }}
-                      style={{
-                        flex: 1, minWidth: 0,
-                        padding: '8px 10px', borderRadius: '8px',
-                        border: '1px solid #e2e8f0', outline: 'none',
-                        fontSize: '12px', fontWeight: 700, color: '#0a1628',
-                        background: 'white', cursor: 'pointer',
-                      }}
-                    >
-                      <option value="">Pick template…</option>
-                      {templates.map(tpl => (
-                        <option key={tpl.id} value={tpl.id}>{tpl.name}</option>
-                      ))}
-                    </select>
+                    {/* Template selector — compact, searchable */}
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <SearchableTemplatePicker
+                        compact
+                        templates={templates}
+                        value={selectedTemplateId}
+                        placeholder="Pick template…"
+                        onChange={(tpl) => {
+                          const html = tpl.content || tpl.Content || '';
+                          setSelectedTemplateId(tpl.id);
+                          setEditorText(html);
+                          requestAnimationFrame(() => {
+                            const handle = editorRef.current;
+                            if (handle?.setContent) handle.setContent(html);
+                            else if (handle?.editor) { try { handle.editor.commands.setContent(html, false); } catch {} }
+                          });
+                        }}
+                      />
+                    </div>
 
                     {/* Save draft (icon-only) */}
                     <button
@@ -4371,53 +4395,21 @@ const ReportingPage = () => {
                     padding: '14px 16px',
                   }}>
                     <div style={{ fontSize: '9px', fontWeight: 800, color: '#94a3b8', letterSpacing: '1.2px', textTransform: 'uppercase', marginBottom: '10px' }}>Report Template</div>
-                    <select
-                      className="template-selector"
-                      value={selectedTemplateId || ''}
-                      onChange={(e) => {
-                        const tpl = templates.find(t => String(t.id) === String(e.target.value));
-                        if (!tpl) return;
+                    <SearchableTemplatePicker
+                      templates={templates}
+                      value={selectedTemplateId}
+                      placeholder="Select a template…"
+                      onChange={(tpl) => {
                         const html = tpl.content || tpl.Content || '';
-                        // Update state first so the prop sync covers any future remount.
                         setSelectedTemplateId(tpl.id);
                         setEditorText(html);
-                        // Then push directly into the editor via the imperative handle, so the
-                        // content is applied this tick regardless of focus state (the
-                        // NarrativeEditor sync effect skips updates when the editor is
-                        // focused with non-empty content). requestAnimationFrame defers until
-                        // after the prop update has flushed so we don't fight with it.
-                        const apply = () => {
+                        requestAnimationFrame(() => {
                           const handle = editorRef.current;
-                          if (handle?.setContent) {
-                            handle.setContent(html);
-                          } else if (handle?.editor) {
-                            try { handle.editor.commands.setContent(html, false); } catch {}
-                          }
-                        };
-                        if (typeof requestAnimationFrame === 'function') {
-                          requestAnimationFrame(apply);
-                        } else {
-                          apply();
-                        }
+                          if (handle?.setContent) handle.setContent(html);
+                          else if (handle?.editor) { try { handle.editor.commands.setContent(html, false); } catch {} }
+                        });
                       }}
-                      style={{
-                        width: '100%',
-                        padding: '10px 12px',
-                        borderRadius: '9px',
-                        border: '1px solid #e2e8f0',
-                        outline: 'none',
-                        fontSize: '12px',
-                        fontWeight: 600,
-                        color: '#0a1628',
-                        background: 'white',
-                        cursor: 'pointer',
-                      }}
-                    >
-                      <option value="">Select a template…</option>
-                      {templates.map(tpl => (
-                        <option key={tpl.id} value={String(tpl.id)}>{tpl.name || tpl.Name}</option>
-                      ))}
-                    </select>
+                    />
                     {selectedTemplateId && (
                       <div style={{ fontSize: '10px', color: '#16a34a', fontWeight: 700, marginTop: '8px', display: 'flex', alignItems: 'center', gap: '4px' }}>
                         <span>✓</span> Template applied

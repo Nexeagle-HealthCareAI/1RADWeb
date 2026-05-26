@@ -181,40 +181,26 @@ const Link = Mark.create({
   },
 });
 
-// ── Typography auto-replace: smart quotes, em-dash, ellipsis ────────────
-// Off-by-default; toggled via options.enabled. Mirrors Word's "AutoFormat
-// as you type" without pulling in a separate dependency. Input rules fire
-// only on typed characters, so loaded HTML is left untouched.
+// ── Typography auto-replace: smart quotes ────────────────────────────────
+// AutoCorrect already handles em-dash, ellipsis, fractions, arrows on Space/
+// Enter. Typography adds the one thing AutoCorrect doesn't cover: curly-
+// quote substitution as the closing character is typed. Loaded HTML and
+// pasted content are left untouched (InputRules fire only on typed chars).
 const Typography = Extension.create({
   name: 'typography',
   addOptions() { return { enabled: true }; },
   addInputRules() {
     if (!this.options.enabled) return [];
     return [
-      // Em-dash from double hyphen surrounded by word chars
-      new InputRule({ find: /([^-\s])--([^-\s])$/, handler: ({ range, match, commands }) => {
-        commands.command(({ tr }) => {
-          tr.insertText(`${match[1]}—${match[2]}`, range.from, range.to);
-          return true;
-        });
-      }}),
-      // Ellipsis from three dots
-      new InputRule({ find: /\.\.\.$/, handler: ({ range, commands }) => {
-        commands.command(({ tr }) => { tr.insertText('…', range.from, range.to); return true; });
-      }}),
-      // Curly double quote — open if at start / after whitespace / after open punct
       new InputRule({ find: /(^|[\s\(\[\{<])"$/, handler: ({ range, match, commands }) => {
         commands.command(({ tr }) => { tr.insertText(`${match[1]}“`, range.from, range.to); return true; });
       }}),
-      // Curly double quote — close after non-whitespace
       new InputRule({ find: /(\S)"$/, handler: ({ range, match, commands }) => {
         commands.command(({ tr }) => { tr.insertText(`${match[1]}”`, range.from, range.to); return true; });
       }}),
-      // Curly single quote — open
       new InputRule({ find: /(^|[\s\(\[\{<])'$/, handler: ({ range, match, commands }) => {
         commands.command(({ tr }) => { tr.insertText(`${match[1]}‘`, range.from, range.to); return true; });
       }}),
-      // Curly single quote / apostrophe — close
       new InputRule({ find: /(\S)'$/, handler: ({ range, match, commands }) => {
         commands.command(({ tr }) => { tr.insertText(`${match[1]}’`, range.from, range.to); return true; });
       }}),
@@ -348,7 +334,21 @@ const NarrativeEditor = React.forwardRef(function NarrativeEditor({
   const [findOpen, setFindOpen] = useState(false);
   const [findFocusReplace, setFindFocusReplace] = useState(false);
   const [symbolOpen, setSymbolOpen] = useState(false);
-  const [spellcheckOn, setSpellcheckOn] = useState(false);
+  // Persist the spellcheck preference per-browser so the doctor doesn't have to
+  // re-enable it after each reload. Native browser spellcheck — words can be
+  // added to the system dictionary via right-click → "Add to dictionary"
+  // (Chrome/Edge). That allow-list is owned by the OS profile.
+  const [spellcheckOn, setSpellcheckOnRaw] = useState(() => {
+    try { return localStorage.getItem('narrative-editor:spellcheck') === '1'; }
+    catch { return false; }
+  });
+  const setSpellcheckOn = useCallback((v) => {
+    setSpellcheckOnRaw(prev => {
+      const next = typeof v === 'function' ? v(prev) : v;
+      try { localStorage.setItem('narrative-editor:spellcheck', next ? '1' : '0'); } catch {}
+      return next;
+    });
+  }, []);
   const [currentPage, setCurrentPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
   const [promptState, setPromptState] = useState(null); // {title, message, defaultValue, placeholder, resolve}
@@ -726,10 +726,16 @@ const NarrativeEditor = React.forwardRef(function NarrativeEditor({
         heading: { levels: [1, 2, 3, 4, 5, 6] },
         bulletList: { keepMarks: true, keepAttributes: false },
         orderedList: { keepMarks: true, keepAttributes: false },
+        // Beefier undo history for long-form report editing. Default is 100
+        // transactions; 500 lets the doctor undo through a deeper session
+        // (e.g. after applying a template by accident). newGroupDelay drops
+        // from 500 ms to 350 ms so undo steps land on smaller pause-boundaries.
+        history: { depth: 500, newGroupDelay: 350 },
       }),
       PageDocument,
       Page,
       Pagination,
+      Typography,
       LineHeight,
       ParagraphIndent,
       PageBreak,
