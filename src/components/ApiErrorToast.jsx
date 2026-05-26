@@ -233,6 +233,15 @@ function ToastItem({ toast, onDismiss }) {
 
 export default function ApiErrorToast() {
   const [toasts, setToasts] = useState([]);
+  // Portal target — must be inside the current fullscreen element while
+  // any element on the page is fullscreened, otherwise the browser hides
+  // anything outside the fullscreen subtree. Falls back to <body>.
+  const [host, setHost] = useState(() =>
+    typeof document === 'undefined' ? null :
+      (document.fullscreenElement
+        || document.querySelector('.ne--css-fullscreen')
+        || document.body)
+  );
 
   useEffect(() => {
     const unsubscribe = onApiError((payload) => {
@@ -245,11 +254,30 @@ export default function ApiErrorToast() {
     return unsubscribe;
   }, []);
 
+  useEffect(() => {
+    const resolveHost = () =>
+      document.fullscreenElement
+        || document.querySelector('.ne--css-fullscreen')
+        || document.body;
+    setHost(resolveHost());
+
+    const onFs = () => setHost(resolveHost());
+    document.addEventListener('fullscreenchange', onFs);
+    // The CSS-fullscreen fallback (iOS) toggles a class. Use a MutationObserver
+    // on <body> to catch that class flip too.
+    const mo = new MutationObserver(() => setHost(resolveHost()));
+    mo.observe(document.body, { subtree: true, attributes: true, attributeFilter: ['class'] });
+    return () => {
+      document.removeEventListener('fullscreenchange', onFs);
+      mo.disconnect();
+    };
+  }, []);
+
   const handleDismiss = (id) => {
     setToasts(prev => prev.filter(t => t.id !== id));
   };
 
-  if (typeof document === 'undefined') return null;
+  if (typeof document === 'undefined' || !host) return null;
 
   return createPortal(
     <>
@@ -280,6 +308,6 @@ export default function ApiErrorToast() {
         ))}
       </div>
     </>,
-    document.body
+    host
   );
 }

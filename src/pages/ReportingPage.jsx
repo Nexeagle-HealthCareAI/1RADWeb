@@ -1,4 +1,5 @@
 import React, { useState, useRef, useEffect, useMemo, useCallback } from 'react';
+import { createPortal } from 'react-dom';
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import JSZip from 'jszip';
 import dicomParser from 'dicom-parser';
@@ -115,6 +116,33 @@ const ReportingPage = () => {
 
   const [notifModal, setNotifModal] = useState({ isOpen: false, type: 'info', title: '', message: '' });
   const showNotif = (type, title, message) => setNotifModal({ isOpen: true, type, title, message });
+
+  // Overlay host — resolves to the current fullscreen element when any
+  // element on the page is fullscreened, otherwise <body>. Browsers only
+  // render descendants of the fullscreen element during native fullscreen,
+  // so notifications must portal inside it to be visible.
+  const [overlayHost, setOverlayHost] = useState(() =>
+    typeof document === 'undefined' ? null :
+      (document.fullscreenElement
+        || document.querySelector('.ne--css-fullscreen')
+        || document.body)
+  );
+  useEffect(() => {
+    if (typeof document === 'undefined') return;
+    const resolve = () =>
+      document.fullscreenElement
+        || document.querySelector('.ne--css-fullscreen')
+        || document.body;
+    setOverlayHost(resolve());
+    const onFs = () => setOverlayHost(resolve());
+    document.addEventListener('fullscreenchange', onFs);
+    const mo = new MutationObserver(() => setOverlayHost(resolve()));
+    mo.observe(document.body, { subtree: true, attributes: true, attributeFilter: ['class'] });
+    return () => {
+      document.removeEventListener('fullscreenchange', onFs);
+      mo.disconnect();
+    };
+  }, []);
 
   useEffect(() => {
     const handleResize = () => {
@@ -4615,7 +4643,7 @@ const ReportingPage = () => {
       </div>
 
       {/* ── Universal Notification Modal ─────────────────────────── */}
-      {notifModal.isOpen && (() => {
+      {notifModal.isOpen && overlayHost && (() => {
         const NOTIF_CFG = {
           success: { gradient: 'linear-gradient(135deg,#dcfce7,#bbf7d0)', iconColor: '#16a34a', border: '#bbf7d0', titleColor: '#15803d', shadow: 'rgba(22,163,74,0.22)',  icon: '✓', btnGrad: 'linear-gradient(135deg,#16a34a,#15803d)', btnShadow: 'rgba(22,163,74,0.4)'  },
           error:   { gradient: 'linear-gradient(135deg,#fee2e2,#fecaca)', iconColor: '#dc2626', border: '#fecaca', titleColor: '#991b1b', shadow: 'rgba(220,38,38,0.22)',  icon: '✕', btnGrad: 'linear-gradient(135deg,#e11d48,#be123c)', btnShadow: 'rgba(225,29,72,0.4)'  },
@@ -4623,7 +4651,7 @@ const ReportingPage = () => {
           info:    { gradient: 'linear-gradient(135deg,#dbeafe,#bfdbfe)', iconColor: '#0f52ba', border: '#bfdbfe', titleColor: '#1e40af', shadow: 'rgba(15,82,186,0.22)', icon: '↻', btnGrad: 'linear-gradient(135deg,#0f52ba,#1e40af)', btnShadow: 'rgba(15,82,186,0.4)' },
         };
         const cfg = NOTIF_CFG[notifModal.type] || NOTIF_CFG.info;
-        return (
+        return createPortal(
           <div
             style={{ position: 'fixed', inset: 0, zIndex: 100002, background: 'rgba(10,22,40,0.65)', backdropFilter: 'blur(12px)', WebkitBackdropFilter: 'blur(12px)', display: 'flex', justifyContent: 'center', alignItems: 'center', animation: 'rpNoticeFade 0.2s ease-out' }}
             onClick={() => setNotifModal(m => ({ ...m, isOpen: false }))}
@@ -4652,7 +4680,8 @@ const ReportingPage = () => {
               @keyframes rpNoticeFade { from { opacity: 0 } to { opacity: 1 } }
               @keyframes rpNoticePop  { from { transform: scale(0.88) translateY(20px); opacity: 0 } to { transform: scale(1) translateY(0); opacity: 1 } }
             `}</style>
-          </div>
+          </div>,
+          overlayHost   // ← portal target: fullscreen element if active, else <body>
         );
       })()}
     </>
