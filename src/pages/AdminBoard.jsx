@@ -420,6 +420,49 @@ export default function AdminBoard() {
   const [hospitalLoading, setHospitalLoading] = useState(false);
   const [savingHospital, setSavingHospital] = useState(false);
   const [hospitalMessage, setHospitalMessage] = useState({ type: '', text: '' });
+  // Clinical credentials edit state — local copy of admin's spec/degree/license
+  // shown in the drawer so the user can edit before clicking Save.
+  const [adminEdit, setAdminEdit] = useState({ specialization: '', degree: '', licenseNo: '' });
+  const [savingAdmin, setSavingAdmin] = useState(false);
+
+  // Hydrate the edit form whenever the admin data refreshes
+  useEffect(() => {
+    if (hospitalData.admin) {
+      setAdminEdit({
+        specialization: hospitalData.admin.specialization || '',
+        degree:         hospitalData.admin.degree || '',
+        licenseNo:      hospitalData.admin.licenseNo || '',
+      });
+    }
+  }, [hospitalData.admin?.userId, hospitalData.admin?.specialization, hospitalData.admin?.degree, hospitalData.admin?.licenseNo]);
+
+  const handleSaveAdminCredentials = async () => {
+    if (!hospitalData.admin?.userId) return;
+    setSavingAdmin(true);
+    try {
+      await apiClient.patch(`/personnel/${hospitalData.admin.userId}/clinical-credentials`, {
+        specialization: adminEdit.specialization || null,
+        degree:         adminEdit.degree || null,
+        licenseNo:      adminEdit.licenseNo || null,
+      });
+      // Reflect the saved values locally so the admin card refreshes
+      setHospitalData(prev => ({
+        ...prev,
+        admin: {
+          ...prev.admin,
+          specialization: adminEdit.specialization,
+          degree:         adminEdit.degree,
+          licenseNo:      adminEdit.licenseNo,
+        },
+      }));
+      setHospitalMessage({ type: 'success', text: 'Clinical credentials updated.' });
+    } catch (err) {
+      setHospitalMessage({ type: 'error', text: 'Failed to update credentials. Please retry.' });
+      console.error('[ADMIN] clinical credentials update failed', err);
+    } finally {
+      setSavingAdmin(false);
+    }
+  };
 
   // --- API FETCHING ---
   const fetchPersonnel = useCallback(async () => {
@@ -508,13 +551,16 @@ export default function AdminBoard() {
       // so the binding survives backend casing changes.
       const adminRaw = r.admin || r.Admin || null;
       const admin = adminRaw ? {
-        userId:       adminRaw.userId       || adminRaw.UserId       || null,
-        fullName:     adminRaw.fullName     || adminRaw.FullName     || '—',
-        email:        adminRaw.email        || adminRaw.Email        || '—',
-        mobile:       adminRaw.mobile       || adminRaw.Mobile       || '—',
-        role:         adminRaw.role         || adminRaw.Role         || 'Staff',
-        status:       adminRaw.status       || adminRaw.Status       || 'Unknown',
-        registeredOn: adminRaw.registeredOn || adminRaw.RegisteredOn || '',
+        userId:         adminRaw.userId         || adminRaw.UserId         || null,
+        fullName:       adminRaw.fullName       || adminRaw.FullName       || '—',
+        email:          adminRaw.email          || adminRaw.Email          || '—',
+        mobile:         adminRaw.mobile         || adminRaw.Mobile         || '—',
+        role:           adminRaw.role           || adminRaw.Role           || 'Staff',
+        status:         adminRaw.status         || adminRaw.Status         || 'Unknown',
+        registeredOn:   adminRaw.registeredOn   || adminRaw.RegisteredOn   || '',
+        specialization: adminRaw.specialization || adminRaw.Specialization || '',
+        degree:         adminRaw.degree         || adminRaw.Degree         || '',
+        licenseNo:      adminRaw.licenseNo      || adminRaw.LicenseNo      || '',
       } : null;
 
       const data = {
@@ -1736,10 +1782,13 @@ export default function AdminBoard() {
 
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '16px' }}>
                 {[
-                  { label: 'Email',         value: hospitalData.admin.email },
-                  { label: 'Mobile',        value: hospitalData.admin.mobile },
-                  { label: 'Role',          value: hospitalData.admin.role },
-                  { label: 'Registered',    value: hospitalData.admin.registeredOn },
+                  { label: 'Email',          value: hospitalData.admin.email },
+                  { label: 'Mobile',         value: hospitalData.admin.mobile },
+                  { label: 'Role',           value: hospitalData.admin.role },
+                  { label: 'Registered',     value: hospitalData.admin.registeredOn },
+                  { label: 'Specialization', value: hospitalData.admin.specialization },
+                  { label: 'Degree',         value: hospitalData.admin.degree },
+                  { label: 'License Number', value: hospitalData.admin.licenseNo },
                 ].map(item => (
                   <div key={item.label} style={{ background: '#f8fafc', padding: '16px', borderRadius: '10px', border: '1px solid #f1f5f9' }}>
                     <div style={{ fontSize: '10px', fontWeight: 700, color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.4px', marginBottom: '4px' }}>{item.label}</div>
@@ -1864,8 +1913,9 @@ export default function AdminBoard() {
         </div>
 
         <div style={{ flex: 1, overflowY: 'auto', padding: '22px 24px' }}>
-           {/* Admin info — read-only snapshot at the top of the drawer.
-               Changes to the admin happen via the Personnel screen. */}
+           {/* Administrator block — account fields read-only (email/mobile/
+               role change via Personnel), clinical credentials editable
+               inline (specialization / degree / license number). */}
            {hospitalData.admin && (
              <div style={{
                background: 'linear-gradient(135deg, #f0f9ff 0%, #eff6ff 100%)',
@@ -1893,7 +1943,9 @@ export default function AdminBoard() {
                    {hospitalData.admin.status}
                  </span>
                </div>
-               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px 16px', fontSize: '12px' }}>
+
+               {/* Read-only account fields */}
+               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px 16px', fontSize: '12px', marginBottom: '14px' }}>
                  <div>
                    <div style={{ color: '#64748b', fontWeight: 600, fontSize: '10px', textTransform: 'uppercase', marginBottom: '2px' }}>Email</div>
                    <div style={{ color: '#0f172a', fontWeight: 600, wordBreak: 'break-all' }}>{hospitalData.admin.email}</div>
@@ -1911,8 +1963,71 @@ export default function AdminBoard() {
                    <div style={{ color: '#0f172a', fontWeight: 600 }}>{hospitalData.admin.registeredOn || '—'}</div>
                  </div>
                </div>
-               <div style={{ fontSize: '11px', color: '#64748b', marginTop: '12px', fontStyle: 'italic' }}>
-                 Edit admin profile from the Personnel screen.
+
+               {/* Editable clinical credentials */}
+               <div style={{ borderTop: '1px dashed #bfdbfe', paddingTop: '12px' }}>
+                 <div style={{ fontSize: '10px', fontWeight: 800, color: '#1e40af', textTransform: 'uppercase', letterSpacing: '0.6px', marginBottom: '8px' }}>
+                   Clinical Credentials
+                 </div>
+                 <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                   <div>
+                     <label style={{ fontSize: '10px', fontWeight: 600, color: '#64748b', display: 'block', marginBottom: '3px' }}>Specialization</label>
+                     <input
+                       type="text"
+                       value={adminEdit.specialization}
+                       onChange={e => setAdminEdit({ ...adminEdit, specialization: e.target.value })}
+                       placeholder="e.g. Radiology, Cardiology"
+                       style={{ width: '100%', padding: '8px 11px', borderRadius: '7px', border: '1px solid rgba(59,130,246,0.25)', background: 'rgba(255,255,255,0.85)', fontSize: '12.5px', fontWeight: 600, color: '#0f172a', outline: 'none', boxSizing: 'border-box' }}
+                       onFocus={e => e.target.style.borderColor = '#3b82f6'}
+                       onBlur={e => e.target.style.borderColor = 'rgba(59,130,246,0.25)'}
+                     />
+                   </div>
+                   <div>
+                     <label style={{ fontSize: '10px', fontWeight: 600, color: '#64748b', display: 'block', marginBottom: '3px' }}>Degree</label>
+                     <input
+                       type="text"
+                       value={adminEdit.degree}
+                       onChange={e => setAdminEdit({ ...adminEdit, degree: e.target.value })}
+                       placeholder="e.g. MBBS, MD"
+                       style={{ width: '100%', padding: '8px 11px', borderRadius: '7px', border: '1px solid rgba(59,130,246,0.25)', background: 'rgba(255,255,255,0.85)', fontSize: '12.5px', fontWeight: 600, color: '#0f172a', outline: 'none', boxSizing: 'border-box' }}
+                       onFocus={e => e.target.style.borderColor = '#3b82f6'}
+                       onBlur={e => e.target.style.borderColor = 'rgba(59,130,246,0.25)'}
+                     />
+                   </div>
+                   <div>
+                     <label style={{ fontSize: '10px', fontWeight: 600, color: '#64748b', display: 'block', marginBottom: '3px' }}>License / Registration Number</label>
+                     <input
+                       type="text"
+                       value={adminEdit.licenseNo}
+                       onChange={e => setAdminEdit({ ...adminEdit, licenseNo: e.target.value })}
+                       placeholder="e.g. MMC/12345"
+                       style={{ width: '100%', padding: '8px 11px', borderRadius: '7px', border: '1px solid rgba(59,130,246,0.25)', background: 'rgba(255,255,255,0.85)', fontSize: '12.5px', fontWeight: 600, color: '#0f172a', outline: 'none', boxSizing: 'border-box' }}
+                       onFocus={e => e.target.style.borderColor = '#3b82f6'}
+                       onBlur={e => e.target.style.borderColor = 'rgba(59,130,246,0.25)'}
+                     />
+                   </div>
+                   <button
+                     type="button"
+                     onClick={handleSaveAdminCredentials}
+                     disabled={savingAdmin}
+                     style={{
+                       alignSelf: 'flex-end',
+                       background: savingAdmin ? '#94a3b8' : 'linear-gradient(135deg, #3b82f6 0%, #2563eb 100%)',
+                       color: 'white', border: 'none',
+                       padding: '8px 16px', borderRadius: '8px',
+                       fontSize: '11px', fontWeight: 800,
+                       letterSpacing: '0.4px',
+                       cursor: savingAdmin ? 'not-allowed' : 'pointer',
+                       boxShadow: '0 4px 10px -3px rgba(59,130,246,0.4)',
+                       fontFamily: 'inherit',
+                     }}
+                   >
+                     {savingAdmin ? 'Saving…' : 'Save credentials'}
+                   </button>
+                 </div>
+                 <div style={{ fontSize: '11px', color: '#64748b', marginTop: '10px', fontStyle: 'italic' }}>
+                   Email, mobile, and role are managed from the Personnel screen.
+                 </div>
                </div>
              </div>
            )}
