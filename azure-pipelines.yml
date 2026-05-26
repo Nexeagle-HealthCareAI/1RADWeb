@@ -22,6 +22,11 @@ pool:
 variables:
   nodeVersion: '20.x'         # Node LTS
 
+  # ── API URLs baked into the Vite build (VITE_API_URL is read at build
+  # time only; the bundle must be rebuilt per environment).
+  devApiUrl:  'https://1radapi-bch4ere7a6cmgkap.centralindia-01.azurewebsites.net/api/v1'
+  prodApiUrl: 'https://1radapiprod-h6bxhde8hgdtctee.centralindia-01.azurewebsites.net/api/v1'
+
 stages:
   # ────────────────────────────────────────────────────────────────────────
   # Stage 1 — Build React (runs on main push AND on every PR for CI)
@@ -29,10 +34,11 @@ stages:
   # guaranteeing the two environments serve identical bundles.
   # ────────────────────────────────────────────────────────────────────────
   - stage: Build
-    displayName: Build React
+    displayName: Build React (Dev + Prod bundles)
     jobs:
-      - job: BuildJob
-        displayName: npm ci & vite build
+      # ── BuildDev — bundle that points at the Dev API ────────────────────
+      - job: BuildDev
+        displayName: Build for Dev (VITE_API_URL = dev API)
         timeoutInMinutes: 30
         steps:
           - checkout: self
@@ -53,17 +59,51 @@ stages:
 
           - script: |
               npm ci
-              npm run build
+              VITE_API_URL="$(devApiUrl)" npm run build
             workingDirectory: $(Build.SourcesDirectory)
-            displayName: npm ci & build
+            displayName: npm ci & build (Dev API URL)
 
-          # Publish the dist/ folder so both deploy stages can consume the
-          # SAME build (no rebuild risk between Dev and Prod).
           - task: PublishPipelineArtifact@1
-            displayName: Publish dist artifact
+            displayName: Publish Dev dist artifact
             inputs:
               targetPath: '$(Build.SourcesDirectory)/dist'
-              artifact: 'web-dist'
+              artifact: 'web-dist-dev'
+              publishLocation: 'pipeline'
+
+      # ── BuildProd — bundle that points at the Prod API ──────────────────
+      # Skipped on PR builds (Dev build is enough for CI validation).
+      - job: BuildProd
+        displayName: Build for Prod (VITE_API_URL = prod API)
+        condition: ne(variables['Build.Reason'], 'PullRequest')
+        timeoutInMinutes: 30
+        steps:
+          - checkout: self
+            clean: true
+
+          - task: NodeTool@0
+            inputs:
+              versionSpec: $(nodeVersion)
+            displayName: Use Node $(nodeVersion)
+
+          - task: Cache@2
+            inputs:
+              key: 'npm | "$(Agent.OS)" | $(Build.SourcesDirectory)/package-lock.json'
+              restoreKeys: |
+                npm | "$(Agent.OS)"
+              path: $(Build.SourcesDirectory)/node_modules
+            displayName: Cache node_modules
+
+          - script: |
+              npm ci
+              VITE_API_URL="$(prodApiUrl)" npm run build
+            workingDirectory: $(Build.SourcesDirectory)
+            displayName: npm ci & build (Prod API URL)
+
+          - task: PublishPipelineArtifact@1
+            displayName: Publish Prod dist artifact
+            inputs:
+              targetPath: '$(Build.SourcesDirectory)/dist'
+              artifact: 'web-dist-prod'
               publishLocation: 'pipeline'
 
   # ────────────────────────────────────────────────────────────────────────
@@ -102,10 +142,10 @@ stages:
                 # (Must use the full DownloadPipelineArtifact@2 task — the
                 # `- download:` shorthand doesn't accept a custom path.)
                 - task: DownloadPipelineArtifact@2
-                  displayName: 'Download web-dist into source dir'
+                  displayName: 'Download Dev bundle into source dir'
                   inputs:
                     buildType: 'current'
-                    artifactName: 'web-dist'
+                    artifactName: 'web-dist-dev'
                     targetPath: '$(Build.SourcesDirectory)/dist'
 
                 - task: AzureStaticWebApp@0
@@ -154,10 +194,10 @@ stages:
                   clean: true
 
                 - task: DownloadPipelineArtifact@2
-                  displayName: 'Download web-dist into source dir'
+                  displayName: 'Download Prod bundle into source dir'
                   inputs:
                     buildType: 'current'
-                    artifactName: 'web-dist'
+                    artifactName: 'web-dist-prod'
                     targetPath: '$(Build.SourcesDirectory)/dist'
 
                 - script: |

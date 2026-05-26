@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import useAuth from '../auth/useAuth';
+import { BASE_URL } from '../api/apiClient';
 
 const BRIDGE_URL = 'http://localhost:3001';
 const POLL_MS    = 5000;
@@ -502,7 +503,7 @@ export default function DicomBridgePage() {
                   <span style={{ fontSize: '11px', color: '#94a3b8', fontWeight: 700, fontFamily: 'monospace' }}>.env</span>
                   <button 
                     onClick={() => {
-                      const envText = `ORTHANC_URL=http://localhost:8042\nONERAD_API_URL=https://1radapi-bch4ere7a6cmgkap.centralindia-01.azurewebsites.net/api/v1\nONERAD_IDENTIFIER=${currentUser?.email || 'your-email@example.com'}\nONERAD_PASSWORD=your_password_here\nMATCH_CONFIDENCE_THRESHOLD=0.6\nPOLL_INTERVAL_SECONDS=30`;
+                      const envText = `ORTHANC_URL=http://localhost:8042\nONERAD_API_URL=${BASE_URL}\nONERAD_IDENTIFIER=${currentUser?.email || 'your-email@example.com'}\nONERAD_PASSWORD=your_password_here\nMATCH_CONFIDENCE_THRESHOLD=0.6\nPOLL_INTERVAL_SECONDS=30`;
                       const blob = new Blob([envText], { type: 'text/plain' });
                       const a = document.createElement('a');
                       a.href = URL.createObjectURL(blob);
@@ -515,7 +516,7 @@ export default function DicomBridgePage() {
                 </div>
                 <div style={{ padding: '16px', color: '#38bdf8', fontFamily: 'monospace', fontSize: '12px', whiteSpace: 'pre-wrap', lineHeight: 1.6 }}>
                   ORTHANC_URL=http://localhost:8042<br />
-                  ONERAD_API_URL=https://1radapi-bch4ere7a6cmgkap.centralindia-01.azurewebsites.net/api/v1<br />
+                  ONERAD_API_URL={BASE_URL}<br />
                   ONERAD_IDENTIFIER={currentUser?.email || 'your-email@example.com'}<br />
                   <span style={{ color: '#f87171' }}>ONERAD_PASSWORD=your_password_here</span><br />
                   <span style={{ color: '#94a3b8' }}>MATCH_CONFIDENCE_THRESHOLD=0.6</span><br />
