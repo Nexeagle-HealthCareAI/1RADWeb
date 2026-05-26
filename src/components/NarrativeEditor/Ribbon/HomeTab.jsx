@@ -724,19 +724,7 @@ export default function HomeTab({ editor, showFormattingMarks, onToggleFormattin
             <Btn onClick={() => editor.chain().focus().setTextAlign('center').run()} active={editor.isActive({ textAlign: 'center' })} title="Center (Ctrl+E)">
               <Icon d={ICONS.alignC} />
             </Btn>
-            <Btn
-              onClick={() => {
-                const $from = editor.state.selection.$from;
-                const parentType = $from.parent.type.name;
-                const result = editor.chain().focus().setTextAlign('right').run();
-                console.log('[ALIGN-RIGHT] parentBlock=', parentType,
-                  ' commandReturned=', result,
-                  ' attrsAfter=', editor.getAttributes(parentType),
-                  ' isActiveRight=', editor.isActive({ textAlign: 'right' }));
-              }}
-              active={editor.isActive({ textAlign: 'right' })}
-              title="Align Right (Ctrl+R)"
-            >
+            <Btn onClick={() => editor.chain().focus().setTextAlign('right').run()} active={editor.isActive({ textAlign: 'right' })} title="Align Right (Ctrl+R)">
               <Icon d={ICONS.alignR} />
             </Btn>
             <Btn onClick={() => editor.chain().focus().setTextAlign('justify').run()} active={editor.isActive({ textAlign: 'justify' })} title="Justify (Ctrl+J)">

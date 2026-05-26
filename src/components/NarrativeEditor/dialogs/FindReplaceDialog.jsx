@@ -12,20 +12,27 @@ export default function FindReplaceDialog({ editor, open, onClose, focusReplace 
   const [replacement, setReplacement] = useState('');
   const [caseSensitive, setCaseSensitive] = useState(false);
   const [wholeWord, setWholeWord] = useState(false);
+  const [useRegex, setUseRegex] = useState(false);
+  const [regexError, setRegexError] = useState('');
   const [activeIdx, setActiveIdx] = useState(0);
   const inputRef = useRef(null);
   const replaceRef = useRef(null);
 
   // Build the list of match positions in the doc whenever query/options change.
   const matches = useMemo(() => {
-    if (!editor || !query) return [];
+    if (!editor || !query) { setRegexError(''); return []; }
     const results = [];
     const flags = caseSensitive ? 'g' : 'gi';
-    const escaped = query.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-    const pattern = wholeWord ? `\\b${escaped}\\b` : escaped;
+    let pattern;
+    if (useRegex) {
+      pattern = query;
+    } else {
+      const escaped = query.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      pattern = wholeWord ? `\\b${escaped}\\b` : escaped;
+    }
     let regex;
-    try { regex = new RegExp(pattern, flags); }
-    catch { return []; }
+    try { regex = new RegExp(pattern, flags); setRegexError(''); }
+    catch (err) { setRegexError(err.message || 'Invalid pattern'); return []; }
 
     editor.state.doc.descendants((node, pos) => {
       if (!node.isText) return;
@@ -37,7 +44,7 @@ export default function FindReplaceDialog({ editor, open, onClose, focusReplace 
       }
     });
     return results;
-  }, [editor, query, caseSensitive, wholeWord, editor?.state.doc]);
+  }, [editor, query, caseSensitive, wholeWord, useRegex, editor?.state.doc]);
 
   useEffect(() => {
     if (open) {
@@ -84,8 +91,16 @@ export default function FindReplaceDialog({ editor, open, onClose, focusReplace 
 
   if (!open) return null;
 
+  // Refocus the editor on any close path so caret continues where last
+  // active match was selected.
+  const closeAndRestore = () => {
+    onClose?.();
+    setTimeout(() => editor?.commands?.focus?.(), 0);
+  };
+
   return (
     <div
+      onKeyDown={e => { if (e.key === 'Escape') { e.preventDefault(); closeAndRestore(); } }}
       style={{
         position: 'absolute',
         top: '8px',
@@ -106,7 +121,7 @@ export default function FindReplaceDialog({ editor, open, onClose, focusReplace 
     >
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
         <span style={{ fontSize: '12px', fontWeight: 600, color: '#323130' }}>Find &amp; Replace</span>
-        <button onClick={onClose} style={{ background: 'transparent', border: 'none', cursor: 'pointer', fontSize: '16px', color: '#666', padding: '0 4px' }}>×</button>
+        <button onClick={closeAndRestore} title="Close (Esc)" style={{ background: 'transparent', border: 'none', cursor: 'pointer', fontSize: '16px', color: '#666', padding: '0 4px' }}>×</button>
       </div>
 
       <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
@@ -118,12 +133,13 @@ export default function FindReplaceDialog({ editor, open, onClose, focusReplace 
           onChange={e => setQuery(e.target.value)}
           onKeyDown={e => {
             if (e.key === 'Enter') { e.preventDefault(); e.shiftKey ? onPrev() : onNext(); }
-            if (e.key === 'Escape') { e.preventDefault(); onClose(); }
+            if (e.key === 'Escape') { e.preventDefault(); closeAndRestore(); }
           }}
           style={{ flex: 1, height: '28px', padding: '0 8px', border: '1px solid #c8c8c8', borderRadius: '3px', fontSize: '13px', outline: 'none' }}
         />
-        <span style={{ fontSize: '11px', color: '#666', minWidth: '60px', textAlign: 'right' }}>
-          {matches.length === 0 ? '0' : `${activeIdx + 1} of ${matches.length}`}
+        <span style={{ fontSize: '11px', color: regexError ? '#c00' : '#666', minWidth: '60px', textAlign: 'right' }}
+              title={regexError || (matches.length === 0 ? 'No matches' : `${activeIdx + 1} of ${matches.length}`)}>
+          {regexError ? 'Bad regex' : (matches.length === 0 ? '0' : `${activeIdx + 1} of ${matches.length}`)}
         </span>
       </div>
 
@@ -140,20 +156,26 @@ export default function FindReplaceDialog({ editor, open, onClose, focusReplace 
               if (e.shiftKey) onReplaceAll();
               else onReplaceOne();
             }
-            if (e.key === 'Escape') { e.preventDefault(); onClose(); }
+            if (e.key === 'Escape') { e.preventDefault(); closeAndRestore(); }
           }}
           style={{ flex: 1, height: '28px', padding: '0 8px', border: '1px solid #c8c8c8', borderRadius: '3px', fontSize: '13px', outline: 'none' }}
         />
       </div>
 
-      <div style={{ display: 'flex', gap: '4px', flexWrap: 'wrap', marginTop: '2px' }}>
+      <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', marginTop: '2px' }}>
         <label style={{ fontSize: '11px', display: 'flex', alignItems: 'center', gap: '3px', color: '#666' }}>
           <input type="checkbox" checked={caseSensitive} onChange={e => setCaseSensitive(e.target.checked)} />
           Match case
         </label>
-        <label style={{ fontSize: '11px', display: 'flex', alignItems: 'center', gap: '3px', color: '#666' }}>
-          <input type="checkbox" checked={wholeWord} onChange={e => setWholeWord(e.target.checked)} />
+        <label style={{ fontSize: '11px', display: 'flex', alignItems: 'center', gap: '3px', color: useRegex ? '#999' : '#666' }}
+               title={useRegex ? 'Whole-word is ignored when regex is on — use \\b in your pattern' : ''}>
+          <input type="checkbox" checked={wholeWord} disabled={useRegex} onChange={e => setWholeWord(e.target.checked)} />
           Whole word
+        </label>
+        <label style={{ fontSize: '11px', display: 'flex', alignItems: 'center', gap: '3px', color: '#666' }}
+               title="Treat the Find field as a JavaScript regular expression">
+          <input type="checkbox" checked={useRegex} onChange={e => setUseRegex(e.target.checked)} />
+          Regex
         </label>
       </div>
 

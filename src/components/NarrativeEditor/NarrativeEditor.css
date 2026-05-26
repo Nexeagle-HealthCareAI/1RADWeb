@@ -593,6 +593,7 @@
 .autosave-modified { color: #b45309; background: rgba(251,191,36,0.18); }
 .autosave-saving   { color: #0078d4; background: rgba(0,120,212,0.1);  }
 .autosave-saved    { color: #16a34a; background: rgba(22,163,74,0.12); animation: autosave-fade 3s forwards; animation-delay: 0.2s; }
+.autosave-saved-idle { color: rgba(255,255,255,0.85); background: rgba(255,255,255,0.12); }
 
 @keyframes autosave-fade {
   0%   { opacity: 1; }

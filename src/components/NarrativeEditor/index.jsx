@@ -27,7 +27,7 @@ const CustomTableCell = TableCell.extend({
 });
 import { Placeholder } from '@tiptap/extension-placeholder';
 import { CharacterCount } from '@tiptap/extension-character-count';
-import { Extension, Mark } from '@tiptap/core';
+import { Extension, Mark, InputRule } from '@tiptap/core';
 import EditorToolbar from './EditorToolbar';
 import Ribbon from './Ribbon';
 import { PageDocument, Page } from './extensions/PageNode';
@@ -181,6 +181,47 @@ const Link = Mark.create({
   },
 });
 
+// ── Typography auto-replace: smart quotes, em-dash, ellipsis ────────────
+// Off-by-default; toggled via options.enabled. Mirrors Word's "AutoFormat
+// as you type" without pulling in a separate dependency. Input rules fire
+// only on typed characters, so loaded HTML is left untouched.
+const Typography = Extension.create({
+  name: 'typography',
+  addOptions() { return { enabled: true }; },
+  addInputRules() {
+    if (!this.options.enabled) return [];
+    return [
+      // Em-dash from double hyphen surrounded by word chars
+      new InputRule({ find: /([^-\s])--([^-\s])$/, handler: ({ range, match, commands }) => {
+        commands.command(({ tr }) => {
+          tr.insertText(`${match[1]}—${match[2]}`, range.from, range.to);
+          return true;
+        });
+      }}),
+      // Ellipsis from three dots
+      new InputRule({ find: /\.\.\.$/, handler: ({ range, commands }) => {
+        commands.command(({ tr }) => { tr.insertText('…', range.from, range.to); return true; });
+      }}),
+      // Curly double quote — open if at start / after whitespace / after open punct
+      new InputRule({ find: /(^|[\s\(\[\{<])"$/, handler: ({ range, match, commands }) => {
+        commands.command(({ tr }) => { tr.insertText(`${match[1]}“`, range.from, range.to); return true; });
+      }}),
+      // Curly double quote — close after non-whitespace
+      new InputRule({ find: /(\S)"$/, handler: ({ range, match, commands }) => {
+        commands.command(({ tr }) => { tr.insertText(`${match[1]}”`, range.from, range.to); return true; });
+      }}),
+      // Curly single quote — open
+      new InputRule({ find: /(^|[\s\(\[\{<])'$/, handler: ({ range, match, commands }) => {
+        commands.command(({ tr }) => { tr.insertText(`${match[1]}‘`, range.from, range.to); return true; });
+      }}),
+      // Curly single quote / apostrophe — close
+      new InputRule({ find: /(\S)'$/, handler: ({ range, match, commands }) => {
+        commands.command(({ tr }) => { tr.insertText(`${match[1]}’`, range.from, range.to); return true; });
+      }}),
+    ];
+  },
+});
+
 // ── Helpers used by the shortcut handler ─────────────────────────────────────
 
 function cycleFontSize(editor, delta) {
@@ -324,6 +365,7 @@ const NarrativeEditor = React.forwardRef(function NarrativeEditor({
 
   // Auto-save
   const [saveStatus, setSaveStatus] = useState(''); // '' | 'modified' | 'saving' | 'saved'
+  const [lastSavedAt, setLastSavedAt] = useState(null);
   const autoSaveTimerRef = useRef(null);
   const fadeTimerRef = useRef(null);
 
@@ -755,14 +797,61 @@ const NarrativeEditor = React.forwardRef(function NarrativeEditor({
         class: 'narrative-editor-content',
         spellcheck: 'false', // toggled at runtime by spellcheckOn effect
       },
-      // Strip <div class="word-page"> and <div class="word-page-inner"> wrappers
-      // from pasted HTML so copy/paste from the editor itself does not create
-      // page-in-page visuals.
+      // Cleans pasted HTML: removes the editor's own page wrappers (avoids
+      // page-in-page nesting) AND scrubs the junk Microsoft Word / Outlook
+      // / Google Docs leak into the clipboard (mso-* styles, conditional
+      // comments, empty <o:p> tags, MsoNormal classes, deprecated <font>
+      // tags). Without this, pasting a report from Word produces bloated
+      // HTML that breaks pagination and styling.
       transformPastedHTML(html) {
-        return (html || '')
+        if (!html) return '';
+        let out = html;
+
+        // Editor self-paste — strip own page wrappers
+        out = out
           .replace(/<div[^>]*class="[^"]*word-page-inner[^"]*"[^>]*>/gi, '')
           .replace(/<div[^>]*class="[^"]*word-page[^"]*"[^>]*>/gi, '')
           .replace(/<\/div>\s*<\/div>(?=\s*(<div[^>]*class="[^"]*word-page|$))/gi, '');
+
+        // Strip Word / Outlook conditional comments and XML islands
+        out = out
+          .replace(/<!--\[if[^\]]*\]>[\s\S]*?<!\[endif\]-->/gi, '')
+          .replace(/<!--StartFragment-->|<!--EndFragment-->/gi, '')
+          .replace(/<xml[\s\S]*?<\/xml>/gi, '')
+          .replace(/<o:p[\s\S]*?<\/o:p>/gi, '')
+          .replace(/<o:p[^>]*\/>/gi, '');
+
+        // Remove mso-* CSS declarations inside style="…" attributes
+        out = out.replace(/style="([^"]*)"/gi, (_m, css) => {
+          const cleaned = css
+            .split(';')
+            .filter(d => d && !/^\s*mso-/i.test(d) && !/^\s*line-height\s*:\s*normal/i.test(d))
+            .join(';')
+            .trim();
+          return cleaned ? `style="${cleaned}"` : '';
+        });
+
+        // Strip MsoNormal and similar class attributes; collapse Office classes
+        out = out
+          .replace(/\sclass="Mso[^"]*"/gi, '')
+          .replace(/\sclass="WordSection\d+"/gi, '');
+
+        // Convert deprecated <font> tags to <span> with inline style
+        out = out.replace(/<font([^>]*)>/gi, (_m, attrs) => {
+          const style = [];
+          const color = attrs.match(/color="?([^"\s>]+)/i);
+          const face  = attrs.match(/face="?([^"\s>]+)/i);
+          const size  = attrs.match(/size="?(\d+)/i);
+          if (color) style.push(`color: ${color[1]}`);
+          if (face)  style.push(`font-family: ${face[1]}`);
+          if (size)  style.push(`font-size: ${[null,'10px','13px','16px','18px','24px','32px','48px'][+size[1]] || '13px'}`);
+          return `<span style="${style.join('; ')}">`;
+        }).replace(/<\/font>/gi, '</span>');
+
+        // Drop completely empty attributes left behind by the regex passes
+        out = out.replace(/\s(class|style)=""/gi, '');
+
+        return out;
       },
     },
   });
@@ -1350,6 +1439,7 @@ const NarrativeEditor = React.forwardRef(function NarrativeEditor({
         setSaveStatus('saving');
         try { onSave(); } catch (_) { /* ignore */ }
         setSaveStatus('saved');
+        setLastSavedAt(new Date());
         fadeTimerRef.current = setTimeout(() => setSaveStatus(''), 3000);
       }, 3000);
     };
@@ -1981,6 +2071,10 @@ const NarrativeEditor = React.forwardRef(function NarrativeEditor({
           </span>
           <span className="statusbar-sep" />
           <span>{charCount} characters</span>
+          <span className="statusbar-sep" />
+          <span title="Estimated reading time at 200 wpm">
+            ~{Math.max(1, Math.ceil(wordCount / 200))} min read
+          </span>
           {!editor.state.selection.empty && (() => {
             const { from, to } = editor.state.selection;
             const selTxt   = editor.state.doc.textBetween(from, to, '\n');
@@ -1997,7 +2091,13 @@ const NarrativeEditor = React.forwardRef(function NarrativeEditor({
           {saveStatus === 'modified' && <span className="autosave-status autosave-modified">Unsaved changes</span>}
           {saveStatus === 'saving'   && <span className="autosave-status autosave-saving">Saving…</span>}
           {saveStatus === 'saved'    && <span className="autosave-status autosave-saved">✓ Saved</span>}
-          {saveStatus && <span className="statusbar-sep" />}
+          {!saveStatus && lastSavedAt && (
+            <span className="autosave-status autosave-saved-idle"
+                  title={`Last saved at ${lastSavedAt.toLocaleTimeString()}`}>
+              Saved at {lastSavedAt.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+            </span>
+          )}
+          {(saveStatus || lastSavedAt) && <span className="statusbar-sep" />}
           <kbd>Ctrl+S</kbd><span> Save</span>
           <span className="statusbar-sep" />
           <kbd>Ctrl+F</kbd><span> Find</span>

@@ -487,31 +487,14 @@ const ReportingPage = () => {
       // or if its `isEmpty` heuristic mis-fires. The imperative call inside
       // requestAnimationFrame guarantees the editor catches up.
       const applyEditorContent = (html) => {
-        const incoming = html || '';
-        const countAligns = (s) => {
-          const matches = s.match(/text-align[^"]*"?/gi) || [];
-          const counts = { left: 0, right: 0, center: 0, justify: 0 };
-          matches.forEach(m => {
-            if (/right/i.test(m))        counts.right++;
-            else if (/center/i.test(m))  counts.center++;
-            else if (/justify/i.test(m)) counts.justify++;
-            else if (/left/i.test(m))    counts.left++;
-          });
-          return { total: matches.length, counts };
-        };
-        console.log('[LOAD] INCOMING:', countAligns(incoming), ' totalLen=', incoming.length);
-        setEditorText(incoming);
+        setEditorText(html || '');
         requestAnimationFrame(() => {
           const handle = editorRef.current;
           if (!handle) return;
-          if (handle.setContent) handle.setContent(incoming);
+          if (handle.setContent) handle.setContent(html || '');
           else if (handle.editor) {
-            try { handle.editor.commands.setContent(incoming, false); } catch {}
+            try { handle.editor.commands.setContent(html || '', false); } catch {}
           }
-          requestAnimationFrame(() => {
-            const afterHTML = handle.editor?.getHTML?.() || '';
-            console.log('[LOAD] AFTER setContent:', countAligns(afterHTML), ' totalLen=', afterHTML.length);
-          });
         });
       };
 
@@ -749,17 +732,6 @@ const ReportingPage = () => {
     let currentFindings = editorText;
     if (editorRef.current?.editor) {
       currentFindings = editorRef.current.editor.getHTML();
-    }
-    {
-      const allMatches = currentFindings.match(/text-align[^"]*"?/gi) || [];
-      const counts = { left: 0, right: 0, center: 0, justify: 0 };
-      allMatches.forEach(m => {
-        if (/right/i.test(m))   counts.right++;
-        else if (/center/i.test(m))  counts.center++;
-        else if (/justify/i.test(m)) counts.justify++;
-        else if (/left/i.test(m))    counts.left++;
-      });
-      console.log('[SAVE] OUTGOING — total matches:', allMatches.length, 'counts:', counts, ' totalLen=', currentFindings.length);
     }
 
     const payload = {
