@@ -326,6 +326,11 @@ const NarrativeEditor = React.forwardRef(function NarrativeEditor({
   const [isFullscreen, setIsFullscreen] = useState(false);
   // CSS-only fallback fullscreen — used on iPad/Safari when requestFullscreen API is unavailable or fails
   const [cssFullscreen, setCssFullscreen] = useState(false);
+  // Mirror cssFullscreen into a ref so the long-lived capture-phase keydown
+  // handler (Esc, F11) can read the current value without being re-attached
+  // every time the state flips.
+  const cssFullscreenRef = useRef(false);
+  useEffect(() => { cssFullscreenRef.current = cssFullscreen; }, [cssFullscreen]);
   // Set to true just before we intentionally call exitFullscreen() so that
   // onFsChange can tell the difference between a user-initiated exit and iOS
   // auto-cancelling native fullscreen on scroll/app-switch.
@@ -466,17 +471,29 @@ const NarrativeEditor = React.forwardRef(function NarrativeEditor({
   });
 
   useEffect(() => {
+    // The "re-enter CSS fallback on unintentional exit" branch below is iOS-
+    // specific (Safari's scroll/address-bar gesture auto-cancels fullscreen).
+    // Desktop browsers exit fullscreen on Esc — that's the user's explicit
+    // intent, never re-enter. Without this gate, Esc would race the Exit
+    // button: browser exits fullscreen before our keydown handler can set the
+    // intentional-exit flag, the watcher then bounces back into CSS fallback,
+    // and the user lands on a busted half-fullscreen layout.
+    const isIOS = typeof navigator !== 'undefined' &&
+      (/iPad|iPhone|iPod/.test(navigator.userAgent) ||
+       (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1));
+
     const onFsChange = () => {
       const active = !!(document.fullscreenElement || document.webkitFullscreenElement);
       setIsFullscreen(active);
       if (!active) {
-        if (exitingIntentionallyRef.current) {
-          // User tapped "Exit Fullscreen" — honour the intent and clear everything.
+        if (exitingIntentionallyRef.current || !isIOS) {
+          // Explicit exit (button) OR desktop browser — honour the exit.
           setCssFullscreen(false);
         } else {
-          // iOS/browser cancelled native fullscreen externally (scroll triggers
-          // address-bar, app-switcher, etc.). Re-enter CSS fallback so the
-          // user's fullscreen session is NOT interrupted by a stray scroll.
+          // iOS only: Safari cancelled native fullscreen externally (scroll
+          // triggered address-bar, app-switcher, etc.). Re-enter CSS fallback
+          // so the user's fullscreen session is NOT interrupted by a stray
+          // scroll.
           setCssFullscreen(true);
         }
         exitingIntentionallyRef.current = false;
@@ -1048,12 +1065,20 @@ const NarrativeEditor = React.forwardRef(function NarrativeEditor({
           editor.chain().cancelFormatPainter().run();
           return;
         }
-        // Explicit exit from browser fullscreen API. Some browsers' native
+        // Explicit exit from native browser fullscreen. Some browsers' native
         // Esc-to-exit-fullscreen is unreliable when other capture-phase keydown
         // handlers are on `document`; do it ourselves to be safe.
         if (document.fullscreenElement && containerRef.current?.contains(document.fullscreenElement)) {
           e.preventDefault();
-          document.exitFullscreen?.().catch(() => {});
+          exitingIntentionallyRef.current = true;
+          document.exitFullscreen?.().catch(() => { exitingIntentionallyRef.current = false; });
+          return;
+        }
+        // CSS-fallback fullscreen (iPad/Safari path) — there's no native
+        // fullscreen element to exit, so just clear the flag ourselves.
+        if (cssFullscreenRef.current) {
+          e.preventDefault();
+          setCssFullscreen(false);
           return;
         }
         // Find/Symbol dialogs handle their own Esc
