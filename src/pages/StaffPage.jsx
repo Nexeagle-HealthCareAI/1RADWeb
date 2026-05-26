@@ -385,11 +385,17 @@ export default function StaffPage() {
     }
     const hasFlat = SAL_FIELDS.some(k => raw[k] !== undefined && raw[k] !== '' && raw[k] !== null);
     if (!hasFlat) return { revisions: [], disbursements: raw.disbursements || [] };
+    // Synthetic revision constructed from a legacy flat record so the rest of
+    // the app sees a uniform shape. Never persisted — saveSalaryStructure
+    // always builds a fresh payload from the drawer. _isMigrated flag lets
+    // downstream code recognise and filter these out if needed (e.g. don't
+    // POST them, don't show them in the revision history as "real" rows).
     const legacy = {
       id: `rev_legacy_${Date.now()}`,
       effectiveFrom: '2020-01-01',
       note: 'Initial (migrated)',
       createdAt: new Date().toISOString(),
+      _isMigrated: true,
     };
     SAL_FIELDS.forEach(k => { legacy[k] = raw[k] || ''; });
     return { revisions: [legacy], disbursements: raw.disbursements || [] };
@@ -484,7 +490,6 @@ export default function StaffPage() {
 
     const record = normalizeStaffSalary(salaryData[staffId]);
     const active = pickRevision(record, lastDay);
-    const { gross: baseGross, net: baseNet } = computeFromRevision(active);
 
     // Attendance counts for this month
     const attRec = attendanceData[staffId] || {};
@@ -532,7 +537,9 @@ export default function StaffPage() {
 
     let totalGross = 0;
     let totalNet = 0;
-    let totalLwpDeduction = 0;
+    let totalDayGross = 0;  // sum of per-day gross rates — averaged for perDayRate display
+    let totalLwpGrossLoss = 0;
+    let totalLwpNetLoss = 0;
     let totalLwpDays = 0;
     let paidLeaveInMonth = 0;
     let lwpLeaveInMonth = 0;
@@ -546,6 +553,7 @@ export default function StaffPage() {
 
        totalGross += dayGross;
        totalNet += dayNet;
+       totalDayGross += dayGross;
 
        let isLwp = 0;
        if (leaveStatusForDay[ds] === 'paid') {
@@ -560,15 +568,20 @@ export default function StaffPage() {
        }
 
        totalLwpDays += isLwp;
-       totalLwpDeduction += (dayGross * isLwp);
+       // Track gross and net loss separately. Gross loss feeds proRatedGross;
+       // net loss feeds proRatedNet so PF/TDS aren't double-deducted for LWP days.
+       totalLwpGrossLoss += (dayGross * isLwp);
+       totalLwpNetLoss   += (dayNet   * isLwp);
     }
 
     const gross = Math.round(totalGross);
     const net = Math.round(totalNet);
     const deductions = Math.round(totalGross - totalNet);
-    const proRatedGross = Math.max(0, Math.round(totalGross - totalLwpDeduction));
-    const proRatedNet = Math.max(0, Math.round(totalNet - totalLwpDeduction));
-    const lwpDeduction = Math.round(totalLwpDeduction);
+    const proRatedGross = Math.max(0, Math.round(totalGross - totalLwpGrossLoss));
+    const proRatedNet   = Math.max(0, Math.round(totalNet   - totalLwpNetLoss));
+    // lwpDeduction is shown in payslips as "salary lost to LWP" — keep it gross
+    // (the structure-standard reading), matches what was displayed before.
+    const lwpDeduction = Math.round(totalLwpGrossLoss);
 
     return {
       hasStructure: !!active,
@@ -578,7 +591,10 @@ export default function StaffPage() {
       paidLeaveInMonth,
       lwpLeaveInMonth,
       lwpDays: totalLwpDays,
-      perDayRate: daysInMonth > 0 ? Math.round(baseGross / daysInMonth) : 0,
+      // Average per-day rate across the month — honours mid-month revisions
+      // (was using the last-day revision only, which mispriced LWP for days
+      // before the revision took effect).
+      perDayRate: daysInMonth > 0 ? Math.round(totalDayGross / daysInMonth) : 0,
       lwpDeduction,
       gross, deductions, net,
       proRatedGross, proRatedNet,
@@ -610,7 +626,7 @@ export default function StaffPage() {
       paidLeaveInMonth: payroll.paidLeaveInMonth,
       lwpLeaveInMonth:  payroll.lwpLeaveInMonth,
       encashmentBonus:  paymentDetails.encashmentBonus || 0,
-      encashmentDays:   paymentDetails.encashmentDays || 0,
+      encashmentDays:   Math.max(0, Math.floor(Number(paymentDetails.encashmentDays) || 0)),
       encashmentType:   paymentDetails.encashmentType || null,
       extraPay:         paymentDetails.extraPay || 0,
       extraPayReason:   paymentDetails.extraPayReason || null,
@@ -1301,16 +1317,27 @@ export default function StaffPage() {
       return;
     }
     
-    // Deduct leave balance by creating a dummy approved leave record
-    if (Number(encashmentDays) > 0 && encashmentType) {
-      const { balance } = getLeaveBalance(selectedStaff.id, new Date(paidOnDate).getFullYear());
-      if (Number(encashmentDays) > (balance[encashmentType] || 0)) {
-        showNotif('warning', 'Insufficient Balance', `Cannot encash ${encashmentDays} days of ${encashmentType}. Only ${balance[encashmentType] || 0} days available.`);
+    // Encashment validation — must have a type, must not exceed balance.
+    // These are hard blocks so the disbursement never goes through with
+    // bad inputs (previously, a missing type silently skipped the check).
+    const encashDaysNum = Number(encashmentDays) || 0;
+    if (encashDaysNum > 0) {
+      if (!encashmentType) {
+        showNotif('warning', 'Leave type required', 'Pick a leave type to encash, or set days to 0.');
         return;
       }
+      const { balance } = getLeaveBalance(selectedStaff.id, new Date(paidOnDate).getFullYear());
+      const available = balance[encashmentType] || 0;
+      if (encashDaysNum > available) {
+        showNotif('warning', 'Insufficient Balance', `Cannot encash ${encashDaysNum} days of ${encashmentType}. Only ${available} days available.`);
+        return;
+      }
+      // Local leave row mirrors what the backend will auto-create. We rely on
+      // the backend's auto-create being the source of truth — this local row
+      // only updates the balance display until the next salary reload.
       const tempId = `lv_encash_${Date.now()}`;
       const entry = {
-        id: tempId, staffId: selectedStaff.id, type: encashmentType, from: paidOnDate, to: paidOnDate, days: Number(encashmentDays),
+        id: tempId, staffId: selectedStaff.id, type: encashmentType, from: paidOnDate, to: paidOnDate, days: encashDaysNum,
         reason: 'Encashed during salary payout', status: 'approved', appliedOn: new Date().toISOString(),
       };
       const updated = [...leaveData, entry];
@@ -2902,9 +2929,14 @@ export default function StaffPage() {
                         <TextInput
                           type="number"
                           min="0"
-                          step="0.5"
+                          step="1"
                           value={f.encashmentDays}
-                          onChange={(v) => setDisbDrawer(p => ({ ...p, form: { ...p.form, encashmentDays: v } }))}
+                          onChange={(v) => {
+                            // Encashment is whole-days-only because the leave
+                            // ledger stores Days as int. Reject fractions early.
+                            const intVal = v === '' ? '' : String(Math.max(0, Math.floor(Number(v) || 0)));
+                            setDisbDrawer(p => ({ ...p, form: { ...p.form, encashmentDays: intVal } }));
+                          }}
                           placeholder="Days"
                           style={{ width: '70px' }}
                         />
