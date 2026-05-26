@@ -117,6 +117,19 @@ const ReportingPage = () => {
   const [notifModal, setNotifModal] = useState({ isOpen: false, type: 'info', title: '', message: '' });
   const showNotif = (type, title, message) => setNotifModal({ isOpen: true, type, title, message });
 
+  // Crash-recovery prompt — promise-based so the load flow can await the
+  // user's choice and decide which version of the report to render.
+  const [draftRecoveryModal, setDraftRecoveryModal] = useState({ isOpen: false, ageMin: 0, resolve: null });
+  const askDraftRecovery = (ageMin) => new Promise((resolve) => {
+    setDraftRecoveryModal({ isOpen: true, ageMin, resolve });
+  });
+  const resolveDraftRecovery = (restore) => {
+    setDraftRecoveryModal((m) => {
+      m.resolve?.(restore);
+      return { isOpen: false, ageMin: 0, resolve: null };
+    });
+  };
+
   // Overlay host — resolves to the current fullscreen element when any
   // element on the page is fullscreened, otherwise <body>. Browsers only
   // render descendants of the fullscreen element during native fullscreen,
@@ -604,10 +617,7 @@ const ReportingPage = () => {
             const draftDiffers = (localDraft.findings || '') !== findingsHtml;
             if (draftDiffers && draftTs > serverTs && !r.isFinalized) {
               const ageMin = Math.max(1, Math.round((Date.now() - draftTs) / 60000));
-              const restore = window.confirm(
-                `An unsaved draft from ~${ageMin} min ago was found on this device.\n\n` +
-                `OK = Restore the unsaved draft\nCancel = Use the version saved on the server`
-              );
+              const restore = await askDraftRecovery(ageMin);
               if (restore) {
                 console.info('[1RAD] Crash-recovery — restoring local draft');
                 applyEditorContent(localDraft.findings || '');
@@ -4684,6 +4694,55 @@ const ReportingPage = () => {
           overlayHost   // ← portal target: fullscreen element if active, else <body>
         );
       })()}
+
+      {/* ── Draft Recovery Modal ─────────────────────────────────── */}
+      {draftRecoveryModal.isOpen && overlayHost && createPortal(
+        <div
+          style={{ position: 'fixed', inset: 0, zIndex: 100003, background: 'rgba(10,22,40,0.65)', backdropFilter: 'blur(12px)', WebkitBackdropFilter: 'blur(12px)', display: 'flex', justifyContent: 'center', alignItems: 'center', animation: 'rpNoticeFade 0.2s ease-out' }}
+          // Backdrop click defaults to "Use server version" — same as Cancel
+          // on the old window.confirm, so behaviour is unchanged for users
+          // who dismiss without reading.
+          onClick={() => resolveDraftRecovery(false)}
+        >
+          <div
+            style={{ width: '90%', maxWidth: '500px', background: 'linear-gradient(160deg,#ffffff 0%,#f8fafc 100%)', borderRadius: '28px', border: '1px solid #fde68a', boxShadow: '0 24px 60px -12px rgba(217,119,6,0.22), 0 0 0 1px rgba(0,0,0,0.04)', padding: '40px 32px 28px', textAlign: 'center', animation: 'rpNoticePop 0.3s cubic-bezier(0.34,1.56,0.64,1)' }}
+            onClick={e => e.stopPropagation()}
+          >
+            <div style={{ width: '76px', height: '76px', borderRadius: '50%', background: 'linear-gradient(135deg,#fef3c7,#fde68a)', border: '2px solid #fde68a', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 22px', fontSize: '34px', boxShadow: '0 12px 28px -8px rgba(217,119,6,0.22)' }}>
+              <span style={{ color: '#d97706', fontWeight: 900, lineHeight: 1 }}>⟲</span>
+            </div>
+            <div style={{ display: 'inline-block', background: 'linear-gradient(135deg,#fef3c7,#fde68a)', border: '1px solid #fde68a', borderRadius: '8px', padding: '3px 12px', marginBottom: '12px' }}>
+              <span style={{ fontSize: '9px', fontWeight: 950, letterSpacing: '2px', color: '#92400e', fontFamily: 'system-ui,sans-serif' }}>UNSAVED DRAFT FOUND</span>
+            </div>
+            <div style={{ fontSize: '15px', fontWeight: 950, letterSpacing: '0.5px', color: '#0f172a', marginBottom: '12px', fontFamily: 'system-ui,sans-serif', lineHeight: 1.3 }}>
+              Restore your unsaved work?
+            </div>
+            <div style={{ width: '40px', height: '3px', background: 'linear-gradient(135deg,#fef3c7,#fde68a)', borderRadius: '99px', margin: '0 auto 16px' }} />
+            <p style={{ fontSize: '13px', lineHeight: 1.7, color: '#475569', fontWeight: 500, margin: '0 0 8px', fontFamily: 'system-ui,sans-serif' }}>
+              An autosaved draft from <strong style={{ color: '#0f172a' }}>~{draftRecoveryModal.ageMin} min ago</strong> exists on this device and is newer than the saved copy on the server.
+            </p>
+            <p style={{ fontSize: '12px', lineHeight: 1.6, color: '#64748b', fontWeight: 500, margin: '0 0 26px', fontFamily: 'system-ui,sans-serif' }}>
+              Pick which version to load. The other one will be discarded.
+            </p>
+            <div style={{ display: 'flex', gap: '10px' }}>
+              <button
+                onClick={() => resolveDraftRecovery(false)}
+                style={{ flex: 1, padding: '14px', background: 'white', color: '#475569', border: '1.5px solid #e2e8f0', borderRadius: '14px', fontSize: '11px', fontWeight: 800, letterSpacing: '1px', cursor: 'pointer', fontFamily: 'system-ui,sans-serif' }}
+                onMouseEnter={e => { e.currentTarget.style.background = '#f8fafc'; e.currentTarget.style.borderColor = '#cbd5e1'; }}
+                onMouseLeave={e => { e.currentTarget.style.background = 'white'; e.currentTarget.style.borderColor = '#e2e8f0'; }}
+              >USE SERVER COPY</button>
+              <button
+                onClick={() => resolveDraftRecovery(true)}
+                autoFocus
+                style={{ flex: 1.3, padding: '14px', background: 'linear-gradient(135deg,#d97706,#b45309)', color: 'white', border: 'none', borderRadius: '14px', fontSize: '11px', fontWeight: 950, letterSpacing: '1.5px', cursor: 'pointer', boxShadow: '0 8px 20px -6px rgba(217,119,6,0.4)', fontFamily: 'system-ui,sans-serif' }}
+                onMouseEnter={e => { e.currentTarget.style.opacity = '0.88'; }}
+                onMouseLeave={e => { e.currentTarget.style.opacity = '1'; }}
+              >RESTORE DRAFT</button>
+            </div>
+          </div>
+        </div>,
+        overlayHost
+      )}
     </>
   );
 
