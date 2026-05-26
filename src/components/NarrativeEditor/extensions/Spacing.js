@@ -66,11 +66,15 @@ export const LineHeight = Extension.create({
 /**
  * ParagraphIndent — left-padding via margin-left, increments of 24px.
  * Works on paragraphs and headings (not just inside lists like sinkListItem).
+ *
+ * `max: 20` gives 20 × 24 = 480 px of indent, ~80% of the writable area on
+ * an A4 page with default margins — matches the Word behaviour of "Tab
+ * indents most of the way across the page before stopping."
  */
 export const ParagraphIndent = Extension.create({
   name: 'paragraphIndent',
   addOptions() {
-    return { types: ['paragraph', 'heading'], step: 24, max: 8 };
+    return { types: ['paragraph', 'heading'], step: 24, max: 20 };
   },
   addGlobalAttributes() {
     return [{
