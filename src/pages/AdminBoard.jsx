@@ -1725,95 +1725,106 @@ export default function AdminBoard() {
             </button>
           </div>
 
-          <div style={{ background: 'white', padding: '30px', borderRadius: '16px', border: '1px solid #e2e8f0', boxShadow: '0 4px 24px rgba(0,0,0,0.02)' }}>
-            <div style={{ marginBottom: '30px' }}>
-              <div style={{ fontSize: '12px', fontWeight: 700, color: '#64748b', textTransform: 'uppercase', marginBottom: '4px' }}>Hospital Name</div>
-              <h3 style={{ fontSize: '24px', fontWeight: 800, color: '#0f172a', margin: 0 }}>{hospitalData.hospitalName || 'Unnamed Hospital'}</h3>
-              <div style={{ fontSize: '14px', color: '#475569', marginTop: '8px' }}>{hospitalData.hospitalAddress || 'No address provided'}</div>
-            </div>
-
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(250px, 1fr))', gap: '20px' }}>
-              {[
-                { label: 'GSTIN', value: hospitalData.gstin },
-                { label: 'Registration Number', value: hospitalData.registrationNumber },
-                { label: 'PAN', value: hospitalData.pan },
-                { label: 'Accreditation (NABH)', value: hospitalData.nabhNumber }
-              ].map(item => (
-                <div key={item.label} style={{ background: '#f8fafc', padding: '20px', borderRadius: '12px', border: '1px solid #f1f5f9' }}>
-                  <div style={{ fontSize: '11px', fontWeight: 700, color: '#64748b', textTransform: 'uppercase', marginBottom: '4px' }}>{item.label}</div>
-                  <div style={{ fontSize: '15px', fontWeight: 700, color: '#0f172a' }}>{item.value || 'Not provided'}</div>
-                </div>
-              ))}
-            </div>
-          </div>
-
-          {/* ── Administrator Information ─────────────────────────────
-               Shows the primary admin user mapped to this hospital. The
-               API picks the first user with an Admin-role (AdminDoctor,
-               AdminOperator, etc.) and falls back to the first mapping. */}
-          {hospitalData.admin ? (
-            <div style={{
-              background: 'white', padding: '30px', borderRadius: '16px',
-              border: '1px solid #e2e8f0', boxShadow: '0 4px 24px rgba(0,0,0,0.02)',
-              marginTop: '20px',
-            }}>
-              <div style={{
-                display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-                marginBottom: '20px',
-              }}>
-                <div>
-                  <div style={{ fontSize: '12px', fontWeight: 700, color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.6px', marginBottom: '4px' }}>
-                    Administrator
-                  </div>
-                  <h3 style={{ fontSize: '20px', fontWeight: 800, color: '#0f172a', margin: 0 }}>
-                    {hospitalData.admin.fullName}
-                  </h3>
-                </div>
-                <span style={{
-                  fontSize: '11px', fontWeight: 700,
-                  color: hospitalData.admin.status?.toLowerCase() === 'active' ? '#16a34a' : '#dc2626',
-                  background: hospitalData.admin.status?.toLowerCase() === 'active' ? '#dcfce7' : '#fee2e2',
-                  padding: '5px 12px', borderRadius: '999px',
-                  textTransform: 'uppercase', letterSpacing: '0.5px',
-                }}>
-                  {hospitalData.admin.status}
-                </span>
+          {/* ── Two-column layout: Hospital info ◀▶ Administrator info ──
+               Side-by-side on desktop (≥900 px), stacks to single column on
+               narrower viewports. The admin card has 1 inner column on the
+               right rail to keep field labels readable. */}
+          <div style={{
+            display: 'grid',
+            gridTemplateColumns: isMobile ? '1fr' : 'minmax(0, 1fr) minmax(0, 1fr)',
+            gap: '20px',
+            alignItems: 'start',
+          }}>
+            {/* ── LEFT: Hospital details ──────────────────────────── */}
+            <div style={{ background: 'white', padding: '28px', borderRadius: '16px', border: '1px solid #e2e8f0', boxShadow: '0 4px 24px rgba(0,0,0,0.02)' }}>
+              <div style={{ fontSize: '11px', fontWeight: 800, color: '#1e40af', textTransform: 'uppercase', letterSpacing: '0.6px', marginBottom: '16px' }}>
+                Hospital Information
               </div>
 
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '16px' }}>
+              <div style={{ marginBottom: '24px' }}>
+                <div style={{ fontSize: '11px', fontWeight: 700, color: '#64748b', textTransform: 'uppercase', marginBottom: '4px' }}>Hospital Name</div>
+                <h3 style={{ fontSize: '22px', fontWeight: 800, color: '#0f172a', margin: 0, lineHeight: 1.2 }}>{hospitalData.hospitalName || 'Unnamed Hospital'}</h3>
+                <div style={{ fontSize: '13px', color: '#475569', marginTop: '6px' }}>{hospitalData.hospitalAddress || 'No address provided'}</div>
+              </div>
+
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '12px' }}>
                 {[
-                  { label: 'Email',          value: hospitalData.admin.email },
-                  { label: 'Mobile',         value: hospitalData.admin.mobile },
-                  { label: 'Role',           value: hospitalData.admin.role },
-                  { label: 'Registered',     value: hospitalData.admin.registeredOn },
-                  { label: 'Specialization', value: hospitalData.admin.specialization },
-                  { label: 'Degree',         value: hospitalData.admin.degree },
-                  { label: 'License Number', value: hospitalData.admin.licenseNo },
+                  { label: 'GSTIN', value: hospitalData.gstin },
+                  { label: 'Registration Number', value: hospitalData.registrationNumber },
+                  { label: 'PAN', value: hospitalData.pan },
+                  { label: 'Accreditation (NABH)', value: hospitalData.nabhNumber }
                 ].map(item => (
-                  <div key={item.label} style={{ background: '#f8fafc', padding: '16px', borderRadius: '10px', border: '1px solid #f1f5f9' }}>
-                    <div style={{ fontSize: '10px', fontWeight: 700, color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.4px', marginBottom: '4px' }}>{item.label}</div>
-                    <div style={{ fontSize: '14px', fontWeight: 700, color: '#0f172a', wordBreak: 'break-all' }}>{item.value || '—'}</div>
+                  <div key={item.label} style={{ background: '#f8fafc', padding: '14px', borderRadius: '10px', border: '1px solid #f1f5f9' }}>
+                    <div style={{ fontSize: '10px', fontWeight: 700, color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.4px', marginBottom: '3px' }}>{item.label}</div>
+                    <div style={{ fontSize: '14px', fontWeight: 700, color: '#0f172a', wordBreak: 'break-all' }}>{item.value || 'Not provided'}</div>
                   </div>
                 ))}
               </div>
             </div>
-          ) : (
-            <div style={{
-              background: '#fffbeb', padding: '20px', borderRadius: '12px',
-              border: '1px solid #fde68a', marginTop: '20px',
-              display: 'flex', alignItems: 'center', gap: '12px',
-            }}>
-              <span style={{ fontSize: '20px' }}>⚠️</span>
-              <div>
-                <div style={{ fontSize: '13px', fontWeight: 700, color: '#92400e', marginBottom: '2px' }}>
-                  No administrator assigned
+
+            {/* ── RIGHT: Administrator info ───────────────────────── */}
+            {hospitalData.admin ? (
+              <div style={{ background: 'white', padding: '28px', borderRadius: '16px', border: '1px solid #e2e8f0', boxShadow: '0 4px 24px rgba(0,0,0,0.02)' }}>
+                <div style={{
+                  display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between',
+                  marginBottom: '20px',
+                }}>
+                  <div>
+                    <div style={{ fontSize: '11px', fontWeight: 800, color: '#7c3aed', textTransform: 'uppercase', letterSpacing: '0.6px', marginBottom: '4px' }}>
+                      Administrator
+                    </div>
+                    <h3 style={{ fontSize: '20px', fontWeight: 800, color: '#0f172a', margin: 0, lineHeight: 1.2 }}>
+                      {hospitalData.admin.fullName}
+                    </h3>
+                  </div>
+                  <span style={{
+                    fontSize: '10px', fontWeight: 700,
+                    color: hospitalData.admin.status?.toLowerCase() === 'active' ? '#16a34a' : '#dc2626',
+                    background: hospitalData.admin.status?.toLowerCase() === 'active' ? '#dcfce7' : '#fee2e2',
+                    padding: '4px 10px', borderRadius: '999px',
+                    textTransform: 'uppercase', letterSpacing: '0.5px',
+                    whiteSpace: 'nowrap', flexShrink: 0,
+                  }}>
+                    {hospitalData.admin.status}
+                  </span>
                 </div>
-                <div style={{ fontSize: '12px', color: '#a16207' }}>
-                  This hospital doesn't have a primary admin user mapped yet.
+
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: '10px' }}>
+                  {[
+                    { label: 'Email',          value: hospitalData.admin.email },
+                    { label: 'Mobile',         value: hospitalData.admin.mobile },
+                    { label: 'Role',           value: hospitalData.admin.role },
+                    { label: 'Registered',     value: hospitalData.admin.registeredOn },
+                    { label: 'Specialization', value: hospitalData.admin.specialization },
+                    { label: 'Degree',         value: hospitalData.admin.degree },
+                    { label: 'License Number', value: hospitalData.admin.licenseNo },
+                  ].map(item => (
+                    <div key={item.label} style={{ background: '#f8fafc', padding: '12px 14px', borderRadius: '10px', border: '1px solid #f1f5f9' }}>
+                      <div style={{ fontSize: '10px', fontWeight: 700, color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.4px', marginBottom: '3px' }}>{item.label}</div>
+                      <div style={{ fontSize: '13px', fontWeight: 700, color: '#0f172a', wordBreak: 'break-all', lineHeight: 1.35 }}>{item.value || '—'}</div>
+                    </div>
+                  ))}
                 </div>
               </div>
-            </div>
-          )}
+            ) : (
+              <div style={{
+                background: '#fffbeb', padding: '24px', borderRadius: '16px',
+                border: '1px solid #fde68a',
+                display: 'flex', alignItems: 'center', gap: '14px',
+                minHeight: '120px',
+              }}>
+                <span style={{ fontSize: '24px' }}>⚠️</span>
+                <div>
+                  <div style={{ fontSize: '13px', fontWeight: 700, color: '#92400e', marginBottom: '4px' }}>
+                    No administrator assigned
+                  </div>
+                  <div style={{ fontSize: '12px', color: '#a16207' }}>
+                    This hospital doesn't have a primary admin user mapped yet.
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
         </div>
       );
     }
