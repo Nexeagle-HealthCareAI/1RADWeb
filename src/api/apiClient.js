@@ -2,6 +2,12 @@ import axios from 'axios';
 
 export const BASE_URL = import.meta.env.VITE_API_URL || 'https://1radapi-bch4ere7a6cmgkap.centralindia-01.azurewebsites.net/api/v1';
 
+// One-time diagnostic so we can verify in the browser console which API the
+// deployed bundle is actually calling. Remove once Prod is confirmed routing
+// to the Prod API correctly.
+// eslint-disable-next-line no-console
+console.info('[1Rad] API base URL:', BASE_URL);
+
 const apiClient = axios.create({
   baseURL: BASE_URL,
   headers: {
