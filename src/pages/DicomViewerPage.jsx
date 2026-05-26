@@ -40,7 +40,12 @@ const DicomViewerPage = () => {
   const stateInitialLayoutMode = location.state?.layoutMode;
 
   // If we were opened via ?appointmentId=… (e.g. from the timeline), hydrate the assets
-  // ourselves: download the ZIPs from the backend, extract them, classify into series.
+  // ourselves. PRIMARY PATH (Option C): fetch the manifest — backend has already
+  // unzipped + indexed each slice with its own URL, so we can hand individual
+  // slice URLs straight to Cornerstone and skip the in-browser unzip entirely.
+  // FALLBACK PATH: any asset the backend hasn't extracted yet (legacy uploads
+  // not yet backfilled, extraction still queued, or extraction failed) gets
+  // the old download-zip-and-unzip-locally treatment.
   useEffect(() => {
     if (!urlAppointmentId) return;
     if (stateFiles || stateAllSeries) return; // navigation state already supplied data
@@ -51,18 +56,69 @@ const DicomViewerPage = () => {
       const t0 = performance.now();
       setHydrating(true);
       setHydrationError(null);
-      setHydrationProgress({ phase: 'fetching-asset-list', current: 0, total: 0, elapsedMs: 0 });
+      setHydrationProgress({ phase: 'fetching-manifest', current: 0, total: 0, elapsedMs: 0 });
       try {
-        const res = await apiClient.get(`/Study/${urlAppointmentId}/assets`);
-        const assets = res.data || [];
+        // 1. Try the manifest endpoint first.
+        let manifestData = null;
+        try {
+          const manifestRes = await apiClient.get(`/Study/${urlAppointmentId}/manifest`);
+          if (manifestRes.data?.success) manifestData = manifestRes.data.data;
+        } catch (mErr) {
+          // Manifest endpoint missing (older API) or 404 — fall through to legacy.
+          console.info('[DICOM VIEWER] Manifest endpoint unavailable, using legacy asset list:', mErr?.message);
+        }
+
+        let assets;
+        if (manifestData?.assets) {
+          assets = manifestData.assets;
+        } else {
+          // Legacy path: fetch the raw asset list (no extraction status).
+          const res = await apiClient.get(`/Study/${urlAppointmentId}/assets`);
+          assets = (res.data || []).map(a => ({
+            assetId: a.id,
+            fileName: a.fileName,
+            fileType: a.fileType,
+            blobUrl: a.blobUrl,
+            extractionStatus: 'Pending',
+            series: null,
+          }));
+        }
         if (!Array.isArray(assets) || assets.length === 0) {
           throw new Error('No imaging assets are available for this study.');
         }
 
-        // For each remote asset (typically one ZIP per study), download as Blob and extract.
         const allExtracted = [];
         for (let assetIdx = 0; assetIdx < assets.length; assetIdx++) {
           const asset = assets[assetIdx];
+
+          // ───── PRIMARY PATH: Manifest already has per-slice URLs ─────
+          if (asset.extractionStatus === 'Extracted' && Array.isArray(asset.series) && asset.series.length > 0) {
+            setHydrationProgress({ phase: `manifest-asset-${assetIdx + 1}-of-${assets.length}`, current: 0, total: 0, elapsedMs: Math.round(performance.now() - t0) });
+            asset.series.forEach((s) => {
+              // Pseudo-File objects: getOrCreateBlobUrl in AdvancedDicomViewer
+              // returns .dicomUrl directly when present (no createObjectURL),
+              // so wadouri:{url} is passed straight to Cornerstone's loader.
+              const files = (s.slices || []).map((slice, sliceIdx) => ({
+                name: `${slice.sopInstanceUID || 'slice'}_${sliceIdx}.dcm`,
+                size: 0,
+                type: 'application/dicom',
+                dicomUrl: slice.url,
+                sopInstanceUID: slice.sopInstanceUID,
+                instanceNumber: slice.instanceNumber,
+              }));
+              allExtracted.push({
+                name: s.seriesDescription || `Series ${allExtracted.length + 1}`,
+                seriesDesc: s.seriesDescription,
+                modality: s.modality,
+                seriesUID: s.seriesUID,
+                files,
+                thumbnailUrl: s.thumbnailUrl,
+              });
+            });
+            continue;
+          }
+
+          // ───── FALLBACK PATH: ZIP not yet extracted — unzip in browser ─────
           if (!asset.blobUrl) continue;
           try {
             setHydrationProgress({ phase: `downloading-asset-${assetIdx + 1}-of-${assets.length}`, current: 0, total: 0, elapsedMs: Math.round(performance.now() - t0) });
@@ -72,7 +128,7 @@ const DicomViewerPage = () => {
             const isZip = (asset.fileType || '').toLowerCase() === 'zip' || (asset.fileName || '').toLowerCase().endsWith('.zip');
 
             if (isZip) {
-              const file = new File([blob], asset.fileName || `study-${asset.id}.zip`, { type: 'application/zip' });
+              const file = new File([blob], asset.fileName || `study-${asset.assetId}.zip`, { type: 'application/zip' });
               const result = await dicomOptimizer.processZipFileOptimized(file, (p) => {
                 if (cancelled) return;
                 setHydrationProgress({
@@ -86,19 +142,19 @@ const DicomViewerPage = () => {
               series.forEach(s => allExtracted.push(s));
             } else {
               // Single DICOM file
-              const file = new File([blob], asset.fileName || `image-${asset.id}.dcm`, { type: 'application/dicom' });
+              const file = new File([blob], asset.fileName || `image-${asset.assetId}.dcm`, { type: 'application/dicom' });
               allExtracted.push({
-                name: asset.fileName || `Asset ${asset.id}`,
+                name: asset.fileName || `Asset ${asset.assetId}`,
                 seriesDesc: asset.fileName || 'Image',
                 patientName: '',
                 modality: '',
-                seriesUID: asset.id,
+                seriesUID: asset.assetId,
                 files: [file],
                 metadata: {},
               });
             }
           } catch (err) {
-            console.warn(`[DICOM VIEWER] Failed to process asset ${asset.id}:`, err);
+            console.warn(`[DICOM VIEWER] Failed to process asset ${asset.assetId}:`, err);
           }
         }
 
@@ -109,10 +165,11 @@ const DicomViewerPage = () => {
 
         // Shape the hydrated series to match what the viewer expects.
         const series = allExtracted.map((s, idx) => ({
-          name: s.patientName ? `${s.patientName} — ${s.seriesDesc}` : (s.seriesDesc || `Series ${idx + 1}`),
+          name: s.patientName ? `${s.patientName} — ${s.seriesDesc}` : (s.seriesDesc || s.name || `Series ${idx + 1}`),
           files: s.files,
           modality: s.modality,
           seriesUID: s.seriesUID,
+          thumbnailUrl: s.thumbnailUrl,
         }));
         setHydratedSeries(series);
       } catch (err) {
@@ -962,6 +1019,27 @@ const DicomViewerPage = () => {
                   }
                 }}
               >
+                {series.thumbnailUrl && (
+                  // Pre-rendered JPEG from the backend extraction (Option C).
+                  // Loads in ~50ms, gives the user something to look at while
+                  // Cornerstone fetches and decodes the actual DICOM.
+                  <div style={{
+                    width: '100%',
+                    aspectRatio: '1 / 1',
+                    background: '#000',
+                    borderRadius: '6px',
+                    marginBottom: '6px',
+                    overflow: 'hidden',
+                    border: '1px solid rgba(255,255,255,0.08)'
+                  }}>
+                    <img
+                      src={series.thumbnailUrl}
+                      alt=""
+                      loading="lazy"
+                      style={{ width: '100%', height: '100%', objectFit: 'contain', display: 'block' }}
+                    />
+                  </div>
+                )}
                 <div style={{
                   fontSize: isTablet ? '11px' : '12px',
                   fontWeight: 900,

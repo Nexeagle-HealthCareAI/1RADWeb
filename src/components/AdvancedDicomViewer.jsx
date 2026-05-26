@@ -109,6 +109,12 @@ const blobUrlTracker = new Map();
 // on some mobile browsers when the blob is large.
 const urlToFile = new Map();
 function getOrCreateBlobUrl(file) {
+  // Manifest-driven (Option C) pseudo-File: lightweight object carrying the
+  // remote DICOM URL. Cornerstone's built-in wadouri loader fetches over
+  // HTTPS directly, so we hand back the URL as-is — no createObjectURL.
+  if (file && typeof file === 'object' && typeof file.dicomUrl === 'string') {
+    return file.dicomUrl;
+  }
   let url = blobUrlCache.get(file);
   if (!url) {
     url = URL.createObjectURL(file);
@@ -1412,15 +1418,21 @@ const AdvancedDicomViewer = ({
         }
         const viewport = renderingEngine.getViewport(viewportId);
 
+        // Diagnostic sweet spot for most modalities (CT, MR, US loops) is the
+        // middle slice — top/bottom slices of a CT are often the empty top of
+        // head or scout images. Loading the middle first gives the radiologist
+        // something useful instantly; we then prefetch outward from there.
+        const middleIdx = Math.floor(imageIds.length / 2);
+        const firstLoadId = imageIds[middleIdx] ?? imageIds[0];
+
         // Load and assign Stack
         // Volume viewports load their pixel data via the volume loader, not via
         // loadAndCacheImage + setStack. Skip the entire stack-load+setStack block.
         if (isVolumeMode) {
           // engineStackReadyRef is already set true above; flow falls through
           // to the tool setup + rAF render block below.
-        } else
-        try {
-          console.log(`[DICOM] Attempting decode: ${imageIds[0]}`);
+        } else try {
+          console.log(`[DICOM] Attempting decode (middle slice ${middleIdx}): ${firstLoadId}`);
           console.log(`[DICOM] Starting image load at: ${new Date().toISOString()}`);
 
           // Increased timeout for slow networks/large files
@@ -1430,11 +1442,11 @@ const AdvancedDicomViewer = ({
               reject(new Error("Decoder timeout after " + (DICOM_CONFIG.INITIAL_LOAD_TIMEOUT/1000) + "s. File may be too large or compressed with unsupported codec."));
             }, DICOM_CONFIG.INITIAL_LOAD_TIMEOUT)
           );
-          
+
           let firstImage;
           try {
             console.log(`[DICOM] Calling loadAndCacheImage...`);
-            const loadPromise = cornerstone.imageLoader.loadAndCacheImage(imageIds[0]);
+            const loadPromise = cornerstone.imageLoader.loadAndCacheImage(firstLoadId);
             
             // Add progress tracking
             loadPromise.then(
@@ -1483,10 +1495,10 @@ const AdvancedDicomViewer = ({
               );
               
               firstImage = await Promise.race([
-                cornerstone.imageLoader.loadAndCacheImage(imageIds[0]),
+                cornerstone.imageLoader.loadAndCacheImage(firstLoadId),
                 retryTimeout
               ]);
-              
+
               console.log(`[DICOM] Retry successful!`);
             } else {
               // Workers already disabled, just throw the error
@@ -1545,15 +1557,38 @@ const AdvancedDicomViewer = ({
             }
           }
 
-          // Explicitly set to first image
-          await viewport.setImageIdIndex(0);
+          // Explicitly start at the middle slice (already pre-loaded above)
+          // so the radiologist sees a diagnostically-relevant view immediately.
+          await viewport.setImageIdIndex(middleIdx);
         }
         if (!isMounted || !elementRef.current) {
           console.log('[DICOM_TRACE] setupEngine: BAILED after setImageIdIndex');
           return;
         }
-        setCurrentImageIndex(0);
-        console.log(`[DICOM_TRACE] setupEngine: imageIndex set to 0`);
+        setCurrentImageIndex(middleIdx);
+        console.log(`[DICOM_TRACE] setupEngine: imageIndex set to ${middleIdx} (middle)`);
+
+        // Outward prefetch from middle. Cornerstone's loadAndCacheImage queues
+        // each request and decodes them via the web-worker pool; we just need
+        // to enqueue them in the order we want them to land. Fire-and-forget;
+        // the rendering thread is not blocked on these.
+        if (!isVolumeMode && imageIds.length > 1) {
+          (async () => {
+            for (let offset = 1; offset < imageIds.length; offset++) {
+              if (!isMounted) return;
+              const ahead  = middleIdx + offset;
+              const behind = middleIdx - offset;
+              if (ahead < imageIds.length) {
+                cornerstone.imageLoader.loadAndCacheImage(imageIds[ahead]).catch(() => {});
+              }
+              if (behind >= 0) {
+                cornerstone.imageLoader.loadAndCacheImage(imageIds[behind]).catch(() => {});
+              }
+              // Yield so we don't enqueue 500 promises in one microtask burst.
+              if (offset % 8 === 0) await new Promise(r => setTimeout(r, 0));
+            }
+          })();
+        }
 
         // Safety net: hide the loader after a longer delay regardless of the render
         // path below, so a silent failure doesn't leave RENDERING_IMAGE up forever.
