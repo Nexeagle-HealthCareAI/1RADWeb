@@ -161,17 +161,22 @@ const ReportingPage = () => {
   useEffect(() => {
     if (!appointmentId || isFinalized) return;
 
-    const draft = {
-      appointmentId,
-      templateId: selectedTemplateId,
-      findings: editorText,
-      impression,
-      advice,
-      reportingMode: 'Narrative',
-      timestamp: new Date().toISOString()
-    };
-
     const timer = setTimeout(async () => {
+      // Read the FRESH editor HTML, not the (debounced) editorText state, so
+      // attribute changes like right-align that haven't crossed the 300 ms
+      // onUpdate debounce yet still get persisted.
+      const freshFindings = editorRef.current?.editor?.getHTML?.() ?? editorText;
+
+      const draft = {
+        appointmentId,
+        templateId: selectedTemplateId,
+        findings: freshFindings,
+        impression,
+        advice,
+        reportingMode: 'Narrative',
+        timestamp: new Date().toISOString()
+      };
+
       try {
         await nativeStorage.set(`1rad_draft_${appointmentId}`, draft);
         if (saveStatus === 'IDLE' || saveStatus === 'SUCCESS') {
@@ -195,10 +200,13 @@ const ReportingPage = () => {
       setIsCloudSyncing(true);
       setSaveStatus('SAVING');
       try {
+        // Same staleness guard as the local autosave + manual save: pull
+        // fresh HTML directly from the editor, skipping the debounced state.
+        const freshFindings = editorRef.current?.editor?.getHTML?.() ?? editorText;
         const payload = {
           appointmentId,
           templateId: selectedTemplateId,
-          findings: editorText,
+          findings: freshFindings,
           impression: impression || '',
           advice: advice || '',
           reportingMode: 'Narrative',
@@ -741,8 +749,12 @@ const ReportingPage = () => {
     if (!appointmentId || isFinalized) return;
 
     const autosaveTimer = setTimeout(async () => {
+      // Pull fresh editor HTML so attribute-only changes (right-align,
+      // text-color, etc.) made within the 300 ms onUpdate debounce window
+      // still make it into the persisted draft.
+      const freshFindings = editorRef.current?.editor?.getHTML?.() ?? editorText;
       const draft = {
-        findings: editorText,
+        findings: freshFindings,
         impression,
         advice,
         selectedTemplateId,
