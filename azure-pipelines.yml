@@ -99,9 +99,14 @@ stages:
 
                 # Download the build artifact INTO the source dir, so the
                 # SWA container can see it under /working_dir/dist.
-                - download: current
-                  artifact: web-dist
-                  path: $(Build.SourcesDirectory)/dist
+                # (Must use the full DownloadPipelineArtifact@2 task — the
+                # `- download:` shorthand doesn't accept a custom path.)
+                - task: DownloadPipelineArtifact@2
+                  displayName: 'Download web-dist into source dir'
+                  inputs:
+                    buildType: 'current'
+                    artifactName: 'web-dist'
+                    targetPath: '$(Build.SourcesDirectory)/dist'
 
                 - task: AzureStaticWebApp@0
                   displayName: Deploy to Azure Static Web Apps (Dev)
@@ -148,9 +153,12 @@ stages:
                 - checkout: self
                   clean: true
 
-                - download: current
-                  artifact: web-dist
-                  path: $(Build.SourcesDirectory)/dist
+                - task: DownloadPipelineArtifact@2
+                  displayName: 'Download web-dist into source dir'
+                  inputs:
+                    buildType: 'current'
+                    artifactName: 'web-dist'
+                    targetPath: '$(Build.SourcesDirectory)/dist'
 
                 - script: |
                     echo "===== PROD DEPLOY ====="
