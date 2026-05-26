@@ -90,13 +90,23 @@ stages:
           runOnce:
             deploy:
               steps:
+                # Checkout is required so the SWA Docker container has a
+                # source directory to mount (it ignores $(Pipeline.Workspace);
+                # only $(Build.SourcesDirectory) is bind-mounted as
+                # /working_dir/ inside the container).
+                - checkout: self
+                  clean: true
+
+                # Download the build artifact INTO the source dir, so the
+                # SWA container can see it under /working_dir/dist.
                 - download: current
                   artifact: web-dist
+                  path: $(Build.SourcesDirectory)/dist
 
                 - task: AzureStaticWebApp@0
                   displayName: Deploy to Azure Static Web Apps (Dev)
                   inputs:
-                    app_location: '$(Pipeline.Workspace)/web-dist'
+                    app_location: 'dist'        # relative to repo root
                     output_location: ''
                     api_location: ''
                     skip_app_build: true
@@ -132,8 +142,15 @@ stages:
           runOnce:
             deploy:
               steps:
+                # Same mounting fix as DeployDev: SWA's container only mounts
+                # $(Build.SourcesDirectory), so we checkout the repo and
+                # download the artifact INTO that directory.
+                - checkout: self
+                  clean: true
+
                 - download: current
                   artifact: web-dist
+                  path: $(Build.SourcesDirectory)/dist
 
                 - script: |
                     echo "===== PROD DEPLOY ====="
@@ -146,7 +163,7 @@ stages:
                 - task: AzureStaticWebApp@0
                   displayName: Deploy to Azure Static Web Apps (Prod)
                   inputs:
-                    app_location: '$(Pipeline.Workspace)/web-dist'
+                    app_location: 'dist'        # relative to repo root
                     output_location: ''
                     api_location: ''
                     skip_app_build: true
