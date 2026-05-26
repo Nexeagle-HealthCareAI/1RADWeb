@@ -1,10 +1,32 @@
-import React, { useState } from 'react';
+import React, { useState, useRef, useLayoutEffect } from 'react';
 import HomeTab from './HomeTab';
 import InsertTab from './InsertTab';
 import LayoutTab from './LayoutTab';
 import ReviewTab from './ReviewTab';
 import ViewTab from './ViewTab';
 import { Icon, ICONS } from './RibbonControls';
+
+// Modern system font stack — clean, premium feel, no network dep.
+const FONT_STACK = '-apple-system, BlinkMacSystemFont, "Segoe UI", "Inter", Roboto, "Helvetica Neue", Arial, sans-serif';
+
+// Premium palette — SLATE accent. Restrained, professional, clinical-grade
+// (matches RibbonControls.jsx token set).
+const COLOR = {
+  bg:           'linear-gradient(180deg, #f8fafc 0%, #f1f5f9 100%)',
+  surface:      '#ffffff',
+  border:       '#e2e8f0',
+  borderSoft:   '#eef2f6',
+  text:         '#0f172a',
+  textMute:     '#64748b',
+  textSoft:     '#94a3b8',
+  accent:       '#334155',
+  accentDeep:   '#1e293b',
+  accentSoft:   '#f1f5f9',
+  danger:       '#dc2626',
+  dangerSoft:   '#fee2e2',
+};
+
+const EASE = 'cubic-bezier(0.16, 1, 0.3, 1)';
 
 // Same safe-can wrapper as in HomeTab — tiptap's internal Editor.can() can throw
 // during concurrent rendering when the editor is mid-init.
@@ -20,35 +42,76 @@ function safeCan(editor, commandName) {
   }
 }
 
+// Tab icons as inline SVGs — replaces emoji for a polished look.
+const TabIcons = {
+  home: (
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M3 9.5 12 3l9 6.5V21a1 1 0 0 1-1 1h-5v-7h-6v7H4a1 1 0 0 1-1-1z" />
+    </svg>
+  ),
+  insert: (
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <line x1="12" y1="5"  x2="12" y2="19" />
+      <line x1="5"  y1="12" x2="19" y2="12" />
+    </svg>
+  ),
+  layout: (
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <rect x="3"  y="3"  width="7" height="9" rx="1" />
+      <rect x="14" y="3"  width="7" height="5" rx="1" />
+      <rect x="14" y="12" width="7" height="9" rx="1" />
+      <rect x="3"  y="16" width="7" height="5" rx="1" />
+    </svg>
+  ),
+  review: (
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <polyline points="20 6 9 17 4 12" />
+    </svg>
+  ),
+  view: (
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8S1 12 1 12z" />
+      <circle cx="12" cy="12" r="3" />
+    </svg>
+  ),
+};
+
 const TABS = [
-  { id: 'home',   label: 'Home',   icon: '🏠' },
-  { id: 'insert', label: 'Insert', icon: '➕' },
-  { id: 'layout', label: 'Layout', icon: '🖼️' },
-  { id: 'review', label: 'Review', icon: '✔️' },
-  { id: 'view',   label: 'View',   icon: '👁️' },
+  { id: 'home',   label: 'Home',   icon: TabIcons.home },
+  { id: 'insert', label: 'Insert', icon: TabIcons.insert },
+  { id: 'layout', label: 'Layout', icon: TabIcons.layout },
+  { id: 'review', label: 'Review', icon: TabIcons.review },
+  { id: 'view',   label: 'View',   icon: TabIcons.view },
 ];
 
 /**
- * Word-style ribbon with modern tab strip + persistent zoom + per-tab body.
+ * Premium ribbon with smooth animated tab indicator, polished pill buttons,
+ * and a save-status pill in the quick-access area.
  */
 export default function Ribbon(props) {
   const {
     editor, onSave, isFullscreen, toggleFullscreen,
     voiceSupported, voiceActive, onToggleVoice,
+    saveStatus,            // '' | 'modified' | 'saving' | 'saved'
+    lastSavedAt,           // Date | null
   } = props;
 
   const [activeTab, setActiveTab] = useState('home');
   const [ribbonCollapsed, setRibbonCollapsed] = useState(false);
 
-  const handleTabClick = (id) => {
-    if (ribbonCollapsed) {
-      setRibbonCollapsed(false);
-      setActiveTab(id);
-    } else {
-      setActiveTab(id);
-    }
-  };
+  // Animated active-tab underline — measures the active tab button and
+  // slides a single absolutely-positioned underline across the tab strip.
+  const tabRefs = useRef({});
+  const [underline, setUnderline] = useState({ left: 0, width: 0 });
+  useLayoutEffect(() => {
+    const node = tabRefs.current[activeTab];
+    if (node) setUnderline({ left: node.offsetLeft, width: node.offsetWidth });
+  }, [activeTab]);
 
+  const handleTabClick = (id) => {
+    if (ribbonCollapsed) setRibbonCollapsed(false);
+    setActiveTab(id);
+  };
   const handleTabDoubleClick = (id) => {
     setActiveTab(id);
     setRibbonCollapsed(c => !c);
@@ -58,266 +121,245 @@ export default function Ribbon(props) {
 
   return (
     <div className="word-ribbon" style={{
-      background: '#f3f3f3',
-      borderBottom: '1px solid #d8d8d8',
+      background: COLOR.bg,
+      borderBottom: `1px solid ${COLOR.border}`,
       flexShrink: 0,
       userSelect: 'none',
-      fontFamily: '"Segoe UI", system-ui, sans-serif',
-      boxShadow: '0 1px 2px rgba(0, 0, 0, 0.06)',
+      fontFamily: FONT_STACK,
+      boxShadow: '0 1px 0 rgba(0, 0, 0, 0.02), 0 4px 12px -8px rgba(0, 0, 0, 0.08)',
     }}>
-      {/* ── Quick Access Toolbar (Word-style, above tab strip) ─────
-           Compact icon-only quick actions on the LEFT.
-           Persistent action buttons (Dictate / Full Screen / Help / Save)
-           moved DOWN to the tab strip's right side for visual consistency. */}
+      <style>{`
+        @keyframes narrative-mic-pulse {
+          0%, 100% { opacity: 1; transform: scale(1); }
+          50%      { opacity: 0.55; transform: scale(0.92); }
+        }
+        @keyframes narrative-save-pulse {
+          0%, 100% { opacity: 1; }
+          50%      { opacity: 0.55; }
+        }
+        .word-ribbon ::-webkit-scrollbar { display: none; }
+      `}</style>
+
+      {/* ── Quick-Access Toolbar ────────────────────────────── */}
       <div style={{
         display: 'flex', alignItems: 'center',
-        gap: '2px',
-        height: '24px', padding: '0 10px',
-        background: '#f3f3f3',
-        borderBottom: '1px solid #ddd',
+        gap: '4px',
+        height: '28px',
+        padding: '0 14px',
+        background: 'transparent',
+        borderBottom: `1px solid ${COLOR.borderSoft}`,
         fontSize: '11px',
       }}>
         <QATBtn
           title="Save (Ctrl+S)"
           onClick={() => onSave?.()}
           icon={(
-            <svg width="13" height="13" viewBox="0 0 16 16" fill="currentColor"><path d="M11 1H3a1 1 0 0 0-1 1v12a1 1 0 0 0 1 1h10a1 1 0 0 0 1-1V4l-3-3zM9 13H5v-3h4v3zm2-7H4V3h7v3z"/></svg>
+            <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor"><path d="M11 1H3a1 1 0 0 0-1 1v12a1 1 0 0 0 1 1h10a1 1 0 0 0 1-1V4l-3-3zM9 13H5v-3h4v3zm2-7H4V3h7v3z"/></svg>
           )}
         />
         <QATBtn
           title="Undo (Ctrl+Z)"
           disabled={!safeCan(editor, 'undo')}
           onClick={() => editor?.chain().focus().undo().run()}
-          icon={<Icon d={ICONS.undo} size={13} />}
+          icon={<Icon d={ICONS.undo} size={14} />}
         />
         <QATBtn
           title="Redo (Ctrl+Y)"
           disabled={!safeCan(editor, 'redo')}
           onClick={() => editor?.chain().focus().redo().run()}
-          icon={<Icon d={ICONS.redo} size={13} />}
+          icon={<Icon d={ICONS.redo} size={14} />}
         />
-        <style>{`
-          @keyframes narrative-mic-pulse {
-            0%, 100% { opacity: 1; transform: scale(1); }
-            50%      { opacity: 0.55; transform: scale(0.92); }
-          }
-        `}</style>
+
+        <SaveStatusPill saveStatus={saveStatus} lastSavedAt={lastSavedAt} />
+
+        {/* Right-aligned filler */}
+        <div style={{ flex: 1 }} />
+
+        {/* Document title placeholder — could later show patient name */}
+        <span style={{
+          fontSize: '11px', color: COLOR.textSoft, fontWeight: 500,
+          letterSpacing: '0.2px',
+        }}>
+          1Rad · Narrative Editor
+        </span>
       </div>
 
-      {/* ── Tab strip (modern) ────────────────────────────── */}
+      {/* ── Tab strip ────────────────────────────────────────── */}
       <div style={{
         display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-        background: '#ffffff',
-        height: '32px',
-        borderBottom: '1px solid #e0e0e0',
-        padding: '0 8px 0 4px',
+        background: COLOR.surface,
+        height: '38px',
+        borderBottom: `1px solid ${COLOR.border}`,
+        padding: '0 12px',
+        position: 'relative',
       }}>
-        <div style={{ display: 'flex', height: '100%', alignItems: 'flex-end' }}>
+        <div style={{ display: 'flex', height: '100%', alignItems: 'center', position: 'relative' }}>
           {TABS.map(t => {
             const isActive = activeTab === t.id;
             return (
               <button
                 key={t.id}
+                ref={el => { if (el) tabRefs.current[t.id] = el; }}
                 onMouseDown={e => { e.preventDefault(); handleTabClick(t.id); }}
                 onDoubleClick={e => { e.preventDefault(); handleTabDoubleClick(t.id); }}
                 style={{
-                  border: 'none',
-                  background: isActive ? '#f3f3f3' : 'transparent',
-                  padding: '0 16px',
-                  height: '30px',
-                  marginBottom: '-1px',
                   position: 'relative',
-                  fontSize: '12px',
-                  fontWeight: isActive ? 700 : 400,
-                  color: isActive ? '#0078d4' : '#3b3b3b',
+                  border: 'none',
+                  background: 'transparent',
+                  padding: '0 16px',
+                  height: '100%',
+                  fontSize: '12.5px',
+                  fontWeight: isActive ? 600 : 500,
+                  color: isActive ? COLOR.accent : COLOR.text,
                   cursor: 'pointer',
                   fontFamily: 'inherit',
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '6px',
-                  letterSpacing: '0.1px',
-                  transition: 'color 0.12s, background 0.12s',
-                  borderRadius: '2px 2px 0 0',
+                  display: 'flex', alignItems: 'center', gap: '7px',
+                  letterSpacing: '0.05px',
+                  transition: `color 0.18s ${EASE}`,
                 }}
-                onMouseEnter={e => { if (!isActive) { e.currentTarget.style.color = '#0078d4'; e.currentTarget.style.background = '#e8f1fc'; } }}
-                onMouseLeave={e => { if (!isActive) { e.currentTarget.style.color = '#3b3b3b'; e.currentTarget.style.background = 'transparent'; } }}
+                onMouseEnter={e => { if (!isActive) e.currentTarget.style.color = COLOR.accent; }}
+                onMouseLeave={e => { if (!isActive) e.currentTarget.style.color = COLOR.text; }}
               >
-                {t.label}
-                {isActive && (
-                  <span style={{
-                    position: 'absolute',
-                    bottom: '-1px', left: '14px', right: '14px',
-                    height: '2.5px', background: '#0078d4',
-                    borderTopLeftRadius: '2px', borderTopRightRadius: '2px',
-                  }} />
-                )}
+                <span style={{ opacity: isActive ? 1 : 0.7, display: 'inline-flex' }}>{t.icon}</span>
+                <span>{t.label}</span>
               </button>
             );
           })}
+          {/* Animated underline that slides between tabs */}
+          <span style={{
+            position: 'absolute',
+            bottom: 0,
+            left: underline.left,
+            width: underline.width,
+            height: '2px',
+            background: COLOR.accent,
+            borderRadius: '2px 2px 0 0',
+            transition: `left 0.32s ${EASE}, width 0.32s ${EASE}`,
+            pointerEvents: 'none',
+          }} />
         </div>
 
-        {/* ── Persistent right-side controls ──────────────────────
-             All elements use a unified 26px-tall row with consistent
-             borders, spacing, and typography. Order (most→least used):
-             Dictate · Full Screen · Help · Save · Collapse ribbon */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-
-          {/* Dictate — moved here from QAT for visual consistency */}
+        {/* ── Persistent right-side controls ──────────────────── */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
           {voiceSupported && onToggleVoice && (
-            <button
-              onMouseDown={e => { e.preventDefault(); onToggleVoice(); }}
-              title={voiceActive ? 'Stop dictation' : 'Start voice dictation'}
-              aria-pressed={voiceActive}
-              style={{
-                display: 'inline-flex', alignItems: 'center', gap: '6px',
-                height: '26px', padding: '0 10px 0 9px',
-                background: voiceActive ? '#dc2626' : '#ffffff',
-                border: `1px solid ${voiceActive ? '#dc2626' : '#d1d5db'}`,
-                borderRadius: '4px',
-                color: voiceActive ? '#ffffff' : '#374151',
-                fontSize: '11.5px', fontWeight: 500,
-                cursor: 'pointer', fontFamily: 'inherit',
-                boxShadow: voiceActive
-                  ? '0 0 0 3px rgba(220, 38, 38, 0.18), 0 1px 2px rgba(220, 38, 38, 0.4)'
-                  : '0 1px 0 rgba(0, 0, 0, 0.02)',
-                transition: 'background 0.12s, border-color 0.12s, color 0.12s, box-shadow 0.12s',
-              }}
-              onMouseEnter={e => {
-                if (!voiceActive) { e.currentTarget.style.background = '#f3f4f6'; e.currentTarget.style.borderColor = '#9ca3af'; }
-              }}
-              onMouseLeave={e => {
-                if (!voiceActive) { e.currentTarget.style.background = '#ffffff'; e.currentTarget.style.borderColor = '#d1d5db'; }
-              }}
-            >
-              <span
-                style={{
-                  display: 'inline-flex',
+            <PillButton
+              icon={(
+                <span style={{ display: 'inline-flex',
                   animation: voiceActive ? 'narrative-mic-pulse 1.2s ease-in-out infinite' : 'none',
-                }}
-              >
-                <Icon d={ICONS.mic} size={13} />
-              </span>
-              <span style={{ lineHeight: 1 }}>{voiceActive ? 'Listening…' : 'Dictate'}</span>
-              {voiceActive && (
-                <span style={{
-                  width: '6px', height: '6px', borderRadius: '50%',
-                  background: '#fff',
-                  animation: 'narrative-mic-pulse 1.2s ease-in-out infinite',
-                }} />
+                }}>
+                  <Icon d={ICONS.mic} size={13} />
+                </span>
               )}
-            </button>
+              label={voiceActive ? 'Listening…' : 'Dictate'}
+              active={voiceActive}
+              activeBg={COLOR.danger}
+              activeRing={'rgba(220, 38, 38, 0.18)'}
+              title={voiceActive ? 'Stop dictation' : 'Start voice dictation'}
+              onClick={onToggleVoice}
+              showDot={voiceActive}
+            />
           )}
 
-          {/* Full Screen */}
           {toggleFullscreen && (
-            <button
-              type="button"
-              onClick={e => { e.preventDefault(); e.stopPropagation(); toggleFullscreen(); }}
+            <PillButton
+              icon={<Icon d={isFullscreen ? ICONS.exitFs : ICONS.fullscreen} size={13} />}
+              label={isFullscreen ? 'Exit Full' : 'Full Screen'}
+              active={isFullscreen}
+              activeBg={COLOR.accent}
+              activeRing={'rgba(0, 102, 255, 0.18)'}
               title={isFullscreen ? 'Exit Full Screen (F11)' : 'Enter Full Screen (F11)'}
-              aria-pressed={isFullscreen}
-              style={{
-                display: 'inline-flex', alignItems: 'center', gap: '6px',
-                height: '26px', padding: '0 10px 0 9px',
-                background: isFullscreen ? '#0078d4' : '#ffffff',
-                border: `1px solid ${isFullscreen ? '#0078d4' : '#d1d5db'}`,
-                borderRadius: '4px',
-                color: isFullscreen ? '#ffffff' : '#374151',
-                fontSize: '11.5px', fontWeight: 500,
-                cursor: 'pointer', fontFamily: 'inherit',
-                boxShadow: isFullscreen
-                  ? '0 1px 2px rgba(0, 120, 212, 0.35)'
-                  : '0 1px 0 rgba(0, 0, 0, 0.02)',
-                transition: 'background 0.12s, border-color 0.12s, color 0.12s',
-              }}
-              onMouseEnter={e => {
-                if (!isFullscreen) { e.currentTarget.style.background = '#f3f4f6'; e.currentTarget.style.borderColor = '#9ca3af'; }
-              }}
-              onMouseLeave={e => {
-                if (!isFullscreen) { e.currentTarget.style.background = '#ffffff'; e.currentTarget.style.borderColor = '#d1d5db'; }
-              }}
-            >
-              <Icon d={isFullscreen ? ICONS.exitFs : ICONS.fullscreen} size={13} />
-              <span style={{ lineHeight: 1 }}>{isFullscreen ? 'Exit Full' : 'Full Screen'}</span>
-            </button>
+              onClick={(e) => { e?.preventDefault?.(); e?.stopPropagation?.(); toggleFullscreen(); }}
+            />
           )}
 
-          {/* Help — circle button matched to 26px height */}
+          {/* Circular help button */}
           <button
             onMouseDown={e => { e.preventDefault(); window.dispatchEvent(new CustomEvent('narrative-editor:open-shortcuts')); }}
             title="Keyboard shortcuts (F1)"
             style={{
-              width: '26px', height: '26px', borderRadius: '50%',
-              background: '#ffffff', border: '1px solid #d1d5db',
-              color: '#555', fontSize: '12px', fontWeight: 700,
+              width: '28px', height: '28px', borderRadius: '50%',
+              background: COLOR.surface, border: `1px solid ${COLOR.border}`,
+              color: COLOR.textMute, fontSize: '13px', fontWeight: 700,
               cursor: 'pointer', fontFamily: 'inherit',
               display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
               flexShrink: 0,
-              transition: 'background 0.12s, border-color 0.12s, color 0.12s',
+              transition: `all 0.18s ${EASE}`,
             }}
-            onMouseEnter={e => { e.currentTarget.style.background = '#f3f4f6'; e.currentTarget.style.borderColor = '#9ca3af'; e.currentTarget.style.color = '#0078d4'; }}
-            onMouseLeave={e => { e.currentTarget.style.background = '#ffffff'; e.currentTarget.style.borderColor = '#d1d5db'; e.currentTarget.style.color = '#555'; }}
+            onMouseEnter={e => {
+              e.currentTarget.style.background = COLOR.accentSoft;
+              e.currentTarget.style.borderColor = COLOR.accent;
+              e.currentTarget.style.color = COLOR.accent;
+            }}
+            onMouseLeave={e => {
+              e.currentTarget.style.background = COLOR.surface;
+              e.currentTarget.style.borderColor = COLOR.border;
+              e.currentTarget.style.color = COLOR.textMute;
+            }}
           >?</button>
 
-          {/* Primary Save button — slightly more visually prominent */}
+          {/* Premium Save button */}
           {onSave && (
             <button
               onMouseDown={e => { e.preventDefault(); onSave(); }}
               title="Save (Ctrl+S)"
               style={{
-                display: 'inline-flex', alignItems: 'center', gap: '6px',
-                height: '26px', padding: '0 14px',
-                background: 'linear-gradient(180deg, #0a8aea 0%, #006bbc 100%)',
-                color: '#fff', border: '1px solid #006bbc',
-                borderRadius: '4px',
-                fontSize: '11.5px', fontWeight: 600,
+                display: 'inline-flex', alignItems: 'center', gap: '7px',
+                height: '28px', padding: '0 16px',
+                background: `linear-gradient(135deg, ${COLOR.accent} 0%, ${COLOR.accentDeep} 100%)`,
+                color: '#fff', border: 'none',
+                borderRadius: '999px',
+                fontSize: '12px', fontWeight: 600,
                 cursor: 'pointer', fontFamily: 'inherit',
-                boxShadow: '0 1px 2px rgba(0, 120, 212, 0.4)',
-                transition: 'background 0.12s, box-shadow 0.12s',
+                letterSpacing: '0.1px',
+                boxShadow: '0 1px 2px rgba(0, 102, 255, 0.30), 0 0 0 1px rgba(0, 102, 255, 0.10), inset 0 1px 0 rgba(255, 255, 255, 0.20)',
+                transition: `all 0.2s ${EASE}`,
               }}
-              onMouseEnter={e => { e.currentTarget.style.background = 'linear-gradient(180deg, #1894f0 0%, #0078d4 100%)'; }}
-              onMouseLeave={e => { e.currentTarget.style.background = 'linear-gradient(180deg, #0a8aea 0%, #006bbc 100%)'; }}
+              onMouseEnter={e => {
+                e.currentTarget.style.transform = 'translateY(-1px)';
+                e.currentTarget.style.boxShadow = '0 4px 12px rgba(0, 102, 255, 0.35), 0 0 0 1px rgba(0, 102, 255, 0.15), inset 0 1px 0 rgba(255, 255, 255, 0.25)';
+              }}
+              onMouseLeave={e => {
+                e.currentTarget.style.transform = 'translateY(0)';
+                e.currentTarget.style.boxShadow = '0 1px 2px rgba(0, 102, 255, 0.30), 0 0 0 1px rgba(0, 102, 255, 0.10), inset 0 1px 0 rgba(255, 255, 255, 0.20)';
+              }}
             >
-              <svg width="12" height="12" viewBox="0 0 16 16" fill="currentColor"><path d="M11 1H3a1 1 0 0 0-1 1v12a1 1 0 0 0 1 1h10a1 1 0 0 0 1-1V4l-3-3zM9 13H5v-3h4v3zm2-7H4V3h7v3z"/></svg>
+              <svg width="13" height="13" viewBox="0 0 16 16" fill="currentColor"><path d="M11 1H3a1 1 0 0 0-1 1v12a1 1 0 0 0 1 1h10a1 1 0 0 0 1-1V4l-3-3zM9 13H5v-3h4v3zm2-7H4V3h7v3z"/></svg>
               <span style={{ lineHeight: 1 }}>Save</span>
             </button>
           )}
 
-          {/* Subtle vertical divider before the collapse toggle */}
-          <span style={{ width: '1px', height: '18px', background: '#d8d8d8', margin: '0 2px' }} />
-
-          {/* Collapse/expand ribbon toggle */}
+          {/* Collapse toggle */}
           <button
             onMouseDown={e => { e.preventDefault(); setRibbonCollapsed(c => !c); }}
             title={ribbonCollapsed ? 'Expand ribbon (Ctrl+F1)' : 'Collapse ribbon (Ctrl+F1)'}
             style={{
-              width: '24px', height: '24px', borderRadius: '3px',
+              width: '26px', height: '26px', borderRadius: '50%',
               background: 'transparent', border: '1px solid transparent',
-              color: '#555', fontSize: '12px', fontWeight: 700,
+              color: COLOR.textMute, fontSize: '12px', fontWeight: 700,
               cursor: 'pointer', fontFamily: 'inherit',
               display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
               flexShrink: 0,
-              transition: 'background 0.1s, border-color 0.1s',
+              transition: `all 0.18s ${EASE}`,
             }}
-            onMouseEnter={e => { e.currentTarget.style.background = '#E5F1FB'; e.currentTarget.style.borderColor = '#A6CDEC'; }}
-            onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.borderColor = 'transparent'; }}
+            onMouseEnter={e => { e.currentTarget.style.background = COLOR.accentSoft; e.currentTarget.style.color = COLOR.accent; }}
+            onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = COLOR.textMute; }}
           >
             {ribbonCollapsed ? '⌄' : '⌃'}
           </button>
         </div>
       </div>
 
-      {/* ── Active tab body ──────────────────────────────── */}
+      {/* ── Active tab body ──────────────────────────────────── */}
       <div style={{
-        height: ribbonCollapsed ? '0' : '90px',
-        padding: ribbonCollapsed ? '0 10px' : '3px 10px 0',
-        background: '#f3f3f3',
+        height: ribbonCollapsed ? '0' : '92px',
+        padding: ribbonCollapsed ? '0 12px' : '4px 12px 0',
+        background: 'transparent',
         overflowX: ribbonCollapsed ? 'hidden' : 'auto',
         overflowY: 'hidden',
         msOverflowStyle: 'none',
         scrollbarWidth: 'none',
-        transition: 'height 0.18s ease, padding 0.18s ease',
+        transition: `height 0.24s ${EASE}, padding 0.24s ${EASE}`,
       }}>
-        <style>{`.word-ribbon ::-webkit-scrollbar { display: none; }`}</style>
         {activeTab === 'home'   && <HomeTab   {...props} />}
         {activeTab === 'insert' && <InsertTab {...props} />}
         {activeTab === 'layout' && <LayoutTab {...props} />}
@@ -329,8 +371,7 @@ export default function Ribbon(props) {
 }
 
 /**
- * Quick-Access Toolbar button — compact 22×20 transparent button that hovers
- * to a subtle gray, matches Word's QAT visual weight.
+ * Quick-Access Toolbar button — refined, larger hit target, accent hover.
  */
 const QATBtn = ({ title, onClick, disabled, icon }) => (
   <button
@@ -339,17 +380,115 @@ const QATBtn = ({ title, onClick, disabled, icon }) => (
     title={title}
     style={{
       display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-      width: '22px', height: '20px', padding: 0,
+      width: '26px', height: '24px', padding: 0,
       background: 'transparent', border: '1px solid transparent',
-      borderRadius: '3px',
-      color: disabled ? '#bbb' : '#444',
+      borderRadius: '6px',
+      color: disabled ? '#c8ccd1' : COLOR.textMute,
       cursor: disabled ? 'not-allowed' : 'pointer',
       fontFamily: 'inherit',
-      transition: 'background 0.08s, border-color 0.08s',
+      transition: `all 0.16s ${EASE}`,
     }}
-            onMouseEnter={e => { if (!disabled) { e.currentTarget.style.background = '#E5F1FB'; e.currentTarget.style.borderColor = '#A6CDEC'; } }}
-    onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.borderColor = 'transparent'; }}
+    onMouseEnter={e => {
+      if (!disabled) {
+        e.currentTarget.style.background = COLOR.accentSoft;
+        e.currentTarget.style.color = COLOR.accent;
+      }
+    }}
+    onMouseLeave={e => {
+      e.currentTarget.style.background = 'transparent';
+      e.currentTarget.style.color = disabled ? '#c8ccd1' : COLOR.textMute;
+    }}
   >
     {icon}
   </button>
 );
+
+/**
+ * Reusable pill-style action button — used by Dictate + Full Screen.
+ */
+const PillButton = ({ icon, label, active, activeBg, activeRing, title, onClick, showDot }) => (
+  <button
+    onMouseDown={e => { e.preventDefault(); onClick?.(e); }}
+    title={title}
+    aria-pressed={active}
+    style={{
+      display: 'inline-flex', alignItems: 'center', gap: '6px',
+      height: '28px', padding: '0 12px 0 11px',
+      background: active ? activeBg : COLOR.surface,
+      border: `1px solid ${active ? activeBg : COLOR.border}`,
+      borderRadius: '999px',
+      color: active ? '#ffffff' : COLOR.text,
+      fontSize: '11.5px', fontWeight: 600,
+      cursor: 'pointer', fontFamily: 'inherit',
+      letterSpacing: '0.1px',
+      boxShadow: active
+        ? `0 0 0 3px ${activeRing}, 0 1px 2px rgba(0, 0, 0, 0.06)`
+        : '0 1px 0 rgba(0, 0, 0, 0.02)',
+      transition: `all 0.18s ${EASE}`,
+    }}
+    onMouseEnter={e => {
+      if (!active) {
+        e.currentTarget.style.background = COLOR.accentSoft;
+        e.currentTarget.style.borderColor = COLOR.accent;
+        e.currentTarget.style.color = COLOR.accent;
+      }
+    }}
+    onMouseLeave={e => {
+      if (!active) {
+        e.currentTarget.style.background = COLOR.surface;
+        e.currentTarget.style.borderColor = COLOR.border;
+        e.currentTarget.style.color = COLOR.text;
+      }
+    }}
+  >
+    {icon}
+    <span style={{ lineHeight: 1 }}>{label}</span>
+    {showDot && (
+      <span style={{
+        width: '6px', height: '6px', borderRadius: '50%',
+        background: '#fff',
+        animation: 'narrative-mic-pulse 1.2s ease-in-out infinite',
+      }} />
+    )}
+  </button>
+);
+
+/**
+ * Save-status pill in the QAT — shows live save state.
+ *   • Modified  → amber
+ *   • Saving…   → blue, pulsing
+ *   • Saved     → green, fades
+ *   • Saved at HH:MM (idle) → grey, subtle
+ */
+const SaveStatusPill = ({ saveStatus, lastSavedAt }) => {
+  let label = null, color = null, bg = null, anim = null;
+
+  if (saveStatus === 'modified') {
+    label = 'Unsaved changes'; color = '#b45309'; bg = 'rgba(251,191,36,0.16)';
+  } else if (saveStatus === 'saving') {
+    label = 'Saving…'; color = COLOR.accent; bg = COLOR.accentSoft;
+    anim = 'narrative-save-pulse 1.2s ease-in-out infinite';
+  } else if (saveStatus === 'saved') {
+    label = '✓ Saved'; color = '#16a34a'; bg = 'rgba(22,163,74,0.12)';
+  } else if (lastSavedAt) {
+    const t = (lastSavedAt instanceof Date ? lastSavedAt : new Date(lastSavedAt))
+      .toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    label = `Saved · ${t}`; color = COLOR.textMute; bg = 'rgba(0, 0, 0, 0.03)';
+  }
+  if (!label) return null;
+
+  return (
+    <span style={{
+      marginLeft: '8px',
+      display: 'inline-flex', alignItems: 'center',
+      height: '20px', padding: '0 10px',
+      background: bg,
+      borderRadius: '999px',
+      color, fontSize: '10.5px', fontWeight: 600,
+      letterSpacing: '0.2px',
+      animation: anim ?? 'none',
+    }}>
+      {label}
+    </span>
+  );
+};

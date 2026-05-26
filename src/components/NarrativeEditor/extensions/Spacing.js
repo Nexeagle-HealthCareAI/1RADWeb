@@ -5,13 +5,16 @@ import { Extension } from '@tiptap/core';
  * Usage: editor.chain().focus().setLineHeight('1.5').run()
  *        editor.chain().focus().unsetLineHeight().run()
  *
- * Clinical-report safety: CSS line-height < 1.0 causes physically overlapping
- * text rows. We clamp the *rendered* line-height to a minimum of 1.0 so a user
- * typing "0.5" into the custom-spacing dialog doesn't produce an unreadable
- * report. The attribute is stored as the user entered it (so the dropdown
+ * Clinical-report safety: CSS line-height < 0.5 makes lines physically
+ * overlap and become unreadable. We allow tight spacing down to 0.5× (useful
+ * for compact bullet findings) but clamp the *rendered* line-height to that
+ * floor. The attribute is stored as the user entered it (so the dropdown
  * still shows their choice), but the visual minimum is enforced at render time.
  */
-const MIN_LINE_HEIGHT = 1.0;
+// Allows tight spacing (e.g. compact bullet findings) down to 0.5×. Below
+// that lines actually start overlapping and become unreadable, so 0.5 is
+// the floor.
+const MIN_LINE_HEIGHT = 0.5;
 function clampLineHeightValue(value) {
   if (value == null || value === '') return value;
   const s = String(value).trim();

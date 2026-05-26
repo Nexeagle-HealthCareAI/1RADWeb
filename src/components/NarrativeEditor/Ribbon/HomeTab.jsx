@@ -81,22 +81,24 @@ const ChangeCaseDropdown = ({ editor }) => {
         onMouseDown={e => { e.preventDefault(); setOpen(v => !v); }}
         title="Change Case"
         style={{
-          display: 'inline-flex', alignItems: 'center', gap: '3px',
-          minWidth: '34px', height: '26px', padding: '0 6px',
-          background: open ? '#CCE4F7' : 'transparent',
-          border: `1px solid ${open ? '#106EBE' : 'transparent'}`,
-          borderRadius: '3px', cursor: 'pointer',
-          color: open ? '#004578' : '#1f1f1f',
-          fontSize: '13px', fontFamily: '"Segoe UI", system-ui, sans-serif',
-          fontWeight: open ? 600 : 400,
+          display: 'inline-flex', alignItems: 'center', gap: '4px',
+          minWidth: '38px', height: '28px', padding: '0 8px',
+          background: open ? '#dde7fb' : 'transparent',
+          border: `1px solid ${open ? '#0066ff' : 'transparent'}`,
+          borderRadius: '6px', cursor: 'pointer',
+          color: open ? '#0050d4' : '#1f2937',
+          fontSize: '13px',
+          fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", "Inter", Roboto, "Helvetica Neue", Arial, sans-serif',
+          fontWeight: open ? 600 : 500,
           lineHeight: 1,
-          transition: 'background 0.08s, border-color 0.08s',
+          boxShadow: open ? 'inset 0 0 0 1px rgba(0, 102, 255, 0.18)' : 'none',
+          transition: 'all 0.16s cubic-bezier(0.16, 1, 0.3, 1)',
         }}
-        onMouseEnter={e => { if (!open) { e.currentTarget.style.background = '#E5F1FB'; e.currentTarget.style.borderColor = '#A6CDEC'; } }}
-        onMouseLeave={e => { if (!open) { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.borderColor = 'transparent'; } }}
+        onMouseEnter={e => { if (!open) { e.currentTarget.style.background = '#eef4ff'; e.currentTarget.style.borderColor = '#c5d6ee'; e.currentTarget.style.color = '#0050d4'; } }}
+        onMouseLeave={e => { if (!open) { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.borderColor = 'transparent'; e.currentTarget.style.color = '#1f2937'; } }}
       >
-        <span style={{ fontWeight: 600 }}>Aa</span>
-        <span style={{ fontSize: '8px', marginTop: '2px' }}>▾</span>
+        <span style={{ fontWeight: 700 }}>Aa</span>
+        <span style={{ fontSize: '9px', marginTop: '1px', opacity: 0.7 }}>▾</span>
       </button>
       {open && portalTarget && createPortal(
         <div ref={menuRef} style={{
@@ -350,13 +352,15 @@ export default function HomeTab({ editor, showFormattingMarks, onToggleFormattin
 
   return (
     <div style={{ display: 'flex', alignItems: 'stretch', height: '100%' }}>
-      {/* ── Clipboard group ─────────────────────────────── */}
+      {/* ── Clipboard group — premium BigBtn + label-row Btns ─────── */}
       <Group label="Clipboard">
         <div style={{ display: 'flex', gap: '4px', alignItems: 'center', height: '100%' }}>
 
-          {/* Paste — tall primary button */}
-          <button
-            onMouseDown={e => e.preventDefault()}
+          {/* Paste — primary BigBtn */}
+          <BigBtn
+            title="Paste (Ctrl+V)"
+            label="Paste"
+            icon={<Icon d="M4 1.5H3a2 2 0 0 0-2 2V14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V3.5a2 2 0 0 0-2-2h-1v1h1a1 1 0 0 1 1 1V14a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1V3.5a1 1 0 0 1 1-1h1v-1zM9.5 1v1h-3V1h3zm-4-1a1 1 0 0 0-1 1v2a1 1 0 0 0 1 1h5a1 1 0 0 0 1-1V1a1 1 0 0 0-1-1z" size={20} />}
             onClick={async () => {
               try {
                 const items = await navigator.clipboard.read();
@@ -372,107 +376,40 @@ export default function HomeTab({ editor, showFormattingMarks, onToggleFormattin
                 if (text) editor.chain().focus().insertContent(text).run();
               } catch {}
             }}
-            title="Paste (Ctrl+V)"
-            style={{
-              display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
-              gap: '5px', width: '48px', height: '62px',
-              background: 'transparent', border: '1px solid transparent',
-              borderRadius: '3px', cursor: 'pointer', flexShrink: 0,
-              fontFamily: '"Segoe UI", system-ui, sans-serif',
-            }}
-            onMouseEnter={e => { e.currentTarget.style.background = '#DEECF9'; e.currentTarget.style.borderColor = '#C7E0F4'; }}
-            onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.borderColor = 'transparent'; }}
-          >
-            <Icon d="M4 1.5H3a2 2 0 0 0-2 2V14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V3.5a2 2 0 0 0-2-2h-1v1h1a1 1 0 0 1 1 1V14a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1V3.5a1 1 0 0 1 1-1h1v-1zM9.5 1v1h-3V1h3zm-4-1a1 1 0 0 0-1 1v2a1 1 0 0 0 1 1h5a1 1 0 0 0 1-1V1a1 1 0 0 0-1-1z" size={24} />
-            <span style={{ fontSize: '10px', color: '#1f1f1f', lineHeight: 1, fontWeight: 500 }}>Paste</span>
-          </button>
+          />
 
-          {/* Divider line */}
-          <div style={{ width: '1px', height: '48px', background: '#d8d8d8', flexShrink: 0 }} />
-
-          {/* Cut / Copy / Painter — vertical stack */}
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
-            {/* Cut */}
-            <button
-              onMouseDown={e => { e.preventDefault(); document.execCommand('cut'); }}
+          {/* Secondary actions — vertical stack with labels */}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '3px' }}>
+            <Btn
+              onClick={() => document.execCommand('cut')}
               title="Cut (Ctrl+X)"
-              style={{
-                display: 'flex', alignItems: 'center', gap: '5px',
-                height: '18px', padding: '0 6px',
-                background: 'transparent', border: '1px solid transparent',
-                borderRadius: '2px', cursor: 'pointer',
-                fontSize: '11px', color: '#1f1f1f',
-                fontFamily: '"Segoe UI", system-ui, sans-serif', whiteSpace: 'nowrap',
-                boxSizing: 'border-box',
-              }}
-              onMouseEnter={e => { e.currentTarget.style.background = '#DEECF9'; e.currentTarget.style.borderColor = '#C7E0F4'; }}
-              onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.borderColor = 'transparent'; }}
+              style={{ height: '20px', fontSize: '11.5px', gap: '6px', justifyContent: 'flex-start', minWidth: '78px' }}
             >
               <Icon d="M9.828.722a.5.5 0 0 1 .354.146l4.95 4.95a.5.5 0 0 1 0 .707c-.48.48-1.072.588-1.503.588-.177 0-.335-.018-.46-.039l-3.134 3.134a5.5 5.5 0 0 1 .16 1.013c.046.702-.032 1.687-.72 2.375a.5.5 0 0 1-.707 0l-2.829-2.828-3.182 3.182a.5.5 0 0 1-.707-.707l3.182-3.182-2.828-2.829a.5.5 0 0 1 0-.707c.688-.688 1.673-.767 2.375-.72a5.5 5.5 0 0 1 1.013.16l3.134-3.133a2.7 2.7 0 0 1-.04-.461c0-.43.108-1.022.589-1.503a.5.5 0 0 1 .353-.146" size={11} />
-              Cut
-            </button>
-
-            {/* Copy to Clipboard */}
-            <button
-              onMouseDown={e => { e.preventDefault(); document.execCommand('copy'); }}
-              title="Copy to Clipboard (Ctrl+C)"
-              style={{
-                display: 'flex', alignItems: 'center', gap: '5px',
-                height: '18px', padding: '0 6px',
-                background: 'transparent', border: '1px solid transparent',
-                borderRadius: '2px', cursor: 'pointer',
-                fontSize: '11px', color: '#1f1f1f',
-                fontFamily: '"Segoe UI", system-ui, sans-serif', whiteSpace: 'nowrap',
-                boxSizing: 'border-box',
-              }}
-              onMouseEnter={e => { e.currentTarget.style.background = '#DEECF9'; e.currentTarget.style.borderColor = '#C7E0F4'; }}
-              onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.borderColor = 'transparent'; }}
+              <span style={{ marginLeft: '4px' }}>Cut</span>
+            </Btn>
+            <Btn
+              onClick={() => document.execCommand('copy')}
+              title="Copy (Ctrl+C)"
+              style={{ height: '20px', fontSize: '11.5px', gap: '6px', justifyContent: 'flex-start', minWidth: '78px' }}
             >
               <Icon d="M4 1.5H3a2 2 0 0 0-2 2V14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V3.5a2 2 0 0 0-2-2h-1v1h1a1 1 0 0 1 1 1V14a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1V3.5a1 1 0 0 1 1-1h1v-1zM9.5 1v1h-3V1h3zm-4-1a1 1 0 0 0-1 1v2a1 1 0 0 0 1 1h5a1 1 0 0 0 1-1V1a1 1 0 0 0-1-1z" size={11} />
-              Copy
-            </button>
-
-            {/* Format Painter */}
-            <button
-              onMouseDown={e => {
-                e.preventDefault();
-                if (painterActive) {
-                  editor.chain().focus().cancelFormatPainter().run();
-                } else {
-                  editor.chain().focus().pickupFormat().run();
-                }
+              <span style={{ marginLeft: '4px' }}>Copy</span>
+            </Btn>
+            <Btn
+              onClick={() => {
+                if (painterActive) editor.chain().focus().cancelFormatPainter().run();
+                else editor.chain().focus().pickupFormat().run();
               }}
+              active={painterActive}
               title={painterActive
                 ? 'Format Painter active — click again to cancel  (Ctrl+Shift+C / V)'
                 : 'Format Painter — pick up formatting  (Ctrl+Shift+C)'}
-              style={{
-                display: 'flex', alignItems: 'center', gap: '5px',
-                height: '18px', padding: '0 6px',
-                background: painterActive ? '#DEECF9' : 'transparent',
-                border: `1px solid ${painterActive ? '#2B86CE' : 'transparent'}`,
-                boxShadow: painterActive ? '0 0 0 1px #2B86CE' : 'none',
-                borderRadius: '2px', cursor: 'pointer',
-                fontSize: '11px', color: painterActive ? '#004578' : '#1f1f1f',
-                fontWeight: painterActive ? 600 : 400,
-                fontFamily: '"Segoe UI", system-ui, sans-serif', whiteSpace: 'nowrap',
-                boxSizing: 'border-box',
-              }}
-              onMouseEnter={e => {
-                if (!painterActive) {
-                  e.currentTarget.style.background = '#DEECF9';
-                  e.currentTarget.style.borderColor = '#C7E0F4';
-                }
-              }}
-              onMouseLeave={e => {
-                if (!painterActive) {
-                  e.currentTarget.style.background = 'transparent';
-                  e.currentTarget.style.borderColor = 'transparent';
-                }
-              }}
+              style={{ height: '20px', fontSize: '11.5px', gap: '6px', justifyContent: 'flex-start', minWidth: '78px' }}
             >
               <Icon d={ICONS.painter} size={11} />
-              Painter
-            </button>
+              <span style={{ marginLeft: '4px' }}>Painter</span>
+            </Btn>
           </div>
 
         </div>
@@ -572,11 +509,152 @@ export default function HomeTab({ editor, showFormattingMarks, onToggleFormattin
 
       <Sep />
 
-      {/* ── Paragraph group ─────────────────────────────── */}
+      {/* ── Paragraph group ─────────────────────────────────────────
+           Row 1: alignment.   Row 2: indent + line spacing + paragraph
+           shading + borders. List-specific controls moved to the new
+           Lists group on the right. */}
       <Group label="Paragraph" onLauncher={() => window.dispatchEvent(new CustomEvent('narrative-editor:open-paragraph-dialog'))}>
         <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', alignItems: 'flex-start' }}>
+          <div style={{ display: 'flex', gap: '1px' }}>
+            <Btn onClick={() => editor.chain().focus().setTextAlign('left').run()} active={editor.isActive({ textAlign: 'left' })} title="Align Left (Ctrl+L)">
+              <Icon d={ICONS.alignL} />
+            </Btn>
+            <Btn onClick={() => editor.chain().focus().setTextAlign('center').run()} active={editor.isActive({ textAlign: 'center' })} title="Center (Ctrl+E)">
+              <Icon d={ICONS.alignC} />
+            </Btn>
+            <Btn onClick={() => editor.chain().focus().setTextAlign('right').run()} active={editor.isActive({ textAlign: 'right' })} title="Align Right (Ctrl+R)">
+              <Icon d={ICONS.alignR} />
+            </Btn>
+            <Btn onClick={() => editor.chain().focus().setTextAlign('justify').run()} active={editor.isActive({ textAlign: 'justify' })} title="Justify (Ctrl+J)">
+              <Icon d={ICONS.alignJ} />
+            </Btn>
+          </div>
           <div style={{ display: 'flex', gap: '1px', alignItems: 'center' }}>
-            {/* Bullet list — split button */}
+            <Btn
+              onClick={() => {
+                if (editor.can().liftListItem('listItem')) editor.chain().focus().liftListItem('listItem').run();
+                else editor.chain().focus().decreaseParagraphIndent().run();
+              }}
+              title="Decrease Indent (Shift+Tab)"
+              style={{ fontSize: '14px' }}
+            >⇤</Btn>
+            <Btn
+              onClick={() => {
+                if (editor.can().sinkListItem('listItem')) editor.chain().focus().sinkListItem('listItem').run();
+                else editor.chain().focus().increaseParagraphIndent().run();
+              }}
+              title="Increase Indent (Tab)"
+              style={{ fontSize: '14px' }}
+            >⇥</Btn>
+            <Combobox
+              value={editor.getAttributes('paragraph').lineHeight || editor.getAttributes('heading').lineHeight || ''}
+              onChange={async v => {
+                if (v === '__custom__') {
+                  const current = editor.getAttributes('paragraph').lineHeight || editor.getAttributes('heading').lineHeight || '1.6';
+                  const input = await editorPrompt({
+                    title: 'Custom Line Spacing',
+                    message: 'Enter a number (e.g. 1.75) or value with unit (e.g. 24px, 150%). Minimum is 0.5 — anything tighter would overlap text.',
+                    defaultValue: String(current),
+                    placeholder: '1.75',
+                    confirmLabel: 'Apply',
+                  });
+                  if (input == null) return;
+                  const trimmed = input.trim();
+                  if (!trimmed) {
+                    editor.chain().focus().unsetLineHeight().run();
+                  } else {
+                    const asNum = parseFloat(trimmed);
+                    if (Number.isFinite(asNum) && asNum < 0.5 && !/[a-z%]/i.test(trimmed)) {
+                      console.info(`[NarrativeEditor] Line-spacing ${trimmed} below safe minimum — clamped to 0.5 to avoid overlapping text.`);
+                    }
+                    editor.chain().focus().setLineHeight(trimmed).run();
+                  }
+                  return;
+                }
+                if (v) editor.chain().focus().setLineHeight(v).run();
+                else editor.chain().focus().unsetLineHeight().run();
+              }}
+              options={[
+                { value: '', label: 'Spacing' },
+                { value: '0.5', label: '0.5' },
+                { value: '1', label: '1.0' },
+                { value: '1.15', label: '1.15' },
+                { value: '1.5', label: '1.5' },
+                { value: '2', label: '2.0' },
+                { value: '2.5', label: '2.5' },
+                { value: '3', label: '3.0' },
+                { value: '__custom__', label: 'Custom…' },
+              ]}
+              width={78}
+              title="Line Spacing"
+            />
+
+            {/* Shading — paragraph background color */}
+            <span ref={shadingBtnRef} style={{ display: 'inline-flex' }}>
+              <Btn
+                onClick={() => { setShowShading(v => !v); setShowBorders(false); }}
+                active={showShading || !!editor.getAttributes('paragraph').shading}
+                title="Paragraph Shading"
+                style={{ minWidth: '28px' }}
+              >
+                <span style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '1px' }}>
+                  <span style={{ fontSize: '11px' }}>🪣</span>
+                  <span style={{
+                    width: '14px', height: '3px',
+                    background: editor.getAttributes('paragraph').shading || '#ffeb3b',
+                    borderRadius: '1px',
+                  }} />
+                </span>
+              </Btn>
+            </span>
+            {showShading && (
+              <ColorPicker
+                anchorEl={shadingBtnRef.current}
+                onSelect={c => editor.chain().focus().setParagraphShading(c).run()}
+                onClear={() => editor.chain().focus().unsetParagraphShading().run()}
+                onClose={() => setShowShading(false)}
+                clearLabel="No shading"
+              />
+            )}
+
+            {/* Borders */}
+            <span ref={bordersBtnRef} style={{ display: 'inline-flex' }}>
+              <Btn
+                onClick={() => { setShowBorders(v => !v); setShowShading(false); }}
+                active={showBorders || !!editor.getAttributes('paragraph').borders}
+                title="Paragraph Borders"
+                style={{ minWidth: '28px' }}
+              >
+                <span style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '1px' }}>
+                  <span style={{
+                    width: '14px', height: '10px',
+                    border: '1px solid currentColor',
+                    boxSizing: 'border-box',
+                  }} />
+                  <span style={{ fontSize: '7px', lineHeight: 1 }}>▾</span>
+                </span>
+              </Btn>
+            </span>
+            {showBorders && (
+              <BordersMenu
+                anchor={bordersBtnRef.current}
+                onClose={() => setShowBorders(false)}
+                onPick={(b) => editor.chain().focus().setParagraphBorders(b).run()}
+                onClear={() => editor.chain().focus().unsetParagraphBorders().run()}
+              />
+            )}
+          </div>
+        </div>
+      </Group>
+
+      <Sep />
+
+      {/* ── Lists group (NEW — carved out of Paragraph) ─────────────
+           Row 1: bullet / numbered (both split buttons with style picker) +
+           multilevel + sort.   Row 2: ¶ formatting marks. */}
+      <Group label="Lists">
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', alignItems: 'flex-start' }}>
+          <div style={{ display: 'flex', gap: '1px', alignItems: 'center' }}>
             <SplitButton
               btnRef={bulletBtnRef}
               active={editor.isActive('bulletList')}
@@ -606,7 +684,6 @@ export default function HomeTab({ editor, showFormattingMarks, onToggleFormattin
               />
             )}
 
-            {/* Numbered list — split button */}
             <SplitButton
               btnRef={orderedBtnRef}
               active={editor.isActive('orderedList')}
@@ -633,22 +710,6 @@ export default function HomeTab({ editor, showFormattingMarks, onToggleFormattin
             )}
 
             <Btn
-              onClick={() => {
-                if (editor.can().liftListItem('listItem')) editor.chain().focus().liftListItem('listItem').run();
-                else editor.chain().focus().decreaseParagraphIndent().run();
-              }}
-              title="Decrease Indent (Shift+Tab)"
-              style={{ fontSize: '14px' }}
-            >⇤</Btn>
-            <Btn
-              onClick={() => {
-                if (editor.can().sinkListItem('listItem')) editor.chain().focus().sinkListItem('listItem').run();
-                else editor.chain().focus().increaseParagraphIndent().run();
-              }}
-              title="Increase Indent (Tab)"
-              style={{ fontSize: '14px' }}
-            >⇥</Btn>
-            <Btn
               onClick={() => editor.chain().focus().toggleMultilevelList().run()}
               active={
                 (editor.isActive('orderedList') && editor.getAttributes('orderedList').multilevel) ||
@@ -666,125 +727,16 @@ export default function HomeTab({ editor, showFormattingMarks, onToggleFormattin
             <Btn
               onClick={() => editor.chain().focus().sortSelected('asc').run()}
               title="Sort A → Z (selected list / paragraphs)"
-              style={{ fontSize: '12px', fontWeight: 600, minWidth: '28px' }}
+              style={{ fontSize: '12px', fontWeight: 600, minWidth: '32px' }}
             >A↓Z</Btn>
+          </div>
+          <div style={{ display: 'flex', gap: '1px' }}>
             <Btn
               onClick={() => onToggleFormattingMarks?.()}
               active={!!showFormattingMarks}
               title="Show/Hide formatting marks (¶)"
               style={{ fontSize: '13px', fontWeight: 700 }}
             >¶</Btn>
-            <Combobox
-              value={editor.getAttributes('paragraph').lineHeight || editor.getAttributes('heading').lineHeight || ''}
-              onChange={async v => {
-                if (v === '__custom__') {
-                  const current = editor.getAttributes('paragraph').lineHeight || editor.getAttributes('heading').lineHeight || '1.6';
-                  const input = await editorPrompt({
-                    title: 'Custom Line Spacing',
-                    message: 'Enter a number (e.g. 1.75) or value with unit (e.g. 24px, 150%). Minimum is 1.0 — anything below would overlap text.',
-                    defaultValue: String(current),
-                    placeholder: '1.75',
-                    confirmLabel: 'Apply',
-                  });
-                  if (input == null) return;
-                  const trimmed = input.trim();
-                  if (!trimmed) {
-                    editor.chain().focus().unsetLineHeight().run();
-                  } else {
-                    // Show a one-line note if the value would have overlapped (clamped by the extension).
-                    const asNum = parseFloat(trimmed);
-                    if (Number.isFinite(asNum) && asNum < 1 && !/[a-z%]/i.test(trimmed)) {
-                      console.info(`[NarrativeEditor] Line-spacing ${trimmed} below safe minimum — clamped to 1.0 to avoid overlapping text.`);
-                    }
-                    editor.chain().focus().setLineHeight(trimmed).run();
-                  }
-                  return;
-                }
-                if (v) editor.chain().focus().setLineHeight(v).run();
-                else editor.chain().focus().unsetLineHeight().run();
-              }}
-              options={[
-                { value: '', label: 'Spacing' },
-                { value: '1', label: '1.0' },
-                { value: '1.15', label: '1.15' },
-                { value: '1.5', label: '1.5' },
-                { value: '2', label: '2.0' },
-                { value: '2.5', label: '2.5' },
-                { value: '3', label: '3.0' },
-                { value: '__custom__', label: 'Custom…' },
-              ]}
-              width={84}
-              title="Line Spacing"
-            />
-          </div>
-          <div style={{ display: 'flex', gap: '1px' }}>
-            <Btn onClick={() => editor.chain().focus().setTextAlign('left').run()} active={editor.isActive({ textAlign: 'left' })} title="Align Left (Ctrl+L)">
-              <Icon d={ICONS.alignL} />
-            </Btn>
-            <Btn onClick={() => editor.chain().focus().setTextAlign('center').run()} active={editor.isActive({ textAlign: 'center' })} title="Center (Ctrl+E)">
-              <Icon d={ICONS.alignC} />
-            </Btn>
-            <Btn onClick={() => editor.chain().focus().setTextAlign('right').run()} active={editor.isActive({ textAlign: 'right' })} title="Align Right (Ctrl+R)">
-              <Icon d={ICONS.alignR} />
-            </Btn>
-            <Btn onClick={() => editor.chain().focus().setTextAlign('justify').run()} active={editor.isActive({ textAlign: 'justify' })} title="Justify (Ctrl+J)">
-              <Icon d={ICONS.alignJ} />
-            </Btn>
-
-            {/* Shading — paragraph background color */}
-            <span ref={shadingBtnRef} style={{ display: 'inline-flex' }}>
-              <Btn
-                onClick={() => { setShowShading(v => !v); setShowBorders(false); }}
-                active={showShading || !!editor.getAttributes('paragraph').shading}
-                title="Paragraph Shading"
-                style={{ minWidth: '30px' }}
-              >
-                <span style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '1px' }}>
-                  <span style={{ fontSize: '11px' }}>🪣</span>
-                  <span style={{
-                    width: '14px', height: '3px',
-                    background: editor.getAttributes('paragraph').shading || '#ffeb3b',
-                    borderRadius: '1px',
-                  }} />
-                </span>
-              </Btn>
-            </span>
-            {showShading && (
-              <ColorPicker
-                anchorEl={shadingBtnRef.current}
-                onSelect={c => editor.chain().focus().setParagraphShading(c).run()}
-                onClear={() => editor.chain().focus().unsetParagraphShading().run()}
-                onClose={() => setShowShading(false)}
-                clearLabel="No shading"
-              />
-            )}
-
-            {/* Borders */}
-            <span ref={bordersBtnRef} style={{ display: 'inline-flex' }}>
-              <Btn
-                onClick={() => { setShowBorders(v => !v); setShowShading(false); }}
-                active={showBorders || !!editor.getAttributes('paragraph').borders}
-                title="Paragraph Borders"
-                style={{ minWidth: '30px' }}
-              >
-                <span style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '1px' }}>
-                  <span style={{
-                    width: '14px', height: '10px',
-                    border: '1px solid currentColor',
-                    boxSizing: 'border-box',
-                  }} />
-                  <span style={{ fontSize: '7px', lineHeight: 1 }}>▾</span>
-                </span>
-              </Btn>
-            </span>
-            {showBorders && (
-              <BordersMenu
-                anchor={bordersBtnRef.current}
-                onClose={() => setShowBorders(false)}
-                onPick={(b) => editor.chain().focus().setParagraphBorders(b).run()}
-                onClear={() => editor.chain().focus().unsetParagraphBorders().run()}
-              />
-            )}
           </div>
         </div>
       </Group>
@@ -798,20 +750,9 @@ export default function HomeTab({ editor, showFormattingMarks, onToggleFormattin
 
       <Sep />
 
-      {/* ── History group ───────────────────────────────── */}
-      <Group label="History">
-        <Btn onClick={() => editor?.chain().focus().undo().run()} disabled={!safeCan(editor, 'undo')} title="Undo (Ctrl+Z)">
-          <Icon d={ICONS.undo} />
-        </Btn>
-        <Btn onClick={() => editor?.chain().focus().redo().run()} disabled={!safeCan(editor, 'redo')} title="Redo (Ctrl+Y)">
-          <Icon d={ICONS.redo} />
-        </Btn>
-      </Group>
-
-      <Sep />
-
-      {/* ── Editing group (Word convention: Find / Replace / Select on Home) ── */}
-      <Group label="Editing">
+      {/* ── Find group (was "Editing") — Undo/Redo removed; they live
+           in the Quick Access Toolbar at the top of the ribbon. */}
+      <Group label="Find">
         <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', alignItems: 'flex-start' }}>
           <button
             onMouseDown={e => { e.preventDefault(); window.dispatchEvent(new CustomEvent('narrative-editor:open-find-replace', { detail: { focusReplace: false } })); }}

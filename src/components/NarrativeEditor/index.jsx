@@ -1695,6 +1695,8 @@ const NarrativeEditor = React.forwardRef(function NarrativeEditor({
         <Ribbon
           editor={editor}
           onSave={onSave}
+          saveStatus={saveStatus}
+          lastSavedAt={lastSavedAt}
           isFullscreen={isFullscreen || cssFullscreen}
           toggleFullscreen={toggleFullscreen}
           zoom={zoom}

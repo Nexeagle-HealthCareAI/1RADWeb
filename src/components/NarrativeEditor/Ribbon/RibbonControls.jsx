@@ -1,6 +1,26 @@
 import React, { useRef, useEffect, useState, useLayoutEffect } from 'react';
 import { createPortal } from 'react-dom';
 
+// ── Premium design tokens — shared by every primitive ─────────────────────────
+//
+// SLATE accent palette — restrained, professional, very 'Apple Pro' feel.
+// Compact density. Strong group dividers. Single source of truth — change
+// values here and every Btn/BigBtn/SplitButton/Group/Sep updates in one pass.
+const FONT_STACK = '-apple-system, BlinkMacSystemFont, "Segoe UI", "Inter", Roboto, "Helvetica Neue", Arial, sans-serif';
+const EASE = 'cubic-bezier(0.16, 1, 0.3, 1)';
+const C = {
+  text:         '#0f172a',     // slate-900
+  textMute:     '#64748b',     // slate-500
+  accent:       '#334155',     // slate-700 (the chosen accent)
+  accentDeep:   '#1e293b',     // slate-800 — active text
+  accentSoft:   '#f1f5f9',     // slate-100 — hover tint
+  accentMid:    '#e2e8f0',     // slate-200 — active fill
+  accentBorder: '#cbd5e1',     // slate-300 — hover border
+  accentActive: '#334155',     // slate-700 — active border
+  border:       '#e2e8f0',     // slate-200
+  divider:      '#cbd5e1',     // slate-300 — STRONG separator
+};
+
 // ── Shared primitives for the ribbon ─────────────────────────────────────────
 
 export const Btn = ({ onClick, disabled, active, title, children, style = {} }) => (
@@ -11,26 +31,26 @@ export const Btn = ({ onClick, disabled, active, title, children, style = {} }) 
     style={{
       display: 'flex', alignItems: 'center', justifyContent: 'center',
       minWidth: '26px', height: '26px', padding: '0 6px',
-      background: active ? '#CCE4F7' : 'transparent',
-      border: `1px solid ${active ? '#106EBE' : 'transparent'}`,
-      borderRadius: '3px', cursor: disabled ? 'not-allowed' : 'pointer',
-      fontSize: '13px', color: active ? '#004578' : '#1f1f1f',
+      background: active ? C.accentMid : 'transparent',
+      border: `1px solid ${active ? C.accentActive : 'transparent'}`,
+      borderRadius: '6px', cursor: disabled ? 'not-allowed' : 'pointer',
+      fontSize: '13px', color: active ? C.accentDeep : C.text,
       opacity: disabled ? 0.38 : 1, lineHeight: 1, flexShrink: 0,
-      fontFamily: '"Segoe UI", system-ui, sans-serif',
-      fontWeight: active ? 600 : 400,
-      transition: 'background 0.08s, border-color 0.08s, box-shadow 0.08s',
-      boxShadow: active ? 'inset 0 0 0 1px rgba(16, 110, 190, 0.15)' : 'none',
+      fontFamily: FONT_STACK,
+      fontWeight: active ? 600 : 500,
+      transition: `background 0.16s ${EASE}, border-color 0.16s ${EASE}, color 0.16s ${EASE}, box-shadow 0.16s ${EASE}`,
+      boxShadow: active ? `inset 0 0 0 1px ${C.accent}25` : 'none',
       ...style,
     }}
-    onMouseEnter={e => { if (!disabled && !active) { e.currentTarget.style.background = '#E5F1FB'; e.currentTarget.style.borderColor = '#A6CDEC'; } }}
-    onMouseLeave={e => { if (!active) { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.borderColor = 'transparent'; } }}
+    onMouseEnter={e => { if (!disabled && !active) { e.currentTarget.style.background = C.accentSoft; e.currentTarget.style.borderColor = C.accentBorder; e.currentTarget.style.color = C.accentDeep; } }}
+    onMouseLeave={e => { if (!active) { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.borderColor = 'transparent'; e.currentTarget.style.color = C.text; } }}
   >
     {children}
   </button>
 );
 
 /**
- * Larger "split" button — Word-style big icon with label below.
+ * Larger "split" button — premium card-like button with icon + label below.
  * Used for primary actions in a group (e.g. Paste, Format Painter).
  */
 export const BigBtn = ({ onClick, disabled, active, title, icon, label, style = {} }) => (
@@ -39,81 +59,117 @@ export const BigBtn = ({ onClick, disabled, active, title, icon, label, style = 
     disabled={disabled}
     title={title}
     style={{
-      display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'flex-start',
-      gap: '3px',
-      minWidth: '50px', height: '62px', padding: '6px 6px 4px',
-      background: active ? '#CCE4F7' : 'transparent',
-      border: `1px solid ${active ? '#106EBE' : 'transparent'}`,
-      borderRadius: '3px', cursor: disabled ? 'not-allowed' : 'pointer',
-      fontSize: '10.5px', color: active ? '#004578' : '#1f1f1f',
+      display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
+      gap: '4px',
+      minWidth: '50px', height: '58px', padding: '5px 6px 4px',
+      background: active ? C.accentMid : 'transparent',
+      border: `1px solid ${active ? C.accentActive : 'transparent'}`,
+      borderRadius: '8px', cursor: disabled ? 'not-allowed' : 'pointer',
+      fontSize: '10.5px', color: active ? C.accentDeep : C.text,
       opacity: disabled ? 0.38 : 1, lineHeight: 1.2, flexShrink: 0,
-      fontFamily: '"Segoe UI", system-ui, sans-serif',
-      fontWeight: active ? 600 : 400,
-      transition: 'background 0.08s, border-color 0.08s',
+      fontFamily: FONT_STACK,
+      fontWeight: active ? 600 : 500,
+      transition: `all 0.18s ${EASE}`,
+      boxShadow: active ? `inset 0 0 0 1px ${C.accent}25` : 'none',
       ...style,
     }}
-    onMouseEnter={e => { if (!disabled && !active) { e.currentTarget.style.background = '#E5F1FB'; e.currentTarget.style.borderColor = '#A6CDEC'; } }}
-    onMouseLeave={e => { if (!active) { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.borderColor = 'transparent'; } }}
+    onMouseEnter={e => {
+      if (!disabled && !active) {
+        e.currentTarget.style.background = C.accentSoft;
+        e.currentTarget.style.borderColor = C.accentBorder;
+        e.currentTarget.style.color = C.accentDeep;
+        e.currentTarget.style.transform = 'translateY(-1px)';
+      }
+    }}
+    onMouseLeave={e => {
+      if (!active) {
+        e.currentTarget.style.background = 'transparent';
+        e.currentTarget.style.borderColor = 'transparent';
+        e.currentTarget.style.color = C.text;
+        e.currentTarget.style.transform = 'translateY(0)';
+      }
+    }}
   >
-    <div style={{ fontSize: '22px', lineHeight: 1, flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>{icon}</div>
-    <span style={{ textAlign: 'center', whiteSpace: 'nowrap', fontSize: '10px', lineHeight: 1.2 }}>{label}</span>
+    <div style={{ fontSize: '22px', lineHeight: 1, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>{icon}</div>
+    <span style={{ textAlign: 'center', whiteSpace: 'nowrap', fontSize: '10.5px', lineHeight: 1.2, letterSpacing: '0.1px' }}>{label}</span>
   </button>
 );
 
 export const Sep = () => (
   <div style={{
-    width: '1px', alignSelf: 'stretch',
-    background: 'linear-gradient(to bottom, transparent 0%, #b8b8b8 12%, #b8b8b8 88%, transparent 100%)',
-    margin: '0 7px', flexShrink: 0,
+    width: '1.5px', alignSelf: 'stretch',
+    background: C.divider,
+    margin: '6px 7px', flexShrink: 0,
+    borderRadius: '1px',
   }} />
 );
 
 /**
- * SplitButton — Word-style split button: main action on the left, a small
- * caret ▾ on the right that toggles a dropdown menu (rendered by caller).
+ * SplitButton — premium split button: main action on the left, caret on right.
+ * Whole element gets a single rounded outline; the caret divider is subtle.
  */
 export const SplitButton = ({
   active, title, onMain, onCaret, caretOpen, children, mainStyle = {}, btnRef,
-}) => (
-  <span style={{
-    display: 'inline-flex', alignItems: 'stretch', height: '26px',
-    background: active ? '#CCE4F7' : 'transparent',
-    border: `1px solid ${active || caretOpen ? '#106EBE' : 'transparent'}`,
-    borderRadius: '3px',
-    overflow: 'hidden',
-    flexShrink: 0,
-    transition: 'background 0.08s, border-color 0.08s',
-  }} ref={btnRef}>
-    <button
-      onMouseDown={e => { e.preventDefault(); onMain?.(); }}
-      title={title}
-      style={{
-        background: 'transparent', border: 'none',
-        padding: '0 5px',
-        display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-        color: active ? '#004578' : '#1f1f1f',
-        cursor: 'pointer', minWidth: '24px',
-        fontFamily: 'inherit',
-        fontWeight: active ? 600 : 400,
-        ...mainStyle,
-      }}
-      onMouseEnter={e => { if (!active) { e.currentTarget.parentElement.style.background = '#E5F1FB'; e.currentTarget.parentElement.style.borderColor = '#A6CDEC'; } }}
-      onMouseLeave={e => { if (!active) { e.currentTarget.parentElement.style.background = 'transparent'; e.currentTarget.parentElement.style.borderColor = 'transparent'; } }}
-    >{children}</button>
-    <button
-      onMouseDown={e => { e.preventDefault(); onCaret?.(); }}
-      title={`${title} options`}
-      style={{
-        background: caretOpen ? '#CCE4F7' : 'transparent',
-        border: 'none', borderLeft: '1px solid rgba(0,0,0,0.1)',
-        padding: '0 3px',
-        cursor: 'pointer', fontSize: '8px', color: '#555',
-        display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-        fontFamily: 'inherit',
-      }}
-    >▾</button>
-  </span>
-);
+}) => {
+  const showOutline = active || caretOpen;
+  return (
+    <span style={{
+      display: 'inline-flex', alignItems: 'stretch', height: '26px',
+      background: active ? C.accentMid : 'transparent',
+      border: `1px solid ${showOutline ? C.accentActive : 'transparent'}`,
+      borderRadius: '6px',
+      overflow: 'hidden',
+      flexShrink: 0,
+      transition: `background 0.16s ${EASE}, border-color 0.16s ${EASE}, box-shadow 0.16s ${EASE}`,
+      boxShadow: showOutline ? `inset 0 0 0 1px ${C.accent}25` : 'none',
+      fontFamily: FONT_STACK,
+    }} ref={btnRef}>
+      <button
+        onMouseDown={e => { e.preventDefault(); onMain?.(); }}
+        title={title}
+        style={{
+          background: 'transparent', border: 'none',
+          padding: '0 7px',
+          display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+          color: active ? C.accentDeep : C.text,
+          cursor: 'pointer', minWidth: '26px',
+          fontFamily: 'inherit',
+          fontWeight: active ? 600 : 500,
+          fontSize: '13px',
+          transition: `color 0.16s ${EASE}`,
+          ...mainStyle,
+        }}
+        onMouseEnter={e => {
+          if (!active) {
+            e.currentTarget.parentElement.style.background = C.accentSoft;
+            e.currentTarget.parentElement.style.borderColor = C.accentBorder;
+            e.currentTarget.style.color = C.accentDeep;
+          }
+        }}
+        onMouseLeave={e => {
+          if (!active) {
+            e.currentTarget.parentElement.style.background = 'transparent';
+            e.currentTarget.parentElement.style.borderColor = caretOpen ? C.accentActive : 'transparent';
+            e.currentTarget.style.color = C.text;
+          }
+        }}
+      >{children}</button>
+      <button
+        onMouseDown={e => { e.preventDefault(); onCaret?.(); }}
+        title={`${title} options`}
+        style={{
+          background: caretOpen ? C.accentMid : 'transparent',
+          border: 'none', borderLeft: `1px solid ${C.divider}`,
+          padding: '0 4px',
+          cursor: 'pointer', fontSize: '9px', color: caretOpen ? C.accentDeep : C.textMute,
+          display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+          fontFamily: 'inherit',
+          transition: `background 0.16s ${EASE}, color 0.16s ${EASE}`,
+        }}
+      >▾</button>
+    </span>
+  );
+};
 
 export const Icon = ({ d, size = 14 }) => (
   <svg width={size} height={size} viewBox="0 0 16 16" fill="currentColor" style={{ display: 'block', pointerEvents: 'none' }}>
@@ -128,43 +184,45 @@ export const Icon = ({ d, size = 14 }) => (
 export const Group = ({ label, children, onLauncher, style = {} }) => (
   <div style={{
     display: 'flex', flexDirection: 'column', alignItems: 'stretch',
-    padding: '0 7px', flexShrink: 0, ...style,
+    padding: '0 8px', flexShrink: 0,
+    fontFamily: FONT_STACK,
+    ...style,
   }}>
     <div style={{
       display: 'flex', alignItems: 'center', gap: '3px',
-      flex: 1, minHeight: '58px', paddingTop: '3px', paddingBottom: '2px',
+      flex: 1, minHeight: '56px', paddingTop: '3px', paddingBottom: '2px',
     }}>
       {children}
     </div>
     <div style={{
       display: 'flex', alignItems: 'center', justifyContent: 'center',
-      gap: '3px', height: '18px',
-      borderTop: '1px solid #cfcfcf',
+      gap: '4px', height: '18px',
+      borderTop: `1px solid ${C.divider}`,
       userSelect: 'none',
-      paddingTop: '2px',
+      paddingTop: '3px',
     }}>
       <span style={{
-        fontSize: '10.5px',
-        color: '#444',
-        letterSpacing: '0.15px',
-        fontWeight: 500,
+        fontSize: '10px',
+        color: C.textMute,
+        letterSpacing: '0.6px',
+        textTransform: 'uppercase',
+        fontWeight: 600,
         lineHeight: 1,
-        textTransform: 'none',
       }}>{label}</span>
       {onLauncher && (
         <button
           onMouseDown={e => { e.preventDefault(); onLauncher(); }}
           title={`${label} dialog`}
           style={{
-            width: '14px', height: '14px',
+            width: '16px', height: '16px',
             background: 'transparent', border: 'none',
             cursor: 'pointer', padding: 0,
-            color: '#666', borderRadius: '2px',
+            color: C.textMute, borderRadius: '4px',
             display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-            transition: 'background 0.08s, color 0.08s',
+            transition: `background 0.16s ${EASE}, color 0.16s ${EASE}`,
           }}
-          onMouseEnter={e => { e.currentTarget.style.color = '#0078d4'; }}
-          onMouseLeave={e => { e.currentTarget.style.color = '#666'; }}
+          onMouseEnter={e => { e.currentTarget.style.background = C.accentSoft; e.currentTarget.style.color = C.accent; }}
+          onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = C.textMute; }}
         >
           <svg width="10" height="10" viewBox="0 0 10 10" fill="currentColor">
             <path d="M0 0v10h10V0H0zm9 9H1V1h6v4h2v4z M5 6l4-4-1-1-3 3V2H4v2h2V3l-1 1-1 1z" />
