@@ -2942,28 +2942,35 @@ const ReportingPage = () => {
             flexDirection: 'column',
             flex: '1 1 auto',
             width: '100%',
-            // Explicit height — flex chain to this point is unreliable on mobile
-            // browsers (the .reporting-app-container has top-margin + calc-height,
-            // .main-layout is forced column by media query, and 'height: 100%'
-            // collapses to 0 because no ancestor sets an explicit height).
-            // Using dvh accounts for dynamic browser chrome (URL bar showing/hiding).
-            // 80px = 20px container top margin + 60px page header.
-            height: 'calc(100dvh - 80px)',
+            // Use SMALL viewport height (svh) instead of dynamic (dvh). dvh
+            // shrinks when the URL bar collapses, causing the entire DICOM
+            // layout to grow upward on the first user gesture — the
+            // user-reported "series going up" issue. svh stays pinned to the
+            // smallest reasonable viewport, so the canvas height never shifts
+            // after mount. 80 px = 20 px container top margin + 60 px page
+            // header.
+            height: 'calc(100svh - 80px)',
             minHeight: '480px',
             padding: 0,
             background: '#0a0a0f',
             overflow: 'hidden',
+            // Block scroll anchoring — if Cornerstone re-renders into a
+            // resized canvas, browsers may try to "keep the user's view
+            // anchored" by scrolling the parent, which manifests as the
+            // series strip drifting up. Force a stable layout.
+            overflowAnchor: 'none',
           }}>
-            {/* Top strip — slice counter + count of series */}
+            {/* Top strip — slice counter + count of series. Fixed height so
+                the layout stays stable on tap. Shrunk from 40 → 34 px. */}
             <div style={{
               display: 'flex',
               alignItems: 'center',
-              gap: '8px',
-              padding: '8px 10px',
+              gap: '6px',
+              padding: '4px 8px',
               background: 'linear-gradient(180deg, #0f172a 0%, #1e293b 100%)',
               borderBottom: '1px solid #334155',
               flexShrink: 0,
-              minHeight: '40px',
+              height: '34px',
             }}>
               <div style={{ color: '#94a3b8', fontSize: '10px', fontWeight: 900, letterSpacing: '1.5px' }}>
                 {uploadedFiles.length} SERIES
@@ -3073,20 +3080,28 @@ const ReportingPage = () => {
               )}
             </div>
 
-            {/* Horizontal scrolling series strip — all series visible at once */}
+            {/* Horizontal scrolling series strip — compact density on phones.
+                Heights are FIXED (no minHeight) so the strip cannot grow when
+                a tile gains a focus outline or active border, which was making
+                the layout shift on tap. */}
             {uploadedFiles.length > 0 && (
               <div style={{
                 display: 'flex',
                 flexDirection: 'row',
-                gap: '8px',
-                padding: '8px 10px',
+                gap: '6px',
+                padding: '5px 8px',
                 background: '#0f172a',
                 borderBottom: '1px solid #334155',
                 overflowX: 'auto',
                 overflowY: 'hidden',
                 WebkitOverflowScrolling: 'touch',
+                scrollSnapType: 'x proximity',
                 flexShrink: 0,
-                minHeight: '72px',
+                // Strip is 48 px tall (tile 38 + 5 px padding × 2). Fixed
+                // height — not minHeight — prevents content from pushing the
+                // viewer down when an active tile gains its 2 px border.
+                height: '48px',
+                overflowAnchor: 'none',
               }}>
                 {uploadedFiles.map((f, i) => {
                   const isActive = activeAssetIndex === i;
@@ -3102,11 +3117,14 @@ const ReportingPage = () => {
                       title={f.name}
                       style={{
                         flexShrink: 0,
-                        minWidth: '90px',
-                        maxWidth: '120px',
-                        height: '56px',
-                        padding: '6px 8px',
-                        borderRadius: '8px',
+                        minWidth: '64px',
+                        maxWidth: '88px',
+                        height: '38px',
+                        // Box-sizing forces the active 2 px border to absorb
+                        // INTO the 38 px height rather than adding to it.
+                        boxSizing: 'border-box',
+                        padding: '3px 6px',
+                        borderRadius: '6px',
                         border: isActive ? '2px solid #3b82f6' : '1px solid rgba(255,255,255,0.1)',
                         background: isActive
                           ? 'linear-gradient(135deg, #3b82f6, #1d4ed8)'
@@ -3117,25 +3135,27 @@ const ReportingPage = () => {
                         flexDirection: 'column',
                         justifyContent: 'center',
                         alignItems: 'flex-start',
-                        gap: '3px',
+                        gap: '1px',
+                        scrollSnapAlign: 'start',
                         touchAction: 'manipulation',
                         WebkitTapHighlightColor: 'transparent',
-                        boxShadow: isActive ? '0 4px 12px rgba(59, 130, 246, 0.4)' : 'none',
+                        boxShadow: isActive ? '0 2px 8px rgba(59, 130, 246, 0.35)' : 'none',
                       }}
                     >
-                      <div style={{ fontSize: '11px', fontWeight: 950, letterSpacing: '0.5px' }}>
-                        🎞️ S{i + 1}
+                      <div style={{ fontSize: '10px', fontWeight: 950, letterSpacing: '0.3px', lineHeight: 1 }}>
+                        S{i + 1}
                       </div>
                       <div style={{
-                        fontSize: '9px',
+                        fontSize: '8px',
                         fontWeight: 600,
-                        opacity: 0.85,
+                        opacity: 0.8,
+                        lineHeight: 1,
                         overflow: 'hidden',
                         textOverflow: 'ellipsis',
                         whiteSpace: 'nowrap',
                         width: '100%',
                       }}>
-                        {sliceCount > 0 ? `${sliceCount} slc` : 'load...'}
+                        {sliceCount > 0 ? `${sliceCount}` : '…'}
                       </div>
                     </button>
                   );
