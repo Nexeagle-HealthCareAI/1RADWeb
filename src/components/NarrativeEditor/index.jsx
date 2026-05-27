@@ -1751,6 +1751,8 @@ const NarrativeEditor = React.forwardRef(function NarrativeEditor({
           onSave={onSave}
           saveStatus={saveStatus}
           isFinalized={isFinalized}
+          isFullscreen={isFullscreen || cssFullscreen}
+          toggleFullscreen={toggleFullscreen}
           position="top"
         />
       )}

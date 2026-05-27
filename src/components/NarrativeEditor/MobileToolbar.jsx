@@ -79,6 +79,8 @@ const MobileToolbar = ({
   onSave,
   saveStatus,
   isFinalized,
+  isFullscreen,
+  toggleFullscreen,
   position,
 }) => {
   const [headingOpen, setHeadingOpen] = useState(false);
@@ -153,9 +155,58 @@ const MobileToolbar = ({
           overflow: 'hidden',
           textOverflow: 'ellipsis',
           whiteSpace: 'nowrap',
+          flex: 1,
+          minWidth: 0,
         }}>
           {isFinalized ? 'FINALIZED' : (saveStatus || 'Draft')}
         </div>
+        {/* Full / Exit fullscreen toggle. CSS-only fullscreen on iOS (handled
+            inside toggleFullscreen) so iPad swipe gestures don't tear it
+            down. The button compacts to icon-only at <360px-wide phones. */}
+        {toggleFullscreen && (
+          <button
+            type="button"
+            onPointerDown={(e) => e.preventDefault()}
+            onClick={toggleFullscreen}
+            title={isFullscreen ? 'Exit full screen' : 'Full screen'}
+            style={{
+              minHeight: '36px',
+              padding: '0 12px',
+              background: isFullscreen ? '#e2e8f0' : 'rgba(15,23,42,0.06)',
+              color: '#0f172a',
+              border: '1px solid #cbd5e1',
+              borderRadius: '8px',
+              fontSize: '11px',
+              fontWeight: 800,
+              letterSpacing: '0.8px',
+              touchAction: 'manipulation',
+              WebkitTapHighlightColor: 'transparent',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '4px',
+              flexShrink: 0,
+            }}
+          >
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+              {isFullscreen ? (
+                <>
+                  <path d="M9 4v5H4" />
+                  <path d="M15 4v5h5" />
+                  <path d="M4 15h5v5" />
+                  <path d="M20 15h-5v5" />
+                </>
+              ) : (
+                <>
+                  <path d="M4 9V4h5" />
+                  <path d="M20 9V4h-5" />
+                  <path d="M4 15v5h5" />
+                  <path d="M20 15v5h-5" />
+                </>
+              )}
+            </svg>
+            <span>{isFullscreen ? 'EXIT' : 'FULL'}</span>
+          </button>
+        )}
         {onSave && !isFinalized && (
           <button
             type="button"
@@ -174,6 +225,7 @@ const MobileToolbar = ({
               touchAction: 'manipulation',
               WebkitTapHighlightColor: 'transparent',
               boxShadow: '0 2px 6px rgba(15, 82, 186, 0.3)',
+              flexShrink: 0,
             }}
           >
             SAVE
