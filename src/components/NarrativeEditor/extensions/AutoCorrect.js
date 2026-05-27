@@ -1,14 +1,15 @@
 import { Extension } from '@tiptap/core';
 import { Plugin, PluginKey } from '@tiptap/pm/state';
+import { lookupAutoCorrect } from '../data/autoCorrectMap';
 
 /**
- * AutoCorrect — smart typography replacements fired on Space or Enter.
+ * AutoCorrect — smart typography + medical-typo replacements fired on
+ * Space or Enter.
  *
  * Checks the text immediately before the cursor against a table of patterns.
- * When a match is found the matched text is replaced with the Unicode equivalent,
- * then the trigger key (space / enter) is inserted by the normal Tiptap flow.
+ * When a match is found the matched text is replaced.
  *
- * Rules:
+ * Typography rules:
  *   --      → —   (em dash)
  *   ...     → …   (ellipsis)
  *   (c)     → ©
@@ -23,6 +24,16 @@ import { Plugin, PluginKey } from '@tiptap/pm/state';
  *   !=      → ≠
  *   <=      → ≤
  *   >=      → ≥
+ *
+ * Medical / English typo rules (see data/autoCorrectMap.js):
+ *   pnuemonia  → pneumonia
+ *   atelactasis → atelectasis
+ *   haemorrage → hemorrhage
+ *   teh         → the
+ *   ...and ~100 more
+ *
+ * Case is preserved on typo replacement (Pnuemonia → Pneumonia).
+ * Each correction is a single undoable step so Ctrl+Z reverts cleanly.
  */
 
 const RULES = [
@@ -93,6 +104,31 @@ export const AutoCorrect = Extension.create({
                   state.tr.replaceWith(from, to, state.schema.text(replacement))
                 );
                 return false;
+              }
+            }
+
+            // ── Medical / English typo correction ────────────────────────
+            // Pull the LAST word in textBefore (alphabetic + apostrophe /
+            // hyphen). If that word is in AUTOCORRECT_MAP, swap it in-place
+            // with case preservation. Skip ALL-CAPS short words (acronyms
+            // like CT, MR, FLAIR, LV — we never want to "correct" those).
+            const wordMatch = /([A-Za-z][A-Za-z'-]*)$/.exec(textBefore);
+            if (wordMatch) {
+              const word = wordMatch[1];
+              const isAllCapsShort = word.length <= 6 && word === word.toUpperCase();
+              if (!isAllCapsShort && word.length >= 2) {
+                const corrected = lookupAutoCorrect(word);
+                if (corrected && corrected !== word) {
+                  const from = $from.pos - word.length;
+                  const to   = $from.pos;
+                  view.dispatch(
+                    state.tr
+                      .replaceWith(from, to, state.schema.text(corrected))
+                      .setMeta('addToHistory', true)
+                  );
+                  // fall through to return false so the trigger key inserts
+                  return false;
+                }
               }
             }
 

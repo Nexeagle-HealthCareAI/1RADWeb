@@ -4,6 +4,9 @@ import InsertTab from './InsertTab';
 import LayoutTab from './LayoutTab';
 import ReviewTab from './ReviewTab';
 import ViewTab from './ViewTab';
+import TemplatesQuickPicker from './TemplatesQuickPicker';
+import ActiveStyleIndicator from './ActiveStyleIndicator';
+import HeadingQuickBar from './HeadingQuickBar';
 import { Icon, ICONS } from './RibbonControls';
 
 // Modern system font stack — clean, premium feel, no network dep.
@@ -94,6 +97,11 @@ export default function Ribbon(props) {
     voiceSupported, voiceActive, onToggleVoice,
     saveStatus,            // '' | 'modified' | 'saving' | 'saved'
     lastSavedAt,           // Date | null
+    onOpenTemplates,       // opens full picker dialog
+    onApplyTemplate,       // (html, opts) — applies template directly (QAT quick pick)
+    onOpenFinalize,        // opens the Finalize dialog
+    isFinalized,           // current report finalized state
+    onSaveVersion,         // (label?) — snapshots a version into history
   } = props;
 
   const [activeTab, setActiveTab] = useState('home');
@@ -172,16 +180,96 @@ export default function Ribbon(props) {
 
         <SaveStatusPill saveStatus={saveStatus} lastSavedAt={lastSavedAt} />
 
+        {/* Always-visible H1/H2/H3/Normal quick bar — section heading changes
+            are 1 click regardless of which Ribbon tab is currently showing. */}
+        <HeadingQuickBar editor={editor} />
+
+        {/* Live readout of the current selection's style — saves the typist
+            from bouncing through ribbon tabs to find "what's my heading
+            level / alignment?" Updates on every selection or transaction. */}
+        <ActiveStyleIndicator editor={editor} />
+
+        {/* Voice dictation toggle — power-typist hotkey for hands-free input
+            while measuring with one hand. Hidden if the Web Speech API isn't
+            available in this browser (Firefox / older Safari). */}
+        {voiceSupported && (
+          <QATBtn
+            title={voiceActive ? 'Stop voice dictation' : 'Start voice dictation'}
+            onClick={onToggleVoice}
+            icon={(
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                <rect x="9" y="2" width="6" height="12" rx="3" fill={voiceActive ? '#dc2626' : 'none'} stroke={voiceActive ? '#dc2626' : 'currentColor'} />
+                <path d="M5 11a7 7 0 0 0 14 0" />
+                <line x1="12" y1="18" x2="12" y2="22" />
+              </svg>
+            )}
+          />
+        )}
+
+        {/* Snapshot a version into history — quick capture without opening
+            the version history dialog. Disabled on finalized reports. */}
+        {onSaveVersion && (
+          <QATBtn
+            title="Save version snapshot"
+            disabled={isFinalized}
+            onClick={() => onSaveVersion()}
+            icon={(
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                <circle cx="12" cy="12" r="9" />
+                <path d="M12 7v5l3 2" />
+              </svg>
+            )}
+          />
+        )}
+
         {/* Right-aligned filler */}
         <div style={{ flex: 1 }} />
 
-        {/* Document title placeholder — could later show patient name */}
-        <span style={{
-          fontSize: '11px', color: COLOR.textSoft, fontWeight: 500,
-          letterSpacing: '0.2px',
-        }}>
-          1Rad · Narrative Editor
-        </span>
+        {/* Templates quick-picker — 1-click access to common report templates.
+            The full picker dialog stays available via the dropdown's
+            "Browse all templates…" footer. */}
+        {onApplyTemplate && (
+          <TemplatesQuickPicker
+            onApply={onApplyTemplate}
+            onOpenFull={onOpenTemplates}
+          />
+        )}
+
+        {/* Finalize report — the typist's "ship it" button. Lives on the QAT
+            because it's the last action on every case; previously buried in
+            the Review tab. Disabled (and visually muted) once the report is
+            already finalized. */}
+        {onOpenFinalize && (
+          <button
+            type="button"
+            onMouseDown={(e) => { e.preventDefault(); if (!isFinalized) onOpenFinalize(); }}
+            disabled={isFinalized}
+            title={isFinalized ? 'Already finalized' : 'Finalize this report'}
+            style={{
+              display: 'inline-flex', alignItems: 'center', gap: '5px',
+              height: '24px', padding: '0 10px',
+              background: isFinalized
+                ? '#e2e8f0'
+                : 'linear-gradient(135deg, #16a34a 0%, #15803d 100%)',
+              color: isFinalized ? '#94a3b8' : '#ffffff',
+              border: '1px solid ' + (isFinalized ? '#cbd5e1' : '#15803d'),
+              borderRadius: '5px',
+              fontSize: '11px',
+              fontWeight: 800,
+              letterSpacing: '0.4px',
+              cursor: isFinalized ? 'not-allowed' : 'pointer',
+              fontFamily: FONT_STACK,
+              boxShadow: isFinalized ? 'none' : '0 1px 4px rgba(22, 163, 74, 0.3)',
+            }}
+            onMouseEnter={(e) => { if (!isFinalized) e.currentTarget.style.opacity = '0.92'; }}
+            onMouseLeave={(e) => { e.currentTarget.style.opacity = '1'; }}
+          >
+            <svg width="11" height="11" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
+              <path d="M13.854 3.146a.5.5 0 0 1 0 .708l-7 7a.5.5 0 0 1-.708 0l-3.5-3.5a.5.5 0 1 1 .708-.708L6.5 9.793l6.646-6.647a.5.5 0 0 1 .708 0z" />
+            </svg>
+            <span>{isFinalized ? 'FINALIZED' : 'FINALIZE'}</span>
+          </button>
+        )}
       </div>
 
       {/* ── Tab strip ────────────────────────────────────────── */}

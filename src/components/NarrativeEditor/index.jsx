@@ -31,6 +31,8 @@ import { Extension, Mark, InputRule } from '@tiptap/core';
 import EditorToolbar from './EditorToolbar';
 import Ribbon from './Ribbon';
 import MobileToolbar from './MobileToolbar';
+import SlashMenu from './SlashMenu';
+import SelectionToolbar from './SelectionToolbar';
 import { PageDocument, Page } from './extensions/PageNode';
 import { Pagination } from './extensions/Pagination';
 import { LineHeight, ParagraphIndent, PageBreak } from './extensions/Spacing';
@@ -485,6 +487,12 @@ const NarrativeEditor = React.forwardRef(function NarrativeEditor({
       editor.chain().focus().insertContent(prefix + text).run();
     },
   });
+  // Mirror voice into a ref so the capture-phase keydown listener (mounted
+  // once with a stable [editor, onSave, onPrint] dep array) can always read
+  // the current voice handle without forcing a listener re-mount on every
+  // voice state change.
+  const voiceRef = useRef(voice);
+  useEffect(() => { voiceRef.current = voice; }, [voice]);
 
   useEffect(() => {
     // The "re-enter CSS fallback on unintentional exit" branch below is iOS-
@@ -1066,6 +1074,21 @@ const NarrativeEditor = React.forwardRef(function NarrativeEditor({
         }
         return;
       }
+      // F8 — global voice-dictation toggle.
+      // Deliberately NOT gated on inEditor: a radiologist measuring with one
+      // hand should be able to start/stop dictation regardless of which
+      // element has focus on the Reporting page. Dragon NaturallySpeaking
+      // uses the same key, so it matches existing muscle memory.
+      // No-op if the Web Speech API isn't available in this browser.
+      if (e.key === 'F8' && !e.shiftKey && !e.ctrlKey && !e.metaKey && !e.altKey) {
+        const v = voiceRef.current;
+        if (v?.supported && typeof v.toggle === 'function') {
+          e.preventDefault();
+          e.stopImmediatePropagation();
+          v.toggle();
+        }
+        return;
+      }
       // F5 — Go to page (same as Ctrl+G)
       if (e.key === 'F5') {
         if (inEditor(e)) {
@@ -1192,6 +1215,62 @@ const NarrativeEditor = React.forwardRef(function NarrativeEditor({
         e.preventDefault();
         e.stopImmediatePropagation();
         moveBlockVertically(editor, e.key === 'ArrowUp' ? 'up' : 'down');
+        return;
+      }
+
+      // ── Alt+1 / Alt+2 / Alt+3 — jump to section heading ────────────────────
+      // A radiologist drafting a report scrolls between Findings → Impression
+      // → Advice constantly. Alt+1/2/3 finds the H2 (or H3) heading whose
+      // text matches that section name (case-insensitive, fuzzy first-token
+      // match), moves the caret to the end of its first content paragraph,
+      // and scrolls it into view. Falls back to the Nth H2 in the doc if no
+      // name match is found, so atypical templates still get jump targets.
+      if (e.altKey && !e.shiftKey && !e.ctrlKey && !e.metaKey &&
+          (e.key === '1' || e.key === '2' || e.key === '3')) {
+        if (!inEditor(e)) return;
+        const SECTION_KEYS = {
+          '1': ['finding', 'finds'],
+          '2': ['impression', 'impr', 'conclusion'],
+          '3': ['advice', 'recommend', 'plan', 'follow'],
+        };
+        const needles = SECTION_KEYS[e.key];
+        const nthFallback = parseInt(e.key, 10) - 1;
+        const { doc } = editor.state;
+        let nameMatchPos = -1;
+        let nthH2Pos = -1;
+        let h2Counter = 0;
+        doc.descendants((node, pos) => {
+          if (nameMatchPos >= 0) return false;
+          if (node.type.name !== 'heading') return;
+          const level = node.attrs?.level;
+          if (level !== 2 && level !== 3) return;
+          const text = (node.textContent || '').toLowerCase().trim();
+          if (level === 2) {
+            if (h2Counter === nthFallback) nthH2Pos = pos;
+            h2Counter++;
+          }
+          if (needles.some((n) => text.includes(n))) {
+            nameMatchPos = pos;
+            return false;
+          }
+        });
+        const targetPos = nameMatchPos >= 0 ? nameMatchPos : nthH2Pos;
+        if (targetPos < 0) return; // no candidate heading in the document
+        e.preventDefault();
+        e.stopImmediatePropagation();
+        // Land the caret inside the heading itself (start of its text). This
+        // makes typing immediately replace the section title if the user
+        // wants — same affordance Word offers for "Click heading then type".
+        try {
+          editor.chain().focus().setTextSelection(targetPos + 1).run();
+          // Scroll the heading into view; rAF lets layout settle if the
+          // editor was in a fresh paint cycle.
+          requestAnimationFrame(() => {
+            try { editor.view.dispatch(editor.state.tr.scrollIntoView()); } catch {}
+          });
+        } catch (err) {
+          console.warn('[NE] section jump failed:', err?.message);
+        }
         return;
       }
 
@@ -1783,6 +1862,18 @@ const NarrativeEditor = React.forwardRef(function NarrativeEditor({
           showRuler={showRuler}
           onToggleRuler={() => setShowRuler(v => !v)}
           onOpenTemplates={() => setTemplatesOpen(true)}
+          onApplyTemplate={(html, opts) => {
+            // QAT quick-pick path — applies a template directly without
+            // opening the full dialog. opts.replace defaults to true since
+            // templates are full-report scaffolds. Re-uses ensurePagedHTML
+            // so the new content sits inside the editor's Page wrapper.
+            if (!editor) return;
+            if (opts?.replace !== false) {
+              editor.commands.setContent(ensurePagedHTML(html), false);
+            } else {
+              editor.chain().focus().insertContent(html).run();
+            }
+          }}
           onOpenVersionHistory={() => setVersionsOpen(true)}
           onSaveVersion={saveVersion}
           onExportDocx={handleExportDocx}
@@ -1837,6 +1928,27 @@ const NarrativeEditor = React.forwardRef(function NarrativeEditor({
       {!previewMode && showRuler && (
         <HorizontalRuler editor={editor} zoom={zoom} />
       )}
+
+      {/* Slash menu — type "/" in the editor to open a popover with Templates,
+          Normal Findings, Measurement, and the full snippet library. The menu
+          is non-blocking: if the typist ignores it and keeps typing, the
+          existing snippet-expansion (Space after "/trigger") still fires
+          exactly as before. */}
+      {!previewMode && (
+        <SlashMenu
+          editor={editor}
+          snippets={snippets}
+          onOpenTemplates={() => setTemplatesOpen(true)}
+          onOpenNormalFindings={() => setNormalFindingsOpen(true)}
+          onOpenMeasurement={() => setMeasurementOpen(true)}
+        />
+      )}
+
+      {/* Floating selection mini-toolbar — Word-style B/I/U/S/Highlight/Link
+          bubble that appears above any non-empty text selection. Saves the
+          typist a trip up to the Ribbon for one-off format changes. Hidden
+          in preview mode. */}
+      <SelectionToolbar editor={editor} previewMode={previewMode} containerRef={containerRef} />
 
       <div className={`word-canvas${showFormattingMarks ? ' show-formatting-marks' : ''}${previewMode ? ' preview-mode-canvas' : ''}`} style={{ '--zoom': zoom / 100, position: 'relative' }}>
         {previewMode && (

@@ -2,7 +2,9 @@ import React from 'react';
 import { createPortal } from 'react-dom';
 
 // ─── Template definitions ─────────────────────────────────────────────────────
-const TEMPLATES = [
+// Exported so the QAT TemplatesQuickPicker can reuse the same list without
+// re-defining them — one source of truth.
+export const TEMPLATES = [
   {
     id: 'blank',
     modality: 'Blank Report',
