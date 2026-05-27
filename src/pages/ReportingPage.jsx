@@ -522,6 +522,21 @@ const ReportingPage = () => {
           else if (handle.editor) {
             try { handle.editor.commands.setContent(html || '', false); } catch {}
           }
+          // ── Text-align persistence diagnostic (post-render) ─────────────
+          // After Tiptap parses + re-serialises, do we still see the align?
+          // If load logged alignCount > 0 but this logs 0, Tiptap's TextAlign
+          // extension isn't parsing the inline style on the way back in.
+          try {
+            requestAnimationFrame(() => {
+              const post = handle.editor?.getHTML?.() || '';
+              const alignMatches = post.match(/text-align\s*:\s*[a-z]+/gi) || [];
+              console.info('[ALIGN_DIAG] post-setContent editor HTML:', {
+                htmlLength: post.length,
+                alignCount: alignMatches.length,
+                aligns: alignMatches.slice(0, 5),
+              });
+            });
+          } catch (_) { /* never block render on diagnostic */ }
         });
       };
 
@@ -575,6 +590,19 @@ const ReportingPage = () => {
         console.info(`[1RAD] Found Existing Report.`);
 
         const findingsHtml = r.findings || '';
+        // ── Text-align persistence diagnostic (load side) ────────────────
+        // If save logged alignCount > 0 but this logs 0, the API round-trip
+        // is dropping inline styles. If both show alignCount > 0, the issue
+        // is in the editor's parseHTML / content sync layer.
+        try {
+          const alignMatches = findingsHtml.match(/text-align\s*:\s*[a-z]+/gi) || [];
+          console.info('[ALIGN_DIAG] load from API:', {
+            htmlLength: findingsHtml.length,
+            alignCount: alignMatches.length,
+            aligns: alignMatches.slice(0, 5),
+            firstSnippet: findingsHtml.slice(0, 200),
+          });
+        } catch (_) { /* never block load on diagnostic */ }
         setImpression(r.impression || '');
         setAdvice(r.advice || '');
         setIsFinalized(r.isFinalized);
@@ -788,6 +816,23 @@ const ReportingPage = () => {
     if (editorRef.current?.editor) {
       currentFindings = editorRef.current.editor.getHTML();
     }
+    // ── Text-align persistence diagnostic ──────────────────────────────
+    // Count text-align occurrences in the HTML being saved so we can tell
+    // the user whether alignment leaves the browser intact. If this prints
+    // alignCount > 0 but the post-reload version reports 0, the bug is
+    // server-side or wire-level. If this prints 0 right after the user
+    // clicked Right-Align, the bug is in the editor command itself.
+    try {
+      const sample = (currentFindings || '');
+      const alignMatches = sample.match(/text-align\s*:\s*[a-z]+/gi) || [];
+      console.info('[ALIGN_DIAG] save payload:', {
+        finalizing,
+        htmlLength: sample.length,
+        alignCount: alignMatches.length,
+        aligns: alignMatches.slice(0, 5),
+        firstSnippet: sample.slice(0, 200),
+      });
+    } catch (_) { /* never block save on diagnostic */ }
 
     const payload = {
       appointmentId: appointmentId,
