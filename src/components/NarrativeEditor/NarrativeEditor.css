@@ -535,6 +535,12 @@
   z-index: 5;
   pointer-events: auto;
   user-select: text;
+  /* The banner is a SIBLING of .narrative-editor-content (where the page
+     zoom is applied), so it doesn't inherit that zoom automatically. Mirror
+     it here. CSS zoom scales the banner's own content AND its position
+     offsets together, so the left/right calcs above remain anchored to the
+     page writable area at every zoom level. */
+  zoom: var(--zoom, 1);
 }
 
 /* Push page-1 editable content down by the measured banner height so the

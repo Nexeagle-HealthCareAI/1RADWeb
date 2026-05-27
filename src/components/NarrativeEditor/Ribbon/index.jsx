@@ -7,6 +7,7 @@ import ViewTab from './ViewTab';
 import TemplatesQuickPicker from './TemplatesQuickPicker';
 import ActiveStyleIndicator from './ActiveStyleIndicator';
 import HeadingQuickBar from './HeadingQuickBar';
+import ZoomQuickControl from './ZoomQuickControl';
 import { Icon, ICONS } from './RibbonControls';
 
 // Modern system font stack — clean, premium feel, no network dep.
@@ -102,6 +103,9 @@ export default function Ribbon(props) {
     onOpenFinalize,        // opens the Finalize dialog
     isFinalized,           // current report finalized state
     onSaveVersion,         // (label?) — snapshots a version into history
+    zoom,                  // current zoom percent
+    setZoom,               // fn(z) to apply a new zoom
+    zoomLevels,            // sorted array of preset levels
   } = props;
 
   const [activeTab, setActiveTab] = useState('home');
@@ -220,6 +224,15 @@ export default function Ribbon(props) {
               </svg>
             )}
           />
+        )}
+
+        {/* Zoom control — always visible (including in fullscreen / on the
+            mobile MobileToolbar parent layout). Stepper buttons + dropdown
+            of presets. Was hidden in the View tab; surfaced here so a
+            typist working in fullscreen can zoom without leaving the
+            keyboard / mouse focus area. */}
+        {typeof setZoom === 'function' && (
+          <ZoomQuickControl zoom={zoom} setZoom={setZoom} zoomLevels={zoomLevels} />
         )}
 
         {/* Right-aligned filler */}

@@ -1384,6 +1384,27 @@ const NarrativeEditor = React.forwardRef(function NarrativeEditor({
       if (e.key === ']' || (e.shiftKey && e.key === '>')) return run(() => cycleFontSize(editor, +1));
       if (e.key === '[' || (e.shiftKey && e.key === '<')) return run(() => cycleFontSize(editor, -1));
 
+      // ── Ctrl+0 reset zoom · Ctrl+- zoom out ──────────────────────────
+      // Browsers default Ctrl+0/Ctrl+- to page zoom. Inside the editor we
+      // want the document's page chrome to zoom (our `zoom` state) instead,
+      // so we preventDefault here. Zoom-IN via Ctrl+= conflicts with the
+      // subscript toggle defined a few lines above, so we leave Ctrl+= to
+      // subscript and expose zoom-in via the QAT [+] button. To zoom in
+      // from the keyboard, use Ctrl+0 first then the QAT, or step the QAT
+      // dropdown directly.
+      if (e.key === '0' && !e.shiftKey && !e.altKey && typeof setZoom === 'function') {
+        return run(() => setZoom(100));
+      }
+      if (e.key === '-' && !e.altKey && !e.shiftKey && typeof setZoom === 'function') {
+        return run(() => {
+          const idx = ZOOM_LEVELS.indexOf(zoom);
+          const next = idx < 0
+            ? [...ZOOM_LEVELS].reverse().find((l) => l <= zoom) ?? 100
+            : ZOOM_LEVELS[Math.max(0, idx - 1)];
+          setZoom(next);
+        });
+      }
+
       // Clear character formatting (Ctrl+Space)
       if (e.key === ' ' && !e.shiftKey && !e.altKey) return run(() => editor.chain().focus().unsetAllMarks().run());
 
@@ -1665,6 +1686,42 @@ const NarrativeEditor = React.forwardRef(function NarrativeEditor({
     ro.observe(host);
     return () => ro.disconnect();
   }, [firstPageBanner]);
+
+  // ── Ctrl+Mouse-Wheel zoom on the editor canvas ─────────────────────────
+  // Browsers default Ctrl+Wheel to page-zoom. Inside the editor we redirect
+  // it to the document's own zoom (the `zoom` state that drives the canvas's
+  // --zoom CSS variable). preventDefault + capture phase wins back the
+  // default, then we step the closest ZOOM_LEVELS entry.
+  useEffect(() => {
+    const canvas = containerRef.current?.querySelector('.word-canvas');
+    if (!canvas) return;
+    let lastWheelAt = 0;
+    const onWheel = (e) => {
+      if (!e.ctrlKey && !e.metaKey) return;
+      e.preventDefault();
+      // Throttle to ~10 wheel-ticks per second so a fast-scroll trackpad
+      // doesn't fly from 50→200% in one gesture.
+      const now = performance.now();
+      if (now - lastWheelAt < 90) return;
+      lastWheelAt = now;
+      const dir = e.deltaY > 0 ? -1 : +1;
+      const idx = ZOOM_LEVELS.indexOf(zoom);
+      let next;
+      if (idx < 0) {
+        // Current zoom isn't a preset — snap to the nearest, then step.
+        next = ZOOM_LEVELS.reduce((b, l) => Math.abs(l - zoom) < Math.abs(b - zoom) ? l : b, ZOOM_LEVELS[0]);
+        const i2 = ZOOM_LEVELS.indexOf(next);
+        next = ZOOM_LEVELS[Math.max(0, Math.min(ZOOM_LEVELS.length - 1, i2 + dir))];
+      } else {
+        next = ZOOM_LEVELS[Math.max(0, Math.min(ZOOM_LEVELS.length - 1, idx + dir))];
+      }
+      if (next !== zoom) setZoom(next);
+    };
+    // passive:false so preventDefault is honoured (Chrome treats wheel
+    // listeners on scrollables as passive by default).
+    canvas.addEventListener('wheel', onWheel, { passive: false });
+    return () => canvas.removeEventListener('wheel', onWheel);
+  }, [zoom, setZoom]);
 
   // Track current page (most visible) + total pages.
   useEffect(() => {
