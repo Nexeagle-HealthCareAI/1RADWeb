@@ -897,12 +897,35 @@ const AdvancedDicomViewer = ({
   }, []);
 
   // --- FULLSCREEN MANAGEMENT ---
+  // iPad Safari has a built-in vertical-swipe gesture that exits native
+  // fullscreen. Combined with a touch-driven slice scroller, every drag
+  // would dismiss fullscreen and the viewer would "collapse and close" mid-
+  // interaction. On iOS we skip the native Fullscreen API entirely and use
+  // CSS-only fullscreen (position: fixed, z-index: 9999 — already wired in
+  // the JSX below). The user-visible behaviour is identical; what differs
+  // is that swipe gestures can't tear it down.
+  const isIOSFullscreenHost =
+    typeof navigator !== 'undefined' &&
+    (/iPad|iPhone|iPod/.test(navigator.userAgent) ||
+     (/Macintosh/.test(navigator.userAgent) && typeof document !== 'undefined' && 'ontouchstart' in document));
+
   const toggleFullscreen = useCallback(async () => {
     try {
       const container = fullscreenContainerRef.current || containerRef.current;
-      
+
+      // iOS: CSS-only fullscreen — flip the state, JSX handles the visual.
+      if (isIOSFullscreenHost) {
+        const next = !isFullscreen;
+        setIsFullscreen(next);
+        if (onFullscreenChange) onFullscreenChange(next);
+        setTimeout(() => {
+          if (renderingEngineRef.current) renderingEngineRef.current.resize();
+        }, 100);
+        return;
+      }
+
       if (!document.fullscreenElement) {
-        // Enter fullscreen
+        // Enter fullscreen (desktop / Android Chrome path)
         if (container.requestFullscreen) {
           await container.requestFullscreen();
         } else if (container.webkitRequestFullscreen) {
@@ -928,7 +951,7 @@ const AdvancedDicomViewer = ({
         setIsFullscreen(false);
         if (onFullscreenChange) onFullscreenChange(false);
       }
-      
+
       // Trigger resize after fullscreen change
       setTimeout(() => {
         if (renderingEngineRef.current) {
@@ -938,15 +961,21 @@ const AdvancedDicomViewer = ({
     } catch (err) {
       console.error('[DICOM] Fullscreen toggle failed:', err);
     }
-  }, [onFullscreenChange]);
+  }, [onFullscreenChange, isFullscreen, isIOSFullscreenHost]);
 
-  // Listen for fullscreen changes (user pressing ESC, etc.)
+  // Listen for fullscreen changes (user pressing ESC, etc.).
+  // IMPORTANT: on iOS we ignore these — iPad Safari fires
+  // webkitfullscreenchange when a vertical swipe gesture triggers its
+  // built-in fullscreen exit, which would otherwise tear down our CSS
+  // fullscreen state every time the user tried to scroll through slices.
   useEffect(() => {
+    if (isIOSFullscreenHost) return; // CSS-only fullscreen — no listeners
+
     const handleFullscreenChange = () => {
       const isCurrentlyFullscreen = !!document.fullscreenElement;
       setIsFullscreen(isCurrentlyFullscreen);
       if (onFullscreenChange) onFullscreenChange(isCurrentlyFullscreen);
-      
+
       // Resize viewport after fullscreen change
       setTimeout(() => {
         if (renderingEngineRef.current) {
@@ -966,7 +995,7 @@ const AdvancedDicomViewer = ({
       document.removeEventListener('mozfullscreenchange', handleFullscreenChange);
       document.removeEventListener('MSFullscreenChange', handleFullscreenChange);
     };
-  }, [onFullscreenChange]);
+  }, [onFullscreenChange, isIOSFullscreenHost]);
 
   // --- TOUCH GESTURE SUPPORT FOR TABLETS AND PHONES ---
   // Pinch-zoom (2 fingers), pan (1 finger), slice-scroll (3 fingers), double-tap reset.

@@ -498,20 +498,20 @@ const NarrativeEditor = React.forwardRef(function NarrativeEditor({
       (/iPad|iPhone|iPod/.test(navigator.userAgent) ||
        (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1));
 
+    // On iOS we never call requestFullscreen — toggleFullscreen takes the
+    // CSS-only path. So fullscreenchange events would only come from some
+    // other code path requesting native fullscreen on the editor container.
+    // Skip the listener entirely; nothing valid for the editor should fire
+    // it on iOS, and ignoring stray events prevents the "swipe collapses
+    // the page" bug.
+    if (isIOS) return;
+
     const onFsChange = () => {
       const active = !!(document.fullscreenElement || document.webkitFullscreenElement);
       setIsFullscreen(active);
       if (!active) {
-        if (exitingIntentionallyRef.current || !isIOS) {
-          // Explicit exit (button) OR desktop browser — honour the exit.
-          setCssFullscreen(false);
-        } else {
-          // iOS only: Safari cancelled native fullscreen externally (scroll
-          // triggered address-bar, app-switcher, etc.). Re-enter CSS fallback
-          // so the user's fullscreen session is NOT interrupted by a stray
-          // scroll.
-          setCssFullscreen(true);
-        }
+        // Desktop: explicit exit (Esc, button, devtools, …) — honour it.
+        setCssFullscreen(false);
         exitingIntentionallyRef.current = false;
       }
     };
@@ -578,6 +578,19 @@ const NarrativeEditor = React.forwardRef(function NarrativeEditor({
     // CSS fallback mode — just clear the class
     if (cssFullscreen) {
       setCssFullscreen(false);
+      return;
+    }
+
+    // iPad Safari has a vertical-swipe-to-exit-fullscreen gesture built in.
+    // Combined with a touch editor (where every drag/scroll is vertical), it
+    // means the user can't even read past one paragraph without the native
+    // fullscreen being torn down. On iOS we go CSS-only — flip the class and
+    // rely on .ne--css-fullscreen styles to take over.
+    const isIOS = typeof navigator !== 'undefined' &&
+      (/iPad|iPhone|iPod/.test(navigator.userAgent) ||
+       (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1));
+    if (isIOS) {
+      setCssFullscreen(true);
       return;
     }
 
