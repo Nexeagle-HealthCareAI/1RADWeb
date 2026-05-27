@@ -343,4 +343,65 @@ function paginate(view, fallbackMaxHeight) {
       return;
     }
   }
+
+  // Pass 3: REMOVE empty trailing pages outright.
+  //
+  // Case B above can't help when the previous page is already full (slack
+  // ≤ tolerance) — the empty <p> "doesn't fit", so the merge skips and the
+  // user is left staring at a blank page. But an empty paragraph is just
+  // the schema's `block+` requirement, not real content; if a page holds
+  // nothing else, the whole page should disappear.
+  //
+  // Rules:
+  //   - NEVER remove the only page (the document needs at least one).
+  //   - NEVER remove a non-trailing page (don't punch a hole in the middle
+  //     of a paginated document; merge passes can handle inner gaps).
+  //   - Remove only if the page contains exactly one empty textblock with
+  //     no text content (`<p></p>` or `<heading></heading>` etc.).
+  //
+  // Process bottom-up so multi-page deletes don't invalidate positions.
+  for (let i = pages.length - 1; i >= 1; i--) {
+    const { node, pos } = pages[i];
+    // Only consider the trailing run of empty pages — stop at the first
+    // non-empty one encountered from the bottom.
+    const isLastInRun = i === pages.length - 1 || pagesEmptyAfter(pages, i);
+    if (!isLastInRun) break;
+
+    if (node.childCount !== 1) continue;
+    const onlyChild = node.child(0);
+    if (!onlyChild.isTextblock) continue;
+    if ((onlyChild.textContent || '').length > 0) continue;
+    // Also skip if the child carries non-default attrs the user may have
+    // intentionally left (e.g. a heading or alignment) — only nuke truly
+    // blank paragraphs to avoid surprising the user.
+    if (onlyChild.type.name !== 'paragraph') continue;
+    const attrs = onlyChild.attrs || {};
+    const hasMeaningfulAttrs =
+      (attrs.textAlign && attrs.textAlign !== 'left') ||
+      (attrs.indent && attrs.indent !== 0) ||
+      (attrs.lineHeight && attrs.lineHeight !== null);
+    if (hasMeaningfulAttrs) continue;
+
+    const pageEnd = pos + node.nodeSize;
+    const transaction = state.tr.delete(pos, pageEnd);
+    transaction.setMeta('addToHistory', false);
+    transaction.setMeta('pagination', true);
+    view.dispatch(transaction);
+    return; // run again on next rAF in case multiple trailing pages need it
+  }
+}
+
+/**
+ * Helper for Pass 3: returns true if every page AFTER `idx` (exclusive) is
+ * already an empty-paragraph-only page. Used so we only remove pages that
+ * sit at the trailing end of the document, never a hole in the middle.
+ */
+function pagesEmptyAfter(pages, idx) {
+  for (let j = idx + 1; j < pages.length; j++) {
+    const n = pages[j].node;
+    if (n.childCount !== 1) return false;
+    const c = n.child(0);
+    if (!c.isTextblock || (c.textContent || '').length > 0) return false;
+  }
+  return true;
 }
