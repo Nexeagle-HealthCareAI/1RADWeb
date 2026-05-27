@@ -946,7 +946,10 @@ const DicomViewerPage = () => {
           minWidth: (isTablet || isMobile) ? 'auto' : '280px',
           maxWidth: (isTablet || isMobile) ? '100%' : '280px',
           height: (isTablet || isMobile) ? 'auto' : '100%',
-          maxHeight: isMobile ? '22vh' : (isTablet ? '30vh' : '100%'),
+          // Mobile panel was 22vh (~154 px on a 700 px phone) but each tile
+          // needed ~190 px (150 thumbnail + 40 text), so tiles clipped at
+          // the top. Reducing to 14vh + shrunk tiles below = no clip.
+          maxHeight: isMobile ? '14vh' : (isTablet ? '24vh' : '100%'),
           background: 'linear-gradient(180deg, #0f172a 0%, #1e293b 100%)',
           borderRight: (isTablet || isMobile) ? 'none' : '2px solid #334155',
           borderBottom: (isTablet || isMobile) ? '2px solid #334155' : 'none',
@@ -1013,8 +1016,12 @@ const DicomViewerPage = () => {
                   e.preventDefault();
                 }}
                 style={{
-                  width: isMobile ? '150px' : (isTablet ? '200px' : '100%'),
-                  minWidth: isMobile ? '150px' : (isTablet ? '200px' : 'auto'),
+                  // Mobile: compact horizontal card — thumbnail + text side-by-side
+                  // so the tile fits within the 14vh panel without clipping.
+                  width: isMobile ? '140px' : (isTablet ? '200px' : '100%'),
+                  minWidth: isMobile ? '140px' : (isTablet ? '200px' : 'auto'),
+                  height: isMobile ? '70px' : (isTablet ? 'auto' : 'auto'),
+                  boxSizing: 'border-box',
                   flexShrink: (isTablet || isMobile) ? 0 : 'auto',
                   background: activeSeriesIndex === index
                     ? 'linear-gradient(135deg, #8b5cf6, #6366f1)'
@@ -1023,18 +1030,26 @@ const DicomViewerPage = () => {
                     ? '2px solid #8b5cf6'
                     : '2px solid transparent',
                   color: activeSeriesIndex === index ? 'white' : '#e2e8f0',
-                  padding: isMobile ? '10px 10px' : (isTablet ? '16px 14px' : '12px'),
+                  padding: isMobile ? '4px 6px' : (isTablet ? '16px 14px' : '12px'),
                   borderRadius: '8px',
                   cursor: 'pointer',
                   marginBottom: (isTablet || isMobile) ? '0' : '8px',
                   textAlign: 'left',
+                  display: isMobile ? 'flex' : 'block',
+                  flexDirection: isMobile ? 'row' : undefined,
+                  alignItems: isMobile ? 'center' : undefined,
+                  gap: isMobile ? '6px' : undefined,
                   transition: 'all 0.2s ease',
                   boxShadow: activeSeriesIndex === index
                     ? '0 4px 12px rgba(139, 92, 246, 0.4)'
                     : 'none',
-                  transform: activeSeriesIndex === index ? ((isTablet || isMobile) ? 'translateY(-2px)' : 'translateX(4px)') : 'none',
-                  touchAction: 'manipulation', // Better touch response
-                  WebkitTapHighlightColor: 'transparent' // Remove tap highlight on iOS
+                  // Disabled translateY on mobile — was contributing to the
+                  // "tiles bouncing into the clip region" perception.
+                  transform: !isMobile && activeSeriesIndex === index
+                    ? (isTablet ? 'translateY(-2px)' : 'translateX(4px)')
+                    : 'none',
+                  touchAction: 'manipulation',
+                  WebkitTapHighlightColor: 'transparent',
                 }}
                 onTouchStart={(e) => {
                   // Immediate visual feedback on touch
@@ -1050,14 +1065,16 @@ const DicomViewerPage = () => {
               >
                 {series.thumbnailUrl && (
                   // Pre-rendered JPEG from the backend extraction (Option C).
-                  // Loads in ~50ms, gives the user something to look at while
-                  // Cornerstone fetches and decodes the actual DICOM.
+                  // Mobile: 56×56 left-side thumbnail (compact tile).
+                  // Desktop/tablet: full-width 1:1 thumbnail above the text.
                   <div style={{
-                    width: '100%',
-                    aspectRatio: '1 / 1',
+                    width: isMobile ? '56px' : '100%',
+                    height: isMobile ? '56px' : undefined,
+                    aspectRatio: isMobile ? undefined : '1 / 1',
+                    flexShrink: isMobile ? 0 : undefined,
                     background: '#000',
                     borderRadius: '6px',
-                    marginBottom: '6px',
+                    marginBottom: isMobile ? 0 : '6px',
                     overflow: 'hidden',
                     border: '1px solid rgba(255,255,255,0.08)'
                   }}>
@@ -1069,33 +1086,50 @@ const DicomViewerPage = () => {
                     />
                   </div>
                 )}
+                {/* Text column — sits beside the thumbnail on mobile, below on
+                    larger screens. minWidth:0 lets the name truncate cleanly. */}
                 <div style={{
-                  fontSize: isTablet ? '11px' : '12px',
-                  fontWeight: 900,
-                  marginBottom: '4px',
-                  color: activeSeriesIndex === index ? '#fff' : '#8b5cf6'
+                  display: isMobile ? 'flex' : 'contents',
+                  flexDirection: isMobile ? 'column' : undefined,
+                  minWidth: isMobile ? 0 : undefined,
+                  flex: isMobile ? 1 : undefined,
+                  overflow: isMobile ? 'hidden' : undefined,
                 }}>
-                  SERIES {index + 1}
-                </div>
-                <div style={{
-                  fontSize: isTablet ? '9px' : '10px',
-                  fontWeight: 600,
-                  marginBottom: '4px',
-                  lineHeight: '1.3',
-                  wordBreak: 'break-word'
-                }}>
-                  {series.name}
-                </div>
-                <div style={{
-                  fontSize: isTablet ? '8px' : '9px',
-                  opacity: 0.7,
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '8px',
-                  flexWrap: 'wrap'
-                }}>
-                  <span>📁 {series.files?.length || 0} slices</span>
-                  {series.modality && <span>• {series.modality}</span>}
+                  <div style={{
+                    fontSize: isMobile ? '10px' : (isTablet ? '11px' : '12px'),
+                    fontWeight: 900,
+                    marginBottom: isMobile ? '2px' : '4px',
+                    color: activeSeriesIndex === index ? '#fff' : '#8b5cf6',
+                    lineHeight: 1.1,
+                  }}>
+                    SERIES {index + 1}
+                  </div>
+                  <div style={{
+                    fontSize: isMobile ? '9px' : (isTablet ? '9px' : '10px'),
+                    fontWeight: 600,
+                    marginBottom: isMobile ? '2px' : '4px',
+                    lineHeight: 1.2,
+                    wordBreak: 'break-word',
+                    overflow: 'hidden',
+                    textOverflow: 'ellipsis',
+                    display: '-webkit-box',
+                    WebkitLineClamp: isMobile ? 1 : 2,
+                    WebkitBoxOrient: 'vertical',
+                  }}>
+                    {series.name}
+                  </div>
+                  <div style={{
+                    fontSize: isMobile ? '8px' : (isTablet ? '8px' : '9px'),
+                    opacity: 0.75,
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: isMobile ? '4px' : '8px',
+                    flexWrap: 'wrap',
+                    lineHeight: 1,
+                  }}>
+                    <span>{series.files?.length || 0} slc</span>
+                    {series.modality && <span>· {series.modality}</span>}
+                  </div>
                 </div>
               </button>
             ))}
