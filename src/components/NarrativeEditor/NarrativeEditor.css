@@ -848,8 +848,46 @@
     --page-margin-left:   15px;
   }
   .word-canvas {
-    padding: 10px 5px 40px;
+    padding: 10px 5px 16px;
     background: #c0c0c0;
+  }
+}
+
+/* ── Phone-mode MobileToolbar layout ──────────────────────────────────────────
+   Editor container is a flex column. On phone, the top strip + canvas +
+   bottom strip stack so the canvas takes the remaining vertical space and
+   the bottom toolbar stays pinned (sticky inside the flex). */
+@media (max-width: 767px) {
+  .narrative-editor-container {
+    display: flex;
+    flex-direction: column;
+    /* svh = small viewport height, pinned to post-collapse mobile size so
+       the layout doesn't jump when the address bar collapses. */
+    height: 100svh;
+    max-height: 100svh;
+    overflow: hidden;
+  }
+  .narrative-editor-container .word-canvas {
+    flex: 1 1 auto;
+    min-height: 0;            /* allow flex item to shrink so it can scroll */
+    -webkit-overflow-scrolling: touch;
+  }
+  /* Compact page chrome on phone — less wasted shadow + gap so the page
+     fills the screen edge to edge. */
+  .narrative-editor-container .word-page {
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.12);
+    margin-bottom: 8px;
+  }
+  /* Slightly smaller default font so 12 pt body wraps reasonably inside a
+     360-px-wide page. Editors can still apply explicit font-size to override. */
+  .narrative-editor-container .narrative-editor-content {
+    font-size: 11pt;
+    line-height: 1.5;
+  }
+  /* Both toolbars never shrink — canvas does. */
+  .narrative-editor-container .ne-mobile-top,
+  .narrative-editor-container .ne-mobile-bottom {
+    flex-shrink: 0;
   }
 }
 

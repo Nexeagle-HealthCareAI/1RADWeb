@@ -30,6 +30,7 @@ import { CharacterCount } from '@tiptap/extension-character-count';
 import { Extension, Mark, InputRule } from '@tiptap/core';
 import EditorToolbar from './EditorToolbar';
 import Ribbon from './Ribbon';
+import MobileToolbar from './MobileToolbar';
 import { PageDocument, Page } from './extensions/PageNode';
 import { Pagination } from './extensions/Pagination';
 import { LineHeight, ParagraphIndent, PageBreak } from './extensions/Spacing';
@@ -323,6 +324,21 @@ const NarrativeEditor = React.forwardRef(function NarrativeEditor({
   firstPageBanner,
 }, ref) {
   const containerRef = useRef(null);
+  // Phone viewport detection — the desktop Ribbon (5 tabs, 17 tools) is
+  // unusable on <768 px screens. Below that we swap to MobileToolbar.
+  const [isMobile, setIsMobile] = useState(() =>
+    typeof window !== 'undefined' && window.innerWidth < 768
+  );
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const onResize = () => setIsMobile(window.innerWidth < 768);
+    window.addEventListener('resize', onResize);
+    window.addEventListener('orientationchange', onResize);
+    return () => {
+      window.removeEventListener('resize', onResize);
+      window.removeEventListener('orientationchange', onResize);
+    };
+  }, []);
   const [isFullscreen, setIsFullscreen] = useState(false);
   // CSS-only fallback fullscreen — used on iPad/Safari when requestFullscreen API is unavailable or fails
   const [cssFullscreen, setCssFullscreen] = useState(false);
@@ -1716,7 +1732,16 @@ const NarrativeEditor = React.forwardRef(function NarrativeEditor({
 
   return (
     <div ref={containerRef} className={`narrative-editor-container${isFinalized ? ' is-finalized' : ''}${cssFullscreen ? ' ne--css-fullscreen' : ''} ${className}`} style={{ ...style, ...marginVars }}>
-      {!previewMode && (
+      {!previewMode && isMobile && (
+        <MobileToolbar
+          editor={editor}
+          onSave={onSave}
+          saveStatus={saveStatus}
+          isFinalized={isFinalized}
+          position="top"
+        />
+      )}
+      {!previewMode && !isMobile && (
         <Ribbon
           editor={editor}
           onSave={onSave}
@@ -1837,6 +1862,16 @@ const NarrativeEditor = React.forwardRef(function NarrativeEditor({
 
         <FindReplaceDialog editor={editor} open={findOpen} focusReplace={findFocusReplace} onClose={() => setFindOpen(false)} />
       </div>
+
+      {/* Mobile bottom toolbar — placed AFTER the canvas so it sits at the
+          bottom of the editor and stays visible above the soft keyboard. */}
+      {!previewMode && isMobile && (
+        <MobileToolbar
+          editor={editor}
+          isFinalized={isFinalized}
+          position="bottom"
+        />
+      )}
 
       {/* ── Grammar errors panel ────────────────────────────────────────── */}
       {grammarOpen && grammarMatches.length > 0 && (
