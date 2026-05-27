@@ -7,6 +7,7 @@ import AdvancedDicomViewer from '../components/AdvancedDicomViewer';
 import ReportPreviewModal from '../components/ReportPreviewModal';
 import { DicomCache } from '../utils/DicomCache';
 import { dicomOptimizer } from '../utils/DicomPerformanceOptimizer';
+import { assetsFromManifest } from '../utils/dicomManifest';
 import { uploadStudyAssetDirect } from '../utils/azureUpload';
 import '../styles/global.css';
 import '../styles/TechnicianPage.css';
@@ -273,20 +274,17 @@ export default function TechnicianPage() {
       await handleStatusUpdate(study.appointmentId || study.id, 'in_progress');
     }
 
-    // Fetch existing assets for this mission
+    // Fetch existing assets for this mission via the manifest endpoint.
+    // Extracted ZIPs come back as per-series entries with slice-URL pseudo-Files
+    // ready for Cornerstone; legacy un-extracted ZIPs keep the needsHydration
+    // shape so hydrateZipAsset() can still serve them as a fallback.
     try {
         setLoading(true);
-        const res = await apiClient.get(`/Study/${study.appointmentId}/assets`);
-        if (res.data && res.data.length > 0) {
-            const hydAssets = res.data.map(asset => ({
-                id: asset.id,
-                name: asset.fileName,
-                type: asset.fileType.toUpperCase(),
-                remoteUrl: asset.blobUrl,
-                needsHydration: asset.fileType === 'zip',
-                rawFiles: []
-            }));
-            setUploadedFiles(hydAssets);
+        const manifestRes = await apiClient.get(`/Study/${study.appointmentId}/manifest`)
+            .catch(() => ({ data: { success: false } }));
+        const manifestAssets = (manifestRes?.data?.success && manifestRes.data.data?.assets) || [];
+        if (manifestAssets.length > 0) {
+            setUploadedFiles(assetsFromManifest(manifestAssets));
         }
     } catch (err) {
         console.error('[TECH] Asset fetch failed', err);
@@ -518,19 +516,14 @@ export default function TechnicianPage() {
   const reloadAssetsFromBackend = async () => {
     if (!activeStudy?.appointmentId) return;
     try {
-      console.log(`[TECH] 🔄 Reloading assets from backend for appointment: ${activeStudy.appointmentId}`);
-      const res = await apiClient.get(`/Study/${activeStudy.appointmentId}/assets`);
-      if (res.data && res.data.length > 0) {
-        const hydAssets = res.data.map(asset => ({
-          id: asset.id,
-          name: asset.fileName,
-          type: asset.fileType.toUpperCase(),
-          remoteUrl: asset.blobUrl,
-          needsHydration: asset.fileType === 'zip',
-          rawFiles: []
-        }));
+      console.log(`[TECH] 🔄 Reloading manifest for appointment: ${activeStudy.appointmentId}`);
+      const manifestRes = await apiClient.get(`/Study/${activeStudy.appointmentId}/manifest`)
+        .catch(() => ({ data: { success: false } }));
+      const manifestAssets = (manifestRes?.data?.success && manifestRes.data.data?.assets) || [];
+      if (manifestAssets.length > 0) {
+        const hydAssets = assetsFromManifest(manifestAssets);
         setUploadedFiles(hydAssets);
-        console.log(`[TECH] ✅ Assets reloaded: ${hydAssets.length} files now available`);
+        console.log(`[TECH] ✅ Reloaded ${hydAssets.length} series-entries from manifest`);
       }
     } catch (err) {
       console.error('[TECH] Failed to reload assets from backend', err);

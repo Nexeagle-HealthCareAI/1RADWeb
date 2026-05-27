@@ -15,6 +15,7 @@ import { nativeStorage } from '../hooks/useElectron';
 import ReportPreviewModal, { PatientInfoBlock } from '../components/ReportPreviewModal';
 import SearchableTemplatePicker from '../components/SearchableTemplatePicker';
 import PatientTimeline from '../components/PatientTimeline';
+import { assetsFromManifest } from '../utils/dicomManifest';
 
 const ReportingPage = () => {
   const navigate = useNavigate();
@@ -351,17 +352,13 @@ const ReportingPage = () => {
     setProcessingStatus(`Synchronizing comparative study: ${study.modality || 'DICOM'}...`);
 
     try {
-      const assetRes = await apiClient.get(`/Study/${historicalId}/assets`);
-      if (assetRes.data && assetRes.data.length > 0) {
-        const hydAssets = assetRes.data.map((asset, index) => ({
-          id: asset.id,
-          name: asset.fileName || `Historical Asset ${index + 1}`,
-          type: (asset.fileType || 'unknown').toUpperCase(),
-          remoteUrl: asset.blobUrl,
-          needsHydration: (asset.fileType || '').toLowerCase() === 'zip',
-          rawFiles: [],
-          isHistorical: true
-        }));
+      // Manifest endpoint — same Option C migration as the initial load.
+      const manifestRes = await apiClient.get(`/Study/${historicalId}/manifest`)
+        .catch(() => ({ data: { success: false } }));
+      const manifestAssets = (manifestRes?.data?.success && manifestRes.data.data?.assets) || [];
+
+      if (manifestAssets.length > 0) {
+        const hydAssets = assetsFromManifest(manifestAssets, { isHistorical: true });
 
         setUploadedFiles(hydAssets);
         setIsHistoricalMode(true);
@@ -447,13 +444,16 @@ const ReportingPage = () => {
 
       console.info(`[1RAD] Final Context DoctorID: ${doctorId}`);
 
-      // 2. Parallel fetch for Library and Institutional Branding
-      const [templRes, keyRes, protRes, reportRes, assetRes] = await Promise.all([
+      // 2. Parallel fetch for Library, Institutional Branding, and study manifest.
+      // Manifest endpoint replaces /assets — for extracted ZIPs it returns
+      // per-slice URLs that the viewer loads directly via Cornerstone's wadouri
+      // loader, eliminating the in-browser unzip wait.
+      const [templRes, keyRes, protRes, reportRes, manifestRes] = await Promise.all([
         apiClient.get('/reporting/templates'),
         apiClient.get('/reporting/keywords'),
         doctorId ? apiClient.get(`/Prescription/${doctorId}`).catch(() => null) : Promise.resolve(null),
         apiClient.get(`/Reporting/report/${appId}`).catch(() => ({ data: { success: false } })),
-        apiClient.get(`/Study/${appId}/assets`).catch(() => ({ data: [] }))
+        apiClient.get(`/Study/${appId}/manifest`).catch(() => ({ data: { success: false } }))
       ]);
 
       if (templRes.data?.success) {
@@ -482,39 +482,16 @@ const ReportingPage = () => {
         console.warn(`[1RAD] Institutional Branding failed for DoctorID: ${doctorId}. Reverting to default.`);
       }
 
-      if (assetRes.data && assetRes.data.length > 0) {
-        console.info(`[1RAD] Found ${assetRes.data.length} existing study assets`);
-        console.info(`[1RAD] Raw asset data:`, assetRes.data);
+      const manifestAssets = (manifestRes?.data?.success && manifestRes.data.data?.assets) || [];
+      if (manifestAssets.length > 0) {
+        console.info(`[1RAD] Manifest returned ${manifestAssets.length} asset(s).`);
+        const hydAssets = assetsFromManifest(manifestAssets);
+        const extractedCount = hydAssets.filter(a => a.isExtracted).length;
+        const pendingCount   = hydAssets.filter(a => a.needsHydration).length;
+        console.info(`[1RAD] Hydrated ${hydAssets.length} series-entries (${extractedCount} extracted, ${pendingCount} pending ZIP fallback).`);
 
-        const hydAssets = assetRes.data.map((asset, index) => {
-          // Validate asset data
-          if (!asset.blobUrl) {
-            console.error(`[1RAD] Asset ${index} missing blobUrl:`, asset);
-          }
-          if (!asset.fileName) {
-            console.warn(`[1RAD] Asset ${index} missing fileName:`, asset);
-          }
-
-          return {
-            id: asset.id,
-            name: asset.fileName || `Asset ${index + 1}`,
-            type: (asset.fileType || 'unknown').toUpperCase(),
-            remoteUrl: asset.blobUrl,
-            needsHydration: (asset.fileType || '').toLowerCase() === 'zip',
-            rawFiles: [],
-            // Add debug info
-            originalAsset: asset
-          };
-        });
-
-        console.info(`[1RAD] Processed assets:`, hydAssets);
         setUploadedFiles(hydAssets);
         setOriginalAssets(hydAssets);
-
-        // DICOM hydration is deferred — triggered only when the doctor opens the DICOM tab.
-        if (hydAssets.length > 0 && hydAssets[0].needsHydration && !hydAssets[0].remoteUrl) {
-          console.error(`[1RAD] Asset missing remoteUrl:`, hydAssets[0]);
-        }
       } else {
         console.info(`[1RAD] No existing study assets found`);
       }
@@ -725,14 +702,17 @@ const ReportingPage = () => {
           });
         }
 
-        // 2. Fetch assets — skip while DICOM is downloading to avoid bandwidth competition
+        // 2. Fetch manifest — skip while DICOM is downloading to avoid bandwidth competition.
+        // Manifest call also returns Pending/Queued statuses so we pick up freshly
+        // uploaded ZIPs the moment the backend extraction worker finishes them.
         if (!isHydratingRef.current) {
-          const assetRes = await apiClient.get(`/Study/${appointmentId}/assets`).catch(() => null);
-          if (assetRes?.data) {
+          const manifestRes = await apiClient.get(`/Study/${appointmentId}/manifest`).catch(() => null);
+          const manifestAssets = (manifestRes?.data?.success && manifestRes.data.data?.assets) || null;
+          if (manifestAssets) {
             setUploadedFiles(prev => {
               // Don't overwrite if we already have extracted series (local upload OR hydrated remote ZIP).
               // Both populate rawFiles + set needsHydration=false. We also catch the case where one
-              // remote ZIP got expanded into multiple series entries sharing the same id.
+              // remote ZIP got expanded into multiple series entries sharing the same source id.
               const hasExtractedSeries = prev.some(a =>
                 (a.rawFiles?.length > 0) ||
                 (a.needsHydration === false && a.seriesUID) ||
@@ -741,31 +721,21 @@ const ReportingPage = () => {
               if (hasExtractedSeries) {
                 console.log('[LIVE_UPDATE] Preserving extracted series, skipping API sync', {
                   prevCount: prev.length,
-                  apiCount: assetRes.data.length
+                  manifestCount: manifestAssets.length
                 });
                 return prev;
               }
 
-              const currentIds = prev.map(a => String(a.id));
-              const hasNewAssets = assetRes.data.some(asset => !currentIds.includes(String(asset.id)));
-              const hasRemovedAssets = currentIds.some(id => !assetRes.data.some(asset => String(asset.id) === id));
+              // Compare source asset ids (the manifest entries are series-expanded,
+              // so we de-dupe by sourceAssetId / id when comparing).
+              const manifestSourceIds = manifestAssets.map(a => String(a.assetId));
+              const currentSourceIds  = prev.map(a => String(a.sourceAssetId || a.id));
+              const sameSet = manifestSourceIds.length === new Set([...manifestSourceIds, ...currentSourceIds]).size
+                              && manifestSourceIds.length === currentSourceIds.length;
 
-              if (hasNewAssets || hasRemovedAssets || prev.length !== assetRes.data.length) {
+              if (!sameSet) {
                 console.log('[LIVE_UPDATE] Assets changed, reloading study library...');
-                const hydAssets = assetRes.data.map((asset, index) => {
-                  const existing = prev.find(p => String(p.id) === String(asset.id));
-                  return {
-                    id: asset.id,
-                    name: asset.fileName || `Asset ${index + 1}`,
-                    type: (asset.fileType || 'unknown').toUpperCase(),
-                    remoteUrl: asset.blobUrl,
-                    needsHydration: (asset.fileType || '').toLowerCase() === 'zip' && (!existing || existing.rawFiles?.length === 0),
-                    rawFiles: existing?.rawFiles || [],
-                    originalAsset: asset
-                  };
-                });
-
-                // Hydration is triggered on-demand when user opens the DICOM tab.
+                const hydAssets = assetsFromManifest(manifestAssets);
                 setOriginalAssets(hydAssets);
                 return hydAssets;
               }
@@ -3062,6 +3032,9 @@ const ReportingPage = () => {
                         files: series.rawFiles,
                         seriesUID: series.seriesUID,
                         modality: series.modality,
+                        // Pre-rendered JPEG thumbnail — keeps the placeholder
+                        // visible in the fullscreen viewer during cold start.
+                        thumbnailUrl: series.thumbnailUrl,
                       }));
                       const activeValidIdx = validSeries.findIndex(s => s.name === uploadedFiles[activeAssetIndex]?.name);
                       navigate('/dicom-viewer', {
@@ -3236,6 +3209,7 @@ const ReportingPage = () => {
                 <AdvancedDicomViewer
                   key={`mobile-${activeAssetIndex}_${resetTrigger}`}
                   files={activeAsset.rawFiles}
+                  placeholderUrl={activeAsset.thumbnailUrl}
                   preParsedMetadata={activeAsset.metadata}
                   activeTool={activeTool}
                   isCine={cineEnabled}
@@ -3799,7 +3773,10 @@ const ReportingPage = () => {
                           name: series.name,
                           files: series.rawFiles,
                           seriesUID: series.seriesUID,
-                          modality: series.modality
+                          modality: series.modality,
+                          // Pre-rendered JPEG thumbnail (Option C manifest) —
+                          // shown as placeholder in viewer during cold start.
+                          thumbnailUrl: series.thumbnailUrl
                         }));
 
                         const activeValidSeriesIndex = validSeries.findIndex(s => s.name === uploadedFiles[activeAssetIndex]?.name);
@@ -4098,6 +4075,7 @@ const ReportingPage = () => {
                             <AdvancedDicomViewer
                               key={`${activeAssetIndex}_${idx}_${resetTrigger}`}
                               files={currentFiles || []}
+                              placeholderUrl={uploadedFiles[(activeAssetIndex + idx) % uploadedFiles.length]?.thumbnailUrl}
                               preParsedMetadata={uploadedFiles[(activeAssetIndex + idx) % uploadedFiles.length]?.metadata}
                               activeTool={activeTool}
                               isCine={cineEnabled}

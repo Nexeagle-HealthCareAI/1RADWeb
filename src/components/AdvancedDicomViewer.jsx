@@ -124,6 +124,24 @@ function getOrCreateBlobUrl(file) {
   }
   return url;
 }
+
+/**
+ * Reads raw DICOM bytes from either a real File (from local upload or
+ * in-browser unzip) or a manifest-driven pseudo-File (manifest path —
+ * carries only a .dicomUrl, no arrayBuffer method). Centralises the
+ * branching so every byte-reading site stays consistent.
+ */
+async function readDicomBytes(file) {
+  if (file && typeof file.arrayBuffer === 'function') {
+    return file.arrayBuffer();
+  }
+  if (file && typeof file.dicomUrl === 'string') {
+    const res = await fetch(file.dicomUrl);
+    if (!res.ok) throw new Error(`HTTP ${res.status} fetching ${file.dicomUrl}`);
+    return res.arrayBuffer();
+  }
+  throw new Error('Unsupported file shape — no arrayBuffer() and no dicomUrl.');
+}
 export function clearDicomBlobUrlCache() {
   blobUrlTracker.forEach(url => {
     try { URL.revokeObjectURL(url); } catch (e) {}
@@ -524,11 +542,16 @@ async function initCornerstone() {
   console.log("[DICOM] Cornerstone3D Core & Loader Fully Initialized");
 }
 
-const AdvancedDicomViewer = ({ 
-  files, 
-  onImageStatus, 
-  activeTool, 
-  onMetadata, 
+const AdvancedDicomViewer = ({
+  files,
+  // Backend-rendered JPEG thumbnail (256px, ~30 KB) for the active series.
+  // Painted over the canvas while the first DICOM slice streams in — so the
+  // user sees something diagnostic in <100 ms instead of staring at a black
+  // canvas during the cold-start fetch + decode.
+  placeholderUrl,
+  onImageStatus,
+  activeTool,
+  onMetadata,
   onSliceChange,
   isCine,
   invert,
@@ -683,6 +706,65 @@ const AdvancedDicomViewer = ({
         console.warn('[DICOM_TRACE] STRICT_APPEND threw:', e?.message, e);
       }
       return;
+    }
+
+    // ───── IN-PLACE STACK SWITCH (fast series swap) ─────────────────────
+    // If the engine is alive and ready, we can swap the stack without tearing
+    // down the entire engine (which costs 5–10 s of re-init + tool re-register
+    // + middle-slice re-fetch). Cornerstone's viewport.setStack accepts a new
+    // imageId array and rebinds the GL texture; tools attached to the
+    // toolGroup survive. Falls back to the full re-init path below if the
+    // engine isn't ready yet.
+    const canSwapInPlace = renderingEngineRef.current &&
+                           engineStackReadyRef.current &&
+                           files && files.length > 0;
+    if (canSwapInPlace) {
+      try {
+        const vp = renderingEngineRef.current.getViewport(viewportId);
+        if (vp && typeof vp.setStack === 'function') {
+          const newImageIds = files.map(f => `wadouri:${getOrCreateBlobUrl(f)}`);
+          const newMiddleIdx = Math.floor(newImageIds.length / 2);
+          console.log(`[DICOM] In-place stack swap: ${newImageIds.length} new slices, jumping to middle ${newMiddleIdx}`);
+          // Show loader (with placeholder underneath) until first slice paints
+          setHasRenderedFirstImage(false);
+          setCurrentImageIndex(newMiddleIdx);
+          filesRef.current = files;
+          prevFilesRef.current = files;
+          // Pre-warm middle + ±2 in parallel
+          for (let offset = 0; offset <= 2; offset++) {
+            const ahead  = newMiddleIdx + offset;
+            const behind = newMiddleIdx - offset;
+            if (ahead < newImageIds.length) {
+              cornerstone.imageLoader.loadAndCacheImage(newImageIds[ahead]).catch(() => {});
+            }
+            if (offset > 0 && behind >= 0) {
+              cornerstone.imageLoader.loadAndCacheImage(newImageIds[behind]).catch(() => {});
+            }
+          }
+          // Listen for the very next IMAGE_RENDERED so we hide the loader the
+          // moment real pixels land on the canvas.
+          const onSwapRendered = () => {
+            try { elementRef.current?.removeEventListener(Enums.Events.IMAGE_RENDERED, onSwapRendered); } catch {}
+            setHasRenderedFirstImage(true);
+          };
+          try { elementRef.current?.addEventListener(Enums.Events.IMAGE_RENDERED, onSwapRendered); } catch {}
+          vp.setStack(newImageIds).then(() => {
+            try {
+              vp.setImageIdIndex(newMiddleIdx);
+              renderingEngineRef.current?.renderViewports([viewportId]);
+            } catch (err) {
+              console.warn('[DICOM] In-place swap setImageIdIndex failed:', err?.message);
+            }
+          }).catch(err => {
+            console.warn('[DICOM] In-place swap setStack rejected:', err?.message);
+            // If setStack itself failed, fall back to full re-init.
+            setIsReady(false);
+          });
+          return; // skip the full re-init branch below
+        }
+      } catch (e) {
+        console.warn('[DICOM] In-place swap threw, falling back to full re-init:', e?.message);
+      }
     }
 
     console.log('[DICOM] Files prop changed, resetting currentImageIndex to 0');
@@ -1226,9 +1308,15 @@ const AdvancedDicomViewer = ({
         console.log('[DICOM METADATA] Reading first file arrayBuffer...', {
           fileName: files[0].name,
           fileSize: files[0].size,
-          fileType: files[0].type
+          fileType: files[0].type,
+          isRemote: !!files[0].dicomUrl,
         });
-        const arrayBuffer = await files[0].arrayBuffer();
+        // readDicomBytes transparently handles both real Files (local upload /
+        // in-browser unzip) and manifest pseudo-Files (manifest path — fetches
+        // from the slice's HTTPS URL). Without this, the manifest path threw
+        // "files[0].arrayBuffer is not a function" because the pseudo-File
+        // shape doesn't carry that method.
+        const arrayBuffer = await readDicomBytes(files[0]);
         console.log('[DICOM METADATA] ArrayBuffer size:', arrayBuffer.byteLength);
         
         const byteArray = new Uint8Array(arrayBuffer);
@@ -1350,7 +1438,20 @@ const AdvancedDicomViewer = ({
         //    tighter GPU memory caps. Volume viewport regularly throws "engine
         //    error" / blank-renders on iPad. Force stack mode there.
         //  - Phones in general: prefer stack to keep GPU memory low.
-        const VOLUME_VIEWPORT_THRESHOLD = 4;
+        // Volume viewport is currently disabled site-wide. Rationale: with
+        // manifest-driven loading, each slice arrives as an individual HTTPS
+        // fetch. Volume mode emits IMAGE_RENDERED on the FIRST orthographic
+        // paint — before most slices have streamed into the 3D GPU texture
+        // — so the user sees the loader vanish onto a still-empty/black
+        // canvas until the volume fills (~1–3s on a 160-slice CT). Stack
+        // mode paints actual pixels for the middle slice on first render,
+        // and our middle-priority preload + outward prefetch keeps adjacent
+        // slices warm for smooth scrolling. iOS / phones were already on
+        // stack; the change generalises that to desktop too.
+        //
+        // To re-enable later (when we add a "wait for middle slice in volume"
+        // guard), drop VOLUME_VIEWPORT_THRESHOLD back to a small number.
+        const VOLUME_VIEWPORT_THRESHOLD = Number.POSITIVE_INFINITY;
         const ua = typeof navigator !== 'undefined' ? navigator.userAgent : '';
         const isIOSDevice = /iPad|iPhone|iPod/.test(ua)
           || (/Macintosh/.test(ua) && typeof document !== 'undefined' && 'ontouchstart' in document); // iPadOS 13+ reports as Mac
@@ -1358,12 +1459,18 @@ const AdvancedDicomViewer = ({
         const allowVolumeViewport = !isIOSDevice && !isPhone;
         const useVolumeViewport = allowVolumeViewport && files.length >= VOLUME_VIEWPORT_THRESHOLD;
         let isVolumeMode = false;
-        if (!allowVolumeViewport) {
-          console.log(`[DICOM_TRACE] Volume viewport disabled (iOS=${isIOSDevice}, phone=${isPhone}) — using stack mode`);
+        if (!useVolumeViewport) {
+          console.log('[DICOM_TRACE] Volume viewport disabled — using stack mode for all studies (manifest-friendly)');
         }
 
         if (useVolumeViewport) {
           try {
+            // Same null-element guard as the stack path — we may have just
+            // finished initCornerstone awaits when the user navigated away.
+            if (!isMounted || !elementRef.current) {
+              console.warn('[DICOM] Volume enableElement skipped — element gone.');
+              return;
+            }
             console.log(`[DICOM_TRACE] Attempting VOLUME viewport mode (${files.length} slices)`);
             const viewportInput = {
               viewportId,
@@ -1408,6 +1515,16 @@ const AdvancedDicomViewer = ({
 
         // ─── STACK VIEWPORT (fallback OR single-slice series) ───────────────
         if (!isVolumeMode) {
+          // Re-verify the element here — between the entry guard at the top of
+          // setupEngine and this point we may have awaited initCornerstone
+          // and/or the volume-viewport create. A route change / remount during
+          // those awaits nulls elementRef.current and Cornerstone throws
+          // "No element provided", which then cascades into null.join() inside
+          // its render queue. Re-check + bail cleanly.
+          if (!isMounted || !elementRef.current) {
+            console.warn('[DICOM] enableElement skipped — element gone (remount mid-setup).');
+            return;
+          }
           const viewportInput = {
             viewportId,
             element: elementRef.current,
@@ -1445,15 +1562,32 @@ const AdvancedDicomViewer = ({
 
           let firstImage;
           try {
-            console.log(`[DICOM] Calling loadAndCacheImage...`);
+            // Fire-and-forget warm-up of the immediate neighbours (middle ±2)
+            // in parallel so that as soon as ANY web worker frees up, it starts
+            // decoding the next adjacent slice instead of sitting idle while
+            // we wait for the middle one. This converts the cold-start "single
+            // worker grinding" into a 5-way parallel decode and the user sees
+            // adjacent slices ready the moment they scroll.
+            for (let offset = 1; offset <= 2; offset++) {
+              const aheadIdx  = middleIdx + offset;
+              const behindIdx = middleIdx - offset;
+              if (aheadIdx < imageIds.length) {
+                cornerstone.imageLoader.loadAndCacheImage(imageIds[aheadIdx]).catch(() => {});
+              }
+              if (behindIdx >= 0) {
+                cornerstone.imageLoader.loadAndCacheImage(imageIds[behindIdx]).catch(() => {});
+              }
+            }
+
+            console.log(`[DICOM] Calling loadAndCacheImage on middle slice…`);
             const loadPromise = cornerstone.imageLoader.loadAndCacheImage(firstLoadId);
-            
+
             // Add progress tracking
             loadPromise.then(
               (img) => console.log(`[DICOM] Load promise resolved successfully`),
               (err) => console.error(`[DICOM] Load promise rejected:`, err)
             );
-            
+
             firstImage = await Promise.race([
               loadPromise,
               timeout
@@ -1568,39 +1702,56 @@ const AdvancedDicomViewer = ({
         setCurrentImageIndex(middleIdx);
         console.log(`[DICOM_TRACE] setupEngine: imageIndex set to ${middleIdx} (middle)`);
 
-        // Outward prefetch from middle. Cornerstone's loadAndCacheImage queues
-        // each request and decodes them via the web-worker pool; we just need
-        // to enqueue them in the order we want them to land. Fire-and-forget;
-        // the rendering thread is not blocked on these.
+        // Outward prefetch from middle, clamped to ±OUTWARD_PREFETCH_WINDOW.
+        // The full-series prefetch was racing against the visible-slice fetch
+        // for HTTP connections + decode workers, pushing first-paint past 3 s
+        // on large CTs. We focus on the ~60 slices the radiologist is most
+        // likely to scroll through next; stackPrefetch.enable (registered
+        // later) handles the rest as the user actually moves.
+        //
+        // Priority arg is best-effort — Cornerstone3D's queue may or may not
+        // honour `options.priority` depending on version, but enqueue order
+        // dominates in practice. Closest slices fire first.
+        const OUTWARD_PREFETCH_WINDOW = 30;
         if (!isVolumeMode && imageIds.length > 1) {
-          (async () => {
-            for (let offset = 1; offset < imageIds.length; offset++) {
-              if (!isMounted) return;
-              const ahead  = middleIdx + offset;
-              const behind = middleIdx - offset;
-              if (ahead < imageIds.length) {
-                cornerstone.imageLoader.loadAndCacheImage(imageIds[ahead]).catch(() => {});
-              }
-              if (behind >= 0) {
-                cornerstone.imageLoader.loadAndCacheImage(imageIds[behind]).catch(() => {});
-              }
-              // Yield so we don't enqueue 500 promises in one microtask burst.
-              if (offset % 8 === 0) await new Promise(r => setTimeout(r, 0));
+          const maxOffset = Math.min(OUTWARD_PREFETCH_WINDOW, imageIds.length);
+          for (let offset = 1; offset < maxOffset; offset++) {
+            if (!isMounted) break;
+            const ahead    = middleIdx + offset;
+            const behind   = middleIdx - offset;
+            // Skip the ±1..2 slices we already enqueued during the initial
+            // parallel preload above — Cornerstone dedupes but it's cleaner.
+            const skipPre  = offset <= 2;
+            if (!skipPre && ahead < imageIds.length) {
+              cornerstone.imageLoader.loadAndCacheImage(
+                imageIds[ahead], { priority: offset }
+              ).catch(() => {});
             }
-          })();
+            if (!skipPre && behind >= 0) {
+              cornerstone.imageLoader.loadAndCacheImage(
+                imageIds[behind], { priority: offset }
+              ).catch(() => {});
+            }
+          }
         }
 
         // Safety net: hide the loader after a longer delay regardless of the render
         // path below, so a silent failure doesn't leave RENDERING_IMAGE up forever.
         // 3 s is generous enough to never beat the 2-frame rAF chain to the punch
         // on a normal device, but short enough to surface a real failure quickly.
+        // Uses functional setState so it no-ops if IMAGE_RENDERED already flipped
+        // the flag (avoids the redundant "safety-net firing" log AFTER a real
+        // paint event).
         setTimeout(() => {
-          if (isMounted) {
-            console.log('[DICOM_TRACE] safety-net 3s timeout firing setHasRenderedFirstImage(true)');
-            setHasRenderedFirstImage(true);
-          } else {
+          if (!isMounted) {
             console.log('[DICOM_TRACE] safety-net timeout SKIPPED — isMounted=false');
+            return;
           }
+          setHasRenderedFirstImage(prev => {
+            if (prev) return prev; // IMAGE_RENDERED already fired — nothing to do
+            console.log('[DICOM_TRACE] safety-net 3s timeout firing setHasRenderedFirstImage(true)');
+            return true;
+          });
         }, 3000);
 
         // Wait a frame to ensure internal state is stable
@@ -1734,6 +1885,13 @@ const AdvancedDicomViewer = ({
                // We attach a one-shot IMAGE_RENDERED listener, then schedule the
                // standard resize+render to actually cause the paint. The listener
                // flips hasRenderedFirstImage when pixels are committed.
+               //
+               // NOTE: deliberately attached AFTER the first renderViewports call
+               // above. That first render can be into a still-sizing canvas (no
+               // real pixels). The next render (inner rAF / 150 ms setTimeout
+               // below) is when pixels actually land. Attaching here ensures we
+               // catch the later, "real" IMAGE_RENDERED instead of the first
+               // possibly-empty one.
                const onFirstImageRendered = () => {
                  if (!isMounted) return;
                  try { elementRef.current?.removeEventListener(Enums.Events.IMAGE_RENDERED, onFirstImageRendered); } catch {}
@@ -1787,10 +1945,57 @@ const AdvancedDicomViewer = ({
         const resizeObserver = new ResizeObserver(() => {
           if (renderingEngineRef.current) renderingEngineRef.current.resize();
         });
-        
+
         if (elementRef.current) {
           resizeObserver.observe(elementRef.current);
           renderingEngineRef.current._resizeObserver = resizeObserver;
+        }
+
+        // Defensive wheel handler — direct fallback for slice navigation when
+        // StackScrollTool's wheel binding isn't responding (focus quirks, host
+        // CSS capture, certain trackpad drivers). To avoid double-stepping when
+        // StackScrollTool IS working, we:
+        //  1. preventDefault immediately (stop page scroll)
+        //  2. record the current index
+        //  3. wait one frame and check if StackScrollTool changed it
+        //  4. if not, manually step
+        // Only runs in stack mode — volume viewport handles its own wheel.
+        if (!isVolumeMode && elementRef.current) {
+          const wheelHandler = (e) => {
+            try {
+              if (!renderingEngineRef.current) return;
+              const vp = renderingEngineRef.current.getViewport(viewportId);
+              if (!vp ||
+                  typeof vp.getCurrentImageIdIndex !== 'function' ||
+                  typeof vp.setImageIdIndex !== 'function') return;
+              const total = vp.getImageIds?.()?.length || files.length;
+              if (total <= 1) return;
+              e.preventDefault();
+              const idxBefore = vp.getCurrentImageIdIndex();
+              // Give StackScrollTool one frame to handle it.
+              requestAnimationFrame(() => {
+                try {
+                  const vp2 = renderingEngineRef.current?.getViewport(viewportId);
+                  if (!vp2) return;
+                  const idxAfter = vp2.getCurrentImageIdIndex();
+                  if (idxAfter !== idxBefore) return; // tool handled it — done
+                  // Fallback: tool didn't advance, step manually.
+                  const next = Math.max(0, Math.min(total - 1, idxBefore + (e.deltaY > 0 ? 1 : -1)));
+                  if (next !== idxBefore) {
+                    vp2.setImageIdIndex(next);
+                    renderingEngineRef.current.renderViewports([viewportId]);
+                    setCurrentImageIndex(next);
+                    if (onSliceChange) onSliceChange(next, total);
+                  }
+                } catch (err) { /* ignore */ }
+              });
+            } catch (err) {
+              console.warn('[DICOM] Fallback wheel handler error:', err?.message);
+            }
+          };
+          elementRef.current.addEventListener('wheel', wheelHandler, { passive: false });
+          renderingEngineRef.current._fallbackWheelHandler = wheelHandler;
+          console.log('[DICOM] Defensive wheel handler attached for slice scroll');
         }
 
         // Global failure listener for this element
@@ -2495,8 +2700,40 @@ const AdvancedDicomViewer = ({
       }}
     >
       <div ref={containerRef} style={{ width: '100%', height: '100%', position: 'relative', display: 'flex', flexDirection: 'column', background: '#000' }}>
+      {/* Thumbnail placeholder — painted in the containerRef level so it sits
+          beneath the loader overlay (z:10) but above the WebGL canvas (z:1).
+          Lets the loader text/spinner show through with a translucent dark
+          tint, so the user sees a real diagnostic preview during the cold-
+          start fetch + decode window instead of staring at pure black. */}
+      {placeholderUrl && !hasRenderedFirstImage && (
+        <img
+          src={placeholderUrl}
+          alt=""
+          style={{
+            position: 'absolute',
+            inset: 0,
+            width: '100%',
+            height: '100%',
+            objectFit: 'contain',
+            zIndex: 5,
+            pointerEvents: 'none',
+            transition: 'opacity 0.25s ease-out',
+          }}
+        />
+      )}
       {(!isReady || !hasRenderedFirstImage) && (
-        <div style={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', zIndex: 10, background: '#000' }}>
+        <div
+          style={{
+            position: 'absolute', inset: 0,
+            display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
+            zIndex: 10,
+            // When a placeholder thumbnail is visible, use a translucent
+            // backdrop so the thumbnail bleeds through. Without a placeholder
+            // we stay opaque black to hide the empty WebGL canvas.
+            background: placeholderUrl ? 'rgba(0,0,0,0.55)' : '#000',
+            backdropFilter: placeholderUrl ? 'blur(2px)' : undefined,
+          }}
+        >
           <div className="dicom-loader" />
           <p style={{ color: '#0f52ba', fontSize: '10px', fontWeight: 950, marginTop: '20px', letterSpacing: '3px' }}>
             {!isReady ? 'PARSING_DIAGNOSTIC_DATA' : 'RENDERING_IMAGE'}
@@ -3099,7 +3336,9 @@ const AdvancedDicomViewer = ({
         </div>
       )}
 
-      {/* WEBGL CANVAS CONTAINER */}
+      {/* WEBGL CANVAS CONTAINER. Placeholder thumbnail lives at the
+          containerRef level above (z:5) so it sits beneath the loader
+          overlay (z:10) and shows through its translucent backdrop. */}
       <div
         ref={elementRef}
         onContextMenu={(e) => e.preventDefault()}
@@ -3213,19 +3452,30 @@ const AdvancedDicomViewer = ({
                onChange={(e) => {
                   const index = parseInt(e.target.value);
                   console.log(`[DICOM] Slider navigation: ${index + 1}/${files.length}`);
-                  
+
                   const viewport = renderingEngineRef.current?.getViewport(viewportId);
-                  if (viewport) {
-                    try {
-                      viewport.setImageIdIndex(index);
-                      setCurrentImageIndex(index);
-                      if (onSliceChange) onSliceChange(index, files.length);
-                      console.log(`[DICOM] ✅ Slider slice navigation successful`);
-                    } catch (err) {
-                      console.error('[DICOM] ❌ Slider slice navigation failed:', err);
-                    }
-                  } else {
+                  if (!viewport) {
                     console.warn('[DICOM] ⚠️ Viewport not available for slice navigation');
+                    return;
+                  }
+                  try {
+                    // Stack viewports use setImageIdIndex; volume viewports
+                    // (orthographic, MPR) don't have it — they navigate slices
+                    // via camera/setSliceIndex. Use whichever is available.
+                    if (typeof viewport.setImageIdIndex === 'function') {
+                      viewport.setImageIdIndex(index);
+                    } else if (typeof viewport.setSliceIndex === 'function') {
+                      viewport.setSliceIndex(index);
+                      renderingEngineRef.current?.renderViewports([viewportId]);
+                    } else {
+                      console.warn('[DICOM] ⚠️ Viewport has no slice-navigation method');
+                      return;
+                    }
+                    setCurrentImageIndex(index);
+                    if (onSliceChange) onSliceChange(index, files.length);
+                    console.log(`[DICOM] ✅ Slider slice navigation successful`);
+                  } catch (err) {
+                    console.error('[DICOM] ❌ Slider slice navigation failed:', err);
                   }
                }}
                onInput={(e) => {

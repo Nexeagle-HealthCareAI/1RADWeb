@@ -30,7 +30,10 @@ export const Btn = ({ onClick, disabled, active, title, children, style = {} }) 
     title={title}
     style={{
       display: 'flex', alignItems: 'center', justifyContent: 'center',
-      minWidth: '26px', height: '26px', padding: '0 6px',
+      // Hit-target bumped from 26→30px and the inner padding widened — the
+      // 3px row gap between buttons was leaving <2px of dead space, which on
+      // a trackpad/laptop translates to "I clicked Bold but Italic toggled".
+      minWidth: '30px', height: '30px', padding: '0 8px',
       background: active ? C.accentMid : 'transparent',
       border: `1px solid ${active ? C.accentActive : 'transparent'}`,
       borderRadius: '6px', cursor: disabled ? 'not-allowed' : 'pointer',
@@ -99,7 +102,9 @@ export const Sep = () => (
   <div style={{
     width: '1.5px', alignSelf: 'stretch',
     background: C.divider,
-    margin: '6px 7px', flexShrink: 0,
+    // Margin widened to match the bigger button row — keeps the visual
+    // rhythm consistent across buttons and group dividers.
+    margin: '6px 10px', flexShrink: 0,
     borderRadius: '1px',
   }} />
 );
@@ -189,7 +194,10 @@ export const Group = ({ label, children, onLauncher, style = {} }) => (
     ...style,
   }}>
     <div style={{
-      display: 'flex', alignItems: 'center', gap: '3px',
+      // gap bumped from 3→6px so adjacent buttons no longer feel "merged" —
+      // user-reported issue: clicks intended for one button were registering
+      // on the neighbour because of the tight spacing.
+      display: 'flex', alignItems: 'center', gap: '6px',
       flex: 1, minHeight: '56px', paddingTop: '3px', paddingBottom: '2px',
     }}>
       {children}

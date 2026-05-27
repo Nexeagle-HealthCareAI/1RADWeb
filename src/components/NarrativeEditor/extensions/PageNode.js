@@ -41,7 +41,8 @@ export const Page = Node.create({
        * Pagination plugin re-split if the merged page overflows.
        */
       Backspace: () => {
-        const { state } = this.editor.view;
+        const view = this.editor.view;
+        const { state } = view;
         const { $from, empty } = state.selection;
 
         // Only act on a collapsed (non-range) cursor.
@@ -52,10 +53,65 @@ export const Page = Node.create({
         if ($from.depth < 2) return false;
         if ($from.node(1).type.name !== 'page') return false;
 
-        // Cursor must be at the very start of its block.
-        if ($from.parentOffset !== 0) return false;
+        // ── Branch A: empty paragraph anywhere on the page ────────────────
+        // Sweep away wholly-empty paragraphs in one keypress. Without this,
+        // default joinBackward sometimes leaves an "uneditable gap" because
+        // ProseMirror tries to preserve the empty block as a defining child
+        // of the page and merges character-by-character instead of removing
+        // the node. Result: user sees the gap shrink by 1 unit per press
+        // instead of disappearing.
+        //
+        // Conditions:
+        //   - cursor is at the start of its block (parentOffset 0)
+        //   - the block has no text content
+        //   - it's a paragraph (not heading/list — those need their own UX)
+        //   - it's NOT the first block (otherwise Branch B handles page boundary)
+        //   - there IS a previous sibling to land the caret in
+        const block = $from.parent;
+        const isEmptyPara =
+          block.type.name === 'paragraph' &&
+          block.content.size === 0 &&
+          $from.parentOffset === 0;
 
-        // That block must be the first child of the page.
+        if (isEmptyPara && $from.index(1) > 0) {
+          try {
+            const blockStart = $from.before($from.depth);  // position just before this paragraph
+            const blockEnd   = $from.after($from.depth);   // position just after this paragraph
+            const tr = state.tr.delete(blockStart, blockEnd);
+            // Drop the caret at the end of whatever block now sits before us.
+            const $newPos = tr.doc.resolve(Math.max(0, blockStart - 1));
+            tr.setSelection(state.selection.constructor.near($newPos, -1));
+            tr.scrollIntoView();
+            view.dispatch(tr);
+            return true;
+          } catch (_) {
+            return false;
+          }
+        }
+
+        // ── Branch B: previous sibling is an empty paragraph ─────────────
+        // Mirror UX: user has cursor at the start of a content paragraph,
+        // immediately above is an empty paragraph. Backspace should swallow
+        // the empty paragraph without nuking any text. Same intent as A,
+        // from the other side.
+        if ($from.parentOffset === 0 && $from.index(1) > 0) {
+          const prevIndex = $from.index(1) - 1;
+          const pageNode = $from.node(1);
+          const prevBlock = pageNode.child(prevIndex);
+          if (prevBlock.type.name === 'paragraph' && prevBlock.content.size === 0) {
+            try {
+              const blockStart = $from.before($from.depth) - prevBlock.nodeSize;
+              const blockEnd   = $from.before($from.depth);
+              const tr = state.tr.delete(blockStart, blockEnd);
+              tr.scrollIntoView();
+              view.dispatch(tr);
+              return true;
+            } catch (_) { /* fall through */ }
+          }
+        }
+
+        // ── Branch C: page boundary join (original behaviour) ────────────
+        if ($from.parentOffset !== 0) return false;
         if ($from.index(1) !== 0) return false;
 
         // The position just before this page's opening token.
@@ -71,13 +127,13 @@ export const Page = Node.create({
         try {
           const tr = state.tr.join(pagePos, 2);
           tr.scrollIntoView();
-          this.editor.view.dispatch(tr);
+          view.dispatch(tr);
           return true;
         } catch (_) {
           try {
             const tr = state.tr.join(pagePos, 1);
             tr.scrollIntoView();
-            this.editor.view.dispatch(tr);
+            view.dispatch(tr);
             return true;
           } catch (_2) {
             return false;

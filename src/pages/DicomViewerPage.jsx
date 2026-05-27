@@ -2,7 +2,6 @@ import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate, useLocation, useSearchParams } from 'react-router-dom';
 import AdvancedDicomViewer from '../components/AdvancedDicomViewer';
 import apiClient from '../api/apiClient';
-import { dicomOptimizer } from '../utils/DicomPerformanceOptimizer';
 
 const DicomViewerPage = () => {
   const navigate = useNavigate();
@@ -13,6 +12,12 @@ const DicomViewerPage = () => {
   const [hydrationError, setHydrationError] = useState(null);
   const [hydratedSeries, setHydratedSeries] = useState(null); // array of series objects when fetched by appointmentId
   const [hydrationProgress, setHydrationProgress] = useState({ phase: '', current: 0, total: 0, elapsedMs: 0 });
+  // When the backend manifest reports an asset with extractionStatus != 'Extracted'
+  // (Queued / Running / Failed), we surface a friendly "still processing" state
+  // with a retry button instead of trying to unzip in the browser. Removed in
+  // Phase 4 cleanup — the lazy-extract path in /manifest is now the safety net.
+  const [pendingExtractionAssets, setPendingExtractionAssets] = useState([]);
+  const [hydrationAttempt, setHydrationAttempt] = useState(0); // bump to retry manifest
   const [activeTool, setActiveTool] = useState('WindowLevelTool');
   const [currentSlice, setCurrentSlice] = useState(1);
   const [activeMetadata, setActiveMetadata] = useState(null);
@@ -39,13 +44,12 @@ const DicomViewerPage = () => {
   const stateInitialSeriesIndex = location.state?.activeSeriesIndex;
   const stateInitialLayoutMode = location.state?.layoutMode;
 
-  // If we were opened via ?appointmentId=… (e.g. from the timeline), hydrate the assets
-  // ourselves. PRIMARY PATH (Option C): fetch the manifest — backend has already
-  // unzipped + indexed each slice with its own URL, so we can hand individual
-  // slice URLs straight to Cornerstone and skip the in-browser unzip entirely.
-  // FALLBACK PATH: any asset the backend hasn't extracted yet (legacy uploads
-  // not yet backfilled, extraction still queued, or extraction failed) gets
-  // the old download-zip-and-unzip-locally treatment.
+  // Manifest-driven hydration (Option C). The backend extraction pipeline owns
+  // ZIP → per-slice splitting; the viewer just fetches the manifest and hands
+  // slice URLs to Cornerstone. The legacy in-browser unzip path was removed in
+  // Phase 4 cleanup — the backend /manifest endpoint has its own lazy-extract
+  // safety net, so the only real failure mode here is "extraction in flight",
+  // which we surface as a pending-state UI with a retry button.
   useEffect(() => {
     if (!urlAppointmentId) return;
     if (stateFiles || stateAllSeries) return; // navigation state already supplied data
@@ -56,42 +60,26 @@ const DicomViewerPage = () => {
       const t0 = performance.now();
       setHydrating(true);
       setHydrationError(null);
+      setPendingExtractionAssets([]);
       setHydrationProgress({ phase: 'fetching-manifest', current: 0, total: 0, elapsedMs: 0 });
       try {
-        // 1. Try the manifest endpoint first.
-        let manifestData = null;
-        try {
-          const manifestRes = await apiClient.get(`/Study/${urlAppointmentId}/manifest`);
-          if (manifestRes.data?.success) manifestData = manifestRes.data.data;
-        } catch (mErr) {
-          // Manifest endpoint missing (older API) or 404 — fall through to legacy.
-          console.info('[DICOM VIEWER] Manifest endpoint unavailable, using legacy asset list:', mErr?.message);
+        const manifestRes = await apiClient.get(`/Study/${urlAppointmentId}/manifest`);
+        if (!manifestRes.data?.success) {
+          throw new Error(manifestRes.data?.error || 'Manifest request failed.');
         }
-
-        let assets;
-        if (manifestData?.assets) {
-          assets = manifestData.assets;
-        } else {
-          // Legacy path: fetch the raw asset list (no extraction status).
-          const res = await apiClient.get(`/Study/${urlAppointmentId}/assets`);
-          assets = (res.data || []).map(a => ({
-            assetId: a.id,
-            fileName: a.fileName,
-            fileType: a.fileType,
-            blobUrl: a.blobUrl,
-            extractionStatus: 'Pending',
-            series: null,
-          }));
-        }
+        const manifestData = manifestRes.data.data;
+        const assets = manifestData?.assets;
         if (!Array.isArray(assets) || assets.length === 0) {
           throw new Error('No imaging assets are available for this study.');
         }
 
         const allExtracted = [];
+        const pending = [];
+
         for (let assetIdx = 0; assetIdx < assets.length; assetIdx++) {
           const asset = assets[assetIdx];
 
-          // ───── PRIMARY PATH: Manifest already has per-slice URLs ─────
+          // Extracted DICOM ZIP — per-slice URLs are ready.
           if (asset.extractionStatus === 'Extracted' && Array.isArray(asset.series) && asset.series.length > 0) {
             setHydrationProgress({ phase: `manifest-asset-${assetIdx + 1}-of-${assets.length}`, current: 0, total: 0, elapsedMs: Math.round(performance.now() - t0) });
             asset.series.forEach((s) => {
@@ -118,60 +106,61 @@ const DicomViewerPage = () => {
             continue;
           }
 
-          // ───── FALLBACK PATH: ZIP not yet extracted — unzip in browser ─────
-          if (!asset.blobUrl) continue;
-          try {
-            setHydrationProgress({ phase: `downloading-asset-${assetIdx + 1}-of-${assets.length}`, current: 0, total: 0, elapsedMs: Math.round(performance.now() - t0) });
-            const fileRes = await fetch(asset.blobUrl);
-            if (!fileRes.ok) throw new Error(`Fetch ${fileRes.status}`);
-            const blob = await fileRes.blob();
-            const isZip = (asset.fileType || '').toLowerCase() === 'zip' || (asset.fileName || '').toLowerCase().endsWith('.zip');
-
-            if (isZip) {
-              const file = new File([blob], asset.fileName || `study-${asset.assetId}.zip`, { type: 'application/zip' });
-              const result = await dicomOptimizer.processZipFileOptimized(file, (p) => {
-                if (cancelled) return;
-                setHydrationProgress({
-                  phase: p.stage || 'processing',
-                  current: p.current || 0,
-                  total: p.total || 0,
-                  elapsedMs: Math.round(performance.now() - t0),
-                });
-              });
-              const series = result?.series || [];
-              series.forEach(s => allExtracted.push(s));
-            } else {
-              // Single DICOM file
-              const file = new File([blob], asset.fileName || `image-${asset.assetId}.dcm`, { type: 'application/dicom' });
+          // Non-ZIP attachments (single .dcm/.jpg/.png) — backend marks them
+          // NotApplicable. We can still load a lone DICOM via its blobUrl
+          // through Cornerstone's wadouri loader.
+          if (asset.extractionStatus === 'NotApplicable' && asset.blobUrl) {
+            const ft = (asset.fileType || '').toLowerCase();
+            if (ft === 'dcm' || ft === 'dicom') {
               allExtracted.push({
                 name: asset.fileName || `Asset ${asset.assetId}`,
-                seriesDesc: asset.fileName || 'Image',
-                patientName: '',
+                seriesDesc: asset.fileName,
                 modality: '',
                 seriesUID: asset.assetId,
-                files: [file],
-                metadata: {},
+                files: [{
+                  name: asset.fileName || `image-${asset.assetId}.dcm`,
+                  size: 0,
+                  type: 'application/dicom',
+                  dicomUrl: asset.blobUrl,
+                }],
               });
             }
-          } catch (err) {
-            console.warn(`[DICOM VIEWER] Failed to process asset ${asset.assetId}:`, err);
+            // (image attachments JPG/PNG aren't DICOM and don't render in this viewer)
+            continue;
           }
+
+          // Queued / Running / Failed — extraction not yet complete. Surface
+          // it so the user knows the backend is still working on it and gets
+          // a retry button rather than a silent failure.
+          pending.push({
+            assetId: asset.assetId,
+            fileName: asset.fileName,
+            extractionStatus: asset.extractionStatus || 'Pending',
+          });
         }
 
         if (cancelled) return;
-        if (allExtracted.length === 0) {
-          throw new Error('No DICOM images could be extracted from this study.');
-        }
 
-        // Shape the hydrated series to match what the viewer expects.
-        const series = allExtracted.map((s, idx) => ({
-          name: s.patientName ? `${s.patientName} — ${s.seriesDesc}` : (s.seriesDesc || s.name || `Series ${idx + 1}`),
-          files: s.files,
-          modality: s.modality,
-          seriesUID: s.seriesUID,
-          thumbnailUrl: s.thumbnailUrl,
-        }));
-        setHydratedSeries(series);
+        if (allExtracted.length === 0) {
+          if (pending.length > 0) {
+            setPendingExtractionAssets(pending);
+          } else {
+            throw new Error('No DICOM images could be extracted from this study.');
+          }
+        } else {
+          // Shape the hydrated series to match what the viewer expects.
+          const series = allExtracted.map((s, idx) => ({
+            name: s.patientName ? `${s.patientName} — ${s.seriesDesc}` : (s.seriesDesc || s.name || `Series ${idx + 1}`),
+            files: s.files,
+            modality: s.modality,
+            seriesUID: s.seriesUID,
+            thumbnailUrl: s.thumbnailUrl,
+          }));
+          setHydratedSeries(series);
+          // Tell the user some assets are still extracting in the background
+          // even though others have rendered — best of both worlds.
+          if (pending.length > 0) setPendingExtractionAssets(pending);
+        }
       } catch (err) {
         if (!cancelled) setHydrationError(err.message || 'Failed to load study assets.');
       } finally {
@@ -180,7 +169,7 @@ const DicomViewerPage = () => {
     };
     hydrate();
     return () => { cancelled = true; };
-  }, [urlAppointmentId, stateFiles, stateAllSeries, hydratedSeries]);
+  }, [urlAppointmentId, stateFiles, stateAllSeries, hydratedSeries, hydrationAttempt]);
 
   // Effective sources — prefer navigation state, fall back to hydrated assets.
   const files          = stateFiles || (hydratedSeries && hydratedSeries.length === 1 ? hydratedSeries[0].files : null);
@@ -829,6 +818,46 @@ const DicomViewerPage = () => {
     );
   }
 
+  // Backend extraction still in flight — no series ready to display yet.
+  // This replaces the old in-browser ZIP-unzip fallback: instead of slowly
+  // chewing the ZIP on the client, we wait for the backend extraction worker
+  // and show progress + retry. Failed extractions land here too with a
+  // distinct message.
+  if (!hydratedSeries && pendingExtractionAssets.length > 0) {
+    const hasFailed = pendingExtractionAssets.some(a => a.extractionStatus === 'Failed');
+    const allFailed = pendingExtractionAssets.every(a => a.extractionStatus === 'Failed');
+    return (
+      <div style={{ height: '100vh', width: '100vw', background: '#0a0a0f', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', color: 'white', padding: '40px' }}>
+        <div style={{ fontSize: '48px', marginBottom: '16px' }}>{allFailed ? '⚠️' : '⏳'}</div>
+        <div style={{ fontSize: '16px', fontWeight: 800, color: allFailed ? '#ef4444' : '#3b82f6', letterSpacing: '2px', marginBottom: '8px' }}>
+          {allFailed ? 'EXTRACTION FAILED' : 'STUDY IS BEING PROCESSED'}
+        </div>
+        <div style={{ fontSize: '12px', color: '#94a3b8', marginBottom: '20px', textAlign: 'center', maxWidth: '460px', lineHeight: 1.6 }}>
+          {allFailed
+            ? 'The backend could not extract DICOM slices from this study. Re-upload the ZIP or contact support.'
+            : 'The backend is unzipping and indexing the DICOM files. This usually takes a few seconds for small studies, longer for large CT/MR series. Try again in a moment.'}
+        </div>
+        <div style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '10px', padding: '12px 16px', marginBottom: '24px', fontSize: '11px', color: '#cbd5e1', maxWidth: '460px' }}>
+          {pendingExtractionAssets.slice(0, 5).map(a => (
+            <div key={a.assetId} style={{ display: 'flex', justifyContent: 'space-between', gap: '12px', padding: '2px 0' }}>
+              <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{a.fileName || a.assetId}</span>
+              <span style={{ color: a.extractionStatus === 'Failed' ? '#ef4444' : '#3b82f6', fontWeight: 700, flexShrink: 0 }}>{a.extractionStatus}</span>
+            </div>
+          ))}
+          {pendingExtractionAssets.length > 5 && (
+            <div style={{ color: '#64748b', fontSize: '10px', marginTop: '4px' }}>… and {pendingExtractionAssets.length - 5} more</div>
+          )}
+        </div>
+        <div style={{ display: 'flex', gap: '12px' }}>
+          {!allFailed && (
+            <button onClick={() => setHydrationAttempt(n => n + 1)} style={{ padding: '10px 22px', borderRadius: '10px', border: 'none', background: 'linear-gradient(135deg, #3b82f6, #1d4ed8)', color: 'white', fontSize: '12px', fontWeight: 800, letterSpacing: '1px', cursor: 'pointer' }}>RETRY</button>
+          )}
+          <button onClick={() => window.close()} style={{ padding: '10px 22px', borderRadius: '10px', border: '1px solid rgba(255,255,255,0.2)', background: 'rgba(255,255,255,0.1)', color: 'white', fontSize: '12px', fontWeight: 700, cursor: 'pointer' }}>Close</button>
+        </div>
+      </div>
+    );
+  }
+
   // Show error if no files are available
   if (!currentFiles || !Array.isArray(currentFiles) || currentFiles.length === 0) {
     return (
@@ -1240,12 +1269,21 @@ const DicomViewerPage = () => {
             const seriesIndex = (activeSeriesIndex + idx) % (allSeries?.length || 1);
             const displayFiles = hasMultipleSeries ? allSeries[seriesIndex]?.files : currentFiles;
             const displayName = hasMultipleSeries ? allSeries[seriesIndex]?.name : currentSeriesName;
+            // Backend pre-rendered JPEG thumbnail for this series — shown as a
+            // placeholder in the viewport while the first DICOM slice streams
+            // in over the network. Keeps the user from staring at a blank
+            // canvas during the cold-start fetch + decode (~1–3s on a far
+            // Azure region).
+            const displayThumbnail = hasMultipleSeries
+              ? allSeries[seriesIndex]?.thumbnailUrl
+              : (hydratedSeries?.[0]?.thumbnailUrl ?? null);
             
             return (
               <div key={`viewport-${idx}`} style={{ position: 'relative', overflow: 'hidden' }}>
                 <AdvancedDicomViewer
                   files={displayFiles}
                   seriesName={displayName}
+                  placeholderUrl={displayThumbnail}
                   activeTool={activeTool}
                   isCine={cineEnabled}
                   isSynced={isSyncEnabled}
@@ -1267,7 +1305,14 @@ const DicomViewerPage = () => {
                   flipVertical={viewportProps.flipVertical}
                   rotation={viewportProps.rotation}
                   resetTrigger={resetTrigger}
-                  key={`active-${activeSeriesIndex}-series-${seriesIndex}-viewport-${idx}-reset-${resetTrigger}`}
+                  // Key intentionally OMITS activeSeriesIndex / seriesIndex:
+                  // series-switch should rebuild the stack in-place via the
+                  // files-prop effect rather than tear down + recreate the
+                  // entire WebGL engine. Each engine teardown costs 5–10 s
+                  // (re-init, re-register 17 tools, re-fetch middle slice).
+                  // Now only layout changes (idx) and explicit reset trigger
+                  // a remount.
+                  key={`viewport-${idx}-reset-${resetTrigger}`}
                 />
 
                 {/* Overlay Information for this viewport */}
