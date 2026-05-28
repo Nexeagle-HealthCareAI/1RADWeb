@@ -376,11 +376,26 @@ const ReportPreviewModal = ({
       });
     };
 
+    // Blank-line spacing: a typist adds gaps between paragraphs by pressing
+    // Enter (empty <p></p>). The editor renders these with a full line of
+    // height (ProseMirror's trailing <br>), but getHTML() serialises them as
+    // truly empty <p></p>, which COLLAPSE to ~0 height in plain HTML — so the
+    // gaps disappear in preview/print. Inject a <br> into every empty block so
+    // it keeps one line of height, exactly as the editor shows it.
+    const _preserveBlankLines = (root) => {
+      root.querySelectorAll('p, h1, h2, h3, h4, h5, h6, li').forEach(el => {
+        if (!el.textContent.trim() && el.children.length === 0) {
+          el.innerHTML = '<br>';
+        }
+      });
+    };
+
     const _extractEditorPages = (html) => {
       if (!html) return [];
       const tmp = document.createElement('div');
       tmp.innerHTML = html;
       _hydrateSpacing(tmp);
+      _preserveBlankLines(tmp);
       const inners = tmp.querySelectorAll('.word-page-inner');
       if (inners.length === 0) {
         // Content has no .word-page wrappers (e.g., legacy data). Treat as a
