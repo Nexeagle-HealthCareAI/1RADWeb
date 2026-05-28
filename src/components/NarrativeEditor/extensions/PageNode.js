@@ -140,6 +140,60 @@ export const Page = Node.create({
           }
         }
       },
+
+      /**
+       * Forward Delete at the very END of a non-last page.
+       *
+       * Mirror image of the Backspace handler: because Page is `isolating`,
+       * the default forward-delete (joinForward) can't pull the next page's
+       * first block up into this one, so the key silently no-ops at a page
+       * boundary. We detect "cursor at end of the last block of this page"
+       * and join the next page's first block onto it; Pagination re-splits
+       * if the merged page overflows.
+       */
+      Delete: () => {
+        const view = this.editor.view;
+        const { state } = view;
+        const { $from, empty } = state.selection;
+
+        if (!empty) return false;
+        if ($from.depth < 2) return false;
+        if ($from.node(1).type.name !== 'page') return false;
+
+        const pageNode = $from.node(1);
+        const idx = $from.index(1);
+        const atBlockEnd = $from.parentOffset === $from.parent.content.size;
+
+        // Must be at the end of the LAST block of this page. Anything else is
+        // an in-page delete that ProseMirror already handles correctly (the
+        // page is only isolating at its outer boundary).
+        if (!atBlockEnd) return false;
+        if (idx !== pageNode.childCount - 1) return false;
+
+        // Position just after this page's closing token = start of next page.
+        const afterPage = $from.after(1);
+        // No next page → nothing to join (let default behaviour run).
+        if (afterPage >= state.doc.content.size) return false;
+
+        // Join the last block of this page with the first block of the next
+        // page (depth 2); fall back to a page-level join (depth 1) if the
+        // block types can't merge (e.g. heading + paragraph).
+        try {
+          const tr = state.tr.join(afterPage, 2);
+          tr.scrollIntoView();
+          view.dispatch(tr);
+          return true;
+        } catch (_) {
+          try {
+            const tr = state.tr.join(afterPage, 1);
+            tr.scrollIntoView();
+            view.dispatch(tr);
+            return true;
+          } catch (_2) {
+            return false;
+          }
+        }
+      },
     };
   },
 

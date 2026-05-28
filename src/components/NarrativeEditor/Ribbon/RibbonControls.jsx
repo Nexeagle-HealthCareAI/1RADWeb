@@ -30,10 +30,12 @@ export const Btn = ({ onClick, disabled, active, title, children, style = {} }) 
     title={title}
     style={{
       display: 'flex', alignItems: 'center', justifyContent: 'center',
-      // Hit-target bumped from 26→30px and the inner padding widened — the
-      // 3px row gap between buttons was leaving <2px of dead space, which on
-      // a trackpad/laptop translates to "I clicked Bold but Italic toggled".
-      minWidth: '30px', height: '30px', padding: '0 8px',
+      // 26-px square hit-target — the hover/active highlight is a rounded
+      // box the size of this element, so trimming the height shrinks the
+      // visual halo per user request while still leaving room for the
+      // 3-px gap between rows (Btn-26 + Btn-26 + 4-px gap = 56 px, fits the
+      // Group's 56-px inner content area).
+      minWidth: '24px', height: '20px', padding: '0 6px',
       background: active ? C.accentMid : 'transparent',
       border: `1px solid ${active ? C.accentActive : 'transparent'}`,
       borderRadius: '6px', cursor: disabled ? 'not-allowed' : 'pointer',
@@ -197,17 +199,28 @@ export const Group = ({ label, children, onLauncher, style = {} }) => (
       // gap bumped from 3→6px so adjacent buttons no longer feel "merged" —
       // user-reported issue: clicks intended for one button were registering
       // on the neighbour because of the tight spacing.
+      // minHeight bumped 56→68 px so two-row groups (Font: family+size row
+      // on top, B/I/U row below; Paragraph: align row + indent/spacing row;
+      // Clipboard: BigBtn for Format Painter) don't push the bottom label
+      // row up into the button row. 30-px Btn × 2 + 4-px inner gap + 3-px
+      // padding-top + 2-px padding-bottom = 69 px; round to 68.
+      // paddingBottom bumped 2→8 px so the bottom-most button in two-row
+      // groups (Clipboard's Painter, Font's B/I/U, Paragraph's spacing
+      // combobox) doesn't visually touch the label-row border below.
       display: 'flex', alignItems: 'center', gap: '6px',
-      flex: 1, minHeight: '56px', paddingTop: '3px', paddingBottom: '2px',
+      flex: 1, minHeight: '68px', paddingTop: '4px', paddingBottom: '8px',
     }}>
       {children}
     </div>
     <div style={{
+      // Label row — sits at the bottom of every Group. paddingTop bumped
+      // 3→6 px so the label text is clearly separated from the divider
+      // line (and visually from the bottom button row above it).
       display: 'flex', alignItems: 'center', justifyContent: 'center',
-      gap: '4px', height: '18px',
+      gap: '4px', height: '20px',
       borderTop: `1px solid ${C.divider}`,
       userSelect: 'none',
-      paddingTop: '3px',
+      paddingTop: '6px',
     }}>
       <span style={{
         fontSize: '10px',
@@ -313,11 +326,14 @@ export const Combobox = ({ value, onChange, options, width = 120, renderValue, r
         onMouseDown={e => { e.preventDefault(); setOpen(v => !v); }}
         title={title}
         style={{
+          // Rounded-pill style matches the Btn primitive (radius 6) — was
+          // 3 px square corners which made comboboxes look like leftover
+          // OS form controls instead of part of the same toolbar system.
           display: 'inline-flex', alignItems: 'center', justifyContent: 'space-between',
           width, height: '24px', padding: '0 6px 0 8px',
           background: open ? '#cce4f7' : '#ffffff',
           border: `1px solid ${open ? '#0078d4' : '#c8c8c8'}`,
-          borderRadius: '3px', cursor: 'pointer', outline: 'none',
+          borderRadius: '6px', cursor: 'pointer', outline: 'none',
           fontSize: '12px', color: '#323130',
           fontFamily: '"Segoe UI", sans-serif', flexShrink: 0,
           transition: 'background 0.1s, border-color 0.1s',
@@ -345,7 +361,27 @@ export const Combobox = ({ value, onChange, options, width = 120, renderValue, r
             fontFamily: '"Segoe UI", sans-serif', fontSize: '12px',
           }}
         >
-          {options.map(opt => {
+          {options.map((opt, i) => {
+            // Section headers (e.g. "Theme Fonts" / "All Fonts") are not
+            // selectable — render as a styled, non-clickable label.
+            if (opt.isHeader) {
+              return (
+                <div
+                  key={`__hdr-${i}-${opt.label}`}
+                  style={{
+                    padding: '6px 12px 3px',
+                    fontSize: '10.5px', fontWeight: 600,
+                    color: '#6b7280', textTransform: 'uppercase',
+                    letterSpacing: '0.04em',
+                    borderTop: i === 0 ? 'none' : '1px solid #e5e7eb',
+                    marginTop: i === 0 ? 0 : 2,
+                    background: '#fafafa',
+                  }}
+                >
+                  {opt.label}
+                </div>
+              );
+            }
             const active = String(opt.value) === String(value);
             return (
               <button
@@ -400,8 +436,11 @@ export const ICONS = {
   exitFs: 'M3 3H1v5h2V5h3V3H3zm7 0H8v2h3v3h2V3h-3zM3 8H1v5h5v-2H3V8zm10 5h-3v2h5v-5h-2v3z',
   search: 'M11.742 10.344a6.5 6.5 0 1 0-1.397 1.398h-.001l3.85 3.85a1 1 0 0 0 1.415-1.414l-3.85-3.85a1.007 1.007 0 0 0-.117-.1zM12 6.5a5.5 5.5 0 1 1-11 0 5.5 5.5 0 0 1 11 0z',
   brush: 'M11.534.32a.5.5 0 0 1 .832.273l.5 4.5a.5.5 0 0 1-.84.439L9.5 4.058l-4.49 4.49 1.474 1.474a.5.5 0 0 1-.353.854l-4.5.5a.5.5 0 0 1-.547-.547l.5-4.5a.5.5 0 0 1 .854-.353L3.912 7.45 8.402 2.96l-1.474-1.475a.5.5 0 0 1 .439-.84z',
-  // Format-painter paintbrush (pen nib pointing bottom-left, handle top-right)
-  painter: 'M12.854.146a.5.5 0 0 0-.707 0L10.5 1.793 14.207 5.5l1.647-1.646a.5.5 0 0 0 0-.707zm.646 6.061L9.793 2.5 3.293 9H3.5a.5.5 0 0 1 .5.5v.5h.5a.5.5 0 0 1 .5.5v.5h.5a.5.5 0 0 1 .5.5v.5h.5a.5.5 0 0 1 .5.5v.207zm-7.468 7.468A.5.5 0 0 1 6 13.5V13h-.5a.5.5 0 0 1-.5-.5V12h-.5a.5.5 0 0 1-.5-.5V11h-.5a.5.5 0 0 1-.5-.5V10h-.5a.5.5 0 0 1-.175-.032l-.179.178a.5.5 0 0 0-.11.168l-2 5a.5.5 0 0 0 .65.65l5-2a.5.5 0 0 0 .168-.11z',
+  // Format-painter — paintbrush with visible bristles + angled handle
+  // (Bootstrap bi-brush-fill, 16×16 viewBox). The previous glyph looked
+  // more like a pen nib than a brush, which read as a pen tool rather
+  // than the format-painter action.
+  painter: 'M15.825.12a.5.5 0 0 1 .132.584c-1.53 3.43-4.743 8.17-7.095 10.64a6.067 6.067 0 0 1-2.373 1.534c-.018.227-.06.538-.16.868-.201.659-.667 1.479-1.708 1.74a8.118 8.118 0 0 1-3.078.132 3.659 3.659 0 0 1-.562-.135 1.382 1.382 0 0 1-.466-.247.714.714 0 0 1-.204-.288.622.622 0 0 1 .004-.443c.095-.245.316-.38.461-.452.394-.197.625-.453.867-.826.095-.144.184-.297.287-.472l.117-.198c.151-.255.326-.54.546-.848.528-.739 1.201-.925 1.746-.896.126.007.243.025.348.048.062-.172.142-.38.238-.608.261-.619.658-1.419 1.187-2.069 2.176-2.67 6.18-6.206 9.117-8.104a.5.5 0 0 1 .596.04z',
   mic: 'M3.5 6.5A.5.5 0 0 1 4 7v1a4 4 0 0 0 8 0V7a.5.5 0 0 1 1 0v1a5 5 0 0 1-4.5 4.975V15h3a.5.5 0 0 1 0 1h-7a.5.5 0 0 1 0-1h3v-2.025A5 5 0 0 1 3 8V7a.5.5 0 0 1 .5-.5zM8 1a3 3 0 0 0-3 3v4a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z',
   spell: 'M5.83 7.41 7.41 5.83 4.83 3.25l-1.58 1.58zM10.41 5.83l-2.58 2.58 1.58 1.58 2.58-2.58zM4 14h2v2H4zM7 11h2v2H7zM10 14h2v2h-2z',
   pageBreak: 'M14 7H2v2h12V7zM2 5h12V3H2v2zm0 8h12v-2H2v2z',
@@ -410,13 +449,64 @@ export const ICONS = {
 
 // ── Constants ────────────────────────────────────────────────────────────────
 
+// Word-style "Theme Fonts" — the heading/body pair the document uses by
+// default. Rendered at the top of the font dropdown under a "Theme Fonts"
+// header, with the "All Fonts" group below.
+export const THEME_FONTS = [
+  { value: 'Calibri Light', label: 'Calibri Light', subtitle: '(Headings)' },
+  { value: 'Calibri',       label: 'Calibri',       subtitle: '(Body)' },
+];
+
 export const FONT_FAMILIES = [
-  'Calibri', 'Arial', 'Times New Roman', 'Georgia',
-  'Courier New', 'Verdana', 'Trebuchet MS', 'Garamond',
-  'Palatino Linotype', 'Tahoma',
+  // Default / common Word fonts
+  'Calibri', 'Calibri Light', 'Cambria', 'Aptos', 'Aptos Display', 'Aptos Narrow',
+  'Arial', 'Arial Black', 'Arial Narrow', 'Arial Rounded MT Bold',
+  'Times New Roman', 'Georgia', 'Garamond', 'Book Antiqua', 'Palatino Linotype',
+  // Sans-serif
+  'Bahnschrift', 'Candara', 'Century Gothic', 'Corbel', 'Franklin Gothic Medium',
+  'Gill Sans MT', 'Helvetica', 'Lucida Sans Unicode', 'Microsoft Sans Serif',
+  'Segoe UI', 'Segoe UI Light', 'Segoe UI Semibold', 'Tahoma', 'Trebuchet MS', 'Verdana',
+  // Serif
+  'Bookman Old Style', 'Cambria Math', 'Constantia', 'Lucida Bright', 'MS Serif',
+  'Perpetua', 'Rockwell', 'Sitka Text',
+  // Monospace
+  'Consolas', 'Courier New', 'Lucida Console', 'Lucida Sans Typewriter',
+  // Display / decorative
+  'Bauhaus 93', 'Bradley Hand ITC', 'Brush Script MT', 'Calisto MT', 'Castellar',
+  'Centaur', 'Chiller', 'Colonna MT', 'Comic Sans MS', 'Cooper Black',
+  'Copperplate Gothic', 'Curlz MT', 'Edwardian Script ITC', 'Engravers MT',
+  'Eras ITC', 'Felix Titling', 'Footlight MT Light', 'Forte', 'Freestyle Script',
+  'French Script MT', 'Goudy Old Style', 'Goudy Stout', 'Harrington',
+  'High Tower Text', 'Impact', 'Imprint MT Shadow', 'Informal Roman',
+  'Jokerman', 'Juice ITC', 'Kristen ITC', 'Kunstler Script', 'Magneto',
+  'Maiandra GD', 'Matura MT Script Capitals', 'Mistral', 'Modern No. 20',
+  'Monotype Corsiva', 'Niagara Engraved', 'Niagara Solid', 'OCR A Extended',
+  'Old English Text MT', 'Onyx', 'Papyrus', 'Parchment', 'Playbill',
+  'Poor Richard', 'Pristina', 'Rage Italic', 'Ravie', 'Script MT Bold',
+  'Showcard Gothic', 'Snap ITC', 'Stencil', 'Tempus Sans ITC',
+  'Tw Cen MT', 'Viner Hand ITC', 'Vivaldi', 'Vladimir Script', 'Wide Latin',
 ];
 
 export const FONT_SIZES = ['8', '9', '10', '11', '12', '14', '16', '18', '20', '22', '24', '28', '36', '48', '72'];
+
+// Preset linear-gradients for the "Gradient" section of the colour picker.
+// Each entry is `label` + the raw CSS gradient string. Picked up by the
+// editor's TextGradient extension, applied to selected text via
+// background-clip:text.
+export const GRADIENTS = [
+  { label: 'Sunset',     value: 'linear-gradient(90deg,#ff7e5f,#feb47b)' },
+  { label: 'Ocean',      value: 'linear-gradient(90deg,#2193b0,#6dd5ed)' },
+  { label: 'Purple',     value: 'linear-gradient(90deg,#7f00ff,#e100ff)' },
+  { label: 'Lime',       value: 'linear-gradient(90deg,#11998e,#38ef7d)' },
+  { label: 'Cherry',     value: 'linear-gradient(90deg,#eb3349,#f45c43)' },
+  { label: 'Royal',      value: 'linear-gradient(90deg,#141e30,#243b55)' },
+  { label: 'Peach',      value: 'linear-gradient(90deg,#ed4264,#ffedbc)' },
+  { label: 'Sky',        value: 'linear-gradient(90deg,#1e3c72,#2a5298)' },
+  { label: 'Fire',       value: 'linear-gradient(90deg,#f12711,#f5af19)' },
+  { label: 'Mint',       value: 'linear-gradient(90deg,#00b09b,#96c93d)' },
+  { label: 'Berry',      value: 'linear-gradient(90deg,#cc2b5e,#753a88)' },
+  { label: 'Rainbow',    value: 'linear-gradient(90deg,#ff0000,#ff7300,#fffb00,#48ff00,#00ffd5,#002bff,#7a00ff,#ff00c8,#ff0000)' },
+];
 
 export const HIGHLIGHTS = [
   { label: 'Yellow', value: '#ffff00' },
@@ -499,7 +589,7 @@ function hexToHsv(hex) {
 
 // ── Color picker dropdown — Office Fluent style, fullscreen-aware portal ─────
 
-export const ColorPicker = ({ anchorEl, onSelect, onClose, onClear, clearLabel = 'No color' }) => {
+export const ColorPicker = ({ anchorEl, onSelect, onClose, onClear, onSelectGradient, clearLabel = 'No color' }) => {
   const ref = useRef(null);
   const sbAreaRef = useRef(null);
   const [pos, setPos] = useState({ top: 0, left: 0 });
@@ -526,7 +616,7 @@ export const ColorPicker = ({ anchorEl, onSelect, onClose, onClear, clearLabel =
     if (!anchorEl) return;
     const rect = anchorEl.getBoundingClientRect();
     // Keep the panel inside viewport horizontally — flip left if it would overflow.
-    const PANEL_W = 268;
+    const PANEL_W = 300;
     let left = rect.left;
     if (left + PANEL_W > window.innerWidth - 8) left = Math.max(8, window.innerWidth - PANEL_W - 8);
     setPos({ top: rect.bottom + 6, left });
@@ -593,7 +683,7 @@ export const ColorPicker = ({ anchorEl, onSelect, onClose, onClear, clearLabel =
       padding: '12px 12px 10px', zIndex: 13000,
       boxShadow: '0 10px 32px rgba(0,0,0,0.18), 0 2px 6px rgba(0,0,0,0.08)',
       fontFamily: '"Segoe UI", system-ui, sans-serif', fontSize: '11px', color: '#1f2937',
-      width: '268px', boxSizing: 'border-box',
+      width: '300px', boxSizing: 'border-box',
     }}>
       {/* Automatic / Clear row */}
       {onClear && (
@@ -609,7 +699,7 @@ export const ColorPicker = ({ anchorEl, onSelect, onClose, onClear, clearLabel =
           onMouseEnter={e => e.currentTarget.style.background = '#f3f4f6'}
           onMouseLeave={e => e.currentTarget.style.background = '#ffffff'}
         >
-          <span style={{ display: 'inline-block', width: 14, height: 14, border: '1px solid #d1d5db', background: '#ffffff', position: 'relative', borderRadius: '2px', overflow: 'hidden' }}>
+          <span style={{ display: 'inline-block', width: 14, height: 14, border: '1px solid #d1d5db', background: '#ffffff', position: 'relative', borderRadius: 0, overflow: 'hidden' }}>
             <span style={{ position: 'absolute', top: '50%', left: '-2px', right: '-2px', height: '2px', background: '#dc2626', transform: 'rotate(-30deg)', transformOrigin: 'center' }} />
           </span>
           <span style={{ fontWeight: 500 }}>{clearLabel}</span>
@@ -620,7 +710,7 @@ export const ColorPicker = ({ anchorEl, onSelect, onClose, onClear, clearLabel =
       <SectionLabel>Theme colors</SectionLabel>
       <div style={{ display: 'flex', flexDirection: 'column', gap: '3px', marginBottom: '10px' }}>
         {THEME_COLORS.map((row, ri) => (
-          <div key={ri} style={{ display: 'grid', gridTemplateColumns: 'repeat(10, 1fr)', gap: '3px' }}>
+          <div key={ri} style={{ display: 'grid', gridTemplateColumns: 'repeat(10, 22px)', gridAutoRows: '22px', gap: '6px', justifyContent: 'start' }}>
             {row.map((c, ci) => (
               <Swatch key={ci} color={c} onClick={() => pick(c)} />
             ))}
@@ -630,7 +720,7 @@ export const ColorPicker = ({ anchorEl, onSelect, onClose, onClear, clearLabel =
 
       {/* Standard colors */}
       <SectionLabel>Standard colors</SectionLabel>
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(10, 1fr)', gap: '3px', marginBottom: '10px' }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(10, 22px)', gridAutoRows: '22px', gap: '6px', justifyContent: 'start', marginBottom: '10px' }}>
         {STANDARD_COLORS.map((c, i) => <Swatch key={i} color={c} onClick={() => pick(c)} />)}
       </div>
 
@@ -638,8 +728,42 @@ export const ColorPicker = ({ anchorEl, onSelect, onClose, onClear, clearLabel =
       {recents.length > 0 && (
         <>
           <SectionLabel>Recent</SectionLabel>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(10, 1fr)', gap: '3px', marginBottom: '10px' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(10, 22px)', gridAutoRows: '22px', gap: '6px', justifyContent: 'start', marginBottom: '10px' }}>
             {recents.map((c, i) => <Swatch key={i} color={c} onClick={() => pick(c)} />)}
+          </div>
+        </>
+      )}
+
+      {/* Gradients (font-color picker only — wired via onSelectGradient) */}
+      {onSelectGradient && (
+        <>
+          <SectionLabel>Gradient</SectionLabel>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(6, 36px)', gridAutoRows: '22px', gap: '6px', justifyContent: 'start', marginBottom: '10px' }}>
+            {GRADIENTS.map((g, i) => (
+              <button
+                key={i}
+                title={g.label}
+                onMouseDown={e => { e.preventDefault(); onSelectGradient(g.value); onClose(); }}
+                style={{
+                  width: '36px', height: '22px',
+                  minWidth: '36px', maxWidth: '36px',
+                  minHeight: '22px', maxHeight: '22px',
+                  display: 'block', padding: 0,
+                  background: g.value,
+                  border: '1px solid rgba(0,0,0,0.18)', borderRadius: 0,
+                  cursor: 'pointer', boxSizing: 'border-box',
+                  transition: 'transform 0.08s, box-shadow 0.08s',
+                }}
+                onMouseEnter={e => {
+                  e.currentTarget.style.boxShadow = '0 0 0 2px #0078d4';
+                  e.currentTarget.style.transform = 'scale(1.06)';
+                }}
+                onMouseLeave={e => {
+                  e.currentTarget.style.boxShadow = 'none';
+                  e.currentTarget.style.transform = 'scale(1)';
+                }}
+              />
+            ))}
           </div>
         </>
       )}
@@ -658,7 +782,7 @@ export const ColorPicker = ({ anchorEl, onSelect, onClose, onClear, clearLabel =
         }}
       >
         <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
-          <span style={{ display: 'inline-block', width: 12, height: 12, borderRadius: '50%',
+          <span style={{ display: 'inline-block', width: 12, height: 12, borderRadius: 0,
             background: 'conic-gradient(red, yellow, lime, cyan, blue, magenta, red)',
             border: '1px solid #d1d5db' }} />
           More colors
@@ -724,7 +848,7 @@ export const ColorPicker = ({ anchorEl, onSelect, onClose, onClear, clearLabel =
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
             <div style={{
               width: 32, height: 32, background: currentHex,
-              borderRadius: '4px', border: '1px solid #d1d5db',
+              borderRadius: 0, border: '1px solid #d1d5db',
               flexShrink: 0,
             }} />
             <div style={{ flex: 1, display: 'flex', alignItems: 'center', gap: '6px' }}>
@@ -778,15 +902,26 @@ const Swatch = ({ color, onClick }) => (
     onMouseDown={e => { e.preventDefault(); onClick(); }}
     title={color}
     style={{
-      width: '100%', aspectRatio: '1', minWidth: 0,
+      // Fixed 22 × 22 square. CRITICAL: minHeight/minWidth must be set
+      // explicitly to 22px because global.css applies
+      //   button { min-height: 44px; min-width: 44px; padding: 12px 16px; }
+      // to every <button>, which would otherwise stretch each swatch to
+      // 22 × 44 (rectangle). Inline min-* overrides that selector.
+      width: '22px', height: '22px',
+      minWidth: '22px', maxWidth: '22px',
+      minHeight: '22px', maxHeight: '22px',
+      display: 'block',
       background: color, padding: 0,
-      border: '1px solid rgba(0,0,0,0.12)', borderRadius: '3px',
+      border: '1px solid rgba(0,0,0,0.18)', borderRadius: 0,
       cursor: 'pointer', flexShrink: 0,
       boxSizing: 'border-box',
       transition: 'transform 0.08s, box-shadow 0.08s',
     }}
     onMouseEnter={e => {
-      e.currentTarget.style.boxShadow = '0 0 0 2px #0078d4, 0 1px 4px rgba(0,0,0,0.18)';
+      // Symmetric 2-px outline only — no drop shadow. A drop shadow
+      // (offset Y > 0 with blur) would extend the hover silhouette
+      // BELOW the swatch and make the square read as a rectangle.
+      e.currentTarget.style.boxShadow = '0 0 0 2px #0078d4';
       e.currentTarget.style.transform = 'scale(1.08)';
     }}
     onMouseLeave={e => {

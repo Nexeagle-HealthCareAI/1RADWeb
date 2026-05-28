@@ -357,10 +357,30 @@ const ReportPreviewModal = ({
     // so we simply extract each <div class="word-page-inner"> as a ready
     // preview-page chunk. Eliminates editor/preview divergence (different
     // fonts, different metrics) entirely.
+    // Print-time spacing: the editor stores `data-spacing-before` /
+    // `data-spacing-after` on paragraphs/headings without applying them as
+    // visible CSS margin (so live pagination stays stable). At preview/print
+    // time we honor those attributes by writing them out as margin-top /
+    // margin-bottom inline styles, so the user's "Add Space Before / After
+    // Paragraph" choices reach the rendered output exactly as in Word.
+    const _hydrateSpacing = (root) => {
+      root.querySelectorAll('[data-spacing-before], [data-spacing-after]').forEach(el => {
+        const before = el.getAttribute('data-spacing-before');
+        const after  = el.getAttribute('data-spacing-after');
+        const styles = [];
+        if (before) styles.push(`margin-top: ${before}`);
+        if (after)  styles.push(`margin-bottom: ${after}`);
+        const existing = el.getAttribute('style') || '';
+        const sep = existing && !existing.trim().endsWith(';') ? '; ' : '';
+        el.setAttribute('style', existing + sep + styles.join('; '));
+      });
+    };
+
     const _extractEditorPages = (html) => {
       if (!html) return [];
       const tmp = document.createElement('div');
       tmp.innerHTML = html;
+      _hydrateSpacing(tmp);
       const inners = tmp.querySelectorAll('.word-page-inner');
       if (inners.length === 0) {
         // Content has no .word-page wrappers (e.g., legacy data). Treat as a

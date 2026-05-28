@@ -1,7 +1,7 @@
 import React, { useRef, useState, useEffect, useCallback, useImperativeHandle } from 'react';
 import { useEditor, EditorContent } from '@tiptap/react';
 import { StarterKit } from '@tiptap/starter-kit';
-import { Underline } from '@tiptap/extension-underline';
+import { UnderlineStyle } from './extensions/UnderlineStyle';
 import { TextAlign } from '@tiptap/extension-text-align';
 import { TextStyle } from '@tiptap/extension-text-style';
 import { Color } from '@tiptap/extension-color';
@@ -35,7 +35,7 @@ import SlashMenu from './SlashMenu';
 import SelectionToolbar from './SelectionToolbar';
 import { PageDocument, Page } from './extensions/PageNode';
 import { Pagination } from './extensions/Pagination';
-import { LineHeight, ParagraphIndent, PageBreak } from './extensions/Spacing';
+import { LineHeight, ParagraphIndent, PageBreak, ParagraphSpacing } from './extensions/Spacing';
 import { FormatPainter } from './extensions/FormatPainter';
 import { ParagraphFraming } from './extensions/ParagraphFraming';
 import { ListStyles } from './extensions/ListStyles';
@@ -110,6 +110,51 @@ const FontSize = Extension.create({
     return {
       setFontSize: size => ({ chain }) => chain().setMark('textStyle', { fontSize: size }).run(),
       unsetFontSize: () => ({ chain }) => chain().setMark('textStyle', { fontSize: null }).removeEmptyTextStyle().run(),
+    };
+  },
+});
+
+// TextGradient — paints selected text with a CSS linear-gradient instead of
+// a solid colour. Adds a `textGradient` attribute on textStyle marks; the
+// renderHTML cascade sets background + background-clip:text + transparent
+// text-fill so the gradient shows through the glyphs.
+const TextGradient = Extension.create({
+  name: 'textGradient',
+  addOptions() { return { types: ['textStyle'] }; },
+  addGlobalAttributes() {
+    return [{
+      types: this.options.types,
+      attributes: {
+        textGradient: {
+          default: null,
+          parseHTML: el => el.getAttribute('data-text-gradient') || null,
+          renderHTML: attrs => {
+            if (!attrs.textGradient) return {};
+            // Stack a few CSS properties so the gradient masks the text.
+            const css = [
+              `background-image:${attrs.textGradient}`,
+              'background-clip:text',
+              '-webkit-background-clip:text',
+              'color:transparent',
+              '-webkit-text-fill-color:transparent',
+            ].join(';');
+            return {
+              'data-text-gradient': attrs.textGradient,
+              style: css,
+            };
+          },
+        },
+      },
+    }];
+  },
+  addCommands() {
+    return {
+      setTextGradient: gradient => ({ chain }) =>
+        // Clearing the solid colour at the same time avoids a stale `color:#..`
+        // bleed-through when applying a gradient over previously coloured text.
+        chain().setMark('textStyle', { textGradient: gradient, color: null }).run(),
+      unsetTextGradient: () => ({ chain }) =>
+        chain().setMark('textStyle', { textGradient: null }).removeEmptyTextStyle().run(),
     };
   },
 });
@@ -234,6 +279,32 @@ function resetParagraph(editor) {
   try {
     editor.chain().focus().decreaseParagraphIndent().decreaseParagraphIndent().decreaseParagraphIndent().run();
   } catch {}
+}
+
+// Returns true when the given paragraph/heading DOM element is currently a
+// single visual line AND adding one more indent step (stepPx) would shrink its
+// width enough that the text would wrap. Used by the Tab handler to "snap" a
+// short signature line to right-align instead of indenting it into a wrap.
+function paragraphWouldWrapOnIndent(pEl, stepPx = 24) {
+  if (!pEl || pEl.nodeType !== 1) return false;
+  try {
+    const cs = window.getComputedStyle(pEl);
+    const lineHeight = parseFloat(cs.lineHeight) || (parseFloat(cs.fontSize) || 14) * 1.4;
+    // Only auto-snap when the line is currently unwrapped (single line).
+    if (pEl.scrollHeight > lineHeight * 1.6) return false;
+    const padL = parseFloat(cs.paddingLeft) || 0;
+    const padR = parseFloat(cs.paddingRight) || 0;
+    // Width available to text AFTER the next indent step is applied (margin-left
+    // grows by stepPx, so the paragraph's content box shrinks by the same).
+    const availableAfter = pEl.clientWidth - padL - padR - stepPx;
+    // Actual rendered width of the text on its line.
+    const range = document.createRange();
+    range.selectNodeContents(pEl);
+    const textWidth = range.getBoundingClientRect().width;
+    return textWidth > availableAfter;
+  } catch {
+    return false;
+  }
 }
 
 /**
@@ -465,16 +536,41 @@ const NarrativeEditor = React.forwardRef(function NarrativeEditor({
   useEffect(() => { onChangeRef.current = onChange; }, [onChange]);
   const onChangeTimerRef = useRef(null);
   const latestEditorRef = useRef(null);
-  // Flush any pending HTML on unmount so we don't lose the last edit.
-  useEffect(() => () => {
+  // Last HTML the editor itself emitted via onChange. The parent stores this
+  // and echoes it back as the `content` prop; the content-sync effect uses
+  // this ref to recognise such echoes and SKIP setContent() for them —
+  // otherwise every keystroke round-trip would call setContent and wipe the
+  // undo history, breaking Ctrl+Z.
+  const lastEmittedHtmlRef = useRef(null);
+  // Synchronously flush any pending (debounced) onChange so callers reading
+  // the report HTML — Save, export, version snapshot — never see content
+  // that's up to 300 ms stale.
+  const flushPendingChange = useCallback(() => {
     if (onChangeTimerRef.current) {
       clearTimeout(onChangeTimerRef.current);
+      onChangeTimerRef.current = null;
       try {
         const e = latestEditorRef.current;
-        if (e) onChangeRef.current?.(e.getHTML());
+        if (e) {
+          const html = e.getHTML();
+          lastEmittedHtmlRef.current = html;
+          onChangeRef.current?.(html);
+        }
       } catch (_) {}
     }
   }, []);
+
+  // Save wrapper used by Ctrl+S and the ribbon Save button — flush first so
+  // the last few keystrokes before a manual save aren't dropped.
+  const handleSave = useCallback(() => {
+    flushPendingChange();
+    onSave?.();
+  }, [flushPendingChange, onSave]);
+
+  // Flush any pending HTML on unmount so we don't lose the last edit.
+  useEffect(() => () => {
+    flushPendingChange();
+  }, [flushPendingChange]);
 
   // Voice dictation — text inserted at cursor when a phrase finalises.
   const voice = useVoiceDictation({
@@ -780,6 +876,10 @@ const NarrativeEditor = React.forwardRef(function NarrativeEditor({
         heading: { levels: [1, 2, 3, 4, 5, 6] },
         bulletList: { keepMarks: true, keepAttributes: false },
         orderedList: { keepMarks: true, keepAttributes: false },
+        // Disable StarterKit's plain Underline — we register UnderlineStyle
+        // below which extends it with an MS-Word underline-style attribute
+        // (double / thick / dotted / dashed / wavy / dot-dash / dot-dot-dash).
+        underline: false,
         // Beefier undo history for long-form report editing. Default is 100
         // transactions; 500 lets the doctor undo through a deeper session
         // (e.g. after applying a template by accident). newGroupDelay drops
@@ -789,9 +889,11 @@ const NarrativeEditor = React.forwardRef(function NarrativeEditor({
       PageDocument,
       Page,
       Pagination,
+      UnderlineStyle,
       Typography,
       LineHeight,
       ParagraphIndent,
+      ParagraphSpacing,
       PageBreak,
       FormatPainter,
       ParagraphFraming,
@@ -829,6 +931,7 @@ const NarrativeEditor = React.forwardRef(function NarrativeEditor({
       CharacterCount,
       FontSize,
       FontFamily,
+      TextGradient,
       Subscript,
       Superscript,
       Link,
@@ -849,7 +952,11 @@ const NarrativeEditor = React.forwardRef(function NarrativeEditor({
       // Keeps typing smooth even on long multi-page reports.
       if (onChangeTimerRef.current) clearTimeout(onChangeTimerRef.current);
       onChangeTimerRef.current = setTimeout(() => {
-        try { onChangeRef.current?.(e.getHTML()); } catch (_) {}
+        try {
+          const html = e.getHTML();
+          lastEmittedHtmlRef.current = html;
+          onChangeRef.current?.(html);
+        } catch (_) {}
       }, 300);
     },
     editorProps: {
@@ -952,6 +1059,11 @@ const NarrativeEditor = React.forwardRef(function NarrativeEditor({
   // this avoids clobbering live typing while still applying external changes.
   useEffect(() => {
     if (!editor || content === undefined) return;
+    // Echo guard: if the incoming content is exactly what the editor last
+    // emitted, this is the parent round-tripping our own edit back to us.
+    // Calling setContent here would wipe the undo history (breaking Ctrl+Z)
+    // and can revert in-flight typing, so skip it entirely.
+    if (content === lastEmittedHtmlRef.current) return;
     const currentHTML = editor.getHTML();
     if (content === currentHTML) return; // nothing to do
     // Always sync when the editor is empty or unfocused.
@@ -1051,9 +1163,22 @@ const NarrativeEditor = React.forwardRef(function NarrativeEditor({
   useEffect(() => {
     if (!editor) return;
 
-    const inEditor = (e) =>
-      containerRef.current?.contains(e.target) ||
-      containerRef.current?.contains(document.activeElement);
+    // True only when the keystroke is happening on the ProseMirror editing
+    // surface — NOT on a plain <input>/<textarea>/<select> that lives inside
+    // the editor container (the Find box, Comments textarea, prompt dialogs,
+    // etc.). Without this guard, the capture-phase shortcut handler below
+    // would `stopImmediatePropagation()` and hijack Ctrl+B / Ctrl+A / Ctrl+Z
+    // while the user is typing in those fields, because the old check matched
+    // anything contained by the editor container.
+    const inEditor = (e) => {
+      const el = e.target || document.activeElement;
+      if (!el || !containerRef.current?.contains(el)) return false;
+      const tag = el.tagName;
+      if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return false;
+      // Only the ProseMirror editable (or a node inside it) counts as "in
+      // editor". closest() also matches the element itself.
+      return !!(el.closest?.('.narrative-editor-content'));
+    };
 
     const handler = (e) => {
       // F1 — global, always works (open shortcuts cheat-sheet)
@@ -1175,19 +1300,42 @@ const NarrativeEditor = React.forwardRef(function NarrativeEditor({
         };
 
         try {
+          const { $from } = state.selection;
+          const blockType = $from.parent.type.name;
+          const isAlignable = blockType === 'paragraph' || blockType === 'heading';
           if (e.shiftKey) {
-            // Shift+Tab: lift list item or decrease paragraph indent
+            // Shift+Tab: lift list item, OR un-snap a right-aligned line back
+            // to left, OR decrease paragraph indent.
             if (canRun('liftListItem')) {
               editor.chain().focus().liftListItem('listItem').run();
+            } else if (isAlignable && editor.isActive({ textAlign: 'right' })) {
+              // Reverse the auto-snap: right-aligned signature → back to left.
+              editor.chain().focus().setTextAlign('left').run();
             } else {
               editor.chain().focus().decreaseParagraphIndent().run();
             }
           } else {
-            // Tab: sink list item or increase paragraph indent
+            // Tab: sink list item, OR indent the paragraph — but if indenting a
+            // short single-line paragraph would wrap it, snap to right-align
+            // instead so a signature line keeps moving right without breaking.
             if (canRun('sinkListItem')) {
               editor.chain().focus().sinkListItem('listItem').run();
             } else {
-              editor.chain().focus().increaseParagraphIndent().run();
+              let snapped = false;
+              if (isAlignable && !editor.isActive({ textAlign: 'right' })) {
+                const posBefore = $from.before($from.depth);
+                const pEl = editor.view.nodeDOM(posBefore);
+                if (paragraphWouldWrapOnIndent(pEl)) {
+                  // Clear any accumulated indent and pin to the right margin so
+                  // the line sits flush-right on a single line.
+                  editor.chain().focus()
+                    .updateAttributes(blockType, { indent: 0 })
+                    .setTextAlign('right')
+                    .run();
+                  snapped = true;
+                }
+              }
+              if (!snapped) editor.chain().focus().increaseParagraphIndent().run();
             }
           }
         } catch (tabErr) {
@@ -1325,7 +1473,7 @@ const NarrativeEditor = React.forwardRef(function NarrativeEditor({
       if (e.altKey) return; // don't intercept other Ctrl+Alt combos
 
       // ── App-level ────────────────────────────────────────
-      if (key === 's' && !e.shiftKey) return run(() => onSave?.());
+      if (key === 's' && !e.shiftKey) return run(() => handleSave());
 
       // ── Find / Replace ────────────────────────────────────
       if (key === 'f') return run(() => { setFindFocusReplace(false); setFindOpen(true); });
@@ -1448,8 +1596,17 @@ const NarrativeEditor = React.forwardRef(function NarrativeEditor({
       if (e.shiftKey && e.key === '7') return run(() => editor.chain().focus().toggleOrderedList().run());
 
       // ── History ───────────────────────────────────────────
-      if (key === 'z' && !e.shiftKey) return run(() => editor.chain().focus().undo().run());
-      if (key === 'y' || (e.shiftKey && key === 'z')) return run(() => editor.chain().focus().redo().run());
+      if (key === 'z' && !e.shiftKey) return run(() => {
+        editor.chain().focus().undo().run();
+        // Undo is a discrete action (not rapid typing), so reflow content
+        // back across pages IMMEDIATELY rather than waiting the typing
+        // debounce — makes undo feel instant like Word.
+        window.dispatchEvent(new CustomEvent('narrative-editor:paginate-now'));
+      });
+      if (key === 'y' || (e.shiftKey && key === 'z')) return run(() => {
+        editor.chain().focus().redo().run();
+        window.dispatchEvent(new CustomEvent('narrative-editor:paginate-now'));
+      });
 
       // ── Track Changes ─────────────────────────────────────
       if (e.shiftKey && key === 'e') {
@@ -1497,20 +1654,21 @@ const NarrativeEditor = React.forwardRef(function NarrativeEditor({
       if (e.key === 'Enter') return run(() => editor.chain().focus().insertPageBreak().run());
       if (e.shiftKey && (e.key === '-' || e.key === '_')) return run(() => editor.chain().focus().insertContent('—').run());
       if (e.shiftKey && e.key === ' ')  return run(() => editor.chain().focus().insertContent(' ').run()); // non-breaking space
-      if (!e.shiftKey && !e.altKey && e.key === '-') return run(() => editor.chain().focus().insertContent('­').run()); // soft/optional hyphen
-
+      // Ctrl+- (no shift) is reserved for zoom-out (handled earlier). The
+      // soft/optional-hyphen mapping that used to live here was unreachable
+      // once zoom was wired up and behaved inconsistently; removed so Ctrl+-
+      // is unambiguous. (Insert a soft hyphen via the Symbol picker.) Was:
+      // run(() => editor.chain().focus().insertContent('­').run());
       // ── Navigation ────────────────────────────────────────
+      // Ctrl+Home / Ctrl+End — jump to document start / end. Use Tiptap's
+      // focus('start'|'end') which resolves to a VALID text position rather
+      // than the raw offsets 1 / size-1, which could land on a page/paragraph
+      // boundary and leave the caret in a non-editable gap.
       if (e.key === 'Home') {
-        return run(() => {
-          const size = editor.state.doc.content.size;
-          editor.chain().focus().setTextSelection(1).scrollIntoView().run();
-        });
+        return run(() => editor.chain().focus('start').scrollIntoView().run());
       }
       if (e.key === 'End') {
-        return run(() => {
-          const size = editor.state.doc.content.size;
-          editor.chain().focus().setTextSelection(size - 1).scrollIntoView().run();
-        });
+        return run(() => editor.chain().focus('end').scrollIntoView().run());
       }
 
       // ── Print ─────────────────────────────────────────────
@@ -1525,7 +1683,7 @@ const NarrativeEditor = React.forwardRef(function NarrativeEditor({
 
     document.addEventListener('keydown', handler, true /* capture */);
     return () => document.removeEventListener('keydown', handler, true);
-  }, [editor, onSave, onPrint]);
+  }, [editor, onSave, onPrint, handleSave]);
 
   // Toolbar Find button dispatches a window event — listen and open the dialog
   useEffect(() => {
@@ -1884,7 +2042,7 @@ const NarrativeEditor = React.forwardRef(function NarrativeEditor({
       {!previewMode && isMobile && (
         <MobileToolbar
           editor={editor}
-          onSave={onSave}
+          onSave={handleSave}
           saveStatus={saveStatus}
           isFinalized={isFinalized}
           isFullscreen={isFullscreen || cssFullscreen}
@@ -1895,7 +2053,7 @@ const NarrativeEditor = React.forwardRef(function NarrativeEditor({
       {!previewMode && !isMobile && (
         <Ribbon
           editor={editor}
-          onSave={onSave}
+          onSave={handleSave}
           saveStatus={saveStatus}
           lastSavedAt={lastSavedAt}
           isFullscreen={isFullscreen || cssFullscreen}

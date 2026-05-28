@@ -71,8 +71,14 @@ export const AutoCorrect = Extension.create({
             const { $from, empty } = state.selection;
             if (!empty) return false;
 
-            // Text in the current block before the cursor
-            const textBefore = $from.parent.textBetween(0, $from.parentOffset);
+            // Text in the current block before the cursor. The '\x00' leaf
+            // separator makes inline atoms (images, hard breaks) occupy one
+            // char each so the string length stays aligned with document
+            // positions — otherwise `$from.pos - matchLength` could land
+            // mid-atom when a paragraph mixes text and inline nodes. \x00 is
+            // not a word/typography char, so it also correctly terminates a
+            // match at an atom boundary.
+            const textBefore = $from.parent.textBetween(0, $from.parentOffset, undefined, '\x00');
             if (!textBefore) return false;
 
             // URL auto-linkify — wrap a typed URL in a link mark before the trigger key inserts

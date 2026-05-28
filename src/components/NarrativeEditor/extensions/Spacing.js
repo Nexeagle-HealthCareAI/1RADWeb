@@ -67,6 +67,105 @@ export const LineHeight = Extension.create({
 });
 
 /**
+ * ParagraphSpacing — stores "space before" / "space after" paragraph values
+ * as attributes on paragraph and heading nodes. The values DO NOT render as
+ * visible CSS margin in the live editor — we only emit `data-spacing-before`
+ * / `data-spacing-after` attributes. This keeps the live pagination stable
+ * (no cascading splits when users toggle spacing on a paragraph mid-page).
+ *
+ * The print/export pipeline reads `data-spacing-before` / `data-spacing-after`
+ * and converts them into real margin-top / margin-bottom CSS so the printed
+ * output respects the spacing exactly like MS Word.
+ *
+ * Why not render margins in-editor? With our paginator, adding even 4 pt of
+ * vertical margin can cascade a paragraph to the next page and the merge
+ * pass can't always pull it back (split is content-aware but merge has only
+ * 4 pt of slack to work with — see split/merge symmetry note in Pagination.js).
+ * Print-time-only rendering trades "WYSIWYG while editing" for "stable page
+ * count while editing".
+ */
+export const ParagraphSpacing = Extension.create({
+  name: 'paragraphSpacing',
+  addOptions() {
+    return { types: ['paragraph', 'heading'] };
+  },
+  addGlobalAttributes() {
+    return [{
+      types: this.options.types,
+      attributes: {
+        spacingBefore: {
+          default: null,
+          parseHTML: el =>
+            el.getAttribute('data-spacing-before') || el.style.marginTop || null,
+          renderHTML: attrs =>
+            attrs.spacingBefore ? { 'data-spacing-before': attrs.spacingBefore } : {},
+        },
+        spacingAfter: {
+          default: null,
+          parseHTML: el =>
+            el.getAttribute('data-spacing-after') || el.style.marginBottom || null,
+          renderHTML: attrs =>
+            attrs.spacingAfter ? { 'data-spacing-after': attrs.spacingAfter } : {},
+        },
+      },
+    }];
+  },
+  addCommands() {
+    return {
+      setSpacingBefore: (value) => ({ commands }) =>
+        this.options.types.every(t => commands.updateAttributes(t, { spacingBefore: value })),
+      setSpacingAfter: (value) => ({ commands }) =>
+        this.options.types.every(t => commands.updateAttributes(t, { spacingAfter: value })),
+      // "Add / Remove Space Before / After Paragraph" — walks up the node
+      // tree to the nearest paragraph or heading wrapping the cursor and
+      // toggles a 12pt margin on it via setNodeMarkup. setNodeMarkup is
+      // bulletproof: it directly mutates the node's attrs in the
+      // transaction, no chain-mode forgiveness ambiguity.
+      toggleSpaceBefore: () => ({ state, dispatch }) => {
+        const { $from } = state.selection;
+        let node = null, pos = null;
+        for (let depth = $from.depth; depth >= 0; depth--) {
+          const n = $from.node(depth);
+          if (n.type.name === 'paragraph' || n.type.name === 'heading') {
+            node = n;
+            pos = $from.before(depth);
+            break;
+          }
+        }
+        if (!node) return false;
+        const has = node.attrs.spacingBefore;
+        const value = has ? null : '4pt';
+        if (dispatch) {
+          const tr = state.tr.setNodeMarkup(pos, null, { ...node.attrs, spacingBefore: value });
+          dispatch(tr);
+        }
+        return true;
+      },
+      toggleSpaceAfter: () => ({ state, dispatch }) => {
+        const { $from } = state.selection;
+        let node = null, pos = null;
+        for (let depth = $from.depth; depth >= 0; depth--) {
+          const n = $from.node(depth);
+          if (n.type.name === 'paragraph' || n.type.name === 'heading') {
+            node = n;
+            pos = $from.before(depth);
+            break;
+          }
+        }
+        if (!node) return false;
+        const has = node.attrs.spacingAfter;
+        const value = has ? null : '4pt';
+        if (dispatch) {
+          const tr = state.tr.setNodeMarkup(pos, null, { ...node.attrs, spacingAfter: value });
+          dispatch(tr);
+        }
+        return true;
+      },
+    };
+  },
+});
+
+/**
  * ParagraphIndent — left-padding via margin-left, increments of 24px.
  * Works on paragraphs and headings (not just inside lists like sinkListItem).
  *

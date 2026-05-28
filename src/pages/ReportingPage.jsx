@@ -15,6 +15,7 @@ import { nativeStorage } from '../hooks/useElectron';
 import ReportPreviewModal, { PatientInfoBlock } from '../components/ReportPreviewModal';
 import SearchableTemplatePicker from '../components/SearchableTemplatePicker';
 import PatientTimeline from '../components/PatientTimeline';
+import VoiceReportingPanel from '../components/VoiceReportingPanel';
 import { assetsFromManifest } from '../utils/dicomManifest';
 
 const ReportingPage = () => {
@@ -33,6 +34,14 @@ const ReportingPage = () => {
   const [keywordLibrary, setKeywordLibrary] = useState([]);
   const editorRef = useRef(null);
   const fileInputRef = useRef(null);
+  // The findings HTML as it currently exists on the SERVER (set when a report
+  // is loaded and after each successful save). Stored inside every local draft
+  // as `serverBaseline` so the crash-recovery prompt can tell whether the
+  // draft holds genuine unsaved local edits (server unchanged since the draft)
+  // vs. a stale draft that the server has already moved past. Fixes the bug
+  // where the prompt always claimed the local draft was "newer" because the
+  // report entity has no server-side UpdatedAt timestamp to compare against.
+  const serverBaselineRef = useRef(null);
   const [selectedImg, setSelectedImg] = useState(null);
   const [imgToolbarPos, setImgToolbarPos] = useState({ top: 0, left: 0 });
   const [isFullscreen, setIsFullscreen] = useState(false);
@@ -117,6 +126,27 @@ const ReportingPage = () => {
 
   const [notifModal, setNotifModal] = useState({ isOpen: false, type: 'info', title: '', message: '' });
   const showNotif = (type, title, message) => setNotifModal({ isOpen: true, type, title, message });
+
+  // Voice Reporting → AI draft. Sends the dictation transcript + chosen
+  // template + appointment context to the backend, which prompts Claude Haiku
+  // to produce a structured HTML report. Returns { success, html, error }.
+  const generateVoiceReport = useCallback(async ({ transcript, templateId }) => {
+    try {
+      const res = await apiClient.post('/reporting/voice-generate', {
+        appointmentId,
+        templateId: templateId || null,
+        transcript,
+      });
+      const data = res?.data || {};
+      if (data.success && (data.html || data.report)) {
+        return { success: true, html: data.html || data.report };
+      }
+      return { success: false, error: data.error || data.message || 'No report returned.' };
+    } catch (e) {
+      const msg = e?.response?.data?.error || e?.response?.data?.message || e?.message || 'Request failed.';
+      return { success: false, error: msg };
+    }
+  }, [appointmentId]);
 
   // Crash-recovery prompt — promise-based so the load flow can await the
   // user's choice and decide which version of the report to render.
@@ -216,7 +246,8 @@ const ReportingPage = () => {
         impression,
         advice,
         reportingMode: 'Narrative',
-        timestamp: new Date().toISOString()
+        timestamp: new Date().toISOString(),
+        serverBaseline: serverBaselineRef.current,
       };
 
       try {
@@ -590,6 +621,9 @@ const ReportingPage = () => {
         console.info(`[1RAD] Found Existing Report.`);
 
         const findingsHtml = r.findings || '';
+        // Record what the server currently holds so draft-recovery can compare
+        // lineage (see serverBaselineRef declaration).
+        serverBaselineRef.current = findingsHtml;
         // ── Text-align persistence diagnostic (load side) ────────────────
         // If save logged alignCount > 0 but this logs 0, the API round-trip
         // is dropping inline styles. If both show alignCount > 0, the issue
@@ -617,10 +651,33 @@ const ReportingPage = () => {
         try {
           const localDraft = await nativeStorage.get(`1rad_draft_${appId}`);
           if (localDraft && localDraft.findings) {
-            const draftTs = new Date(localDraft.timestamp || 0).getTime();
-            const serverTs = new Date(r.updatedAt || r.UpdatedAt || r.modifiedAt || r.savedAt || 0).getTime();
             const draftDiffers = (localDraft.findings || '') !== findingsHtml;
-            if (draftDiffers && draftTs > serverTs && !r.isFinalized) {
+
+            // Decide whether the draft holds genuine UNSAVED local edits.
+            //
+            // Preferred signal — content lineage: the draft stores the server
+            // content it was based on (`serverBaseline`). If that baseline
+            // still equals the current server content, the server hasn't moved
+            // on since the draft was made, so the draft's differences are real
+            // unsaved edits → offer to restore. If the baseline differs, the
+            // server has a newer saved version (saved elsewhere / later) and
+            // the local draft is stale → don't prompt.
+            //
+            // Fallbacks for older drafts with no baseline: use the server's
+            // UpdatedAt timestamp if the API provides one; otherwise fall back
+            // to the legacy "draft newer than epoch" behaviour.
+            const serverTs = new Date(r.updatedAt || r.UpdatedAt || r.modifiedAt || r.savedAt || 0).getTime();
+            const draftTs = new Date(localDraft.timestamp || 0).getTime();
+            let draftIsUnsaved;
+            if (localDraft.serverBaseline !== undefined && localDraft.serverBaseline !== null) {
+              draftIsUnsaved = localDraft.serverBaseline === findingsHtml;
+            } else if (serverTs > 0) {
+              draftIsUnsaved = draftTs > serverTs;
+            } else {
+              draftIsUnsaved = true; // no signal available — legacy behaviour
+            }
+
+            if (draftDiffers && draftIsUnsaved && !r.isFinalized) {
               const ageMin = Math.max(1, Math.round((Date.now() - draftTs) / 60000));
               const restore = await askDraftRecovery(ageMin);
               if (restore) {
@@ -794,7 +851,8 @@ const ReportingPage = () => {
         impression,
         advice,
         selectedTemplateId,
-        timestamp: new Date().getTime()
+        timestamp: new Date().getTime(),
+        serverBaseline: serverBaselineRef.current,
       };
       console.log(`[REPORTING] Autosaving draft for ${appointmentId}...`);
       await nativeStorage.set(`1rad_draft_${appointmentId}`, draft);
@@ -858,6 +916,10 @@ const ReportingPage = () => {
     try {
       const res = await apiClient.post('/reporting/save', payload);
       if (res.data?.success) {
+        // The server now holds exactly what we just sent — advance the
+        // baseline so any subsequent draft compares lineage against this
+        // saved content (and a reload right after save won't falsely prompt).
+        serverBaselineRef.current = currentFindings;
         showNotif('success', finalizing ? 'REPORT FINALIZED' : 'DRAFT SAVED', finalizing ? 'Report has been finalized and dispatched successfully.' : 'Your changes have been saved successfully.');
         if (finalizing) {
           setIsFinalized(true);
@@ -2948,6 +3010,7 @@ const ReportingPage = () => {
             {[
               { id: 'DICOM', label: 'DICOM_VIEWER', icon: '🔍' },
               { id: 'REPORTING', label: 'REPORTING', icon: '📝' },
+              { id: 'VOICE', label: 'AI_VOICE_REPORTING', icon: '🎙️' },
               { id: 'TIMELINE', label: 'TIMELINE', icon: '🕒' }
             ].map(tab => (
               <button
@@ -4576,6 +4639,66 @@ const ReportingPage = () => {
               </div>
             )}
 
+            {/* VOICE REPORTING TAB — split: controls (left) + live editor (right) */}
+            {activeMainTab === 'VOICE' && (
+              <div style={{
+                flex: 1, minHeight: 0,
+                display: 'flex', flexDirection: isMobile ? 'column' : 'row',
+                background: '#f1f5f9', gap: isMobile ? '10px' : '16px',
+                padding: isMobile ? '10px' : '16px', overflow: 'hidden',
+              }}>
+                {/* LEFT: dictation + generate controls */}
+                <div style={{ flex: 1, minWidth: 0, minHeight: 0, display: 'flex', overflow: 'hidden' }}>
+                  <VoiceReportingPanel
+                    appointmentId={appointmentId}
+                    templates={templates}
+                    selectedTemplateId={selectedTemplateId}
+                    isMobile={isMobile}
+                    generate={generateVoiceReport}
+                    onGenerated={(html) => {
+                      // Drop the AI draft straight into the right-hand editor —
+                      // no tab switch; the doctor reviews & edits it in place.
+                      setEditorText(html || '');
+                      const handle = editorRef.current;
+                      if (handle?.setContent) handle.setContent(html || '');
+                      else if (handle?.editor) { try { handle.editor.commands.setContent(html || '', false); } catch {} }
+                    }}
+                  />
+                </div>
+
+                {/* RIGHT: the generated report in the NarrativeEditor (editable) */}
+                <div style={{
+                  flex: 1, minWidth: 0, minHeight: 0,
+                  display: 'flex', flexDirection: 'column',
+                  background: 'white', borderRadius: '14px', border: '1px solid #e8edf2',
+                  boxShadow: '0 4px 20px rgba(15,23,42,0.05)', overflow: 'hidden',
+                }}>
+                  <NarrativeEditor
+                    ref={editorRef}
+                    content={editorText}
+                    onChange={(html) => setEditorText(html)}
+                    placeholder="Your generated report will appear here — or start typing…"
+                    onSave={() => handleSaveReport(false)}
+                    style={{ flex: 1, minHeight: 0 }}
+                    keywordLibrary={keywordLibrary}
+                    pageMargins={protocol ? {
+                      top:    protocol.headerMargin ?? 25,
+                      right:  protocol.rightMargin  ?? 20,
+                      bottom: protocol.bottomMargin ?? 20,
+                      left:   protocol.leftMargin   ?? 20,
+                    } : undefined}
+                    firstPageBanner={activeAppointment ? (
+                      <PatientInfoBlock
+                        appointmentId={appointmentId}
+                        fullAppointment={activeAppointment}
+                        savedMetadata={null}
+                      />
+                    ) : null}
+                  />
+                </div>
+              </div>
+            )}
+
             {/* TIMELINE TAB */}
             {activeMainTab === 'TIMELINE' && (
               <div style={{ flex: 1, overflowY: 'auto', background: '#f1f5f9', padding: '24px 28px' }}>
@@ -4762,7 +4885,7 @@ const ReportingPage = () => {
             </div>
             <div style={{ width: '40px', height: '3px', background: 'linear-gradient(135deg,#fef3c7,#fde68a)', borderRadius: '99px', margin: '0 auto 16px' }} />
             <p style={{ fontSize: '13px', lineHeight: 1.7, color: '#475569', fontWeight: 500, margin: '0 0 8px', fontFamily: 'system-ui,sans-serif' }}>
-              An autosaved draft from <strong style={{ color: '#0f172a' }}>~{draftRecoveryModal.ageMin} min ago</strong> exists on this device and is newer than the saved copy on the server.
+              An autosaved draft from <strong style={{ color: '#0f172a' }}>~{draftRecoveryModal.ageMin} min ago</strong> exists on this device and <strong style={{ color: '#0f172a' }}>differs</strong> from the saved copy on the server.
             </p>
             <p style={{ fontSize: '12px', lineHeight: 1.6, color: '#64748b', fontWeight: 500, margin: '0 0 26px', fontFamily: 'system-ui,sans-serif' }}>
               Pick which version to load. The other one will be discarded.

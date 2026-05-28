@@ -450,9 +450,20 @@ export default function Ribbon(props) {
         </div>
       </div>
 
-      {/* ── Active tab body ──────────────────────────────────── */}
+      {/* ── Active tab body ────────────────────────────────────
+          Height bumped to 112 px to fit:
+            • 30-px Btn × 2 rows = 60 px content
+            + 4-px inner-stack gap                        = 64
+            + 4-px button-row paddingTop + 8-px paddingBottom = 76
+            + 20-px label-row height (with 6-px label paddingTop)
+            + 1-px label-row borderTop                    = 97
+            + 4-px tab body paddingTop                    = 101
+          ~11 px slack so the bottom of the bottom button row sits
+          clearly above the label divider line. Previous 92→108 was
+          fine for height math but the visual proximity of bottom
+          buttons to the label still felt cramped. */}
       <div style={{
-        height: ribbonCollapsed ? '0' : '92px',
+        height: ribbonCollapsed ? '0' : '112px',
         padding: ribbonCollapsed ? '0 12px' : '4px 12px 0',
         background: 'transparent',
         overflowX: ribbonCollapsed ? 'hidden' : 'auto',

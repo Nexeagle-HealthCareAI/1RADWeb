@@ -22,6 +22,13 @@ export const MultilevelList = Extension.create({
           parseHTML: el => el.getAttribute('data-multilevel') === 'true' ? true : null,
           renderHTML: attrs => attrs.multilevel ? { 'data-multilevel': 'true' } : {},
         },
+        // Named template that picks the per-level marker set. The CSS in
+        // NarrativeEditor.css keys off data-ml-style to render each depth.
+        multilevelStyle: {
+          default: null,
+          parseHTML: el => el.getAttribute('data-ml-style') || null,
+          renderHTML: attrs => attrs.multilevelStyle ? { 'data-ml-style': attrs.multilevelStyle } : {},
+        },
       },
     }];
   },
@@ -36,6 +43,16 @@ export const MultilevelList = Extension.create({
         const listType = editor.isActive('orderedList') ? 'orderedList' : 'bulletList';
         const current = editor.getAttributes(listType).multilevel || false;
         return chain().updateAttributes(listType, { multilevel: !current }).run();
+      },
+      // Apply a named multilevel template (e.g. 'numbers', 'legal', 'bullets',
+      // 'mixed'). Turns the current list into a multilevel one and tags it
+      // with the chosen style so CSS renders the right per-level markers.
+      setMultilevelStyle: (style) => ({ editor, chain }) => {
+        if (!editor.isActive('orderedList') && !editor.isActive('bulletList')) {
+          chain().toggleOrderedList().run();
+        }
+        const listType = editor.isActive('orderedList') ? 'orderedList' : 'bulletList';
+        return chain().updateAttributes(listType, { multilevel: true, multilevelStyle: style }).run();
       },
     };
   },
