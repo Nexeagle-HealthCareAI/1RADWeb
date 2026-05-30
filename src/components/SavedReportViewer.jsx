@@ -2,6 +2,7 @@ import { useEffect, useState, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import apiClient, { BASE_URL } from '../api/apiClient';
 import { PatientInfoBlock } from './ReportPreviewModal';
+import { getTrackingUrl } from '../utils/trackingUrl';
 
 // Read-only viewer for a SAVED radiology report.
 //
@@ -228,7 +229,7 @@ export default function SavedReportViewer({
   // their chat, the report opens in their browser (already public at
   // /track/{id} via the QR code surface). No backend changes, no template
   // approval, works on web + mobile WhatsApp identically.
-  const handleShareWhatsApp = () => {
+  const handleShareWhatsApp = async () => {
     if (!appointmentId) return;
 
     // Normalise mobile to digits-only. Indian numbers are stored 10-digit
@@ -246,7 +247,9 @@ export default function SavedReportViewer({
     const patientFirstName = (appointment?.patientName || patientData?.patientName || 'Patient')
       .split(' ')[0];
     const modalityLabel = appointment?.modality || patientData?.modality || 'radiology';
-    const trackUrl = `${window.location.origin}/track/${appointmentId}`;
+    // Signed-token URL so the patient's tap from WhatsApp lands on a valid
+    // public endpoint rather than getting a 401.
+    const trackUrl = await getTrackingUrl(appointmentId);
     const message =
       `Hi ${patientFirstName}, your ${modalityLabel} report is ready.\n\n` +
       `View it here: ${trackUrl}`;

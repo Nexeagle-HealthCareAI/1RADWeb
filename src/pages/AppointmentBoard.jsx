@@ -11,6 +11,7 @@ import ReportPreviewModal from '../components/ReportPreviewModal';
 import useTickClock from '../utils/useTickClock';
 import { formatElapsed, premisesSeverity, premisesPillStyle } from '../utils/timeTracking';
 import { useOverdue } from '../components/OverdueAppointments/OverdueContext';
+import { getTrackingUrl } from '../utils/trackingUrl';
 
 // --- CONSTANTS ---
 
@@ -107,6 +108,23 @@ export default function AppointmentBoard() {
   const [notifModal, setNotifModal] = useState({ isOpen: false, type: 'info', title: '', message: '' });
   const showNotif = (type, title, message) => setNotifModal({ isOpen: true, type, title, message });
   const [tokenPrintData, setTokenPrintData] = useState(null);
+  // Resolved tokenized URL for the printable QR — fetched whenever a token
+  // slip is opened so the patient's QR scan reaches the public endpoint with
+  // a signature instead of an anonymous Guid (which would be rejected).
+  const [tokenPrintQrUrl, setTokenPrintQrUrl] = useState('');
+  useEffect(() => {
+    let cancelled = false;
+    if (!tokenPrintData) { setTokenPrintQrUrl(''); return; }
+    const id = tokenPrintData.appointmentId || tokenPrintData.id;
+    if (!id) { setTokenPrintQrUrl(''); return; }
+    // Render the tokenless URL straight away so the QR has something to
+    // show during the brief fetch. Swap in the signed URL once it arrives.
+    setTokenPrintQrUrl(`${window.location.origin}/track/${id}`);
+    getTrackingUrl(id).then(url => {
+      if (!cancelled && url) setTokenPrintQrUrl(url);
+    });
+    return () => { cancelled = true; };
+  }, [tokenPrintData]);
   const [printDropdownId, setPrintDropdownId] = useState(null);
 
   const [bookingStep, setBookingStep] = useState(1);
@@ -2480,11 +2498,11 @@ export default function AppointmentBoard() {
 
               <div style={{ marginTop: '12px', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '10px' }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '8px', background: '#f8fafc', borderRadius: '12px', border: '1px solid #e2e8f0', width: '65mm' }}>
-                  <img 
-                    src={`https://api.qrserver.com/v1/create-qr-code/?size=100x100&data=${encodeURIComponent(`${window.location.origin}/track/${tokenPrintData.appointmentId || tokenPrintData.id}`)}`} 
-                    alt="QR" 
+                  <img
+                    src={`https://api.qrserver.com/v1/create-qr-code/?size=100x100&data=${encodeURIComponent(tokenPrintQrUrl)}`}
+                    alt="QR"
                     crossOrigin="anonymous"
-                    style={{ width: '14mm', height: '14mm' }} 
+                    style={{ width: '14mm', height: '14mm' }}
                   />
                   <div style={{ textAlign: 'left' }}>
                     <div style={{ fontSize: '9px', fontWeight: 950, color: '#0f52ba' }}>LIVE STATUS</div>

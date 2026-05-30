@@ -1,68 +1,68 @@
 import { useState, useEffect, useMemo } from 'react';
-import { useParams } from 'react-router-dom';
+import { useParams, useSearchParams } from 'react-router-dom';
 import apiClient, { BASE_URL } from '../api/apiClient';
 import useTickClock from '../utils/useTickClock';
 import { formatElapsed } from '../utils/timeTracking';
 
 export default function StatusTracking() {
   const { id } = useParams();
+  const [searchParams] = useSearchParams();
+  // The /track route is anonymous; the QR carries a signed token in the
+  // ?token= query string that the backend validates before serving data.
+  // Without a token we can still render an "invalid link" state below.
+  const token = searchParams.get('token');
   const [study, setStudy] = useState(null);
   const [report, setReport] = useState(null);
-  // Prescription protocol (letterhead, fonts) — fetched best-effort. If the
-  // endpoint is auth-only and the patient isn't logged in, we skip the
-  // letterhead and render a clean sheet. Report content always renders.
+  // Prescription protocol (letterhead, fonts) — fetched best-effort. Public
+  // endpoint may not exist yet; failures are silent.
   const [protocol, setProtocol] = useState(null);
   const [loading, setLoading] = useState(true);
-  // One tick a minute so the on-premises clock advances on the patient's
-  // screen without them having to refresh. Server-side polling already
-  // covers status transitions; this only drives "X minutes ago" labels.
+  const [authError, setAuthError] = useState(false);
   useTickClock();
 
   useEffect(() => {
     let active = true;
     const fetchAll = async () => {
       try {
-        const res = await apiClient.get(`/appointments/${id}`);
+        // One call returns both the tracker-safe appointment view AND the
+        // finalized report (when present). No mobile numbers, billing,
+        // technician comments — only what the patient should see.
+        const res = await apiClient.get(`/public/tracking/${id}`, {
+          params: token ? { token } : undefined,
+        });
         if (!active) return;
-        const studyData = res.data?.data || res.data;
-        setStudy(studyData);
+        const payload = res?.data?.data;
+        if (!payload?.appointment) {
+          setAuthError(true);
+          return;
+        }
+        setAuthError(false);
+        setStudy(payload.appointment);
 
-        // If the study is reported/finalized, also fetch the report content
-        // so the QR-scanner sees the actual report instead of the timeline.
-        const status = (studyData?.status || '').toLowerCase();
-        const isReported = status === 'reported' || status === 'finalized' || status === 'completed';
-        if (isReported) {
-          try {
-            const reportRes = await apiClient.get(`/Reporting/report/${id}`);
-            if (!active) return;
-            const reportData = reportRes.data?.data || reportRes.data;
-            if (reportData && (reportData.isFinalized || reportData.finalizedAt || reportData.findings || reportData.text)) {
-              setReport(reportData);
-            }
-          } catch (e) {
-            console.warn('Report fetch failed', e?.message);
-          }
+        const r = payload.report;
+        if (r && (r.isFinalized || r.finalizedAt)) {
+          // The DTO names match the legacy report fetch shape so the rest
+          // of the page (the findingsHtml memo, IMPRESSION/ADVICE blocks)
+          // continues to work unchanged.
+          setReport(r);
+        }
 
-          // Letterhead — try the radiologist's prescription protocol.
-          // Best-effort; safe to fail silently. The sheet still prints
-          // cleanly without a letterhead.
-          const doctorId =
-            studyData?.doctorUserId || studyData?.doctorId ||
-            studyData?.doctor?.userId;
-          if (doctorId) {
-            try {
-              const protoRes = await apiClient.get(`/Prescription/${doctorId}`);
-              if (!active) return;
-              if (protoRes?.data?.success && protoRes.data.data) {
-                setProtocol(protoRes.data.data);
-              }
-            } catch {
-              // Endpoint may require auth — patients see a clean sheet.
-            }
-          }
+        // Branding is bundled into the same tracking response now (the
+        // doctor's prescription protocol — letterhead URL + typography +
+        // margins). No separate /Prescription call, no anonymous 401, no
+        // missing letterhead on the patient sheet. Shape mirrors what
+        // SavedReportViewer's authenticated path already uses, so the
+        // downstream rendering code is unchanged.
+        if (payload.branding) {
+          setProtocol(payload.branding);
         }
       } catch (err) {
-        console.error('Tracking failed', err);
+        if (!active) return;
+        // 401 means the token was missing/expired/tampered. Surface a
+        // distinct state so the patient can ask the centre for a fresh QR
+        // instead of staring at a half-rendered page.
+        if (err?.response?.status === 401) setAuthError(true);
+        else console.error('Tracking failed', err);
       } finally {
         if (active) setLoading(false);
       }
@@ -186,6 +186,23 @@ export default function StatusTracking() {
   const currentIndex = steps.findIndex(s => s.key === currentStatus);
 
   // (printReport replaced by handleSaveOrPrint above.)
+
+  // Token missing / invalid / expired — show a clear state so the patient
+  // knows to ask for a fresh QR instead of refreshing forever.
+  if (!loading && (authError || (!study && !token))) return (
+    <div style={{ minHeight: '100vh', background: '#0a1628', color: 'white', fontFamily: 'Inter, sans-serif', padding: '40px 18px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+      <div style={{ maxWidth: '420px', textAlign: 'center' }}>
+        <div style={{ fontSize: '56px', marginBottom: '16px' }}>🔒</div>
+        <div style={{ fontSize: '11px', fontWeight: 800, color: '#60a5fa', letterSpacing: '2px', textTransform: 'uppercase', marginBottom: '10px' }}>1Rad · Report Tracker</div>
+        <h1 style={{ fontSize: '22px', fontWeight: 900, margin: 0 }}>This link is invalid or expired</h1>
+        <p style={{ fontSize: '13px', color: '#94a3b8', marginTop: '14px', lineHeight: 1.6 }}>
+          Please re-scan the QR code on your most recent prescription or
+          booking slip. If you still see this message, the centre can issue
+          you a fresh link.
+        </p>
+      </div>
+    </div>
+  );
 
   if (loading) return (
     <div style={{ height: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#0a1628', color: 'white' }}>
@@ -409,6 +426,70 @@ export default function StatusTracking() {
     ? formatElapsed(study.arrivedAt)
     : null;
 
+  // Expiry rule: a token QR is meaningful only on the day of the visit.
+  // It expires at the exact stroke of midnight IST (i.e., right after
+  // 11:59 PM) on the appointment day. Once midnight passes, the live
+  // tracker stops — the patient is no longer on premises and shouldn't
+  // keep polling a stale state. A delivered report can still be re-viewed
+  // via the same QR forever (the report-view branch above runs first).
+  //
+  // IST is fixed UTC+5:30 (no DST), so no timezone library needed.
+  const isExpired = (() => {
+    if (!study?.dateTime) return false;
+    if (report) return false; // Finalized reports never expire.
+    const apptUtc = parseUtc(study.dateTime);
+    if (!apptUtc) return false;
+    const IST_OFFSET_MS = 5.5 * 60 * 60 * 1000;
+    // Shift to IST wall-clock so .setUTCHours(0,0,0,0) snaps to IST midnight
+    // of the appointment day. Then add a full day to land on IST midnight
+    // of the NEXT day — i.e., the instant right after 11:59 PM.
+    const apptIst = new Date(apptUtc.getTime() + IST_OFFSET_MS);
+    apptIst.setUTCHours(0, 0, 0, 0);
+    const expiryUtc = new Date(apptIst.getTime() + (24 * 60 * 60 * 1000) - IST_OFFSET_MS);
+    return Date.now() >= expiryUtc.getTime();
+  })();
+
+  if (isExpired) {
+    return (
+      <div style={{ minHeight: '100vh', background: '#0a1628', color: 'white', fontFamily: 'Inter, sans-serif', padding: '40px 18px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+        <div style={{ maxWidth: '420px', textAlign: 'center' }}>
+          <div style={{ fontSize: '56px', marginBottom: '16px' }}>⌛</div>
+          <div style={{ fontSize: '11px', fontWeight: 800, color: '#60a5fa', letterSpacing: '2px', textTransform: 'uppercase', marginBottom: '10px' }}>1Rad · Report Tracker</div>
+          <h1 style={{ fontSize: '22px', fontWeight: 900, margin: 0, letterSpacing: '-0.3px' }}>This tracker has expired</h1>
+          <p style={{ fontSize: '13px', color: '#94a3b8', marginTop: '14px', lineHeight: 1.6 }}>
+            The live status link is only active on the day of your visit and
+            expires at <strong style={{ color: 'white' }}>11:59 PM</strong> the same day.
+          </p>
+          <p style={{ fontSize: '12px', color: '#cbd5e1', marginTop: '20px', lineHeight: 1.6 }}>
+            If your report is ready, please re-scan the prescription QR or
+            contact the centre. We’ll be happy to share your report directly.
+          </p>
+          <div style={{ marginTop: '24px', padding: '14px 18px', background: 'rgba(255,255,255,0.04)', borderRadius: '12px', display: 'inline-block', fontSize: '11px', fontWeight: 600, color: '#94a3b8' }}>
+            Token #{study?.dailyTokenNumber ?? study?.displayId ?? id}
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // Combined "30 May 2026 · 11:45 AM IST"-style label for the appointment
+  // slot, parsed UTC-safely so a server timestamp without a Z suffix isn't
+  // misread as local time.
+  const fmtAppointmentDate = (iso) => {
+    const d = parseUtc(iso);
+    if (!d || Number.isNaN(d.getTime())) return null;
+    const date = d.toLocaleDateString('en-IN', {
+      timeZone: 'Asia/Kolkata',
+      day: '2-digit', month: 'short', year: 'numeric',
+    });
+    const time = d.toLocaleTimeString('en-IN', {
+      timeZone: 'Asia/Kolkata',
+      hour: '2-digit', minute: '2-digit', hour12: true,
+    });
+    return `${date} · ${time} IST`;
+  };
+  const appointmentSlot = fmtAppointmentDate(study?.dateTime);
+
   return (
     <div style={{ minHeight: '100vh', background: '#0a1628', color: 'white', fontFamily: 'Inter, sans-serif', padding: '28px 18px 60px' }}>
       <div style={{ maxWidth: '500px', margin: '0 auto' }}>
@@ -421,30 +502,38 @@ export default function StatusTracking() {
           <div style={{ fontSize: '12px', opacity: 0.55, marginTop: '6px', fontWeight: 600 }}>Token #{study?.displayId || id}</div>
         </div>
 
-        {/* Patient Info Card */}
+        {/* Patient Info Card — labelled field grid mirroring the printed
+            token slip, so the patient can verify each detail at a glance:
+            TOKEN NO · PATIENT ID · NAME · DATE · MODALITY · STUDY. */}
         <div style={{
           background: 'rgba(255,255,255,0.05)', borderRadius: '20px',
           padding: '20px', border: '1px solid rgba(255,255,255,0.1)',
           marginBottom: '22px',
         }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '12px' }}>
-            <div style={{ flex: 1, minWidth: 0 }}>
-              <div style={{ fontSize: '17px', fontWeight: 800, letterSpacing: '-0.2px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                {study?.patientName?.toUpperCase() || 'PATIENT'}
-              </div>
-              <div style={{ fontSize: '11px', opacity: 0.65, marginTop: '4px', fontWeight: 600 }}>
-                {study?.modality}{study?.service ? ` · ${study.service}` : ''}
-              </div>
+          {/* Status badge floats top-right */}
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '14px' }}>
+            <div style={{ fontSize: '10px', fontWeight: 800, letterSpacing: '1.5px', color: '#60a5fa', textTransform: 'uppercase' }}>
+              Booking Slip
             </div>
             <div style={{
               background: currentStatus === 'reported' ? '#16a34a' : '#0f52ba',
               color: 'white', padding: '5px 10px',
               borderRadius: '8px', fontSize: '9px', fontWeight: 900, letterSpacing: '1px',
-              flexShrink: 0,
               boxShadow: currentStatus === 'reported' ? '0 0 20px rgba(22,163,74,0.5)' : '0 0 20px rgba(15,82,186,0.4)',
             }}>
               {currentStatus === 'reported' ? 'READY' : 'LIVE'}
             </div>
+          </div>
+
+          {/* Two-column label/value grid. Values are vertically aligned so
+              labels run as a column down the left and data sits to the right. */}
+          <div style={{ display: 'grid', gridTemplateColumns: '90px 1fr', rowGap: '10px', columnGap: '10px', alignItems: 'baseline' }}>
+            <TrackerField label="Token No" value={study?.dailyTokenNumber ?? '—'} highlight />
+            <TrackerField label="Patient ID" value={study?.patientIdentifier || '—'} mono />
+            <TrackerField label="Name" value={(study?.patientName || '').toUpperCase() || '—'} />
+            <TrackerField label="Date" value={appointmentSlot || '—'} />
+            <TrackerField label="Modality" value={study?.modality || '—'} />
+            <TrackerField label="Study" value={study?.service || '—'} />
           </div>
 
           {/* On-premises clock — only while the patient is actually here. */}
@@ -524,5 +613,31 @@ export default function StatusTracking() {
         `}</style>
       </div>
     </div>
+  );
+}
+
+// Single label/value row in the booking-slip card. `highlight` boosts the
+// value's font size + colour for the token number; `mono` swaps to a
+// tabular font for IDs so digits don't shift between renders.
+function TrackerField({ label, value, highlight, mono }) {
+  return (
+    <>
+      <div style={{
+        fontSize: '10px',
+        fontWeight: 800,
+        letterSpacing: '1.5px',
+        textTransform: 'uppercase',
+        color: '#94a3b8',
+      }}>{label}:</div>
+      <div style={{
+        fontSize: highlight ? '20px' : '13px',
+        fontWeight: highlight ? 900 : 700,
+        color: highlight ? '#60a5fa' : 'white',
+        letterSpacing: highlight ? '-0.5px' : '0',
+        fontFamily: mono ? '"JetBrains Mono", ui-monospace, Menlo, Consolas, monospace' : 'inherit',
+        wordBreak: 'break-word',
+        lineHeight: 1.3,
+      }}>{value}</div>
+    </>
   );
 }

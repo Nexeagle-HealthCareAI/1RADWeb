@@ -5,6 +5,7 @@ import { Document, Page, pdfjs } from 'react-pdf';
 import { QRCodeCanvas } from 'qrcode.react';
 import QRCode from 'qrcode';
 import { downloadReportPdf } from '../utils/downloadPdf';
+import { getTrackingUrl } from '../utils/trackingUrl';
 
 // Configure PDF.js worker
 // Configure PDF.js worker to use CDN for maximum reliability
@@ -25,6 +26,24 @@ export const PatientInfoBlock = ({ appointmentId, fullAppointment, savedMetadata
   const repDate   = savedMetadata?.finalizedAt
     ? new Date(savedMetadata.finalizedAt).toLocaleDateString()
     : new Date().toLocaleDateString();
+
+  // QR target — request a signed token from the API so the printed QR works
+  // when the patient (anonymous) scans it. We start with the tokenless URL so
+  // the QR has something to render immediately, then swap once the token
+  // arrives. If the token request fails we keep the bare URL — the public
+  // endpoint will reject it and the patient gets a clear "ask for a new QR"
+  // message instead of silently bad data.
+  const [qrUrl, setQrUrl] = useState(
+    appointmentId ? `${window.location.origin}/track/${appointmentId}` : ''
+  );
+  useEffect(() => {
+    let cancelled = false;
+    if (!appointmentId) return;
+    getTrackingUrl(appointmentId).then(url => {
+      if (!cancelled && url) setQrUrl(url);
+    });
+    return () => { cancelled = true; };
+  }, [appointmentId]);
 
   // Compact patient header + a thank-you note to the prescribing doctor.
   // Two-line header (name + dot-separated meta) keeps page-1 vertical space
@@ -63,7 +82,7 @@ export const PatientInfoBlock = ({ appointmentId, fullAppointment, savedMetadata
           borderRadius: '6px',
           flexShrink: 0,
         }}>
-          <QRCodeCanvas value={`${window.location.origin}/track/${appointmentId}`} size={42} level="H" />
+          <QRCodeCanvas value={qrUrl} size={42} level="H" />
         </div>
 
         {/* Patient identity + metadata stacked */}
@@ -228,7 +247,10 @@ const ReportPreviewModal = ({
 
     const generateQR = async () => {
       try {
-        const qrUrl = `${window.location.origin}/track/${appointmentId}`;
+        // Embed the signed tracking token so the QR works when scanned by
+        // the patient (anonymous, no session cookies). Falls back to the
+        // tokenless URL if the issue endpoint fails.
+        const qrUrl = await getTrackingUrl(appointmentId);
         const dataUrl = await QRCode.toDataURL(qrUrl, {
           errorCorrectionLevel: 'H',
           type: 'image/png',
@@ -798,14 +820,16 @@ const ReportPreviewModal = ({
     // injected into the print HTML above — no more race-condition setTimeout here.
   };
 
-  const handleWhatsAppShare = () => {
+  const handleWhatsAppShare = async () => {
     const mobile = fullAppointment?.patientMobile || fullAppointment?.mobile;
     if (!mobile) {
       alert("No patient mobile number found for this appointment.");
       return;
     }
 
-    const reportUrl = `${window.location.origin}/track/${appointmentId}`;
+    // Use the same signed-token URL the QR uses so the WhatsApp link works
+    // when the patient taps it from their phone (no session).
+    const reportUrl = await getTrackingUrl(appointmentId);
     const message = `Hello ${fullAppointment?.patientName},\n\nYour Diagnostic Report for ${fullAppointment?.service || 'the clinical study'} is now available.\n\n📄 View/Download Report: ${reportUrl}\n\nThank you for choosing ${fullAppointment?.hospitalName || '1Rad Diagnostic Center'}.`;
     
     const encoded = encodeURIComponent(message);
