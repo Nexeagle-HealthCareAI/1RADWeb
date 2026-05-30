@@ -64,6 +64,9 @@ export default function OperationsBoard() {
   const [newStatus, setNewStatus] = useState('NOT_STARTED');
   const [newReason, setNewReason] = useState('');
   const [saving, setSaving] = useState(false);
+  // Export uses an async path now (bulk-fetches comments), so we lock the
+  // button while it's running to prevent a re-click spawning a second pull.
+  const [exporting, setExporting] = useState(false);
 
   // Comment timeline popup. Loaded on demand because per-row counts aren't
   // useful and the full list could be large; we only need it when the user
@@ -312,28 +315,119 @@ export default function OperationsBoard() {
     );
   };
 
-  // Excel export — exports current filtered appointments
-  const exportToExcel = () => {
+  // Excel export — exports current filtered appointments + full comment
+  // trail. We POST every visible appointmentId in one bulk request so an
+  // export of 200 patients is one HTTP round-trip, not 200.
+  //
+  // Layout:
+  //   Sheet 1 "Operations" — one row per appointment, with the latest
+  //      comment summary, author, time, comment count, and the full trail
+  //      concatenated in chronological order.
+  //   Sheet 2 "Comments"  — one row per comment so the analyst can pivot /
+  //      sort by author / time in Excel itself.
+  const exportToExcel = async () => {
     if (!filteredAppointments.length) return;
-    const rows = filteredAppointments.map((a) => ({
-      Token: a.dailyTokenNumber ?? '',
-      'Patient ID': a.patientId ?? '',
-      'Patient Name': a.patientName ?? '',
-      Age: a.patientAge ?? '',
-      Gender: a.patientGender ?? '',
-      Mobile: a.mobile ?? '',
-      Modality: a.modality ?? '',
-      Service: a.service ?? '',
-      Status: a.status ?? '',
-      'Progress Status': a.reportProgressStatus ?? '',
-      'Delay Reason': a.delayReason ?? '',
-      Date: a.dateTime ? a.dateTime.split('T')[0] : '',
-      Time: a.dateTime ? a.dateTime.split('T')[1]?.slice(0, 5) : '',
-    }));
+    setExporting(true);
+
+    // Bulk-fetch comments for the visible set. If the bulk endpoint fails
+    // for any reason we still produce the spreadsheet — minus the timeline
+    // — rather than block the user from getting their data out.
+    let commentsByApptId = new Map();
+    let allComments = [];
+    try {
+      const ids = filteredAppointments.map(a => a.appointmentId);
+      const res = await apiClient.post('/appointments/comments/bulk', { appointmentIds: ids });
+      allComments = res?.data?.items ?? [];
+      for (const c of allComments) {
+        if (!commentsByApptId.has(c.appointmentId)) commentsByApptId.set(c.appointmentId, []);
+        commentsByApptId.get(c.appointmentId).push(c);
+      }
+    } catch (err) {
+      console.warn('[OPS] bulk comments fetch failed — exporting without trail', err);
+      showToast('Comment trail unavailable — exporting summary only', 'error');
+    }
+
+    const fmtDateTime = (iso) => {
+      if (!iso) return '';
+      const hasTz = /[zZ]|[+-]\d{2}:?\d{2}$/.test(iso);
+      const d = new Date(hasTz ? iso : iso + 'Z');
+      if (Number.isNaN(d.getTime())) return '';
+      return d.toLocaleString('en-GB', {
+        timeZone: 'Asia/Kolkata',
+        day: '2-digit', month: 'short', year: 'numeric',
+        hour: '2-digit', minute: '2-digit', hour12: true,
+      });
+    };
+
+    // Sheet 1: appointments + comment summary.
+    const rows = filteredAppointments.map((a) => {
+      const trail = commentsByApptId.get(a.appointmentId) || [];
+      // Concatenate every comment as a single text block, oldest first, with
+      // a clear delimiter per entry. Newlines render as wrapped rows in
+      // Excel when Wrap-Text is enabled on the column.
+      const fullTrail = trail
+        .map(c => `[${fmtDateTime(c.createdAt)} — ${c.authorName}]\n${c.body}`)
+        .join('\n\n');
+
+      return {
+        Token: a.dailyTokenNumber ?? '',
+        'Patient ID': a.patientId ?? '',
+        'Patient Name': a.patientName ?? '',
+        Age: a.patientAge ?? '',
+        Gender: a.patientGender ?? '',
+        Mobile: a.mobile ?? '',
+        Modality: a.modality ?? '',
+        Service: a.service ?? '',
+        Status: a.status ?? '',
+        'Progress Status': a.reportProgressStatus ?? '',
+        'Latest Comment': a.delayReason ?? '',
+        'Latest Comment By': a.latestCommentAuthorName ?? '',
+        'Latest Comment At': fmtDateTime(a.latestCommentAt),
+        'Comment Count': trail.length,
+        'All Comments (oldest → newest)': fullTrail,
+        Date: a.dateTime ? a.dateTime.split('T')[0] : '',
+        Time: a.dateTime ? a.dateTime.split('T')[1]?.slice(0, 5) : '',
+      };
+    });
+
     const ws = XLSX.utils.json_to_sheet(rows);
+    // Widen the comment trail column so it's readable instead of one
+    // character per row. !cols controls per-column width in xlsx.
+    ws['!cols'] = [
+      { wch: 6 },  { wch: 14 }, { wch: 24 }, { wch: 4 }, { wch: 6 },
+      { wch: 14 }, { wch: 12 }, { wch: 18 }, { wch: 12 }, { wch: 16 },
+      { wch: 36 }, { wch: 22 }, { wch: 22 }, { wch: 10 }, { wch: 60 },
+      { wch: 12 }, { wch: 8 },
+    ];
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, 'Operations');
+
+    // Sheet 2: every comment as its own row — useful for pivots / sorting
+    // by author or time across the whole export.
+    if (allComments.length > 0) {
+      const apptById = new Map(filteredAppointments.map(a => [a.appointmentId, a]));
+      const commentRows = allComments.map((c) => {
+        const a = apptById.get(c.appointmentId);
+        return {
+          Token: a?.dailyTokenNumber ?? '',
+          'Patient Name': a?.patientName ?? '',
+          'Display ID': a?.displayId ?? '',
+          Modality: a?.modality ?? '',
+          Author: c.authorName ?? '',
+          'Created At': fmtDateTime(c.createdAt),
+          Comment: c.body ?? '',
+        };
+      });
+      const cws = XLSX.utils.json_to_sheet(commentRows);
+      cws['!cols'] = [
+        { wch: 6 }, { wch: 24 }, { wch: 14 }, { wch: 12 },
+        { wch: 22 }, { wch: 22 }, { wch: 70 },
+      ];
+      XLSX.utils.book_append_sheet(wb, cws, 'Comments');
+    }
+
     XLSX.writeFile(wb, `operations-${selectedDate}.xlsx`);
+    setExporting(false);
   };
 
   // Date navigator helper
@@ -371,10 +465,10 @@ export default function OperationsBoard() {
             <button
               className="appt-new-mission-btn"
               onClick={exportToExcel}
-              disabled={!filteredAppointments.length}
-              style={{ background: '#15803d', borderColor: '#15803d' }}
-              title="Export visible records to Excel"
-            >⬇ Export Excel</button>
+              disabled={!filteredAppointments.length || exporting}
+              style={{ background: '#15803d', borderColor: '#15803d', opacity: exporting ? 0.6 : 1 }}
+              title="Export visible records (with full comment trail) to Excel"
+            >{exporting ? '⏳ Exporting…' : '⬇ Export Excel'}</button>
           </div>
         </div>
       </div>
