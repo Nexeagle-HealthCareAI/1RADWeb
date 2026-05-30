@@ -8,6 +8,7 @@ import { nativeStorage } from '../hooks/useElectron';
 import useTickClock from '../utils/useTickClock';
 import { formatElapsed, premisesSeverity, premisesPillStyle } from '../utils/timeTracking';
 import { useOverdue } from '../components/OverdueAppointments/OverdueContext';
+import { formatPatientAge } from '../utils/patientAge';
 import '../styles/global.css';
 import '../styles/DoctorBoard.css';
 
@@ -553,7 +554,7 @@ export default function DoctorBoard() {
                           <div style={{ width: '40px', height: '40px', borderRadius: '14px', background: '#f8fafc', color: '#0f52ba', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 900, fontSize: '16px', border: '1px solid #e2e8f0' }}>{c.patientName.charAt(0)}</div>
                           <div>
                              <div style={{ fontWeight: 800, color: '#1e293b', fontSize: '14px' }}>{c.patientName.toUpperCase()}</div>
-                             <div style={{ fontSize: '10px', color: '#94a3b8', fontWeight: 700 }}>{c.id} | {c.patientGender || 'M'} | {c.patientAge || '45'}Y</div>
+                             <div style={{ fontSize: '10px', color: '#94a3b8', fontWeight: 700 }}>{c.id} | {c.patientGender || 'M'} | {formatPatientAge(c.patientAge, '45Y')}</div>
                              {/* TAT pills: on-premises (live) + scan→delivery (final). */}
                              {onPremisesElapsed && (
                                <div style={{ display: 'flex', alignItems: 'center', gap: '5px', marginTop: '4px', flexWrap: 'wrap' }}>

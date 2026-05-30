@@ -12,6 +12,7 @@ import useTickClock from '../utils/useTickClock';
 import { formatElapsed, premisesSeverity, premisesPillStyle } from '../utils/timeTracking';
 import { useOverdue } from '../components/OverdueAppointments/OverdueContext';
 import { getTrackingUrl } from '../utils/trackingUrl';
+import { buildPatientAge, formatPatientAge, parsePatientAge } from '../utils/patientAge';
 
 // --- CONSTANTS ---
 
@@ -142,8 +143,8 @@ export default function AppointmentBoard() {
     priority: 'ROUTINE', // STAT / URGENT / ROUTINE — drives worklist sort
   });
 
-  const [newPatient, setNewPatient] = useState({ 
-    name: '', mobile: '', age: '', gender: 'Male', 
+  const [newPatient, setNewPatient] = useState({
+    name: '', mobile: '', age: '', ageUnit: 'Y', gender: 'Male',
     village: '', district: '', address: '', sourceOfInfo: '', referrerId: null
   });
   const [duplicatePatient, setDuplicatePatient] = useState(null);
@@ -225,10 +226,12 @@ export default function AppointmentBoard() {
         };
       });
       
-      // Worklist order: STAT → URGENT → ROUTINE, then token ASC. Priority is
-      // the dominant key so a STAT walk-in surfaces above all routine tokens
-      // regardless of when it was booked; inside each priority bucket the
-      // tokens still run 1, 2, 3… so the front desk reads the queue normally.
+      // Worklist order: STAT → URGENT → ROUTINE, then token DESC. Priority
+      // is still the dominant key so a STAT walk-in surfaces above all
+      // routine tokens regardless of when it was booked; inside each
+      // priority bucket the LATEST tokens float to the top so the front
+      // desk sees newly-booked patients first when refreshing the board.
+      // (Time DESC as a tiebreaker for the rare same-token collision.)
       const PRIORITY_RANK = { STAT: 0, URGENT: 1, ROUTINE: 2 };
       const finalSortedData = itemsWithTokens.sort((a, b) => {
         const pa = PRIORITY_RANK[a.priority] ?? 2;
@@ -237,11 +240,11 @@ export default function AppointmentBoard() {
 
         const tokenA = a.tokenNo || 0;
         const tokenB = b.tokenNo || 0;
-        if (tokenA !== tokenB) return tokenA - tokenB;
+        if (tokenA !== tokenB) return tokenB - tokenA;
 
         const timeA = new Date(a.dateTime || 0).getTime();
         const timeB = new Date(b.dateTime || 0).getTime();
-        return timeA - timeB;
+        return timeB - timeA;
       });
 
       setAppointments(finalSortedData);
@@ -533,7 +536,7 @@ export default function AppointmentBoard() {
     const payload = {
       fullName: newPatient.name,
       mobile: newPatient.mobile,
-      age: newPatient.age,
+      age: buildPatientAge(newPatient.age, newPatient.ageUnit),
       gender: newPatient.gender,
       village: newPatient.village,
       district: newPatient.district,
@@ -554,7 +557,7 @@ export default function AppointmentBoard() {
       const response = await apiClient.post('/patients', payload);
       const patientId = response.data.patientId;
       setIsAddPatientOpen(false);
-      setNewPatient({ name: '', mobile: '', age: '', gender: 'Male', village: '', district: '', address: '', referredBy: '', sourceOfInfo: '' });
+      setNewPatient({ name: '', mobile: '', age: '', ageUnit: 'Y', gender: 'Male', village: '', district: '', address: '', referredBy: '', sourceOfInfo: '' });
       setNewBooking(prev => ({ ...prev, patientId }));
       fetchPatients('');
     } catch (error) {
@@ -659,7 +662,11 @@ export default function AppointmentBoard() {
       priority: 'ROUTINE',
     });
 
-    setNewPatient({ name: '', mobile: '', age: '', gender: 'Male', village: '', district: '', address: '', referredBy: '', sourceOfInfo: '' });
+    // Reset age unit to Years on every fresh booking — M / D must be a
+    // conscious choice each time, never a sticky carry-over from a previous
+    // booking (e.g. a baby's appointment leaving M selected for the next
+    // adult patient by accident).
+    setNewPatient({ name: '', mobile: '', age: '', ageUnit: 'Y', gender: 'Male', village: '', district: '', address: '', referredBy: '', sourceOfInfo: '' });
     setReferrerSearchValue('');
     setDrawerSearchQuery('');
     setShowBookingValidation(false);
@@ -1375,7 +1382,7 @@ export default function AppointmentBoard() {
                 {app.patientName.toUpperCase()}
               </span>
               <span style={{ fontSize: '9px', fontWeight: 900, color: '#475569', background: '#f1f5f9', padding: '1px 5px', borderRadius: '4px', textTransform: 'uppercase' }}>
-                {app.patientGender || 'U'} • {app.patientAge ? `${app.patientAge}Y` : '—'}
+                {app.patientGender || 'U'} • {formatPatientAge(app.patientAge)}
               </span>
               {/* Priority chip — only show when above ROUTINE so the row stays clean.
                   Heartbeat animation class draws the eye to STAT/URGENT cases. */}
@@ -1603,11 +1610,16 @@ export default function AppointmentBoard() {
                         <div key={p.id}
                           className={`patient-search-result ${newBooking.patientId === p.id ? 'selected' : ''}`}
                           onClick={() => { 
-                            setNewBooking({...newBooking, patientId: p.id}); 
+                            setNewBooking({...newBooking, patientId: p.id});
+                            // Decode any stored unit suffix so the toggle
+                            // reflects what's already on file (a 6-month-old
+                            // is stored as "6m", reopens with M selected).
+                            const { value: ageVal, unit: ageUnitVal } = parsePatientAge(p.age);
                             setNewPatient({
                               name: p.name,
                               mobile: p.mobile,
-                              age: p.age || '',
+                              age: ageVal,
+                              ageUnit: ageUnitVal,
                               gender: p.gender || 'Male',
                               village: p.village || '',
                               district: p.district || '',
@@ -1717,20 +1729,56 @@ export default function AppointmentBoard() {
                         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
                           <div className="form-group" style={{ marginBottom: '4px' }}>
                             <label style={{ fontSize: '10px', fontWeight: 700, marginBottom: '4px', display: 'block' }}>AGE <span style={{ color: '#e74c3c' }}>*</span></label>
-                            <input 
-                              type="text" 
-                              required 
-                              placeholder="25" 
-                              style={{ 
-                                fontSize: '13px', 
-                                padding: '8px 10px',
-                                borderRadius: '10px',
-                                border: showBookingValidation && !newPatient.age.trim() ? '1.5px solid #e74c3c' : '1.5px solid #dee2e6',
-                                background: showBookingValidation && !newPatient.age.trim() ? '#fff5f5' : 'white'
-                              }} 
-                              value={newPatient.age} 
-                              onChange={e => setNewPatient({...newPatient, age: e.target.value})} 
-                            />
+                            {/* Number + Y/M/D unit toggle. Use M for babies
+                                under 2y, D for newborns under a month. The
+                                input + buttons share the same border so it
+                                looks like one control, not two stuck side
+                                by side. */}
+                            <div style={{
+                              display: 'flex', alignItems: 'stretch',
+                              border: showBookingValidation && !newPatient.age.trim() ? '1.5px solid #e74c3c' : '1.5px solid #dee2e6',
+                              borderRadius: '10px',
+                              background: showBookingValidation && !newPatient.age.trim() ? '#fff5f5' : 'white',
+                              overflow: 'hidden',
+                            }}>
+                              <input
+                                type="text"
+                                required
+                                placeholder={newPatient.ageUnit === 'M' ? '6' : newPatient.ageUnit === 'D' ? '15' : '25'}
+                                inputMode="numeric"
+                                style={{
+                                  flex: 1, minWidth: 0,
+                                  fontSize: '13px',
+                                  padding: '8px 10px',
+                                  border: 'none', outline: 'none',
+                                  background: 'transparent',
+                                }}
+                                value={newPatient.age}
+                                onChange={e => setNewPatient({...newPatient, age: e.target.value.replace(/[^0-9.]/g, '')})}
+                              />
+                              <div style={{ display: 'flex', borderLeft: '1.5px solid #dee2e6' }}>
+                                {['Y', 'M', 'D'].map(u => {
+                                  const active = newPatient.ageUnit === u;
+                                  return (
+                                    <button
+                                      key={u}
+                                      type="button"
+                                      onClick={() => setNewPatient({...newPatient, ageUnit: u})}
+                                      title={u === 'Y' ? 'Years' : u === 'M' ? 'Months' : 'Days'}
+                                      style={{
+                                        background: active ? '#0f52ba' : 'transparent',
+                                        color: active ? 'white' : '#64748b',
+                                        border: 'none',
+                                        padding: '0 10px',
+                                        fontSize: '11px', fontWeight: 900, letterSpacing: '0.5px',
+                                        cursor: 'pointer',
+                                        transition: 'background 0.15s',
+                                      }}
+                                    >{u}</button>
+                                  );
+                                })}
+                              </div>
+                            </div>
                           </div>
                           <div className="form-group" style={{ marginBottom: '4px' }}>
                             <label style={{ fontSize: '10px', fontWeight: 700, color: '#64748b', marginBottom: '4px', display: 'block' }}>GENDER</label>
@@ -1884,7 +1932,7 @@ export default function AppointmentBoard() {
                                 const response = await apiClient.post('/patients', {
                                   fullName: newPatient.name,
                                   mobile: newPatient.mobile,
-                                  age: newPatient.age || '0',
+                                  age: buildPatientAge(newPatient.age, newPatient.ageUnit) || '0',
                                   gender: newPatient.gender,
                                   village: newPatient.village,
                                   district: newPatient.district,
@@ -1911,7 +1959,7 @@ export default function AppointmentBoard() {
                                   patientId: newBooking.patientId,
                                   fullName: newPatient.name,
                                   mobile: newPatient.mobile,
-                                  age: newPatient.age || '0',
+                                  age: buildPatientAge(newPatient.age, newPatient.ageUnit) || '0',
                                   gender: newPatient.gender,
                                   village: newPatient.village,
                                   district: newPatient.district,

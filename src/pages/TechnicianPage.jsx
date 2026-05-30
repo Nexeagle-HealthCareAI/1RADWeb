@@ -8,6 +8,7 @@ import ReportPreviewModal from '../components/ReportPreviewModal';
 import { DicomCache } from '../utils/DicomCache';
 import { dicomOptimizer } from '../utils/DicomPerformanceOptimizer';
 import { assetsFromManifest } from '../utils/dicomManifest';
+import { formatPatientAge } from '../utils/patientAge';
 import { uploadStudyAssetDirect } from '../utils/azureUpload';
 import useTickClock from '../utils/useTickClock';
 import { formatElapsed, premisesSeverity, premisesPillStyle } from '../utils/timeTracking';
@@ -1023,7 +1024,7 @@ export default function TechnicianPage() {
                           </div>
                           <div>
                              <div style={{ fontWeight: 800, color: '#1e293b', fontSize: '12px' }}>{study.patientName.toUpperCase()}</div>
-                             <div style={{ fontSize: '9px', color: '#94a3b8', fontWeight: 700 }}>{study.id} | {study.patientGender} | {study.patientAge}Y</div>
+                             <div style={{ fontSize: '9px', color: '#94a3b8', fontWeight: 700 }}>{study.id} | {study.patientGender} | {formatPatientAge(study.patientAge)}</div>
                              {/* TAT pills: on-premises (live) + scan→delivery (final). */}
                              {onPremisesElapsed && (
                                <div style={{ display: 'flex', alignItems: 'center', gap: '4px', marginTop: '3px', flexWrap: 'wrap' }}>
