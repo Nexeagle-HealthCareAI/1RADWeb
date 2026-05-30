@@ -53,7 +53,7 @@ function postProcess(text) {
  *
  * When a phrase finalises, calls `onResult(text)` with post-processed text.
  */
-export function useVoiceDictation({ onResult, lang = 'en-US' } = {}) {
+export function useVoiceDictation({ onResult, onInterim, lang = 'en-US' } = {}) {
   const [active, setActive] = useState(false);
   const recogRef = useRef(null);
   const supported = isVoiceSupported();
@@ -62,6 +62,8 @@ export function useVoiceDictation({ onResult, lang = 'en-US' } = {}) {
   // always call the current callback even after re-renders.
   const onResultRef = useRef(onResult);
   useEffect(() => { onResultRef.current = onResult; }, [onResult]);
+  const onInterimRef = useRef(onInterim);
+  useEffect(() => { onInterimRef.current = onInterim; }, [onInterim]);
 
   const stop = useCallback(() => {
     if (recogRef.current) {
@@ -79,19 +81,23 @@ export function useVoiceDictation({ onResult, lang = 'en-US' } = {}) {
     const r = new SR();
     r.lang = lang;
     r.continuous = true;
-    r.interimResults = false;
+    r.interimResults = true; // live — emit partial text as the user speaks
     r.maxAlternatives = 1;
 
     r.onresult = (e) => {
       let finalText = '';
+      let interimText = '';
       for (let i = e.resultIndex; i < e.results.length; i++) {
         const result = e.results[i];
         if (result.isFinal) finalText += result[0].transcript;
+        else interimText += result[0].transcript;
       }
       if (finalText) {
-        const processed = postProcess(finalText);
-        onResultRef.current?.(processed);
+        onResultRef.current?.(postProcess(finalText));
       }
+      // Always report the current interim (possibly empty when a phrase just
+      // finalised) so the UI can show/clear the live "writing as you speak".
+      onInterimRef.current?.(interimText ? postProcess(interimText) : '');
     };
 
     r.onerror = (e) => {

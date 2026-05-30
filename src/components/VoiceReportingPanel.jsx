@@ -68,7 +68,14 @@ export default function VoiceReportingPanel({
   const [error, setError] = useState('');
   const [elapsed, setElapsed] = useState(0);
   const [hasGenerated, setHasGenerated] = useState(false); // true once a draft has been produced
+  const [autoStop, setAutoStop] = useState(true);          // auto-stop+generate after a pause
   const timerRef = useRef(null);
+  const silenceTimerRef = useRef(null);
+  const SILENCE_MS = 4000; // pause length that triggers auto stop & generate
+  // Always holds the latest transcript so the delayed "stop & generate" path
+  // reads the final phrase the speech engine flushes after stop().
+  const transcriptRef = useRef('');
+  useEffect(() => { transcriptRef.current = transcript; }, [transcript]);
 
   useEffect(() => {
     if (!templateId && (templates[0]?.id || templates[0]?.Id)) {
@@ -76,15 +83,22 @@ export default function VoiceReportingPanel({
     }
   }, [templates, templateId]);
 
+  const [interim, setInterim] = useState(''); // live, not-yet-finalised speech
+
   const handleResult = useCallback((text) => {
     if (!text) return;
+    setInterim(''); // this phrase is now final — clear the live tail
     setTranscript(prev => {
       const sep = prev && !/\s$/.test(prev) ? ' ' : '';
       return prev + sep + text;
     });
   }, []);
+  const handleInterim = useCallback((text) => setInterim(text || ''), []);
 
-  const voice = useVoiceDictation({ onResult: handleResult });
+  const voice = useVoiceDictation({ onResult: handleResult, onInterim: handleInterim });
+
+  // Clear any live interim text once dictation stops.
+  useEffect(() => { if (!voice.active) setInterim(''); }, [voice.active]);
 
   // Recording timer.
   useEffect(() => {
@@ -103,7 +117,9 @@ export default function VoiceReportingPanel({
 
   const handleGenerate = async () => {
     setError('');
-    const text = transcript.trim();
+    // Read the latest transcript via ref so a generate fired right after
+    // stopping the mic still includes the final dictated phrase.
+    const text = (transcriptRef.current || transcript).trim();
     if (!text) { setError('Dictate or type some findings first.'); return; }
     if (voice.active) voice.stop();
     setLoading(true);
@@ -119,6 +135,33 @@ export default function VoiceReportingPanel({
       setLoading(false);
     }
   };
+
+  // One-tap "Stop & Generate": stop the mic, then generate after a short beat
+  // so the speech engine's final phrase has landed in the transcript.
+  const stopAndGenerate = () => {
+    if (voice.active) voice.stop();
+    setError('');
+    setLoading(true); // show the spinner immediately for snappy feedback
+    setTimeout(() => { setLoading(false); handleGenerate(); }, 550);
+  };
+
+  // Auto-stop on silence: while recording with content captured, restart a
+  // countdown on every new phrase; if the doctor pauses for SILENCE_MS the
+  // report is generated hands-free. Only runs once there's a transcript, so a
+  // slow start never triggers it. (Effect re-runs on each new phrase, which
+  // resets the timer.)
+  useEffect(() => {
+    if (silenceTimerRef.current) { clearTimeout(silenceTimerRef.current); silenceTimerRef.current = null; }
+    if (!autoStop || !voice.active || loading || !transcript.trim()) return;
+    silenceTimerRef.current = setTimeout(() => {
+      if (voice.active && transcriptRef.current.trim()) stopAndGenerate();
+    }, SILENCE_MS);
+    return () => { if (silenceTimerRef.current) { clearTimeout(silenceTimerRef.current); silenceTimerRef.current = null; } };
+    // `interim` is included so ongoing speech (live partials) keeps resetting
+    // the countdown — otherwise continuous talking without a finalised phrase
+    // could auto-stop mid-sentence.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [transcript, interim, voice.active, autoStop, loading]);
 
   const divider = <div style={{ height: '1px', background: THEME.line, margin: '2px 0' }} />;
 
@@ -187,8 +230,8 @@ export default function VoiceReportingPanel({
 
             {/* Section 2 — Dictate */}
             <section>
-              <StepHeader n={2} done={wordCount > 0} title="Dictate your findings"
-                hint={supported ? 'Speak naturally — say "comma", "full stop", "new paragraph" for punctuation.' : 'Voice input is unavailable in this browser — type your findings below.'} />
+              <StepHeader n={2} done={wordCount > 0} title="Dictate, then tap stop — it auto-generates"
+                hint={supported ? 'Tap the mic, speak naturally, then tap ■ — the report generates automatically. Say "comma", "full stop", "new paragraph" for punctuation.' : 'Voice input is unavailable in this browser — type your findings below, then use Generate.'} />
 
               <div style={{
                 display: 'flex', alignItems: 'center', gap: '14px', flexWrap: 'wrap',
@@ -198,9 +241,13 @@ export default function VoiceReportingPanel({
                 transition: 'background 0.2s, border-color 0.2s',
               }}>
                 <button
-                  onClick={() => supported && voice.toggle()}
+                  onClick={() => {
+                    if (!supported || loading) return;
+                    if (voice.active) stopAndGenerate(); // stop + auto-generate in one tap
+                    else voice.toggle();                 // start dictating
+                  }}
                   disabled={!supported || loading}
-                  title={supported ? (voice.active ? 'Stop dictation' : 'Start dictation') : 'Voice not supported'}
+                  title={supported ? (voice.active ? 'Stop & generate report' : 'Start dictation') : 'Voice not supported'}
                   style={{
                     width: '54px', height: '54px', borderRadius: '50%', flexShrink: 0,
                     border: 'none', cursor: supported && !loading ? 'pointer' : 'not-allowed',
@@ -224,7 +271,9 @@ export default function VoiceReportingPanel({
                           }} />
                         ))}
                       </div>
-                      <span style={{ fontSize: '13px', fontWeight: 700, color: '#dc2626' }}>Listening… {fmtTime(elapsed)}</span>
+                      <span style={{ fontSize: '13px', fontWeight: 700, color: '#dc2626' }}>
+                        Listening {fmtTime(elapsed)}{autoStop ? ' · auto-stops when you pause' : ' · tap ■ to stop'}
+                      </span>
                     </div>
                   ) : (
                     <div>
@@ -252,9 +301,11 @@ export default function VoiceReportingPanel({
               </div>
 
               <textarea
-                value={transcript}
+                value={voice.active && interim
+                  ? transcript + (transcript && !/\s$/.test(transcript) ? ' ' : '') + interim
+                  : transcript}
                 onChange={(e) => setTranscript(e.target.value)}
-                placeholder="Your dictation appears here — you can edit it before generating the report…"
+                placeholder="Your dictation appears here as you speak — you can edit it before generating the report…"
                 style={{
                   width: '100%', minHeight: isMobile ? '100px' : '140px', resize: 'vertical',
                   border: `1px solid ${THEME.line}`, borderRadius: '12px', padding: '13px 15px',
@@ -265,6 +316,32 @@ export default function VoiceReportingPanel({
                 onFocus={(e) => e.target.style.borderColor = '#c4b5fd'}
                 onBlur={(e) => e.target.style.borderColor = THEME.line}
               />
+
+              {/* Auto-stop toggle */}
+              <label style={{
+                display: 'inline-flex', alignItems: 'center', gap: '8px',
+                marginTop: '10px', cursor: 'pointer', userSelect: 'none',
+                fontSize: '12px', fontWeight: 600, color: THEME.sub,
+              }}>
+                <button
+                  type="button"
+                  role="switch"
+                  aria-checked={autoStop}
+                  onClick={() => setAutoStop(v => !v)}
+                  style={{
+                    width: '34px', height: '20px', borderRadius: '999px', border: 'none',
+                    cursor: 'pointer', padding: 0, position: 'relative', flexShrink: 0,
+                    background: autoStop ? THEME.grad : '#cbd5e1', transition: 'background 0.18s',
+                  }}
+                >
+                  <span style={{
+                    position: 'absolute', top: '2px', left: autoStop ? '16px' : '2px',
+                    width: '16px', height: '16px', borderRadius: '50%', background: 'white',
+                    boxShadow: '0 1px 3px rgba(0,0,0,0.25)', transition: 'left 0.18s',
+                  }} />
+                </button>
+                Auto-generate when I pause speaking ({SILENCE_MS / 1000}s)
+              </label>
             </section>
 
             {divider}

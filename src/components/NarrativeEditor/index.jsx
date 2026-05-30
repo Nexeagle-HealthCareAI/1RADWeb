@@ -1023,17 +1023,21 @@ const NarrativeEditor = React.forwardRef(function NarrativeEditor({
     },
   });
 
-  // ── Track change count — update on every editor transaction ──────────────
+  // ── Track change count — debounced so it doesn't recompute on every
+  // keystroke (the count drives a UI badge; ~300ms lag is invisible). ───────
   useEffect(() => {
     if (!editor) return;
-    const update = () => {
+    let t = null;
+    const compute = () => {
       try {
         const count = editor.commands.getTrackChangeCount?.() ?? 0;
         setTrackChangeCount(count);
       } catch (_) {}
     };
-    editor.on('update', update);
-    return () => editor.off('update', update);
+    const schedule = () => { if (t) clearTimeout(t); t = setTimeout(compute, 300); };
+    compute();
+    editor.on('update', schedule);
+    return () => { if (t) clearTimeout(t); editor.off('update', schedule); };
   }, [editor]);
 
   // Expose methods to parent
@@ -1091,6 +1095,7 @@ const NarrativeEditor = React.forwardRef(function NarrativeEditor({
   // all footnote atoms so they always reflect document order.
   useEffect(() => {
     if (!editor) return;
+    let t = null;
     const renumber = () => {
       let n = 1;
       const { tr, doc } = editor.state;
@@ -1106,8 +1111,12 @@ const NarrativeEditor = React.forwardRef(function NarrativeEditor({
       });
       if (changed) editor.view.dispatch(tr);
     };
-    editor.on('update', renumber);
-    return () => editor.off('update', renumber);
+    // Debounced — this is a full doc walk; running it on every keystroke
+    // slowed typing on long reports. Footnote numbering can settle ~300ms
+    // after a pause without the user noticing.
+    const schedule = () => { if (t) clearTimeout(t); t = setTimeout(renumber, 300); };
+    editor.on('update', schedule);
+    return () => { if (t) clearTimeout(t); editor.off('update', schedule); };
   }, [editor]);
 
   // ── Insert-footnote custom event (fired from InsertTab button) ────────────
