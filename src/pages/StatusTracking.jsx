@@ -1,6 +1,8 @@
 import { useState, useEffect, useMemo } from 'react';
 import { useParams } from 'react-router-dom';
 import apiClient, { BASE_URL } from '../api/apiClient';
+import useTickClock from '../utils/useTickClock';
+import { formatElapsed } from '../utils/timeTracking';
 
 export default function StatusTracking() {
   const { id } = useParams();
@@ -11,6 +13,10 @@ export default function StatusTracking() {
   // letterhead and render a clean sheet. Report content always renders.
   const [protocol, setProtocol] = useState(null);
   const [loading, setLoading] = useState(true);
+  // One tick a minute so the on-premises clock advances on the patient's
+  // screen without them having to refresh. Server-side polling already
+  // covers status transitions; this only drives "X minutes ago" labels.
+  useTickClock();
 
   useEffect(() => {
     let active = true;
@@ -373,46 +379,116 @@ export default function StatusTracking() {
   }
 
   // ── Live tracker (in-progress) ──────────────────────────────────────────────
+  // Each step maps to a real timestamp on the appointment so the patient
+  // sees "Arrived at 10:32 AM" instead of just "Completed". The map keeps
+  // the JSX clean and makes it easy to add or rename a step later.
+  const stepTimestamps = {
+    booked:      study?.dateTime,
+    confirmed:   study?.arrivedAt,
+    in_progress: study?.scanStartedAt,
+    scanned:     study?.scannedAt,
+    reporting:   null, // No discrete timestamp — show as the in-flight stage.
+    reported:    study?.deliveredAt,
+  };
+
+  // Helpers
+  const parseUtc = (iso) => {
+    if (!iso) return null;
+    const hasTz = /[zZ]|[+-]\d{2}:?\d{2}$/.test(iso);
+    return new Date(hasTz ? iso : iso + 'Z');
+  };
+  const fmtTime = (iso) => {
+    const d = parseUtc(iso);
+    if (!d || Number.isNaN(d.getTime())) return null;
+    return d.toLocaleTimeString('en-IN', {
+      timeZone: 'Asia/Kolkata',
+      hour: '2-digit', minute: '2-digit', hour12: true,
+    });
+  };
+  const onPremises = study?.arrivedAt && !study?.deliveredAt
+    ? formatElapsed(study.arrivedAt)
+    : null;
+
   return (
-    <div style={{ minHeight: '100vh', background: '#0a1628', color: 'white', fontFamily: 'Inter, sans-serif', padding: '40px 20px' }}>
+    <div style={{ minHeight: '100vh', background: '#0a1628', color: 'white', fontFamily: 'Inter, sans-serif', padding: '28px 18px 60px' }}>
       <div style={{ maxWidth: '500px', margin: '0 auto' }}>
         {/* Header */}
-        <div style={{ textAlign: 'center', marginBottom: '40px' }}>
-          <div style={{ fontSize: '12px', fontWeight: 950, color: '#60a5fa', letterSpacing: '3px', textTransform: 'uppercase', marginBottom: '10px' }}>1RAD_LIVE_TRACKER</div>
-          <h1 style={{ fontSize: '28px', fontWeight: 950, margin: 0 }}>MISSION STATUS</h1>
-          <div style={{ fontSize: '14px', opacity: 0.6, marginTop: '5px' }}>TOKEN #{study?.displayId || id}</div>
+        <div style={{ textAlign: 'center', marginBottom: '28px' }}>
+          <div style={{ fontSize: '11px', fontWeight: 800, color: '#60a5fa', letterSpacing: '2px', textTransform: 'uppercase', marginBottom: '8px' }}>1Rad · Report Tracker</div>
+          <h1 style={{ fontSize: '24px', fontWeight: 900, margin: 0, letterSpacing: '-0.5px' }}>
+            {currentStatus === 'reported' ? 'Your report is ready' : 'We’re working on your report'}
+          </h1>
+          <div style={{ fontSize: '12px', opacity: 0.55, marginTop: '6px', fontWeight: 600 }}>Token #{study?.displayId || id}</div>
         </div>
 
         {/* Patient Info Card */}
-        <div style={{ background: 'rgba(255,255,255,0.05)', borderRadius: '24px', padding: '25px', border: '1px solid rgba(255,255,255,0.1)', marginBottom: '30px' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-            <div>
-              <div style={{ fontSize: '18px', fontWeight: 950 }}>{study?.patientName?.toUpperCase()}</div>
-              <div style={{ fontSize: '12px', opacity: 0.6 }}>{study?.modality} // {study?.service}</div>
+        <div style={{
+          background: 'rgba(255,255,255,0.05)', borderRadius: '20px',
+          padding: '20px', border: '1px solid rgba(255,255,255,0.1)',
+          marginBottom: '22px',
+        }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '12px' }}>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ fontSize: '17px', fontWeight: 800, letterSpacing: '-0.2px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                {study?.patientName?.toUpperCase() || 'PATIENT'}
+              </div>
+              <div style={{ fontSize: '11px', opacity: 0.65, marginTop: '4px', fontWeight: 600 }}>
+                {study?.modality}{study?.service ? ` · ${study.service}` : ''}
+              </div>
             </div>
-            <div style={{ background: '#0f52ba', color: 'white', padding: '6px 12px', borderRadius: '10px', fontSize: '10px', fontWeight: 950 }}>LIVE</div>
+            <div style={{
+              background: currentStatus === 'reported' ? '#16a34a' : '#0f52ba',
+              color: 'white', padding: '5px 10px',
+              borderRadius: '8px', fontSize: '9px', fontWeight: 900, letterSpacing: '1px',
+              flexShrink: 0,
+              boxShadow: currentStatus === 'reported' ? '0 0 20px rgba(22,163,74,0.5)' : '0 0 20px rgba(15,82,186,0.4)',
+            }}>
+              {currentStatus === 'reported' ? 'READY' : 'LIVE'}
+            </div>
           </div>
+
+          {/* On-premises clock — only while the patient is actually here. */}
+          {onPremises && (
+            <div style={{
+              marginTop: '14px', paddingTop: '12px',
+              borderTop: '1px dashed rgba(255,255,255,0.1)',
+              display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+              fontSize: '11px', fontWeight: 700,
+            }}>
+              <span style={{ opacity: 0.6 }}>⏱ Time on premises</span>
+              <span style={{ color: '#60a5fa', fontVariantNumeric: 'tabular-nums' }}>{onPremises}</span>
+            </div>
+          )}
         </div>
 
         {/* Timeline */}
-        <div style={{ position: 'relative', paddingLeft: '50px' }}>
+        <div style={{ position: 'relative', paddingLeft: '46px' }}>
           <div style={{ position: 'absolute', left: '20px', top: '10px', bottom: '10px', width: '2px', background: 'rgba(255,255,255,0.1)' }}></div>
           {steps.map((step, idx) => {
             const isDone = idx <= currentIndex;
             const isCurrent = idx === currentIndex;
+            const stamp = isDone ? fmtTime(stepTimestamps[step.key]) : null;
             return (
-              <div key={step.key} style={{ marginBottom: '40px', position: 'relative', opacity: isDone ? 1 : 0.4 }}>
+              <div key={step.key} style={{ marginBottom: '26px', position: 'relative', opacity: isDone ? 1 : 0.35 }}>
                 <div style={{
-                  position: 'absolute', left: '-38px', top: '0', width: '16px', height: '16px',
-                  borderRadius: '50%', background: isCurrent ? '#0f52ba' : isDone ? '#2ecc71' : '#1e293b',
-                  boxShadow: isCurrent ? '0 0 20px #0f52ba' : 'none',
-                  zIndex: 2, border: '4px solid #0a1628'
+                  position: 'absolute', left: '-34px', top: '2px', width: '14px', height: '14px',
+                  borderRadius: '50%',
+                  background: isCurrent ? '#0f52ba' : isDone ? '#16a34a' : '#1e293b',
+                  boxShadow: isCurrent ? '0 0 16px #0f52ba' : 'none',
+                  zIndex: 2, border: '3px solid #0a1628',
+                  animation: isCurrent ? 'trackPulse 1.6s ease-in-out infinite' : 'none',
                 }}></div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '15px' }}>
-                  <span style={{ fontSize: '24px' }}>{step.icon}</span>
-                  <div>
-                    <div style={{ fontSize: '14px', fontWeight: 950, color: isCurrent ? '#60a5fa' : 'white' }}>{step.label}</div>
-                    <div style={{ fontSize: '10px', opacity: 0.6 }}>{isDone ? (isCurrent ? 'Current Phase' : 'Completed') : 'Pending'}</div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                  <span style={{ fontSize: '22px', flexShrink: 0 }}>{step.icon}</span>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontSize: '13px', fontWeight: 900, color: isCurrent ? '#60a5fa' : 'white', letterSpacing: '0.3px' }}>{step.label}</div>
+                    <div style={{ fontSize: '10px', opacity: 0.6, marginTop: '2px', fontWeight: 600 }}>
+                      {isCurrent
+                        ? 'In progress now'
+                        : isDone
+                          ? (stamp ? `Completed at ${stamp}` : 'Completed')
+                          : 'Pending'}
+                    </div>
                   </div>
                 </div>
               </div>
@@ -421,13 +497,31 @@ export default function StatusTracking() {
         </div>
 
         {/* Footer */}
-        <div style={{ marginTop: '50px', textAlign: 'center', padding: '20px', background: 'rgba(255,255,255,0.02)', borderRadius: '20px' }}>
-          <p style={{ fontSize: '12px', color: '#64748b' }}>
+        <div style={{
+          marginTop: '32px', textAlign: 'center', padding: '18px 20px',
+          background: 'rgba(255,255,255,0.03)', borderRadius: '16px',
+          border: '1px solid rgba(255,255,255,0.06)',
+        }}>
+          <p style={{ fontSize: '12px', color: '#94a3b8', margin: 0, lineHeight: 1.5 }}>
             {currentStatus === 'reported'
-              ? 'Your report is being prepared for viewing — please refresh in a moment.'
-              : 'Please wait in the diagnostic lounge. Our team will notify you when the mission enters the next phase.'}
+              ? 'Your report is being prepared for viewing. This page will refresh automatically.'
+              : currentStatus === 'reporting'
+                ? 'Our radiologist is preparing your report. We’ll update this page as soon as it’s ready.'
+                : currentStatus === 'scanned' || currentStatus === 'in_progress'
+                  ? 'Your scan is complete. The report will be ready shortly.'
+                  : 'Please relax in the waiting area. This page updates automatically as your visit progresses.'}
+          </p>
+          <p style={{ fontSize: '10px', color: '#64748b', marginTop: '10px', marginBottom: 0, fontWeight: 600 }}>
+            Auto-refreshing every 30 seconds
           </p>
         </div>
+
+        <style>{`
+          @keyframes trackPulse {
+            0%, 100% { transform: scale(1);   box-shadow: 0 0 0 0 rgba(15, 82, 186, 0.7); }
+            50%      { transform: scale(1.15); box-shadow: 0 0 0 10px rgba(15, 82, 186, 0); }
+          }
+        `}</style>
       </div>
     </div>
   );
