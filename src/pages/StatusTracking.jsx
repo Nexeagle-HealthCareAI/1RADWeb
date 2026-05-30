@@ -1,11 +1,15 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { useParams } from 'react-router-dom';
-import apiClient from '../api/apiClient';
+import apiClient, { BASE_URL } from '../api/apiClient';
 
 export default function StatusTracking() {
   const { id } = useParams();
   const [study, setStudy] = useState(null);
   const [report, setReport] = useState(null);
+  // Prescription protocol (letterhead, fonts) — fetched best-effort. If the
+  // endpoint is auth-only and the patient isn't logged in, we skip the
+  // letterhead and render a clean sheet. Report content always renders.
+  const [protocol, setProtocol] = useState(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -26,11 +30,29 @@ export default function StatusTracking() {
             const reportRes = await apiClient.get(`/Reporting/report/${id}`);
             if (!active) return;
             const reportData = reportRes.data?.data || reportRes.data;
-            if (reportData && (reportData.isFinalized || reportData.finalizedAt || reportData.text)) {
+            if (reportData && (reportData.isFinalized || reportData.finalizedAt || reportData.findings || reportData.text)) {
               setReport(reportData);
             }
           } catch (e) {
             console.warn('Report fetch failed', e?.message);
+          }
+
+          // Letterhead — try the radiologist's prescription protocol.
+          // Best-effort; safe to fail silently. The sheet still prints
+          // cleanly without a letterhead.
+          const doctorId =
+            studyData?.doctorUserId || studyData?.doctorId ||
+            studyData?.doctor?.userId;
+          if (doctorId) {
+            try {
+              const protoRes = await apiClient.get(`/Prescription/${doctorId}`);
+              if (!active) return;
+              if (protoRes?.data?.success && protoRes.data.data) {
+                setProtocol(protoRes.data.data);
+              }
+            } catch {
+              // Endpoint may require auth — patients see a clean sheet.
+            }
           }
         }
       } catch (err) {
@@ -44,6 +66,107 @@ export default function StatusTracking() {
     return () => { active = false; clearInterval(interval); };
   }, [id]);
 
+  // Resolve letterhead URL through the Azure proxy when needed (same logic
+  // as ReportPreviewModal + SavedReportViewer so we don't fork the routing).
+  const letterheadUrl = useMemo(() => {
+    if (!protocol?.letterheadBlobUrl) return null;
+    let url = protocol.letterheadBlobUrl.startsWith('http')
+      ? protocol.letterheadBlobUrl
+      : `${BASE_URL}${protocol.letterheadBlobUrl}`;
+    if (url.includes('blob.core.windows.net')) {
+      return `${BASE_URL}/Study/proxy-asset?url=${encodeURIComponent(url)}`;
+    }
+    return url;
+  }, [protocol?.letterheadBlobUrl]);
+
+  // Shape the findings HTML the same way SavedReportViewer does:
+  //   • unwrap the editor's .word-page / .word-page-inner scaffolding so
+  //     paragraphs flow continuously instead of overlapping
+  //   • hydrate data-spacing-before / -after into inline margins so the
+  //     user's "Space Before / After Paragraph" choices reach the page
+  //   • inject a <br> into empty <p>/headings so blank-line gaps survive
+  //   • for structured reports, render the JSON sections as titled blocks
+  const findingsHtml = useMemo(() => {
+    if (!report) return '';
+    const raw = report.findings ?? report.text ?? report.content ?? '';
+    if (!raw) return '';
+    const looksJson = typeof raw === 'string' && raw.trim().startsWith('{');
+    if (looksJson) {
+      try {
+        const data = JSON.parse(raw);
+        return Object.entries(data).map(([k, v]) => (
+          `<div style="margin-bottom: 18px;">
+             <div style="font-size: 10px; font-weight: 800; color: #64748b; text-transform: uppercase; letter-spacing: 1.5px; margin-bottom: 4px;">${k.replace(/_/g, ' ')}</div>
+             <div style="white-space: pre-wrap;">${v || ''}</div>
+           </div>`
+        )).join('');
+      } catch {
+        return raw;
+      }
+    }
+    const tmp = document.createElement('div');
+    tmp.innerHTML = raw;
+    tmp.querySelectorAll('.word-page-inner').forEach(el => {
+      const parent = el.parentNode;
+      while (el.firstChild) parent.insertBefore(el.firstChild, el);
+      parent.removeChild(el);
+    });
+    tmp.querySelectorAll('.word-page').forEach(el => {
+      const parent = el.parentNode;
+      while (el.firstChild) parent.insertBefore(el.firstChild, el);
+      parent.removeChild(el);
+    });
+    tmp.querySelectorAll('[data-spacing-before], [data-spacing-after]').forEach(el => {
+      const before = el.getAttribute('data-spacing-before');
+      const after  = el.getAttribute('data-spacing-after');
+      const styles = [];
+      if (before) styles.push(`margin-top: ${before}`);
+      if (after)  styles.push(`margin-bottom: ${after}`);
+      const existing = el.getAttribute('style') || '';
+      const sep = existing && !existing.trim().endsWith(';') ? '; ' : '';
+      el.setAttribute('style', existing + sep + styles.join('; '));
+    });
+    tmp.querySelectorAll('p, h1, h2, h3, h4, h5, h6, li').forEach(el => {
+      if (!el.textContent.trim() && el.children.length === 0) {
+        el.innerHTML = '<br>';
+      }
+    });
+    return tmp.innerHTML;
+  }, [report]);
+
+  // Share via the native share sheet (mobile: WhatsApp, Telegram, Email, etc.).
+  // Falls back to a WhatsApp web link if the Web Share API is unavailable
+  // (older desktop browsers). The patient picks the recipient themselves.
+  const handleShare = async () => {
+    const shareUrl = window.location.href;
+    const modality = study?.modality || 'radiology';
+    const shareData = {
+      title: 'My Radiology Report',
+      text: `My ${modality} report from 1Rad`,
+      url: shareUrl,
+    };
+    try {
+      if (navigator.share) {
+        await navigator.share(shareData);
+        return;
+      }
+    } catch (err) {
+      // User cancelled the share sheet — silent.
+      if (err?.name === 'AbortError') return;
+      console.warn('Native share failed, falling back to WhatsApp', err?.message);
+    }
+    // Fallback: open WhatsApp with a pre-filled message. No phone number,
+    // so WhatsApp lets the patient choose the contact themselves.
+    const text = encodeURIComponent(`${shareData.text}: ${shareUrl}`);
+    window.open(`https://wa.me/?text=${text}`, '_blank');
+  };
+
+  const handleSaveOrPrint = () => {
+    // Single button covers both. Mobile browsers' print dialog has a
+    // "Save as PDF" / "Save to Files" destination on every modern platform.
+    window.print();
+  };
+
   const steps = [
     { key: 'booked', label: 'BOOKED', icon: '📅' },
     { key: 'confirmed', label: 'ARRIVED', icon: '📍' },
@@ -56,7 +179,7 @@ export default function StatusTracking() {
   const currentStatus = study?.status?.toLowerCase() || 'booked';
   const currentIndex = steps.findIndex(s => s.key === currentStatus);
 
-  const printReport = () => window.print();
+  // (printReport replaced by handleSaveOrPrint above.)
 
   if (loading) return (
     <div style={{ height: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#0a1628', color: 'white' }}>
@@ -81,8 +204,6 @@ export default function StatusTracking() {
       ? new Date(report.finalizedAt).toLocaleDateString()
       : new Date().toLocaleDateString();
 
-    const html = report?.text || report?.content || '';
-
     return (
       <div className="track-report-root" style={{
         minHeight: '100vh', background: '#e2e8f0', padding: '24px 12px',
@@ -90,29 +211,66 @@ export default function StatusTracking() {
       }}>
         <div style={{ maxWidth: '780px', margin: '0 auto' }}>
 
-          {/* Top bar — only on screen, hidden on print */}
+          {/* Top bar — only on screen, hidden on print. Stacks on small
+              screens (most patients view this on a phone). */}
           <div className="track-toolbar" style={{
             display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-            marginBottom: '14px', gap: '10px',
+            marginBottom: '14px', gap: '10px', flexWrap: 'wrap',
           }}>
             <div style={{ fontSize: '11px', color: '#475569', fontWeight: 700, letterSpacing: '1.2px', textTransform: 'uppercase' }}>
               1RAD · Final Report
             </div>
-            <button onClick={printReport} style={{
-              background: '#0f52ba', color: 'white', border: 'none',
-              padding: '8px 16px', borderRadius: '8px', fontSize: '12px',
-              fontWeight: 700, cursor: 'pointer', boxShadow: '0 2px 6px rgba(15,82,186,0.3)',
-            }}>
-              🖨️ Print / Save as PDF
-            </button>
+            <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+              <button
+                onClick={handleSaveOrPrint}
+                style={{
+                  background: '#0f52ba', color: 'white', border: 'none',
+                  padding: '10px 16px', borderRadius: '10px', fontSize: '12px',
+                  fontWeight: 800, cursor: 'pointer',
+                  boxShadow: '0 2px 6px rgba(15,82,186,0.3)',
+                  display: 'inline-flex', alignItems: 'center', gap: '6px',
+                }}
+              >💾 Save as PDF</button>
+              <button
+                onClick={handleShare}
+                style={{
+                  background: '#25D366', color: 'white', border: 'none',
+                  padding: '10px 16px', borderRadius: '10px', fontSize: '12px',
+                  fontWeight: 800, cursor: 'pointer',
+                  boxShadow: '0 2px 6px rgba(37,211,102,0.35)',
+                  display: 'inline-flex', alignItems: 'center', gap: '6px',
+                }}
+              >📲 Share</button>
+            </div>
           </div>
 
           {/* Report sheet */}
           <div className="track-report-sheet" style={{
+            position: 'relative',
             background: 'white', borderRadius: '10px',
             boxShadow: '0 4px 18px rgba(15, 23, 42, 0.08)',
             padding: '24px 28px',
+            overflow: 'hidden',
           }}>
+
+            {/* Letterhead background (best-effort — patients without the
+                doctor's branding still get a clean white sheet). */}
+            {letterheadUrl && (
+              <img
+                src={letterheadUrl}
+                alt=""
+                style={{
+                  position: 'absolute', inset: 0,
+                  width: '100%', height: '100%',
+                  objectFit: 'fill',
+                  pointerEvents: 'none',
+                  zIndex: 0,
+                }}
+                onError={(e) => { e.target.style.display = 'none'; }}
+              />
+            )}
+
+            <div style={{ position: 'relative', zIndex: 1 }}>
 
             {/* Patient header — same layout as PatientInfoBlock */}
             <div style={{
@@ -152,31 +310,39 @@ export default function StatusTracking() {
               Thank you for referring the patient for <strong style={{ color: '#0f52ba', fontStyle: 'normal' }}>{modality}</strong>.
             </div>
 
-            {/* Report content */}
+            {/* Report content — built by `findingsHtml`, which unwraps the
+                editor's page scaffolding, hydrates the spacing attrs, and
+                preserves blank-line gaps so the rendering matches the
+                radiology workspace's preview exactly. */}
             <div
               className="report-content"
               style={{
-                fontFamily: '"Calibri", "Segoe UI", sans-serif',
-                fontSize: '12pt', lineHeight: 1.6, color: '#000',
+                fontFamily: protocol?.fontFamily || '"Calibri", "Segoe UI", sans-serif',
+                fontSize: `${protocol?.fontSize || 12}pt`,
+                lineHeight: 1.6,
+                color: protocol?.fontColor || '#000',
               }}
-              dangerouslySetInnerHTML={{ __html: html }}
+              dangerouslySetInnerHTML={{ __html: findingsHtml }}
             />
 
             {/* Impression / advice if present */}
             {report.impression && (
               <div style={{ marginTop: '18px' }}>
                 <div style={{ fontSize: '11px', fontWeight: 800, color: '#0f52ba', letterSpacing: '1px', marginBottom: '6px' }}>IMPRESSION</div>
-                <div style={{ fontSize: '12pt', lineHeight: 1.6, color: '#000' }}
-                  dangerouslySetInnerHTML={{ __html: report.impression }} />
+                <div style={{ fontSize: '12pt', lineHeight: 1.6, color: '#000', whiteSpace: 'pre-wrap' }}>
+                  {report.impression}
+                </div>
               </div>
             )}
             {report.advice && (
               <div style={{ marginTop: '18px' }}>
                 <div style={{ fontSize: '11px', fontWeight: 800, color: '#0f52ba', letterSpacing: '1px', marginBottom: '6px' }}>ADVICE</div>
-                <div style={{ fontSize: '11pt', lineHeight: 1.6, color: '#374151', fontStyle: 'italic' }}
-                  dangerouslySetInnerHTML={{ __html: report.advice }} />
+                <div style={{ fontSize: '11pt', lineHeight: 1.6, color: '#374151', fontStyle: 'italic', whiteSpace: 'pre-wrap' }}>
+                  {report.advice}
+                </div>
               </div>
             )}
+            </div>
           </div>
 
           <div style={{ textAlign: 'center', marginTop: '14px', fontSize: '10px', color: '#94a3b8' }}>

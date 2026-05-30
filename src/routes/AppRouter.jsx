@@ -81,11 +81,21 @@ export default function AppRouter() {
       <Route path="/forgot-password" element={<ForgotPassword />} />
       <Route path="/access-denied" element={<AccessDenied />} />
 
-      {/* Full-screen DICOM Viewer - Outside AppLayout */}
+      {/* Full-screen DICOM Viewer - Outside AppLayout.
+          Permissions intentionally mirror the PatientTimelinePage route below:
+          any role that can SEE a worklist/timeline can also OPEN the DICOM
+          viewer for that study. The viewer is read-only — no clinical changes
+          flow from here — so admin / receptionist / accountant viewing
+          images for context, billing or QC is fine. The earlier narrower
+          list bounced admin + receptionist users to /access-denied (or
+          /login if their session was stale), which the timeline UI then
+          surfaced as a confusing "Open DICOM → login screen" jump. */}
       <Route
         path="/dicom-viewer"
         element={
-          <ProtectedRoute allowedRoles={['admindoctor', 'doctor', 'technician']} moduleRoutes={['/doctor-board', '/technician']}>
+          <ProtectedRoute
+            allowedRoles={['admindoctor', 'admin', 'doctor', 'technician', 'receptionist', 'accountant']}
+            moduleRoutes={['/doctor-board', '/technician', '/appointment-board', '/admin-board']}>
             <DicomViewerPage />
           </ProtectedRoute>
         }

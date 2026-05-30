@@ -303,10 +303,74 @@ export default function SavedReportViewer({
         .saved-report-viewer-sheet .report-content *[style*="line-height: 0."] { line-height: 1 !important; }
 
         @media print {
-          body > *:not(.saved-report-viewer-print-host) { display: none !important; }
-          .saved-report-viewer-backdrop { background: white !important; padding: 0 !important; }
-          .saved-report-viewer-sheet    { box-shadow: none !important; margin: 0 !important; }
-          .saved-report-viewer-toolbar  { display: none !important; }
+          /* Hide everything outside the modal portal. The portal mounts the
+             backdrop as a direct child of <body>, so we hide all siblings of
+             the backdrop — not the backdrop itself (the earlier rule hid the
+             whole modal including the content, which is why print came out
+             blank). */
+          body > *:not(.saved-report-viewer-backdrop) { display: none !important; }
+
+          /* Unwrap the modal chrome so the sheet flows like a normal
+             document page instead of being constrained to the fixed-position
+             viewport overlay. */
+          .saved-report-viewer-backdrop {
+            position: static !important;
+            inset: auto !important;
+            background: white !important;
+            backdrop-filter: none !important;
+            -webkit-backdrop-filter: none !important;
+            padding: 0 !important;
+            overflow: visible !important;
+            height: auto !important;
+            min-height: 0 !important;
+            display: block !important;
+          }
+          .saved-report-viewer-print-host {
+            width: 100% !important;
+            max-width: none !important;
+            min-height: 0 !important;
+            background: white !important;
+            border-radius: 0 !important;
+            box-shadow: none !important;
+            display: block !important;
+            overflow: visible !important;
+          }
+          /* The grey scrollable body wrapper inside the print-host — remove
+             its scroll container and grey padding so the sheet sits flush. */
+          .saved-report-viewer-print-host > div { overflow: visible !important; }
+          .saved-report-viewer-print-host > div[style*="background: rgb(226, 232, 240)"],
+          .saved-report-viewer-print-host > div[style*="background:#e2e8f0"] {
+            background: white !important;
+            padding: 0 !important;
+          }
+
+          /* Hide the toolbar (header bar with buttons). */
+          .saved-report-viewer-toolbar { display: none !important; }
+
+          /* The sheet itself: drop the shadow + border so it doesn't print a
+             second outline alongside the page edge. Width auto so it fills
+             the printable area; min-height auto so a short report doesn't
+             force an extra blank page. */
+          .saved-report-viewer-sheet {
+            box-shadow: none !important;
+            margin: 0 !important;
+            border: none !important;
+            width: 100% !important;
+            max-width: none !important;
+            min-height: 0 !important;
+            padding: 18mm 16mm 22mm 16mm !important;
+          }
+
+          /* Avoid orphaned headings / split paragraphs across page breaks. */
+          .saved-report-viewer-sheet h1,
+          .saved-report-viewer-sheet h2,
+          .saved-report-viewer-sheet h3,
+          .saved-report-viewer-sheet h4 { break-after: avoid; page-break-after: avoid; }
+          .saved-report-viewer-sheet p,
+          .saved-report-viewer-sheet li { break-inside: avoid; page-break-inside: avoid; }
+
+          /* Margin policy for the printed pages themselves. */
+          @page { size: A4; margin: 0; }
         }
       `}</style>
 

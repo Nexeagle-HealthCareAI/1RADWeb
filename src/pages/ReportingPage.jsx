@@ -4756,12 +4756,19 @@ const ReportingPage = () => {
                     onViewDicom={(study) => {
                       // Open the historical study in the full-screen DICOM viewer in a new tab.
                       // The viewer hydrates from /Study/{id}/assets when launched via ?appointmentId=.
+                      //
+                      // IMPORTANT: do NOT pass `noopener` here. This app keeps the auth token in
+                      // sessionStorage, which only propagates to a new tab when the tab is opened
+                      // with an opener relationship intact. `noopener` breaks that relationship,
+                      // the new tab starts with empty sessionStorage, ProtectedRoute sees a null
+                      // currentUser, and the DICOM viewer redirects to /login. Same-origin routes
+                      // don't carry a real tab-nabbing risk so dropping noopener is fine.
                       const historicalId = study.appointmentId || study.AppointmentId || study.id || study.Id;
                       if (!historicalId) {
                         showNotif('warning', 'NO_STUDY_ID', 'Could not determine the study to load.');
                         return;
                       }
-                      window.open(`/dicom-viewer?appointmentId=${encodeURIComponent(historicalId)}`, '_blank', 'noopener');
+                      window.open(`/dicom-viewer?appointmentId=${encodeURIComponent(historicalId)}`, '_blank');
                     }}
                   />
                 </div>

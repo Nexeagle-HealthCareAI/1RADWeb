@@ -717,7 +717,16 @@ const DicomViewerPage = () => {
     );
   };
 
-  if (!files || files.length === 0) {
+  // Empty-state gate. The page picks slices from `currentFiles` (which is
+  // either the single-series `files` OR the active series within `allSeries`
+  // for multi-series studies). Checking only `files` here misfires whenever
+  // hydration returned more than one series — `files` is null in that case
+  // even though there's plenty of valid data — so the viewer was showing
+  // "No DICOM Data Available" for perfectly good multi-series studies.
+  const hasAnyData =
+    (currentFiles && currentFiles.length > 0) ||
+    (allSeries && allSeries.some(s => Array.isArray(s.files) && s.files.length > 0));
+  if (!hasAnyData) {
     return (
       <div style={{
         height: '100vh',
