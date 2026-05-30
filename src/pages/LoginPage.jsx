@@ -54,12 +54,13 @@ export default function LoginPage() {
     : null;
   const sessionBanner = urlReason === 'signed-out-elsewhere' ? {
     title: 'Signed out on another device',
-    body: 'You were signed in on another ' + (typeof window !== 'undefined'
-      ? 'device of the same type' : 'device') +
-      '. The previous session here was ended. Sign in again to continue.',
+    body: 'You were signed in on another device of the same type. The previous session here was ended. Sign in again to continue.',
   } : urlReason === 'session-upgraded' ? {
     title: 'Please sign in again',
     body: 'We upgraded the session security on this server. Sign in once to refresh your access — you won\'t need to do this again.',
+  } : urlReason === 'session-expired' ? {
+    title: 'Session ended',
+    body: 'Your previous sign-in expired. Please sign in again to continue.',
   } : null;
 
   // If no AdminDoctor exists, redirect to register immediately

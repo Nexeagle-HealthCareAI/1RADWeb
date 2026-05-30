@@ -171,6 +171,12 @@ function shouldSuppressToast(axiosError, errorCode, status) {
   if (status === 401 && url.includes('/auth/login')) return true;
   if (status === 401 && url.includes('/auth/refresh')) return true; // silent rotation
 
+  // Any other 401 triggers the apiClient interceptor to clear local auth and
+  // redirect to /login?reason=…, which already shows a friendly banner on
+  // the login screen. Surfacing a "Session expired" toast in addition just
+  // confuses users who are mid-redirect — suppress it.
+  if (status === 401) return true;
+
   // OTP / forgot-password screens show inline errors
   if (status === 401 && (url.includes('/auth/otp') || url.includes('/auth/forgot') ||
                          url.includes('/auth/verify-reset'))) return true;

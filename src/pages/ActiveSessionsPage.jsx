@@ -141,8 +141,8 @@ export default function ActiveSessionsPage() {
       <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
         {sessions.map(s => {
           const isCurrent = s.sessionId === currentSessionId;
-          const lastSeen = s.lastSeenAt ? new Date(s.lastSeenAt) : null;
-          const created  = s.createdAt   ? new Date(s.createdAt)  : null;
+          const lastSeen = parseUtc(s.lastSeenAt);
+          const created  = parseUtc(s.createdAt);
           return (
             <div key={s.sessionId} style={{
               background: 'white',
@@ -176,7 +176,7 @@ export default function ActiveSessionsPage() {
                 </div>
                 <div style={{ fontSize: '11px', color: '#64748b', marginTop: '4px', fontWeight: 600, display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
                   {s.ipAddress && <span title="IP at sign-in">📍 {s.ipAddress}</span>}
-                  {created && <span title="Signed in at">🕐 Signed in {created.toLocaleString()}</span>}
+                  {created && <span title={`Signed in at ${fmtIst(created)}`}>🕐 Signed in {fmtIst(created)}</span>}
                   {lastSeen && <span title="Last activity">⏱ Last seen {timeAgo(lastSeen)}</span>}
                 </div>
               </div>
@@ -201,6 +201,28 @@ export default function ActiveSessionsPage() {
       </div>
     </div>
   );
+}
+
+// EF Core / System.Text.Json returns DateTimes with Kind=Unspecified, which
+// strips the trailing 'Z' in the JSON. new Date() then interprets the string
+// as LOCAL time and the displayed clock is wrong by the IST offset. Detect
+// the missing zone designator and append 'Z' so the browser parses as UTC.
+function parseUtc(iso) {
+  if (!iso) return null;
+  const hasTz = /[zZ]|[+-]\d{2}:?\d{2}$/.test(iso);
+  const d = new Date(hasTz ? iso : iso + 'Z');
+  return Number.isNaN(d.getTime()) ? null : d;
+}
+
+// Always render in Asia/Kolkata so the displayed clock matches the rest of
+// the app regardless of the browser's locale (which a patient/staff phone
+// may have set to anything).
+function fmtIst(date) {
+  return date.toLocaleString('en-IN', {
+    timeZone: 'Asia/Kolkata',
+    day: '2-digit', month: 'short', year: 'numeric',
+    hour: '2-digit', minute: '2-digit', hour12: true,
+  }) + ' IST';
 }
 
 function timeAgo(date) {

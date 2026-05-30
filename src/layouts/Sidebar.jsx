@@ -204,11 +204,20 @@ const SignOutIcon = () => (
   </svg>
 );
 
+// ── Active-sessions icon (a stack of small device rectangles) ────────────────
+const SessionsIcon = () => (
+  <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor" style={{ flexShrink: 0 }}>
+    <path d="M2 3.5A1.5 1.5 0 0 1 3.5 2h9A1.5 1.5 0 0 1 14 3.5v6A1.5 1.5 0 0 1 12.5 11h-9A1.5 1.5 0 0 1 2 9.5v-6zm1.5-.5a.5.5 0 0 0-.5.5v6a.5.5 0 0 0 .5.5h9a.5.5 0 0 0 .5-.5v-6a.5.5 0 0 0-.5-.5h-9z"/>
+    <path d="M1 13.5a.5.5 0 0 1 .5-.5h13a.5.5 0 0 1 0 1h-13a.5.5 0 0 1-.5-.5z"/>
+  </svg>
+);
+
 // ── Main Sidebar ──────────────────────────────────────────────────────────────
 export default function Sidebar({ isMobileOpen, onMobileClose }) {
   const { currentUser, logout, activeCenter } = useAuth();
   const [collapsed, setCollapsed] = useState(false);
   const [soHov, setSoHov] = useState(false);
+  const [sessHov, setSessHov] = useState(false);
   const [toggleHov, setToggleHov] = useState(false);
   const [closeHov, setCloseHov] = useState(false);
   const [viewW, setViewW] = useState(window.innerWidth);
@@ -420,6 +429,37 @@ export default function Sidebar({ isMobileOpen, onMobileClose }) {
       }}>
 
 
+
+        {/* Active sessions — same visual idiom as the Sign-out button so it
+            lives where the muscle-memory for "things about my login" lives. */}
+        <button
+          onClick={() => { navigate('/settings/sessions'); onMobileClose?.(); }}
+          onMouseEnter={() => setSessHov(true)}
+          onMouseLeave={() => setSessHov(false)}
+          title={showCollapsed ? 'Active sessions' : undefined}
+          style={{
+            width: '100%', display: 'flex', alignItems: 'center',
+            justifyContent: showCollapsed ? 'center' : 'flex-start',
+            gap: '10px',
+            padding: showCollapsed ? '9px 0' : '8px 10px',
+            borderRadius: '9px', border: 'none',
+            background: sessHov ? 'rgba(59,130,246,0.18)' : 'transparent',
+            color: sessHov ? '#ffffff' : T.textMid, cursor: 'pointer',
+            transition: 'all 0.2s ease, padding 0.22s',
+            fontFamily: FF,
+          }}
+        >
+          <SessionsIcon />
+          <div style={{
+            overflow: 'hidden',
+            maxWidth: showCollapsed ? 0 : '150px',
+            opacity: showCollapsed ? 0 : 1,
+            transition: 'max-width 0.24s cubic-bezier(0.4,0,0.2,1), opacity 0.18s ease',
+            whiteSpace: 'nowrap',
+          }}>
+            <span style={{ fontSize: '13px', fontWeight: 400 }}>Active sessions</span>
+          </div>
+        </button>
 
         {/* Sign out */}
         <button

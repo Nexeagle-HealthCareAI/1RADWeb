@@ -1,22 +1,21 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef, useLayoutEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { useNavigate } from 'react-router-dom';
 import { useOverdue } from './OverdueContext';
 import { formatElapsed } from '../../utils/timeTracking';
 
-// Nav-bar bell trigger that opens a full-screen slide-down panel.
+// Nav-bar bell with a dropdown anchored to the bell itself, not a centered
+// modal. Why:
+//   • Matches the mental model patients/staff already have for
+//     notifications: pulls down from the icon, points at it with a caret,
+//     dismisses on outside-click.
+//   • No body-scroll lock, no heavy backdrop — feels lightweight.
+//   • Portal-rendered so it still survives the nav bar's stacking context
+//     and z-index fights with other surfaces (DICOM viewer overlays etc.).
 //
-// Why a portal-based panel instead of a positioned dropdown:
-//   • Survives the nav-bar stacking context, so no z-index fights with sticky
-//     headers, modals, sidebars, or DICOM viewer overlays on ReportingPage.
-//   • Backdrop dimming makes it feel like a proper modal — the user is
-//     looking AT the notifications, not glancing.
-//   • Roomier than the 380px dropdown so the ACK button + patient summary
-//     can both breathe; no truncation pressure.
-//
-// Bell trigger stays small (40px) so it doesn't claim nav real estate. It
-// auto-hides when there's nothing overdue. The panel stops pulsing red and
-// drops the badge once everything is acknowledged.
+// Position is computed from the bell button's bounding rect each time the
+// panel opens (and on window resize) so it stays glued to the bell when the
+// page reflows or the user resizes the window.
 
 export default function OverdueBell() {
   const {
@@ -29,22 +28,59 @@ export default function OverdueBell() {
   } = useOverdue();
   const [open, setOpen] = useState(false);
   const navigate = useNavigate();
+  const bellRef = useRef(null);
 
-  // Lock body scroll while the panel is open so the page underneath doesn't
-  // shift around when the user mouse-wheels over the backdrop.
-  useEffect(() => {
+  // Anchor — viewport coords of the bell's bottom-right corner. We compute
+  // it on open + on resize so the panel stays glued to the bell. The
+  // dropdown is right-aligned: it grows leftward from the bell so it never
+  // overflows the right viewport edge.
+  const [anchor, setAnchor] = useState(null);
+  const recomputeAnchor = () => {
+    const r = bellRef.current?.getBoundingClientRect();
+    if (!r) return;
+    setAnchor({
+      bellBottom: r.bottom,
+      bellRight: r.right,
+      bellLeft: r.left,
+      bellCenterX: r.left + r.width / 2,
+    });
+  };
+  useLayoutEffect(() => {
     if (!open) return;
-    const prev = document.body.style.overflow;
-    document.body.style.overflow = 'hidden';
-    return () => { document.body.style.overflow = prev; };
+    recomputeAnchor();
   }, [open]);
 
-  // Close on Escape — standard modal behaviour.
+  // Recompute on window changes so the panel stays anchored when the user
+  // resizes their browser or rotates a tablet.
+  useEffect(() => {
+    if (!open) return;
+    const onChange = () => recomputeAnchor();
+    window.addEventListener('resize', onChange);
+    window.addEventListener('scroll', onChange, true);
+    return () => {
+      window.removeEventListener('resize', onChange);
+      window.removeEventListener('scroll', onChange, true);
+    };
+  }, [open]);
+
+  // Close on Escape OR on outside-click. We treat clicks on the bell button
+  // as "not outside" so toggling via the bell doesn't immediately re-close.
   useEffect(() => {
     if (!open) return;
     const onKey = (e) => { if (e.key === 'Escape') setOpen(false); };
+    const onPointer = (e) => {
+      const panel = document.getElementById('overdue-bell-panel');
+      if (!panel) return;
+      if (panel.contains(e.target)) return;
+      if (bellRef.current?.contains(e.target)) return;
+      setOpen(false);
+    };
     document.addEventListener('keydown', onKey);
-    return () => document.removeEventListener('keydown', onKey);
+    document.addEventListener('mousedown', onPointer);
+    return () => {
+      document.removeEventListener('keydown', onKey);
+      document.removeEventListener('mousedown', onPointer);
+    };
   }, [open]);
 
   const totalCount = (unacknowledged?.length || 0) + (acknowledged?.length || 0);
@@ -60,7 +96,8 @@ export default function OverdueBell() {
   return (
     <>
       <button
-        onClick={() => setOpen(true)}
+        ref={bellRef}
+        onClick={() => setOpen(o => !o)}
         title={unackCount > 0
           ? `${unackCount} patient${unackCount === 1 ? '' : 's'} on premises > ${thresholdLabel}`
           : `${ackCount} acknowledged overdue patient${ackCount === 1 ? '' : 's'}`}
@@ -92,8 +129,9 @@ export default function OverdueBell() {
         )}
       </button>
 
-      {open && createPortal(
+      {open && anchor && createPortal(
         <OverduePanel
+          anchor={anchor}
           unacknowledged={unacknowledged}
           acknowledged={acknowledged}
           unackCount={unackCount}
@@ -113,48 +151,79 @@ export default function OverdueBell() {
 }
 
 function OverduePanel({
+  anchor,
   unacknowledged, acknowledged,
   unackCount, ackCount,
   thresholdLabel, allHandled,
   notificationPermission, requestNotificationPermission,
   onClose, onJump, onToggleAck,
 }) {
+  // Anchor-driven positioning. Width is clamped so the panel never overflows
+  // narrow viewports; on a phone we shrink it down and shift it leftward
+  // until it fits in the visible area with a tiny gutter.
+  const GAP = 12;            // vertical distance from bell bottom to panel top
+  const GUTTER = 12;         // minimum margin from any viewport edge
+  const desiredWidth = 400;
+  const vw = typeof window !== 'undefined' ? window.innerWidth : desiredWidth;
+  const width = Math.min(desiredWidth, Math.max(280, vw - GUTTER * 2));
+  // Anchor the right edge of the panel to the right edge of the bell, but
+  // shift it back into the viewport if the bell sits too close to the right
+  // edge (rare — only on tablets in landscape with narrow toolbars).
+  let right = Math.max(GUTTER, vw - anchor.bellRight);
+  // Center the caret over the bell. Caret X is measured from the panel's
+  // right edge — same coordinate system the panel uses.
+  const caretRightFromPanel = Math.max(20, Math.min(width - 32, vw - anchor.bellCenterX - right));
+
   return (
     <div
-      onClick={onClose}
+      id="overdue-bell-panel"
       style={{
-        position: 'fixed', inset: 0,
-        background: 'rgba(15, 23, 42, 0.55)',
-        backdropFilter: 'blur(2px)',
+        position: 'fixed',
+        top: Math.max(GUTTER, anchor.bellBottom + GAP),
+        right,
+        width,
+        maxHeight: `calc(100vh - ${anchor.bellBottom + GAP + GUTTER}px)`,
+        background: 'white',
+        borderRadius: '16px',
+        boxShadow: '0 20px 60px rgba(15,23,42,0.22), 0 4px 16px rgba(15,23,42,0.10)',
+        border: '1px solid #e2e8f0',
         zIndex: 5000,
-        animation: 'overdueBackdropIn 0.18s ease-out',
+        overflow: 'visible',
+        display: 'flex', flexDirection: 'column',
+        animation: 'overduePanelIn 0.18s ease-out',
+        transformOrigin: `${width - caretRightFromPanel}px 0px`,
       }}
     >
       <style>{`
-        @keyframes overdueBackdropIn { from { opacity: 0; } to { opacity: 1; } }
         @keyframes overduePanelIn {
-          from { opacity: 0; transform: translateY(-12px); }
-          to   { opacity: 1; transform: translateY(0); }
+          from { opacity: 0; transform: translateY(-6px) scale(0.98); }
+          to   { opacity: 1; transform: translateY(0) scale(1); }
         }
       `}</style>
 
-      <div
-        onClick={(e) => e.stopPropagation()}
-        style={{
-          position: 'fixed',
-          top: '72px', // sits just below the 64px nav bar with breathing room
-          left: '50%',
-          transform: 'translateX(-50%)',
-          width: 'min(640px, calc(100vw - 32px))',
-          maxHeight: 'calc(100vh - 96px)',
+      {/* Caret pointing up at the bell. Two stacked triangles fake the
+          border + fill so the dropdown looks like it's growing out of the
+          bell, not floating disconnected from it. */}
+      <div style={{
+        position: 'absolute',
+        top: -7,
+        right: caretRightFromPanel,
+        width: 14, height: 7,
+        overflow: 'hidden',
+        pointerEvents: 'none',
+      }}>
+        <div style={{
+          position: 'absolute', top: 1, left: 1,
+          width: 12, height: 12,
           background: 'white',
-          borderRadius: '20px',
-          boxShadow: '0 30px 80px rgba(0,0,0,0.32), 0 8px 24px rgba(0,0,0,0.18)',
-          overflow: 'hidden',
-          display: 'flex', flexDirection: 'column',
-          animation: 'overduePanelIn 0.22s ease-out',
-        }}
-      >
+          border: '1px solid #e2e8f0',
+          transform: 'rotate(45deg)',
+          transformOrigin: 'top left',
+          boxShadow: '0 0 0 0 rgba(0,0,0,0)',
+        }} />
+      </div>
+
+      <div style={{ display: 'flex', flexDirection: 'column', overflow: 'hidden', borderRadius: '16px' }}>
         {/* Header */}
         <div style={{
           padding: '20px 24px',
@@ -289,6 +358,10 @@ function OverduePanel({
     </div>
   );
 }
+
+// Removed: the outer modal-style backdrop wrapper. With the dropdown
+// anchored to the bell we close on outside-click via a document-level
+// pointer listener in the parent instead of an explicit backdrop overlay.
 
 function OverdueRow({ item, onJump, onToggleAck, acknowledged }) {
   return (

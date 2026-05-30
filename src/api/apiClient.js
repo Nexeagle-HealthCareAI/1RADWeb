@@ -47,27 +47,34 @@ apiClient.interceptors.response.use(
     if (error.response?.status === 401) {
       const isLogin = error.config.url.includes('/auth/login');
       const code = error.response?.data?.code;
-      const isSessionRevoked = code === 'SESSION_REVOKED' || code === 'MISSING_SID';
-
-      if (isSessionRevoked && !isLogin) {
-        // Server has invalidated this session — either kicked by a new
-        // login on the same device category, or revoked from the Active
-        // Sessions UI, or stale-after-migration. Clear local state and
-        // ship the user to /login with a reason flag so the login page
-        // can surface a friendly banner.
+      // We treat EVERY non-login 401 as a sign-out trigger. Before this, the
+      // redirect only ran for our new SESSION_REVOKED / MISSING_SID codes —
+      // any other 401 (expired JWT, deploy-window mismatch, an endpoint
+      // that's anonymous-only on the new backend but auth-only on the old)
+      // showed the "Session expired" toast forever with the user stuck on
+      // their current page. That's the bug behind the report "no logout is
+      // happening". Now: clear local auth + bounce to /login on any 401.
+      if (!isLogin) {
         try {
           localStorage.removeItem('1rad_user');
           localStorage.removeItem('1rad_token');
           localStorage.removeItem('1rad_initiation_token');
-        } catch { /* storage may be unavailable in private modes */ }
-        // Avoid re-redirecting if we're already on /login (e.g. the user
-        // ran into a stale token before they finished re-signing in).
+          sessionStorage.removeItem('1rad_user');
+          sessionStorage.removeItem('1rad_token');
+          sessionStorage.removeItem('1rad_initiation_token');
+        } catch { /* storage unavailable in private modes */ }
+
         if (typeof window !== 'undefined' && !window.location.pathname.startsWith('/login')) {
-          const reason = code === 'MISSING_SID' ? 'session-upgraded' : 'signed-out-elsewhere';
+          // Pick the friendliest banner for what we know:
+          //   • SESSION_REVOKED → someone else signed in on this device class
+          //   • MISSING_SID    → token predates the session-management deploy
+          //   • anything else  → ordinary session expiry / JWT timeout
+          const reason =
+            code === 'SESSION_REVOKED' ? 'signed-out-elsewhere' :
+            code === 'MISSING_SID'    ? 'session-upgraded' :
+            'session-expired';
           window.location.replace(`/login?reason=${reason}`);
         }
-      } else if (!isLogin) {
-        console.warn('[API] Unauthorized. Session may have expired.');
       } else {
         console.warn('[API] Login failed: Invalid credentials.');
       }
