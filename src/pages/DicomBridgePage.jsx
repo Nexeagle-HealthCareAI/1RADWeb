@@ -1,9 +1,17 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import useAuth from '../auth/useAuth';
 import { BASE_URL } from '../api/apiClient';
 
 const BRIDGE_URL = 'http://localhost:3001';
-const POLL_MS    = 5000;
+// Healthy polling cadence — 5s feels snappy on the dashboard.
+const POLL_MS_OK = 5000;
+// When the bridge can't be reached we slow way down. Two reasons:
+//   1. Most "disconnected" cases mean the bridge service isn't running on
+//      this machine at all — every 5s request is a guaranteed browser
+//      console error (and a CORS/PNA error doesn't decay quietly).
+//   2. The reconnect grace doesn't need to be tight; an operator who's
+//      just started the local service is happy with a 30s reattach.
+const POLL_MS_DOWN = 30000;
 
 const STATUS_STYLE = {
   uploaded: { bg: '#f0fdf4', color: '#16a34a', border: '#bbf7d0', dot: '#22c55e' },
@@ -27,6 +35,9 @@ export default function DicomBridgePage() {
   const { currentUser } = useAuth();
   const [status, setStatus]         = useState(null);
   const [connected, setConnected]   = useState(null); // null=checking, true, false
+  // Ref mirror of `connected` so the polling scheduler can read the latest
+  // value without re-creating the effect every time it flips.
+  const connectedRef = useRef(null);
   const [lastFetch, setLastFetch]   = useState(null);
   const [filterStatus, setFilter]   = useState('ALL');
   const [search, setSearch]         = useState('');
@@ -55,16 +66,37 @@ export default function DicomBridgePage() {
         });
       }
       setConnected(true);
+      connectedRef.current = true;
       setLastFetch(new Date());
     } catch {
       setConnected(false);
+      connectedRef.current = false;
     }
   }, []);
 
+  // Adaptive polling: 5s when the bridge is up, 30s when it isn't. Using a
+  // setTimeout chain (rather than setInterval) so the next interval is
+  // chosen based on the OUTCOME of the previous request, not the state at
+  // the time the interval was started.
   useEffect(() => {
-    fetchStatus();
-    const id = setInterval(fetchStatus, POLL_MS);
-    return () => clearInterval(id);
+    let cancelled = false;
+    let timer = null;
+    const schedule = (ms) => {
+      if (cancelled) return;
+      timer = setTimeout(async () => {
+        await fetchStatus();
+        // `connectedRef` was updated inside fetchStatus; pick the next
+        // delay based on the live outcome so a sudden disconnect (or a
+        // reconnect after the operator starts the local service) takes
+        // effect immediately on the next tick.
+        schedule(connectedRef.current ? POLL_MS_OK : POLL_MS_DOWN);
+      }, ms);
+    };
+    (async () => {
+      await fetchStatus();
+      schedule(connectedRef.current ? POLL_MS_OK : POLL_MS_DOWN);
+    })();
+    return () => { cancelled = true; if (timer) clearTimeout(timer); };
   }, [fetchStatus]);
 
   const updateConfig = async (newConfig) => {
