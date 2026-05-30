@@ -271,19 +271,22 @@ const ReportingPage = () => {
 
   // 2. CLOUD AUTOSAVE: Background API sync every 45 seconds if dirty.
   //
-  // Failure backoff: every consecutive failure DOUBLES the next wait, so a
-  // persistent server-side problem (404 from a stale deploy, gateway error,
-  // dropped network) eases off instead of hammering the endpoint every 45s.
-  // Without this, the effect's failure path sets saveStatus back to DIRTY
-  // which re-triggers the effect, schedules another 45s timer, fails again,
-  // and so on forever — same endpoint pounded with no chance of recovery.
-  // The backoff is capped at ~24 minutes; success resets it.
+  // Failure policy:
+  //   • 404 on the save endpoint = endpoint is gone (typo, deploy mid-flight,
+  //     gateway misconfig). No amount of retrying will help. We DISABLE the
+  //     cloud autosave for the rest of the session, log a clear console
+  //     warning, and surface a banner so the user knows their work is
+  //     still safe in localStorage (the local autosave is unaffected) but
+  //     cloud sync is paused until they reload.
+  //   • Any other failure (network blip, 5xx, 401) backs off exponentially:
+  //     45s → 90s → 180s → 360s → 720s → 1440s (24 min cap). Success resets.
   const autosaveFailuresRef = useRef(0);
+  const [cloudAutosaveDisabledReason, setCloudAutosaveDisabledReason] = useState(null);
   useEffect(() => {
+    if (cloudAutosaveDisabledReason) return;
     if (saveStatus !== 'DIRTY' || !appointmentId || isFinalized || !isOnline || isCloudSyncing) return;
 
     const failures = autosaveFailuresRef.current;
-    // 45s → 90s → 180s → 360s → 720s → 1440s (24 min), then clamped.
     const delay = Math.min(45_000 * Math.pow(2, failures), 24 * 60 * 1000);
     if (failures > 0) {
       console.info(`[AUTOSAVE] Backing off after ${failures} failure(s); next attempt in ${Math.round(delay / 1000)}s`);
@@ -294,8 +297,6 @@ const ReportingPage = () => {
       setIsCloudSyncing(true);
       setSaveStatus('SAVING');
       try {
-        // Same staleness guard as the local autosave + manual save: pull
-        // fresh HTML directly from the editor, skipping the debounced state.
         const freshFindings = editorRef.current?.editor?.getHTML?.() ?? editorText;
         const payload = {
           appointmentId,
@@ -310,29 +311,31 @@ const ReportingPage = () => {
         if (res.data?.success) {
           setLastSaved(new Date().toLocaleTimeString());
           setSaveStatus('SUCCESS');
-          autosaveFailuresRef.current = 0; // reset backoff
+          autosaveFailuresRef.current = 0;
         } else {
           autosaveFailuresRef.current = failures + 1;
           setSaveStatus('DIRTY');
         }
       } catch (err) {
-        // Log the status code distinctly so a 404 (endpoint missing after a
-        // deploy, gateway misconfiguration) is easy to spot in the console.
         const status = err?.response?.status;
         if (status === 404) {
-          console.warn('[AUTOSAVE] Save endpoint returned 404 — likely mid-deploy. Backing off.');
+          // Hard stop. Retrying a route that doesn't exist is pointless and
+          // visible in network logs makes engineers chase the wrong thing.
+          console.error('[AUTOSAVE] /reporting/save returned 404. Cloud autosave is now DISABLED for this session — local autosave is still active. Verify the API deploy and reload.');
+          setCloudAutosaveDisabledReason('endpoint-missing');
+          setSaveStatus('DIRTY'); // leave it dirty so a future manual save can still try
         } else {
           console.warn('[AUTOSAVE] Cloud sync failed, will retry later.', err?.message || err);
+          autosaveFailuresRef.current = failures + 1;
+          setSaveStatus('DIRTY');
         }
-        autosaveFailuresRef.current = failures + 1;
-        setSaveStatus('DIRTY');
       } finally {
         setIsCloudSyncing(false);
       }
     }, delay);
 
     return () => clearTimeout(cloudTimer);
-  }, [saveStatus, editorText, impression, advice, appointmentId, isFinalized, isOnline, selectedTemplateId, isCloudSyncing]);
+  }, [saveStatus, editorText, impression, advice, appointmentId, isFinalized, isOnline, selectedTemplateId, isCloudSyncing, cloudAutosaveDisabledReason]);
 
 
 
