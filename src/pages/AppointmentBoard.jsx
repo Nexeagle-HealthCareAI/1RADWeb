@@ -2498,11 +2498,15 @@ export default function AppointmentBoard() {
 
               <div style={{ marginTop: '12px', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '10px' }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '8px', background: '#f8fafc', borderRadius: '12px', border: '1px solid #e2e8f0', width: '65mm' }}>
+                  {/* ecc=M (15% correction) packs the tokenized URL sparse
+                      enough that 14mm of paper is still scannable; ecc=H
+                      was forcing too many modules and the printed result
+                      was effectively a black blob. */}
                   <img
-                    src={`https://api.qrserver.com/v1/create-qr-code/?size=100x100&data=${encodeURIComponent(tokenPrintQrUrl)}`}
+                    src={`https://api.qrserver.com/v1/create-qr-code/?size=180x180&ecc=M&data=${encodeURIComponent(tokenPrintQrUrl)}`}
                     alt="QR"
                     crossOrigin="anonymous"
-                    style={{ width: '14mm', height: '14mm' }}
+                    style={{ width: '18mm', height: '18mm' }}
                   />
                   <div style={{ textAlign: 'left' }}>
                     <div style={{ fontSize: '9px', fontWeight: 950, color: '#0f52ba' }}>LIVE STATUS</div>

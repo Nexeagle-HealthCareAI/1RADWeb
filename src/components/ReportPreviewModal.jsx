@@ -82,7 +82,11 @@ export const PatientInfoBlock = ({ appointmentId, fullAppointment, savedMetadata
           borderRadius: '6px',
           flexShrink: 0,
         }}>
-          <QRCodeCanvas value={qrUrl} size={42} level="H" />
+          {/* level=M (15% error correction) lets the QR pack the ~140-char
+              tokenized URL into a sparse-enough matrix to scan reliably at
+              this size. level=H (30%) was forcing 53+ modules per side and
+              sub-pixel module width at 42px, which phones couldn't read. */}
+          <QRCodeCanvas value={qrUrl} size={56} level="M" />
         </div>
 
         {/* Patient identity + metadata stacked */}
@@ -252,10 +256,15 @@ const ReportPreviewModal = ({
         // tokenless URL if the issue endpoint fails.
         const qrUrl = await getTrackingUrl(appointmentId);
         const dataUrl = await QRCode.toDataURL(qrUrl, {
-          errorCorrectionLevel: 'H',
+          // M (15%) instead of H (30%) — the longer tokenized URL was
+          // forcing too many modules with H, making the printed QR
+          // sub-millimetre per module on standard A4 letterhead and
+          // unscannable by phone cameras. M is the industry default and
+          // still tolerates print scuffs / ink bleed.
+          errorCorrectionLevel: 'M',
           type: 'image/png',
           width: 200,
-          margin: 1,
+          margin: 2,
           color: { dark: '#000000', light: '#ffffff' }
         });
         setQrCodeDataUrl(dataUrl);
