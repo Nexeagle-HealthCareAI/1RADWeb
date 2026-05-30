@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import useAuth from '../auth/useAuth';
 import useOffline from '../hooks/useOffline';
+import OverdueBell from '../components/OverdueAppointments/OverdueBell';
 import '../styles/global.css';
 
 export default function TopNav({ currentTime }) {
@@ -224,6 +225,9 @@ export default function TopNav({ currentTime }) {
 
         {/* Temporal / User HUD */}
         <div style={{ display: 'flex', alignItems: 'center', gap: '25px' }} className="nav-user-section">
+          {/* SLA bell — auto-hides when there are no overdue patients. */}
+          <OverdueBell />
+
           <div style={{ textAlign: 'right' }} className="nav-temporal-section">
             <div style={{ fontSize: '16px', fontWeight: 950, color: '#1e293b', letterSpacing: '-0.5px', lineHeight: 1, marginBottom: '2px' }}>
               {formattedTime}

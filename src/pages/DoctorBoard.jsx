@@ -5,6 +5,9 @@ import { AuthContext } from '../auth/AuthContext';
 import ReportPreviewModal from '../components/ReportPreviewModal';
 import useOffline from '../hooks/useOffline';
 import { nativeStorage } from '../hooks/useElectron';
+import useTickClock from '../utils/useTickClock';
+import { formatElapsed, premisesSeverity, premisesPillStyle } from '../utils/timeTracking';
+import { useOverdue } from '../components/OverdueAppointments/OverdueContext';
 import '../styles/global.css';
 import '../styles/DoctorBoard.css';
 
@@ -42,6 +45,9 @@ export default function DoctorBoard() {
   const { activeCenter, currentUser } = useContext(AuthContext);
   const { isOnline } = useOffline();
   const navigate = useNavigate();
+  // 60s tick keeps the on-premises pill counting up; isOverdue mirrors the bell.
+  useTickClock();
+  const { isOverdue } = useOverdue();
   const [cases, setCases] = useState([]);
   const [loading, setLoading] = useState(false);
   const [view, setView] = useState('QUEUE'); // 'QUEUE' or 'HISTORY'
@@ -109,7 +115,7 @@ export default function DoctorBoard() {
         return {
           ...a,
           id: a.displayId,
-          priority: a.type === 'EMERGENCY' ? 'STAT' : 'ROUTINE',
+          priority: a.priority || (a.type === 'EMERGENCY' ? 'STAT' : 'ROUTINE'),
           isToday: studyDate === TODAY,
           // Prefer persisted server-side token; fall back to calculated for legacy records
           tokenNo: a.dailyTokenNumber ?? dailyCounters[dateKey]
@@ -206,6 +212,13 @@ export default function DoctorBoard() {
     const sortableItems = [...filteredCases];
     if (sortConfig.key !== null) {
       sortableItems.sort((a, b) => {
+        // Priority floats STATs to the top regardless of which column the
+        // user is sorting by. Mirrors backend GetAppointmentsQuery.
+        const rank = { STAT: 0, URGENT: 1, ROUTINE: 2 };
+        const pa = rank[a.priority] ?? 2;
+        const pb = rank[b.priority] ?? 2;
+        if (pa !== pb) return pa - pb;
+
         let aValue = a[sortConfig.key];
         let bValue = b[sortConfig.key];
 
@@ -455,7 +468,8 @@ export default function DoctorBoard() {
 
           <select value={filters.priority} onChange={e => setFilters({...filters, priority: e.target.value})} style={{ padding: '10px 14px', borderRadius: '8px', border: '1px solid #e2e8f0', fontSize: '12px', fontWeight: 500, background: 'white', outline: 'none' }}>
             <option value="ALL">All Priorities</option>
-            <option value="STAT">Emergency</option>
+            <option value="STAT">STAT</option>
+            <option value="URGENT">Urgent</option>
             <option value="ROUTINE">Routine</option>
           </select>
 
@@ -515,14 +529,50 @@ export default function DoctorBoard() {
                 const isScanning = ['confirmed', 'in_progress'].includes(status);
                 const isExpected = ['scheduled', 'booked'].includes(status) && c.isToday;
                 
+                const isCaseOverdue = isOverdue(c.appointmentId);
+                const priorityTrClass = (isCaseOverdue || c.priority === 'STAT') ? 'priority-tr-stat'
+                                      : c.priority === 'URGENT'                   ? 'priority-tr-urgent'
+                                      : '';
+
+                // Turnaround-time pills.
+                const onPremisesElapsed = c.arrivedAt
+                  ? formatElapsed(c.arrivedAt, c.deliveredAt)
+                  : null;
+                const premisesSev = premisesSeverity(c.arrivedAt, c.deliveredAt);
+                const premisesStyle = premisesPillStyle(premisesSev);
+                const scanToDelivery = (c.scanStartedAt && c.deliveredAt)
+                  ? formatElapsed(c.scanStartedAt, c.deliveredAt)
+                  : null;
+
                 return (
-                  <tr key={c.appointmentId} style={{ borderBottom: '1px solid #f1f5f9' }}>
+                  <tr key={c.appointmentId} className={priorityTrClass} style={{
+                    borderBottom: '1px solid #f1f5f9',
+                  }}>
                     <td style={{ padding: '20px' }}>
                        <div style={{ display: 'flex', alignItems: 'center', gap: '15px' }}>
                           <div style={{ width: '40px', height: '40px', borderRadius: '14px', background: '#f8fafc', color: '#0f52ba', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 900, fontSize: '16px', border: '1px solid #e2e8f0' }}>{c.patientName.charAt(0)}</div>
                           <div>
                              <div style={{ fontWeight: 800, color: '#1e293b', fontSize: '14px' }}>{c.patientName.toUpperCase()}</div>
                              <div style={{ fontSize: '10px', color: '#94a3b8', fontWeight: 700 }}>{c.id} | {c.patientGender || 'M'} | {c.patientAge || '45'}Y</div>
+                             {/* TAT pills: on-premises (live) + scan→delivery (final). */}
+                             {onPremisesElapsed && (
+                               <div style={{ display: 'flex', alignItems: 'center', gap: '5px', marginTop: '4px', flexWrap: 'wrap' }}>
+                                 <span title={c.deliveredAt ? 'Total time on premises' : 'On premises (live)'} style={{
+                                   fontSize: '9px', fontWeight: 950, letterSpacing: '0.3px',
+                                   padding: '2px 6px', borderRadius: '999px',
+                                   color: premisesStyle.color, background: premisesStyle.bg,
+                                   border: `1px solid ${premisesStyle.border}`,
+                                 }}>⏱ {onPremisesElapsed}</span>
+                                 {scanToDelivery && (
+                                   <span title="Scan start → delivered" style={{
+                                     fontSize: '9px', fontWeight: 950, letterSpacing: '0.3px',
+                                     padding: '2px 6px', borderRadius: '999px',
+                                     color: '#0369a1', background: '#e0f2fe',
+                                     border: '1px solid #bae6fd',
+                                   }}>📋 {scanToDelivery}</span>
+                                 )}
+                               </div>
+                             )}
                           </div>
                        </div>
                     </td>
@@ -540,9 +590,21 @@ export default function DoctorBoard() {
                     <td style={{ padding: '20px' }}>
                        <div style={{ display: 'flex', flexDirection: 'column' }}>
                           <span style={{ fontSize: '13px', fontWeight: 800, color: '#1a1a2e' }}>{c.service}</span>
-                          <span style={{ fontSize: '9px', fontWeight: 950, color: c.priority === 'STAT' ? '#ef4444' : '#64748b', background: c.priority === 'STAT' ? '#fee2e2' : '#f1f5f9', padding: '2px 8px', borderRadius: '6px', alignSelf: 'flex-start', marginTop: '4px' }}>
-                            {c.priority === 'STAT' ? 'Emergency' : 'Routine'}
-                          </span>
+                          {c.priority && c.priority !== 'ROUTINE' && (
+                            <span
+                              className={c.priority === 'STAT' ? 'priority-chip-stat' : 'priority-chip-urgent'}
+                              style={{
+                                fontSize: '9px', fontWeight: 950, letterSpacing: '0.5px',
+                                color: c.priority === 'STAT' ? '#dc2626' : '#d97706',
+                                background: c.priority === 'STAT' ? '#fee2e2' : '#fef3c7',
+                                border: `1px solid ${c.priority === 'STAT' ? '#fecaca' : '#fde68a'}`,
+                                padding: '2px 8px', borderRadius: '999px',
+                                alignSelf: 'flex-start', marginTop: '4px',
+                              }}
+                            >
+                              {c.priority}
+                            </span>
+                          )}
                        </div>
                     </td>
                     <td style={{ padding: '20px' }}>

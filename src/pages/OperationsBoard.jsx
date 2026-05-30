@@ -1,6 +1,9 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useCallback } from 'react';
 import * as XLSX from 'xlsx';
 import apiClient from '../api/apiClient';
+import useTickClock from '../utils/useTickClock';
+import { formatElapsed, premisesSeverity, premisesPillStyle } from '../utils/timeTracking';
+import { useOverdue } from '../components/OverdueAppointments/OverdueContext';
 import '../styles/global.css';
 import '../styles/AppointmentBoard.css';
 
@@ -27,6 +30,9 @@ const T = {
 };
 
 export default function OperationsBoard() {
+  // 60s tick keeps the on-premises pill counting up; isOverdue mirrors the bell.
+  useTickClock();
+  const { isOverdue } = useOverdue();
   const [appointments, setAppointments] = useState([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
@@ -58,6 +64,35 @@ export default function OperationsBoard() {
   const [newStatus, setNewStatus] = useState('NOT_STARTED');
   const [newReason, setNewReason] = useState('');
   const [saving, setSaving] = useState(false);
+
+  // Comment timeline popup. Loaded on demand because per-row counts aren't
+  // useful and the full list could be large; we only need it when the user
+  // explicitly asks to see history.
+  const [commentsModal, setCommentsModal] = useState({ open: false, appointment: null });
+  const [comments, setComments] = useState([]);
+  const [commentsLoading, setCommentsLoading] = useState(false);
+
+  const fetchComments = useCallback(async (appointmentId) => {
+    if (!appointmentId) return;
+    setCommentsLoading(true);
+    try {
+      const res = await apiClient.get(`/appointments/${appointmentId}/comments`);
+      setComments(res?.data?.items ?? []);
+    } catch (err) {
+      console.error('[OPS] comments fetch failed', err);
+      setComments([]);
+    } finally {
+      setCommentsLoading(false);
+    }
+  }, []);
+
+  const openCommentsModal = useCallback((appt) => {
+    setCommentsModal({ open: true, appointment: appt });
+    setComments([]);
+    fetchComments(appt.appointmentId);
+  }, [fetchComments]);
+
+  const closeCommentsModal = () => setCommentsModal({ open: false, appointment: null });
 
   // Trigger stateful local notifications
   const showToast = (message, type = 'success') => {
@@ -93,21 +128,39 @@ export default function OperationsBoard() {
     setCurrentPage(1);
   }, [search, modality, statusFilter, selectedDate]);
 
-  // Update operations status override
+  // Update operations status override.
+  //
+  // Two separate API calls now: the status PUT and (optionally) a comment
+  // POST. We deliberately STOP sending delayReason on the status PUT — the
+  // /comments endpoint owns that field server-side now, mirroring the latest
+  // comment onto Appointment.DelayReason so worklist rows keep working
+  // without a join. This is what stops history from being overwritten.
   const handleUpdateStatus = async (e) => {
     e.preventDefault();
     if (!selectedItem) return;
-    
+
     setSaving(true);
     try {
+      // Status update. delayReason is omitted on purpose; the server keeps
+      // its current value (it's only changed by the /comments endpoint now).
       await apiClient.put(`/appointments/${selectedItem.appointmentId}/operations-status`, {
         appointmentId: selectedItem.appointmentId,
         progressStatus: newStatus,
-        delayReason: newReason
+        delayReason: null
       });
-      
+
+      // Append a new comment if the user typed one. We always append — even
+      // if the text matches the previous DelayReason — because the user
+      // explicitly clicked save with this content, and the audit trail
+      // should reflect that they reaffirmed it.
+      const body = newReason.trim();
+      if (body.length > 0) {
+        await apiClient.post(`/appointments/${selectedItem.appointmentId}/comments`, { body });
+      }
+
       showToast('Clinical progress status updated successfully!', 'success');
       setModalOpen(false);
+      setNewReason('');
       fetchAppointments();
     } catch (err) {
       console.error(err);
@@ -120,7 +173,10 @@ export default function OperationsBoard() {
   const openEditModal = (appt) => {
     setSelectedItem(appt);
     setNewStatus(appt.reportProgressStatus || 'NOT_STARTED');
-    setNewReason(appt.delayReason || '');
+    // Start the textarea empty — the previous comment is shown as read-only
+    // context above the input so the user knows what was there. This is the
+    // "no more accidental overwrites" guardrail.
+    setNewReason('');
     setModalOpen(true);
   };
 
@@ -141,7 +197,16 @@ export default function OperationsBoard() {
       const progressMatch = statusFilter === 'ALL' || appt.reportProgressStatus === statusFilter;
       
       return dateMatch && searchMatch && modalityMatch && progressMatch;
-    }).sort((a, b) => (a.dailyTokenNumber ?? Infinity) - (b.dailyTokenNumber ?? Infinity)) : [];
+    }).sort((a, b) => {
+      // Worklist order: STAT → URGENT → ROUTINE, then daily token ascending.
+      // Mirrors AppointmentBoard / Technician / Doctor so the same patient
+      // appears in the same relative position on every operations surface.
+      const rank = { STAT: 0, URGENT: 1, ROUTINE: 2 };
+      const pa = rank[a.priority] ?? 2;
+      const pb = rank[b.priority] ?? 2;
+      if (pa !== pb) return pa - pb;
+      return (a.dailyTokenNumber ?? Infinity) - (b.dailyTokenNumber ?? Infinity);
+    }) : [];
   }, [appointments, selectedDate, search, modality, statusFilter]);
 
   // Paginated partition matching BillingPage
@@ -163,7 +228,6 @@ export default function OperationsBoard() {
       started: todayAppts.filter(a => a.reportProgressStatus === 'STARTED').length,
       inMid: todayAppts.filter(a => a.reportProgressStatus === 'IN_MID').length,
       delivered: todayAppts.filter(a => a.reportProgressStatus === 'DELIVERED').length,
-      delayed: todayAppts.filter(a => a.delayReason && a.delayReason.trim().length > 0).length
     };
   };
 
@@ -348,12 +412,6 @@ export default function OperationsBoard() {
           <div className="intel-trend" style={{ color: '#15803d' }}>Reports Sent</div>
         </div>
 
-        <div className="intel-card" style={{ background: '#fff1f2', border: '1px solid #fecaca' }}>
-          <span className="intel-label" style={{ color: '#e11d48' }}>⚠️ Delayed</span>
-          <div className="intel-value" style={{ color: '#881337' }}>{metrics.delayed}</div>
-          <div className="intel-trend" style={{ color: '#e11d48' }}>With Delay Note</div>
-        </div>
-
       </div>
 
       {/* ── FILTER BAR ─────────────────────────────────────────────────── */}
@@ -417,8 +475,18 @@ export default function OperationsBoard() {
                 {paginatedAppointments.map((appt) => {
                   const progress   = getProgressBadge(appt.reportProgressStatus);
                   const coreStatus = getCoreStatusStyle(appt.status);
+                  const isApptOverdue = isOverdue(appt.appointmentId);
+                  // STAT + overdue share the same red heartbeat. URGENT gets
+                  // the softer amber. Matches AppointmentBoard / Tech / Doctor.
+                  const overdueRowClass = (isApptOverdue || appt.priority === 'STAT') ? 'priority-row-stat'
+                                        : appt.priority === 'URGENT'                  ? 'priority-row-urgent'
+                                        : '';
+                  const onPremisesElapsed = appt.arrivedAt ? formatElapsed(appt.arrivedAt, appt.deliveredAt) : null;
+                  const premisesSev = premisesSeverity(appt.arrivedAt, appt.deliveredAt);
+                  const premisesStyle = premisesPillStyle(premisesSev);
+                  const scanToDelivery = (appt.scanStartedAt && appt.deliveredAt) ? formatElapsed(appt.scanStartedAt, appt.deliveredAt) : null;
                   return (
-                    <div key={appt.appointmentId} style={{ background: 'white', border: '1px solid #e2e8f0', borderRadius: '16px', padding: '16px', boxShadow: '0 2px 8px rgba(0,0,0,0.04)' }}>
+                    <div key={appt.appointmentId} className={overdueRowClass} style={{ background: 'white', border: '1px solid #e2e8f0', borderRadius: '16px', padding: '16px', boxShadow: '0 2px 8px rgba(0,0,0,0.04)' }}>
                       {/* Top row: token + badges */}
                       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '10px' }}>
                         <div>
@@ -436,8 +504,22 @@ export default function OperationsBoard() {
                           </span>
                         </div>
                       </div>
-                      {/* Patient info */}
-                      <div style={{ fontWeight: 950, color: '#0f172a', fontSize: '14px' }}>{appt.patientName}</div>
+                      {/* Patient info + priority chip (only above ROUTINE) */}
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
+                        <span style={{ fontWeight: 950, color: '#0f172a', fontSize: '14px' }}>{appt.patientName}</span>
+                        {appt.priority && appt.priority !== 'ROUTINE' && (
+                          <span
+                            className={appt.priority === 'STAT' ? 'priority-chip-stat' : 'priority-chip-urgent'}
+                            style={{
+                              fontSize: '9px', fontWeight: 950, letterSpacing: '0.5px',
+                              padding: '2px 7px', borderRadius: '999px',
+                              color: appt.priority === 'STAT' ? '#dc2626' : '#d97706',
+                              background: appt.priority === 'STAT' ? '#fee2e2' : '#fef3c7',
+                              border: `1px solid ${appt.priority === 'STAT' ? '#fecaca' : '#fde68a'}`,
+                            }}
+                          >{appt.priority}</span>
+                        )}
+                      </div>
                       {appt.patientId && (
                         <div style={{ fontSize: '9px', color: '#0f52ba', fontWeight: 800, marginTop: '2px', fontFamily: 'monospace' }}>PID: {appt.patientId}</div>
                       )}
@@ -451,10 +533,37 @@ export default function OperationsBoard() {
                         </span>
                         <span style={{ fontSize: '12px', color: '#0f172a', fontWeight: 950 }}>{appt.service}</span>
                       </div>
-                      {/* Delay note */}
+                      {/* TAT pills */}
+                      {onPremisesElapsed && (
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginTop: '8px', flexWrap: 'wrap' }}>
+                          <span title={appt.deliveredAt ? 'Total time on premises' : 'On premises (live)'} style={{ fontSize: '10px', fontWeight: 950, padding: '3px 8px', borderRadius: '999px', color: premisesStyle.color, background: premisesStyle.bg, border: `1px solid ${premisesStyle.border}` }}>⏱ {onPremisesElapsed}</span>
+                          {scanToDelivery && (
+                            <span title="Scan start → delivered" style={{ fontSize: '10px', fontWeight: 950, padding: '3px 8px', borderRadius: '999px', color: '#0369a1', background: '#e0f2fe', border: '1px solid #bae6fd' }}>📋 {scanToDelivery}</span>
+                          )}
+                        </div>
+                      )}
+                      {/* Latest comment + author byline + View all link */}
                       {appt.delayReason && (
                         <div style={{ background: '#fff1f2', color: '#b91c1c', border: '1px solid #fecaca', padding: '8px 12px', borderRadius: '10px', fontSize: '11px', lineHeight: 1.4, fontWeight: 800, marginTop: '10px' }}>
-                          ⚠️ <strong>Delayed:</strong> {appt.delayReason}
+                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '2px' }}>
+                            <span style={{ fontSize: '9px', fontWeight: 950, letterSpacing: '0.6px' }}>⚠️ LATEST COMMENT</span>
+                            <button
+                              onClick={() => openCommentsModal(appt)}
+                              style={{ background: 'transparent', border: 'none', color: '#0f52ba', fontSize: '10px', fontWeight: 950, cursor: 'pointer', textDecoration: 'underline' }}
+                            >View all →</button>
+                          </div>
+                          {appt.delayReason}
+                          {(appt.latestCommentAuthorName || appt.latestCommentAt) && (
+                            <div style={{ fontSize: '9px', fontWeight: 700, color: '#7f1d1d', marginTop: '4px', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                              <span>👤 {appt.latestCommentAuthorName || 'System'}</span>
+                              {appt.latestCommentAt && (
+                                <>
+                                  <span style={{ opacity: 0.5 }}>·</span>
+                                  <span>{formatCommentTime(appt.latestCommentAt)}</span>
+                                </>
+                              )}
+                            </div>
+                          )}
                         </div>
                       )}
                       {/* Action */}
@@ -486,9 +595,17 @@ export default function OperationsBoard() {
                   {paginatedAppointments.map((appt) => {
                     const progress   = getProgressBadge(appt.reportProgressStatus);
                     const coreStatus = getCoreStatusStyle(appt.status);
+                    const isApptOverdue = isOverdue(appt.appointmentId);
+                    const overdueTrClass = (isApptOverdue || appt.priority === 'STAT') ? 'priority-tr-stat'
+                                         : appt.priority === 'URGENT'                  ? 'priority-tr-urgent'
+                                         : '';
+                    const onPremisesElapsed = appt.arrivedAt ? formatElapsed(appt.arrivedAt, appt.deliveredAt) : null;
+                    const premisesSev = premisesSeverity(appt.arrivedAt, appt.deliveredAt);
+                    const premisesStyle = premisesPillStyle(premisesSev);
+                    const scanToDelivery = (appt.scanStartedAt && appt.deliveredAt) ? formatElapsed(appt.scanStartedAt, appt.deliveredAt) : null;
 
                     return (
-                      <tr key={appt.appointmentId}>
+                      <tr key={appt.appointmentId} className={overdueTrClass}>
                         {/* Token / ID */}
                         <td style={{ fontFamily: 'monospace' }}>
                           <div style={{ fontWeight: 950, color: '#0f52ba', fontSize: '15px' }}>
@@ -499,13 +616,46 @@ export default function OperationsBoard() {
 
                         {/* Patient */}
                         <td>
-                          <div style={{ fontWeight: 950, color: '#0f172a', fontSize: '14px' }}>{appt.patientName}</div>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
+                            <span style={{ fontWeight: 950, color: '#0f172a', fontSize: '14px' }}>{appt.patientName}</span>
+                            {appt.priority && appt.priority !== 'ROUTINE' && (
+                              <span
+                                className={appt.priority === 'STAT' ? 'priority-chip-stat' : 'priority-chip-urgent'}
+                                style={{
+                                  fontSize: '9px', fontWeight: 950, letterSpacing: '0.5px',
+                                  padding: '2px 7px', borderRadius: '999px',
+                                  color: appt.priority === 'STAT' ? '#dc2626' : '#d97706',
+                                  background: appt.priority === 'STAT' ? '#fee2e2' : '#fef3c7',
+                                  border: `1px solid ${appt.priority === 'STAT' ? '#fecaca' : '#fde68a'}`,
+                                }}
+                              >{appt.priority}</span>
+                            )}
+                          </div>
                           {appt.patientId && (
                             <div style={{ fontSize: '9px', color: '#0f52ba', fontWeight: 800, marginTop: '2px', fontFamily: 'monospace' }}>PID: {appt.patientId}</div>
                           )}
                           <div style={{ fontSize: '11px', color: '#64748b', marginTop: '3px', fontWeight: 700 }}>
                             {appt.patientAge}y · {appt.patientGender} · {appt.mobile}
                           </div>
+                          {/* TAT pills: on-premises (live) + scan→delivery (final). */}
+                          {onPremisesElapsed && (
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '5px', marginTop: '6px', flexWrap: 'wrap' }}>
+                              <span title={appt.deliveredAt ? 'Total time on premises' : 'On premises (live)'} style={{
+                                fontSize: '9px', fontWeight: 950, letterSpacing: '0.3px',
+                                padding: '2px 7px', borderRadius: '999px',
+                                color: premisesStyle.color, background: premisesStyle.bg,
+                                border: `1px solid ${premisesStyle.border}`,
+                              }}>⏱ {onPremisesElapsed}</span>
+                              {scanToDelivery && (
+                                <span title="Scan start → delivered" style={{
+                                  fontSize: '9px', fontWeight: 950, letterSpacing: '0.3px',
+                                  padding: '2px 7px', borderRadius: '999px',
+                                  color: '#0369a1', background: '#e0f2fe',
+                                  border: '1px solid #bae6fd',
+                                }}>📋 {scanToDelivery}</span>
+                              )}
+                            </div>
+                          )}
                         </td>
 
                         {/* Modality & Service */}
@@ -530,14 +680,36 @@ export default function OperationsBoard() {
                           </span>
                         </td>
 
-                        {/* Delay Note */}
-                        <td style={{ maxWidth: '240px' }}>
+                        {/* Latest comment + author byline + View all link */}
+                        <td style={{ maxWidth: '260px' }}>
                           {appt.delayReason ? (
-                            <div style={{ background: '#fff1f2', color: '#b91c1c', border: '1px solid #fecaca', padding: '8px 12px', borderRadius: '12px', fontSize: '11px', lineHeight: 1.4, maxHeight: '60px', overflowY: 'auto', fontWeight: 800 }}>
-                              ⚠️ <strong>Delayed:</strong> {appt.delayReason}
+                            <div style={{ background: '#fff1f2', color: '#b91c1c', border: '1px solid #fecaca', padding: '8px 12px', borderRadius: '12px', fontSize: '11px', lineHeight: 1.4, maxHeight: '110px', overflowY: 'auto', fontWeight: 800 }}>
+                              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '3px' }}>
+                                <span style={{ fontSize: '9px', fontWeight: 950, letterSpacing: '0.6px' }}>⚠️ LATEST COMMENT</span>
+                                <button
+                                  onClick={() => openCommentsModal(appt)}
+                                  style={{ background: 'transparent', border: 'none', color: '#0f52ba', fontSize: '10px', fontWeight: 950, cursor: 'pointer', textDecoration: 'underline' }}
+                                >View all →</button>
+                              </div>
+                              {appt.delayReason}
+                              {(appt.latestCommentAuthorName || appt.latestCommentAt) && (
+                                <div style={{ fontSize: '9px', fontWeight: 700, color: '#7f1d1d', marginTop: '5px', display: 'flex', alignItems: 'center', gap: '5px' }}>
+                                  <span>👤 {appt.latestCommentAuthorName || 'System'}</span>
+                                  {appt.latestCommentAt && (
+                                    <>
+                                      <span style={{ opacity: 0.5 }}>·</span>
+                                      <span>{formatCommentTime(appt.latestCommentAt)}</span>
+                                    </>
+                                  )}
+                                </div>
+                              )}
                             </div>
                           ) : (
-                            <span style={{ color: '#94a3b8', fontSize: '11px', fontStyle: 'italic', fontWeight: 700 }}>No delays recorded</span>
+                            <button
+                              onClick={() => openCommentsModal(appt)}
+                              style={{ background: 'transparent', border: '1px dashed #cbd5e1', color: '#94a3b8', fontSize: '11px', fontStyle: 'italic', fontWeight: 700, padding: '6px 10px', borderRadius: '10px', cursor: 'pointer' }}
+                              title="View comment history"
+                            >No comments yet — View history</button>
                           )}
                         </td>
 
@@ -598,9 +770,50 @@ export default function OperationsBoard() {
                 </div>
               </div>
 
-              {/* Delay reason */}
+              {/* Latest comment (context) — read-only so the user can see what
+                  was last said without accidentally erasing it by editing. */}
+              {selectedItem.delayReason && (
+                <div style={{
+                  background: '#fffbeb', border: '1px solid #fef3c7',
+                  borderRadius: '12px', padding: '10px 12px',
+                  display: 'flex', flexDirection: 'column', gap: '4px',
+                }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <span style={{ fontSize: '9px', color: '#92400e', fontWeight: 950, letterSpacing: '0.8px', textTransform: 'uppercase' }}>
+                      Latest comment
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => openCommentsModal(selectedItem)}
+                      style={{
+                        background: 'transparent', border: 'none', cursor: 'pointer',
+                        color: '#0f52ba', fontSize: '10px', fontWeight: 950,
+                        letterSpacing: '0.3px', textDecoration: 'underline',
+                      }}
+                    >View all comments →</button>
+                  </div>
+                  <div style={{ fontSize: '12px', color: '#1e293b', fontWeight: 700, lineHeight: 1.5 }}>
+                    {selectedItem.delayReason}
+                  </div>
+                  {(selectedItem.latestCommentAuthorName || selectedItem.latestCommentAt) && (
+                    <div style={{ fontSize: '10px', color: '#92400e', fontWeight: 700, marginTop: '4px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                      <span>👤 {selectedItem.latestCommentAuthorName || 'System'}</span>
+                      {selectedItem.latestCommentAt && (
+                        <>
+                          <span style={{ opacity: 0.5 }}>·</span>
+                          <span>{formatCommentTime(selectedItem.latestCommentAt)}</span>
+                        </>
+                      )}
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* Add a new comment — APPEND, not overwrite. */}
               <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                <label style={{ fontSize: '10px', color: '#94a3b8', fontWeight: 950, letterSpacing: '0.8px', textTransform: 'uppercase' }}>Reason for Delay / Comments</label>
+                <label style={{ fontSize: '10px', color: '#94a3b8', fontWeight: 950, letterSpacing: '0.8px', textTransform: 'uppercase' }}>
+                  {selectedItem.delayReason ? 'Add a new comment' : 'Add a comment'}
+                </label>
                 <textarea
                   placeholder="e.g. Awaiting radiologist signature, Gantry scanner under maintenance…"
                   value={newReason}
@@ -634,6 +847,70 @@ export default function OperationsBoard() {
         </div>
       )}
 
+      {/* ── COMMENTS TIMELINE POPUP ────────────────────────────────────── */}
+      {commentsModal.open && commentsModal.appointment && (
+        <div
+          onClick={closeCommentsModal}
+          style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.55)', backdropFilter: 'blur(2px)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 10001, animation: 'fadeIn 0.2s ease-out' }}
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              width: 'min(560px, calc(100vw - 32px))',
+              maxHeight: '80vh',
+              background: 'white', borderRadius: '20px',
+              boxShadow: '0 30px 80px rgba(0,0,0,0.32)',
+              overflow: 'hidden', display: 'flex', flexDirection: 'column',
+              animation: 'scaleIn 0.25s cubic-bezier(0.34,1.56,0.64,1)',
+            }}
+          >
+            <div style={{ padding: '20px 24px', background: 'linear-gradient(135deg, #0f52ba 0%, #0a3d91 100%)', color: 'white', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '16px' }}>
+              <div>
+                <div style={{ fontSize: '11px', fontWeight: 900, letterSpacing: '2px', opacity: 0.85 }}>COMMENT HISTORY</div>
+                <div style={{ fontSize: '18px', fontWeight: 900, marginTop: '4px', letterSpacing: '-0.3px' }}>
+                  {commentsModal.appointment.patientName}
+                </div>
+                <div style={{ fontSize: '11px', fontWeight: 700, marginTop: '2px', opacity: 0.78 }}>
+                  {commentsModal.appointment.displayId} · {commentsModal.appointment.modality}
+                </div>
+              </div>
+              <button
+                onClick={closeCommentsModal}
+                aria-label="Close"
+                style={{ width: '34px', height: '34px', borderRadius: '50%', background: 'rgba(255,255,255,0.18)', border: '1px solid rgba(255,255,255,0.28)', color: 'white', cursor: 'pointer', fontSize: '16px', fontWeight: 900, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}
+              >✕</button>
+            </div>
+
+            <div style={{ overflowY: 'auto', flex: 1, padding: '8px 0' }}>
+              {commentsLoading ? (
+                <div style={{ padding: '40px 24px', textAlign: 'center', color: '#64748b', fontSize: '12px', fontWeight: 700 }}>
+                  Loading timeline…
+                </div>
+              ) : comments.length === 0 ? (
+                <div style={{ padding: '40px 24px', textAlign: 'center', color: '#64748b', fontSize: '12px', fontWeight: 700 }}>
+                  No comments yet for this appointment.
+                </div>
+              ) : (
+                <div style={{ padding: '8px 24px 16px' }}>
+                  {comments.map((c, idx) => (
+                    <CommentTimelineItem
+                      key={c.appointmentCommentId}
+                      comment={c}
+                      isLatest={idx === 0}
+                    />
+                  ))}
+                </div>
+              )}
+            </div>
+
+            <div style={{ padding: '12px 24px', background: '#f8fafc', borderTop: '1px solid #e2e8f0', fontSize: '10px', fontWeight: 700, color: '#64748b', display: 'flex', justifyContent: 'space-between' }}>
+              <span>{comments.length} comment{comments.length === 1 ? '' : 's'}</span>
+              <span>Newest first</span>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* ── TOAST CONTAINER ────────────────────────────────────────────── */}
       <div style={{ position: 'fixed', bottom: '30px', right: '16px', left: isMobile ? '16px' : 'auto', zIndex: 99999, display: 'flex', flexDirection: 'column', gap: '10px', pointerEvents: 'none' }}>
         {toasts.map(t => (
@@ -650,6 +927,76 @@ export default function OperationsBoard() {
         @keyframes scaleIn { from { transform: scale(0.9) translateY(20px); opacity: 0; } to { transform: scale(1) translateY(0); opacity: 1; } }
       `}</style>
 
+    </div>
+  );
+}
+
+// Compact human time for the inline "by {name} · {when}" byline. Falls back
+// gracefully if the timestamp is missing or unparseable. Reuses the UTC
+// hardening from timeTracking (server omits the trailing Z on DateTimes
+// with Kind=Unspecified, which would otherwise parse as local time).
+function formatCommentTime(iso) {
+  if (!iso) return '';
+  const hasTz = /[zZ]|[+-]\d{2}:?\d{2}$/.test(iso);
+  const ms = new Date(hasTz ? iso : iso + 'Z').getTime();
+  if (Number.isNaN(ms)) return '';
+  const diffMin = Math.max(0, Math.round((Date.now() - ms) / 60000));
+  if (diffMin < 1)   return 'just now';
+  if (diffMin < 60)  return `${diffMin}m ago`;
+  if (diffMin < 1440) {
+    const h = Math.floor(diffMin / 60);
+    const m = diffMin % 60;
+    return m === 0 ? `${h}h ago` : `${h}h ${m}m ago`;
+  }
+  // For older comments fall back to absolute IST date so users don't see
+  // "47h ago" — easier to scan as "12 Apr".
+  return new Date(ms).toLocaleDateString('en-GB', {
+    timeZone: 'Asia/Kolkata',
+    day: '2-digit', month: 'short',
+  });
+}
+
+// One timeline row. Newest entry gets a small "LATEST" badge so the user
+// can spot the active comment without scanning timestamps.
+function CommentTimelineItem({ comment, isLatest }) {
+  const dt = comment.createdAt ? new Date(comment.createdAt + (/[zZ]|[+-]\d{2}:?\d{2}$/.test(comment.createdAt) ? '' : 'Z')) : null;
+  const when = dt ? dt.toLocaleString('en-GB', {
+    timeZone: 'Asia/Kolkata',
+    day: '2-digit', month: 'short', year: 'numeric',
+    hour: '2-digit', minute: '2-digit', hour12: true,
+  }) : '—';
+
+  return (
+    <div style={{ display: 'flex', gap: '12px', padding: '12px 4px', borderBottom: '1px solid #f1f5f9' }}>
+      {/* Avatar (initial) */}
+      <div style={{
+        width: '34px', height: '34px', borderRadius: '50%',
+        background: isLatest ? '#dbeafe' : '#f1f5f9',
+        color:      isLatest ? '#0f52ba' : '#64748b',
+        fontWeight: 900, fontSize: '13px',
+        display: 'flex', alignItems: 'center', justifyContent: 'center',
+        flexShrink: 0,
+        border: isLatest ? '1px solid #bfdbfe' : '1px solid #e2e8f0',
+      }}>
+        {(comment.authorName || '?').charAt(0).toUpperCase()}
+      </div>
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+          <span style={{ fontSize: '12px', fontWeight: 900, color: '#0f172a' }}>{comment.authorName}</span>
+          {isLatest && (
+            <span style={{
+              fontSize: '8px', fontWeight: 950, letterSpacing: '0.8px',
+              background: '#dbeafe', color: '#0f52ba',
+              padding: '2px 6px', borderRadius: '999px',
+              border: '1px solid #bfdbfe',
+            }}>LATEST</span>
+          )}
+          <span style={{ fontSize: '10px', color: '#64748b', fontWeight: 700, marginLeft: 'auto' }}>{when}</span>
+        </div>
+        <div style={{ fontSize: '13px', color: '#1e293b', fontWeight: 600, lineHeight: 1.55, marginTop: '4px', whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
+          {comment.body}
+        </div>
+      </div>
     </div>
   );
 }

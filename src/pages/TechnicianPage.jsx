@@ -9,6 +9,9 @@ import { DicomCache } from '../utils/DicomCache';
 import { dicomOptimizer } from '../utils/DicomPerformanceOptimizer';
 import { assetsFromManifest } from '../utils/dicomManifest';
 import { uploadStudyAssetDirect } from '../utils/azureUpload';
+import useTickClock from '../utils/useTickClock';
+import { formatElapsed, premisesSeverity, premisesPillStyle } from '../utils/timeTracking';
+import { useOverdue } from '../components/OverdueAppointments/OverdueContext';
 import '../styles/global.css';
 import '../styles/TechnicianPage.css';
 
@@ -22,15 +25,22 @@ const MODALITY_ICONS = {
 };
 
 const PRIORITY_META = {
-  'STAT': { color: '#ef4444', label: 'EMERGENCY', bg: '#fee2e2' },
-  'URGENT': { color: '#f59e0b', label: 'URGENT', bg: '#fef3c7' },
-  'ROUTINE': { color: '#3b82f6', label: 'ROUTINE', bg: '#dbeafe' }
+  'STAT':    { color: '#dc2626', label: 'STAT',    bg: '#fee2e2', accent: '#dc2626' },
+  'URGENT':  { color: '#d97706', label: 'URGENT',  bg: '#fef3c7', accent: '#d97706' },
+  'ROUTINE': { color: '#64748b', label: 'ROUTINE', bg: '#f1f5f9', accent: null }
 };
+
+// STAT (0) → URGENT (1) → ROUTINE (2). Mirrors the backend GetAppointmentsQuery
+// sort so the queue looks the same wherever it shows up.
+const PRIORITY_RANK = { 'STAT': 0, 'URGENT': 1, 'ROUTINE': 2 };
 
 const TODAY = new Date().toLocaleDateString('en-CA'); // YYYY-MM-DD format in local time
 
 export default function TechnicianPage() {
   const { activeCenter } = useContext(AuthContext);
+  // 60s tick keeps the on-premises pill counting up; isOverdue mirrors the bell.
+  useTickClock();
+  const { isOverdue } = useOverdue();
   const [studies, setStudies] = useState([]);
   const [loading, setLoading] = useState(false);
   const [currentView, setCurrentView] = useState('QUEUE'); // 'QUEUE' or 'WORKSPACE'
@@ -116,7 +126,9 @@ export default function TechnicianPage() {
         return {
           ...a,
           id: a.displayId,
-          priority: a.type === 'EMERGENCY' ? 'STAT' : 'ROUTINE',
+          // Real priority comes from the API; fall back to EMERGENCY-type for
+          // legacy records that pre-date the Priority column.
+          priority: a.priority || (a.type === 'EMERGENCY' ? 'STAT' : 'ROUTINE'),
           isToday: studyDate === TODAY,
           // Prefer persisted server-side token; fall back to calculated for legacy records
           tokenNo: a.dailyTokenNumber ?? dailyCounters[dateKey]
@@ -216,6 +228,13 @@ export default function TechnicianPage() {
     const sortableItems = [...filteredStudies];
     if (sortConfig.key !== null) {
       sortableItems.sort((a, b) => {
+        // Priority is the dominant key so STATs surface to the top regardless
+        // of which column the user clicked. Within a priority bucket the
+        // user's chosen column sort applies.
+        const pa = PRIORITY_RANK[a.priority] ?? 2;
+        const pb = PRIORITY_RANK[b.priority] ?? 2;
+        if (pa !== pb) return pa - pb;
+
         let aValue = a[sortConfig.key];
         let bValue = b[sortConfig.key];
 
@@ -911,7 +930,8 @@ export default function TechnicianPage() {
 
           <select value={filters.priority} onChange={e => setFilters({...filters, priority: e.target.value})} style={{ padding: '10px 14px', borderRadius: '8px', border: '1px solid #e2e8f0', fontSize: '12px', fontWeight: 500, background: 'white', outline: 'none' }}>
             <option value="ALL">All Priorities</option>
-            <option value="STAT">Emergency</option>
+            <option value="STAT">STAT</option>
+            <option value="URGENT">Urgent</option>
             <option value="ROUTINE">Routine</option>
           </select>
 
@@ -973,8 +993,29 @@ export default function TechnicianPage() {
                 const isExpected = ['scheduled', 'booked'].includes(status) && study.isToday;
                 const isDone = ['scanned', 'reporting', 'reported', 'completed'].includes(status);
                 
+                // Priority class — drives the pulsing inset accent + glow via
+                // CSS (.priority-tr-stat / .priority-tr-urgent in global.css).
+                // Overdue (on-premises > 3h) gets the same red pulse since both
+                // are "act now" signals.
+                const isStudyOverdue = isOverdue(study.appointmentId);
+                const priorityTrClass = (isStudyOverdue || study.priority === 'STAT') ? 'priority-tr-stat'
+                                      : study.priority === 'URGENT'                    ? 'priority-tr-urgent'
+                                      : '';
+
+                // Turnaround-time pills.
+                const onPremisesElapsed = study.arrivedAt
+                  ? formatElapsed(study.arrivedAt, study.deliveredAt)
+                  : null;
+                const premisesSev = premisesSeverity(study.arrivedAt, study.deliveredAt);
+                const premisesStyle = premisesPillStyle(premisesSev);
+                const scanToDelivery = (study.scanStartedAt && study.deliveredAt)
+                  ? formatElapsed(study.scanStartedAt, study.deliveredAt)
+                  : null;
+
                 return (
-                  <tr key={study.appointmentId} style={{ borderBottom: '1px solid #f1f5f9' }}>
+                  <tr key={study.appointmentId} className={priorityTrClass} style={{
+                    borderBottom: '1px solid #f1f5f9',
+                  }}>
                     <td style={{ padding: '8px 15px' }}>
                        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
                           <div style={{ width: '32px', height: '32px', borderRadius: '10px', background: '#f8fafc', color: '#0f52ba', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 900, fontSize: '14px', border: '1px solid #e2e8f0' }}>
@@ -983,6 +1024,25 @@ export default function TechnicianPage() {
                           <div>
                              <div style={{ fontWeight: 800, color: '#1e293b', fontSize: '12px' }}>{study.patientName.toUpperCase()}</div>
                              <div style={{ fontSize: '9px', color: '#94a3b8', fontWeight: 700 }}>{study.id} | {study.patientGender} | {study.patientAge}Y</div>
+                             {/* TAT pills: on-premises (live) + scan→delivery (final). */}
+                             {onPremisesElapsed && (
+                               <div style={{ display: 'flex', alignItems: 'center', gap: '4px', marginTop: '3px', flexWrap: 'wrap' }}>
+                                 <span title={study.deliveredAt ? 'Total time on premises' : 'On premises (live)'} style={{
+                                   fontSize: '8px', fontWeight: 950, letterSpacing: '0.3px',
+                                   padding: '1px 5px', borderRadius: '999px',
+                                   color: premisesStyle.color, background: premisesStyle.bg,
+                                   border: `1px solid ${premisesStyle.border}`,
+                                 }}>⏱ {onPremisesElapsed}</span>
+                                 {scanToDelivery && (
+                                   <span title="Scan start → delivered" style={{
+                                     fontSize: '8px', fontWeight: 950, letterSpacing: '0.3px',
+                                     padding: '1px 5px', borderRadius: '999px',
+                                     color: '#0369a1', background: '#e0f2fe',
+                                     border: '1px solid #bae6fd',
+                                   }}>📋 {scanToDelivery}</span>
+                                 )}
+                               </div>
+                             )}
                           </div>
                        </div>
                     </td>
@@ -999,9 +1059,14 @@ export default function TechnicianPage() {
                     <td style={{ padding: '8px 15px' }}>
                        <div style={{ display: 'flex', flexDirection: 'column' }}>
                           <span style={{ fontSize: '12px', fontWeight: 800, color: '#1e293b' }}>{study.service}</span>
-                          <span style={{ fontSize: '8px', fontWeight: 950, color: priority.color, background: priority.bg, padding: '1px 6px', borderRadius: '4px', alignSelf: 'flex-start', marginTop: '2px' }}>
-                             {priority.label}
-                          </span>
+                          {study.priority && study.priority !== 'ROUTINE' && (
+                            <span
+                              className={study.priority === 'STAT' ? 'priority-chip-stat' : 'priority-chip-urgent'}
+                              style={{ fontSize: '8px', fontWeight: 950, color: priority.color, background: priority.bg, padding: '1px 6px', borderRadius: '4px', alignSelf: 'flex-start', marginTop: '2px', letterSpacing: '0.5px' }}
+                            >
+                               {priority.label}
+                            </span>
+                          )}
                        </div>
                     </td>
                     <td style={{ padding: '8px 15px' }}>

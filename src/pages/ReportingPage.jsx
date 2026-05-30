@@ -13,6 +13,8 @@ import { jwtDecode } from 'jwt-decode';
 import useOffline from '../hooks/useOffline';
 import { nativeStorage } from '../hooks/useElectron';
 import ReportPreviewModal, { PatientInfoBlock } from '../components/ReportPreviewModal';
+import useTickClock from '../utils/useTickClock';
+import { formatElapsed, premisesSeverity, premisesPillStyle } from '../utils/timeTracking';
 import SearchableTemplatePicker from '../components/SearchableTemplatePicker';
 import PatientTimeline from '../components/PatientTimeline';
 import VoiceReportingPanel from '../components/VoiceReportingPanel';
@@ -23,6 +25,9 @@ const ReportingPage = () => {
   const params = useParams();
   const [searchParams] = useSearchParams();
   const { isOnline, addToOutbox } = useOffline();
+  // 60s tick so the on-premises clock advances while the radiologist is
+  // actively reporting — shows the case "ageing" in real time.
+  useTickClock();
   const appointmentId = params.id || searchParams.get('id');
   const [showKeywordDrawer, setShowKeywordDrawer] = useState(false);
   const [showTableModal, setShowTableModal] = useState(false);
@@ -2979,6 +2984,47 @@ const ReportingPage = () => {
             </div>
             <div style={{ display: 'flex', gap: '8px', marginLeft: '15px', alignItems: 'center' }}>
               <span style={{ background: '#0f52ba', color: 'white', padding: '4px 10px', borderRadius: '6px', fontSize: '10px', fontWeight: 950, letterSpacing: '1px' }}>{activeAppointment?.modality || '...'}</span>
+              {/* Priority chip — visible while reporting so the radiologist
+                  doesn't miss a STAT / URGENT case once they're in the editor. */}
+              {activeAppointment?.priority && activeAppointment.priority !== 'ROUTINE' && (
+                <span
+                  className={activeAppointment.priority === 'STAT' ? 'priority-chip-stat' : 'priority-chip-urgent'}
+                  style={{
+                    background: activeAppointment.priority === 'STAT' ? '#fee2e2' : '#fef3c7',
+                    color: activeAppointment.priority === 'STAT' ? '#dc2626' : '#d97706',
+                    border: `1px solid ${activeAppointment.priority === 'STAT' ? '#fecaca' : '#fde68a'}`,
+                    padding: '4px 10px', borderRadius: '999px',
+                    fontSize: '10px', fontWeight: 950, letterSpacing: '1px',
+                  }}
+                >{activeAppointment.priority}</span>
+              )}
+              {/* Turnaround-time pills: on-premises clock (live) + scan→delivery
+                  (final). Hidden until ArrivedAt is set so pre-arrival cases
+                  don't show a clock. */}
+              {activeAppointment?.arrivedAt && (() => {
+                const sev = premisesSeverity(activeAppointment.arrivedAt, activeAppointment.deliveredAt);
+                const ps  = premisesPillStyle(sev);
+                const onPrem = formatElapsed(activeAppointment.arrivedAt, activeAppointment.deliveredAt);
+                const scanDel = (activeAppointment.scanStartedAt && activeAppointment.deliveredAt)
+                  ? formatElapsed(activeAppointment.scanStartedAt, activeAppointment.deliveredAt)
+                  : null;
+                return (
+                  <>
+                    <span title={activeAppointment.deliveredAt ? 'Total time on premises' : 'On premises (live)'} style={{
+                      background: ps.bg, color: ps.color, border: `1px solid ${ps.border}`,
+                      padding: '4px 10px', borderRadius: '999px',
+                      fontSize: '10px', fontWeight: 950, letterSpacing: '0.5px',
+                    }}>⏱ {onPrem}</span>
+                    {scanDel && (
+                      <span title="Scan start → delivered" style={{
+                        background: '#e0f2fe', color: '#0369a1', border: '1px solid #bae6fd',
+                        padding: '4px 10px', borderRadius: '999px',
+                        fontSize: '10px', fontWeight: 950, letterSpacing: '0.5px',
+                      }}>📋 {scanDel}</span>
+                    )}
+                  </>
+                );
+              })()}
               {(activeAppointment?.referredBy || activeAppointment?.ReferredBy) && (
                 <span style={{ 
                   background: '#f5f3ff', 

@@ -2899,3 +2899,53 @@ button, a, input[type="button"], input[type="submit"] {
     display: none;
   }
 }
+
+/* ==========================================================================
+   Priority pulse — used by AppointmentBoard rows (div), Technician + Doctor
+   table rows (tr), and the priority chip everywhere. Two variants per surface
+   because <tr> can't take box-shadow on the outside without table-collapse
+   quirks, so we paint the strip + glow with an inset shadow there.
+   ========================================================================== */
+@keyframes priorityChipHeartbeat {
+  0%, 100% { transform: scale(1);    }
+  50%      { transform: scale(1.10); }
+}
+/* Div rows (AppointmentBoard): outer box-shadow paints both the 4px strip
+   and the breathing glow that bleeds outside the row edge. */
+@keyframes priorityRowGlowStat {
+  0%, 100% { box-shadow: -4px 0 0 0 #dc2626, 0 0 0 0 rgba(220, 38, 38, 0); }
+  50%      { box-shadow: -4px 0 0 0 #dc2626, 0 0 14px 2px rgba(220, 38, 38, 0.35); }
+}
+@keyframes priorityRowGlowUrgent {
+  0%, 100% { box-shadow: -4px 0 0 0 #d97706, 0 0 0 0 rgba(217, 119, 6, 0); }
+  50%      { box-shadow: -4px 0 0 0 #d97706, 0 0 10px 2px rgba(217, 119, 6, 0.22); }
+}
+/* Table rows (TechnicianPage, DoctorBoard): inset variant so the strip lives
+   inside the first cell — outer box-shadow on <tr> doesn't render reliably. */
+@keyframes priorityTrGlowStat {
+  0%, 100% { box-shadow: inset 4px 0 0 0 #dc2626, inset 0 0 0 0 rgba(220, 38, 38, 0); }
+  50%      { box-shadow: inset 4px 0 0 0 #dc2626, inset 0 0 18px 0 rgba(220, 38, 38, 0.18); }
+}
+@keyframes priorityTrGlowUrgent {
+  0%, 100% { box-shadow: inset 4px 0 0 0 #d97706, inset 0 0 0 0 rgba(217, 119, 6, 0); }
+  50%      { box-shadow: inset 4px 0 0 0 #d97706, inset 0 0 14px 0 rgba(217, 119, 6, 0.12); }
+}
+
+.priority-chip-stat   { animation: priorityChipHeartbeat 1.4s ease-in-out infinite; display: inline-block; transform-origin: center; }
+.priority-chip-urgent { animation: priorityChipHeartbeat 2.2s ease-in-out infinite; display: inline-block; transform-origin: center; }
+
+.priority-row-stat    { animation: priorityRowGlowStat   1.8s ease-in-out infinite; }
+.priority-row-urgent  { animation: priorityRowGlowUrgent 2.6s ease-in-out infinite; }
+
+.priority-tr-stat    { animation: priorityTrGlowStat   1.8s ease-in-out infinite; }
+.priority-tr-urgent  { animation: priorityTrGlowUrgent 2.6s ease-in-out infinite; }
+
+/* Reduced motion: keep the colour, drop the pulsing. */
+@media (prefers-reduced-motion: reduce) {
+  .priority-chip-stat,
+  .priority-chip-urgent,
+  .priority-row-stat,
+  .priority-row-urgent,
+  .priority-tr-stat,
+  .priority-tr-urgent { animation: none; }
+}

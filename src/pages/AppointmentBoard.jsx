@@ -8,6 +8,9 @@ import AppointmentCard from '../components/AppointmentCard';
 import '../styles/global.css';
 import '../styles/AppointmentBoard.css';
 import ReportPreviewModal from '../components/ReportPreviewModal';
+import useTickClock from '../utils/useTickClock';
+import { formatElapsed, premisesSeverity, premisesPillStyle } from '../utils/timeTracking';
+import { useOverdue } from '../components/OverdueAppointments/OverdueContext';
 
 // --- CONSTANTS ---
 
@@ -62,6 +65,10 @@ export default function AppointmentBoard() {
   const navigate = useNavigate();
   const { activeCenterId, activeCenter } = useContext(AuthContext);
   const { isOnline, addToOutbox } = useOffline();
+  // 60s tick keeps the on-premises pill counting up; isOverdue comes from the
+  // shared OverdueProvider so the row pulse mirrors the bell exactly.
+  useTickClock();
+  const { isOverdue } = useOverdue();
   const [windowWidth, setWindowWidth] = useState(window.innerWidth);
   const isMobile = windowWidth < 768;
   const isTablet = windowWidth >= 768 && windowWidth < 1024;
@@ -105,15 +112,16 @@ export default function AppointmentBoard() {
   const [bookingStep, setBookingStep] = useState(1);
   const [currentPage, setCurrentPage] = useState(1);
   const listTopRef = useRef(null);
-  const [newBooking, setNewBooking] = useState({ 
-    patientId: '', 
-    service: '', 
-    modality: 'X-RAY', 
-    date: getTodayString(), 
-    doctor: '', 
+  const [newBooking, setNewBooking] = useState({
+    patientId: '',
+    service: '',
+    modality: 'X-RAY',
+    date: getTodayString(),
+    doctor: '',
     notes: '',
     amount: '',
-    referralCutValue: 0
+    referralCutValue: 0,
+    priority: 'ROUTINE', // STAT / URGENT / ROUTINE — drives worklist sort
   });
 
   const [newPatient, setNewPatient] = useState({ 
@@ -199,16 +207,23 @@ export default function AppointmentBoard() {
         };
       });
       
-      // Sort DESCENDING by Token Number as requested
+      // Worklist order: STAT → URGENT → ROUTINE, then token ASC. Priority is
+      // the dominant key so a STAT walk-in surfaces above all routine tokens
+      // regardless of when it was booked; inside each priority bucket the
+      // tokens still run 1, 2, 3… so the front desk reads the queue normally.
+      const PRIORITY_RANK = { STAT: 0, URGENT: 1, ROUTINE: 2 };
       const finalSortedData = itemsWithTokens.sort((a, b) => {
+        const pa = PRIORITY_RANK[a.priority] ?? 2;
+        const pb = PRIORITY_RANK[b.priority] ?? 2;
+        if (pa !== pb) return pa - pb;
+
         const tokenA = a.tokenNo || 0;
         const tokenB = b.tokenNo || 0;
-        if (tokenA !== tokenB) {
-          return tokenB - tokenA;
-        }
+        if (tokenA !== tokenB) return tokenA - tokenB;
+
         const timeA = new Date(a.dateTime || 0).getTime();
         const timeB = new Date(b.dateTime || 0).getTime();
-        return timeB - timeA;
+        return timeA - timeB;
       });
 
       setAppointments(finalSortedData);
@@ -578,7 +593,8 @@ export default function AppointmentBoard() {
       referredAddress: referrers.find(r => r.name === newPatient.referredBy)?.address || '',
       notes: newBooking.notes,
       amount: newBooking.amount,
-      referralCutValue: newBooking.referralCutValue
+      referralCutValue: newBooking.referralCutValue,
+      priority: newBooking.priority || 'ROUTINE',
     };
 
 
@@ -611,15 +627,18 @@ export default function AppointmentBoard() {
 
   const resetBooking = () => {
     setBookingStep(1);
-    setNewBooking({ 
-      patientId: '', 
-      service: '', 
-      modality: 'X-RAY', 
-      date: getTodayString(), 
-      doctor: doctors && doctors.length > 0 ? doctors[0] : '', 
+    setNewBooking({
+      patientId: '',
+      service: '',
+      modality: 'X-RAY',
+      date: getTodayString(),
+      doctor: doctors && doctors.length > 0 ? doctors[0] : '',
       notes: '',
       amount: '',
-      referralCutValue: 0
+      referralCutValue: 0,
+      // Reset to ROUTINE every time the form is opened — STAT must be a
+      // conscious choice for the booker, never a sticky carry-over.
+      priority: 'ROUTINE',
     });
 
     setNewPatient({ name: '', mobile: '', age: '', gender: 'Male', village: '', district: '', address: '', referredBy: '', sourceOfInfo: '' });
@@ -1270,9 +1289,31 @@ export default function AppointmentBoard() {
     const appDate = app.dateTime ? new Date(app.dateTime).toLocaleDateString('en-GB', { timeZone: 'Asia/Kolkata', day: '2-digit', month: 'short', year: 'numeric' }) : '—';
     const appTime = app.dateTime ? `${new Date(app.dateTime).toLocaleTimeString('en-US', { timeZone: 'Asia/Kolkata', hour: '2-digit', minute: '2-digit', hour12: true })} IST` : '';
 
+    // Priority class — drives the row's pulsing left-edge glow via CSS
+    // (priority-row-stat / priority-row-urgent in AppointmentBoard.css). The
+    // box-shadow paints the 4px accent strip AND the breathing glow, so we
+    // skip the inline borderLeft to avoid double-rendering it.
+    // Overdue (on-premises > 3h) reuses the same red pulse — they're both
+    // "act now" signals; a row that is both STAT and overdue still pulses red,
+    // which is the correct visual outcome.
+    const overdue = isOverdue(app.appointmentId);
+    const priorityRowClass = (overdue || app.priority === 'STAT') ? 'priority-row-stat'
+                           : app.priority === 'URGENT'             ? 'priority-row-urgent'
+                           : '';
+
+    // Turnaround-time pills.
+    const onPremisesElapsed = app.arrivedAt
+      ? formatElapsed(app.arrivedAt, app.deliveredAt)
+      : null;
+    const premisesSev = premisesSeverity(app.arrivedAt, app.deliveredAt);
+    const premisesStyle = premisesPillStyle(premisesSev);
+    const scanToDelivery = (app.scanStartedAt && app.deliveredAt)
+      ? formatElapsed(app.scanStartedAt, app.deliveredAt)
+      : null;
+
     return (
-      <div key={app.appointmentId} className="appointments-table-wrapper" style={{ 
-        marginBottom: '10px', 
+      <div key={app.appointmentId} className={`appointments-table-wrapper ${priorityRowClass}`} style={{
+        marginBottom: '10px',
         border: '1px solid #e2e8f0',
         borderRadius: '16px',
         overflow: 'hidden',
@@ -1318,6 +1359,22 @@ export default function AppointmentBoard() {
               <span style={{ fontSize: '9px', fontWeight: 900, color: '#475569', background: '#f1f5f9', padding: '1px 5px', borderRadius: '4px', textTransform: 'uppercase' }}>
                 {app.patientGender || 'U'} • {app.patientAge ? `${app.patientAge}Y` : '—'}
               </span>
+              {/* Priority chip — only show when above ROUTINE so the row stays clean.
+                  Heartbeat animation class draws the eye to STAT/URGENT cases. */}
+              {app.priority && app.priority !== 'ROUTINE' && (
+                <span
+                  className={app.priority === 'STAT' ? 'priority-chip-stat' : 'priority-chip-urgent'}
+                  style={{
+                    fontSize: '9px', fontWeight: 950, letterSpacing: '0.6px',
+                    padding: '2px 7px', borderRadius: '999px',
+                    color: app.priority === 'STAT' ? '#dc2626' : '#d97706',
+                    background: app.priority === 'STAT' ? '#fee2e2' : '#fef3c7',
+                    border: `1px solid ${app.priority === 'STAT' ? '#fecaca' : '#fde68a'}`,
+                    transformOrigin: 'center',
+                    display: 'inline-block',
+                  }}
+                >{app.priority}</span>
+              )}
             </div>
             <div style={{ fontSize: '9px', color: '#64748b', fontWeight: 700, marginTop: '3px', display: 'flex', alignItems: 'center', gap: '4px' }}>
               <span style={{ color: '#0f52ba', background: '#eff6ff', padding: '1.5px 5px', borderRadius: '4px', fontSize: '8.5px', fontWeight: 900 }}>
@@ -1326,6 +1383,35 @@ export default function AppointmentBoard() {
               <span>•</span>
               <span style={{ textTransform: 'uppercase' }}>{app.service}</span>
             </div>
+            {/* Turnaround-time pills: on-premises clock (live-ticks) and
+                scan→delivery (final, only after delivery). Hidden entirely
+                until ArrivedAt is set so pre-arrival rows stay quiet. */}
+            {onPremisesElapsed && (
+              <div style={{ display: 'flex', alignItems: 'center', gap: '5px', marginTop: '4px', flexWrap: 'wrap' }}>
+                <span title={app.deliveredAt ? 'Total time on premises' : 'On premises (live)'} style={{
+                  fontSize: '9px', fontWeight: 900, letterSpacing: '0.3px',
+                  padding: '2px 6px', borderRadius: '999px',
+                  color: premisesStyle.color, background: premisesStyle.bg,
+                  border: `1px solid ${premisesStyle.border}`,
+                  display: 'inline-flex', alignItems: 'center', gap: '3px',
+                }}>
+                  <span style={{ fontSize: '9px' }}>⏱</span>
+                  {onPremisesElapsed}
+                </span>
+                {scanToDelivery && (
+                  <span title="Scan start → delivered" style={{
+                    fontSize: '9px', fontWeight: 900, letterSpacing: '0.3px',
+                    padding: '2px 6px', borderRadius: '999px',
+                    color: '#0369a1', background: '#e0f2fe',
+                    border: '1px solid #bae6fd',
+                    display: 'inline-flex', alignItems: 'center', gap: '3px',
+                  }}>
+                    <span style={{ fontSize: '9px' }}>📋</span>
+                    {scanToDelivery}
+                  </span>
+                )}
+              </div>
+            )}
           </div>
 
           {/* Column 4: Referred By */}
@@ -1802,6 +1888,9 @@ export default function AppointmentBoard() {
                             else if (newBooking.patientId) {
                               try {
                                 await apiClient.put(`/patients/${newBooking.patientId}`, {
+                                  // Controller rejects with 400 "Identity mismatch" if the
+                                  // body's PatientId doesn't match the URL id.
+                                  patientId: newBooking.patientId,
                                   fullName: newPatient.name,
                                   mobile: newPatient.mobile,
                                   age: newPatient.age || '0',
@@ -1848,7 +1937,7 @@ export default function AppointmentBoard() {
 
                       <div className="modality-grid" style={{ gridTemplateColumns: 'repeat(5, 1fr)', gap: '6px', marginBottom: '10px' }}>
                         {MODALITIES.map(m => (
-                          <div key={m} className={`modality-card ${newBooking.modality === m ? 'active' : ''}`} 
+                          <div key={m} className={`modality-card ${newBooking.modality === m ? 'active' : ''}`}
                             style={{ padding: '6px 2px', minHeight: 'auto', display: 'flex', flexDirection: 'column', alignItems: 'center' }}
                             onClick={() => setNewBooking({...newBooking, modality: m, service: '', amount: '', referralCutValue: 0})}
                           >
@@ -1856,6 +1945,39 @@ export default function AppointmentBoard() {
                             <span className="modality-name" style={{ fontSize: '8px' }}>{m}</span>
                           </div>
                         ))}
+                      </div>
+
+                      {/* ── Priority — drives worklist sort (STAT > URGENT > ROUTINE) ── */}
+                      <label style={{ fontSize: '9px', fontWeight: 800, letterSpacing: '0.5px', color: '#888', marginBottom: '6px', display: 'block' }}>
+                        PRIORITY
+                      </label>
+                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '6px', marginBottom: '10px' }}>
+                        {[
+                          { id: 'STAT',    label: 'STAT',    desc: 'Immediate',  color: '#dc2626', soft: '#fee2e2' },
+                          { id: 'URGENT',  label: 'Urgent',  desc: 'Same day',   color: '#d97706', soft: '#fef3c7' },
+                          { id: 'ROUTINE', label: 'Routine', desc: 'Standard',   color: '#64748b', soft: '#f1f5f9' },
+                        ].map(opt => {
+                          const active = newBooking.priority === opt.id;
+                          return (
+                            <button
+                              key={opt.id}
+                              type="button"
+                              onClick={() => setNewBooking({ ...newBooking, priority: opt.id })}
+                              style={{
+                                padding: '8px 6px', borderRadius: '10px', cursor: 'pointer',
+                                border: `2px solid ${active ? opt.color : '#e5e7eb'}`,
+                                background: active ? opt.soft : 'white',
+                                color: active ? opt.color : '#475569',
+                                fontWeight: 800, fontSize: '11px',
+                                display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '1px',
+                                transition: 'all 0.12s',
+                              }}
+                            >
+                              <span style={{ letterSpacing: '0.4px' }}>{opt.label}</span>
+                              <span style={{ fontSize: '8px', fontWeight: 600, opacity: 0.8 }}>{opt.desc}</span>
+                            </button>
+                          );
+                        })}
                       </div>
 
                       <div className="form-group" style={{ marginTop: '6px', position: 'relative' }}>
