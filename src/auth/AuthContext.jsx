@@ -42,8 +42,24 @@ export function AuthProvider({ children }) {
   });
 
   const [currentUser, setCurrentUser] = useState(() => {
-    // Current session persistence
-    const stored = sessionStorage.getItem('1rad_user');
+    // Auth state lives in localStorage (one session per browser, survives
+    // tab restarts) — the server enforces idle-timeout revocation, so the
+    // marginal risk of a token living past close is bounded.
+    //
+    // Migration shim: if we find legacy data still parked in sessionStorage
+    // (where the old build kept it), promote it to localStorage on first
+    // read so users don't get silently signed out on the deploy.
+    if (typeof window !== 'undefined') {
+      const legacyUser = sessionStorage.getItem('1rad_user');
+      if (legacyUser && !localStorage.getItem('1rad_user')) {
+        localStorage.setItem('1rad_user', legacyUser);
+        const legacyToken = sessionStorage.getItem('1rad_token');
+        if (legacyToken) localStorage.setItem('1rad_token', legacyToken);
+        sessionStorage.removeItem('1rad_user');
+        sessionStorage.removeItem('1rad_token');
+      }
+    }
+    const stored = localStorage.getItem('1rad_user');
     return stored ? JSON.parse(stored) : null;
   });
 
@@ -94,7 +110,7 @@ export function AuthProvider({ children }) {
   };
 
   useEffect(() => {
-    if (activeCenterId && (sessionStorage.getItem('1rad_token') || sessionStorage.getItem('1rad_initiation_token'))) {
+    if (activeCenterId && (localStorage.getItem('1rad_token') || localStorage.getItem('1rad_initiation_token'))) {
       syncCustomRoles(activeCenterId);
     }
   }, [activeCenterId]);
@@ -114,7 +130,7 @@ export function AuthProvider({ children }) {
       }
 
       // 1. Update token for subsequent security-validated requests
-      sessionStorage.setItem('1rad_token', accessToken);
+      localStorage.setItem('1rad_token', accessToken);
       
       // 2. Lock the active Hub ID in storage to ensure persistence after reload
       localStorage.setItem('1rad_active_center_id', id);
@@ -130,7 +146,7 @@ export function AuthProvider({ children }) {
       };
       
       setCurrentUser(updatedUser);
-      sessionStorage.setItem('1rad_user', JSON.stringify(updatedUser));
+      localStorage.setItem('1rad_user', JSON.stringify(updatedUser));
       
       // Ensure roles are synced before redirecting/resolving
       await syncCustomRoles(id, accessToken);
@@ -256,7 +272,18 @@ export function AuthProvider({ children }) {
 
   const login = useCallback(async (identifier, password) => {
     try {
-      const resp = await apiClient.post('/auth/login', { identifier, password });
+      // Tag the login with device context so the server can enforce the
+      // "one session per category" rule and label the row on the Active
+      // Sessions page. The server also captures IP + UA from the request
+      // frame — these client-supplied fields cover what only the client
+      // knows (touch / screen size / installed-PWA signals).
+      const { getDeviceCategory, getDeviceName } = await import('../utils/deviceFingerprint');
+      const resp = await apiClient.post('/auth/login', {
+        identifier,
+        password,
+        deviceCategory: getDeviceCategory(),
+        deviceName: getDeviceName(),
+      });
       const data = resp.data || {};
       
       const isSuccess = data.success || data.Success;
@@ -275,7 +302,7 @@ export function AuthProvider({ children }) {
       const refreshToken = data.refreshToken || data.RefreshToken;
 
       // CRITICAL: Persist credentials BEFORE triggering state updates that rely on the token
-      sessionStorage.setItem('1rad_token', accessToken);
+      localStorage.setItem('1rad_token', accessToken);
       localStorage.setItem('1rad_refresh_token', refreshToken);
 
       const allRoles = handleUserRoles(userProfile);
@@ -310,7 +337,7 @@ export function AuthProvider({ children }) {
         await syncCustomRoles(defaultCenterId, accessToken);
       }
 
-      sessionStorage.setItem('1rad_user', JSON.stringify(user));
+      localStorage.setItem('1rad_user', JSON.stringify(user));
       
       return { success: true, user };
     } catch (error) {
@@ -326,9 +353,9 @@ export function AuthProvider({ children }) {
 
   const logout = useCallback(() => {
     setCurrentUser(null);
-    sessionStorage.removeItem('1rad_user');
-    sessionStorage.removeItem('1rad_token');
-    sessionStorage.removeItem('1rad_initiation_token');
+    localStorage.removeItem('1rad_user');
+    localStorage.removeItem('1rad_token');
+    localStorage.removeItem('1rad_initiation_token');
     localStorage.removeItem('1rad_refresh_token');
 
     // PHI hygiene: stop background downloads and purge the local DICOM cache on logout.
@@ -421,7 +448,7 @@ export function AuthProvider({ children }) {
       const { token: nextToken, userId, error: idError, errorCode: idCode } = identityRes.data;
       if (idError) return { success: false, error: idError, errorCode: idCode };
       
-      sessionStorage.setItem('1rad_initiation_token', nextToken);
+      localStorage.setItem('1rad_initiation_token', nextToken);
 
       // Stage 3: Infrastructure Deployment
       const roleNameMap = {
@@ -526,13 +553,13 @@ export function AuthProvider({ children }) {
           await syncCustomRoles(defaultCenter.id, token);
         }
 
-        sessionStorage.setItem('1rad_user', JSON.stringify(user));
-        sessionStorage.setItem('1rad_token', token);
+        localStorage.setItem('1rad_user', JSON.stringify(user));
+        localStorage.setItem('1rad_token', token);
         localStorage.setItem('1rad_refresh_token', refreshToken);
         return { success: true, isRegistered: true, user };
       } else {
         // Registration path - store initiation token
-        sessionStorage.setItem('1rad_initiation_token', token);
+        localStorage.setItem('1rad_initiation_token', token);
         return { success: true, isRegistered: false };
       }
     } catch (error) {

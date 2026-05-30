@@ -21,6 +21,7 @@ import ReportingPage from '../pages/ReportingPage';
 import DicomViewerPage from '../pages/DicomViewerPage';
 import SubscriptionPage from '../pages/SubscriptionPage';
 import PatientTimelinePage from '../pages/PatientTimelinePage';
+import ActiveSessionsPage from '../pages/ActiveSessionsPage';
 import DicomBridgePage from '../pages/DicomBridgePage';
 import ConfigurationPage from '../pages/ConfigurationPage';
 import OperationsBoard from '../pages/OperationsBoard';
@@ -114,6 +115,16 @@ export default function AppRouter() {
           element={
             <ProtectedRoute allowedRoles={['admindoctor', 'admin']}>
               <AdminBoard />
+            </ProtectedRoute>
+          }
+        />
+        {/* Settings → Active Sessions. Available to every authenticated user
+            regardless of role — they only see + revoke their OWN sessions. */}
+        <Route
+          path="/settings/sessions"
+          element={
+            <ProtectedRoute authOnly={true}>
+              <ActiveSessionsPage />
             </ProtectedRoute>
           }
         />

@@ -45,6 +45,23 @@ export default function LoginPage() {
   const location = useLocation();
   const from = location.state?.from?.pathname || '/';
 
+  // Banner reason ferried in via the URL by the apiClient 401 handler when
+  // the server-side session middleware revokes a token. We pull it from the
+  // raw URL (rather than location.state) so a fresh tab opening this URL
+  // also surfaces the banner.
+  const urlReason = typeof window !== 'undefined'
+    ? new URLSearchParams(window.location.search).get('reason')
+    : null;
+  const sessionBanner = urlReason === 'signed-out-elsewhere' ? {
+    title: 'Signed out on another device',
+    body: 'You were signed in on another ' + (typeof window !== 'undefined'
+      ? 'device of the same type' : 'device') +
+      '. The previous session here was ended. Sign in again to continue.',
+  } : urlReason === 'session-upgraded' ? {
+    title: 'Please sign in again',
+    body: 'We upgraded the session security on this server. Sign in once to refresh your access — you won\'t need to do this again.',
+  } : null;
+
   // If no AdminDoctor exists, redirect to register immediately
   // Temporarily disabled for development - you can always access login
   // if (!hasAdminDoctor) {
@@ -389,6 +406,25 @@ export default function LoginPage() {
             OTP / SMS Code
           </button>
         </div>
+
+        {sessionBanner && (
+          <div role="alert" style={{
+            background: '#fff7ed',
+            border: '1px solid #fed7aa',
+            borderLeft: '4px solid #ea580c',
+            color: '#7c2d12',
+            borderRadius: '10px',
+            padding: '12px 14px',
+            marginBottom: '16px',
+            fontSize: '13px',
+            lineHeight: 1.5,
+          }}>
+            <div style={{ fontWeight: 900, marginBottom: '4px', letterSpacing: '0.3px' }}>
+              {sessionBanner.title}
+            </div>
+            <div style={{ fontWeight: 500 }}>{sessionBanner.body}</div>
+          </div>
+        )}
 
         <form onSubmit={handleSubmit} className="auth-form">
           <div className="form-group">

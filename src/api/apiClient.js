@@ -23,7 +23,14 @@ apiClient.interceptors.request.use((config) => {
   const isPublicRoute = publicRoutes.some(route => config.url.includes(route));
 
   if (!isPublicRoute) {
-    const token = sessionStorage.getItem('1rad_token') || sessionStorage.getItem('1rad_initiation_token');
+    // Auth tokens migrated from sessionStorage to localStorage (one session
+    // per browser, survives tab restarts). We still read sessionStorage as a
+    // one-time fallback so an in-flight tab can finish its request after the
+    // deploy without an unsolicited 401.
+    const token = localStorage.getItem('1rad_token')
+      || localStorage.getItem('1rad_initiation_token')
+      || sessionStorage.getItem('1rad_token')
+      || sessionStorage.getItem('1rad_initiation_token');
     if (token) {
       config.headers.Authorization = `Bearer ${token}`;
     }
@@ -39,7 +46,27 @@ apiClient.interceptors.response.use(
   (error) => {
     if (error.response?.status === 401) {
       const isLogin = error.config.url.includes('/auth/login');
-      if (!isLogin) {
+      const code = error.response?.data?.code;
+      const isSessionRevoked = code === 'SESSION_REVOKED' || code === 'MISSING_SID';
+
+      if (isSessionRevoked && !isLogin) {
+        // Server has invalidated this session — either kicked by a new
+        // login on the same device category, or revoked from the Active
+        // Sessions UI, or stale-after-migration. Clear local state and
+        // ship the user to /login with a reason flag so the login page
+        // can surface a friendly banner.
+        try {
+          localStorage.removeItem('1rad_user');
+          localStorage.removeItem('1rad_token');
+          localStorage.removeItem('1rad_initiation_token');
+        } catch { /* storage may be unavailable in private modes */ }
+        // Avoid re-redirecting if we're already on /login (e.g. the user
+        // ran into a stale token before they finished re-signing in).
+        if (typeof window !== 'undefined' && !window.location.pathname.startsWith('/login')) {
+          const reason = code === 'MISSING_SID' ? 'session-upgraded' : 'signed-out-elsewhere';
+          window.location.replace(`/login?reason=${reason}`);
+        }
+      } else if (!isLogin) {
         console.warn('[API] Unauthorized. Session may have expired.');
       } else {
         console.warn('[API] Login failed: Invalid credentials.');
