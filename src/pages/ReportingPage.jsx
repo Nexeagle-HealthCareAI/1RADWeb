@@ -318,12 +318,25 @@ const ReportingPage = () => {
         }
       } catch (err) {
         const status = err?.response?.status;
+        // 404 from this endpoint actually comes back two ways:
+        //   1. The route is missing on the deployed API (rare; only mid-deploy).
+        //   2. The SaveReport handler caught a KeyNotFoundException because
+        //      the appointment id doesn't exist in the user's hospital
+        //      context (the body carries an explanatory error message).
+        // We can't distinguish those reliably from the status alone, but
+        // either way retrying is futile until the user does something
+        // (reload, navigate back, fix the URL). Disable cloud autosave for
+        // the session in both cases.
         if (status === 404) {
-          // Hard stop. Retrying a route that doesn't exist is pointless and
-          // visible in network logs makes engineers chase the wrong thing.
-          console.error('[AUTOSAVE] /reporting/save returned 404. Cloud autosave is now DISABLED for this session — local autosave is still active. Verify the API deploy and reload.');
-          setCloudAutosaveDisabledReason('endpoint-missing');
-          setSaveStatus('DIRTY'); // leave it dirty so a future manual save can still try
+          const serverMsg = err?.response?.data?.error
+            || 'The save endpoint returned 404 (no body).';
+          console.error(
+            '[AUTOSAVE] /reporting/save returned 404. Cloud autosave is now ' +
+            'DISABLED for this session — local autosave is still active. ' +
+            'Server said:', serverMsg
+          );
+          setCloudAutosaveDisabledReason(serverMsg);
+          setSaveStatus('DIRTY'); // a future manual save can still try
         } else {
           console.warn('[AUTOSAVE] Cloud sync failed, will retry later.', err?.message || err);
           autosaveFailuresRef.current = failures + 1;
@@ -4616,6 +4629,30 @@ const ReportingPage = () => {
                           ? <><span style={{ marginRight: '4px', color: '#16a34a' }}>✓</span>Saved at {lastSaved}</>
                           : <><span style={{ marginRight: '4px' }}>💤</span>Monitoring for changes</>}
                     </div>
+                    {cloudAutosaveDisabledReason && (
+                      <div style={{
+                        marginTop: '10px',
+                        background: '#fef2f2',
+                        border: '1px solid #fecaca',
+                        borderLeft: '3px solid #dc2626',
+                        color: '#7f1d1d',
+                        borderRadius: '8px',
+                        padding: '8px 10px',
+                        fontSize: '10px',
+                        fontWeight: 600,
+                        lineHeight: 1.5,
+                      }}>
+                        <div style={{ fontWeight: 900, letterSpacing: '0.5px', marginBottom: '3px' }}>
+                          ⚠ Cloud autosave paused
+                        </div>
+                        <div style={{ fontWeight: 500, color: '#991b1b' }}>
+                          {cloudAutosaveDisabledReason}
+                        </div>
+                        <div style={{ marginTop: '4px', fontWeight: 500, color: '#7f1d1d' }}>
+                          Your work is still being saved locally. Return to the worklist and reopen this appointment, or reload to retry.
+                        </div>
+                      </div>
+                    )}
                   </div>
 
                   {/* Template selector card */}
