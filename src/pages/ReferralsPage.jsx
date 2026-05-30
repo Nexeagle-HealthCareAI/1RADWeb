@@ -41,6 +41,15 @@ const SECTIONS_POOL = [
   { id: 'notes', name: 'Notes' }
 ];
 
+// Local-timezone-safe ISO date formatter. Using new Date().toISOString()
+// directly is wrong for India (or any non-UTC zone) because it shifts the
+// date back across midnight — e.g., 1 Jan 00:30 IST formats to 2024-12-31.
+const fmtLocalISO = (d) => {
+  const offset = d.getTimezoneOffset();
+  const local = new Date(d.getTime() - (offset * 60 * 1000));
+  return local.toISOString().split('T')[0];
+};
+
 const getOverviewDates = (timeframe) => {
   const now = new Date();
   let start = null;
@@ -49,17 +58,23 @@ const getOverviewDates = (timeframe) => {
   if (timeframe === 'DAY') {
     start = getISODate(0);
   } else if (timeframe === 'WEEK') {
-    start = getISODate(6); // 7 days including today
+    // CURRENT calendar week (Mon → Sun), not a rolling 7-day window.
+    // JS getDay(): Sun=0, Mon=1 ... Sat=6. Coerce Sun→7 so the offset to
+    // Monday is always positive.
+    const day = now.getDay() || 7;
+    const monday = new Date(now);
+    monday.setHours(0, 0, 0, 0);
+    monday.setDate(now.getDate() - (day - 1));
+    const sunday = new Date(monday);
+    sunday.setDate(monday.getDate() + 6);
+    start = fmtLocalISO(monday);
+    end = fmtLocalISO(sunday);
   } else if (timeframe === 'MONTH') {
     const d = new Date(now.getFullYear(), now.getMonth(), 1);
-    const offset = d.getTimezoneOffset();
-    const localDate = new Date(d.getTime() - (offset*60*1000));
-    start = localDate.toISOString().split('T')[0];
+    start = fmtLocalISO(d);
   } else if (timeframe === 'YEAR') {
     const d = new Date(now.getFullYear(), 0, 1);
-    const offset = d.getTimezoneOffset();
-    const localDate = new Date(d.getTime() - (offset*60*1000));
-    start = localDate.toISOString().split('T')[0];
+    start = fmtLocalISO(d);
   }
   return { start, end };
 };
@@ -79,8 +94,16 @@ export default function ReferralsPage() {
   const [referralPatientsSearch, setReferralPatientsSearch] = useState('');
   const [referralViewMode, setReferralViewMode] = useState('MATRIX'); // 'MATRIX' or 'LOG'
   const [matrixPeriod, setMatrixPeriod] = useState('WEEK'); // 'DAY', 'WEEK', 'MONTH', 'YEAR'
-  const [matrixDateStr, setMatrixDateStr] = useState(TODAY);
-  const [matrixWeekIndex, setMatrixWeekIndex] = useState(1);
+  // Lazy-init both so a tab kept open overnight still picks up today's
+  // actual date on mount (vs. the frozen module-load TODAY constant).
+  const [matrixDateStr, setMatrixDateStr] = useState(() => getISODate(0));
+  // Default to the week-of-month that contains today, not always Week 1.
+  // ceil(day/7) maps days 1-7 → 1, 8-14 → 2, 15-21 → 3, 22+ → 4. Clamp to
+  // 4 since the matrix only defines four week columns.
+  const [matrixWeekIndex, setMatrixWeekIndex] = useState(() => {
+    const day = new Date().getDate();
+    return Math.min(4, Math.ceil(day / 7));
+  });
   
   // Dashboard Filters
   const [selectedDateFilter, setSelectedDateFilter] = useState(TODAY);
@@ -113,12 +136,21 @@ export default function ReferralsPage() {
   const [newSectionName, setNewSectionName] = useState('');
 
   // Referral Intel State
-  const [referralRange, setReferralRange] = useState({ start: TODAY, end: TODAY });
+  // Lazy init with the CURRENT calendar week (Mon → Sun) so the date inputs
+  // reflect the active week the moment the page mounts. We reuse the same
+  // helper the Strategic Outlook timeframe selector uses so D / R / Week
+  // semantics never drift apart.
+  const [referralRange, setReferralRange] = useState(() => {
+    const { start, end } = getOverviewDates('WEEK');
+    return { start, end };
+  });
   const [isImporting, setIsImporting] = useState(false);
   const [importResult, setImportResult] = useState(null);
   const [patientMasterList, setPatientMasterList] = useState([]);
   const [loadingMaster, setLoadingMaster] = useState(false);
-  const [referralFilterMode, setReferralFilterMode] = useState('ALL'); // 'SINGLE', 'RANGE' or 'ALL'
+  // Default to RANGE — current week. The Case Ledger lands pre-filtered to
+  // this week's cases instead of forcing the user to pick a range manually.
+  const [referralFilterMode, setReferralFilterMode] = useState('RANGE'); // 'SINGLE', 'RANGE' or 'ALL'
   const [expandedReferrer, setExpandedReferrer] = useState(null);
   const [personnel, setPersonnel] = useState([]);
   const [referralIntelligence, setReferralIntelligence] = useState([]);
@@ -3507,10 +3539,23 @@ export default function ReferralsPage() {
              }}>
                 <div style={{ display: 'flex', gap: '4px' }}>
                   {['SINGLE', 'RANGE', 'ALL'].map(mode => (
-                    <button 
+                    <button
                       key={mode}
-                      onClick={() => setReferralFilterMode(mode)}
-                      style={{ 
+                      onClick={() => {
+                        setReferralFilterMode(mode);
+                        // SINGLE → today; RANGE → current calendar week.
+                        // Both refresh on click so an overnight-open tab
+                        // still lands on the correct window the moment the
+                        // user touches the toolbar.
+                        if (mode === 'SINGLE') {
+                          const today = getISODate(0);
+                          setReferralRange({ start: today, end: today });
+                        } else if (mode === 'RANGE') {
+                          const { start, end } = getOverviewDates('WEEK');
+                          setReferralRange({ start, end });
+                        }
+                      }}
+                      style={{
                         padding: '10px 18px', borderRadius: '12px', border: 'none', fontSize: '9px', fontWeight: 950,
                         background: referralFilterMode === mode ? '#1e293b' : 'transparent',
                         color: referralFilterMode === mode ? 'white' : '#64748b',
