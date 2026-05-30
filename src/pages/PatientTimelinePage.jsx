@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { useNavigate, useParams, useLocation } from 'react-router-dom';
-import DOMPurify from 'dompurify';
 import apiClient from '../api/apiClient';
+import SavedReportViewer from '../components/SavedReportViewer';
 
 const STATUS_COLOR = {
   reported:    { bg: '#10b981', light: '#f0fdf4', border: '#bbf7d0', text: '#065f46' },
@@ -27,9 +27,17 @@ export default function PatientTimelinePage() {
 
   const [history, setHistory] = useState([]);
   const [loading, setLoading] = useState(false);
-  const [expandedReport, setExpandedReport] = useState({});
+  // The timeline uses SavedReportViewer (a read-only viewer) instead of
+  // ReportPreviewModal. The preview modal's pagination relies on the editor's
+  // own .word-page chunks, which were sized for the editor's metrics at SAVE
+  // time. When those chunks don't match current page dimensions (different
+  // letterhead, margin, banner height) they overflow the modal's fixed-height
+  // A4 cards and the impression block visually overlaps the cut-off body.
+  // The viewer flattens those chunks into a single continuously-flowing sheet
+  // so the saved content always renders cleanly regardless of when it was
+  // saved.
+  const [previewAppointment, setPreviewAppointment] = useState(null);
   const [dicomState, setDicomState] = useState({});
-  const [copiedId, setCopiedId] = useState(null);
   const [filterStatus, setFilterStatus] = useState('ALL');
   const [filterModality, setFilterModality] = useState('ALL');
 
@@ -99,21 +107,18 @@ export default function PatientTimelinePage() {
 
   useEffect(() => { fetchHistory(); }, [fetchHistory]);
 
-  const handleViewReport = async (appt) => {
-    const id = appt.appointmentId;
-    if (expandedReport[id]) {
-      setExpandedReport(prev => { const n = { ...prev }; delete n[id]; return n; });
-      return;
-    }
-    setExpandedReport(prev => ({ ...prev, [id]: { loading: true, data: null, error: null } }));
-    try {
-      const res = await apiClient.get(`/Reporting/report/${id}`);
-      const body = res.data;
-      const r = (body?.success && body?.data) ? body.data : body;
-      setExpandedReport(prev => ({ ...prev, [id]: { loading: false, data: r, error: null } }));
-    } catch {
-      setExpandedReport(prev => ({ ...prev, [id]: { loading: false, data: null, error: 'Could not load report.' } }));
-    }
+  // SavedReportViewer fetches its own report + appointment + protocol given
+  // an appointmentId — we just hand it the appointment object so it has a
+  // banner fallback while the network calls resolve.
+  const handleViewReport = (appt) => {
+    setPreviewAppointment({
+      ...appt,
+      patientName: appt.patientName || patient?.patientName,
+    });
+  };
+
+  const closePreview = () => {
+    setPreviewAppointment(null);
   };
 
   const handleOpenDicom = async (appt) => {
@@ -138,13 +143,6 @@ export default function PatientTimelinePage() {
     } catch {
       setDicomState(prev => ({ ...prev, [id]: 'error' }));
     }
-  };
-
-  const copyText = (text, id) => {
-    navigator.clipboard.writeText(text).then(() => {
-      setCopiedId(id);
-      setTimeout(() => setCopiedId(null), 2000);
-    });
   };
 
   const modalities = [...new Set(history.map(h => h.modality).filter(Boolean))];
@@ -286,8 +284,6 @@ export default function PatientTimelinePage() {
             <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
               {filtered.map((appt, idx) => {
                 const sc = getStatus(appt.status);
-                const isExpanded = !!expandedReport[appt.appointmentId];
-                const rState = expandedReport[appt.appointmentId];
                 const hasReport = ['reported', 'reporting', 'completed'].includes(appt.status?.toLowerCase());
                 const dState = dicomState[appt.appointmentId];
 
@@ -300,7 +296,7 @@ export default function PatientTimelinePage() {
                     </div>
 
                     {/* Card */}
-                    <div style={{ flex: 1, background: 'white', borderRadius: '18px', border: `1px solid ${isExpanded ? '#bfdbfe' : '#e8edf2'}`, overflow: 'hidden', boxShadow: isExpanded ? '0 8px 24px rgba(15,82,186,0.08)' : '0 2px 10px rgba(0,0,0,0.04)', transition: 'all 0.2s' }}>
+                    <div style={{ flex: 1, background: 'white', borderRadius: '18px', border: '1px solid #e8edf2', overflow: 'hidden', boxShadow: '0 2px 10px rgba(0,0,0,0.04)', transition: 'all 0.2s' }}>
 
                       {/* Card Header */}
                       <div style={{ padding: '18px 22px' }}>
@@ -347,17 +343,14 @@ export default function PatientTimelinePage() {
                             disabled={!hasReport}
                             onClick={() => hasReport && handleViewReport(appt)}
                             style={{
-                              background: isExpanded ? '#eff6ff' : hasReport ? 'white' : '#f8fafc',
-                              border: `1.5px solid ${isExpanded ? '#0f52ba' : hasReport ? '#e2e8f0' : '#f1f5f9'}`,
-                              color: isExpanded ? '#0f52ba' : hasReport ? '#334155' : '#cbd5e1',
+                              background: hasReport ? 'white' : '#f8fafc',
+                              border: `1.5px solid ${hasReport ? '#e2e8f0' : '#f1f5f9'}`,
+                              color: hasReport ? '#334155' : '#cbd5e1',
                               borderRadius: '10px', padding: '8px 14px', fontSize: '11px', fontWeight: 900,
                               cursor: hasReport ? 'pointer' : 'default', display: 'flex', alignItems: 'center', gap: '6px', transition: 'all 0.2s'
                             }}
                           >
-                            {rState?.loading
-                              ? <span style={{ display: 'inline-block', width: '10px', height: '10px', border: '2px solid rgba(15,82,186,0.2)', borderTopColor: '#0f52ba', borderRadius: '50%', animation: 'spin 0.8s linear infinite' }} />
-                              : '📄'}
-                            {isExpanded ? 'HIDE REPORT' : hasReport ? 'VIEW REPORT' : 'NO REPORT'}
+                            📄 {hasReport ? 'VIEW REPORT' : 'NO REPORT'}
                           </button>
 
                           <button
@@ -382,85 +375,6 @@ export default function PatientTimelinePage() {
                         </div>
                       </div>
 
-                      {/* ── Expanded Report ── */}
-                      {isExpanded && (
-                        <div style={{ borderTop: '1px solid #e8edf2', background: '#f8fafc', padding: '20px 22px' }}>
-                          {rState?.loading ? (
-                            <div style={{ display: 'flex', alignItems: 'center', gap: '10px', color: '#64748b', fontSize: '12px', fontWeight: 700 }}>
-                              <div style={{ width: '16px', height: '16px', border: '2px solid rgba(15,82,186,0.2)', borderTopColor: '#0f52ba', borderRadius: '50%', animation: 'spin 0.8s linear infinite' }} />
-                              Loading report...
-                            </div>
-                          ) : rState?.error ? (
-                            <div style={{ color: '#ef4444', fontSize: '12px', fontWeight: 700 }}>⚠️ {rState.error}</div>
-                          ) : rState?.data ? (
-                            <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-
-                              {/* Findings */}
-                              {rState.data.findings && (() => {
-                                const text = (() => { try { return Object.values(JSON.parse(rState.data.findings)).join('\n\n'); } catch { return rState.data.findings || ''; } })();
-                                const html = (() => { try { return Object.values(JSON.parse(rState.data.findings)).join('<br/>'); } catch { return rState.data.findings || ''; } })();
-                                return (
-                                  <div>
-                                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
-                                      <div style={{ fontSize: '9px', fontWeight: 950, color: '#0f52ba', textTransform: 'uppercase', letterSpacing: '1.5px', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                                        <span style={{ width: '3px', height: '12px', background: '#0f52ba', borderRadius: '2px', display: 'inline-block' }} /> CLINICAL FINDINGS
-                                      </div>
-                                      <button
-                                        onClick={() => copyText(text, `findings-${appt.appointmentId}`)}
-                                        style={{ background: copiedId === `findings-${appt.appointmentId}` ? '#dcfce7' : '#eff6ff', border: `1px solid ${copiedId === `findings-${appt.appointmentId}` ? '#bbf7d0' : '#bfdbfe'}`, borderRadius: '8px', color: copiedId === `findings-${appt.appointmentId}` ? '#16a34a' : '#0f52ba', fontSize: '9px', fontWeight: 950, padding: '4px 10px', cursor: 'pointer', transition: 'all 0.2s' }}
-                                      >
-                                        {copiedId === `findings-${appt.appointmentId}` ? '✓ COPIED' : '⎘ COPY'}
-                                      </button>
-                                    </div>
-                                    <div
-                                      style={{ fontSize: '12px', color: '#1e293b', lineHeight: '1.7', background: 'white', borderRadius: '10px', padding: '14px 16px', border: '1px solid #e2e8f0', maxHeight: '200px', overflowY: 'auto' }}
-                                      dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(html) }}
-                                    />
-                                  </div>
-                                );
-                              })()}
-
-                              {/* Impression */}
-                              {rState.data.impression && (
-                                <div>
-                                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
-                                    <div style={{ fontSize: '9px', fontWeight: 950, color: '#10b981', textTransform: 'uppercase', letterSpacing: '1.5px', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                                      <span style={{ width: '3px', height: '12px', background: '#10b981', borderRadius: '2px', display: 'inline-block' }} /> IMPRESSION
-                                    </div>
-                                    <button
-                                      onClick={() => copyText(rState.data.impression, `imp-${appt.appointmentId}`)}
-                                      style={{ background: copiedId === `imp-${appt.appointmentId}` ? '#dcfce7' : '#f0fdf4', border: `1px solid ${copiedId === `imp-${appt.appointmentId}` ? '#bbf7d0' : '#bbf7d0'}`, borderRadius: '8px', color: copiedId === `imp-${appt.appointmentId}` ? '#16a34a' : '#16a34a', fontSize: '9px', fontWeight: 950, padding: '4px 10px', cursor: 'pointer', transition: 'all 0.2s' }}
-                                    >
-                                      {copiedId === `imp-${appt.appointmentId}` ? '✓ COPIED' : '⎘ COPY'}
-                                    </button>
-                                  </div>
-                                  <div style={{ fontSize: '13px', fontWeight: 900, color: '#0f172a', background: '#f0fdf4', borderRadius: '10px', padding: '14px 16px', border: '1px solid #bbf7d0', lineHeight: '1.6' }}>
-                                    {rState.data.impression}
-                                  </div>
-                                </div>
-                              )}
-
-                              {/* Advice */}
-                              {rState.data.advice && (
-                                <div style={{ fontSize: '11px', color: '#64748b', fontStyle: 'italic', paddingLeft: '12px', borderLeft: '3px solid #e2e8f0', lineHeight: '1.6' }}>
-                                  <strong style={{ fontStyle: 'normal', color: '#475569' }}>Advice:</strong> {rState.data.advice}
-                                </div>
-                              )}
-
-                              {/* Finalized stamp */}
-                              {rState.data.isFinalized && (
-                                <div style={{ display: 'flex' }}>
-                                  <span style={{ background: '#ecfdf5', color: '#10b981', border: '1px solid #a7f3d0', borderRadius: '99px', padding: '5px 14px', fontSize: '9px', fontWeight: 950, letterSpacing: '1px' }}>
-                                    ✓ FINALIZED & SIGNED
-                                  </span>
-                                </div>
-                              )}
-                            </div>
-                          ) : (
-                            <div style={{ color: '#94a3b8', fontSize: '12px', fontWeight: 700 }}>No report data available.</div>
-                          )}
-                        </div>
-                      )}
                     </div>
                   </div>
                 );
@@ -474,6 +388,17 @@ export default function PatientTimelinePage() {
         @keyframes spin { to { transform: rotate(360deg); } }
         select { -webkit-appearance: none; appearance: none; }
       `}</style>
+
+      {/* Read-only viewer for the saved report — letterhead + patient banner
+          + body + impression + advice, rendered as one continuously flowing
+          A4 sheet so old saves (where the editor's stored chunks no longer
+          match current page metrics) don't overlap. */}
+      <SavedReportViewer
+        isOpen={!!previewAppointment}
+        onClose={closePreview}
+        appointmentId={previewAppointment?.appointmentId}
+        patientData={previewAppointment}
+      />
     </div>
   );
 }

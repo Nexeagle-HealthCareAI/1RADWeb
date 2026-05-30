@@ -1,7 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { createPortal } from 'react-dom';
-import DOMPurify from 'dompurify';
 import apiClient from '../api/apiClient';
+import SavedReportViewer from './SavedReportViewer';
 
 /**
  * PatientTimeline — premium vertical timeline of a patient's appointment history.
@@ -18,8 +17,9 @@ const PatientTimeline = ({
   activeAppointmentId = null,
 }) => {
   const [isMobile, setIsMobile] = useState(typeof window !== 'undefined' && window.innerWidth < 768);
-  // Report popup state — null when closed, otherwise { studyId, study, loading, data, error }
-  const [reportModal, setReportModal] = useState(null);
+  // Selected study for the SavedReportViewer popup. The viewer does its own
+  // report/appointment/protocol fetching, so we just hand it the study row.
+  const [previewStudy, setPreviewStudy] = useState(null);
 
   useEffect(() => {
     const handleResize = () => setIsMobile(window.innerWidth < 768);
@@ -27,14 +27,7 @@ const PatientTimeline = ({
     return () => window.removeEventListener('resize', handleResize);
   }, []);
 
-  // Lock body scroll when modal is open
-  useEffect(() => {
-    if (reportModal) {
-      const prev = document.body.style.overflow;
-      document.body.style.overflow = 'hidden';
-      return () => { document.body.style.overflow = prev; };
-    }
-  }, [reportModal]);
+  // (SavedReportViewer owns its own body-scroll lock while open.)
 
   // ── Helpers ──────────────────────────────────────────────────────────────
   const getId = (s) => s.appointmentId || s.AppointmentId || s.id || s.Id;
@@ -50,22 +43,9 @@ const PatientTimeline = ({
   };
 
   // ── Open report popup ────────────────────────────────────────────────────
-  const handleOpenReport = async (study) => {
-    const studyId = getId(study);
-    // If report was pre-embedded by the timeline API, render immediately.
-    if (study.report) {
-      setReportModal({ studyId, study, loading: false, data: study.report, error: null });
-      return;
-    }
-    setReportModal({ studyId, study, loading: true, data: null, error: null });
-    try {
-      const res = await apiClient.get(`/Reporting/report/${studyId}`);
-      const body = res.data;
-      const r = (body?.success && body?.data) ? body.data : body;
-      setReportModal({ studyId, study, loading: false, data: r, error: null });
-    } catch (err) {
-      setReportModal({ studyId, study, loading: false, data: null, error: err.response?.data?.message || 'Could not load the historical report.' });
-    }
+  // The viewer fetches its own data — no eager pre-load needed here.
+  const handleOpenReport = (study) => {
+    setPreviewStudy(study);
   };
 
   // ── Loading state ────────────────────────────────────────────────────────
@@ -320,354 +300,19 @@ const PatientTimeline = ({
         </div>
       </div>
 
-      {/* Report preview modal */}
-      {reportModal && createPortal(
-        <ReportPreviewModal
-          modal={reportModal}
-          onClose={() => setReportModal(null)}
-        />,
-        document.body
-      )}
+      {/* Read-only viewer for historical reports — same letterhead + patient
+          banner + flowing body as the reporting workspace's preview.
+          Replaces the old inline modal whose body just dumped raw editor HTML
+          into a small card, causing .word-page-inner styles to overlap. */}
+      <SavedReportViewer
+        isOpen={!!previewStudy}
+        onClose={() => setPreviewStudy(null)}
+        appointmentId={previewStudy ? getId(previewStudy) : null}
+        patientData={previewStudy}
+      />
     </div>
   );
 };
 
-// ════════════════════════════════════════════════════════════════════════════
-// Report preview modal — portal-rendered for proper layering
-// ════════════════════════════════════════════════════════════════════════════
-function ReportPreviewModal({ modal, onClose }) {
-  const [copiedField, setCopiedField] = useState(null);
-  const { studyId, study, loading, data, error } = modal;
-
-  const date = new Date(study.appointmentDate || study.AppointmentDate || study.dateTime || study.DateTime);
-  const formattedDate = date.toLocaleDateString('en-US', { day: '2-digit', month: 'short', year: 'numeric' });
-  const modality = study.modality || study.Modality || 'STUDY';
-  const service  = study.procedureName || study.ProcedureName || study.service || study.Service || 'Diagnostic Study';
-  const patient  = study.patientName || study.PatientName || '';
-  const referrer = study.referredBy || study.ReferredBy || '';
-
-  const copy = (text, field) => {
-    if (!text) return;
-    navigator.clipboard.writeText(text);
-    setCopiedField(field);
-    setTimeout(() => setCopiedField(null), 1800);
-  };
-
-  // Parse findings (may be a JSON-encoded map or plain string)
-  const { plainFindings, htmlFindings } = (() => {
-    if (!data?.findings) return { plainFindings: '', htmlFindings: '' };
-    try {
-      const parsed = JSON.parse(data.findings);
-      if (typeof parsed === 'object' && parsed !== null) {
-        return {
-          plainFindings: Object.values(parsed).join('\n\n'),
-          htmlFindings:  Object.values(parsed).join('<br/><br/>'),
-        };
-      }
-    } catch { /* fallthrough */ }
-    return { plainFindings: data.findings, htmlFindings: data.findings };
-  })();
-
-  return (
-    <div
-      onClick={onClose}
-      style={{
-        position: 'fixed', inset: 0, zIndex: 9999,
-        background: 'rgba(10, 22, 40, 0.55)', backdropFilter: 'blur(6px)',
-        display: 'flex', alignItems: 'center', justifyContent: 'center',
-        padding: '24px',
-        animation: 'tlFadeIn 0.18s ease-out',
-      }}
-    >
-      <div
-        onClick={(e) => e.stopPropagation()}
-        style={{
-          width: '100%', maxWidth: '760px', maxHeight: '88vh',
-          background: 'white', borderRadius: '18px',
-          boxShadow: '0 24px 60px rgba(10, 22, 40, 0.35)',
-          display: 'flex', flexDirection: 'column',
-          overflow: 'hidden',
-          animation: 'tlPop 0.24s cubic-bezier(0.16, 1, 0.3, 1)',
-        }}
-      >
-        {/* Header — navy with gold accent */}
-        <div style={{
-          padding: '20px 26px',
-          background: 'linear-gradient(135deg, #0a1628 0%, #1e3a5f 100%)',
-          color: 'white', position: 'relative', overflow: 'hidden',
-        }}>
-          <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: '3px', background: 'linear-gradient(90deg, transparent, #d4a017 30%, #f5d76e 50%, #d4a017 70%, transparent)' }} />
-          <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: '14px' }}>
-            <div style={{ minWidth: 0 }}>
-              <div style={{ fontSize: '10px', fontWeight: 800, color: '#d4a017', letterSpacing: '1.5px', textTransform: 'uppercase', marginBottom: '6px' }}>
-                Historical Report · {formattedDate}
-              </div>
-              <h2 style={{ margin: 0, fontSize: '20px', fontWeight: 800, letterSpacing: '-0.3px' }}>{service}</h2>
-              <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap', marginTop: '8px', fontSize: '12px', color: 'rgba(255,255,255,0.7)' }}>
-                <span style={{ fontSize: '10px', fontWeight: 800, color: '#0a1628', background: '#d4a017', padding: '3px 9px', borderRadius: '5px', letterSpacing: '0.5px' }}>{modality.toUpperCase()}</span>
-                {patient && <span>👤 {patient}</span>}
-                {referrer && <span>↗ {referrer}</span>}
-              </div>
-            </div>
-            <button
-              type="button"
-              onClick={onClose}
-              aria-label="Close"
-              style={{ width: '34px', height: '34px', borderRadius: '50%', background: 'rgba(255,255,255,0.1)', border: '1px solid rgba(255,255,255,0.2)', color: 'white', cursor: 'pointer', fontSize: '16px', lineHeight: 1, flexShrink: 0 }}
-            >×</button>
-          </div>
-        </div>
-
-        {/* Body */}
-        <div style={{ flex: 1, overflowY: 'auto', padding: '22px 26px', background: '#fafbfc' }}>
-          {loading && (
-            <div style={{ padding: '40px 0', textAlign: 'center', color: '#64748b' }}>
-              <div style={{ width: '28px', height: '28px', border: '3px solid #e2e8f0', borderTopColor: '#0a1628', borderRadius: '50%', margin: '0 auto 12px', animation: 'tlspin 0.8s linear infinite' }} />
-              <div style={{ fontSize: '12px', fontWeight: 700 }}>Loading historical report…</div>
-            </div>
-          )}
-
-          {error && (
-            <div style={{ padding: '14px 16px', background: '#fef2f2', border: '1px solid #fecaca', borderRadius: '12px', color: '#b91c1c', fontSize: '12px', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '8px' }}>
-              ⚠️ {error}
-            </div>
-          )}
-
-          {!loading && !error && data && (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-              {/* Findings */}
-              {plainFindings && (
-                <div>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
-                    <div style={{ fontSize: '10px', fontWeight: 800, color: '#0f52ba', letterSpacing: '1.2px', textTransform: 'uppercase' }}>Findings</div>
-                    <button
-                      onClick={() => copy(plainFindings, 'findings')}
-                      style={{ fontSize: '10px', fontWeight: 700, padding: '4px 10px', borderRadius: '6px', border: '1px solid #bfdbfe', background: copiedField === 'findings' ? '#dcfce7' : '#eff6ff', color: copiedField === 'findings' ? '#15803d' : '#0f52ba', cursor: 'pointer' }}
-                    >{copiedField === 'findings' ? '✓ Copied' : '⎘ Copy'}</button>
-                  </div>
-                  <div
-                    style={{ background: 'white', border: '1px solid #e8edf2', borderRadius: '10px', padding: '14px 16px', fontSize: '13px', color: '#0a1628', lineHeight: 1.6 }}
-                    dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(htmlFindings) }}
-                  />
-                </div>
-              )}
-
-              {/* Impression */}
-              {data.impression && (
-                <div>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
-                    <div style={{ fontSize: '10px', fontWeight: 800, color: '#15803d', letterSpacing: '1.2px', textTransform: 'uppercase' }}>Impression</div>
-                    <button
-                      onClick={() => copy(data.impression, 'impression')}
-                      style={{ fontSize: '10px', fontWeight: 700, padding: '4px 10px', borderRadius: '6px', border: '1px solid #bbf7d0', background: copiedField === 'impression' ? '#dcfce7' : '#f0fdf4', color: '#15803d', cursor: 'pointer' }}
-                    >{copiedField === 'impression' ? '✓ Copied' : '⎘ Copy'}</button>
-                  </div>
-                  <div style={{ background: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: '10px', padding: '14px 16px', fontSize: '13px', color: '#0a1628', fontWeight: 600, lineHeight: 1.6 }}>
-                    {data.impression}
-                  </div>
-                </div>
-              )}
-
-              {/* Advice */}
-              {data.advice && (
-                <div>
-                  <div style={{ fontSize: '10px', fontWeight: 800, color: '#7c3aed', letterSpacing: '1.2px', textTransform: 'uppercase', marginBottom: '8px' }}>Advice</div>
-                  <div style={{ background: '#faf5ff', border: '1px solid #e9d5ff', borderRadius: '10px', padding: '12px 16px', fontSize: '12px', color: '#581c87', fontStyle: 'italic', lineHeight: 1.6 }}>
-                    {data.advice}
-                  </div>
-                </div>
-              )}
-
-              {/* Verified badge */}
-              {data.isFinalized && (
-                <div style={{ alignSelf: 'flex-start', display: 'inline-flex', alignItems: 'center', gap: '6px', padding: '6px 14px', borderRadius: '999px', background: '#dcfce7', border: '1px solid #bbf7d0', color: '#15803d', fontSize: '10px', fontWeight: 800, letterSpacing: '0.5px' }}>
-                  <span style={{ width: '6px', height: '6px', borderRadius: '50%', background: '#16a34a' }} />
-                  VERIFIED &amp; SIGNED REPORT
-                </div>
-              )}
-
-              {!plainFindings && !data.impression && !data.advice && (
-                <div style={{ padding: '24px', textAlign: 'center', color: '#94a3b8', fontSize: '12px', background: 'white', borderRadius: '12px', border: '1.5px dashed #e2e8f0' }}>
-                  This report has no narrative content yet.
-                </div>
-              )}
-            </div>
-          )}
-
-          {!loading && !error && !data && (
-            <div style={{ padding: '24px', textAlign: 'center', color: '#94a3b8', fontSize: '12px' }}>
-              No report data returned for this study.
-            </div>
-          )}
-        </div>
-
-        {/* Footer */}
-        <div style={{ padding: '14px 26px', borderTop: '1px solid #e8edf2', background: 'white', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
-          <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
-            {/* Download as .html file — admin can later print/share */}
-            <button
-              onClick={() => downloadReport({ study, data, plainFindings, htmlFindings, formattedDate, modality, service, patient, referrer })}
-              disabled={!data || (!plainFindings && !data?.impression)}
-              title={!data || (!plainFindings && !data?.impression) ? 'No content to download' : 'Download as HTML file'}
-              style={{
-                padding: '10px 16px', borderRadius: '10px',
-                border: '1px solid #e2e8f0', background: 'white',
-                color: (!data || (!plainFindings && !data?.impression)) ? '#cbd5e1' : '#0a1628',
-                fontSize: '12px', fontWeight: 700,
-                cursor: (!data || (!plainFindings && !data?.impression)) ? 'not-allowed' : 'pointer',
-                display: 'inline-flex', alignItems: 'center', gap: '6px',
-              }}
-            >📥 Download</button>
-
-            {/* Print / Save as PDF */}
-            <button
-              onClick={() => printReport({ study, data, plainFindings, htmlFindings, formattedDate, modality, service, patient, referrer })}
-              disabled={!data || (!plainFindings && !data?.impression)}
-              title={!data || (!plainFindings && !data?.impression) ? 'No content to print' : 'Print or save as PDF'}
-              style={{
-                padding: '10px 18px', borderRadius: '10px', border: 'none',
-                background: (!data || (!plainFindings && !data?.impression)) ? '#e2e8f0' : 'linear-gradient(135deg, #0a1628 0%, #1e3a5f 100%)',
-                color: (!data || (!plainFindings && !data?.impression)) ? '#94a3b8' : 'white',
-                fontSize: '12px', fontWeight: 800,
-                cursor: (!data || (!plainFindings && !data?.impression)) ? 'not-allowed' : 'pointer',
-                letterSpacing: '0.3px',
-                boxShadow: (!data || (!plainFindings && !data?.impression)) ? 'none' : '0 4px 12px rgba(10, 22, 40, 0.18)',
-                display: 'inline-flex', alignItems: 'center', gap: '6px',
-              }}
-            >🖨 Print / Save as PDF</button>
-          </div>
-
-          <button
-            onClick={onClose}
-            style={{ padding: '10px 22px', borderRadius: '10px', border: '1px solid #e2e8f0', background: 'white', color: '#0a1628', fontSize: '12px', fontWeight: 700, cursor: 'pointer' }}
-          >Close</button>
-        </div>
-      </div>
-
-      <style>{`
-        @keyframes tlFadeIn { from { opacity: 0; } to { opacity: 1; } }
-        @keyframes tlPop { from { opacity: 0; transform: scale(0.96) translateY(8px); } to { opacity: 1; transform: scale(1) translateY(0); } }
-        @keyframes tlspin { to { transform: rotate(360deg); } }
-      `}</style>
-    </div>
-  );
-}
-
-// ════════════════════════════════════════════════════════════════════════════
-// Print + Download helpers — share a single HTML template
-// ════════════════════════════════════════════════════════════════════════════
-function buildReportHtml({ study, data, plainFindings, htmlFindings, formattedDate, modality, service, patient, referrer }) {
-  const sanitisedFindings = DOMPurify.sanitize(htmlFindings || '');
-  const impressionHtml = data?.impression ? DOMPurify.sanitize(data.impression).replace(/\n/g, '<br/>') : '';
-  const adviceHtml = data?.advice ? DOMPurify.sanitize(data.advice).replace(/\n/g, '<br/>') : '';
-
-  return `<!doctype html>
-<html lang="en">
-<head>
-<meta charset="utf-8" />
-<title>Report · ${patient || service} · ${formattedDate}</title>
-<style>
-  * { box-sizing: border-box; }
-  body { margin: 0; padding: 36px 48px; font-family: 'Inter', -apple-system, 'Segoe UI', Roboto, sans-serif; color: #0a1628; background: white; }
-  .header { border-bottom: 2px solid #0a1628; padding-bottom: 18px; margin-bottom: 22px; }
-  .header .eyebrow { font-size: 10px; font-weight: 800; color: #d4a017; letter-spacing: 1.5px; text-transform: uppercase; margin-bottom: 6px; }
-  .header h1 { margin: 0 0 4px; font-size: 22px; font-weight: 800; letter-spacing: -0.3px; }
-  .header .meta { display: flex; gap: 18px; flex-wrap: wrap; font-size: 12px; color: #475569; margin-top: 10px; }
-  .header .meta span { display: inline-flex; align-items: center; gap: 6px; }
-  .header .meta strong { color: #0a1628; font-weight: 700; }
-  .section { margin-bottom: 22px; page-break-inside: avoid; }
-  .section h2 { font-size: 11px; font-weight: 800; letter-spacing: 1.2px; text-transform: uppercase; color: #0f52ba; margin: 0 0 10px; padding-bottom: 6px; border-bottom: 1px solid #e8edf2; }
-  .section.impression h2 { color: #15803d; }
-  .section.advice h2 { color: #7c3aed; }
-  .section .body { font-size: 13px; line-height: 1.6; color: #0a1628; }
-  .section.impression .body { background: #f0fdf4; border: 1px solid #bbf7d0; padding: 12px 14px; border-radius: 8px; font-weight: 600; }
-  .section.advice .body { background: #faf5ff; border: 1px solid #e9d5ff; padding: 12px 14px; border-radius: 8px; font-style: italic; color: #581c87; }
-  .verified { display: inline-block; margin-top: 10px; padding: 6px 14px; background: #dcfce7; border: 1px solid #bbf7d0; border-radius: 999px; color: #15803d; font-size: 10px; font-weight: 800; letter-spacing: 0.5px; }
-  .footer { margin-top: 30px; padding-top: 14px; border-top: 1px solid #e8edf2; font-size: 10px; color: #94a3b8; }
-  .toolbar { position: fixed; top: 16px; right: 16px; display: flex; gap: 8px; z-index: 1000; }
-  .toolbar button { padding: 9px 16px; border-radius: 8px; border: 1px solid #e2e8f0; background: white; color: #0a1628; font-size: 12px; font-weight: 700; cursor: pointer; box-shadow: 0 4px 12px rgba(15,23,42,0.1); }
-  .toolbar .primary { background: linear-gradient(135deg, #0a1628 0%, #1e3a5f 100%); color: white; border: none; }
-  @media print {
-    .toolbar { display: none; }
-    body { padding: 0; }
-  }
-</style>
-</head>
-<body>
-  <div class="toolbar">
-    <button onclick="window.close()">Close</button>
-    <button class="primary" onclick="window.print()">🖨 Print</button>
-  </div>
-
-  <div class="header">
-    <div class="eyebrow">${modality.toUpperCase()} · Historical Report</div>
-    <h1>${service}</h1>
-    <div class="meta">
-      ${patient ? `<span>👤 <strong>${patient}</strong></span>` : ''}
-      <span>📅 <strong>${formattedDate}</strong></span>
-      ${referrer ? `<span>↗ Referred by <strong>${referrer}</strong></span>` : ''}
-    </div>
-  </div>
-
-  ${sanitisedFindings ? `
-  <div class="section findings">
-    <h2>Findings</h2>
-    <div class="body">${sanitisedFindings}</div>
-  </div>` : ''}
-
-  ${impressionHtml ? `
-  <div class="section impression">
-    <h2>Impression</h2>
-    <div class="body">${impressionHtml}</div>
-  </div>` : ''}
-
-  ${adviceHtml ? `
-  <div class="section advice">
-    <h2>Advice</h2>
-    <div class="body">${adviceHtml}</div>
-  </div>` : ''}
-
-  ${data?.isFinalized ? `<div class="verified">✓ VERIFIED &amp; SIGNED REPORT</div>` : ''}
-
-  <div class="footer">
-    Generated from 1Rad patient timeline · ${new Date().toLocaleString('en-IN', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
-  </div>
-
-  <script>
-    // Auto-trigger print dialog when opened in a popup window (helpful for "Save as PDF").
-    if (window.opener && window.name === 'rep-print') {
-      window.addEventListener('load', () => setTimeout(() => window.print(), 250));
-    }
-  </script>
-</body>
-</html>`;
-}
-
-function printReport(args) {
-  const html = buildReportHtml(args);
-  const w = window.open('', 'rep-print', 'width=900,height=900');
-  if (!w) {
-    alert('Pop-up was blocked. Please allow pop-ups for this site and try again.');
-    return;
-  }
-  w.document.write(html);
-  w.document.close();
-  w.focus();
-}
-
-function downloadReport(args) {
-  const html = buildReportHtml(args);
-  const blob = new Blob([html], { type: 'text/html;charset=utf-8' });
-  const url  = URL.createObjectURL(blob);
-  const safeName = (args.patient || 'patient').replace(/[^a-z0-9]+/gi, '_').toLowerCase();
-  const safeDate = args.formattedDate.replace(/[^a-z0-9]+/gi, '-');
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = `report-${safeName}-${safeDate}.html`;
-  document.body.appendChild(a);
-  a.click();
-  document.body.removeChild(a);
-  setTimeout(() => URL.revokeObjectURL(url), 1000);
-}
 
 export default PatientTimeline;
