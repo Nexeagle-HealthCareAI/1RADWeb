@@ -13,6 +13,7 @@
 import { useEffect, useState, useCallback } from 'react';
 import useAuth from '../auth/useAuth';
 import { hasPin, getPinInfo, verifyPin, removePin } from '../auth/pinAuth';
+import SettingsSubPageHeader from '../components/SettingsSubPageHeader';
 import '../styles/global.css';
 
 function formatRelative(ms) {
@@ -155,17 +156,11 @@ export default function SecuritySettingsPage() {
   if (!userId) return null;
 
   return (
-    <div style={{ padding: '24px 28px', maxWidth: '720px', fontFamily: '"Segoe UI", system-ui, sans-serif' }}>
-      <div style={{ marginBottom: '20px' }}>
-        <div style={{ fontSize: '11px', fontWeight: 800, color: '#94a3b8', letterSpacing: '1.5px', textTransform: 'uppercase' }}>
-          Settings
-        </div>
-        <h1 style={{ fontSize: '22px', fontWeight: 800, color: '#0f172a', margin: '4px 0 6px' }}>Security &amp; quick-unlock PIN</h1>
-        <p style={{ fontSize: '13px', color: '#64748b', lineHeight: 1.5, margin: 0 }}>
-          A PIN lets you sign back into 1Rad on <strong>this device</strong> without your password while you're offline or on a flaky connection.
-          The PIN is stored only on this device and never transmitted to the server.
-        </p>
-      </div>
+    <div style={{ padding: '24px 28px', maxWidth: '720px', margin: '0 auto', fontFamily: '"Segoe UI", system-ui, sans-serif' }}>
+      <SettingsSubPageHeader
+        title="Security & quick-unlock PIN"
+        description={<>A PIN lets you sign back into 1Rad on <strong>this device</strong> without your password while you're offline or on a flaky connection. The PIN is stored only on this device and never transmitted to the server.</>}
+      />
 
       <div style={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '20px 22px', boxShadow: '0 1px 3px rgba(15,23,42,0.04)' }}>
 

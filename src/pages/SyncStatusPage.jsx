@@ -12,6 +12,7 @@ import useOffline from '../hooks/useOffline';
 import { syncNow, getSyncDebugInfo } from '../sync/SyncEngine';
 import { listAll as listOutbox, purgePoisoned, remove as removeOutbox } from '../db/repos/outboxRepo';
 import { tables } from '../db/dexie';
+import SettingsSubPageHeader from '../components/SettingsSubPageHeader';
 import '../styles/global.css';
 
 function relative(iso) {
@@ -115,24 +116,19 @@ export default function SyncStatusPage() {
   if (!currentUser) return null;
 
   return (
-    <div style={{ padding: '24px 28px', maxWidth: '960px', fontFamily: '"Segoe UI", system-ui, sans-serif' }}>
-      <div style={{ marginBottom: '20px', display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between' }}>
-        <div>
-          <div style={{ fontSize: '11px', fontWeight: 800, color: '#94a3b8', letterSpacing: '1.5px', textTransform: 'uppercase' }}>
-            Settings
-          </div>
-          <h1 style={{ fontSize: '22px', fontWeight: 800, color: '#0f172a', margin: '4px 0 6px' }}>Sync &amp; offline queue</h1>
-          <p style={{ fontSize: '13px', color: '#64748b', lineHeight: 1.5, margin: 0, maxWidth: '640px' }}>
-            What the sync engine has cached locally, what's still waiting to be pushed to the server, and a tail of recent sync activity. Useful for diagnosing flaky-network issues.
-          </p>
-        </div>
-        <button
-          onMouseDown={e => { e.preventDefault(); handleSyncNow(); }}
-          disabled={busy || !isOnline}
-          style={primaryBtn}
-          title={!isOnline ? 'You are offline' : 'Pull latest deltas + push outbox'}
-        >{busy ? 'Syncing…' : 'Sync now'}</button>
-      </div>
+    <div style={{ padding: '24px 28px', maxWidth: '960px', margin: '0 auto', fontFamily: '"Segoe UI", system-ui, sans-serif' }}>
+      <SettingsSubPageHeader
+        title="Sync & offline queue"
+        description="What the sync engine has cached locally, what's still waiting to be pushed to the server, and a tail of recent sync activity. Useful for diagnosing flaky-network issues."
+        rightAction={
+          <button
+            onMouseDown={e => { e.preventDefault(); handleSyncNow(); }}
+            disabled={busy || !isOnline}
+            style={primaryBtn}
+            title={!isOnline ? 'You are offline' : 'Pull latest deltas + push outbox'}
+          >{busy ? 'Syncing…' : 'Sync now'}</button>
+        }
+      />
 
       {/* Headline status card */}
       <div style={{ background: toneBg, border: `1px solid ${toneColor}33`, borderLeft: `4px solid ${toneColor}`, borderRadius: '10px', padding: '14px 18px', marginBottom: '18px' }}>

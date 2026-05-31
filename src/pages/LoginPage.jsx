@@ -5,6 +5,7 @@ import PinSetupModal from '../auth/PinSetupModal';
 import { ROLE_HOME, ROLE_LABELS, NAV_ITEMS } from '../data/roles';
 import RadiologyWorkflowBG from '../components/RadiologyWorkflowBG';
 import TacticalWorkflow from '../components/TacticalWorkflow';
+import AuthErrorModal from '../components/AuthErrorModal';
 import '../styles/global.css';
 
 const INDUSTRY_QUOTES = [
@@ -98,6 +99,10 @@ export default function LoginPage() {
   const [successMessage, setSuccessMessage] = useState(null);
   const [quoteIndex, setQuoteIndex] = useState(0);
   const [quoteFading, setQuoteFading] = useState(false);
+  // Premium error modal — surfaces login failures (wrong credentials,
+  // unknown user, inactive account, OTP rejection) in a high-attention
+  // overlay rather than an easy-to-miss inline band.
+  const [errorModal, setErrorModal] = useState({ open: false });
 
   useEffect(() => {
     const interval = setInterval(() => {
@@ -252,6 +257,50 @@ export default function LoginPage() {
     return from;
   };
 
+  // Build modal config from an auth failure. Different error codes map to
+  // different copy + CTAs so the user gets a real next step instead of a
+  // generic "something went wrong".
+  const buildErrorModal = (result, { context }) => {
+    const code = result.errorCode;
+    if (code === 'USER_NOT_FOUND') {
+      return {
+        open: true,
+        variant: 'info',
+        title: 'No account for this identity',
+        message: result.error || 'We could not find an account with this email or mobile.',
+        identifiers: { email: identifier.includes('@') ? identifier : undefined, mobile: identifier.includes('@') ? undefined : identifier },
+        primaryAction: { label: 'Register a new centre  →', onClick: () => navigate('/register', { state: { identifier, isFromLogin: true } }) },
+        tertiaryAction: { label: 'Try a different email / mobile', onClick: () => setErrorModal({ open: false }) },
+      };
+    }
+    if (code === 'ACCOUNT_INACTIVE') {
+      return {
+        open: true,
+        variant: 'warn',
+        title: 'Account awaiting verification',
+        message: `Status: ${result.accountStatus?.toUpperCase() || 'PENDING'}. Please wait for an administrator to verify your account, or contact support if this is taking too long.`,
+        primaryAction: { label: 'Got it', onClick: () => setErrorModal({ open: false }) },
+        tertiaryAction: { label: 'Use a different account', onClick: () => setErrorModal({ open: false }) },
+      };
+    }
+    // Generic credential failure / OTP failure / network failure.
+    const isOtp = context === 'otp';
+    return {
+      open: true,
+      variant: 'error',
+      title: isOtp ? 'Verification failed' : 'Sign-in failed',
+      message: result.error || (isOtp
+        ? 'The code you entered did not match. Request a fresh code and try again.'
+        : 'Wrong email/mobile or password. Please check and try again.'),
+      primaryAction: { label: 'Try again', onClick: () => setErrorModal({ open: false }) },
+      secondaryAction: !isOtp ? {
+        label: 'Forgot password?',
+        onClick: () => navigate('/forgot-password', { state: { identifier } }),
+      } : undefined,
+      tertiaryAction: { label: 'Register as a new centre', onClick: () => navigate('/register', { state: { identifier, isFromLogin: true } }) },
+    };
+  };
+
   const handleLogin = async (id, pwd) => {
     setLoading(true);
     setErrorCode(null);
@@ -288,6 +337,7 @@ export default function LoginPage() {
       setError(result.error);
       setErrorCode(result.errorCode);
       setAccountStatus(result.accountStatus);
+      setErrorModal(buildErrorModal(result, { context: 'password' }));
     }
   };
 
@@ -302,6 +352,7 @@ export default function LoginPage() {
       startCountdown();
     } else {
       setError(result.error);
+      setErrorModal(buildErrorModal(result, { context: 'otp' }));
     }
   };
 
@@ -319,6 +370,7 @@ export default function LoginPage() {
       }
     } else {
       setError(result.error);
+      setErrorModal(buildErrorModal(result, { context: 'otp' }));
     }
   };
 
@@ -793,6 +845,11 @@ export default function LoginPage() {
            </p>
         </div>
       </div>
+
+      <AuthErrorModal
+        {...errorModal}
+        onClose={() => setErrorModal({ open: false })}
+      />
 
       <PinSetupModal
         open={pinSetupOpen}

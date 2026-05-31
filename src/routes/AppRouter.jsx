@@ -24,6 +24,7 @@ import PatientTimelinePage from '../pages/PatientTimelinePage';
 import ActiveSessionsPage from '../pages/ActiveSessionsPage';
 import SecuritySettingsPage from '../pages/SecuritySettingsPage';
 import SyncStatusPage from '../pages/SyncStatusPage';
+import SettingsHomePage from '../pages/SettingsHomePage';
 import DicomBridgePage from '../pages/DicomBridgePage';
 import ConfigurationPage from '../pages/ConfigurationPage';
 import OperationsBoard from '../pages/OperationsBoard';
@@ -117,6 +118,17 @@ export default function AppRouter() {
           element={
             <ProtectedRoute allowedRoles={['admindoctor', 'admin']}>
               <AdminBoard />
+            </ProtectedRoute>
+          }
+        />
+        {/* Settings landing page. Lists Security / Sync / Sessions as
+            tiles so the user picks visually instead of having to memorise
+            sub-routes. Authenticated only — every role can see it. */}
+        <Route
+          path="/settings"
+          element={
+            <ProtectedRoute authOnly={true}>
+              <SettingsHomePage />
             </ProtectedRoute>
           }
         />

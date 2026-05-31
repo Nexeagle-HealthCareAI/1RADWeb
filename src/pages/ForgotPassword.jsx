@@ -19,6 +19,24 @@ export default function ForgotPassword() {
   const [countdown, setCountdown] = useState(0);
   const [timerId, setTimerId] = useState(null);
 
+  // Detect whether the identifier the user typed is an email or a mobile.
+  // We use this to render the step-2 confirmation ("code sent to your
+  // email" vs "to your mobile") without trusting the server response,
+  // since /auth/forgot-password is intentionally vague to prevent
+  // account enumeration.
+  const isEmailIdentifier = identifier.includes('@');
+  const maskedDestination = (() => {
+    if (!identifier) return '';
+    if (isEmailIdentifier) {
+      const [name, domain] = identifier.split('@');
+      const masked = name.length <= 2 ? name[0] + '*' : name[0] + '***' + name.slice(-1);
+      return `${masked}@${domain}`;
+    }
+    const digits = identifier.replace(/\D/g, '');
+    if (digits.length < 4) return digits;
+    return digits.slice(0, 2) + '****' + digits.slice(-2);
+  })();
+
   const startCountdown = () => {
     if (timerId) clearInterval(timerId);
     setCountdown(30);
@@ -153,7 +171,11 @@ export default function ForgotPassword() {
                 required
               />
               <p style={{ fontSize: '10px', color: 'rgba(255,255,255,0.4)', marginTop: '12px', textAlign: 'center' }}>
-                A TEMPORARY CODE HAS BEEN BEAMED TO YOUR DEVICE.{' '}
+                CODE SENT TO YOUR {isEmailIdentifier ? 'EMAIL' : 'MOBILE'}
+                {maskedDestination && (
+                  <> &mdash; <span style={{ color: '#00f2fe', fontWeight: 800 }}>{maskedDestination}</span></>
+                )}
+                .{' '}
                 {countdown > 0 ? (
                   <span style={{ color: '#00f2fe', fontWeight: 800 }}>RESEND IN 0:{countdown < 10 ? `0${countdown}` : countdown}</span>
                 ) : (

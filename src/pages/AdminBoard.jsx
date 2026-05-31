@@ -102,7 +102,9 @@ export default function AdminBoard() {
   const [isDeployingChain, setIsDeployingChain] = useState(false);
   const [newChainData, setNewChainData] = useState({ chainName: '', hospitalName: '', hospitalAddress: '' });
   const [showChainSelector, setShowChainSelector] = useState(false);
-  const [isSwitcherOpen, setIsSwitcherOpen] = useState(false);
+  // The on-page hospital switcher was removed in favour of the global one
+  // in TopNav (visible on every page). isSwitchingNode is still used by
+  // handleSwitchNode, which fires after a new hospital is deployed.
   const [isSwitchingNode, setIsSwitchingNode] = useState(false);
   const [userRegStep, setUserRegStep] = useState(1);
   const [editUser, setEditUser] = useState(null);
@@ -4850,116 +4852,98 @@ return (
           </div>
         </div>
 
-        <div style={{ display: 'flex', flexDirection: isMobile ? 'column' : 'row', gap: '15px', width: isMobile ? '100%' : 'auto' }}>
-          {/* Institutional Hub Switcher */}
-          <div className="center-switcher-hud" style={{ position: 'relative', width: isMobile ? '100%' : 'auto' }}>
-            <button 
-              id="center-switcher-btn"
-              className="command-core-btn"
-              onClick={() => setIsSwitcherOpen(!isSwitcherOpen)}
-              style={{ 
-                display: 'flex', alignItems: 'center', gap: '12px', padding: '10px 18px', 
-                borderRadius: '14px', background: 'white', border: '1px solid #e2e8f0', 
-                cursor: 'pointer', transition: 'all 0.2s', boxShadow: '0 4px 15px rgba(0,0,0,0.03)',
-                width: '100%'
-              }}
-            >
-              <div className={isSwitchingNode ? "pulse-loader-mini" : "tactical-node-active"} style={{ width: '10px', height: '10px', borderRadius: '50%', background: isSwitchingNode ? '#f39c12' : '#2ecc71', boxShadow: isSwitchingNode ? '0 0 10px rgba(243, 156, 18, 0.4)' : '0 0 10px rgba(46, 204, 113, 0.4)' }}></div>
-              <div className="hub-identity" style={{ textAlign: 'left', overflow: 'hidden', flex: 1 }}>
-                <div className="hub-label" style={{ fontSize: '7px', fontWeight: 950, color: isSwitchingNode ? '#f39c12' : '#aaa', letterSpacing: '1px', textTransform: 'uppercase' }}>{isSwitchingNode ? 'Switching...' : 'Active Center'}</div>
-                <div className="hub-name" style={{ fontSize: '13px', fontWeight: 950, color: '#1a1a2e', whiteSpace: 'nowrap', textOverflow: 'ellipsis', overflow: isTestMode ? 'visible' : 'hidden', maxWidth: isMobile ? '100%' : '350px', opacity: isSwitchingNode ? 0.5 : 1 }}>{activeCenter?.name?.toUpperCase() || 'SELECT CENTER...'}</div>
-              </div>
-              <div style={{ fontSize: '10px', color: '#888', transition: 'transform 0.3s', transform: isSwitcherOpen ? 'rotate(180deg)' : 'rotate(0deg)' }}>
-                  ▼
-              </div>
-            </button>
-
-            {isSwitcherOpen && (
-              <>
-                <div 
-                  style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, zIndex: 1050, background: 'transparent' }} 
-                  onClick={() => setIsSwitcherOpen(false)}
-                />
-                <div 
-                  id="center-dropdown-menu"
-                  className="tactical-hub-dropdown"
-                  style={{ 
-                    position: 'absolute', top: '100%', left: 0, marginTop: '12px', width: isMobile ? '100%' : '350px', 
-                    zIndex: 1100, background: 'white', borderRadius: '18px', border: '1px solid #e2e8f0', 
-                    boxShadow: '0 15px 50px rgba(0,0,0,0.15)', padding: '15px', boxSizing: 'border-box'
-                  }}
-                >
-                <div style={{ padding: '0 5px 12px', fontSize: '10px', fontWeight: 950, color: '#0f52ba', textTransform: 'uppercase', letterSpacing: '2px', borderBottom: '1px solid #f1f5f9', marginBottom: '12px', display: 'flex', justifyContent: 'space-between' }}>
-                  <span>AUTHORIZED CLINICAL NODES</span>
-                  <span style={{ opacity: 0.5 }}>ACTIVE LIST</span>
-                </div>
-                
-                 <div style={{ maxHeight: '300px', overflowY: 'auto', paddingRight: '5px' }}>
-                   {centers.length > 0 ? (
-                     centers.map(center => (
-                       <button
-                         key={center.id}
-                         onClick={async () => { 
-                           const normalizedActiveId = String(activeCenter?.id || '').toLowerCase();
-                           const normalizedTargetId = String(center.id).toLowerCase();
-                           
-                           if (normalizedActiveId === normalizedTargetId || isSwitchingNode) return;
-                           setIsSwitchingNode(true);
-                           const result = await switchCenter(center.id); 
-                           setIsSwitchingNode(false);
-                           setIsSwitcherOpen(false); 
-                           if (result?.success && result.roles) {
-                             window.location.reload(); 
-                           }
-                         }}
-                         className={`hub-option ${activeCenter?.id === center.id ? 'active-hub' : ''}`}
-                         style={{ 
-                           width: '100%', textAlign: 'left', padding: '15px', borderRadius: '14px', 
-                           display: 'flex', alignItems: 'center', gap: '15px', cursor: 'pointer', 
-                           background: activeCenter?.id === center.id ? '#f0f7ff' : 'transparent',
-                           border: activeCenter?.id === center.id ? '1px solid #dbeafe' : '1px solid transparent', 
-                           transition: 'all 0.2s', marginBottom: '6px'
-                         }}
-                       >
-
-                         <div style={{ 
-                           width: '10px', height: '10px', borderRadius: '50%', 
-                           background: activeCenter?.id === center.id ? '#2ecc71' : 'rgba(0,0,0,0.1)',
-                           boxShadow: activeCenter?.id === center.id ? '0 0 10px rgba(46, 204, 113, 0.3)' : 'none'
-                         }}></div>
-                         <div style={{ flex: 1, overflow: 'hidden' }}>
-                           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                             <span style={{ fontSize: '12px', fontWeight: 900, color: '#1e293b', whiteSpace: 'nowrap', textOverflow: 'ellipsis', overflow: 'hidden' }}>{center.name || 'Unnamed Center'}</span>
-                             {activeCenter?.id === center.id && <span style={{ fontSize: '9px', fontWeight: 950, color: '#2ecc71', letterSpacing: '1px' }}>ACTIVE</span>}
-                           </div>
-                         </div>
-                       </button>
-                     ))
-                   ) : (
-                     <div style={{ padding: '40px 20px', textAlign: 'center' }}>
-                        <div style={{ fontSize: '32px', marginBottom: '15px' }}>🛰️</div>
-                        <div style={{ fontSize: '11px', fontWeight: 950, color: '#64748b', letterSpacing: '1px' }}>No Authorized Nodes</div>
-                     </div>
-                   )}
-                 </div>
-               </div>
-              </>
-            )}
-          </div>
-
-          <button 
+        {/* Right-aligned action area. The hospital switcher used to live
+            here, but it's now in the global TopNav so it's reachable from
+            every page. All that remains is the premium "Register new
+            chain" CTA. */}
+        <div style={{
+          display: 'flex',
+          justifyContent: isMobile ? 'stretch' : 'flex-end',
+          width: isMobile ? '100%' : 'auto',
+        }}>
+          <button
+            type="button"
             onClick={() => setIsChainDrawerOpen(true)}
-            style={{ 
-              padding: '12px 20px', borderRadius: '16px', background: 'linear-gradient(135deg, #0f52ba 0%, #061a40 100%)', 
-              border: 'none', color: 'white', display: 'flex', gap: '8px', 
-              alignItems: 'center', justifyContent: 'center', cursor: 'pointer', transition: 'all 0.2s',
-              fontSize: '10px', fontWeight: 950, letterSpacing: '1px',
-              boxShadow: '0 8px 25px rgba(15, 82, 186, 0.25)',
+            className="register-chain-cta"
+            style={{
+              position: 'relative',
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: '12px',
+              padding: '13px 22px 13px 18px',
+              borderRadius: '14px',
+              border: '1px solid rgba(255,255,255,0.15)',
+              background:
+                'linear-gradient(135deg, #1e40af 0%, #1d4ed8 45%, #0b1a3a 100%)',
+              color: 'white',
+              fontSize: '12px',
+              fontWeight: 800,
+              letterSpacing: '0.6px',
+              cursor: 'pointer',
+              boxShadow:
+                '0 14px 32px -10px rgba(29, 78, 216, 0.55), ' +
+                '0 0 0 1px rgba(255,255,255,0.04), ' +
+                'inset 0 1px 0 rgba(255,255,255,0.18)',
+              fontFamily: 'inherit',
+              transition: 'transform 0.18s ease, box-shadow 0.18s ease',
               width: isMobile ? '100%' : 'auto',
-              whiteSpace: 'nowrap'
+              justifyContent: 'center',
+              whiteSpace: 'nowrap',
+            }}
+            onMouseEnter={(e) => {
+              e.currentTarget.style.transform = 'translateY(-1px)';
+              e.currentTarget.style.boxShadow =
+                '0 20px 40px -10px rgba(29, 78, 216, 0.65), ' +
+                '0 0 0 1px rgba(255,255,255,0.05), ' +
+                'inset 0 1px 0 rgba(255,255,255,0.22)';
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.transform = 'translateY(0)';
+              e.currentTarget.style.boxShadow =
+                '0 14px 32px -10px rgba(29, 78, 216, 0.55), ' +
+                '0 0 0 1px rgba(255,255,255,0.04), ' +
+                'inset 0 1px 0 rgba(255,255,255,0.18)';
             }}
           >
-            <span style={{ fontSize: '14px' }}>📡</span> REGISTER NEW CHAIN
+            <span
+              aria-hidden="true"
+              style={{
+                width: '28px',
+                height: '28px',
+                borderRadius: '9px',
+                background: 'linear-gradient(135deg, rgba(255,255,255,0.22), rgba(255,255,255,0.06))',
+                border: '1px solid rgba(255,255,255,0.20)',
+                display: 'inline-flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                flexShrink: 0,
+              }}
+            >
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.8" strokeLinecap="round" strokeLinejoin="round">
+                <line x1="12" y1="5" x2="12" y2="19" />
+                <line x1="5" y1="12" x2="19" y2="12" />
+              </svg>
+            </span>
+            <span style={{ display: 'inline-flex', flexDirection: 'column', alignItems: 'flex-start', lineHeight: 1.15 }}>
+              <span style={{
+                fontSize: '9px',
+                fontWeight: 700,
+                letterSpacing: '2px',
+                color: 'rgba(255,255,255,0.65)',
+                textTransform: 'uppercase',
+              }}>Expand network</span>
+              <span style={{ fontSize: '13px', fontWeight: 900, letterSpacing: '0.4px' }}>
+                Register new chain
+              </span>
+            </span>
+            <span
+              aria-hidden="true"
+              style={{
+                marginLeft: '4px',
+                fontSize: '13px',
+                color: 'rgba(255,255,255,0.75)',
+              }}
+            >→</span>
           </button>
         </div>
       </div>
@@ -5487,63 +5471,263 @@ return (
   );
 
   function renderChainDrawer() {
+    const fieldLabel = {
+      display: 'block',
+      fontSize: '12px',
+      fontWeight: 700,
+      color: '#0f172a',
+      marginBottom: '6px',
+      letterSpacing: '0.1px',
+    };
+    const fieldHelp = {
+      fontSize: '11px',
+      fontWeight: 500,
+      color: '#64748b',
+      marginBottom: '10px',
+      lineHeight: 1.45,
+    };
+    const fieldInput = {
+      width: '100%',
+      padding: '13px 14px',
+      borderRadius: '12px',
+      border: '1px solid #e2e8f0',
+      background: '#fff',
+      fontSize: '13px',
+      fontWeight: 500,
+      color: '#0f172a',
+      outline: 'none',
+      fontFamily: 'inherit',
+      transition: 'border-color 0.18s, box-shadow 0.18s',
+      boxSizing: 'border-box',
+    };
+    const focusOn  = (e) => { e.target.style.borderColor = '#3b82f6'; e.target.style.boxShadow = '0 0 0 4px rgba(59,130,246,0.12)'; };
+    const focusOff = (e) => { e.target.style.borderColor = '#e2e8f0'; e.target.style.boxShadow = 'none'; };
+
     return (
-      <div onClick={() => setIsChainDrawerOpen(false)} style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backdropFilter: 'blur(4px)', background: 'rgba(10, 22, 40, 0.45)', zIndex: 10000 }}>
-          <div style={{ position: 'absolute', right: 0, top: 0, height: '100%', padding: 0, width: isMobile ? '100%' : '450px', background: '#fff', display: 'flex', flexDirection: 'column', boxShadow: '-12px 0 40px rgba(10,22,40,0.18)' }} onClick={e => e.stopPropagation()}>
-          <div style={{ padding: '35px', background: 'linear-gradient(135deg, #0f52ba 0%, #061a40 100%)', color: 'white' }}>
-             <h2 style={{ fontSize: '11px', fontWeight: 950, color: 'var(--tactical-cyan)', letterSpacing: '3px', textTransform: 'uppercase', marginBottom: '8px' }}>Infrastructure Deployment</h2>
-             <div style={{ fontSize: '20px', fontWeight: 950, letterSpacing: '-1px' }}>REGISTER NEW CHAIN</div>
-             <p style={{ fontSize: '10px', color: 'rgba(255,255,255,0.6)', marginTop: '10px', fontWeight: 600 }}>Spawning new institutional node and re-mapping administrative authority.</p>
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="new-chain-title"
+        onClick={() => setIsChainDrawerOpen(false)}
+        style={{
+          position: 'fixed', inset: 0,
+          background: 'radial-gradient(ellipse at right, rgba(15,23,42,0.55) 0%, rgba(15,23,42,0.70) 100%)',
+          backdropFilter: 'blur(6px)', WebkitBackdropFilter: 'blur(6px)',
+          zIndex: 10000,
+          animation: 'chainFade 220ms cubic-bezier(0.16, 1, 0.3, 1)',
+        }}
+      >
+        <div
+          onClick={e => e.stopPropagation()}
+          style={{
+            position: 'absolute', right: 0, top: 0,
+            height: '100%',
+            width: isMobile ? '100%' : '480px',
+            background: '#f8fafc',
+            display: 'flex', flexDirection: 'column',
+            boxShadow: '-24px 0 60px rgba(15, 23, 42, 0.25)',
+            animation: 'chainSlide 320ms cubic-bezier(0.32, 0.72, 0.36, 1)',
+            fontFamily: 'inherit',
+          }}
+        >
+          {/* ── Header ─────────────────────────────────────────────── */}
+          <div style={{
+            position: 'relative',
+            padding: '32px 32px 28px',
+            background: 'linear-gradient(135deg, #1e40af 0%, #1d4ed8 50%, #0b1a3a 100%)',
+            color: 'white',
+            overflow: 'hidden',
+          }}>
+            {/* decorative glow */}
+            <div aria-hidden="true" style={{
+              position: 'absolute', top: '-60px', right: '-40px',
+              width: '220px', height: '220px', borderRadius: '50%',
+              background: 'radial-gradient(circle, rgba(96,165,250,0.35) 0%, rgba(96,165,250,0) 70%)',
+              pointerEvents: 'none',
+            }} />
+
+            <button
+              type="button"
+              aria-label="Close"
+              onClick={() => setIsChainDrawerOpen(false)}
+              style={{
+                position: 'absolute', top: '20px', right: '20px',
+                width: '32px', height: '32px', borderRadius: '10px',
+                background: 'rgba(255,255,255,0.10)',
+                border: '1px solid rgba(255,255,255,0.16)',
+                color: 'rgba(255,255,255,0.85)',
+                cursor: 'pointer',
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                fontSize: '15px',
+              }}
+            >×</button>
+
+            <div style={{
+              width: '52px', height: '52px', borderRadius: '14px',
+              background: 'linear-gradient(135deg, rgba(255,255,255,0.22), rgba(255,255,255,0.06))',
+              border: '1px solid rgba(255,255,255,0.20)',
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              marginBottom: '18px',
+              boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.18)',
+            }}>
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M3 21h18" />
+                <path d="M5 21V7l7-4 7 4v14" />
+                <path d="M9 9h.01M9 13h.01M9 17h.01M15 9h.01M15 13h.01M15 17h.01" />
+              </svg>
+            </div>
+
+            <div id="new-chain-title" style={{ fontSize: '22px', fontWeight: 900, letterSpacing: '-0.4px', marginBottom: '6px' }}>
+              Add a new centre
+            </div>
+            <p style={{ fontSize: '13px', color: 'rgba(255,255,255,0.78)', margin: 0, lineHeight: 1.55, maxWidth: '360px' }}>
+              Open a new location under your group. We'll set it up and link it to your account in one step.
+            </p>
           </div>
 
-          <div style={{ padding: '35px' }}>
-            <form onSubmit={handleDeployChain} style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
-               <div className="input-group">
-                  <label style={{ display: 'block', fontSize: '9px', fontWeight: 950, color: '#94a3b8', letterSpacing: '2px', marginBottom: '10px' }}>CHAIN BRAND NAME</label>
-                  <input 
-                    type="text" 
-                    required 
-                    value={newChainData.chainName} 
-                    onChange={e => setNewChainData({...newChainData, chainName: e.target.value})} 
-                    placeholder="e.g. GLOBAL RADIOLOGY NETWORKS"
-                    style={{ width: '100%', padding: '14px', borderRadius: '12px', border: '1px solid #eee', fontSize: '12px', fontWeight: 700 }}
-                  />
-               </div>
-               <div className="input-group">
-                  <label style={{ display: 'block', fontSize: '9px', fontWeight: 950, color: '#94a3b8', letterSpacing: '2px', marginBottom: '10px' }}>CENTRE NAME</label>
-                  <input 
-                    type="text" 
-                    required 
-                    value={newChainData.hospitalName} 
-                    onChange={e => setNewChainData({...newChainData, hospitalName: e.target.value})} 
-                    placeholder="e.g. CITY DIAGNOSTIC HUB"
-                    style={{ width: '100%', padding: '14px', borderRadius: '12px', border: '1px solid #eee', fontSize: '12px', fontWeight: 700 }}
-                  />
-               </div>
-               <div className="input-group">
-                  <label style={{ display: 'block', fontSize: '9px', fontWeight: 950, color: '#94a3b8', letterSpacing: '2px', marginBottom: '10px' }}>NODE LOCATION (ADDRESS)</label>
-                  <textarea 
-                    required 
-                    rows="3"
-                    value={newChainData.hospitalAddress} 
-                    onChange={e => setNewChainData({...newChainData, hospitalAddress: e.target.value})} 
-                    placeholder="FULL INSTITUTIONAL ADDRESS"
-                    style={{ width: '100%', padding: '14px', borderRadius: '12px', border: '1px solid #eee', fontSize: '12px', fontWeight: 700, resize: 'none' }}
-                  />
-               </div>
+          {/* ── Form body ──────────────────────────────────────────── */}
+          <div style={{
+            flex: 1, overflowY: 'auto',
+            padding: '28px 32px 24px',
+          }}>
+            <form id="new-chain-form" onSubmit={handleDeployChain} style={{ display: 'flex', flexDirection: 'column', gap: '22px' }}>
 
-               <div style={{ marginTop: '30px', display: 'flex', gap: '15px' }}>
-                  <button type="button" onClick={() => setIsChainDrawerOpen(false)} style={{ flex: 1, padding: '16px', borderRadius: '16px', border: '1px solid #eee', fontWeight: 800 }}>ABORT</button>
-                  <button 
-                    type="submit" 
-                    disabled={isDeployingChain}
-                    style={{ flex: 2, padding: '16px', borderRadius: '16px', background: '#0f52ba', color: 'white', fontWeight: 950, border: 'none', cursor: 'pointer' }}
-                  >
-                    {isDeployingChain ? 'DEPLOYING...' : 'INITIATE DEPLOYMENT →'}
-                  </button>
-               </div>
+              <div>
+                <label style={fieldLabel} htmlFor="chainName">
+                  Group or chain name <span style={{ fontWeight: 500, color: '#94a3b8' }}>(optional)</span>
+                </label>
+                <p style={fieldHelp}>If this centre is part of a group of centres, type the group name. Leave blank for a standalone centre.</p>
+                <input
+                  id="chainName"
+                  type="text"
+                  value={newChainData.chainName}
+                  onChange={e => setNewChainData({ ...newChainData, chainName: e.target.value })}
+                  placeholder="e.g. Sunrise Diagnostics Group"
+                  style={fieldInput}
+                  onFocus={focusOn} onBlur={focusOff}
+                />
+              </div>
+
+              <div>
+                <label style={fieldLabel} htmlFor="hospitalName">Centre name</label>
+                <p style={fieldHelp}>This is what patients and staff will see on bills, reports, and the worklist.</p>
+                <input
+                  id="hospitalName"
+                  type="text"
+                  required
+                  value={newChainData.hospitalName}
+                  onChange={e => setNewChainData({ ...newChainData, hospitalName: e.target.value })}
+                  placeholder="e.g. City Diagnostic Centre"
+                  style={fieldInput}
+                  onFocus={focusOn} onBlur={focusOff}
+                />
+              </div>
+
+              <div>
+                <label style={fieldLabel} htmlFor="hospitalAddress">Centre address</label>
+                <p style={fieldHelp}>Full address — building, street, city, PIN. Used on letterheads and invoices.</p>
+                <textarea
+                  id="hospitalAddress"
+                  required
+                  rows={3}
+                  value={newChainData.hospitalAddress}
+                  onChange={e => setNewChainData({ ...newChainData, hospitalAddress: e.target.value })}
+                  placeholder="123 Main Road, Sector 5, City, 400001"
+                  style={{ ...fieldInput, resize: 'none', lineHeight: 1.55 }}
+                  onFocus={focusOn} onBlur={focusOff}
+                />
+              </div>
+
+              <div style={{
+                marginTop: '4px',
+                padding: '14px 16px',
+                borderRadius: '12px',
+                background: '#eff6ff',
+                border: '1px solid #dbeafe',
+                display: 'flex',
+                gap: '12px',
+                alignItems: 'flex-start',
+              }}>
+                <span style={{ fontSize: '16px', lineHeight: 1, marginTop: '1px' }}>💡</span>
+                <div style={{ fontSize: '12px', color: '#1e3a8a', lineHeight: 1.55 }}>
+                  After you create the centre, you'll be switched to it automatically. You can add staff, prices, and letterhead from the Admin Panel.
+                </div>
+              </div>
             </form>
           </div>
+
+          {/* ── Sticky footer ──────────────────────────────────────── */}
+          <div style={{
+            padding: '18px 32px 22px',
+            background: '#fff',
+            borderTop: '1px solid #e2e8f0',
+            display: 'flex',
+            gap: '12px',
+          }}>
+            <button
+              type="button"
+              onClick={() => setIsChainDrawerOpen(false)}
+              style={{
+                flex: 1,
+                padding: '14px',
+                borderRadius: '12px',
+                border: '1px solid #e2e8f0',
+                background: '#fff',
+                color: '#475569',
+                fontSize: '13px',
+                fontWeight: 700,
+                cursor: 'pointer',
+                fontFamily: 'inherit',
+                transition: 'background 0.15s, border-color 0.15s',
+              }}
+              onMouseEnter={e => { e.currentTarget.style.background = '#f1f5f9'; }}
+              onMouseLeave={e => { e.currentTarget.style.background = '#fff'; }}
+            >
+              Cancel
+            </button>
+            <button
+              type="submit"
+              form="new-chain-form"
+              disabled={isDeployingChain}
+              style={{
+                flex: 2,
+                padding: '14px',
+                borderRadius: '12px',
+                border: 'none',
+                background: isDeployingChain
+                  ? 'linear-gradient(135deg, #93c5fd 0%, #60a5fa 100%)'
+                  : 'linear-gradient(135deg, #1e40af 0%, #1d4ed8 100%)',
+                color: '#fff',
+                fontSize: '13px',
+                fontWeight: 800,
+                letterSpacing: '0.3px',
+                cursor: isDeployingChain ? 'wait' : 'pointer',
+                fontFamily: 'inherit',
+                boxShadow: '0 12px 24px -8px rgba(29, 78, 216, 0.55), inset 0 1px 0 rgba(255,255,255,0.20)',
+                transition: 'transform 0.15s, box-shadow 0.15s',
+                display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: '8px',
+              }}
+              onMouseEnter={e => {
+                if (isDeployingChain) return;
+                e.currentTarget.style.transform = 'translateY(-1px)';
+                e.currentTarget.style.boxShadow = '0 16px 30px -8px rgba(29, 78, 216, 0.65), inset 0 1px 0 rgba(255,255,255,0.25)';
+              }}
+              onMouseLeave={e => {
+                e.currentTarget.style.transform = 'translateY(0)';
+                e.currentTarget.style.boxShadow = '0 12px 24px -8px rgba(29, 78, 216, 0.55), inset 0 1px 0 rgba(255,255,255,0.20)';
+              }}
+            >
+              {isDeployingChain ? 'Creating…' : (<>Create centre <span aria-hidden="true">→</span></>)}
+            </button>
+          </div>
+
+          <style>{`
+            @keyframes chainFade { from { opacity: 0; } to { opacity: 1; } }
+            @keyframes chainSlide {
+              from { transform: translateX(40px); opacity: 0; }
+              to   { transform: translateX(0);    opacity: 1; }
+            }
+          `}</style>
         </div>
       </div>
     );

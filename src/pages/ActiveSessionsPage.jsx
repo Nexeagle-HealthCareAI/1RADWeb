@@ -1,5 +1,6 @@
 import { useEffect, useState, useCallback } from 'react';
 import apiClient from '../api/apiClient';
+import SettingsSubPageHeader from '../components/SettingsSubPageHeader';
 import '../styles/global.css';
 
 // Settings → Active Sessions. Lists every active session for the signed-in
@@ -79,15 +80,10 @@ export default function ActiveSessionsPage() {
 
   return (
     <div style={{ padding: '24px 20px', maxWidth: '780px', margin: '0 auto' }}>
-      <div style={{ marginBottom: '20px' }}>
-        <h1 style={{ fontSize: '22px', fontWeight: 900, color: '#0f172a', margin: 0, letterSpacing: '-0.3px' }}>
-          Active Sessions
-        </h1>
-        <p style={{ fontSize: '13px', color: '#64748b', marginTop: '6px', lineHeight: 1.55 }}>
-          Each device type (desktop, mobile, tablet) can have one active sign-in. Signing in on a new
-          device of the same type ends the previous one.
-        </p>
-      </div>
+      <SettingsSubPageHeader
+        title="Active sessions"
+        description="Each device type (desktop, mobile, tablet) can have one active sign-in. Signing in on a new device of the same type ends the previous one."
+      />
 
       <div style={{
         display: 'flex', justifyContent: 'space-between', alignItems: 'center',

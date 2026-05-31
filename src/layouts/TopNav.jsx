@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import useAuth from '../auth/useAuth';
 import useOffline from '../hooks/useOffline';
@@ -8,8 +8,47 @@ import OverdueBell from '../components/OverdueAppointments/OverdueBell';
 import '../styles/global.css';
 
 export default function TopNav({ currentTime }) {
-  const { currentUser, activeCenter, subscription } = useAuth();
+  const { currentUser, activeCenter, subscription, centers, switchCenter } = useAuth();
   const navigate = useNavigate();
+
+  // Multi-hospital switcher state. Only renders when the user has more than
+  // one authorized hospital mapping — single-hospital users see no chrome
+  // change. Mirrors the AdminBoard switcher but compact for the header.
+  const [isSwitcherOpen, setIsSwitcherOpen] = useState(false);
+  const [isSwitchingCenter, setIsSwitchingCenter] = useState(false);
+  const switcherRef = useRef(null);
+  const hasMultipleHospitals = (centers?.length || 0) > 1;
+
+  useEffect(() => {
+    if (!isSwitcherOpen) return undefined;
+    const onClickOutside = (e) => {
+      if (switcherRef.current && !switcherRef.current.contains(e.target)) {
+        setIsSwitcherOpen(false);
+      }
+    };
+    const onEsc = (e) => { if (e.key === 'Escape') setIsSwitcherOpen(false); };
+    document.addEventListener('mousedown', onClickOutside);
+    document.addEventListener('keydown', onEsc);
+    return () => {
+      document.removeEventListener('mousedown', onClickOutside);
+      document.removeEventListener('keydown', onEsc);
+    };
+  }, [isSwitcherOpen]);
+
+  const handleSwitchCenter = async (id) => {
+    const normalizedActive = String(activeCenter?.id || '').toLowerCase();
+    const normalizedTarget = String(id).toLowerCase();
+    if (normalizedActive === normalizedTarget || isSwitchingCenter) return;
+    setIsSwitchingCenter(true);
+    const result = await switchCenter(id);
+    setIsSwitchingCenter(false);
+    setIsSwitcherOpen(false);
+    if (result?.success) {
+      // Reload so every component re-derives from the new active hospital —
+      // matches the existing AdminBoard/ReferralsPage switch behaviour.
+      window.location.reload();
+    }
+  };
 
   // Fix #9: Persist dismiss to sessionStorage keyed by date so the banner stays
   // dismissed across page navigations for the entire working day.
@@ -195,25 +234,143 @@ export default function TopNav({ currentTime }) {
       }}>
         
         <div style={{ display: 'flex', alignItems: 'center' }}>
-          {/* Institutional Node Identifier */}
-          <div className="nav-logo-section" style={{ display: 'flex', alignItems: 'center', gap: '15px' }}>
-            <div className="nav-logo-icon" style={{ 
-              width: '40px', height: '40px', borderRadius: '12px', 
-              background: 'linear-gradient(135deg, #0f52ba 0%, #1e40af 100%)',
-              display: 'flex', alignItems: 'center', justifyContent: 'center',
-              boxShadow: '0 8px 16px rgba(15, 82, 186, 0.2)'
-            }}>
-              <span style={{ color: 'white', fontWeight: 950, fontSize: '16px' }}>{activeCenter?.name?.charAt(0) || 'H'}</span>
-            </div>
-            <div style={{ display: 'flex', flexDirection: 'column' }}>
-              <div className="nav-terminal-label" style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                <span style={{ fontSize: '9px', fontWeight: 950, color: '#94a3b8', letterSpacing: '1.5px', textTransform: 'uppercase' }}>Current Terminal</span>
-                {isOnline && <div style={{ width: '6px', height: '6px', borderRadius: '50%', background: '#10b981', boxShadow: '0 0 8px #10b981' }} />}
+          {/* Institutional Node Identifier (with multi-hospital switcher). */}
+          <div ref={switcherRef} style={{ position: 'relative' }}>
+            <button
+              type="button"
+              onClick={() => hasMultipleHospitals && setIsSwitcherOpen(o => !o)}
+              disabled={!hasMultipleHospitals}
+              aria-haspopup={hasMultipleHospitals ? 'listbox' : undefined}
+              aria-expanded={hasMultipleHospitals ? isSwitcherOpen : undefined}
+              title={hasMultipleHospitals ? 'Switch hospital' : undefined}
+              className="nav-logo-section"
+              style={{
+                display: 'flex', alignItems: 'center', gap: '15px',
+                background: 'transparent', border: 'none', padding: 0,
+                cursor: hasMultipleHospitals ? 'pointer' : 'default',
+                fontFamily: 'inherit',
+              }}
+            >
+              <div className="nav-logo-icon" style={{
+                width: '40px', height: '40px', borderRadius: '12px',
+                background: 'linear-gradient(135deg, #0f52ba 0%, #1e40af 100%)',
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                boxShadow: '0 8px 16px rgba(15, 82, 186, 0.2)',
+                position: 'relative',
+              }}>
+                <span style={{ color: 'white', fontWeight: 950, fontSize: '16px' }}>{activeCenter?.name?.charAt(0) || 'H'}</span>
+                {hasMultipleHospitals && (
+                  <span style={{
+                    position: 'absolute', bottom: '-3px', right: '-3px',
+                    minWidth: '16px', height: '16px', padding: '0 4px',
+                    borderRadius: '8px', background: '#10b981',
+                    color: 'white', fontSize: '9px', fontWeight: 950,
+                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    border: '2px solid white',
+                    lineHeight: 1,
+                  }}>{centers.length}</span>
+                )}
               </div>
-              <span className="nav-center-name" style={{ fontSize: '14px', fontWeight: 950, color: '#1e293b', letterSpacing: '-0.3px' }}>
-                {activeCenter?.name || 'INITIALIZING_NODE...'}
-              </span>
-            </div>
+              <div style={{ display: 'flex', flexDirection: 'column', textAlign: 'left' }}>
+                <div className="nav-terminal-label" style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                  <span style={{ fontSize: '9px', fontWeight: 950, color: '#94a3b8', letterSpacing: '1.5px', textTransform: 'uppercase' }}>
+                    {hasMultipleHospitals ? 'Active hospital' : 'Current Terminal'}
+                  </span>
+                  {isOnline && <div style={{ width: '6px', height: '6px', borderRadius: '50%', background: '#10b981', boxShadow: '0 0 8px #10b981' }} />}
+                </div>
+                <span className="nav-center-name" style={{ fontSize: '14px', fontWeight: 950, color: '#1e293b', letterSpacing: '-0.3px', display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
+                  {activeCenter?.name || 'INITIALIZING_NODE...'}
+                  {hasMultipleHospitals && (
+                    <span style={{
+                      fontSize: '11px', color: '#64748b',
+                      transform: isSwitcherOpen ? 'rotate(180deg)' : 'rotate(0deg)',
+                      transition: 'transform 0.18s ease',
+                    }}>▾</span>
+                  )}
+                </span>
+              </div>
+            </button>
+
+            {isSwitcherOpen && hasMultipleHospitals && (
+              <div
+                role="listbox"
+                aria-label="Authorized hospitals"
+                style={{
+                  position: 'absolute', top: 'calc(100% + 10px)', left: 0,
+                  width: '320px', maxHeight: '60vh', overflowY: 'auto',
+                  background: 'white', border: '1px solid #e2e8f0',
+                  borderRadius: '14px', padding: '10px',
+                  boxShadow: '0 18px 50px rgba(0,0,0,0.18)',
+                  zIndex: 1100,
+                }}
+              >
+                <div style={{
+                  padding: '4px 8px 10px', fontSize: '9px', fontWeight: 950,
+                  color: '#0f52ba', textTransform: 'uppercase', letterSpacing: '1.5px',
+                  borderBottom: '1px solid #f1f5f9', marginBottom: '8px',
+                  display: 'flex', justifyContent: 'space-between',
+                }}>
+                  <span>Authorized hospitals</span>
+                  <span style={{ opacity: 0.5 }}>{centers.length}</span>
+                </div>
+                {centers.map(center => {
+                  const isActive = String(activeCenter?.id || '').toLowerCase() === String(center.id).toLowerCase();
+                  return (
+                    <button
+                      key={center.id}
+                      type="button"
+                      onClick={() => handleSwitchCenter(center.id)}
+                      disabled={isSwitchingCenter}
+                      role="option"
+                      aria-selected={isActive}
+                      style={{
+                        width: '100%', textAlign: 'left',
+                        padding: '12px', borderRadius: '10px',
+                        display: 'flex', alignItems: 'center', gap: '12px',
+                        background: isActive ? '#f0f7ff' : 'transparent',
+                        border: isActive ? '1px solid #dbeafe' : '1px solid transparent',
+                        cursor: isSwitchingCenter ? 'wait' : 'pointer',
+                        opacity: isSwitchingCenter && !isActive ? 0.5 : 1,
+                        marginBottom: '4px',
+                        fontFamily: 'inherit',
+                        transition: 'all 0.15s',
+                      }}
+                    >
+                      <div style={{
+                        width: '34px', height: '34px', borderRadius: '10px', flexShrink: 0,
+                        background: isActive ? 'linear-gradient(135deg, #0f52ba 0%, #1e40af 100%)' : '#f1f5f9',
+                        color: isActive ? 'white' : '#64748b',
+                        display: 'flex', alignItems: 'center', justifyContent: 'center',
+                        fontWeight: 950, fontSize: '14px',
+                      }}>
+                        {center.name?.charAt(0) || 'H'}
+                      </div>
+                      <div style={{ flex: 1, overflow: 'hidden' }}>
+                        <div style={{
+                          fontSize: '12px', fontWeight: 900, color: '#1e293b',
+                          whiteSpace: 'nowrap', textOverflow: 'ellipsis', overflow: 'hidden',
+                        }}>
+                          {center.name || 'Unnamed Center'}
+                        </div>
+                        {(center.groupName || center.role) && (
+                          <div style={{ fontSize: '10px', color: '#64748b', whiteSpace: 'nowrap', textOverflow: 'ellipsis', overflow: 'hidden' }}>
+                            {[center.groupName, center.role && String(center.role).toUpperCase()].filter(Boolean).join(' · ')}
+                          </div>
+                        )}
+                      </div>
+                      {isActive ? (
+                        <span style={{
+                          fontSize: '9px', fontWeight: 950, color: '#10b981',
+                          letterSpacing: '1px', flexShrink: 0,
+                        }}>ACTIVE</span>
+                      ) : (
+                        <span style={{ fontSize: '11px', color: '#94a3b8', flexShrink: 0 }}>↵</span>
+                      )}
+                    </button>
+                  );
+                })}
+              </div>
+            )}
           </div>
 
           <div className="nav-divider" style={{ width: '1px', height: '24px', background: '#e2e8f0', margin: '0 40px' }} />

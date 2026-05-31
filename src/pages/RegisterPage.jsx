@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import useAuth from '../auth/useAuth';
 import RadiologyWorkflowBG from '../components/RadiologyWorkflowBG';
+import AuthErrorModal from '../components/AuthErrorModal';
 import '../styles/global.css';
 
 // ── Shared field styles ───────────────────────────────────────────────────────
@@ -101,6 +102,10 @@ export default function RegisterPage() {
   // Holds the redirect on a beat so the user gets a moment of payoff
   // before being sent to the login screen.
   const [welcome,       setWelcome]      = useState({ open: false });
+  // Modal shown when the identity (email/mobile) collides with an Active
+  // user. The inline error band was easy to miss at the bottom of step 4,
+  // so we surface it as a blocking dialog with explicit next-step CTAs.
+  const [identityClash, setIdentityClash] = useState({ open: false, message: '' });
 
   const set = (key, val) => setFormData(p => ({ ...p, [key]: val }));
 
@@ -183,7 +188,12 @@ export default function RegisterPage() {
           centerName: formData.centerName,
           mobile: formData.mobile,
         });
-      } else { setError(res.error); setErrorCode(res.errorCode); }
+      } else {
+        setError(res.error); setErrorCode(res.errorCode);
+        if (res.errorCode === 'IDENTITY_ALREADY_ACTIVE' || res.errorCode === 'ALREADY_REGISTERED') {
+          setIdentityClash({ open: true, message: res.error });
+        }
+      }
     }
   };
 
@@ -485,6 +495,34 @@ export default function RegisterPage() {
           </p>
         </form>
       </div>
+
+      <AuthErrorModal
+        open={identityClash.open}
+        variant="info"
+        title="This identity is already registered"
+        message={identityClash.message || 'An active account already exists for this email or mobile number.'}
+        identifiers={{ email: formData.email, mobile: formData.mobile }}
+        primaryAction={{
+          label: 'Sign in instead  →',
+          onClick: () => navigate('/login', { state: { identifier: formData.mobile || formData.email } }),
+        }}
+        secondaryAction={{
+          label: 'Forgot password?',
+          onClick: () => navigate('/forgot-password', { state: { identifier: formData.email || formData.mobile } }),
+        }}
+        tertiaryAction={{
+          label: 'Use a different email / mobile',
+          onClick: () => {
+            setIdentityClash({ open: false, message: '' });
+            setError(''); setErrorCode(null);
+            setStep(2);
+            // Clear only the colliding fields so the user can retry with a
+            // different identity; keep the centre details they already typed.
+            setFormData(p => ({ ...p, email: '', password: '', confirmPassword: '' }));
+          },
+        }}
+        onClose={() => setIdentityClash({ open: false, message: '' })}
+      />
 
       {welcome.open && (
         <WelcomeCelebration
