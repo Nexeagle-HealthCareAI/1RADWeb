@@ -5,8 +5,7 @@ import { DicomCache } from '../utils/DicomCache';
 import { startSyncEngine, stopSyncEngine, syncNow } from '../sync/SyncEngine';
 import { clearLocalDatabase, setActiveHospital, purgeLegacyDb } from '../db/dexie';
 import { migrateLegacyOutbox } from '../db/repos/outboxRepo';
-import { setPin as pinAuthSet, removePin as pinAuthRemove } from './pinAuth';
-import { clearAuthDb } from './authDb';
+import { setPin as pinAuthSet } from './pinAuth';
 
 export const AuthContext = createContext(null);
 
@@ -456,10 +455,15 @@ export function AuthProvider({ children }) {
     // on this device doesn't inherit anyone's worklist.
     stopSyncEngine();
     clearLocalDatabase().catch(() => {});
-    // PIN-unlock data follows the same hygiene posture: removed on logout
-    // so a shared device doesn't carry one user's offline-unlock token
-    // into the next user's session.
-    clearAuthDb().catch(() => {});
+    // NOTE: authDb (PIN registry) is intentionally NOT cleared here.
+    // A PIN is a personal credential that should survive logout so the
+    // user can sign back in via PIN on subsequent visits. Clearing it on
+    // logout made PIN unlock useless after one cycle. The PIN can still
+    // be removed deliberately via Settings → Security & PIN → Remove PIN
+    // (or the lockout cap auto-wipes after too many wrong attempts).
+    // The session JWT inside the PIN slot is what gates re-entry; if it's
+    // been revoked server-side, the next API call after PIN unlock will
+    // 401 and force a real password login anyway.
 
     // Clear timers
     if (idleTimerRef.current) clearTimeout(idleTimerRef.current);
