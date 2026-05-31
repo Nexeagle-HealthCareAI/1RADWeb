@@ -23,6 +23,7 @@ import SubscriptionPage from '../pages/SubscriptionPage';
 import PatientTimelinePage from '../pages/PatientTimelinePage';
 import ActiveSessionsPage from '../pages/ActiveSessionsPage';
 import SecuritySettingsPage from '../pages/SecuritySettingsPage';
+import SyncStatusPage from '../pages/SyncStatusPage';
 import DicomBridgePage from '../pages/DicomBridgePage';
 import ConfigurationPage from '../pages/ConfigurationPage';
 import OperationsBoard from '../pages/OperationsBoard';
@@ -137,6 +138,17 @@ export default function AppRouter() {
           element={
             <ProtectedRoute authOnly={true}>
               <SecuritySettingsPage />
+            </ProtectedRoute>
+          }
+        />
+        {/* Settings → Sync & offline queue. Surfaces sync state, the
+            outbox queue, and the telemetry tail. Useful for diagnosing
+            flaky-network issues. */}
+        <Route
+          path="/settings/sync"
+          element={
+            <ProtectedRoute authOnly={true}>
+              <SyncStatusPage />
             </ProtectedRoute>
           }
         />

@@ -357,18 +357,15 @@ export default function AppointmentBoard() {
     }
   }, []);
 
-  // Drives post-mutation refresh. The TODAY tab is offline-first (Phase B1):
-  // it reads from the local Dexie cache via liveQuery, so after a successful
-  // mutation we just nudge the SyncEngine to pull the delta; the UI re-renders
-  // when the new row lands in local storage. For PAST / FUTURE we still go
-  // through the legacy server fetch because those views are not cached.
+  // Drives post-mutation refresh. Every tab now reads from the local
+  // Dexie cache via liveQuery (TODAY, FUTURE, and PAST all served by the
+  // same cached table — the sync engine pulls every delta without a date
+  // filter, so all three windows are present locally). A successful
+  // mutation just nudges the SyncEngine to pull the delta; the UI
+  // re-renders when the new row lands in local storage.
   const refreshAppointments = useCallback(() => {
-    if (activeTab === 'TODAY') {
-      syncNow();
-    } else {
-      fetchAppointments();
-    }
-  }, [activeTab, fetchAppointments]);
+    syncNow();
+  }, []);
 
   // TODAY tab: subscribe to the offline cache via liveQuery. The SyncEngine
   // writes deltas in the background (booted in AuthContext), this just
@@ -378,19 +375,26 @@ export default function AppointmentBoard() {
   useEffect(() => {
     fetchServiceRegistry();
 
-    if (activeTab !== 'TODAY') {
-      fetchAppointments();
-      const interval = setInterval(fetchAppointments, 30000); // 30s heartbeat
-      return () => clearInterval(interval);
+    // Build the liveQuery argument shape for whichever tab is active.
+    // The sync engine pulls every appointment delta the user has access
+    // to (no date filter), so PAST and FUTURE are served from the same
+    // cached table that TODAY uses — the mode just controls the slice.
+    let watchArgs;
+    if (activeTab === 'TODAY') {
+      watchArgs = { mode: 'today', dateIso: filters.date, status: filters.status };
+    } else if (activeTab === 'FUTURE') {
+      watchArgs = { mode: 'future', status: filters.status };
+    } else { // PAST (the legacy archive tab)
+      const range = (archiveFilterMode === 'RANGE')
+        ? { startIso: pastDateRange.start, endIso: pastDateRange.end }
+        : {};
+      watchArgs = { mode: 'past', ...range, status: filters.status };
     }
 
     setLoading(true);
     let firstEmission = true;
     const today = getTodayString();
-    const sub = watchAppointments({
-      dateIso: filters.date,
-      status: filters.status,
-    }).subscribe({
+    const sub = watchAppointments(watchArgs).subscribe({
       next: (rows) => {
         // Adapt repo rows to the shape the rest of this component already
         // expects: alias displayId → id, patientIdentifier → ptid, and apply
@@ -419,11 +423,17 @@ export default function AppointmentBoard() {
 
     // Kick an immediate pull so the local cache reflects the freshest server
     // state right after mount or a tab/date/status switch. The engine's own
-    // 30s interval covers the steady-state case.
+    // 30s interval covers the steady-state case. Online-only; harmless when
+    // offline (sync engine just no-ops).
     syncNow();
 
     return () => sub.unsubscribe();
-  }, [fetchAppointments, fetchServiceRegistry, activeCenterId, activeTab, filters.date, filters.status]);
+  }, [
+    fetchServiceRegistry, activeCenterId,
+    activeTab,
+    filters.date, filters.status,
+    archiveFilterMode, pastDateRange.start, pastDateRange.end,
+  ]);
 
   // Patient drawer search — subscribes to the local cache. Below 3 chars we
   // intentionally render an empty list (the legacy behaviour), so the

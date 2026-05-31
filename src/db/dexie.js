@@ -67,6 +67,42 @@ function applySchema(inst) {
   inst.version(5).stores({
     outbox: 'id, createdAtMs, poisoned, type',
   });
+
+  // v6 — Phase B3 Slice 1: cache Invoices so BillingPage works offline.
+  // Same shape conventions as appointments/patients/reports.
+  //   • invoiceId   — primary key (matches DTO's InvoiceId GUID).
+  //   • status      — PENDING / PARTIAL / PAID / CANCELLED filter.
+  //   • createdAt   — drives the default DESC sort.
+  //   • _updatedAtMs — delta-pull high-water mark.
+  inst.version(6).stores({
+    invoices: 'invoiceId, status, createdAt, _updatedAtMs',
+  });
+
+  // v7 — Phase B3 Slice 3: Expenses. Keyed on id (the ExpenseDto's Id).
+  // Status is unused for filtering today (almost always "Paid") but
+  // indexed for future use. transactionDate drives the default DESC sort
+  // matching the legacy server query.
+  inst.version(7).stores({
+    expenses: 'id, category, transactionDate, _updatedAtMs',
+  });
+
+  // v8 — Phase B3 Slice 4: Referrers (master list). Small, slow-changing,
+  // could have been a snapshot like Personnel but we already have the
+  // delta-pull plumbing so the consistency is worth keeping.
+  // v8 — Phase B3 Slice 5: ReferralCommissions. Per-appointment commission
+  // rows, larger and faster-changing than Referrers. Status indexed for
+  // the UNPAID/PAID filter on the referrals page.
+  inst.version(8).stores({
+    referrers:           'referrerId, _updatedAtMs',
+    referral_commissions:'id, referrerId, status, transactionDate, _updatedAtMs',
+  });
+
+  // v9 — Phase B3 Slice 7: ServiceCharges (service-price registry). Small,
+  // slow-changing list — same snapshot pattern as Personnel: clear +
+  // bulkPut on every successful fetch; read from cache when offline.
+  inst.version(9).stores({
+    service_charges: 'id, _snapshotAtMs',
+  });
 }
 
 // In-process registry. Multiple hospitals can be opened in the same tab
@@ -171,6 +207,11 @@ export const tables = {
   patients:     () => table('patients'),
   reports:      () => table('reports'),
   personnel:    () => table('personnel'),
+  invoices:     () => table('invoices'),
+  expenses:     () => table('expenses'),
+  referrers:           () => table('referrers'),
+  referral_commissions:() => table('referral_commissions'),
+  service_charges:     () => table('service_charges'),
   outbox:       () => table('outbox'),
   meta:         () => table('meta'),
 };

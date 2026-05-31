@@ -3,6 +3,12 @@ import useAuth from '../auth/useAuth';
 import apiClient from '../api/apiClient';
 import useOffline from '../hooks/useOffline';
 import { nativeStorage } from '../hooks/useElectron';
+import { watchInvoices } from '../db/repos/invoicesRepo';
+import { watchExpenses } from '../db/repos/expensesRepo';
+import { watchReferrers } from '../db/repos/referrersRepo';
+import { watchReferralCommissions } from '../db/repos/referralCommissionsRepo';
+import { syncNow } from '../sync/SyncEngine';
+import { computeStats, computeMatrix } from '../analytics/financialAggregator';
 import '../styles/BillingPage.css';
 
 // Modular Hub Components
@@ -24,7 +30,7 @@ import {
 
 export default function BillingPage() {
   const { activeCenter } = useAuth();
-  const { isOnline, addToOutbox, performSync } = useOffline();
+  const { isOnline, addToOutbox, performSync, pendingCount } = useOffline();
   
   const TODAY = new Date().toISOString().split('T')[0];
 
@@ -118,19 +124,14 @@ export default function BillingPage() {
   const [windowWidth, setWindowWidth] = useState(window.innerWidth);
 
 
+  // B3 Slice 1 — invoices are now offline-first. The legacy fetchInvoices
+  // function survives so post-mutation calls still work, but reading is
+  // driven by the liveQuery subscription added in the useEffect below.
+  // fetchInvoices reduces to a SyncEngine nudge that pulls the freshest
+  // delta into the local cache; liveQuery re-emits and the table re-renders.
   const fetchInvoices = useCallback(async () => {
-    try {
-      const res = await apiClient.get('/finance/invoices', {
-        params: { search: searchTerm, status: statusFilter }
-      });
-      setInvoices(res.data);
-      await nativeStorage.set('1rad_cache_invoices', res.data);
-    } catch (err) {
-      console.error('[FINANCE] Invoice fetch failed, trying cache', err);
-      const cached = await nativeStorage.get('1rad_cache_invoices');
-      if (cached) setInvoices(cached);
-    }
-  }, [searchTerm, statusFilter]);
+    try { await syncNow(); } catch (_) { /* engine logs */ }
+  }, []);
 
   const fetchStats = useCallback(async () => {
     try {
@@ -144,15 +145,29 @@ export default function BillingPage() {
     }
   }, []);
 
+  // B3 Slice 7 — service charges promoted to a Dexie snapshot for
+  // consistency with the other offline surfaces. On success: snapshot the
+  // full response into IndexedDB; on failure: load from snapshot. The old
+  // nativeStorage cache stays as a secondary fallback for legacy installs
+  // that haven't populated the Dexie copy yet.
   const fetchRegistry = useCallback(async () => {
     try {
       const res = await apiClient.get('/finance/registry');
       setServiceRegistry(res.data);
       await nativeStorage.set('1rad_cache_registry', res.data);
+      try {
+        const { snapshotServiceCharges } = await import('../db/repos/serviceChargesRepo');
+        await snapshotServiceCharges(res.data);
+      } catch (_) { /* cache write best-effort */ }
     } catch (err) {
-      console.error('[FINANCE] Registry fetch failed, trying cache', err);
-      const cached = await nativeStorage.get('1rad_cache_registry');
-      if (cached) setServiceRegistry(cached);
+      console.warn('[FINANCE] Registry fetch failed - using offline snapshot.', err);
+      try {
+        const { getAllServiceCharges } = await import('../db/repos/serviceChargesRepo');
+        const cached = await getAllServiceCharges();
+        if (cached && cached.length) { setServiceRegistry(cached); return; }
+      } catch (_) {}
+      const legacy = await nativeStorage.get('1rad_cache_registry');
+      if (legacy) setServiceRegistry(legacy);
     }
   }, []);
 
@@ -197,40 +212,28 @@ export default function BillingPage() {
     }
   }, []);
 
+  // B3 Slice 3 — expenses are offline-first. Reading is driven by the
+  // watchExpenses liveQuery added in the same effect block as invoices;
+  // fetchExpenses becomes a SyncEngine nudge so post-mutation refreshes
+  // still work.
   const fetchExpenses = useCallback(async () => {
-    try {
-      const res = await apiClient.get('/finance/expenses');
-      setExpenses(res.data);
-      await nativeStorage.set('1rad_cache_expenses', res.data);
-    } catch (err) {
-      console.error('[FINANCE] Expenses fetch failed, trying cache', err);
-      const cached = await nativeStorage.get('1rad_cache_expenses');
-      if (cached) setExpenses(cached);
-    }
+    try { await syncNow(); } catch (_) {}
   }, []);
 
+  // B3 Slice 4 — referrers offline. fetchReferrers becomes a SyncEngine
+  // nudge; rendering driven by the watchReferrers liveQuery effect below.
   const fetchReferrers = useCallback(async () => {
-    try {
-      const res = await apiClient.get('/referrers');
-      setReferrers(res.data);
-      await nativeStorage.set('1rad_cache_referrers', res.data);
-    } catch (err) {
-      console.error('[FINANCE] Referrers fetch failed, trying cache', err);
-      const cached = await nativeStorage.get('1rad_cache_referrers');
-      if (cached) setReferrers(cached);
-    }
+    try { await syncNow(); } catch (_) {}
   }, []);
 
+  // B3 Slice 5 — referral commissions offline. NOTE: the legacy
+  // implementation hit /referrers/ledger which returns date-grouped detail.
+  // The cache holds flat per-row commissions; if downstream rendering
+  // needs the date-grouping it can be computed client-side. Keeping the
+  // ledger endpoint cached separately is a future follow-up if a user
+  // surface depends on its specific shape.
   const fetchCommissions = useCallback(async () => {
-    try {
-      const res = await apiClient.get('/referrers/ledger');
-      setReferralCommissions(res.data);
-      await nativeStorage.set('1rad_cache_commissions', res.data);
-    } catch (err) {
-      console.error('[FINANCE] Commissions fetch failed, trying cache', err);
-      const cached = await nativeStorage.get('1rad_cache_commissions');
-      if (cached) setReferralCommissions(cached);
-    }
+    try { await syncNow(); } catch (_) {}
   }, []);
 
   const fetchAppointments = useCallback(async () => {
@@ -304,6 +307,88 @@ export default function BillingPage() {
 
     return () => window.removeEventListener('resize', handleResize);
   }, [fetchInvoices, fetchStats, fetchRegistry, fetchMatrix, fetchExpenses, fetchReferrers, fetchCommissions, fetchAppointments]);
+
+  // B3 Slice 1 — invoices come from the local Dexie cache via liveQuery.
+  // The sync engine keeps the cache fresh in the background; this just
+  // re-renders the table whenever a delta lands. Filters mirror the
+  // legacy server-side query (status / search / date range) so the
+  // offline experience is identical to online.
+  useEffect(() => {
+    const sub = watchInvoices({
+      status: statusFilter,
+      search: searchTerm,
+      startDateIso: startDate || undefined,
+      endDateIso:   endDate   || undefined,
+    }).subscribe({
+      next: (rows) => setInvoices(rows),
+      error: (err) => console.warn('[BillingPage] invoice liveQuery error', err),
+    });
+    return () => sub.unsubscribe();
+  }, [statusFilter, searchTerm, startDate, endDate]);
+
+  // Client-side analytics override. The server /finance/stats and
+  // /finance/matrix endpoints are authoritative when we're online AND the
+  // outbox is empty — fetchStats / fetchMatrix above keep state in sync
+  // with the server in that case. But when offline OR with queued
+  // mutations, the server values can't reflect reality (the user's
+  // pending invoices haven't reached the server yet). We compute the
+  // same shape locally from the cached invoices so the dashboard moves
+  // when the user creates an invoice offline.
+  useEffect(() => {
+    const useComputed = !isOnline || pendingCount > 0;
+    if (!useComputed) return undefined;
+    const sub = watchInvoices({
+      status: 'ALL',     // stats span all statuses regardless of UI filter
+      startDateIso: startDate || undefined,
+      endDateIso:   endDate   || undefined,
+    }).subscribe({
+      next: (rows) => {
+        setStats(computeStats(rows));
+        setMatrix(computeMatrix(rows, {
+          from: startDate || undefined,
+          to:   endDate   || undefined,
+        }));
+      },
+      error: (err) => console.warn('[BillingPage] computed analytics liveQuery error', err),
+    });
+    return () => sub.unsubscribe();
+  }, [isOnline, pendingCount, startDate, endDate]);
+
+  // B3 Slice 3 — expenses liveQuery. Same filter shape; expenses don't
+  // have a status filter but reuse search + date range from the page state.
+  useEffect(() => {
+    const sub = watchExpenses({
+      search: searchTerm,
+      startDateIso: startDate || undefined,
+      endDateIso:   endDate   || undefined,
+    }).subscribe({
+      next: (rows) => setExpenses(rows),
+      error: (err) => console.warn('[BillingPage] expense liveQuery error', err),
+    });
+    return () => sub.unsubscribe();
+  }, [searchTerm, startDate, endDate]);
+
+  // B3 Slice 4 — referrers liveQuery.
+  useEffect(() => {
+    const sub = watchReferrers({ search: searchTerm }).subscribe({
+      next: (rows) => setReferrers(rows),
+      error: (err) => console.warn('[BillingPage] referrers liveQuery error', err),
+    });
+    return () => sub.unsubscribe();
+  }, [searchTerm]);
+
+  // B3 Slice 5 — referral commissions liveQuery. Status defaults to ALL
+  // (the page's own UI filters specific statuses post-query).
+  useEffect(() => {
+    const sub = watchReferralCommissions({
+      startDateIso: startDate || undefined,
+      endDateIso:   endDate   || undefined,
+    }).subscribe({
+      next: (rows) => setReferralCommissions(rows),
+      error: (err) => console.warn('[BillingPage] commissions liveQuery error', err),
+    });
+    return () => sub.unsubscribe();
+  }, [startDate, endDate]);
 
 
   const handleSaveExpense = async (e) => {
@@ -1591,6 +1676,34 @@ export default function BillingPage() {
           </div>
         </div>
       </div>
+
+      {/* Local-compute banner — surfaces when dashboard numbers come from
+          cached invoices instead of /finance/stats. Visible when offline
+          OR when the outbox has unsynced mutations the server can't yet
+          reflect. Disappears as soon as the queue drains AND the next
+          server fetch lands. */}
+      {(!isOnline || pendingCount > 0) && (
+        <div style={{
+          margin: '0 20px 14px',
+          background: '#fffbeb',
+          border: '1px solid #fde68a',
+          borderLeft: '4px solid #b45309',
+          color: '#78350f',
+          borderRadius: '10px',
+          padding: '10px 14px',
+          fontSize: '12px',
+          fontWeight: 600,
+          lineHeight: 1.5,
+          display: 'flex', alignItems: 'center', gap: '10px',
+        }}>
+          <span style={{ fontSize: '14px' }}>📊</span>
+          <div>
+            <strong>Dashboard values computed locally</strong> — {!isOnline
+              ? 'you are offline; numbers reflect what your device has cached.'
+              : `${pendingCount} pending change${pendingCount === 1 ? '' : 's'} not yet on the server.`} They will switch back to the server's authoritative figures once the queue drains.
+          </div>
+        </div>
+      )}
 
       {billingViewMode === 'EXPENSES' && (
         <ExpenseLedger

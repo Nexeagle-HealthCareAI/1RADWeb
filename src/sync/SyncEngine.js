@@ -39,6 +39,22 @@ import {
   clearLocalDirty   as clearReportLocalDirty,
 } from '../db/repos/reportsRepo';
 import {
+  applyServerDeltas as applyInvoiceDeltas,
+  highWatermarkIso  as invoicesHighWatermarkIso,
+} from '../db/repos/invoicesRepo';
+import {
+  applyServerDeltas as applyExpenseDeltas,
+  highWatermarkIso  as expensesHighWatermarkIso,
+} from '../db/repos/expensesRepo';
+import {
+  applyServerDeltas as applyReferrerDeltas,
+  highWatermarkIso  as referrersHighWatermarkIso,
+} from '../db/repos/referrersRepo';
+import {
+  applyServerDeltas as applyCommissionDeltas,
+  highWatermarkIso  as commissionsHighWatermarkIso,
+} from '../db/repos/referralCommissionsRepo';
+import {
   listPending  as outboxListPending,
   remove       as outboxRemove,
   markFailure  as outboxMarkFailure,
@@ -171,6 +187,78 @@ async function pullReports() {
 
   if (stats.applied || stats.deleted) {
     console.info(`[SYNC] Reports: +${stats.applied} ~${stats.deleted} (since ${since || 'epoch'})`);
+  }
+  return stats;
+}
+
+// --- Invoices delta pull -----------------------------------------------------
+
+async function pullInvoices() {
+  const since = await invoicesHighWatermarkIso();
+  const params = { includeDeleted: true };
+  if (since) params.updatedAfter = since;
+
+  const res = await apiClient.get('/finance/invoices', { params });
+  const rows = Array.isArray(res?.data) ? res.data : [];
+  const stats = await withQuotaRetry('invoices', () => applyInvoiceDeltas(rows));
+  if (stats == null) return { applied: 0, deleted: 0 };
+
+  if (stats.applied || stats.deleted) {
+    console.info(`[SYNC] Invoices: +${stats.applied} ~${stats.deleted} (since ${since || 'epoch'})`);
+  }
+  return stats;
+}
+
+// --- Expenses delta pull -----------------------------------------------------
+
+async function pullExpenses() {
+  const since = await expensesHighWatermarkIso();
+  const params = { includeDeleted: true };
+  if (since) params.updatedAfter = since;
+
+  const res = await apiClient.get('/finance/expenses', { params });
+  const rows = Array.isArray(res?.data) ? res.data : [];
+  const stats = await withQuotaRetry('expenses', () => applyExpenseDeltas(rows));
+  if (stats == null) return { applied: 0, deleted: 0 };
+
+  if (stats.applied || stats.deleted) {
+    console.info(`[SYNC] Expenses: +${stats.applied} ~${stats.deleted} (since ${since || 'epoch'})`);
+  }
+  return stats;
+}
+
+// --- Referrers delta pull ----------------------------------------------------
+
+async function pullReferrers() {
+  const since = await referrersHighWatermarkIso();
+  const params = { includeDeleted: true };
+  if (since) params.updatedAfter = since;
+
+  const res = await apiClient.get('/referrers', { params });
+  const rows = Array.isArray(res?.data) ? res.data : [];
+  const stats = await withQuotaRetry('referrers', () => applyReferrerDeltas(rows));
+  if (stats == null) return { applied: 0, deleted: 0 };
+
+  if (stats.applied || stats.deleted) {
+    console.info(`[SYNC] Referrers: +${stats.applied} ~${stats.deleted} (since ${since || 'epoch'})`);
+  }
+  return stats;
+}
+
+// --- Referral commissions delta pull -----------------------------------------
+
+async function pullReferralCommissions() {
+  const since = await commissionsHighWatermarkIso();
+  const params = { includeDeleted: true };
+  if (since) params.updatedAfter = since;
+
+  const res = await apiClient.get('/referrers/commissions', { params });
+  const rows = Array.isArray(res?.data) ? res.data : [];
+  const stats = await withQuotaRetry('commissions', () => applyCommissionDeltas(rows));
+  if (stats == null) return { applied: 0, deleted: 0 };
+
+  if (stats.applied || stats.deleted) {
+    console.info(`[SYNC] Commissions: +${stats.applied} ~${stats.deleted} (since ${since || 'epoch'})`);
   }
   return stats;
 }
@@ -312,6 +400,10 @@ async function pullCycle() {
     await pullAppointments();
     await pullPatients();
     await pullReports();
+    await pullInvoices();
+    await pullExpenses();
+    await pullReferrers();
+    await pullReferralCommissions();
     await tables.meta().put({ key: 'lastSuccessfulPullAt', value: new Date().toISOString() });
     logEvent('pull.cycle', { ok: true, ms: Date.now() - startedAt });
   } catch (err) {
@@ -418,5 +510,9 @@ export async function getSyncDebugInfo() {
     appointmentsHighWater: await appointmentsHighWatermarkIso(),
     patientsHighWater:     await patientsHighWatermarkIso(),
     reportsHighWater:      await reportsHighWatermarkIso(),
+    invoicesHighWater:     await invoicesHighWatermarkIso(),
+    expensesHighWater:     await expensesHighWatermarkIso(),
+    referrersHighWater:    await referrersHighWatermarkIso(),
+    commissionsHighWater:  await commissionsHighWatermarkIso(),
   };
 }

@@ -70,19 +70,51 @@ export async function highWatermarkIso() {
 //   const rows = useLiveAppointments({ dateIso });
 //   if (rows == null) return <Loading/>;
 //
-export function watchAppointments({ dateIso, status = 'ALL' } = {}) {
+// Day-of-month string in Asia/Kolkata for a given Date or ISO. Used to
+// compare appointment dates without timezone gotchas.
+function ymdKolkata(input) {
+  if (!input) return '';
+  const d = input instanceof Date ? input : new Date(input);
+  if (Number.isNaN(d.getTime())) return '';
+  return d.toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' });
+}
+
+// Watch the appointments cache in one of three "tab modes":
+//
+//   mode: 'today'   — dateIso required; returns only that day's appointments.
+//   mode: 'future'  — returns appointments strictly AFTER today.
+//   mode: 'past'    — returns appointments strictly BEFORE today, optionally
+//                     bounded by startIso / endIso (inclusive).
+//
+// The sync engine pulls every appointment delta the user has access to (no
+// date filter), so all three modes are served from the same cached table.
+// The mode just controls which slice is rendered. status='ALL' disables the
+// status filter; otherwise it's case-insensitive on the appointment status.
+export function watchAppointments({
+  mode = 'today',
+  dateIso,
+  startIso,
+  endIso,
+  status = 'ALL',
+} = {}) {
   return liveQuery(async () => {
     const t = tables.appointments();
     let arr = await t.toArray();
+    const todayIso = ymdKolkata(new Date());
 
-    // Filter by appointment day (Asia/Kolkata) — the server-side filter
-    // happens during sync; this is just the rendered view filter.
-    if (dateIso) {
+    if (mode === 'today') {
+      if (!dateIso) return [];
+      arr = arr.filter(a => a.dateTime && ymdKolkata(a.dateTime) === dateIso);
+    } else if (mode === 'future') {
+      arr = arr.filter(a => a.dateTime && ymdKolkata(a.dateTime) > todayIso);
+    } else if (mode === 'past') {
       arr = arr.filter(a => {
         if (!a.dateTime) return false;
-        const d = new Date(a.dateTime);
-        // toLocaleDateString('en-CA') gives YYYY-MM-DD in local timezone.
-        return d.toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' }) === dateIso;
+        const d = ymdKolkata(a.dateTime);
+        if (!d || d >= todayIso) return false;          // strictly past
+        if (startIso && d < startIso) return false;     // optional lower bound
+        if (endIso   && d > endIso)   return false;     // optional upper bound
+        return true;
       });
     }
     if (status && status !== 'ALL') {
@@ -98,7 +130,7 @@ export function watchAppointments({ dateIso, status = 'ALL' } = {}) {
     );
     const dailyCounters = {};
     const withTokens = chronological.map(item => {
-      const dateKey = item.dateTime ? item.dateTime.split('T')[0] : dateIso || 'unknown';
+      const dateKey = item.dateTime ? item.dateTime.split('T')[0] : (dateIso || 'unknown');
       dailyCounters[dateKey] = (dailyCounters[dateKey] || 0) + 1;
       return {
         ...item,

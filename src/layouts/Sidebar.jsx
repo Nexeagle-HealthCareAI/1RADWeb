@@ -218,6 +218,12 @@ const PinIcon = () => (
   </svg>
 );
 
+const SyncIcon = () => (
+  <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor" style={{ flexShrink: 0 }}>
+    <path d="M8 3V1L4.5 4 8 7V5a4 4 0 1 1-4 4H2.5a5.5 5.5 0 1 0 5.5-6z"/>
+  </svg>
+);
+
 // ── Main Sidebar ──────────────────────────────────────────────────────────────
 export default function Sidebar({ isMobileOpen, onMobileClose }) {
   const { currentUser, logout, activeCenter } = useAuth();
@@ -225,6 +231,7 @@ export default function Sidebar({ isMobileOpen, onMobileClose }) {
   const [soHov, setSoHov] = useState(false);
   const [sessHov, setSessHov] = useState(false);
   const [pinHov, setPinHov] = useState(false);
+  const [syncHov, setSyncHov] = useState(false);
   const [toggleHov, setToggleHov] = useState(false);
   const [closeHov, setCloseHov] = useState(false);
   const [viewW, setViewW] = useState(window.innerWidth);
@@ -466,6 +473,38 @@ export default function Sidebar({ isMobileOpen, onMobileClose }) {
             whiteSpace: 'nowrap',
           }}>
             <span style={{ fontSize: '13px', fontWeight: 400 }}>Security &amp; PIN</span>
+          </div>
+        </button>
+
+        {/* Sync & offline queue — diagnostics for the offline-first
+            architecture. Hidden by default behind the same visual idiom
+            as the other settings rows. */}
+        <button
+          onClick={() => { navigate('/settings/sync'); onMobileClose?.(); }}
+          onMouseEnter={() => setSyncHov(true)}
+          onMouseLeave={() => setSyncHov(false)}
+          title={showCollapsed ? 'Sync & offline queue' : undefined}
+          style={{
+            width: '100%', display: 'flex', alignItems: 'center',
+            justifyContent: showCollapsed ? 'center' : 'flex-start',
+            gap: '10px',
+            padding: showCollapsed ? '9px 0' : '8px 10px',
+            borderRadius: '9px', border: 'none',
+            background: syncHov ? 'rgba(59,130,246,0.18)' : 'transparent',
+            color: syncHov ? '#ffffff' : T.textMid, cursor: 'pointer',
+            transition: 'all 0.2s ease, padding 0.22s',
+            fontFamily: FF,
+          }}
+        >
+          <SyncIcon />
+          <div style={{
+            overflow: 'hidden',
+            maxWidth: showCollapsed ? 0 : '150px',
+            opacity: showCollapsed ? 0 : 1,
+            transition: 'max-width 0.24s cubic-bezier(0.4,0,0.2,1), opacity 0.18s ease',
+            whiteSpace: 'nowrap',
+          }}>
+            <span style={{ fontSize: '13px', fontWeight: 400 }}>Sync &amp; offline</span>
           </div>
         </button>
 

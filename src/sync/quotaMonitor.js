@@ -22,6 +22,8 @@
 
 import { evictOlderThan as evictAppointments } from '../db/repos/appointmentsRepo';
 import { evictOlderThan as evictReports }      from '../db/repos/reportsRepo';
+import { evictOlderThan as evictInvoices }     from '../db/repos/invoicesRepo';
+import { evictOlderThan as evictExpenses }     from '../db/repos/expensesRepo';
 import { tables } from '../db/dexie';
 import { logEvent } from './syncTelemetry';
 
@@ -77,24 +79,30 @@ export function getQuotaSnapshot() {
 export async function evictAggressively() {
   let droppedA = 0;
   let droppedR = 0;
+  let droppedI = 0;
+  let droppedX = 0;
   try { droppedA += await evictAppointments(FIRST_EVICT_DAYS); } catch (_) {}
   try { droppedR += await evictReports(FIRST_EVICT_DAYS);      } catch (_) {}
+  try { droppedI += await evictInvoices(FIRST_EVICT_DAYS);     } catch (_) {}
+  try { droppedX += await evictExpenses(FIRST_EVICT_DAYS);     } catch (_) {}
   await refresh();
   if (lastUsage != null && lastQuota != null && lastUsage / lastQuota >= EVICT_THRESHOLD) {
     try { droppedA += await evictAppointments(HARD_EVICT_DAYS); } catch (_) {}
     try { droppedR += await evictReports(HARD_EVICT_DAYS);      } catch (_) {}
+    try { droppedI += await evictInvoices(HARD_EVICT_DAYS);     } catch (_) {}
+    try { droppedX += await evictExpenses(HARD_EVICT_DAYS);     } catch (_) {}
     await refresh();
   }
-  if (droppedA || droppedR) {
-    console.info(`[QUOTA] Evicted ${droppedA} appointment(s) + ${droppedR} report(s) under quota pressure.`);
+  if (droppedA || droppedR || droppedI || droppedX) {
+    console.info(`[QUOTA] Evicted ${droppedA} appointment(s) + ${droppedR} report(s) + ${droppedI} invoice(s) + ${droppedX} expense(s) under quota pressure.`);
     try {
       await tables.meta().put({
         key: 'lastEvictionAt',
-        value: { at: new Date().toISOString(), appointments: droppedA, reports: droppedR },
+        value: { at: new Date().toISOString(), appointments: droppedA, reports: droppedR, invoices: droppedI, expenses: droppedX },
       });
     } catch (_) {}
   }
-  return { appointments: droppedA, reports: droppedR };
+  return { appointments: droppedA, reports: droppedR, invoices: droppedI, expenses: droppedX };
 }
 
 async function refresh() {
