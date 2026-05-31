@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import useAuth from '../auth/useAuth';
 import useOffline from '../hooks/useOffline';
+import useSyncStatus from '../sync/useSyncStatus';
 import OverdueBell from '../components/OverdueAppointments/OverdueBell';
 import '../styles/global.css';
 
@@ -23,6 +24,13 @@ export default function TopNav({ currentTime }) {
   if (!currentUser) return null;
 
   const { isOnline, isSyncing, pendingCount } = useOffline();
+  // Cache-freshness chip in the existing Sync Hub. The SyncEngine writes
+  // meta.lastSuccessfulPullAt after each pull; the hook below reads that
+  // via Dexie liveQuery and derives a human label + colour tone.
+  const syncStatus = useSyncStatus();
+  const syncToneColor = syncStatus.tone === 'crit' ? '#dc2626'
+                       : syncStatus.tone === 'warn' ? '#b45309'
+                       : '#10b981';
 
   const formattedTime = currentTime.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
   const formattedDate = currentTime.toLocaleDateString([], { weekday: 'short', day: 'numeric', month: 'short' });
@@ -211,12 +219,16 @@ export default function TopNav({ currentTime }) {
               }}>
                 <span style={{ fontSize: '14px' }}>{isOnline ? '🌐' : '📡'}</span>
               </div>
-              <div className="nav-status-details" style={{ display: 'flex', flexDirection: 'column' }}>
-                <span style={{ fontSize: '9px', fontWeight: 950, color: '#10b981', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+              <div
+                className="nav-status-details"
+                style={{ display: 'flex', flexDirection: 'column' }}
+                title={syncStatus.lastPullAtIso ? `Last sync: ${new Date(syncStatus.lastPullAtIso).toLocaleString()}` : 'No successful sync yet'}
+              >
+                <span style={{ fontSize: '9px', fontWeight: 950, color: syncToneColor, textTransform: 'uppercase', letterSpacing: '0.5px' }}>
                   {isSyncing ? 'Syncing...' : isOnline ? 'Online' : 'Offline'}
                 </span>
                 <span style={{ fontSize: '10px', fontWeight: 700, color: '#64748b' }}>
-                  {pendingCount > 0 ? `${pendingCount} Pending` : 'Encrypted'}
+                  {pendingCount > 0 ? `${pendingCount} Pending` : syncStatus.label}
                 </span>
               </div>
             </div>

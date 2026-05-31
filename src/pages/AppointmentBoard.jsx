@@ -13,6 +13,10 @@ import { formatElapsed, premisesSeverity, premisesPillStyle } from '../utils/tim
 import { useOverdue } from '../components/OverdueAppointments/OverdueContext';
 import { getTrackingUrl } from '../utils/trackingUrl';
 import { buildPatientAge, formatPatientAge, parsePatientAge } from '../utils/patientAge';
+import { watchAppointments } from '../db/repos/appointmentsRepo';
+import { watchPatients } from '../db/repos/patientsRepo';
+import { snapshotPersonnel, getAllPersonnel } from '../db/repos/personnelRepo';
+import { syncNow } from '../sync/SyncEngine';
 
 // --- CONSTANTS ---
 
@@ -260,19 +264,14 @@ export default function AppointmentBoard() {
     }
   }, [searchQuery, filters.status, activeTab, pastDateRange, activeCenterId]);
 
-  const fetchPatients = useCallback(async (query) => {
-    try {
-      const response = await apiClient.get('/patients', {
-        params: { search: query }
-      });
-      setPatients(response.data.map(p => ({
-        ...p,
-        id: p.patientId,
-        name: p.fullName
-      })));
-    } catch (error) {
-      console.error('Failed to fetch patients:', error);
-    }
+  // Patient search now goes through the offline-first cache. The actual
+  // network pull is the SyncEngine's job; this function only exists to
+  // trigger an immediate delta-pull (e.g. right after creating a new
+  // patient) so the freshly-created row turns up in the drawer search
+  // without waiting for the next 30s tick. Reactive list rendering is
+  // handled by the liveQuery effect below.
+  const fetchPatients = useCallback(async () => {
+    try { await syncNow(); } catch (_err) { /* engine already logs */ }
   }, []);
 
   const fetchReferrers = useCallback(async (query) => {
@@ -286,50 +285,68 @@ export default function AppointmentBoard() {
     }
   }, []);
 
+  // Personnel processing — runs against either the live API response or
+  // the cached snapshot from the offline fallback. Extracted so both
+  // paths render the SAME owner details + specialist list (a bug in this
+  // helper would have shown up twice otherwise).
+  const applyPersonnel = useCallback((allPersonnel) => {
+    if (!Array.isArray(allPersonnel)) return;
+
+    let owner = allPersonnel.find(u => {
+      const roles = (u.roles || u.Roles || []).map(r => String(r).toLowerCase());
+      return roles.includes('admindoctor');
+    });
+    if (!owner) {
+      owner = allPersonnel.find(u => {
+        const roles = (u.roles || u.Roles || []).map(r => String(r).toLowerCase());
+        return roles.includes('admin');
+      });
+    }
+    if (owner) {
+      setOwnerDetails({
+        name: owner.fullName || owner.FullName || 'Owner',
+        contact: owner.mobile || owner.Mobile || owner.phoneNumber || owner.PhoneNumber || '+91 XXXXXXXXXX',
+        email: owner.email || owner.Email || 'contact@1rad.health'
+      });
+    }
+
+    const standardNonDoctors = ['admin', 'technician', 'receptionist', 'accountant'];
+    let specialists = allPersonnel.filter(p => {
+      const rawRoles = p.roles || p.Roles || [];
+      return rawRoles.some(r => {
+        const lower = String(r).toLowerCase();
+        return lower.includes('doctor') || !standardNonDoctors.includes(lower);
+      });
+    }).map(p => p.fullName || p.FullName || 'UNKNOWN_STAFF');
+
+    if (specialists.length === 0) {
+      specialists = allPersonnel.map(p => p.fullName || p.FullName || 'UNKNOWN_STAFF');
+    }
+
+    setDoctors(specialists);
+  }, []);
+
+  // Personnel is a small slow-changing list — no delta sync engine pull.
+  // Snapshot the response on success; fall back to the snapshot on failure.
+  // The cache survives reload and powers the booking drawer's specialist
+  // dropdown during a brief outage so the booking flow never stalls on
+  // "who is this patient referred to".
   const fetchDoctors = useCallback(async () => {
     try {
       const response = await apiClient.get('/personnel');
       const allPersonnel = response.data;
-      
-      let owner = allPersonnel.find(u => {
-        const roles = (u.roles || u.Roles || []).map(r => String(r).toLowerCase());
-        return roles.includes('admindoctor');
-      });
-      if (!owner) {
-        owner = allPersonnel.find(u => {
-          const roles = (u.roles || u.Roles || []).map(r => String(r).toLowerCase());
-          return roles.includes('admin');
-        });
-      }
-      if (owner) {
-        setOwnerDetails({
-          name: owner.fullName || owner.FullName || 'Owner',
-          contact: owner.mobile || owner.Mobile || owner.phoneNumber || owner.PhoneNumber || '+91 XXXXXXXXXX',
-          email: owner.email || owner.Email || 'contact@1rad.health'
-        });
-      }
-
-      // Filter for roles: admindoctor, doctor, or custom roles (excluding non-doctors)
-      const standardNonDoctors = ['admin', 'technician', 'receptionist', 'accountant'];
-      
-      let specialists = allPersonnel.filter(p => {
-        const rawRoles = p.roles || p.Roles || [];
-        return rawRoles.some(r => {
-          const lower = String(r).toLowerCase();
-          return lower.includes('doctor') || !standardNonDoctors.includes(lower);
-        });
-      }).map(p => p.fullName || p.FullName || 'UNKNOWN_STAFF');
-      
-      // Fallback: If strict role filtering returns nobody, list everyone (preventing a blocked UI)
-      if (specialists.length === 0) {
-        specialists = allPersonnel.map(p => p.fullName || p.FullName || 'UNKNOWN_STAFF');
-      }
-      
-      setDoctors(specialists);
+      applyPersonnel(allPersonnel);
+      try { await snapshotPersonnel(allPersonnel); } catch (_) { /* cache write best-effort */ }
     } catch (error) {
-      console.error('Failed to fetch doctors:', error);
+      console.warn('Failed to fetch personnel — using offline snapshot.', error);
+      try {
+        const cached = await getAllPersonnel();
+        if (cached && cached.length) applyPersonnel(cached);
+      } catch (cacheErr) {
+        console.warn('Personnel offline snapshot read failed', cacheErr);
+      }
     }
-  }, []);
+  }, [applyPersonnel]);
 
   const fetchServiceRegistry = useCallback(async () => {
     try {
@@ -340,18 +357,88 @@ export default function AppointmentBoard() {
     }
   }, []);
 
-  useEffect(() => {
-    fetchAppointments();
-    fetchServiceRegistry();
-    const interval = setInterval(fetchAppointments, 30000); // 30s Real-time Heartbeat
-    return () => clearInterval(interval);
-  }, [fetchAppointments, fetchServiceRegistry, activeCenterId, activeTab]);
-
-  useEffect(() => {
-    if (drawerSearchQuery.length > 2) {
-      fetchPatients(drawerSearchQuery);
+  // Drives post-mutation refresh. The TODAY tab is offline-first (Phase B1):
+  // it reads from the local Dexie cache via liveQuery, so after a successful
+  // mutation we just nudge the SyncEngine to pull the delta; the UI re-renders
+  // when the new row lands in local storage. For PAST / FUTURE we still go
+  // through the legacy server fetch because those views are not cached.
+  const refreshAppointments = useCallback(() => {
+    if (activeTab === 'TODAY') {
+      syncNow();
+    } else {
+      fetchAppointments();
     }
-  }, [drawerSearchQuery, fetchPatients]);
+  }, [activeTab, fetchAppointments]);
+
+  // TODAY tab: subscribe to the offline cache via liveQuery. The SyncEngine
+  // writes deltas in the background (booted in AuthContext), this just
+  // re-renders every time the local rows change. PAST / FUTURE tabs keep
+  // the old server-fetch + 30s poll path because they're not cached locally
+  // in B1.
+  useEffect(() => {
+    fetchServiceRegistry();
+
+    if (activeTab !== 'TODAY') {
+      fetchAppointments();
+      const interval = setInterval(fetchAppointments, 30000); // 30s heartbeat
+      return () => clearInterval(interval);
+    }
+
+    setLoading(true);
+    let firstEmission = true;
+    const today = getTodayString();
+    const sub = watchAppointments({
+      dateIso: filters.date,
+      status: filters.status,
+    }).subscribe({
+      next: (rows) => {
+        // Adapt repo rows to the shape the rest of this component already
+        // expects: alias displayId → id, patientIdentifier → ptid, and apply
+        // the "future booking" status normalisation the old fetch path did
+        // post-response.
+        const adapted = rows.map((a) => {
+          const appDate = a.dateTime ? a.dateTime.split('T')[0] : null;
+          const isFuture = appDate && appDate > today;
+          const current = a.status ? a.status.toLowerCase() : 'scheduled';
+          return {
+            ...a,
+            id: a.displayId,
+            appointmentId: a.appointmentId,
+            ptid: a.patientIdentifier,
+            status: isFuture ? 'future' : (current === 'future' ? 'scheduled' : current),
+          };
+        });
+        setAppointments(adapted);
+        if (firstEmission) { firstEmission = false; setLoading(false); }
+      },
+      error: (err) => {
+        console.warn('[AppointmentBoard] liveQuery error', err);
+        setLoading(false);
+      },
+    });
+
+    // Kick an immediate pull so the local cache reflects the freshest server
+    // state right after mount or a tab/date/status switch. The engine's own
+    // 30s interval covers the steady-state case.
+    syncNow();
+
+    return () => sub.unsubscribe();
+  }, [fetchAppointments, fetchServiceRegistry, activeCenterId, activeTab, filters.date, filters.status]);
+
+  // Patient drawer search — subscribes to the local cache. Below 3 chars we
+  // intentionally render an empty list (the legacy behaviour), so the
+  // drawer doesn't dump every cached patient on a single-letter typo.
+  useEffect(() => {
+    if (drawerSearchQuery.length <= 2) {
+      setPatients([]);
+      return undefined;
+    }
+    const sub = watchPatients({ query: drawerSearchQuery, limit: 50 }).subscribe({
+      next: (rows) => setPatients(rows),
+      error: (err) => console.warn('[AppointmentBoard] patient liveQuery error', err),
+    });
+    return () => sub.unsubscribe();
+  }, [drawerSearchQuery]);
 
   const fetchRegistry = useCallback(async () => {
     try {
@@ -498,7 +585,7 @@ export default function AppointmentBoard() {
           message: result.message || "Cannot cancel appointment at this time."
         });
       } else {
-        fetchAppointments();
+        refreshAppointments();
       }
     } catch (error) {
       console.error('Failed to update status:', error);
@@ -632,7 +719,7 @@ export default function AppointmentBoard() {
       
       setIsBookingOpen(false);
       resetBooking();
-      fetchAppointments();
+      refreshAppointments();
     } catch (error) {
 
       console.error('Failed to book appointment:', error);
@@ -732,7 +819,7 @@ export default function AppointmentBoard() {
 
       setIsEditingOpen(false);
       setEditingAppointment(null);
-      fetchAppointments();
+      refreshAppointments();
     } catch (error) {
       console.error('Failed to update appointment:', error);
       showNotif('error', 'UPDATE FAILED', 'Could not update the appointment. Please check your connection and try again.');

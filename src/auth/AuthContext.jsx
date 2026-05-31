@@ -2,6 +2,8 @@ import { createContext, useContext, useState, useCallback, useEffect, useMemo, u
 import apiClient from '../api/apiClient';
 import { StudyPrefetcher } from '../utils/StudyPrefetcher';
 import { DicomCache } from '../utils/DicomCache';
+import { startSyncEngine, stopSyncEngine } from '../sync/SyncEngine';
+import { clearLocalDatabase } from '../db/dexie';
 
 export const AuthContext = createContext(null);
 
@@ -256,6 +258,9 @@ export function AuthProvider({ children }) {
       // Kick off background pre-download of today's worklist for radiologists.
       // Guardrails (role, network, storage) live inside the prefetcher.
       StudyPrefetcher.start(currentUser);
+      // Offline-first cache: start pulling deltas so the worklist survives
+      // brief outages. Cleared in logout() for PHI hygiene.
+      startSyncEngine();
 
       // Fix #3: Periodically re-check subscription status every 20 minutes so that
       // expiry is caught during long active sessions without requiring a page reload.
@@ -361,6 +366,10 @@ export function AuthProvider({ children }) {
     // PHI hygiene: stop background downloads and purge the local DICOM cache on logout.
     StudyPrefetcher.stop();
     DicomCache.clear().catch(() => {});
+    // Tear down offline cache (sync engine + Dexie tables) so the next user
+    // on this device doesn't inherit anyone's worklist.
+    stopSyncEngine();
+    clearLocalDatabase().catch(() => {});
 
     // Clear timers
     if (idleTimerRef.current) clearTimeout(idleTimerRef.current);

@@ -19,6 +19,7 @@ import SearchableTemplatePicker from '../components/SearchableTemplatePicker';
 import PatientTimeline from '../components/PatientTimeline';
 import VoiceReportingPanel from '../components/VoiceReportingPanel';
 import { assetsFromManifest } from '../utils/dicomManifest';
+import { getReportByAppointmentId, saveLocalDraft } from '../db/repos/reportsRepo';
 
 const ReportingPage = () => {
   const navigate = useNavigate();
@@ -530,7 +531,22 @@ const ReportingPage = () => {
         apiClient.get('/reporting/templates'),
         apiClient.get('/reporting/keywords'),
         doctorId ? apiClient.get(`/Prescription/${doctorId}`).catch(() => null) : Promise.resolve(null),
-        apiClient.get(`/Reporting/report/${appId}`).catch(() => ({ data: { success: false } })),
+        // Offline-first fallback (Phase B1 Slice 3): if the network fetch
+        // fails (offline, 5xx, DNS hiccup) check the local cache before
+        // surrendering. The cache row is kept fresh by SyncEngine.pullReports
+        // and is keyed by appointmentId.
+        apiClient.get(`/Reporting/report/${appId}`).catch(async () => {
+          try {
+            const cached = await getReportByAppointmentId(appId);
+            if (cached) {
+              console.info('[REPORTING] Network fetch failed — rendering from offline cache.');
+              return { data: { success: true, data: { ...cached, isFinalized: !!cached.isFinalized } } };
+            }
+          } catch (cacheErr) {
+            console.warn('[REPORTING] Offline cache read failed', cacheErr);
+          }
+          return { data: { success: false } };
+        }),
         apiClient.get(`/Study/${appId}/manifest`).catch(() => ({ data: { success: false } }))
       ]);
 
@@ -903,6 +919,21 @@ const ReportingPage = () => {
       };
       console.log(`[REPORTING] Autosaving draft for ${appointmentId}...`);
       await nativeStorage.set(`1rad_draft_${appointmentId}`, draft);
+      // Mirror the draft into the offline cache (Phase B1 Slice 3). The
+      // nativeStorage write above still drives the existing crash-recovery
+      // prompt; this write keeps the IndexedDB cache row aligned with the
+      // user's latest in-flight edit so a re-open while offline shows the
+      // freshest version, not the last server snapshot.
+      try {
+        await saveLocalDraft(appointmentId, {
+          findings: freshFindings,
+          impression,
+          advice,
+          templateId: selectedTemplateId,
+        });
+      } catch (cacheErr) {
+        console.warn('[REPORTING] Local cache draft write failed', cacheErr);
+      }
     }, 2000); // Debounce for 2 seconds
 
     return () => clearTimeout(autosaveTimer);
