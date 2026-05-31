@@ -212,12 +212,19 @@ const SessionsIcon = () => (
   </svg>
 );
 
+const PinIcon = () => (
+  <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor" style={{ flexShrink: 0 }}>
+    <path d="M8 1a3 3 0 0 0-3 3v3H4a1 1 0 0 0-1 1v6a1 1 0 0 0 1 1h8a1 1 0 0 0 1-1V8a1 1 0 0 0-1-1h-1V4a3 3 0 0 0-3-3zm-2 6V4a2 2 0 1 1 4 0v3H6zm2 4a1 1 0 1 1 0 2 1 1 0 0 1 0-2z"/>
+  </svg>
+);
+
 // ── Main Sidebar ──────────────────────────────────────────────────────────────
 export default function Sidebar({ isMobileOpen, onMobileClose }) {
   const { currentUser, logout, activeCenter } = useAuth();
   const [collapsed, setCollapsed] = useState(false);
   const [soHov, setSoHov] = useState(false);
   const [sessHov, setSessHov] = useState(false);
+  const [pinHov, setPinHov] = useState(false);
   const [toggleHov, setToggleHov] = useState(false);
   const [closeHov, setCloseHov] = useState(false);
   const [viewW, setViewW] = useState(window.innerWidth);
@@ -429,6 +436,38 @@ export default function Sidebar({ isMobileOpen, onMobileClose }) {
       }}>
 
 
+
+        {/* Security & PIN — manage the device-local quick-unlock PIN. Sits
+            above Active Sessions so the "settings about my account" group
+            reads top-down: Security → Sessions → Sign out. */}
+        <button
+          onClick={() => { navigate('/settings/security'); onMobileClose?.(); }}
+          onMouseEnter={() => setPinHov(true)}
+          onMouseLeave={() => setPinHov(false)}
+          title={showCollapsed ? 'Security & PIN' : undefined}
+          style={{
+            width: '100%', display: 'flex', alignItems: 'center',
+            justifyContent: showCollapsed ? 'center' : 'flex-start',
+            gap: '10px',
+            padding: showCollapsed ? '9px 0' : '8px 10px',
+            borderRadius: '9px', border: 'none',
+            background: pinHov ? 'rgba(59,130,246,0.18)' : 'transparent',
+            color: pinHov ? '#ffffff' : T.textMid, cursor: 'pointer',
+            transition: 'all 0.2s ease, padding 0.22s',
+            fontFamily: FF,
+          }}
+        >
+          <PinIcon />
+          <div style={{
+            overflow: 'hidden',
+            maxWidth: showCollapsed ? 0 : '150px',
+            opacity: showCollapsed ? 0 : 1,
+            transition: 'max-width 0.24s cubic-bezier(0.4,0,0.2,1), opacity 0.18s ease',
+            whiteSpace: 'nowrap',
+          }}>
+            <span style={{ fontSize: '13px', fontWeight: 400 }}>Security &amp; PIN</span>
+          </div>
+        </button>
 
         {/* Active sessions — same visual idiom as the Sign-out button so it
             lives where the muscle-memory for "things about my login" lives. */}

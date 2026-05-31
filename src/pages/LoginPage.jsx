@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useNavigate, useLocation, Navigate, Link } from 'react-router-dom';
 import useAuth from '../auth/useAuth';
+import PinSetupModal from '../auth/PinSetupModal';
 import { ROLE_HOME, ROLE_LABELS, NAV_ITEMS } from '../data/roles';
 import RadiologyWorkflowBG from '../components/RadiologyWorkflowBG';
 import TacticalWorkflow from '../components/TacticalWorkflow';
@@ -40,7 +41,7 @@ const INDUSTRY_QUOTES = [
 ];
 
 export default function LoginPage() {
-  const { login, hasAdminDoctor, sendOtp, verifyOtp, currentUser } = useAuth();
+  const { login, hasAdminDoctor, sendOtp, verifyOtp, currentUser, signInFromCache, enrollPin } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
   const from = location.state?.from?.pathname || '/';
@@ -72,8 +73,21 @@ export default function LoginPage() {
   const [identifier, setIdentifier] = useState('');
   const [password, setPassword] = useState('');
   const [otp, setOtp] = useState('');
-  const [loginMode, setLoginMode] = useState('password'); // 'password' or 'otp'
+  const [loginMode, setLoginMode] = useState('password'); // 'password' | 'otp' | 'pin'
   const [otpStep, setOtpStep] = useState('request'); // 'request' or 'verify'
+  // PIN-unlock state (offline re-entry). Populated on mount from authDb.
+  // pinUsers is the saved-PIN profile list; selecting one enables PIN entry.
+  const [pinUsers, setPinUsers] = useState([]);          // [{userId, name, lockedUntilMs}]
+  const [selectedPinUserId, setSelectedPinUserId] = useState(null);
+  const [pinValue, setPinValue] = useState('');
+  const [pinError, setPinError] = useState('');
+  const [pinLockUntilMs, setPinLockUntilMs] = useState(0);
+  const [pinLockNowTick, setPinLockNowTick] = useState(0);
+  // PIN setup modal state (post-login prompt).
+  const [pinSetupOpen, setPinSetupOpen] = useState(false);
+  const [pinSetupUserId, setPinSetupUserId] = useState(null);
+  const [pinSetupUserName, setPinSetupUserName] = useState('');
+  const [postLoginRoles, setPostLoginRoles] = useState([]);
   const [error, setError] = useState(null);
   const [loading, setLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
@@ -126,6 +140,85 @@ export default function LoginPage() {
     }
   }, [location.state]);
 
+  // Detect saved-PIN profiles on this device. If any exist, default the
+  // login mode to PIN entry. The user can switch to password/OTP via the
+  // existing toggle row.
+  useEffect(() => {
+    let cancelled = false;
+    import('../auth/pinAuth').then(({ listPinUsers }) => listPinUsers()).then((rows) => {
+      if (cancelled) return;
+      setPinUsers(rows);
+      if (rows.length > 0) {
+        setLoginMode('pin');
+        setSelectedPinUserId(rows[0].userId);
+        setPinLockUntilMs(rows[0].lockedUntilMs || 0);
+      }
+    }).catch(() => { /* no-op: fall back to password */ });
+    return () => { cancelled = true; };
+  }, []);
+
+  // Tick every second while a lockout is active so the countdown UI updates.
+  useEffect(() => {
+    if (!pinLockUntilMs || pinLockUntilMs <= Date.now()) return undefined;
+    const id = setInterval(() => setPinLockNowTick(t => (t + 1) | 0), 1000);
+    return () => clearInterval(id);
+  }, [pinLockUntilMs]);
+
+  // PIN submit handler. Verifies via pinAuth, restores AuthContext via
+  // signInFromCache on success, and surfaces lockout / wrong / expired
+  // cases with the right messaging.
+  const handlePinSubmit = async (e) => {
+    e?.preventDefault?.();
+    if (!selectedPinUserId) return;
+    if (pinValue.length < 4) { setPinError('Enter your 4-digit PIN.'); return; }
+    if (pinLockUntilMs > Date.now()) return; // safety; UI already disables submit
+    setPinError('');
+    setLoading(true);
+    try {
+      const { verifyPin } = await import('../auth/pinAuth');
+      const r = await verifyPin(selectedPinUserId, pinValue);
+      if (r.success) {
+        const sr = signInFromCache(r.session);
+        if (!sr.success) {
+          setPinError(sr.error || 'Could not restore session.');
+          return;
+        }
+        const target = resolveRedirectPath(sr.user?.roles);
+        navigate(target, { replace: true });
+        return;
+      }
+      if (r.reason === 'locked') {
+        setPinLockUntilMs(r.lockUntilMs || 0);
+        setPinError('');
+      } else if (r.reason === 'wrong') {
+        setPinError(`Wrong PIN. ${r.attemptsLeft} attempt${r.attemptsLeft === 1 ? '' : 's'} left.`);
+      } else if (r.reason === 'removed') {
+        // PIN slot wiped (lockout cap hit). Drop to password mode and
+        // refresh the saved-PIN list so this user disappears from the UI.
+        setPinError('Too many wrong attempts. Sign in with your password to continue.');
+        setPinUsers(prev => prev.filter(u => u.userId !== selectedPinUserId));
+        setSelectedPinUserId(null);
+        setLoginMode('password');
+      } else if (r.reason === 'session-expired') {
+        setPinError('Your offline session has expired. Sign in with your password to renew.');
+        setPinUsers(prev => prev.filter(u => u.userId !== selectedPinUserId));
+        setSelectedPinUserId(null);
+        setLoginMode('password');
+      } else {
+        setPinError('Could not verify PIN. Try again or use your password.');
+      }
+      setPinValue('');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const pinLockedSecondsLeft = pinLockUntilMs > Date.now()
+    ? Math.max(0, Math.ceil((pinLockUntilMs - Date.now()) / 1000))
+    : 0;
+  // eslint-disable-next-line no-unused-vars
+  const _pinTick = pinLockNowTick; // dependency for re-render during lockout
+
   const handleSubmit = async (e) => {
     e.preventDefault();
     setError(null);
@@ -166,6 +259,29 @@ export default function LoginPage() {
     const result = await login(id, pwd);
     setLoading(false);
     if (result.success) {
+      // Offer PIN setup ONCE per device per user. Skipped if the user has
+      // already dismissed the prompt OR already has a PIN. Either way, the
+      // post-setup navigation is the same as the legacy flow.
+      try {
+        const userId = result.user?.id;
+        if (userId) {
+          const [{ hasPin }, { isPinSetupDismissed }] = await Promise.all([
+            import('../auth/pinAuth'),
+            import('../auth/PinSetupModal'),
+          ]);
+          const [alreadyHasPin, dismissed] = await Promise.all([
+            hasPin(userId),
+            Promise.resolve(isPinSetupDismissed(userId)),
+          ]);
+          if (!alreadyHasPin && !dismissed) {
+            setPostLoginRoles(result.user?.roles || []);
+            setPinSetupUserId(userId);
+            setPinSetupUserName(result.user?.name || '');
+            setPinSetupOpen(true);
+            return; // Modal handles its own navigation after enroll/skip.
+          }
+        }
+      } catch (_) { /* fall through to navigation on any failure */ }
       const targetPath = resolveRedirectPath(result.user?.roles);
       navigate(targetPath, { replace: true });
     } else {
@@ -366,7 +482,27 @@ export default function LoginPage() {
         </div>
 
         <div className="login-mode-toggle" style={{ display: 'flex', gap: '10px', marginBottom: '25px', padding: '4px', background: 'rgba(255,255,255,0.05)', borderRadius: '10px' }}>
-          <button 
+          {pinUsers.length > 0 && (
+            <button
+              type="button"
+              onClick={() => { setLoginMode('pin'); setError(null); setPinError(''); }}
+              className={`toggle-btn ${loginMode === 'pin' ? 'active' : ''}`}
+              style={{
+                flex: 1,
+                padding: '12px',
+                border: 'none',
+                borderRadius: '8px',
+                cursor: 'pointer',
+                fontSize: '11px',
+                fontWeight: 800,
+                transition: 'all 0.3s',
+                background: loginMode === 'pin' ? '#00f2fe' : 'transparent',
+                color: loginMode === 'pin' ? '#060a12' : '#fff',
+                boxShadow: loginMode === 'pin' ? '0 0 15px rgba(0, 242, 254, 0.4)' : 'none',
+              }}
+            >PIN</button>
+          )}
+          <button
             type="button"
             onClick={() => { setLoginMode('password'); setError(null); }}
             className={`toggle-btn ${loginMode === 'password' ? 'active' : ''}`}
@@ -427,6 +563,96 @@ export default function LoginPage() {
           </div>
         )}
 
+        {loginMode === 'pin' && (
+          <form onSubmit={handlePinSubmit} className="auth-form" autoComplete="off">
+            {pinUsers.length > 1 && (
+              <div style={{ marginBottom: '14px' }}>
+                <label style={{ display: 'block', fontSize: '11px', fontWeight: 800, color: 'rgba(255,255,255,0.55)', textTransform: 'uppercase', letterSpacing: '0.6px', marginBottom: '8px' }}>
+                  Saved account
+                </label>
+                <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                  {pinUsers.map(u => (
+                    <button
+                      key={u.userId}
+                      type="button"
+                      onClick={() => {
+                        setSelectedPinUserId(u.userId);
+                        setPinValue('');
+                        setPinError('');
+                        setPinLockUntilMs(u.lockedUntilMs || 0);
+                      }}
+                      style={{
+                        background: selectedPinUserId === u.userId ? 'rgba(0, 242, 254, 0.18)' : 'rgba(255,255,255,0.05)',
+                        color: '#fff',
+                        border: selectedPinUserId === u.userId ? '1px solid #00f2fe' : '1px solid rgba(255,255,255,0.12)',
+                        padding: '8px 12px',
+                        borderRadius: '8px',
+                        fontSize: '12px',
+                        fontWeight: 700,
+                        cursor: 'pointer',
+                      }}
+                    >{u.name}</button>
+                  ))}
+                </div>
+              </div>
+            )}
+            <div className="form-group" style={{ marginBottom: '6px' }}>
+              <label>Quick-Unlock PIN</label>
+              <input
+                type="password"
+                inputMode="numeric"
+                pattern="[0-9]*"
+                maxLength={4}
+                autoComplete="off"
+                autoFocus
+                value={pinValue}
+                onChange={e => { setPinValue(e.target.value.replace(/\D/g, '').slice(0, 4)); setPinError(''); }}
+                placeholder="• • • •"
+                disabled={pinLockedSecondsLeft > 0 || loading}
+                style={{
+                  letterSpacing: '14px',
+                  textAlign: 'center',
+                  fontSize: '20px',
+                  background: 'rgba(0, 0, 0, 0.35)',
+                  color: '#fff',
+                  border: '1px solid rgba(255, 255, 255, 0.15)',
+                  borderRadius: '10px',
+                  padding: '14px',
+                  width: '100%',
+                  boxSizing: 'border-box',
+                  outline: 'none',
+                }}
+              />
+            </div>
+            {pinLockedSecondsLeft > 0 && (
+              <div style={{ marginTop: '10px', padding: '10px 12px', background: 'rgba(220, 38, 38, 0.18)', border: '1px solid rgba(220, 38, 38, 0.35)', borderRadius: '8px', color: '#fecaca', fontSize: '12px', fontWeight: 600, lineHeight: 1.5 }}>
+                Too many wrong attempts. Try again in {Math.floor(pinLockedSecondsLeft / 60)}:{String(pinLockedSecondsLeft % 60).padStart(2, '0')}.
+              </div>
+            )}
+            {pinError && pinLockedSecondsLeft === 0 && (
+              <div style={{ marginTop: '10px', fontSize: '12px', color: '#fca5a5', fontWeight: 600 }}>
+                {pinError}
+              </div>
+            )}
+            <button
+              type="submit"
+              disabled={loading || pinLockedSecondsLeft > 0 || pinValue.length < 4 || !selectedPinUserId}
+              className="auth-submit"
+              style={{ marginTop: '16px' }}
+            >
+              {loading ? 'Unlocking…' : 'Unlock'}
+            </button>
+            <div style={{ marginTop: '14px', textAlign: 'center' }}>
+              <button
+                type="button"
+                onClick={() => { setLoginMode('password'); setPinError(''); }}
+                style={{ background: 'transparent', border: 'none', color: '#00f2fe', fontSize: '11px', fontWeight: 700, cursor: 'pointer', letterSpacing: '0.3px' }}
+              >Use password instead</button>
+            </div>
+          </form>
+        )}
+
+        {loginMode !== 'pin' && (
         <form onSubmit={handleSubmit} className="auth-form">
           <div className="form-group">
             <label>Email or Mobile Number</label>
@@ -552,11 +778,12 @@ export default function LoginPage() {
 
           <button type="submit" className="btn-primary btn-block gamified-btn" disabled={loading} style={{ marginTop: '10px' }}>
             {loading ? 'Signing In...' : (
-              loginMode === 'password' ? 'Sign In' : 
+              loginMode === 'password' ? 'Sign In' :
               (otpStep === 'request' ? 'Send OTP' : 'Verify & Sign In')
             )}
           </button>
         </form>
+        )}
 
         <div className="neon-divider"></div>
         
@@ -566,6 +793,24 @@ export default function LoginPage() {
            </p>
         </div>
       </div>
+
+      <PinSetupModal
+        open={pinSetupOpen}
+        userId={pinSetupUserId}
+        userName={pinSetupUserName}
+        onEnroll={async (pin) => {
+          const r = await enrollPin(pin);
+          if (r?.success) {
+            setPinSetupOpen(false);
+            navigate(resolveRedirectPath(postLoginRoles), { replace: true });
+          }
+          return r;
+        }}
+        onDismiss={() => {
+          setPinSetupOpen(false);
+          navigate(resolveRedirectPath(postLoginRoles), { replace: true });
+        }}
+      />
     </div>
   );
 }

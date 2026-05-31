@@ -5,6 +5,8 @@ import { DicomCache } from '../utils/DicomCache';
 import { startSyncEngine, stopSyncEngine, syncNow } from '../sync/SyncEngine';
 import { clearLocalDatabase, setActiveHospital, purgeLegacyDb } from '../db/dexie';
 import { migrateLegacyOutbox } from '../db/repos/outboxRepo';
+import { setPin as pinAuthSet, removePin as pinAuthRemove } from './pinAuth';
+import { clearAuthDb } from './authDb';
 
 export const AuthContext = createContext(null);
 
@@ -380,14 +382,65 @@ export function AuthProvider({ children }) {
       return { success: true, user };
     } catch (error) {
       const respData = error.response?.data || {};
-      return { 
-        success: false, 
+      return {
+        success: false,
         error: respData.error || respData.message || 'Authentication failed.',
         errorCode: respData.errorCode || respData.ErrorCode,
         accountStatus: respData.accountStatus || respData.AccountStatus
       };
     }
   }, []);
+
+  // Capture the current session as a snapshot suitable for PIN-unlock
+  // restoration. Includes everything signInFromCache() needs to rebuild
+  // AuthContext without an API call. Called from PinSetupModal.
+  const captureSessionSnapshot = useCallback(() => {
+    if (!currentUser) return null;
+    return {
+      user: currentUser,
+      accessToken:  localStorage.getItem('1rad_token'),
+      refreshToken: localStorage.getItem('1rad_refresh_token'),
+      centers,
+      defaultCenterId: activeCenterId,
+    };
+  }, [currentUser, centers, activeCenterId]);
+
+  // PIN-unlock counterpart to login(). Restores the cached session into
+  // AuthContext without a network round-trip. LoginPage calls this after a
+  // successful verifyPin(). The next API call going out re-validates the
+  // restored JWT server-side via SessionValidationMiddleware - if the
+  // session has been revoked, the 401 interceptor (set up elsewhere)
+  // forces a fresh logout + login.
+  const signInFromCache = useCallback((snapshot) => {
+    if (!snapshot?.user || !snapshot?.accessToken) {
+      return { success: false, error: 'Cached session is incomplete.' };
+    }
+    localStorage.setItem('1rad_token', snapshot.accessToken);
+    if (snapshot.refreshToken) {
+      localStorage.setItem('1rad_refresh_token', snapshot.refreshToken);
+    }
+    localStorage.setItem('1rad_user', JSON.stringify(snapshot.user));
+    setCurrentUser(snapshot.user);
+    if (Array.isArray(snapshot.centers)) setCenters(snapshot.centers);
+    if (snapshot.defaultCenterId)        setActiveCenterId(snapshot.defaultCenterId);
+    return { success: true, user: snapshot.user };
+  }, []);
+
+  // Setter exposed to the PIN setup modal. Wraps pinAuth.setPin with the
+  // current session snapshot so the caller doesn't have to know about
+  // tokens / centers / etc.
+  const enrollPin = useCallback(async (pin) => {
+    const snapshot = captureSessionSnapshot();
+    if (!snapshot?.user?.id) {
+      return { success: false, error: 'No active session.' };
+    }
+    try {
+      await pinAuthSet(snapshot.user.id, pin, snapshot);
+      return { success: true };
+    } catch (err) {
+      return { success: false, error: err?.message || 'Could not set PIN.' };
+    }
+  }, [captureSessionSnapshot]);
 
   const logout = useCallback(() => {
     setCurrentUser(null);
@@ -403,6 +456,10 @@ export function AuthProvider({ children }) {
     // on this device doesn't inherit anyone's worklist.
     stopSyncEngine();
     clearLocalDatabase().catch(() => {});
+    // PIN-unlock data follows the same hygiene posture: removed on logout
+    // so a shared device doesn't carry one user's offline-unlock token
+    // into the next user's session.
+    clearAuthDb().catch(() => {});
 
     // Clear timers
     if (idleTimerRef.current) clearTimeout(idleTimerRef.current);
@@ -677,8 +734,13 @@ export function AuthProvider({ children }) {
       activeCenter,
       switchCenter,
       hasAdminDoctor,
-      login, 
+      login,
       logout,
+      // PIN-unlock (offline re-entry). signInFromCache primes AuthContext
+      // from a verified PIN snapshot; enrollPin captures the current
+      // session into authDb. See src/auth/pinAuth.js.
+      signInFromCache,
+      enrollPin,
       refreshCenters,
       registerAdminDoctor,
       sendOtp,

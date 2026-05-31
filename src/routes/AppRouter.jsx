@@ -22,6 +22,7 @@ import DicomViewerPage from '../pages/DicomViewerPage';
 import SubscriptionPage from '../pages/SubscriptionPage';
 import PatientTimelinePage from '../pages/PatientTimelinePage';
 import ActiveSessionsPage from '../pages/ActiveSessionsPage';
+import SecuritySettingsPage from '../pages/SecuritySettingsPage';
 import DicomBridgePage from '../pages/DicomBridgePage';
 import ConfigurationPage from '../pages/ConfigurationPage';
 import OperationsBoard from '../pages/OperationsBoard';
@@ -125,6 +126,17 @@ export default function AppRouter() {
           element={
             <ProtectedRoute authOnly={true}>
               <ActiveSessionsPage />
+            </ProtectedRoute>
+          }
+        />
+        {/* Settings → Security. Manage the device-local quick-unlock PIN
+            (set / change / remove). Authenticated only — never reachable
+            without an active session. */}
+        <Route
+          path="/settings/security"
+          element={
+            <ProtectedRoute authOnly={true}>
+              <SecuritySettingsPage />
             </ProtectedRoute>
           }
         />
