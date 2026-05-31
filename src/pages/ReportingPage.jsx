@@ -20,6 +20,7 @@ import PatientTimeline from '../components/PatientTimeline';
 import VoiceReportingPanel from '../components/VoiceReportingPanel';
 import { assetsFromManifest } from '../utils/dicomManifest';
 import { getReportByAppointmentId, saveLocalDraft } from '../db/repos/reportsRepo';
+import { logEvent } from '../sync/syncTelemetry';
 
 const ReportingPage = () => {
   const navigate = useNavigate();
@@ -48,6 +49,14 @@ const ReportingPage = () => {
   // where the prompt always claimed the local draft was "newer" because the
   // report entity has no server-side UpdatedAt timestamp to compare against.
   const serverBaselineRef = useRef(null);
+  // B2 Track 3 — OCC token of the report we last loaded / saved. Sent
+  // back on every save so a concurrent edit returns 409 instead of
+  // silently overwriting. Updated after each successful load + save.
+  const rowVersionRef = useRef(null);
+  // 409 undo-toast state. When set, shows a banner with the user's
+  // pre-conflict content stashed in `previous` for 30s — clicking Undo
+  // re-sends that content as the new save. Auto-dismisses after 30s.
+  const [occConflict, setOccConflict] = useState(null);
   const [selectedImg, setSelectedImg] = useState(null);
   const [imgToolbarPos, setImgToolbarPos] = useState({ top: 0, left: 0 });
   const [isFullscreen, setIsFullscreen] = useState(false);
@@ -306,13 +315,23 @@ const ReportingPage = () => {
           impression: impression || '',
           advice: advice || '',
           reportingMode: 'Narrative',
-          isFinalized: false
+          isFinalized: false,
+          // B2 Track 3 — OCC token. Server runs the concurrency check
+          // when this is present; falls back to last-write-wins when null.
+          rowVersion: rowVersionRef.current,
         };
         const res = await apiClient.post('/reporting/save', payload);
         if (res.data?.success) {
           setLastSaved(new Date().toLocaleTimeString());
           setSaveStatus('SUCCESS');
           autosaveFailuresRef.current = 0;
+          // Advance the OCC token so the NEXT autosave / manual save sends
+          // the up-to-date value. Server echoes the new RowVersion in the
+          // response payload.
+          const updated = res.data?.data;
+          if (updated?.rowVersion ?? updated?.RowVersion) {
+            rowVersionRef.current = updated.rowVersion ?? updated.RowVersion;
+          }
         } else {
           autosaveFailuresRef.current = failures + 1;
           setSaveStatus('DIRTY');
@@ -338,6 +357,15 @@ const ReportingPage = () => {
           );
           setCloudAutosaveDisabledReason(serverMsg);
           setSaveStatus('DIRTY'); // a future manual save can still try
+        } else if (status === 409) {
+          // B2 Track 3 — concurrent edit. The radiologist is actively
+          // typing; overwriting the editor mid-keystroke would be jarring.
+          // Surface the conflict via saveStatus + a non-destructive banner
+          // so they can decide when to engage. The NEXT manual save will
+          // trip the same 409 and enter the full undo-toast flow.
+          console.warn('[AUTOSAVE] 409 — concurrent edit detected; deferring to manual save.');
+          autosaveFailuresRef.current = failures + 1;
+          setSaveStatus('CONFLICT');
         } else {
           console.warn('[AUTOSAVE] Cloud sync failed, will retry later.', err?.message || err);
           autosaveFailuresRef.current = failures + 1;
@@ -687,6 +715,8 @@ const ReportingPage = () => {
         // Record what the server currently holds so draft-recovery can compare
         // lineage (see serverBaselineRef declaration).
         serverBaselineRef.current = findingsHtml;
+        // B2 Track 3 — stash the OCC token for the next save.
+        rowVersionRef.current = r.rowVersion ?? r.RowVersion ?? null;
         // ── Text-align persistence diagnostic (load side) ────────────────
         // If save logged alignCount > 0 but this logs 0, the API round-trip
         // is dropping inline styles. If both show alignCount > 0, the issue
@@ -977,7 +1007,9 @@ const ReportingPage = () => {
       impression: impression || '',
       advice: advice || '',
       isFinalized: finalizing,
-      reportingMode: 'Narrative'
+      reportingMode: 'Narrative',
+      // B2 Track 3 — OCC token from the last load / save.
+      rowVersion: rowVersionRef.current,
     };
 
     if (!isOnline) {
@@ -998,6 +1030,11 @@ const ReportingPage = () => {
         // baseline so any subsequent draft compares lineage against this
         // saved content (and a reload right after save won't falsely prompt).
         serverBaselineRef.current = currentFindings;
+        // B2 Track 3 — advance the OCC token to the just-saved version.
+        const updated = res.data?.data;
+        if (updated?.rowVersion ?? updated?.RowVersion) {
+          rowVersionRef.current = updated.rowVersion ?? updated.RowVersion;
+        }
         showNotif('success', finalizing ? 'REPORT FINALIZED' : 'DRAFT SAVED', finalizing ? 'Report has been finalized and dispatched successfully.' : 'Your changes have been saved successfully.');
         if (finalizing) {
           setIsFinalized(true);
@@ -1008,7 +1045,36 @@ const ReportingPage = () => {
       }
     } catch (err) {
       console.error('[REPORTING] Save failed', err);
-      if (!err.response) {
+      if (err?.response?.status === 409 && err.response.data?.code === 'OCC_CONFLICT') {
+        // B2 Track 3 — auto-merge + Undo.
+        // Stash the user's content so the 30s Undo can re-apply it.
+        // Replace the editor with the server's canonical state. Show a
+        // banner; on Undo click the user's content is sent back with the
+        // server's new RowVersion (so it wins deliberately).
+        const server = err.response.data?.data || {};
+        const previousContent = {
+          findings:    currentFindings,
+          impression:  impression || '',
+          advice:      advice || '',
+          templateId:  selectedTemplateId,
+          isFinalized: finalizing,
+        };
+        // Apply server state to the editor.
+        applyEditorContent(server.findings || '');
+        setImpression(server.impression || '');
+        setAdvice(server.advice || '');
+        if (server.templateId) setSelectedTemplateId(String(server.templateId));
+        // Advance our token to the server's (so a subsequent save — Undo
+        // included — uses the up-to-date concurrency value).
+        rowVersionRef.current = server.rowVersion ?? server.RowVersion ?? null;
+        serverBaselineRef.current = server.findings || '';
+        setOccConflict({
+          shownAt: Date.now(),
+          previous: previousContent,
+        });
+        setSaveStatus('CONFLICT');
+        logEvent('conflict.shown', { appointmentId, finalizing });
+      } else if (!err.response) {
         await addToOutbox('REPORT', payload);
         showNotif('warning', 'SAVED TO OUTBOX', 'Network error encountered. Report has been saved to the offline outbox and will sync automatically.');
         if (finalizing) {
@@ -1022,6 +1088,52 @@ const ReportingPage = () => {
       setIsSaving(false);
     }
   };
+
+  // B2 Track 3 — Undo handler for a 409 auto-merge. Re-applies the user's
+  // pre-conflict content and submits it with the server's NEW RowVersion
+  // so it wins deliberately. The conflict toast auto-dismisses after 30s.
+  const handleUndoConflict = useCallback(async () => {
+    const prev = occConflict?.previous;
+    if (!prev || !appointmentId) return;
+    applyEditorContent(prev.findings || '');
+    setImpression(prev.impression || '');
+    setAdvice(prev.advice || '');
+    if (prev.templateId) setSelectedTemplateId(String(prev.templateId));
+    setOccConflict(null);
+    try {
+      const res = await apiClient.post('/reporting/save', {
+        appointmentId,
+        templateId: prev.templateId,
+        findings: prev.findings,
+        impression: prev.impression,
+        advice: prev.advice,
+        isFinalized: prev.isFinalized,
+        reportingMode: 'Narrative',
+        rowVersion: rowVersionRef.current,
+      });
+      if (res.data?.success) {
+        const updated = res.data?.data;
+        if (updated?.rowVersion ?? updated?.RowVersion) {
+          rowVersionRef.current = updated.rowVersion ?? updated.RowVersion;
+        }
+        serverBaselineRef.current = prev.findings;
+        setSaveStatus('SUCCESS');
+        showNotif('success', 'UNDO APPLIED', 'Your changes have been re-applied over the conflicting save.');
+        logEvent('conflict.resolved', { appointmentId, choice: 'undo' });
+      }
+    } catch (e) {
+      console.warn('[REPORTING] Undo failed', e);
+      showNotif('error', 'UNDO FAILED', 'Could not re-apply your changes. Try saving again.');
+    }
+  }, [occConflict, appointmentId, applyEditorContent, showNotif]);
+
+  // Auto-dismiss the conflict toast after 30 seconds. The user can still
+  // act on it during that window via the Undo button.
+  useEffect(() => {
+    if (!occConflict) return undefined;
+    const t = setTimeout(() => setOccConflict(null), 30_000);
+    return () => clearTimeout(t);
+  }, [occConflict]);
 
 
 
@@ -4682,6 +4794,44 @@ const ReportingPage = () => {
                         <div style={{ marginTop: '4px', fontWeight: 500, color: '#7f1d1d' }}>
                           Your work is still being saved locally. Return to the worklist and reopen this appointment, or reload to retry.
                         </div>
+                      </div>
+                    )}
+                    {occConflict && (
+                      <div style={{
+                        marginTop: '10px',
+                        background: '#fffbeb',
+                        border: '1px solid #fde68a',
+                        borderLeft: '3px solid #b45309',
+                        color: '#78350f',
+                        borderRadius: '8px',
+                        padding: '10px',
+                        fontSize: '10px',
+                        fontWeight: 600,
+                        lineHeight: 1.5,
+                      }}>
+                        <div style={{ fontWeight: 900, letterSpacing: '0.5px', marginBottom: '4px' }}>
+                          ⚠ Updated by another user
+                        </div>
+                        <div style={{ fontWeight: 500, color: '#78350f', marginBottom: '8px' }}>
+                          Their version is now showing. Your earlier edits are still recoverable for 30s.
+                        </div>
+                        <button
+                          type="button"
+                          onClick={handleUndoConflict}
+                          style={{
+                            background: '#b45309',
+                            color: 'white',
+                            border: 'none',
+                            padding: '5px 12px',
+                            borderRadius: '6px',
+                            fontWeight: 900,
+                            fontSize: '10px',
+                            letterSpacing: '0.5px',
+                            cursor: 'pointer',
+                          }}
+                        >
+                          UNDO — RESTORE MY VERSION
+                        </button>
                       </div>
                     )}
                   </div>

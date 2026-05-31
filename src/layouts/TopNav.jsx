@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import useAuth from '../auth/useAuth';
 import useOffline from '../hooks/useOffline';
 import useSyncStatus from '../sync/useSyncStatus';
+import useQuotaStatus from '../sync/useQuotaStatus';
 import OverdueBell from '../components/OverdueAppointments/OverdueBell';
 import '../styles/global.css';
 
@@ -31,6 +32,16 @@ export default function TopNav({ currentTime }) {
   const syncToneColor = syncStatus.tone === 'crit' ? '#dc2626'
                        : syncStatus.tone === 'warn' ? '#b45309'
                        : '#10b981';
+  // Track 4 — quota chip. Only renders when the cache is filling (warn or
+  // crit). Below 80% we stay invisible so the header doesn't carry a chip
+  // that's permanently green and ignored. The quota monitor evicts old
+  // rows automatically; this chip just tells the user it's happening.
+  const quota = useQuotaStatus();
+  const showQuotaChip = quota?.state === 'warn' || quota?.state === 'crit';
+  const quotaPct = quota?.ratio != null ? Math.round(quota.ratio * 100) : null;
+  const quotaToneColor = quota?.state === 'crit' ? '#dc2626' : '#b45309';
+  const quotaToneBg    = quota?.state === 'crit' ? '#fef2f2' : '#fffbeb';
+  const quotaToneBorder= quota?.state === 'crit' ? '#fee2e2' : '#fde68a';
 
   const formattedTime = currentTime.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
   const formattedDate = currentTime.toLocaleDateString([], { weekday: 'short', day: 'numeric', month: 'short' });
@@ -232,6 +243,24 @@ export default function TopNav({ currentTime }) {
                 </span>
               </div>
             </div>
+
+            {showQuotaChip && quotaPct != null && (
+              <div
+                title={`Local cache: ${quotaPct}% full — old worklists are evicted automatically`}
+                style={{
+                  display: 'flex', alignItems: 'center', gap: '6px',
+                  padding: '4px 10px',
+                  borderRadius: '8px',
+                  background: quotaToneBg,
+                  border: `1px solid ${quotaToneBorder}`,
+                }}
+              >
+                <span style={{ fontSize: '12px' }}>💾</span>
+                <span style={{ fontSize: '10px', fontWeight: 950, color: quotaToneColor, letterSpacing: '0.3px' }}>
+                  Cache {quotaPct}%
+                </span>
+              </div>
+            )}
           </div>
         </div>
 

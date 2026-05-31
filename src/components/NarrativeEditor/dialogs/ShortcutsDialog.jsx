@@ -95,7 +95,6 @@ const SECTIONS = [
       ['Shift + F3', 'Toggle case (Mixed → UPPER → lower → Title)'],
       ['Alt + Shift + ↑ / ↓', 'Move paragraph up / down'],
       ['Ctrl + Shift + Space', 'Insert non-breaking space'],
-      ['Ctrl + –', 'Insert soft/optional hyphen'],
       ['Ctrl + Shift + –', 'Insert em dash —'],
     ],
   },
@@ -113,6 +112,8 @@ const SECTIONS = [
     items: [
       ['Ctrl + S', 'Save'],
       ['Ctrl + P', 'Print preview'],
+      ['Ctrl + 0', 'Reset zoom to 100%'],
+      ['Ctrl + –', 'Zoom out'],
       ['F11', 'Toggle full screen'],
       ['F1', 'Show this list'],
       ['Esc', 'Close dialogs'],

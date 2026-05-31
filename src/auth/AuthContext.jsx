@@ -2,8 +2,9 @@ import { createContext, useContext, useState, useCallback, useEffect, useMemo, u
 import apiClient from '../api/apiClient';
 import { StudyPrefetcher } from '../utils/StudyPrefetcher';
 import { DicomCache } from '../utils/DicomCache';
-import { startSyncEngine, stopSyncEngine } from '../sync/SyncEngine';
-import { clearLocalDatabase } from '../db/dexie';
+import { startSyncEngine, stopSyncEngine, syncNow } from '../sync/SyncEngine';
+import { clearLocalDatabase, setActiveHospital, purgeLegacyDb } from '../db/dexie';
+import { migrateLegacyOutbox } from '../db/repos/outboxRepo';
 
 export const AuthContext = createContext(null);
 
@@ -258,9 +259,10 @@ export function AuthProvider({ children }) {
       // Kick off background pre-download of today's worklist for radiologists.
       // Guardrails (role, network, storage) live inside the prefetcher.
       StudyPrefetcher.start(currentUser);
-      // Offline-first cache: start pulling deltas so the worklist survives
-      // brief outages. Cleared in logout() for PHI hygiene.
-      startSyncEngine();
+      // One-time: purge the pre-B2 unified cache DB. The new per-hospital
+      // DBs repopulate from the server within the first pull, so nothing
+      // is lost by dropping it.
+      purgeLegacyDb();
 
       // Fix #3: Periodically re-check subscription status every 20 minutes so that
       // expiry is caught during long active sessions without requiring a page reload.
@@ -274,6 +276,37 @@ export function AuthProvider({ children }) {
       StudyPrefetcher.stop();
     }
   }, [currentUser?.id, refreshCenters, refreshSubscription]);
+
+  // B2 Track 5 — bind the offline cache to the active hospital.
+  // The Dexie module keeps a per-hospital DB; the table accessors
+  // (tables.*) resolve to whichever DB is active. Whenever activeCenter
+  // resolves or changes:
+  //   1. flip the DB pointer  → reads/writes hit the right hospital
+  //   2. start the sync engine (idempotent) so the new DB gets populated
+  //   3. nudge an immediate pull so the worklist reflects the freshest
+  //      server state for the new hospital without waiting 30s
+  // The order matters: setActiveHospital BEFORE the engine writes — the
+  // pullCycle reads tables.appointments() at call time, so as long as the
+  // pointer is set first it picks up the new DB on the very next cycle.
+  useEffect(() => {
+    if (!currentUser?.id) {
+      setActiveHospital(null);
+      return;
+    }
+    const hid = activeCenter?.id;
+    if (!hid) return;
+    setActiveHospital(hid);
+    // One-time migration: any pre-B2 outbox items still parked in
+    // localStorage move into this hospital's Dexie outbox now that the
+    // DB pointer is set. Idempotent — does nothing once the legacy key
+    // is cleared.
+    migrateLegacyOutbox();
+    startSyncEngine();
+    // Hospital changed mid-session → immediate sync (push then pull)
+    // so any queued mutations from this hospital go up, and the board
+    // doesn't show stale rows for 30s after the switch. Best-effort.
+    syncNow();
+  }, [currentUser?.id, activeCenter?.id]);
 
   const login = useCallback(async (identifier, password) => {
     try {

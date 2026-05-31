@@ -1,248 +1,98 @@
 // ════════════════════════════════════════════════════════════════
 // src/hooks/useOffline.js
 //
-// 1Rad / EasyRad Synchronization Manager
-// Monitors network connectivity and manages the local 'Outbox'
-// to ensure zero data loss during clinical offline sessions.
+// 1Rad / EasyRad Synchronization Manager — Phase B2 Track 1 rewrite.
+//
+// Pre-B2 this hook owned the outbox (localStorage) AND the push loop
+// (performSync). Both responsibilities have moved into the SyncEngine and
+// the per-hospital Dexie cache. What's left here is a thin React surface
+// over the engine + outbox table:
+//   • addToOutbox        → enqueue + nudge push if online
+//   • performSync        → deprecated alias for syncNow (kept so existing
+//                         callers in AppLayout/BillingPage don't break)
+//   • purgePoisonedOutbox→ direct Dexie call
+//   • pendingCount / poisonedCount → liveQuery counters
+//   • isOnline / isSyncing      → React state derived from network events
+//
+// The behavioural difference users will notice: on reconnect, the queue
+// drains AND the worklist refreshes within ~1s (single coordinator instead
+// of two parallel triggers). On the same shared `pulling` mutex, no more
+// double-fires.
 // ════════════════════════════════════════════════════════════════
 
-import { useState, useEffect, useCallback } from 'react';
-import { nativeStorage } from './useElectron';
-
-const OUTBOX_KEY = '1rad_offline_outbox';
+import { useCallback, useEffect, useState } from 'react';
+import { enqueue, purgePoisoned, watchCounts } from '../db/repos/outboxRepo';
+import { syncNow, syncPushNow } from '../sync/SyncEngine';
 
 export default function useOffline() {
-  const [isOnline, setIsOnline] = useState(navigator.onLine);
-  const [syncQueue, setSyncQueue] = useState([]);
+  const [isOnline, setIsOnline] = useState(() => navigator.onLine);
   const [isSyncing, setIsSyncing] = useState(false);
+  const [counts, setCounts] = useState({ pending: 0, poisoned: 0 });
 
-  // 1. Monitor Connectivity
+  // Network state. SyncEngine has its own listener for the actual sync
+  // trigger; we keep one here for the boolean exposed to consumers.
   useEffect(() => {
-    const handleOnline = () => setIsOnline(true);
-    const handleOffline = () => setIsOnline(false);
-
-    window.addEventListener('online', handleOnline);
-    window.addEventListener('offline', handleOffline);
-
-    // Initial load of outbox
-    loadOutbox();
-
+    const on  = () => setIsOnline(true);
+    const off = () => setIsOnline(false);
+    window.addEventListener('online',  on);
+    window.addEventListener('offline', off);
     return () => {
-      window.removeEventListener('online', handleOnline);
-      window.removeEventListener('offline', handleOffline);
+      window.removeEventListener('online',  on);
+      window.removeEventListener('offline', off);
     };
   }, []);
 
-  // 2. Manage Outbox Persistence
-  const loadOutbox = async () => {
-    const data = await nativeStorage.get(OUTBOX_KEY);
-    setSyncQueue(data || []);
-  };
-
-  // After this many consecutive POST failures we quarantine an outbox
-  // record (mark poisoned) instead of retrying it forever. The user's logs
-  // showed one bad record battering /reporting/save with 100+ 404s in a
-  // single session — poisoning stops that cold while still preserving the
-  // payload for inspection / manual retry.
-  const MAX_RETRY_ATTEMPTS = 5;
+  // Reactive outbox counts. liveQuery fires within a few ms of any
+  // outbox write, including pushes from SyncEngine itself.
+  useEffect(() => {
+    const sub = watchCounts().subscribe({
+      next: setCounts,
+      error: (err) => console.warn('[useOffline] count liveQuery error', err),
+    });
+    return () => sub.unsubscribe();
+  }, []);
 
   const addToOutbox = useCallback(async (type, payload) => {
-    const newItem = {
-      id: crypto.randomUUID(),
-      type, // 'INVOICE', 'EXPENSE', 'PATIENT'
-      payload,
-      timestamp: new Date().toISOString(),
-      attempts: 0,
-      poisoned: false,
-      lastError: null,
-    };
-
-    const updatedQueue = [...syncQueue, newItem];
-    setSyncQueue(updatedQueue);
-    await nativeStorage.set(OUTBOX_KEY, updatedQueue);
-
+    const item = await enqueue(type, payload);
     console.log(`[OFFLINE] Record cached in outbox: ${type}`);
-    return newItem.id;
-  }, [syncQueue]);
+    // If we're online, attempt the push right away — no reason to wait
+    // for the next user action. If offline, this is a no-op (the engine's
+    // online listener will drain on reconnect).
+    if (navigator.onLine) {
+      setIsSyncing(true);
+      try { await syncPushNow(); } catch (_) {}
+      setIsSyncing(false);
+    }
+    return item.id;
+  }, []);
 
-  const clearFromOutbox = useCallback(async (id) => {
-    const updatedQueue = syncQueue.filter(item => item.id !== id);
-    setSyncQueue(updatedQueue);
-    await nativeStorage.set(OUTBOX_KEY, updatedQueue);
-  }, [syncQueue]);
-
-  // Mark a record as poisoned after MAX_RETRY_ATTEMPTS failures. It stays in
-  // the outbox (so the user / developer can see it) but the sync loop skips
-  // it — no more spamming the API with a request we already know will fail.
-  const markPoisoned = useCallback(async (id, errorMessage) => {
-    const updatedQueue = syncQueue.map(item =>
-      item.id === id
-        ? { ...item, poisoned: true, lastError: errorMessage || 'Unknown error' }
-        : item
-    );
-    setSyncQueue(updatedQueue);
-    await nativeStorage.set(OUTBOX_KEY, updatedQueue);
-  }, [syncQueue]);
-
-  // Wipe every poisoned record from the outbox. Surfaced via the return
-  // value so a settings page (or the dev console) can call it to clean up.
   const purgePoisonedOutbox = useCallback(async () => {
-    const survivors = syncQueue.filter(item => !item.poisoned);
-    const purged = syncQueue.length - survivors.length;
-    setSyncQueue(survivors);
-    await nativeStorage.set(OUTBOX_KEY, survivors);
+    const purged = await purgePoisoned();
     console.log(`[OFFLINE] Purged ${purged} poisoned record(s).`);
     return purged;
-  }, [syncQueue]);
+  }, []);
 
-  // 3. Synchronization Engine
-  const performSync = useCallback(async (apiClient) => {
-    if (!isOnline || syncQueue.length === 0 || isSyncing) return;
-
+  // Compat shim for the legacy useOffline.performSync(apiClient) signature.
+  // The apiClient argument is ignored — the engine knows how to reach the
+  // API directly. Callers (AppLayout's auto-sync effect, BillingPage's
+  // toolbar) keep working without code changes.
+  const performSync = useCallback(async (_apiClient) => {
     setIsSyncing(true);
-    console.log(`[SYNC] Starting synchronization of ${syncQueue.length} records...`);
-
-    const results = { success: 0, failed: 0 };
-
-    for (const item of syncQueue) {
-      // Skip any record we've already poisoned. Without this, every
-      // sync cycle (~triggered on online/offline toggles + ~30s intervals)
-      // would re-burn through the bad records and re-POST them — the exact
-      // symptom in the log: the same record id 404ing dozens of times.
-      if (item.poisoned) {
-        results.failed++;
-        continue;
-      }
-      try {
-        let endpoint = '';
-        let method = 'POST';
-        
-        if (item.type === 'INVOICE') endpoint = '/finance/invoices';
-        if (item.type === 'EXPENSE') endpoint = '/finance/expense';
-        if (item.type === 'PAYMENT') endpoint = '/finance/payments';
-        if (item.type === 'REPORT') endpoint = '/reporting/save';
-        if (item.type === 'PRICE_UPDATE') endpoint = '/finance/registry';
-        if (item.type === 'PAYOUT') endpoint = '/referrers/commissions';
-        if (item.type === 'HOSPITAL_UPDATE') {
-           endpoint = `/hospitals/${item.payload.id}`;
-           method = 'PUT';
-        }
-        if (item.type === 'PERSONNEL_CREATE') {
-           endpoint = '/personnel';
-           method = 'POST';
-        }
-        if (item.type === 'PERSONNEL_UPDATE') {
-           endpoint = `/personnel/${item.payload.id}`;
-           method = 'PUT';
-        }
-        if (item.type === 'PERSONNEL_DELETE') {
-           endpoint = `/personnel/${item.payload.id}`;
-           method = 'DELETE';
-        }
-        if (item.type === 'CHAIN_DEPLOY') {
-           endpoint = '/hospitals/chain';
-           method = 'POST';
-        }
-        if (item.type === 'PRICE_DELETE') {
-           endpoint = `/finance/registry/${item.payload.id}`;
-           method = 'DELETE';
-        }
-        if (item.type === 'EXPENSE_DELETE') {
-           endpoint = `/finance/expenses/${item.payload.id}`;
-           method = 'DELETE';
-        }
-        if (item.type === 'INVOICE_DELETE') {
-           endpoint = `/finance/invoices/${item.payload.id}`;
-           method = 'DELETE';
-        }
-        if (item.type === 'PRESCRIPTION_UPDATE') {
-           endpoint = '/Prescription';
-           method = 'POST';
-        }
-        if (item.type === 'APPOINTMENT_CREATE') {
-           endpoint = '/appointments';
-           method = 'POST';
-        }
-        if (item.type === 'APPOINTMENT_STATUS') {
-           endpoint = `/appointments/${item.payload.id}/status`;
-           method = 'PATCH';
-           item.payload = `"${item.payload.status}"`; // Raw string for status endpoint
-        }
-        if (item.type === 'PATIENT_CREATE') {
-           endpoint = '/patients';
-           method = 'POST';
-        }
-        
-        if (endpoint) {
-          let response;
-          if (method === 'POST') response = await apiClient.post(endpoint, item.payload);
-          else if (method === 'PUT') response = await apiClient.put(endpoint, item.payload);
-          else if (method === 'PATCH') response = await apiClient.patch(endpoint, item.payload, { headers: { 'Content-Type': 'application/json' } });
-          else if (method === 'DELETE') response = await apiClient.delete(endpoint);
-          
-          // ID Resolution for Patient Creation
-          if (item.type === 'PATIENT_CREATE' && response?.data?.patientId && item.payload.tempId) {
-             const realId = response.data.patientId;
-             const tempId = item.payload.tempId;
-             console.log(`[SYNC] Resolved ID: ${tempId} -> ${realId}`);
-             
-             // Update any pending appointments that use this tempId
-             const outbox = await nativeStorage.get('1rad_offline_outbox') || [];
-             const updatedOutbox = outbox.map(o => {
-                if (o.type === 'APPOINTMENT_CREATE' && o.payload.patientId === tempId) {
-                   return { ...o, payload: { ...o.payload, patientId: realId } };
-                }
-                return o;
-             });
-             await nativeStorage.set('1rad_offline_outbox', updatedOutbox);
-          }
-
-          await clearFromOutbox(item.id);
-          results.success++;
-        } else {
-          console.warn(`[SYNC] Unknown record type: ${item.type}`);
-          results.failed++;
-        }
-      } catch (err) {
-        const status = err?.response?.status;
-        const errMsg = err?.response?.data?.error || err?.message || String(err);
-        // 404 = the endpoint or target resource is gone. Retrying will
-        // never succeed — poison immediately rather than burning through
-        // the retry budget over multiple sync cycles.
-        const isPermanent = status === 404;
-        const newAttempts = (item.attempts || 0) + 1;
-        if (isPermanent || newAttempts >= MAX_RETRY_ATTEMPTS) {
-          console.error(
-            `[SYNC] Poisoning record ${item.id} (type=${item.type}) after ${newAttempts} attempt(s). ` +
-            `Status=${status}. Server said: ${errMsg}`
-          );
-          await markPoisoned(item.id, `${status}: ${errMsg}`);
-        } else {
-          // Bump attempts so we converge on the cap and poison eventually
-          // even for transient-looking errors that never recover.
-          const updated = syncQueue.map(o =>
-            o.id === item.id ? { ...o, attempts: newAttempts, lastError: errMsg } : o
-          );
-          setSyncQueue(updated);
-          await nativeStorage.set(OUTBOX_KEY, updated);
-          console.warn(`[SYNC] Failed to push record ${item.id} (attempt ${newAttempts}/${MAX_RETRY_ATTEMPTS})`, err);
-        }
-        results.failed++;
-      }
-    }
-
-    setIsSyncing(false);
-    return results;
-  }, [isOnline, syncQueue, isSyncing, clearFromOutbox, markPoisoned]);
+    try { await syncNow(); } finally { setIsSyncing(false); }
+    return { success: 0, failed: 0 }; // legacy shape; counters are now reactive
+  }, []);
 
   return {
     isOnline,
-    syncQueue,
     isSyncing,
     addToOutbox,
     performSync,
     purgePoisonedOutbox,
-    pendingCount: syncQueue.filter(i => !i.poisoned).length,
-    poisonedCount: syncQueue.filter(i => i.poisoned).length,
+    pendingCount:  counts.pending,
+    poisonedCount: counts.poisoned,
+    // syncQueue is no longer surfaced — components that used to read it
+    // (none, per grep) would now need to use a separate hook on the
+    // outbox table. Removing it intentionally to flush out any stale
+    // dependencies at compile time.
   };
 }

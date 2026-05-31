@@ -9,7 +9,6 @@ import TopNav from './TopNav';
 import SessionTimeoutModal from '../components/SessionTimeoutModal';
 import PrefetchStatusIndicator from '../components/PrefetchStatusIndicator';
 import useOffline from '../hooks/useOffline';
-import apiClient from '../api/apiClient';
 
 
 export default function AppLayout() {
@@ -19,7 +18,7 @@ export default function AppLayout() {
   const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState(false);
   const pageContentRef = useRef(null);
 
-  const { isOnline, performSync, pendingCount } = useOffline();
+  const { isOnline, pendingCount } = useOffline();
   const [isLocked, setIsLocked] = useState(false);
   const [isResolvingLock, setIsResolvingLock] = useState(false);
   const navigate = useNavigate();
@@ -30,13 +29,10 @@ export default function AppLayout() {
     return () => clearInterval(timer);
   }, []);
 
-  // Global Auto-Sync Trigger
-  useEffect(() => {
-    if (isOnline && pendingCount > 0) {
-      console.log(`[SYNC_ENGINE] Network detected. Syncing ${pendingCount} records...`);
-      performSync(apiClient);
-    }
-  }, [isOnline, pendingCount, performSync]);
+  // Outbox push is now coordinated centrally by SyncEngine (online event +
+  // addToOutbox nudge + boot-time drain). No layout-level trigger needed.
+  // The pendingCount value is still surfaced for the TopNav "N Pending" chip.
+  void pendingCount;
 
   // Handle Backend Lock Event
   useEffect(() => {

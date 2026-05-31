@@ -30,6 +30,9 @@ export function fromServerDto(dto) {
     createdAt:      dto.createdAt ?? null,
     updatedAt:      updatedAtIso,
     reportingMode:  dto.reportingMode ?? 'Narrative',
+    // B2 Track 3 — OCC token. Server sends as base64 string; we keep it
+    // verbatim and echo back on save so a concurrent edit is detected.
+    rowVersion:     dto.rowVersion ?? null,
     _updatedAtMs:   updatedAtIso ? new Date(updatedAtIso).getTime() : 0,
     _localDirty:    0,
   };
@@ -105,6 +108,20 @@ export async function saveLocalDraft(appointmentId, draft) {
     _updatedAtMs: nowMs,
     _localDirty: 1,
   });
+}
+
+// Eviction — drop cached reports whose last-update is older than the
+// cut-off, but NEVER drop a row that's locally dirty (_localDirty=1
+// means there's an unsynced draft we'd otherwise lose). The quota
+// monitor calls this from Track 4 when storage fills up. Re-fetched on
+// demand the next time the user opens that report online.
+export async function evictOlderThan(daysAgo) {
+  if (!Number.isFinite(daysAgo) || daysAgo <= 0) return 0;
+  const cutoffMs = Date.now() - daysAgo * 24 * 3600 * 1000;
+  const t = tables.reports();
+  return t
+    .filter(r => !r._localDirty && (r._updatedAtMs || 0) < cutoffMs)
+    .delete();
 }
 
 // Called by the SyncEngine immediately after a successful push of the

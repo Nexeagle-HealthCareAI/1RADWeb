@@ -125,6 +125,24 @@ export function watchAppointments({ dateIso, status = 'ALL' } = {}) {
   });
 }
 
+// Eviction — drop appointments whose own dateTime is older than the cut-off.
+// We use dateTime (the appointment slot) rather than _updatedAtMs because
+// an old appointment getting a comment update shouldn't keep it alive
+// indefinitely: the cache only needs to retain rows the radiologist might
+// actually open. Returns the number of rows dropped.
+//
+// Called by the quota monitor (B2 Track 4) when local storage is filling.
+// Safe to run any time — the SyncEngine will re-pull anything the user
+// actually queries against the next ?updatedAfter=.
+export async function evictOlderThan(daysAgo) {
+  if (!Number.isFinite(daysAgo) || daysAgo <= 0) return 0;
+  const cutoffIso = new Date(Date.now() - daysAgo * 24 * 3600 * 1000).toISOString();
+  const t = tables.appointments();
+  return t
+    .filter(a => (a.dateTime || '') < cutoffIso)
+    .delete();
+}
+
 // One-shot read by id. Used by single-record views (not the worklist).
 export async function getAppointmentById(appointmentId) {
   if (!appointmentId) return null;

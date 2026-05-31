@@ -1,117 +1,225 @@
-// Offline-first local database — Phase B1.
+// Offline-first local database — Phase B2 Track 5 update.
 //
-// Why Dexie + IndexedDB and not localStorage:
-//   • IndexedDB scales to gigabytes; localStorage caps at 5–10 MB and a
-//     centre with a year of cached appointments would hit that ceiling.
-//   • Dexie's liveQuery makes pages reactive — when SyncEngine writes a
-//     new row from a delta pull, every component reading that resource
-//     re-renders automatically without us plumbing a context.
-//   • Real indexes mean date-range filtering ("today's worklist") is a
-//     fast index scan, not a full-table loop in JS.
+// What changed from B1: there is no longer a single shared database. Each
+// hospital has its own Dexie instance, keyed by hospitalId in the DB name.
+// The motivation:
+//   • Users routinely switch between hospitals during the day. With one
+//     shared DB, the cache was a leak surface — the previous hospital's
+//     worklist would render until the next sync overwrote it.
+//   • Tenancy filters at query time aren't enough: a stray liveQuery
+//     subscription set up in one centre's session could keep firing when
+//     the user has switched centres. Per-hospital DB isolation makes
+//     cross-tenant leakage structurally impossible.
 //
-// Schema versioning rules:
-//   • NEVER remove a field. The next Dexie open() detects the version
-//     bump and runs the migration. If a field disappears, the user's
-//     local data is silently dropped on update — clinical disaster.
-//   • Each schema change increments the version number AND defines an
-//     upgrade(). Even if the schema doesn't change shape, a version bump
-//     is fine — Dexie ignores no-op upgrades.
+// Lifecycle:
+//   1. Login completes → AuthContext calls setActiveHospital(hospitalId).
+//   2. tables.* accessors now resolve to that hospital's DB.
+//   3. Centre switch → AuthContext calls setActiveHospital(newHospitalId)
+//      again. Old DB instance stays open (re-entering the previous centre
+//      is instant). All liveQuery subscriptions keyed on activeCenterId
+//      automatically tear down and re-subscribe against the new DB.
+//   4. Logout → clearLocalDatabase() deletes every per-hospital DB it
+//      can enumerate, PLUS the legacy v1 name as a one-time migration.
 //
-// Eviction / quota:
-//   • Phase B1 doesn't auto-evict. We rely on the worklist being a small
-//     working set and on logout to clear (clear-on-logout posture).
-//   • If a user exceeds quota, IndexedDB writes start throwing
-//     QuotaExceededError; the SyncEngine catches these and surfaces a
-//     banner. Eviction policy comes in B2.
+// What does NOT change: the schema. Versions 1..4 are applied to every
+// per-hospital DB identically. A future schema bump is a one-line edit
+// inside applySchema().
 
 import Dexie from 'dexie';
 
-const DB_NAME = '1rad_offline_v1';
+const DB_NAME_PREFIX = '1rad_offline_v1_';
+// Pre-B2 single-DB name. Kept here so the first post-upgrade login can
+// purge it (the cache repopulates from the server within seconds — no
+// reason to leave stale per-tenant data on the device).
+const LEGACY_DB_NAME = '1rad_offline_v1';
 
-export const db = new Dexie(DB_NAME);
+// Schema registration is shared across every per-hospital DB. Whenever
+// you add a new table or bump a version, edit ONLY this function — every
+// existing per-hospital DB on the user's device will migrate forward on
+// next open without any per-DB special-casing.
+function applySchema(inst) {
+  inst.version(1).stores({
+    appointments: 'appointmentId, dateTime, status, _updatedAtMs, _localDirty',
+    meta: '&key',
+  });
 
-db.version(1).stores({
-  // Compound indexes are declared as comma-separated strings; the FIRST
-  // field is the primary key. The leading + on _localDirty would auto-
-  // increment if we used it (we don't); plain field names create regular
-  // indexes Dexie can use in queries.
-  //
-  // Appointments — keyed by appointmentId.
-  //   • dateTime — drives "today's worklist" range filter
-  //   • status — drives the active/archive splits
-  //   • _updatedAtMs — drives delta pulls (the high-water mark we send
-  //     as ?updatedAfter=). Stored as Number not Date because Dexie's
-  //     range queries work cleaner on numbers.
-  //   • _localDirty — outbox replay scans this to find rows to push
-  appointments: 'appointmentId, dateTime, status, _updatedAtMs, _localDirty',
+  inst.version(2).stores({
+    patients: 'patientId, _fullNameLower, _mobileLower, _patientIdentifierLower, _updatedAtMs, _localDirty',
+  });
 
-  // Single-row table holding sync engine bookkeeping. Key is a string
-  // tag so we can keep multiple kinds of metadata in one table.
-  //   • 'clockSkewMs' → { value: ms client is AHEAD of server }
-  //   • 'lastPull_appointments' → { value: ISO of high-water mark }
-  meta: '&key',
-});
+  inst.version(3).stores({
+    reports: 'appointmentId, isFinalized, _updatedAtMs, _localDirty',
+  });
 
-// v2 — Phase B1 Slice 2: cache Patients so the booking drawer's search
-// works offline and the appointment cards have a name + identifier to
-// render without a roundtrip. Same shape conventions as appointments:
-//   • _updatedAtMs mirrors UpdatedAt for delta-pull math
-//   • _localDirty marks rows the outbox still needs to push
-// Search indexes (fullName, mobile, patientIdentifier) are lowercase
-// mirrors maintained by the repo so case-insensitive prefix searches
-// stay index-driven instead of falling back to a full-table loop.
-db.version(2).stores({
-  patients: 'patientId, _fullNameLower, _mobileLower, _patientIdentifierLower, _updatedAtMs, _localDirty',
-});
+  inst.version(4).stores({
+    personnel: 'userId, _snapshotAtMs',
+  });
 
-// v3 — Phase B1 Slice 3: cache finalised + draft DiagnosticReports keyed by
-// appointmentId (1:1 in this product — one report per appointment). With
-// this in place the radiologist can re-open a prior report for any cached
-// worklist row during a brief outage, and the autosaved local draft moves
-// off localStorage (which caps at 5–10 MB) onto IndexedDB which has no
-// practical ceiling for a single report.
-//   • appointmentId — primary key (lookup by appointment, never by report id)
-//   • isFinalized — split between "this is the gospel" and "draft" rows
-//   • _updatedAtMs — delta-pull high-water mark
-//   • _localDirty — set when the draft was written locally and the outbox
-//                   hasn't pushed it yet
-db.version(3).stores({
-  reports: 'appointmentId, isFinalized, _updatedAtMs, _localDirty',
-});
+  // v5 — Phase B2 Track 1: outbox moves from localStorage into Dexie so
+  // it shares the offline cache lifecycle (clear-on-logout for PHI
+  // hygiene). Per-hospital naturally falls out of the per-hospital DB
+  // model: a mutation queued at hospital A cannot accidentally push at
+  // hospital B.
+  //   • id           — UUID; primary key, never re-used.
+  //   • createdAtMs  — time queued, drives FIFO replay order.
+  //   • poisoned     — 1/0 flag (Dexie can't index booleans; use 0/1).
+  //   • type         — coarse filter for outbox debugging.
+  inst.version(5).stores({
+    outbox: 'id, createdAtMs, poisoned, type',
+  });
+}
 
-// v4 — Phase B1 Slice 4: snapshot of hospital personnel for the offline
-// AppointmentBoard. Personnel is a small, slow-changing list (typically
-// 5–50 rows per hospital, edited at most a few times a month) so we don't
-// run a delta-fetch sync engine pull for it. Instead the page snapshots
-// the full /personnel response into this table on every successful call
-// and reads from it as the offline fallback. _snapshotAtMs is the time of
-// the last successful refresh so a future surface can show how stale the
-// cache is if the user is offline for a long stretch.
-db.version(4).stores({
-  personnel: 'userId, _snapshotAtMs',
-});
+// In-process registry. Multiple hospitals can be opened in the same tab
+// over a session (centre switching) — keep the instances around so
+// switching back is instant. Closed only on logout.
+const instances = new Map(); // hospitalId → Dexie
 
-// Convenience accessors. Repos use these instead of hitting db.* directly
-// so that if we ever rename a table, only this file changes.
-export const tables = {
-  appointments: () => db.table('appointments'),
-  patients:     () => db.table('patients'),
-  reports:      () => db.table('reports'),
-  personnel:    () => db.table('personnel'),
-  meta:         () => db.table('meta'),
+let activeHospitalId = null;
+
+// Listeners notified when the active hospital changes. The SyncEngine
+// subscribes to this so it can re-pull when the user switches centre.
+// Plain emitter — no need for a full event bus.
+const switchListeners = new Set();
+
+function lc(s) { return (s ?? '').toString().toLowerCase(); }
+
+function openDbFor(hospitalId) {
+  const key = lc(hospitalId);
+  if (!key) return null;
+  let inst = instances.get(key);
+  if (inst) return inst;
+  inst = new Dexie(`${DB_NAME_PREFIX}${key}`);
+  applySchema(inst);
+  instances.set(key, inst);
+  return inst;
+}
+
+// Setter called from AuthContext on login + centre switch. No-ops if the
+// id is unchanged so we don't fire a flood of "switch" events when the
+// effect re-runs against the same id.
+export function setActiveHospital(hospitalId) {
+  const next = lc(hospitalId) || null;
+  if (next === activeHospitalId) return;
+  activeHospitalId = next;
+  // Lazy: ensure the instance exists so the first table() call is
+  // instant (no schema-open jank during a render).
+  if (next) openDbFor(next);
+  for (const fn of switchListeners) {
+    try { fn(next); } catch (err) { console.warn('[DB] switch listener failed', err); }
+  }
+}
+
+export function getActiveHospitalId() {
+  return activeHospitalId;
+}
+
+export function onHospitalSwitch(fn) {
+  switchListeners.add(fn);
+  return () => switchListeners.delete(fn);
+}
+
+// Returns the active hospital's DB or null if no hospital is selected
+// yet. Callers MUST handle null — components are mounted before AuthContext
+// resolves the active centre on first paint.
+export function getActiveDb() {
+  if (!activeHospitalId) return null;
+  return openDbFor(activeHospitalId);
+}
+
+// Stub table object used when no hospital is active yet. Reads return
+// empty results, writes silently no-op. This lets liveQuery subscribers
+// keep working during the pre-hospital window of the auth boot — the
+// real data comes in on the next subscription cycle after
+// setActiveHospital fires.
+const EMPTY_COLLECTION = {
+  toArray: async () => [],
+  first:   async () => undefined,
+  limit:   () => EMPTY_COLLECTION,
+  reverse: () => EMPTY_COLLECTION,
+  filter:  () => EMPTY_COLLECTION,
+  count:   async () => 0,
+  delete:  async () => 0,
+};
+const EMPTY_TABLE = {
+  toArray:   async () => [],
+  get:       async () => undefined,
+  put:       async () => undefined,
+  add:       async () => undefined,
+  delete:    async () => undefined,
+  update:    async () => 0,
+  bulkPut:   async () => undefined,
+  bulkDelete:async () => undefined,
+  clear:     async () => undefined,
+  count:     async () => 0,
+  where:     () => ({
+    startsWith: () => EMPTY_COLLECTION,
+    equals:     () => EMPTY_COLLECTION,
+  }),
+  orderBy:   () => EMPTY_COLLECTION,
+  filter:    () => EMPTY_COLLECTION,
+  toCollection: () => EMPTY_COLLECTION,
 };
 
-// Whole-database wipe for the clear-on-logout posture. Called by
-// AuthContext.logout() — see CLAUDE.md / analysis doc for rationale.
-// We deliberately use deleteDatabase rather than `db.tables.forEach(clear)`
-// so the IndexedDB itself is gone, not just emptied — emptied stores still
-// count against quota until the browser's GC reclaims them, and on
-// shared front-desk computers the data shouldn't linger in any form.
+function table(name) {
+  const db = getActiveDb();
+  if (!db) return EMPTY_TABLE;
+  return db.table(name);
+}
+
+export const tables = {
+  appointments: () => table('appointments'),
+  patients:     () => table('patients'),
+  reports:      () => table('reports'),
+  personnel:    () => table('personnel'),
+  outbox:       () => table('outbox'),
+  meta:         () => table('meta'),
+};
+
+// One-time cleanup of the pre-B2 unified database. Called from AuthContext
+// the first time a user logs in after this code ships. Idempotent.
+async function deleteLegacyDb() {
+  try {
+    await Dexie.delete(LEGACY_DB_NAME);
+  } catch (_) {
+    // legacy DB may not exist; that's fine
+  }
+}
+
+// Whole-cache wipe for the clear-on-logout posture. Deletes EVERY known
+// per-hospital DB plus the legacy v1 name. PHI hygiene: a shared front-desk
+// machine shouldn't carry one user's worklist into the next user's session.
 export async function clearLocalDatabase() {
   try {
-    db.close();
-    await Dexie.delete(DB_NAME);
+    // Close every open instance before deleteDatabase so the calls don't
+    // wait on long-running connections.
+    for (const inst of instances.values()) {
+      try { inst.close(); } catch (_) {}
+    }
+    // Enumerate persisted DBs and drop anything matching our prefix.
+    if (typeof indexedDB?.databases === 'function') {
+      const all = await indexedDB.databases();
+      await Promise.all(all
+        .filter(d => d?.name && (d.name.startsWith(DB_NAME_PREFIX) || d.name === LEGACY_DB_NAME))
+        .map(d => Dexie.delete(d.name)));
+    } else {
+      // Older browsers without databases() — best effort: drop the
+      // instances we know about + the legacy name.
+      await Promise.all([
+        ...Array.from(instances.keys()).map(k => Dexie.delete(`${DB_NAME_PREFIX}${k}`)),
+        Dexie.delete(LEGACY_DB_NAME),
+      ]);
+    }
   } catch (err) {
-    console.warn('[DB] Failed to delete local database', err);
+    console.warn('[DB] Failed to clear local databases', err);
+  } finally {
+    instances.clear();
+    activeHospitalId = null;
   }
+}
+
+// Exposed so AuthContext can fire this once on boot. Doing it lazily
+// instead of at module-init time avoids ever blocking the SPA shell on
+// an IDB call.
+export async function purgeLegacyDb() {
+  await deleteLegacyDb();
 }
