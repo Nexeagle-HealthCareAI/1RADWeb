@@ -1,0 +1,196 @@
+/* ============================================================
+   RADIOLOGY REPORT EDITOR — Styles
+   TipTap suggestion dropdown + dictation UI
+   ============================================================ */
+
+/* ─── Editor container ──────────────────────────────────── */
+#radiology-editor-wrapper {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  font-family: Arial, 'Segoe UI', sans-serif;
+}
+
+#editor-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 16px;
+  background: #1F4E79;
+  border-bottom: 2px solid #144272;
+}
+
+#editor-toolbar h1 {
+  color: #fff;
+  font-size: 15px;
+  font-weight: 700;
+  margin: 0;
+  flex: 1;
+}
+
+#dictate-btn, #export-btn {
+  padding: 7px 16px;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 600;
+  transition: background 0.2s;
+}
+
+#dictate-btn                  { background: #2E75B6; color: #fff; }
+#dictate-btn[data-state=recording] { background: #C0392B; animation: pulse 1.4s infinite; }
+#dictate-btn:disabled         { background: #888; cursor: not-allowed; }
+#export-btn                   { background: #27AE60; color: #fff; }
+
+@keyframes pulse {
+  0%,100% { opacity: 1; }
+  50%      { opacity: 0.7; }
+}
+
+/* Interim speech display */
+#interim-display {
+  padding: 4px 16px;
+  background: #f0f8ff;
+  color: #555;
+  font-style: italic;
+  font-size: 12px;
+  min-height: 22px;
+  border-bottom: 1px solid #d0e8f8;
+}
+
+/* ─── TipTap editor area ────────────────────────────────── */
+.ProseMirror {
+  flex: 1;
+  padding: 24px 32px;
+  font-size: 14px;
+  line-height: 1.8;
+  outline: none;
+  overflow-y: auto;
+  color: #1a1a2e;
+  background: #fff;
+  max-width: 900px;
+  margin: 0 auto;
+  width: 100%;
+}
+
+.ProseMirror p { margin: 0 0 10px; }
+
+/* Highlighted radiology term in document */
+span.radiology-term {
+  background: #EBF5FF;
+  border-bottom: 2px solid #2E75B6;
+  padding: 0 2px;
+  border-radius: 2px;
+  cursor: pointer;
+  font-weight: 500;
+}
+
+span.radiology-term:hover {
+  background: #D6EAF8;
+}
+
+/* ─── Suggestion dropdown ───────────────────────────────── */
+.radiology-suggestion-list,
+.slash-command-list {
+  background: #fff;
+  border: 1px solid #B0C4DE;
+  border-radius: 8px;
+  box-shadow: 0 4px 20px rgba(0,0,0,0.15);
+  max-height: 320px;
+  overflow-y: auto;
+  width: 380px;
+  z-index: 9999;
+}
+
+.suggestion-item,
+.slash-item {
+  display: grid;
+  padding: 9px 14px;
+  cursor: pointer;
+  border-bottom: 1px solid #EDF2F7;
+  gap: 2px;
+  transition: background 0.1s;
+}
+
+.suggestion-item {
+  grid-template-areas:
+    "label cat"
+    "def   def";
+  grid-template-columns: 1fr auto;
+}
+
+.suggestion-item:hover,
+.suggestion-item:focus,
+.slash-item:hover { background: #EBF5FF; }
+
+.term-label {
+  grid-area: label;
+  font-weight: 700;
+  font-size: 13px;
+  color: #1F4E79;
+}
+
+.term-label mark {
+  background: #FFF176;
+  color: inherit;
+  border-radius: 2px;
+}
+
+.term-cat {
+  grid-area: cat;
+  font-size: 10px;
+  color: #2E75B6;
+  background: #EBF5FF;
+  padding: 1px 6px;
+  border-radius: 10px;
+  white-space: nowrap;
+  align-self: start;
+  font-weight: 600;
+}
+
+.term-def {
+  grid-area: def;
+  font-size: 11px;
+  color: #666;
+  line-height: 1.4;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.no-results {
+  padding: 12px;
+  text-align: center;
+  color: #999;
+  font-size: 12px;
+}
+
+/* Slash command list items */
+.slash-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.slash-icon  { font-size: 16px; }
+.slash-label { font-weight: 700; font-size: 13px; color: #1F4E79; flex: 1; }
+.slash-cat   { font-size: 10px; color: #2E75B6; background: #EBF5FF; padding: 1px 6px; border-radius: 10px; font-weight: 600; }
+
+/* ─── Tippy theme ───────────────────────────────────────── */
+.tippy-box[data-theme~='radiology'] {
+  background: transparent;
+  border: none;
+  box-shadow: none;
+  padding: 0;
+}
+
+.tippy-box[data-theme~='radiology'] .tippy-content {
+  padding: 0;
+}
+
+/* ─── Scrollbar ─────────────────────────────────────────── */
+.radiology-suggestion-list::-webkit-scrollbar,
+.slash-command-list::-webkit-scrollbar { width: 4px; }
+.radiology-suggestion-list::-webkit-scrollbar-thumb,
+.slash-command-list::-webkit-scrollbar-thumb { background: #B0C4DE; border-radius: 4px; }

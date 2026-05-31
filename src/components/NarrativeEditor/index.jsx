@@ -35,6 +35,8 @@ import SlashMenu from './SlashMenu';
 import SelectionToolbar from './SelectionToolbar';
 import { PageDocument, Page } from './extensions/PageNode';
 import { Pagination } from './extensions/Pagination';
+import { FlatDocument, PageBreakNode } from './extensions/FlatDocument';
+import { PaginationDecoration, getPrintHTML as getPaginatedPrintHTML } from './extensions/PaginationDecoration';
 import { LineHeight, ParagraphIndent, PageBreak, ParagraphSpacing } from './extensions/Spacing';
 import { FormatPainter } from './extensions/FormatPainter';
 import { ParagraphFraming } from './extensions/ParagraphFraming';
@@ -54,7 +56,7 @@ import ImageToolbar from './ImageToolbar';
 import ContextMenu from './ContextMenu';
 import FindReplaceDialog from './dialogs/FindReplaceDialog';
 import SymbolPickerDialog from './dialogs/SymbolPickerDialog';
-import PromptDialog, { editorPrompt } from './dialogs/PromptDialog';
+import PromptDialog, { editorPrompt, editorPromptAtCursor } from './dialogs/PromptDialog';
 import ShortcutsDialog from './dialogs/ShortcutsDialog';
 import FontDialog from './dialogs/FontDialog';
 import ParagraphDialog from './dialogs/ParagraphDialog';
@@ -69,6 +71,7 @@ import QualityCheckPanel from './dialogs/QualityCheckPanel';
 import SnippetManagerDialog from './dialogs/SnippetManagerDialog';
 import AddendumDialog from './dialogs/AddendumDialog';
 import HorizontalRuler from './HorizontalRuler';
+import OnboardingHints from './OnboardingHints';
 import { FONT_SIZES } from './Ribbon/RibbonControls';
 import { useVoiceDictation } from './hooks/useVoiceDictation';
 import { exportToDocx } from './utils/exportDocx';
@@ -80,9 +83,26 @@ import './NarrativeEditor.css';
 /**
  * Wrap raw HTML content in a <div class="word-page"> if it isn't already.
  * Ensures the editor's schema (doc -> page+) accepts legacy flat-HTML reports.
+ *
+ * Path B note: when USE_DECORATION_PAGINATION is on, the schema is
+ * doc → block+ — wrapping in .word-page would create an unparseable node.
+ * We strip the wrappers if they're there (legacy content from a Path A
+ * save) and return the inner content, letting the standard block schema
+ * handle it. Round-tripping back to Path A would need the wrappers; Path B
+ * is a one-way upgrade once flipped on.
  */
 function ensurePagedHTML(html) {
   const trimmed = (html || '').trim();
+  if (USE_DECORATION_PAGINATION) {
+    if (!trimmed) return '<p></p>';
+    // Strip outer .word-page / .word-page-inner wrappers (legacy Path A
+    // content). Use a permissive regex — we just want their CHILDREN to
+    // flow into the flat doc. A DOM-based unwrap would be more correct
+    // for malformed input but rolldown rejected DOMParser at module init.
+    return trimmed
+      .replace(/<div[^>]*class="[^"]*word-page-inner[^"]*"[^>]*>([\s\S]*?)<\/div>/gi, '$1')
+      .replace(/<div[^>]*class="[^"]*word-page[^"]*"[^>]*>([\s\S]*?)<\/div>/gi, '$1');
+  }
   if (!trimmed) return '<div class="word-page"><div class="word-page-inner"><p></p></div></div>';
   // Already paginated
   if (/^<div[^>]*class="[^"]*word-page[^"]*"/i.test(trimmed)) return trimmed;
@@ -370,6 +390,22 @@ function moveBlockVertically(editor, direction) {
 
 const ZOOM_LEVELS = [50, 75, 90, 100, 110, 125, 150, 200];
 
+// Feature flag — Path B (decoration-based pagination). When ON, the editor
+// uses FlatDocument + PaginationDecoration instead of PageDocument + Page +
+// Pagination. The visual identity stays the same (stacked A4 sheets), but
+// pagination becomes a visual overlay instead of document mutation, which
+// eliminates typing jank and undo flicker.
+//
+// Flip in DevTools to test:
+//   localStorage.setItem('narrative-editor:decoration-pagination', '1')
+//   localStorage.removeItem('narrative-editor:decoration-pagination')
+//
+// Default is OFF — Path A continues to ship until Path B is validated for
+// header/footer rendering and print/PDF parity.
+const USE_DECORATION_PAGINATION =
+  typeof window !== 'undefined' &&
+  window.localStorage?.getItem('narrative-editor:decoration-pagination') === '1';
+
 /**
  * NarrativeEditor
  * Clinical rich-text editor based on Tiptap.
@@ -449,7 +485,22 @@ const NarrativeEditor = React.forwardRef(function NarrativeEditor({
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
   const [fontDlgOpen, setFontDlgOpen] = useState(false);
   const [paragraphDlgOpen, setParagraphDlgOpen] = useState(false);
+  // Launcher-anchor for the Font / Paragraph popovers (friction #4 extended).
+  // Set when the Group launcher dispatches its event with the button's rect.
+  const [fontDlgAnchor, setFontDlgAnchor] = useState(null);
+  const [paragraphDlgAnchor, setParagraphDlgAnchor] = useState(null);
   const [showFormattingMarks, setShowFormattingMarks] = useState(false);
+
+  // Ribbon active-state refresh signal. Tiptap v3's useEditor does NOT
+  // re-render on selection changes by default (perf optimisation). Without
+  // this, formatting buttons (Bold/Italic/etc.) read editor.isActive() at
+  // mount and never refresh — when the cursor moves into a bold word the
+  // Bold button doesn't visibly press in. We tick this on every selection
+  // update so the Ribbon (a child of this component) re-renders and the
+  // active states stay truthful. Selection events fire on clicks + arrow
+  // keys, not on every keystroke, so the cost is bounded.
+  const [, setSelectionTick] = useState(0);
+  const bumpSelectionTick = useCallback(() => setSelectionTick(t => (t + 1) | 0), []);
 
   // Header / footer state — { text, fontFamily, fontSize, align }
   const [headerFooterOpen, setHeaderFooterOpen] = useState(false);
@@ -886,15 +937,21 @@ const NarrativeEditor = React.forwardRef(function NarrativeEditor({
         // from 500 ms to 350 ms so undo steps land on smaller pause-boundaries.
         history: { depth: 500, newGroupDelay: 350 },
       }),
-      PageDocument,
-      Page,
-      Pagination,
+      // Path A vs Path B pagination — see USE_DECORATION_PAGINATION above.
+      // Only ONE of these schema groups can register `doc`; the flag picks.
+      ...(USE_DECORATION_PAGINATION
+        ? [FlatDocument, PageBreakNode, PaginationDecoration]
+        : [PageDocument, Page, Pagination]
+      ),
       UnderlineStyle,
       Typography,
       LineHeight,
       ParagraphIndent,
       ParagraphSpacing,
-      PageBreak,
+      // Legacy PageBreak command (mutates page nodes) only on Path A. On
+      // Path B, PageBreakNode (registered above) provides the equivalent
+      // via the insertPageBreakFlat command.
+      ...(USE_DECORATION_PAGINATION ? [] : [PageBreak]),
       FormatPainter,
       ParagraphFraming,
       ListStyles,
@@ -958,10 +1015,21 @@ const NarrativeEditor = React.forwardRef(function NarrativeEditor({
           onChangeRef.current?.(html);
         } catch (_) {}
       }, 300);
+      // Active-state refresh: content changes can also flip formatting
+      // (e.g. typing while in a marked range, applying a mark). Cheap.
+      bumpSelectionTick();
     },
+    // Selection changes — arrow keys, mouse clicks, programmatic
+    // .setTextSelection() — don't trigger onUpdate, so we listen here too.
+    // Without this, the toolbar's active states (Bold pressed, alignment
+    // chip, font picker value) lag behind the actual cursor location.
+    onSelectionUpdate: () => bumpSelectionTick(),
     editorProps: {
       attributes: {
-        class: 'narrative-editor-content',
+        // On Path B, the `.flat-pagination` modifier activates the Path B
+        // CSS rules — the editor itself styles as the A4 column and the
+        // boundary widgets render the inter-page gaps inside.
+        class: 'narrative-editor-content' + (USE_DECORATION_PAGINATION ? ' flat-pagination' : ''),
         spellcheck: 'false', // toggled at runtime by spellcheckOn effect
       },
       // Cleans pasted HTML: removes the editor's own page wrappers (avoids
@@ -1053,6 +1121,11 @@ const NarrativeEditor = React.forwardRef(function NarrativeEditor({
       }
     },
     getHTML: () => editor?.getHTML() || '',
+    // Path B-aware print HTML. On Path A returns getHTML() unchanged
+    // (Page nodes already produce multi-page markup). On Path B injects
+    // auto-page-break markers at every computed boundary so downstream
+    // serializers split correctly. Safe to call regardless of flag state.
+    getPrintHTML: () => editor ? getPaginatedPrintHTML(editor) : '',
     container: containerRef.current,
     editor
   }));
@@ -1123,7 +1196,7 @@ const NarrativeEditor = React.forwardRef(function NarrativeEditor({
   useEffect(() => {
     if (!editor) return;
     const handler = async () => {
-      const text = await editorPrompt({
+      const text = await editorPromptAtCursor(editor, {
         title: 'Insert Footnote',
         message: 'Enter the footnote text:',
         defaultValue: '',
@@ -1228,7 +1301,7 @@ const NarrativeEditor = React.forwardRef(function NarrativeEditor({
         if (inEditor(e)) {
           e.preventDefault();
           e.stopImmediatePropagation();
-          editorPrompt({
+          editorPromptAtCursor(editor, {
             title: 'Go to Page',
             message: `Enter page number (1 – ${totalPagesRef.current}).`,
             defaultValue: String(currentPageRef.current),
@@ -1491,7 +1564,7 @@ const NarrativeEditor = React.forwardRef(function NarrativeEditor({
       // ── Go to page (Ctrl+G or F5) ─────────────────────────
       if (key === 'g') {
         return run(async () => {
-          const n = await editorPrompt({
+          const n = await editorPromptAtCursor(editor, {
             title: 'Go to Page',
             message: `Enter page number (1 – ${totalPagesRef.current}).`,
             defaultValue: String(currentPageRef.current),
@@ -1507,7 +1580,7 @@ const NarrativeEditor = React.forwardRef(function NarrativeEditor({
       // ── Insert link ───────────────────────────────────────
       if (key === 'k') {
         return run(async () => {
-          const url = await editorPrompt({
+          const url = await editorPromptAtCursor(editor, {
             title: 'Insert Hyperlink',
             message: 'Enter the URL to link to.',
             defaultValue: 'https://',
@@ -1660,7 +1733,14 @@ const NarrativeEditor = React.forwardRef(function NarrativeEditor({
       }
 
       // ── Insert ────────────────────────────────────────────
-      if (e.key === 'Enter') return run(() => editor.chain().focus().insertPageBreak().run());
+      if (e.key === 'Enter') return run(() => {
+        // Path A: insertPageBreak (splits the Page node). Path B:
+        // insertPageBreakFlat (inserts a PageBreak block node which the
+        // decoration plugin recognises as a forced boundary).
+        const chain = editor.chain().focus();
+        if (USE_DECORATION_PAGINATION) chain.insertPageBreakFlat().run();
+        else chain.insertPageBreak().run();
+      });
       if (e.shiftKey && (e.key === '-' || e.key === '_')) return run(() => editor.chain().focus().insertContent('—').run());
       if (e.shiftKey && e.key === ' ')  return run(() => editor.chain().focus().insertContent(' ').run()); // non-breaking space
       // Ctrl+- (no shift) is reserved for zoom-out (handled earlier). The
@@ -1726,10 +1806,12 @@ const NarrativeEditor = React.forwardRef(function NarrativeEditor({
     return () => window.removeEventListener('narrative-editor:open-shortcuts', open);
   }, []);
 
-  // Dialog-launcher events from Ribbon group corners
+  // Dialog-launcher events from Ribbon group corners. The Group launcher
+  // dispatches with detail.anchor = the button's bounding rect, so the
+  // dialogs can render as popovers under the launcher.
   useEffect(() => {
-    const openFont = () => setFontDlgOpen(true);
-    const openPara = () => setParagraphDlgOpen(true);
+    const openFont = (e) => { setFontDlgAnchor(e?.detail?.anchor || null); setFontDlgOpen(true); };
+    const openPara = (e) => { setParagraphDlgAnchor(e?.detail?.anchor || null); setParagraphDlgOpen(true); };
     window.addEventListener('narrative-editor:open-font-dialog', openFont);
     window.addEventListener('narrative-editor:open-paragraph-dialog', openPara);
     return () => {
@@ -1830,6 +1912,38 @@ const NarrativeEditor = React.forwardRef(function NarrativeEditor({
     editor?.on('update', applyToPages);
     return () => editor?.off('update', applyToPages);
   }, [editor, headerState, footerState, previewMode]);
+
+  // Path B header/footer feed - the Path A effect above mutates .word-page
+  // children directly, but on Path B there ARE no .word-page nodes. Instead
+  // we hand the chrome to the PaginationDecoration plugin, which renders it
+  // as widget decorations at each computed boundary + the doc edges.
+  // Idempotent no-op when the flag is OFF (setPageChrome command isn't
+  // registered without the extension).
+  useEffect(() => {
+    if (!editor || !USE_DECORATION_PAGINATION) return;
+    if (typeof editor.commands.setPageChrome !== 'function') return;
+    // Read the current banner height from the CSS var the bannerHostRef
+    // effect maintains - whichever is later (banner mount or chrome push)
+    // converges within one recompute.
+    const bannerHeight = parseFloat(
+      containerRef.current?.style?.getPropertyValue('--patient-banner-height') || '0'
+    ) || 0;
+    editor.commands.setPageChrome({
+      header: {
+        text: headerState.text || '',
+        fontFamily: headerState.fontFamily,
+        fontSize: parseFloat(headerState.fontSize) || 10,
+        align: headerState.align,
+      },
+      footer: {
+        text: footerState.text || '',
+        fontFamily: footerState.fontFamily,
+        fontSize: parseFloat(footerState.fontSize) || 10,
+        align: footerState.align,
+      },
+      firstPageBannerHeight: bannerHeight,
+    });
+  }, [editor, headerState, footerState, firstPageBanner]);
 
   // ── Hardcoded first-page banner (patient header) ───────────────────────────
   // Rendered directly in JSX inside .word-canvas (outside ProseMirror's
@@ -2191,6 +2305,11 @@ const NarrativeEditor = React.forwardRef(function NarrativeEditor({
         )}
         <EditorContent editor={editor} />
 
+        {/* Onboarding hints — light-touch toast surface, one hint per
+            device, never blocks the canvas. Self-rate-limits + reads
+            editor state via the prop. */}
+        <OnboardingHints editor={editor} />
+
         {/* ── Footnotes panel ─────────────────────────────────────────────── */}
         {editor && (() => {
           const fns = [];
@@ -2283,8 +2402,8 @@ const NarrativeEditor = React.forwardRef(function NarrativeEditor({
 
       <ShortcutsDialog open={shortcutsOpen} onClose={() => setShortcutsOpen(false)} />
 
-      <FontDialog editor={editor} open={fontDlgOpen} onClose={() => setFontDlgOpen(false)} />
-      <ParagraphDialog editor={editor} open={paragraphDlgOpen} onClose={() => setParagraphDlgOpen(false)} />
+      <FontDialog editor={editor} open={fontDlgOpen} anchor={fontDlgAnchor} onClose={() => setFontDlgOpen(false)} />
+      <ParagraphDialog editor={editor} open={paragraphDlgOpen} anchor={paragraphDlgAnchor} onClose={() => setParagraphDlgOpen(false)} />
 
       <HeaderFooterDialog
         open={headerFooterOpen}
@@ -2397,22 +2516,39 @@ const NarrativeEditor = React.forwardRef(function NarrativeEditor({
         onClose={() => setAddendumOpen(false)}
       />
 
-      {/* ── Medical Autocomplete Dropdown ── */}
+      {/* ── Medical Autocomplete Dropdown ──
+          Suggestions are now {id, label, cat, short, ...} objects from the
+          1,621-term Fuse-indexed corpus (radiologyData.search). The row
+          shows the label with the matched prefix bolded, plus a small
+          subtitle "category · short definition" so the user can pick
+          confidently without consulting an external reference. */}
       {autocomplete.active && autocomplete.suggestions.length > 0 && autocomplete.rect && (
         <div
           className="ne-autocomplete-dropdown"
           style={{
-            top:  Math.min(autocomplete.rect.bottom + 4, window.innerHeight - 200),
-            left: Math.min(autocomplete.rect.left,       window.innerWidth  - 400),
+            top:  Math.min(autocomplete.rect.bottom + 4, window.innerHeight - 240),
+            left: Math.min(autocomplete.rect.left,       window.innerWidth  - 420),
           }}
           onMouseDown={e => e.preventDefault()} // keep editor focus
         >
           <div className="ne-autocomplete-header">Medical terms</div>
           {autocomplete.suggestions.map((term, i) => {
+            // Defensive: accept legacy string-only entries (fallback path)
+            // so the UI keeps rendering even if the data layer falls back.
+            const label = typeof term === 'string' ? term : (term?.label || '');
+            const cat   = typeof term === 'string' ? ''    : (term?.cat   || '');
+            const short = typeof term === 'string' ? ''    : (term?.short || '');
             const matchLen = autocomplete.query.length;
+            // Try to bold the leading matched prefix in the label. Falls
+            // back to whole-label render if the query isn't a prefix
+            // (Fuse can return matches whose hit isn't at position 0).
+            const matchedPrefix = label.toLowerCase().startsWith(autocomplete.query.toLowerCase())
+              ? label.slice(0, matchLen)
+              : '';
+            const rest = matchedPrefix ? label.slice(matchLen) : label;
             return (
               <div
-                key={term}
+                key={term?.id ?? label}
                 className={`ne-autocomplete-item${i === autocomplete.selected ? ' ne-autocomplete-item--active' : ''}`}
                 onMouseEnter={() => setAutocomplete(prev => ({ ...prev, selected: i }))}
                 onMouseDown={() => {
@@ -2420,8 +2556,22 @@ const NarrativeEditor = React.forwardRef(function NarrativeEditor({
                   setAutocomplete(prev => ({ ...prev, active: false }));
                 }}
               >
-                <span className="ne-autocomplete-item__match">{term.slice(0, matchLen)}</span>
-                {term.slice(matchLen)}
+                <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: '8px' }}>
+                  <span>
+                    {matchedPrefix && <span className="ne-autocomplete-item__match">{matchedPrefix}</span>}
+                    {rest}
+                  </span>
+                  {cat && (
+                    <span style={{ fontSize: '10px', color: '#94a3b8', fontWeight: 600, letterSpacing: '0.3px', flexShrink: 0 }}>
+                      {cat}
+                    </span>
+                  )}
+                </div>
+                {short && (
+                  <div style={{ fontSize: '11px', color: '#64748b', marginTop: '2px', lineHeight: 1.35, fontWeight: 400 }}>
+                    {short}
+                  </div>
+                )}
               </div>
             );
           })}
@@ -2441,6 +2591,12 @@ const NarrativeEditor = React.forwardRef(function NarrativeEditor({
         placeholder={promptState?.placeholder}
         confirmLabel={promptState?.confirmLabel || 'OK'}
         cancelLabel={promptState?.cancelLabel || 'Cancel'}
+        inputType={promptState?.inputType || 'text'}
+        // Cursor anchor (friction #4). The keyboard handlers that fire
+        // editorPrompt() compute coordsAtPos(selection.from) and pass it
+        // through; PromptDialog renders as a popover instead of a centred
+        // modal when this is present. Falls back to centre when absent.
+        anchor={promptState?.anchor}
         onConfirm={(v) => { promptState?.resolve?.(v); setPromptState(null); }}
         onCancel={() => { promptState?.resolve?.(null); setPromptState(null); }}
       />

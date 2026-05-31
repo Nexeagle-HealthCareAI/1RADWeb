@@ -1,5 +1,6 @@
 import React, { useEffect, useState, useRef, useCallback } from 'react';
 import { createPortal } from 'react-dom';
+import { warmRadiologyTemplates, getTemplates, onTemplatesReady } from '../../data/radiologyTemplates';
 
 /**
  * Notion-style slash menu for the NarrativeEditor.
@@ -47,6 +48,14 @@ export default function SlashMenu({
   // Menu state — { open, anchor: {top,left}, slashPos, query }
   const [state, setState] = useState({ open: false, anchor: null, slashPos: -1, query: '' });
   const [selected, setSelected] = useState(0);
+  // Radiology templates - lazy-loaded from /data/report_templates.json.
+  // Re-renders the menu when the data lands so a fast typist who opens
+  // "/" before the fetch resolves still sees the templates appear.
+  const [radTemplates, setRadTemplates] = useState(() => getTemplates());
+  useEffect(() => {
+    warmRadiologyTemplates();
+    return onTemplatesReady(setRadTemplates);
+  }, []);
 
   // Stable ref of items so the keydown handler can read fresh ones without re-binding
   const itemsRef = useRef([]);
@@ -66,8 +75,19 @@ export default function SlashMenu({
     const l = (s.label || '').toLowerCase();
     return t.includes(filterText) || l.includes(filterText);
   });
+  // Radiology templates from /data/report_templates.json. Match against
+  // command (minus leading slash), label, and category so typing "/imp"
+  // surfaces Impression and "/cxr" surfaces all CXR templates.
+  const matchedRadTemplates = (radTemplates || []).filter((t) => {
+    if (!filterText) return true;
+    const cmd  = (t.command  || '').toLowerCase().replace(/^\//, '');
+    const lab  = (t.label    || '').toLowerCase();
+    const cat  = (t.category || '').toLowerCase();
+    return cmd.includes(filterText) || lab.includes(filterText) || cat.includes(filterText);
+  });
   const items = [
     ...matchedWorkflow.map((w) => ({ kind: 'workflow', ...w })),
+    ...matchedRadTemplates.map((t) => ({ kind: 'radTemplate', ...t })),
     ...matchedSnippets.map((s) => ({ kind: 'snippet', ...s })),
   ];
   itemsRef.current = items;
@@ -97,6 +117,13 @@ export default function SlashMenu({
       if (item.action === 'templates')       onOpenTemplates?.();
       if (item.action === 'normalFindings')  onOpenNormalFindings?.();
       if (item.action === 'measurement')     onOpenMeasurement?.();
+    } else if (item.kind === 'radTemplate') {
+      // Insert the template body. Plain-text templates use \n line breaks;
+      // convert to <br> so they render as separate visual lines inside a
+      // single paragraph. A future polish could parse "IMPRESSION:" /
+      // section headers into headings, but plain works fine for now.
+      const html = (item.template || '').replace(/\n/g, '<br>');
+      replaceSlash(html);
     } else if (item.kind === 'snippet') {
       // Inline insert the snippet content (mirrors the snippet-expansion logic)
       const tmp = document.createElement('div');
@@ -239,9 +266,33 @@ export default function SlashMenu({
       }}>
         {state.query ? `Filter: /${state.query}` : 'Quick insert'}
       </div>
-      {items.map((item, idx) => (
+      {items.map((item, idx) => {
+        // Per-kind display fields. Pulled out so the JSX below stays one
+        // shape regardless of whether this row is a workflow shortcut, a
+        // radiology template, or a user snippet.
+        let key, icon, iconColor, label, sub;
+        if (item.kind === 'workflow') {
+          key = `wf:${item.id}`;
+          icon = item.icon;
+          iconColor = '#0f52ba';
+          label = item.label;
+          sub = item.hint;
+        } else if (item.kind === 'radTemplate') {
+          key = `rt:${item.command}`;
+          icon = item.icon || '∎';
+          iconColor = '#16a34a';
+          label = item.label;
+          sub = `${item.command}  ·  ${item.category || ''}`;
+        } else {
+          key = `sn:${item.id}`;
+          icon = '∎';
+          iconColor = '#64748b';
+          label = item.label || item.trigger;
+          sub = item.trigger;
+        }
+        return (
         <button
-          key={`${item.kind}:${item.id}`}
+          key={key}
           type="button"
           onMouseDown={(e) => { e.preventDefault(); apply(idx); }}
           onMouseEnter={() => setSelected(idx)}
@@ -263,9 +314,9 @@ export default function SlashMenu({
             width: '20px',
             textAlign: 'center',
             flexShrink: 0,
-            color: item.kind === 'workflow' ? '#0f52ba' : '#64748b',
+            color: iconColor,
           }}>
-            {item.kind === 'workflow' ? item.icon : '∎'}
+            {icon}
           </span>
           <div style={{ flex: 1, minWidth: 0 }}>
             <div style={{
@@ -276,9 +327,9 @@ export default function SlashMenu({
               textOverflow: 'ellipsis',
               whiteSpace: 'nowrap',
             }}>
-              {item.kind === 'workflow' ? item.label : (item.label || item.trigger)}
+              {label}
             </div>
-            {(item.kind === 'workflow' ? item.hint : item.trigger) && (
+            {sub && (
               <div style={{
                 fontSize: '10px',
                 color: '#64748b',
@@ -287,12 +338,13 @@ export default function SlashMenu({
                 textOverflow: 'ellipsis',
                 whiteSpace: 'nowrap',
               }}>
-                {item.kind === 'workflow' ? item.hint : item.trigger}
+                {sub}
               </div>
             )}
           </div>
         </button>
-      ))}
+        );
+      })}
     </div>,
     document.body
   );

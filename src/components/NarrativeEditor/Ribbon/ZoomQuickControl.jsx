@@ -166,7 +166,7 @@ export default function ZoomQuickControl({ zoom, setZoom, zoomLevels }) {
               <button
                 key={lvl}
                 type="button"
-                onClick={() => { setZoom(lvl); setOpen(false); }}
+                onMouseDown={e => { e.preventDefault(); setZoom(lvl); setOpen(false); }}
                 style={{
                   display: 'flex',
                   alignItems: 'center',
@@ -193,7 +193,7 @@ export default function ZoomQuickControl({ zoom, setZoom, zoomLevels }) {
           <div style={{ height: '1px', background: '#e2e8f0', margin: '4px 2px' }} />
           <button
             type="button"
-            onClick={() => { setZoom(100); setOpen(false); }}
+            onMouseDown={e => { e.preventDefault(); setZoom(100); setOpen(false); }}
             style={{
               display: 'flex', alignItems: 'center', gap: '6px',
               width: '100%',

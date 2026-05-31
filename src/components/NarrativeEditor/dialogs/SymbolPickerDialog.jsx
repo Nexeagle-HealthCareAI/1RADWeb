@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 
 const SYMBOL_GROUPS = {
   Common: [
@@ -80,6 +80,68 @@ export default function SymbolPickerDialog({ editor, open, onClose }) {
     if (!open) setSearch('');
   }, [open]);
 
+  // Friction #4 — anchor the picker at the editor caret instead of
+  // centering a full-screen modal. coordsAtPos returns viewport-relative
+  // coords; we use the caret bottom as the popover's top so it sits
+  // immediately under the cursor, flipping above if too close to the
+  // viewport bottom. Computed only when `open` transitions true so cursor
+  // movement during the picker session doesn't drag the popover around.
+  const popoverRef = useRef(null);
+  const [anchor, setAnchor] = useState(null); // { top, left, flipUp }
+  useEffect(() => {
+    if (!open || !editor) return;
+    let cancelled = false;
+    requestAnimationFrame(() => {
+      if (cancelled) return;
+      try {
+        const { from } = editor.state.selection;
+        const coords = editor.view.coordsAtPos(from);
+        const POPOVER_W = 440;
+        const POPOVER_H = 360;
+        const vw = window.innerWidth;
+        const vh = window.innerHeight;
+        // Prefer below; flip above if not enough room.
+        const wantsTop = coords.bottom + POPOVER_H + 16 > vh;
+        const top = wantsTop
+          ? Math.max(8, coords.top - POPOVER_H - 8)
+          : coords.bottom + 8;
+        // Clamp horizontally so the popover never bleeds off the right edge.
+        let left = coords.left;
+        if (left + POPOVER_W > vw - 8) left = vw - POPOVER_W - 8;
+        if (left < 8) left = 8;
+        setAnchor({ top, left, flipUp: wantsTop });
+      } catch {
+        // No caret available — fall back to viewport centre.
+        setAnchor({ top: window.innerHeight / 2 - 180, left: window.innerWidth / 2 - 220, flipUp: false });
+      }
+    });
+    return () => { cancelled = true; };
+  }, [open, editor]);
+
+  // Outside-click-to-close. Mouse-down (not click) so the editor doesn't
+  // receive a stray click between mousedown and the close fired.
+  useEffect(() => {
+    if (!open) return;
+    const handler = (e) => {
+      if (popoverRef.current && popoverRef.current.contains(e.target)) return;
+      onClose?.();
+    };
+    document.addEventListener('mousedown', handler, true);
+    return () => document.removeEventListener('mousedown', handler, true);
+  }, [open, onClose]);
+
+  // ESC closes the popover (the editor's own ESC already routes through
+  // the global handler in NarrativeEditor for dialogs, but the popover
+  // is registered after that handler runs in capture phase, so we listen
+  // here too for the standalone case where the editor's handler isn't
+  // installed).
+  useEffect(() => {
+    if (!open) return;
+    const onKey = (e) => { if (e.key === 'Escape') { e.stopPropagation(); onClose?.(); } };
+    document.addEventListener('keydown', onKey, true);
+    return () => document.removeEventListener('keydown', onKey, true);
+  }, [open, onClose]);
+
   const visibleSymbols = useMemo(() => {
     if (search.trim()) {
       const q = search.toLowerCase();
@@ -100,26 +162,34 @@ export default function SymbolPickerDialog({ editor, open, onClose }) {
 
   if (!open) return null;
 
+  // Popover layout — fixed-positioned near the editor caret, no backdrop.
+  // We deliberately render OUTSIDE the editor container so a Ribbon click
+  // can't push it off-screen by reflowing the toolbar; z-index 12000
+  // matches the legacy modal so dialogs over the editor still beat it.
   return (
     <div
-      onMouseDown={e => e.target === e.currentTarget && onClose()}
+      ref={popoverRef}
+      onMouseDown={e => e.stopPropagation()}
       style={{
-        position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.4)',
-        zIndex: 12000, display: 'flex', alignItems: 'center', justifyContent: 'center',
+        position: 'fixed',
+        top: anchor ? anchor.top : -9999,
+        left: anchor ? anchor.left : -9999,
+        width: '440px',
+        maxHeight: '360px',
+        background: '#fff',
+        borderRadius: '10px',
+        boxShadow: '0 10px 40px rgba(0,0,0,0.18), 0 2px 6px rgba(0,0,0,0.08)',
+        border: '1px solid #e2e8f0',
+        display: 'flex', flexDirection: 'column',
+        fontFamily: '"Segoe UI", system-ui, sans-serif',
+        zIndex: 12000,
+        opacity: anchor ? 1 : 0,
+        transition: 'opacity 0.12s ease-out',
       }}
     >
-      <div
-        onMouseDown={e => e.stopPropagation()}
-        style={{
-          width: '520px', maxHeight: '480px', background: '#fff',
-          borderRadius: '8px', boxShadow: '0 20px 60px rgba(0,0,0,0.3)',
-          display: 'flex', flexDirection: 'column',
-          fontFamily: '"Segoe UI", system-ui, sans-serif',
-        }}
-      >
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '14px 18px', borderBottom: '1px solid #e0e0e0' }}>
-          <span style={{ fontWeight: 600, fontSize: '14px' }}>Insert Symbol</span>
-          <button onClick={onClose} style={{ background: 'transparent', border: 'none', cursor: 'pointer', fontSize: '20px', color: '#666' }}>×</button>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px 14px', borderBottom: '1px solid #e2e8f0' }}>
+          <span style={{ fontWeight: 600, fontSize: '13px', color: '#1e293b' }}>Insert Symbol</span>
+          <button onClick={onClose} style={{ background: 'transparent', border: 'none', cursor: 'pointer', fontSize: '18px', color: '#94a3b8', lineHeight: 1 }}>×</button>
         </div>
 
         <div style={{ padding: '10px 14px 0' }}>
@@ -181,16 +251,6 @@ export default function SymbolPickerDialog({ editor, open, onClose }) {
           )}
         </div>
 
-        <div style={{ padding: '10px 14px', borderTop: '1px solid #e0e0e0', textAlign: 'right' }}>
-          <button
-            onClick={onClose}
-            style={{
-              padding: '6px 16px', borderRadius: '3px', border: '1px solid #c8c8c8',
-              background: '#fff', cursor: 'pointer', fontSize: '12px', fontFamily: 'inherit',
-            }}
-          >Close</button>
-        </div>
-      </div>
     </div>
   );
 }

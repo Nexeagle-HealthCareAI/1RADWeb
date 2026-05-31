@@ -1,6 +1,6 @@
 import { Extension } from '@tiptap/core';
 import { Plugin, PluginKey } from '@tiptap/pm/state';
-import { MEDICAL_TERMS } from './medicalTerms';
+import { search as searchTerms, warmRadiologyData } from '../../../data/radiologyData';
 
 const AUTOCOMPLETE_PLUGIN_KEY = new PluginKey('medicalAutocomplete');
 
@@ -40,6 +40,12 @@ export const MedicalAutocomplete = Extension.create({
   addProseMirrorPlugins() {
     let lastQuery = '';
 
+    // Fire-and-forget warmup so the 1,621-term corpus is fetched + Fuse
+    // index built BEFORE the user's first 2-char query. By the time they
+    // type "ao" the result is ready; if they're faster than the network
+    // the data module falls back to a startsWith filter until Fuse arrives.
+    warmRadiologyData();
+
     return [
       new Plugin({
         key: AUTOCOMPLETE_PLUGIN_KEY,
@@ -66,9 +72,15 @@ export const MedicalAutocomplete = Extension.create({
               if (lower === lastQuery) return;
               lastQuery = lower;
 
-              const suggestions = MEDICAL_TERMS
-                .filter(t => t.toLowerCase().startsWith(lower) && t.toLowerCase() !== lower)
-                .slice(0, 8);
+              // Suggestions are now {id, label, cat, short, key, alt} objects
+              // ranked by Fuse.js fuzzy match. The consumer dropdown renders
+              // `label  ·  cat  ·  short` so the user sees what each row is
+              // before selecting. Filter out the exact match — typing "aortic"
+              // shouldn't suggest "aortic" back.
+              const ranked = searchTerms(word, 8);
+              const suggestions = ranked.filter(
+                t => (t?.label || '').toLowerCase() !== lower
+              );
 
               let rect = null;
               try {
@@ -102,10 +114,14 @@ export const MedicalAutocomplete = Extension.create({
         ({ state, chain }) => {
           const to = state.selection.from;
           if (from >= to) return false;
+          // Accept either a raw string (legacy fallback path) or the new
+          // {label, ...} object shape from radiologyData.search().
+          const label = typeof term === 'string' ? term : (term?.label || '');
+          if (!label) return false;
           return chain()
             .focus()
             .deleteRange({ from, to })
-            .insertContent(term)
+            .insertContent(label)
             .run();
         },
     };

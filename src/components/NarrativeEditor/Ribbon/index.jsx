@@ -110,6 +110,20 @@ export default function Ribbon(props) {
 
   const [activeTab, setActiveTab] = useState('home');
   const [ribbonCollapsed, setRibbonCollapsed] = useState(false);
+  // Friction #6 — compact mode. When on, tab strip shows icons only and
+  // the tab content area pads tighter. Persisted in localStorage so the
+  // user's preference sticks across reloads. Opt-in by default.
+  const [compact, setCompact] = useState(() => {
+    try { return window.localStorage?.getItem('narrative-editor:ribbon-compact') === '1'; }
+    catch { return false; }
+  });
+  const toggleCompact = () => {
+    setCompact(v => {
+      const next = !v;
+      try { window.localStorage?.setItem('narrative-editor:ribbon-compact', next ? '1' : '0'); } catch {}
+      return next;
+    });
+  };
 
   // Animated active-tab underline — measures the active tab button and
   // slides a single absolutely-positioned underline across the tab strip.
@@ -118,7 +132,9 @@ export default function Ribbon(props) {
   useLayoutEffect(() => {
     const node = tabRefs.current[activeTab];
     if (node) setUnderline({ left: node.offsetLeft, width: node.offsetWidth });
-  }, [activeTab]);
+    // `compact` in deps so the underline re-measures when labels appear /
+    // disappear (which changes the tab button widths).
+  }, [activeTab, compact]);
 
   const handleTabClick = (id) => {
     if (ribbonCollapsed) setRibbonCollapsed(false);
@@ -303,18 +319,23 @@ export default function Ribbon(props) {
                 ref={el => { if (el) tabRefs.current[t.id] = el; }}
                 onMouseDown={e => { e.preventDefault(); handleTabClick(t.id); }}
                 onDoubleClick={e => { e.preventDefault(); handleTabDoubleClick(t.id); }}
+                // In compact mode the tab label disappears so the user sees
+                // just the icon. Title attribute carries the label so a
+                // tooltip still gives the name on hover - no information
+                // lost, only visual real estate reclaimed.
+                title={compact ? t.label : undefined}
                 style={{
                   position: 'relative',
                   border: 'none',
                   background: 'transparent',
-                  padding: '0 16px',
+                  padding: compact ? '0 10px' : '0 16px',
                   height: '100%',
                   fontSize: '12.5px',
                   fontWeight: isActive ? 600 : 500,
                   color: isActive ? COLOR.accent : COLOR.text,
                   cursor: 'pointer',
                   fontFamily: 'inherit',
-                  display: 'flex', alignItems: 'center', gap: '7px',
+                  display: 'flex', alignItems: 'center', gap: compact ? 0 : '7px',
                   letterSpacing: '0.05px',
                   transition: `color 0.18s ${EASE}`,
                 }}
@@ -322,7 +343,7 @@ export default function Ribbon(props) {
                 onMouseLeave={e => { if (!isActive) e.currentTarget.style.color = COLOR.text; }}
               >
                 <span style={{ opacity: isActive ? 1 : 0.7, display: 'inline-flex' }}>{t.icon}</span>
-                <span>{t.label}</span>
+                {!compact && <span>{t.label}</span>}
               </button>
             );
           })}
@@ -372,6 +393,44 @@ export default function Ribbon(props) {
               onClick={(e) => { e?.preventDefault?.(); e?.stopPropagation?.(); toggleFullscreen(); }}
             />
           )}
+
+          {/* Compact-mode toggle (friction #6). Icon-only when active,
+              outlined when inactive. Preference persists in localStorage. */}
+          <button
+            onMouseDown={e => { e.preventDefault(); toggleCompact(); }}
+            title={compact ? 'Expanded ribbon' : 'Compact ribbon'}
+            aria-pressed={compact}
+            style={{
+              width: '28px', height: '28px', borderRadius: '50%',
+              background: compact ? COLOR.accent : COLOR.surface,
+              border: `1px solid ${compact ? COLOR.accent : COLOR.border}`,
+              color: compact ? '#fff' : COLOR.textMute,
+              fontSize: '12px', fontWeight: 800,
+              cursor: 'pointer', fontFamily: 'inherit',
+              display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+              flexShrink: 0,
+              transition: `all 0.18s ${EASE}`,
+            }}
+            onMouseEnter={e => {
+              if (compact) return;
+              e.currentTarget.style.background = COLOR.accentSoft;
+              e.currentTarget.style.borderColor = COLOR.accent;
+              e.currentTarget.style.color = COLOR.accent;
+            }}
+            onMouseLeave={e => {
+              if (compact) return;
+              e.currentTarget.style.background = COLOR.surface;
+              e.currentTarget.style.borderColor = COLOR.border;
+              e.currentTarget.style.color = COLOR.textMute;
+            }}
+          >
+            {/* Two-bar icon - more bars = more density. Compact = single bar. */}
+            <svg width="13" height="13" viewBox="0 0 16 16" fill="currentColor">
+              {compact
+                ? <rect x="3" y="7" width="10" height="2" rx="1" />
+                : <><rect x="3" y="4" width="10" height="2" rx="1" /><rect x="3" y="10" width="10" height="2" rx="1" /></>}
+            </svg>
+          </button>
 
           {/* Circular help button */}
           <button
@@ -463,8 +522,12 @@ export default function Ribbon(props) {
           fine for height math but the visual proximity of bottom
           buttons to the label still felt cramped. */}
       <div style={{
-        height: ribbonCollapsed ? '0' : '112px',
-        padding: ribbonCollapsed ? '0 12px' : '4px 12px 0',
+        // Compact mode shaves ~16px off the tab body so the canvas
+        // gets more vertical room. The button rows inside don't
+        // resize - this is just the wrapper padding - so no risk of
+        // clipping content.
+        height: ribbonCollapsed ? '0' : (compact ? '96px' : '112px'),
+        padding: ribbonCollapsed ? '0 12px' : (compact ? '0 12px 0' : '4px 12px 0'),
         background: 'transparent',
         overflowX: ribbonCollapsed ? 'hidden' : 'auto',
         overflowY: 'hidden',

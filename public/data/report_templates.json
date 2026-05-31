@@ -1,0 +1,126 @@
+{
+  "meta": {
+    "totalTemplates": 17
+  },
+  "templates": [
+    {
+      "command": "/impression",
+      "label": "Impression",
+      "category": "General",
+      "icon": "📋",
+      "template": "IMPRESSION:\n1. [Primary finding]\n2. [Secondary finding]\n\nRECOMMENDATION: [Further imaging / clinical correlation / biopsy]"
+    },
+    {
+      "command": "/findings",
+      "label": "Findings section",
+      "category": "General",
+      "icon": "🔍",
+      "template": "FINDINGS:\n\n[Organ/region]: [Description of finding including size, location, attenuation/signal, margins, enhancement]."
+    },
+    {
+      "command": "/technique",
+      "label": "Technique",
+      "category": "General",
+      "icon": "⚙️",
+      "template": "TECHNIQUE: [Modality] of the [anatomical region] was performed [with/without] intravenous contrast. [Additional details]."
+    },
+    {
+      "command": "/indication",
+      "label": "Indication",
+      "category": "General",
+      "icon": "📌",
+      "template": "INDICATION: [Clinical reason for study, e.g. pain, fever, follow-up of known condition]."
+    },
+    {
+      "command": "/comparison",
+      "label": "Comparison",
+      "category": "General",
+      "icon": "🔄",
+      "template": "COMPARISON: [Prior study type] dated [DD/MM/YYYY]."
+    },
+    {
+      "command": "/normal-cxr",
+      "label": "Normal CXR",
+      "category": "Chest",
+      "icon": "🫁",
+      "template": "Cardiac size is within normal limits. The mediastinum is of normal width. The lung fields are clear bilaterally. No pleural effusion or pneumothorax is identified. The visualised bony thorax is intact.\n\nIMPRESSION:\nNo acute cardiopulmonary process."
+    },
+    {
+      "command": "/ct-brain-normal",
+      "label": "Normal CT Brain",
+      "category": "Neuro",
+      "icon": "🧠",
+      "template": "There is no evidence of acute intracranial haemorrhage, mass lesion, or extra-axial collection. The brain parenchyma demonstrates normal attenuation. No acute infarct is identified. The ventricles and sulci are normal in size for age. The basal cisterns are patent. The midline is central with no mass effect.\n\nIMPRESSION:\nNo acute intracranial abnormality."
+    },
+    {
+      "command": "/usg-abdomen",
+      "label": "USG Abdomen Normal",
+      "category": "Abdomen",
+      "icon": "📡",
+      "template": "LIVER: Normal in size and echotexture. No focal lesion identified. Portal vein is patent with hepatopetal flow.\nGALLBLADDER: Normal wall thickness. No calculi. CBD measures [X]mm (normal <6mm).\nPANCREAS: Normal echogenicity. Main pancreatic duct not dilated.\nSPLEEN: Normal in size ([X]cm).\nKIDNEYS: Bilateral kidneys normal in size and echotexture. No hydronephrosis, calculi, or focal lesion.\nFREE FLUID: None.\n\nIMPRESSION:\nNormal abdominal ultrasound."
+    },
+    {
+      "command": "/mri-knee",
+      "label": "MRI Knee Template",
+      "category": "MSK",
+      "icon": "🦴",
+      "template": "BONE MARROW: No bone marrow oedema or trabecular fracture.\nARTICULAR CARTILAGE: [Normal thickness / Focal thinning at (location)] in medial compartment, lateral compartment, and patellofemoral joint.\nMENISCI: Medial meniscus — [normal / grade I–II intrasubstance signal / grade III tear at (location)]. Lateral meniscus — [normal / abnormal].\nLIGAMENTS: ACL [intact/disrupted]. PCL [intact]. MCL [intact]. LCL/PLC [intact].\nSYNOVIUM: [No/mild/moderate] joint effusion. No loose bodies.\n\nIMPRESSION:\n1. [Primary finding]\n2. [Secondary finding]"
+    },
+    {
+      "command": "/ct-chest",
+      "label": "CT Chest Template",
+      "category": "Chest",
+      "icon": "🫁",
+      "template": "LUNGS: [No/bilateral/right/left] pulmonary nodule(s)/consolidation/pleural effusion. Airways patent to subsegmental level.\nPLEURA: [No pleural effusion / Small right pleural effusion].\nMEDIASTINUM: Heart size normal. No mediastinal lymphadenopathy (all nodes <1cm short axis). Aorta normal in calibre.\nCHEST WALL: No rib fracture.\n\nIMPRESSION:\n[Summary]"
+    },
+    {
+      "command": "/ct-abdomen",
+      "label": "CT Abdomen & Pelvis",
+      "category": "Abdomen",
+      "icon": "🏥",
+      "template": "LIVER: [Normal / Lesion description] — size [X]cm.\nGALLBLADDER: [Normal / Calculi / Wall thickening].\nBILE DUCTS: CBD [not dilated / dilated to Xmm].\nPANCREAS: [Normal].\nSPLEEN: [Normal / Splenomegaly — Xcm].\nADRENALS: [Normal].\nKIDNEYS: [Normal / Hydronephrosis / Mass].\nBLADDER: [Normal].\nBOWEL: [No bowel obstruction / Dilated loops].\nLYMPH NODES: [No lymphadenopathy / Enlarged nodes in region].\nPELVIS: [Uterus and ovaries normal / Prostate normal].\nFREE FLUID: [None / Present].\nBONES: [No acute osseous abnormality].\n\nIMPRESSION:\n[Summary]"
+    },
+    {
+      "command": "/mri-brain",
+      "label": "MRI Brain Template",
+      "category": "Neuro",
+      "icon": "🧠",
+      "template": "PARENCHYMA: No abnormal T1 or T2/FLAIR signal within brain parenchyma. No diffusion restriction to suggest acute ischaemia. No susceptibility artefact to suggest haemorrhage or calcification.\nVENTRICLES: Normal in size and configuration.\nEXTRA-AXIAL SPACES: No subdural, epidural, or subarachnoid collection.\nMIDLINE: Central. No mass effect or herniation.\nCRANIOCERVICAL JUNCTION: Normal.\nSELLA: [Normal pituitary].\nORBITS: [Unremarkable].\n\nIMPRESSION:\n[Summary]"
+    },
+    {
+      "command": "/mri-spine",
+      "label": "MRI Spine Template",
+      "category": "Spine",
+      "icon": "🦷",
+      "template": "ALIGNMENT: [Normal lordosis/kyphosis / Loss of normal curvature].\nVERTEBRAL BODIES: Normal height and signal. No fracture or marrow-replacing lesion.\nINTERVERTEBRAL DISCS: Disc desiccation at [levels]. [Focal disc herniation at level, type, direction].\nSPINAL CANAL: [Adequate / Moderate / Severe] central canal stenosis at [level].\nNEURAL FORAMINA: [No / Right / Left / Bilateral] foraminal narrowing at [level].\nSPINAL CORD / CAUDA EQUINA: [Normal cord signal / Abnormal T2 signal at level]. Conus medullaris at [L1/L2] level.\n\nIMPRESSION:\n[Summary]"
+    },
+    {
+      "command": "/no-evidence",
+      "label": "No evidence of...",
+      "category": "Phrases",
+      "icon": "✅",
+      "template": "No evidence of [finding/diagnosis]."
+    },
+    {
+      "command": "/stable",
+      "label": "Stable comparison",
+      "category": "Phrases",
+      "icon": "📊",
+      "template": "[Stable / Interval decrease / Interval increase] in [finding] compared to prior [study type] dated [date]."
+    },
+    {
+      "command": "/correlate",
+      "label": "Correlate clinically",
+      "category": "Phrases",
+      "icon": "💡",
+      "template": "Clinical correlation is recommended."
+    },
+    {
+      "command": "/incidental",
+      "label": "Incidental finding",
+      "category": "Phrases",
+      "icon": "ℹ️",
+      "template": "Incidentally noted is [finding]. This is [likely benign / requires further evaluation with MRI / clinically insignificant]."
+    }
+  ]
+}

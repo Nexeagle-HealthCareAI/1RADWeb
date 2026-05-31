@@ -427,13 +427,40 @@ const ReportPreviewModal = ({
       tmp.innerHTML = html;
       _hydrateSpacing(tmp);
       _preserveBlankLines(tmp);
+
+      // Path A — editor produced .word-page wrappers (PageDocument schema).
+      // Each one is already a ready-made page chunk.
       const inners = tmp.querySelectorAll('.word-page-inner');
-      if (inners.length === 0) {
-        // Content has no .word-page wrappers (e.g., legacy data). Treat as a
-        // single page; pagination will be best-effort but won't split.
-        return [tmp.innerHTML];
+      if (inners.length > 0) {
+        return Array.from(inners).map(inner => inner.innerHTML);
       }
-      return Array.from(inners).map(inner => inner.innerHTML);
+
+      // Path B — editor produced flat blocks, with [data-page-break]
+      // markers injected by getPrintHTML at every auto-flow boundary AND
+      // by PageBreakNode renderHTML at every user-inserted manual break.
+      // Walk top-level children and split at each marker.
+      const hasMarkers = !!tmp.querySelector('[data-page-break]');
+      if (hasMarkers) {
+        const pages = [];
+        let current = document.createElement('div');
+        Array.from(tmp.children).forEach(child => {
+          if (child.hasAttribute && child.hasAttribute('data-page-break')) {
+            pages.push(current.innerHTML);
+            current = document.createElement('div');
+            return;
+          }
+          current.appendChild(child.cloneNode(true));
+        });
+        pages.push(current.innerHTML);
+        // Filter trivially empty trailing chunks (e.g., a break with no
+        // content after it — shouldn't normally happen but defensive).
+        return pages.filter(p => p && p.trim());
+      }
+
+      // Legacy / single-page fallback — content has no Path A wrappers
+      // and no Path B markers (e.g., very short flat draft, or legacy
+      // raw HTML from an older save). One page; pagination is best-effort.
+      return [tmp.innerHTML];
     };
 
     let chunks = [];

@@ -1071,7 +1071,7 @@ export default function HomeTab({ editor, showFormattingMarks, onToggleFormattin
       <Sep />
 
       {/* ── Font group ──────────────────────────────────── */}
-      <Group label="Font" onLauncher={() => window.dispatchEvent(new CustomEvent('narrative-editor:open-font-dialog'))}>
+      <Group label="Font" onLauncher={(anchor) => window.dispatchEvent(new CustomEvent('narrative-editor:open-font-dialog', { detail: { anchor } }))}>
         <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', alignItems: 'flex-start' }}>
           <div style={{ display: 'flex', gap: '4px' }}>
             <Combobox
@@ -1210,7 +1210,7 @@ export default function HomeTab({ editor, showFormattingMarks, onToggleFormattin
            Row 1: alignment.   Row 2: indent + line spacing + paragraph
            shading + borders. List-specific controls moved to the new
            Lists group on the right. */}
-      <Group label="Paragraph" onLauncher={() => window.dispatchEvent(new CustomEvent('narrative-editor:open-paragraph-dialog'))}>
+      <Group label="Paragraph" onLauncher={(anchor) => window.dispatchEvent(new CustomEvent('narrative-editor:open-paragraph-dialog', { detail: { anchor } }))}>
         <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', alignItems: 'flex-start' }}>
           <div style={{ display: 'flex', gap: '1px' }}>
             <Btn onClick={() => editor.chain().focus().setTextAlign('left').run()} active={editor.isActive({ textAlign: 'left' })} title="Align Left (Ctrl+L)">

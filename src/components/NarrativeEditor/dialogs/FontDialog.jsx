@@ -1,13 +1,17 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { FONT_FAMILIES, FONT_SIZES, STANDARD_COLORS } from '../Ribbon/RibbonControls';
 
 /**
  * Word-style Font dialog. Opens from the Font group's launcher arrow.
  * Captures the current selection's marks and lets the user tweak them in
- * a single modal, then applies on OK.
+ * a single panel, then applies on OK.
+ *
+ * Friction #4 — when `anchor` is provided ({top, left}), renders as a
+ * popover under the launcher button instead of as a backdrop modal. Falls
+ * back to the centred modal when anchor is absent.
  */
-export default function FontDialog({ editor, open, onClose }) {
+export default function FontDialog({ editor, open, anchor, onClose }) {
   const [family, setFamily] = useState('Calibri');
   const [size, setSize] = useState('12');
   const [bold, setBold] = useState(false);
@@ -39,6 +43,18 @@ export default function FontDialog({ editor, open, onClose }) {
     setHighlight(editor.getAttributes('highlight').color || '');
   }, [open, editor]);
 
+  // Outside-mousedown dismissal for the popover variant.
+  const panelRef = useRef(null);
+  useEffect(() => {
+    if (!open || !anchor) return undefined;
+    const h = (e) => {
+      if (panelRef.current && panelRef.current.contains(e.target)) return;
+      onClose?.();
+    };
+    document.addEventListener('mousedown', h, true);
+    return () => document.removeEventListener('mousedown', h, true);
+  }, [open, anchor, onClose]);
+
   if (!open || !portalTarget) return null;
 
   const apply = () => {
@@ -69,24 +85,37 @@ export default function FontDialog({ editor, open, onClose }) {
     padding: '2px 4px',
   };
 
-  return createPortal(
+  const isPopover = !!anchor;
+  // Popover positioning: anchor.top is the launcher button's bottom edge,
+  // anchor.left its left edge. Clamp horizontally so a launcher near the
+  // right edge of a small viewport doesn't push the popover off-screen.
+  const POPOVER_W = 460;
+  const POPOVER_H_EST = 460;
+  let popLeft = 0, popTop = 0;
+  if (isPopover) {
+    const vw = window.innerWidth;
+    const vh = window.innerHeight;
+    popLeft = Math.min(Math.max(8, anchor.left), vw - POPOVER_W - 8);
+    popTop = anchor.top + 4;
+    if (popTop + POPOVER_H_EST > vh - 8) {
+      popTop = Math.max(8, anchor.top - POPOVER_H_EST - 8);
+    }
+  }
+
+  const panel = (
     <div
-      onMouseDown={e => { if (e.target === e.currentTarget) onClose(); }}
+      ref={panelRef}
+      onMouseDown={e => e.stopPropagation()}
       style={{
-        position: 'fixed', inset: 0, background: 'rgba(10, 22, 40, 0.45)',
-        backdropFilter: 'blur(2px)',
-        zIndex: 13500, display: 'flex', alignItems: 'center', justifyContent: 'center',
-        fontFamily: '"Segoe UI", system-ui, sans-serif',
+        width: '460px', background: '#fff',
+        borderRadius: isPopover ? '10px' : '8px',
+        boxShadow: isPopover
+          ? '0 12px 40px rgba(0,0,0,0.18), 0 2px 6px rgba(0,0,0,0.08)'
+          : '0 24px 60px rgba(0,0,0,0.3)',
+        border: isPopover ? '1px solid #e2e8f0' : 'none',
+        overflow: 'hidden',
       }}
     >
-      <div
-        onMouseDown={e => e.stopPropagation()}
-        style={{
-          width: '460px', background: '#fff',
-          borderRadius: '8px', boxShadow: '0 24px 60px rgba(0,0,0,0.3)',
-          overflow: 'hidden',
-        }}
-      >
         <div style={{ padding: '14px 18px', borderBottom: '1px solid #f0f0f0', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           <div style={{ fontSize: '14px', fontWeight: 600, color: '#1f2937' }}>Font</div>
           <button onMouseDown={e => { e.preventDefault(); onClose(); }} style={{ background: 'transparent', border: 'none', cursor: 'pointer', fontSize: '20px', color: '#666' }}>×</button>
@@ -128,10 +157,34 @@ export default function FontDialog({ editor, open, onClose }) {
           <button onMouseDown={e => { e.preventDefault(); onClose(); }} style={btnSecondary}>Cancel</button>
           <button onMouseDown={e => { e.preventDefault(); apply(); }} style={btnPrimary}>OK</button>
         </div>
-      </div>
-    </div>,
-    portalTarget
+    </div>
   );
+
+  const wrapper = isPopover ? (
+    <div
+      style={{
+        position: 'fixed', top: popTop, left: popLeft,
+        zIndex: 13500,
+        fontFamily: '"Segoe UI", system-ui, sans-serif',
+      }}
+    >
+      {panel}
+    </div>
+  ) : (
+    <div
+      onMouseDown={e => { if (e.target === e.currentTarget) onClose(); }}
+      style={{
+        position: 'fixed', inset: 0, background: 'rgba(10, 22, 40, 0.45)',
+        backdropFilter: 'blur(2px)',
+        zIndex: 13500, display: 'flex', alignItems: 'center', justifyContent: 'center',
+        fontFamily: '"Segoe UI", system-ui, sans-serif',
+      }}
+    >
+      {panel}
+    </div>
+  );
+
+  return createPortal(wrapper, portalTarget);
 }
 
 const selectStyle = {

@@ -1288,3 +1288,143 @@ del[data-ci] {
 }
 .exit-preview-btn:hover { background: #006bbc; }
 
+
+/* -------------------------------------------------------------------------
+   Path B pagination - decoration-based page boundaries.
+
+   Active only when the useDecorationPagination feature flag is on. When the
+   PaginationDecoration plugin emits widget decorations, this CSS gives them
+   the same visual gap the old .word-page margin-bottom used to provide.
+
+   The trick: in Path B the editor's content lives in a SINGLE A4-width
+   column (.narrative-editor-content.flat-pagination). The widget decorations
+   are zero-content divs inserted between blocks; CSS sizes them to look
+   identical to the old inter-page gap so the user can't tell the difference.
+
+   Schema-flip safety: when the flag is OFF, .flat-pagination is never set
+   and these rules are dead code paths - no regression on Path A.
+   ------------------------------------------------------------------------- */
+
+.narrative-editor-content.flat-pagination {
+  width: 794px;
+  margin-left: auto;
+  margin-right: auto;
+  background-color: #ffffff;
+  box-shadow:
+    0 1px 3px rgba(0, 0, 0, 0.30),
+    0 4px 10px rgba(0, 0, 0, 0.15);
+  /* Top padding expands by the first-page banner height (set by the React
+     bannerHostRef effect) so typed content never sits under the banner.
+     The pagination plugin reads the same value and subtracts it from
+     page 1's writable area so the boundary lands in the right place. */
+  padding: calc(96px + var(--patient-banner-height, 0px)) 96px 96px 96px;
+  box-sizing: border-box;
+  min-height: 1123px;
+}
+
+/* Header / footer chrome containers emitted by PaginationDecoration. */
+.narrative-editor-content.flat-pagination .word-page-chrome {
+  display: block;
+  user-select: none;
+}
+.narrative-editor-content.flat-pagination .word-page-chrome-top {
+  /* Page 1 header sits at the very top of the column, just below the
+     banner area. Negative top margin pulls it into the top padding zone
+     the way Path A puts headers inside the page's top padding. */
+  margin: -64px -96px 12px;
+  padding: 0 96px;
+}
+.narrative-editor-content.flat-pagination .word-page-chrome-bottom {
+  /* Last-page footer mirrors the header positioning at the bottom. */
+  margin: 12px -96px -64px;
+  padding: 0 96px;
+}
+.narrative-editor-content.flat-pagination .word-page-chrome-boundary {
+  /* Stacks footer-of-prior-page, gap, header-of-next-page vertically.
+     Negative side margins make it span the full canvas width so the gap
+     and chrome bands look like they belong to the page surface, not the
+     inner content column. */
+  margin: 12px -96px;
+}
+.narrative-editor-content.flat-pagination .word-page-chrome-boundary .word-page-footer {
+  padding: 0 96px 6px;
+}
+.narrative-editor-content.flat-pagination .word-page-chrome-boundary .word-page-header {
+  padding: 6px 96px 0;
+}
+.narrative-editor-content.flat-pagination .word-page-footer,
+.narrative-editor-content.flat-pagination .word-page-header {
+  color: #475569;
+  font-size: 9pt;
+  pointer-events: none;
+}
+
+/* Inter-page gap widget - the visible seam between two virtual pages.
+   Negative margins push it OUTSIDE the editor's normal padding so it
+   spans the full width of the canvas and the user sees grey backdrop
+   between sheets instead of inner padding. */
+.narrative-editor-content.flat-pagination .word-page-boundary {
+  display: block;
+  margin: 32px -96px;
+  height: 28px;
+  background:
+    linear-gradient(to bottom,
+      rgba(0,0,0,0.12) 0%,
+      rgba(0,0,0,0) 6px,
+      transparent 6px,
+      transparent calc(100% - 6px),
+      rgba(0,0,0,0) calc(100% - 6px),
+      rgba(0,0,0,0.12) 100%
+    );
+  pointer-events: none;
+  user-select: none;
+}
+
+/* Explicit page-break marker (the PageBreakNode users insert via Ctrl+Enter
+   when they want a forced break). Rendered as a thin dashed line so the
+   user can see WHERE they put a manual break vs an automatic one. */
+.narrative-editor-content .page-break-marker {
+  display: block;
+  height: 0;
+  margin: 12px 0;
+  border-top: 1px dashed #94a3b8;
+  position: relative;
+}
+.narrative-editor-content .page-break-marker::after {
+  content: 'PAGE BREAK';
+  position: absolute;
+  top: -7px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: #fff;
+  padding: 0 8px;
+  font-size: 9px;
+  font-weight: 800;
+  color: #94a3b8;
+  letter-spacing: 1.5px;
+}
+
+/* In PRINT, the dashed indicator disappears and the marker becomes a real
+   page break. Browsers honour break-after on block elements so the printed
+   PDF gets a genuine boundary at the user's manual break. */
+@media print {
+  .narrative-editor-content .page-break-marker {
+    border: none;
+    margin: 0;
+    break-after: page;
+    page-break-after: always; /* legacy alias */
+  }
+  .narrative-editor-content .page-break-marker::after {
+    display: none;
+  }
+  /* Auto boundary widgets must NOT force a page break in print - print uses
+     CSS-driven page boxes via the @page rule and .word-page-boundary is
+     only a visual seam in screen layout. */
+  .narrative-editor-content.flat-pagination .word-page-boundary {
+    display: none;
+  }
+}
+
+
+
+

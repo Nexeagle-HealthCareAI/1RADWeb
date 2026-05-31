@@ -64,7 +64,10 @@ export default function TemplatesQuickPicker({ onApply, onOpenFull }) {
       <button
         ref={btnRef}
         type="button"
-        onClick={openMenu}
+        // Friction #2 — preventDefault on mousedown keeps editor focus.
+        // Without this, clicking the picker steals selection and the
+        // ribbon's other active-state indicators go stale.
+        onMouseDown={e => { e.preventDefault(); openMenu(); }}
         title="Apply a report template (Insert tab → Templates for the full picker)"
         style={{
           display: 'flex', alignItems: 'center', gap: '5px',
@@ -122,7 +125,7 @@ export default function TemplatesQuickPicker({ onApply, onOpenFull }) {
             <button
               key={tpl.id}
               type="button"
-              onClick={() => handlePick(tpl)}
+              onMouseDown={e => { e.preventDefault(); handlePick(tpl); }}
               style={{
                 display: 'flex',
                 alignItems: 'center',
@@ -175,7 +178,7 @@ export default function TemplatesQuickPicker({ onApply, onOpenFull }) {
               <div style={{ height: '1px', background: '#e2e8f0', margin: '4px 0' }} />
               <button
                 type="button"
-                onClick={() => { setOpen(false); onOpenFull(); }}
+                onMouseDown={e => { e.preventDefault(); setOpen(false); onOpenFull(); }}
                 style={{
                   display: 'flex',
                   alignItems: 'center',

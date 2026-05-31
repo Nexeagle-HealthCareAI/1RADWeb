@@ -232,7 +232,15 @@ export const Group = ({ label, children, onLauncher, style = {} }) => (
       }}>{label}</span>
       {onLauncher && (
         <button
-          onMouseDown={e => { e.preventDefault(); onLauncher(); }}
+          // Forward the launcher button's bounding rect to the handler so
+          // the receiving dialog can render as a popover anchored under it
+          // (friction #4). Handlers that don't care about position simply
+          // ignore the argument.
+          onMouseDown={e => {
+            e.preventDefault();
+            const rect = e.currentTarget.getBoundingClientRect();
+            onLauncher({ top: rect.bottom, left: rect.left });
+          }}
           title={`${label} dialog`}
           style={{
             width: '16px', height: '16px',

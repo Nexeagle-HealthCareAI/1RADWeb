@@ -57,6 +57,25 @@ const ReportingPage = () => {
   // pre-conflict content stashed in `previous` for 30s — clicking Undo
   // re-sends that content as the new save. Auto-dismisses after 30s.
   const [occConflict, setOccConflict] = useState(null);
+
+  // Imperative editor-content setter. Lifted from inside the report-fetch
+  // effect because the OCC undo handler (and any other top-level callback)
+  // also needs to push HTML into the editor — duplicating the body inline
+  // would re-grow the same scope-bug it was created from. State alone
+  // relies on NarrativeEditor's content-sync useEffect, which is skipped
+  // if the editor is focused or its isEmpty heuristic mis-fires; the
+  // imperative call inside rAF guarantees the editor catches up.
+  const applyEditorContent = useCallback((html) => {
+    setEditorText(html || '');
+    requestAnimationFrame(() => {
+      const handle = editorRef.current;
+      if (!handle) return;
+      if (handle.setContent) handle.setContent(html || '');
+      else if (handle.editor) {
+        try { handle.editor.commands.setContent(html || '', false); } catch {}
+      }
+    });
+  }, []);
   const [selectedImg, setSelectedImg] = useState(null);
   const [imgToolbarPos, setImgToolbarPos] = useState({ top: 0, left: 0 });
   const [isFullscreen, setIsFullscreen] = useState(false);
@@ -135,9 +154,21 @@ const ReportingPage = () => {
   const [originalAssets, setOriginalAssets] = useState([]);
 
   // --- AUTOSAVE SYSTEM ---
-  const [lastSaved, setLastSaved] = useState(null);
-  const [saveStatus, setSaveStatus] = useState('IDLE'); // 'IDLE', 'DIRTY', 'SAVING', 'SUCCESS'
+  // Friction-#3 calming pass: instead of bouncing between four discrete
+  // labels (IDLE / DIRTY / SAVING / SUCCESS) the UI now derives a single
+  // calm status line from these three pieces of state.
+  //   lastSavedAt → Date | null. Drives "Saved just now" / "Saved Xm ago".
+  //   saveStatus  → kept for the orchestration logic in the autosave effect
+  //                 (it still needs DIRTY/SAVING/CONFLICT semantics) but
+  //                 only the labels are decoupled from the state names.
+  //   savingVisible → flips true only if a save lasts >500ms. Sub-500ms
+  //                 saves never show "Saving…" at all — eliminates the
+  //                 single biggest source of pill-bouncing.
+  const [lastSavedAt, setLastSavedAt] = useState(null);
+  const [saveStatus, setSaveStatus] = useState('IDLE'); // 'IDLE', 'DIRTY', 'SAVING', 'SUCCESS', 'CONFLICT'
   const [isCloudSyncing, setIsCloudSyncing] = useState(false);
+  const [savingVisible, setSavingVisible] = useState(false);
+  const savingShowTimerRef = useRef(null);
 
   const [notifModal, setNotifModal] = useState({ isOpen: false, type: 'info', title: '', message: '' });
   const showNotif = (type, title, message) => setNotifModal({ isOpen: true, type, title, message });
@@ -306,6 +337,11 @@ const ReportingPage = () => {
       console.info(`[AUTOSAVE] Triggering background cloud sync...`);
       setIsCloudSyncing(true);
       setSaveStatus('SAVING');
+      // Only show "Saving…" if the save lasts longer than 500ms. Fast saves
+      // (the common case) never flicker the label — the UI just transitions
+      // straight to "Saved just now".
+      if (savingShowTimerRef.current) clearTimeout(savingShowTimerRef.current);
+      savingShowTimerRef.current = setTimeout(() => setSavingVisible(true), 500);
       try {
         const freshFindings = editorRef.current?.editor?.getHTML?.() ?? editorText;
         const payload = {
@@ -322,9 +358,14 @@ const ReportingPage = () => {
         };
         const res = await apiClient.post('/reporting/save', payload);
         if (res.data?.success) {
-          setLastSaved(new Date().toLocaleTimeString());
+          setLastSavedAt(new Date());
           setSaveStatus('SUCCESS');
           autosaveFailuresRef.current = 0;
+          // Save completed - cancel the deferred "Saving…" label and
+          // hide it if it had already shown. Either way the next render
+          // shows "Saved just now".
+          if (savingShowTimerRef.current) { clearTimeout(savingShowTimerRef.current); savingShowTimerRef.current = null; }
+          setSavingVisible(false);
           // Advance the OCC token so the NEXT autosave / manual save sends
           // the up-to-date value. Server echoes the new RowVersion in the
           // response payload.
@@ -373,6 +414,11 @@ const ReportingPage = () => {
         }
       } finally {
         setIsCloudSyncing(false);
+        // Cancel the deferred "Saving…" label and hide it regardless of
+        // success/failure — the next paint either shows "Saved just now"
+        // or an error banner, both of which supersede the saving label.
+        if (savingShowTimerRef.current) { clearTimeout(savingShowTimerRef.current); savingShowTimerRef.current = null; }
+        setSavingVisible(false);
       }
     }, delay);
 
@@ -629,38 +675,6 @@ const ReportingPage = () => {
       // 3. Resolve Report Data (Handle both nested and flat structures)
       const reportBody = reportRes.data;
       const r = (reportBody?.success && reportBody?.data) ? reportBody.data : reportBody;
-
-      // Helper to push HTML into the editor both via state AND imperatively
-      // through the editor handle. State alone relies on NarrativeEditor's
-      // content-sync useEffect, which is skipped if the editor is focused
-      // or if its `isEmpty` heuristic mis-fires. The imperative call inside
-      // requestAnimationFrame guarantees the editor catches up.
-      const applyEditorContent = (html) => {
-        setEditorText(html || '');
-        requestAnimationFrame(() => {
-          const handle = editorRef.current;
-          if (!handle) return;
-          if (handle.setContent) handle.setContent(html || '');
-          else if (handle.editor) {
-            try { handle.editor.commands.setContent(html || '', false); } catch {}
-          }
-          // ── Text-align persistence diagnostic (post-render) ─────────────
-          // After Tiptap parses + re-serialises, do we still see the align?
-          // If load logged alignCount > 0 but this logs 0, Tiptap's TextAlign
-          // extension isn't parsing the inline style on the way back in.
-          try {
-            requestAnimationFrame(() => {
-              const post = handle.editor?.getHTML?.() || '';
-              const alignMatches = post.match(/text-align\s*:\s*[a-z]+/gi) || [];
-              console.info('[ALIGN_DIAG] post-setContent editor HTML:', {
-                htmlLength: post.length,
-                alignCount: alignMatches.length,
-                aligns: alignMatches.slice(0, 5),
-              });
-            });
-          } catch (_) { /* never block render on diagnostic */ }
-        });
-      };
 
       // Tolerant service-name match: tries exact (case/whitespace-insensitive),
       // then substring both directions, then alphanumeric-only token-set match
@@ -1035,6 +1049,10 @@ const ReportingPage = () => {
         if (updated?.rowVersion ?? updated?.RowVersion) {
           rowVersionRef.current = updated.rowVersion ?? updated.RowVersion;
         }
+        // Bump the calm status line so the user sees "Saved just now" in
+        // the corner even when the manual save modal isn't visible.
+        setSaveStatus('SUCCESS');
+        setLastSavedAt(new Date());
         showNotif('success', finalizing ? 'REPORT FINALIZED' : 'DRAFT SAVED', finalizing ? 'Report has been finalized and dispatched successfully.' : 'Your changes have been saved successfully.');
         if (finalizing) {
           setIsFinalized(true);
@@ -1118,6 +1136,7 @@ const ReportingPage = () => {
         }
         serverBaselineRef.current = prev.findings;
         setSaveStatus('SUCCESS');
+        setLastSavedAt(new Date());
         showNotif('success', 'UNDO APPLIED', 'Your changes have been re-applied over the conflicting save.');
         logEvent('conflict.resolved', { appointmentId, choice: 'undo' });
       }
@@ -4758,20 +4777,52 @@ const ReportingPage = () => {
                     boxShadow: '0 2px 8px rgba(15, 23, 42, 0.04)',
                     padding: '14px 16px',
                   }}>
-                    <div style={{ fontSize: '9px', fontWeight: 800, color: '#94a3b8', letterSpacing: '1.2px', textTransform: 'uppercase', marginBottom: '10px' }}>Status</div>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px' }}>
-                      <div style={{ width: '8px', height: '8px', borderRadius: '50%', background: isOnline ? '#10b981' : '#f59e0b', boxShadow: `0 0 0 3px ${isOnline ? '#10b98125' : '#f59e0b25'}`, animation: 'pulse 1.5s infinite' }} />
-                      <span style={{ fontSize: '11px', fontWeight: 800, color: isOnline ? '#15803d' : '#92400e', letterSpacing: '0.3px' }}>
-                        {isOnline ? 'Cloud connected' : 'Offline cache active'}
-                      </span>
-                    </div>
-                    <div style={{ fontSize: '11px', fontWeight: 600, color: '#64748b' }}>
-                      {saveStatus === 'SAVING'
-                        ? <><span style={{ marginRight: '4px' }}>📡</span>Syncing…</>
-                        : saveStatus === 'SUCCESS'
-                          ? <><span style={{ marginRight: '4px', color: '#16a34a' }}>✓</span>Saved at {lastSaved}</>
-                          : <><span style={{ marginRight: '4px' }}>💤</span>Monitoring for changes</>}
-                    </div>
+                    {/* Calmed save-status (friction #3): one line that
+                        rolls forward through "Saved just now" / "Saved Xm
+                        ago" without bouncing. Sub-500ms saves never flash
+                        "Saving…" — the timer that would flip
+                        savingVisible=true is cleared before it fires.
+                        The dot reflects the connection state, the label
+                        the save state; both are muted by default and
+                        only escalate to colour on actual problems. */}
+                    {(() => {
+                      const now = Date.now();
+                      const savedMs = lastSavedAt ? now - lastSavedAt.getTime() : null;
+                      let label;
+                      let tone = 'muted';
+                      if (savingVisible && saveStatus === 'SAVING') {
+                        label = 'Saving…';
+                      } else if (saveStatus === 'CONFLICT') {
+                        label = 'Conflict — see banner';
+                        tone = 'warn';
+                      } else if (savedMs != null) {
+                        if (savedMs < 45_000) label = 'Saved just now';
+                        else if (savedMs < 3_600_000) {
+                          const mins = Math.max(1, Math.round(savedMs / 60_000));
+                          label = `Saved ${mins}m ago`;
+                        } else {
+                          label = `Saved at ${lastSavedAt.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`;
+                        }
+                      } else if (saveStatus === 'DIRTY') {
+                        label = 'Unsaved changes';
+                        tone = 'warn';
+                      } else {
+                        label = 'Ready';
+                      }
+                      const dotColor = isOnline ? '#10b981' : '#f59e0b';
+                      const labelColor = tone === 'warn' ? '#b45309' : '#64748b';
+                      return (
+                        <div
+                          title={isOnline ? 'Cloud connected' : 'Offline cache active'}
+                          style={{ display: 'flex', alignItems: 'center', gap: '8px' }}
+                        >
+                          <div style={{ width: '7px', height: '7px', borderRadius: '50%', background: dotColor, flexShrink: 0 }} />
+                          <span style={{ fontSize: '11px', fontWeight: 600, color: labelColor, letterSpacing: '0.2px' }}>
+                            {label}
+                          </span>
+                        </div>
+                      );
+                    })()}
                     {cloudAutosaveDisabledReason && (
                       <div style={{
                         marginTop: '10px',
@@ -5108,7 +5159,10 @@ const ReportingPage = () => {
           patientData={activeAppointment}
           reportContent={{
             mode: 'Narrative',
-            text: editorText,
+            // Use getPrintHTML so Path B's auto-flow boundaries are injected
+            // as page-break markers in the served HTML. No-op on Path A
+            // (returns editor.getHTML() unchanged).
+            text: (editorRef.current?.getPrintHTML?.() ?? editorText),
             data: {},
             impression: impression,
             advice: advice,

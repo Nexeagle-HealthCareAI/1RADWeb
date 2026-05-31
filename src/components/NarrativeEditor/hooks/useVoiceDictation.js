@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
+import { applyCorrections, getGrammarText, warmVoiceData } from '../../../data/voiceCorrections';
 
 /**
  * Web Speech API support detection.
@@ -10,35 +11,50 @@ export function isVoiceSupported() {
 }
 
 /**
- * Post-processing table — common phonetic mistakes the Web Speech engine
- * makes on radiology vocabulary. Pattern → replacement.
+ * Punctuation + line-break voice commands. These are commands the user
+ * speaks aloud (not mishearings to correct), so they're hardcoded here
+ * rather than data-driven. They run AFTER the JSON misheard→correct
+ * corrections so a 58-pair fix can't accidentally clobber "full stop".
  */
-const PHRASE_FIXES = [
-  [/\bnew monia\b/gi, 'pneumonia'],
-  [/\bpnew monia\b/gi, 'pneumonia'],
-  [/\bnumonia\b/gi, 'pneumonia'],
-  [/\battala lectasis\b/gi, 'atelectasis'],
-  [/\battle lecta sis\b/gi, 'atelectasis'],
-  [/\beffusion\b/gi, 'effusion'],
-  [/\bemphasys ma\b/gi, 'emphysema'],
-  [/\bcontrast in hands\b/gi, 'contrast-enhanced'],
-  [/\bsino site is\b/gi, 'sinusitis'],
-  [/\bcyst ick\b/gi, 'cystic'],
-  [/\bnecrosis\b/gi, 'necrosis'],
-  [/\boste o\b/gi, 'osteo'],
-  [/\bay orta\b/gi, 'aorta'],
-  [/\bay ortic\b/gi, 'aortic'],
-  [/\bcardio meg lee\b/gi, 'cardiomegaly'],
-  [/\bcomma\b/gi, ','],
-  [/\bperiod\b/gi, '.'],
-  [/\bfull stop\b/gi, '.'],
-  [/\bnew line\b/gi, '\n'],
-  [/\bnew paragraph\b/gi, '\n\n'],
+const VOICE_COMMANDS = [
+  [/\bfull stop\b/gi,      '.'],
+  [/\bperiod\b/gi,         '.'],
+  [/\bcomma\b/gi,          ','],
+  [/\bsemicolon\b/gi,      ';'],
+  [/\bcolon\b/gi,          ':'],
+  [/\bquestion mark\b/gi,  '?'],
+  [/\bexclamation\b/gi,    '!'],
+  [/\bopen bracket\b/gi,   '('],
+  [/\bclose bracket\b/gi,  ')'],
+  [/\bnew line\b/gi,       '\n'],
+  [/\bnew paragraph\b/gi,  '\n\n'],
+];
+
+/**
+ * Tiny defensive fallback for when /data/speech_dictionary.json hasn't
+ * loaded yet (cold offline boot, fetch failure). Once the data layer is
+ * ready, applyCorrections() takes over and these become moot.
+ */
+const HARDCODED_FALLBACK = [
+  [/\bhype arrest\b/gi,      'hyperintense'],
+  [/\bhype a dense\b/gi,     'hyperdense'],
+  [/\bhype oh dense\b/gi,    'hypodense'],
+  [/\bnew monia\b/gi,        'pneumonia'],
+  [/\bnumonia\b/gi,          'pneumonia'],
+  [/\battala lectasis\b/gi,  'atelectasis'],
+  [/\bcontrast in hands\b/gi,'contrast-enhanced'],
+  [/\bay orta\b/gi,          'aorta'],
 ];
 
 function postProcess(text) {
-  let out = text;
-  for (const [re, sub] of PHRASE_FIXES) out = out.replace(re, sub);
+  // Order matters: corrections first (so "hype arrest" becomes
+  // "hyperintense" BEFORE any word-boundary punctuation rule fires),
+  // then voice commands (period/comma/new line).
+  let out = applyCorrections(text);
+  // If the data layer didn't catch anything (transcript was clean OR the
+  // dictionary hasn't loaded yet), run the tiny hardcoded list too. Idempotent.
+  for (const [re, sub] of HARDCODED_FALLBACK) out = out.replace(re, sub);
+  for (const [re, sub] of VOICE_COMMANDS) out = out.replace(re, sub);
   return out;
 }
 
@@ -77,12 +93,31 @@ export function useVoiceDictation({ onResult, onInterim, lang = 'en-US' } = {}) 
 
   const start = useCallback(() => {
     if (!supported) return;
+    // Warm the corrections + grammar files. Fire-and-forget — the engine
+    // starts immediately; corrections apply as soon as the JSON arrives.
+    warmVoiceData();
     const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
     const r = new SR();
     r.lang = lang;
     r.continuous = true;
     r.interimResults = true; // live — emit partial text as the user speaks
     r.maxAlternatives = 1;
+
+    // Prime the engine with the radiology JSGF grammar list. Chrome/Edge
+    // accept this and bias their language model toward the listed
+    // vocabulary, giving cleaner transcripts BEFORE corrections run.
+    // Safari/Firefox don't ship SpeechGrammarList — we degrade silently.
+    try {
+      const SGL = window.SpeechGrammarList || window.webkitSpeechGrammarList;
+      const grammarBody = getGrammarText();
+      if (SGL && grammarBody) {
+        const gl = new SGL();
+        gl.addFromString(grammarBody, 1); // weight 1 = highest priority
+        r.grammars = gl;
+      }
+    } catch (err) {
+      console.warn('[VoiceDictation] grammar attachment failed', err?.message || err);
+    }
 
     r.onresult = (e) => {
       let finalText = '';

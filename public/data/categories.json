@@ -1,0 +1,693 @@
+{
+  "meta": {
+    "totalCategories": 35
+  },
+  "categories": [
+    {
+      "name": "Anatomy & Regions",
+      "termCount": 40,
+      "subcategories": [
+        "Abdomen",
+        "Biliary",
+        "Liver",
+        "Neuro",
+        "Pelvis",
+        "Spine",
+        "Thorax"
+      ]
+    },
+    {
+      "name": "Artifacts",
+      "termCount": 40,
+      "subcategories": [
+        "CT",
+        "MRI",
+        "MRI DWI",
+        "MRI GRE/SWI",
+        "NM/PET",
+        "PET/CT",
+        "USG",
+        "USG Color",
+        "X-Ray"
+      ]
+    },
+    {
+      "name": "Breast Radiology",
+      "termCount": 58,
+      "subcategories": [
+        "BI-RADS Category",
+        "Breast MRI",
+        "Calcification",
+        "Calcification Dist.",
+        "Mammography Density",
+        "Mass Density",
+        "Mass Margin",
+        "Mass Shape",
+        "Non-mass",
+        "Pathology"
+      ]
+    },
+    {
+      "name": "CT Terminology",
+      "termCount": 50,
+      "subcategories": [
+        "-100 to -50 HU",
+        "-1000 HU",
+        "0 HU",
+        "100-400 HU",
+        "20-80 HU",
+        "400-1000+ HU",
+        "50-80 HU",
+        ">100 HU",
+        "Higher HU than reference",
+        "Lower HU than reference",
+        "Same HU as reference structure",
+        "Variable",
+        "WW:150 / WL:75",
+        "WW:1500 / WL:-600",
+        "WW:200 / WL:75",
+        "WW:2000 / WL:500",
+        "WW:400 / WL:40",
+        "WW:80 / WL:40",
+        "~100 sec",
+        "~2-3 min",
+        "~25-35 sec",
+        "~3-5 min",
+        "~5-15 min",
+        "~60-70 sec",
+        "—"
+      ]
+    },
+    {
+      "name": "Cardiac Radiology",
+      "termCount": 30,
+      "subcategories": [
+        "Cardiac CT",
+        "Cardiac CXR",
+        "Cardiac MRI"
+      ]
+    },
+    {
+      "name": "Chest Deep Dive",
+      "termCount": 42,
+      "subcategories": [
+        "Lung Cancer Histology",
+        "Lung Cancer TNM 8",
+        "Mediastinum",
+        "Pleural",
+        "Pulmonary Vascular"
+      ]
+    },
+    {
+      "name": "Chest Pulmonary Adv",
+      "termCount": 28,
+      "subcategories": [
+        "ILD Pattern",
+        "Pulmonary",
+        "Pulmonary HTN"
+      ]
+    },
+    {
+      "name": "Contrast & Enhancement",
+      "termCount": 35,
+      "subcategories": [
+        "CT contrast",
+        "CT technique",
+        "Contrast reaction",
+        "Contrast safety",
+        "Drug interaction",
+        "GBCA classification",
+        "GBCA safety",
+        "MRI contrast",
+        "MRI technique",
+        "Renal safety",
+        "USG contrast"
+      ]
+    },
+    {
+      "name": "Differential Diagnosis",
+      "termCount": 30,
+      "subcategories": [
+        "Adnexal DDx",
+        "Adrenal DDx",
+        "Bone DDx",
+        "Brain DDx",
+        "DDx Framework",
+        "Hilar DDx",
+        "Liver DDx",
+        "Lung Nodule DDx",
+        "Orbit DDx",
+        "Renal DDx",
+        "Sacral DDx"
+      ]
+    },
+    {
+      "name": "Emergency Radiology",
+      "termCount": 40,
+      "subcategories": [
+        "CT",
+        "CT/MRI",
+        "CXR",
+        "CXR/CT",
+        "ECHO/CT",
+        "MRI",
+        "MRI SWI/GRE",
+        "MRI T2",
+        "MRI/USG",
+        "NCCT",
+        "USG",
+        "USG/CT"
+      ]
+    },
+    {
+      "name": "Fluoroscopy Terms",
+      "termCount": 38,
+      "subcategories": [
+        "Barium Studies",
+        "Colon Fluoro",
+        "Fluoroscopy",
+        "Genitourinary Fluoro",
+        "Gynaecological Fluoro",
+        "Joint Fluoro",
+        "Sinus & Fistula",
+        "Small Bowel Fluoro",
+        "Upper GI Fluoro"
+      ]
+    },
+    {
+      "name": "GI Radiology",
+      "termCount": 43,
+      "subcategories": [
+        "Colorectal",
+        "GI Sign",
+        "Small Bowel",
+        "Upper GI"
+      ]
+    },
+    {
+      "name": "Genitourinary Radiology",
+      "termCount": 40,
+      "subcategories": [
+        "Adrenal",
+        "Bladder",
+        "PI-RADS",
+        "Prostate",
+        "Renal",
+        "Renal Cyst",
+        "Renal Mass",
+        "Scrotal"
+      ]
+    },
+    {
+      "name": "Head & Neck",
+      "termCount": 52,
+      "subcategories": [
+        "Larynx",
+        "Neck",
+        "Orbit",
+        "Pharynx",
+        "Salivary Gland",
+        "Sinonasal",
+        "Temporal Bone",
+        "Thyroid"
+      ]
+    },
+    {
+      "name": "Hepatobiliary & Pancreas",
+      "termCount": 37,
+      "subcategories": [
+        "Biliary",
+        "LI-RADS",
+        "Liver",
+        "Pancreas"
+      ]
+    },
+    {
+      "name": "Interventional IR",
+      "termCount": 42,
+      "subcategories": [
+        "Ablation",
+        "Access kit",
+        "Access technique",
+        "Aortic intervention",
+        "Biopsy",
+        "Drainage",
+        "Embolic material",
+        "Embolization",
+        "Joint intervention",
+        "Outcome",
+        "Pain intervention",
+        "Safety technique",
+        "Spine intervention",
+        "TIPS",
+        "Vascular access",
+        "Vascular device",
+        "Vascular intervention"
+      ]
+    },
+    {
+      "name": "MRI Terminology",
+      "termCount": 52,
+      "subcategories": [
+        "Bright fluid",
+        "Derived from DWI",
+        "EPI-based diffusion",
+        "Fat suppressed T2",
+        "Fat-suppressed proton density",
+        "Flow-based signal",
+        "Heavy T2W 3D",
+        "Hyperintense",
+        "Hyperintense on T1+C",
+        "Hypointense",
+        "Long TR (>2000ms), long TE (>80ms)",
+        "Long TR, long TE, TI ~2000ms",
+        "Phase + magnitude GRE",
+        "Phase-contrast for tissue stiffness",
+        "Phase-contrast velocity encoding",
+        "Quantitative T1",
+        "Quantitative T2",
+        "Short TR (<800ms), short TE (<30ms)",
+        "Short TR, flip angle, no 180° pulse",
+        "T1 fat-saturated volumetric",
+        "T1W dynamic post-Gd",
+        "T2* EPI post-Gd",
+        "Variable",
+        "—"
+      ]
+    },
+    {
+      "name": "MSK Radiology",
+      "termCount": 186,
+      "subcategories": [
+        "Arthroplasty",
+        "Benign Bone Tumour",
+        "Bone Lesion Pattern",
+        "Bone Matrix",
+        "Fracture Classification",
+        "Fracture Descriptor",
+        "Hip",
+        "Joint Pathology",
+        "Knee",
+        "Malignant Bone Tumour",
+        "Metabolic Bone",
+        "Named Fracture",
+        "Periosteal Reaction",
+        "Shoulder",
+        "Soft Tissue",
+        "Spine"
+      ]
+    },
+    {
+      "name": "Measurements",
+      "termCount": 45,
+      "subcategories": [
+        "CT",
+        "CT CTPA",
+        "CT/Echo",
+        "CT/MRI",
+        "CTA/MRA",
+        "CXR",
+        "Doppler",
+        "Doppler USG",
+        "Echo",
+        "Echo/MRI",
+        "MRI",
+        "TVS USG",
+        "USG",
+        "USG/MRCP"
+      ]
+    },
+    {
+      "name": "Modality-Specific",
+      "termCount": 55,
+      "subcategories": [
+        "CT",
+        "MRI",
+        "NM",
+        "USG",
+        "X-Ray",
+        "X-Ray/CT"
+      ]
+    },
+    {
+      "name": "Named Radiological Signs",
+      "termCount": 53,
+      "subcategories": [
+        "Abdomen",
+        "Chest",
+        "MSK",
+        "Neuro",
+        "Other"
+      ]
+    },
+    {
+      "name": "Neuroradiology",
+      "termCount": 85,
+      "subcategories": [
+        "Anatomy",
+        "Brain Tumour",
+        "Epilepsy",
+        "Haemorrhage",
+        "Infection",
+        "Perfusion",
+        "Spectroscopy",
+        "Spine",
+        "Stroke",
+        "White Matter"
+      ]
+    },
+    {
+      "name": "Nuclear Medicine",
+      "termCount": 31,
+      "subcategories": [
+        "18F-Fluorodeoxyglucose",
+        "5-point scale for lymphoma PET",
+        "Area of absent uptake",
+        "Decreased tracer uptake",
+        "Drainage half-time",
+        "Furosemide-augmented renogram",
+        "Gallium-68 DOTATATE",
+        "Glomerular Filtration Rate",
+        "Hybrid PET + MRI",
+        "Hybrid functional + anatomical imaging",
+        "Increased tracer uptake",
+        "Increased uptake after therapy",
+        "Maximum SUV in ROI",
+        "Mean SUV in ROI",
+        "Meta-iodobenzylguanidine (123I or 131I)",
+        "Metabolic Tumor Volume",
+        "Near-uniform increased bone uptake",
+        "PET Response Criteria in Solid Tumors",
+        "Prospective Investigation of PE Diagnosis",
+        "Prostate PSMA PET scoring",
+        "Prostate-Specific Membrane Antigen",
+        "Standardized Uptake Value",
+        "Technetium-99m HMPAO",
+        "Technetium-99m MIBI",
+        "Technetium-99m diethylenetriaminepentaacetate",
+        "Technetium-99m mercaptoacetyltriglycine",
+        "Technetium-99m methylene diphosphonate",
+        "Total Lesion Glycolysis",
+        "Ventilation/Perfusion scan",
+        "mSv or mGy",
+        "—"
+      ]
+    },
+    {
+      "name": "OB-GYN Radiology",
+      "termCount": 42,
+      "subcategories": [
+        "Fetal Anomaly",
+        "Gynaecology",
+        "Gynaecology/GU",
+        "Obstetric"
+      ]
+    },
+    {
+      "name": "Oncology & Staging",
+      "termCount": 35,
+      "subcategories": [
+        "Breast Imaging Reporting and Data System",
+        "Immune RECIST",
+        "LI-RADS M",
+        "LI-RADS TIV",
+        "LI-RADS category 5",
+        "Liver Imaging Reporting and Data System",
+        "Lung Reporting and Data System",
+        "Modified RECIST",
+        "PET Response Criteria",
+        "Prostate Imaging-Reporting and Data System",
+        "Response Evaluation Criteria in Solid Tumors",
+        "Thyroid Imaging Reporting and Data System",
+        "Tumor-Node-Metastasis",
+        "—"
+      ]
+    },
+    {
+      "name": "Paediatric CHD",
+      "termCount": 33,
+      "subcategories": [
+        "Acyanotic CHD",
+        "Arch Anomaly",
+        "CHD Approach",
+        "CHD CXR",
+        "Complex CHD",
+        "Cyanotic CHD",
+        "Situs"
+      ]
+    },
+    {
+      "name": "Paediatric Radiology",
+      "termCount": 44,
+      "subcategories": [
+        "Congenital",
+        "Congenital Brain",
+        "Neonatal Abdomen",
+        "Neonatal Brain",
+        "Neonatal Chest",
+        "Paediatric Abdomen",
+        "Paediatric Chest",
+        "Paediatric Skeletal"
+      ]
+    },
+    {
+      "name": "Pathology Descriptors",
+      "termCount": 41,
+      "subcategories": [
+        "<3 cm solid lesion",
+        ">3 cm solid lesion",
+        "Becomes hypodense in portal/delayed phase",
+        "Blood within lesion",
+        "Calcium deposition within lesion",
+        "Central + rim enhancement pattern",
+        "Central low density; liquefaction",
+        "Central/peripheral/dense/eggshell",
+        "Completely well-defined border",
+        "Enhances in arterial phase",
+        "Entirely soft tissue density",
+        "Fat density within lesion",
+        "Fluid-filled; thin wall",
+        "Generic term for any abnormality",
+        "Ground glass only; no solid",
+        "Increasing enhancement over time",
+        "Internal cysts within main cyst",
+        "Internal dividing walls",
+        "Long axis much greater than short",
+        "Low-level echoes in cyst",
+        "Mass-forming lesion",
+        "Mixed solid + GGO component",
+        "No appreciable enhancement",
+        "Nodular rim enhancement",
+        "Non-geometric shape",
+        "Non-uniform enhancement",
+        "Peripheral fibrous rim",
+        "Peripheral ring of enhancement",
+        "Poorly demarcated border",
+        "Scalloped, undulating border",
+        "Sharp, distinct border",
+        "Small adjacent lesion",
+        "Smooth rounded shape",
+        "Solid nodule on cyst wall",
+        "Star-burst/spike margin",
+        "Tiny scalloped lobulations",
+        "Triangular, apex toward hilum",
+        "Two-lobed shape",
+        "Uneven, non-smooth border",
+        "Uniform contrast uptake",
+        "Very small nodule"
+      ]
+    },
+    {
+      "name": "Physics & PACS",
+      "termCount": 34,
+      "subcategories": [
+        "MRI Physics",
+        "PACS/DICOM",
+        "Radiation Physics"
+      ]
+    },
+    {
+      "name": "Post-Treatment Radiology",
+      "termCount": 28,
+      "subcategories": [
+        "Post-Chemo",
+        "Post-Radiation",
+        "Post-Surgical",
+        "Treatment Response"
+      ]
+    },
+    {
+      "name": "Report Language",
+      "termCount": 54,
+      "subcategories": [
+        "Adequate for interpretation",
+        "Both sides",
+        "Cannot rule out finding",
+        "Clinical reason for study",
+        "Compatible with diagnosis",
+        "Core/edge",
+        "Could be explained by",
+        "Decreased since prior imaging",
+        "Detailed observations",
+        "Directional",
+        "Essentially unchanged",
+        "Extremely small",
+        "Findings match the diagnosis",
+        "Front/back",
+        "Grading of findings",
+        "High probability",
+        "How the study was performed",
+        "Improvement after treatment",
+        "Increased since prior imaging",
+        "Likely absent but not certain",
+        "Limited to one area",
+        "Match findings to clinical picture",
+        "Moderate probability",
+        "Most prominent finding",
+        "Multiple discrete areas",
+        "Near/far from origin",
+        "Need additional workup",
+        "Negative for a finding",
+        "No acute chest pathology on CXR",
+        "No longer visible compared to prior",
+        "No pathological finding identified",
+        "Normal; nothing noteworthy",
+        "Not present on prior study",
+        "One side only",
+        "Opposite side",
+        "Possibility not ruled out",
+        "Prior study referenced",
+        "Raises concern for",
+        "Raises the possibility of",
+        "Recommend clinical correlation",
+        "Remaining after treatment",
+        "Same side",
+        "Seen again on this study",
+        "Spurious finding from imaging",
+        "Study of suboptimal quality",
+        "Summary/conclusion of the report",
+        "Tissue sampling suggested",
+        "Toward midline / away from midline",
+        "Unchanged compared to prior study",
+        "Unrelated to primary indication",
+        "Very small degree",
+        "Widely distributed",
+        "Widespread",
+        "Worsening of disease"
+      ]
+    },
+    {
+      "name": "Reporting Systems",
+      "termCount": 49,
+      "subcategories": [
+        "BI-RADS",
+        "Bosniak",
+        "C-RADS",
+        "Fleischner",
+        "LI-RADS",
+        "Lung-RADS",
+        "NI-RADS",
+        "O-RADS",
+        "PI-RADS",
+        "TI-RADS"
+      ]
+    },
+    {
+      "name": "Spine Radiology",
+      "termCount": 36,
+      "subcategories": [
+        "Cervical Trauma",
+        "Cord Pathology",
+        "Degenerative Spine",
+        "Spinal Tumour",
+        "Spinal Vascular",
+        "TL Trauma"
+      ]
+    },
+    {
+      "name": "Ultrasound Terms",
+      "termCount": 39,
+      "subcategories": [
+        "(PSV-EDV)/PSV; 0-1",
+        "(PSV-EDV)/TAMV",
+        "5-layered bowel wall on HFUS",
+        "Bowel sliding against abdominal wall",
+        "Color wrapping to opposite color in Doppler",
+        "Continuous line of echoes behind gas bubble",
+        "Cyst with internal echoes, septations, wall thickening",
+        "Dark shadow deep to structure",
+        "Dilated CBD + MPD on USG",
+        "Disordered, multidirectional flow",
+        "Echogenic intrauterine contents",
+        "Fewer echoes than reference; darker",
+        "Flat, low-pulsatility flow",
+        "Flow away from liver in portal vein",
+        "Flow toward liver in portal vein",
+        "Focused Assessment with Sonography in Trauma",
+        "Increased echoes deep to structure",
+        "Indistinct shadow with internal echoes",
+        "Maximum velocity in systole",
+        "Mixed echogenicity",
+        "More echoes than reference; brighter",
+        "No IUP; adnexal ring",
+        "No internal echoes; appears black",
+        "Portal vein + hepatic artery + bile duct",
+        "Producing echoes; generally bright",
+        "Propagation speed of shear waves (m/s)",
+        "Qualitative deformation mapping",
+        "Repeated parallel echoes deep to reflector",
+        "Same echogenicity as reference",
+        "Sharp, well-defined shadow",
+        "Short reverberation deep to small reflector",
+        "Sonographic tenderness with probe over GB",
+        "Stiffness unit in SWE",
+        "Thin shadow at edges of curved structure",
+        "Three phases: systolic, reversal, diastolic",
+        "Time-averaged mean/max velocity",
+        "Uniform echogenicity",
+        "Velocity at end of diastole",
+        "Wall-Echo-Shadow; triple layer in GB"
+      ]
+    },
+    {
+      "name": "Vascular Terms",
+      "termCount": 34,
+      "subcategories": [
+        "(PSV-EDV)/PSV",
+        "(PSV-EDV)/TAMV",
+        ">12 mmHg portal pressure",
+        "All three wall layers involved",
+        "Atherosclerotic intimal thickening",
+        "Atherosclerotic plaque ulceration into media",
+        "Back-filling from lumbar/IMA branches",
+        "CT with timing for pulmonary arteries",
+        "Calcified + non-calcified components",
+        "Calcium within vessel wall or plaque",
+        "Carotid stenosis measurement method",
+        "Complete vessel lumen obliteration",
+        "Contained rupture; outside adventitia",
+        "Continued blood flow outside graft",
+        "Deep vein thrombosis",
+        "Dense calcification in plaque",
+        "Focal vessel dilation >1.5× normal diameter",
+        "Hemorrhage within aortic wall",
+        "Intimal tear with intramural hematoma",
+        "Leak at proximal/distal graft attachment",
+        "Low amplitude, delayed systolic rise",
+        "Low-density plaque; lipid-rich",
+        "Massive DVT causing venous gangrene",
+        "Narrowing of vessel lumen",
+        "New lumen created by dissection",
+        "Original vessel lumen",
+        "PE straddling pulmonary trunk bifurcation",
+        "Portal vein replaced by collateral channels",
+        "Standard measurement method",
+        "Thrombus adherent to vessel wall",
+        "Thrombus in pulmonary artery",
+        "Thrombus in vein",
+        "Torn intima separating true and false lumen",
+        "Transjugular shunt velocity"
+      ]
+    }
+  ]
+}
