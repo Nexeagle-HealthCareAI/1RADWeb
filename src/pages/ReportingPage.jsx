@@ -96,6 +96,38 @@ const ReportingPage = () => {
     setActiveAssetIndex(0);
   }, [activeServiceId]);
   const [uploadedFiles, setUploadedFiles] = useState([]);
+
+  // Active service derived from the URL-/tab-picked id. Drives the
+  // DICOM filter so switching services swaps the viewer's series
+  // list, the sidebar, and the slice counter — all in lockstep.
+  const activeService = useMemo(() => {
+    if (!activeServiceId || !appointmentServices?.length) return null;
+    return appointmentServices.find(s => s.id === activeServiceId) || null;
+  }, [activeServiceId, appointmentServices]);
+  const activeServiceMod = useMemo(() => {
+    return String(activeService?.modality || activeAppointment?.modality || '').toUpperCase();
+  }, [activeService, activeAppointment]);
+
+  // Per-service filter applied across every DICOM surface (mobile
+  // viewer, mobile series strip, desktop sidebar, desktop viewer).
+  // Three-tier match — strict FK > modality > first-service pin —
+  // so legacy assets without an AppointmentServiceId still attach
+  // sensibly. Same logic that fixed the per-service viewing earlier.
+  const visibleUploadedFiles = useMemo(() => {
+    if (!appointmentServices || appointmentServices.length <= 1) return uploadedFiles;
+    if (!activeService) return uploadedFiles;
+    const isFirstService = appointmentServices[0]?.id === activeService.id;
+    return uploadedFiles.filter((f) => {
+      const svcId = f?.appointmentServiceId || f?.AppointmentServiceId;
+      if (svcId) return svcId === activeService.id;
+      const m = String(f?.modality || f?.Modality || '').toUpperCase();
+      if (m && activeServiceMod) return m === activeServiceMod;
+      // Untagged + unknown-modality → pin to first service only so
+      // legacy assets don't double-up across every service tab.
+      return isFirstService;
+    });
+  }, [uploadedFiles, appointmentServices, activeService, activeServiceMod]);
+
   const [currentSlice, setCurrentSlice] = useState(1);
   const [activeTool, setActiveTool] = useState('WindowLevel');
   const [activeMetadata, setActiveMetadata] = useState(null);
@@ -3587,7 +3619,9 @@ const ReportingPage = () => {
             mobile media-query rule forcing height: 65vh + flex-row that fights
             this layout. We give the wrapper its own inline-only styles instead. */}
         {activeMainTab === 'DICOM' && isMobile && (() => {
-          const activeAsset = uploadedFiles[activeAssetIndex];
+          // Use the per-service filtered list — switching services
+          // updates the mobile viewer too, not just the desktop.
+          const activeAsset = visibleUploadedFiles[activeAssetIndex];
           const hasRawFiles = !!(activeAsset?.rawFiles?.length);
           const needsLoad = !!activeAsset?.needsHydration && !hasRawFiles;
           return (
@@ -3627,7 +3661,7 @@ const ReportingPage = () => {
               height: '34px',
             }}>
               <div style={{ color: '#94a3b8', fontSize: '10px', fontWeight: 900, letterSpacing: '1.5px' }}>
-                {uploadedFiles.length} SERIES
+                {visibleUploadedFiles.length} SERIES
               </div>
               <div style={{ flex: 1 }} />
               {/* Mobile = info-only. The radiologist on a phone is
@@ -3652,7 +3686,7 @@ const ReportingPage = () => {
                 Heights are FIXED (no minHeight) so the strip cannot grow when
                 a tile gains a focus outline or active border, which was making
                 the layout shift on tap. */}
-            {uploadedFiles.length > 0 && (
+            {visibleUploadedFiles.length > 0 && (
               <div style={{
                 display: 'flex',
                 flexDirection: 'row',
@@ -3671,7 +3705,7 @@ const ReportingPage = () => {
                 height: '48px',
                 overflowAnchor: 'none',
               }}>
-                {uploadedFiles.map((f, i) => {
+                {visibleUploadedFiles.map((f, i) => {
                   const isActive = activeAssetIndex === i;
                   const sliceCount = f.rawFiles?.length || 0;
                   return (
@@ -4289,7 +4323,7 @@ const ReportingPage = () => {
                   alignItems: 'center',
                   gap: '6px'
                 }}>
-                  <span>🎬</span> SERIES: S{(activeAssetIndex + 1)} / {uploadedFiles.length} {uploadedFiles[activeAssetIndex]?.name && `(${uploadedFiles[activeAssetIndex].name.substring(0, 20)}...)`}
+                  <span>🎬</span> SERIES: S{(activeAssetIndex + 1)} / {visibleUploadedFiles.length} {visibleUploadedFiles[activeAssetIndex]?.name && `(${visibleUploadedFiles[activeAssetIndex].name.substring(0, 20)}...)`}
                 </div>
 
                 {/* Active Tool Display */}
@@ -4352,11 +4386,14 @@ const ReportingPage = () => {
                   {/* FULLSCREEN BUTTON */}
                   <button
                     onClick={() => {
-                      // Check if we have any files with rawFiles
-                      const validSeries = uploadedFiles.filter(file => file.rawFiles && file.rawFiles.length > 0);
+                      // Per-service filter — fullscreen viewer only
+                      // gets the series belonging to the active
+                      // service tab (or the full set on single-
+                      // service visits where the filter is a no-op).
+                      const validSeries = visibleUploadedFiles.filter(file => file.rawFiles && file.rawFiles.length > 0);
 
                       if (validSeries.length > 0) {
-                        // Pass ALL series to the viewer, not just the active one
+                        // Pass ALL filtered series to the viewer.
                         const allSeries = validSeries.map(series => ({
                           name: series.name,
                           files: series.rawFiles,
@@ -4367,12 +4404,12 @@ const ReportingPage = () => {
                           thumbnailUrl: series.thumbnailUrl
                         }));
 
-                        const activeValidSeriesIndex = validSeries.findIndex(s => s.name === uploadedFiles[activeAssetIndex]?.name);
+                        const activeValidSeriesIndex = validSeries.findIndex(s => s.name === visibleUploadedFiles[activeAssetIndex]?.name);
 
                         const navigationState = {
                           allSeries: allSeries, // Pass all series
                           files: validSeries[0].rawFiles, // Default to first series for backward compatibility
-                          seriesName: uploadedFiles[activeAssetIndex]?.name || 'DICOM STUDY',
+                          seriesName: visibleUploadedFiles[activeAssetIndex]?.name || 'DICOM STUDY',
                           activeSeriesIndex: activeValidSeriesIndex >= 0 ? activeValidSeriesIndex : 0, // Map to validSeries index
                           layoutMode: layoutMode, // Preserve layout mode
                           appointmentData: {
@@ -4528,8 +4565,11 @@ const ReportingPage = () => {
                   </div>
                 )}
 
-                {/* SERIES LIBRARY MINI-SIDEBAR — horizontal strip on mobile, vertical sidebar otherwise */}
-                {uploadedFiles.length > 0 && (
+                {/* SERIES LIBRARY MINI-SIDEBAR — horizontal strip on
+                    mobile, vertical sidebar otherwise. Uses the
+                    per-service filtered list so the sidebar only
+                    shows the active service's series. */}
+                {visibleUploadedFiles.length > 0 && (
                   <div style={{
                     width: isMobile ? '100%' : '60px',
                     minWidth: isMobile ? 'auto' : '60px',
@@ -4550,7 +4590,7 @@ const ReportingPage = () => {
                     WebkitOverflowScrolling: 'touch',
                     pointerEvents: 'auto'
                   }}>
-                    {uploadedFiles.map((f, i) => (
+                    {visibleUploadedFiles.map((f, i) => (
                       <button
                         key={i}
                         type="button"
@@ -4623,36 +4663,10 @@ const ReportingPage = () => {
                   <div style={{ flex: 1, display: 'grid', gridTemplateColumns: layoutMode === '2x2' ? '1fr 1fr' : '1fr', gridTemplateRows: layoutMode === '2x2' ? '1fr 1fr' : '1fr', gap: '2px' }}>
                     {(() => null)()}
                     {[...Array(layoutMode === '2x2' ? 4 : 1)].map((_, idx) => {
-                      // Multi-service filter — when the doctor switches
-                      // services, the viewer scopes to only that
-                      // service's uploads. Three-tier match:
-                      //   1. Strict FK match when the asset carries
-                      //      appointmentServiceId (new uploads after
-                      //      the multi-service rollout).
-                      //   2. Modality match when only the DICOM tag
-                      //      is available (legacy uploads).
-                      //   3. Unknown-modality + no FK assets are
-                      //      bound to the FIRST service only, so
-                      //      they don't double-up across every tab.
-                      const activeServiceLine = appointmentServices?.find(s => s.id && s.id === activeServiceId);
-                      const activeServiceMod  = String(activeServiceLine?.modality || activeAppointment?.modality || '').toUpperCase();
-                      const isFirstService    = appointmentServices?.[0]?.id === activeServiceLine?.id;
-                      const matchesActiveService = (f) => {
-                        if (!activeServiceLine) return true;
-                        const svcId = f?.appointmentServiceId || f?.AppointmentServiceId;
-                        if (svcId) return svcId === activeServiceLine.id;
-                        const m = String(f?.modality || f?.Modality || '').toUpperCase();
-                        if (m && activeServiceMod) return m === activeServiceMod;
-                        // Untagged + unknown-modality — pin to first
-                        // service only (best-guess primary attribution)
-                        // so the asset doesn't appear on every tab.
-                        return isFirstService;
-                      };
-                      const visibleUploadedFiles = (appointmentServices && appointmentServices.length > 1)
-                        ? uploadedFiles.filter(matchesActiveService)
-                        : uploadedFiles;
-
-                      // For 2x2, cycle through series. For 1x1, just use active series
+                      // Per-service filter is now hoisted to a useMemo
+                      // at component top so the mobile viewer, sidebar,
+                      // and this desktop viewport all see the same set.
+                      // For 2x2, cycle through series. For 1x1, just use active series.
                       const seriesIndex = layoutMode === '2x2'
                         ? (activeAssetIndex + idx) % Math.max(1, visibleUploadedFiles.length)
                         : activeAssetIndex % Math.max(1, visibleUploadedFiles.length);
