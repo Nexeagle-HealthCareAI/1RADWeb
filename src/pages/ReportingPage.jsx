@@ -3630,107 +3630,21 @@ const ReportingPage = () => {
                 {uploadedFiles.length} SERIES
               </div>
               <div style={{ flex: 1 }} />
+              {/* Mobile = info-only. The radiologist on a phone is
+                  reviewing what's on the page, not measuring or
+                  windowing — those workflows happen on tablet/desktop
+                  where the viewer has the real toolset. So the only
+                  affordance on the mobile DICOM top strip is the
+                  slice counter. */}
               {hasRawFiles && (
-                <>
-                  {/* Zoom out */}
-                  <button
-                    type="button"
-                    onClick={() => window.dispatchEvent(new CustomEvent('dicom-viewer:zoom', { detail: { delta: 0.8 } }))}
-                    title="Zoom out"
-                    style={{
-                      width: '32px', height: '32px',
-                      background: 'rgba(255,255,255,0.08)',
-                      border: '1px solid rgba(255,255,255,0.15)',
-                      color: 'white', borderRadius: '6px',
-                      fontSize: '15px', fontWeight: 900,
-                      cursor: 'pointer', touchAction: 'manipulation',
-                      WebkitTapHighlightColor: 'transparent',
-                      display: 'flex', alignItems: 'center', justifyContent: 'center',
-                    }}
-                  >−</button>
-                  {/* Zoom in */}
-                  <button
-                    type="button"
-                    onClick={() => window.dispatchEvent(new CustomEvent('dicom-viewer:zoom', { detail: { delta: 1.25 } }))}
-                    title="Zoom in"
-                    style={{
-                      width: '32px', height: '32px',
-                      background: 'rgba(255,255,255,0.08)',
-                      border: '1px solid rgba(255,255,255,0.15)',
-                      color: 'white', borderRadius: '6px',
-                      fontSize: '14px', fontWeight: 900,
-                      cursor: 'pointer', touchAction: 'manipulation',
-                      WebkitTapHighlightColor: 'transparent',
-                      display: 'flex', alignItems: 'center', justifyContent: 'center',
-                    }}
-                  >+</button>
-                  {/* Reset zoom */}
-                  <button
-                    type="button"
-                    onClick={() => window.dispatchEvent(new CustomEvent('dicom-viewer:zoom', { detail: { reset: true } }))}
-                    title="Reset zoom"
-                    style={{
-                      height: '32px', padding: '0 8px',
-                      background: 'rgba(255,255,255,0.08)',
-                      border: '1px solid rgba(255,255,255,0.15)',
-                      color: 'white', borderRadius: '6px',
-                      fontSize: '10px', fontWeight: 800, letterSpacing: '1px',
-                      cursor: 'pointer', touchAction: 'manipulation',
-                      WebkitTapHighlightColor: 'transparent',
-                    }}
-                  >FIT</button>
-                  {/* Full-screen DICOM viewer (dedicated page) */}
-                  <button
-                    type="button"
-                    onClick={() => {
-                      const validSeries = uploadedFiles.filter(f => f.rawFiles && f.rawFiles.length > 0);
-                      if (validSeries.length === 0) {
-                        showNotif('warning', 'NO DICOM FILES', 'Wait for the study to finish loading.');
-                        return;
-                      }
-                      const allSeries = validSeries.map(series => ({
-                        name: series.name,
-                        files: series.rawFiles,
-                        seriesUID: series.seriesUID,
-                        modality: series.modality,
-                        // Pre-rendered JPEG thumbnail — keeps the placeholder
-                        // visible in the fullscreen viewer during cold start.
-                        thumbnailUrl: series.thumbnailUrl,
-                      }));
-                      const activeValidIdx = validSeries.findIndex(s => s.name === uploadedFiles[activeAssetIndex]?.name);
-                      navigate('/dicom-viewer', {
-                        state: {
-                          allSeries,
-                          files: validSeries[0].rawFiles,
-                          seriesName: uploadedFiles[activeAssetIndex]?.name || 'DICOM STUDY',
-                          activeSeriesIndex: activeValidIdx >= 0 ? activeValidIdx : 0,
-                          layoutMode: '1x1',
-                          appointmentData: { ...activeAppointment, appointmentId, id: appointmentId },
-                        },
-                      });
-                    }}
-                    title="Open full-screen DICOM viewer"
-                    style={{
-                      height: '32px', padding: '0 10px',
-                      background: 'linear-gradient(135deg, #10b981, #059669)',
-                      border: '1px solid #34d399',
-                      color: 'white', borderRadius: '6px',
-                      fontSize: '10px', fontWeight: 900, letterSpacing: '1px',
-                      cursor: 'pointer', touchAction: 'manipulation',
-                      WebkitTapHighlightColor: 'transparent',
-                      display: 'flex', alignItems: 'center', gap: '4px',
-                      boxShadow: '0 2px 8px rgba(16, 185, 129, 0.35)',
-                    }}
-                  >⛶ FULL</button>
-                  <div style={{
-                    background: 'rgba(59, 130, 246, 0.25)',
-                    border: '1px solid rgba(59, 130, 246, 0.5)',
-                    padding: '5px 10px', borderRadius: '6px',
-                    fontSize: '11px', fontWeight: 800, color: 'white', whiteSpace: 'nowrap',
-                  }}>
-                    {currentSlice} / {activeAsset.rawFiles.length}
-                  </div>
-                </>
+                <div style={{
+                  background: 'rgba(59, 130, 246, 0.25)',
+                  border: '1px solid rgba(59, 130, 246, 0.5)',
+                  padding: '5px 10px', borderRadius: '6px',
+                  fontSize: '11px', fontWeight: 800, color: 'white', whiteSpace: 'nowrap',
+                }}>
+                  {currentSlice} / {activeAsset.rawFiles.length}
+                </div>
               )}
             </div>
 
@@ -4711,19 +4625,28 @@ const ReportingPage = () => {
                     {[...Array(layoutMode === '2x2' ? 4 : 1)].map((_, idx) => {
                       // Multi-service filter — when the doctor switches
                       // services, the viewer scopes to only that
-                      // service's uploads. Strict FK match for assets
-                      // tagged with appointmentServiceId; otherwise
-                      // fall back to modality match (covers legacy
-                      // uploads that pre-date the tag).
+                      // service's uploads. Three-tier match:
+                      //   1. Strict FK match when the asset carries
+                      //      appointmentServiceId (new uploads after
+                      //      the multi-service rollout).
+                      //   2. Modality match when only the DICOM tag
+                      //      is available (legacy uploads).
+                      //   3. Unknown-modality + no FK assets are
+                      //      bound to the FIRST service only, so
+                      //      they don't double-up across every tab.
                       const activeServiceLine = appointmentServices?.find(s => s.id && s.id === activeServiceId);
                       const activeServiceMod  = String(activeServiceLine?.modality || activeAppointment?.modality || '').toUpperCase();
+                      const isFirstService    = appointmentServices?.[0]?.id === activeServiceLine?.id;
                       const matchesActiveService = (f) => {
                         if (!activeServiceLine) return true;
                         const svcId = f?.appointmentServiceId || f?.AppointmentServiceId;
                         if (svcId) return svcId === activeServiceLine.id;
                         const m = String(f?.modality || f?.Modality || '').toUpperCase();
-                        if (!m) return true;
-                        return m === activeServiceMod;
+                        if (m && activeServiceMod) return m === activeServiceMod;
+                        // Untagged + unknown-modality — pin to first
+                        // service only (best-guess primary attribution)
+                        // so the asset doesn't appear on every tab.
+                        return isFirstService;
                       };
                       const visibleUploadedFiles = (appointmentServices && appointmentServices.length > 1)
                         ? uploadedFiles.filter(matchesActiveService)

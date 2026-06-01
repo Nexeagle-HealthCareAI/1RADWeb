@@ -36,6 +36,10 @@ export function assetsFromManifest(manifestAssets, opts = {}) {
           // Compound id keeps each series distinct within uploadedFiles.
           id: `${asset.assetId}_s${sIdx}`,
           sourceAssetId: asset.assetId,
+          // Multi-service rollout — propagate the asset's owning
+          // AppointmentService FK to every series produced from it
+          // so the page-level filters can strict-match per service.
+          appointmentServiceId: asset.appointmentServiceId ?? asset.AppointmentServiceId ?? null,
           name: s.seriesDescription || (asset.fileName || `Asset ${assetIdx + 1}`),
           type: 'DICOM SERIES',
           size: `${pseudoFiles.length} IMAGES`,
@@ -59,6 +63,10 @@ export function assetsFromManifest(manifestAssets, opts = {}) {
     // path download + unzip in the browser on demand.
     out.push({
       id: asset.assetId,
+      // Same FK forwarding as the extracted path — legacy ZIPs need
+      // the service link too so per-service filtering works while
+      // the worker is still extracting.
+      appointmentServiceId: asset.appointmentServiceId ?? asset.AppointmentServiceId ?? null,
       name: asset.fileName || `Asset ${assetIdx + 1}`,
       type: (asset.fileType || 'unknown').toUpperCase(),
       remoteUrl: asset.blobUrl,
