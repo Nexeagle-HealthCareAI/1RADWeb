@@ -126,18 +126,26 @@ async function blockedPutToAzure(sasUrl, file, opts = {}) {
  * @param {File} file
  * @param {string} appointmentId
  * @param {(progress: {loaded, total, pct, stage}) => void} [onProgress]
+ * @param {{ appointmentServiceId?: string|null }} [options]
+ *   appointmentServiceId — when the visit has multiple services and the
+ *   technician is uploading from a specific service's workspace tab, we
+ *   stamp the resulting StudyAsset row with this FK so the asset is
+ *   strictly attributed to that service (instead of falling back to a
+ *   modality-name match on the client).
  * @returns {Promise<{ assetId, publicReadUrl }>}
  */
-export async function uploadStudyAssetDirect(file, appointmentId, onProgress) {
+export async function uploadStudyAssetDirect(file, appointmentId, onProgress, options = {}) {
   if (!file) throw new Error('No file provided.');
   if (!appointmentId) throw new Error('No appointmentId provided.');
 
   const t0 = performance.now();
+  const appointmentServiceId = options?.appointmentServiceId ?? null;
 
   // 1. Request a SAS write URL (small + fast). No DB row created yet on the server.
   if (onProgress) onProgress({ loaded: 0, total: file.size, pct: 0, stage: 'requesting-token' });
   const tokenRes = await apiClient.post('/Study/upload-token', {
     AppointmentId: appointmentId,
+    AppointmentServiceId: appointmentServiceId,
     FileName: file.name,
     FileSize: file.size,
     ContentType: file.type || 'application/zip',
@@ -170,6 +178,7 @@ export async function uploadStudyAssetDirect(file, appointmentId, onProgress) {
   const completeRes = await apiClient.post('/Study/upload-complete', {
     AssetId: assetId,
     AppointmentId: appointmentId,
+    AppointmentServiceId: appointmentServiceId,
     BlobPath: blobPath,
     ContainerName: containerName,
     PublicReadUrl: publicReadUrl,

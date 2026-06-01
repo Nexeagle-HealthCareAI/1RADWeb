@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useMemo, useRef, useLayoutEffect } from 'react';
 import { createPortal } from 'react-dom';
 import * as XLSX from 'xlsx';
+import { notifyToast } from '../../utils/toast';
 
 // ─── Design tokens ────────────────────────────────────────────────────────
 const C = {
@@ -77,7 +78,9 @@ const ExpenseLedger = ({
   handleToggleExpenseStatus,
   handleSetExpenseStatus,
   activeCenterName = 'Default',
-  notify = (msg) => (typeof msg === 'string' ? window.alert(msg) : window.alert(msg?.message || '')),
+  // Default notify falls back to the global toast so the ledger works in
+  // standalone settings (Storybook etc.) without a parent passing notify.
+  notify = (msg) => notifyToast(msg, (msg && msg.type) || 'info'),
   confirmDialog = ({ message, onConfirm }) => { if (window.confirm(message)) onConfirm?.(); },
 }) => {
   const [selectedIds, setSelectedIds] = useState(new Set());

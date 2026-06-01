@@ -11,6 +11,8 @@
  * @param {object}      [opts.header] — header config: { text, fontFamily, fontSize, align }
  * @param {object}      [opts.footer] — footer config: { text, fontFamily, fontSize, align }
  */
+import { notifyToast } from '../../../utils/toast';
+
 export function exportPdf(containerEl, { title = 'Radiology Report', header, footer } = {}) {
   const canvas = containerEl?.querySelector('.word-canvas');
   if (!canvas) return;
@@ -72,7 +74,7 @@ export function exportPdf(containerEl, { title = 'Radiology Report', header, foo
 
   const win = window.open('', '_blank', 'width=900,height=800,menubar=yes,toolbar=yes');
   if (!win) {
-    alert('Pop-up was blocked. Please allow pop-ups for this site and try again.');
+    notifyToast('Pop-up was blocked. Please allow pop-ups for this site and try again.', 'warning');
     return;
   }
 

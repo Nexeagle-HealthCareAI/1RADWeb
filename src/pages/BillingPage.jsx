@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import * as XLSX from 'xlsx';
 import useAuth from '../auth/useAuth';
 import apiClient from '../api/apiClient';
 import useOffline from '../hooks/useOffline';
@@ -802,24 +803,203 @@ export default function BillingPage() {
     }
   };
 
+  // Excel export — client-side so we can include the multi-service
+  // line items, per-modality breakdown, and referral-cut detail
+  // exactly as the UI shows them. Layout:
+  //
+  //   Sheet 1 "Invoices"     — one row per invoice (visit-level rollup).
+  //   Sheet 2 "Line Items"   — one row per InvoiceItem, with modality
+  //                            and service back-fill so analysts can
+  //                            pivot revenue by modality / service.
+  //   Sheet 3 "Modality Mix" — aggregate by modality across the
+  //                            filtered set (count, billed, paid,
+  //                            pending).
+  //   Sheet 4 "Stats Summary"— the same headline numbers the KPI
+  //                            cards show, so the export reads like
+  //                            the page.
   const handleExportData = async () => {
     try {
       const { start, end } = exportDates;
-      const finalStart = exportMode === 'RANGE' ? start : null;
-      const finalEnd = exportMode === 'RANGE' ? end : null;
+      const useRange = exportMode === 'RANGE' && (start || end);
 
-      const response = await apiClient.get('/finance/export', {
-        params: { startDate: finalStart, endDate: finalEnd },
-        responseType: 'blob'
+      const fmtDateTime = (iso) => {
+        if (!iso) return '';
+        const hasTz = /[zZ]|[+-]\d{2}:?\d{2}$/.test(iso);
+        const d = new Date(hasTz ? iso : iso + 'Z');
+        if (Number.isNaN(d.getTime())) return '';
+        return d.toLocaleString('en-GB', {
+          timeZone: 'Asia/Kolkata',
+          day: '2-digit', month: 'short', year: 'numeric',
+          hour: '2-digit', minute: '2-digit', hour12: true,
+        });
+      };
+      const fmtDate = (iso) => {
+        if (!iso) return '';
+        const hasTz = /[zZ]|[+-]\d{2}:?\d{2}$/.test(iso);
+        const d = new Date(hasTz ? iso : iso + 'Z');
+        if (Number.isNaN(d.getTime())) return '';
+        return d.toISOString().split('T')[0];
+      };
+      const inRange = (iso) => {
+        if (!useRange || !iso) return !useRange;
+        const d = fmtDate(iso);
+        if (start && d < start) return false;
+        if (end   && d > end)   return false;
+        return true;
+      };
+
+      // Scope: if the user picked a date range, honour it; otherwise
+      // export every cached invoice (the same set the page shows).
+      const safeInvoices = (invoices || []).filter(inv => {
+        if (!inv) return false;
+        if (!useRange) return true;
+        return inRange(inv.createdAt);
       });
-      
-      const url = window.URL.createObjectURL(new Blob([response.data]));
-      const link = document.createElement('a');
-      link.href = url;
-      link.setAttribute('download', `1Rad_Financials_${new Date().toISOString().split('T')[0]}.xlsx`);
-      document.body.appendChild(link);
-      link.click();
-      link.remove();
+
+      // Sheet 1 — visit-level invoice rollup. Includes everything the
+      // operator sees in the ledger row plus the modality short-list
+      // and per-stage counts derived from items[].
+      const invoiceRows = safeInvoices.map(inv => {
+        const items = inv.items || [];
+        const modalities = [...new Set(items.map(it => it.modality || it.Modality).filter(Boolean))];
+        const services   = items.map(it => `${it.description}${it.quantity > 1 ? ` ×${it.quantity}` : ''}`);
+        const grossLines = items.reduce((s, it) => s + (Number(it.amount) || 0) * (Number(it.quantity) || 0), 0);
+        return {
+          'Invoice ID': inv.displayId ?? '',
+          'Patient Name': inv.patientName ?? '',
+          'Patient ID': inv.patientIdentifier ?? '',
+          'Referred By': inv.referrerName ?? '',
+          'Modalities (all)': modalities.join(' | ') || (inv.modality || ''),
+          'Service Count': items.length,
+          'Services (all)': services.join(' | '),
+          'Gross Amount':   Number(inv.grossAmount) || grossLines,
+          'Discount':       Number(inv.discountAmount) || 0,
+          'Total Payable':  Number(inv.totalAmount)  || 0,
+          'Paid Amount':    Number(inv.paidAmount)   || 0,
+          'Balance':        Math.max(0, (Number(inv.totalAmount) || 0) - (Number(inv.paidAmount) || 0)),
+          'Referral Cut':   Number(inv.commissionAmount) || 0,
+          'Net Centre Income': (Number(inv.totalAmount) || 0) - (Number(inv.commissionAmount) || 0),
+          'Status':       inv.status ?? '',
+          'Created At':   fmtDateTime(inv.createdAt),
+          'Service Date': fmtDate(inv.serviceDate || inv.createdAt),
+        };
+      });
+
+      const wb = XLSX.utils.book_new();
+      const ws1 = XLSX.utils.json_to_sheet(invoiceRows);
+      ws1['!cols'] = [
+        { wch: 14 }, { wch: 26 }, { wch: 14 }, { wch: 22 }, { wch: 22 },
+        { wch: 8 },  { wch: 40 },
+        { wch: 12 }, { wch: 12 }, { wch: 14 }, { wch: 12 }, { wch: 12 },
+        { wch: 14 }, { wch: 18 },
+        { wch: 10 }, { wch: 22 }, { wch: 12 },
+      ];
+      XLSX.utils.book_append_sheet(wb, ws1, 'Invoices');
+
+      // Sheet 2 — per-line item detail. Each row maps 1:1 with an
+      // InvoiceItem so the analyst can pivot revenue by modality or
+      // service across the filtered set.
+      const itemRows = [];
+      for (const inv of safeInvoices) {
+        const items = inv.items || [];
+        for (const it of items) {
+          const qty   = Number(it.quantity) || 0;
+          const rate  = Number(it.amount)   || 0;
+          const sub   = qty * rate;
+          itemRows.push({
+            'Invoice ID':   inv.displayId ?? '',
+            'Patient Name': inv.patientName ?? '',
+            'Referred By':  inv.referrerName ?? '',
+            'Modality':     String(it.modality || it.Modality || '').toUpperCase(),
+            'Service':      it.description ?? '',
+            'Quantity':     qty,
+            'Rate':         rate,
+            'Subtotal':     sub,
+            'Invoice Status': inv.status ?? '',
+            'Created At':   fmtDateTime(inv.createdAt),
+            'Service Date': fmtDate(inv.serviceDate || inv.createdAt),
+          });
+        }
+      }
+      if (itemRows.length > 0) {
+        const ws2 = XLSX.utils.json_to_sheet(itemRows);
+        ws2['!cols'] = [
+          { wch: 14 }, { wch: 26 }, { wch: 22 }, { wch: 14 },
+          { wch: 36 }, { wch: 8 }, { wch: 12 }, { wch: 12 },
+          { wch: 12 }, { wch: 22 }, { wch: 12 },
+        ];
+        XLSX.utils.book_append_sheet(wb, ws2, 'Line Items');
+      }
+
+      // Sheet 3 — modality breakdown across the filtered set.
+      const byMod = new Map();
+      for (const inv of safeInvoices) {
+        const items = inv.items || [];
+        const total = Number(inv.totalAmount) || 0;
+        const paid  = Number(inv.paidAmount)  || 0;
+        const itemsSubtotal = items.reduce((s, it) => s + (Number(it.amount) || 0) * (Number(it.quantity) || 0), 0);
+        // Scale factor pro-rates the invoice's total / paid across its
+        // items so any discount baked into totalAmount distributes
+        // proportionally. Falls back to even split if no item amounts.
+        const realisation = total > 0 ? paid / total : 0;
+        for (const it of items) {
+          const lineSub = (Number(it.amount) || 0) * (Number(it.quantity) || 0);
+          const lineBilled = itemsSubtotal > 0 ? (lineSub / itemsSubtotal) * total : (total / Math.max(1, items.length));
+          const linePaid   = lineBilled * realisation;
+          const m = String(it.modality || it.Modality || 'OTHER').toUpperCase() || 'OTHER';
+          const row = byMod.get(m) || { Modality: m, 'Service Lines': 0, 'Billed': 0, 'Paid': 0, 'Pending': 0 };
+          row['Service Lines'] += 1;
+          row['Billed']        += lineBilled;
+          row['Paid']          += linePaid;
+          row['Pending']       += Math.max(0, lineBilled - linePaid);
+          byMod.set(m, row);
+        }
+      }
+      const modalityRows = [...byMod.values()]
+        .sort((a, b) => b['Billed'] - a['Billed'])
+        .map(r => ({
+          Modality: r.Modality,
+          'Service Lines': r['Service Lines'],
+          'Billed': Math.round(r['Billed']),
+          'Paid':   Math.round(r['Paid']),
+          'Pending':Math.round(r['Pending']),
+          'Realisation %': r['Billed'] > 0 ? Math.round((r['Paid'] / r['Billed']) * 100) : 0,
+        }));
+      if (modalityRows.length > 0) {
+        const ws3 = XLSX.utils.json_to_sheet(modalityRows);
+        ws3['!cols'] = [
+          { wch: 14 }, { wch: 14 }, { wch: 14 }, { wch: 14 }, { wch: 14 }, { wch: 14 },
+        ];
+        XLSX.utils.book_append_sheet(wb, ws3, 'Modality Mix');
+      }
+
+      // Sheet 4 — stats summary mirroring the KPI cards on the page.
+      const statsRows = [
+        { Metric: 'Total Revenue',     Value: Math.round(liveStats?.totalRevenue   || 0) },
+        { Metric: 'Total Billed',      Value: Math.round(liveStats?.totalBilled    || 0) },
+        { Metric: 'Pending Revenue',   Value: Math.round(liveStats?.pendingRevenue || 0) },
+        { Metric: 'Pending Invoices',  Value: liveStats?.pendingCount || 0 },
+        { Metric: 'Realisation %',     Value: liveStats?.realizationRate || 0 },
+        { Metric: 'Average Ticket',    Value: Math.round(liveStats?.averageTicket  || 0) },
+        { Metric: 'Total Discount',    Value: Math.round(liveStats?.totalDiscount  || 0) },
+        { Metric: 'Total Commission',  Value: Math.round(liveStats?.totalCommission|| 0) },
+        { Metric: 'Net Profit',        Value: Math.round(liveStats?.netProfit      || 0) },
+        { Metric: '', Value: '' },
+        { Metric: 'Export Range Start', Value: useRange && start ? start : 'All time' },
+        { Metric: 'Export Range End',   Value: useRange && end   ? end   : 'All time' },
+        { Metric: 'Invoices in Export', Value: invoiceRows.length },
+        { Metric: 'Line Items',         Value: itemRows.length },
+        { Metric: 'Exported At',        Value: fmtDateTime(new Date().toISOString()) },
+      ];
+      const ws4 = XLSX.utils.json_to_sheet(statsRows);
+      ws4['!cols'] = [{ wch: 22 }, { wch: 22 }];
+      XLSX.utils.book_append_sheet(wb, ws4, 'Stats Summary');
+
+      const fname = useRange && (start || end)
+        ? `1Rad_Financials_${start || 'start'}_to_${end || 'end'}.xlsx`
+        : `1Rad_Financials_${new Date().toISOString().split('T')[0]}.xlsx`;
+      XLSX.writeFile(wb, fname);
+
       setIsExportDrawerOpen(false);
     } catch (err) {
       console.error('[FINANCE] Export failed', err);

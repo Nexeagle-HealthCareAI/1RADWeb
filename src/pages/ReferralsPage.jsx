@@ -10,6 +10,7 @@ import '../styles/AdminBoard.css';
 import PrescriptionPreview from '../components/PrescriptionPreview';
 import FinanceManager from '../components/FinanceManager';
 import RolesAndPermissions from '../components/RolesAndPermissions';
+import { notifyToast } from '../utils/toast';
 
 
 // --- HELPERS ---
@@ -638,7 +639,7 @@ export default function ReferralsPage() {
     }
 
     if (digits.length !== 10 || !/^[6-9]\d{9}$/.test(digits)) {
-      alert('Error: Please enter a valid 10-digit Indian mobile number (e.g., 9876543210).');
+      notifyToast('Please enter a valid 10-digit Indian mobile number (e.g., 9876543210).', 'error');
       return;
     }
 
@@ -666,7 +667,7 @@ export default function ReferralsPage() {
     } catch (err) {
       console.error('[REFERRER] Save failed', err);
       const backendError = err.response?.data?.error || err.response?.data?.message;
-      alert(backendError ? `Error: ${backendError}` : 'Error: Could not save partner details.');
+      notifyToast(backendError || 'Could not save partner details.', 'error');
     } finally {
       setIsSavingReferrer(false);
     }
@@ -696,7 +697,7 @@ export default function ReferralsPage() {
       setEditingPatient(null);
     } catch (err) {
       console.error('[PATIENT] Update failed', err);
-      alert('Error: Could not save patient details.');
+      notifyToast('Could not save patient details.', 'error');
     } finally {
       setIsSavingPatient(false);
     }
@@ -794,7 +795,7 @@ export default function ReferralsPage() {
       setShowExportOverlay(false);
     } catch (err) {
       console.error('Export Failed:', err);
-      alert('Error: Could not export data.');
+      notifyToast('Could not export data.', 'error');
     } finally {
       setIsExporting(false);
     }
@@ -828,7 +829,7 @@ export default function ReferralsPage() {
 
     if (!isOnline) {
       await addToOutbox('CHAIN_DEPLOY', payload);
-      alert('OFFLINE_MODE: Institutional expansion protocol queued for sync.');
+      notifyToast({ title: 'Queued for sync', message: 'Centre expansion will sync when connection is restored.' }, 'info');
       setIsChainDrawerOpen(false);
       return;
     }
@@ -848,10 +849,10 @@ export default function ReferralsPage() {
       console.error('Chain Deployment Failure:', err);
       if (!err.response) {
         await addToOutbox('CHAIN_DEPLOY', payload);
-        alert('NETWORK_ERROR: Chain deployment added to offline outbox.');
+        notifyToast({ title: 'Network error', message: 'Centre deployment queued in offline outbox.' }, 'warning');
         setIsChainDrawerOpen(false);
       } else {
-        alert(err.response?.data?.message || 'DEPLOYMENT FAILURE: Institutional expansion protocol failed.');
+        notifyToast(err.response?.data?.message || 'Centre expansion failed.', 'error');
       }
     } finally {
       setIsDeployingChain(false);
@@ -884,7 +885,7 @@ export default function ReferralsPage() {
 
     if (!isOnline) {
       await addToOutbox('HOSPITAL_UPDATE', { id: targetHubId, ...payload });
-      alert('OFFLINE_MODE: Institutional node metadata queued for sync.');
+      notifyToast({ title: 'Queued for sync', message: 'Centre metadata will sync when connection is restored.' }, 'info');
       setIsHospitalDrawerOpen(false);
       return;
     }
@@ -908,7 +909,7 @@ export default function ReferralsPage() {
       console.error('[HOSPITAL] Save failed', err);
       if (!err.response) {
         await addToOutbox('HOSPITAL_UPDATE', { id: targetHubId, ...payload });
-        alert('NETWORK_ERROR: Hub configuration added to offline outbox.');
+        notifyToast({ title: 'Network error', message: 'Centre configuration queued in offline outbox.' }, 'warning');
         setIsHospitalDrawerOpen(false);
       } else {
         setHospitalMessage({ type: 'error', text: err.response?.data?.message || 'DEPLOYMENT FAILURE: Failed to update institutional node metadata.' });
@@ -935,7 +936,7 @@ export default function ReferralsPage() {
 
     if (!isOnline) {
       await addToOutbox('HOSPITAL_UPDATE', { id: targetHubId, ...payload });
-      alert(`OFFLINE_MODE: Billing protocol ${newAutoBill ? 'ENABLED' : 'DISABLED'} (Queued for sync).`);
+      notifyToast({ title: 'Queued for sync', message: `Auto-billing ${newAutoBill ? 'enabled' : 'disabled'} — will sync when connection is restored.` }, 'info');
       setBillingSettings(prev => ({ ...prev, autoBill: newAutoBill }));
       return;
     }
@@ -949,10 +950,10 @@ export default function ReferralsPage() {
       console.error('[FINANCE] Protocol update failed', err);
       if (!err.response) {
         await addToOutbox('HOSPITAL_UPDATE', { id: targetHubId, ...payload });
-        alert('NETWORK_ERROR: Billing protocol added to offline outbox.');
+        notifyToast({ title: 'Network error', message: 'Billing setting queued in offline outbox.' }, 'warning');
         setBillingSettings(prev => ({ ...prev, autoBill: newAutoBill }));
       } else {
-        alert('Error: Failed to save billing settings. Please check your connection.');
+        notifyToast('Failed to save billing settings. Please check your connection.', 'error');
       }
     }
   };
@@ -1285,13 +1286,13 @@ export default function ReferralsPage() {
 
   const handleDeleteUser = async (id) => {
     if (id === currentUser.id) {
-      alert('SECURITY PROTOCOL: Self-decommissioning blocked. You cannot remove your own deployment from this hub to prevent lockout.');
+      notifyToast({ title: 'Action blocked', message: "You cannot remove your own account from this centre — it would lock you out." }, 'warning');
       return;
     }
     if (window.confirm('Are you sure you want to remove this staff member from the current hub?')) {
       if (!isOnline) {
         await addToOutbox('PERSONNEL_DELETE', { id });
-        alert('OFFLINE_MODE: Personnel decommissioning queued for sync.');
+        notifyToast({ title: 'Queued for sync', message: 'Personnel removal will sync when connection is restored.' }, 'info');
         setPersonnel(prev => prev.filter(u => u.id !== id)); // Optimistic UI
         return;
       }
@@ -1303,10 +1304,10 @@ export default function ReferralsPage() {
         console.error('[PERSONNEL] Delete failed', err);
         if (!err.response) {
           await addToOutbox('PERSONNEL_DELETE', { id });
-          alert('NETWORK_ERROR: Decommissioning added to offline outbox.');
+          notifyToast({ title: 'Network error', message: 'Personnel removal queued in offline outbox.' }, 'warning');
           setPersonnel(prev => prev.filter(u => u.id !== id)); // Optimistic UI
         } else {
-          alert(err.response?.data?.message || 'Failed to remove personnel.');
+          notifyToast(err.response?.data?.message || 'Failed to remove personnel.', 'error');
         }
       }
     }
@@ -1358,7 +1359,7 @@ export default function ReferralsPage() {
     }
 
     if (!editUser.roles || editUser.roles.length === 0) {
-      alert("System Protocol Error: At least one clinical or administrative role must be assigned.");
+      notifyToast('At least one clinical or administrative role must be assigned.', 'error');
       return;
     }
 
@@ -1376,7 +1377,7 @@ export default function ReferralsPage() {
     if (!isOnline) {
       const type = editUser.id ? 'PERSONNEL_UPDATE' : 'PERSONNEL_CREATE';
       await addToOutbox(type, { id: editUser.id, ...payload });
-      alert(`OFFLINE_MODE: Personnel ${editUser.id ? 'update' : 'registration'} queued for sync.`);
+      notifyToast({ title: 'Queued for sync', message: `Personnel ${editUser.id ? 'update' : 'registration'} will sync when connection is restored.` }, 'info');
       setIsUserDrawerOpen(false);
       return;
     }
@@ -1395,10 +1396,10 @@ export default function ReferralsPage() {
       if (!err.response) {
         const type = editUser.id ? 'PERSONNEL_UPDATE' : 'PERSONNEL_CREATE';
         await addToOutbox(type, { id: editUser.id, ...payload });
-        alert('NETWORK_ERROR: Staff record added to offline outbox.');
+        notifyToast({ title: 'Network error', message: 'Staff record queued in offline outbox.' }, 'warning');
         setIsUserDrawerOpen(false);
       } else {
-        alert(err.response?.data?.message || 'Failed to save staff record.');
+        notifyToast(err.response?.data?.message || 'Failed to save staff record.', 'error');
       }
     }
   };
@@ -1519,7 +1520,7 @@ export default function ReferralsPage() {
     
     if (!isOnline) {
       await addToOutbox('PRICE_UPDATE', payload);
-      alert('OFFLINE_MODE: Service price update queued for sync.');
+      notifyToast({ title: 'Queued for sync', message: 'Service price update will sync when connection is restored.' }, 'info');
       setIsPriceDrawerOpen(false);
       return;
     }
@@ -1532,7 +1533,7 @@ export default function ReferralsPage() {
       console.error('[FINANCE] Save failed', err);
       if (!err.response) {
         await addToOutbox('PRICE_UPDATE', payload);
-        alert('NETWORK_ERROR: Price update added to offline outbox.');
+        notifyToast({ title: 'Network error', message: 'Price update queued in offline outbox.' }, 'warning');
         setIsPriceDrawerOpen(false);
       }
     }
@@ -1544,7 +1545,7 @@ export default function ReferralsPage() {
 
     if (!isOnline) {
       await addToOutbox('EXPENSE', payload);
-      alert('OFFLINE_MODE: Operational expense queued for sync.');
+      notifyToast({ title: 'Queued for sync', message: 'Expense entry will sync when connection is restored.' }, 'info');
       setIsExpenseDrawerOpen(false);
       return;
     }
@@ -1571,10 +1572,10 @@ export default function ReferralsPage() {
       console.error('[FINANCE] Expense save failed', err);
       if (!err.response) {
         await addToOutbox('EXPENSE', payload);
-        alert('NETWORK_ERROR: Expense added to offline outbox.');
+        notifyToast({ title: 'Network error', message: 'Expense queued in offline outbox.' }, 'warning');
         setIsExpenseDrawerOpen(false);
       } else {
-        alert('Error: Failed to save expense.');
+        notifyToast('Failed to save expense.', 'error');
       }
     } finally {
       setSavingExpense(false);
@@ -1586,7 +1587,7 @@ export default function ReferralsPage() {
     
     if (!isOnline) {
       await addToOutbox('EXPENSE_DELETE', { id });
-      alert('OFFLINE_MODE: Operational expense deletion queued for sync.');
+      notifyToast({ title: 'Queued for sync', message: 'Expense deletion will sync when connection is restored.' }, 'info');
       setExpenses(prev => prev.filter(e => e.id !== id)); // Optimistic UI
       return;
     }
@@ -1599,10 +1600,10 @@ export default function ReferralsPage() {
       console.error('[FINANCE] Failed to delete expense', err);
       if (!err.response) {
         await addToOutbox('EXPENSE_DELETE', { id });
-        alert('NETWORK_ERROR: Deletion added to offline outbox.');
+        notifyToast({ title: 'Network error', message: 'Deletion queued in offline outbox.' }, 'warning');
         setExpenses(prev => prev.filter(e => e.id !== id)); // Optimistic UI
       } else {
-        alert('Error: Could not delete expense.');
+        notifyToast('Could not delete expense.', 'error');
       }
     }
   };
@@ -1611,7 +1612,7 @@ export default function ReferralsPage() {
     if (window.confirm('Are you sure you want to delete this service charge?')) {
       if (!isOnline) {
         await addToOutbox('PRICE_DELETE', { id });
-        alert('OFFLINE_MODE: Service charge deletion queued for sync.');
+        notifyToast({ title: 'Queued for sync', message: 'Service charge deletion will sync when connection is restored.' }, 'info');
         setServicePrices(prev => prev.filter(p => p.id !== id)); // Optimistic UI
         return;
       }
@@ -1623,7 +1624,7 @@ export default function ReferralsPage() {
         console.error('[FINANCE] Delete failed', err);
         if (!err.response) {
           await addToOutbox('PRICE_DELETE', { id });
-          alert('NETWORK_ERROR: Deletion added to offline outbox.');
+          notifyToast({ title: 'Network error', message: 'Deletion queued in offline outbox.' }, 'warning');
           setServicePrices(prev => prev.filter(p => p.id !== id)); // Optimistic UI
         }
       }
@@ -2380,7 +2381,7 @@ export default function ReferralsPage() {
                 // For now, we queue the settings; files will need a live connection.
                 if (!isOnline) {
                   await addToOutbox('PRESCRIPTION_UPDATE', payload);
-                  alert('OFFLINE_MODE: Prescription protocol settings queued for sync. (Note: Letterhead files require an active connection)');
+                  notifyToast({ title: 'Queued for sync', message: 'Prescription protocol settings will sync when connection is restored. Letterhead files require an active connection.' }, 'info', { duration: 6000 });
                   return;
                 }
 
@@ -2398,13 +2399,13 @@ export default function ReferralsPage() {
                    });
                    const updated = response.data;
                    setPrescriptionSettings(prev => ({...prev, letterhead: updated.data?.letterheadBlobUrl, letterheadFile: null}));
-                   alert("Settings saved successfully.");
+                   notifyToast('Settings saved successfully.', 'success');
                    fetchDoctorProtocol(selectedPrescriptionDoctorId);
                 } catch (err) {
                    console.error("Sync failed:", err);
                    if (!err.response) {
                       await addToOutbox('PRESCRIPTION_UPDATE', payload);
-                      alert('NETWORK_ERROR: Settings added to offline outbox.');
+                      notifyToast({ title: 'Network error', message: 'Settings queued in offline outbox.' }, 'warning');
                    }
                 } finally {
                    setIsPrescriptionSaving(false);

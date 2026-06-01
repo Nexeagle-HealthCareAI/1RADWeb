@@ -6,6 +6,7 @@ import { QRCodeCanvas } from 'qrcode.react';
 import QRCode from 'qrcode';
 import { downloadReportPdf } from '../utils/downloadPdf';
 import { getTrackingUrl } from '../utils/trackingUrl';
+import { notifyToast } from '../utils/toast';
 
 // Configure PDF.js worker
 // Configure PDF.js worker to use CDN for maximum reliability
@@ -666,7 +667,7 @@ const ReportPreviewModal = ({
       await downloadReportPdf(completePages, filename);
     } catch (error) {
       console.error('Download failed:', error);
-      alert('Failed to download PDF. Please try again.');
+      notifyToast('Failed to download PDF. Please try again.', 'error');
     }
   };
 
@@ -866,7 +867,7 @@ const ReportPreviewModal = ({
     // Open in new window
     const printWindow = window.open('', '_blank', 'width=1200,height=800');
     if (!printWindow) {
-      alert('Pop-up was blocked. Please allow pop-ups for this site and try again.');
+      notifyToast('Pop-up was blocked. Please allow pop-ups for this site and try again.', 'warning');
       return;
     }
 
@@ -880,7 +881,7 @@ const ReportPreviewModal = ({
   const handleWhatsAppShare = async () => {
     const mobile = fullAppointment?.patientMobile || fullAppointment?.mobile;
     if (!mobile) {
-      alert("No patient mobile number found for this appointment.");
+      notifyToast('No patient mobile number found for this appointment.', 'warning');
       return;
     }
 

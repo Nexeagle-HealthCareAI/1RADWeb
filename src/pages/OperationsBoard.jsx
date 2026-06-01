@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useCallback } from 'react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import * as XLSX from 'xlsx';
 import apiClient from '../api/apiClient';
 import useTickClock from '../utils/useTickClock';
@@ -60,6 +60,20 @@ export default function OperationsBoard() {
     const t = setInterval(() => setNowMs(Date.now()), 60000);
     return () => clearInterval(t);
   }, []);
+
+  // Which worklist rows have the full per-service ledger expanded.
+  // Collapsed by default — the first row shows a compact gist (modality
+  // chips + service count), click the toggle to open a sub-row with
+  // the full per-line breakdown + inline notes + status edit hooks.
+  // Mirrors the same pattern as AppointmentBoard.
+  const [expandedLedgers, setExpandedLedgers] = useState(() => new Set());
+  const toggleLedger = (apptId) => {
+    setExpandedLedgers(prev => {
+      const next = new Set(prev);
+      if (next.has(apptId)) next.delete(apptId); else next.add(apptId);
+      return next;
+    });
+  };
   
   // Pagination State Matrix
   const [currentPage, setCurrentPage] = useState(1);
@@ -74,7 +88,6 @@ export default function OperationsBoard() {
   // Modal override states
   const [selectedItem, setSelectedItem] = useState(null);
   const [modalOpen, setModalOpen] = useState(false);
-  const [newStatus, setNewStatus] = useState('NOT_STARTED');
   const [newReason, setNewReason] = useState('');
   const [saving, setSaving] = useState(false);
   // Export uses an async path now (bulk-fetches comments), so we lock the
@@ -169,51 +182,95 @@ export default function OperationsBoard() {
       try { fetchAppointments?.(); } catch (_) { /* not always wired */ }
     } catch (err) {
       console.error('[OPS] Service status update failed', err);
-      alert('Could not update this service. Please try again.');
+      const msg = err?.response?.data?.message || err?.response?.data?.error || 'Could not update this service. Please try again.';
+      showToast(msg, 'error');
     }
   };
 
-  const handleUpdateStatus = async (e) => {
+  // Per-service notes — saves to AppointmentService.TechnicianComments
+  // via the PATCH /notes endpoint. Empty string clears the note.
+  const handleUpdateServiceNotes = async (appointmentId, serviceId, notes) => {
+    if (!appointmentId || !serviceId) return;
+    try {
+      await apiClient.patch(
+        `/appointments/${appointmentId}/services/${serviceId}/notes`,
+        { notes: notes ?? '' }
+      );
+      try { fetchAppointments?.(); } catch (_) { /* parent may not pass it */ }
+    } catch (err) {
+      console.error('[OPS] Service notes update failed', err);
+      const msg = err?.response?.data?.message || err?.response?.data?.error || 'Could not save these notes. Please try again.';
+      showToast(msg, 'error');
+    }
+  };
+
+  // Service-pill popover state — { appointmentId, serviceId, anchorRect }.
+  // anchorRect is the bounding rect of the clicked pill so we can park
+  // the popover next to it without depending on a portal/library.
+  const [servicePopover, setServicePopover] = useState(null);
+  const openServicePopover = (e, appt, line) => {
+    e.stopPropagation();
+    if (!line.id) return; // legacy synthetic line — nothing to edit
+    const rect = e.currentTarget.getBoundingClientRect();
+    setServicePopover({
+      appointmentId: appt.appointmentId,
+      serviceId:     line.id,
+      modality:      line.modality,
+      serviceName:   line.serviceName,
+      status:        String(line.status || 'NOT_STARTED').toUpperCase(),
+      notes:         line.notes || '',
+      anchorRect:    { top: rect.top, left: rect.left, width: rect.width, height: rect.height, bottom: rect.bottom, right: rect.right },
+    });
+  };
+  const closeServicePopover = () => setServicePopover(null);
+  const saveServicePopover = async (draft) => {
+    if (!servicePopover) return;
+    const { appointmentId, serviceId, status: originalStatus, notes: originalNotes } = servicePopover;
+    const tasks = [];
+    if (draft.status !== originalStatus) {
+      tasks.push(handleAdvanceServiceStatus(appointmentId, serviceId, draft.status));
+    }
+    if ((draft.notes || '') !== (originalNotes || '')) {
+      tasks.push(handleUpdateServiceNotes(appointmentId, serviceId, draft.notes));
+    }
+    if (tasks.length === 0) { closeServicePopover(); return; }
+    await Promise.all(tasks);
+    closeServicePopover();
+  };
+
+  // Visit-level note handler. The old "override status" path is gone:
+  // per-service status changes now flow through the pill popover and
+  // drive the parent rollup server-side, so the only thing left to
+  // edit at the visit level is the cross-service narrative (e.g.
+  // "patient hasn't arrived yet" — applies to ALL services, not one).
+  const handleAddVisitNote = async (e) => {
     e.preventDefault();
     if (!selectedItem) return;
 
+    const body = newReason.trim();
+    if (body.length === 0) { setModalOpen(false); return; }
+
     setSaving(true);
     try {
-      // Status update. delayReason is omitted on purpose; the server keeps
-      // its current value (it's only changed by the /comments endpoint now).
-      await apiClient.put(`/appointments/${selectedItem.appointmentId}/operations-status`, {
-        appointmentId: selectedItem.appointmentId,
-        progressStatus: newStatus,
-        delayReason: null
-      });
-
-      // Append a new comment if the user typed one. We always append — even
-      // if the text matches the previous DelayReason — because the user
-      // explicitly clicked save with this content, and the audit trail
-      // should reflect that they reaffirmed it.
-      const body = newReason.trim();
-      if (body.length > 0) {
-        await apiClient.post(`/appointments/${selectedItem.appointmentId}/comments`, { body });
-      }
-
-      showToast('Clinical progress status updated successfully!', 'success');
+      await apiClient.post(`/appointments/${selectedItem.appointmentId}/comments`, { body });
+      showToast('Visit note saved.', 'success');
       setModalOpen(false);
       setNewReason('');
       fetchAppointments();
     } catch (err) {
       console.error(err);
-      showToast('Failed to update clinical progress.', 'error');
+      showToast('Failed to save visit note.', 'error');
     } finally {
       setSaving(false);
     }
   };
 
-  const openEditModal = (appt) => {
+  const openVisitNoteModal = (appt) => {
     setSelectedItem(appt);
-    setNewStatus(appt.reportProgressStatus || 'NOT_STARTED');
     // Start the textarea empty — the previous comment is shown as read-only
-    // context above the input so the user knows what was there. This is the
-    // "no more accidental overwrites" guardrail.
+    // context above the input so the user knows what was there. We never
+    // overwrite an existing comment; new entries always append to the
+    // visit's comment timeline.
     setNewReason('');
     setModalOpen(true);
   };
@@ -393,12 +450,18 @@ export default function OperationsBoard() {
   // trail. We POST every visible appointmentId in one bulk request so an
   // export of 200 patients is one HTTP round-trip, not 200.
   //
-  // Layout:
-  //   Sheet 1 "Operations" — one row per appointment, with the latest
-  //      comment summary, author, time, comment count, and the full trail
-  //      concatenated in chronological order.
-  //   Sheet 2 "Comments"  — one row per comment so the analyst can pivot /
-  //      sort by author / time in Excel itself.
+  // Layout (post multi-service rollout):
+  //   Sheet 1 "Operations"  — one row per visit. Visit-level rollup +
+  //      flattened summary of all services (modalities, services, per-
+  //      stage counts), the visit's delay reason and the full
+  //      chronological comment trail. Good for headcount reports.
+  //   Sheet 2 "Services"    — one row per AppointmentService line, with
+  //      its modality, service name, status, per-stage timestamps, TAT,
+  //      technician notes, and back-reference to the visit identifiers.
+  //      This is the sheet ops needs to answer "how long did CT cases
+  //      spend in each stage today?".
+  //   Sheet 3 "Comments"    — one row per visit-level comment so the
+  //      analyst can pivot / sort by author or time across the export.
   const exportToExcel = async () => {
     if (!filteredAppointments.length) return;
     setExporting(true);
@@ -433,27 +496,75 @@ export default function OperationsBoard() {
       });
     };
 
-    // Sheet 1: appointments + comment summary.
+    // Whole-minutes formatter for elapsed time export. Empty when we
+    // don't have an anchor for the line (e.g. NOT_STARTED without
+    // arrivedAt). Reads UTC anchors via the same helpers the UI uses.
+    const fmtElapsed = (line, appt) => {
+      const min = getStageElapsedMinutes(line, appt, Date.now());
+      return min == null ? '' : formatStageElapsed(min);
+    };
+    const statusLabel = (s) => {
+      const u = String(s || 'NOT_STARTED').toUpperCase();
+      if (u === 'IN_PROGRESS') return 'In Progress';
+      if (u === 'IN_MID')      return 'Half Way';
+      return u.charAt(0) + u.slice(1).toLowerCase().replace(/_/g, ' ');
+    };
+
+    // Sheet 1: appointments + comment summary. Visit-level rollup row
+    // with all services flattened into pipe-separated cells so even
+    // multi-service visits stay readable on a single line.
     const rows = filteredAppointments.map((a) => {
       const trail = commentsByApptId.get(a.appointmentId) || [];
-      // Concatenate every comment as a single text block, oldest first, with
-      // a clear delimiter per entry. Newlines render as wrapped rows in
-      // Excel when Wrap-Text is enabled on the column.
       const fullTrail = trail
         .map(c => `[${fmtDateTime(c.createdAt)} — ${c.authorName}]\n${c.body}`)
         .join('\n\n');
 
+      const lines = getServiceLines(a);
+      // Per-stage tally for the visit (non-cancelled lines only)
+      const live = lines.filter(l => String(l.status || '').toUpperCase() !== 'CANCELLED');
+      const tally = { notStarted: 0, inProgress: 0, scanned: 0, reported: 0, delivered: 0 };
+      for (const l of live) {
+        const s = String(l.status || 'NOT_STARTED').toUpperCase();
+        if (s === 'DELIVERED')                          tally.delivered++;
+        else if (s === 'REPORTED')                      tally.reported++;
+        else if (s === 'SCANNED')                       tally.scanned++;
+        else if (s === 'IN_PROGRESS' || s === 'IN_MID') tally.inProgress++;
+        else                                             tally.notStarted++;
+      }
+      const modalitiesFlat = [...new Set(lines.map(l => l.modality).filter(Boolean))].join(' | ');
+      const servicesFlat   = lines.map(l => l.serviceName).filter(Boolean).join(' | ');
+      const statusesFlat   = lines.map(l => `${l.modality || 'OT'}:${statusLabel(l.status)}`).join(' | ');
+      const onPremises     = a.arrivedAt ? formatElapsed(a.arrivedAt, a.deliveredAt) : '';
+      const scanToDeliv    = (a.scanStartedAt && a.deliveredAt) ? formatElapsed(a.scanStartedAt, a.deliveredAt) : '';
+
       return {
         Token: a.dailyTokenNumber ?? '',
+        'Display ID': a.displayId ?? '',
         'Patient ID': a.patientId ?? '',
         'Patient Name': a.patientName ?? '',
         Age: a.patientAge ?? '',
         Gender: a.patientGender ?? '',
         Mobile: a.mobile ?? '',
-        Modality: a.modality ?? '',
-        Service: a.service ?? '',
-        Status: a.status ?? '',
+        Doctor: a.doctor ?? '',
+        'Referred By': a.referredBy ?? '',
+        Priority: a.priority ?? 'ROUTINE',
+        'Service Count': lines.length,
+        'Modalities (all)': modalitiesFlat,
+        'Services (all)':   servicesFlat,
+        'Per-Service Status': statusesFlat,
+        'Pending': tally.notStarted,
+        'In Progress / Half Way': tally.inProgress,
+        'Scanned': tally.scanned,
+        'Reported': tally.reported,
+        'Delivered': tally.delivered,
+        'Visit Status': a.status ?? '',
         'Progress Status': a.reportProgressStatus ?? '',
+        'On Premises': onPremises,
+        'Scan → Delivered': scanToDeliv,
+        'Arrived At': fmtDateTime(a.arrivedAt),
+        'Scan Started': fmtDateTime(a.scanStartedAt),
+        'Scanned At':   fmtDateTime(a.scannedAt),
+        'Delivered At': fmtDateTime(a.deliveredAt),
         'Latest Comment': a.delayReason ?? '',
         'Latest Comment By': a.latestCommentAuthorName ?? '',
         'Latest Comment At': fmtDateTime(a.latestCommentAt),
@@ -465,28 +576,72 @@ export default function OperationsBoard() {
     });
 
     const ws = XLSX.utils.json_to_sheet(rows);
-    // Widen the comment trail column so it's readable instead of one
-    // character per row. !cols controls per-column width in xlsx.
+    // Per-column widths. Order must match the keys above.
     ws['!cols'] = [
-      { wch: 6 },  { wch: 14 }, { wch: 24 }, { wch: 4 }, { wch: 6 },
-      { wch: 14 }, { wch: 12 }, { wch: 18 }, { wch: 12 }, { wch: 16 },
-      { wch: 36 }, { wch: 22 }, { wch: 22 }, { wch: 10 }, { wch: 60 },
-      { wch: 12 }, { wch: 8 },
+      { wch: 6 },  { wch: 14 }, { wch: 14 }, { wch: 24 }, { wch: 4 },  // Token, Display ID, Patient ID, Name, Age
+      { wch: 6 },  { wch: 14 }, { wch: 18 }, { wch: 18 }, { wch: 8 },  // Gender, Mobile, Doctor, Ref, Priority
+      { wch: 8 },  { wch: 22 }, { wch: 36 }, { wch: 40 },               // Service Count, Modalities, Services, Per-Svc
+      { wch: 8 },  { wch: 14 }, { wch: 8 },  { wch: 8 },  { wch: 8 },  // tally cols
+      { wch: 12 }, { wch: 16 }, { wch: 12 }, { wch: 14 },               // Visit/Progress Status, On Premises, S→D
+      { wch: 22 }, { wch: 22 }, { wch: 22 }, { wch: 22 },               // 4 timestamps
+      { wch: 36 }, { wch: 22 }, { wch: 22 }, { wch: 10 }, { wch: 60 },  // Comment columns
+      { wch: 12 }, { wch: 8 },                                          // Date, Time
     ];
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, 'Operations');
 
-    // Sheet 2: every comment as its own row — useful for pivots / sorting
-    // by author or time across the whole export.
+    // Sheet 2 — per-service line items. One row per AppointmentService
+    // so analysts can pivot per modality / status / technician.
+    const serviceRows = [];
+    for (const a of filteredAppointments) {
+      const lines = getServiceLines(a);
+      for (const l of lines) {
+        serviceRows.push({
+          Token: a.dailyTokenNumber ?? '',
+          'Display ID': a.displayId ?? '',
+          'Patient Name': a.patientName ?? '',
+          'Patient ID': a.patientId ?? '',
+          Mobile: a.mobile ?? '',
+          Doctor: a.doctor ?? '',
+          'Referred By': a.referredBy ?? '',
+          Priority: a.priority ?? 'ROUTINE',
+          Modality: l.modality ?? '',
+          Service: l.serviceName ?? '',
+          Status: statusLabel(l.status),
+          'Stage Elapsed': fmtElapsed(l, a),
+          'Scan Started':     fmtDateTime(l.scanStartedAt),
+          'Scan Completed':   fmtDateTime(l.scanCompletedAt),
+          'Reported At':      fmtDateTime(l.reportedAt),
+          'Delivered At':     fmtDateTime(l.deliveredAt),
+          'Cancelled At':     fmtDateTime(l.cancelledAt),
+          'Technician Notes': l.notes ?? '',
+          'Visit Date': a.dateTime ? a.dateTime.split('T')[0] : '',
+        });
+      }
+    }
+    if (serviceRows.length > 0) {
+      const sws = XLSX.utils.json_to_sheet(serviceRows);
+      sws['!cols'] = [
+        { wch: 6 },  { wch: 14 }, { wch: 24 }, { wch: 14 }, { wch: 14 },  // Token..Mobile
+        { wch: 18 }, { wch: 18 }, { wch: 8 },  { wch: 12 }, { wch: 30 },  // Doctor..Service
+        { wch: 14 }, { wch: 12 },                                          // Status, Elapsed
+        { wch: 22 }, { wch: 22 }, { wch: 22 }, { wch: 22 }, { wch: 22 },  // 5 timestamps
+        { wch: 50 }, { wch: 12 },                                          // Notes, Date
+      ];
+      XLSX.utils.book_append_sheet(wb, sws, 'Services');
+    }
+
+    // Sheet 3 — every visit-level comment as its own row.
     if (allComments.length > 0) {
       const apptById = new Map(filteredAppointments.map(a => [a.appointmentId, a]));
       const commentRows = allComments.map((c) => {
         const a = apptById.get(c.appointmentId);
+        const aLines = a ? getServiceLines(a) : [];
         return {
           Token: a?.dailyTokenNumber ?? '',
           'Patient Name': a?.patientName ?? '',
           'Display ID': a?.displayId ?? '',
-          Modality: a?.modality ?? '',
+          Modalities: [...new Set(aLines.map(l => l.modality).filter(Boolean))].join(' | '),
           Author: c.authorName ?? '',
           'Created At': fmtDateTime(c.createdAt),
           Comment: c.body ?? '',
@@ -494,7 +649,7 @@ export default function OperationsBoard() {
       });
       const cws = XLSX.utils.json_to_sheet(commentRows);
       cws['!cols'] = [
-        { wch: 6 }, { wch: 24 }, { wch: 14 }, { wch: 12 },
+        { wch: 6 }, { wch: 24 }, { wch: 14 }, { wch: 16 },
         { wch: 22 }, { wch: 22 }, { wch: 70 },
       ];
       XLSX.utils.book_append_sheet(wb, cws, 'Comments');
@@ -533,15 +688,19 @@ export default function OperationsBoard() {
     };
     const stepRank = (status) => {
       const s = String(status || '').toUpperCase();
-      if (s === 'DELIVERED') return 4;
-      if (s === 'REPORTED')  return 3;
-      if (s === 'SCANNED')   return 2;
+      if (s === 'DELIVERED')   return 6;
+      if (s === 'REPORTED')    return 5;
+      if (s === 'SCANNED')     return 4;
+      if (s === 'IN_MID')      return 3;
+      if (s === 'IN_PROGRESS') return 2;
       return 1;
     };
     const stepPill = (status) => {
       const s = String(status || '').toUpperCase();
-      if (s === 'DELIVERED') return { label: 'Delivered',   color: '#047857', bg: '#d1fae5', border: '#a7f3d0' };
-      if (s === 'REPORTED')  return { label: 'Reported',    color: '#1d4ed8', bg: '#dbeafe', border: '#bfdbfe' };
+      if (s === 'DELIVERED')   return { label: 'Delivered',   color: '#047857', bg: '#d1fae5', border: '#a7f3d0' };
+      if (s === 'REPORTED')    return { label: 'Reported',    color: '#1d4ed8', bg: '#dbeafe', border: '#bfdbfe' };
+      if (s === 'IN_MID')      return { label: 'Half Way',    color: '#b45309', bg: '#fef3c7', border: '#fcd34d' };
+      if (s === 'IN_PROGRESS') return { label: 'In Progress', color: '#a16207', bg: '#fef9c3', border: '#fde68a' };
       if (s === 'SCANNED')   return { label: 'Scanned',     color: '#9a3412', bg: '#ffedd5', border: '#fed7aa' };
       return                       { label: 'Not Started',  color: '#475569', bg: '#f1f5f9', border: '#e2e8f0' };
     };
@@ -674,8 +833,9 @@ export default function OperationsBoard() {
                     // place this transition happens. SCANNED → REPORTED
                     // is owned by the doctor's save on ReportingPage.
                     let nextAction = null;
-                    if (step === 1) nextAction = { status: 'SCANNED',   label: '✓ Mark scanned',              tint: 'linear-gradient(135deg, #ea580c 0%, #c2410c 100%)', shadow: 'rgba(234, 88, 12, 0.45)' };
-                    else if (step === 3) nextAction = { status: 'DELIVERED', label: '✓ Mark delivered to patient', tint: 'linear-gradient(135deg, #047857 0%, #065f46 100%)', shadow: 'rgba(4, 120, 87, 0.55)' };
+                    if (step === 1)      nextAction = { status: 'IN_PROGRESS', label: '▶ Start scan',                  tint: 'linear-gradient(135deg, #ca8a04 0%, #a16207 100%)', shadow: 'rgba(202, 138, 4, 0.45)' };
+                    else if (step === 2) nextAction = { status: 'SCANNED',     label: '✓ Mark scanned',               tint: 'linear-gradient(135deg, #ea580c 0%, #c2410c 100%)', shadow: 'rgba(234, 88, 12, 0.45)' };
+                    else if (step === 4) nextAction = { status: 'DELIVERED',   label: '✓ Mark delivered to patient',  tint: 'linear-gradient(135deg, #047857 0%, #065f46 100%)', shadow: 'rgba(4, 120, 87, 0.55)' };
                     // Per-stage TAT chip. Anchored to the moment this
                     // line entered its current stage so a line that
                     // was scanned 2 minutes ago doesn't inherit the
@@ -1029,42 +1189,273 @@ export default function OperationsBoard() {
                       <div style={{ fontSize: '11px', color: '#64748b', fontWeight: 700, marginTop: '2px' }}>
                         {appt.patientAge}y · {appt.patientGender} · {appt.mobile}
                       </div>
-                      {/* Modality + Service (multi-service aware).
-                          Single-service visits render exactly as before:
-                          one chip and the service name. Multi-service
-                          visits get a chip stack, the primary service
-                          name, an extra-count chip and the green
-                          "X / Y reported" progress badge. */}
+                      {/* Doctor + referrer chips — same as desktop. */}
+                      <div style={{
+                        display: 'flex', alignItems: 'center', gap: '6px',
+                        marginTop: '6px', flexWrap: 'wrap',
+                      }}>
+                        <span
+                          title={appt.doctor ? `Assigned to ${appt.doctor}` : 'No specialist assigned'}
+                          style={{
+                            display: 'inline-flex', alignItems: 'center', gap: '4px',
+                            fontSize: '10px', fontWeight: 900, letterSpacing: '0.2px',
+                            color: appt.doctor ? '#0c4a6e' : '#9a3412',
+                            background: appt.doctor ? '#e0f2fe' : '#fef3c7',
+                            border: `1px solid ${appt.doctor ? '#bae6fd' : '#fde68a'}`,
+                            padding: '2px 8px', borderRadius: '999px',
+                          }}
+                        >
+                          <span aria-hidden="true" style={{ fontSize: '10px' }}>🩺</span>
+                          {appt.doctor || 'Unassigned'}
+                        </span>
+                        {appt.referredBy && (
+                          <span
+                            title={`Referred by ${appt.referredBy}`}
+                            style={{
+                              display: 'inline-flex', alignItems: 'center', gap: '4px',
+                              fontSize: '10px', fontWeight: 900, letterSpacing: '0.2px',
+                              color: '#5b21b6', background: '#ede9fe',
+                              border: '1px solid #ddd6fe',
+                              padding: '2px 8px', borderRadius: '999px',
+                            }}
+                          >
+                            <span aria-hidden="true" style={{ fontSize: '10px' }}>↗</span>
+                            Ref: {appt.referredBy}
+                          </span>
+                        )}
+                      </div>
+                      {/* Modality + Service — mobile-friendly tappable
+                          rows. Tap the row → opens the per-service
+                          editor popup (status + notes), same as desktop.
+                          Multi-service visits get a View All toggle;
+                          single-service visits show inline always. */}
                       {(() => {
-                        const lines      = getServiceLines(appt);
-                        const modalities = getUniqueModalities(appt);
-                        const progress   = getReportProgressLabel(appt);
-                        const primary    = lines[0]?.serviceName || appt.service || '';
-                        const extra      = lines.length - 1;
+                        const lines = getServiceLines(appt);
+                        if (lines.length === 0) return null;
+                        const apptKey  = appt.appointmentId;
+                        const expanded = expandedLedgers.has(apptKey);
+                        const modTint = (m) => {
+                          const k = String(m || '').toUpperCase();
+                          return ({
+                            'X-RAY':     { bg: '#ecfdf5', border: '#a7f3d0', text: '#047857' },
+                            CT:          { bg: '#eff6ff', border: '#bfdbfe', text: '#1d4ed8' },
+                            MRI:         { bg: '#f5f3ff', border: '#ddd6fe', text: '#6d28d9' },
+                            ULTRASOUND:  { bg: '#ecfeff', border: '#a5f3fc', text: '#0e7490' },
+                            USG:         { bg: '#ecfeff', border: '#a5f3fc', text: '#0e7490' },
+                            MAMMOGRAPHY: { bg: '#fdf2f8', border: '#fbcfe8', text: '#be185d' },
+                            MG:          { bg: '#fdf2f8', border: '#fbcfe8', text: '#be185d' },
+                            DEXA:        { bg: '#fffbeb', border: '#fde68a', text: '#b45309' },
+                            PET:         { bg: '#fff7ed', border: '#fed7aa', text: '#c2410c' },
+                          }[k] || { bg: '#f1f5f9', border: '#e2e8f0', text: '#0f52ba' });
+                        };
+                        const stepStyle = (s) => {
+                          const u = String(s || '').toUpperCase();
+                          if (u === 'DELIVERED')   return { color: '#047857', bg: '#d1fae5', border: '#a7f3d0', label: 'Delivered' };
+                          if (u === 'REPORTED')    return { color: '#1d4ed8', bg: '#dbeafe', border: '#bfdbfe', label: 'Reported' };
+                          if (u === 'SCANNED')     return { color: '#9a3412', bg: '#ffedd5', border: '#fed7aa', label: 'Scanned' };
+                          if (u === 'IN_MID')      return { color: '#b45309', bg: '#fef3c7', border: '#fcd34d', label: 'Half Way' };
+                          if (u === 'IN_PROGRESS') return { color: '#a16207', bg: '#fef9c3', border: '#fde68a', label: 'In Progress' };
+                          if (u === 'CANCELLED')   return { color: '#9f1239', bg: '#ffe4e6', border: '#fecdd3', label: 'Cancelled' };
+                          return                         { color: '#475569', bg: '#f1f5f9', border: '#e2e8f0', label: 'Not Started' };
+                        };
+
+                        // Tappable mobile-friendly service row.
+                        const renderServiceRow = (line, idx) => {
+                          const tint = modTint(line.modality);
+                          const st   = stepStyle(line.status);
+                          const elapsedMin = getStageElapsedMinutes(line, appt, nowMs);
+                          const slaBucket  = getStageSlaBucket(line, elapsedMin);
+                          const tatStyle = (
+                            slaBucket === 'breach' ? { color: '#9f1239', bg: '#ffe4e6', border: '#fecdd3' } :
+                            slaBucket === 'warn'   ? { color: '#9a3412', bg: '#ffedd5', border: '#fed7aa' } :
+                                                     { color: '#475569', bg: '#f1f5f9', border: '#e2e8f0' }
+                          );
+                          const tatLabel  = elapsedMin == null ? '' : formatStageElapsed(elapsedMin);
+                          const cancelled = String(line.status || '').toUpperCase() === 'CANCELLED';
+                          const editable  = Boolean(line.id);
+                          const hasNotes  = Boolean(line.notes && String(line.notes).trim());
+                          return (
+                            <div
+                              key={line.id || `mcard-${idx}`}
+                              role={editable ? 'button' : undefined}
+                              tabIndex={editable ? 0 : undefined}
+                              onClick={editable ? (e) => openServicePopover(e, appt, line) : undefined}
+                              onKeyDown={editable ? (e) => {
+                                if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openServicePopover(e, appt, line); }
+                              } : undefined}
+                              style={{
+                                background: '#f8fafc',
+                                border: '1px solid #eef2f7',
+                                borderRadius: '10px',
+                                padding: '10px',
+                                opacity: cancelled ? 0.55 : 1,
+                                cursor: editable ? 'pointer' : 'default',
+                                display: 'flex', flexDirection: 'column', gap: '6px',
+                              }}
+                            >
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                <span style={{
+                                  flexShrink: 0,
+                                  fontSize: '10px', fontWeight: 950, letterSpacing: '0.4px',
+                                  color: tint.text, background: tint.bg,
+                                  border: `1px solid ${tint.border}`,
+                                  padding: '3px 8px', borderRadius: '5px',
+                                  minWidth: '44px', textAlign: 'center',
+                                }}>{line.modality || 'OT'}</span>
+                                <span
+                                  style={{
+                                    flex: 1, minWidth: 0,
+                                    fontSize: '13px', fontWeight: 900, color: '#0f172a',
+                                    whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
+                                    textDecoration: cancelled ? 'line-through' : 'none',
+                                  }}
+                                  title={line.serviceName}
+                                >{line.serviceName || '—'}</span>
+                                {editable && (
+                                  <span style={{
+                                    flexShrink: 0,
+                                    fontSize: '9px', fontWeight: 950, letterSpacing: '0.3px',
+                                    color: '#0f52ba',
+                                  }}>✎</span>
+                                )}
+                              </div>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '5px', flexWrap: 'wrap' }}>
+                                <span style={{
+                                  fontSize: '9.5px', fontWeight: 900, letterSpacing: '0.3px',
+                                  color: st.color, background: st.bg,
+                                  border: `1px solid ${st.border}`,
+                                  padding: '2px 8px', borderRadius: '999px',
+                                  textTransform: 'uppercase',
+                                }}>{st.label}</span>
+                                {tatLabel && !cancelled && (
+                                  <span style={{
+                                    fontSize: '9.5px', fontWeight: 900, letterSpacing: '0.3px',
+                                    color: tatStyle.color, background: tatStyle.bg,
+                                    padding: '2px 8px', borderRadius: '999px',
+                                    border: `1px solid ${tatStyle.border}`,
+                                    fontVariantNumeric: 'tabular-nums',
+                                  }}>⏱ {tatLabel}</span>
+                                )}
+                              </div>
+                              {hasNotes && (
+                                <div style={{
+                                  fontSize: '11px', fontWeight: 600, color: '#0f172a',
+                                  lineHeight: 1.4,
+                                  paddingTop: '4px',
+                                  borderTop: '1px dashed #e2e8f0',
+                                }}>📝 {line.notes}</div>
+                              )}
+                            </div>
+                          );
+                        };
+
+                        // Single-service — show one row inline, no toggle.
+                        // Tap the row OR the explicit Update button to
+                        // open the editor. The button gives an obvious
+                        // affordance for the operator who doesn't know
+                        // the whole row is tappable.
+                        if (lines.length === 1) {
+                          const only = lines[0];
+                          const editable = Boolean(only?.id);
+                          return (
+                            <div style={{ marginTop: '10px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                              {renderServiceRow(only, 0)}
+                              {editable && (
+                                <button
+                                  type="button"
+                                  onClick={(e) => openServicePopover(e, appt, only)}
+                                  style={{
+                                    width: '100%',
+                                    background: 'linear-gradient(135deg, #0f52ba 0%, #1e3a8a 100%)',
+                                    border: 'none',
+                                    color: 'white',
+                                    padding: '10px',
+                                    borderRadius: '10px',
+                                    cursor: 'pointer',
+                                    fontSize: '11px', fontWeight: 950, letterSpacing: '0.3px',
+                                    textTransform: 'uppercase',
+                                    boxShadow: '0 3px 8px -3px rgba(15, 82, 186, 0.55)',
+                                    display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: '6px',
+                                  }}
+                                >✎ Update Status & Notes</button>
+                              )}
+                            </div>
+                          );
+                        }
+
+                        // Multi-service — summary chips + View all toggle.
+                        const summary = { notStarted: 0, inProgress: 0, scanned: 0, reported: 0, delivered: 0, cancelled: 0 };
+                        for (const l of lines) {
+                          const s = String(l.status || 'NOT_STARTED').toUpperCase();
+                          if (s === 'DELIVERED')                          summary.delivered++;
+                          else if (s === 'REPORTED')                      summary.reported++;
+                          else if (s === 'SCANNED')                       summary.scanned++;
+                          else if (s === 'IN_PROGRESS' || s === 'IN_MID') summary.inProgress++;
+                          else if (s === 'CANCELLED')                     summary.cancelled++;
+                          else                                             summary.notStarted++;
+                        }
+                        const summaryChips = [
+                          summary.notStarted && { label: `${summary.notStarted} pending`,    bg: '#f1f5f9', color: '#475569', border: '#e2e8f0' },
+                          summary.inProgress && { label: `${summary.inProgress} in progress`,bg: '#fef9c3', color: '#a16207', border: '#fde68a' },
+                          summary.scanned    && { label: `${summary.scanned} scanned`,       bg: '#ffedd5', color: '#9a3412', border: '#fed7aa' },
+                          summary.reported   && { label: `${summary.reported} reported`,     bg: '#dbeafe', color: '#1d4ed8', border: '#bfdbfe' },
+                          summary.delivered  && { label: `${summary.delivered} delivered`,   bg: '#d1fae5', color: '#047857', border: '#a7f3d0' },
+                          summary.cancelled  && { label: `${summary.cancelled} cancelled`,   bg: '#ffe4e6', color: '#9f1239', border: '#fecdd3' },
+                        ].filter(Boolean);
+
                         return (
-                          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '8px', flexWrap: 'wrap' }}>
-                            {modalities.map((m, idx) => (
-                              <span key={`${m}-${idx}`} title={lines.find(l => l.modality === m)?.serviceName || m} style={{ background: '#eff6ff', color: '#0f52ba', fontSize: '9px', fontWeight: 950, padding: '3px 8px', borderRadius: '6px', border: '1px solid #bfdbfe' }}>
-                                {m}
-                              </span>
-                            ))}
-                            <span style={{ fontSize: '12px', color: '#0f172a', fontWeight: 950 }}>{primary}</span>
-                            {extra > 0 && (
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginTop: '10px' }}>
+                            <div
+                              role="button"
+                              tabIndex={0}
+                              onClick={() => toggleLedger(apptKey)}
+                              onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggleLedger(apptKey); } }}
+                              aria-expanded={expanded}
+                              style={{
+                                display: 'flex', alignItems: 'center', gap: '8px',
+                                padding: '8px 10px',
+                                borderRadius: '10px',
+                                background: expanded ? 'rgba(15, 82, 186, 0.05)' : '#f8fafc',
+                                border: `1px solid ${expanded ? 'rgba(15, 82, 186, 0.18)' : '#eef2f6'}`,
+                                cursor: 'pointer',
+                              }}
+                            >
                               <span style={{
-                                background: '#dbeafe', color: '#0f52ba',
-                                fontSize: '9px', fontWeight: 900,
-                                padding: '2px 7px', borderRadius: '999px',
-                                letterSpacing: '0.3px',
-                              }}>+{extra} more</span>
-                            )}
-                            {progress && (
-                              <span title="Reporting progress across all services on this visit" style={{
-                                background: '#d1fae5', color: '#047857',
-                                fontSize: '9px', fontWeight: 900,
-                                padding: '2px 7px', borderRadius: '999px',
-                                border: '1px solid #a7f3d0',
-                                letterSpacing: '0.3px',
-                              }}>{progress}</span>
+                                fontSize: '10px', fontWeight: 950, letterSpacing: '0.4px',
+                                color: '#0f172a', textTransform: 'uppercase', whiteSpace: 'nowrap',
+                              }}>{lines.length} services</span>
+                              <div style={{
+                                flex: 1, minWidth: 0,
+                                display: 'flex', alignItems: 'center', gap: '4px',
+                                flexWrap: 'wrap',
+                              }}>
+                                {summaryChips.map((c, i) => (
+                                  <span key={i} style={{
+                                    fontSize: '8.5px', fontWeight: 800, letterSpacing: '0.3px',
+                                    color: c.color, background: c.bg,
+                                    padding: '2px 7px', borderRadius: '999px',
+                                    border: `1px solid ${c.border}`,
+                                    textTransform: 'uppercase',
+                                  }}>{c.label}</span>
+                                ))}
+                              </div>
+                              <span style={{
+                                fontSize: '10px', fontWeight: 900, letterSpacing: '0.4px',
+                                color: '#0f52ba', textTransform: 'uppercase', whiteSpace: 'nowrap',
+                                display: 'inline-flex', alignItems: 'center', gap: '4px',
+                              }}>
+                                {expanded ? 'Hide' : 'View all'}
+                                <span aria-hidden="true" style={{
+                                  display: 'inline-block',
+                                  transform: expanded ? 'rotate(180deg)' : 'rotate(0deg)',
+                                  transition: 'transform 0.18s',
+                                }}>▾</span>
+                              </span>
+                            </div>
+                            {expanded && (
+                              <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                                {lines.map((line, idx) => renderServiceRow(line, idx))}
+                              </div>
                             )}
                           </div>
                         );
@@ -1104,31 +1495,36 @@ export default function OperationsBoard() {
                       )}
                       {/* Action */}
                       <button
-                        onClick={() => openEditModal(appt)}
+                        onClick={() => openVisitNoteModal(appt)}
                         style={{ marginTop: '12px', width: '100%', background: 'white', border: '1px solid #0f52ba', color: '#0f52ba', padding: '10px', borderRadius: '10px', cursor: 'pointer', fontSize: '11px', fontWeight: 950, letterSpacing: '0.3px' }}
                       >
-                        OVERRIDE STATUS
+                        ADD VISIT NOTE
                       </button>
                     </div>
                   );
                 })}
               </div>
             ) : (
-              /* ── DESKTOP: Table Layout ── */
-              <table className="appointments-table">
-                <thead>
-                  <tr>
-                    <th>Token / ID</th>
-                    <th>Patient Details</th>
-                    <th>Modality &amp; Service</th>
-                    <th>Clinical Stage</th>
-                    <th>Delivery Progress</th>
-                    <th>Delay Reason / Note</th>
-                    <th style={{ textAlign: 'right' }}>Action</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {paginatedAppointments.map((appt) => {
+              /* ── DESKTOP: Card-Stack Layout ── */
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', padding: '8px 4px 4px' }}>
+                {/* Tiny column-label strip above the cards — same role
+                    as the old <thead> but quieter so cards read as
+                    cards, not table rows. */}
+                <div style={{
+                  display: 'grid',
+                  gridTemplateColumns: 'minmax(220px, 1.3fr) minmax(200px, 1.2fr) minmax(150px, 0.9fr) minmax(180px, 1.1fr) minmax(160px, 1fr)',
+                  gap: '14px',
+                  padding: '0 16px 4px',
+                  fontSize: '8.5px', fontWeight: 950, letterSpacing: '0.8px',
+                  color: '#94a3b8', textTransform: 'uppercase',
+                }}>
+                  <span>Patient &amp; Visit</span>
+                  <span>Services &amp; TAT</span>
+                  <span>Clinical Stage</span>
+                  <span>Notes</span>
+                  <span style={{ textAlign: 'right' }}>Actions</span>
+                </div>
+                {paginatedAppointments.map((appt) => {
                     const progress   = getProgressBadge(appt.reportProgressStatus);
                     const coreStatus = getCoreStatusStyle(appt.status);
                     const isApptOverdue = isOverdue(appt.appointmentId);
@@ -1140,79 +1536,229 @@ export default function OperationsBoard() {
                     const premisesStyle = premisesPillStyle(premisesSev);
                     const scanToDelivery = (appt.scanStartedAt && appt.deliveredAt) ? formatElapsed(appt.scanStartedAt, appt.deliveredAt) : null;
 
+                    // Only show the expanded ledger for multi-service visits.
+                    // Single-service visits render inline in column 2 with no
+                    // toggle, so there's nothing to expand into.
+                    const apptServiceCount = getServiceLines(appt).length;
+                    const isLedgerExpanded = apptServiceCount > 1 && expandedLedgers.has(appt.appointmentId);
+                    const isStat   = (isApptOverdue || appt.priority === 'STAT');
+                    const isUrgent = appt.priority === 'URGENT';
                     return (
-                      <tr key={appt.appointmentId} className={overdueTrClass}>
-                        {/* Token / ID */}
-                        <td style={{ fontFamily: 'monospace' }}>
-                          <div style={{ fontWeight: 950, color: '#0f52ba', fontSize: '15px' }}>
-                            {appt.dailyTokenNumber ? `#${String(appt.dailyTokenNumber).padStart(3, '0')}` : 'N/A'}
+                      <div
+                        key={appt.appointmentId}
+                        className={overdueTrClass}
+                        style={{
+                          background: 'white',
+                          border: `1px solid ${isStat ? '#fecaca' : isUrgent ? '#fde68a' : '#e8eef7'}`,
+                          borderRadius: '14px',
+                          overflow: 'hidden',
+                          boxShadow: '0 1px 3px rgba(15, 23, 42, 0.04)',
+                          transition: 'box-shadow 0.15s, transform 0.15s',
+                        }}
+                        onMouseEnter={(e) => {
+                          e.currentTarget.style.boxShadow = '0 6px 18px -6px rgba(15, 23, 42, 0.12)';
+                          e.currentTarget.style.transform = 'translateY(-1px)';
+                        }}
+                        onMouseLeave={(e) => {
+                          e.currentTarget.style.boxShadow = '0 1px 3px rgba(15, 23, 42, 0.04)';
+                          e.currentTarget.style.transform = 'translateY(0)';
+                        }}
+                      >
+                      <div style={{
+                        display: 'grid',
+                        gridTemplateColumns: 'minmax(220px, 1.3fr) minmax(200px, 1.2fr) minmax(150px, 0.9fr) minmax(180px, 1.1fr) minmax(160px, 1fr)',
+                        gap: '14px',
+                        padding: '14px 16px',
+                        alignItems: 'flex-start',
+                      }}>
+                        {/* ── COLUMN 1: Patient & Visit identity ── */}
+                        <div style={{ display: 'flex', alignItems: 'flex-start', gap: '10px', minWidth: 0 }}>
+                          {/* Token tile — same pattern as AppointmentBoard. */}
+                          <div style={{
+                            flexShrink: 0,
+                            width: '42px', height: '42px',
+                            borderRadius: '10px',
+                            background: 'rgba(15, 82, 186, 0.08)',
+                            border: '1.5px solid rgba(15, 82, 186, 0.2)',
+                            color: '#0f52ba',
+                            display: 'flex', flexDirection: 'column',
+                            alignItems: 'center', justifyContent: 'center',
+                            fontFamily: 'monospace',
+                          }}>
+                            <span style={{ fontSize: '13px', fontWeight: 950, lineHeight: 1 }}>
+                              {appt.dailyTokenNumber ? `#${String(appt.dailyTokenNumber).padStart(3, '0')}` : '—'}
+                            </span>
+                            <span style={{ fontSize: '7.5px', fontWeight: 800, color: '#94a3b8', marginTop: '2px', letterSpacing: '0.3px' }}>TOKEN</span>
                           </div>
-                          <div style={{ fontSize: '9px', color: '#94a3b8', marginTop: '2px', fontWeight: 800 }}>{appt.displayId}</div>
-                        </td>
-
-                        {/* Patient */}
-                        <td>
-                          <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
-                            <span style={{ fontWeight: 950, color: '#0f172a', fontSize: '14px' }}>{appt.patientName}</span>
-                            {appt.priority && appt.priority !== 'ROUTINE' && (
-                              <span
-                                className={appt.priority === 'STAT' ? 'priority-chip-stat' : 'priority-chip-urgent'}
-                                style={{
-                                  fontSize: '9px', fontWeight: 950, letterSpacing: '0.5px',
-                                  padding: '2px 7px', borderRadius: '999px',
-                                  color: appt.priority === 'STAT' ? '#dc2626' : '#d97706',
-                                  background: appt.priority === 'STAT' ? '#fee2e2' : '#fef3c7',
-                                  border: `1px solid ${appt.priority === 'STAT' ? '#fecaca' : '#fde68a'}`,
-                                }}
-                              >{appt.priority}</span>
-                            )}
-                          </div>
-                          {appt.patientId && (
-                            <div style={{ fontSize: '9px', color: '#0f52ba', fontWeight: 800, marginTop: '2px', fontFamily: 'monospace' }}>PID: {appt.patientId}</div>
-                          )}
-                          <div style={{ fontSize: '11px', color: '#64748b', marginTop: '3px', fontWeight: 700 }}>
-                            {appt.patientAge}y · {appt.patientGender} · {appt.mobile}
-                          </div>
-                          {/* TAT pills: on-premises (live) + scan→delivery (final). */}
-                          {onPremisesElapsed && (
-                            <div style={{ display: 'flex', alignItems: 'center', gap: '5px', marginTop: '6px', flexWrap: 'wrap' }}>
-                              <span title={appt.deliveredAt ? 'Total time on premises' : 'On premises (live)'} style={{
-                                fontSize: '9px', fontWeight: 950, letterSpacing: '0.3px',
-                                padding: '2px 7px', borderRadius: '999px',
-                                color: premisesStyle.color, background: premisesStyle.bg,
-                                border: `1px solid ${premisesStyle.border}`,
-                              }}>⏱ {onPremisesElapsed}</span>
-                              {scanToDelivery && (
-                                <span title="Scan start → delivered" style={{
-                                  fontSize: '9px', fontWeight: 950, letterSpacing: '0.3px',
-                                  padding: '2px 7px', borderRadius: '999px',
-                                  color: '#0369a1', background: '#e0f2fe',
-                                  border: '1px solid #bae6fd',
-                                }}>📋 {scanToDelivery}</span>
+                          <div style={{ minWidth: 0, flex: 1 }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
+                              <span style={{ fontWeight: 950, color: '#0f172a', fontSize: '13.5px', letterSpacing: '-0.2px' }}>{appt.patientName}</span>
+                              {appt.priority && appt.priority !== 'ROUTINE' && (
+                                <span
+                                  className={appt.priority === 'STAT' ? 'priority-chip-stat' : 'priority-chip-urgent'}
+                                  style={{
+                                    fontSize: '8.5px', fontWeight: 950, letterSpacing: '0.5px',
+                                    padding: '2px 7px', borderRadius: '999px',
+                                    color: appt.priority === 'STAT' ? '#dc2626' : '#d97706',
+                                    background: appt.priority === 'STAT' ? '#fee2e2' : '#fef3c7',
+                                    border: `1px solid ${appt.priority === 'STAT' ? '#fecaca' : '#fde68a'}`,
+                                  }}
+                                >{appt.priority}</span>
                               )}
                             </div>
-                          )}
-                        </td>
+                            <div style={{
+                              display: 'flex', alignItems: 'center', gap: '6px',
+                              marginTop: '4px', flexWrap: 'wrap',
+                              fontSize: '10px', fontWeight: 700, color: '#64748b',
+                            }}>
+                              {appt.patientId && (
+                                <span style={{ fontFamily: 'monospace', fontWeight: 800, color: '#475569' }}>#{appt.patientId}</span>
+                              )}
+                              <span style={{ opacity: 0.4 }}>·</span>
+                              <span>{appt.patientAge}y · {appt.patientGender}</span>
+                              {appt.mobile && (
+                                <>
+                                  <span style={{ opacity: 0.4 }}>·</span>
+                                  <span>{appt.mobile}</span>
+                                </>
+                              )}
+                            </div>
+                            {/* Doctor + referrer chips — same emphasis pattern as AppointmentBoard. */}
+                            <div style={{
+                              display: 'flex', alignItems: 'center', gap: '6px',
+                              marginTop: '6px', flexWrap: 'wrap',
+                            }}>
+                              <span
+                                title={appt.doctor ? `Assigned to ${appt.doctor}` : 'No specialist assigned'}
+                                style={{
+                                  display: 'inline-flex', alignItems: 'center', gap: '4px',
+                                  fontSize: '10px', fontWeight: 900, letterSpacing: '0.2px',
+                                  color: appt.doctor ? '#0c4a6e' : '#9a3412',
+                                  background: appt.doctor ? '#e0f2fe' : '#fef3c7',
+                                  border: `1px solid ${appt.doctor ? '#bae6fd' : '#fde68a'}`,
+                                  padding: '2px 8px', borderRadius: '999px',
+                                }}
+                              >
+                                <span aria-hidden="true" style={{ fontSize: '10px' }}>🩺</span>
+                                {appt.doctor || 'Unassigned'}
+                              </span>
+                              {appt.referredBy && (
+                                <span
+                                  title={`Referred by ${appt.referredBy}`}
+                                  style={{
+                                    display: 'inline-flex', alignItems: 'center', gap: '4px',
+                                    fontSize: '10px', fontWeight: 900, letterSpacing: '0.2px',
+                                    color: '#5b21b6', background: '#ede9fe',
+                                    border: '1px solid #ddd6fe',
+                                    padding: '2px 8px', borderRadius: '999px',
+                                  }}
+                                >
+                                  <span aria-hidden="true" style={{ fontSize: '10px' }}>↗</span>
+                                  Ref: {appt.referredBy}
+                                </span>
+                              )}
+                            </div>
+                            {/* Visit-level TAT pills */}
+                            {onPremisesElapsed && (
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '5px', marginTop: '6px', flexWrap: 'wrap' }}>
+                                <span title={appt.deliveredAt ? 'Total time on premises' : 'On premises (live)'} style={{
+                                  fontSize: '9px', fontWeight: 950, letterSpacing: '0.3px',
+                                  padding: '2px 7px', borderRadius: '999px',
+                                  color: premisesStyle.color, background: premisesStyle.bg,
+                                  border: `1px solid ${premisesStyle.border}`,
+                                }}>⏱ {onPremisesElapsed}</span>
+                                {scanToDelivery && (
+                                  <span title="Scan start → delivered" style={{
+                                    fontSize: '9px', fontWeight: 950, letterSpacing: '0.3px',
+                                    padding: '2px 7px', borderRadius: '999px',
+                                    color: '#0369a1', background: '#e0f2fe',
+                                    border: '1px solid #bae6fd',
+                                  }}>📋 {scanToDelivery}</span>
+                                )}
+                              </div>
+                            )}
+                          </div>
+                        </div>
 
-                        {/* Modality & Service (multi-service aware). */}
-                        <td>
+                        {/* ── COLUMN 2: Services gist only.
+                            The toggle strip lives at the bottom of the
+                            card (below the 4-column grid) — mirrors
+                            AppointmentBoard's pattern so the "View all"
+                            affordance is always in the same spot. */}
+                        <div style={{ minWidth: 0 }}>
                           {(() => {
-                            const lines      = getServiceLines(appt);
+                            const lines = getServiceLines(appt);
+                            if (lines.length === 0) {
+                              return <span style={{ fontSize: '11px', color: '#cbd5e1', fontWeight: 700 }}>—</span>;
+                            }
+                            const modTint = (m) => {
+                              const k = String(m || '').toUpperCase();
+                              return ({
+                                'X-RAY':     { bg: '#ecfdf5', border: '#a7f3d0', text: '#047857' },
+                                CT:          { bg: '#eff6ff', border: '#bfdbfe', text: '#1d4ed8' },
+                                MRI:         { bg: '#f5f3ff', border: '#ddd6fe', text: '#6d28d9' },
+                                ULTRASOUND:  { bg: '#ecfeff', border: '#a5f3fc', text: '#0e7490' },
+                                USG:         { bg: '#ecfeff', border: '#a5f3fc', text: '#0e7490' },
+                                MAMMOGRAPHY: { bg: '#fdf2f8', border: '#fbcfe8', text: '#be185d' },
+                                MG:          { bg: '#fdf2f8', border: '#fbcfe8', text: '#be185d' },
+                                DEXA:        { bg: '#fffbeb', border: '#fde68a', text: '#b45309' },
+                                PET:         { bg: '#fff7ed', border: '#fed7aa', text: '#c2410c' },
+                              }[k] || { bg: '#f1f5f9', border: '#e2e8f0', text: '#0f52ba' });
+                            };
+
+                            // Single-service — show one row inline.
+                            // The "Update Status & Notes" button lives
+                            // in Column 4 (Notes & Actions) on the
+                            // right-hand side of the card, so the
+                            // affordance sits with the other action
+                            // buttons and is easy to find.
+                            if (lines.length === 1) {
+                              const only = lines[0];
+                              const t    = modTint(only.modality);
+                              return (
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
+                                  <span style={{
+                                    fontSize: '9px', fontWeight: 950, letterSpacing: '0.3px',
+                                    color: t.text, background: t.bg,
+                                    border: `1px solid ${t.border}`,
+                                    padding: '3px 9px', borderRadius: '6px',
+                                  }}>{only.modality || 'OT'}</span>
+                                  <span
+                                    style={{ fontSize: '13px', color: '#0f172a', fontWeight: 900,
+                                      whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '220px' }}
+                                    title={only.serviceName || ''}
+                                  >{only.serviceName || '—'}</span>
+                                </div>
+                              );
+                            }
+
+                            // Multi-service — modality chip stack + primary
+                            // service name + "+N more" badge. The summary
+                            // chips and View-all toggle live at the bottom
+                            // of the card.
                             const modalities = getUniqueModalities(appt);
-                            const progress   = getReportProgressLabel(appt);
                             const primary    = lines[0]?.serviceName || appt.service || '';
                             const extra      = lines.length - 1;
                             return (
-                              <>
-                                <div style={{ display: 'flex', alignItems: 'center', gap: '4px', flexWrap: 'wrap', marginBottom: '4px' }}>
-                                  {modalities.map((m, idx) => (
-                                    <span key={`${m}-${idx}`} title={lines.find(l => l.modality === m)?.serviceName || m} style={{ display: 'inline-block', background: '#eff6ff', color: '#0f52ba', fontSize: '9px', fontWeight: 950, padding: '3px 8px', borderRadius: '6px', border: '1px solid #bfdbfe' }}>
-                                      {m}
-                                    </span>
-                                  ))}
+                              <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '4px', flexWrap: 'wrap' }}>
+                                  {modalities.map((m, idx) => {
+                                    const t = modTint(m);
+                                    return (
+                                      <span key={`${m}-${idx}`} title={lines.find(l => l.modality === m)?.serviceName || m} style={{
+                                        fontSize: '9px', fontWeight: 950, letterSpacing: '0.3px',
+                                        color: t.text, background: t.bg,
+                                        border: `1px solid ${t.border}`,
+                                        padding: '2px 8px', borderRadius: '6px',
+                                      }}>{m}</span>
+                                    );
+                                  })}
                                 </div>
                                 <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
-                                  <div style={{ fontSize: '13px', color: '#0f172a', fontWeight: 950 }}>{primary}</div>
+                                  <span style={{
+                                    fontSize: '12.5px', color: '#0f172a', fontWeight: 900,
+                                    whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '180px',
+                                  }} title={primary}>{primary}</span>
                                   {extra > 0 && (
                                     <span style={{
                                       background: '#dbeafe', color: '#0f52ba',
@@ -1222,38 +1768,137 @@ export default function OperationsBoard() {
                                     }}>+{extra} more</span>
                                   )}
                                 </div>
-                                {progress && (
-                                  <div style={{ marginTop: '4px' }}>
-                                    <span title="Reporting progress across all services on this visit" style={{
-                                      background: '#d1fae5', color: '#047857',
-                                      fontSize: '9px', fontWeight: 900,
-                                      padding: '2px 7px', borderRadius: '999px',
-                                      border: '1px solid #a7f3d0',
-                                      letterSpacing: '0.3px',
-                                    }}>{progress}</span>
-                                  </div>
-                                )}
-                              </>
+                              </div>
                             );
                           })()}
-                        </td>
+                        </div>
 
-                        {/* Clinical Stage */}
-                        <td>
-                          <span className="status-badge" style={{ background: coreStatus.style.bg, color: coreStatus.style.text, border: `1px solid ${coreStatus.style.border}` }}>
+                        {/* ── COLUMN 3: Clinical Stage + Per-service progress pills ── */}
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', minWidth: 0 }}>
+                          <span className="status-badge" style={{ alignSelf: 'flex-start', background: coreStatus.style.bg, color: coreStatus.style.text, border: `1px solid ${coreStatus.style.border}` }}>
                             {coreStatus.label}
                           </span>
-                        </td>
 
-                        {/* Delivery Progress */}
-                        <td>
-                          <span className="status-badge" style={{ background: progress.style.bg, color: progress.style.text, border: `1px solid ${progress.style.border}` }}>
-                            {progress.label}
-                          </span>
-                        </td>
+                          {/* Per-service status strip.
+                            A multi-service visit shows one mini-pill per
+                            AppointmentService (modality short code + status
+                            colour). Single-service visits show one pill;
+                            the visual treatment is identical so the eye
+                            doesn't have to context-switch between rows.
+                            The aggregate "X/Y reported" still anchors the
+                            top so the rollup isn't lost. */}
+                          {(() => {
+                            const lines = getServiceLines(appt);
+                            // Step rank so we can colour each per-service
+                            // pill the same way the queue cards do.
+                            const stepStyle = (status) => {
+                              const s = String(status || '').toUpperCase();
+                              if (s === 'DELIVERED')   return { color: '#047857', bg: '#d1fae5', border: '#a7f3d0' };
+                              if (s === 'REPORTED')    return { color: '#1d4ed8', bg: '#dbeafe', border: '#bfdbfe' };
+                              if (s === 'SCANNED')     return { color: '#9a3412', bg: '#ffedd5', border: '#fed7aa' };
+                              if (s === 'IN_MID')      return { color: '#b45309', bg: '#fef3c7', border: '#fcd34d' };
+                              if (s === 'IN_PROGRESS') return { color: '#a16207', bg: '#fef9c3', border: '#fde68a' };
+                              if (s === 'CANCELLED')   return { color: '#9f1239', bg: '#ffe4e6', border: '#fecdd3' };
+                              return                         { color: '#475569', bg: '#f1f5f9', border: '#e2e8f0' };
+                            };
+                            const statusLabel = (status) => {
+                              const s = String(status || '').toUpperCase();
+                              if (s === 'DELIVERED')   return 'Delivered';
+                              if (s === 'REPORTED')    return 'Reported';
+                              if (s === 'SCANNED')     return 'Scanned';
+                              if (s === 'IN_MID')      return 'Half Way';
+                              if (s === 'IN_PROGRESS') return 'In Progress';
+                              if (s === 'CANCELLED')   return 'Cancelled';
+                              return                         'Not Started';
+                            };
+                            // Short modality code so a 3-service visit
+                            // still fits in the column without wrapping.
+                            const shortMod = (m) => {
+                              const k = String(m || '').toUpperCase();
+                              return ({
+                                CT: 'CT', MRI: 'MRI',
+                                'X-RAY': 'XR',
+                                ULTRASOUND: 'US', USG: 'US',
+                                MAMMOGRAPHY: 'MG', MG: 'MG',
+                                DEXA: 'DX', PET: 'PT', NUCLEAR: 'NM',
+                              }[k] || (k ? k.substring(0, 3) : 'OT'));
+                            };
+                            // Rollup tally — non-cancelled services and
+                            // how many are at-or-past REPORTED. Shown as
+                            // a small caption above the per-line pills.
+                            const live = lines.filter(l => String(l.status || '').toUpperCase() !== 'CANCELLED');
+                            const reported = live.filter(l => {
+                              const s = String(l.status || '').toUpperCase();
+                              return s === 'REPORTED' || s === 'DELIVERED';
+                            }).length;
+                            return (
+                              <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', alignItems: 'flex-start' }}>
+                                {live.length > 1 && (
+                                  <span style={{
+                                    fontSize: '8.5px', fontWeight: 900, color: '#64748b',
+                                    letterSpacing: '0.4px', textTransform: 'uppercase',
+                                  }}>{reported}/{live.length} reported</span>
+                                )}
+                                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px', maxWidth: '220px' }}>
+                                  {lines.map((line, idx) => {
+                                    const st  = stepStyle(line.status);
+                                    const lbl = statusLabel(line.status);
+                                    const elapsedMin = getStageElapsedMinutes(line, appt, nowMs);
+                                    const tatLabel   = elapsedMin == null ? '' : formatStageElapsed(elapsedMin);
+                                    const hasNotes   = Boolean(line.notes && String(line.notes).trim());
+                                    const tooltip    = `${line.modality || 'OT'} · ${line.serviceName || ''} — ${lbl}${tatLabel ? ` · ${tatLabel}` : ''}${hasNotes ? `\n📝 ${line.notes}` : ''}\n\nClick to edit status or notes`;
+                                    const clickable  = Boolean(line.id);
+                                    return (
+                                      <span
+                                        key={line.id || `${appt.appointmentId}-${idx}`}
+                                        title={tooltip}
+                                        onClick={clickable ? (e) => openServicePopover(e, appt, line) : undefined}
+                                        role={clickable ? 'button' : undefined}
+                                        tabIndex={clickable ? 0 : undefined}
+                                        onKeyDown={clickable ? (e) => {
+                                          if (e.key === 'Enter' || e.key === ' ') {
+                                            e.preventDefault();
+                                            openServicePopover(e, appt, line);
+                                          }
+                                        } : undefined}
+                                        style={{
+                                          display: 'inline-flex', alignItems: 'center', gap: '4px',
+                                          padding: '2px 7px',
+                                          borderRadius: '999px',
+                                          fontSize: '9px', fontWeight: 900, letterSpacing: '0.3px',
+                                          color: st.color, background: st.bg,
+                                          border: `1px solid ${st.border}`,
+                                          textTransform: 'uppercase',
+                                          cursor: clickable ? 'pointer' : 'default',
+                                          userSelect: 'none',
+                                        }}
+                                      >
+                                        <span style={{
+                                          fontFamily: 'monospace', fontWeight: 950,
+                                          fontSize: '8.5px',
+                                          opacity: 0.85,
+                                          letterSpacing: '0.2px',
+                                        }}>{shortMod(line.modality)}</span>
+                                        <span style={{ opacity: 0.55 }}>·</span>
+                                        <span>{lbl}</span>
+                                        {hasNotes && (
+                                          <span aria-label="Has notes" style={{ marginLeft: '2px', fontSize: '9px' }}>📝</span>
+                                        )}
+                                      </span>
+                                    );
+                                  })}
+                                </div>
+                              </div>
+                            );
+                          })()}
+                        </div>
 
-                        {/* Latest comment + author byline + View all link */}
-                        <td style={{ maxWidth: '260px' }}>
+                        {/* ── COLUMN 4: Notes ──
+                            Visit-level latest comment box (when there
+                            is one) and the per-service note gist for
+                            single-service visits. Multi-service notes
+                            live inside the expanded ledger. */}
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', minWidth: 0 }}>
                           {appt.delayReason ? (
                             <div style={{ background: '#fff1f2', color: '#b91c1c', border: '1px solid #fecaca', padding: '8px 12px', borderRadius: '12px', fontSize: '11px', lineHeight: 1.4, maxHeight: '110px', overflowY: 'auto', fontWeight: 800 }}>
                               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '3px' }}>
@@ -1283,31 +1928,243 @@ export default function OperationsBoard() {
                               title="View comment history"
                             >No comments yet — View history</button>
                           )}
-                        </td>
 
-                        {/* Action */}
-                        <td style={{ textAlign: 'right' }}>
+                          {/* Per-service note gist (single-service
+                              only). For multi-service the per-line
+                              notes live inside the expanded ledger
+                              and would duplicate here. */}
+                          {apptServiceCount === 1 && (() => {
+                            const only = getServiceLines(appt)[0];
+                            const noteText = only && only.notes && String(only.notes).trim();
+                            if (!noteText) return null;
+                            return (
+                              <div
+                                style={{
+                                  fontSize: '11px', fontWeight: 600, color: '#0f172a',
+                                  lineHeight: 1.4,
+                                  padding: '6px 10px',
+                                  background: '#fffbeb',
+                                  border: '1px solid #fef3c7',
+                                  borderRadius: '10px',
+                                  display: '-webkit-box',
+                                  WebkitLineClamp: 2,
+                                  WebkitBoxOrient: 'vertical',
+                                  overflow: 'hidden',
+                                }}
+                                title={only.notes}
+                              >📝 {only.notes}</div>
+                            );
+                          })()}
+                        </div>
+
+                        {/* ── COLUMN 5: Actions ──
+                            Buttons cluster on the right edge of the
+                            card. Single-service visits get the primary
+                            "Update Status & Notes" button up top; the
+                            "Add Visit Note" button anchors the visit-
+                            level comment action below. */}
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', alignItems: 'stretch', minWidth: 0 }}>
+                          {apptServiceCount === 1 && (() => {
+                            const only = getServiceLines(appt)[0];
+                            if (!only || !only.id) return null;
+                            return (
+                              <button
+                                type="button"
+                                onClick={(e) => openServicePopover(e, appt, only)}
+                                title="Change status or add/edit notes for this service"
+                                style={{
+                                  background: 'linear-gradient(135deg, #0f52ba 0%, #1e3a8a 100%)',
+                                  border: 'none',
+                                  color: 'white',
+                                  padding: '8px 14px',
+                                  borderRadius: '10px',
+                                  cursor: 'pointer',
+                                  fontSize: '10px', fontWeight: 950, letterSpacing: '0.3px',
+                                  transition: 'all 0.15s ease',
+                                  boxShadow: '0 3px 8px -3px rgba(15, 82, 186, 0.55)',
+                                  textTransform: 'uppercase',
+                                  display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: '5px',
+                                  whiteSpace: 'nowrap',
+                                }}
+                                onMouseEnter={e => e.currentTarget.style.transform = 'translateY(-1px)'}
+                                onMouseLeave={e => e.currentTarget.style.transform = 'translateY(0)'}
+                              >✎ Update Status & Notes</button>
+                            );
+                          })()}
                           <button
-                            onClick={() => openEditModal(appt)}
-                            style={{ background: 'white', border: '1px solid #e2e8f0', color: '#0f52ba', padding: '7px 14px', borderRadius: '10px', cursor: 'pointer', fontSize: '10px', fontWeight: 950, letterSpacing: '0.3px', transition: 'all 0.15s ease' }}
+                            onClick={() => openVisitNoteModal(appt)}
+                            style={{ background: 'white', border: '1px solid #e2e8f0', color: '#0f52ba', padding: '8px 14px', borderRadius: '10px', cursor: 'pointer', fontSize: '10px', fontWeight: 950, letterSpacing: '0.3px', transition: 'all 0.15s ease' }}
                             onMouseEnter={e => { e.currentTarget.style.borderColor = '#0f52ba'; e.currentTarget.style.background = '#eff6ff'; }}
                             onMouseLeave={e => { e.currentTarget.style.borderColor = '#e2e8f0'; e.currentTarget.style.background = 'white'; }}
                           >
-                            OVERRIDE STATUS
+                            + ADD VISIT NOTE
                           </button>
-                        </td>
-                      </tr>
+                        </div>
+                      </div>
+
+                      {/* Toggle strip — bottom of the card, full width.
+                          Same role + styling as AppointmentBoard's
+                          "View N services ▾" toggle so the affordance
+                          is in the same spot on both boards. Only
+                          renders for multi-service visits; single-
+                          service rows don't need a hide/show. */}
+                      {apptServiceCount > 1 && (() => {
+                        const lines    = getServiceLines(appt);
+                        const apptKey  = appt.appointmentId;
+                        const expanded = expandedLedgers.has(apptKey);
+                        const summary = { notStarted: 0, inProgress: 0, scanned: 0, reported: 0, delivered: 0, cancelled: 0 };
+                        for (const l of lines) {
+                          const s = String(l.status || 'NOT_STARTED').toUpperCase();
+                          if (s === 'DELIVERED')                          summary.delivered++;
+                          else if (s === 'REPORTED')                      summary.reported++;
+                          else if (s === 'SCANNED')                       summary.scanned++;
+                          else if (s === 'IN_PROGRESS' || s === 'IN_MID') summary.inProgress++;
+                          else if (s === 'CANCELLED')                     summary.cancelled++;
+                          else                                             summary.notStarted++;
+                        }
+                        const summaryChips = [
+                          summary.notStarted && { label: `${summary.notStarted} pending`,    bg: '#f1f5f9', color: '#475569', border: '#e2e8f0' },
+                          summary.inProgress && { label: `${summary.inProgress} in progress`,bg: '#fef9c3', color: '#a16207', border: '#fde68a' },
+                          summary.scanned    && { label: `${summary.scanned} scanned`,       bg: '#ffedd5', color: '#9a3412', border: '#fed7aa' },
+                          summary.reported   && { label: `${summary.reported} reported`,     bg: '#dbeafe', color: '#1d4ed8', border: '#bfdbfe' },
+                          summary.delivered  && { label: `${summary.delivered} delivered`,   bg: '#d1fae5', color: '#047857', border: '#a7f3d0' },
+                          summary.cancelled  && { label: `${summary.cancelled} cancelled`,   bg: '#ffe4e6', color: '#9f1239', border: '#fecdd3' },
+                        ].filter(Boolean);
+                        return (
+                          <div
+                            role="button"
+                            tabIndex={0}
+                            onClick={(e) => { e.stopPropagation(); toggleLedger(apptKey); }}
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); e.stopPropagation(); toggleLedger(apptKey); }
+                            }}
+                            aria-expanded={expanded}
+                            aria-label={expanded ? 'Hide services' : `View all ${lines.length} services`}
+                            style={{
+                              display: 'flex', alignItems: 'center', gap: '10px',
+                              padding: '8px 16px',
+                              borderTop: '1px solid #f1f5f9',
+                              background: expanded ? 'rgba(15, 82, 186, 0.04)' : '#f8fafc',
+                              cursor: 'pointer',
+                              transition: 'background 0.12s',
+                            }}
+                            onMouseEnter={(e) => { if (!expanded) e.currentTarget.style.background = '#f1f5f9'; }}
+                            onMouseLeave={(e) => { if (!expanded) e.currentTarget.style.background = '#f8fafc'; }}
+                          >
+                            <span style={{
+                              fontSize: '9px', fontWeight: 950, letterSpacing: '0.5px',
+                              color: '#0f172a', textTransform: 'uppercase', whiteSpace: 'nowrap',
+                            }}>
+                              {lines.length} services
+                            </span>
+                            <div style={{
+                              flex: 1, minWidth: 0,
+                              display: 'flex', alignItems: 'center', gap: '4px',
+                              flexWrap: 'wrap',
+                            }}>
+                              {summaryChips.map((c, i) => (
+                                <span key={i} style={{
+                                  fontSize: '8.5px', fontWeight: 800, letterSpacing: '0.3px',
+                                  color: c.color, background: c.bg,
+                                  padding: '2px 7px', borderRadius: '999px',
+                                  border: `1px solid ${c.border}`,
+                                  textTransform: 'uppercase',
+                                }}>{c.label}</span>
+                              ))}
+                            </div>
+                            <span style={{
+                              fontSize: '9px', fontWeight: 900, letterSpacing: '0.5px',
+                              color: '#0f52ba', textTransform: 'uppercase', whiteSpace: 'nowrap',
+                              display: 'inline-flex', alignItems: 'center', gap: '4px',
+                              marginLeft: 'auto',
+                            }}>
+                              {expanded ? 'Hide' : 'View all'}
+                              <span aria-hidden="true" style={{
+                                display: 'inline-block',
+                                transform: expanded ? 'rotate(180deg)' : 'rotate(0deg)',
+                                transition: 'transform 0.18s',
+                                fontSize: '11px', lineHeight: 1,
+                              }}>▾</span>
+                            </span>
+                          </div>
+                        );
+                      })()}
+
+                      {isLedgerExpanded && (
+                        <div style={{ padding: '0 16px 14px 16px', background: '#f8fafc', borderTop: '1px solid #f1f5f9' }}>
+                          <div style={{ paddingTop: '12px' }}>
+                            {(() => {
+                              const lines = getServiceLines(appt);
+                              return (
+                                <div style={{
+                                  background: 'white',
+                                  border: '1px solid #e2e8f0',
+                                  borderRadius: '12px',
+                                  padding: '4px 12px 8px',
+                                  boxShadow: '0 1px 3px rgba(15, 23, 42, 0.04)',
+                                }}>
+                                  {/* Mini in-table header */}
+                                  <div style={{
+                                    display: 'grid',
+                                    gridTemplateColumns: '70px minmax(180px, 1.2fr) 140px 100px minmax(240px, 2fr) 180px',
+                                    gap: '16px',
+                                    padding: '8px 8px 6px',
+                                    borderBottom: '1px solid #f1f5f9',
+                                    fontSize: '8.5px', fontWeight: 900, letterSpacing: '0.5px',
+                                    color: '#94a3b8', textTransform: 'uppercase',
+                                  }}>
+                                    <span>Modality</span>
+                                    <span>Service</span>
+                                    <span>Status</span>
+                                    <span style={{ textAlign: 'center' }}>Time in stage</span>
+                                    <span>Notes</span>
+                                    <span style={{ textAlign: 'right' }}>Action</span>
+                                  </div>
+                                  {lines.map((line, idx) => (
+                                    <LedgerRowEditor
+                                      key={line.id || `det-${idx}`}
+                                      line={line}
+                                      appt={appt}
+                                      isLast={idx === lines.length - 1}
+                                      nowMs={nowMs}
+                                      onOpenEditor={openServicePopover}
+                                    />
+                                  ))}
+                                  <div style={{
+                                    marginTop: '6px',
+                                    padding: '6px 8px 0',
+                                    borderTop: '1px solid #f1f5f9',
+                                    fontSize: '9px', fontWeight: 800, color: '#94a3b8',
+                                    letterSpacing: '0.3px', textTransform: 'uppercase',
+                                  }}>
+                                    Click ✎ Update Status & Notes (or the status pill) to change status and notes for that service.
+                                  </div>
+                                </div>
+                              );
+                            })()}
+                          </div>
+                        </div>
+                      )}
+                      </div>
                     );
                   })}
-                </tbody>
-              </table>
+                </div>
             )}
             {renderPagination()}
           </div>
         )}
       </div>
 
-      {/* ── OVERRIDE MODAL ─────────────────────────────────────────────── */}
+      {/* ── PER-SERVICE STATUS + NOTES POPOVER ─────────────────────────── */}
+      {servicePopover && (
+        <ServicePillPopover
+          state={servicePopover}
+          onClose={closeServicePopover}
+          onSave={saveServicePopover}
+        />
+      )}
+
+      {/* ── ADD VISIT NOTE MODAL ───────────────────────────────────────── */}
       {modalOpen && selectedItem && (
         <div style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.4)', backdropFilter: 'blur(12px)', WebkitBackdropFilter: 'blur(12px)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 10000, animation: 'fadeIn 0.25s ease-out' }}>
           <div style={{ width: '90%', maxWidth: '420px', background: 'linear-gradient(135deg, #ffffff 0%, #f8fafc 100%)', borderRadius: '24px', border: '1px solid rgba(226,232,240,0.8)', boxShadow: '0 25px 50px -12px rgba(15,23,42,0.2)', padding: '30px 24px', display: 'flex', flexDirection: 'column', gap: '20px', animation: 'scaleIn 0.3s cubic-bezier(0.34,1.56,0.64,1)', boxSizing: 'border-box' }}>
@@ -1315,33 +2172,18 @@ export default function OperationsBoard() {
             {/* Header */}
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
               <div>
-                <h3 style={{ fontSize: '15px', fontWeight: 950, margin: 0, color: '#e11d48', letterSpacing: '0.8px', textTransform: 'uppercase' }}>Manual Status Override</h3>
+                <h3 style={{ fontSize: '15px', fontWeight: 950, margin: 0, color: '#0f52ba', letterSpacing: '0.8px', textTransform: 'uppercase' }}>Add Visit Note</h3>
                 <span style={{ fontSize: '11px', color: '#0f52ba', fontWeight: 950, marginTop: '4px', display: 'block' }}>
                   {selectedItem.patientName} ({selectedItem.dailyTokenNumber ? `#${String(selectedItem.dailyTokenNumber).padStart(3, '0')}` : 'N/A'})
+                </span>
+                <span style={{ fontSize: '10px', color: '#64748b', fontWeight: 700, marginTop: '2px', display: 'block' }}>
+                  Applies to the whole visit. For per-service notes, click the status pill.
                 </span>
               </div>
               <button onClick={() => setModalOpen(false)} style={{ background: '#f1f5f9', border: '1px solid #e2e8f0', color: '#0f172a', width: '30px', height: '30px', borderRadius: '50%', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 950, fontSize: '12px' }}>✕</button>
             </div>
 
-            <form onSubmit={handleUpdateStatus} style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-              {/* Status grid */}
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                <label style={{ fontSize: '10px', color: '#94a3b8', fontWeight: 950, letterSpacing: '0.8px', textTransform: 'uppercase' }}>Report Progress Status</label>
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '8px' }}>
-                  {[
-                    { val: 'NOT_STARTED', lbl: '⚪ Not Started' },
-                    { val: 'STARTED',     lbl: '🔵 Started' },
-                    { val: 'IN_MID',      lbl: '🟡 In Mid' },
-                    { val: 'DELIVERED',   lbl: '🟢 Delivered' },
-                  ].map(btn => (
-                    <button key={btn.val} type="button" onClick={() => setNewStatus(btn.val)}
-                      style={{ background: newStatus === btn.val ? '#eff6ff' : 'white', border: newStatus === btn.val ? '2px solid #0f52ba' : '1px solid #e2e8f0', color: newStatus === btn.val ? '#0f52ba' : '#475569', padding: '10px', borderRadius: '12px', fontSize: '11px', fontWeight: 950, cursor: 'pointer', transition: 'all 0.15s ease' }}>
-                      {btn.lbl}
-                    </button>
-                  ))}
-                </div>
-              </div>
-
+            <form onSubmit={handleAddVisitNote} style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
               {/* Latest comment (context) — read-only so the user can see what
                   was last said without accidentally erasing it by editing. */}
               {selectedItem.delayReason && (
@@ -1409,9 +2251,9 @@ export default function OperationsBoard() {
                   style={{ flex: 1, background: '#f1f5f9', border: '1px solid #e2e8f0', color: '#0f172a', padding: '12px', borderRadius: '12px', cursor: 'pointer', fontSize: '11px', fontWeight: 950 }}>
                   CANCEL
                 </button>
-                <button type="submit" disabled={saving}
-                  style={{ flex: 1, background: 'linear-gradient(135deg, #0f52ba 0%, #0a3d91 100%)', border: 'none', color: 'white', padding: '12px', borderRadius: '12px', cursor: saving ? 'not-allowed' : 'pointer', fontSize: '11px', fontWeight: 950, boxShadow: '0 8px 18px -4px rgba(15,82,186,0.35)', opacity: saving ? 0.7 : 1 }}>
-                  {saving ? 'SAVING…' : 'APPLY OVERRIDE'}
+                <button type="submit" disabled={saving || newReason.trim().length === 0}
+                  style={{ flex: 1, background: (saving || newReason.trim().length === 0) ? '#cbd5e1' : 'linear-gradient(135deg, #0f52ba 0%, #0a3d91 100%)', border: 'none', color: 'white', padding: '12px', borderRadius: '12px', cursor: (saving || newReason.trim().length === 0) ? 'not-allowed' : 'pointer', fontSize: '11px', fontWeight: 950, boxShadow: (saving || newReason.trim().length === 0) ? 'none' : '0 8px 18px -4px rgba(15,82,186,0.35)', opacity: saving ? 0.7 : 1 }}>
+                  {saving ? 'SAVING…' : 'SAVE NOTE'}
                 </button>
               </div>
             </form>
@@ -1573,3 +2415,469 @@ function CommentTimelineItem({ comment, isLatest }) {
   );
 }
 
+// ─────────────────────────────────────────────────────────────────────────
+//  LedgerRowEditor — one row in the expanded service ledger.
+//  Read-only display by default; the EDIT ✎ button opens the
+//  ServicePillPopover (the same popup as the top-row pills) anchored
+//  to this row, so the operator changes status + notes in one place.
+// ─────────────────────────────────────────────────────────────────────────
+function LedgerRowEditor({
+  line,
+  appt,
+  isLast,
+  nowMs,
+  onOpenEditor,
+}) {
+  const status = String(line.status || 'NOT_STARTED').toUpperCase();
+  const notes  = line.notes || '';
+
+  const modTint = (m) => {
+    const k = String(m || '').toUpperCase();
+    return ({
+      'X-RAY':     { bg: '#ecfdf5', border: '#a7f3d0', text: '#047857' },
+      CT:          { bg: '#eff6ff', border: '#bfdbfe', text: '#1d4ed8' },
+      MRI:         { bg: '#f5f3ff', border: '#ddd6fe', text: '#6d28d9' },
+      ULTRASOUND:  { bg: '#ecfeff', border: '#a5f3fc', text: '#0e7490' },
+      USG:         { bg: '#ecfeff', border: '#a5f3fc', text: '#0e7490' },
+      MAMMOGRAPHY: { bg: '#fdf2f8', border: '#fbcfe8', text: '#be185d' },
+      MG:          { bg: '#fdf2f8', border: '#fbcfe8', text: '#be185d' },
+      DEXA:        { bg: '#fffbeb', border: '#fde68a', text: '#b45309' },
+      PET:         { bg: '#fff7ed', border: '#fed7aa', text: '#c2410c' },
+    }[k] || { bg: '#f1f5f9', border: '#e2e8f0', text: '#0f52ba' });
+  };
+  const stepStyle = (s) => {
+    if (s === 'DELIVERED')   return { color: '#047857', bg: '#d1fae5', border: '#a7f3d0', label: 'Delivered' };
+    if (s === 'REPORTED')    return { color: '#1d4ed8', bg: '#dbeafe', border: '#bfdbfe', label: 'Reported' };
+    if (s === 'SCANNED')     return { color: '#9a3412', bg: '#ffedd5', border: '#fed7aa', label: 'Scanned' };
+    if (s === 'IN_MID')      return { color: '#b45309', bg: '#fef3c7', border: '#fcd34d', label: 'Half Way' };
+    if (s === 'IN_PROGRESS') return { color: '#a16207', bg: '#fef9c3', border: '#fde68a', label: 'In Progress' };
+    if (s === 'CANCELLED')   return { color: '#9f1239', bg: '#ffe4e6', border: '#fecdd3', label: 'Cancelled' };
+    return                         { color: '#475569', bg: '#f1f5f9', border: '#e2e8f0', label: 'Not Started' };
+  };
+  const tint = modTint(line.modality);
+  const st   = stepStyle(status);
+
+  const elapsedMin = getStageElapsedMinutes(line, appt, nowMs);
+  const slaBucket  = getStageSlaBucket(line, elapsedMin);
+  const tatStyle = (
+    slaBucket === 'breach' ? { color: '#9f1239', bg: '#ffe4e6', border: '#fecdd3' } :
+    slaBucket === 'warn'   ? { color: '#9a3412', bg: '#ffedd5', border: '#fed7aa' } :
+                             { color: '#475569', bg: '#f1f5f9', border: '#e2e8f0' }
+  );
+  const tatLabel  = elapsedMin == null ? '' : formatStageElapsed(elapsedMin);
+  const cancelled = status === 'CANCELLED';
+  const editable  = Boolean(line.id);
+
+  const openEditor = (e) => {
+    if (!editable) return;
+    onOpenEditor(e, appt, line);
+  };
+
+  return (
+    <div
+      style={{
+        display: 'grid',
+        gridTemplateColumns: '70px minmax(180px, 1.2fr) 140px 100px minmax(240px, 2fr) 180px',
+        gap: '16px',
+        padding: '10px 8px',
+        alignItems: 'flex-start',
+        borderBottom: isLast ? 'none' : '1px solid #f8fafc',
+        opacity: cancelled ? 0.6 : 1,
+      }}
+    >
+      {/* Modality */}
+      <span style={{
+        justifySelf: 'start',
+        fontSize: '9px', fontWeight: 950, letterSpacing: '0.4px',
+        color: tint.text, background: tint.bg,
+        border: `1px solid ${tint.border}`,
+        padding: '3px 8px', borderRadius: '5px',
+        textAlign: 'center', minWidth: '46px',
+        marginTop: '2px',
+      }}>{line.modality || 'OT'}</span>
+
+      {/* Service name */}
+      <span style={{
+        fontSize: '12px', fontWeight: 800, color: '#0f172a',
+        whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
+        textDecoration: cancelled ? 'line-through' : 'none',
+        marginTop: '2px',
+      }} title={line.serviceName}>{line.serviceName || '—'}</span>
+
+      {/* Status pill — read-only display. Click opens the editor
+          popup (same component as the top-row pills). */}
+      <span
+        onClick={openEditor}
+        role={editable ? 'button' : undefined}
+        tabIndex={editable ? 0 : undefined}
+        onKeyDown={editable ? (e) => {
+          if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openEditor(e); }
+        } : undefined}
+        title={editable ? 'Click to change status or edit notes' : ''}
+        style={{
+          justifySelf: 'start',
+          display: 'inline-flex', alignItems: 'center', gap: '4px',
+          fontSize: '10px', fontWeight: 900, letterSpacing: '0.3px',
+          color: st.color, background: st.bg,
+          border: `1px solid ${st.border}`,
+          padding: '3px 10px', borderRadius: '999px',
+          textTransform: 'uppercase',
+          cursor: editable ? 'pointer' : 'default',
+          userSelect: 'none',
+          marginTop: '2px',
+        }}
+      >
+        {st.label}
+      </span>
+
+      {/* Time-in-stage chip */}
+      <span style={{
+        justifySelf: 'center',
+        marginTop: '2px',
+        fontSize: '10px', fontWeight: 900, letterSpacing: '0.3px',
+        color: tatLabel ? tatStyle.color : '#cbd5e1',
+        background: tatLabel ? tatStyle.bg : 'transparent',
+        border: tatLabel ? `1px solid ${tatStyle.border}` : '1px dashed #e2e8f0',
+        padding: '3px 8px', borderRadius: '999px',
+        fontVariantNumeric: 'tabular-nums',
+        display: 'inline-flex', alignItems: 'center', gap: '3px',
+      }}>
+        {tatLabel ? <>⏱ {tatLabel}</> : '—'}
+      </span>
+
+      {/* Notes gist — full text shown wrapped on up to 2 lines so the
+          operator sees the actual note without opening the editor.
+          Long notes get an ellipsis with full text in the tooltip. */}
+      <div style={{
+        fontSize: '11px', lineHeight: 1.4,
+        color: notes ? '#0f172a' : '#94a3b8',
+        fontWeight: notes ? 700 : 600,
+        fontStyle: notes ? 'normal' : 'italic',
+        display: '-webkit-box',
+        WebkitLineClamp: 2,
+        WebkitBoxOrient: 'vertical',
+        overflow: 'hidden',
+        marginTop: '2px',
+      }}
+        title={notes || ''}
+      >
+        {notes ? `📝 ${notes}` : '— No notes —'}
+      </div>
+
+      {/* Edit button — opens the status + notes popup anchored next
+          to this row. One affordance for both edits keeps the row
+          calm and the action obvious. */}
+      <button
+        type="button"
+        onClick={openEditor}
+        disabled={!editable}
+        title={notes ? 'Update status or notes' : 'Change status or add a note'}
+        style={{
+          justifySelf: 'stretch',
+          padding: '6px 10px',
+          border: '1px solid #e2e8f0',
+          background: 'white',
+          color: editable ? '#0f52ba' : '#cbd5e1',
+          borderRadius: '8px',
+          fontSize: '9px', fontWeight: 950, letterSpacing: '0.3px',
+          cursor: editable ? 'pointer' : 'not-allowed',
+          fontFamily: 'inherit',
+          textTransform: 'uppercase',
+          transition: 'all 0.12s',
+          marginTop: '2px',
+          whiteSpace: 'nowrap',
+          display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: '4px',
+        }}
+        onMouseEnter={(e) => { if (editable) { e.currentTarget.style.borderColor = '#0f52ba'; e.currentTarget.style.background = '#eff6ff'; } }}
+        onMouseLeave={(e) => { e.currentTarget.style.borderColor = '#e2e8f0'; e.currentTarget.style.background = 'white'; }}
+      >✎ Update Status & Notes</button>
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+//  ServicePillPopover — anchored editor for status + notes on one service
+// ─────────────────────────────────────────────────────────────────────────
+// Opens next to the clicked pill, contains a status dropdown and a notes
+// textarea. Click-outside / Escape closes. No portal — uses fixed
+// positioning with the pill's bounding rect, then nudges into view if
+// it would clip the viewport.
+function ServicePillPopover({ state, onClose, onSave }) {
+  const { modality, serviceName, status: initialStatus, notes: initialNotes, anchorRect } = state;
+  const [status, setStatus] = React.useState(initialStatus);
+  const [notes,  setNotes]  = React.useState(initialNotes || '');
+  const ref = React.useRef(null);
+
+  // Click-outside + Escape to dismiss without saving. The popover
+  // itself stops propagation so clicks inside don't close it.
+  React.useEffect(() => {
+    const onDocClick = (e) => {
+      if (ref.current && !ref.current.contains(e.target)) onClose();
+    };
+    const onKey = (e) => { if (e.key === 'Escape') onClose(); };
+    document.addEventListener('mousedown', onDocClick);
+    document.addEventListener('keydown', onKey);
+    return () => {
+      document.removeEventListener('mousedown', onDocClick);
+      document.removeEventListener('keydown', onKey);
+    };
+  }, [onClose]);
+
+  // Responsive sizing — on phones (≤480px) the popover takes nearly
+  // the full screen width with a small gutter, so the step grid and
+  // notes textarea don't get squeezed. On tablet/desktop we keep the
+  // ideal 420×520. Park below the pill by default; flip above if it
+  // would clip the bottom; clamp horizontally to the viewport.
+  const gutter = 12;
+  const viewportW = (typeof window !== 'undefined') ? window.innerWidth  : 1024;
+  const viewportH = (typeof window !== 'undefined') ? window.innerHeight : 768;
+  const isPhone = viewportW < 520;
+  const popoverWidth  = Math.min(420, viewportW - gutter * 2);
+  const popoverHeight = Math.min(520, viewportH - gutter * 2);
+  let top  = anchorRect.bottom + 6;
+  let left = anchorRect.left;
+  if (isPhone) {
+    // Centre on the screen — anchoring to a tiny pill on a phone is
+    // unhelpful since the popover is nearly full width anyway.
+    left = Math.max(gutter, Math.round((viewportW - popoverWidth) / 2));
+    top  = Math.max(gutter, Math.round((viewportH - popoverHeight) / 2));
+  } else {
+    if (top + popoverHeight > viewportH - gutter) {
+      top = Math.max(gutter, anchorRect.top - popoverHeight - 6);
+    }
+    if (left + popoverWidth > viewportW - gutter) {
+      left = Math.max(gutter, viewportW - popoverWidth - gutter);
+    }
+  }
+
+  const dirty = (status !== initialStatus) || ((notes || '') !== (initialNotes || ''));
+
+  return (
+    <div
+      role="dialog"
+      aria-label={`Edit ${modality} service`}
+      style={{
+        position: 'fixed', inset: 0, zIndex: 10001,
+        // Phone backdrop dims the page so the centred popover reads
+        // as a modal; desktop stays transparent so the popover feels
+        // anchored to the row it came from.
+        background: isPhone ? 'rgba(15, 23, 42, 0.35)' : 'transparent',
+        pointerEvents: isPhone ? 'auto' : 'none',
+      }}
+      onClick={(e) => { if (isPhone && e.target === e.currentTarget) onClose(); }}
+    >
+      <div
+        ref={ref}
+        style={{
+          position: 'absolute',
+          top, left,
+          width: `${popoverWidth}px`,
+          maxHeight: `${popoverHeight}px`,
+          background: 'white',
+          border: '1px solid #e2e8f0',
+          borderRadius: '14px',
+          boxShadow: '0 20px 50px -12px rgba(15, 23, 42, 0.25), 0 0 0 1px rgba(15, 23, 42, 0.04)',
+          padding: '14px 16px',
+          pointerEvents: 'auto',
+          display: 'flex', flexDirection: 'column', gap: '12px',
+          fontFamily: 'inherit',
+          overflowY: 'auto',
+          // Smooth scroll on iOS so long content (textarea + step grid
+          // + actions) doesn't feel janky inside the popover frame.
+          WebkitOverflowScrolling: 'touch',
+        }}
+        onClick={(e) => e.stopPropagation()}
+        onMouseDown={(e) => e.stopPropagation()}
+      >
+        {/* Header — modality chip + service name */}
+        <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: '8px' }}>
+          <div style={{ minWidth: 0, flex: 1 }}>
+            <div style={{
+              fontSize: '9px', fontWeight: 950, letterSpacing: '0.5px',
+              color: '#0f52ba', textTransform: 'uppercase',
+            }}>{modality || 'OTHER'}</div>
+            <div style={{
+              fontSize: '13px', fontWeight: 900, color: '#0f172a',
+              marginTop: '2px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
+            }} title={serviceName}>{serviceName || '—'}</div>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            aria-label="Close"
+            style={{
+              flexShrink: 0,
+              width: '24px', height: '24px',
+              border: 'none', background: '#f1f5f9',
+              borderRadius: '6px', cursor: 'pointer',
+              fontSize: '14px', color: '#64748b', fontWeight: 900,
+              display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+            }}
+          >✕</button>
+        </div>
+
+        {/* Status — visual step progression instead of a dropdown.
+            Each step is a clickable chip so the operator can see
+            where the service is in the flow and tap exactly the
+            stage they want. Cancelled is offset on the right
+            because it's a side-exit, not a forward step. */}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+          <span style={{
+            fontSize: '9px', fontWeight: 900, letterSpacing: '0.5px',
+            color: '#64748b', textTransform: 'uppercase',
+          }}>Status</span>
+          {(() => {
+            const steps = [
+              { value: 'NOT_STARTED', label: 'Not started', dot: '⚪', color: '#475569', bg: '#f1f5f9', border: '#e2e8f0', desc: 'Booked, waiting' },
+              { value: 'IN_PROGRESS', label: 'In progress', dot: '🟡', color: '#a16207', bg: '#fef9c3', border: '#fde68a', desc: 'Scan started, just begun' },
+              { value: 'IN_MID',      label: 'Half way',    dot: '🟧', color: '#b45309', bg: '#fef3c7', border: '#fcd34d', desc: 'Scan is half-way done' },
+              { value: 'SCANNED',     label: 'Scanned',     dot: '🟠', color: '#9a3412', bg: '#ffedd5', border: '#fed7aa', desc: 'Acquisition complete' },
+              { value: 'REPORTED',    label: 'Reported',    dot: '🔵', color: '#1d4ed8', bg: '#dbeafe', border: '#bfdbfe', desc: 'Doctor signed off' },
+              { value: 'DELIVERED',   label: 'Delivered',   dot: '🟢', color: '#047857', bg: '#d1fae5', border: '#a7f3d0', desc: 'Handed to patient' },
+            ];
+            return (
+              <>
+                <div style={{
+                  display: 'grid',
+                  gridTemplateColumns: 'repeat(3, 1fr)',
+                  gap: '6px',
+                }}>
+                  {steps.map((step) => {
+                    const isActive = status === step.value;
+                    return (
+                      <button
+                        key={step.value}
+                        type="button"
+                        onClick={() => setStatus(step.value)}
+                        title={step.desc}
+                        style={{
+                          padding: '8px 4px',
+                          borderRadius: '8px',
+                          border: isActive ? `1.5px solid ${step.color}` : '1px solid #e2e8f0',
+                          background: isActive ? step.bg : 'white',
+                          color: isActive ? step.color : '#64748b',
+                          cursor: 'pointer',
+                          fontFamily: 'inherit',
+                          fontSize: '9.5px', fontWeight: 900, letterSpacing: '0.2px',
+                          display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '4px',
+                          transition: 'all 0.12s',
+                          boxShadow: isActive ? `0 2px 6px -3px ${step.color}66` : 'none',
+                        }}
+                        onMouseEnter={(e) => { if (!isActive) e.currentTarget.style.borderColor = step.border; }}
+                        onMouseLeave={(e) => { if (!isActive) e.currentTarget.style.borderColor = '#e2e8f0'; }}
+                      >
+                        <span style={{ fontSize: '13px' }}>{step.dot}</span>
+                        <span style={{ textTransform: 'uppercase', textAlign: 'center', lineHeight: 1.2 }}>{step.label}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+                {/* Cancelled — set apart as a side exit */}
+                <button
+                  type="button"
+                  onClick={() => setStatus('CANCELLED')}
+                  title="Service withdrawn from this visit"
+                  style={{
+                    padding: '6px 10px',
+                    borderRadius: '8px',
+                    border: status === 'CANCELLED' ? '1.5px solid #9f1239' : '1px dashed #fecdd3',
+                    background: status === 'CANCELLED' ? '#ffe4e6' : 'white',
+                    color: status === 'CANCELLED' ? '#9f1239' : '#9f1239',
+                    cursor: 'pointer',
+                    fontFamily: 'inherit',
+                    fontSize: '10px', fontWeight: 900, letterSpacing: '0.3px',
+                    textTransform: 'uppercase',
+                    display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: '5px',
+                    alignSelf: 'flex-start',
+                    transition: 'all 0.12s',
+                  }}
+                >
+                  <span>✕</span>
+                  {status === 'CANCELLED' ? 'Cancelled — selected' : 'Cancel this service'}
+                </button>
+                {/* Description of current selection */}
+                <div style={{
+                  fontSize: '10px', fontWeight: 700, color: '#64748b',
+                  padding: '6px 10px',
+                  background: '#f8fafc', borderRadius: '7px',
+                  border: '1px solid #f1f5f9',
+                }}>
+                  <span style={{ fontWeight: 900, color: '#0f172a', marginRight: '6px' }}>{(steps.find(s => s.value === status) || { label: 'Cancelled', desc: 'Service withdrawn' }).label}:</span>
+                  {(steps.find(s => s.value === status) || { desc: 'Service withdrawn from this visit' }).desc}
+                </div>
+              </>
+            );
+          })()}
+        </div>
+
+        {/* Notes textarea */}
+        <label style={{ display: 'flex', flexDirection: 'column', gap: '5px' }}>
+          <span style={{
+            display: 'flex', justifyContent: 'space-between', alignItems: 'baseline',
+            fontSize: '9px', fontWeight: 900, letterSpacing: '0.5px',
+            color: '#64748b', textTransform: 'uppercase',
+          }}>
+            <span>Notes (ops team only)</span>
+            <span style={{ fontWeight: 700, color: notes.length > 500 ? '#dc2626' : '#94a3b8' }}>{notes.length}/500</span>
+          </span>
+          <textarea
+            value={notes}
+            onChange={(e) => setNotes(e.target.value.substring(0, 500))}
+            placeholder="e.g. Patient asked to come back tomorrow, sedation needed…"
+            rows={3}
+            style={{
+              padding: '8px 10px',
+              borderRadius: '8px',
+              border: '1px solid #e2e8f0',
+              fontSize: '12px', fontWeight: 600, color: '#0f172a',
+              fontFamily: 'inherit',
+              resize: 'vertical',
+              minHeight: '60px', maxHeight: '120px',
+              outline: 'none',
+            }}
+            onFocus={(e) => e.currentTarget.style.borderColor = '#0f52ba'}
+            onBlur={(e) => e.currentTarget.style.borderColor = '#e2e8f0'}
+          />
+        </label>
+
+        {/* Actions */}
+        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px' }}>
+          <button
+            type="button"
+            onClick={onClose}
+            style={{
+              padding: '7px 14px',
+              borderRadius: '8px',
+              border: '1px solid #e2e8f0',
+              background: 'white',
+              color: '#475569',
+              fontSize: '11px', fontWeight: 900, letterSpacing: '0.3px',
+              cursor: 'pointer',
+              fontFamily: 'inherit',
+              textTransform: 'uppercase',
+            }}
+          >Cancel</button>
+          <button
+            type="button"
+            disabled={!dirty}
+            onClick={() => onSave({ status, notes })}
+            style={{
+              padding: '7px 14px',
+              borderRadius: '8px',
+              border: 'none',
+              background: dirty
+                ? 'linear-gradient(135deg, #0f52ba 0%, #1e3a8a 100%)'
+                : '#cbd5e1',
+              color: 'white',
+              fontSize: '11px', fontWeight: 900, letterSpacing: '0.3px',
+              cursor: dirty ? 'pointer' : 'not-allowed',
+              fontFamily: 'inherit',
+              textTransform: 'uppercase',
+              boxShadow: dirty ? '0 3px 8px -3px rgba(15, 82, 186, 0.55)' : 'none',
+            }}
+          >Save ✓</button>
+        </div>
+      </div>
+    </div>
+  );
+}

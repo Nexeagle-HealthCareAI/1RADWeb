@@ -1,6 +1,7 @@
 import { useEffect, useState, useCallback } from 'react';
 import apiClient from '../api/apiClient';
 import SettingsSubPageHeader from '../components/SettingsSubPageHeader';
+import { notifyToast } from '../utils/toast';
 import '../styles/global.css';
 
 // Settings → Active Sessions. Lists every active session for the signed-in
@@ -54,7 +55,7 @@ export default function ActiveSessionsPage() {
       // Optimistically remove from list; the next load() reconciles.
       setSessions(prev => prev.filter(s => s.sessionId !== sessionId));
     } catch (err) {
-      alert(err?.response?.data?.error || 'Could not sign out that session.');
+      notifyToast(err?.response?.data?.error || 'Could not sign out that session.', 'error');
     } finally {
       setBusyId(null);
     }
@@ -70,7 +71,7 @@ export default function ActiveSessionsPage() {
       await apiClient.delete('/me/sessions');
       await load();
     } catch (err) {
-      alert(err?.response?.data?.error || 'Could not sign out the other sessions.');
+      notifyToast(err?.response?.data?.error || 'Could not sign out the other sessions.', 'error');
     } finally {
       setBulkBusy(false);
     }

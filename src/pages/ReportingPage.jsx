@@ -14,7 +14,6 @@ import useOffline from '../hooks/useOffline';
 import { nativeStorage } from '../hooks/useElectron';
 import ReportPreviewModal, { PatientInfoBlock } from '../components/ReportPreviewModal';
 import useTickClock from '../utils/useTickClock';
-import { formatElapsed, premisesSeverity, premisesPillStyle } from '../utils/timeTracking';
 import SearchableTemplatePicker from '../components/SearchableTemplatePicker';
 import PatientTimeline from '../components/PatientTimeline';
 import VoiceReportingPanel from '../components/VoiceReportingPanel';
@@ -90,6 +89,12 @@ const ReportingPage = () => {
   const [imgToolbarPos, setImgToolbarPos] = useState({ top: 0, left: 0 });
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [activeAssetIndex, setActiveAssetIndex] = useState(0);
+  // When the doctor switches services, snap back to the first
+  // matching series so the viewer reloads cleanly from the top of
+  // that service's filtered set.
+  useEffect(() => {
+    setActiveAssetIndex(0);
+  }, [activeServiceId]);
   const [uploadedFiles, setUploadedFiles] = useState([]);
   const [currentSlice, setCurrentSlice] = useState(1);
   const [activeTool, setActiveTool] = useState('WindowLevel');
@@ -147,6 +152,9 @@ const ReportingPage = () => {
   const [isSaving, setIsSaving] = useState(false);
 
   const [activeAppointment, setActiveAppointment] = useState(null);
+  // Overflow menu for the service picker — opens when there are more
+  // services than fit on a single visible row.
+  const [serviceOverflowOpen, setServiceOverflowOpen] = useState(false);
   const [impression, setImpression] = useState('');
   const [advice, setAdvice] = useState('');
   const [isFinalized, setIsFinalized] = useState(false);
@@ -858,12 +866,20 @@ const ReportingPage = () => {
           applyEditorContent(findingsHtml);
         }
       } else {
-        // FALLBACK: New Case. Attempt auto-matching template with service name.
-        console.info(`[1RAD] New Case Detected. Searching for default protocol for service: ${appointmentData.service}`);
+        // FALLBACK: New Case. Auto-match a template against the
+        // ACTIVE service's name (or fall back to the visit's primary
+        // service for legacy single-service visits). This makes the
+        // template binding follow whichever service tab the
+        // radiologist is on — switching from CT → X-Ray now re-binds
+        // to the X-Ray template instead of leaving the CT template
+        // mismatched on the page.
+        const targetServiceLine = lines.find(l => l.id && l.id === activeServiceId) || lines[0];
+        const targetServiceName = targetServiceLine?.serviceName || appointmentData.service;
+        console.info(`[1RAD] New Case Detected. Searching for default protocol for service: ${targetServiceName}`);
 
-        if (templRes.data?.success && appointmentData.service) {
+        if (templRes.data?.success && targetServiceName) {
           const templatesList = templRes.data.data || [];
-          const serviceMatch = findTemplateForService(templatesList, appointmentData.service);
+          const serviceMatch = findTemplateForService(templatesList, targetServiceName);
 
           if (serviceMatch) {
             const matchId = serviceMatch.id ?? serviceMatch.Id;
@@ -872,7 +888,7 @@ const ReportingPage = () => {
             setSelectedTemplateId(String(matchId));
             applyEditorContent(matchContent);
           } else {
-            console.info(`[1RAD] No matching template for service "${appointmentData.service}". Available: ${templatesList.map(t => t.name ?? t.Name).join(', ')}`);
+            console.info(`[1RAD] No matching template for service "${targetServiceName}". Available: ${templatesList.map(t => t.name ?? t.Name).join(', ')}`);
           }
         }
       }
@@ -2493,18 +2509,38 @@ const ReportingPage = () => {
           gap: 15px;
         }
 
+        /* Worklist back button — promoted to a proper standout pill
+           so the doctor can find their exit even on a busy header.
+           Indigo gradient matches the rest of the brand chrome, with
+           a soft shadow and lift on hover. */
         .back-btn {
-          background: none;
+          background: linear-gradient(135deg, #0f52ba 0%, #1e3a8a 100%);
           border: none;
-          color: #64748b;
+          color: white;
           cursor: pointer;
-          font-weight: 500;
-          font-size: 14px;
-          display: flex;
+          font-weight: 800;
+          font-size: 12px;
+          letter-spacing: 0.5px;
+          text-transform: uppercase;
+          display: inline-flex;
           align-items: center;
-          gap: 5px;
+          gap: 6px;
+          padding: 8px 14px;
+          border-radius: 10px;
+          box-shadow: 0 4px 10px -3px rgba(15, 82, 186, 0.45);
+          transition: transform 0.12s ease, box-shadow 0.12s ease, filter 0.12s ease;
+          font-family: inherit;
         }
-        .back-btn:hover { color: #0f172a; }
+        .back-btn:hover {
+          transform: translateY(-1px);
+          box-shadow: 0 6px 14px -3px rgba(15, 82, 186, 0.55);
+          filter: brightness(1.05);
+          color: white;
+        }
+        .back-btn:active {
+          transform: translateY(0);
+          box-shadow: 0 2px 6px -2px rgba(15, 82, 186, 0.45);
+        }
 
         .patient-badge-header {
           display: flex;
@@ -3228,20 +3264,43 @@ const ReportingPage = () => {
           <button className="back-btn" onClick={() => window.location.href = '/doctor-board'}>← Worklist</button>
           <div className="patient-badge-header">
             <div>
-              <div style={{ fontSize: '20px', fontWeight: 950, color: '#1a1a2e', letterSpacing: '-0.5px' }}>{activeAppointment?.patientName?.toUpperCase() || 'LOADING...'}</div>
-              <div style={{ display: 'flex', gap: '8px', marginTop: '4px' }}>
-                <span style={{ fontSize: '10px', fontWeight: 950, color: '#94a3b8', letterSpacing: '1px' }}>ID: {activeAppointment?.patientIdentifier || '...'}</span>
-                <span style={{ fontSize: '10px', fontWeight: 950, color: '#94a3b8', letterSpacing: '1px' }}>ACC: {activeAppointment?.displayId || '...'}</span>
+              <div style={{ fontSize: '14px', fontWeight: 900, color: '#1a1a2e', letterSpacing: '-0.2px' }}>
+                {activeAppointment?.patientName || 'Loading…'}
+              </div>
+              <div style={{
+                display: 'flex', gap: '8px', marginTop: '2px',
+                fontSize: '10px', fontWeight: 700, color: '#64748b',
+                alignItems: 'center', flexWrap: 'wrap',
+              }}>
+                <span style={{ fontFamily: 'monospace', fontWeight: 800, color: '#475569' }}>
+                  #{activeAppointment?.patientIdentifier || '—'}
+                </span>
+                {(activeAppointment?.patientAge != null || activeAppointment?.patientGender) && (
+                  <>
+                    <span style={{ opacity: 0.4 }}>·</span>
+                    <span>
+                      {activeAppointment?.patientAge != null ? `${activeAppointment.patientAge}y` : ''}
+                      {activeAppointment?.patientAge != null && activeAppointment?.patientGender ? ' · ' : ''}
+                      {activeAppointment?.patientGender || ''}
+                    </span>
+                  </>
+                )}
+                {activeAppointment?.displayId && (
+                  <>
+                    <span style={{ opacity: 0.4 }}>·</span>
+                    <span style={{ fontFamily: 'monospace' }}>{activeAppointment.displayId}</span>
+                  </>
+                )}
               </div>
             </div>
             <div style={{ display: 'flex', gap: '8px', marginLeft: '15px', alignItems: 'center', flexWrap: 'wrap' }}>
               {(() => {
-                // Multi-service rollout step 6 — service picker tab strip.
-                // Renders a single badge for single-service visits (so the
-                // header looks unchanged) and a clickable tab strip for
-                // multi-service ones. Tabs that already have a finalised
-                // report carry a green dot so the doctor sees what's
-                // outstanding at a glance.
+                // Multi-service rollout step 6 — service picker.
+                // Single-service visits keep a single badge (header
+                // looks unchanged). Multi-service visits get a card
+                // stack so the radiologist sees every service's
+                // modality, full name, status and stage TAT at a
+                // glance — same vocabulary the rest of the app uses.
                 const lines = appointmentServices && appointmentServices.length > 0
                   ? appointmentServices
                   : [{ id: null, serviceName: activeAppointment?.service || '', modality: activeAppointment?.modality || '', status: 'NOT_STARTED' }];
@@ -3252,58 +3311,213 @@ const ReportingPage = () => {
                     </span>
                   );
                 }
+                // Per-modality chip palette — matches OpsBoard /
+                // Technician so the colour code reads the same
+                // everywhere. On the Reporting page we keep each tab
+                // lean (modality + service name only) so the doctor
+                // can scan 5+ services without horizontal sprawl.
+                // Status / TAT / notes live on the worklist where
+                // the doctor came from — duplicating them here just
+                // clutters the picker.
+                const modTint = (m) => {
+                  const k = String(m || '').toUpperCase();
+                  return ({
+                    'X-RAY':     { bg: '#ecfdf5', border: '#a7f3d0', text: '#047857' },
+                    CT:          { bg: '#eff6ff', border: '#bfdbfe', text: '#1d4ed8' },
+                    MRI:         { bg: '#f5f3ff', border: '#ddd6fe', text: '#6d28d9' },
+                    ULTRASOUND:  { bg: '#ecfeff', border: '#a5f3fc', text: '#0e7490' },
+                    USG:         { bg: '#ecfeff', border: '#a5f3fc', text: '#0e7490' },
+                    MAMMOGRAPHY: { bg: '#fdf2f8', border: '#fbcfe8', text: '#be185d' },
+                    MG:          { bg: '#fdf2f8', border: '#fbcfe8', text: '#be185d' },
+                    DEXA:        { bg: '#fffbeb', border: '#fde68a', text: '#b45309' },
+                    PET:         { bg: '#fff7ed', border: '#fed7aa', text: '#c2410c' },
+                  }[k] || { bg: '#f1f5f9', border: '#e2e8f0', text: '#0f52ba' });
+                };
+                // Visible-tab cap. Keeps the picker on a single row;
+                // anything beyond goes into a "+N more ▾" dropdown so
+                // a 7-service visit doesn't push the header to two
+                // lines. The active service is always pinned visible
+                // (it's the one being edited) even if it would
+                // otherwise overflow.
+                const VISIBLE_CAP = 3;
+                const activeIdx = lines.findIndex(l => l.id && l.id === activeServiceId);
+                const baseVisible = lines.slice(0, VISIBLE_CAP);
+                let visibleLines = baseVisible;
+                let overflowLines = lines.slice(VISIBLE_CAP);
+                // If the active line is in the overflow group, swap it
+                // up to the front of the visible band so it's always
+                // on-screen.
+                if (activeIdx >= VISIBLE_CAP) {
+                  visibleLines = [lines[activeIdx], ...baseVisible.slice(0, VISIBLE_CAP - 1)];
+                  overflowLines = lines.filter((_, i) => i !== activeIdx && i >= VISIBLE_CAP - 1);
+                  overflowLines = overflowLines.concat(baseVisible.slice(VISIBLE_CAP - 1));
+                }
+
+                // Tab renderer — shared between the visible row and
+                // the overflow dropdown so styling stays in lockstep.
+                // The ACTIVE tab gets a solid indigo gradient (same
+                // brand chrome as the Worklist back button) so the
+                // doctor never confuses "which service am I editing
+                // right now". Inactive tabs stay minimal in white.
+                const renderTab = (line, opts = {}) => {
+                  const { compact = false } = opts;
+                  const isActive  = !!line.id && line.id === activeServiceId;
+                  const cancelled = String(line.status || '').toUpperCase() === 'CANCELLED';
+                  const tint      = modTint(line.modality);
+                  return (
+                    <button
+                      key={line.id || `${line.modality}-${line.serviceName}`}
+                      type="button"
+                      role="tab"
+                      aria-selected={isActive}
+                      disabled={!line.id || isActive}
+                      onClick={() => {
+                        if (!line.id || line.id === activeServiceId) return;
+                        setActiveServiceId(line.id);
+                        setServiceOverflowOpen(false);
+                        const next = new URLSearchParams(searchParams);
+                        next.set('serviceId', line.id);
+                        navigate({ search: next.toString() }, { replace: true });
+                      }}
+                      title={`${line.modality} · ${line.serviceName}${isActive ? ' (editing)' : ''}`}
+                      style={{
+                        display: 'inline-flex', alignItems: 'center', gap: '6px',
+                        padding: compact ? '7px 12px' : (isActive ? '6px 11px' : '4px 9px'),
+                        borderRadius: '8px',
+                        border: isActive ? 'none' : '1px solid #e2e8f0',
+                        cursor: (!line.id || isActive) ? 'default' : 'pointer',
+                        background: isActive
+                          ? 'linear-gradient(135deg, #0f52ba 0%, #1e3a8a 100%)'
+                          : 'white',
+                        color: isActive ? 'white' : '#0f172a',
+                        fontFamily: 'inherit',
+                        transition: 'all 0.15s',
+                        boxShadow: isActive
+                          ? '0 6px 16px -4px rgba(15, 82, 186, 0.55), 0 0 0 2px rgba(15, 82, 186, 0.18)'
+                          : 'none',
+                        opacity: cancelled ? 0.55 : 1,
+                        position: 'relative',
+                        width: compact ? '100%' : 'auto',
+                        justifyContent: compact ? 'flex-start' : 'center',
+                        transform: isActive ? 'translateY(-1px)' : 'translateY(0)',
+                      }}
+                      onMouseEnter={(e) => { if (!isActive && line.id) e.currentTarget.style.borderColor = '#94a3b8'; }}
+                      onMouseLeave={(e) => { if (!isActive) e.currentTarget.style.borderColor = '#e2e8f0'; }}
+                    >
+                      <span style={{
+                        fontSize: '8px', fontWeight: 950, letterSpacing: '0.3px',
+                        color: isActive ? 'white' : tint.text,
+                        background: isActive ? 'rgba(255, 255, 255, 0.2)' : tint.bg,
+                        border: `1px solid ${isActive ? 'rgba(255, 255, 255, 0.35)' : tint.border}`,
+                        padding: '2px 6px', borderRadius: '4px',
+                        textTransform: 'uppercase', flexShrink: 0,
+                      }}>{line.modality || 'OT'}</span>
+                      <span style={{
+                        fontSize: isActive ? '11px' : '10.5px',
+                        fontWeight: isActive ? 950 : 800,
+                        color: isActive ? 'white' : '#0f172a',
+                        letterSpacing: isActive ? '0.2px' : '0.1px',
+                        textDecoration: cancelled ? 'line-through' : 'none',
+                        maxWidth: compact ? '260px' : '200px',
+                        whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
+                      }}>{line.serviceName}</span>
+                      {isActive && (
+                        <span aria-hidden="true" title="Currently editing" style={{
+                          fontSize: '7.5px', fontWeight: 950, letterSpacing: '0.6px',
+                          color: '#0f52ba', background: 'white',
+                          padding: '2px 7px', borderRadius: '999px',
+                          textTransform: 'uppercase',
+                          flexShrink: 0, marginLeft: '2px',
+                          boxShadow: '0 1px 3px rgba(0,0,0,0.15)',
+                        }}>● Editing</span>
+                      )}
+                    </button>
+                  );
+                };
+
                 return (
-                  <div role="tablist" aria-label="Services on this visit" style={{ display: 'inline-flex', gap: '4px', padding: '3px', background: '#eef2ff', borderRadius: '10px', border: '1px solid #c7d2fe' }}>
-                    {lines.map((line) => {
-                      const isActive   = !!line.id && line.id === activeServiceId;
-                      const isReported = ['REPORTED', 'DELIVERED'].includes((line.status || '').toUpperCase());
-                      return (
+                  <div
+                    role="tablist"
+                    aria-label="Services on this visit"
+                    style={{
+                      display: 'flex', alignItems: 'center', gap: '5px',
+                      flexWrap: 'nowrap', position: 'relative',
+                    }}
+                  >
+                    {visibleLines.map(line => renderTab(line))}
+                    {overflowLines.length > 0 && (
+                      <div style={{ position: 'relative' }}>
                         <button
-                          key={line.id || `${line.modality}-${line.serviceName}`}
                           type="button"
-                          role="tab"
-                          aria-selected={isActive}
-                          disabled={!line.id || isActive}
-                          onClick={() => {
-                            if (!line.id || line.id === activeServiceId) return;
-                            // Switch services. The fetch effect rerun
-                            // takes care of reloading the right report;
-                            // we also push the new ?serviceId= into the
-                            // URL so a reload or shared link stays on
-                            // the picked service.
-                            setActiveServiceId(line.id);
-                            const next = new URLSearchParams(searchParams);
-                            next.set('serviceId', line.id);
-                            navigate({ search: next.toString() }, { replace: true });
-                          }}
-                          title={line.serviceName}
+                          aria-haspopup="listbox"
+                          aria-expanded={serviceOverflowOpen}
+                          onClick={() => setServiceOverflowOpen(o => !o)}
+                          title={`${overflowLines.length} more services`}
                           style={{
-                            display: 'inline-flex', alignItems: 'center', gap: '6px',
-                            padding: '5px 11px',
-                            borderRadius: '7px',
-                            border: 'none',
-                            cursor: (!line.id || isActive) ? 'default' : 'pointer',
-                            background: isActive ? '#0f52ba' : 'transparent',
-                            color: isActive ? 'white' : '#1e293b',
-                            fontSize: '10px',
-                            fontWeight: 950,
-                            letterSpacing: '0.5px',
+                            display: 'inline-flex', alignItems: 'center', gap: '5px',
+                            padding: '5px 10px',
+                            borderRadius: '8px',
+                            border: `1px solid ${serviceOverflowOpen ? '#0f52ba' : '#e2e8f0'}`,
+                            background: serviceOverflowOpen ? 'rgba(15, 82, 186, 0.06)' : 'white',
+                            color: '#0f52ba',
+                            cursor: 'pointer',
                             fontFamily: 'inherit',
+                            fontSize: '10px', fontWeight: 900, letterSpacing: '0.3px',
+                            textTransform: 'uppercase',
+                            transition: 'all 0.12s',
                           }}
                         >
-                          {isReported && (
-                            <span aria-hidden="true" style={{
-                              width: '6px', height: '6px', borderRadius: '50%',
-                              background: isActive ? '#a7f3d0' : '#10b981',
-                            }} />
-                          )}
-                          <span>{line.modality}</span>
-                          <span style={{ opacity: 0.7, fontWeight: 700, textTransform: 'uppercase' }}>
-                            {line.serviceName?.length > 18 ? `${line.serviceName.slice(0, 18)}…` : line.serviceName}
-                          </span>
+                          +{overflowLines.length} more
+                          <span aria-hidden="true" style={{
+                            display: 'inline-block',
+                            transform: serviceOverflowOpen ? 'rotate(180deg)' : 'rotate(0deg)',
+                            transition: 'transform 0.18s',
+                            fontSize: '11px', lineHeight: 1,
+                          }}>▾</span>
                         </button>
-                      );
-                    })}
+                        {serviceOverflowOpen && (
+                          <>
+                            {/* Click-outside backdrop — invisible, just
+                                catches the click. Stops at the dropdown
+                                itself so internal clicks don't dismiss. */}
+                            <div
+                              onClick={() => setServiceOverflowOpen(false)}
+                              style={{
+                                position: 'fixed', inset: 0,
+                                zIndex: 99,
+                                background: 'transparent',
+                              }}
+                            />
+                            <div
+                              role="listbox"
+                              style={{
+                                position: 'absolute',
+                                top: 'calc(100% + 6px)',
+                                right: 0,
+                                minWidth: '260px',
+                                maxHeight: '320px',
+                                overflowY: 'auto',
+                                background: 'white',
+                                border: '1px solid #e2e8f0',
+                                borderRadius: '12px',
+                                boxShadow: '0 14px 36px -10px rgba(15, 23, 42, 0.18)',
+                                padding: '6px',
+                                display: 'flex', flexDirection: 'column', gap: '4px',
+                                zIndex: 100,
+                              }}
+                            >
+                              <div style={{
+                                padding: '4px 8px 6px',
+                                fontSize: '8.5px', fontWeight: 950, letterSpacing: '0.5px',
+                                color: '#94a3b8', textTransform: 'uppercase',
+                                borderBottom: '1px solid #f1f5f9', marginBottom: '4px',
+                              }}>More services ({overflowLines.length})</div>
+                              {overflowLines.map(line => renderTab(line, { compact: true }))}
+                            </div>
+                          </>
+                        )}
+                      </div>
+                    )}
                   </div>
                 );
               })()}
@@ -3321,48 +3535,11 @@ const ReportingPage = () => {
                   }}
                 >{activeAppointment.priority}</span>
               )}
-              {/* Turnaround-time pills: on-premises clock (live) + scan→delivery
-                  (final). Hidden until ArrivedAt is set so pre-arrival cases
-                  don't show a clock. */}
-              {activeAppointment?.arrivedAt && (() => {
-                const sev = premisesSeverity(activeAppointment.arrivedAt, activeAppointment.deliveredAt);
-                const ps  = premisesPillStyle(sev);
-                const onPrem = formatElapsed(activeAppointment.arrivedAt, activeAppointment.deliveredAt);
-                const scanDel = (activeAppointment.scanStartedAt && activeAppointment.deliveredAt)
-                  ? formatElapsed(activeAppointment.scanStartedAt, activeAppointment.deliveredAt)
-                  : null;
-                return (
-                  <>
-                    <span title={activeAppointment.deliveredAt ? 'Total time on premises' : 'On premises (live)'} style={{
-                      background: ps.bg, color: ps.color, border: `1px solid ${ps.border}`,
-                      padding: '4px 10px', borderRadius: '999px',
-                      fontSize: '10px', fontWeight: 950, letterSpacing: '0.5px',
-                    }}>⏱ {onPrem}</span>
-                    {scanDel && (
-                      <span title="Scan start → delivered" style={{
-                        background: '#e0f2fe', color: '#0369a1', border: '1px solid #bae6fd',
-                        padding: '4px 10px', borderRadius: '999px',
-                        fontSize: '10px', fontWeight: 950, letterSpacing: '0.5px',
-                      }}>📋 {scanDel}</span>
-                    )}
-                  </>
-                );
-              })()}
-              {(activeAppointment?.referredBy || activeAppointment?.ReferredBy) && (
-                <span style={{ 
-                  background: '#f5f3ff', 
-                  border: '1px solid #ddd6fe', 
-                  color: '#7c3aed', 
-                  padding: '4px 10px', 
-                  borderRadius: '6px', 
-                  fontSize: '10px', 
-                  fontWeight: 950, 
-                  letterSpacing: '0.5px'
-                }}>
-                  ↗ REF: {activeAppointment?.referredBy || activeAppointment?.ReferredBy}
-                  {(activeAppointment?.referredContact || activeAppointment?.ReferredContact) && ` (${activeAppointment?.referredContact || activeAppointment?.ReferredContact})`}
-                </span>
-              )}
+              {/* TAT and referrer chips removed at user request — the
+                  Reporting page header is for picking which service
+                  to report on, not for status surfacing. Those still
+                  live on the Doctor Board worklist where the doctor
+                  came from. */}
             </div>
           </div>
         </div>
@@ -3377,10 +3554,10 @@ const ReportingPage = () => {
             padding: '5px', borderRadius: '16px', border: '1px solid rgba(15, 82, 186, 0.1)'
           }}>
             {[
-              { id: 'DICOM', label: 'DICOM_VIEWER', icon: '🔍' },
-              { id: 'REPORTING', label: 'REPORTING', icon: '📝' },
-              { id: 'VOICE', label: 'AI_VOICE_REPORTING', icon: '🎙️' },
-              { id: 'TIMELINE', label: 'TIMELINE', icon: '🕒' }
+              { id: 'DICOM',     label: 'DICOM Viewer',           icon: '🔍' },
+              { id: 'REPORTING', label: 'Reporting',              icon: '📝' },
+              { id: 'VOICE',     label: 'AI Voice Reporting (Beta)', icon: '🎙️' },
+              { id: 'TIMELINE',  label: 'Patient Timeline',       icon: '🕒' }
             ].map(tab => (
               <button
                 key={tab.id}
@@ -4530,26 +4707,34 @@ const ReportingPage = () => {
                   </div>
                 ) : (
                   <div style={{ flex: 1, display: 'grid', gridTemplateColumns: layoutMode === '2x2' ? '1fr 1fr' : '1fr', gridTemplateRows: layoutMode === '2x2' ? '1fr 1fr' : '1fr', gap: '2px' }}>
-                    {uploadedFiles.length > 0 && (
-                      <>
-                        {console.log('[REPORTING] Current uploadedFiles array:', {
-                          length: uploadedFiles.length,
-                          files: uploadedFiles.map((f, i) => ({
-                            index: i,
-                            name: f.name,
-                            rawFilesLength: f.rawFiles?.length || 0,
-                            hasMetadata: !!f.metadata
-                          }))
-                        })}
-                      </>
-                    )}
+                    {(() => null)()}
                     {[...Array(layoutMode === '2x2' ? 4 : 1)].map((_, idx) => {
+                      // Multi-service filter — when the doctor switches
+                      // services, the viewer scopes to only that
+                      // service's uploads. Strict FK match for assets
+                      // tagged with appointmentServiceId; otherwise
+                      // fall back to modality match (covers legacy
+                      // uploads that pre-date the tag).
+                      const activeServiceLine = appointmentServices?.find(s => s.id && s.id === activeServiceId);
+                      const activeServiceMod  = String(activeServiceLine?.modality || activeAppointment?.modality || '').toUpperCase();
+                      const matchesActiveService = (f) => {
+                        if (!activeServiceLine) return true;
+                        const svcId = f?.appointmentServiceId || f?.AppointmentServiceId;
+                        if (svcId) return svcId === activeServiceLine.id;
+                        const m = String(f?.modality || f?.Modality || '').toUpperCase();
+                        if (!m) return true;
+                        return m === activeServiceMod;
+                      };
+                      const visibleUploadedFiles = (appointmentServices && appointmentServices.length > 1)
+                        ? uploadedFiles.filter(matchesActiveService)
+                        : uploadedFiles;
+
                       // For 2x2, cycle through series. For 1x1, just use active series
                       const seriesIndex = layoutMode === '2x2'
-                        ? (activeAssetIndex + idx) % uploadedFiles.length
-                        : activeAssetIndex;
+                        ? (activeAssetIndex + idx) % Math.max(1, visibleUploadedFiles.length)
+                        : activeAssetIndex % Math.max(1, visibleUploadedFiles.length);
 
-                      const currentSeries = uploadedFiles[seriesIndex];
+                      const currentSeries = visibleUploadedFiles[seriesIndex];
                       const currentFiles = currentSeries?.rawFiles && Array.isArray(currentSeries.rawFiles)
                         ? currentSeries.rawFiles
                         : [];
@@ -4570,10 +4755,16 @@ const ReportingPage = () => {
                           {/* DICOM Viewer with Advanced Tools */}
                           <div style={{ flex: 1, position: 'relative' }}>
                             <AdvancedDicomViewer
-                              key={`${activeAssetIndex}_${idx}_${resetTrigger}`}
+                              // Include activeServiceId so the viewer
+                              // remounts with a fresh engine when the
+                              // doctor switches services — otherwise
+                              // the previous service's modality
+                              // toolset would linger on screen.
+                              key={`${activeServiceId || 'visit'}_${activeAssetIndex}_${idx}_${resetTrigger}`}
+                              modality={activeServiceMod || undefined}
                               files={currentFiles || []}
-                              placeholderUrl={uploadedFiles[(activeAssetIndex + idx) % uploadedFiles.length]?.thumbnailUrl}
-                              preParsedMetadata={uploadedFiles[(activeAssetIndex + idx) % uploadedFiles.length]?.metadata}
+                              placeholderUrl={currentSeries?.thumbnailUrl}
+                              preParsedMetadata={currentSeries?.metadata}
                               activeTool={activeTool}
                               isCine={cineEnabled}
                               isSynced={isSyncEnabled}

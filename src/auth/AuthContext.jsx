@@ -6,6 +6,7 @@ import { startSyncEngine, stopSyncEngine, syncNow } from '../sync/SyncEngine';
 import { clearLocalDatabase, setActiveHospital, purgeLegacyDb } from '../db/dexie';
 import { migrateLegacyOutbox } from '../db/repos/outboxRepo';
 import { setPin as pinAuthSet } from './pinAuth';
+import { notifyToast } from '../utils/toast';
 
 export const AuthContext = createContext(null);
 
@@ -87,7 +88,7 @@ export function AuthProvider({ children }) {
       localStorage.setItem('1rad_active_center_id', activeCenterId);
     } catch (e) {
       if (e.name === 'QuotaExceededError') {
-        alert('CRITICAL STORAGE ALERT: Your browser storage (5MB) is full. This is likely due to large clinical report formats. Please delete unused doctors or compress your medical images.');
+        notifyToast({ title: 'Storage Full', message: 'Your browser storage (5MB) is full — likely from large clinical report formats. Please delete unused doctors or compress your medical images.' }, 'error', { duration: 8000 });
         console.error('LocalStorage Quota Exceeded:', e);
       }
     }
@@ -129,7 +130,7 @@ export function AuthProvider({ children }) {
       const { success, accessToken, roles, error } = response.data;
 
       if (!success) {
-        alert(error || 'Failed to switch context');
+        notifyToast(error || 'Failed to switch context', 'error');
         return;
       }
 

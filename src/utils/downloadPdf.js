@@ -3,6 +3,7 @@
  * Downloads PDF without opening print dialog
  */
 import html2pdf from 'html2pdf.js';
+import { notifyToast } from './toast';
 
 export async function downloadReportPdf(pages, filename = 'report.pdf', options = {}) {
   if (!pages || pages.length === 0) {
@@ -60,6 +61,6 @@ export async function downloadReportPdf(pages, filename = 'report.pdf', options 
     console.log(`[DownloadPDF] Successfully downloaded: ${filename}`);
   } catch (error) {
     console.error('[DownloadPDF] Error downloading PDF:', error);
-    alert('Failed to download PDF. Please try again or use Print instead.');
+    notifyToast('Failed to download PDF. Please try again or use Print instead.', 'error');
   }
 }

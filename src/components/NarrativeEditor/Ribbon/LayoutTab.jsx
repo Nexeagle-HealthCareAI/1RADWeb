@@ -1,5 +1,6 @@
 import React from 'react';
 import { Btn, BigBtn, Sep, Group, selectStyle } from './RibbonControls';
+import { notifyToast } from '../../../utils/toast';
 
 /**
  * LayoutTab — page setup, headers/footers, columns.
@@ -16,13 +17,13 @@ export default function LayoutTab({ editor, documentMeta = {} }) {
           icon="📐"
           label="Margins"
           title="Page margins are set per radiologist in Letterhead settings"
-          onClick={() => alert('Page margins are configured per radiologist in Letterhead settings. Open Settings → Letterhead to adjust.')}
+          onClick={() => notifyToast({ title: 'Page margins', message: 'Configured per radiologist in Letterhead settings. Open Settings → Letterhead to adjust.' }, 'info')}
         />
         <BigBtn
           icon="📄"
           label="Orientation"
           title="Reports use A4 portrait (210×297mm)"
-          onClick={() => alert('Reports are fixed to A4 portrait (210×297mm) for clinical printing consistency.')}
+          onClick={() => notifyToast({ title: 'Orientation', message: 'Reports are fixed to A4 portrait (210×297mm) for clinical printing consistency.' }, 'info')}
         />
       </Group>
 

@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import useAuth from '../auth/useAuth';
 import { BASE_URL } from '../api/apiClient';
+import { notifyToast } from '../utils/toast';
 
 const BRIDGE_URL = 'http://localhost:3001';
 // Healthy polling cadence — 5s feels snappy on the dashboard.
@@ -119,7 +120,7 @@ export default function DicomBridgePage() {
       fetchStatus();
     } catch (err) {
       console.error(err);
-      alert('Failed to trigger upload');
+      notifyToast('Failed to trigger upload', 'error');
     }
   };
 

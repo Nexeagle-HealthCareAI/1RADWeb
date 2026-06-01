@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import NarrativeEditor from './index';
+import { notifyToast } from '../../utils/toast';
 
 /**
  * Example usage of the NarrativeEditor component
@@ -17,13 +18,13 @@ const NarrativeEditorExample = () => {
     console.log('Advice:', advice);
     
     // Here you would typically send this data to your backend
-    alert('Report saved successfully!');
+    notifyToast('Report saved successfully!', 'success');
   };
 
   const handleFinalize = () => {
     console.log('Finalizing report...');
     // Add your finalization logic here
-    alert('Report finalized!');
+    notifyToast('Report finalized!', 'success');
   };
 
   return (

@@ -1,4 +1,5 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
+import { notifyToast } from '../utils/toast';
 import {
   RenderingEngine,
   Enums,
@@ -131,7 +132,7 @@ export default function ViewerPage() {
   };
 
   const handleExport = () => {
-    alert('GENERATING CLINICAL ASSET PACKAGE (PNG/DICOM)...');
+    notifyToast('Generating clinical asset package (PNG/DICOM)…', 'info');
   };
 
   return (

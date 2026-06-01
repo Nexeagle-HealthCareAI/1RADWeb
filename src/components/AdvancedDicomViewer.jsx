@@ -1,4 +1,5 @@
 import React, { useRef, useState, useEffect, useId, useCallback } from 'react';
+import { notifyToast } from '../utils/toast';
 import {
   RenderingEngine,
   Enums,
@@ -2544,7 +2545,7 @@ const AdvancedDicomViewer = ({
   // --- EXPORT MEASUREMENTS ---
   const exportMeasurements = useCallback(() => {
     if (measurements.length === 0) {
-      alert('No measurements to export');
+      notifyToast('No measurements to export', 'info');
       return;
     }
 

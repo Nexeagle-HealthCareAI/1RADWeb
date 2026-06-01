@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom';
 import apiClient, { BASE_URL } from '../api/apiClient';
 import { PatientInfoBlock } from './ReportPreviewModal';
 import { getTrackingUrl } from '../utils/trackingUrl';
+import { notifyToast } from '../utils/toast';
 
 // Read-only viewer for a SAVED radiology report.
 //
@@ -239,7 +240,7 @@ export default function SavedReportViewer({
     const rawMobile = appointment?.mobile || patientData?.mobile || '';
     const digits = String(rawMobile).replace(/\D/g, '');
     if (!digits) {
-      alert('No mobile number on file for this patient — cannot share via WhatsApp.');
+      notifyToast('No mobile number on file for this patient — cannot share via WhatsApp.', 'warning');
       return;
     }
     const e164 = digits.length === 10 ? `91${digits}` : digits;

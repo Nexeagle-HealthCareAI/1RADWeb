@@ -603,57 +603,106 @@ export default function DoctorBoard() {
                     </td>
                     <td style={{ padding: '20px' }}>
                        {(() => {
-                         const lines      = getServiceLines(c);
-                         const modalities = getUniqueModalities(c);
-                         const progress   = getReportProgressLabel(c);
-                         const primary    = lines[0]?.serviceName || c.service || '—';
-                         const extraCount = lines.length - 1;
+                         const lines    = getServiceLines(c);
+                         const progress = getReportProgressLabel(c);
+                         // Per-service status palette — matches the
+                         // rest of the app (OpsBoard / Technician /
+                         // Reporting). Doctor sees what's already
+                         // signed off in green, what's awaiting the
+                         // doctor in amber/orange, etc.
+                         const stepStyle = (s) => {
+                           const u = String(s || '').toUpperCase();
+                           if (u === 'DELIVERED')   return { color: '#047857', bg: '#d1fae5', border: '#a7f3d0', label: 'Delivered' };
+                           if (u === 'REPORTED')    return { color: '#1d4ed8', bg: '#dbeafe', border: '#bfdbfe', label: 'Reported' };
+                           if (u === 'SCANNED')     return { color: '#9a3412', bg: '#ffedd5', border: '#fed7aa', label: 'Scanned' };
+                           if (u === 'IN_MID')      return { color: '#b45309', bg: '#fef3c7', border: '#fcd34d', label: 'Half Way' };
+                           if (u === 'IN_PROGRESS') return { color: '#a16207', bg: '#fef9c3', border: '#fde68a', label: 'In Progress' };
+                           if (u === 'CANCELLED')   return { color: '#9f1239', bg: '#ffe4e6', border: '#fecdd3', label: 'Cancelled' };
+                           return                         { color: '#475569', bg: '#f1f5f9', border: '#e2e8f0', label: 'Not Started' };
+                         };
+                         const modTint = (m) => {
+                           const k = String(m || '').toUpperCase();
+                           return ({
+                             'X-RAY':     { bg: '#ecfdf5', border: '#a7f3d0', text: '#047857' },
+                             CT:          { bg: '#eff6ff', border: '#bfdbfe', text: '#1d4ed8' },
+                             MRI:         { bg: '#f5f3ff', border: '#ddd6fe', text: '#6d28d9' },
+                             ULTRASOUND:  { bg: '#ecfeff', border: '#a5f3fc', text: '#0e7490' },
+                             USG:         { bg: '#ecfeff', border: '#a5f3fc', text: '#0e7490' },
+                             MAMMOGRAPHY: { bg: '#fdf2f8', border: '#fbcfe8', text: '#be185d' },
+                             MG:          { bg: '#fdf2f8', border: '#fbcfe8', text: '#be185d' },
+                             DEXA:        { bg: '#fffbeb', border: '#fde68a', text: '#b45309' },
+                             PET:         { bg: '#fff7ed', border: '#fed7aa', text: '#c2410c' },
+                           }[k] || { bg: '#eff6ff', border: '#dbeafe', text: '#0f52ba' });
+                         };
                          return (
-                           <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                             <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
-                               <span style={{ fontSize: '13px', fontWeight: 800, color: '#1a1a2e' }}>{primary}</span>
-                               {extraCount > 0 && (
-                                 <span style={{
-                                   fontSize: '9px', fontWeight: 900, letterSpacing: '0.3px',
-                                   color: '#0f52ba', background: '#dbeafe',
-                                   padding: '1px 6px', borderRadius: '999px',
-                                 }}>+{extraCount} more</span>
-                               )}
-                             </div>
-                             {modalities.length > 1 && (
-                               <div style={{ display: 'flex', alignItems: 'center', gap: '4px', flexWrap: 'wrap' }}>
-                                 {modalities.map((m, idx) => (
-                                   <span key={`${m}-${idx}`} style={{
+                           <div style={{ display: 'flex', flexDirection: 'column', gap: '5px' }}>
+                             {/* Per-service rows — one per AppointmentService.
+                                 The doctor sees every scan on the visit
+                                 with its current status pill, so they
+                                 know which lines need a report and
+                                 which are already signed off. Cancelled
+                                 services dim + strike-through. */}
+                             {lines.map((line, idx) => {
+                               const tint = modTint(line.modality);
+                               const st   = stepStyle(line.status);
+                               const cancelled = String(line.status || '').toUpperCase() === 'CANCELLED';
+                               return (
+                                 <div
+                                   key={line.id || `${line.modality}-${idx}`}
+                                   style={{
+                                     display: 'flex', alignItems: 'center', gap: '6px',
+                                     flexWrap: 'wrap',
+                                     opacity: cancelled ? 0.55 : 1,
+                                   }}
+                                 >
+                                   <span style={{
+                                     fontSize: '9px', fontWeight: 950, letterSpacing: '0.4px',
+                                     color: tint.text, background: tint.bg,
+                                     border: `1px solid ${tint.border}`,
+                                     padding: '2px 7px', borderRadius: '5px',
+                                     minWidth: '44px', textAlign: 'center',
+                                   }}>{line.modality || 'OT'}</span>
+                                   <span style={{
+                                     fontSize: '12.5px', fontWeight: 800, color: '#1a1a2e',
+                                     textDecoration: cancelled ? 'line-through' : 'none',
+                                     maxWidth: '220px',
+                                     whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
+                                   }} title={line.serviceName}>{line.serviceName || '—'}</span>
+                                   <span style={{
+                                     fontSize: '8.5px', fontWeight: 900, letterSpacing: '0.3px',
+                                     color: st.color, background: st.bg,
+                                     padding: '2px 7px', borderRadius: '999px',
+                                     border: `1px solid ${st.border}`,
+                                     textTransform: 'uppercase',
+                                   }}>{st.label}</span>
+                                 </div>
+                               );
+                             })}
+                             {/* Visit-level meta below the per-service list */}
+                             {(progress || (c.priority && c.priority !== 'ROUTINE')) && (
+                               <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap', marginTop: '2px' }}>
+                                 {c.priority && c.priority !== 'ROUTINE' && (
+                                   <span
+                                     className={c.priority === 'STAT' ? 'priority-chip-stat' : 'priority-chip-urgent'}
+                                     style={{
+                                       fontSize: '9px', fontWeight: 950, letterSpacing: '0.5px',
+                                       color: c.priority === 'STAT' ? '#dc2626' : '#d97706',
+                                       background: c.priority === 'STAT' ? '#fee2e2' : '#fef3c7',
+                                       border: `1px solid ${c.priority === 'STAT' ? '#fecaca' : '#fde68a'}`,
+                                       padding: '2px 8px', borderRadius: '999px',
+                                     }}
+                                   >{c.priority}</span>
+                                 )}
+                                 {progress && (
+                                   <span title="Reporting progress across all services on this visit" style={{
                                      fontSize: '9px', fontWeight: 900, letterSpacing: '0.3px',
-                                     color: '#0f52ba', background: '#eff6ff',
-                                     padding: '1px 6px', borderRadius: '4px',
-                                     border: '1px solid #dbeafe',
-                                   }}>{m}</span>
-                                 ))}
+                                     color: '#047857', background: '#d1fae5',
+                                     padding: '2px 8px', borderRadius: '999px',
+                                     border: '1px solid #a7f3d0',
+                                   }}>{progress}</span>
+                                 )}
                                </div>
                              )}
-                             <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
-                               {c.priority && c.priority !== 'ROUTINE' && (
-                                 <span
-                                   className={c.priority === 'STAT' ? 'priority-chip-stat' : 'priority-chip-urgent'}
-                                   style={{
-                                     fontSize: '9px', fontWeight: 950, letterSpacing: '0.5px',
-                                     color: c.priority === 'STAT' ? '#dc2626' : '#d97706',
-                                     background: c.priority === 'STAT' ? '#fee2e2' : '#fef3c7',
-                                     border: `1px solid ${c.priority === 'STAT' ? '#fecaca' : '#fde68a'}`,
-                                     padding: '2px 8px', borderRadius: '999px',
-                                   }}
-                                 >{c.priority}</span>
-                               )}
-                               {progress && (
-                                 <span title="Reporting progress across all services on this visit" style={{
-                                   fontSize: '9px', fontWeight: 900, letterSpacing: '0.3px',
-                                   color: '#047857', background: '#d1fae5',
-                                   padding: '2px 8px', borderRadius: '999px',
-                                   border: '1px solid #a7f3d0',
-                                 }}>{progress}</span>
-                               )}
-                             </div>
                            </div>
                          );
                        })()}

@@ -1867,11 +1867,13 @@ export default function AppointmentBoard() {
             };
             const stepPill = (status) => {
               const s = String(status || '').toUpperCase();
-              if (s === 'DELIVERED') return { label: 'Delivered',   color: '#047857', bg: '#d1fae5', border: '#a7f3d0' };
-              if (s === 'REPORTED')  return { label: 'Reported',    color: '#1d4ed8', bg: '#dbeafe', border: '#bfdbfe' };
-              if (s === 'SCANNED')   return { label: 'Scanned',     color: '#9a3412', bg: '#ffedd5', border: '#fed7aa' };
-              if (s === 'CANCELLED') return { label: 'Cancelled',   color: '#9f1239', bg: '#ffe4e6', border: '#fecdd3' };
-              return                       { label: 'Not Started',  color: '#475569', bg: '#f1f5f9', border: '#e2e8f0' };
+              if (s === 'DELIVERED')   return { label: 'Delivered',   color: '#047857', bg: '#d1fae5', border: '#a7f3d0' };
+              if (s === 'REPORTED')    return { label: 'Reported',    color: '#1d4ed8', bg: '#dbeafe', border: '#bfdbfe' };
+              if (s === 'SCANNED')     return { label: 'Scanned',     color: '#9a3412', bg: '#ffedd5', border: '#fed7aa' };
+              if (s === 'IN_MID')      return { label: 'Half Way',    color: '#b45309', bg: '#fef3c7', border: '#fcd34d' };
+              if (s === 'IN_PROGRESS') return { label: 'In Progress', color: '#a16207', bg: '#fef9c3', border: '#fde68a' };
+              if (s === 'CANCELLED')   return { label: 'Cancelled',   color: '#9f1239', bg: '#ffe4e6', border: '#fecdd3' };
+              return                         { label: 'Not Started',  color: '#475569', bg: '#f1f5f9', border: '#e2e8f0' };
             };
             const apptKey  = app.appointmentId || app.id;
             const expanded = expandedLedgers.has(apptKey);

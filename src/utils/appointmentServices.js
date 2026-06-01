@@ -49,6 +49,7 @@ export function getServiceLines(appt) {
       reportedAt:       s.reportedAt ?? s.ReportedAt ?? null,
       deliveredAt:      s.deliveredAt ?? s.DeliveredAt ?? null,
       cancelledAt:      s.cancelledAt ?? s.CancelledAt ?? null,
+      notes:            s.technicianComments ?? s.TechnicianComments ?? null,
     }));
   }
 
@@ -67,6 +68,7 @@ export function getServiceLines(appt) {
     reportedAt:       appt.reportedAt ?? null,
     deliveredAt:      appt.deliveredAt ?? null,
     cancelledAt:      null,
+    notes:            null,
   }];
 }
 
@@ -95,10 +97,12 @@ export function getServiceLines(appt) {
 export function getStageStartedAt(line, appt) {
   const status = (line?.status || 'NOT_STARTED').toUpperCase();
   switch (status) {
-    case 'SCANNED':   return line.scanCompletedAt || line.scanStartedAt || null;
-    case 'REPORTED':  return line.reportedAt      || line.scanCompletedAt || null;
-    case 'DELIVERED': return line.deliveredAt     || null;
-    case 'CANCELLED': return line.cancelledAt     || null;
+    case 'IN_PROGRESS':
+    case 'IN_MID':      return line.scanStartedAt   || appt?.arrivedAt || null;
+    case 'SCANNED':     return line.scanCompletedAt || line.scanStartedAt || null;
+    case 'REPORTED':    return line.reportedAt      || line.scanCompletedAt || null;
+    case 'DELIVERED':   return line.deliveredAt     || null;
+    case 'CANCELLED':   return line.cancelledAt     || null;
     case 'NOT_STARTED':
     default:
       // Only count from arrival. appt.dateTime is the *scheduled* slot
@@ -168,6 +172,8 @@ export function formatStageElapsed(minutes) {
 // hospital config table is a future enhancement.
 const STAGE_SLA_MIN = {
   NOT_STARTED: { warn: 30,  breach: 60  },  // waiting for the scan
+  IN_PROGRESS: { warn: 15,  breach: 45  },  // scan in progress (in the room)
+  IN_MID:      { warn: 10,  breach: 30  },  // half-way through the scan
   SCANNED:     { warn: 60,  breach: 240 },  // waiting for the report
   REPORTED:    { warn: 30,  breach: 90  },  // waiting for hand-over
   DELIVERED:   { warn: null, breach: null },

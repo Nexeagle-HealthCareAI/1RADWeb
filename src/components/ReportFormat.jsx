@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { notifyToast } from '../utils/toast';
 
 // --- CONFIGURATION & PROTOCOLS ---
 const A4_RATIO = '210 / 297';
@@ -62,7 +63,7 @@ export default function ReportFormat({ doc, onUpdate }) {
   const handleSave = () => {
     onUpdate('reportLayout', localLayout);
     onUpdate('reportFormat', previewUrl);
-    alert('Clinical Protocol Synchronized Successfully.');
+    notifyToast('Clinical protocol synchronized successfully.', 'success');
   };
 
   const updateLayout = (field, value) => {

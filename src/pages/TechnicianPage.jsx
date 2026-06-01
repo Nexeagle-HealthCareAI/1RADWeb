@@ -49,6 +49,11 @@ export default function TechnicianPage() {
   const [hubTab, setHubTab] = useState('ACTIVE'); // 'ACTIVE' or 'ARCHIVE'
   const [activeStudy, setActiveStudy] = useState(null);
   const [activeAssetIndex, setActiveAssetIndex] = useState(0);
+  // Multi-service workspace — which AppointmentService line is the
+  // operator currently viewing? Drives the modality-aware viewer
+  // toolset and filters the series list to only that service's
+  // uploads (or, when uploads lack an FK, matches by modality).
+  const [activeServiceId, setActiveServiceId] = useState(null);
   const [isDicomImage, setIsDicomImage] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [filters, setFilters] = useState({ modality: 'ALL', priority: 'ALL', clinicalStatus: 'ALL' });
@@ -231,6 +236,7 @@ export default function TechnicianPage() {
     }
   };
 
+
   const handleCompleteStudy = async () => {
     if (!activeStudy) return;
     try {
@@ -334,6 +340,12 @@ export default function TechnicianPage() {
     setTechNotes(study.notes || study.technicianComments || '');
     setViewportProps({ invert: false, flipHorizontal: false, flipVertical: false, rotation: 0 });
     setKeyImages([]);
+    // Default active service — first one the user is most likely to
+    // scan first (per booking order). Multi-service visits let the
+    // technician switch via the sidebar cards.
+    const initialServices = getServiceLines(study);
+    setActiveServiceId(initialServices[0]?.id ?? null);
+    setActiveAssetIndex(0);
 
     // Auto-update status to in_progress if starting scan from confirmed/scheduled/booked
     const currentStatus = study.status?.toLowerCase();
@@ -570,6 +582,14 @@ export default function TechnicianPage() {
     }
   };
 
+  // When the technician switches to a different service, snap the
+  // series picker back to the first asset so the viewer reloads
+  // from the top of that service's series instead of an index that
+  // may not exist after filtering.
+  useEffect(() => {
+    setActiveAssetIndex(0);
+  }, [activeServiceId]);
+
   useEffect(() => {
     if (uploadedFiles[activeAssetIndex]?.needsHydration) {
       hydrateZipAsset(activeAssetIndex);
@@ -612,6 +632,13 @@ export default function TechnicianPage() {
           const total = (p.total / 1048576).toFixed(1);
           console.log(`[TECH] upload ${p.stage}: ${mb} / ${total} MB (${(p.pct * 100).toFixed(0)}%)`);
         }
+      }, {
+        // Stamp the asset with the active service on a multi-service
+        // visit so the viewer can strictly filter by AppointmentServiceId
+        // instead of falling back to a modality-name match. Null when
+        // the technician hasn't picked a service yet (legacy single-
+        // service visits, freshly opened workspace before any click).
+        appointmentServiceId: activeServiceId || null,
       });
       console.log(`[TECH] ✅ Direct upload completed: ${file.name}`);
       fetchWorklist();
@@ -624,6 +651,7 @@ export default function TechnicianPage() {
     try {
       const formData = new FormData();
       formData.append('AppointmentId', appointmentId);
+      if (activeServiceId) formData.append('AppointmentServiceId', activeServiceId);
       formData.append('File', file);
       console.log(`[TECH] 📤 (fallback) multipart upload: ${file.name}`);
       await apiClient.post('/Study/upload', formData, {
@@ -1106,38 +1134,75 @@ export default function TechnicianPage() {
                     </td>
                     <td style={{ padding: '8px 15px' }}>
                        {(() => {
-                         const lines      = getServiceLines(study);
-                         const progress   = getReportProgressLabel(study);
-                         const primary    = lines[0]?.serviceName || study.service || '—';
-                         const extraCount = lines.length - 1;
+                         const lines    = getServiceLines(study);
+                         const progress = getReportProgressLabel(study);
+                         // Per-service chip palette — matches OpsBoard /
+                         // popover so the technician's eye learns the
+                         // same status colour vocabulary everywhere.
+                         const stepStyle = (s) => {
+                           const u = String(s || '').toUpperCase();
+                           if (u === 'DELIVERED')   return { color: '#047857', bg: '#d1fae5', border: '#a7f3d0', label: 'Delivered' };
+                           if (u === 'REPORTED')    return { color: '#1d4ed8', bg: '#dbeafe', border: '#bfdbfe', label: 'Reported' };
+                           if (u === 'SCANNED')     return { color: '#9a3412', bg: '#ffedd5', border: '#fed7aa', label: 'Scanned' };
+                           if (u === 'IN_MID')      return { color: '#b45309', bg: '#fef3c7', border: '#fcd34d', label: 'Half Way' };
+                           if (u === 'IN_PROGRESS') return { color: '#a16207', bg: '#fef9c3', border: '#fde68a', label: 'In Progress' };
+                           if (u === 'CANCELLED')   return { color: '#9f1239', bg: '#ffe4e6', border: '#fecdd3', label: 'Cancelled' };
+                           return                         { color: '#475569', bg: '#f1f5f9', border: '#e2e8f0', label: 'Not Started' };
+                         };
                          return (
-                           <div style={{ display: 'flex', flexDirection: 'column' }}>
-                             <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
-                               <span style={{ fontSize: '12px', fontWeight: 800, color: '#1e293b' }}>{primary}</span>
-                               {extraCount > 0 && (
-                                 <span style={{
-                                   fontSize: '8px', fontWeight: 900, letterSpacing: '0.3px',
-                                   color: '#0f52ba', background: '#dbeafe',
-                                   padding: '1px 6px', borderRadius: '999px',
-                                 }}>+{extraCount} more</span>
-                               )}
-                             </div>
-                             <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginTop: '3px', flexWrap: 'wrap' }}>
-                               {study.priority && study.priority !== 'ROUTINE' && (
-                                 <span
-                                   className={study.priority === 'STAT' ? 'priority-chip-stat' : 'priority-chip-urgent'}
-                                   style={{ fontSize: '8px', fontWeight: 950, color: priority.color, background: priority.bg, padding: '1px 6px', borderRadius: '4px', letterSpacing: '0.5px' }}
-                                 >{priority.label}</span>
-                               )}
-                               {progress && (
-                                 <span title="Reporting progress across all services on this visit" style={{
-                                   fontSize: '8px', fontWeight: 900, letterSpacing: '0.3px',
-                                   color: '#047857', background: '#d1fae5',
-                                   padding: '1px 6px', borderRadius: '999px',
-                                   border: '1px solid #a7f3d0',
-                                 }}>{progress}</span>
-                               )}
-                             </div>
+                           <div style={{ display: 'flex', flexDirection: 'column', gap: '5px' }}>
+                             {/* Per-service rows — one per AppointmentService.
+                                 The technician sees every scan the patient
+                                 came in for, with each line's status pill,
+                                 right on the worklist. No "+ N more" hiding.
+                                 Cancelled lines dim + strike-through. */}
+                             {lines.map((line, idx) => {
+                               const st = stepStyle(line.status);
+                               const cancelled = String(line.status || '').toUpperCase() === 'CANCELLED';
+                               return (
+                                 <div
+                                   key={line.id || `${line.modality}-${idx}`}
+                                   style={{
+                                     display: 'flex', alignItems: 'center', gap: '6px',
+                                     flexWrap: 'wrap',
+                                     opacity: cancelled ? 0.55 : 1,
+                                   }}
+                                 >
+                                   <span style={{
+                                     fontSize: '12px', fontWeight: 800, color: '#1e293b',
+                                     textDecoration: cancelled ? 'line-through' : 'none',
+                                     maxWidth: '200px',
+                                     whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
+                                   }} title={line.serviceName}>{line.serviceName || '—'}</span>
+                                   <span style={{
+                                     fontSize: '8px', fontWeight: 900, letterSpacing: '0.3px',
+                                     color: st.color, background: st.bg,
+                                     padding: '1px 6px', borderRadius: '999px',
+                                     border: `1px solid ${st.border}`,
+                                     textTransform: 'uppercase',
+                                   }}>{st.label}</span>
+                                 </div>
+                               );
+                             })}
+                             {/* Visit-level meta chips below the service list */}
+                             {(progress || (study.priority && study.priority !== 'ROUTINE')) && (
+                               <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginTop: '2px', flexWrap: 'wrap' }}>
+                                 {study.priority && study.priority !== 'ROUTINE' && (
+                                   <span
+                                     className={study.priority === 'STAT' ? 'priority-chip-stat' : 'priority-chip-urgent'}
+                                     style={{ fontSize: '8px', fontWeight: 950, color: priority.color, background: priority.bg, padding: '1px 6px', borderRadius: '4px', letterSpacing: '0.5px' }}
+                                   >{priority.label}</span>
+                                 )}
+                                 {progress && (
+                                   <span title="Reporting progress across all services on this visit" style={{
+                                     fontSize: '8px', fontWeight: 900, letterSpacing: '0.3px',
+                                     color: '#047857', background: '#d1fae5',
+                                     padding: '1px 6px', borderRadius: '999px',
+                                     border: '1px solid #a7f3d0',
+                                   }}>{progress}</span>
+                                 )}
+                               </div>
+                             )}
                            </div>
                          );
                        })()}
@@ -1279,7 +1344,33 @@ export default function TechnicianPage() {
     </div>
   );
 
-  const renderWorkspace = () => (
+  const renderWorkspace = () => {
+    // Derive the currently-focused service + its modality so the
+    // viewer and series list can scope themselves to it. Falls back
+    // to the visit-level modality when no service is set (legacy
+    // single-service visits or a brand-new workspace open).
+    const workspaceServices = getServiceLines(activeStudy);
+    const activeService = workspaceServices.find(s => s.id && s.id === activeServiceId) || workspaceServices[0] || null;
+    const activeModality = (activeService?.modality || activeStudy?.modality || '').toUpperCase();
+
+    // Series filter — show only the assets matching the active
+    // service. Uploads carrying an AppointmentServiceId match
+    // strictly; legacy uploads (no FK) fall back to modality match
+    // so a CT card still shows CT series. Hidden series stay
+    // available via "Show all" toggle below the list.
+    const matchesActiveService = (asset) => {
+      if (!activeService) return true;
+      const assetSvcId = asset?.appointmentServiceId || asset?.AppointmentServiceId;
+      if (assetSvcId) return assetSvcId === activeService.id;
+      const assetMod = String(asset?.modality || asset?.Modality || '').toUpperCase();
+      if (!assetMod) return true; // unknown — keep visible
+      return assetMod === activeModality;
+    };
+    const visibleUploadedFiles = workspaceServices.length > 1
+      ? uploadedFiles.filter(matchesActiveService)
+      : uploadedFiles;
+
+    return (
     <div className="workspace-view" style={{ display: 'flex', flexDirection: 'column', height: '100vh', background: '#f8fafc', overflow: 'hidden', fontFamily: "'Inter', 'Outfit', sans-serif" }}>
       
       {/* TOP COMPACT TOOLBAR */}
@@ -1436,21 +1527,91 @@ export default function TechnicianPage() {
                   <label style={{ fontSize: '10px', fontWeight: 950, color: '#94a3b8', letterSpacing: '1px', marginBottom: '8px', display: 'block', textTransform: 'uppercase' }}>
                     Services on this visit ({lines.length})
                   </label>
+                  {lines.length > 1 && (
+                    <div style={{
+                      fontSize: '9px', fontWeight: 700, color: '#475569',
+                      marginBottom: '8px', lineHeight: 1.4,
+                      padding: '5px 8px',
+                      background: '#f0f9ff', border: '1px solid #bfdbfe',
+                      borderRadius: '6px',
+                    }}>
+                      💡 Tap a service to load its scans in the viewer.
+                    </div>
+                  )}
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
                     {lines.map((line) => {
-                      const isScanned    = ['SCANNED', 'REPORTED', 'DELIVERED'].includes((line.status || '').toUpperCase());
-                      const statusColor  = isScanned ? '#047857' : '#475569';
-                      const statusBg     = isScanned ? '#d1fae5' : '#f1f5f9';
-                      const statusBorder = isScanned ? '#a7f3d0' : '#e2e8f0';
-                      const canMark      = !!line.id && !isScanned;
+                      const statusUpper  = (line.status || 'NOT_STARTED').toUpperCase();
+                      const isScanned    = ['SCANNED', 'REPORTED', 'DELIVERED'].includes(statusUpper);
+                      const isInProgress = ['IN_PROGRESS', 'IN_MID'].includes(statusUpper);
+                      const isCancelled  = statusUpper === 'CANCELLED';
+                      // Active service drives the viewer + series list.
+                      // Single-service visits always treat the one line
+                      // as active so the highlight + filtering still
+                      // make sense even without a multi-service picker.
+                      const isActive = !!line.id && (line.id === activeServiceId || (lines.length === 1));
+                      // Status pill colours — mirrors the shared
+                      // step palette used in OpsBoard / popover so
+                      // the technician's eye learns one vocabulary.
+                      const statusStyle =
+                        statusUpper === 'DELIVERED' ? { color: '#047857', bg: '#d1fae5', border: '#a7f3d0' } :
+                        statusUpper === 'REPORTED'  ? { color: '#1d4ed8', bg: '#dbeafe', border: '#bfdbfe' } :
+                        statusUpper === 'SCANNED'   ? { color: '#9a3412', bg: '#ffedd5', border: '#fed7aa' } :
+                        statusUpper === 'IN_MID'    ? { color: '#b45309', bg: '#fef3c7', border: '#fcd34d' } :
+                        statusUpper === 'IN_PROGRESS' ? { color: '#a16207', bg: '#fef9c3', border: '#fde68a' } :
+                        statusUpper === 'CANCELLED' ? { color: '#9f1239', bg: '#ffe4e6', border: '#fecdd3' } :
+                                                       { color: '#475569', bg: '#f1f5f9', border: '#e2e8f0' };
+                      const statusLabel =
+                        statusUpper === 'IN_MID' ? 'Half Way' :
+                        statusUpper === 'IN_PROGRESS' ? 'In Progress' :
+                        (line.status || 'NOT_STARTED').replace(/_/g, ' ');
+                      const canMark    = !!line.id && !isScanned && !isCancelled;
+                      const editable   = !!line.id;
+                      const hasNotes   = Boolean(line.notes && String(line.notes).trim());
+                      // Whole-card click opens the editor popover so
+                      // the technician can change status to anything
+                      // (not just SCANNED) and add notes.
                       return (
-                        <div key={line.id || `${line.modality}-${line.serviceName}`} style={{
-                          background: 'white',
-                          border: '1px solid #e2e8f0',
-                          borderRadius: '10px',
-                          padding: '8px 10px',
-                          display: 'flex', flexDirection: 'column', gap: '6px',
-                        }}>
+                        <div
+                          key={line.id || `${line.modality}-${line.serviceName}`}
+                          role={editable ? 'button' : undefined}
+                          tabIndex={editable ? 0 : undefined}
+                          // Click = make this the active service →
+                          // the DICOM viewer + series list switch to
+                          // its modality context. The ✎ icon (top
+                          // right of the card) opens the status/notes
+                          // popover separately.
+                          onClick={editable ? () => setActiveServiceId(line.id) : undefined}
+                          onKeyDown={editable ? (e) => {
+                            if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setActiveServiceId(line.id); }
+                          } : undefined}
+                          title={editable ? 'Click to view this service in the viewer' : ''}
+                          style={{
+                            background: isActive ? 'rgba(15, 82, 186, 0.05)' : 'white',
+                            border: `1.5px solid ${isActive ? '#0f52ba' : '#e2e8f0'}`,
+                            borderRadius: '10px',
+                            padding: '8px 10px',
+                            display: 'flex', flexDirection: 'column', gap: '6px',
+                            cursor: editable ? 'pointer' : 'default',
+                            opacity: isCancelled ? 0.55 : 1,
+                            transition: 'all 0.15s',
+                            boxShadow: isActive ? '0 4px 12px -4px rgba(15, 82, 186, 0.3)' : 'none',
+                            position: 'relative',
+                          }}
+                          onMouseEnter={editable && !isActive ? (e) => {
+                            e.currentTarget.style.borderColor = '#94a3b8';
+                          } : undefined}
+                          onMouseLeave={editable && !isActive ? (e) => {
+                            e.currentTarget.style.borderColor = '#e2e8f0';
+                          } : undefined}
+                        >
+                          {/* Active indicator stripe on the left edge */}
+                          {isActive && (
+                            <div aria-hidden="true" style={{
+                              position: 'absolute', top: 0, left: 0, bottom: 0,
+                              width: '3px', borderRadius: '10px 0 0 10px',
+                              background: 'linear-gradient(180deg, #0f52ba, #1d4ed8)',
+                            }} />
+                          )}
                           <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
                             <span style={{
                               fontSize: '9px', fontWeight: 950, letterSpacing: '0.4px',
@@ -1462,21 +1623,40 @@ export default function TechnicianPage() {
                               fontSize: '11px', fontWeight: 800, color: '#0f172a',
                               flex: 1, minWidth: 0,
                               whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
+                              textDecoration: isCancelled ? 'line-through' : 'none',
                             }}
                             title={line.serviceName}>{line.serviceName}</span>
+                            {isActive && (
+                              <span title="Currently viewing" style={{
+                                fontSize: '8px', fontWeight: 950, color: '#0f52ba',
+                                background: '#dbeafe', border: '1px solid #bfdbfe',
+                                padding: '2px 6px', borderRadius: '999px',
+                                letterSpacing: '0.4px', textTransform: 'uppercase',
+                              }}>● Viewing</span>
+                            )}
+                            {hasNotes && (
+                              <span title="Has notes" aria-label="Has notes" style={{ fontSize: '11px' }}>📝</span>
+                            )}
                           </div>
                           <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
                             <span style={{
                               fontSize: '9px', fontWeight: 900, letterSpacing: '0.3px',
-                              color: statusColor, background: statusBg,
+                              color: statusStyle.color, background: statusStyle.bg,
                               padding: '2px 7px', borderRadius: '999px',
-                              border: `1px solid ${statusBorder}`,
-                            }}>{(line.status || 'NOT_STARTED').replace(/_/g, ' ')}</span>
+                              border: `1px solid ${statusStyle.border}`,
+                              textTransform: 'uppercase',
+                            }}>{statusLabel}</span>
                             <div style={{ flex: 1 }} />
                             {canMark && (
                               <button
                                 type="button"
-                                onClick={() => handleServiceStatus(activeStudy.appointmentId || activeStudy.id, line.id, 'SCANNED')}
+                                onClick={(e) => {
+                                  // Stop the parent card's onClick — this
+                                  // is the quick-mark shortcut, not the
+                                  // full editor.
+                                  e.stopPropagation();
+                                  handleServiceStatus(activeStudy.appointmentId || activeStudy.id, line.id, 'SCANNED');
+                                }}
                                 style={{
                                   fontSize: '10px',
                                   fontWeight: 900,
@@ -1500,6 +1680,20 @@ export default function TechnicianPage() {
                               </span>
                             )}
                           </div>
+                          {hasNotes && (
+                            <div style={{
+                              fontSize: '10.5px', fontWeight: 600, color: '#0f172a',
+                              lineHeight: 1.35,
+                              padding: '6px 8px',
+                              background: '#fffbeb',
+                              border: '1px solid #fef3c7',
+                              borderRadius: '8px',
+                              display: '-webkit-box',
+                              WebkitLineClamp: 2,
+                              WebkitBoxOrient: 'vertical',
+                              overflow: 'hidden',
+                            }} title={line.notes}>📝 {line.notes}</div>
+                          )}
                         </div>
                       );
                     })}
@@ -1508,20 +1702,33 @@ export default function TechnicianPage() {
               );
             })()}
 
-            <label style={{ fontSize: '11px', fontWeight: 600, color: '#94a3b8', marginBottom: '10px', display: 'block' }}>Series ({uploadedFiles.length})</label>
-            {uploadedFiles.map((f, i) => (
+            <label style={{ fontSize: '11px', fontWeight: 600, color: '#94a3b8', marginBottom: '10px', display: 'block' }}>
+              Series ({visibleUploadedFiles.length})
+              {workspaceServices.length > 1 && uploadedFiles.length > visibleUploadedFiles.length && (
+                <span style={{
+                  marginLeft: '6px',
+                  fontSize: '9px', fontWeight: 800, color: '#0f52ba',
+                  background: '#dbeafe', border: '1px solid #bfdbfe',
+                  padding: '1px 6px', borderRadius: '999px', letterSpacing: '0.3px',
+                  textTransform: 'uppercase',
+                }} title={`${uploadedFiles.length - visibleUploadedFiles.length} series hidden — different modality`}>
+                  {uploadedFiles.length - visibleUploadedFiles.length} hidden
+                </span>
+              )}
+            </label>
+            {visibleUploadedFiles.map((f, i) => (
               <div
                 key={i}
                 onClick={(e) => {
                   e.stopPropagation();
                   setActiveAssetIndex(i);
                 }}
-                style={{ 
-                  background: activeAssetIndex === i ? '#eff6ff' : 'white', 
-                  padding: '12px', 
-                  borderRadius: '12px', 
-                  marginBottom: '10px', 
-                  border: `1px solid ${activeAssetIndex === i ? '#3b82f6' : '#e2e8f0'}`, 
+                style={{
+                  background: activeAssetIndex === i ? '#eff6ff' : 'white',
+                  padding: '12px',
+                  borderRadius: '12px',
+                  marginBottom: '10px',
+                  border: `1px solid ${activeAssetIndex === i ? '#3b82f6' : '#e2e8f0'}`,
                   cursor: 'pointer',
                   transition: '0.2s',
                   display: 'flex',
@@ -1623,23 +1830,29 @@ export default function TechnicianPage() {
           )}
           
            <div style={{ flex: 1, padding: '0px', display: 'flex', flexDirection: 'column' }}>
-              {uploadedFiles.length > 0 ? (
-                <div style={{ 
-                  width: '100%', 
-                  height: '100%', 
-                  display: 'grid', 
+              {visibleUploadedFiles.length > 0 ? (
+                <div style={{
+                  width: '100%',
+                  height: '100%',
+                  display: 'grid',
                   gridTemplateColumns: layoutMode === '2x2' ? '1fr 1fr' : '1fr',
                   gridTemplateRows: layoutMode === '2x2' ? '1fr 1fr' : '1fr',
                   gap: '10px'
                 }}>
                   {[...Array(layoutMode === '2x2' ? 4 : 1)].map((_, idx) => (
                     <div key={idx} style={{ position: 'relative', borderRadius: '16px', overflow: 'hidden', border: '1px solid #334155', background: '#000' }}>
-                      <AdvancedDicomViewer 
-                        key={`${activeAssetIndex}_${idx}`} 
+                      <AdvancedDicomViewer
+                        // Key includes active service id so the
+                        // viewer re-initialises with a fresh engine
+                        // when the technician switches services —
+                        // otherwise the previous service's modality
+                        // toolset would linger.
+                        key={`${activeService?.id || 'visit'}_${activeAssetIndex}_${idx}`}
                         engineId={`tech-engine-${idx}`}
                         viewportId={`tech-viewport-${idx}`}
-                        files={uploadedFiles[(activeAssetIndex + idx) % uploadedFiles.length]?.rawFiles} 
-                        preParsedMetadata={uploadedFiles[(activeAssetIndex + idx) % uploadedFiles.length]?.metadata}
+                        modality={activeModality || undefined}
+                        files={visibleUploadedFiles[(activeAssetIndex + idx) % visibleUploadedFiles.length]?.rawFiles}
+                        preParsedMetadata={visibleUploadedFiles[(activeAssetIndex + idx) % visibleUploadedFiles.length]?.metadata}
                         onMetadata={idx === 0 ? setActiveMetadata : null}
                         isSynced={isSyncEnabled}
                         onKeyImageToggle={toggleKeyImage}
@@ -1653,11 +1866,19 @@ export default function TechnicianPage() {
                       
                       {/* VIEWPORT HUD */}
                       <div style={{ position: 'absolute', top: '15px', left: '15px', display: 'flex', flexDirection: 'column', gap: '5px', zIndex: 10 }}>
+                        {/* Active modality + service caption so the
+                            technician always knows which service the
+                            viewer is currently showing. */}
+                        {activeService && workspaceServices.length > 1 && (
+                          <div style={{ background: 'rgba(15, 82, 186, 0.9)', backdropFilter: 'blur(8px)', padding: '4px 10px', borderRadius: '6px', fontSize: '9px', color: 'white', fontWeight: 950, letterSpacing: '0.8px', border: '1px solid rgba(255,255,255,0.2)' }}>
+                            🔍 {activeModality} · {activeService.serviceName}
+                          </div>
+                        )}
                         <div style={{ background: 'rgba(15, 23, 42, 0.7)', backdropFilter: 'blur(8px)', padding: '4px 10px', borderRadius: '6px', fontSize: '9px', color: '#94a3b8', fontWeight: 950, letterSpacing: '1px', border: '1px solid rgba(255,255,255,0.1)' }}>
-                           {uploadedFiles[(activeAssetIndex + idx) % uploadedFiles.length]?.name || 'No signal'}
+                           {visibleUploadedFiles[(activeAssetIndex + idx) % visibleUploadedFiles.length]?.name || 'No signal'}
                         </div>
                         <div style={{ background: 'rgba(59, 130, 246, 0.9)', padding: '2px 8px', borderRadius: '4px', fontSize: '10px', color: 'white', fontWeight: 900, width: 'fit-content' }}>
-                          SLICE: {idx === 0 ? currentSlice : '?'} / {uploadedFiles[(activeAssetIndex + idx) % uploadedFiles.length]?.rawFiles?.length || 0}
+                          SLICE: {idx === 0 ? currentSlice : '?'} / {visibleUploadedFiles[(activeAssetIndex + idx) % visibleUploadedFiles.length]?.rawFiles?.length || 0}
                         </div>
                         {isSyncEnabled && <div style={{ background: 'rgba(16, 185, 129, 0.9)', color: 'white', padding: '4px 8px', borderRadius: '4px', fontSize: '10px', fontWeight: 500 }}>Synced</div>}
                       </div>
@@ -1775,13 +1996,14 @@ export default function TechnicianPage() {
       `}</style>
     </div>
   );
+  };
 
   return (
     <div className="page-wrapper" style={{ padding: 0, background: currentView === 'QUEUE' ? '#fcfdfe' : '#f8fafc' }}>
       {currentView === 'QUEUE' ? renderQueue() : renderWorkspace()}
 
       
-      <ReportPreviewModal 
+      <ReportPreviewModal
         isOpen={isPreviewOpen}
         onClose={() => setIsPreviewOpen(false)}
         doctorId={previewAppointment?.doctorId}
@@ -1789,6 +2011,7 @@ export default function TechnicianPage() {
         patientData={previewAppointment}
         reportContent={previewReport}
       />
+
       <style>{`
         .gamified-btn {
           background: #0f52ba;
