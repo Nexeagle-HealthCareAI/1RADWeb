@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { getServiceLines, getUniqueModalities, getReportProgressLabel } from '../utils/appointmentServices';
 import '../styles/AppointmentCard.css';
 
@@ -6,6 +6,13 @@ import '../styles/AppointmentCard.css';
  * AppointmentCard Component
  * Mobile/Tablet card display for appointments
  * Replaces table rows on smaller screens
+ *
+ * Multi-service rollout — when the visit has more than one service
+ * line, a "Show services" chevron appears under the meta row. Clicking
+ * expands an in-card panel listing each service with its own status
+ * and per-line actions (View report, Print prescription). Single-
+ * service visits get no chevron and no expansion — they look exactly
+ * as they always have.
  */
 export default function AppointmentCard({
   appointment,
@@ -16,10 +23,16 @@ export default function AppointmentCard({
   onPrescription,
   onEdit,
   onCancel,
-  patients
+  patients,
+  // Multi-service rollout — Print prescription callback. The earlier
+  // "View report" was removed at the receptionist's request — they
+  // jump into reports via the row-level 📄 Report button which lands
+  // on the first unreported service.
+  onPrintServicePrescription,
 }) {
   const meta = statusMeta[appointment.status] || statusMeta['unknown'];
   const next = getNextAction(appointment.status);
+  const [expanded, setExpanded] = useState(false);
 
   return (
     <div className="appointment-card">
@@ -72,6 +85,7 @@ export default function AppointmentCard({
           const progress    = getReportProgressLabel(appointment);
           const primaryName = lines[0]?.serviceName || appointment.service || '—';
           const extraCount  = lines.length - 1;
+          const isMulti     = lines.length > 1;
           return (
             <div className="info-grid">
               <div className="info-item">
@@ -79,11 +93,19 @@ export default function AppointmentCard({
                 <div className="value" style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
                   <span style={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis' }}>{primaryName}</span>
                   {extraCount > 0 && (
-                    <span style={{
-                      fontSize: '9px', fontWeight: 900,
-                      color: '#0f52ba', background: '#dbeafe',
-                      padding: '1px 6px', borderRadius: '999px', letterSpacing: '0.3px',
-                    }}>+{extraCount} more</span>
+                    <button
+                      type="button"
+                      onClick={() => setExpanded(true)}
+                      title={`Show all ${lines.length} services on this visit`}
+                      style={{
+                        fontSize: '9px', fontWeight: 900,
+                        color: '#0f52ba', background: '#dbeafe',
+                        padding: '1px 8px', borderRadius: '999px', letterSpacing: '0.3px',
+                        border: '1px solid #bfdbfe',
+                        cursor: 'pointer',
+                        fontFamily: 'inherit',
+                      }}
+                    >+{extraCount} more</button>
                   )}
                 </div>
                 {progress && (
@@ -122,7 +144,183 @@ export default function AppointmentCard({
             </div>
           );
         })()}
+
+        {/* Show-services chevron. Shown for every visit now (was
+            multi-service only) — single-service rows need an
+            affordance to access the per-service Print prescription
+            button too, since the row-level prescription button was
+            removed. Label adapts to singular / plural. */}
+        {(() => {
+          const lines = getServiceLines(appointment);
+          if (lines.length === 0) return null;
+          const isMulti = lines.length > 1;
+          return (
+            <button
+              type="button"
+              onClick={() => setExpanded(v => !v)}
+              aria-expanded={expanded}
+              style={{
+                marginTop: '10px',
+                width: '100%',
+                padding: '8px 12px',
+                borderRadius: '10px',
+                border: '1px solid #cbd5e1',
+                background: expanded ? '#0f52ba' : 'white',
+                color: expanded ? 'white' : '#0f52ba',
+                cursor: 'pointer',
+                fontSize: '11px', fontWeight: 900, letterSpacing: '0.3px',
+                fontFamily: 'inherit',
+                display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: '6px',
+                transition: 'background 0.15s, color 0.15s',
+              }}
+            >
+              <span>
+                {expanded
+                  ? (isMulti ? `Hide services (${lines.length})` : 'Hide details')
+                  : (isMulti ? `Show all ${lines.length} services` : 'Show details')}
+              </span>
+              <span aria-hidden="true" style={{
+                display: 'inline-block',
+                transform: expanded ? 'rotate(180deg)' : 'rotate(0deg)',
+                transition: 'transform 0.18s ease',
+              }}>▾</span>
+            </button>
+          );
+        })()}
       </div>
+
+      {/* Expanded per-service panel (mobile/tablet). Renders for any
+          visit with at least one service line — single-service rows
+          show one card so the receptionist can still tap Print
+          prescription from the worklist. */}
+      {expanded && (() => {
+        const lines = getServiceLines(appointment);
+        if (lines.length === 0) return null;
+
+        const accentFor = (m) => {
+          const k = String(m || '').toUpperCase();
+          return ({
+            'X-RAY': '#10b981',
+            CT:      '#3b82f6',
+            MRI:     '#8b5cf6',
+            ULTRASOUND: '#06b6d4',
+            USG:     '#06b6d4',
+            MAMMOGRAPHY: '#ec4899',
+            MG:      '#ec4899',
+            DEXA:    '#f59e0b',
+            PET:     '#f97316',
+            NUCLEAR: '#84cc16',
+          }[k] || '#64748b');
+        };
+        const stepRank = (status) => {
+          const s = String(status || '').toUpperCase();
+          if (s === 'DELIVERED') return 4;
+          if (s === 'REPORTED')  return 3;
+          if (s === 'SCANNED')   return 2;
+          if (s === 'NOT_STARTED') return 1;
+          return 1;
+        };
+        const stepLabel = (status) => {
+          const s = String(status || '').toUpperCase();
+          if (s === 'DELIVERED') return { label: 'Delivered',  color: '#047857', bg: '#d1fae5', border: '#a7f3d0' };
+          if (s === 'REPORTED')  return { label: 'Reported',   color: '#1d4ed8', bg: '#dbeafe', border: '#bfdbfe' };
+          if (s === 'SCANNED')   return { label: 'Scanned',    color: '#9a3412', bg: '#ffedd5', border: '#fed7aa' };
+          if (s === 'CANCELLED') return { label: 'Cancelled',  color: '#9f1239', bg: '#ffe4e6', border: '#fecdd3' };
+          return                       { label: 'Not started', color: '#475569', bg: '#f1f5f9', border: '#e2e8f0' };
+        };
+
+        return (
+          <div className="card-section" style={{
+            background: 'linear-gradient(180deg, #f8fbff 0%, #f1f5fb 100%)',
+            borderTop: '1px solid #e2e8f0',
+            padding: '12px 14px',
+          }}>
+            <div style={{
+              display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+              marginBottom: '10px',
+            }}>
+              <div style={{ fontSize: '9px', fontWeight: 950, color: '#0f52ba', letterSpacing: '1px', textTransform: 'uppercase' }}>
+                Services on this visit
+              </div>
+              <span style={{ fontSize: '9px', fontWeight: 950, color: 'white', background: '#0f52ba', padding: '2px 7px', borderRadius: '999px' }}>
+                {lines.length}
+              </span>
+            </div>
+
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+              {lines.map((line, idx) => {
+                const accent    = accentFor(line.modality);
+                const step      = stepRank(line.status);
+                const pill      = stepLabel(line.status);
+                const canPrint  = step >= 3;
+                return (
+                  <div
+                    key={line.id || `mline-${idx}`}
+                    style={{
+                      position: 'relative',
+                      background: 'white',
+                      border: '1px solid #e2e8f0',
+                      borderRadius: '12px',
+                      padding: '10px 12px 10px 14px',
+                      display: 'flex', flexDirection: 'column', gap: '8px',
+                    }}
+                  >
+                    <div aria-hidden="true" style={{
+                      position: 'absolute', left: 0, top: 8, bottom: 8,
+                      width: '3px', borderRadius: '3px',
+                      background: accent,
+                    }} />
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                      <span style={{
+                        fontSize: '9px', fontWeight: 950, letterSpacing: '0.4px',
+                        color: '#0f52ba', background: '#eff6ff',
+                        padding: '2px 7px', borderRadius: '5px',
+                        border: '1px solid #dbeafe',
+                      }}>{line.modality || 'OT'}</span>
+                      <span style={{
+                        flex: 1, minWidth: 0,
+                        fontSize: '12px', fontWeight: 800, color: '#0f172a',
+                        whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
+                      }} title={line.serviceName}>
+                        {line.serviceName || '—'}
+                      </span>
+                      <span style={{
+                        fontSize: '8.5px', fontWeight: 900, letterSpacing: '0.3px',
+                        color: pill.color, background: pill.bg,
+                        padding: '2px 7px', borderRadius: '999px',
+                        border: `1px solid ${pill.border}`,
+                        textTransform: 'uppercase',
+                      }}>{pill.label}</span>
+                    </div>
+                    <div style={{ display: 'flex', gap: '6px' }}>
+                      <button
+                        type="button"
+                        disabled={!canPrint || !onPrintServicePrescription}
+                        onClick={() => onPrintServicePrescription && onPrintServicePrescription(appointment, line.id)}
+                        style={{
+                          flex: 1,
+                          padding: '8px 10px',
+                          borderRadius: '8px',
+                          border: '1px solid #cbd5e1',
+                          background: canPrint ? 'linear-gradient(135deg, #0f52ba 0%, #1e3a8a 100%)' : '#f8fafc',
+                          color: canPrint ? 'white' : '#94a3b8',
+                          fontSize: '11px', fontWeight: 900, letterSpacing: '0.3px',
+                          cursor: (canPrint && onPrintServicePrescription) ? 'pointer' : 'not-allowed',
+                          fontFamily: 'inherit',
+                          display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: '5px',
+                          boxShadow: canPrint ? '0 4px 10px -4px rgba(15, 82, 186, 0.45)' : 'none',
+                        }}
+                      >
+                        🖨️ Print prescription
+                      </button>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        );
+      })()}
 
       {/* Actions */}
       <div className="card-actions">

@@ -100,29 +100,205 @@ export const InvoiceDrawer = ({
 
            {/* Left Column: Items and Adjustments */}
            <div>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
-                 <span style={{ fontSize: '9px', fontWeight: 950, color: '#94a3b8', letterSpacing: '1px' }}>LINE_ITEMS_MANIFEST</span>
-                 
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: '10px' }}>
+                 <span style={{ fontSize: '9px', fontWeight: 950, color: '#94a3b8', letterSpacing: '1px' }}>LINE ITEMS</span>
+                 <span style={{ fontSize: '9px', fontWeight: 800, color: '#94a3b8', letterSpacing: '0.5px', textTransform: 'uppercase' }}>
+                   {selectedInvoice.items?.length || 0} {(selectedInvoice.items?.length || 0) === 1 ? 'service' : 'services'}
+                 </span>
               </div>
-              
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', maxHeight: '200px', overflowY: 'auto', paddingRight: '5px', marginBottom: '20px' }}>
-                 {selectedInvoice.items?.map((item, idx) => (
-                   <div key={idx} style={{ display: 'flex', gap: '10px', alignItems: 'center', background: '#f8fafc', padding: '10px', borderRadius: '10px', border: '1px solid #f1f5f9' }}>
-                      <input 
-                        disabled={true} type="text" value={item.description}
-                        placeholder="Description"
-                        style={{ flex: 1, background: 'transparent', border: 'none', borderBottom: 'none', fontSize: '11px', fontWeight: 700 }}
-                      />
-                      <div style={{ fontSize: '11px', fontWeight: 950, color: '#0f52ba', display: 'flex', alignItems: 'center' }}>
-                         ₹<input 
-                           disabled={true} type="number" value={item.amount}
-                           style={{ width: '60px', background: 'transparent', border: 'none', borderBottom: 'none', fontSize: '11px', fontWeight: 950, textAlign: 'right', marginLeft: '4px' }}
-                         />
+
+              {(() => {
+                // Per-modality breakdown chips — only render when the
+                // visit carries more than one modality. For a single-
+                // service invoice the line item itself already shows
+                // everything, so the chip strip would just be visual
+                // noise.
+                const items = selectedInvoice.items || [];
+                const accentFor = (m) => {
+                  const k = String(m || '').toUpperCase();
+                  return ({
+                    'X-RAY': '#10b981', CT: '#3b82f6', MRI: '#8b5cf6',
+                    ULTRASOUND: '#06b6d4', USG: '#06b6d4',
+                    MAMMOGRAPHY: '#ec4899', MG: '#ec4899',
+                    DEXA: '#f59e0b', PET: '#f97316', NUCLEAR: '#84cc16',
+                  }[k] || '#64748b');
+                };
+                const tintFor = (m) => {
+                  const k = String(m || '').toUpperCase();
+                  return ({
+                    'X-RAY':     { bg: '#ecfdf5', border: '#d1fae5', text: '#047857' },
+                    CT:          { bg: '#eff6ff', border: '#dbeafe', text: '#1d4ed8' },
+                    MRI:         { bg: '#f5f3ff', border: '#ede9fe', text: '#6d28d9' },
+                    ULTRASOUND:  { bg: '#ecfeff', border: '#cffafe', text: '#0e7490' },
+                    USG:         { bg: '#ecfeff', border: '#cffafe', text: '#0e7490' },
+                    MAMMOGRAPHY: { bg: '#fdf2f8', border: '#fce7f3', text: '#be185d' },
+                    MG:          { bg: '#fdf2f8', border: '#fce7f3', text: '#be185d' },
+                    DEXA:        { bg: '#fffbeb', border: '#fef3c7', text: '#b45309' },
+                    PET:         { bg: '#fff7ed', border: '#ffedd5', text: '#c2410c' },
+                  }[k] || { bg: '#f1f5f9', border: '#e2e8f0', text: '#475569' });
+                };
+
+                // Aggregate per modality. Falls back to "OTHER" for
+                // items the server couldn't attach a modality to.
+                const byMod = new Map();
+                for (const it of items) {
+                  const m = String(it.modality || it.Modality || 'OTHER').toUpperCase() || 'OTHER';
+                  const subtotal = (Number(it.amount) || 0) * (Number(it.quantity) || 0);
+                  const cur = byMod.get(m) || { modality: m, subtotal: 0, count: 0 };
+                  cur.subtotal += subtotal;
+                  cur.count    += 1;
+                  byMod.set(m, cur);
+                }
+                const modRows = [...byMod.values()].sort((a, b) => b.subtotal - a.subtotal);
+
+                return (
+                  <>
+                    {modRows.length > 1 && (
+                      <div style={{
+                        display: 'flex', flexWrap: 'wrap', gap: '6px',
+                        marginBottom: '12px',
+                        padding: '10px 12px',
+                        background: '#f8fafc', borderRadius: '12px',
+                        border: '1px solid #eef2f7',
+                      }}>
+                        <span style={{
+                          fontSize: '8.5px', fontWeight: 950, letterSpacing: '0.5px',
+                          color: '#94a3b8', textTransform: 'uppercase',
+                          alignSelf: 'center', marginRight: '4px',
+                        }}>By modality</span>
+                        {modRows.map(r => {
+                          const tint = tintFor(r.modality);
+                          return (
+                            <span key={r.modality} style={{
+                              display: 'inline-flex', alignItems: 'center', gap: '6px',
+                              fontSize: '10px', fontWeight: 900, letterSpacing: '0.2px',
+                              color: tint.text, background: tint.bg,
+                              padding: '3px 10px', borderRadius: '999px',
+                              border: `1px solid ${tint.border}`,
+                              fontVariantNumeric: 'tabular-nums',
+                            }}>
+                              <span style={{ width: '6px', height: '6px', borderRadius: '999px', background: accentFor(r.modality) }} />
+                              {r.modality}
+                              <span style={{ opacity: 0.7, fontWeight: 700 }}>·</span>
+                              ₹{Math.round(r.subtotal).toLocaleString()}
+                            </span>
+                          );
+                        })}
                       </div>
-                      
-                   </div>
-                 ))}
-              </div>
+                    )}
+
+                    {/* Premium items table — modality chip, service
+                        name, qty × rate, subtotal. Header row gives
+                        the eye column anchors; rows hover-highlight. */}
+                    <div style={{
+                      border: '1px solid #eef2f7',
+                      borderRadius: '12px',
+                      overflow: 'hidden',
+                      marginBottom: '20px',
+                    }}>
+                      <div style={{
+                        display: 'grid',
+                        gridTemplateColumns: '96px minmax(120px, 1fr) 70px 90px',
+                        gap: '8px',
+                        padding: '8px 12px',
+                        background: '#f8fafc',
+                        borderBottom: '1px solid #eef2f7',
+                        fontSize: '8.5px', fontWeight: 900, letterSpacing: '0.5px',
+                        color: '#94a3b8', textTransform: 'uppercase',
+                      }}>
+                        <span style={{ textAlign: 'center' }}>Modality</span>
+                        <span>Service</span>
+                        <span style={{ textAlign: 'center' }}>Qty × Rate</span>
+                        <span style={{ textAlign: 'right' }}>Subtotal</span>
+                      </div>
+                      <div style={{ maxHeight: '260px', overflowY: 'auto' }}>
+                        {items.length === 0 ? (
+                          <div style={{ padding: '24px', textAlign: 'center', color: '#94a3b8', fontSize: '11px', fontWeight: 700 }}>
+                            No line items
+                          </div>
+                        ) : items.map((item, idx) => {
+                          const mod      = String(item.modality || item.Modality || '').toUpperCase();
+                          const tint     = tintFor(mod);
+                          const qty      = Number(item.quantity) || 0;
+                          const rate     = Number(item.amount)   || 0;
+                          const subtotal = qty * rate;
+                          return (
+                            <div
+                              key={item.id || idx}
+                              style={{
+                                display: 'grid',
+                                gridTemplateColumns: '96px minmax(120px, 1fr) 70px 90px',
+                                gap: '8px',
+                                padding: '10px 12px',
+                                alignItems: 'center',
+                                borderBottom: idx === items.length - 1 ? 'none' : '1px solid #f1f5f9',
+                                transition: 'background 0.12s',
+                              }}
+                              onMouseEnter={(e) => { e.currentTarget.style.background = '#f8fbff'; }}
+                              onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; }}
+                            >
+                              <span style={{
+                                justifySelf: 'center',
+                                fontSize: '9px', fontWeight: 950, letterSpacing: '0.3px',
+                                color: tint.text, background: tint.bg,
+                                border: `1px solid ${tint.border}`,
+                                padding: '2px 8px', borderRadius: '6px',
+                                textAlign: 'center', whiteSpace: 'nowrap',
+                              }}>{mod || '—'}</span>
+                              <span style={{
+                                fontSize: '11px', fontWeight: 700, color: '#1e293b',
+                                whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
+                              }} title={item.description}>
+                                {item.description}
+                              </span>
+                              <span style={{
+                                textAlign: 'center',
+                                fontSize: '10px', fontWeight: 700, color: '#64748b',
+                                fontVariantNumeric: 'tabular-nums',
+                              }}>
+                                {qty} × ₹{rate.toLocaleString()}
+                              </span>
+                              <span style={{
+                                textAlign: 'right',
+                                fontSize: '12px', fontWeight: 950, color: '#0f52ba',
+                                fontVariantNumeric: 'tabular-nums',
+                              }}>
+                                ₹{subtotal.toLocaleString()}
+                              </span>
+                            </div>
+                          );
+                        })}
+                      </div>
+                      {/* Footer with running total — anchors the
+                          bill at the bottom of the list. */}
+                      {items.length > 0 && (
+                        <div style={{
+                          display: 'grid',
+                          gridTemplateColumns: '96px minmax(120px, 1fr) 70px 90px',
+                          gap: '8px',
+                          padding: '10px 12px',
+                          background: '#f8fafc',
+                          borderTop: '1px solid #eef2f7',
+                          fontSize: '10px', fontWeight: 900, color: '#0f172a',
+                          textTransform: 'uppercase', letterSpacing: '0.3px',
+                          alignItems: 'center',
+                        }}>
+                          <span />
+                          <span style={{ color: '#475569' }}>Gross total</span>
+                          <span />
+                          <span style={{
+                            textAlign: 'right',
+                            fontSize: '13px', fontWeight: 950, color: '#0f172a',
+                            fontVariantNumeric: 'tabular-nums',
+                          }}>
+                            ₹{(Number(selectedInvoice.grossAmount) || items.reduce((s, it) => s + (Number(it.amount) || 0) * (Number(it.quantity) || 0), 0)).toLocaleString()}
+                          </span>
+                        </div>
+                      )}
+                    </div>
+                  </>
+                );
+              })()}
 
               {isPaid && (
                 <div style={{ 

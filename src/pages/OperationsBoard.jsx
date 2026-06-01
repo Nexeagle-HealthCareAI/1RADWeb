@@ -4,7 +4,7 @@ import apiClient from '../api/apiClient';
 import useTickClock from '../utils/useTickClock';
 import { formatElapsed, premisesSeverity, premisesPillStyle } from '../utils/timeTracking';
 import { useOverdue } from '../components/OverdueAppointments/OverdueContext';
-import { getServiceLines, getUniqueModalities, matchesAnyModality, getReportProgressLabel } from '../utils/appointmentServices';
+import { getServiceLines, getUniqueModalities, matchesAnyModality, getReportProgressLabel, getStageElapsedMinutes, formatStageElapsed, getStageSlaBucket } from '../utils/appointmentServices';
 import '../styles/global.css';
 import '../styles/AppointmentBoard.css';
 
@@ -39,6 +39,10 @@ export default function OperationsBoard() {
   const [search, setSearch] = useState('');
   const [modality, setModality] = useState('ALL');
   const [statusFilter, setStatusFilter] = useState('ALL');
+  // List vs. Modality-Queue view toggle. The list is the existing
+  // appointment-per-row table; the queue pivots service lines by
+  // modality so the front desk can see what's pending in each room.
+  const [viewMode, setViewMode] = useState('list'); // 'list' | 'queue'
 
   // Responsive breakpoint — matches AppointmentBoard
   const [windowWidth, setWindowWidth] = useState(window.innerWidth);
@@ -47,6 +51,14 @@ export default function OperationsBoard() {
     const handleResize = () => setWindowWidth(window.innerWidth);
     window.addEventListener('resize', handleResize);
     return () => window.removeEventListener('resize', handleResize);
+  }, []);
+
+  // Per-service TAT chips display whole minutes, so a 60s tick is enough
+  // to keep them honest without burning CPU on a re-render every second.
+  const [nowMs, setNowMs] = useState(() => Date.now());
+  useEffect(() => {
+    const t = setInterval(() => setNowMs(Date.now()), 60000);
+    return () => clearInterval(t);
   }, []);
   
   // Pagination State Matrix
@@ -139,6 +151,28 @@ export default function OperationsBoard() {
   // /comments endpoint owns that field server-side now, mirroring the latest
   // comment onto Appointment.DelayReason so worklist rows keep working
   // without a join. This is what stops history from being overwritten.
+  // Single per-service status transition used across the OpsBoard
+  // queue view. OpsBoard is the consolidated status command centre:
+  // - NOT_STARTED → SCANNED (front desk override when no DICOM lands)
+  // - REPORTED → DELIVERED (patient picks up the report)
+  // SCANNED → REPORTED is driven automatically by the doctor's save
+  // on ReportingPage, so we don't expose it here.
+  const handleAdvanceServiceStatus = async (appointmentId, serviceId, nextStatus) => {
+    if (!appointmentId || !serviceId || !nextStatus) return;
+    try {
+      await apiClient.patch(
+        `/appointments/${appointmentId}/services/${serviceId}/status`,
+        { status: nextStatus }
+      );
+      // Best-effort refresh — the parent already polls but a manual
+      // refetch nudges the user's view ahead of the next poll tick.
+      try { fetchAppointments?.(); } catch (_) { /* not always wired */ }
+    } catch (err) {
+      console.error('[OPS] Service status update failed', err);
+      alert('Could not update this service. Please try again.');
+    }
+  };
+
   const handleUpdateStatus = async (e) => {
     e.preventDefault();
     if (!selectedItem) return;
@@ -204,7 +238,13 @@ export default function OperationsBoard() {
       // Multi-service rollout: match the picked modality against any
       // service line on the visit (with v1 scalar fallback).
       const modalityMatch = matchesAnyModality(appt, modality);
-      const progressMatch = statusFilter === 'ALL' || appt.reportProgressStatus === statusFilter;
+      // Per-service progress filter — picking "Scanned" surfaces any
+      // visit with at least one service line in SCANNED state, not
+      // only visits whose parent reportProgressStatus matches. Falls
+      // back to the parent scalar for legacy rows without service
+      // lines (getServiceLines synthesises a single line then).
+      const progressMatch = statusFilter === 'ALL'
+        || getServiceLines(appt).some(l => String(l.status || 'NOT_STARTED').toUpperCase() === statusFilter);
       
       return dateMatch && searchMatch && modalityMatch && progressMatch;
     }).sort((a, b) => {
@@ -226,18 +266,45 @@ export default function OperationsBoard() {
 
   const totalPages = Math.ceil(filteredAppointments.length / itemsPerPage);
 
-  // Metrics calculators based explicitly on Delivery Progress (reportProgressStatus)
+  // Per-SERVICE metrics. Counts AppointmentService line items (not
+  // appointments) so a multi-service visit where X-Ray is delivered
+  // but CT is still pending contributes accurately to BOTH the
+  // Delivered and Not Started buckets instead of collapsing the whole
+  // visit into one parent status. For visits that pre-date migration
+  // 57 (or somehow have no service lines yet) we fall back to a
+  // single synthesised line from the scalar fields via
+  // getServiceLines, so legacy data still counts.
   const getMetrics = () => {
-    const todayAppts = Array.isArray(appointments) 
+    const todayAppts = Array.isArray(appointments)
       ? appointments.filter(a => (a.dateTime ? a.dateTime.split('T')[0] : '') === selectedDate)
       : [];
-    
+
+    // Count appointments separately so the "Total Today" tile still
+    // means "patients seen today" rather than "scans done today".
+    const totalAppointments = todayAppts.length;
+
+    const buckets = { notStarted: 0, scanned: 0, reported: 0, delivered: 0, totalLines: 0 };
+    for (const appt of todayAppts) {
+      for (const line of getServiceLines(appt)) {
+        // Cancelled lines drop out — they shouldn't tilt the queue
+        // counters or the productivity numbers.
+        const status = String(line.status || 'NOT_STARTED').toUpperCase();
+        if (status === 'CANCELLED') continue;
+        buckets.totalLines += 1;
+        if      (status === 'DELIVERED') buckets.delivered  += 1;
+        else if (status === 'REPORTED')  buckets.reported   += 1;
+        else if (status === 'SCANNED')   buckets.scanned    += 1;
+        else                             buckets.notStarted += 1;
+      }
+    }
+
     return {
-      total: todayAppts.length,
-      notStarted: todayAppts.filter(a => !a.reportProgressStatus || a.reportProgressStatus === 'NOT_STARTED').length,
-      started: todayAppts.filter(a => a.reportProgressStatus === 'STARTED').length,
-      inMid: todayAppts.filter(a => a.reportProgressStatus === 'IN_MID').length,
-      delivered: todayAppts.filter(a => a.reportProgressStatus === 'DELIVERED').length,
+      total: totalAppointments,     // patients on the worklist today
+      totalLines: buckets.totalLines, // scans on the worklist today
+      notStarted: buckets.notStarted,
+      scanned:    buckets.scanned,
+      reported:   buckets.reported,
+      delivered:  buckets.delivered,
     };
   };
 
@@ -444,6 +511,280 @@ export default function OperationsBoard() {
     setSelectedDate(d.toISOString().split('T')[0]);
   };
 
+  // ────────────────────────────────────────────────────────────────────
+  //  Modality Queue view — pivots service lines from the filtered
+  //  appointments by modality so the front desk can see what's
+  //  pending in each scan room. Each column is a modality; inside
+  //  the column, lines are grouped by status and shown as service
+  //  cards with patient name, token, and a Mark Delivered action
+  //  for reports that have been finalised.
+  // ────────────────────────────────────────────────────────────────────
+  const renderModalityQueue = (apptList) => {
+    // Accent colour per modality. Falls back to slate for anything
+    // we haven't tabled.
+    const accentFor = (m) => {
+      const k = String(m || '').toUpperCase();
+      return ({
+        'X-RAY': '#10b981', CT: '#3b82f6', MRI: '#8b5cf6',
+        ULTRASOUND: '#06b6d4', USG: '#06b6d4',
+        MAMMOGRAPHY: '#ec4899', MG: '#ec4899',
+        DEXA: '#f59e0b', PET: '#f97316', NUCLEAR: '#84cc16',
+      }[k] || '#64748b');
+    };
+    const stepRank = (status) => {
+      const s = String(status || '').toUpperCase();
+      if (s === 'DELIVERED') return 4;
+      if (s === 'REPORTED')  return 3;
+      if (s === 'SCANNED')   return 2;
+      return 1;
+    };
+    const stepPill = (status) => {
+      const s = String(status || '').toUpperCase();
+      if (s === 'DELIVERED') return { label: 'Delivered',   color: '#047857', bg: '#d1fae5', border: '#a7f3d0' };
+      if (s === 'REPORTED')  return { label: 'Reported',    color: '#1d4ed8', bg: '#dbeafe', border: '#bfdbfe' };
+      if (s === 'SCANNED')   return { label: 'Scanned',     color: '#9a3412', bg: '#ffedd5', border: '#fed7aa' };
+      return                       { label: 'Not Started',  color: '#475569', bg: '#f1f5f9', border: '#e2e8f0' };
+    };
+
+    // Flatten all service lines from the filtered appointments and
+    // group by modality. Cancelled lines drop out.
+    const groups = new Map();
+    for (const appt of apptList) {
+      for (const line of getServiceLines(appt)) {
+        const status = String(line.status || 'NOT_STARTED').toUpperCase();
+        if (status === 'CANCELLED') continue;
+        const modality = (line.modality || 'OTHER').toUpperCase();
+        if (!groups.has(modality)) groups.set(modality, []);
+        groups.get(modality).push({ line, appt, status });
+      }
+    }
+
+    if (groups.size === 0) {
+      return (
+        <div style={{ padding: '80px', textAlign: 'center', color: '#94a3b8', fontSize: '12px', fontWeight: 700 }}>
+          NO SERVICE LINES IN ACTIVE SCOPE
+        </div>
+      );
+    }
+
+    // Stable column order: modalities sorted by name. Could be hospital-
+    // configurable later (alphabetical is a sensible default).
+    const sortedModalities = [...groups.keys()].sort();
+
+    return (
+      <div style={{
+        display: 'grid',
+        gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))',
+        gap: '14px',
+        padding: '16px 20px 20px',
+        background: '#f8fafc',
+      }}>
+        {sortedModalities.map(modality => {
+          const items = groups.get(modality);
+          const accent = accentFor(modality);
+
+          // Per-status sub-counts so the column header reads at a glance.
+          const counts = { 1: 0, 2: 0, 3: 0, 4: 0 };
+          for (const it of items) counts[stepRank(it.status)] += 1;
+
+          // Display order within a column: pending first (action
+          // needed), then scanned, reported, delivered. So the eye
+          // catches what's outstanding at the top.
+          const ordered = [...items].sort((a, b) => stepRank(a.status) - stepRank(b.status));
+
+          return (
+            <div key={modality} style={{
+              background: 'white',
+              border: '1px solid #e2e8f0',
+              borderRadius: '14px',
+              boxShadow: '0 1px 3px rgba(15, 23, 42, 0.04)',
+              overflow: 'hidden',
+              display: 'flex', flexDirection: 'column',
+            }}>
+              {/* Column header — accent stripe + modality + counts */}
+              <div style={{
+                position: 'relative',
+                padding: '14px 16px 12px',
+                background: 'white',
+                borderBottom: '1px solid #f1f5f9',
+              }}>
+                <div aria-hidden="true" style={{
+                  position: 'absolute', top: 0, left: 0, right: 0,
+                  height: '3px', background: accent,
+                }} />
+                <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between' }}>
+                  <h4 style={{
+                    margin: 0,
+                    fontSize: '13px', fontWeight: 950,
+                    color: '#0f172a', letterSpacing: '0.4px',
+                  }}>{modality}</h4>
+                  <span style={{
+                    fontSize: '9px', fontWeight: 950, letterSpacing: '0.5px',
+                    color: '#64748b', textTransform: 'uppercase',
+                  }}>{items.length} {items.length === 1 ? 'line' : 'lines'}</span>
+                </div>
+                {/* Mini stat strip: pending · scanned · reported · delivered */}
+                <div style={{
+                  display: 'flex', alignItems: 'center', gap: '4px',
+                  marginTop: '8px',
+                  fontSize: '9px', fontWeight: 900, letterSpacing: '0.3px',
+                }}>
+                  <span style={{
+                    background: '#f1f5f9', color: '#475569',
+                    padding: '2px 7px', borderRadius: '999px',
+                    border: '1px solid #e2e8f0',
+                  }}>⚪ {counts[1]}</span>
+                  <span style={{
+                    background: '#ffedd5', color: '#9a3412',
+                    padding: '2px 7px', borderRadius: '999px',
+                    border: '1px solid #fed7aa',
+                  }}>🟠 {counts[2]}</span>
+                  <span style={{
+                    background: '#dbeafe', color: '#1d4ed8',
+                    padding: '2px 7px', borderRadius: '999px',
+                    border: '1px solid #bfdbfe',
+                  }}>🔵 {counts[3]}</span>
+                  <span style={{
+                    background: '#d1fae5', color: '#047857',
+                    padding: '2px 7px', borderRadius: '999px',
+                    border: '1px solid #a7f3d0',
+                  }}>🟢 {counts[4]}</span>
+                </div>
+              </div>
+
+              {/* Service cards — one per AppointmentService row in the
+                  column. Outstanding services float to the top. */}
+              <div style={{
+                padding: '8px 10px 10px',
+                display: 'flex', flexDirection: 'column', gap: '6px',
+                flex: 1,
+                maxHeight: '480px',
+                overflowY: 'auto',
+              }}>
+                {ordered.length === 0 ? (
+                  <div style={{
+                    padding: '24px 10px', textAlign: 'center',
+                    fontSize: '10px', fontWeight: 700, color: '#94a3b8',
+                  }}>Room idle — nothing pending.</div>
+                ) : (
+                  ordered.map(({ line, appt, status }) => {
+                    const pill = stepPill(status);
+                    const step = stepRank(status);
+                    // Context-aware action — OpsBoard is the single
+                    // place this transition happens. SCANNED → REPORTED
+                    // is owned by the doctor's save on ReportingPage.
+                    let nextAction = null;
+                    if (step === 1) nextAction = { status: 'SCANNED',   label: '✓ Mark scanned',              tint: 'linear-gradient(135deg, #ea580c 0%, #c2410c 100%)', shadow: 'rgba(234, 88, 12, 0.45)' };
+                    else if (step === 3) nextAction = { status: 'DELIVERED', label: '✓ Mark delivered to patient', tint: 'linear-gradient(135deg, #047857 0%, #065f46 100%)', shadow: 'rgba(4, 120, 87, 0.55)' };
+                    // Per-stage TAT chip. Anchored to the moment this
+                    // line entered its current stage so a line that
+                    // was scanned 2 minutes ago doesn't inherit the
+                    // visit's hour-long booking age.
+                    const elapsedMin = getStageElapsedMinutes(line, appt, nowMs);
+                    const slaBucket  = getStageSlaBucket(line, elapsedMin);
+                    const tatStyle = (
+                      slaBucket === 'breach' ? { color: '#9f1239', bg: '#ffe4e6', border: '#fecdd3' } :
+                      slaBucket === 'warn'   ? { color: '#9a3412', bg: '#ffedd5', border: '#fed7aa' } :
+                                               { color: '#475569', bg: '#f1f5f9', border: '#e2e8f0' }
+                    );
+                    const tatLabel = elapsedMin == null ? '' : formatStageElapsed(elapsedMin);
+                    return (
+                      <div
+                        key={`${appt.appointmentId}-${line.id || line.modality}-${line.serviceName}`}
+                        style={{
+                          background: 'white',
+                          border: '1px solid #e8eef7',
+                          borderRadius: '10px',
+                          padding: '8px 10px',
+                          display: 'flex', flexDirection: 'column', gap: '6px',
+                        }}
+                      >
+                        {/* Top line — token + patient name + status pill */}
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                          <span style={{
+                            flexShrink: 0,
+                            fontFamily: 'monospace',
+                            fontSize: '10px', fontWeight: 950,
+                            color: '#0f52ba', background: 'rgba(15,82,186,0.08)',
+                            padding: '2px 7px', borderRadius: '5px',
+                            border: '1px solid rgba(15,82,186,0.2)',
+                          }}>{appt.dailyTokenNumber ? `#${String(appt.dailyTokenNumber).padStart(3, '0')}` : (appt.tokenNo || '—')}</span>
+                          <span style={{
+                            flex: 1, minWidth: 0,
+                            fontSize: '11px', fontWeight: 900, color: '#0f172a',
+                            whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
+                          }} title={appt.patientName}>{appt.patientName}</span>
+                          <span style={{
+                            flexShrink: 0,
+                            fontSize: '8.5px', fontWeight: 900, letterSpacing: '0.3px',
+                            color: pill.color, background: pill.bg,
+                            padding: '2px 7px', borderRadius: '999px',
+                            border: `1px solid ${pill.border}`,
+                            textTransform: 'uppercase',
+                          }}>{pill.label}</span>
+                        </div>
+                        {/* Service name + TAT chip */}
+                        <div style={{
+                          display: 'flex', alignItems: 'center', gap: '6px',
+                          fontSize: '10px', color: '#475569', fontWeight: 700,
+                        }}>
+                          <span style={{
+                            flex: 1, minWidth: 0,
+                            whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
+                          }} title={line.serviceName}>
+                            {line.serviceName || '—'}
+                          </span>
+                          {tatLabel && (
+                            <span title={`In ${pill.label.toLowerCase()} stage for ${tatLabel}`} style={{
+                              flexShrink: 0,
+                              fontSize: '9px', fontWeight: 900, letterSpacing: '0.3px',
+                              color: tatStyle.color, background: tatStyle.bg,
+                              padding: '2px 6px', borderRadius: '999px',
+                              border: `1px solid ${tatStyle.border}`,
+                              fontVariantNumeric: 'tabular-nums',
+                              display: 'inline-flex', alignItems: 'center', gap: '3px',
+                            }}>⏱ {tatLabel}</span>
+                          )}
+                        </div>
+                        {/* Action row — context-aware. Mark Scanned
+                            for NOT_STARTED, Mark Delivered for
+                            REPORTED. SCANNED → REPORTED is automatic
+                            (doctor's save). DELIVERED/CANCELLED show
+                            nothing — the work on the row is done. */}
+                        {nextAction && line.id && (
+                          <button
+                            type="button"
+                            onClick={() => handleAdvanceServiceStatus(appt.appointmentId, line.id, nextAction.status)}
+                            style={{
+                              padding: '6px 10px',
+                              borderRadius: '8px',
+                              border: 'none',
+                              background: nextAction.tint,
+                              color: 'white',
+                              fontSize: '10px', fontWeight: 900, letterSpacing: '0.3px',
+                              cursor: 'pointer',
+                              fontFamily: 'inherit',
+                              boxShadow: `0 3px 8px -3px ${nextAction.shadow}`,
+                              transition: 'transform 0.12s ease',
+                            }}
+                            onMouseEnter={(e) => e.currentTarget.style.transform = 'translateY(-1px)'}
+                            onMouseLeave={(e) => e.currentTarget.style.transform = 'translateY(0)'}
+                          >
+                            {nextAction.label}
+                          </button>
+                        )}
+                      </div>
+                    );
+                  })
+                )}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    );
+  };
+
   return (
     <div className="appointment-board-container">
 
@@ -486,31 +827,38 @@ export default function OperationsBoard() {
         <div className="intel-card dark">
           <span className="intel-label">Total Today</span>
           <div className="intel-value">{metrics.total}</div>
-          <div className="intel-trend" style={{ color: '#10b981' }}>Active Queue</div>
+          <div className="intel-trend" style={{ color: '#10b981' }}>
+            {/* Show patient count vs scan count side by side when they
+                differ — clarifies that a multi-service visit produces
+                multiple scans without inflating the patient count. */}
+            {metrics.totalLines > metrics.total
+              ? `${metrics.totalLines} scan${metrics.totalLines === 1 ? '' : 's'}`
+              : 'Active Queue'}
+          </div>
         </div>
 
         <div className="intel-card" style={{ background: 'white' }}>
           <span className="intel-label">⚪ Not Started</span>
           <div className="intel-value" style={{ color: '#475569' }}>{metrics.notStarted}</div>
-          <div className="intel-trend" style={{ color: '#94a3b8' }}>Awaiting Work</div>
-        </div>
-
-        <div className="intel-card" style={{ background: '#eff6ff', border: '1px solid #bfdbfe' }}>
-          <span className="intel-label" style={{ color: '#0f52ba' }}>🔵 Started</span>
-          <div className="intel-value" style={{ color: '#0f52ba' }}>{metrics.started}</div>
-          <div className="intel-trend" style={{ color: '#0f52ba' }}>In Progress</div>
+          <div className="intel-trend" style={{ color: '#94a3b8' }}>Awaiting Scan</div>
         </div>
 
         <div className="intel-card" style={{ background: '#fffbeb', border: '1px solid #fde68a' }}>
-          <span className="intel-label" style={{ color: '#b45309' }}>🟡 In Mid</span>
-          <div className="intel-value" style={{ color: '#b45309' }}>{metrics.inMid}</div>
-          <div className="intel-trend" style={{ color: '#b45309' }}>Half Complete</div>
+          <span className="intel-label" style={{ color: '#b45309' }}>🟠 Scanned</span>
+          <div className="intel-value" style={{ color: '#b45309' }}>{metrics.scanned}</div>
+          <div className="intel-trend" style={{ color: '#b45309' }}>Awaiting Report</div>
+        </div>
+
+        <div className="intel-card" style={{ background: '#eff6ff', border: '1px solid #bfdbfe' }}>
+          <span className="intel-label" style={{ color: '#0f52ba' }}>🔵 Reported</span>
+          <div className="intel-value" style={{ color: '#0f52ba' }}>{metrics.reported}</div>
+          <div className="intel-trend" style={{ color: '#0f52ba' }}>Awaiting Delivery</div>
         </div>
 
         <div className="intel-card" style={{ background: '#f0fdf4', border: '1px solid #bbf7d0' }}>
           <span className="intel-label" style={{ color: '#15803d' }}>🟢 Delivered</span>
           <div className="intel-value" style={{ color: '#14532d' }}>{metrics.delivered}</div>
-          <div className="intel-trend" style={{ color: '#15803d' }}>Reports Sent</div>
+          <div className="intel-trend" style={{ color: '#15803d' }}>Handed to Patient</div>
         </div>
 
       </div>
@@ -538,10 +886,10 @@ export default function OperationsBoard() {
           </select>
 
           <select className="filter-select" value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}>
-            <option value="ALL">All Delivery Progress</option>
+            <option value="ALL">All Service Status</option>
             <option value="NOT_STARTED">Not Started</option>
-            <option value="STARTED">Started</option>
-            <option value="IN_MID">In Mid (Half Done)</option>
+            <option value="SCANNED">Scanned (awaiting report)</option>
+            <option value="REPORTED">Reported (awaiting delivery)</option>
             <option value="DELIVERED">Delivered</option>
           </select>
         </div>
@@ -549,9 +897,61 @@ export default function OperationsBoard() {
 
       {/* ── OPERATIONS LEDGER TABLE ────────────────────────────────────── */}
       <div className="appointments-table-wrapper">
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '20px 24px', borderBottom: '1px solid #e2e8f0' }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '20px 24px', borderBottom: '1px solid #e2e8f0', flexWrap: 'wrap', gap: '12px' }}>
           <h3 style={{ fontSize: '13px', fontWeight: 950, letterSpacing: '1px', margin: 0, color: '#0a1628' }}>CLINICAL OPERATIONS REGISTRY</h3>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+            {/* View toggle — switches between the existing visit
+                ledger (one row per appointment) and the new modality
+                queue (services pivoted by modality so the front desk
+                can see what's pending in each room). */}
+            <div style={{
+              display: 'inline-flex',
+              padding: '3px',
+              background: '#f1f5f9',
+              borderRadius: '10px',
+              border: '1px solid #e2e8f0',
+            }}>
+              <button
+                type="button"
+                onClick={() => setViewMode('list')}
+                aria-pressed={viewMode === 'list'}
+                style={{
+                  padding: '6px 14px',
+                  borderRadius: '7px',
+                  border: 'none',
+                  fontSize: '10px',
+                  fontWeight: 900,
+                  letterSpacing: '0.5px',
+                  cursor: 'pointer',
+                  textTransform: 'uppercase',
+                  fontFamily: 'inherit',
+                  background: viewMode === 'list' ? 'white' : 'transparent',
+                  color: viewMode === 'list' ? '#0f52ba' : '#64748b',
+                  boxShadow: viewMode === 'list' ? '0 1px 3px rgba(15, 23, 42, 0.08)' : 'none',
+                  transition: 'background 0.15s, color 0.15s',
+                }}
+              >☰ List</button>
+              <button
+                type="button"
+                onClick={() => setViewMode('queue')}
+                aria-pressed={viewMode === 'queue'}
+                style={{
+                  padding: '6px 14px',
+                  borderRadius: '7px',
+                  border: 'none',
+                  fontSize: '10px',
+                  fontWeight: 900,
+                  letterSpacing: '0.5px',
+                  cursor: 'pointer',
+                  textTransform: 'uppercase',
+                  fontFamily: 'inherit',
+                  background: viewMode === 'queue' ? 'white' : 'transparent',
+                  color: viewMode === 'queue' ? '#0f52ba' : '#64748b',
+                  boxShadow: viewMode === 'queue' ? '0 1px 3px rgba(15, 23, 42, 0.08)' : 'none',
+                  transition: 'background 0.15s, color 0.15s',
+                }}
+              >⊞ Modality Queue</button>
+            </div>
             <span style={{ fontSize: '10px', fontWeight: 900, color: '#94a3b8', letterSpacing: '0.5px' }}>RECORDS</span>
             <span style={{ background: '#0f52ba', color: 'white', padding: '2px 10px', borderRadius: '6px', fontSize: '11px', fontWeight: 950 }}>
               {filteredAppointments.length}
@@ -568,6 +968,8 @@ export default function OperationsBoard() {
           <div style={{ padding: '80px', textAlign: 'center', color: '#94a3b8', fontSize: '12px', fontWeight: 700 }}>
             NO DATA DETECTED IN ACTIVE SCOPE
           </div>
+        ) : viewMode === 'queue' ? (
+          renderModalityQueue(filteredAppointments)
         ) : (
           <div style={{ overflowX: 'auto' }}>
             {isMobile ? (

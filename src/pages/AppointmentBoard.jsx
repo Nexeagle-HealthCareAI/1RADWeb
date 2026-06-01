@@ -13,7 +13,7 @@ import { formatElapsed, premisesSeverity, premisesPillStyle } from '../utils/tim
 import { useOverdue } from '../components/OverdueAppointments/OverdueContext';
 import { getTrackingUrl } from '../utils/trackingUrl';
 import { buildPatientAge, formatPatientAge, parsePatientAge } from '../utils/patientAge';
-import { getServiceLines, getUniqueModalities, matchesAnyModality, getReportProgressLabel } from '../utils/appointmentServices';
+import { getServiceLines, getUniqueModalities, matchesAnyModality, getReportProgressLabel, getStageElapsedMinutes, formatStageElapsed, getStageSlaBucket } from '../utils/appointmentServices';
 import { watchAppointments } from '../db/repos/appointmentsRepo';
 import { watchPatients } from '../db/repos/patientsRepo';
 import { snapshotPersonnel, getAllPersonnel } from '../db/repos/personnelRepo';
@@ -85,6 +85,30 @@ export default function AppointmentBoard() {
     window.addEventListener('resize', handleResize);
     return () => window.removeEventListener('resize', handleResize);
   }, []);
+
+  // 60-second tick drives the per-service TAT pills on the ledger.
+  // Whole-minute precision is plenty — cheaper than a 1-second tick
+  // re-rendering every card.
+  const [nowMs, setNowMs] = useState(() => Date.now());
+  useEffect(() => {
+    const t = setInterval(() => setNowMs(Date.now()), 60000);
+    return () => clearInterval(t);
+  }, []);
+
+  // Which worklist rows have their service ledger expanded. Collapsed
+  // by default so the worklist scans as a tight one-line-per-visit
+  // list; click "View N services" to unfurl the full ledger. A Set is
+  // O(1) toggle + cheap to JSON-serialise if we ever want to persist
+  // (not doing that today — collapse is the safer default per visit).
+  const [expandedLedgers, setExpandedLedgers] = useState(() => new Set());
+  const toggleLedger = (apptId) => {
+    setExpandedLedgers(prev => {
+      const next = new Set(prev);
+      if (next.has(apptId)) next.delete(apptId); else next.add(apptId);
+      return next;
+    });
+  };
+
   const [activeTab, setActiveTab] = useState('TODAY'); // 'TODAY' or 'PAST'
   const [pastDateRange, setPastDateRange] = useState({ 
     start: TODAY, 
@@ -116,7 +140,18 @@ export default function AppointmentBoard() {
   const [editServices, setEditServices] = useState([]);
   const [isPreviewOpen, setIsPreviewOpen] = useState(false);
   const [previewAppointment, setPreviewAppointment] = useState(null);
+  // Multi-service rollout — which AppointmentService.Id the open
+  // ReportPreviewModal is currently scoped to. Null = "primary line"
+  // / legacy single-service path; the modal falls back to the
+  // appointment's scalar Service/Modality for the header & thank-you
+  // line in that case.
+  const [previewServiceId, setPreviewServiceId] = useState(null);
   const [previewReport, setPreviewReport] = useState({ mode: 'Narrative Editor', text: '', impression: '', isFinalized: false });
+  // Worklist row expansion — only ONE row can be expanded at a time so
+  // a busy worklist doesn't accordion out of control. Set to the
+  // appointmentId of the open row, or null when nothing is expanded.
+  // Single-service visits don't render the chevron at all.
+  const [expandedRowId, setExpandedRowId] = useState(null);
   const [errorModal, setErrorModal] = useState({ isOpen: false, title: '', message: '' });
   const [cancelConfirmModal, setCancelConfirmModal] = useState({ isOpen: false, appointmentId: null, patientName: '' });
   const [notifModal, setNotifModal] = useState({ isOpen: false, type: 'info', title: '', message: '' });
@@ -819,12 +854,23 @@ export default function AppointmentBoard() {
     setShowBookingValidation(false);
   };
 
-  const handlePreviewPrint = async (c) => {
+  // Open the print preview for a visit. When `serviceId` is supplied,
+  // the GET fetches the service-scoped report (different services on a
+  // multi-service visit have separate DiagnosticReport rows post-step-6)
+  // and the ReportPreviewModal renders the patient banner + thank-you
+  // line with THAT service's name + modality.
+  const handlePreviewPrint = async (c, serviceId = null) => {
     try {
       setLoading(true);
       setPreviewAppointment(c);
-      
-      const reportRes = await apiClient.get(`/Reporting/report/${c.id || c.appointmentId}`).catch(() => null);
+      setPreviewServiceId(serviceId || null);
+
+      const apptId = c.id || c.appointmentId;
+      const url = serviceId
+        ? `/Reporting/report/${apptId}?serviceId=${encodeURIComponent(serviceId)}`
+        : `/Reporting/report/${apptId}`;
+
+      const reportRes = await apiClient.get(url).catch(() => null);
       if (reportRes?.data?.success && reportRes.data.data) {
         const r = reportRes.data.data;
         setPreviewReport({
@@ -1527,273 +1573,548 @@ export default function AppointmentBoard() {
     return (
       <div key={app.appointmentId} className={`appointments-table-wrapper ${priorityRowClass}`} style={{
         marginBottom: '10px',
-        border: '1px solid #e2e8f0',
-        borderRadius: '16px',
+        border: '1px solid #e8eef7',
+        borderRadius: '14px',
         overflow: 'hidden',
         background: 'white',
-        boxShadow: '0 2px 8px rgba(0,0,0,0.02)',
-        minWidth: '950px' // Ensure columns don't collapse too much
+        boxShadow: '0 1px 3px rgba(15, 23, 42, 0.04)',
+        // Compact row redesign — no rigid min-width, content wraps
+        // gracefully so the worklist fits on standard laptop screens
+        // without horizontal scroll. The earlier 950px floor came
+        // from the old 8-column grid; that grid is now flexbox.
+        minWidth: 0,
       }}>
-        <div 
-          style={{ 
-            display: 'grid',
-            gridTemplateColumns: '75px 50px 2.4fr 0.9fr 95px 110px 1.3fr 215px',
-            gap: '12px',
-            padding: '12px 16px',
-            alignItems: 'center',
-            background: 'transparent'
-          }}
-        >
-          {/* Column 1: ID */}
-          <div>
-            <span style={{ fontFamily: 'monospace', fontSize: '10px', fontWeight: 800, color: '#64748b', background: '#f1f5f9', padding: '3px 6px', borderRadius: '6px' }}>
-              #{app.ptid || app.patientIdentifier || app.id?.substring(0,8) || '—'}
-            </span>
-          </div>
-
-          {/* Column 2: Token */}
-          <div style={{ display: 'flex', justifyContent: 'center' }}>
-            <div style={{ 
-              width: '28px', height: '28px', borderRadius: '6px', 
-              background: 'rgba(15, 82, 186, 0.08)', color: '#0f52ba', 
-              display: 'flex', alignItems: 'center', justifyContent: 'center', 
-              fontWeight: 950, fontSize: '12px', border: '1.5px solid rgba(15, 82, 186, 0.2)'
-            }}>
-              {app.tokenNo || '—'}
-            </div>
-          </div>
-
-          {/* Column 3: Patient & Service */}
-          <div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
-              <span style={{ fontWeight: 800, color: '#0f172a', fontSize: '12px', letterSpacing: '-0.2px' }}>
-                {app.patientName.toUpperCase()}
-              </span>
-              <span style={{ fontSize: '9px', fontWeight: 900, color: '#475569', background: '#f1f5f9', padding: '1px 5px', borderRadius: '4px', textTransform: 'uppercase' }}>
-                {app.patientGender || 'U'} • {formatPatientAge(app.patientAge)}
-              </span>
-              {/* Priority chip — only show when above ROUTINE so the row stays clean.
-                  Heartbeat animation class draws the eye to STAT/URGENT cases. */}
-              {app.priority && app.priority !== 'ROUTINE' && (
-                <span
-                  className={app.priority === 'STAT' ? 'priority-chip-stat' : 'priority-chip-urgent'}
-                  style={{
-                    fontSize: '9px', fontWeight: 950, letterSpacing: '0.6px',
-                    padding: '2px 7px', borderRadius: '999px',
-                    color: app.priority === 'STAT' ? '#dc2626' : '#d97706',
-                    background: app.priority === 'STAT' ? '#fee2e2' : '#fef3c7',
-                    border: `1px solid ${app.priority === 'STAT' ? '#fecaca' : '#fde68a'}`,
-                    transformOrigin: 'center',
-                    display: 'inline-block',
-                  }}
-                >{app.priority}</span>
-              )}
-            </div>
-            {/* Modality chip stack + service summary.
-                Single-service visits render exactly as before (one chip
-                + one service name). Multi-service visits render N chips
-                followed by a "2 of 3 reported" progress badge. The chip
-                list is derived from services[] with a v1 scalar
-                fallback so old cache rows still render. */}
-            {(() => {
-              const lines       = getServiceLines(app);
-              const modalities  = getUniqueModalities(app);
-              const progress    = getReportProgressLabel(app);
-              const primaryName = lines[0]?.serviceName || app.service || '';
-              const extraCount  = lines.length - 1;
-              return (
-                <div style={{ fontSize: '9px', color: '#64748b', fontWeight: 700, marginTop: '3px', display: 'flex', alignItems: 'center', gap: '4px', flexWrap: 'wrap' }}>
-                  {modalities.map((m, idx) => (
+        <div style={{ padding: '10px 14px 8px', background: 'transparent' }}>
+          {/* Header row — visit-level info (patient + meta + status +
+              quick actions). All sub-rows below are service-scoped.
+              Layout: identity cluster on the left, action cluster on
+              the right, with the patient meta line wrapping if the
+              container gets narrow. */}
+          <div style={{
+            display: 'flex', alignItems: 'flex-start', gap: '12px',
+          }}>
+            {/* Identity cluster — token tile + patient name + meta line. */}
+            <div style={{ display: 'flex', alignItems: 'flex-start', gap: '10px', minWidth: 0, flex: 1 }}>
+              <div style={{
+                flexShrink: 0,
+                width: '34px', height: '34px', borderRadius: '8px',
+                background: 'rgba(15, 82, 186, 0.08)', color: '#0f52ba',
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                fontWeight: 950, fontSize: '13px',
+                border: '1.5px solid rgba(15, 82, 186, 0.18)',
+              }}>
+                {app.tokenNo || '—'}
+              </div>
+              <div style={{ minWidth: 0, flex: 1 }}>
+                {/* Top line — patient name + gender/age + priority +
+                    a compact "services gist" so the receptionist can
+                    read the visit's scan plan without dropping their
+                    eye to the ledger below. The gist is just the
+                    distinct modality codes (X-RAY · CT · USG) with a
+                    "+N" overflow chip when there are more than 3. The
+                    full breakdown still lives in the ledger sub-rows. */}
+                <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
+                  <span style={{ fontWeight: 900, color: '#0f172a', fontSize: '13px', letterSpacing: '-0.2px' }}>
+                    {app.patientName.toUpperCase()}
+                  </span>
+                  <span style={{ fontSize: '9px', fontWeight: 900, color: '#475569', background: '#f1f5f9', padding: '1px 5px', borderRadius: '4px', textTransform: 'uppercase' }}>
+                    {app.patientGender || 'U'} · {formatPatientAge(app.patientAge)}
+                  </span>
+                  {app.priority && app.priority !== 'ROUTINE' && (
                     <span
-                      key={`${m}-${idx}`}
-                      title={lines.find(l => l.modality === m)?.serviceName || m}
-                      style={{ color: '#0f52ba', background: '#eff6ff', padding: '1.5px 5px', borderRadius: '4px', fontSize: '8.5px', fontWeight: 900 }}
+                      className={app.priority === 'STAT' ? 'priority-chip-stat' : 'priority-chip-urgent'}
+                      style={{
+                        fontSize: '8.5px', fontWeight: 950, letterSpacing: '0.5px',
+                        padding: '1px 6px', borderRadius: '999px',
+                        color: app.priority === 'STAT' ? '#dc2626' : '#d97706',
+                        background: app.priority === 'STAT' ? '#fee2e2' : '#fef3c7',
+                        border: `1px solid ${app.priority === 'STAT' ? '#fecaca' : '#fde68a'}`,
+                      }}
+                    >{app.priority}</span>
+                  )}
+                  {(() => {
+                    // Show service NAMES instead of modality codes —
+                    // the receptionist sees exactly what was booked at
+                    // a glance ("Chest X-Ray PA · CT Head"). Names are
+                    // truncated to keep each chip compact; the ledger
+                    // below carries the full names + prices + actions.
+                    const lines = getServiceLines(app);
+                    if (!lines || lines.length === 0) return null;
+                    const shown = lines.slice(0, 2);
+                    const extra = lines.length - shown.length;
+                    return (
+                      <span style={{
+                        display: 'inline-flex', alignItems: 'center', gap: '3px',
+                        marginLeft: '2px',
+                        minWidth: 0, // allow chip text to truncate
+                        maxWidth: '100%',
+                      }}>
+                        {shown.map((line, idx) => (
+                          <span
+                            key={line.id || `gist-${idx}`}
+                            title={line.serviceName || line.modality || ''}
+                            style={{
+                              fontSize: '9px', fontWeight: 800, letterSpacing: '0.2px',
+                              color: '#0f52ba', background: '#eff6ff',
+                              padding: '1px 7px', borderRadius: '4px',
+                              border: '1px solid #dbeafe',
+                              whiteSpace: 'nowrap',
+                              overflow: 'hidden',
+                              textOverflow: 'ellipsis',
+                              maxWidth: '160px',
+                            }}
+                          >{line.serviceName || line.modality || '-'}</span>
+                        ))}
+                        {extra > 0 && (
+                          <span
+                            title={`${extra} more service${extra === 1 ? '' : 's'} — see ledger below`}
+                            style={{
+                              fontSize: '8.5px', fontWeight: 950, letterSpacing: '0.3px',
+                              color: '#0f52ba', background: '#dbeafe',
+                              padding: '1px 6px', borderRadius: '999px',
+                              flexShrink: 0,
+                            }}
+                          >+{extra}</span>
+                        )}
+                      </span>
+                    );
+                  })()}
+                </div>
+                {/* Meta line — #PID · date · time · doctor chip · ref chip · ⏱ TAT.
+                    Doctor & referrer get proper coloured chips so they
+                    stand out from the muted dot-separated meta —
+                    operators glance at this row to know "who's seeing
+                    this and who sent them" without hunting through
+                    grey text. */}
+                <div style={{
+                  marginTop: '3px',
+                  display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '6px',
+                  fontSize: '10px', fontWeight: 700, color: '#64748b',
+                }}>
+                  <span style={{ fontFamily: 'monospace', fontWeight: 800, color: '#475569' }}>
+                    #{app.ptid || app.patientIdentifier || app.id?.substring(0,8) || '—'}
+                  </span>
+                  <span style={{ opacity: 0.4 }}>·</span>
+                  <span>{appDate}</span>
+                  <span style={{ opacity: 0.4 }}>·</span>
+                  <span>{appTime}</span>
+                  {/* Assigned doctor — emphasised chip. Unassigned
+                      states still show but in a muted amber so it
+                      flags "no one owns this yet". */}
+                  <span
+                    title={app.doctor ? `Assigned to ${app.doctor}` : 'No specialist assigned'}
+                    style={{
+                      display: 'inline-flex', alignItems: 'center', gap: '4px',
+                      fontSize: '10.5px', fontWeight: 900, letterSpacing: '0.2px',
+                      color: app.doctor ? '#0c4a6e' : '#9a3412',
+                      background: app.doctor ? '#e0f2fe' : '#fef3c7',
+                      border: `1px solid ${app.doctor ? '#bae6fd' : '#fde68a'}`,
+                      padding: '2px 9px', borderRadius: '999px',
+                    }}
+                  >
+                    <span aria-hidden="true" style={{ fontSize: '11px' }}>🩺</span>
+                    {app.doctor || 'Unassigned'}
+                  </span>
+                  {app.referredBy && (
+                    <span
+                      title={`Referred by ${app.referredBy}`}
+                      style={{
+                        display: 'inline-flex', alignItems: 'center', gap: '4px',
+                        fontSize: '10.5px', fontWeight: 900, letterSpacing: '0.2px',
+                        color: '#5b21b6', background: '#ede9fe',
+                        border: '1px solid #ddd6fe',
+                        padding: '2px 9px', borderRadius: '999px',
+                      }}
                     >
-                      {m}
-                    </span>
-                  ))}
-                  <span>•</span>
-                  <span style={{ textTransform: 'uppercase' }}>{primaryName}</span>
-                  {extraCount > 0 && (
-                    <span style={{
-                      color: '#0f52ba', background: '#dbeafe',
-                      padding: '1.5px 6px', borderRadius: '999px',
-                      fontSize: '8.5px', fontWeight: 900, letterSpacing: '0.3px',
-                    }}>
-                      +{extraCount} more
+                      <span aria-hidden="true" style={{ fontSize: '11px' }}>↗</span>
+                      Ref: {app.referredBy}
                     </span>
                   )}
-                  {progress && (
-                    <span title="Reporting progress across all services on this visit" style={{
-                      color: '#047857', background: '#d1fae5',
-                      padding: '1.5px 6px', borderRadius: '999px',
-                      fontSize: '8.5px', fontWeight: 900, letterSpacing: '0.3px',
-                      border: '1px solid #a7f3d0',
+                  {onPremisesElapsed && (
+                    <>
+                      <span style={{ opacity: 0.4 }}>·</span>
+                      <span title={app.deliveredAt ? 'Total time on premises' : 'On premises (live)'} style={{
+                        color: premisesStyle.color, background: premisesStyle.bg,
+                        border: `1px solid ${premisesStyle.border}`,
+                        padding: '1px 6px', borderRadius: '999px',
+                        fontWeight: 900, fontSize: '9px',
+                        display: 'inline-flex', alignItems: 'center', gap: '3px',
+                      }}>
+                        <span style={{ fontSize: '9px' }}>⏱</span>{onPremisesElapsed}
+                      </span>
+                    </>
+                  )}
+                  {scanToDelivery && (
+                    <span title="Scan start → delivered" style={{
+                      color: '#0369a1', background: '#e0f2fe',
+                      border: '1px solid #bae6fd',
+                      padding: '1px 6px', borderRadius: '999px',
+                      fontWeight: 900, fontSize: '9px',
+                      display: 'inline-flex', alignItems: 'center', gap: '3px',
                     }}>
-                      {progress}
+                      <span style={{ fontSize: '9px' }}>📋</span>{scanToDelivery}
                     </span>
                   )}
                 </div>
-              );
-            })()}
-            {/* Turnaround-time pills: on-premises clock (live-ticks) and
-                scan→delivery (final, only after delivery). Hidden entirely
-                until ArrivedAt is set so pre-arrival rows stay quiet. */}
-            {onPremisesElapsed && (
-              <div style={{ display: 'flex', alignItems: 'center', gap: '5px', marginTop: '4px', flexWrap: 'wrap' }}>
-                <span title={app.deliveredAt ? 'Total time on premises' : 'On premises (live)'} style={{
-                  fontSize: '9px', fontWeight: 900, letterSpacing: '0.3px',
-                  padding: '2px 6px', borderRadius: '999px',
-                  color: premisesStyle.color, background: premisesStyle.bg,
-                  border: `1px solid ${premisesStyle.border}`,
-                  display: 'inline-flex', alignItems: 'center', gap: '3px',
-                }}>
-                  <span style={{ fontSize: '9px' }}>⏱</span>
-                  {onPremisesElapsed}
-                </span>
-                {scanToDelivery && (
-                  <span title="Scan start → delivered" style={{
-                    fontSize: '9px', fontWeight: 900, letterSpacing: '0.3px',
-                    padding: '2px 6px', borderRadius: '999px',
-                    color: '#0369a1', background: '#e0f2fe',
-                    border: '1px solid #bae6fd',
-                    display: 'inline-flex', alignItems: 'center', gap: '3px',
+              </div>
+            </div>
+
+            {/* Action cluster — sits on the right of the header row.
+                Holds the status pill, the optional next-action button
+                (Mark Arrived / Mark Scanning / etc), and the three
+                quick action icons (Print Token, Edit, Cancel). */}
+            <div
+              style={{ display: 'flex', alignItems: 'center', gap: '8px', flexShrink: 0 }}
+              onClick={e => e.stopPropagation()}
+            >
+              <div style={{
+                backgroundColor: meta.bg,
+                color: meta.color,
+                padding: '3px 8px',
+                whiteSpace: 'nowrap',
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '4px',
+                border: `1px solid ${meta.color}20`,
+                borderRadius: '6px',
+              }}>
+                <span style={{ fontSize: '11px', lineHeight: '1' }}>{meta.icon}</span>
+                <span style={{ lineHeight: '1', fontWeight: 800, fontSize: '8.5px' }}>{meta.label}</span>
+              </div>
+              {next && (
+                <button
+                  onClick={() => handleAction(app.appointmentId || app.id, next.action)}
+                  style={{
+                    padding: '6px 12px', borderRadius: '6px',
+                    background: next.color, color: 'white',
+                    border: 'none', cursor: 'pointer',
+                    fontSize: '9px', fontWeight: 950,
+                    boxShadow: `0 4px 10px ${next.color}33`,
+                    whiteSpace: 'nowrap',
+                    display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+                    gap: '4px',
+                  }}
+                >
+                  <span>{next.icon}</span><span>{next.label}</span>
+                </button>
+              )}
+              <button
+                onClick={() => setTokenPrintData(app)}
+                style={{ width: '28px', height: '28px', display: 'flex', alignItems: 'center', justifyContent: 'center', borderRadius: '6px', background: 'white', border: '1px solid #e2e8f0', cursor: 'pointer', fontSize: '12px' }}
+                title="Print Token"
+              >🖨️</button>
+              <button
+                onClick={() => {
+                  setEditingAppointment(app);
+                  const lines = getServiceLines(app);
+                  const [primary, ...rest] = lines;
+                  if (primary) {
+                    setEditingAppointment(prev => ({
+                      ...app,
+                      modality:         primary.modality || app.modality || 'X-RAY',
+                      service:          primary.serviceName || app.service || '',
+                      amount:           primary.amount || app.amount || 0,
+                      referralCutValue: primary.referralCutValue || app.referralCutValue || 0,
+                      _primaryServiceId: primary.id || null,
+                    }));
+                  }
+                  setEditServices(rest.map(l => ({
+                    id:               l.id || null,
+                    serviceName:      l.serviceName,
+                    modality:         l.modality,
+                    amount:           l.amount,
+                    referralCutValue: l.referralCutValue,
+                    status:           l.status,
+                  })));
+                  setIsEditingOpen(true);
+                }}
+                style={{ width: '28px', height: '28px', display: 'flex', alignItems: 'center', justifyContent: 'center', borderRadius: '6px', background: 'white', border: '1px solid #e2e8f0', cursor: 'pointer', fontSize: '12px' }}
+                title="Edit"
+              >✏️</button>
+              <button
+                onClick={() => setCancelConfirmModal({ isOpen: true, appointmentId: app.appointmentId || app.id, patientName: app.patientName })}
+                style={{ width: '28px', height: '28px', display: 'flex', alignItems: 'center', justifyContent: 'center', borderRadius: '6px', background: '#fff1f2', border: '1px solid #fecdd3', cursor: 'pointer', color: '#e11d48', fontSize: '12px' }}
+                title="Cancel"
+              >✕</button>
+            </div>
+          </div>
+
+          {/* Service ledger — Stripe-invoice style sub-rows. One
+              properly-aligned line per service: modality chip · service
+              name · price · status pill · per-line Print button. A
+              TOTAL row anchors the bill at the bottom for multi-service
+              visits. Single-service visits show one sub-row and skip
+              the total (the row itself shows the only price). */}
+          {(() => {
+            const lines = getServiceLines(app);
+            if (lines.length === 0) return null;
+
+            const accentFor = (m) => {
+              const k = String(m || '').toUpperCase();
+              return ({
+                'X-RAY': '#10b981', CT: '#3b82f6', MRI: '#8b5cf6',
+                ULTRASOUND: '#06b6d4', USG: '#06b6d4',
+                MAMMOGRAPHY: '#ec4899', MG: '#ec4899',
+                DEXA: '#f59e0b', PET: '#f97316', NUCLEAR: '#84cc16',
+              }[k] || '#64748b');
+            };
+            const stepRank = (status) => {
+              const s = String(status || '').toUpperCase();
+              if (s === 'DELIVERED') return 4;
+              if (s === 'REPORTED')  return 3;
+              if (s === 'SCANNED')   return 2;
+              return 1;
+            };
+            const stepPill = (status) => {
+              const s = String(status || '').toUpperCase();
+              if (s === 'DELIVERED') return { label: 'Delivered',   color: '#047857', bg: '#d1fae5', border: '#a7f3d0' };
+              if (s === 'REPORTED')  return { label: 'Reported',    color: '#1d4ed8', bg: '#dbeafe', border: '#bfdbfe' };
+              if (s === 'SCANNED')   return { label: 'Scanned',     color: '#9a3412', bg: '#ffedd5', border: '#fed7aa' };
+              if (s === 'CANCELLED') return { label: 'Cancelled',   color: '#9f1239', bg: '#ffe4e6', border: '#fecdd3' };
+              return                       { label: 'Not Started',  color: '#475569', bg: '#f1f5f9', border: '#e2e8f0' };
+            };
+            const apptKey  = app.appointmentId || app.id;
+            const expanded = expandedLedgers.has(apptKey);
+
+            // Tiny one-line summary for the collapsed state. Counts
+            // services by stage so the front desk knows at a glance
+            // whether anything still needs work, even without unfurling.
+            const summary = { notStarted: 0, scanned: 0, reported: 0, delivered: 0, cancelled: 0 };
+            for (const l of lines) {
+              const s = String(l.status || 'NOT_STARTED').toUpperCase();
+              if (s === 'DELIVERED')   summary.delivered++;
+              else if (s === 'REPORTED')  summary.reported++;
+              else if (s === 'SCANNED')   summary.scanned++;
+              else if (s === 'CANCELLED') summary.cancelled++;
+              else                        summary.notStarted++;
+            }
+            const summaryChips = [
+              summary.notStarted && { label: `${summary.notStarted} pending`,   bg: '#f1f5f9', color: '#475569', border: '#e2e8f0' },
+              summary.scanned    && { label: `${summary.scanned} scanned`,      bg: '#ffedd5', color: '#9a3412', border: '#fed7aa' },
+              summary.reported   && { label: `${summary.reported} reported`,    bg: '#dbeafe', color: '#1d4ed8', border: '#bfdbfe' },
+              summary.delivered  && { label: `${summary.delivered} delivered`,  bg: '#d1fae5', color: '#047857', border: '#a7f3d0' },
+              summary.cancelled  && { label: `${summary.cancelled} cancelled`,  bg: '#ffe4e6', color: '#9f1239', border: '#fecdd3' },
+            ].filter(Boolean);
+
+            return (
+              <div style={{
+                marginTop: '8px',
+                paddingTop: '8px',
+                borderTop: '1px solid #f1f5f9',
+                display: 'flex', flexDirection: 'column', gap: '6px',
+              }}>
+                {/* Toggle strip — collapsed by default. Shows a per-
+                    stage chip summary on the left + a chevron button
+                    on the right that flips the full ledger open.
+                    Stops the row click handler so opening the ledger
+                    doesn't also fire whatever the parent row click
+                    does (Edit drawer, etc.). */}
+                <div
+                  role="button"
+                  tabIndex={0}
+                  onClick={(e) => { e.stopPropagation(); toggleLedger(apptKey); }}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); e.stopPropagation(); toggleLedger(apptKey); }
+                  }}
+                  aria-expanded={expanded}
+                  aria-label={expanded ? 'Hide services' : `View all ${lines.length} services`}
+                  style={{
+                    display: 'flex', alignItems: 'center', gap: '8px',
+                    padding: '6px 10px',
+                    borderRadius: '8px',
+                    background: expanded ? 'rgba(15, 82, 186, 0.05)' : '#f8fafc',
+                    border: `1px solid ${expanded ? 'rgba(15, 82, 186, 0.18)' : '#eef2f6'}`,
+                    cursor: 'pointer',
+                    transition: 'background 0.12s, border-color 0.12s',
+                  }}
+                  onMouseEnter={(e) => { if (!expanded) e.currentTarget.style.background = '#f1f5f9'; }}
+                  onMouseLeave={(e) => { if (!expanded) e.currentTarget.style.background = '#f8fafc'; }}
+                >
+                  <span style={{
+                    fontSize: '9px', fontWeight: 950, letterSpacing: '0.5px',
+                    color: '#0f172a', textTransform: 'uppercase', whiteSpace: 'nowrap',
                   }}>
-                    <span style={{ fontSize: '9px' }}>📋</span>
-                    {scanToDelivery}
+                    {lines.length} {lines.length === 1 ? 'service' : 'services'}
                   </span>
+                  <div style={{
+                    flex: 1, minWidth: 0,
+                    display: 'flex', alignItems: 'center', gap: '4px',
+                    flexWrap: 'wrap',
+                  }}>
+                    {summaryChips.map((c, i) => (
+                      <span key={i} style={{
+                        fontSize: '8.5px', fontWeight: 800, letterSpacing: '0.3px',
+                        color: c.color, background: c.bg,
+                        padding: '2px 7px', borderRadius: '999px',
+                        border: `1px solid ${c.border}`,
+                        textTransform: 'uppercase',
+                      }}>{c.label}</span>
+                    ))}
+                  </div>
+                  <span style={{
+                    fontSize: '9px', fontWeight: 900, letterSpacing: '0.5px',
+                    color: '#0f52ba', textTransform: 'uppercase', whiteSpace: 'nowrap',
+                    display: 'inline-flex', alignItems: 'center', gap: '4px',
+                  }}>
+                    {expanded ? 'Hide' : 'View all'}
+                    <span aria-hidden="true" style={{
+                      display: 'inline-block',
+                      transform: expanded ? 'rotate(180deg)' : 'rotate(0deg)',
+                      transition: 'transform 0.18s',
+                      fontSize: '11px', lineHeight: 1,
+                    }}>▾</span>
+                  </span>
+                </div>
+
+                {expanded && (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+                {/* Tiny in-card column headers — match the sub-row
+                    grid columns so service / amount / status / print
+                    all read like a proper table. Very subtle so they
+                    orient without competing with the data. */}
+                <div style={{
+                  display: 'grid',
+                  gridTemplateColumns: '4px 96px minmax(160px, 1fr) 130px 160px',
+                  gap: '8px',
+                  alignItems: 'center',
+                  padding: '0 4px 4px 6px',
+                  fontSize: '8px', fontWeight: 900, letterSpacing: '0.8px',
+                  color: '#94a3b8', textTransform: 'uppercase',
+                }}>
+                  <span />
+                  <span style={{ textAlign: 'center' }}>Modality</span>
+                  <span>Service</span>
+                  <span>Status</span>
+                  <span style={{ textAlign: 'center' }}>Print Prescription</span>
+                </div>
+                {lines.map((line, idx) => {
+                  const accent   = accentFor(line.modality);
+                  const step     = stepRank(line.status);
+                  const pill     = stepPill(line.status);
+                  const canPrint = step >= 3;
+                  return (
+                    <div
+                      key={line.id || `lrow-${idx}`}
+                      style={{
+                        display: 'grid',
+                        // Sub-row grid — consistent columns across the
+                        // visit's services so the eye can scan straight
+                        // down: modality · name · price · status · print.
+                        gridTemplateColumns: '4px 96px minmax(160px, 1fr) 130px 160px',
+                        gap: '8px',
+                        alignItems: 'center',
+                        padding: '5px 4px 5px 6px',
+                        borderRadius: '8px',
+                        transition: 'background 0.12s',
+                      }}
+                      onMouseEnter={(e) => { e.currentTarget.style.background = '#f8fbff'; }}
+                      onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; }}
+                    >
+                      {/* Modality accent stripe — colour-codes the row. */}
+                      <span aria-hidden="true" style={{
+                        width: '3px', height: '18px', borderRadius: '3px',
+                        background: accent,
+                      }} />
+                      <span style={{
+                        fontSize: '9px', fontWeight: 950, letterSpacing: '0.4px',
+                        color: '#0f52ba', background: '#eff6ff',
+                        padding: '2px 6px', borderRadius: '5px',
+                        border: '1px solid #dbeafe',
+                        textAlign: 'center',
+                      }}>{line.modality || 'OT'}</span>
+                      <span style={{
+                        fontSize: '11px', fontWeight: 700, color: '#1e293b',
+                        whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
+                      }} title={line.serviceName}>
+                        {line.serviceName || '-'}
+                      </span>
+                      {/* Status + TAT pills share one cell so the
+                          eye reads them as a unit ("Scanned · 1h 20m"
+                          tells the whole story for the row). The TAT
+                          pill colour shifts amber/red on SLA breach. */}
+                      {(() => {
+                        const elapsedMin = getStageElapsedMinutes(line, app, nowMs);
+                        const slaBucket  = getStageSlaBucket(line, elapsedMin);
+                        const tatStyle = (
+                          slaBucket === 'breach' ? { color: '#9f1239', bg: '#ffe4e6', border: '#fecdd3' } :
+                          slaBucket === 'warn'   ? { color: '#9a3412', bg: '#ffedd5', border: '#fed7aa' } :
+                                                   { color: '#475569', bg: '#f1f5f9', border: '#e2e8f0' }
+                        );
+                        const tatLabel = elapsedMin == null ? '' : formatStageElapsed(elapsedMin);
+                        return (
+                          <span style={{
+                            display: 'inline-flex', alignItems: 'center', gap: '4px',
+                            flexWrap: 'wrap',
+                          }}>
+                            <span style={{
+                              fontSize: '8.5px', fontWeight: 900, letterSpacing: '0.3px',
+                              color: pill.color, background: pill.bg,
+                              padding: '2px 7px', borderRadius: '999px',
+                              border: `1px solid ${pill.border}`,
+                              textTransform: 'uppercase',
+                            }}>{pill.label}</span>
+                            {tatLabel && (
+                              <span title={`In ${pill.label.toLowerCase()} stage for ${tatLabel}`} style={{
+                                fontSize: '8.5px', fontWeight: 800, letterSpacing: '0.3px',
+                                color: tatStyle.color, background: tatStyle.bg,
+                                padding: '2px 6px', borderRadius: '999px',
+                                border: `1px solid ${tatStyle.border}`,
+                                fontVariantNumeric: 'tabular-nums',
+                              }}>⏱ {tatLabel}</span>
+                            )}
+                          </span>
+                        );
+                      })()}
+                      <button
+                        type="button"
+                        disabled={!canPrint}
+                        onClick={(e) => { e.stopPropagation(); if (canPrint) handlePreviewPrint(app, line.id); }}
+                        aria-label={`Print prescription for ${line.serviceName || line.modality}`}
+                        title={canPrint ? 'Print prescription for this service' : 'Available once the report is finalised'}
+                        style={{
+                          justifySelf: 'stretch',
+                          padding: '5px 10px',
+                          borderRadius: '7px',
+                          border: 'none',
+                          background: canPrint ? 'linear-gradient(135deg, #0f52ba 0%, #1e3a8a 100%)' : '#f1f5f9',
+                          color: canPrint ? 'white' : '#94a3b8',
+                          cursor: canPrint ? 'pointer' : 'not-allowed',
+                          fontSize: '9px', fontWeight: 900, letterSpacing: '0.3px',
+                          display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: '5px',
+                          boxShadow: canPrint ? '0 2px 6px -2px rgba(15, 82, 186, 0.55)' : 'none',
+                          fontFamily: 'inherit',
+                          textTransform: 'uppercase',
+                          transition: 'transform 0.12s ease',
+                          whiteSpace: 'nowrap',
+                        }}
+                        onMouseEnter={(e) => { if (canPrint) e.currentTarget.style.transform = 'translateY(-1px)'; }}
+                        onMouseLeave={(e) => { e.currentTarget.style.transform = 'translateY(0)'; }}
+                      >
+                        {/* Heroicons-style outline printer, inline SVG so
+                            no icon library dependency. currentColor lets
+                            it switch between white (enabled) and slate
+                            (disabled) without two assets. */}
+                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                          <polyline points="6 9 6 2 18 2 18 9" />
+                          <path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2" />
+                          <rect x="6" y="14" width="12" height="8" rx="1" />
+                        </svg>
+                        Print Prescription
+                      </button>
+                    </div>
+                  );
+                })}
+
+                {/* Total row removed at user request — per-service
+                    amounts line up in the price column already, and the
+                    booking-step briefing + the token slip both still
+                    show the visit-level total. */}
+                </div>
                 )}
               </div>
-            )}
-          </div>
-
-          {/* Column 4: Referred By */}
-          <div>
-            <div style={{ fontSize: '11px', fontWeight: 700, color: '#334155', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }} title={app.referredBy || 'DIRECT/SELF'}>
-              {app.referredBy || 'DIRECT/SELF'}
-            </div>
-            <div style={{ fontSize: '8.5px', color: '#94a3b8', fontWeight: 700, textTransform: 'uppercase', marginTop: '1px' }}>
-              REFERRING DR.
-            </div>
-          </div>
-
-          {/* Column 5: Date */}
-          <div>
-            <div style={{ fontSize: '11px', fontWeight: 800, color: '#1e293b' }}>{appDate}</div>
-            <div style={{ fontSize: '9px', color: '#64748b', fontWeight: 700, marginTop: '2px' }}>{appTime}</div>
-          </div>
-
-          {/* Column 6: Status */}
-          <div className="status-badge" style={{ 
-            backgroundColor: meta.bg, 
-            color: meta.color, 
-            padding: '4px 8px', 
-            width: 'fit-content',
-            whiteSpace: 'nowrap',
-            display: 'inline-flex',
-            alignItems: 'center',
-            gap: '4px',
-            border: `1px solid ${meta.color}20`,
-            borderRadius: '6px'
-          }}>
-            <span style={{ fontSize: '11px', lineHeight: '1', display: 'flex', alignItems: 'center' }}>{meta.icon}</span>
-            <span style={{ lineHeight: '1', display: 'flex', alignItems: 'center', fontWeight: 800, fontSize: '8.5px' }}>{meta.label}</span>
-          </div>
-
-          {/* Column 7: Specialist */}
-          <div>
-            <div style={{ fontSize: '11px', fontWeight: 700, color: '#1e293b', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }} title={app.doctor || 'UNASSIGNED'}>
-              {app.doctor || 'UNASSIGNED'}
-            </div>
-            <div style={{ fontSize: '8.5px', color: '#94a3b8', textTransform: 'uppercase', fontWeight: 700, marginTop: '1px' }}>
-              SPECIALIST
-            </div>
-          </div>
-
-          {/* Column 8: Actions */}
-          <div style={{ display: 'flex', gap: '6px', justifyContent: 'flex-end' }} onClick={e => e.stopPropagation()}>
-            {next && (
-              <button
-                onClick={() => handleAction(app.appointmentId || app.id, next.action)}
-                style={{ 
-                  padding: '6px 14px', borderRadius: '6px', 
-                  background: next.color, color: 'white', 
-                  border: 'none', cursor: 'pointer', 
-                  fontSize: '9px', fontWeight: 950, 
-                  boxShadow: `0 4px 10px ${next.color}33`,
-                  whiteSpace: 'nowrap',
-                  minWidth: '85px',
-                  display: 'inline-flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  gap: '4px'
-                }}
-              >
-                <span>{next.icon}</span> <span>{next.label}</span>
-              </button>
-            )}
-            <button
-              onClick={() => setTokenPrintData(app)}
-              style={{ width: '28px', height: '28px', display: 'flex', alignItems: 'center', justifyContent: 'center', borderRadius: '6px', background: 'white', border: '1px solid #e2e8f0', cursor: 'pointer', fontSize: '12px' }}
-              title="Print Token"
-            >
-              🖨️
-            </button>
-            <button
-              onClick={() => handlePreviewPrint(app)}
-              style={{ width: '28px', height: '28px', display: 'flex', alignItems: 'center', justifyContent: 'center', borderRadius: '6px', background: 'white', border: '1px solid #e2e8f0', cursor: 'pointer', fontSize: '12px' }}
-              title="Report"
-            >
-              📄
-            </button>
-            <button
-              onClick={() => {
-                setEditingAppointment(app);
-                // Seed the edit tray from the appointment's service lines.
-                // getServiceLines synthesises a single line from the scalar
-                // fields when the row pre-dates the multi-service rollout,
-                // so the drawer always opens with at least one entry. The
-                // "primary" line (index 0) is used to populate the draft
-                // input fields so today's UX (one modality picker, one
-                // service input, one amount) keeps working — additional
-                // lines sit in the tray below.
-                const lines = getServiceLines(app);
-                const [primary, ...rest] = lines;
-                if (primary) {
-                  setEditingAppointment(prev => ({
-                    ...app,
-                    modality:         primary.modality || app.modality || 'X-RAY',
-                    service:          primary.serviceName || app.service || '',
-                    amount:           primary.amount || app.amount || 0,
-                    referralCutValue: primary.referralCutValue || app.referralCutValue || 0,
-                    _primaryServiceId: primary.id || null,
-                  }));
-                }
-                setEditServices(rest.map(l => ({
-                  id:               l.id || null,
-                  serviceName:      l.serviceName,
-                  modality:         l.modality,
-                  amount:           l.amount,
-                  referralCutValue: l.referralCutValue,
-                  status:           l.status,
-                })));
-                setIsEditingOpen(true);
-              }}
-              style={{ width: '28px', height: '28px', display: 'flex', alignItems: 'center', justifyContent: 'center', borderRadius: '6px', background: 'white', border: '1px solid #e2e8f0', cursor: 'pointer', fontSize: '12px' }}
-              title="Edit"
-            >
-              ✏️
-            </button>
-            <button
-              onClick={() => setCancelConfirmModal({ isOpen: true, appointmentId: app.appointmentId || app.id, patientName: app.patientName })}
-              style={{ width: '28px', height: '28px', display: 'flex', alignItems: 'center', justifyContent: 'center', borderRadius: '6px', background: '#fff1f2', border: '1px solid #fecdd3', cursor: 'pointer', color: '#e11d48', fontSize: '12px' }}
-              title="Cancel"
-            >
-              ✕
-            </button>
-          </div>
+            );
+          })()}
         </div>
-
 
       </div>
     );
@@ -2401,9 +2722,13 @@ export default function AppointmentBoard() {
                       {(() => {
                         const draftHasService = !!String(newBooking.service || '').trim();
                         const lines = newBooking.addedServices || [];
-                        const totalAmount =
-                          lines.reduce((acc, l) => acc + (Number(l.amount) || 0), 0) +
-                          (draftHasService ? (Number(newBooking.amount) || 0) : 0);
+                        const draftAmount = draftHasService ? (Number(newBooking.amount) || 0) : 0;
+                        const draftCut    = draftHasService ? (Number(newBooking.referralCutValue) || 0) : 0;
+                        const linesAmount = lines.reduce((acc, l) => acc + (Number(l.amount) || 0), 0);
+                        const linesCut    = lines.reduce((acc, l) => acc + (Number(l.referralCutValue) || 0), 0);
+                        const totalAmount = linesAmount + draftAmount;
+                        const totalCut    = linesCut    + draftCut;
+                        const totalCount  = lines.length + (draftHasService ? 1 : 0);
 
                         const addCurrentDraft = () => {
                           if (!draftHasService) return;
@@ -2433,80 +2758,164 @@ export default function AppointmentBoard() {
                           }));
                         };
 
+                        const promoteLineToDraft = (idx) => {
+                          // Lets the user edit an already-added line by
+                          // pulling it back into the modality + service +
+                          // amount inputs above. Saves them the
+                          // "remove + re-type" round trip.
+                          setNewBooking(prev => {
+                            const next = (prev.addedServices || []).filter((_, i) => i !== idx);
+                            const line = (prev.addedServices || [])[idx];
+                            if (!line) return prev;
+                            return {
+                              ...prev,
+                              addedServices:    next,
+                              modality:         line.modality || prev.modality,
+                              service:          line.serviceName,
+                              amount:           line.amount,
+                              referralCutValue: line.referralCutValue || 0,
+                            };
+                          });
+                        };
+
                         return (
                           <>
                             {(lines.length > 0 || draftHasService) && (
                               <div style={{
                                 marginTop: '10px',
-                                padding: '8px 10px',
-                                background: 'white',
-                                border: '1px dashed #cbd5e1',
-                                borderRadius: '10px',
+                                padding: '12px 12px 10px',
+                                background: 'linear-gradient(180deg, #f8fbff 0%, #ffffff 100%)',
+                                border: '1px solid #dbe6f7',
+                                borderRadius: '12px',
+                                boxShadow: '0 1px 3px rgba(15, 82, 186, 0.04)',
                               }}>
-                                <div style={{
-                                  display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-                                  marginBottom: lines.length > 0 ? '6px' : '0',
-                                }}>
-                                  <span style={{ fontSize: '9px', fontWeight: 900, color: '#0f52ba', letterSpacing: '0.6px', textTransform: 'uppercase' }}>
-                                    Services on this visit
-                                  </span>
-                                  <span style={{ fontSize: '10px', fontWeight: 800, color: '#0f172a' }}>
-                                    {lines.length + (draftHasService ? 1 : 0)} item{lines.length + (draftHasService ? 1 : 0) === 1 ? '' : 's'} · ₹{totalAmount.toLocaleString()}
-                                  </span>
+                                {/* Header — title + count chip + running total.
+                                    Tighter visual hierarchy so it reads as
+                                    THE tally for the whole visit, not just a
+                                    quiet caption above the rows. */}
+                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+                                  <div style={{ display: 'inline-flex', alignItems: 'center', gap: '8px' }}>
+                                    <span style={{ fontSize: '10px', fontWeight: 950, color: '#0f52ba', letterSpacing: '0.6px', textTransform: 'uppercase' }}>
+                                      Services on this visit
+                                    </span>
+                                    <span style={{
+                                      fontSize: '9px', fontWeight: 950, letterSpacing: '0.3px',
+                                      color: 'white', background: '#0f52ba',
+                                      padding: '2px 7px', borderRadius: '999px',
+                                    }}>{totalCount}</span>
+                                  </div>
+                                  <div style={{ textAlign: 'right' }}>
+                                    <div style={{ fontSize: '12px', fontWeight: 950, color: '#0f172a', letterSpacing: '0.1px' }}>
+                                      ₹{totalAmount.toLocaleString()}
+                                    </div>
+                                    {totalCut > 0 && (
+                                      <div style={{ fontSize: '9px', fontWeight: 900, color: '#e67e22', marginTop: '1px' }}>
+                                        Total cut · ₹{totalCut.toLocaleString()}
+                                      </div>
+                                    )}
+                                  </div>
                                 </div>
 
-                                {/* Already-added chips */}
+                                {/* Compact lines. Each row is a single line —
+                                    modality chip + service name (with referral
+                                    cut as a subtle subline if any) + price +
+                                    edit/remove actions. Hover lifts the row so
+                                    affordance is clear. */}
                                 {lines.map((line, idx) => (
                                   <div key={idx} style={{
                                     display: 'flex', alignItems: 'center', gap: '8px',
-                                    padding: '6px 8px', borderRadius: '8px',
-                                    background: '#f1f5f9', marginBottom: '4px',
+                                    padding: '7px 8px', borderRadius: '8px',
+                                    background: 'white', border: '1px solid #e9eef7',
+                                    marginBottom: '4px',
                                   }}>
                                     <span style={{
-                                      fontSize: '8px', fontWeight: 900,
+                                      flexShrink: 0,
+                                      fontSize: '8px', fontWeight: 950, letterSpacing: '0.4px',
                                       color: '#0f52ba',
-                                      background: 'white', padding: '2px 5px',
-                                      borderRadius: '4px', letterSpacing: '0.5px',
+                                      background: '#eff6ff',
+                                      padding: '3px 6px',
+                                      borderRadius: '5px',
+                                      border: '1px solid #dbeafe',
                                     }}>{line.modality || 'OT'}</span>
-                                    <span style={{ fontSize: '11px', fontWeight: 700, color: '#1e293b', flex: 1, minWidth: 0, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                                      {line.serviceName}
-                                    </span>
-                                    <span style={{ fontSize: '10px', fontWeight: 800, color: '#0f172a' }}>
-                                      ₹{Number(line.amount || 0).toLocaleString()}
-                                    </span>
-                                    <button
-                                      type="button"
-                                      onClick={() => removeLine(idx)}
-                                      aria-label={`Remove ${line.serviceName}`}
-                                      style={{
-                                        width: '20px', height: '20px', borderRadius: '6px',
-                                        background: 'white', border: '1px solid #e2e8f0',
-                                        color: '#64748b', cursor: 'pointer', fontSize: '10px',
-                                        display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-                                      }}
-                                    >✕</button>
+                                    <div style={{ flex: 1, minWidth: 0 }}>
+                                      <div style={{ fontSize: '11.5px', fontWeight: 800, color: '#1e293b', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                                        {line.serviceName}
+                                      </div>
+                                      {Number(line.referralCutValue) > 0 && (
+                                        <div style={{ fontSize: '8.5px', fontWeight: 800, color: '#e67e22', marginTop: '1px' }}>
+                                          Referral cut · ₹{Number(line.referralCutValue).toLocaleString()}
+                                        </div>
+                                      )}
+                                    </div>
+                                    <div style={{ textAlign: 'right', flexShrink: 0 }}>
+                                      <div style={{ fontSize: '11px', fontWeight: 900, color: '#0f172a' }}>
+                                        ₹{Number(line.amount || 0).toLocaleString()}
+                                      </div>
+                                    </div>
+                                    <div style={{ display: 'inline-flex', gap: '4px', flexShrink: 0 }}>
+                                      <button
+                                        type="button"
+                                        onClick={() => promoteLineToDraft(idx)}
+                                        aria-label={`Edit ${line.serviceName}`}
+                                        title="Edit this service"
+                                        style={{
+                                          width: '22px', height: '22px', borderRadius: '6px',
+                                          background: 'white', border: '1px solid #e2e8f0',
+                                          color: '#64748b', cursor: 'pointer', fontSize: '11px',
+                                          display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+                                          fontFamily: 'inherit',
+                                        }}
+                                      >✎</button>
+                                      <button
+                                        type="button"
+                                        onClick={() => removeLine(idx)}
+                                        aria-label={`Remove ${line.serviceName}`}
+                                        title="Remove this service"
+                                        style={{
+                                          width: '22px', height: '22px', borderRadius: '6px',
+                                          background: 'white', border: '1px solid #e2e8f0',
+                                          color: '#64748b', cursor: 'pointer', fontSize: '11px',
+                                          display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+                                          fontFamily: 'inherit',
+                                        }}
+                                      >✕</button>
+                                    </div>
                                   </div>
                                 ))}
 
-                                {/* Draft preview (live, unconfirmed) */}
+                                {/* Draft preview — slightly indented + dashed
+                                    border so the user sees it as "what will
+                                    be added if I commit", distinct from the
+                                    saved rows. */}
                                 {draftHasService && (
                                   <div style={{
                                     display: 'flex', alignItems: 'center', gap: '8px',
-                                    padding: '6px 8px', borderRadius: '8px',
+                                    padding: '7px 8px', borderRadius: '8px',
                                     background: '#eff6ff', border: '1px dashed #93c5fd',
+                                    marginTop: lines.length > 0 ? '2px' : '0',
                                   }}>
                                     <span style={{
-                                      fontSize: '8px', fontWeight: 900,
+                                      flexShrink: 0,
+                                      fontSize: '8px', fontWeight: 950, letterSpacing: '0.4px',
                                       color: '#0f52ba',
-                                      background: 'white', padding: '2px 5px',
-                                      borderRadius: '4px', letterSpacing: '0.5px',
+                                      background: 'white',
+                                      padding: '3px 6px',
+                                      borderRadius: '5px',
+                                      border: '1px solid #dbeafe',
                                     }}>{(newBooking.modality || 'OT').toUpperCase()}</span>
-                                    <span style={{ fontSize: '11px', fontWeight: 700, color: '#1e293b', flex: 1, minWidth: 0, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                                      {newBooking.service} <span style={{ opacity: 0.6, fontSize: '9px', fontWeight: 600 }}>· draft</span>
-                                    </span>
-                                    <span style={{ fontSize: '10px', fontWeight: 800, color: '#0f172a' }}>
+                                    <div style={{ flex: 1, minWidth: 0 }}>
+                                      <div style={{ fontSize: '11.5px', fontWeight: 800, color: '#1e293b', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                                        {newBooking.service} <span style={{ opacity: 0.6, fontSize: '9px', fontWeight: 700 }}>· draft</span>
+                                      </div>
+                                      {Number(newBooking.referralCutValue) > 0 && (
+                                        <div style={{ fontSize: '8.5px', fontWeight: 800, color: '#e67e22', marginTop: '1px' }}>
+                                          Referral cut · ₹{Number(newBooking.referralCutValue).toLocaleString()}
+                                        </div>
+                                      )}
+                                    </div>
+                                    <div style={{ fontSize: '11px', fontWeight: 900, color: '#0f172a', flexShrink: 0 }}>
                                       ₹{Number(newBooking.amount || 0).toLocaleString()}
-                                    </span>
+                                    </div>
                                   </div>
                                 )}
                               </div>
@@ -2519,14 +2928,14 @@ export default function AppointmentBoard() {
                               style={{
                                 marginTop: '8px',
                                 width: '100%',
-                                padding: '8px 10px',
+                                padding: '9px 10px',
                                 borderRadius: '10px',
                                 border: '1px dashed #93c5fd',
                                 background: draftHasService ? '#eff6ff' : '#f8fafc',
                                 color: draftHasService ? '#1d4ed8' : '#94a3b8',
                                 cursor: draftHasService ? 'pointer' : 'not-allowed',
                                 fontSize: '11px',
-                                fontWeight: 800,
+                                fontWeight: 900,
                                 letterSpacing: '0.3px',
                                 fontFamily: 'inherit',
                                 display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: '6px',
@@ -2534,7 +2943,9 @@ export default function AppointmentBoard() {
                               title={draftHasService ? 'Add this service and start another' : 'Fill in a service first'}
                             >
                               <span style={{ fontSize: '14px', lineHeight: 1 }}>+</span>
-                              Add another service to this visit
+                              {lines.length === 0
+                                ? 'Add this service to the visit'
+                                : 'Add another service to this visit'}
                             </button>
                           </>
                         );
@@ -2659,32 +3070,155 @@ export default function AppointmentBoard() {
                       </div>
                     </div>
 
-                    <div style={{
-                      background: '#f0f4ff', padding: '10px 12px', borderRadius: '12px',
-                      border: '1px solid #dde5f5', marginTop: '0px',
-                    }}>
-                      <div style={{ fontSize: '8px', fontWeight: 900, color: '#0f52ba', textTransform: 'uppercase', letterSpacing: '1px', marginBottom: '4px' }}>Final Mission Briefing Summary</div>
-                      <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 1fr', gap: '4px' }}>
-                        <div><span style={{ fontSize: '8px', color: '#888', fontWeight: 700 }}>PATIENT</span><div style={{ fontWeight: 800, fontSize: '10px', color: '#1a1a2e' }}>{patients.find(p => p.id === newBooking.patientId)?.name}</div></div>
-                        <div><span style={{ fontSize: '8px', color: '#888', fontWeight: 700 }}>MODALITY</span><div style={{ fontWeight: 800, fontSize: '10px', color: '#1a1a2e' }}>{newBooking.modality}</div></div>
-                        <div style={{ gridColumn: 'span 2' }}>
-                          <span style={{ fontSize: '8px', color: '#888', fontWeight: 700 }}>SERVICE & BILLING</span>
-                          <div style={{ fontWeight: 800, fontSize: '10px', color: '#1a1a2e', display: 'flex', justifyContent: 'space-between' }}>
-                            <span>{newBooking.service || '\u2014'}</span>
-                            <div style={{ textAlign: 'right' }}>
-                              <div style={{ color: '#0f52ba' }}>₹{(newBooking.amount || 0).toLocaleString()}</div>
-                              {newBooking.referralCutValue > 0 && (
-                                <div style={{ fontSize: '8px', color: '#e67e22', fontWeight: 900, marginTop: '2px' }}>
-                                  REFERRAL CUT: ₹{(newBooking.referralCutValue || 0).toLocaleString()}
-                                </div>
-                              )}
+                    {(() => {
+                      // Multi-service summary. Lists every service line
+                      // (including the live draft) so the receptionist
+                      // can verify the whole visit before deploying it.
+                      // Totals at the bottom roll up bill + referral cut.
+                      // Single-service visits still read naturally - one
+                      // row plus the same totals row.
+                      const _draftHasService = !!String(newBooking.service || '').trim();
+                      const _draftAmount = _draftHasService ? (Number(newBooking.amount) || 0) : 0;
+                      const _draftCut    = _draftHasService ? (Number(newBooking.referralCutValue) || 0) : 0;
+                      const _linesAmount = (newBooking.addedServices || []).reduce((acc, l) => acc + (Number(l.amount) || 0), 0);
+                      const _linesCut    = (newBooking.addedServices || []).reduce((acc, l) => acc + (Number(l.referralCutValue) || 0), 0);
+                      const _totalAmount = _linesAmount + _draftAmount;
+                      const _totalCut    = _linesCut    + _draftCut;
+                      const _summaryLines = [
+                        ...(newBooking.addedServices || []),
+                        ...(_draftHasService ? [{
+                          serviceName:      String(newBooking.service || '').trim(),
+                          modality:         String(newBooking.modality || '').trim().toUpperCase(),
+                          amount:           _draftAmount,
+                          referralCutValue: _draftCut,
+                        }] : []),
+                      ];
+                      return (
+                        <div style={{
+                          background: '#f0f4ff', padding: '12px 14px', borderRadius: '12px',
+                          border: '1px solid #dde5f5', marginTop: '0px',
+                        }}>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+                            <div style={{ fontSize: '8px', fontWeight: 950, color: '#0f52ba', textTransform: 'uppercase', letterSpacing: '1.2px' }}>
+                              Final Mission Briefing Summary
+                            </div>
+                            {_summaryLines.length > 1 && (
+                              <span style={{
+                                fontSize: '8px', fontWeight: 950, letterSpacing: '0.3px',
+                                color: 'white', background: '#0f52ba',
+                                padding: '2px 7px', borderRadius: '999px',
+                              }}>{_summaryLines.length} services</span>
+                            )}
+                          </div>
+
+                          {/* Patient + Specialist + Date + Priority. Sets
+                              the who / when context above the bill block. */}
+                          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', marginBottom: '10px' }}>
+                            <div>
+                              <span style={{ fontSize: '8px', color: '#888', fontWeight: 700, letterSpacing: '0.4px' }}>PATIENT</span>
+                              <div style={{ fontWeight: 800, fontSize: '10.5px', color: '#1a1a2e' }}>
+                                {patients.find(p => p.id === newBooking.patientId)?.name || '-'}
+                              </div>
+                            </div>
+                            <div>
+                              <span style={{ fontSize: '8px', color: '#888', fontWeight: 700, letterSpacing: '0.4px' }}>SPECIALIST</span>
+                              <div style={{ fontWeight: 800, fontSize: '10.5px', color: '#1a1a2e' }}>
+                                {newBooking.doctor || 'Unassigned'}
+                              </div>
+                            </div>
+                            <div>
+                              <span style={{ fontSize: '8px', color: '#888', fontWeight: 700, letterSpacing: '0.4px' }}>SCHEDULED DATE</span>
+                              <div style={{ fontWeight: 800, fontSize: '10.5px', color: '#0f52ba' }}>
+                                {newBooking.date}
+                              </div>
+                            </div>
+                            <div>
+                              <span style={{ fontSize: '8px', color: '#888', fontWeight: 700, letterSpacing: '0.4px' }}>PRIORITY</span>
+                              <div style={{
+                                fontWeight: 900, fontSize: '10.5px',
+                                color: newBooking.priority === 'STAT' ? '#dc2626'
+                                     : newBooking.priority === 'URGENT' ? '#d97706'
+                                     : '#1a1a2e',
+                              }}>
+                                {newBooking.priority || 'ROUTINE'}
+                              </div>
                             </div>
                           </div>
+
+                          {/* Services block - one row per line, then a
+                              gradient total row that rolls up the bill
+                              and the referral cut. */}
+                          <div>
+                            <div style={{ fontSize: '8px', color: '#888', fontWeight: 700, letterSpacing: '0.4px', marginBottom: '6px' }}>
+                              SERVICES & BILLING
+                            </div>
+                            {_summaryLines.length === 0 ? (
+                              <div style={{ fontSize: '10px', color: '#94a3b8', fontStyle: 'italic', padding: '6px 0' }}>
+                                No services added yet.
+                              </div>
+                            ) : (
+                              <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                                {_summaryLines.map((line, idx) => (
+                                  <div key={idx} style={{
+                                    display: 'flex', alignItems: 'center', gap: '8px',
+                                    padding: '6px 8px', borderRadius: '8px',
+                                    background: 'white', border: '1px solid #e9eef7',
+                                  }}>
+                                    <span style={{
+                                      flexShrink: 0,
+                                      fontSize: '8px', fontWeight: 950, letterSpacing: '0.4px',
+                                      color: '#0f52ba',
+                                      background: '#eff6ff',
+                                      padding: '2px 6px', borderRadius: '5px',
+                                      border: '1px solid #dbeafe',
+                                    }}>{line.modality || 'OT'}</span>
+                                    <div style={{ flex: 1, minWidth: 0 }}>
+                                      <div style={{ fontSize: '10.5px', fontWeight: 800, color: '#1a1a2e', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                                        {line.serviceName}
+                                      </div>
+                                      {Number(line.referralCutValue) > 0 && (
+                                        <div style={{ fontSize: '8px', fontWeight: 800, color: '#e67e22', marginTop: '1px' }}>
+                                          {`Referral cut · ₹${Number(line.referralCutValue).toLocaleString()}`}
+                                        </div>
+                                      )}
+                                    </div>
+                                    <div style={{ fontSize: '11px', fontWeight: 900, color: '#0f52ba', flexShrink: 0 }}>
+                                      {`₹${Number(line.amount || 0).toLocaleString()}`}
+                                    </div>
+                                  </div>
+                                ))}
+
+                                {/* Totals row - gradient so it visually
+                                    closes the bill, not just another
+                                    service row. Total referral cut sits
+                                    under the total bill in a gold tint. */}
+                                <div style={{
+                                  display: 'flex', alignItems: 'center', gap: '10px',
+                                  padding: '8px 10px', borderRadius: '8px',
+                                  background: 'linear-gradient(135deg, #0f52ba 0%, #1e3a8a 100%)',
+                                  color: 'white',
+                                  marginTop: '2px',
+                                }}>
+                                  <div style={{ flex: 1, fontSize: '9px', fontWeight: 950, letterSpacing: '0.6px', textTransform: 'uppercase', opacity: 0.85 }}>
+                                    Total bill
+                                  </div>
+                                  <div style={{ textAlign: 'right' }}>
+                                    <div style={{ fontSize: '13px', fontWeight: 950, letterSpacing: '0.1px' }}>
+                                      {`₹${_totalAmount.toLocaleString()}`}
+                                    </div>
+                                    {_totalCut > 0 && (
+                                      <div style={{ fontSize: '8.5px', fontWeight: 900, color: '#fcd34d', marginTop: '1px', letterSpacing: '0.3px' }}>
+                                        {`Total referral cut · ₹${_totalCut.toLocaleString()}`}
+                                      </div>
+                                    )}
+                                  </div>
+                                </div>
+                              </div>
+                            )}
+                          </div>
                         </div>
-                        <div><span style={{ fontSize: '8px', color: '#888', fontWeight: 700 }}>SPECIALIST</span><div style={{ fontWeight: 800, fontSize: '10px', color: '#1a1a2e' }}>{newBooking.doctor || 'Unassigned'}</div></div>
-                        <div><span style={{ fontSize: '8px', color: '#888', fontWeight: 700 }}>SCHEDULED DATE</span><div style={{ fontWeight: 800, fontSize: '10px', color: '#0f52ba' }}>{newBooking.date}</div></div>
-                      </div>
-                    </div>
+                      );
+                    })()}
 
                     <div className="drawer-footer" style={{ marginTop: '0px', paddingTop: '10px' }}>
                       <button className="btn-logout" style={{ padding: '10px 16px', borderRadius: '10px', fontWeight: 800, fontSize: '12px' }} onClick={() => setBookingStep(1)}>{'\u2190'} Back</button>
@@ -3054,6 +3588,197 @@ export default function AppointmentBoard() {
                 </div>
               </div>
 
+              {/* Edit-drawer summary footer.
+                  Mirrors the booking briefing so the user can verify the
+                  whole visit (every service, total bill, total referral
+                  cut, who / when / priority) right above the Save action
+                  without scrolling back through the form. The primary
+                  line is whatever's currently in the input fields at the
+                  top; secondary lines come from editServices. */}
+              {(() => {
+                const _draftHasService = !!String(editingAppointment.service || '').trim();
+                const _draftAmount = _draftHasService ? (Number(editingAppointment.amount) || 0) : 0;
+                const _draftCut    = _draftHasService ? (Number(editingAppointment.referralCutValue) || 0) : 0;
+                const _linesAmount = (editServices || []).reduce((acc, l) => acc + (Number(l.amount) || 0), 0);
+                const _linesCut    = (editServices || []).reduce((acc, l) => acc + (Number(l.referralCutValue) || 0), 0);
+                const _totalAmount = _linesAmount + _draftAmount;
+                const _totalCut    = _linesCut    + _draftCut;
+                const _summaryLines = [
+                  ...(_draftHasService ? [{
+                    serviceName:      String(editingAppointment.service || '').trim(),
+                    modality:         String(editingAppointment.modality || '').trim().toUpperCase(),
+                    amount:           _draftAmount,
+                    referralCutValue: _draftCut,
+                    _isPrimary:       true,
+                    _hasExistingId:   !!editingAppointment._primaryServiceId,
+                  }] : []),
+                  ...(editServices || []).map(l => ({
+                    serviceName:      l.serviceName,
+                    modality:         (l.modality || '').toUpperCase(),
+                    amount:           Number(l.amount) || 0,
+                    referralCutValue: Number(l.referralCutValue) || 0,
+                    _isPrimary:       false,
+                    _hasExistingId:   !!l.id,
+                  })),
+                ];
+
+                // Resolve the scheduled date in YYYY-MM-DD form for the
+                // header tile. dateTime may be ISO with or without a T.
+                const _dateStr = (() => {
+                  const raw = editingAppointment.dateTime || editingAppointment.date || '';
+                  if (!raw) return '-';
+                  const m = String(raw).match(/^(\d{4}-\d{2}-\d{2})/);
+                  return m ? m[1] : raw;
+                })();
+
+                return (
+                  <div style={{
+                    background: '#f0f4ff', padding: '12px 14px', borderRadius: '12px',
+                    border: '1px solid #dde5f5', marginBottom: '10px',
+                  }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+                      <div style={{ fontSize: '8px', fontWeight: 950, color: '#0f52ba', textTransform: 'uppercase', letterSpacing: '1.2px' }}>
+                        Visit summary before saving
+                      </div>
+                      {_summaryLines.length > 1 && (
+                        <span style={{
+                          fontSize: '8px', fontWeight: 950, letterSpacing: '0.3px',
+                          color: 'white', background: '#0f52ba',
+                          padding: '2px 7px', borderRadius: '999px',
+                        }}>{_summaryLines.length} services</span>
+                      )}
+                    </div>
+
+                    {/* Who / when / priority context. */}
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', marginBottom: '10px' }}>
+                      <div>
+                        <span style={{ fontSize: '8px', color: '#888', fontWeight: 700, letterSpacing: '0.4px' }}>PATIENT</span>
+                        <div style={{ fontWeight: 800, fontSize: '10.5px', color: '#1a1a2e' }}>
+                          {editingAppointment.patientName || '-'}
+                        </div>
+                      </div>
+                      <div>
+                        <span style={{ fontSize: '8px', color: '#888', fontWeight: 700, letterSpacing: '0.4px' }}>SPECIALIST</span>
+                        <div style={{ fontWeight: 800, fontSize: '10.5px', color: '#1a1a2e' }}>
+                          {editingAppointment.doctor || 'Unassigned'}
+                        </div>
+                      </div>
+                      <div>
+                        <span style={{ fontSize: '8px', color: '#888', fontWeight: 700, letterSpacing: '0.4px' }}>SCHEDULED DATE</span>
+                        <div style={{ fontWeight: 800, fontSize: '10.5px', color: '#0f52ba' }}>
+                          {_dateStr}
+                        </div>
+                      </div>
+                      <div>
+                        <span style={{ fontSize: '8px', color: '#888', fontWeight: 700, letterSpacing: '0.4px' }}>PRIORITY</span>
+                        <div style={{
+                          fontWeight: 900, fontSize: '10.5px',
+                          color: editingAppointment.priority === 'STAT' ? '#dc2626'
+                               : editingAppointment.priority === 'URGENT' ? '#d97706'
+                               : '#1a1a2e',
+                        }}>
+                          {editingAppointment.priority || 'ROUTINE'}
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Services & billing block — same gradient totals
+                        row as the booking briefing so the two flows look
+                        consistent. */}
+                    <div>
+                      <div style={{ fontSize: '8px', color: '#888', fontWeight: 700, letterSpacing: '0.4px', marginBottom: '6px' }}>
+                        SERVICES & BILLING
+                      </div>
+                      {_summaryLines.length === 0 ? (
+                        <div style={{ fontSize: '10px', color: '#94a3b8', fontStyle: 'italic', padding: '6px 0' }}>
+                          No services on this visit yet.
+                        </div>
+                      ) : (
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                          {_summaryLines.map((line, idx) => (
+                            <div key={idx} style={{
+                              display: 'flex', alignItems: 'center', gap: '8px',
+                              padding: '6px 8px', borderRadius: '8px',
+                              background: 'white', border: '1px solid #e9eef7',
+                            }}>
+                              <span style={{
+                                flexShrink: 0,
+                                fontSize: '8px', fontWeight: 950, letterSpacing: '0.4px',
+                                color: '#0f52ba',
+                                background: '#eff6ff',
+                                padding: '2px 6px', borderRadius: '5px',
+                                border: '1px solid #dbeafe',
+                              }}>{line.modality || 'OT'}</span>
+                              <div style={{ flex: 1, minWidth: 0 }}>
+                                <div style={{ fontSize: '10.5px', fontWeight: 800, color: '#1a1a2e', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                  <span style={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                                    {line.serviceName}
+                                  </span>
+                                  {line._isPrimary && (
+                                    <span title="The primary service drives the worklist's headline modality" style={{
+                                      flexShrink: 0,
+                                      fontSize: '7.5px', fontWeight: 900, letterSpacing: '0.4px',
+                                      color: '#0f52ba', background: '#e0e7ff',
+                                      padding: '1px 5px', borderRadius: '999px',
+                                    }}>PRIMARY</span>
+                                  )}
+                                  {!line._isPrimary && line._hasExistingId && (
+                                    <span title="Already-saved line — will be updated, not recreated" style={{
+                                      flexShrink: 0,
+                                      fontSize: '7.5px', fontWeight: 900, letterSpacing: '0.4px',
+                                      color: '#047857', background: '#d1fae5',
+                                      padding: '1px 5px', borderRadius: '999px',
+                                    }}>SAVED</span>
+                                  )}
+                                  {!line._isPrimary && !line._hasExistingId && (
+                                    <span title="New line — will be added on save" style={{
+                                      flexShrink: 0,
+                                      fontSize: '7.5px', fontWeight: 900, letterSpacing: '0.4px',
+                                      color: '#7c3aed', background: '#ede9fe',
+                                      padding: '1px 5px', borderRadius: '999px',
+                                    }}>NEW</span>
+                                  )}
+                                </div>
+                                {Number(line.referralCutValue) > 0 && (
+                                  <div style={{ fontSize: '8px', fontWeight: 800, color: '#e67e22', marginTop: '1px' }}>
+                                    {`Referral cut · ₹${Number(line.referralCutValue).toLocaleString()}`}
+                                  </div>
+                                )}
+                              </div>
+                              <div style={{ fontSize: '11px', fontWeight: 900, color: '#0f52ba', flexShrink: 0 }}>
+                                {`₹${Number(line.amount || 0).toLocaleString()}`}
+                              </div>
+                            </div>
+                          ))}
+
+                          <div style={{
+                            display: 'flex', alignItems: 'center', gap: '10px',
+                            padding: '8px 10px', borderRadius: '8px',
+                            background: 'linear-gradient(135deg, #0f52ba 0%, #1e3a8a 100%)',
+                            color: 'white',
+                            marginTop: '2px',
+                          }}>
+                            <div style={{ flex: 1, fontSize: '9px', fontWeight: 950, letterSpacing: '0.6px', textTransform: 'uppercase', opacity: 0.85 }}>
+                              Total bill
+                            </div>
+                            <div style={{ textAlign: 'right' }}>
+                              <div style={{ fontSize: '13px', fontWeight: 950, letterSpacing: '0.1px' }}>
+                                {`₹${_totalAmount.toLocaleString()}`}
+                              </div>
+                              {_totalCut > 0 && (
+                                <div style={{ fontSize: '8.5px', fontWeight: 900, color: '#fcd34d', marginTop: '1px', letterSpacing: '0.3px' }}>
+                                  {`Total referral cut · ₹${_totalCut.toLocaleString()}`}
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                );
+              })()}
+
             </form>
           </div>
 
@@ -3117,10 +3842,79 @@ export default function AppointmentBoard() {
                   <span style={{ fontSize: '10px', fontWeight: 900 }}>{new Date(tokenPrintData.dateTime).toLocaleDateString('en-GB', { timeZone: 'Asia/Kolkata', day: '2-digit', month: 'short', year: 'numeric' })} - {new Date(tokenPrintData.dateTime).toLocaleTimeString('en-US', { timeZone: 'Asia/Kolkata', hour: '2-digit', minute: '2-digit', hour12: true })} IST</span>
                 </div>
               </div>
-              <div style={{ marginTop: '8px', textAlign: 'left' }}>
-                <div style={{ fontSize: '9px', fontWeight: 800, color: '#333' }}>MODALITY: {tokenPrintData.modality}</div>
-                <div style={{ fontSize: '12px', fontWeight: 950, marginTop: '2px', borderLeft: '3px solid black', paddingLeft: '8px' }}>{tokenPrintData.service}</div>
-              </div>
+              {(() => {
+                // Multi-service token. Lists every service availed on
+                // the visit with its price + a total at the bottom so
+                // the patient walks out with an itemised slip. Falls
+                // back to the legacy single-line render (MODALITY: ...
+                // + service name) only when there's exactly one line —
+                // keeps the slip clean for the common single-modality
+                // walk-in.
+                const _tokenLines = getServiceLines(tokenPrintData);
+                if (_tokenLines.length <= 1) {
+                  const _solo = _tokenLines[0] || {};
+                  return (
+                    <div style={{ marginTop: '8px', textAlign: 'left' }}>
+                      <div style={{ fontSize: '9px', fontWeight: 800, color: '#333' }}>
+                        MODALITY: {_solo.modality || tokenPrintData.modality || '-'}
+                      </div>
+                      <div style={{ fontSize: '12px', fontWeight: 950, marginTop: '2px', borderLeft: '3px solid black', paddingLeft: '8px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '6px' }}>
+                        <span style={{ flex: 1, minWidth: 0, wordBreak: 'break-word' }}>
+                          {_solo.serviceName || tokenPrintData.service || '-'}
+                        </span>
+                        {Number(_solo.amount || tokenPrintData.amount) > 0 && (
+                          <span style={{ fontSize: '11px', fontWeight: 950, whiteSpace: 'nowrap' }}>
+                            ₹{Number(_solo.amount || tokenPrintData.amount).toLocaleString()}
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                  );
+                }
+
+                const _tokenTotal = _tokenLines.reduce((acc, l) => acc + (Number(l.amount) || 0), 0);
+                return (
+                  <div style={{ marginTop: '8px', textAlign: 'left' }}>
+                    <div style={{
+                      fontSize: '9px', fontWeight: 900, color: '#000',
+                      letterSpacing: '0.6px',
+                      borderBottom: '1px solid #000', paddingBottom: '3px', marginBottom: '5px',
+                    }}>
+                      SERVICES AVAILED ({_tokenLines.length})
+                    </div>
+                    {_tokenLines.map((line, idx) => (
+                      <div key={line.id || `tok-${idx}`} style={{
+                        display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start',
+                        gap: '6px', marginBottom: idx === _tokenLines.length - 1 ? '0' : '4px',
+                      }}>
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          <div style={{ fontSize: '10px', fontWeight: 950, lineHeight: 1.15, wordBreak: 'break-word' }}>
+                            {line.serviceName || '-'}
+                          </div>
+                          <div style={{ fontSize: '8px', fontWeight: 700, color: '#333', marginTop: '1px' }}>
+                            {line.modality || ''}
+                          </div>
+                        </div>
+                        <span style={{ fontSize: '10px', fontWeight: 950, whiteSpace: 'nowrap' }}>
+                          ₹{Number(line.amount || 0).toLocaleString()}
+                        </span>
+                      </div>
+                    ))}
+                    <div style={{
+                      borderTop: '1.5px solid #000',
+                      marginTop: '6px', paddingTop: '4px',
+                      display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+                    }}>
+                      <span style={{ fontSize: '10px', fontWeight: 950, letterSpacing: '0.5px' }}>
+                        TOTAL
+                      </span>
+                      <span style={{ fontSize: '12px', fontWeight: 950 }}>
+                        ₹{_tokenTotal.toLocaleString()}
+                      </span>
+                    </div>
+                  </div>
+                );
+              })()}
 
               <div style={{ marginTop: '12px', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '10px' }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '8px', background: '#f8fafc', borderRadius: '12px', border: '1px solid #e2e8f0', width: '65mm' }}>
@@ -3393,27 +4187,6 @@ export default function AppointmentBoard() {
           </span>
         </div>
 
-        {/* Desktop: Table Header */}
-        {!isMobile && (
-          <div style={{
-            display: 'grid',
-            gridTemplateColumns: '75px 50px 2.4fr 0.9fr 95px 110px 1.3fr 215px',
-            gap: '12px',
-            padding: '0 16px 8px',
-            fontSize: '8.5px', fontWeight: 800, color: '#aaa',
-            textTransform: 'uppercase', letterSpacing: '1px',
-          }}>
-            <span>Mission ID</span>
-            <span style={{ textAlign: 'center' }}>Token</span>
-            <span>Patient & Service</span>
-            <span>Referring Dr.</span>
-            <span>Scheduled Date</span>
-            <span>Status</span>
-            <span>Specialist</span>
-            <span style={{ textAlign: 'right', paddingRight: '16px' }}>Mission Control</span>
-          </div>
-        )}
-
         {/* Appointments List - Responsive Display */}
         <div className="appointments-list-container" style={{ overflowX: 'auto', paddingBottom: '20px' }}>
           {loading ? (
@@ -3439,6 +4212,11 @@ export default function AppointmentBoard() {
                   onAction={handleAction}
                   onPrint={(app) => setTokenPrintData(app)}
                   onPrescription={(app) => handlePreviewPrint(app)}
+                  // Multi-service rollout — per-service Print prescription
+                  // for the mobile/tablet expander, mirroring the desktop.
+                  onPrintServicePrescription={(appointmentObj, serviceId) =>
+                    handlePreviewPrint(appointmentObj, serviceId)
+                  }
                   onEdit={(app) => { setEditingAppointment(app); setIsEditingOpen(true); }}
                   onCancel={(id) => {
                     const matchedApp = appointments.find(a => a.id === id || a.appointmentId === id);
@@ -3451,6 +4229,28 @@ export default function AppointmentBoard() {
           ) : (
             /* Desktop: Table Layout */
             <div className="appointments-table">
+              {/* Column header strip — gives the list a table-like
+                  orientation now that each card is a flex layout
+                  rather than a rigid grid. Subtle slate-on-white,
+                  no border noise. The left band covers the identity
+                  cluster (token + patient + meta line) and the
+                  service ledger that sits inside the card; the right
+                  band covers the action cluster (status + buttons). */}
+              <div style={{
+                display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                padding: '0 16px 6px',
+                marginBottom: '6px',
+                borderBottom: '1px solid #e2e8f0',
+                fontSize: '9px', fontWeight: 950, color: '#94a3b8',
+                letterSpacing: '1.2px', textTransform: 'uppercase',
+              }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '24px', flex: 1, minWidth: 0 }}>
+                  <span style={{ flexShrink: 0 }}>Token · Patient</span>
+                  <span style={{ flex: 1, minWidth: 0 }}>Services &amp; Billing</span>
+                </div>
+                <div style={{ flexShrink: 0 }}>Status · Actions</div>
+              </div>
+
               {paginatedAppointments.map(app => (
                 <div key={app.appointmentId}>
                   {renderAppointmentRow(app)}
@@ -3530,11 +4330,16 @@ export default function AppointmentBoard() {
         </div>
       )}
       
-      <ReportPreviewModal 
+      <ReportPreviewModal
         isOpen={isPreviewOpen}
-        onClose={() => setIsPreviewOpen(false)}
+        onClose={() => { setIsPreviewOpen(false); setPreviewServiceId(null); }}
         doctorId={previewAppointment?.doctorId}
         appointmentId={previewAppointment?.appointmentId || previewAppointment?.id}
+        // Multi-service rollout — the per-service "Print prescription"
+        // button from the expanded row passes a service id here so the
+        // modal's patient banner + thank-you line name THAT service
+        // line, not the visit's primary scalar.
+        appointmentServiceId={previewServiceId}
         patientData={previewAppointment}
         reportContent={previewReport}
       />

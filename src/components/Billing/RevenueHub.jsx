@@ -558,8 +558,8 @@ const RevenueHub = ({
                       <th onClick={() => handleSort('patientName')} style={{ cursor: 'pointer', padding: '15px 10px', fontSize: '10px', fontWeight: 950, color: '#94a3b8', letterSpacing: '1px' }}>PATIENT_ENTITY {getSortIcon('patientName')}</th>
                       <th onClick={() => handleSort('referrerName')} style={{ cursor: 'pointer', padding: '15px 10px', fontSize: '10px', fontWeight: 950, color: '#94a3b8', letterSpacing: '1px' }}>REFERRED_BY {getSortIcon('referrerName')}</th>
                       <th onClick={() => handleSort('serviceDate')} style={{ cursor: 'pointer', padding: '15px 10px', fontSize: '10px', fontWeight: 950, color: '#94a3b8', letterSpacing: '1px' }}>SERVICE_DATE {getSortIcon('serviceDate')}</th>
-                        <th onClick={() => handleSort('createdAt')} style={{ cursor: 'pointer', padding: '15px 10px', fontSize: '10px', fontWeight: 950, color: '#94a3b8', letterSpacing: '1px' }}>GENERATED_AT {getSortIcon('createdAt')}</th>
                       <th style={{ padding: '15px 10px', fontSize: '10px', fontWeight: 950, color: '#94a3b8', letterSpacing: '1px' }}>MODALITY</th>
+                      <th style={{ padding: '15px 10px', fontSize: '10px', fontWeight: 950, color: '#94a3b8', letterSpacing: '1px' }}>SERVICES</th>
                       <th onClick={() => handleSort('grossAmount')} style={{ cursor: 'pointer', padding: '15px 10px', fontSize: '10px', fontWeight: 950, color: '#1e293b', letterSpacing: '1px', background: '#f8fafc' }}>GROSS {getSortIcon('grossAmount')}</th>
                       <th onClick={() => handleSort('discountAmount')} style={{ cursor: 'pointer', padding: '15px 10px', fontSize: '10px', fontWeight: 950, color: '#ef4444', letterSpacing: '1px', background: '#fff1f2' }}>DISCOUNT {getSortIcon('discountAmount')}</th>
                       <th onClick={() => handleSort('totalAmount')} style={{ cursor: 'pointer', padding: '15px 10px', fontSize: '10px', fontWeight: 950, color: '#0f52ba', letterSpacing: '1px', background: '#f0f4ff' }}>NET_PAYABLE {getSortIcon('totalAmount')}</th>
@@ -643,9 +643,110 @@ const RevenueHub = ({
                      <td style={{ padding: '20px 10px', fontSize: '11.5px', fontWeight: 800, color: '#1e293b' }}>{(inv?.patientName || 'UNKNOWN').toUpperCase()}</td>
                      <td style={{ padding: '20px 10px', fontSize: '11px', fontWeight: 700, color: '#64748b' }}>{(inv?.referrerName || 'SELF').toUpperCase()}</td>
                      <td style={{ padding: '20px 10px', fontSize: '11px', color: '#0f52ba', fontWeight: 700 }}>{formatDate(inv?.serviceDate || inv?.createdAt, true)}</td>
-                       <td style={{ padding: '20px 10px', fontSize: '10px', color: '#94a3b8', fontWeight: 600 }}>{formatDate(inv?.createdAt, true)}</td>
                      <td style={{ padding: '20px 10px' }}>
-                       <span style={{ padding: '4px 8px', background: '#f1f5f9', borderRadius: '6px', fontSize: '9px', fontWeight: 950, color: '#0f52ba' }}>{(inv.modality || 'US').toUpperCase()}</span>
+                       {(() => {
+                         // Walk every item on the invoice and pull unique
+                         // modalities so a multi-service visit shows all
+                         // its chips, not just the legacy primary scalar.
+                         const tintFor = (m) => {
+                           const k = String(m || '').toUpperCase();
+                           return ({
+                             'X-RAY':     { bg: '#ecfdf5', border: '#a7f3d0', text: '#047857' },
+                             CT:          { bg: '#eff6ff', border: '#bfdbfe', text: '#1d4ed8' },
+                             MRI:         { bg: '#f5f3ff', border: '#ddd6fe', text: '#6d28d9' },
+                             ULTRASOUND:  { bg: '#ecfeff', border: '#a5f3fc', text: '#0e7490' },
+                             USG:         { bg: '#ecfeff', border: '#a5f3fc', text: '#0e7490' },
+                             MAMMOGRAPHY: { bg: '#fdf2f8', border: '#fbcfe8', text: '#be185d' },
+                             MG:          { bg: '#fdf2f8', border: '#fbcfe8', text: '#be185d' },
+                             DEXA:        { bg: '#fffbeb', border: '#fde68a', text: '#b45309' },
+                             PET:         { bg: '#fff7ed', border: '#fed7aa', text: '#c2410c' },
+                           }[k] || { bg: '#f1f5f9', border: '#e2e8f0', text: '#0f52ba' });
+                         };
+                         const items = inv.items || [];
+                         const seen = new Set();
+                         const mods = [];
+                         for (const it of items) {
+                           const m = String(it.modality || it.Modality || '').toUpperCase();
+                           if (!m || seen.has(m)) continue;
+                           seen.add(m);
+                           mods.push(m);
+                         }
+                         // Fallback to legacy scalar if items[] didn't
+                         // carry modality (old invoices pre-multi-service).
+                         if (mods.length === 0 && inv.modality) mods.push(String(inv.modality).toUpperCase());
+                         if (mods.length === 0) mods.push('—');
+                         // Cap visible chips so a 5-modality visit
+                         // doesn't blow the row height. "+N" badge
+                         // shows the overflow on hover.
+                         const VISIBLE = 3;
+                         const visible = mods.slice(0, VISIBLE);
+                         const extra   = mods.length - visible.length;
+                         return (
+                           <div style={{ display: 'inline-flex', flexWrap: 'wrap', gap: '4px', alignItems: 'center', maxWidth: '180px' }}
+                                title={`${items.length} ${items.length === 1 ? 'service' : 'services'}: ${mods.join(', ')}`}>
+                             {visible.map(m => {
+                               const t = tintFor(m);
+                               return (
+                                 <span key={m} style={{
+                                   padding: '3px 8px', borderRadius: '6px',
+                                   fontSize: '9px', fontWeight: 950, letterSpacing: '0.3px',
+                                   color: t.text, background: t.bg,
+                                   border: `1px solid ${t.border}`,
+                                 }}>{m}</span>
+                               );
+                             })}
+                             {extra > 0 && (
+                               <span style={{
+                                 padding: '3px 8px', borderRadius: '6px',
+                                 fontSize: '9px', fontWeight: 950, letterSpacing: '0.3px',
+                                 color: '#475569', background: '#f1f5f9',
+                                 border: '1px solid #e2e8f0',
+                               }}>+{extra}</span>
+                             )}
+                           </div>
+                         );
+                       })()}
+                     </td>
+                     {/* Services column — itemised list of every
+                         service availed on this visit. One row per
+                         item; multi-service visits stack vertically
+                         so the operator sees the full bundle at a
+                         glance without opening the drawer. */}
+                     <td style={{ padding: '14px 10px', verticalAlign: 'top' }}>
+                       {(() => {
+                         const items = inv.items || [];
+                         if (items.length === 0) {
+                           return <span style={{ fontSize: '11px', color: '#cbd5e1', fontWeight: 700 }}>—</span>;
+                         }
+                         const VISIBLE = 3;
+                         const visible = items.slice(0, VISIBLE);
+                         const extra   = items.length - visible.length;
+                         return (
+                           <div
+                             style={{ display: 'flex', flexDirection: 'column', gap: '3px', maxWidth: '220px' }}
+                             title={items.map(it => `${it.description}${it.quantity > 1 ? ` ×${it.quantity}` : ''}`).join(' • ')}
+                           >
+                             {visible.map((it, i) => (
+                               <span key={i} style={{
+                                 fontSize: '10.5px', fontWeight: 700, color: '#1e293b',
+                                 whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
+                                 lineHeight: 1.25,
+                               }}>
+                                 {it.description}
+                                 {it.quantity > 1 && (
+                                   <span style={{ color: '#94a3b8', fontWeight: 600, marginLeft: '4px' }}>×{it.quantity}</span>
+                                 )}
+                               </span>
+                             ))}
+                             {extra > 0 && (
+                               <span style={{
+                                 fontSize: '9px', fontWeight: 900, letterSpacing: '0.3px',
+                                 color: '#475569', textTransform: 'uppercase',
+                               }}>+ {extra} more</span>
+                             )}
+                           </div>
+                         );
+                       })()}
                      </td>
                      <td style={{ padding: '20px 10px', fontSize: '11.5px', fontWeight: 700, color: '#64748b', background: '#f8fafc' }}>₹{(inv.grossAmount || 0).toLocaleString()}</td>
                      <td style={{ padding: '20px 10px', fontSize: '11.5px', fontWeight: 950, color: '#ef4444', background: '#fff1f2' }}>{(inv?.discountAmount || 0) > 0 ? `-₹${(inv.discountAmount || 0).toLocaleString()}` : '—'}</td>

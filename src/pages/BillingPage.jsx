@@ -486,12 +486,67 @@ export default function BillingPage() {
     const inv = invInput || selectedInvoice;
     if (!inv) return;
 
-    const itemsHtml = (inv.items || []).map(it => `
+    // 72mm thermal paper is ~32 monospace chars wide, so verbose
+    // modality names like MAMMOGRAPHY blow the line. Use short
+    // codes that match what radiologists and patients already
+    // recognise from referral pads.
+    const shortMod = (m) => {
+      const k = String(m || '').toUpperCase();
+      return ({
+        CT: 'CT', MRI: 'MRI',
+        'X-RAY': 'XR',
+        ULTRASOUND: 'US', USG: 'US',
+        MAMMOGRAPHY: 'MG', MG: 'MG',
+        DEXA: 'DX', PET: 'PT', NUCLEAR: 'NM',
+      }[k] || (k ? k.substring(0, 3) : ''));
+    };
+
+    const items = inv.items || [];
+
+    // Per-modality subtotal so the patient can verify the bill
+    // against what they walked in for. Only renders below when
+    // 2+ modalities are present.
+    const modAgg = new Map();
+    for (const it of items) {
+      const m = String(it.modality || it.Modality || 'OTHER').toUpperCase() || 'OTHER';
+      const subtotal = (Number(it.amount) || 0) * (Number(it.quantity) || 0);
+      const cur = modAgg.get(m) || { modality: m, subtotal: 0, count: 0 };
+      cur.subtotal += subtotal;
+      cur.count    += 1;
+      modAgg.set(m, cur);
+    }
+    const modRows = [...modAgg.values()].sort((a, b) => b.subtotal - a.subtotal);
+
+    const itemsHtml = items.map(it => {
+      const code = shortMod(it.modality || it.Modality);
+      const sub  = (Number(it.amount) || 0) * (Number(it.quantity) || 0);
+      const prefix = code ? `[${code}] ` : '';
+      // Truncate to fit alongside the modality tag — total line
+      // width has to land under ~32 chars so the price doesn't
+      // wrap onto the next line on a 72mm printer.
+      const desc = `${prefix}${(it.description || '').substring(0, 22 - prefix.length)}`;
+      return `
       <div style="display: flex; justify-content: space-between; font-size: 12px; margin-bottom: 5px; font-family: monospace;">
-        <span>${it.description.substring(0, 20)} x${it.quantity}</span>
-        <span>₹${((it.amount || 0) * (it.quantity || 0)).toLocaleString()}</span>
+        <span>${desc} x${it.quantity}</span>
+        <span>₹${sub.toLocaleString()}</span>
       </div>
-    `).join('');
+    `;
+    }).join('');
+
+    // Per-modality subtotal strip — appears just above the TOTAL
+    // line so the patient sees "you paid X for the CT and Y for
+    // the X-ray" before the grand total. Skip for single-modality
+    // bills since the table already shows it.
+    const modalitySummaryHtml = modRows.length > 1 ? `
+      <div class="divider"></div>
+      <div style="font-size: 10px; font-weight: bold; margin-bottom: 4px;">BY MODALITY</div>
+      ${modRows.map(r => `
+        <div style="display: flex; justify-content: space-between; font-size: 11px; margin-bottom: 3px; font-family: monospace;">
+          <span>${shortMod(r.modality)} - ${r.modality.substring(0, 14)}</span>
+          <span>₹${Math.round(r.subtotal).toLocaleString()}</span>
+        </div>
+      `).join('')}
+    ` : '';
 
     ghostPrint(`
       <html>
@@ -523,6 +578,7 @@ export default function BillingPage() {
           </div>
           <div class="divider"></div>
           ${itemsHtml}
+          ${modalitySummaryHtml}
           <div class="divider"></div>
           <div style="display: flex; justify-content: space-between; font-weight: bold; font-size: 14px;">
             <span>TOTAL</span>
@@ -865,6 +921,7 @@ export default function BillingPage() {
 
     return { totalRevenue, pendingRevenue, pendingCount, realizationRate, averageTicket, totalGross, totalDiscount, totalCommission, netProfit, totalBilled };
   }, [filteredInvoices]);
+
   const combinedReferralCuts = useMemo(() => {
     const legacyCuts = expenses.filter(e => e && (e.category === 'Referral' || (e.description || '').toLowerCase().includes('referral'))).map(e => {
         const inv = (invoices || []).find(i => i.displayId === e.referenceNumber || i.invoiceId === e.referenceNumber);
@@ -1234,7 +1291,14 @@ export default function BillingPage() {
       items: newInvoiceData.items.map(it => ({
         description: it.description,
         amount: Number(it.amount),
-        quantity: Number(it.quantity)
+        quantity: Number(it.quantity),
+        // Multi-service rollout — forward the FK so the server can
+        // attach this line to the right AppointmentService row.
+        // Without it the InvoiceItem ends up with NULL FK and the
+        // GetInvoices modality projection falls back to the visit's
+        // scalar primary, which makes every item on a multi-service
+        // bill look like the same modality.
+        appointmentServiceId: it.appointmentServiceId || null,
       }))
     };
 
@@ -1340,15 +1404,90 @@ export default function BillingPage() {
   const handlePrintA4 = (invInput = null) => {
     const inv = invInput || selectedInvoice;
     if (!inv) return;
-    
-    const itemsHtml = (inv.items || []).map(it => `
-      <tr style="border-bottom: 1px solid #f1f5f9;">
-        <td style="padding: 14px 0; font-size: 11px; font-weight: 600; color: #1e293b;">${it.description.toUpperCase()}</td>
-        <td style="padding: 14px 0; text-align: center; font-size: 11px; font-weight: 500; color: #64748b;">${it.quantity}</td>
-        <td style="padding: 14px 0; text-align: right; font-size: 11px; font-weight: 500; color: #64748b;">₹${(it.amount || 0).toLocaleString()}</td>
-        <td style="padding: 14px 0; text-align: right; font-size: 11px; font-weight: 700; color: #0f52ba;">₹${((it.amount || 0) * (it.quantity || 0)).toLocaleString()}</td>
-      </tr>
-    `).join('');
+
+    // Modality colour palette — same one the worklist ledger,
+    // OpsBoard queue cards, and InvoiceDrawer use. Keeping the
+    // print bill visually in sync with the on-screen experience
+    // so the patient's printed copy is recognisable as "from us".
+    const modTint = (m) => {
+      const k = String(m || '').toUpperCase();
+      return ({
+        'X-RAY':     { bg: '#ecfdf5', border: '#a7f3d0', text: '#047857' },
+        CT:          { bg: '#eff6ff', border: '#bfdbfe', text: '#1d4ed8' },
+        MRI:         { bg: '#f5f3ff', border: '#ddd6fe', text: '#6d28d9' },
+        ULTRASOUND:  { bg: '#ecfeff', border: '#a5f3fc', text: '#0e7490' },
+        USG:         { bg: '#ecfeff', border: '#a5f3fc', text: '#0e7490' },
+        MAMMOGRAPHY: { bg: '#fdf2f8', border: '#fbcfe8', text: '#be185d' },
+        MG:          { bg: '#fdf2f8', border: '#fbcfe8', text: '#be185d' },
+        DEXA:        { bg: '#fffbeb', border: '#fde68a', text: '#b45309' },
+        PET:         { bg: '#fff7ed', border: '#fed7aa', text: '#c2410c' },
+      }[k] || { bg: '#f1f5f9', border: '#e2e8f0', text: '#475569' });
+    };
+
+    const items = inv.items || [];
+
+    // Per-modality aggregate for the summary box. Only renders below
+    // when the bill spans more than one modality — for a single-
+    // service invoice the items table already says everything.
+    const modAgg = new Map();
+    for (const it of items) {
+      const m = String(it.modality || it.Modality || 'OTHER').toUpperCase() || 'OTHER';
+      const subtotal = (Number(it.amount) || 0) * (Number(it.quantity) || 0);
+      const cur = modAgg.get(m) || { modality: m, subtotal: 0, count: 0 };
+      cur.subtotal += subtotal;
+      cur.count    += 1;
+      modAgg.set(m, cur);
+    }
+    const modRows = [...modAgg.values()].sort((a, b) => b.subtotal - a.subtotal);
+
+    const itemsHtml = items.map(it => {
+      const mod  = String(it.modality || it.Modality || '').toUpperCase();
+      const tint = modTint(mod);
+      const sub  = (Number(it.amount) || 0) * (Number(it.quantity) || 0);
+      return `
+        <tr style="border-bottom: 1px solid #f1f5f9;">
+          <td style="padding: 14px 0; text-align: center;">
+            ${mod ? `<span style="display: inline-block; font-size: 9px; font-weight: 900; letter-spacing: 0.4px; color: ${tint.text}; background: ${tint.bg}; border: 1px solid ${tint.border}; padding: 2px 8px; border-radius: 6px; text-transform: uppercase;">${mod}</span>` : `<span style="color: #cbd5e1; font-size: 10px;">—</span>`}
+          </td>
+          <td style="padding: 14px 10px 14px 0; font-size: 11px; font-weight: 600; color: #1e293b;">${(it.description || '').toUpperCase()}</td>
+          <td style="padding: 14px 0; text-align: center; font-size: 11px; font-weight: 500; color: #64748b;">${it.quantity}</td>
+          <td style="padding: 14px 0; text-align: right; font-size: 11px; font-weight: 500; color: #64748b;">₹${(it.amount || 0).toLocaleString()}</td>
+          <td style="padding: 14px 0; text-align: right; font-size: 11px; font-weight: 700; color: #0f52ba;">₹${sub.toLocaleString()}</td>
+        </tr>
+      `;
+    }).join('');
+
+    // Summary box renders only when 2+ modalities are present.
+    // Stays on the same horizontal band as the totals so the bill
+    // reads "what you got · what you owe" in a single glance.
+    const modalitySummaryHtml = modRows.length > 1 ? `
+      <div style="flex: 1; max-width: 360px; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 16px; padding: 20px; margin-right: 30px;">
+        <div style="font-size: 10px; font-weight: 900; color: #94a3b8; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 12px; border-bottom: 1px solid #e2e8f0; padding-bottom: 8px;">
+          Services Breakdown
+        </div>
+        ${modRows.map(r => {
+          const t = modTint(r.modality);
+          return `
+            <div style="display: flex; justify-content: space-between; align-items: center; padding: 6px 0; font-size: 11px;">
+              <span style="display: inline-flex; align-items: center; gap: 8px;">
+                <span style="display: inline-block; width: 8px; height: 8px; border-radius: 999px; background: ${t.text};"></span>
+                <span style="font-weight: 800; color: #0f172a; letter-spacing: 0.2px;">${r.modality}</span>
+                <span style="font-size: 9px; font-weight: 700; color: #94a3b8;">${r.count} ${r.count === 1 ? 'item' : 'items'}</span>
+              </span>
+              <span style="font-weight: 900; color: #0f172a; font-variant-numeric: tabular-nums;">₹${Math.round(r.subtotal).toLocaleString()}</span>
+            </div>
+          `;
+        }).join('')}
+      </div>
+    ` : '';
+
+    // Header meta now describes the visit honestly: a single
+    // modality keeps the existing "Modality: CT" line; multi-
+    // modality visits surface a count chip ("3 modalities") and
+    // let the Services Breakdown box below carry the detail.
+    const headerModalityHtml = modRows.length > 1
+      ? `<span class="meta-label">Modalities:</span><span class="meta-value">${modRows.length} modalities (${modRows.map(r => r.modality).join(', ')})</span>`
+      : `<span class="meta-label">Modality:</span><span class="meta-value">${(modRows[0]?.modality || inv.modality || 'N/A')}</span>`;
 
     ghostPrint(`
       <html>
@@ -1411,7 +1550,7 @@ export default function BillingPage() {
                 <div class="meta-grid">
                   <span class="meta-label">Invoice ID:</span><span class="meta-value">${inv.displayId}</span>
                   <span class="meta-label">Date:</span><span class="meta-value">${new Date(inv.createdAt).toLocaleDateString('en-GB', { day: '2-digit', month: 'long', year: 'numeric' })}</span>
-                  <span class="meta-label">Modality:</span><span class="meta-value">${inv.modality || 'MRI'}</span>
+                  ${headerModalityHtml}
                 </div>
               </div>
             </div>
@@ -1434,10 +1573,11 @@ export default function BillingPage() {
             <table>
               <thead>
                 <tr>
-                  <th style="width: 50%;">Service Description</th>
-                  <th style="text-align: center;">Qty</th>
-                  <th style="text-align: right;">Unit Price</th>
-                  <th style="text-align: right;">Subtotal</th>
+                  <th style="width: 110px; text-align: center;">Modality</th>
+                  <th>Service Description</th>
+                  <th style="width: 60px; text-align: center;">Qty</th>
+                  <th style="width: 110px; text-align: right;">Unit Price</th>
+                  <th style="width: 120px; text-align: right;">Subtotal</th>
                 </tr>
               </thead>
               <tbody>
@@ -1445,7 +1585,8 @@ export default function BillingPage() {
               </tbody>
             </table>
 
-            <div class="summary-section">
+            <div class="summary-section" style="${modRows.length > 1 ? 'justify-content: space-between; align-items: flex-start;' : ''}">
+              ${modalitySummaryHtml}
               <div class="summary-table">
                 <div class="summary-row">
                   <span class="summary-label">Gross Aggregate</span>
@@ -1742,7 +1883,7 @@ export default function BillingPage() {
       )}
 
       {billingViewMode === 'INVOICES' && (
-        <RevenueHub 
+        <RevenueHub
           filteredInvoices={filteredInvoices}
           liveStats={liveStats}
           searchTerm={searchTerm}
