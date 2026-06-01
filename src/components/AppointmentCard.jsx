@@ -133,7 +133,22 @@ export default function AppointmentCard({
               </div>
               <div className="info-item">
                 <span className="label">Specialist</span>
-                <div className="value">{appointment.doctor || 'UNASSIGNED'}</div>
+                <div className="value">
+                  <span
+                    title={appointment.doctor ? `Assigned to ${appointment.doctor}` : 'No specialist assigned'}
+                    style={{
+                      display: 'inline-flex', alignItems: 'center', gap: '4px',
+                      fontSize: '10px', fontWeight: 900, letterSpacing: '0.2px',
+                      color: appointment.doctor ? '#0c4a6e' : '#9a3412',
+                      background: appointment.doctor ? '#e0f2fe' : '#fef3c7',
+                      border: `1px solid ${appointment.doctor ? '#bae6fd' : '#fde68a'}`,
+                      padding: '2px 8px', borderRadius: '999px',
+                    }}
+                  >
+                    <span aria-hidden="true" style={{ fontSize: '10px' }}>🩺</span>
+                    {appointment.doctor || 'Unassigned'}
+                  </span>
+                </div>
               </div>
               <div className="info-item">
                 <span className="label">Mission Date</span>
@@ -141,6 +156,29 @@ export default function AppointmentCard({
                   {appointment.dateTime ? new Date(appointment.dateTime).toLocaleDateString('en-GB', { day: '2-digit', month: 'short' }) : '—'}
                 </div>
               </div>
+              {/* Referrer chip — only shown when the visit has a
+                  referrer. Spans the full info row width so a long
+                  referrer name wraps cleanly on phone widths. */}
+              {appointment.referredBy && (
+                <div className="info-item" style={{ gridColumn: '1 / -1' }}>
+                  <span className="label">Referred By</span>
+                  <div className="value">
+                    <span
+                      title={`Referred by ${appointment.referredBy}`}
+                      style={{
+                        display: 'inline-flex', alignItems: 'center', gap: '4px',
+                        fontSize: '10px', fontWeight: 900, letterSpacing: '0.2px',
+                        color: '#5b21b6', background: '#ede9fe',
+                        border: '1px solid #ddd6fe',
+                        padding: '2px 8px', borderRadius: '999px',
+                      }}
+                    >
+                      <span aria-hidden="true" style={{ fontSize: '10px' }}>↗</span>
+                      {appointment.referredBy}
+                    </span>
+                  </div>
+                </div>
+              )}
             </div>
           );
         })()}
@@ -214,19 +252,22 @@ export default function AppointmentCard({
         };
         const stepRank = (status) => {
           const s = String(status || '').toUpperCase();
-          if (s === 'DELIVERED') return 4;
-          if (s === 'REPORTED')  return 3;
-          if (s === 'SCANNED')   return 2;
-          if (s === 'NOT_STARTED') return 1;
+          if (s === 'DELIVERED')   return 6;
+          if (s === 'REPORTED')    return 5;
+          if (s === 'SCANNED')     return 4;
+          if (s === 'IN_MID')      return 3;
+          if (s === 'IN_PROGRESS') return 2;
           return 1;
         };
         const stepLabel = (status) => {
           const s = String(status || '').toUpperCase();
-          if (s === 'DELIVERED') return { label: 'Delivered',  color: '#047857', bg: '#d1fae5', border: '#a7f3d0' };
-          if (s === 'REPORTED')  return { label: 'Reported',   color: '#1d4ed8', bg: '#dbeafe', border: '#bfdbfe' };
-          if (s === 'SCANNED')   return { label: 'Scanned',    color: '#9a3412', bg: '#ffedd5', border: '#fed7aa' };
-          if (s === 'CANCELLED') return { label: 'Cancelled',  color: '#9f1239', bg: '#ffe4e6', border: '#fecdd3' };
-          return                       { label: 'Not started', color: '#475569', bg: '#f1f5f9', border: '#e2e8f0' };
+          if (s === 'DELIVERED')   return { label: 'Delivered',   color: '#047857', bg: '#d1fae5', border: '#a7f3d0' };
+          if (s === 'REPORTED')    return { label: 'Reported',    color: '#1d4ed8', bg: '#dbeafe', border: '#bfdbfe' };
+          if (s === 'SCANNED')     return { label: 'Scanned',     color: '#9a3412', bg: '#ffedd5', border: '#fed7aa' };
+          if (s === 'IN_MID')      return { label: 'Half Way',    color: '#b45309', bg: '#fef3c7', border: '#fcd34d' };
+          if (s === 'IN_PROGRESS') return { label: 'In Progress', color: '#a16207', bg: '#fef9c3', border: '#fde68a' };
+          if (s === 'CANCELLED')   return { label: 'Cancelled',   color: '#9f1239', bg: '#ffe4e6', border: '#fecdd3' };
+          return                         { label: 'Not Started',  color: '#475569', bg: '#f1f5f9', border: '#e2e8f0' };
         };
 
         return (

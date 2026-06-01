@@ -733,9 +733,13 @@ export default function OperationsBoard() {
     return (
       <div style={{
         display: 'grid',
-        gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))',
+        // Drop minmax to 240px on phones (typical phone width minus
+        // 32px of padding ≈ 328px content area) so each column gets
+        // breathing room without forcing a horizontal scroll when
+        // the device is < 320px viewport (rare but real).
+        gridTemplateColumns: 'repeat(auto-fill, minmax(min(240px, 100%), 1fr))',
         gap: '14px',
-        padding: '16px 20px 20px',
+        padding: '14px 14px 18px',
         background: '#f8fafc',
       }}>
         {sortedModalities.map(modality => {
@@ -1057,8 +1061,19 @@ export default function OperationsBoard() {
 
       {/* ── OPERATIONS LEDGER TABLE ────────────────────────────────────── */}
       <div className="appointments-table-wrapper">
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '20px 24px', borderBottom: '1px solid #e2e8f0', flexWrap: 'wrap', gap: '12px' }}>
-          <h3 style={{ fontSize: '13px', fontWeight: 950, letterSpacing: '1px', margin: 0, color: '#0a1628' }}>CLINICAL OPERATIONS REGISTRY</h3>
+        <div style={{
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          padding: isMobile ? '14px 16px' : '20px 24px',
+          borderBottom: '1px solid #e2e8f0',
+          flexWrap: 'wrap',
+          gap: isMobile ? '8px' : '12px',
+        }}>
+          <h3 style={{
+            fontSize: isMobile ? '11px' : '13px',
+            fontWeight: 950, letterSpacing: '0.8px', margin: 0, color: '#0a1628',
+          }}>{isMobile ? 'OPERATIONS' : 'CLINICAL OPERATIONS REGISTRY'}</h3>
           <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
             {/* View toggle — switches between the existing visit
                 ledger (one row per appointment) and the new modality
@@ -1075,8 +1090,9 @@ export default function OperationsBoard() {
                 type="button"
                 onClick={() => setViewMode('list')}
                 aria-pressed={viewMode === 'list'}
+                title="List view"
                 style={{
-                  padding: '6px 14px',
+                  padding: isMobile ? '6px 10px' : '6px 14px',
                   borderRadius: '7px',
                   border: 'none',
                   fontSize: '10px',
@@ -1090,13 +1106,14 @@ export default function OperationsBoard() {
                   boxShadow: viewMode === 'list' ? '0 1px 3px rgba(15, 23, 42, 0.08)' : 'none',
                   transition: 'background 0.15s, color 0.15s',
                 }}
-              >☰ List</button>
+              >{isMobile ? '☰' : '☰ List'}</button>
               <button
                 type="button"
                 onClick={() => setViewMode('queue')}
                 aria-pressed={viewMode === 'queue'}
+                title="Modality queue view"
                 style={{
-                  padding: '6px 14px',
+                  padding: isMobile ? '6px 10px' : '6px 14px',
                   borderRadius: '7px',
                   border: 'none',
                   fontSize: '10px',
@@ -1110,7 +1127,7 @@ export default function OperationsBoard() {
                   boxShadow: viewMode === 'queue' ? '0 1px 3px rgba(15, 23, 42, 0.08)' : 'none',
                   transition: 'background 0.15s, color 0.15s',
                 }}
-              >⊞ Modality Queue</button>
+              >{isMobile ? '⊞' : '⊞ Modality Queue'}</button>
             </div>
             <span style={{ fontSize: '10px', fontWeight: 900, color: '#94a3b8', letterSpacing: '0.5px' }}>RECORDS</span>
             <span style={{ background: '#0f52ba', color: 'white', padding: '2px 10px', borderRadius: '6px', fontSize: '11px', fontWeight: 950 }}>

@@ -291,6 +291,7 @@ function resolveRoute(item) {
                                           body: JSON.stringify(p.status),
                                           headers: { 'Content-Type': 'application/json' } };
     case 'PATIENT_CREATE':       return { method: 'POST',   url: '/patients' };
+    case 'PATIENT_UPDATE':       return { method: 'PUT',    url: `/patients/${p.patientId}` };
     default: return null;
   }
 }
@@ -300,11 +301,17 @@ async function sendOutboxItem(item) {
   if (!route) throw new Error(`Unknown outbox type: ${item.type}`);
   const body = route.body !== undefined ? route.body : item.payload;
   const config = {
+    // Mark this as a sync-engine push so the apiClient error toast
+    // pipeline skips it — sync retries are expected to fail
+    // intermittently and surface their state via the TopNav
+    // pending/poisoned counters, not via toast spam.
+    suppressErrorToast: true,
     headers: {
       // Idempotency-Key is the Track 2 prereq — a retried push is a no-op
       // server-side instead of producing a duplicate. The header is harmless
       // on backends that don't implement dedupe yet.
       'Idempotency-Key': item.idempotencyKey,
+      'x-sync-engine': '1',
       ...(route.headers || {}),
     },
   };

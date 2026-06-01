@@ -160,12 +160,41 @@ function buildDisplay(errorCode, status, rawMessage) {
   };
 }
 
+// Recent toast dedupe — a burst of identical "Connection issue" / "Service
+// taking too long" toasts from a background poll cycle would otherwise
+// stack vertically. Keep the most recent message of each kind for a
+// short window so the user sees ONE toast per failure cluster.
+const RECENT_TTL_MS = 8000;
+const recentToasts = new Map(); // key = title+severity, value = timestamp
+
+function isRecentDuplicate(title, severity) {
+  const key = `${title}|${severity}`;
+  const now = Date.now();
+  // Clean expired entries on every check — cheaper than a timer.
+  for (const [k, ts] of recentToasts) {
+    if (now - ts > RECENT_TTL_MS) recentToasts.delete(k);
+  }
+  if (recentToasts.has(key)) return true;
+  recentToasts.set(key, now);
+  return false;
+}
+
 /** Decide whether this error should be shown as a toast at all. */
 function shouldSuppressToast(axiosError, errorCode, status) {
   // Per-request opt-out
   if (axiosError.config?.suppressErrorToast) return true;
 
   const url = axiosError.config?.url || '';
+
+  // Browser is truly offline — suppress every network-failure toast.
+  // The TopNav "📡 Offline" indicator already tells the user, and the
+  // critical flows (booking, status, payment) queue to the outbox via
+  // useOffline.addToOutbox. Background polls (worklist refresh,
+  // KPI fetch, comments) would otherwise spam a toast cascade.
+  const isNetworkLevel = status === 0 || status === undefined;
+  if (isNetworkLevel && typeof navigator !== 'undefined' && navigator.onLine === false) {
+    return true;
+  }
 
   // Login form has its own inline error display — don't double-show
   if (status === 401 && url.includes('/auth/login')) return true;
@@ -190,6 +219,10 @@ function shouldSuppressToast(axiosError, errorCode, status) {
   // Cancelled / aborted requests aren't real errors to the user
   if (axiosError.code === 'ERR_CANCELED' || axiosError.name === 'CanceledError') return true;
 
+  // Sync engine / outbox-drain failures bypass the toast — they're
+  // tracked via the TopNav pending/poisoned counters instead.
+  if (axiosError.config?.headers?.['x-sync-engine'] === '1') return true;
+
   return false;
 }
 
@@ -210,6 +243,15 @@ export function dispatchApiError(axiosError) {
   }
 
   const display = buildDisplay(errorCode, status, rawMessage);
+
+  // Dedupe identical toasts that arrive in quick succession (e.g. a
+  // burst of background polls all hitting the same flaky upstream).
+  // The user only needs to see "Connection issue" once per cluster,
+  // not five times stacking down the screen.
+  if (isRecentDuplicate(display.title, display.severity)) {
+    return null;
+  }
+
   const payload = {
     id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
     title: display.title,

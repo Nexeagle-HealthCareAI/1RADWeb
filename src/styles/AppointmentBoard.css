@@ -812,7 +812,18 @@
   }
 }
 
-/* Booking Drawer Custom Width & Compact Spacing */
+/* Booking Drawer Custom Width & Compact Spacing.
+   Mobile (< 640px) uses the global slide-up sheet from global.css.
+   Tablet (640–1023px) gets a 95vw drawer so it doesn't feel like a
+   half-screen popover. Desktop (≥ 1024px) caps at 1500px so the
+   form doesn't sprawl on ultra-wide monitors. */
+@media (min-width: 640px) and (max-width: 1023px) {
+  .drawer-content.booking-drawer-width {
+    width: 95vw !important;
+    max-width: none !important;
+    padding: 14px 18px !important;
+  }
+}
 @media (min-width: 1024px) {
   .drawer-content.booking-drawer-width {
     width: 80vw !important;

@@ -2133,17 +2133,33 @@ export default function AppointmentBoard() {
     if (isBookingOpen) return (
       <div className="drawer-overlay">
         <div className="drawer-content booking-drawer-width" onClick={e => e.stopPropagation()}>
-          <div className="drawer-header" style={{ background: 'linear-gradient(135deg, #0a1628 0%, #0f52ba 100%)', color: 'white', padding: '16px 30px', border: 'none' }}>
-            <div style={{ display: 'flex', flexDirection: 'column' }}>
+          {/* Header — padding shrinks on phones so the title isn't
+              pinched between huge whitespace gutters. Letter-spacing
+              on the phase line drops too (long captions like
+              "Clinical Configuration" otherwise wrap awkwardly). */}
+          <div className="drawer-header" style={{
+            background: 'linear-gradient(135deg, #0a1628 0%, #0f52ba 100%)',
+            color: 'white',
+            padding: isMobile ? '14px 16px' : '16px 30px',
+            border: 'none',
+          }}>
+            <div style={{ display: 'flex', flexDirection: 'column', minWidth: 0 }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '4px' }}>
-                <h2 style={{ fontSize: '18px', fontWeight: 900, margin: 0 }}>NEW APPOINTMENT</h2>
+                <h2 style={{ fontSize: isMobile ? '16px' : '18px', fontWeight: 900, margin: 0 }}>NEW APPOINTMENT</h2>
               </div>
-              <p style={{ fontSize: '11px', opacity: 0.7, textTransform: 'uppercase', letterSpacing: '1px' }}>Phase {bookingStep}: {isStep1 ? 'Patient Identity' : 'Clinical Configuration'}</p>
+              <p style={{
+                fontSize: isMobile ? '10px' : '11px',
+                opacity: 0.7, textTransform: 'uppercase',
+                letterSpacing: isMobile ? '0.5px' : '1px',
+                margin: 0,
+              }}>
+                Phase {bookingStep}: {isStep1 ? 'Patient Identity' : 'Clinical Configuration'}
+              </p>
             </div>
-            <button className="btn-close" style={{ color: 'white', fontSize: '28px' }} onClick={() => setIsBookingOpen(false)}>✕</button>
+            <button className="btn-close" style={{ color: 'white', fontSize: '28px', flexShrink: 0 }} onClick={() => setIsBookingOpen(false)}>✕</button>
           </div>
 
-          <div style={{ padding: '0 30px', marginTop: '12px' }}>
+          <div style={{ padding: isMobile ? '0 16px' : '0 30px', marginTop: '12px' }}>
             <div style={{ display: 'flex', gap: '4px' }}>
               {[1,2].map(s => (
                 <div key={s} style={{
@@ -2495,65 +2511,111 @@ export default function AppointmentBoard() {
                       )}
 
                       <div className="drawer-footer" style={{ borderTop: 'none', paddingTop: '10px', marginTop: 'auto' }}>
-                        <button 
-                          className="gamified-btn" 
-                          style={{ 
-                            width: '100%', padding: '12px', borderRadius: '10px', fontSize: '13px',
+                        <button
+                          className="gamified-btn"
+                          style={{
+                            width: '100%',
+                            padding: isMobile ? '11px' : '12px',
+                            borderRadius: '10px',
+                            fontSize: isMobile ? '12px' : '13px',
                             background: isNewPatientIncomplete && showBookingValidation ? '#94a3b8' : 'linear-gradient(90deg, #0f52ba, #00f2fe)',
                             boxShadow: isNewPatientIncomplete && showBookingValidation ? 'none' : '0 10px 20px rgba(15, 82, 186, 0.2)',
-                          }} 
+                          }}
                           onClick={async () => {
                             if (isNewPatientIncomplete) {
                               setShowBookingValidation(true);
                               return;
                             }
 
-                            // Case A: NEW PATIENT (Registration)
+                            // Case A: NEW PATIENT (Registration).
+                            // Offline-first — if the device is offline
+                            // OR the request fails with no response
+                            // (network drop / DNS hiccup), generate a
+                            // temp ID, queue PATIENT_CREATE in the
+                            // outbox, and let the booking flow
+                            // continue. The SyncEngine drains the
+                            // outbox on reconnect and rewrites the
+                            // tempId on the linked APPOINTMENT_CREATE.
                             if (!newBooking.patientId && newPatient.name && newPatient.mobile) {
-                              try {
-                                const response = await apiClient.post('/patients', {
-                                  fullName: newPatient.name,
-                                  mobile: newPatient.mobile,
-                                  age: buildPatientAge(newPatient.age, newPatient.ageUnit) || '0',
-                                  gender: newPatient.gender,
-                                  village: newPatient.village,
-                                  district: newPatient.district,
-                                  address: newPatient.address,
-                                  sourceOfInfo: newPatient.sourceOfInfo,
-                                  referrerId: newPatient.referrerId
-                                });
-                                const patientId = response.data.patientId;
-                                if (!patientId) throw new Error("API returned invalid patient identity");
-                                setNewBooking(prev => ({...prev, patientId}));
-                                fetchPatients('');
-                              } catch (error) {
-                                console.error('Failed to auto-register patient:', error);
-                                showNotif('error', 'REGISTRATION FAILED', 'Patient registration could not be completed. Please try again.');
-                                return; 
-                              }
-                            } 
-                            // Case B: EXISTING PATIENT (Demographic Sync)
-                            else if (newBooking.patientId) {
-                              try {
-                                await apiClient.put(`/patients/${newBooking.patientId}`, {
-                                  // Controller rejects with 400 "Identity mismatch" if the
-                                  // body's PatientId doesn't match the URL id.
-                                  patientId: newBooking.patientId,
-                                  fullName: newPatient.name,
-                                  mobile: newPatient.mobile,
-                                  age: buildPatientAge(newPatient.age, newPatient.ageUnit) || '0',
-                                  gender: newPatient.gender,
-                                  village: newPatient.village,
-                                  district: newPatient.district,
-                                  address: newPatient.address,
-                                  sourceOfInfo: newPatient.sourceOfInfo,
-                                  referrerId: newPatient.referrerId
-                                });
-                              } catch (error) {
-                                console.error('Failed to sync existing patient demographics:', error);
+                              const patientPayload = {
+                                fullName: newPatient.name,
+                                mobile: newPatient.mobile,
+                                age: buildPatientAge(newPatient.age, newPatient.ageUnit) || '0',
+                                gender: newPatient.gender,
+                                village: newPatient.village,
+                                district: newPatient.district,
+                                address: newPatient.address,
+                                sourceOfInfo: newPatient.sourceOfInfo,
+                                referrerId: newPatient.referrerId,
+                              };
+
+                              if (!isOnline) {
+                                const tempId = `temp-${Date.now()}`;
+                                await addToOutbox('PATIENT_CREATE', { ...patientPayload, tempId });
+                                setNewBooking(prev => ({ ...prev, patientId: tempId }));
+                                showNotif('info', 'QUEUED FOR SYNC', 'Patient profile saved locally. Will register on the server when connection is restored.');
+                              } else {
+                                try {
+                                  const response = await apiClient.post('/patients', patientPayload);
+                                  const patientId = response.data.patientId;
+                                  if (!patientId) throw new Error("API returned invalid patient identity");
+                                  setNewBooking(prev => ({...prev, patientId}));
+                                  fetchPatients('');
+                                } catch (error) {
+                                  console.error('Failed to auto-register patient:', error);
+                                  // Network-level failure → queue to
+                                  // outbox and continue. Only block
+                                  // when the server actually responded
+                                  // with a validation error.
+                                  if (!error.response) {
+                                    const tempId = `temp-${Date.now()}`;
+                                    await addToOutbox('PATIENT_CREATE', { ...patientPayload, tempId });
+                                    setNewBooking(prev => ({ ...prev, patientId: tempId }));
+                                    showNotif('info', 'QUEUED FOR SYNC', 'Network unavailable. Patient profile saved locally and will sync when reconnected.');
+                                  } else {
+                                    const serverMsg = error.response?.data?.error
+                                      || error.response?.data?.message
+                                      || 'Patient registration could not be completed.';
+                                    showNotif('error', 'REGISTRATION FAILED', serverMsg);
+                                    return;
+                                  }
+                                }
                               }
                             }
-                            
+                            // Case B: EXISTING PATIENT (Demographic Sync).
+                            // Best-effort — skip silently when offline,
+                            // queue a PATIENT_UPDATE only if the user
+                            // actually changed something. The booking
+                            // continues regardless (a server-side
+                            // demographic update is not critical for
+                            // proceeding with the visit).
+                            else if (newBooking.patientId && !String(newBooking.patientId).startsWith('temp-')) {
+                              const updatePayload = {
+                                patientId: newBooking.patientId,
+                                fullName: newPatient.name,
+                                mobile: newPatient.mobile,
+                                age: buildPatientAge(newPatient.age, newPatient.ageUnit) || '0',
+                                gender: newPatient.gender,
+                                village: newPatient.village,
+                                district: newPatient.district,
+                                address: newPatient.address,
+                                sourceOfInfo: newPatient.sourceOfInfo,
+                                referrerId: newPatient.referrerId,
+                              };
+                              if (!isOnline) {
+                                try { await addToOutbox('PATIENT_UPDATE', updatePayload); } catch (_) { /* non-blocking */ }
+                              } else {
+                                try {
+                                  await apiClient.put(`/patients/${newBooking.patientId}`, updatePayload);
+                                } catch (error) {
+                                  console.error('Failed to sync existing patient demographics:', error);
+                                  if (!error.response) {
+                                    try { await addToOutbox('PATIENT_UPDATE', updatePayload); } catch (_) { /* non-blocking */ }
+                                  }
+                                }
+                              }
+                            }
+
                             // Advance to Clinical Configuration
                             setBookingStep(2);
                             setShowBookingValidation(false);
@@ -3222,16 +3284,36 @@ export default function AppointmentBoard() {
                       );
                     })()}
 
-                    <div className="drawer-footer" style={{ marginTop: '0px', paddingTop: '10px' }}>
-                      <button className="btn-logout" style={{ padding: '10px 16px', borderRadius: '10px', fontWeight: 800, fontSize: '12px' }} onClick={() => setBookingStep(1)}>{'\u2190'} Back</button>
-                      <button 
-                        className="gamified-btn" 
-                        style={{ 
-                          flex: 1, padding: '10px 16px', borderRadius: '10px', fontSize: '12px', fontWeight: 950,
+                    <div className="drawer-footer" style={{
+                      marginTop: '0px',
+                      paddingTop: '10px',
+                      gap: isMobile ? '8px' : undefined,
+                    }}>
+                      <button
+                        className="btn-logout"
+                        style={{
+                          padding: isMobile ? '10px 12px' : '10px 16px',
+                          borderRadius: '10px',
+                          fontWeight: 800,
+                          fontSize: isMobile ? '11px' : '12px',
+                          whiteSpace: 'nowrap',
+                        }}
+                        onClick={() => setBookingStep(1)}
+                      >{'\u2190'} Back</button>
+                      <button
+                        className="gamified-btn"
+                        style={{
+                          flex: 1,
+                          padding: isMobile ? '10px 12px' : '10px 16px',
+                          borderRadius: '10px',
+                          fontSize: isMobile ? '11px' : '12px',
+                          fontWeight: 950,
+                          letterSpacing: isMobile ? '0.3px' : 'normal',
                           background: 'linear-gradient(90deg, #0f52ba, #00f2fe)',
                           color: 'white', border: 'none', cursor: 'pointer',
                           boxShadow: '0 4px 12px rgba(15, 82, 186, 0.2)',
-                          opacity: (!newBooking.patientId || (!newBooking.service && (newBooking.addedServices || []).length === 0) || !newBooking.doctor) ? 0.7 : 1
+                          opacity: (!newBooking.patientId || (!newBooking.service && (newBooking.addedServices || []).length === 0) || !newBooking.doctor) ? 0.7 : 1,
+                          whiteSpace: 'nowrap',
                         }}
                         disabled={
                           !newBooking.patientId ||
@@ -3242,7 +3324,7 @@ export default function AppointmentBoard() {
                         }
                         onClick={handleBookAppointment}
                       >
-                        🚀 DEPLOY MISSION
+                        {isMobile ? '🚀 BOOK' : '🚀 DEPLOY MISSION'}
                       </button>
                     </div>
                   </div>
