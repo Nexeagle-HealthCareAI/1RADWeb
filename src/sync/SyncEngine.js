@@ -276,6 +276,7 @@ function resolveRoute(item) {
     case 'REPORT':               return { method: 'POST',   url: '/reporting/save' };
     case 'PRICE_UPDATE':         return { method: 'POST',   url: '/finance/registry' };
     case 'PAYOUT':               return { method: 'POST',   url: '/referrers/commissions' };
+    case 'PAYOUT_BATCH':         return { method: 'POST',   url: '/referrers/commissions/batch' };
     case 'HOSPITAL_UPDATE':      return { method: 'PUT',    url: `/hospitals/${p.id}` };
     case 'PERSONNEL_CREATE':     return { method: 'POST',   url: '/personnel' };
     case 'PERSONNEL_UPDATE':     return { method: 'PUT',    url: `/personnel/${p.id}` };

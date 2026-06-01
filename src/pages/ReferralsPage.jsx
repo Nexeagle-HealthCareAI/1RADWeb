@@ -673,6 +673,28 @@ export default function ReferralsPage() {
     }
   };
 
+  const handleDeleteReferrer = async (referrer) => {
+    if (!referrer?.referrerId) return;
+    const name = (referrer.name || 'this partner').toUpperCase();
+    if (!window.confirm(`Remove ${name} from the partner network?\n\nHistoric referrals and commissions are kept for reporting; the partner just stops appearing in the roster.`)) {
+      return;
+    }
+    try {
+      await apiClient.delete(`/referrers/${referrer.referrerId}`);
+      notifyToast(`${name} removed from partner network.`, 'success');
+      // Close the edit drawer if we were editing the same partner
+      if (editingReferrer?.referrerId === referrer.referrerId) {
+        setIsReferrerEditDrawerOpen(false);
+        setEditingReferrer(null);
+      }
+      fetchReferralIntelligence();
+    } catch (err) {
+      console.error('[REFERRER] Delete failed', err);
+      const backendError = err.response?.data?.error || err.response?.data?.message;
+      notifyToast(backendError || 'Could not remove partner.', 'error');
+    }
+  };
+
   const handleUpdatePatient = async (e) => {
     e.preventDefault();
     if (!editingPatient) return;
@@ -3832,9 +3854,9 @@ export default function ReferralsPage() {
                 overflowX: 'auto',
                 WebkitOverflowScrolling: 'touch'
               }}>
-                <div style={{ padding: '25px 30px', borderBottom: '1px solid #e2e8f0', display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: '#fcfdfe', minWidth: isMobile ? '800px' : '100%' }}>
+                <div style={{ padding: isMobile ? '18px' : '25px 30px', borderBottom: '1px solid #e2e8f0', display: 'flex', flexWrap: 'wrap', justifyContent: 'space-between', alignItems: 'center', gap: '12px', background: '#fcfdfe', position: 'sticky', left: 0 }}>
                    <div style={{ fontSize: '12px', fontWeight: 950, color: '#1e293b', letterSpacing: '1px' }}>PARTNER NETWORK ROSTER</div>
-                   <div style={{ display: 'flex', gap: '10px' }}>
+                   <div style={{ display: 'flex', flexWrap: 'wrap', gap: '10px' }}>
                      <button 
                        onClick={() => {
                          setEditingReferrer({ name: '', contact: '', address: '' });
@@ -3891,7 +3913,8 @@ export default function ReferralsPage() {
                             <div style={{ fontSize: '9px', fontWeight: 800, color: '#94a3b8', letterSpacing: '0.5px' }}>UNITS</div>
                           </td>
                           <td style={{ padding: '20px 30px', textAlign: 'right' }}>
-                              <button 
+                            <div style={{ display: 'inline-flex', gap: '8px' }}>
+                              <button
                                 onClick={() => {
                                    setEditingReferrer(s);
                                    setIsReferrerEditDrawerOpen(true);
@@ -3900,6 +3923,14 @@ export default function ReferralsPage() {
                               >
                                 EDIT
                               </button>
+                              <button
+                                onClick={() => handleDeleteReferrer(s)}
+                                title="Remove partner"
+                                style={{ padding: '6px 12px', borderRadius: '8px', border: '1px solid #fecaca', background: 'white', color: '#dc2626', fontSize: '9px', fontWeight: 950, cursor: 'pointer' }}
+                              >
+                                DELETE
+                              </button>
+                            </div>
                            </td>
                         </tr>
                       ))
@@ -3928,15 +3959,23 @@ export default function ReferralsPage() {
                                     <div style={{ fontSize: '16px', fontWeight: 950, color: '#0f52ba' }}>{s.patients?.length || 0}</div>
                                     <div style={{ fontSize: '9px', fontWeight: 800, color: '#94a3b8', letterSpacing: '0.5px' }}>UNITS</div>
                                  </div>
-                                 <button 
-                                   onClick={() => {
-                                      setEditingReferrer(s);
-                                      setIsReferrerEditDrawerOpen(true);
-                                   }}
-                                   style={{ padding: '6px 14px', borderRadius: '8px', border: '1px solid #e2e8f0', background: 'white', color: '#0f52ba', fontSize: '10px', fontWeight: 950, cursor: 'pointer' }}
-                                 >
-                                   EDIT
-                                 </button>
+                                 <div style={{ display: 'flex', gap: '8px' }}>
+                                   <button
+                                     onClick={() => {
+                                        setEditingReferrer(s);
+                                        setIsReferrerEditDrawerOpen(true);
+                                     }}
+                                     style={{ padding: '6px 14px', borderRadius: '8px', border: '1px solid #e2e8f0', background: 'white', color: '#0f52ba', fontSize: '10px', fontWeight: 950, cursor: 'pointer' }}
+                                   >
+                                     EDIT
+                                   </button>
+                                   <button
+                                     onClick={() => handleDeleteReferrer(s)}
+                                     style={{ padding: '6px 14px', borderRadius: '8px', border: '1px solid #fecaca', background: 'white', color: '#dc2626', fontSize: '10px', fontWeight: 950, cursor: 'pointer' }}
+                                   >
+                                     DELETE
+                                   </button>
+                                 </div>
                               </div>
                            </div>
                          ))

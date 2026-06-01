@@ -637,7 +637,30 @@ export default function BillingPage() {
       return;
     }
 
-    const payload = {
+    // Single-line REVISE of one existing commission keeps the legacy single endpoint.
+    const isSingle = !!editPayout.commissionId;
+
+    // Normalise the drawer's service lines (mirrors PayoutDrawer's derivation so
+    // saving works whether or not the user touched the line editor).
+    const rawLines = Array.isArray(editPayout.lines) && editPayout.lines.length > 0
+      ? editPayout.lines
+      : [{ modality: editPayout.modality || 'MRI', amount: editPayout.amount, status: editPayout.status || 'UNPAID', appointmentServiceId: editPayout.appointmentServiceId || null }];
+
+    const lines = rawLines
+      .map(l => ({
+        modality: l.modality || 'MRI',
+        amount: parseFloat(l.amount) || 0,
+        status: l.status || 'UNPAID',
+        appointmentServiceId: l.appointmentServiceId || null,
+      }))
+      .filter(l => l.amount > 0);
+
+    if (!isSingle && lines.length === 0) {
+      notify({ type: 'warning', message: 'Enter an amount for at least one service line.' });
+      return;
+    }
+
+    const singlePayload = {
       referrerId: editPayout.referrerId,
       amount: parseFloat(editPayout.amount),
       modality: editPayout.modality,
@@ -646,8 +669,21 @@ export default function BillingPage() {
       status: editPayout.status || 'UNPAID'
     };
 
+    const batchPayload = {
+      referrerId: editPayout.referrerId,
+      referenceNumber: editPayout.invoiceId,
+      remarks: editPayout.remarks,
+      patientName: editPayout.patientName || null,
+      appointmentId: editPayout.appointmentId || null,
+      lines
+    };
+
     if (!isOnline) {
-      await addToOutbox('PAYOUT', payload);
+      if (isSingle) {
+        await addToOutbox('PAYOUT', singlePayload);
+      } else {
+        await addToOutbox('PAYOUT_BATCH', batchPayload);
+      }
       notify({ type: 'info', title: 'Offline', message: 'Payout will sync when reconnected.' });
       setIsPayoutDrawerOpen(false);
       return;
@@ -655,16 +691,15 @@ export default function BillingPage() {
 
     try {
       setIsSavingPayout(true);
-      
-      if (editPayout.commissionId) {
-        // Update Mode
+
+      if (isSingle) {
         await apiClient.put(`/referrers/commissions/${editPayout.commissionId}`, {
-          ...payload,
+          ...singlePayload,
           commissionId: editPayout.commissionId
         });
       } else {
-        // Create Mode
-        await apiClient.post('/referrers/commissions', payload);
+        // Per-service payout — one commission row per service line.
+        await apiClient.post('/referrers/commissions/batch', batchPayload);
       }
 
       setIsPayoutDrawerOpen(false);
@@ -672,7 +707,7 @@ export default function BillingPage() {
     } catch (err) {
       console.error('[PAYOUT] Transaction failure:', err);
       if (!err.response) {
-        await addToOutbox('PAYOUT', payload);
+        await addToOutbox(isSingle ? 'PAYOUT' : 'PAYOUT_BATCH', isSingle ? singlePayload : batchPayload);
         notify({ type: 'info', title: 'No connection', message: 'Payout added to offline queue.' });
         setIsPayoutDrawerOpen(false);
       } else {
@@ -1116,7 +1151,7 @@ export default function BillingPage() {
             // Honor the actual stored status; default to PAID only when missing
             // (legacy expenses are usually paid but UNPAID is a valid state).
             status: (e.status || 'PAID').toUpperCase() === 'PAID' ? 'PAID' : 'UNPAID',
-            patientPaymentStatus: inv?.status || null
+            patientPaymentStatus: inv?.status ? String(inv.status).toUpperCase() : null
         };
     });
     const strategicCuts = referralCommissions.filter(c => c).map(c => {
@@ -1132,7 +1167,10 @@ export default function BillingPage() {
             referrerId: c.referrerId,
             modality: c.modality || 'MRI',
             patientName: c.patientName || 'N/A',
-            patientPaymentStatus: c.patientPaymentStatus || null,
+            // Normalise casing so the "patient must have paid" gate on the
+            // pay-commission checkbox compares reliably (backend now derives
+            // PAID/PARTIAL/PENDING from the actual collected amounts).
+            patientPaymentStatus: c.patientPaymentStatus ? String(c.patientPaymentStatus).toUpperCase() : null,
             paymentReceived: c.paymentReceived !== undefined ? c.paymentReceived : 0
         };
     });

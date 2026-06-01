@@ -772,44 +772,67 @@ const RevenueHub = ({
                         </span>
                      </td>
                      <td style={{ padding: '20px 10px', textAlign: 'right', display: 'flex', gap: '10px', justifyContent: 'flex-end', alignItems: 'center' }}>
-                        <button 
+                        <button
                           onClick={() => {
-                             let cutAmount = inv.commissionAmount || 0;
-                             if (cutAmount === 0 && inv.items?.length > 0) {
-                                cutAmount = inv.items.reduce((sum, item) => {
-                                  const service = serviceRegistry?.find(s => (s.serviceName || s.descriptor)?.toLowerCase() === item.description?.toLowerCase());
-                                  return sum + ((service?.referralCutValue || 0) * (item.quantity || 1));
-                                }, 0);
-                             }
-                             // Multi-stage identity resolution
+                             // Multi-stage referrer identity resolution
                              let refId = inv.referrerId;
                              if (!refId && inv.referrerName) {
                                 const match = referrers.find(r => r.name?.toLowerCase() === (inv.referrerName || '').toLowerCase());
                                 if (match) refId = match.referrerId || match.id;
                              }
 
-                             if (!inv.commissionId) {
+                             if (!refId) {
                                 setErrorModal({
                                   isOpen: true,
                                   title: "FISCAL COMPLIANCE WARNING",
-                                  message: `No active commission record found for invoice ${inv.displayId}. Update is not permitted until a referrer setting is configured.`
+                                  message: `Invoice ${inv.displayId} has no referral partner attached. Assign a referrer on the invoice before recording a payout.`
                                 });
                                 return;
-                              }
+                             }
 
-                              const existingCommission = (referralCommissions || []).find(c =>
-                                c.id === inv.commissionId
-                              );
-                              setEditPayout({
-                                 commissionId: inv.commissionId,
-                                 referrerId: existingCommission?.referrerId || refId || '',
-                                 referrerName: existingCommission?.referrerName || inv.referrerName || 'DIRECT',
-                                 amount: existingCommission != null ? existingCommission.amount : (inv.commissionAmount || cutAmount || ''),
-                                 modality: existingCommission?.modality || inv.modality || 'MRI',
-                                 remarks: existingCommission?.remarks || `Commission for ${inv.displayId} (${inv.patientName})`,
-                                 invoiceId: inv.displayId,
-                                 status: existingCommission?.status || 'UNPAID'
-                              });
+                             // Build ONE payout line per service on the invoice so a
+                             // multi-service visit pays the referrer per modality.
+                             const items = inv.items || [];
+                             const ref = inv.displayId;
+                             const existingForInvoice = (referralCommissions || []).filter(c =>
+                               (c.referenceNumber || c.reference) === ref || c.id === inv.commissionId
+                             );
+
+                             const lineFromItem = (item) => {
+                               const service = serviceRegistry?.find(s => (s.serviceName || s.descriptor)?.toLowerCase() === item.description?.toLowerCase());
+                               const modality = String(item.modality || item.Modality || service?.modality || inv.modality || 'MRI').toUpperCase();
+                               const registryCut = (service?.referralCutValue || 0) * (item.quantity || 1);
+                               // Prefer a previously-saved amount for this modality, else the registry cut.
+                               const prior = existingForInvoice.find(c => String(c.modality || '').toUpperCase() === modality);
+                               return {
+                                 modality,
+                                 amount: prior?.amount ?? prior?.payoutAmount ?? (registryCut || ''),
+                                 status: prior?.status || prior?.commissionStatus || 'UNPAID',
+                                 serviceName: item.description || modality,
+                                 appointmentServiceId: item.appointmentServiceId || null,
+                               };
+                             };
+
+                             let lines = items.length > 0
+                               ? items.map(lineFromItem)
+                               : [{
+                                   modality: String(inv.modality || 'MRI').toUpperCase(),
+                                   amount: inv.commissionAmount || '',
+                                   status: 'UNPAID',
+                                   serviceName: inv.modality || 'Service',
+                                   appointmentServiceId: null,
+                                 }];
+
+                             setEditPayout({
+                                commissionId: '',            // batch (per-service) mode
+                                referrerId: refId,
+                                referrerName: inv.referrerName || 'DIRECT',
+                                invoiceId: ref,
+                                appointmentId: inv.appointmentId || null,
+                                patientName: inv.patientName || '',
+                                remarks: `Commission for ${inv.displayId} (${inv.patientName})`,
+                                lines,
+                             });
                              setIsPayoutDrawerOpen(true);
                           }}
                            style={{ 
