@@ -97,37 +97,6 @@ const ReportingPage = () => {
   }, [activeServiceId]);
   const [uploadedFiles, setUploadedFiles] = useState([]);
 
-  // Active service derived from the URL-/tab-picked id. Drives the
-  // DICOM filter so switching services swaps the viewer's series
-  // list, the sidebar, and the slice counter — all in lockstep.
-  const activeService = useMemo(() => {
-    if (!activeServiceId || !appointmentServices?.length) return null;
-    return appointmentServices.find(s => s.id === activeServiceId) || null;
-  }, [activeServiceId, appointmentServices]);
-  const activeServiceMod = useMemo(() => {
-    return String(activeService?.modality || activeAppointment?.modality || '').toUpperCase();
-  }, [activeService, activeAppointment]);
-
-  // Per-service filter applied across every DICOM surface (mobile
-  // viewer, mobile series strip, desktop sidebar, desktop viewer).
-  // Three-tier match — strict FK > modality > first-service pin —
-  // so legacy assets without an AppointmentServiceId still attach
-  // sensibly. Same logic that fixed the per-service viewing earlier.
-  const visibleUploadedFiles = useMemo(() => {
-    if (!appointmentServices || appointmentServices.length <= 1) return uploadedFiles;
-    if (!activeService) return uploadedFiles;
-    const isFirstService = appointmentServices[0]?.id === activeService.id;
-    return uploadedFiles.filter((f) => {
-      const svcId = f?.appointmentServiceId || f?.AppointmentServiceId;
-      if (svcId) return svcId === activeService.id;
-      const m = String(f?.modality || f?.Modality || '').toUpperCase();
-      if (m && activeServiceMod) return m === activeServiceMod;
-      // Untagged + unknown-modality → pin to first service only so
-      // legacy assets don't double-up across every service tab.
-      return isFirstService;
-    });
-  }, [uploadedFiles, appointmentServices, activeService, activeServiceMod]);
-
   const [currentSlice, setCurrentSlice] = useState(1);
   const [activeTool, setActiveTool] = useState('WindowLevel');
   const [activeMetadata, setActiveMetadata] = useState(null);
@@ -184,6 +153,39 @@ const ReportingPage = () => {
   const [isSaving, setIsSaving] = useState(false);
 
   const [activeAppointment, setActiveAppointment] = useState(null);
+
+  // Active service derived from the URL-/tab-picked id. Drives the
+  // DICOM filter so switching services swaps the viewer's series
+  // list, the sidebar, and the slice counter — all in lockstep.
+  // Must come AFTER both `appointmentServices` and `activeAppointment`
+  // declarations (TDZ).
+  const activeService = useMemo(() => {
+    if (!activeServiceId || !appointmentServices?.length) return null;
+    return appointmentServices.find(s => s.id === activeServiceId) || null;
+  }, [activeServiceId, appointmentServices]);
+  const activeServiceMod = useMemo(() => {
+    return String(activeService?.modality || activeAppointment?.modality || '').toUpperCase();
+  }, [activeService, activeAppointment]);
+
+  // Per-service filter applied across every DICOM surface (mobile
+  // viewer, mobile series strip, desktop sidebar, desktop viewer).
+  // Three-tier match — strict FK > modality > first-service pin —
+  // so legacy assets without an AppointmentServiceId still attach
+  // sensibly.
+  const visibleUploadedFiles = useMemo(() => {
+    if (!appointmentServices || appointmentServices.length <= 1) return uploadedFiles;
+    if (!activeService) return uploadedFiles;
+    const isFirstService = appointmentServices[0]?.id === activeService.id;
+    return uploadedFiles.filter((f) => {
+      const svcId = f?.appointmentServiceId || f?.AppointmentServiceId;
+      if (svcId) return svcId === activeService.id;
+      const m = String(f?.modality || f?.Modality || '').toUpperCase();
+      if (m && activeServiceMod) return m === activeServiceMod;
+      // Untagged + unknown-modality → pin to first service only so
+      // legacy assets don't double-up across every service tab.
+      return isFirstService;
+    });
+  }, [uploadedFiles, appointmentServices, activeService, activeServiceMod]);
   // Overflow menu for the service picker — opens when there are more
   // services than fit on a single visible row.
   const [serviceOverflowOpen, setServiceOverflowOpen] = useState(false);
