@@ -1106,10 +1106,23 @@ export default function ReferralsPage() {
   const referralAggregated = useMemo(() => {
     // Map the backend intelligence DTOs to the frontend's expected Matrix structure
     const mapped = referralIntelligence.map(ref => {
-      // Calculate modality breakdown for each referrer
+      // Multi-service rollout (batch-5 fix). Per-modality counts now
+      // walk the ServiceLines array when the server provided it — so a
+      // single patient referred for X-Ray + CT + USG contributes 3
+      // counts (one per modality) rather than 1 attributed to the
+      // primary scalar. Falls back to the scalar modality when the
+      // server is older or the entry has no service lines.
       const modalities = ref.patients.reduce((acc, p) => {
-        const mod = p.modality || 'OTHER';
-        acc[mod] = (acc[mod] || 0) + 1;
+        const lines = Array.isArray(p.serviceLines) ? p.serviceLines : null;
+        if (lines && lines.length > 0) {
+          for (const line of lines) {
+            const mod = (line.modality || 'OTHER').toUpperCase();
+            acc[mod] = (acc[mod] || 0) + 1;
+          }
+        } else {
+          const mod = p.modality || 'OTHER';
+          acc[mod] = (acc[mod] || 0) + 1;
+        }
         return acc;
       }, {});
 
@@ -2823,10 +2836,25 @@ export default function ReferralsPage() {
                   <div style={{ fontSize: '10px', fontWeight: 950, color: '#64748b', textTransform: 'uppercase', letterSpacing: '2px', marginBottom: '5px' }}>Commission Liability by Modality</div>
                   <div style={{ background: '#f8fafc', padding: '20px', borderRadius: '18px', border: '1px solid #e2e8f0', display: 'flex', flexDirection: 'column', gap: '12px' }}>
                      {(() => {
+                        // Multi-service rollout — per-modality commission
+                        // liability uses the per-line breakdown when
+                        // available, so a multi-service visit's CT
+                        // commission lands in the CT bucket and its USG
+                        // commission lands in the USG bucket. Falls back
+                        // to attributing the whole commission to the
+                        // primary modality only when no service lines
+                        // are present (v1 server or pre-migration data).
                         const commissionByModality = {};
                         referralAggregated.forEach(ref => {
                            (ref.patients || []).forEach(p => {
-                              if (p.commissionStatus?.toLowerCase() === 'unpaid') {
+                              if (p.commissionStatus?.toLowerCase() !== 'unpaid') return;
+                              const lines = Array.isArray(p.serviceLines) ? p.serviceLines : null;
+                              if (lines && lines.length > 0) {
+                                 for (const line of lines) {
+                                    const mod = (line.modality || 'OTHER').toUpperCase();
+                                    commissionByModality[mod] = (commissionByModality[mod] || 0) + (Number(line.commissionAmount) || 0);
+                                 }
+                              } else {
                                  commissionByModality[p.modality] = (commissionByModality[p.modality] || 0) + (p.commissionAmount || 0);
                               }
                            });

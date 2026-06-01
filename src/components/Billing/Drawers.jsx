@@ -401,37 +401,54 @@ export const NewInvoiceDrawer = ({
                        <p style={{ fontSize: '9px', fontWeight: 950, color: '#0f52ba', marginBottom: '10px' }}>PENDING APPOINTMENTS</p>
                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
                           {pendingServices.map((s, idx) => (
-                            <button 
-                              key={idx}
+                            <button
+                              key={s.appointmentServiceId || `${s.appointmentId}-${idx}`}
                               type="button"
                               onClick={() => {
+                                const newLine = {
+                                  description: s.service,
+                                  amount: s.amount || 0,
+                                  quantity: 1,
+                                  appointmentId: s.appointmentId,
+                                  // Multi-service rollout — server stamps this
+                                  // on the resulting InvoiceItem so the line
+                                  // attaches to the right AppointmentService.
+                                  appointmentServiceId: s.appointmentServiceId || null,
+                                  referralCutValue: s.referralCutValue || 0,
+                                };
                                 const newItems = [...newInvoiceData.items];
-                                  if (newItems.length === 1 && !newItems[0].description) {
-                                    newItems[0] = { 
-                                      description: s.service, 
-                                      amount: s.amount || 0, 
-                                      quantity: 1, 
-                                      appointmentId: s.appointmentId,
-                                      referralCutValue: s.referralCutValue || 0
-                                    };
-                                  } else {
-                                    newItems.push({ 
-                                      description: s.service, 
-                                      amount: s.amount || 0, 
-                                      quantity: 1, 
-                                      appointmentId: s.appointmentId,
-                                      referralCutValue: s.referralCutValue || 0
-                                    });
-                                  }
-                                  setNewInvoiceData({ ...newInvoiceData, items: newItems });
+                                if (newItems.length === 1 && !newItems[0].description) {
+                                  newItems[0] = newLine;
+                                } else {
+                                  newItems.push(newLine);
+                                }
+                                setNewInvoiceData({ ...newInvoiceData, items: newItems });
                                 setPendingServices(prev => prev.filter((_, i) => i !== idx));
                               }}
-                              style={{ 
-                                padding: '8px 12px', border: '1px dashed #0f52ba', background: '#f0f4ff', color: '#0f52ba', 
-                                borderRadius: '10px', fontSize: '10px', fontWeight: 800, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px' 
+                              title={s.modality ? `${s.modality} · ${s.service}` : s.service}
+                              style={{
+                                padding: '8px 12px', border: '1px dashed #0f52ba', background: '#f0f4ff', color: '#0f52ba',
+                                borderRadius: '10px', fontSize: '10px', fontWeight: 800, cursor: 'pointer',
+                                display: 'inline-flex', alignItems: 'center', gap: '6px',
                               }}
                             >
-                              <span style={{ opacity: 0.7 }}>+</span> {s.service}
+                              <span style={{ opacity: 0.7 }}>+</span>
+                              {/* Modality chip in front so a multi-service
+                                  visit shows distinct buttons rather than
+                                  three identical "+ Service" pills. */}
+                              {s.modality && (
+                                <span style={{
+                                  fontSize: '9px', fontWeight: 900,
+                                  background: 'white', color: '#0f52ba',
+                                  padding: '1px 6px', borderRadius: '4px',
+                                  border: '1px solid #dbeafe',
+                                  letterSpacing: '0.3px',
+                                }}>{s.modality}</span>
+                              )}
+                              <span>{s.service}</span>
+                              {s.amount > 0 && (
+                                <span style={{ opacity: 0.7, fontWeight: 900 }}>· ₹{Number(s.amount).toLocaleString()}</span>
+                              )}
                             </button>
                           ))}
                        </div>

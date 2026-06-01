@@ -9,6 +9,7 @@ import { watchReferrers } from '../db/repos/referrersRepo';
 import { watchReferralCommissions } from '../db/repos/referralCommissionsRepo';
 import { syncNow } from '../sync/SyncEngine';
 import { computeStats, computeMatrix } from '../analytics/financialAggregator';
+import { matchesAnyModality } from '../utils/appointmentServices';
 import '../styles/BillingPage.css';
 
 // Modular Hub Components
@@ -824,8 +825,10 @@ export default function BillingPage() {
       const appDate = app.date || (app.dateTime ? app.dateTime.split('T')[0] : null);
       if (!appDate || appDate <= today) return false;
       
-      // Modality Filter
-      if (modalityFilter !== 'ALL' && app.modality !== modalityFilter) return false;
+      // Modality Filter — multi-service aware. Picks up a visit whose
+      // ANY service line matches the chosen modality, with v1 scalar
+      // fallback for rows that pre-date the multi-service rollout.
+      if (!matchesAnyModality(app, modalityFilter)) return false;
       
       // Search Filter
       const matchesSearch = String(app.patientName || '').toLowerCase().includes(searchTerm.toLowerCase()) ||

@@ -2,6 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { useNavigate, useParams, useLocation } from 'react-router-dom';
 import apiClient from '../api/apiClient';
 import SavedReportViewer from '../components/SavedReportViewer';
+import { getServiceLines, getUniqueModalities, matchesAnyModality, getReportProgressLabel } from '../utils/appointmentServices';
 
 const STATUS_COLOR = {
   reported:    { bg: '#10b981', light: '#f0fdf4', border: '#bbf7d0', text: '#065f46' },
@@ -145,20 +146,27 @@ export default function PatientTimelinePage() {
     }
   };
 
-  const modalities = [...new Set(history.map(h => h.modality).filter(Boolean))];
+  // Multi-service rollout: the filter dropdown lists every distinct
+  // modality across the timeline — including ones contributed by
+  // service lines on multi-service visits. The filter itself walks the
+  // service list per entry so picking "CT" finds any visit that has CT
+  // among its services (with v1 scalar fallback).
+  const modalities = [...new Set(history.flatMap(h => getUniqueModalities(h)))];
   const statuses   = [...new Set(history.map(h => h.status?.toLowerCase()).filter(Boolean))];
 
   const filtered = history.filter(h => {
     const okStatus   = filterStatus   === 'ALL' || h.status?.toLowerCase() === filterStatus;
-    const okModality = filterModality === 'ALL' || h.modality === filterModality;
+    const okModality = matchesAnyModality(h, filterModality);
     return okStatus && okModality;
   });
 
   // ── Stats ──────────────────────────────────────────────────────
+  // "Modalities visited" counts distinct modalities across every
+  // service line, so a single CT+USG visit counts as two on the chip.
   const stats = {
     total:     history.length,
     finalized: history.filter(h => ['reported', 'completed'].includes(h.status?.toLowerCase())).length,
-    modalities: [...new Set(history.map(h => h.modality).filter(Boolean))].length,
+    modalities: new Set(history.flatMap(h => getUniqueModalities(h))).size,
     latestDate: history[0]?.dateTime ? new Date(history[0].dateTime).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : '—',
   };
 
@@ -302,31 +310,116 @@ export default function PatientTimelinePage() {
                       <div style={{ padding: '18px 22px' }}>
                         {/* Row 1 */}
                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '14px' }}>
-                          <div>
-                            <div style={{ fontSize: '14px', fontWeight: 950, color: '#0a1628', marginBottom: '2px' }}>
-                              {appt.service || appt.modality || 'Study'}
-                            </div>
-                            <div style={{ fontSize: '11px', color: '#64748b', fontWeight: 700, display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
-                              <span>📅 {appt.dateTime ? new Date(appt.dateTime).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : 'N/A'}</span>
-                              {appt.dateTime && <span>⏰ {new Date(appt.dateTime).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })}</span>}
-                              {appt.doctor && <span>👨‍⚕️ {appt.doctor}</span>}
-                              {appt.referredBy && (
-                                <span style={{ color: '#7c3aed' }}>
-                                  ↗ Ref: {appt.referredBy}
-                                  {(appt.referredContact || appt.ReferredContact) && ` (${appt.referredContact || appt.ReferredContact})`}
-                                </span>
-                              )}
-                            </div>
-                          </div>
+                          {(() => {
+                            const lines      = getServiceLines(appt);
+                            const modalities = getUniqueModalities(appt);
+                            const progress   = getReportProgressLabel(appt);
+                            const primary    = lines[0]?.serviceName || appt.service || appt.modality || 'Study';
+                            const extra      = lines.length - 1;
+                            return (
+                              <div>
+                                <div style={{ display: 'flex', alignItems: 'baseline', gap: '8px', flexWrap: 'wrap', marginBottom: '2px' }}>
+                                  <div style={{ fontSize: '14px', fontWeight: 950, color: '#0a1628' }}>
+                                    {primary}
+                                  </div>
+                                  {extra > 0 && (
+                                    <span style={{
+                                      background: '#dbeafe', color: '#0f52ba',
+                                      fontSize: '9px', fontWeight: 900,
+                                      padding: '2px 8px', borderRadius: '999px',
+                                      letterSpacing: '0.3px',
+                                    }}>+{extra} more service{extra === 1 ? '' : 's'}</span>
+                                  )}
+                                  {progress && (
+                                    <span title="Reporting progress across all services on this visit" style={{
+                                      background: '#d1fae5', color: '#047857',
+                                      fontSize: '9px', fontWeight: 900,
+                                      padding: '2px 8px', borderRadius: '999px',
+                                      border: '1px solid #a7f3d0',
+                                      letterSpacing: '0.3px',
+                                    }}>{progress}</span>
+                                  )}
+                                </div>
+                                <div style={{ fontSize: '11px', color: '#64748b', fontWeight: 700, display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
+                                  <span>📅 {appt.dateTime ? new Date(appt.dateTime).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : 'N/A'}</span>
+                                  {appt.dateTime && <span>⏰ {new Date(appt.dateTime).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })}</span>}
+                                  {appt.doctor && <span>👨‍⚕️ {appt.doctor}</span>}
+                                  {appt.referredBy && (
+                                    <span style={{ color: '#7c3aed' }}>
+                                      ↗ Ref: {appt.referredBy}
+                                      {(appt.referredContact || appt.ReferredContact) && ` (${appt.referredContact || appt.ReferredContact})`}
+                                    </span>
+                                  )}
+                                </div>
+                                {/* Inline mini-list of every service line so the
+                                    user can scan modality + per-service status
+                                    without leaving the timeline. Only renders
+                                    for multi-service visits. */}
+                                {lines.length > 1 && (
+                                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', marginTop: '8px' }}>
+                                    {lines.map((line, lidx) => {
+                                      const isReported = ['REPORTED', 'DELIVERED'].includes((line.status || '').toUpperCase());
+                                      return (
+                                        <span
+                                          key={line.id || `tl-${lidx}`}
+                                          title={line.serviceName}
+                                          style={{
+                                            display: 'inline-flex', alignItems: 'center', gap: '5px',
+                                            background: '#f8fafc',
+                                            border: '1px solid #e2e8f0',
+                                            borderRadius: '8px',
+                                            padding: '3px 8px',
+                                            fontSize: '10px',
+                                            fontWeight: 700,
+                                            color: '#0f172a',
+                                          }}
+                                        >
+                                          <span style={{
+                                            color: '#0f52ba', background: '#eff6ff',
+                                            padding: '0 5px', borderRadius: '4px',
+                                            fontSize: '9px', fontWeight: 900, letterSpacing: '0.3px',
+                                          }}>{line.modality || 'OT'}</span>
+                                          <span style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '180px' }}>
+                                            {line.serviceName}
+                                          </span>
+                                          {isReported && (
+                                            <span aria-label="reported" style={{
+                                              width: '6px', height: '6px', borderRadius: '50%',
+                                              background: '#10b981',
+                                            }} />
+                                          )}
+                                        </span>
+                                      );
+                                    })}
+                                  </div>
+                                )}
+                              </div>
+                            );
+                          })()}
                           <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '6px', flexShrink: 0 }}>
                             <span style={{ background: sc.light, color: sc.text, border: `1px solid ${sc.border}`, borderRadius: '99px', padding: '4px 12px', fontSize: '9px', fontWeight: 950, letterSpacing: '0.5px', textTransform: 'uppercase' }}>
                               {appt.status || 'UNKNOWN'}
                             </span>
-                            {appt.modality && (
-                              <span style={{ background: '#f1f5f9', color: '#475569', borderRadius: '8px', padding: '3px 10px', fontSize: '9px', fontWeight: 950 }}>
-                                {appt.modality}
-                              </span>
-                            )}
+                            {(() => {
+                              const modalities = getUniqueModalities(appt);
+                              if (modalities.length <= 1) {
+                                const m = modalities[0];
+                                return m ? (
+                                  <span style={{ background: '#f1f5f9', color: '#475569', borderRadius: '8px', padding: '3px 10px', fontSize: '9px', fontWeight: 950 }}>
+                                    {m}
+                                  </span>
+                                ) : null;
+                              }
+                              return (
+                                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px', justifyContent: 'flex-end', maxWidth: '160px' }}>
+                                  {modalities.map((m, idx) => (
+                                    <span key={`tl-mod-${m}-${idx}`} style={{ background: '#f1f5f9', color: '#475569', borderRadius: '8px', padding: '3px 8px', fontSize: '9px', fontWeight: 950 }}>
+                                      {m}
+                                    </span>
+                                  ))}
+                                </div>
+                              );
+                            })()}
                           </div>
                         </div>
 

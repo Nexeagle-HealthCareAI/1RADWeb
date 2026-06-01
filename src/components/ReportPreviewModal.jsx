@@ -15,13 +15,24 @@ pdfjs.GlobalWorkerOptions.workerSrc = `https://unpkg.com/pdfjs-dist@${pdfjs.vers
 // hidden measurer so pagination can subtract its height from page-1 capacity.
 // Premium patient-header card. Mirrored in `generatePageHtml` below so the
 // printed report visually matches what the doctor sees on screen.
-export const PatientInfoBlock = ({ appointmentId, fullAppointment, savedMetadata }) => {
+export const PatientInfoBlock = ({ appointmentId, fullAppointment, savedMetadata, appointmentServiceId = null }) => {
+  // Multi-service rollout (batch-4 fix). When the caller supplied an
+  // appointmentServiceId, name THIS service line on the header + the
+  // "thank you" line so the printed report reflects the report that's
+  // actually being printed (e.g. a CT report on a 3-service visit
+  // prints "CT Head Plain (CT)" rather than the visit's primary X-ray
+  // scalar). Falls back to the parent's scalar Service/Modality when
+  // no service id is supplied (single-service / legacy / worklist
+  // print-preview callers that don't pick a specific service).
+  const _matchedService = appointmentServiceId
+    ? (fullAppointment?.services || []).find(s => s.id === appointmentServiceId)
+    : null;
   const name      = (fullAppointment?.patientName || '').toUpperCase() || '—';
   const ptid      = fullAppointment?.patientIdentifier || fullAppointment?.ptid || fullAppointment?.id || '—';
   const age       = fullAppointment?.patientAge || fullAppointment?.age || '—';
   const sex       = fullAppointment?.patientGender || fullAppointment?.gender || '—';
-  const study     = fullAppointment?.service || fullAppointment?.modality || '—';
-  const modality  = fullAppointment?.modality || '—'; // used by the thank-you line
+  const study     = _matchedService?.serviceName || fullAppointment?.service || fullAppointment?.modality || '—';
+  const modality  = _matchedService?.modality    || fullAppointment?.modality || '—'; // used by the thank-you line
   const refBy     = fullAppointment?.referredBy || 'Self';
   const repDate   = savedMetadata?.finalizedAt
     ? new Date(savedMetadata.finalizedAt).toLocaleDateString()
@@ -146,13 +157,19 @@ export const PatientInfoBlock = ({ appointmentId, fullAppointment, savedMetadata
   );
 };
 
-const ReportPreviewModal = ({ 
-  isOpen, 
-  onClose, 
+const ReportPreviewModal = ({
+  isOpen,
+  onClose,
   doctorId,
   appointmentId, // NEW: For direct report fetching
-  patientData, 
-  reportContent 
+  // Multi-service rollout (batch-4 fix). When supplied, the preview's
+  // header + thank-you line name the chosen service line instead of
+  // the parent visit's primary scalar. NULL = legacy / single-service
+  // / "print preview from worklist" path where the caller can't yet
+  // pick a specific service.
+  appointmentServiceId = null,
+  patientData,
+  reportContent
 }) => {
   const [protocol, setProtocol] = useState(null);
   const [loadingProtocol, setLoadingProtocol] = useState(false);
@@ -538,12 +555,16 @@ const ReportPreviewModal = ({
 
     // Build the patient-info banner only on page 1 — exact HTML twin of the
     // React PatientInfoBlock component used in the on-screen preview.
+    // Service-scoped overrides — keep in sync with PatientInfoBlock above.
+    const _matchedService = appointmentServiceId
+      ? (fullAppointment?.services || []).find(s => s.id === appointmentServiceId)
+      : null;
     const _ptName  = (fullAppointment?.patientName || '').toUpperCase() || '—';
     const _ptId    = fullAppointment?.patientIdentifier || fullAppointment?.ptid || fullAppointment?.id || '—';
     const _ptAge   = fullAppointment?.patientAge || fullAppointment?.age || '—';
     const _ptSex   = fullAppointment?.patientGender || fullAppointment?.gender || '—';
-    const _ptSvc   = fullAppointment?.service || fullAppointment?.modality || '—';
-    const _ptMod   = fullAppointment?.modality || '—'; // used by thank-you line
+    const _ptSvc   = _matchedService?.serviceName || fullAppointment?.service || fullAppointment?.modality || '—';
+    const _ptMod   = _matchedService?.modality    || fullAppointment?.modality || '—'; // used by thank-you line
     const _ptRef   = fullAppointment?.referredBy || 'Self';
     const _repDate = savedMetadata?.finalizedAt
       ? new Date(savedMetadata.finalizedAt).toLocaleDateString()

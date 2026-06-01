@@ -13,6 +13,7 @@ import { formatElapsed, premisesSeverity, premisesPillStyle } from '../utils/tim
 import { useOverdue } from '../components/OverdueAppointments/OverdueContext';
 import { getTrackingUrl } from '../utils/trackingUrl';
 import { buildPatientAge, formatPatientAge, parsePatientAge } from '../utils/patientAge';
+import { getServiceLines, getUniqueModalities, matchesAnyModality, getReportProgressLabel } from '../utils/appointmentServices';
 import { watchAppointments } from '../db/repos/appointmentsRepo';
 import { watchPatients } from '../db/repos/patientsRepo';
 import { snapshotPersonnel, getAllPersonnel } from '../db/repos/personnelRepo';
@@ -105,6 +106,14 @@ export default function AppointmentBoard() {
   const [isAddPatientOpen, setIsAddPatientOpen] = useState(false);
   const [isEditingOpen, setIsEditingOpen] = useState(false);
   const [editingAppointment, setEditingAppointment] = useState(null);
+  // Multi-service edit state. The drawer's draft inputs (service /
+  // modality / amount / referralCutValue) on editingAppointment model
+  // the "in-progress" line; editServices is the list of lines already
+  // committed via "Add another service". On save we combine the two
+  // and POST as `services` to the v2 update endpoint. Each entry may
+  // carry an `id` (existing AppointmentService row — server keeps it in
+  // place) or no id (newly added — server inserts).
+  const [editServices, setEditServices] = useState([]);
   const [isPreviewOpen, setIsPreviewOpen] = useState(false);
   const [previewAppointment, setPreviewAppointment] = useState(null);
   const [previewReport, setPreviewReport] = useState({ mode: 'Narrative Editor', text: '', impression: '', isFinalized: false });
@@ -145,6 +154,13 @@ export default function AppointmentBoard() {
     amount: '',
     referralCutValue: 0,
     priority: 'ROUTINE', // STAT / URGENT / ROUTINE — drives worklist sort
+    // Multi-service support (step 3). The single-service inputs above
+    // model the "in progress" draft line; addedServices is the list
+    // already committed via the "Add to visit" button. On submit we
+    // combine the two so a visit can carry multiple scans (X-ray + CT
+    // + USG together). Each entry: { serviceName, modality, amount,
+    // referralCutValue }.
+    addedServices: [],
   });
 
   const [newPatient, setNewPatient] = useState({
@@ -495,7 +511,10 @@ export default function AppointmentBoard() {
                             (app.mobile || '').includes(searchQuery) || 
                             (app.id || '').includes(searchQuery);
       const matchesStatus = filters.status === 'ALL' || app.status === filters.status;
-      const matchesModality = filters.modality === 'ALL' || app.modality === filters.modality;
+      // Multi-service rollout: filter picks up a visit whose ANY service
+      // line matches the chosen modality. matchesAnyModality also
+      // tolerates v1 rows that don't carry a services[] array yet.
+      const matchesModality = matchesAnyModality(app, filters.modality);
       const matchesDoctor = filters.doctor === 'ALL' || app.doctor === filters.doctor;
       return matchesSearch && matchesStatus && matchesModality && matchesDoctor;
     });
@@ -676,9 +695,12 @@ export default function AppointmentBoard() {
       return;
     }
 
-    // 2. Validate Service/Procedure
-    if (!newBooking.service || newBooking.service.trim() === '') {
-      showNotif('error', 'SERVICE REQUIRED', 'Clinical Service / Procedure is missing. This field is mandatory for billing and reporting.');
+    // 2. Validate Service/Procedure — either the draft line is filled OR
+    //    the user has already added at least one service via "Add to visit".
+    const hasDraftService = !!(newBooking.service && newBooking.service.trim());
+    const hasAddedService = (newBooking.addedServices || []).length > 0;
+    if (!hasDraftService && !hasAddedService) {
+      showNotif('error', 'SERVICE REQUIRED', 'Add at least one service. This field is mandatory for billing and reporting.');
       return;
     }
 
@@ -699,10 +721,39 @@ export default function AppointmentBoard() {
     const timePart = `${pad(now.getHours())}:${pad(now.getMinutes())}:${pad(now.getSeconds())}`;
     const localDateTimeStr = `${newBooking.date}T${timePart}`;
 
+    // Build the full service-line list. addedServices are everything the
+    // user has already committed via "Add to visit"; the draft inputs
+    // (newBooking.service / .modality / .amount / .referralCutValue) are
+    // appended as the final line so they don't get lost if the user hit
+    // submit without clicking "Add" first. We then de-dup defensively in
+    // case the user double-clicked.
+    const draftHasService = !!String(newBooking.service || '').trim();
+    const serviceLines = [
+      ...(newBooking.addedServices || []),
+      ...(draftHasService ? [{
+        serviceName:      String(newBooking.service || '').trim(),
+        modality:         String(newBooking.modality || '').trim().toUpperCase(),
+        amount:           Number(newBooking.amount) || 0,
+        referralCutValue: Number(newBooking.referralCutValue) || 0,
+      }] : []),
+    ].filter(s => s.serviceName);
+
+    const primary = serviceLines[0] || {
+      serviceName: '', modality: '', amount: 0, referralCutValue: 0,
+    };
+
     const payload = {
       patientId: newBooking.patientId,
-      service: newBooking.service,
-      modality: newBooking.modality,
+      // Scalar fields kept for backward compat with v1 servers (older
+      // API builds without step 2) and the offline outbox replay path.
+      // The server's CreateAppointmentCommand prefers `services` when
+      // present and falls back to these scalars otherwise.
+      service:  primary.serviceName,
+      modality: primary.modality,
+      amount:   primary.amount,
+      referralCutValue: primary.referralCutValue,
+      // Multi-service shape — what new servers will use.
+      services: serviceLines,
       dateTime: localDateTimeStr,
       type: 'scheduled',
       doctor: newBooking.doctor,
@@ -710,8 +761,6 @@ export default function AppointmentBoard() {
       referredContact: referrers.find(r => r.name === newPatient.referredBy)?.contact || '',
       referredAddress: referrers.find(r => r.name === newPatient.referredBy)?.address || '',
       notes: newBooking.notes,
-      amount: newBooking.amount,
-      referralCutValue: newBooking.referralCutValue,
       priority: newBooking.priority || 'ROUTINE',
     };
 
@@ -749,6 +798,7 @@ export default function AppointmentBoard() {
       patientId: '',
       service: '',
       modality: 'X-RAY',
+      addedServices: [],
       date: getTodayString(),
       doctor: doctors && doctors.length > 0 ? doctors[0] : '',
       notes: '',
@@ -798,9 +848,12 @@ export default function AppointmentBoard() {
 
   const handleEditAppointment = async () => {
     if (!editingAppointment) return;
-    
-    if (!editingAppointment.service) {
-      showNotif('warning', 'SERVICE REQUIRED', 'Service / Procedure details are missing. This field is mandatory before saving.');
+
+    const draftHasService = !!String(editingAppointment.service || '').trim();
+    const hasAddedService = (editServices || []).length > 0;
+
+    if (!draftHasService && !hasAddedService) {
+      showNotif('warning', 'SERVICE REQUIRED', 'At least one service is required. This is mandatory before saving.');
       return;
     }
     if (!editingAppointment.doctor) {
@@ -808,27 +861,65 @@ export default function AppointmentBoard() {
       return;
     }
 
+    // Build the full services[] list.
+    //
+    // The primary line (the inputs at the top of the drawer) carries the
+    // original AppointmentService.Id we stashed on open as
+    // `_primaryServiceId` — sending it back tells the server's
+    // reconciler to update that row in place (preserving its status,
+    // TAT timestamps, attached report / study / commission rows)
+    // instead of soft-deleting and recreating it.
+    //
+    // The remaining lines are whatever the user committed via "Add
+    // another service". Existing rows carry their `id`; new rows have
+    // `id: null`. Any pre-existing line the user removed in the UI is
+    // simply absent here — the reconciler soft-deletes anything not
+    // present in the incoming array.
+    const serviceLines = [
+      ...(draftHasService ? [{
+        id:               editingAppointment._primaryServiceId || null,
+        serviceName:      String(editingAppointment.service || '').trim(),
+        modality:         String(editingAppointment.modality || '').trim().toUpperCase(),
+        amount:           Number(editingAppointment.amount) || 0,
+        referralCutValue: Number(editingAppointment.referralCutValue) || 0,
+      }] : []),
+      ...(editServices || []).map(l => ({
+        id:               l.id || null,
+        serviceName:      l.serviceName,
+        modality:         (l.modality || '').toUpperCase(),
+        amount:           Number(l.amount) || 0,
+        referralCutValue: Number(l.referralCutValue) || 0,
+      })),
+    ].filter(s => s.serviceName);
+
+    const primary = serviceLines[0] || {
+      serviceName: '', modality: '', amount: 0, referralCutValue: 0,
+    };
+
     try {
       await apiClient.put(`/appointments/${editingAppointment.appointmentId}`, {
         appointmentId: editingAppointment.appointmentId,
         patientId: editingAppointment.patientId,
-        service: editingAppointment.service,
-        modality: editingAppointment.modality,
+        // Scalar fields kept for v1-server backward compat (mirror the
+        // first line). The server prefers `services` when present.
+        service:  primary.serviceName,
+        modality: primary.modality,
+        amount:   primary.amount,
+        referralCutValue: primary.referralCutValue,
+        // Multi-service shape — what new servers reconcile against.
+        services: serviceLines,
         dateTime: editingAppointment.dateTime,
         doctor: editingAppointment.doctor,
         notes: editingAppointment.notes,
         referredBy: editingAppointment.referredBy || '',
-        referralCutValue: editingAppointment.referralCutValue || 0,
         patientName: editingAppointment.patientName,
         mobile: editingAppointment.mobile,
         patientAge: editingAppointment.patientAge,
-        amount: editingAppointment.amount || 0
       });
-
-
 
       setIsEditingOpen(false);
       setEditingAppointment(null);
+      setEditServices([]);
       refreshAppointments();
     } catch (error) {
       console.error('Failed to update appointment:', error);
@@ -1498,13 +1589,53 @@ export default function AppointmentBoard() {
                 >{app.priority}</span>
               )}
             </div>
-            <div style={{ fontSize: '9px', color: '#64748b', fontWeight: 700, marginTop: '3px', display: 'flex', alignItems: 'center', gap: '4px' }}>
-              <span style={{ color: '#0f52ba', background: '#eff6ff', padding: '1.5px 5px', borderRadius: '4px', fontSize: '8.5px', fontWeight: 900 }}>
-                {app.modality}
-              </span>
-              <span>•</span>
-              <span style={{ textTransform: 'uppercase' }}>{app.service}</span>
-            </div>
+            {/* Modality chip stack + service summary.
+                Single-service visits render exactly as before (one chip
+                + one service name). Multi-service visits render N chips
+                followed by a "2 of 3 reported" progress badge. The chip
+                list is derived from services[] with a v1 scalar
+                fallback so old cache rows still render. */}
+            {(() => {
+              const lines       = getServiceLines(app);
+              const modalities  = getUniqueModalities(app);
+              const progress    = getReportProgressLabel(app);
+              const primaryName = lines[0]?.serviceName || app.service || '';
+              const extraCount  = lines.length - 1;
+              return (
+                <div style={{ fontSize: '9px', color: '#64748b', fontWeight: 700, marginTop: '3px', display: 'flex', alignItems: 'center', gap: '4px', flexWrap: 'wrap' }}>
+                  {modalities.map((m, idx) => (
+                    <span
+                      key={`${m}-${idx}`}
+                      title={lines.find(l => l.modality === m)?.serviceName || m}
+                      style={{ color: '#0f52ba', background: '#eff6ff', padding: '1.5px 5px', borderRadius: '4px', fontSize: '8.5px', fontWeight: 900 }}
+                    >
+                      {m}
+                    </span>
+                  ))}
+                  <span>•</span>
+                  <span style={{ textTransform: 'uppercase' }}>{primaryName}</span>
+                  {extraCount > 0 && (
+                    <span style={{
+                      color: '#0f52ba', background: '#dbeafe',
+                      padding: '1.5px 6px', borderRadius: '999px',
+                      fontSize: '8.5px', fontWeight: 900, letterSpacing: '0.3px',
+                    }}>
+                      +{extraCount} more
+                    </span>
+                  )}
+                  {progress && (
+                    <span title="Reporting progress across all services on this visit" style={{
+                      color: '#047857', background: '#d1fae5',
+                      padding: '1.5px 6px', borderRadius: '999px',
+                      fontSize: '8.5px', fontWeight: 900, letterSpacing: '0.3px',
+                      border: '1px solid #a7f3d0',
+                    }}>
+                      {progress}
+                    </span>
+                  )}
+                </div>
+              );
+            })()}
             {/* Turnaround-time pills: on-premises clock (live-ticks) and
                 scan→delivery (final, only after delivery). Hidden entirely
                 until ArrivedAt is set so pre-arrival rows stay quiet. */}
@@ -1616,7 +1747,38 @@ export default function AppointmentBoard() {
               📄
             </button>
             <button
-              onClick={() => { setEditingAppointment(app); setIsEditingOpen(true); }}
+              onClick={() => {
+                setEditingAppointment(app);
+                // Seed the edit tray from the appointment's service lines.
+                // getServiceLines synthesises a single line from the scalar
+                // fields when the row pre-dates the multi-service rollout,
+                // so the drawer always opens with at least one entry. The
+                // "primary" line (index 0) is used to populate the draft
+                // input fields so today's UX (one modality picker, one
+                // service input, one amount) keeps working — additional
+                // lines sit in the tray below.
+                const lines = getServiceLines(app);
+                const [primary, ...rest] = lines;
+                if (primary) {
+                  setEditingAppointment(prev => ({
+                    ...app,
+                    modality:         primary.modality || app.modality || 'X-RAY',
+                    service:          primary.serviceName || app.service || '',
+                    amount:           primary.amount || app.amount || 0,
+                    referralCutValue: primary.referralCutValue || app.referralCutValue || 0,
+                    _primaryServiceId: primary.id || null,
+                  }));
+                }
+                setEditServices(rest.map(l => ({
+                  id:               l.id || null,
+                  serviceName:      l.serviceName,
+                  modality:         l.modality,
+                  amount:           l.amount,
+                  referralCutValue: l.referralCutValue,
+                  status:           l.status,
+                })));
+                setIsEditingOpen(true);
+              }}
               style={{ width: '28px', height: '28px', display: 'flex', alignItems: 'center', justifyContent: 'center', borderRadius: '6px', background: 'white', border: '1px solid #e2e8f0', cursor: 'pointer', fontSize: '12px' }}
               title="Edit"
             >
@@ -2212,12 +2374,12 @@ export default function AppointmentBoard() {
 
                       <div className="form-group" style={{ marginTop: '8px' }}>
                         <label style={{ fontSize: '9px', fontWeight: 800, letterSpacing: '0.5px', color: '#888', marginBottom: '4px', display: 'block' }}>3. SERVICE AMOUNT (₹)</label>
-                        <input 
-                          type="number" 
-                          placeholder="e.g. 500" 
-                          value={newBooking.amount} 
-                          onChange={e => setNewBooking({...newBooking, amount: e.target.value === '' ? '' : parseFloat(e.target.value)})} 
-                          style={{ fontSize: '13px', padding: '8px 10px', height: '36px', borderRadius: '10px' }} 
+                        <input
+                          type="number"
+                          placeholder="e.g. 500"
+                          value={newBooking.amount}
+                          onChange={e => setNewBooking({...newBooking, amount: e.target.value === '' ? '' : parseFloat(e.target.value)})}
+                          style={{ fontSize: '13px', padding: '8px 10px', height: '36px', borderRadius: '10px' }}
                         />
                         {newBooking.referralCutValue > 0 && (
                           <div style={{ fontSize: '9px', fontWeight: 800, color: '#0f52ba', marginTop: '4px', display: 'flex', alignItems: 'center', gap: '4px' }}>
@@ -2226,6 +2388,157 @@ export default function AppointmentBoard() {
                           </div>
                         )}
                       </div>
+
+                      {/* Multi-service line-item tray.
+                          The inputs above represent the "current draft" service.
+                          Clicking "Add another service" pushes that draft into
+                          the addedServices list and clears the inputs so the
+                          user can pick a different modality + service for the
+                          next line. The chips below let the user see and
+                          remove what's already been added. On submit, the
+                          draft (if any) is appended to the addedServices list
+                          and the full array is sent as `services` to the API. */}
+                      {(() => {
+                        const draftHasService = !!String(newBooking.service || '').trim();
+                        const lines = newBooking.addedServices || [];
+                        const totalAmount =
+                          lines.reduce((acc, l) => acc + (Number(l.amount) || 0), 0) +
+                          (draftHasService ? (Number(newBooking.amount) || 0) : 0);
+
+                        const addCurrentDraft = () => {
+                          if (!draftHasService) return;
+                          setNewBooking(prev => ({
+                            ...prev,
+                            addedServices: [
+                              ...(prev.addedServices || []),
+                              {
+                                serviceName:      String(prev.service || '').trim(),
+                                modality:         String(prev.modality || '').trim().toUpperCase(),
+                                amount:           Number(prev.amount) || 0,
+                                referralCutValue: Number(prev.referralCutValue) || 0,
+                              },
+                            ],
+                            // Clear draft inputs so the user can add the next
+                            // service with a fresh modality pick.
+                            service: '',
+                            amount: '',
+                            referralCutValue: 0,
+                          }));
+                        };
+
+                        const removeLine = (idx) => {
+                          setNewBooking(prev => ({
+                            ...prev,
+                            addedServices: (prev.addedServices || []).filter((_, i) => i !== idx),
+                          }));
+                        };
+
+                        return (
+                          <>
+                            {(lines.length > 0 || draftHasService) && (
+                              <div style={{
+                                marginTop: '10px',
+                                padding: '8px 10px',
+                                background: 'white',
+                                border: '1px dashed #cbd5e1',
+                                borderRadius: '10px',
+                              }}>
+                                <div style={{
+                                  display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+                                  marginBottom: lines.length > 0 ? '6px' : '0',
+                                }}>
+                                  <span style={{ fontSize: '9px', fontWeight: 900, color: '#0f52ba', letterSpacing: '0.6px', textTransform: 'uppercase' }}>
+                                    Services on this visit
+                                  </span>
+                                  <span style={{ fontSize: '10px', fontWeight: 800, color: '#0f172a' }}>
+                                    {lines.length + (draftHasService ? 1 : 0)} item{lines.length + (draftHasService ? 1 : 0) === 1 ? '' : 's'} · ₹{totalAmount.toLocaleString()}
+                                  </span>
+                                </div>
+
+                                {/* Already-added chips */}
+                                {lines.map((line, idx) => (
+                                  <div key={idx} style={{
+                                    display: 'flex', alignItems: 'center', gap: '8px',
+                                    padding: '6px 8px', borderRadius: '8px',
+                                    background: '#f1f5f9', marginBottom: '4px',
+                                  }}>
+                                    <span style={{
+                                      fontSize: '8px', fontWeight: 900,
+                                      color: '#0f52ba',
+                                      background: 'white', padding: '2px 5px',
+                                      borderRadius: '4px', letterSpacing: '0.5px',
+                                    }}>{line.modality || 'OT'}</span>
+                                    <span style={{ fontSize: '11px', fontWeight: 700, color: '#1e293b', flex: 1, minWidth: 0, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                                      {line.serviceName}
+                                    </span>
+                                    <span style={{ fontSize: '10px', fontWeight: 800, color: '#0f172a' }}>
+                                      ₹{Number(line.amount || 0).toLocaleString()}
+                                    </span>
+                                    <button
+                                      type="button"
+                                      onClick={() => removeLine(idx)}
+                                      aria-label={`Remove ${line.serviceName}`}
+                                      style={{
+                                        width: '20px', height: '20px', borderRadius: '6px',
+                                        background: 'white', border: '1px solid #e2e8f0',
+                                        color: '#64748b', cursor: 'pointer', fontSize: '10px',
+                                        display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+                                      }}
+                                    >✕</button>
+                                  </div>
+                                ))}
+
+                                {/* Draft preview (live, unconfirmed) */}
+                                {draftHasService && (
+                                  <div style={{
+                                    display: 'flex', alignItems: 'center', gap: '8px',
+                                    padding: '6px 8px', borderRadius: '8px',
+                                    background: '#eff6ff', border: '1px dashed #93c5fd',
+                                  }}>
+                                    <span style={{
+                                      fontSize: '8px', fontWeight: 900,
+                                      color: '#0f52ba',
+                                      background: 'white', padding: '2px 5px',
+                                      borderRadius: '4px', letterSpacing: '0.5px',
+                                    }}>{(newBooking.modality || 'OT').toUpperCase()}</span>
+                                    <span style={{ fontSize: '11px', fontWeight: 700, color: '#1e293b', flex: 1, minWidth: 0, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                                      {newBooking.service} <span style={{ opacity: 0.6, fontSize: '9px', fontWeight: 600 }}>· draft</span>
+                                    </span>
+                                    <span style={{ fontSize: '10px', fontWeight: 800, color: '#0f172a' }}>
+                                      ₹{Number(newBooking.amount || 0).toLocaleString()}
+                                    </span>
+                                  </div>
+                                )}
+                              </div>
+                            )}
+
+                            <button
+                              type="button"
+                              onClick={addCurrentDraft}
+                              disabled={!draftHasService}
+                              style={{
+                                marginTop: '8px',
+                                width: '100%',
+                                padding: '8px 10px',
+                                borderRadius: '10px',
+                                border: '1px dashed #93c5fd',
+                                background: draftHasService ? '#eff6ff' : '#f8fafc',
+                                color: draftHasService ? '#1d4ed8' : '#94a3b8',
+                                cursor: draftHasService ? 'pointer' : 'not-allowed',
+                                fontSize: '11px',
+                                fontWeight: 800,
+                                letterSpacing: '0.3px',
+                                fontFamily: 'inherit',
+                                display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: '6px',
+                              }}
+                              title={draftHasService ? 'Add this service and start another' : 'Fill in a service first'}
+                            >
+                              <span style={{ fontSize: '14px', lineHeight: 1 }}>+</span>
+                              Add another service to this visit
+                            </button>
+                          </>
+                        );
+                      })()}
 
                       <div className="form-group" style={{ marginTop: '8px' }}>
                         <label style={{ fontSize: '9px', fontWeight: 800, letterSpacing: '0.5px', color: '#888', marginBottom: '4px', display: 'block' }}>4. NOTES (OPTIONAL)</label>
@@ -2382,9 +2695,15 @@ export default function AppointmentBoard() {
                           background: 'linear-gradient(90deg, #0f52ba, #00f2fe)',
                           color: 'white', border: 'none', cursor: 'pointer',
                           boxShadow: '0 4px 12px rgba(15, 82, 186, 0.2)',
-                          opacity: (!newBooking.patientId || !newBooking.service || !newBooking.doctor) ? 0.7 : 1
+                          opacity: (!newBooking.patientId || (!newBooking.service && (newBooking.addedServices || []).length === 0) || !newBooking.doctor) ? 0.7 : 1
                         }}
-                        disabled={!newBooking.patientId || !newBooking.service || !newBooking.doctor}
+                        disabled={
+                          !newBooking.patientId ||
+                          // Either a draft service is in the inputs OR there's
+                          // at least one committed line in the visit tray.
+                          (!newBooking.service && (newBooking.addedServices || []).length === 0) ||
+                          !newBooking.doctor
+                        }
                         onClick={handleBookAppointment}
                       >
                         🚀 DEPLOY MISSION
@@ -2448,8 +2767,8 @@ export default function AppointmentBoard() {
     if (!isEditingOpen || !editingAppointment) return null;
 
     return (
-      <div 
-        onClick={() => setIsEditingOpen(false)} 
+      <div
+        onClick={() => { setIsEditingOpen(false); setEditServices([]); }}
         style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backdropFilter: 'blur(4px)', background: 'rgba(10, 22, 40, 0.45)', zIndex: 10000 }}
       >
         <div 
@@ -2471,8 +2790,8 @@ export default function AppointmentBoard() {
                   Update clinical or financial details below.
                 </p>
               </div>
-              <button 
-                onClick={() => setIsEditingOpen(false)} 
+              <button
+                onClick={() => { setIsEditingOpen(false); setEditServices([]); }}
                 style={{ width:'32px',height:'32px',borderRadius:'50%',background:'rgba(255,255,255,0.1)',border:'1px solid rgba(255,255,255,0.15)',color:'white',cursor:'pointer',fontSize:'16px',display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0 }}
               >
                 &times;
@@ -2545,6 +2864,168 @@ export default function AppointmentBoard() {
                     </div>
                   )}
                 </div>
+
+                {/* Multi-service tray for edits. Mirrors the create-flow
+                    tray but tracks each line's existing AppointmentService
+                    id so the server's reconciler keeps that row in place
+                    (preserving its status, TAT timestamps, and any
+                    attached report / study / commission). Removing a line
+                    with an id silently soft-deletes it on save; lines
+                    without an id are inserted. The inputs above keep
+                    modelling the "primary" service line (index 0) so
+                    today's single-modality UX stays familiar. */}
+                {(() => {
+                  const draftHasService = !!String(editingAppointment.service || '').trim();
+                  const lines = editServices || [];
+                  const totalAmount =
+                    lines.reduce((acc, l) => acc + (Number(l.amount) || 0), 0) +
+                    (draftHasService ? (Number(editingAppointment.amount) || 0) : 0);
+
+                  const addCurrentDraft = () => {
+                    if (!draftHasService) return;
+                    setEditServices(prev => [
+                      ...prev,
+                      {
+                        // No id — new line. Server inserts on reconcile.
+                        id:               null,
+                        serviceName:      String(editingAppointment.service || '').trim(),
+                        modality:         String(editingAppointment.modality || '').trim().toUpperCase(),
+                        amount:           Number(editingAppointment.amount) || 0,
+                        referralCutValue: Number(editingAppointment.referralCutValue) || 0,
+                      },
+                    ]);
+                    // Clear draft so the user can compose the next line.
+                    // Keep the modality picker on its current value — the
+                    // common case is the same scan family for a multi-line
+                    // visit (e.g. both knees, both shoulders).
+                    setEditingAppointment(prev => ({
+                      ...prev,
+                      service: '',
+                      amount: 0,
+                      referralCutValue: 0,
+                    }));
+                  };
+
+                  const removeLine = (idx) => {
+                    setEditServices(prev => prev.filter((_, i) => i !== idx));
+                  };
+
+                  return (
+                    <>
+                      {(lines.length > 0 || draftHasService) && (
+                        <div style={{
+                          marginTop: '8px',
+                          padding: '10px 12px',
+                          background: '#f8fafc',
+                          border: '1px dashed #cbd5e1',
+                          borderRadius: '10px',
+                        }}>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: lines.length > 0 ? '8px' : '0' }}>
+                            <span style={{ fontSize: '9px', fontWeight: 900, color: '#0f52ba', letterSpacing: '0.6px', textTransform: 'uppercase' }}>
+                              Services on this visit
+                            </span>
+                            <span style={{ fontSize: '10px', fontWeight: 800, color: '#0f172a' }}>
+                              {lines.length + (draftHasService ? 1 : 0)} item{lines.length + (draftHasService ? 1 : 0) === 1 ? '' : 's'} · ₹{totalAmount.toLocaleString()}
+                            </span>
+                          </div>
+
+                          {/* Already-committed lines (primary lives in the
+                              inputs above, so it isn't repeated here). */}
+                          {lines.map((line, idx) => {
+                            const isExisting = !!line.id;
+                            const isReported = ['REPORTED', 'DELIVERED'].includes((line.status || '').toUpperCase());
+                            return (
+                              <div key={line.id || `new-${idx}`} style={{
+                                display: 'flex', alignItems: 'center', gap: '8px',
+                                padding: '7px 9px', borderRadius: '8px',
+                                background: 'white', marginBottom: '4px',
+                                border: '1px solid #e2e8f0',
+                              }}>
+                                <span style={{
+                                  fontSize: '8px', fontWeight: 900, letterSpacing: '0.4px',
+                                  color: '#0f52ba', background: '#eff6ff',
+                                  padding: '2px 6px', borderRadius: '4px',
+                                }}>{line.modality || 'OT'}</span>
+                                <span style={{ fontSize: '11px', fontWeight: 700, color: '#1e293b', flex: 1, minWidth: 0, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }} title={line.serviceName}>
+                                  {line.serviceName}
+                                </span>
+                                {isExisting && (
+                                  <span title="Existing service line — will be updated, not recreated" style={{
+                                    fontSize: '8px', fontWeight: 900,
+                                    color: '#047857', background: '#d1fae5',
+                                    padding: '2px 6px', borderRadius: '999px',
+                                    border: '1px solid #a7f3d0',
+                                  }}>SAVED</span>
+                                )}
+                                <span style={{ fontSize: '10px', fontWeight: 800, color: '#0f172a' }}>
+                                  ₹{Number(line.amount || 0).toLocaleString()}
+                                </span>
+                                <button
+                                  type="button"
+                                  onClick={() => removeLine(idx)}
+                                  aria-label={`Remove ${line.serviceName}`}
+                                  title={isReported ? 'This service already has a report — removing it will soft-delete the line on save.' : 'Remove this service'}
+                                  style={{
+                                    width: '22px', height: '22px', borderRadius: '6px',
+                                    background: 'white', border: '1px solid #e2e8f0',
+                                    color: '#64748b', cursor: 'pointer', fontSize: '11px',
+                                    display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+                                  }}
+                                >✕</button>
+                              </div>
+                            );
+                          })}
+
+                          {/* Primary draft preview — the inputs above. */}
+                          {draftHasService && (
+                            <div style={{
+                              display: 'flex', alignItems: 'center', gap: '8px',
+                              padding: '7px 9px', borderRadius: '8px',
+                              background: '#eff6ff', border: '1px dashed #93c5fd',
+                            }}>
+                              <span style={{
+                                fontSize: '8px', fontWeight: 900, letterSpacing: '0.4px',
+                                color: '#0f52ba', background: 'white',
+                                padding: '2px 6px', borderRadius: '4px',
+                              }}>{(editingAppointment.modality || 'OT').toUpperCase()}</span>
+                              <span style={{ fontSize: '11px', fontWeight: 700, color: '#1e293b', flex: 1, minWidth: 0, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                                {editingAppointment.service} <span style={{ opacity: 0.6, fontSize: '9px', fontWeight: 600 }}>· primary</span>
+                              </span>
+                              <span style={{ fontSize: '10px', fontWeight: 800, color: '#0f172a' }}>
+                                ₹{Number(editingAppointment.amount || 0).toLocaleString()}
+                              </span>
+                            </div>
+                          )}
+                        </div>
+                      )}
+
+                      <button
+                        type="button"
+                        onClick={addCurrentDraft}
+                        disabled={!draftHasService}
+                        style={{
+                          marginTop: '8px',
+                          width: '100%',
+                          padding: '9px 10px',
+                          borderRadius: '10px',
+                          border: '1px dashed #93c5fd',
+                          background: draftHasService ? '#eff6ff' : '#f8fafc',
+                          color: draftHasService ? '#1d4ed8' : '#94a3b8',
+                          cursor: draftHasService ? 'pointer' : 'not-allowed',
+                          fontSize: '11px',
+                          fontWeight: 800,
+                          letterSpacing: '0.3px',
+                          fontFamily: 'inherit',
+                          display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: '6px',
+                        }}
+                        title={draftHasService ? 'Add the current service line and start another' : 'Fill in a service first'}
+                      >
+                        <span style={{ fontSize: '14px', lineHeight: 1 }}>+</span>
+                        Add another service to this visit
+                      </button>
+                    </>
+                  );
+                })()}
               </div>
 
               <div style={{ marginBottom: '25px' }}>
@@ -2578,9 +3059,9 @@ export default function AppointmentBoard() {
 
           {/* Footer */}
           <div style={{ padding:'16px 24px', borderTop:'1px solid #e8edf2', display:'flex', gap:'10px', background:'white', flexShrink:0 }}>
-            <button 
-              type="button" 
-              onClick={() => setIsEditingOpen(false)}
+            <button
+              type="button"
+              onClick={() => { setIsEditingOpen(false); setEditServices([]); }}
               style={{ flex:1, padding:'11px', borderRadius:'10px', border:'1.5px solid #e2e8f0', background:'white', fontWeight:700, fontSize:'13px', cursor:'pointer', color:'#475569' }}
             >
               Cancel

@@ -21,6 +21,7 @@ import VoiceReportingPanel from '../components/VoiceReportingPanel';
 import { assetsFromManifest } from '../utils/dicomManifest';
 import { getReportByAppointmentId, saveLocalDraft } from '../db/repos/reportsRepo';
 import { logEvent } from '../sync/syncTelemetry';
+import { getServiceLines } from '../utils/appointmentServices';
 
 const ReportingPage = () => {
   const navigate = useNavigate();
@@ -31,6 +32,15 @@ const ReportingPage = () => {
   // actively reporting — shows the case "ageing" in real time.
   useTickClock();
   const appointmentId = params.id || searchParams.get('id');
+  // Multi-service rollout (step 6). When the URL has ?serviceId=<guid>
+  // the page scopes its load/save to that specific AppointmentService
+  // line; different services on the same visit each get their own
+  // report. When absent we fall back to the legacy single-report-per-
+  // appointment flow so older entry paths (existing bookmarks, direct
+  // links from older builds) keep working unchanged.
+  const initialServiceIdFromUrl = searchParams.get('serviceId') || null;
+  const [activeServiceId, setActiveServiceId] = useState(initialServiceIdFromUrl);
+  const [appointmentServices, setAppointmentServices] = useState([]);
   const [showKeywordDrawer, setShowKeywordDrawer] = useState(false);
   const [showTableModal, setShowTableModal] = useState(false);
   const [editorText, setEditorText] = useState('');
@@ -180,6 +190,10 @@ const ReportingPage = () => {
     try {
       const res = await apiClient.post('/reporting/voice-generate', {
         appointmentId,
+        // Multi-service rollout — the active service tab decides which
+        // service's name + modality the server feeds Claude Haiku as
+        // dictation context. Null = single-service / legacy path.
+        appointmentServiceId: activeServiceId || null,
         templateId: templateId || null,
         transcript,
       });
@@ -346,6 +360,11 @@ const ReportingPage = () => {
         const freshFindings = editorRef.current?.editor?.getHTML?.() ?? editorText;
         const payload = {
           appointmentId,
+          // Multi-service rollout — when scoped, the server keys the
+          // upsert by (AppointmentId, AppointmentServiceId) so the
+          // CT and USG reports for the same visit land in separate
+          // rows with separate RowVersions. Null = legacy behaviour.
+          appointmentServiceId: activeServiceId || null,
           templateId: selectedTemplateId,
           findings: freshFindings,
           impression: impression || '',
@@ -565,6 +584,22 @@ const ReportingPage = () => {
 
       const appointmentData = appRes.data;
       setActiveAppointment(appointmentData);
+
+      // Multi-service rollout (step 6). Cache the line items so the
+      // service-picker strip can render and we can default to the
+      // appropriate service when the URL didn't pin one explicitly.
+      // getServiceLines also handles v1 cache rows (no services array)
+      // by synthesising a single line from the scalars.
+      const lines = getServiceLines(appointmentData);
+      setAppointmentServices(lines);
+      if (!activeServiceId && lines.length > 0 && lines[0].id) {
+        // Default to the first unreported service so the doctor lands
+        // where the work is. Falls back to the primary line if every
+        // service has already been reported.
+        const firstUnreported = lines.find(l => !['REPORTED', 'DELIVERED'].includes((l.status || '').toUpperCase()));
+        const target = firstUnreported || lines[0];
+        if (target?.id) setActiveServiceId(target.id);
+      }
       // Surface available patient fields so the editor banner can verify which
       // ones are present (helpful when payload shape varies dev vs prod).
       console.info('[REPORTING][PATIENT_FIELDS]', {
@@ -609,7 +644,11 @@ const ReportingPage = () => {
         // fails (offline, 5xx, DNS hiccup) check the local cache before
         // surrendering. The cache row is kept fresh by SyncEngine.pullReports
         // and is keyed by appointmentId.
-        apiClient.get(`/Reporting/report/${appId}`).catch(async () => {
+        apiClient.get(
+          activeServiceId
+            ? `/Reporting/report/${appId}?serviceId=${encodeURIComponent(activeServiceId)}`
+            : `/Reporting/report/${appId}`
+        ).catch(async () => {
           try {
             const cached = await getReportByAppointmentId(appId);
             if (cached) {
@@ -867,13 +906,19 @@ const ReportingPage = () => {
     } finally {
       setLoading(false);
     }
-  }, []);
+    // Depending on activeServiceId so a service tab switch refetches the
+    // scoped report instead of replaying the captured closure value. The
+    // appointment+services state is reset above to the current values so
+    // this is safe to re-run.
+  }, [activeServiceId]);
 
   useEffect(() => {
     if (appointmentId) {
       fetchReportingContext(appointmentId);
     }
-  }, [appointmentId, fetchReportingContext]);
+    // Multi-service rollout: re-fetch when the user switches between
+    // service tabs so the editor reloads with that service's report.
+  }, [appointmentId, activeServiceId, fetchReportingContext]);
 
   // --- LIVE BACKGROUND POLLING FOR STUDY ASSETS & STATUS ---
   useEffect(() => {
@@ -1016,6 +1061,8 @@ const ReportingPage = () => {
 
     const payload = {
       appointmentId: appointmentId,
+      // Multi-service rollout — scope to the active service line.
+      appointmentServiceId: activeServiceId || null,
       templateId: selectedTemplateId,
       findings: currentFindings,
       impression: impression || '',
@@ -1121,6 +1168,7 @@ const ReportingPage = () => {
     try {
       const res = await apiClient.post('/reporting/save', {
         appointmentId,
+        appointmentServiceId: activeServiceId || null,
         templateId: prev.templateId,
         findings: prev.findings,
         impression: prev.impression,
@@ -3186,8 +3234,79 @@ const ReportingPage = () => {
                 <span style={{ fontSize: '10px', fontWeight: 950, color: '#94a3b8', letterSpacing: '1px' }}>ACC: {activeAppointment?.displayId || '...'}</span>
               </div>
             </div>
-            <div style={{ display: 'flex', gap: '8px', marginLeft: '15px', alignItems: 'center' }}>
-              <span style={{ background: '#0f52ba', color: 'white', padding: '4px 10px', borderRadius: '6px', fontSize: '10px', fontWeight: 950, letterSpacing: '1px' }}>{activeAppointment?.modality || '...'}</span>
+            <div style={{ display: 'flex', gap: '8px', marginLeft: '15px', alignItems: 'center', flexWrap: 'wrap' }}>
+              {(() => {
+                // Multi-service rollout step 6 — service picker tab strip.
+                // Renders a single badge for single-service visits (so the
+                // header looks unchanged) and a clickable tab strip for
+                // multi-service ones. Tabs that already have a finalised
+                // report carry a green dot so the doctor sees what's
+                // outstanding at a glance.
+                const lines = appointmentServices && appointmentServices.length > 0
+                  ? appointmentServices
+                  : [{ id: null, serviceName: activeAppointment?.service || '', modality: activeAppointment?.modality || '', status: 'NOT_STARTED' }];
+                if (lines.length <= 1) {
+                  return (
+                    <span style={{ background: '#0f52ba', color: 'white', padding: '4px 10px', borderRadius: '6px', fontSize: '10px', fontWeight: 950, letterSpacing: '1px' }}>
+                      {lines[0]?.modality || activeAppointment?.modality || '...'}
+                    </span>
+                  );
+                }
+                return (
+                  <div role="tablist" aria-label="Services on this visit" style={{ display: 'inline-flex', gap: '4px', padding: '3px', background: '#eef2ff', borderRadius: '10px', border: '1px solid #c7d2fe' }}>
+                    {lines.map((line) => {
+                      const isActive   = !!line.id && line.id === activeServiceId;
+                      const isReported = ['REPORTED', 'DELIVERED'].includes((line.status || '').toUpperCase());
+                      return (
+                        <button
+                          key={line.id || `${line.modality}-${line.serviceName}`}
+                          type="button"
+                          role="tab"
+                          aria-selected={isActive}
+                          disabled={!line.id || isActive}
+                          onClick={() => {
+                            if (!line.id || line.id === activeServiceId) return;
+                            // Switch services. The fetch effect rerun
+                            // takes care of reloading the right report;
+                            // we also push the new ?serviceId= into the
+                            // URL so a reload or shared link stays on
+                            // the picked service.
+                            setActiveServiceId(line.id);
+                            const next = new URLSearchParams(searchParams);
+                            next.set('serviceId', line.id);
+                            navigate({ search: next.toString() }, { replace: true });
+                          }}
+                          title={line.serviceName}
+                          style={{
+                            display: 'inline-flex', alignItems: 'center', gap: '6px',
+                            padding: '5px 11px',
+                            borderRadius: '7px',
+                            border: 'none',
+                            cursor: (!line.id || isActive) ? 'default' : 'pointer',
+                            background: isActive ? '#0f52ba' : 'transparent',
+                            color: isActive ? 'white' : '#1e293b',
+                            fontSize: '10px',
+                            fontWeight: 950,
+                            letterSpacing: '0.5px',
+                            fontFamily: 'inherit',
+                          }}
+                        >
+                          {isReported && (
+                            <span aria-hidden="true" style={{
+                              width: '6px', height: '6px', borderRadius: '50%',
+                              background: isActive ? '#a7f3d0' : '#10b981',
+                            }} />
+                          )}
+                          <span>{line.modality}</span>
+                          <span style={{ opacity: 0.7, fontWeight: 700, textTransform: 'uppercase' }}>
+                            {line.serviceName?.length > 18 ? `${line.serviceName.slice(0, 18)}…` : line.serviceName}
+                          </span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                );
+              })()}
               {/* Priority chip — visible while reporting so the radiologist
                   doesn't miss a STAT / URGENT case once they're in the editor. */}
               {activeAppointment?.priority && activeAppointment.priority !== 'ROUTINE' && (
@@ -4700,6 +4819,7 @@ const ReportingPage = () => {
                     firstPageBanner={activeAppointment ? (
                       <PatientInfoBlock
                         appointmentId={appointmentId}
+                        appointmentServiceId={activeServiceId || null}
                         fullAppointment={activeAppointment}
                         savedMetadata={null}
                       />
@@ -5034,6 +5154,7 @@ const ReportingPage = () => {
                     firstPageBanner={activeAppointment ? (
                       <PatientInfoBlock
                         appointmentId={appointmentId}
+                        appointmentServiceId={activeServiceId || null}
                         fullAppointment={activeAppointment}
                         savedMetadata={null}
                       />
@@ -5155,6 +5276,10 @@ const ReportingPage = () => {
           isOpen={isPreviewOpen}
           onClose={() => setIsPreviewOpen(false)}
           appointmentId={appointmentId}
+          // Multi-service rollout — print preview names the active
+          // service tab's line on the patient banner + thank-you line
+          // instead of the visit's primary scalar.
+          appointmentServiceId={activeServiceId || null}
           doctorId={activeAppointment?.doctorId || activeAppointment?.doctorUserId || activeAppointment?.doctor?.userId || sessionStorage.getItem('1rad_doctor_id')}
           patientData={activeAppointment}
           reportContent={{

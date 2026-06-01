@@ -532,8 +532,76 @@ export default function StatusTracking() {
             <TrackerField label="Patient ID" value={study?.patientIdentifier || '—'} mono />
             <TrackerField label="Name" value={(study?.patientName || '').toUpperCase() || '—'} />
             <TrackerField label="Date" value={appointmentSlot || '—'} />
-            <TrackerField label="Modality" value={study?.modality || '—'} />
-            <TrackerField label="Study" value={study?.service || '—'} />
+            {/* Multi-service rollout (batch-6 fix). When the visit carries
+                multiple service lines, show all modality chips + a list
+                of services on the tracker so the patient can see "X-ray
+                + CT + USG all ordered" — not just the primary scalar.
+                Single-service visits keep the original two single-value
+                rows so the screen looks unchanged for them. */}
+            {Array.isArray(study?.services) && study.services.length > 1 ? (
+              <>
+                <TrackerField
+                  label="Modality"
+                  value={
+                    <span style={{ display: 'inline-flex', flexWrap: 'wrap', gap: '6px' }}>
+                      {[...new Set(study.services.map(s => (s.modality || '').toUpperCase()).filter(Boolean))].map((m, idx) => (
+                        <span key={`${m}-${idx}`} style={{
+                          background: 'rgba(96,165,250,0.18)',
+                          color: '#bfdbfe',
+                          padding: '2px 8px',
+                          borderRadius: '6px',
+                          fontSize: '11px',
+                          fontWeight: 800,
+                          letterSpacing: '0.5px',
+                        }}>{m}</span>
+                      ))}
+                    </span>
+                  }
+                />
+                <TrackerField
+                  label="Studies"
+                  value={
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                      {study.services.map((line, idx) => {
+                        const status = (line.status || 'NOT_STARTED').toUpperCase();
+                        const isReady = status === 'REPORTED' || status === 'DELIVERED';
+                        return (
+                          <div key={line.id || idx} style={{
+                            display: 'inline-flex', alignItems: 'center', gap: '8px',
+                            fontSize: '13px', fontWeight: 600,
+                            color: 'rgba(255,255,255,0.92)',
+                          }}>
+                            <span aria-hidden="true" style={{
+                              width: '7px', height: '7px', borderRadius: '50%',
+                              background: isReady ? '#34d399' : '#94a3b8',
+                              boxShadow: isReady ? '0 0 6px rgba(52,211,153,0.6)' : 'none',
+                              flexShrink: 0,
+                            }} />
+                            <span>{line.serviceName || line.modality || '—'}</span>
+                            {isReady && (
+                              <span style={{
+                                fontSize: '9px', fontWeight: 900, letterSpacing: '0.6px',
+                                color: '#34d399', background: 'rgba(52,211,153,0.12)',
+                                border: '1px solid rgba(52,211,153,0.3)',
+                                padding: '1px 6px', borderRadius: '999px',
+                                textTransform: 'uppercase',
+                              }}>{status === 'DELIVERED' ? 'Delivered' : 'Ready'}</span>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  }
+                />
+              </>
+            ) : (
+              <>
+                {/* Single-service / legacy fallback — preserves the
+                    original two-row layout exactly. */}
+                <TrackerField label="Modality" value={study?.modality || '—'} />
+                <TrackerField label="Study" value={study?.service || '—'} />
+              </>
+            )}
           </div>
 
           {/* On-premises clock — only while the patient is actually here. */}

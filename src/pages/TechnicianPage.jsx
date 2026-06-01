@@ -13,6 +13,7 @@ import { uploadStudyAssetDirect } from '../utils/azureUpload';
 import useTickClock from '../utils/useTickClock';
 import { formatElapsed, premisesSeverity, premisesPillStyle } from '../utils/timeTracking';
 import { useOverdue } from '../components/OverdueAppointments/OverdueContext';
+import { getServiceLines, getUniqueModalities, matchesAnyModality, getReportProgressLabel } from '../utils/appointmentServices';
 import '../styles/global.css';
 import '../styles/TechnicianPage.css';
 
@@ -186,6 +187,50 @@ export default function TechnicianPage() {
     }
   };
 
+  // Per-service mark-scanned (multi-service rollout step 5). One visit
+  // can carry many AppointmentService rows; this transitions a single
+  // one and lets the server's rollup decide when the parent visit as
+  // a whole becomes 'scanned'. Optimistically patches activeStudy so
+  // the workspace UI updates without waiting for the refetch.
+  const handleServiceStatus = async (appointmentId, serviceId, newStatus) => {
+    if (!appointmentId || !serviceId) return;
+    try {
+      const res = await apiClient.patch(
+        `/appointments/${appointmentId}/services/${serviceId}/status`,
+        { status: newStatus }
+      );
+      const result = res?.data || {};
+      // Optimistic local patch — keeps the per-service buttons reactive
+      // without a full worklist refetch round trip.
+      setActiveStudy(prev => {
+        if (!prev || prev.appointmentId !== appointmentId) return prev;
+        const updatedServices = (prev.services || []).map(svc =>
+          svc.id === serviceId
+            ? {
+                ...svc,
+                status:          result.serviceStatus ?? newStatus,
+                scanStartedAt:   result.serviceScanStartedAt ?? svc.scanStartedAt,
+                scanCompletedAt: result.serviceScanCompletedAt ?? svc.scanCompletedAt,
+                deliveredAt:     result.serviceDeliveredAt ?? svc.deliveredAt,
+              }
+            : svc
+        );
+        return {
+          ...prev,
+          services:      updatedServices,
+          status:        result.appointmentStatus ?? prev.status,
+          scanStartedAt: result.appointmentScanStartedAt ?? prev.scanStartedAt,
+          scannedAt:     result.appointmentScannedAt ?? prev.scannedAt,
+          deliveredAt:   result.appointmentDeliveredAt ?? prev.deliveredAt,
+        };
+      });
+      fetchWorklist();
+    } catch (err) {
+      console.error('[TECH] Per-service status transition failed', err);
+      showNotif('error', 'STATUS UPDATE FAILED', 'Could not update the service status. Please check your connection and try again.');
+    }
+  };
+
   const handleCompleteStudy = async () => {
     if (!activeStudy) return;
     try {
@@ -208,7 +253,9 @@ export default function TechnicianPage() {
   const filteredStudies = useMemo(() => {
     return studies.filter(s => {
       const matchesSearch = (s.patientName?.toLowerCase() || '').includes(searchQuery.toLowerCase()) || (s.id?.toLowerCase() || '').includes(searchQuery.toLowerCase());
-      const matchesModality = filters.modality === 'ALL' || s.modality === filters.modality;
+      // Multi-service rollout: surface visits whose ANY service matches
+      // the picked modality, with v1-row fallback for old cache entries.
+      const matchesModality = matchesAnyModality(s, filters.modality);
       
       const status = s.status?.toLowerCase();
       const matchesPriority = filters.priority === 'ALL' || s.priority === filters.priority;
@@ -1058,17 +1105,42 @@ export default function TechnicianPage() {
                        </div>
                     </td>
                     <td style={{ padding: '8px 15px' }}>
-                       <div style={{ display: 'flex', flexDirection: 'column' }}>
-                          <span style={{ fontSize: '12px', fontWeight: 800, color: '#1e293b' }}>{study.service}</span>
-                          {study.priority && study.priority !== 'ROUTINE' && (
-                            <span
-                              className={study.priority === 'STAT' ? 'priority-chip-stat' : 'priority-chip-urgent'}
-                              style={{ fontSize: '8px', fontWeight: 950, color: priority.color, background: priority.bg, padding: '1px 6px', borderRadius: '4px', alignSelf: 'flex-start', marginTop: '2px', letterSpacing: '0.5px' }}
-                            >
-                               {priority.label}
-                            </span>
-                          )}
-                       </div>
+                       {(() => {
+                         const lines      = getServiceLines(study);
+                         const progress   = getReportProgressLabel(study);
+                         const primary    = lines[0]?.serviceName || study.service || '—';
+                         const extraCount = lines.length - 1;
+                         return (
+                           <div style={{ display: 'flex', flexDirection: 'column' }}>
+                             <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
+                               <span style={{ fontSize: '12px', fontWeight: 800, color: '#1e293b' }}>{primary}</span>
+                               {extraCount > 0 && (
+                                 <span style={{
+                                   fontSize: '8px', fontWeight: 900, letterSpacing: '0.3px',
+                                   color: '#0f52ba', background: '#dbeafe',
+                                   padding: '1px 6px', borderRadius: '999px',
+                                 }}>+{extraCount} more</span>
+                               )}
+                             </div>
+                             <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginTop: '3px', flexWrap: 'wrap' }}>
+                               {study.priority && study.priority !== 'ROUTINE' && (
+                                 <span
+                                   className={study.priority === 'STAT' ? 'priority-chip-stat' : 'priority-chip-urgent'}
+                                   style={{ fontSize: '8px', fontWeight: 950, color: priority.color, background: priority.bg, padding: '1px 6px', borderRadius: '4px', letterSpacing: '0.5px' }}
+                                 >{priority.label}</span>
+                               )}
+                               {progress && (
+                                 <span title="Reporting progress across all services on this visit" style={{
+                                   fontSize: '8px', fontWeight: 900, letterSpacing: '0.3px',
+                                   color: '#047857', background: '#d1fae5',
+                                   padding: '1px 6px', borderRadius: '999px',
+                                   border: '1px solid #a7f3d0',
+                                 }}>{progress}</span>
+                               )}
+                             </div>
+                           </div>
+                         );
+                       })()}
                     </td>
                     <td style={{ padding: '8px 15px' }}>
                         <div style={{ fontWeight: 800, color: '#1e293b', fontSize: '12px' }}>{study.dateTime ? new Date(study.dateTime).toLocaleDateString('en-GB', { timeZone: 'Asia/Kolkata', day: '2-digit', month: 'short', year: 'numeric' }).toUpperCase() : 'N/A'}</div>
@@ -1083,12 +1155,36 @@ export default function TechnicianPage() {
                         </div>
                     </td>
                     <td style={{ padding: '8px 15px' }}>
-                       <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                          <div style={{ width: '28px', height: '28px', borderRadius: '8px', background: '#f0f3fd', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '9px', fontWeight: 950, color: '#0f52ba', border: '1px solid #dbeafe' }}>
-                             {study.modality.slice(0, 2)}
-                          </div>
-                          <span style={{ fontSize: '10px', fontWeight: 950, color: '#1e293b' }}>{study.modality}</span>
-                       </div>
+                       {(() => {
+                         const modalities = getUniqueModalities(study);
+                         // For single-modality visits keep the original
+                         // icon-tile + label render so the worklist row
+                         // looks unchanged. Multi-modality visits get a
+                         // compact chip stack to fit the column width.
+                         if (modalities.length === 1) {
+                           const m = modalities[0];
+                           return (
+                             <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                               <div style={{ width: '28px', height: '28px', borderRadius: '8px', background: '#f0f3fd', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '9px', fontWeight: 950, color: '#0f52ba', border: '1px solid #dbeafe' }}>
+                                 {(MODALITY_ICONS[m] || m.slice(0, 2))}
+                               </div>
+                               <span style={{ fontSize: '10px', fontWeight: 950, color: '#1e293b' }}>{m}</span>
+                             </div>
+                           );
+                         }
+                         return (
+                           <div style={{ display: 'flex', alignItems: 'center', gap: '4px', flexWrap: 'wrap' }}>
+                             {modalities.map((m, idx) => (
+                               <span key={`${m}-${idx}`} style={{
+                                 fontSize: '9px', fontWeight: 950, letterSpacing: '0.3px',
+                                 color: '#0f52ba', background: '#eff6ff',
+                                 padding: '2px 6px', borderRadius: '6px',
+                                 border: '1px solid #dbeafe',
+                               }}>{m}</span>
+                             ))}
+                           </div>
+                         );
+                       })()}
                     </td>
                     <td style={{ padding: '8px 15px' }}>
                       <span style={{ 
@@ -1323,6 +1419,94 @@ export default function TechnicianPage() {
               <div style={{ fontSize: '12px', fontWeight: 950, color: '#1e293b' }}>{activeStudy?.patientName}</div>
               <div style={{ fontSize: '11px', color: '#6b7280', marginTop: '4px', fontWeight: 500 }}>ID: {activeStudy?.id}</div>
             </div>
+
+            {/* Per-service scan controls (multi-service rollout step 5).
+                For single-service visits this collapses to a quiet single
+                row — same visual weight as the rest of the sidebar. For
+                multi-service visits each line gets its own status pill +
+                Mark Scanned button so the tech can confirm each modality
+                as it finishes acquiring, instead of one giant "Complete"
+                gate at the end. The server rolls each transition up to
+                the parent visit's status. */}
+            {(() => {
+              const lines = getServiceLines(activeStudy);
+              if (!lines || lines.length === 0) return null;
+              return (
+                <div style={{ marginBottom: '15px' }}>
+                  <label style={{ fontSize: '10px', fontWeight: 950, color: '#94a3b8', letterSpacing: '1px', marginBottom: '8px', display: 'block', textTransform: 'uppercase' }}>
+                    Services on this visit ({lines.length})
+                  </label>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                    {lines.map((line) => {
+                      const isScanned    = ['SCANNED', 'REPORTED', 'DELIVERED'].includes((line.status || '').toUpperCase());
+                      const statusColor  = isScanned ? '#047857' : '#475569';
+                      const statusBg     = isScanned ? '#d1fae5' : '#f1f5f9';
+                      const statusBorder = isScanned ? '#a7f3d0' : '#e2e8f0';
+                      const canMark      = !!line.id && !isScanned;
+                      return (
+                        <div key={line.id || `${line.modality}-${line.serviceName}`} style={{
+                          background: 'white',
+                          border: '1px solid #e2e8f0',
+                          borderRadius: '10px',
+                          padding: '8px 10px',
+                          display: 'flex', flexDirection: 'column', gap: '6px',
+                        }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                            <span style={{
+                              fontSize: '9px', fontWeight: 950, letterSpacing: '0.4px',
+                              color: '#0f52ba', background: '#eff6ff',
+                              padding: '2px 6px', borderRadius: '6px',
+                              border: '1px solid #dbeafe',
+                            }}>{line.modality}</span>
+                            <span style={{
+                              fontSize: '11px', fontWeight: 800, color: '#0f172a',
+                              flex: 1, minWidth: 0,
+                              whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
+                            }}
+                            title={line.serviceName}>{line.serviceName}</span>
+                          </div>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                            <span style={{
+                              fontSize: '9px', fontWeight: 900, letterSpacing: '0.3px',
+                              color: statusColor, background: statusBg,
+                              padding: '2px 7px', borderRadius: '999px',
+                              border: `1px solid ${statusBorder}`,
+                            }}>{(line.status || 'NOT_STARTED').replace(/_/g, ' ')}</span>
+                            <div style={{ flex: 1 }} />
+                            {canMark && (
+                              <button
+                                type="button"
+                                onClick={() => handleServiceStatus(activeStudy.appointmentId || activeStudy.id, line.id, 'SCANNED')}
+                                style={{
+                                  fontSize: '10px',
+                                  fontWeight: 900,
+                                  padding: '5px 10px',
+                                  borderRadius: '8px',
+                                  border: 'none',
+                                  cursor: 'pointer',
+                                  background: 'linear-gradient(135deg, #0f52ba 0%, #1d4ed8 100%)',
+                                  color: 'white',
+                                  boxShadow: '0 4px 10px -4px rgba(15, 82, 186, 0.5)',
+                                  fontFamily: 'inherit',
+                                  letterSpacing: '0.3px',
+                                }}
+                              >
+                                Mark scanned
+                              </button>
+                            )}
+                            {!line.id && (
+                              <span style={{ fontSize: '9px', color: '#94a3b8', fontWeight: 700, fontStyle: 'italic' }}>
+                                legacy
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              );
+            })()}
 
             <label style={{ fontSize: '11px', fontWeight: 600, color: '#94a3b8', marginBottom: '10px', display: 'block' }}>Series ({uploadedFiles.length})</label>
             {uploadedFiles.map((f, i) => (

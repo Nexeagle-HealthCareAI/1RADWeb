@@ -4,6 +4,7 @@ import apiClient from '../api/apiClient';
 import useTickClock from '../utils/useTickClock';
 import { formatElapsed, premisesSeverity, premisesPillStyle } from '../utils/timeTracking';
 import { useOverdue } from '../components/OverdueAppointments/OverdueContext';
+import { getServiceLines, getUniqueModalities, matchesAnyModality, getReportProgressLabel } from '../utils/appointmentServices';
 import '../styles/global.css';
 import '../styles/AppointmentBoard.css';
 
@@ -190,13 +191,19 @@ export default function OperationsBoard() {
       const dateMatch = apptDate === selectedDate;
       
       const searchLower = search.toLowerCase();
-      const searchMatch = !search || 
+      // Search now also walks the service lines so a multi-service visit
+      // surfaces when the user types any of its service names.
+      const serviceLineNames = getServiceLines(appt).map(l => (l.serviceName || '').toLowerCase());
+      const searchMatch = !search ||
         (appt.patientName && appt.patientName.toLowerCase().includes(searchLower)) ||
         (appt.displayId && appt.displayId.toLowerCase().includes(searchLower)) ||
         (appt.mobile && appt.mobile.includes(searchLower)) ||
-        (appt.service && appt.service.toLowerCase().includes(searchLower));
-        
-      const modalityMatch = modality === 'ALL' || appt.modality === modality;
+        (appt.service && appt.service.toLowerCase().includes(searchLower)) ||
+        serviceLineNames.some(n => n.includes(searchLower));
+
+      // Multi-service rollout: match the picked modality against any
+      // service line on the visit (with v1 scalar fallback).
+      const modalityMatch = matchesAnyModality(appt, modality);
       const progressMatch = statusFilter === 'ALL' || appt.reportProgressStatus === statusFilter;
       
       return dateMatch && searchMatch && modalityMatch && progressMatch;
@@ -620,13 +627,46 @@ export default function OperationsBoard() {
                       <div style={{ fontSize: '11px', color: '#64748b', fontWeight: 700, marginTop: '2px' }}>
                         {appt.patientAge}y · {appt.patientGender} · {appt.mobile}
                       </div>
-                      {/* Modality + Service */}
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '8px' }}>
-                        <span style={{ background: '#eff6ff', color: '#0f52ba', fontSize: '9px', fontWeight: 950, padding: '3px 8px', borderRadius: '6px', border: '1px solid #bfdbfe' }}>
-                          {appt.modality}
-                        </span>
-                        <span style={{ fontSize: '12px', color: '#0f172a', fontWeight: 950 }}>{appt.service}</span>
-                      </div>
+                      {/* Modality + Service (multi-service aware).
+                          Single-service visits render exactly as before:
+                          one chip and the service name. Multi-service
+                          visits get a chip stack, the primary service
+                          name, an extra-count chip and the green
+                          "X / Y reported" progress badge. */}
+                      {(() => {
+                        const lines      = getServiceLines(appt);
+                        const modalities = getUniqueModalities(appt);
+                        const progress   = getReportProgressLabel(appt);
+                        const primary    = lines[0]?.serviceName || appt.service || '';
+                        const extra      = lines.length - 1;
+                        return (
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '8px', flexWrap: 'wrap' }}>
+                            {modalities.map((m, idx) => (
+                              <span key={`${m}-${idx}`} title={lines.find(l => l.modality === m)?.serviceName || m} style={{ background: '#eff6ff', color: '#0f52ba', fontSize: '9px', fontWeight: 950, padding: '3px 8px', borderRadius: '6px', border: '1px solid #bfdbfe' }}>
+                                {m}
+                              </span>
+                            ))}
+                            <span style={{ fontSize: '12px', color: '#0f172a', fontWeight: 950 }}>{primary}</span>
+                            {extra > 0 && (
+                              <span style={{
+                                background: '#dbeafe', color: '#0f52ba',
+                                fontSize: '9px', fontWeight: 900,
+                                padding: '2px 7px', borderRadius: '999px',
+                                letterSpacing: '0.3px',
+                              }}>+{extra} more</span>
+                            )}
+                            {progress && (
+                              <span title="Reporting progress across all services on this visit" style={{
+                                background: '#d1fae5', color: '#047857',
+                                fontSize: '9px', fontWeight: 900,
+                                padding: '2px 7px', borderRadius: '999px',
+                                border: '1px solid #a7f3d0',
+                                letterSpacing: '0.3px',
+                              }}>{progress}</span>
+                            )}
+                          </div>
+                        );
+                      })()}
                       {/* TAT pills */}
                       {onPremisesElapsed && (
                         <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginTop: '8px', flexWrap: 'wrap' }}>
@@ -752,12 +792,48 @@ export default function OperationsBoard() {
                           )}
                         </td>
 
-                        {/* Modality & Service */}
+                        {/* Modality & Service (multi-service aware). */}
                         <td>
-                          <span style={{ display: 'inline-block', background: '#eff6ff', color: '#0f52ba', fontSize: '9px', fontWeight: 950, padding: '3px 8px', borderRadius: '6px', border: '1px solid #bfdbfe', marginBottom: '4px' }}>
-                            {appt.modality}
-                          </span>
-                          <div style={{ fontSize: '13px', color: '#0f172a', fontWeight: 950 }}>{appt.service}</div>
+                          {(() => {
+                            const lines      = getServiceLines(appt);
+                            const modalities = getUniqueModalities(appt);
+                            const progress   = getReportProgressLabel(appt);
+                            const primary    = lines[0]?.serviceName || appt.service || '';
+                            const extra      = lines.length - 1;
+                            return (
+                              <>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '4px', flexWrap: 'wrap', marginBottom: '4px' }}>
+                                  {modalities.map((m, idx) => (
+                                    <span key={`${m}-${idx}`} title={lines.find(l => l.modality === m)?.serviceName || m} style={{ display: 'inline-block', background: '#eff6ff', color: '#0f52ba', fontSize: '9px', fontWeight: 950, padding: '3px 8px', borderRadius: '6px', border: '1px solid #bfdbfe' }}>
+                                      {m}
+                                    </span>
+                                  ))}
+                                </div>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
+                                  <div style={{ fontSize: '13px', color: '#0f172a', fontWeight: 950 }}>{primary}</div>
+                                  {extra > 0 && (
+                                    <span style={{
+                                      background: '#dbeafe', color: '#0f52ba',
+                                      fontSize: '9px', fontWeight: 900,
+                                      padding: '2px 7px', borderRadius: '999px',
+                                      letterSpacing: '0.3px',
+                                    }}>+{extra} more</span>
+                                  )}
+                                </div>
+                                {progress && (
+                                  <div style={{ marginTop: '4px' }}>
+                                    <span title="Reporting progress across all services on this visit" style={{
+                                      background: '#d1fae5', color: '#047857',
+                                      fontSize: '9px', fontWeight: 900,
+                                      padding: '2px 7px', borderRadius: '999px',
+                                      border: '1px solid #a7f3d0',
+                                      letterSpacing: '0.3px',
+                                    }}>{progress}</span>
+                                  </div>
+                                )}
+                              </>
+                            );
+                          })()}
                         </td>
 
                         {/* Clinical Stage */}

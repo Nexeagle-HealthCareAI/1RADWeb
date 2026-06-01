@@ -401,7 +401,20 @@ export default function SavedReportViewer({
             <div style={{ fontSize: '10px', fontWeight: 900, letterSpacing: '2px', opacity: 0.85 }}>SAVED REPORT</div>
             <div style={{ fontSize: '13px', fontWeight: 800, marginTop: '2px' }}>
               {appointment?.patientName?.toUpperCase() || 'Patient Report'}
-              {appointment?.modality ? ` · ${appointment.modality}` : ''}
+              {/* Multi-service rollout (batch-4 fix). When the report
+                  carries an AppointmentServiceId, look up THAT service
+                  line on the appointment so the header shows the
+                  modality the report is actually about — not the
+                  visit's primary scalar. Falls back to the scalar for
+                  single-service / v1 reports. */}
+              {(() => {
+                const serviceId = report?.appointmentServiceId || report?.AppointmentServiceId;
+                const matched = serviceId
+                  ? (appointment?.services || []).find(s => s.id === serviceId)
+                  : null;
+                const label = matched?.modality || appointment?.modality;
+                return label ? ` · ${label}` : '';
+              })()}
             </div>
           </div>
           <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' }}>

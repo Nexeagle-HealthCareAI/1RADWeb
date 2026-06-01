@@ -9,6 +9,7 @@ import useTickClock from '../utils/useTickClock';
 import { formatElapsed, premisesSeverity, premisesPillStyle } from '../utils/timeTracking';
 import { useOverdue } from '../components/OverdueAppointments/OverdueContext';
 import { formatPatientAge } from '../utils/patientAge';
+import { getServiceLines, getUniqueModalities, matchesAnyModality, getReportProgressLabel } from '../utils/appointmentServices';
 import '../styles/global.css';
 import '../styles/DoctorBoard.css';
 
@@ -187,7 +188,10 @@ export default function DoctorBoard() {
   const filteredCases = useMemo(() => {
     return cases.filter(c => {
       const matchesSearch = (c.patientName?.toLowerCase() || '').includes(search.toLowerCase()) || (c.id?.toLowerCase() || '').includes(search.toLowerCase());
-      const matchesModality = filters.modality === 'ALL' || c.modality === filters.modality;
+      // Multi-service rollout: a visit matches the picked modality when
+      // ANY of its service lines does. v1 rows (no services array)
+      // fall back to comparing the scalar modality field.
+      const matchesModality = matchesAnyModality(c, filters.modality);
       const matchesPriority = filters.priority === 'ALL' || c.priority === filters.priority;
       
       const status = c.status?.toLowerCase();
@@ -270,8 +274,17 @@ export default function DoctorBoard() {
       await handleStatusUpdate(c.appointmentId || c.id, 'reporting');
     }
 
-    // Navigate to the ReportingPage with the appointment ID
-    navigate(`/reporting/${c.appointmentId || c.id}`);
+    // Multi-service rollout — when the visit carries many service lines,
+    // jump the radiologist straight to the first one without a finalised
+    // report so they land on the actual outstanding work. Single-service
+    // visits behave exactly as before (no serviceId in the URL).
+    const lines = getServiceLines(c);
+    const target = lines.find(l => l.id && !['REPORTED', 'DELIVERED'].includes((l.status || '').toUpperCase()))
+                || lines.find(l => l.id)
+                || null;
+    const apptId = c.appointmentId || c.id;
+    const url = target?.id ? `/reporting/${apptId}?serviceId=${encodeURIComponent(target.id)}` : `/reporting/${apptId}`;
+    navigate(url);
   };
 
   const handlePreviewPrint = async (c) => {
@@ -589,24 +602,61 @@ export default function DoctorBoard() {
                        </div>
                     </td>
                     <td style={{ padding: '20px' }}>
-                       <div style={{ display: 'flex', flexDirection: 'column' }}>
-                          <span style={{ fontSize: '13px', fontWeight: 800, color: '#1a1a2e' }}>{c.service}</span>
-                          {c.priority && c.priority !== 'ROUTINE' && (
-                            <span
-                              className={c.priority === 'STAT' ? 'priority-chip-stat' : 'priority-chip-urgent'}
-                              style={{
-                                fontSize: '9px', fontWeight: 950, letterSpacing: '0.5px',
-                                color: c.priority === 'STAT' ? '#dc2626' : '#d97706',
-                                background: c.priority === 'STAT' ? '#fee2e2' : '#fef3c7',
-                                border: `1px solid ${c.priority === 'STAT' ? '#fecaca' : '#fde68a'}`,
-                                padding: '2px 8px', borderRadius: '999px',
-                                alignSelf: 'flex-start', marginTop: '4px',
-                              }}
-                            >
-                              {c.priority}
-                            </span>
-                          )}
-                       </div>
+                       {(() => {
+                         const lines      = getServiceLines(c);
+                         const modalities = getUniqueModalities(c);
+                         const progress   = getReportProgressLabel(c);
+                         const primary    = lines[0]?.serviceName || c.service || '—';
+                         const extraCount = lines.length - 1;
+                         return (
+                           <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                             <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
+                               <span style={{ fontSize: '13px', fontWeight: 800, color: '#1a1a2e' }}>{primary}</span>
+                               {extraCount > 0 && (
+                                 <span style={{
+                                   fontSize: '9px', fontWeight: 900, letterSpacing: '0.3px',
+                                   color: '#0f52ba', background: '#dbeafe',
+                                   padding: '1px 6px', borderRadius: '999px',
+                                 }}>+{extraCount} more</span>
+                               )}
+                             </div>
+                             {modalities.length > 1 && (
+                               <div style={{ display: 'flex', alignItems: 'center', gap: '4px', flexWrap: 'wrap' }}>
+                                 {modalities.map((m, idx) => (
+                                   <span key={`${m}-${idx}`} style={{
+                                     fontSize: '9px', fontWeight: 900, letterSpacing: '0.3px',
+                                     color: '#0f52ba', background: '#eff6ff',
+                                     padding: '1px 6px', borderRadius: '4px',
+                                     border: '1px solid #dbeafe',
+                                   }}>{m}</span>
+                                 ))}
+                               </div>
+                             )}
+                             <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
+                               {c.priority && c.priority !== 'ROUTINE' && (
+                                 <span
+                                   className={c.priority === 'STAT' ? 'priority-chip-stat' : 'priority-chip-urgent'}
+                                   style={{
+                                     fontSize: '9px', fontWeight: 950, letterSpacing: '0.5px',
+                                     color: c.priority === 'STAT' ? '#dc2626' : '#d97706',
+                                     background: c.priority === 'STAT' ? '#fee2e2' : '#fef3c7',
+                                     border: `1px solid ${c.priority === 'STAT' ? '#fecaca' : '#fde68a'}`,
+                                     padding: '2px 8px', borderRadius: '999px',
+                                   }}
+                                 >{c.priority}</span>
+                               )}
+                               {progress && (
+                                 <span title="Reporting progress across all services on this visit" style={{
+                                   fontSize: '9px', fontWeight: 900, letterSpacing: '0.3px',
+                                   color: '#047857', background: '#d1fae5',
+                                   padding: '2px 8px', borderRadius: '999px',
+                                   border: '1px solid #a7f3d0',
+                                 }}>{progress}</span>
+                               )}
+                             </div>
+                           </div>
+                         );
+                       })()}
                     </td>
                     <td style={{ padding: '20px' }}>
                         <div style={{ fontWeight: 800, color: '#1e293b', fontSize: '13px' }}>{c.dateTime ? new Date(c.dateTime).toLocaleDateString('en-GB', { timeZone: 'Asia/Kolkata', day: '2-digit', month: 'short', year: 'numeric' }).toUpperCase() : 'N/A'}</div>
