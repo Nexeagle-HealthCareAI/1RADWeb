@@ -1596,6 +1596,31 @@ const ReportingPage = () => {
         }
       }
 
+      // Direct blob access DENIED with a real HTTP status (not a thrown
+      // network error). Happens when the storage account has "Allow blob public
+      // access" disabled (Azure returns 409 "Public access is not permitted")
+      // or blocks anonymous reads (403). The browser can't read the blob URL
+      // directly, so stream it through the backend proxy, which authenticates
+      // to storage. 404 is a genuine "gone" and must NOT be retried.
+      if (response && !response.ok && response.status !== 404) {
+        console.log(`[DICOM_LOAD] Direct fetch returned ${response.status}; falling back to secure proxy...`);
+        setProcessingStatus('Trying secure proxy...');
+        try {
+          const proxyRes = await apiClient.get('/Study/proxy-asset', {
+            params: { url: asset.remoteUrl },
+            responseType: 'blob',
+            timeout: 120000,
+          });
+          if (proxyRes.status === 200 && proxyRes.data) {
+            blob = proxyRes.data;
+            response = null; // route to the blob-decode path below
+          }
+        } catch (proxyErr) {
+          console.warn('[DICOM_LOAD] Proxy fallback failed', proxyErr?.message || proxyErr);
+          // fall through to the standard error handling below
+        }
+      }
+
       // Handle HTTP error codes
       if (response && !response.ok) {
         if (response.status === 404) throw new Error('FILE_NOT_FOUND: The study file is no longer available (HTTP 404).');

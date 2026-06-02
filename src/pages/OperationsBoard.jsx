@@ -44,9 +44,13 @@ export default function OperationsBoard() {
   // modality so the front desk can see what's pending in each room.
   const [viewMode, setViewMode] = useState('list'); // 'list' | 'queue'
 
-  // Responsive breakpoint — matches AppointmentBoard
+  // Responsive breakpoints — matches AppointmentBoard. isMobile drives the
+  // fine-grained phone tweaks; isCompact (phone + tablet) drives the bigger
+  // structural choice of card layout vs. the wide desktop table, so tablets
+  // (768–1024) get a comfortable 2-up card grid instead of a cramped table.
   const [windowWidth, setWindowWidth] = useState(window.innerWidth);
   const isMobile = windowWidth < 768;
+  const isCompact = windowWidth < 1024;
   useEffect(() => {
     const handleResize = () => setWindowWidth(window.innerWidth);
     window.addEventListener('resize', handleResize);
@@ -315,6 +319,21 @@ export default function OperationsBoard() {
       return (a.dailyTokenNumber ?? Infinity) - (b.dailyTokenNumber ?? Infinity);
     }) : [];
   }, [appointments, selectedDate, search, modality, statusFilter]);
+
+  // Modality filter options derived from the ACTUAL data, not a hardcoded list.
+  // The old static options ("US", "ECG") never matched the stored modality
+  // values ("ULTRASOUND", …) so those filters silently returned nothing. Driving
+  // the dropdown from real service lines means it always matches and only shows
+  // modalities the centre actually runs — no guesswork for the operator.
+  const availableModalities = useMemo(() => {
+    const set = new Set();
+    for (const appt of appointments) {
+      for (const m of getUniqueModalities(appt)) {
+        if (m && m !== 'OT') set.add(m); // 'OT' is the no-modality fallback
+      }
+    }
+    return Array.from(set).sort();
+  }, [appointments]);
 
   // Paginated partition matching BillingPage
   const paginatedAppointments = useMemo(() => {
@@ -880,7 +899,7 @@ export default function OperationsBoard() {
                           }} title={appt.patientName}>{appt.patientName}</span>
                           <span style={{
                             flexShrink: 0,
-                            fontSize: '8.5px', fontWeight: 900, letterSpacing: '0.3px',
+                            fontSize: '9px', fontWeight: 900, letterSpacing: '0.3px',
                             color: pill.color, background: pill.bg,
                             padding: '2px 7px', borderRadius: '999px',
                             border: `1px solid ${pill.border}`,
@@ -1042,11 +1061,7 @@ export default function OperationsBoard() {
         <div className="filter-select-group">
           <select className="filter-select" value={modality} onChange={(e) => setModality(e.target.value)}>
             <option value="ALL">All Modalities</option>
-            <option value="X-RAY">X-RAY</option>
-            <option value="MRI">MRI</option>
-            <option value="CT">CT</option>
-            <option value="US">Ultrasound (US)</option>
-            <option value="ECG">ECG</option>
+            {availableModalities.map(m => <option key={m} value={m}>{m}</option>)}
           </select>
 
           <select className="filter-select" value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}>
@@ -1149,9 +1164,17 @@ export default function OperationsBoard() {
           renderModalityQueue(filteredAppointments)
         ) : (
           <div style={{ overflowX: 'auto' }}>
-            {isMobile ? (
-              /* ── MOBILE: Card Layout ── */
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', padding: '16px' }}>
+            {isCompact ? (
+              /* ── MOBILE & TABLET: Card Layout ──
+                 Phones get a single column; tablets get a comfortable 2-up grid
+                 so the wide desktop table never has to be scrolled sideways. */
+              <div style={{
+                display: 'grid',
+                gridTemplateColumns: isMobile ? '1fr' : 'repeat(2, 1fr)',
+                gap: '12px',
+                padding: '16px',
+                alignItems: 'start',
+              }}>
                 {paginatedAppointments.map((appt) => {
                   const progress   = getProgressBadge(appt.reportProgressStatus);
                   const coreStatus = getCoreStatusStyle(appt.status);
@@ -1338,7 +1361,7 @@ export default function OperationsBoard() {
                               </div>
                               <div style={{ display: 'flex', alignItems: 'center', gap: '5px', flexWrap: 'wrap' }}>
                                 <span style={{
-                                  fontSize: '9.5px', fontWeight: 900, letterSpacing: '0.3px',
+                                  fontSize: '10px', fontWeight: 900, letterSpacing: '0.3px',
                                   color: st.color, background: st.bg,
                                   border: `1px solid ${st.border}`,
                                   padding: '2px 8px', borderRadius: '999px',
@@ -1346,7 +1369,7 @@ export default function OperationsBoard() {
                                 }}>{st.label}</span>
                                 {tatLabel && !cancelled && (
                                   <span style={{
-                                    fontSize: '9.5px', fontWeight: 900, letterSpacing: '0.3px',
+                                    fontSize: '10px', fontWeight: 900, letterSpacing: '0.3px',
                                     color: tatStyle.color, background: tatStyle.bg,
                                     padding: '2px 8px', borderRadius: '999px',
                                     border: `1px solid ${tatStyle.border}`,
@@ -1448,7 +1471,7 @@ export default function OperationsBoard() {
                               }}>
                                 {summaryChips.map((c, i) => (
                                   <span key={i} style={{
-                                    fontSize: '8.5px', fontWeight: 800, letterSpacing: '0.3px',
+                                    fontSize: '9px', fontWeight: 800, letterSpacing: '0.3px',
                                     color: c.color, background: c.bg,
                                     padding: '2px 7px', borderRadius: '999px',
                                     border: `1px solid ${c.border}`,
@@ -1532,7 +1555,7 @@ export default function OperationsBoard() {
                   gridTemplateColumns: 'minmax(220px, 1.3fr) minmax(200px, 1.2fr) minmax(150px, 0.9fr) minmax(180px, 1.1fr) minmax(160px, 1fr)',
                   gap: '14px',
                   padding: '0 16px 4px',
-                  fontSize: '8.5px', fontWeight: 950, letterSpacing: '0.8px',
+                  fontSize: '9px', fontWeight: 950, letterSpacing: '0.8px',
                   color: '#94a3b8', textTransform: 'uppercase',
                 }}>
                   <span>Patient &amp; Visit</span>
@@ -1605,16 +1628,16 @@ export default function OperationsBoard() {
                             <span style={{ fontSize: '13px', fontWeight: 950, lineHeight: 1 }}>
                               {appt.dailyTokenNumber ? `#${String(appt.dailyTokenNumber).padStart(3, '0')}` : '—'}
                             </span>
-                            <span style={{ fontSize: '7.5px', fontWeight: 800, color: '#94a3b8', marginTop: '2px', letterSpacing: '0.3px' }}>TOKEN</span>
+                            <span style={{ fontSize: '9px', fontWeight: 800, color: '#94a3b8', marginTop: '2px', letterSpacing: '0.3px' }}>TOKEN</span>
                           </div>
                           <div style={{ minWidth: 0, flex: 1 }}>
                             <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
-                              <span style={{ fontWeight: 950, color: '#0f172a', fontSize: '13.5px', letterSpacing: '-0.2px' }}>{appt.patientName}</span>
+                              <span style={{ fontWeight: 950, color: '#0f172a', fontSize: '14px', letterSpacing: '-0.2px' }}>{appt.patientName}</span>
                               {appt.priority && appt.priority !== 'ROUTINE' && (
                                 <span
                                   className={appt.priority === 'STAT' ? 'priority-chip-stat' : 'priority-chip-urgent'}
                                   style={{
-                                    fontSize: '8.5px', fontWeight: 950, letterSpacing: '0.5px',
+                                    fontSize: '9px', fontWeight: 950, letterSpacing: '0.5px',
                                     padding: '2px 7px', borderRadius: '999px',
                                     color: appt.priority === 'STAT' ? '#dc2626' : '#d97706',
                                     background: appt.priority === 'STAT' ? '#fee2e2' : '#fef3c7',
@@ -1773,7 +1796,7 @@ export default function OperationsBoard() {
                                 </div>
                                 <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
                                   <span style={{
-                                    fontSize: '12.5px', color: '#0f172a', fontWeight: 900,
+                                    fontSize: '12px', color: '#0f172a', fontWeight: 900,
                                     whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '180px',
                                   }} title={primary}>{primary}</span>
                                   {extra > 0 && (
@@ -1852,7 +1875,7 @@ export default function OperationsBoard() {
                               <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', alignItems: 'flex-start' }}>
                                 {live.length > 1 && (
                                   <span style={{
-                                    fontSize: '8.5px', fontWeight: 900, color: '#64748b',
+                                    fontSize: '9px', fontWeight: 900, color: '#64748b',
                                     letterSpacing: '0.4px', textTransform: 'uppercase',
                                   }}>{reported}/{live.length} reported</span>
                                 )}
@@ -1892,7 +1915,7 @@ export default function OperationsBoard() {
                                       >
                                         <span style={{
                                           fontFamily: 'monospace', fontWeight: 950,
-                                          fontSize: '8.5px',
+                                          fontSize: '9px',
                                           opacity: 0.85,
                                           letterSpacing: '0.2px',
                                         }}>{shortMod(line.modality)}</span>
@@ -2081,7 +2104,7 @@ export default function OperationsBoard() {
                             }}>
                               {summaryChips.map((c, i) => (
                                 <span key={i} style={{
-                                  fontSize: '8.5px', fontWeight: 800, letterSpacing: '0.3px',
+                                  fontSize: '9px', fontWeight: 800, letterSpacing: '0.3px',
                                   color: c.color, background: c.bg,
                                   padding: '2px 7px', borderRadius: '999px',
                                   border: `1px solid ${c.border}`,
@@ -2127,7 +2150,7 @@ export default function OperationsBoard() {
                                     gap: '16px',
                                     padding: '8px 8px 6px',
                                     borderBottom: '1px solid #f1f5f9',
-                                    fontSize: '8.5px', fontWeight: 900, letterSpacing: '0.5px',
+                                    fontSize: '9px', fontWeight: 900, letterSpacing: '0.5px',
                                     color: '#94a3b8', textTransform: 'uppercase',
                                   }}>
                                     <span>Modality</span>
@@ -2189,7 +2212,7 @@ export default function OperationsBoard() {
             {/* Header */}
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
               <div>
-                <h3 style={{ fontSize: '15px', fontWeight: 950, margin: 0, color: '#0f52ba', letterSpacing: '0.8px', textTransform: 'uppercase' }}>Add Visit Note</h3>
+                <h3 style={{ fontSize: '14px', fontWeight: 950, margin: 0, color: '#0f52ba', letterSpacing: '0.8px', textTransform: 'uppercase' }}>Add Visit Note</h3>
                 <span style={{ fontSize: '11px', color: '#0f52ba', fontWeight: 950, marginTop: '4px', display: 'block' }}>
                   {selectedItem.patientName} ({selectedItem.dailyTokenNumber ? `#${String(selectedItem.dailyTokenNumber).padStart(3, '0')}` : 'N/A'})
                 </span>
@@ -2416,7 +2439,7 @@ function CommentTimelineItem({ comment, isLatest }) {
           <span style={{ fontSize: '12px', fontWeight: 900, color: '#0f172a' }}>{comment.authorName}</span>
           {isLatest && (
             <span style={{
-              fontSize: '8px', fontWeight: 950, letterSpacing: '0.8px',
+              fontSize: '9px', fontWeight: 950, letterSpacing: '0.8px',
               background: '#dbeafe', color: '#0f52ba',
               padding: '2px 6px', borderRadius: '999px',
               border: '1px solid #bfdbfe',
@@ -2775,7 +2798,7 @@ function ServicePillPopover({ state, onClose, onSave }) {
                           color: isActive ? step.color : '#64748b',
                           cursor: 'pointer',
                           fontFamily: 'inherit',
-                          fontSize: '9.5px', fontWeight: 900, letterSpacing: '0.2px',
+                          fontSize: '10px', fontWeight: 900, letterSpacing: '0.2px',
                           display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '4px',
                           transition: 'all 0.12s',
                           boxShadow: isActive ? `0 2px 6px -3px ${step.color}66` : 'none',
