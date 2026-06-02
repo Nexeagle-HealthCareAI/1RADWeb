@@ -1,35 +1,37 @@
 import { useState, useEffect } from 'react';
-import apiClient from '../api/apiClient';
+import { watchAppointments } from '../db/repos/appointmentsRepo';
+import { syncNow } from '../sync/SyncEngine';
 
 export default function WaitingAreaBoard() {
   const [missions, setMissions] = useState([]);
   const [loading, setLoading] = useState(true);
   const [currentTime, setCurrentTime] = useState(new Date());
 
-  const fetchBoard = async () => {
-    try {
-      const res = await apiClient.get('/appointments');
-      const today = new Date().toLocaleDateString('en-CA');
-      const activeMissions = res.data
-        .filter(m => {
-          const studyDate = m.dateTime ? new Date(m.dateTime).toLocaleDateString('en-CA') : null;
-          return studyDate === today && ['confirmed', 'in_progress', 'scanned', 'reporting'].includes(m.status?.toLowerCase());
-        })
-        .sort((a, b) => new Date(a.dateTime).getTime() - new Date(b.dateTime).getTime());
-      
-      setMissions(activeMissions);
-    } catch (err) {
-      console.error('Failed to fetch board', err);
-    } finally {
-      setLoading(false);
-    }
-  };
-
+  // The board now reads today's appointments straight from the local cache via
+  // liveQuery. The sync engine keeps that cache fresh in the background, so the
+  // queue updates on its own the moment a patient is confirmed, scanned, or
+  // moved to reporting — no 15-second polling loop, and it survives a brief
+  // network drop on the waiting-room display.
   useEffect(() => {
-    fetchBoard();
-    const interval = setInterval(fetchBoard, 15000);
+    const todayIso = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' });
+    // Warm the cache immediately on mount; the global engine refreshes it after.
+    syncNow().catch(() => {});
+
+    const ACTIVE = ['confirmed', 'in_progress', 'scanned', 'reporting'];
+    const sub = watchAppointments({ mode: 'today', dateIso: todayIso }).subscribe({
+      next: (rows) => {
+        const activeMissions = (rows || [])
+          .filter(m => ACTIVE.includes((m.status || '').toLowerCase()))
+          // Waiting-room ordering is by appointment time, ascending (next up first).
+          .sort((a, b) => new Date(a.dateTime).getTime() - new Date(b.dateTime).getTime());
+        setMissions(activeMissions);
+        setLoading(false);
+      },
+      error: (err) => { console.warn('[WaitingArea] liveQuery error', err); setLoading(false); },
+    });
+
     const clock = setInterval(() => setCurrentTime(new Date()), 1000);
-    return () => { clearInterval(interval); clearInterval(clock); };
+    return () => { sub.unsubscribe(); clearInterval(clock); };
   }, []);
 
   const getStatusColor = (status) => {

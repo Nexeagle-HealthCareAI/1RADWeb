@@ -212,8 +212,11 @@ const DicomViewerPage = () => {
       setIsMobile(mobile);
       setIsTablet(tablet);
 
-      // Auto-hide left toolbar on tablets AND phones for more viewing area.
-      if (tablet || mobile) {
+      // Phones collapse to a tools-hidden view for maximum image area.
+      // Tablets keep the full desktop layout (docked tools rail on the left,
+      // series rail on the left) per the diagnostic-parity requirement, so we
+      // only auto-hide the toolbar on phones. Tablet users can still toggle it.
+      if (mobile) {
         setShowLeftToolbar(false);
       }
 
@@ -945,38 +948,38 @@ const DicomViewerPage = () => {
       width: '100vw',
       background: '#000',
       display: 'flex',
-      flexDirection: (isTablet || isMobile) && hasMultipleSeries ? 'column' : 'row',
+      flexDirection: (isMobile) && hasMultipleSeries ? 'column' : 'row',
       overflow: 'hidden'
     }}>
       {/* Left Series List Panel (always show if series data exists) */}
       {(hasMultipleSeries || allSeries?.length > 0) && (
         <div style={{
-          width: (isTablet || isMobile) ? '100%' : '280px',
-          minWidth: (isTablet || isMobile) ? 'auto' : '280px',
-          maxWidth: (isTablet || isMobile) ? '100%' : '280px',
-          height: (isTablet || isMobile) ? 'auto' : '100%',
+          width: (isMobile) ? '100%' : '280px',
+          minWidth: (isMobile) ? 'auto' : '280px',
+          maxWidth: (isMobile) ? '100%' : '280px',
+          height: (isMobile) ? 'auto' : '100%',
           // Mobile panel was 22vh (~154 px on a 700 px phone) but each tile
           // needed ~190 px (150 thumbnail + 40 text), so tiles clipped at
           // the top. Reducing to 14vh + shrunk tiles below = no clip.
-          maxHeight: isMobile ? '14vh' : (isTablet ? '24vh' : '100%'),
+          maxHeight: isMobile ? '14vh' : '100%',
           background: 'linear-gradient(180deg, #0f172a 0%, #1e293b 100%)',
-          borderRight: (isTablet || isMobile) ? 'none' : '2px solid #334155',
-          borderBottom: (isTablet || isMobile) ? '2px solid #334155' : 'none',
+          borderRight: (isMobile) ? 'none' : '2px solid #334155',
+          borderBottom: (isMobile) ? '2px solid #334155' : 'none',
           display: 'flex',
-          flexDirection: (isTablet || isMobile) ? 'row' : 'column',
+          flexDirection: (isMobile) ? 'row' : 'column',
           overflow: 'hidden',
-          boxShadow: (isTablet || isMobile) ? '0 4px 20px rgba(0, 0, 0, 0.3)' : '4px 0 20px rgba(0, 0, 0, 0.3)',
-          position: (isTablet || isMobile) ? 'relative' : 'static',
-          zIndex: (isTablet || isMobile) ? 100 : 'auto',
+          boxShadow: (isMobile) ? '0 4px 20px rgba(0, 0, 0, 0.3)' : '4px 0 20px rgba(0, 0, 0, 0.3)',
+          position: (isMobile) ? 'relative' : 'static',
+          zIndex: (isMobile) ? 100 : 'auto',
           flexShrink: 0
         }}>
           {/* Series List Header */}
           <div style={{
-            padding: (isTablet || isMobile) ? '10px 14px' : '20px',
-            borderBottom: (isTablet || isMobile) ? 'none' : '2px solid #334155',
-            borderRight: (isTablet || isMobile) ? '2px solid #334155' : 'none',
+            padding: (isMobile) ? '10px 14px' : '20px',
+            borderBottom: (isMobile) ? 'none' : '2px solid #334155',
+            borderRight: (isMobile) ? '2px solid #334155' : 'none',
             background: 'linear-gradient(135deg, #8b5cf6, #6366f1)',
-            minWidth: isMobile ? '120px' : ((isTablet) ? '200px' : 'auto'),
+            minWidth: isMobile ? '120px' : 'auto',
             display: 'flex',
             flexDirection: 'column',
             justifyContent: 'center'
@@ -1006,11 +1009,11 @@ const DicomViewerPage = () => {
           {/* Series List */}
           <div style={{
             flex: 1,
-            overflowY: (isTablet || isMobile) ? 'hidden' : 'auto',
-            overflowX: (isTablet || isMobile) ? 'auto' : 'hidden',
-            padding: (isTablet || isMobile) ? '10px' : '10px',
-            display: (isTablet || isMobile) ? 'flex' : 'block',
-            gap: (isTablet || isMobile) ? '8px' : '0',
+            overflowY: (isMobile) ? 'hidden' : 'auto',
+            overflowX: (isMobile) ? 'auto' : 'hidden',
+            padding: (isMobile) ? '10px' : '10px',
+            display: (isMobile) ? 'flex' : 'block',
+            gap: (isMobile) ? '8px' : '0',
             WebkitOverflowScrolling: 'touch' // Smooth scrolling on iOS
           }}>
             {allSeries.map((series, index) => (
@@ -1027,11 +1030,11 @@ const DicomViewerPage = () => {
                 style={{
                   // Mobile: compact horizontal card — thumbnail + text side-by-side
                   // so the tile fits within the 14vh panel without clipping.
-                  width: isMobile ? '140px' : (isTablet ? '200px' : '100%'),
-                  minWidth: isMobile ? '140px' : (isTablet ? '200px' : 'auto'),
-                  height: isMobile ? '70px' : (isTablet ? 'auto' : 'auto'),
+                  width: isMobile ? '140px' : '100%',
+                  minWidth: isMobile ? '140px' : 'auto',
+                  height: isMobile ? '70px' : 'auto',
                   boxSizing: 'border-box',
-                  flexShrink: (isTablet || isMobile) ? 0 : 'auto',
+                  flexShrink: (isMobile) ? 0 : 'auto',
                   background: activeSeriesIndex === index
                     ? 'linear-gradient(135deg, #8b5cf6, #6366f1)'
                     : 'rgba(255,255,255,0.05)',
@@ -1039,10 +1042,10 @@ const DicomViewerPage = () => {
                     ? '2px solid #8b5cf6'
                     : '2px solid transparent',
                   color: activeSeriesIndex === index ? 'white' : '#e2e8f0',
-                  padding: isMobile ? '4px 6px' : (isTablet ? '16px 14px' : '12px'),
+                  padding: isMobile ? '4px 6px' : '12px',
                   borderRadius: '8px',
                   cursor: 'pointer',
-                  marginBottom: (isTablet || isMobile) ? '0' : '8px',
+                  marginBottom: (isMobile) ? '0' : '8px',
                   textAlign: 'left',
                   display: isMobile ? 'flex' : 'block',
                   flexDirection: isMobile ? 'row' : undefined,
@@ -1055,7 +1058,7 @@ const DicomViewerPage = () => {
                   // Disabled translateY on mobile — was contributing to the
                   // "tiles bouncing into the clip region" perception.
                   transform: !isMobile && activeSeriesIndex === index
-                    ? (isTablet ? 'translateY(-2px)' : 'translateX(4px)')
+                    ? 'translateX(4px)'
                     : 'none',
                   touchAction: 'manipulation',
                   WebkitTapHighlightColor: 'transparent',

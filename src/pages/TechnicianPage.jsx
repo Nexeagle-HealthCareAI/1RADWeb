@@ -15,6 +15,7 @@ import { formatElapsed, premisesSeverity, premisesPillStyle } from '../utils/tim
 import { useOverdue } from '../components/OverdueAppointments/OverdueContext';
 import { getServiceLines, getUniqueModalities, matchesAnyModality, getReportProgressLabel } from '../utils/appointmentServices';
 import { watchAppointments, patchCachedAppointment } from '../db/repos/appointmentsRepo';
+import { snapshotPersonnel, watchPersonnel } from '../db/repos/personnelRepo';
 import { syncNow } from '../sync/SyncEngine';
 import useOffline from '../hooks/useOffline';
 import '../styles/global.css';
@@ -155,22 +156,32 @@ export default function TechnicianPage() {
     try { await syncNow(); } catch (err) { console.warn('[TECH] manual sync failed', err?.message || err); }
   }, []);
 
+  // Warm the personnel snapshot; the doctor list renders from watchPersonnel
+  // below, so a newly-added doctor appears in the assignment dropdown on its
+  // own (refreshed by the sync engine each cycle). Offline keeps the snapshot.
   const fetchDoctors = useCallback(async () => {
     try {
       const res = await apiClient.get('/personnel');
-      const docList = (res.data || []).map(p => ({
-        id: p.userId,
-        name: p.fullName || 'UNKNOWN_STAFF',
-        roles: (p.roles || []).map(r => String(r).toLowerCase())
-      })).filter(p => p.roles.some(r => r.includes('doctor')));
-      setDoctors(docList);
+      await snapshotPersonnel(res.data);
     } catch (err) {
-      console.error('[TECH] Failed to fetch doctors', err);
+      console.error('[TECH] Failed to refresh doctors — keeping offline snapshot.', err);
     }
   }, []);
 
   useEffect(() => {
-    fetchDoctors();
+    fetchDoctors(); // warm the cache immediately on mount
+    const sub = watchPersonnel().subscribe({
+      next: (rows) => {
+        const docList = (rows || []).map(p => ({
+          id: p.userId,
+          name: p.fullName || 'UNKNOWN_STAFF',
+          roles: (p.roles || []).map(r => String(r).toLowerCase())
+        })).filter(p => p.roles.some(r => r.includes('doctor')));
+        setDoctors(docList);
+      },
+      error: (err) => console.warn('[TECH] personnel liveQuery error', err),
+    });
+    return () => sub.unsubscribe();
   }, [fetchDoctors]);
 
   const handleStatusUpdate = async (id, newStatus) => {

@@ -5,6 +5,9 @@ import useAuth from '../auth/useAuth';
 import { ROLE_LABELS, getCustomRoles, getRoleLabel } from '../data/roles';
 import useOffline from '../hooks/useOffline';
 import { nativeStorage } from '../hooks/useElectron';
+import { snapshotServiceCharges, watchServiceCharges } from '../db/repos/serviceChargesRepo';
+import { snapshotPersonnel, watchPersonnel } from '../db/repos/personnelRepo';
+import useFinanceRevision from '../hooks/useFinanceRevision';
 import '../styles/global.css';
 import '../styles/AdminBoard.css';
 import PrescriptionPreview from '../components/PrescriptionPreview';
@@ -176,6 +179,9 @@ export default function ReferralsPage() {
 
   const [servicePrices, setServicePrices] = useState([]);
   const [financialMatrix, setFinancialMatrix] = useState(null);
+  // Bumps when cached finance data changes; added to the analytics fetch
+  // effects below so the referral/finance dashboards refresh themselves.
+  const financeRev = useFinanceRevision();
   const [billingSettings, setBillingSettings] = useState({ autoBill: false, currency: '₹' });
   const [isPriceDrawerOpen, setIsPriceDrawerOpen] = useState(false);
   const [editPrice, setEditPrice] = useState({ 
@@ -397,15 +403,14 @@ export default function ReferralsPage() {
     }
   }, []);
 
+  // Warm the price-registry snapshot; the list renders from watchServiceCharges
+  // below, so an edited price appears here on its own (refreshed each cycle).
   const fetchServicePrices = useCallback(async () => {
     try {
       const res = await apiClient.get('/finance/registry');
-      setServicePrices(res.data);
-      await nativeStorage.set('1rad_cache_prices', res.data);
+      await snapshotServiceCharges(res.data);
     } catch (err) {
-      console.error('[FINANCE] Registry fetch failed, trying cache', err);
-      const cached = await nativeStorage.get('1rad_cache_prices');
-      if (cached) setServicePrices(cached);
+      console.error('[FINANCE] Registry refresh failed — keeping offline snapshot.', err);
     }
   }, []);
 
@@ -448,12 +453,30 @@ export default function ReferralsPage() {
   const [hospitalMessage, setHospitalMessage] = useState({ type: '', text: '' });
 
   // --- API FETCHING ---
+  // Warm the personnel snapshot; the staff list renders from watchPersonnel
+  // below, so a staff change appears here on its own. Offline keeps the snapshot.
   const fetchPersonnel = useCallback(async () => {
     try {
       setPersonnelLoading(true);
       const res = await apiClient.get('/personnel');
-      // Map PersonnelDto to frontend state
-      const mapped = (res.data || []).map(p => ({
+      await snapshotPersonnel(res.data);
+    } catch (err) {
+      console.error('Personnel refresh failed — keeping offline snapshot.', err);
+    } finally {
+      setPersonnelLoading(false);
+    }
+  }, []);
+
+  // Reactive reference data — staff list and price registry render from the
+  // local cache (refreshed every sync cycle), so changes here or on another
+  // device appear on their own with no manual refresh.
+  useEffect(() => {
+    const subPrices = watchServiceCharges().subscribe({
+      next: (rows) => setServicePrices(Array.isArray(rows) ? rows : []),
+      error: (err) => console.warn('[ReferralsPage] service-charges liveQuery error', err),
+    });
+    const subPersonnel = watchPersonnel().subscribe({
+      next: (rows) => setPersonnel((rows || []).map(p => ({
         id: p.userId,
         name: p.fullName || 'UNKNOWN_STAFF',
         email: p.email,
@@ -465,16 +488,10 @@ export default function ReferralsPage() {
         licenseNo: p.licenseNo,
         status: p.status,
         createdAt: p.createdAt
-      }));
-      setPersonnel(mapped);
-      await nativeStorage.set('1rad_cache_personnel', mapped);
-    } catch (err) {
-      console.error('Personnel fetch failed, trying cache', err);
-      const cached = await nativeStorage.get('1rad_cache_personnel');
-      if (cached) setPersonnel(cached);
-    } finally {
-      setPersonnelLoading(false);
-    }
+      }))),
+      error: (err) => console.warn('[ReferralsPage] personnel liveQuery error', err),
+    });
+    return () => { subPrices.unsubscribe(); subPersonnel.unsubscribe(); };
   }, []);
 
   const fetchPatientMasterList = useCallback(async () => {
@@ -739,7 +756,8 @@ export default function ReferralsPage() {
     if (activeTab === 'Referrals') {
       fetchReferralIntelligence();
     }
-  }, [activeTab, fetchReferralIntelligence]);
+    // financeRev: refresh when a commission/invoice change syncs in.
+  }, [activeTab, financeRev, fetchReferralIntelligence]);
 
   // Patient Master List
   useEffect(() => {
@@ -762,7 +780,8 @@ export default function ReferralsPage() {
       fetchFinancialMatrix();
       fetchExpenses();
     }
-  }, [activeTab, fetchServicePrices, fetchFinancialMatrix, fetchExpenses]);
+    // financeRev: refresh the matrix when a payment/invoice change syncs in.
+  }, [activeTab, financeRev, fetchServicePrices, fetchFinancialMatrix, fetchExpenses]);
 
   const fetchStrategicOutlook = useCallback(async (dateString = null, startDate = null, endDate = null) => {
     try {
@@ -793,7 +812,8 @@ export default function ReferralsPage() {
        fetchFinancialMatrix(start, end);
        fetchReferralIntelligence(start, end, overviewTimeframe === 'ALL');
     }
-  }, [activeTab, overviewTimeframe, fetchStrategicOutlook, fetchFinancialMatrix, fetchReferralIntelligence]);
+    // financeRev: auto-refresh the overview analytics when finance data changes.
+  }, [activeTab, overviewTimeframe, financeRev, fetchStrategicOutlook, fetchFinancialMatrix, fetchReferralIntelligence]);
 
 
 

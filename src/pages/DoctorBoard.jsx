@@ -11,6 +11,7 @@ import { useOverdue } from '../components/OverdueAppointments/OverdueContext';
 import { formatPatientAge } from '../utils/patientAge';
 import { getServiceLines, getUniqueModalities, matchesAnyModality, getReportProgressLabel } from '../utils/appointmentServices';
 import { watchAppointments, patchCachedAppointment } from '../db/repos/appointmentsRepo';
+import { snapshotPersonnel, watchPersonnel } from '../db/repos/personnelRepo';
 import { syncNow } from '../sync/SyncEngine';
 import '../styles/global.css';
 import '../styles/DoctorBoard.css';
@@ -132,44 +133,52 @@ export default function DoctorBoard() {
     try { await syncNow(); } catch (err) { console.warn('[DOCTOR] manual sync failed', err?.message || err); }
   }, []);
 
+  // Warm the personnel snapshot; the doctor list renders from watchPersonnel
+  // below, so staff changes appear on their own (refreshed each sync cycle).
   const fetchDoctors = useCallback(async () => {
     try {
       const res = await apiClient.get('/personnel');
-      
-      // Positive doctor match only — a custom role (or any non-clinical role)
-      // must NOT be treated as a doctor. The old "not in [admin, technician,
-      // receptionist, accountant]" test wrongly swept custom-role users into
-      // the doctor list.
-      const isDoctorRole = (r) => {
-        const lower = String(r).toLowerCase().replace(/\s+/g, '');
-        return lower.includes('doctor') || lower.includes('radiolog');
-      };
-
-      let docList = (res.data || []).map(p => {
-        const rawRoles = p.roles || p.Roles || [];
-        return {
-          id: p.userId || p.UserId,
-          name: p.fullName || p.FullName || 'UNKNOWN_STAFF',
-          roles: rawRoles.map(r => String(r).toLowerCase())
-        };
-      }).filter(p => p.roles.some(isDoctorRole));
-      
-      if (docList.length === 0 && (res.data || []).length > 0) {
-        docList = (res.data || []).map(p => ({
-          id: p.userId || p.UserId,
-          name: p.fullName || p.FullName || 'UNKNOWN_STAFF',
-          roles: (p.roles || p.Roles || []).map(r => String(r).toLowerCase())
-        }));
-      }
-      
-      setDoctors(docList);
+      await snapshotPersonnel(res.data);
     } catch (err) {
-      console.error('[DOCTOR] Failed to fetch doctors', err);
+      console.error('[DOCTOR] Failed to refresh doctors — keeping offline snapshot.', err);
     }
   }, []);
 
   useEffect(() => {
-    fetchDoctors();
+    fetchDoctors(); // warm the cache immediately on mount
+    const sub = watchPersonnel().subscribe({
+      next: (rows) => {
+        const list = rows || [];
+        // Positive doctor match only — a custom role (or any non-clinical role)
+        // must NOT be treated as a doctor. The old "not in [admin, technician,
+        // receptionist, accountant]" test wrongly swept custom-role users into
+        // the doctor list.
+        const isDoctorRole = (r) => {
+          const lower = String(r).toLowerCase().replace(/\s+/g, '');
+          return lower.includes('doctor') || lower.includes('radiolog');
+        };
+        let docList = list.map(p => {
+          const rawRoles = p.roles || p.Roles || [];
+          return {
+            id: p.userId || p.UserId,
+            name: p.fullName || p.FullName || 'UNKNOWN_STAFF',
+            roles: rawRoles.map(r => String(r).toLowerCase())
+          };
+        }).filter(p => p.roles.some(isDoctorRole));
+        // Safety net: only if the centre has NO doctor-roled user at all do we
+        // fall back to listing everyone, so assignment still works.
+        if (docList.length === 0 && list.length > 0) {
+          docList = list.map(p => ({
+            id: p.userId || p.UserId,
+            name: p.fullName || p.FullName || 'UNKNOWN_STAFF',
+            roles: (p.roles || p.Roles || []).map(r => String(r).toLowerCase())
+          }));
+        }
+        setDoctors(docList);
+      },
+      error: (err) => console.warn('[DOCTOR] personnel liveQuery error', err),
+    });
+    return () => sub.unsubscribe();
   }, [fetchDoctors]);
 
   const handleStatusUpdate = async (id, newStatus) => {

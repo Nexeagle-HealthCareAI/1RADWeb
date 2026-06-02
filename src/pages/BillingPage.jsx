@@ -8,6 +8,8 @@ import { watchInvoices } from '../db/repos/invoicesRepo';
 import { watchExpenses } from '../db/repos/expensesRepo';
 import { watchReferrers } from '../db/repos/referrersRepo';
 import { watchReferralCommissions } from '../db/repos/referralCommissionsRepo';
+import { snapshotServiceCharges, watchServiceCharges } from '../db/repos/serviceChargesRepo';
+import { snapshotPersonnel, watchPersonnel } from '../db/repos/personnelRepo';
 import { syncNow } from '../sync/SyncEngine';
 import { computeStats, computeMatrix } from '../analytics/financialAggregator';
 import { matchesAnyModality } from '../utils/appointmentServices';
@@ -152,24 +154,16 @@ export default function BillingPage() {
   // full response into IndexedDB; on failure: load from snapshot. The old
   // nativeStorage cache stays as a secondary fallback for legacy installs
   // that haven't populated the Dexie copy yet.
+  // Warm the price-registry snapshot from the server. Rendering is driven by
+  // the watchServiceCharges subscription below, so an edited price flows in on
+  // its own (from here, the sync engine's background refresh, or another
+  // device). On failure we keep the last good snapshot.
   const fetchRegistry = useCallback(async () => {
     try {
       const res = await apiClient.get('/finance/registry');
-      setServiceRegistry(res.data);
-      await nativeStorage.set('1rad_cache_registry', res.data);
-      try {
-        const { snapshotServiceCharges } = await import('../db/repos/serviceChargesRepo');
-        await snapshotServiceCharges(res.data);
-      } catch (_) { /* cache write best-effort */ }
+      await snapshotServiceCharges(res.data);
     } catch (err) {
-      console.warn('[FINANCE] Registry fetch failed - using offline snapshot.', err);
-      try {
-        const { getAllServiceCharges } = await import('../db/repos/serviceChargesRepo');
-        const cached = await getAllServiceCharges();
-        if (cached && cached.length) { setServiceRegistry(cached); return; }
-      } catch (_) {}
-      const legacy = await nativeStorage.get('1rad_cache_registry');
-      if (legacy) setServiceRegistry(legacy);
+      console.warn('[FINANCE] Registry refresh failed — keeping offline snapshot.', err);
     }
   }, []);
 
@@ -252,29 +246,36 @@ export default function BillingPage() {
 
   const [ownerDetails, setOwnerDetails] = useState(null);
 
+  // Derive the centre owner (for invoice headers / print) from a personnel
+  // list. Pure — used by both the cold-start fetch and the reactive watch.
+  const deriveOwner = useCallback((staffList) => {
+    const list = Array.isArray(staffList) ? staffList : [];
+    let owner = list.find(u => {
+      const roles = (u.roles || u.Roles || []).map(r => String(r).toLowerCase());
+      return roles.includes('admindoctor');
+    });
+    if (!owner) {
+      owner = list.find(u => {
+        const roles = (u.roles || u.Roles || []).map(r => String(r).toLowerCase());
+        return roles.includes('admin');
+      });
+    }
+    if (owner) {
+      setOwnerDetails({
+        name: owner.fullName || owner.FullName || 'Owner',
+        contact: owner.mobile || owner.Mobile || owner.phoneNumber || owner.PhoneNumber || '+91 XXXXXXXXXX',
+        email: owner.email || owner.Email || 'contact@1rad.health'
+      });
+    }
+  }, []);
+
+  // Warm the personnel snapshot; ownerDetails renders from watchPersonnel below.
   const fetchPersonnel = useCallback(async () => {
     try {
       const res = await apiClient.get('/personnel');
-      const staffList = res.data || [];
-      let owner = staffList.find(u => {
-        const roles = (u.roles || u.Roles || []).map(r => r.toLowerCase());
-        return roles.includes('admindoctor');
-      });
-      if (!owner) {
-        owner = staffList.find(u => {
-          const roles = (u.roles || u.Roles || []).map(r => r.toLowerCase());
-          return roles.includes('admin');
-        });
-      }
-      if (owner) {
-        setOwnerDetails({
-          name: owner.fullName || owner.FullName || 'Owner',
-          contact: owner.mobile || owner.Mobile || owner.phoneNumber || owner.PhoneNumber || '+91 XXXXXXXXXX',
-          email: owner.email || owner.Email || 'contact@1rad.health'
-        });
-      }
+      await snapshotPersonnel(res.data);
     } catch (err) {
-      console.error('[FINANCE] Personnel fetch failed', err);
+      console.error('[FINANCE] Personnel refresh failed — keeping offline snapshot.', err);
     }
   }, []);
 
@@ -391,6 +392,21 @@ export default function BillingPage() {
     });
     return () => sub.unsubscribe();
   }, [startDate, endDate]);
+
+  // Reactive reference data: the price registry and owner details render from
+  // the local cache, refreshed every cycle by the sync engine. A price edited
+  // here or elsewhere appears on its own — no manual refresh.
+  useEffect(() => {
+    const subPrices = watchServiceCharges().subscribe({
+      next: (rows) => setServiceRegistry(Array.isArray(rows) ? rows : []),
+      error: (err) => console.warn('[BillingPage] service-charges liveQuery error', err),
+    });
+    const subPersonnel = watchPersonnel().subscribe({
+      next: (rows) => { if (Array.isArray(rows) && rows.length) deriveOwner(rows); },
+      error: (err) => console.warn('[BillingPage] personnel liveQuery error', err),
+    });
+    return () => { subPrices.unsubscribe(); subPersonnel.unsubscribe(); };
+  }, [deriveOwner]);
 
 
   const handleSaveExpense = async (e) => {

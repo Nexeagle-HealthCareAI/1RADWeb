@@ -9,6 +9,7 @@
 // key + _snapshotAtMs marker so a future banner can show how old the
 // cached copy is.
 
+import { liveQuery } from 'dexie';
 import { tables } from '../dexie';
 
 function userKey(p) {
@@ -36,4 +37,12 @@ export async function snapshotPersonnel(list) {
 
 export async function getAllPersonnel() {
   return tables.personnel().toArray();
+}
+
+// Reactive view of the cached personnel list. Re-emits whenever the snapshot
+// changes — whether from this device fetching, or the sync engine's
+// background refresh pulling in a staff change made elsewhere. Consumers
+// (doctor dropdowns, owner details) re-render with no manual refresh.
+export function watchPersonnel() {
+  return liveQuery(async () => tables.personnel().toArray());
 }

@@ -3,6 +3,7 @@
 // successful fetch clears the table and writes the full snapshot; reads
 // fall back to the snapshot when offline.
 
+import { liveQuery } from 'dexie';
 import { tables } from '../dexie';
 
 function idOf(p) {
@@ -26,4 +27,12 @@ export async function snapshotServiceCharges(list) {
 
 export async function getAllServiceCharges() {
   return tables.service_charges().toArray();
+}
+
+// Reactive view of the cached price registry. Re-emits whenever the snapshot
+// changes — including the sync engine's background refresh after a price was
+// edited elsewhere — so booking/billing price lists update with no manual
+// refresh.
+export function watchServiceCharges() {
+  return liveQuery(async () => tables.service_charges().toArray());
 }

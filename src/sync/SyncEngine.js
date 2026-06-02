@@ -54,6 +54,8 @@ import {
   applyServerDeltas as applyCommissionDeltas,
   highWatermarkIso  as commissionsHighWatermarkIso,
 } from '../db/repos/referralCommissionsRepo';
+import { snapshotPersonnel } from '../db/repos/personnelRepo';
+import { snapshotServiceCharges } from '../db/repos/serviceChargesRepo';
 import {
   listPending   as outboxListPending,
   remove        as outboxRemove,
@@ -289,6 +291,27 @@ async function pullReferralCommissions() {
   return stats;
 }
 
+// --- Reference data snapshots ------------------------------------------------
+// Personnel (doctor/staff lists) and the service-price registry are small,
+// slow-changing lists. They don't use the delta/high-water model — each pull
+// just re-snapshots the whole list (clear + bulkPut). Pulling them on the
+// steady tick is what makes a price edit or a newly-added doctor appear on
+// every screen automatically, within one cycle, without a manual refresh.
+
+async function pullPersonnel() {
+  const res = await apiClient.get('/personnel');
+  const rows = Array.isArray(res?.data) ? res.data : [];
+  await withQuotaRetry('personnel', () => snapshotPersonnel(rows));
+  return { applied: rows.length, deleted: 0 };
+}
+
+async function pullServiceCharges() {
+  const res = await apiClient.get('/finance/registry');
+  const rows = Array.isArray(res?.data) ? res.data : [];
+  await withQuotaRetry('service_charges', () => snapshotServiceCharges(rows));
+  return { applied: rows.length, deleted: 0 };
+}
+
 // --- Outbox push -------------------------------------------------------------
 //
 // Routes each queued mutation to the right endpoint and method. New
@@ -453,6 +476,10 @@ async function runAllPulls() {
   await pullExpenses();
   await pullReferrers();
   await pullReferralCommissions();
+  // Reference data last — lowest priority, tiny payloads. Wrapped so a
+  // reference-list hiccup never aborts the (already-completed) worklist pulls.
+  try { await pullPersonnel(); }      catch (err) { console.warn('[SYNC] Personnel refresh failed', err?.message || err); }
+  try { await pullServiceCharges(); } catch (err) { console.warn('[SYNC] Price registry refresh failed', err?.message || err); }
   await tables.meta().put({ key: 'lastSuccessfulPullAt', value: new Date().toISOString() });
 }
 

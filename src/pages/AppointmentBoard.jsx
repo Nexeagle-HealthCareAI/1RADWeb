@@ -17,7 +17,8 @@ import { getServiceLines, getUniqueModalities, matchesAnyModality, getReportProg
 import { watchAppointments } from '../db/repos/appointmentsRepo';
 import { watchPatients, findDuplicateCandidates } from '../db/repos/patientsRepo';
 import { getAllReferrers } from '../db/repos/referrersRepo';
-import { snapshotPersonnel, getAllPersonnel } from '../db/repos/personnelRepo';
+import { snapshotPersonnel, watchPersonnel } from '../db/repos/personnelRepo';
+import { snapshotServiceCharges, watchServiceCharges } from '../db/repos/serviceChargesRepo';
 import { rankPatientDuplicates, rankReferrerDuplicates } from '../utils/duplicateMatch';
 import { syncNow } from '../sync/SyncEngine';
 
@@ -402,34 +403,47 @@ export default function AppointmentBoard() {
     setDoctors(specialists);
   }, []);
 
+  // Reactive reference data. The doctor dropdown and the service-price list
+  // render straight from the local cache; the sync engine refreshes those
+  // snapshots every cycle, so a newly-added doctor or an edited price appears
+  // here on its own — no page reload, no manual refresh — whether the change
+  // was made on this device or another one.
+  useEffect(() => {
+    const subDoctors = watchPersonnel().subscribe({
+      next: (rows) => { if (Array.isArray(rows) && rows.length) applyPersonnel(rows); },
+      error: (err) => console.warn('[AppointmentBoard] personnel liveQuery error', err),
+    });
+    const subPrices = watchServiceCharges().subscribe({
+      next: (rows) => setServiceRegistry(Array.isArray(rows) ? rows : []),
+      error: (err) => console.warn('[AppointmentBoard] service-charges liveQuery error', err),
+    });
+    return () => { subDoctors.unsubscribe(); subPrices.unsubscribe(); };
+  }, [applyPersonnel, activeCenterId]);
+
   // Personnel is a small slow-changing list — no delta sync engine pull.
   // Snapshot the response on success; fall back to the snapshot on failure.
   // The cache survives reload and powers the booking drawer's specialist
   // dropdown during a brief outage so the booking flow never stalls on
   // "who is this patient referred to".
+  // Warm the cache from the server. Rendering is driven by the watchPersonnel
+  // subscription below — this just refreshes the snapshot the watch reads, so
+  // there's a single rendering path and a price/doctor change made anywhere
+  // flows in automatically. On failure we keep the last good snapshot.
   const fetchDoctors = useCallback(async () => {
     try {
       const response = await apiClient.get('/personnel');
-      const allPersonnel = response.data;
-      applyPersonnel(allPersonnel);
-      try { await snapshotPersonnel(allPersonnel); } catch (_) { /* cache write best-effort */ }
+      await snapshotPersonnel(response.data);
     } catch (error) {
-      console.warn('Failed to fetch personnel — using offline snapshot.', error);
-      try {
-        const cached = await getAllPersonnel();
-        if (cached && cached.length) applyPersonnel(cached);
-      } catch (cacheErr) {
-        console.warn('Personnel offline snapshot read failed', cacheErr);
-      }
+      console.warn('Failed to refresh personnel — keeping offline snapshot.', error);
     }
-  }, [applyPersonnel]);
+  }, []);
 
   const fetchServiceRegistry = useCallback(async () => {
     try {
       const response = await apiClient.get('/finance/registry');
-      setServiceRegistry(response.data);
+      await snapshotServiceCharges(response.data);
     } catch (error) {
-      console.error('Failed to fetch service registry:', error);
+      console.error('Failed to refresh service registry — keeping offline snapshot.', error);
     }
   }, []);
 
@@ -580,12 +594,9 @@ export default function AppointmentBoard() {
   const fetchRegistry = useCallback(async () => {
     try {
       const res = await apiClient.get('/finance/registry');
-      setServiceRegistry(res.data);
-      await nativeStorage.set('1rad_cache_service_registry', res.data);
+      await snapshotServiceCharges(res.data);
     } catch (err) {
-      console.error('[FINANCE] Registry fetch failed', err);
-      const cached = await nativeStorage.get('1rad_cache_service_registry');
-      if (cached) setServiceRegistry(cached);
+      console.error('[FINANCE] Registry refresh failed — keeping offline snapshot.', err);
     }
   }, []);
 
