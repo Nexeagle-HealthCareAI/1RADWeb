@@ -23,7 +23,7 @@ import { syncNow } from '../sync/SyncEngine';
 
 // --- CONSTANTS ---
 
-const MODALITIES = ['X-RAY', 'MRI', 'CT', 'ULTRASOUND', 'DEXA', 'ANGIOGRAPHY', 'MAMMOGRAPHY', 'PET-CT', 'NUCLEAR MEDICINE', 'FLUOROSCOPY'];
+const MODALITIES = ['ULTRASOUND', 'X-RAY', 'CT', 'MRI', 'DEXA', 'ANGIOGRAPHY', 'MAMMOGRAPHY', 'PET-CT', 'NUCLEAR MEDICINE', 'FLUOROSCOPY'];
 // TODAY is now calculated dynamically within the component if needed, 
 // but we'll keep a base constant for initial state.
 const getTodayString = () => new Date().toLocaleDateString('en-CA');
@@ -660,12 +660,29 @@ export default function AppointmentBoard() {
     }
     const result = {};
     for (const mod of Object.keys(counts)) {
+      // Top 3 most-USED services for this modality, ranked by how many times
+      // they've actually been booked (highest count first).
       result[mod] = Object.entries(counts[mod])
         .sort((a, b) => b[1] - a[1])
-        .slice(0, 6)
+        .slice(0, 3)
         .map(([name]) => name);
     }
     return result;
+  }, [appointments]);
+
+  // Top 3 most-frequent referring persons (by how many appointments name them),
+  // for one-tap quick-add under the Referred By field.
+  const topReferrers = useMemo(() => {
+    const counts = {};
+    for (const app of appointments || []) {
+      const name = (app?.referredBy || '').trim();
+      if (!name) continue;
+      counts[name] = (counts[name] || 0) + 1;
+    }
+    return Object.entries(counts)
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 3)
+      .map(([name]) => name);
   }, [appointments]);
 
   // Reset page on filter change
@@ -2576,6 +2593,30 @@ export default function AppointmentBoard() {
                           )}
                         </div>
 
+                        {/* Top 3 most-frequent referring persons — one tap to fill.
+                            Shown only when the field is empty. */}
+                        {newPatient.referredBy.trim().length === 0 && topReferrers.length > 0 && (
+                          <div style={{ marginTop: '8px', display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
+                            <span style={{ fontSize: '8px', fontWeight: 900, color: '#94a3b8', letterSpacing: '0.5px', width: '100%' }}>TOP REFERRED BY</span>
+                            {topReferrers.map(name => {
+                              const match = referrers.find(r => r.name === name);
+                              return (
+                                <button
+                                  key={name}
+                                  type="button"
+                                  onClick={() => {
+                                    setNewPatient(prev => ({ ...prev, referredBy: name, referrerId: match ? (match.referrerId || match.id) : null }));
+                                    setReferrers([]);
+                                  }}
+                                  style={{ padding: '5px 11px', borderRadius: '20px', border: '1px solid #dbeafe', background: '#f0f7ff', color: '#0f52ba', fontSize: '10px', fontWeight: 800, cursor: 'pointer' }}
+                                >
+                                  {name}
+                                </button>
+                              );
+                            })}
+                          </div>
+                        )}
+
                         {/* "Did you mean" — fuzzy near-duplicate referrers so the
                             operator links an existing partner instead of spawning
                             "Dr Sharma" / "Dr. Sharmaa" as a second record. */}
@@ -2813,8 +2854,9 @@ export default function AppointmentBoard() {
                   gap: '20px',
                   alignItems: 'stretch'
                 }}>
-                  {/* Left Column: Clinical Setup */}
-                  <div style={{ flex: 1.1, display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                  {/* Left Column: Clinical Setup — wider so the modality grid,
+                      service + price row and multi-service tray have room. */}
+                  <div style={{ flex: 1.9, display: 'flex', flexDirection: 'column', gap: '10px' }}>
                     <div style={{ background: '#f8f9fa', padding: '12px 14px', borderRadius: '14px', border: '1px solid #eee' }}>
                       <div style={{ marginBottom: '6px' }}>
                         <h3 style={{ fontSize: '11px', fontWeight: 900, color: '#0f52ba', textTransform: 'uppercase', letterSpacing: '1px' }}>1. Select Study Modality</h3>
@@ -2832,40 +2874,10 @@ export default function AppointmentBoard() {
                         ))}
                       </div>
 
-                      {/* ── Priority — drives worklist sort (STAT > URGENT > ROUTINE) ── */}
-                      <label style={{ fontSize: '9px', fontWeight: 800, letterSpacing: '0.5px', color: '#888', marginBottom: '6px', display: 'block' }}>
-                        PRIORITY
-                      </label>
-                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '6px', marginBottom: '10px' }}>
-                        {[
-                          { id: 'STAT',    label: 'STAT',    desc: 'Immediate',  color: '#dc2626', soft: '#fee2e2' },
-                          { id: 'URGENT',  label: 'Urgent',  desc: 'Same day',   color: '#d97706', soft: '#fef3c7' },
-                          { id: 'ROUTINE', label: 'Routine', desc: 'Standard',   color: '#64748b', soft: '#f1f5f9' },
-                        ].map(opt => {
-                          const active = newBooking.priority === opt.id;
-                          return (
-                            <button
-                              key={opt.id}
-                              type="button"
-                              onClick={() => setNewBooking({ ...newBooking, priority: opt.id })}
-                              style={{
-                                padding: '8px 6px', borderRadius: '10px', cursor: 'pointer',
-                                border: `2px solid ${active ? opt.color : '#e5e7eb'}`,
-                                background: active ? opt.soft : 'white',
-                                color: active ? opt.color : '#475569',
-                                fontWeight: 800, fontSize: '11px',
-                                display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '1px',
-                                transition: 'all 0.12s',
-                              }}
-                            >
-                              <span style={{ letterSpacing: '0.4px' }}>{opt.label}</span>
-                              <span style={{ fontSize: '8px', fontWeight: 600, opacity: 0.8 }}>{opt.desc}</span>
-                            </button>
-                          );
-                        })}
-                      </div>
-
-                      <div className="form-group" style={{ marginTop: '6px', position: 'relative' }}>
+                      {/* Service + Price on ONE row — service takes the width,
+                          price stays compact beside it. Stacks on mobile. */}
+                      <div style={{ display: 'flex', flexDirection: isMobile ? 'column' : 'row', gap: '10px', alignItems: 'flex-start' }}>
+                      <div className="form-group" style={{ marginTop: '6px', position: 'relative', flex: 2, width: '100%' }}>
                         <label style={{ fontSize: '9px', fontWeight: 800, letterSpacing: '0.5px', color: '#888', marginBottom: '4px', display: 'block' }}>2. SERVICE / PROCEDURE <span style={{ color: '#e74c3c' }}>*</span></label>
                         <input 
                           type="text" 
@@ -2887,9 +2899,11 @@ export default function AppointmentBoard() {
                           style={{ fontSize: '13px', padding: '8px 10px', height: '36px', borderRadius: '10px' }} 
                         />
 
-                        {/* Most-used quick-picks — shown when the field is empty.
-                            History-ranked first, then any remaining registry
-                            services for the selected modality. Tap to fill. */}
+                        {/* Top 3 most-used services for this modality, ranked by
+                            how often they've actually been booked. Shown only
+                            when the field is empty. If there's little/no history
+                            yet, we fill up to 3 from the price registry so a new
+                            centre still gets useful one-tap picks. */}
                         {newBooking.service.length === 0 && (() => {
                           const fromHistory  = mostUsedByModality[newBooking.modality] || [];
                           const fromRegistry = serviceRegistry
@@ -2897,26 +2911,47 @@ export default function AppointmentBoard() {
                             .map(s => s.serviceName);
                           const suggestions = [...new Set([...fromHistory, ...fromRegistry])]
                             .filter(Boolean)
-                            .slice(0, 6);
+                            .slice(0, 3);
                           if (suggestions.length === 0) return null;
                           return (
                             <div style={{ marginTop: '8px', display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
-                              <span style={{ fontSize: '8px', fontWeight: 900, color: '#94a3b8', letterSpacing: '0.5px', width: '100%' }}>MOST USED</span>
+                              <span style={{ fontSize: '8px', fontWeight: 900, color: '#94a3b8', letterSpacing: '0.5px', width: '100%' }}>MOST USED SERVICES</span>
                               {suggestions.map(name => {
                                 const reg = serviceRegistry.find(s => s.modality === newBooking.modality && s.serviceName === name);
                                 return (
                                   <button
                                     key={name}
                                     type="button"
-                                    onClick={() => setNewBooking(prev => ({
-                                      ...prev,
-                                      service: name,
-                                      amount: reg ? reg.amount : prev.amount,
-                                      referralCutValue: reg?.referralCutValue || 0,
-                                    }))}
+                                    onClick={() => {
+                                      const mod = String(newBooking.modality || '').toUpperCase();
+                                      if (reg) {
+                                        // We already know the price — one tap adds it
+                                        // straight to the visit, so the user can keep
+                                        // tapping picks to build a multi-service visit
+                                        // fast. Skips exact duplicates.
+                                        setNewBooking(prev => {
+                                          const exists = (prev.addedServices || []).some(l =>
+                                            (l.serviceName || '').toLowerCase() === name.toLowerCase() &&
+                                            (l.modality || '').toUpperCase() === mod);
+                                          if (exists) return prev;
+                                          return {
+                                            ...prev,
+                                            addedServices: [
+                                              ...(prev.addedServices || []),
+                                              { serviceName: name, modality: mod, amount: Number(reg.amount) || 0, referralCutValue: Number(reg.referralCutValue) || 0 },
+                                            ],
+                                          };
+                                        });
+                                      } else {
+                                        // No known price — fill the draft so the user
+                                        // can set one, then use "Add to visit".
+                                        setNewBooking(prev => ({ ...prev, service: name }));
+                                      }
+                                    }}
+                                    title={reg ? 'Add this service to the visit' : 'Fill in to set a price'}
                                     style={{ padding: '5px 11px', borderRadius: '20px', border: '1px solid #dbeafe', background: '#f0f7ff', color: '#0f52ba', fontSize: '10px', fontWeight: 800, cursor: 'pointer' }}
                                   >
-                                    {name}{reg ? ` · ₹${(reg.amount || 0).toLocaleString()}` : ''}
+                                    {reg ? '+ ' : ''}{name}{reg ? ` · ₹${(reg.amount || 0).toLocaleString()}` : ''}
                                   </button>
                                 );
                               })}
@@ -2969,14 +3004,14 @@ export default function AppointmentBoard() {
                         )}
                       </div>
 
-                      <div className="form-group" style={{ marginTop: '8px' }}>
-                        <label style={{ fontSize: '9px', fontWeight: 800, letterSpacing: '0.5px', color: '#888', marginBottom: '4px', display: 'block' }}>3. SERVICE AMOUNT (₹)</label>
+                      <div className="form-group" style={{ marginTop: '6px', flex: 1, width: '100%', minWidth: isMobile ? 'auto' : '120px' }}>
+                        <label style={{ fontSize: '9px', fontWeight: 800, letterSpacing: '0.5px', color: '#888', marginBottom: '4px', display: 'block' }}>3. PRICE (₹)</label>
                         <input
                           type="number"
                           placeholder="e.g. 500"
                           value={newBooking.amount}
                           onChange={e => setNewBooking({...newBooking, amount: e.target.value === '' ? '' : parseFloat(e.target.value)})}
-                          style={{ fontSize: '13px', padding: '8px 10px', height: '36px', borderRadius: '10px' }}
+                          style={{ fontSize: '13px', padding: '8px 10px', height: '36px', borderRadius: '10px', width: '100%' }}
                         />
                         {newBooking.referralCutValue > 0 && (
                           <div style={{ fontSize: '9px', fontWeight: 800, color: '#0f52ba', marginTop: '4px', display: 'flex', alignItems: 'center', gap: '4px' }}>
@@ -2984,6 +3019,7 @@ export default function AppointmentBoard() {
                             <span>₹{newBooking.referralCutValue}</span>
                           </div>
                         )}
+                      </div>
                       </div>
 
                       {/* Multi-service line-item tray.
@@ -3056,6 +3092,37 @@ export default function AppointmentBoard() {
 
                         return (
                           <>
+                            {/* "Add to visit" — appears ONLY when a service is in
+                                progress, and as a solid primary button so it's
+                                impossible to miss. Hidden otherwise to keep the
+                                area uncluttered (common services are added in one
+                                tap from the "Most used" chips above). */}
+                            {draftHasService && (
+                              <button
+                                type="button"
+                                onClick={addCurrentDraft}
+                                style={{
+                                  marginTop: '10px',
+                                  width: '100%',
+                                  padding: '13px',
+                                  borderRadius: '12px',
+                                  border: 'none',
+                                  background: 'linear-gradient(135deg, #0f52ba, #1e40af)',
+                                  color: 'white',
+                                  fontSize: '13px', fontWeight: 900, letterSpacing: '0.3px', fontFamily: 'inherit',
+                                  cursor: 'pointer',
+                                  boxShadow: '0 6px 16px rgba(15,82,186,0.30)',
+                                  display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: '8px',
+                                }}
+                                title="Add this service to the visit and start another"
+                              >
+                                <span style={{ fontSize: '17px', lineHeight: 1 }}>+</span>
+                                {lines.length === 0
+                                  ? 'Add this service to the visit'
+                                  : 'Add another service to this visit'}
+                              </button>
+                            )}
+
                             {(lines.length > 0 || draftHasService) && (
                               <div style={{
                                 marginTop: '10px',
@@ -3196,33 +3263,6 @@ export default function AppointmentBoard() {
                                 )}
                               </div>
                             )}
-
-                            <button
-                              type="button"
-                              onClick={addCurrentDraft}
-                              disabled={!draftHasService}
-                              style={{
-                                marginTop: '8px',
-                                width: '100%',
-                                padding: '9px 10px',
-                                borderRadius: '10px',
-                                border: '1px dashed #93c5fd',
-                                background: draftHasService ? '#eff6ff' : '#f8fafc',
-                                color: draftHasService ? '#1d4ed8' : '#94a3b8',
-                                cursor: draftHasService ? 'pointer' : 'not-allowed',
-                                fontSize: '11px',
-                                fontWeight: 900,
-                                letterSpacing: '0.3px',
-                                fontFamily: 'inherit',
-                                display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: '6px',
-                              }}
-                              title={draftHasService ? 'Add this service and start another' : 'Fill in a service first'}
-                            >
-                              <span style={{ fontSize: '14px', lineHeight: 1 }}>+</span>
-                              {lines.length === 0
-                                ? 'Add this service to the visit'
-                                : 'Add another service to this visit'}
-                            </button>
                           </>
                         );
                       })()}
@@ -3234,8 +3274,8 @@ export default function AppointmentBoard() {
                     </div>
                   </div>
 
-                  {/* Right Column: Execution Schedule & Specialist */}
-                  <div style={{ flex: 1.3, display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                  {/* Right Column: Execution Schedule & Specialist — narrower. */}
+                  <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '10px' }}>
                     <div style={{ background: 'white', padding: '12px 14px', borderRadius: '14px', border: '2px dashed #dde5f5' }}>
                       <div style={{ marginBottom: '6px' }}>
                         <label style={{ fontSize: '9px', fontWeight: 800, letterSpacing: '0.5px', color: '#888', display: 'block', marginBottom: '4px' }}>5. MISSION DATE <span style={{ color: '#e74c3c' }}>*</span></label>
@@ -3344,6 +3384,54 @@ export default function AppointmentBoard() {
                           ))}
                         </div>
                       </div>
+
+                      {/* ── 7. Appointment Priority — sits below the specialist.
+                          Auto-set to Routine; each level fills with its own
+                          colour when chosen so the urgency reads instantly, and
+                          the default carries an "AUTO" tag so the user can see it
+                          was pre-selected for them. ── */}
+                      <div style={{ marginTop: '10px', marginBottom: '4px' }}>
+                        <label style={{ fontSize: '9px', fontWeight: 800, letterSpacing: '0.5px', color: '#888', display: 'block', marginBottom: '5px' }}>
+                          7. APPOINTMENT PRIORITY
+                        </label>
+                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '6px' }}>
+                          {[
+                            { id: 'STAT',    label: 'Emergency', desc: 'See immediately', color: '#dc2626' },
+                            { id: 'URGENT',  label: 'Urgent',    desc: 'Same day',        color: '#d97706' },
+                            { id: 'ROUTINE', label: 'Routine',   desc: 'Standard',        color: '#16a34a' },
+                          ].map(opt => {
+                            const active = (newBooking.priority || 'ROUTINE') === opt.id;
+                            const isDefault = opt.id === 'ROUTINE';
+                            return (
+                              <button
+                                key={opt.id}
+                                type="button"
+                                onClick={() => setNewBooking({ ...newBooking, priority: opt.id })}
+                                style={{
+                                  position: 'relative',
+                                  padding: '10px 6px', borderRadius: '12px', cursor: 'pointer',
+                                  border: `2px solid ${active ? opt.color : '#e5e7eb'}`,
+                                  background: active ? opt.color : 'white',
+                                  color: active ? 'white' : opt.color,
+                                  fontWeight: 900, fontSize: '11px',
+                                  display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '2px',
+                                  boxShadow: active ? `0 6px 16px ${opt.color}40` : 'none',
+                                  transition: 'all 0.15s',
+                                }}
+                              >
+                                <span style={{ letterSpacing: '0.4px' }}>{opt.label}</span>
+                                <span style={{ fontSize: '8px', fontWeight: 700, opacity: 0.85 }}>{opt.desc}</span>
+                                {active && isDefault && (
+                                  <span style={{ position: 'absolute', top: '-7px', right: '-4px', background: '#0f172a', color: 'white', fontSize: '7px', fontWeight: 900, padding: '2px 6px', borderRadius: '8px', letterSpacing: '0.3px' }}>AUTO</span>
+                                )}
+                              </button>
+                            );
+                          })}
+                        </div>
+                        <div style={{ fontSize: '8px', color: '#94a3b8', fontWeight: 700, marginTop: '5px' }}>
+                          Automatically set to Routine. Choose Urgent or Emergency only if the case needs faster handling.
+                        </div>
+                      </div>
                     </div>
 
                     {(() => {
@@ -3393,7 +3481,7 @@ export default function AppointmentBoard() {
                             <div>
                               <span style={{ fontSize: '8px', color: '#888', fontWeight: 700, letterSpacing: '0.4px' }}>PATIENT</span>
                               <div style={{ fontWeight: 800, fontSize: '10.5px', color: '#1a1a2e' }}>
-                                {patients.find(p => p.id === newBooking.patientId)?.name || '-'}
+                                {newPatient.name || patients.find(p => p.id === newBooking.patientId)?.name || '-'}
                               </div>
                             </div>
                             <div>
