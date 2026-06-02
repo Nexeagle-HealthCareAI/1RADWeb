@@ -182,7 +182,7 @@ export default function AppointmentBoard() {
   const [newBooking, setNewBooking] = useState({
     patientId: '',
     service: '',
-    modality: 'X-RAY',
+    modality: 'ULTRASOUND',
     date: getTodayString(),
     doctor: '',
     notes: '',
@@ -199,8 +199,10 @@ export default function AppointmentBoard() {
   });
 
   const [newPatient, setNewPatient] = useState({
-    name: '', mobile: '', age: '', ageUnit: 'Y', gender: 'Male',
-    village: '', district: '', address: '', sourceOfInfo: '', referrerId: null
+    name: '', mobile: '', age: '', ageUnit: 'Y', gender: 'Female',
+    village: '', district: '', address: '', sourceOfInfo: '', referrerId: null,
+    // Inline referral-source capture for a brand-new (free-typed) referrer.
+    referrerContact: '', referrerAddress: ''
   });
   const [duplicatePatient, setDuplicatePatient] = useState(null);
 
@@ -566,8 +568,40 @@ export default function AppointmentBoard() {
 
   // Derived validation
   const isMobileValid = /^\d{10}$/.test(newPatient.mobile);
-  const isNewPatientIncomplete = !newBooking.patientId && 
-    (!newPatient.name.trim() || !isMobileValid || !newPatient.age.trim());
+  // Mobile is OPTIONAL now — only block if a number was entered but isn't a
+  // full 10 digits. Name + age remain required.
+  const isNewPatientIncomplete = !newBooking.patientId &&
+    (!newPatient.name.trim() || !newPatient.age.trim() || (newPatient.mobile.length > 0 && !isMobileValid));
+  // Referrer mobile (inline new-referrer capture) — optional, 10-digit if present.
+  const isReferrerContactValid = !newPatient.referrerContact || /^\d{10}$/.test(newPatient.referrerContact);
+
+  // Most-used services per modality, derived from this centre's recent
+  // appointments. Powers the quick-pick suggestion chips in step 2 so the
+  // operator can tap the common studies instead of typing every time.
+  const mostUsedByModality = useMemo(() => {
+    const counts = {}; // MODALITY -> { serviceName -> count }
+    for (const app of appointments || []) {
+      const lines = getServiceLines(app);
+      const entries = (lines && lines.length)
+        ? lines
+        : [{ serviceName: app?.service, modality: app?.modality }];
+      for (const ln of entries) {
+        const mod  = String(ln?.modality || app?.modality || '').toUpperCase();
+        const name = (ln?.serviceName || '').trim();
+        if (!mod || !name) continue;
+        counts[mod] = counts[mod] || {};
+        counts[mod][name] = (counts[mod][name] || 0) + 1;
+      }
+    }
+    const result = {};
+    for (const mod of Object.keys(counts)) {
+      result[mod] = Object.entries(counts[mod])
+        .sort((a, b) => b[1] - a[1])
+        .slice(0, 6)
+        .map(([name]) => name);
+    }
+    return result;
+  }, [appointments]);
 
   // Reset page on filter change
   useEffect(() => {
@@ -707,7 +741,7 @@ export default function AppointmentBoard() {
       const response = await apiClient.post('/patients', payload);
       const patientId = response.data.patientId;
       setIsAddPatientOpen(false);
-      setNewPatient({ name: '', mobile: '', age: '', ageUnit: 'Y', gender: 'Male', village: '', district: '', address: '', referredBy: '', sourceOfInfo: '' });
+      setNewPatient({ name: '', mobile: '', age: '', ageUnit: 'Y', gender: 'Female', village: '', district: '', address: '', referredBy: '', sourceOfInfo: '', referrerId: null, referrerContact: '', referrerAddress: '' });
       setNewBooking(prev => ({ ...prev, patientId }));
       fetchPatients('');
     } catch (error) {
@@ -831,7 +865,7 @@ export default function AppointmentBoard() {
     setNewBooking({
       patientId: '',
       service: '',
-      modality: 'X-RAY',
+      modality: 'ULTRASOUND',
       addedServices: [],
       date: getTodayString(),
       doctor: doctors && doctors.length > 0 ? doctors[0] : '',
@@ -847,7 +881,7 @@ export default function AppointmentBoard() {
     // conscious choice each time, never a sticky carry-over from a previous
     // booking (e.g. a baby's appointment leaving M selected for the next
     // adult patient by accident).
-    setNewPatient({ name: '', mobile: '', age: '', ageUnit: 'Y', gender: 'Male', village: '', district: '', address: '', referredBy: '', sourceOfInfo: '' });
+    setNewPatient({ name: '', mobile: '', age: '', ageUnit: 'Y', gender: 'Female', village: '', district: '', address: '', referredBy: '', sourceOfInfo: '', referrerId: null, referrerContact: '', referrerAddress: '' });
     setReferrerSearchValue('');
     setDrawerSearchQuery('');
     setShowBookingValidation(false);
@@ -2207,35 +2241,6 @@ export default function AppointmentBoard() {
                             onChange={e => { setNewPatient({...newPatient, name: e.target.value}); setNewBooking({...newBooking, patientId: ''}); }} 
                           />
                         </div>
-                        <div className="form-group" style={{ marginBottom: '4px' }}>
-                          <label style={{ fontSize: '10px', fontWeight: 700, marginBottom: '4px', display: 'block' }}>MOBILE <span style={{ color: '#e74c3c' }}>*</span></label>
-                          <input 
-                            type="tel" 
-                            required 
-                            placeholder="10-digit mobile..." 
-                            style={{ 
-                              width: '100%',
-                              fontSize: '13px', 
-                              padding: '8px 12px',
-                              borderRadius: '10px',
-                              borderColor: (newPatient.mobile.length > 0 && !isMobileValid) || (showBookingValidation && !isMobileValid) ? '#e74c3c' : '#dee2e6',
-                              background: (showBookingValidation && !isMobileValid) ? '#fff5f5' : 'white',
-                              boxShadow: (newPatient.mobile.length > 0 && !isMobileValid) || (showBookingValidation && !isMobileValid) ? '0 0 0 1px #e74c3c' : 'none',
-                              outline: 'none', fontWeight: 600
-                            }} 
-                            value={newPatient.mobile} 
-                            onChange={e => { 
-                              const val = e.target.value.replace(/\D/g, '').slice(0, 10);
-                              setNewPatient({...newPatient, mobile: val}); 
-                              setNewBooking({...newBooking, patientId: ''}); 
-                            }} 
-                          />
-                          {newPatient.mobile.length > 0 && !isMobileValid && (
-                            <div style={{ fontSize: '8px', color: '#e74c3c', fontWeight: 800, marginTop: '2px', letterSpacing: '0.5px' }}>
-                              IDENTITY PROTOCOL: Exactly 10 digits required.
-                            </div>
-                          )}
-                        </div>
                         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
                           <div className="form-group" style={{ marginBottom: '4px' }}>
                             <label style={{ fontSize: '10px', fontWeight: 700, marginBottom: '4px', display: 'block' }}>AGE <span style={{ color: '#e74c3c' }}>*</span></label>
@@ -2292,10 +2297,56 @@ export default function AppointmentBoard() {
                           </div>
                           <div className="form-group" style={{ marginBottom: '4px' }}>
                             <label style={{ fontSize: '10px', fontWeight: 700, color: '#64748b', marginBottom: '4px', display: 'block' }}>GENDER</label>
-                            <select style={{ fontSize: '13px', padding: '6px', height: '38px', borderRadius: '10px' }} value={newPatient.gender} onChange={e => setNewPatient({...newPatient, gender: e.target.value})}>
-                              <option>Male</option><option>Female</option><option>Other</option>
-                            </select>
+                            {/* F / M toggle — same control idiom as the age unit buttons. */}
+                            <div style={{ display: 'flex', alignItems: 'stretch', border: '1.5px solid #dee2e6', borderRadius: '10px', overflow: 'hidden', height: '38px' }}>
+                              {[{ v: 'Female', l: 'F' }, { v: 'Male', l: 'M' }].map(g => {
+                                const active = newPatient.gender === g.v;
+                                return (
+                                  <button
+                                    key={g.v}
+                                    type="button"
+                                    onClick={() => setNewPatient({...newPatient, gender: g.v})}
+                                    title={g.v}
+                                    style={{
+                                      flex: 1,
+                                      background: active ? '#0f52ba' : 'transparent',
+                                      color: active ? 'white' : '#64748b',
+                                      border: 'none',
+                                      fontSize: '13px', fontWeight: 900, letterSpacing: '0.5px',
+                                      cursor: 'pointer', transition: 'background 0.15s',
+                                    }}
+                                  >{g.l}</button>
+                                );
+                              })}
+                            </div>
                           </div>
+                        </div>
+                        <div className="form-group" style={{ marginBottom: '4px' }}>
+                          <label style={{ fontSize: '10px', fontWeight: 700, marginBottom: '4px', display: 'block' }}>MOBILE <span style={{ color: '#94a3b8', fontWeight: 600 }}>(optional)</span></label>
+                          <input
+                            type="tel"
+                            placeholder="10-digit mobile (optional)"
+                            style={{
+                              width: '100%',
+                              fontSize: '13px',
+                              padding: '8px 12px',
+                              borderRadius: '10px',
+                              borderColor: (newPatient.mobile.length > 0 && !isMobileValid) ? '#e74c3c' : '#dee2e6',
+                              boxShadow: (newPatient.mobile.length > 0 && !isMobileValid) ? '0 0 0 1px #e74c3c' : 'none',
+                              outline: 'none', fontWeight: 600
+                            }}
+                            value={newPatient.mobile}
+                            onChange={e => {
+                              const val = e.target.value.replace(/\D/g, '').slice(0, 10);
+                              setNewPatient({...newPatient, mobile: val});
+                              setNewBooking({...newBooking, patientId: ''});
+                            }}
+                          />
+                          {newPatient.mobile.length > 0 && !isMobileValid && (
+                            <div style={{ fontSize: '8px', color: '#e74c3c', fontWeight: 800, marginTop: '2px', letterSpacing: '0.5px' }}>
+                              Exactly 10 digits required.
+                            </div>
+                          )}
                         </div>
                         <div className="form-group" style={{ marginBottom: '4px' }}>
                           <label style={{ fontSize: '10px', fontWeight: 800, color: '#0f52ba', letterSpacing: '0.5px', marginBottom: '4px', display: 'block' }}>SOURCE OF INFORMATION</label>
@@ -2338,74 +2389,89 @@ export default function AppointmentBoard() {
                       
                       <div className="form-group" style={{ position: 'relative', flex: 1 }}>
                         <label style={{ fontSize: '10px', fontWeight: 800, color: '#64748b', marginBottom: '6px', display: 'block' }}>REFERRED BY</label>
-                        <div style={{ 
-                          display: 'flex', 
-                          flexDirection: isMobile ? 'column' : 'row',
-                          gap: '8px' 
-                        }}>
-                          <div style={{ flex: 1, position: 'relative' }}>
-                            <input 
-                              type="text" 
-                              placeholder="Search or type referrer..."
-                              value={newPatient.referredBy} 
+                        {/* Search OR type. If the typed name matches no existing
+                            referrer, it becomes a brand-new referral source on
+                            proceed — no separate "add" button needed. */}
+                        <div style={{ position: 'relative' }}>
+                          <input
+                            type="text"
+                            placeholder="Search or type referrer..."
+                            value={newPatient.referredBy}
+                            style={{
+                              width: '100%', padding: '8px 12px', borderRadius: '10px',
+                              border: '1.5px solid #dee2e6', fontSize: '13px', fontWeight: 600,
+                              outline: 'none', background: '#f8fafc'
+                            }}
+                            onChange={e => {
+                              const val = e.target.value;
+                              setNewPatient({...newPatient, referredBy: val, referrerId: null});
+                              fetchReferrers(val);
+                            }}
+                          />
+                          {newPatient.referredBy && referrers.length > 0 && !referrers.some(r => r.name === newPatient.referredBy) && (
+                            <div style={{
+                              position: 'absolute', top: '100%', left: 0, right: 0,
+                              background: 'white', border: '1px solid #e2e8f0', borderRadius: '10px',
+                              boxShadow: '0 10px 30px rgba(0,0,0,0.1)', zIndex: 100,
+                              maxHeight: '150px', overflowY: 'auto', marginTop: '4px'
+                            }}>
+                              {referrers.map(r => (
+                                <div
+                                  key={r.referrerId || r.id}
+                                  onClick={() => {
+                                    setNewPatient({...newPatient, referredBy: r.name, referrerId: r.referrerId || r.id});
+                                    setReferrers([]);
+                                  }}
+                                  style={{ padding: '10px 15px', borderBottom: '1px solid #f8fafc', cursor: 'pointer', fontSize: '12px' }}
+                                  onMouseOver={e => e.currentTarget.style.background = '#f0f4ff'}
+                                  onMouseOut={e => e.currentTarget.style.background = 'white'}
+                                >
+                                  <strong>{r.name}</strong>
+                                  <span style={{ marginLeft: '8px', color: '#888', fontSize: '10px' }}>{r.contact}</span>
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+
+                        {/* New referral source — typed name doesn't match an existing
+                            partner. Capture optional mobile + address right here. */}
+                        {newPatient.referredBy.trim() && !newPatient.referrerId && (
+                          <div style={{ marginTop: '10px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                            <div style={{ fontSize: '9px', fontWeight: 800, color: '#0f52ba', letterSpacing: '0.5px' }}>
+                              NEW REFERRAL SOURCE — added on proceed
+                            </div>
+                            <div>
+                              <input
+                                type="tel"
+                                placeholder="Mobile (optional, 10 digits)"
+                                value={newPatient.referrerContact}
+                                onChange={e => setNewPatient({...newPatient, referrerContact: e.target.value.replace(/\D/g, '').slice(0, 10)})}
+                                style={{
+                                  width: '100%', padding: '8px 12px', borderRadius: '10px',
+                                  fontSize: '13px', fontWeight: 600, outline: 'none', background: '#f8fafc',
+                                  border: `1.5px solid ${!isReferrerContactValid ? '#e74c3c' : '#dee2e6'}`
+                                }}
+                              />
+                              {!isReferrerContactValid && (
+                                <div style={{ fontSize: '8px', color: '#e74c3c', fontWeight: 800, marginTop: '2px', letterSpacing: '0.5px' }}>
+                                  Exactly 10 digits required.
+                                </div>
+                              )}
+                            </div>
+                            <input
+                              type="text"
+                              placeholder="Address / clinic (optional)"
+                              value={newPatient.referrerAddress}
+                              onChange={e => setNewPatient({...newPatient, referrerAddress: e.target.value})}
                               style={{
                                 width: '100%', padding: '8px 12px', borderRadius: '10px',
-                                border: '1.5px solid #dee2e6', fontSize: '13px', fontWeight: 600,
-                                outline: 'none', background: '#f8fafc'
+                                fontSize: '13px', fontWeight: 600, outline: 'none', background: '#f8fafc',
+                                border: '1.5px solid #dee2e6'
                               }}
-                              onChange={e => {
-                                const val = e.target.value;
-                                setNewPatient({...newPatient, referredBy: val, referrerId: null});
-                                fetchReferrers(val);
-                              }} 
                             />
-                            {newPatient.referredBy && referrers.length > 0 && !referrers.some(r => r.name === newPatient.referredBy) && (
-                              <div style={{ 
-                                position: 'absolute', top: '100%', left: 0, right: 0, 
-                                background: 'white', border: '1px solid #e2e8f0', borderRadius: '10px', 
-                                boxShadow: '0 10px 30px rgba(0,0,0,0.1)', zIndex: 100, 
-                                maxHeight: '150px', overflowY: 'auto', marginTop: '4px' 
-                              }}>
-                                {referrers.map(r => (
-                                  <div 
-                                    key={r.referrerId || r.id}
-                                    onClick={() => {
-                                      setNewPatient({...newPatient, referredBy: r.name, referrerId: r.referrerId || r.id});
-                                      setReferrers([]);
-                                    }}
-                                    style={{ padding: '10px 15px', borderBottom: '1px solid #f8fafc', cursor: 'pointer', fontSize: '12px' }}
-                                    onMouseOver={e => e.currentTarget.style.background = '#f0f4ff'}
-                                    onMouseOut={e => e.currentTarget.style.background = 'white'}
-                                  >
-                                    <strong>{r.name}</strong>
-                                    <span style={{ marginLeft: '8px', color: '#888', fontSize: '10px' }}>{r.contact}</span>
-                                  </div>
-                                ))}
-                              </div>
-                            )}
                           </div>
-                          <button 
-                            type="button" 
-                            onClick={() => setIsAddingReferrer(true)}
-                            style={{ 
-                              width: isMobile ? '100%' : '36px', 
-                              height: '36px', 
-                              borderRadius: '10px', 
-                              border: '1px dashed #cbd5e1', 
-                              background: '#f8fafc', 
-                              color: '#0f52ba', 
-                              fontSize: isMobile ? '11px' : '18px', 
-                              fontWeight: 700, 
-                              cursor: 'pointer', 
-                              display: 'flex', 
-                              alignItems: 'center', 
-                              justifyContent: 'center',
-                              gap: '8px'
-                            }}
-                          >
-                            {isMobile ? '+ ADD NEW SPECIALIST' : '+'}
-                          </button>
-                        </div>
+                        )}
                       </div>
 
                       {newBooking.patientId && (
@@ -2439,6 +2505,32 @@ export default function AppointmentBoard() {
                               return;
                             }
 
+                            // Referral source: a brand-new (free-typed) name with an
+                            // optional mobile that, if present, must be 10 digits. Create
+                            // it so the booking links to a real referrerId. Best-effort —
+                            // if the create fails we still proceed with the free-text name.
+                            if (!isReferrerContactValid) {
+                              showNotif('error', 'INVALID REFERRER MOBILE', 'Referral source mobile must be exactly 10 digits, or left blank.');
+                              return;
+                            }
+                            let resolvedReferrerId = newPatient.referrerId;
+                            if (!resolvedReferrerId && newPatient.referredBy.trim() && isOnline) {
+                              try {
+                                const refRes = await apiClient.post('/referrers', {
+                                  name: newPatient.referredBy.trim(),
+                                  contact: newPatient.referrerContact || '',
+                                  address: newPatient.referrerAddress || '',
+                                });
+                                resolvedReferrerId = refRes.data?.referrerId || refRes.data?.id || null;
+                                if (resolvedReferrerId) {
+                                  setNewPatient(prev => ({ ...prev, referrerId: resolvedReferrerId }));
+                                  fetchReferrers('');
+                                }
+                              } catch (err) {
+                                console.warn('[REFERRER] Inline create failed; proceeding with free-text name.', err?.message || err);
+                              }
+                            }
+
                             // Case A: NEW PATIENT (Registration).
                             // Offline-first — if the device is offline
                             // OR the request fails with no response
@@ -2448,7 +2540,7 @@ export default function AppointmentBoard() {
                             // continue. The SyncEngine drains the
                             // outbox on reconnect and rewrites the
                             // tempId on the linked APPOINTMENT_CREATE.
-                            if (!newBooking.patientId && newPatient.name && newPatient.mobile) {
+                            if (!newBooking.patientId && newPatient.name.trim()) {
                               const patientPayload = {
                                 fullName: newPatient.name,
                                 mobile: newPatient.mobile,
@@ -2458,7 +2550,7 @@ export default function AppointmentBoard() {
                                 district: newPatient.district,
                                 address: newPatient.address,
                                 sourceOfInfo: newPatient.sourceOfInfo,
-                                referrerId: newPatient.referrerId,
+                                referrerId: resolvedReferrerId,
                               };
 
                               if (!isOnline) {
@@ -2512,7 +2604,7 @@ export default function AppointmentBoard() {
                                 district: newPatient.district,
                                 address: newPatient.address,
                                 sourceOfInfo: newPatient.sourceOfInfo,
-                                referrerId: newPatient.referrerId,
+                                referrerId: resolvedReferrerId,
                               };
                               if (!isOnline) {
                                 try { await addToOutbox('PATIENT_UPDATE', updatePayload); } catch (_) { /* non-blocking */ }
@@ -2630,8 +2722,45 @@ export default function AppointmentBoard() {
                           style={{ fontSize: '13px', padding: '8px 10px', height: '36px', borderRadius: '10px' }} 
                         />
 
+                        {/* Most-used quick-picks — shown when the field is empty.
+                            History-ranked first, then any remaining registry
+                            services for the selected modality. Tap to fill. */}
+                        {newBooking.service.length === 0 && (() => {
+                          const fromHistory  = mostUsedByModality[newBooking.modality] || [];
+                          const fromRegistry = serviceRegistry
+                            .filter(s => s.modality === newBooking.modality)
+                            .map(s => s.serviceName);
+                          const suggestions = [...new Set([...fromHistory, ...fromRegistry])]
+                            .filter(Boolean)
+                            .slice(0, 6);
+                          if (suggestions.length === 0) return null;
+                          return (
+                            <div style={{ marginTop: '8px', display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
+                              <span style={{ fontSize: '8px', fontWeight: 900, color: '#94a3b8', letterSpacing: '0.5px', width: '100%' }}>MOST USED</span>
+                              {suggestions.map(name => {
+                                const reg = serviceRegistry.find(s => s.modality === newBooking.modality && s.serviceName === name);
+                                return (
+                                  <button
+                                    key={name}
+                                    type="button"
+                                    onClick={() => setNewBooking(prev => ({
+                                      ...prev,
+                                      service: name,
+                                      amount: reg ? reg.amount : prev.amount,
+                                      referralCutValue: reg?.referralCutValue || 0,
+                                    }))}
+                                    style={{ padding: '5px 11px', borderRadius: '20px', border: '1px solid #dbeafe', background: '#f0f7ff', color: '#0f52ba', fontSize: '10px', fontWeight: 800, cursor: 'pointer' }}
+                                  >
+                                    {name}{reg ? ` · ₹${(reg.amount || 0).toLocaleString()}` : ''}
+                                  </button>
+                                );
+                              })}
+                            </div>
+                          );
+                        })()}
+
                         {/* Service Suggestions Dropdown */}
-                        {newBooking.service.length > 0 && serviceRegistry.some(s => 
+                        {newBooking.service.length > 0 && serviceRegistry.some(s =>
                           s.modality === newBooking.modality && 
                           s.serviceName.toLowerCase().includes(newBooking.service.toLowerCase()) && 
                           s.serviceName !== newBooking.service

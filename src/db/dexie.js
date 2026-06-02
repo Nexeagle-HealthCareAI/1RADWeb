@@ -229,8 +229,26 @@ async function deleteLegacyDb() {
 // Whole-cache wipe for the clear-on-logout posture. Deletes EVERY known
 // per-hospital DB plus the legacy v1 name. PHI hygiene: a shared front-desk
 // machine shouldn't carry one user's worklist into the next user's session.
-export async function clearLocalDatabase() {
+//
+// preserveActiveOutbox: when true, the active hospital's PENDING outbox rows
+// (queued offline mutations the user hasn't synced yet) are snapshotted before
+// the wipe and restored into a freshly-recreated DB afterwards. This stops an
+// idle-timeout or manual logout from silently destroying unsynced work — those
+// mutations belong to this hospital and will drain on the next login/sync. All
+// PHI-bearing read caches (worklist, patients, reports, …) are still wiped.
+export async function clearLocalDatabase({ preserveActiveOutbox = false } = {}) {
+  const activeKey = activeHospitalId;
+  let preservedOutbox = null;
   try {
+    if (preserveActiveOutbox && activeKey) {
+      try {
+        const db = openDbFor(activeKey);
+        const rows = await db.table('outbox').toArray();
+        const pending = rows.filter(r => r && !r.poisoned);
+        if (pending.length) preservedOutbox = pending;
+      } catch (_) { /* best effort — fall through to a full wipe */ }
+    }
+
     // Close every open instance before deleteDatabase so the calls don't
     // wait on long-running connections.
     for (const inst of instances.values()) {
@@ -249,6 +267,20 @@ export async function clearLocalDatabase() {
         ...Array.from(instances.keys()).map(k => Dexie.delete(`${DB_NAME_PREFIX}${k}`)),
         Dexie.delete(LEGACY_DB_NAME),
       ]);
+    }
+
+    // Restore the preserved outbox into a clean DB for the same hospital.
+    if (preservedOutbox && activeKey) {
+      try {
+        instances.delete(activeKey);
+        const db = new Dexie(`${DB_NAME_PREFIX}${activeKey}`);
+        applySchema(db);
+        await db.table('outbox').bulkPut(preservedOutbox);
+        db.close();
+        console.info(`[DB] Preserved ${preservedOutbox.length} unsynced outbox item(s) across logout.`);
+      } catch (err) {
+        console.warn('[DB] Failed to preserve outbox across logout', err);
+      }
     }
   } catch (err) {
     console.warn('[DB] Failed to clear local databases', err);

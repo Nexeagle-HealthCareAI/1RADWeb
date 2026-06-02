@@ -2,7 +2,7 @@ import { createContext, useContext, useState, useCallback, useEffect, useMemo, u
 import apiClient from '../api/apiClient';
 import { StudyPrefetcher } from '../utils/StudyPrefetcher';
 import { DicomCache } from '../utils/DicomCache';
-import { startSyncEngine, stopSyncEngine, syncNow } from '../sync/SyncEngine';
+import { startSyncEngine, stopSyncEngine, syncNow, syncPushNow } from '../sync/SyncEngine';
 import { clearLocalDatabase, setActiveHospital, purgeLegacyDb } from '../db/dexie';
 import { migrateLegacyOutbox } from '../db/repos/outboxRepo';
 import { setPin as pinAuthSet } from './pinAuth';
@@ -443,19 +443,32 @@ export function AuthProvider({ children }) {
   }, [captureSessionSnapshot]);
 
   const logout = useCallback(() => {
+    const wasOnline = navigator.onLine;
     setCurrentUser(null);
-    localStorage.removeItem('1rad_user');
-    localStorage.removeItem('1rad_token');
-    localStorage.removeItem('1rad_initiation_token');
-    localStorage.removeItem('1rad_refresh_token');
 
     // PHI hygiene: stop background downloads and purge the local DICOM cache on logout.
     StudyPrefetcher.stop();
     DicomCache.clear().catch(() => {});
-    // Tear down offline cache (sync engine + Dexie tables) so the next user
-    // on this device doesn't inherit anyone's worklist.
-    stopSyncEngine();
-    clearLocalDatabase().catch(() => {});
+
+    // Drain queued offline mutations FIRST (while the tokens are still valid),
+    // THEN drop credentials and wipe the PHI read-caches — but PRESERVE any
+    // still-unsynced outbox items so an idle-timeout or manual logout never
+    // silently loses the user's work; it resyncs on their next login.
+    (async () => {
+      // Cap the drain so teardown never hangs; anything not drained in time is
+      // preserved by clearLocalDatabase below and resyncs on next login.
+      try {
+        if (wasOnline) await Promise.race([syncPushNow(), new Promise(r => setTimeout(r, 4000))]);
+      } catch (_) { /* offline / transient */ }
+      try {
+        localStorage.removeItem('1rad_user');
+        localStorage.removeItem('1rad_token');
+        localStorage.removeItem('1rad_initiation_token');
+        localStorage.removeItem('1rad_refresh_token');
+      } catch (_) { /* storage unavailable in private modes */ }
+      stopSyncEngine();
+      try { await clearLocalDatabase({ preserveActiveOutbox: true }); } catch (_) { /* best effort */ }
+    })();
     // NOTE: authDb (PIN registry) is intentionally NOT cleared here.
     // A PIN is a personal credential that should survive logout so the
     // user can sign back in via PIN on subsequent visits. Clearing it on
