@@ -2782,29 +2782,37 @@ const AdvancedDicomViewer = ({
           onClick={toggleFullscreen}
           style={{
             position: 'absolute',
-            top: isFullscreen ? '15px' : '15px',
+            top: '15px',
             right: isFullscreen ? '15px' : showMetadata && metadata ? '280px' : '15px',
-            background: 'rgba(15, 23, 42, 0.9)',
+            // Phones get a bigger, brand-coloured, easy-to-tap target (≥44px
+            // touch size) so the control is obvious; desktop stays compact.
+            background: isMobile
+              ? 'linear-gradient(135deg, #0f52ba, #1e40af)'
+              : 'rgba(15, 23, 42, 0.9)',
             backdropFilter: 'blur(10px)',
-            border: '1px solid rgba(255,255,255,0.1)',
+            border: isMobile ? '1px solid rgba(255,255,255,0.25)' : '1px solid rgba(255,255,255,0.1)',
+            boxShadow: isMobile ? '0 4px 14px rgba(15,82,186,0.4)' : 'none',
             color: 'white',
-            padding: isTablet ? '12px' : '8px 12px',
-            borderRadius: '10px',
+            padding: isMobile ? '12px 16px' : isTablet ? '12px' : '8px 12px',
+            minHeight: isMobile ? '46px' : undefined,
+            borderRadius: '12px',
             cursor: 'pointer',
             zIndex: 200,
-            fontSize: isTablet ? '20px' : '16px',
+            fontSize: isMobile ? '22px' : isTablet ? '20px' : '16px',
             display: 'flex',
             alignItems: 'center',
-            gap: '6px',
-            fontWeight: 700,
+            gap: isMobile ? '8px' : '6px',
+            fontWeight: 800,
             transition: 'all 0.3s',
             opacity: showToolbar ? 1 : (isFullscreen ? 0.3 : 1),
             transform: showToolbar ? 'translateY(0)' : (isFullscreen ? 'translateY(-10px)' : 'translateY(0)')
           }}
           title={isFullscreen ? 'Exit Fullscreen (ESC)' : 'Enter Fullscreen'}
+          aria-label={isFullscreen ? 'Exit fullscreen' : 'View fullscreen'}
         >
           {isFullscreen ? '⤓' : '⤢'}
-          {!isTablet && <span style={{ fontSize: '10px' }}>{isFullscreen ? 'EXIT' : 'FULLSCREEN'}</span>}
+          {/* Label on phones + desktop (tablets stay icon-only to save space). */}
+          {!isTablet && <span style={{ fontSize: isMobile ? '12px' : '10px', letterSpacing: '0.5px' }}>{isFullscreen ? 'EXIT' : 'FULLSCREEN'}</span>}
         </button>
       )}
 
