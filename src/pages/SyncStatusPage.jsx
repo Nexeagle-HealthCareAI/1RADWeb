@@ -9,8 +9,8 @@
 import { useEffect, useState, useCallback } from 'react';
 import useAuth from '../auth/useAuth';
 import useOffline from '../hooks/useOffline';
-import { syncNow, getSyncDebugInfo } from '../sync/SyncEngine';
-import { listAll as listOutbox, purgePoisoned, remove as removeOutbox } from '../db/repos/outboxRepo';
+import { syncNow, syncPushNow, getSyncDebugInfo } from '../sync/SyncEngine';
+import { listAll as listOutbox, purgePoisoned, remove as removeOutbox, retryPoisoned, retryOne } from '../db/repos/outboxRepo';
 import { tables } from '../db/dexie';
 import SettingsSubPageHeader from '../components/SettingsSubPageHeader';
 import '../styles/global.css';
@@ -105,6 +105,24 @@ export default function SyncStatusPage() {
     setBusy(false);
   };
 
+  // Re-arm all permanently-failed items and immediately try to push them.
+  const handleRetryPoisoned = async () => {
+    setBusy(true);
+    await retryPoisoned();
+    try { await syncPushNow(); } catch (_) { /* offline — they'll drain on reconnect */ }
+    await reload();
+    setBusy(false);
+  };
+
+  // Re-arm a single failed item and try to push it now.
+  const handleRetryOne = async (id) => {
+    setBusy(true);
+    await retryOne(id);
+    try { await syncPushNow(); } catch (_) { /* offline */ }
+    await reload();
+    setBusy(false);
+  };
+
   const lastPullAt = debug?.lastPullAt;
   const skewSeconds = debug?.skewMs ? Math.round(debug.skewMs / 1000) : 0;
   const tone = !isOnline ? 'crit'
@@ -118,14 +136,14 @@ export default function SyncStatusPage() {
   return (
     <div style={{ padding: '24px 28px', maxWidth: '960px', margin: '0 auto', fontFamily: '"Segoe UI", system-ui, sans-serif' }}>
       <SettingsSubPageHeader
-        title="Sync & offline queue"
-        description="What the sync engine has cached locally, what's still waiting to be pushed to the server, and a tail of recent sync activity. Useful for diagnosing flaky-network issues."
+        title="Automatic sync"
+        description="Your work saves itself. When you are connected, changes upload on their own and the latest information is downloaded for you — there is nothing to manage. This page just shows you what is saved and what is still on its way."
         rightAction={
           <button
             onMouseDown={e => { e.preventDefault(); handleSyncNow(); }}
             disabled={busy || !isOnline}
             style={primaryBtn}
-            title={!isOnline ? 'You are offline' : 'Pull latest deltas + push outbox'}
+            title={!isOnline ? 'You are offline — changes will save automatically once you reconnect' : 'Check for the latest information and send anything waiting right now'}
           >{busy ? 'Syncing…' : 'Sync now'}</button>
         }
       />
@@ -135,7 +153,11 @@ export default function SyncStatusPage() {
         <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '6px' }}>
           <div style={{ width: '10px', height: '10px', borderRadius: '50%', background: toneColor }} />
           <div style={{ fontSize: '13px', fontWeight: 800, color: toneColor, letterSpacing: '0.3px', textTransform: 'uppercase' }}>
-            {!isOnline ? 'Offline — using local cache' : pendingCount > 0 ? `Catching up — ${pendingCount} pending` : 'Live'}
+            {!isOnline
+              ? 'Offline — your work is saved here'
+              : pendingCount > 0
+                ? `Saving your changes — ${pendingCount} on the way`
+                : 'All saved'}
           </div>
         </div>
         <div style={{ fontSize: '12px', color: '#475569', lineHeight: 1.6 }}>
@@ -167,16 +189,21 @@ export default function SyncStatusPage() {
 
       {/* Outbox */}
       <Section
-        title={`Pending push queue (${outbox.length})`}
+        title={`Changes waiting to save (${outbox.length})`}
         action={poisonedCount > 0 && (
-          <button onMouseDown={e => { e.preventDefault(); handleDiscardPoisoned(); }} style={dangerBtn}>
-            Discard {poisonedCount} poisoned
-          </button>
+          <div style={{ display: 'flex', gap: '8px' }}>
+            <button onMouseDown={e => { e.preventDefault(); handleRetryPoisoned(); }} disabled={busy} style={retryBtn}>
+              Try again ({poisonedCount})
+            </button>
+            <button onMouseDown={e => { e.preventDefault(); handleDiscardPoisoned(); }} disabled={busy} style={dangerBtn}>
+              Discard {poisonedCount}
+            </button>
+          </div>
         )}
       >
         {outbox.length === 0 ? (
           <div style={{ fontSize: '12px', color: '#64748b', padding: '10px 4px' }}>
-            Nothing queued. The outbox drains automatically when you're online.
+            Everything is saved. Anything you change while offline waits here and saves itself automatically once you reconnect.
           </div>
         ) : (
           <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
@@ -187,19 +214,27 @@ export default function SyncStatusPage() {
                     {shortType(item.type)}
                     {item.poisoned ? (
                       <span style={{ marginLeft: '8px', fontSize: '10px', fontWeight: 800, color: '#b91c1c', letterSpacing: '0.4px' }}>
-                        POISONED
+                        NEEDS ATTENTION
                       </span>
                     ) : item.attempts > 0 ? (
                       <span style={{ marginLeft: '8px', fontSize: '10px', fontWeight: 600, color: '#b45309' }}>
-                        {item.attempts}/5 attempts
+                        Trying again automatically
                       </span>
                     ) : null}
                   </div>
                   <div style={{ fontSize: '11px', color: '#64748b', marginTop: '2px' }}>
-                    Queued {relative(new Date(item.createdAtMs).toISOString())}
-                    {item.lastError && (<span style={{ color: '#b91c1c' }}> · {item.lastError}</span>)}
+                    Added {relative(new Date(item.createdAtMs).toISOString())}
+                    {item.poisoned && item.lastError && (<span style={{ color: '#b91c1c' }}> · {item.lastError}</span>)}
                   </div>
                 </div>
+                {item.poisoned && (
+                  <button
+                    onMouseDown={e => { e.preventDefault(); handleRetryOne(item.id); }}
+                    disabled={busy}
+                    style={{ ...iconBtn, color: '#0f52ba' }}
+                    title="Retry this item"
+                  >↻</button>
+                )}
                 <button
                   onMouseDown={e => { e.preventDefault(); handleRemoveOne(item.id); }}
                   style={iconBtn}
@@ -271,6 +306,13 @@ const dangerBtn = {
   background: '#fff', color: '#b91c1c',
   border: '1px solid #fecaca', borderRadius: '6px',
   fontSize: '11px', fontWeight: 700,
+  cursor: 'pointer', fontFamily: 'inherit',
+};
+const retryBtn = {
+  height: '28px', padding: '0 12px',
+  background: '#0f52ba', color: '#fff',
+  border: 'none', borderRadius: '6px',
+  fontSize: '11px', fontWeight: 800,
   cursor: 'pointer', fontFamily: 'inherit',
 };
 const iconBtn = {

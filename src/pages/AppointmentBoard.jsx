@@ -810,9 +810,13 @@ export default function AppointmentBoard() {
       sourceOfInfo: newPatient.sourceOfInfo
     };
 
+    // Stable key shared by the online create and the outbox fallback so a
+    // lost-response retry can't register the patient twice.
+    const idemKey = crypto.randomUUID();
+
     if (!isOnline) {
       const tempId = `temp-${Date.now()}`;
-      await addToOutbox('PATIENT_CREATE', { ...payload, tempId });
+      await addToOutbox('PATIENT_CREATE', { ...payload, tempId }, idemKey);
       showNotif('info', 'QUEUED FOR SYNC', 'Patient profile has been saved and will synchronize automatically when connection is restored.');
       setNewBooking(prev => ({ ...prev, patientId: tempId }));
       setIsAddPatientOpen(false);
@@ -820,7 +824,7 @@ export default function AppointmentBoard() {
     }
 
     try {
-      const response = await apiClient.post('/patients', payload);
+      const response = await apiClient.post('/patients', payload, { headers: { 'Idempotency-Key': idemKey } });
       const patientId = response.data.patientId;
       setIsAddPatientOpen(false);
       setNewPatient({ name: '', mobile: '', age: '', ageUnit: 'Y', gender: 'Female', village: '', district: '', address: '', referredBy: '', sourceOfInfo: '', referrerId: null, referrerContact: '', referrerAddress: '' });
@@ -830,7 +834,7 @@ export default function AppointmentBoard() {
       console.error('Failed to add patient:', error);
       if (!error.response) {
          const tempId = `temp-${Date.now()}`;
-         await addToOutbox('PATIENT_CREATE', { ...payload, tempId });
+         await addToOutbox('PATIENT_CREATE', { ...payload, tempId }, idemKey);
          setNewBooking(prev => ({ ...prev, patientId: tempId }));
          setIsAddPatientOpen(false);
       }
@@ -923,8 +927,13 @@ export default function AppointmentBoard() {
     };
 
 
+    // One stable key for this booking: sent on the online attempt AND reused
+    // by the outbox fallback, so a "created server-side but response lost →
+    // re-queued" retry is deduped by the backend instead of double-booking.
+    const idemKey = crypto.randomUUID();
+
     if (!isOnline) {
-      await addToOutbox('APPOINTMENT_CREATE', payload);
+      await addToOutbox('APPOINTMENT_CREATE', payload, idemKey);
       showNotif('info', 'QUEUED FOR SYNC', 'Appointment has been saved and will sync automatically when your connection is restored.');
       setIsBookingOpen(false);
       resetBooking();
@@ -932,8 +941,8 @@ export default function AppointmentBoard() {
     }
 
     try {
-      await apiClient.post('/appointments', payload);
-      
+      await apiClient.post('/appointments', payload, { headers: { 'Idempotency-Key': idemKey } });
+
       setIsBookingOpen(false);
       resetBooking();
       refreshAppointments();
@@ -941,7 +950,7 @@ export default function AppointmentBoard() {
 
       console.error('Failed to book appointment:', error);
       if (!error.response) {
-        await addToOutbox('APPOINTMENT_CREATE', payload);
+        await addToOutbox('APPOINTMENT_CREATE', payload, idemKey);
         setIsBookingOpen(false);
         resetBooking();
       } else {
@@ -2759,14 +2768,18 @@ export default function AppointmentBoard() {
                                 referrerId: resolvedReferrerId,
                               };
 
+                              // One stable key for this registration — shared by
+                              // the online attempt and the outbox fallback so a
+                              // lost-response retry can't create the patient twice.
+                              const patientIdemKey = crypto.randomUUID();
                               if (!isOnline) {
                                 const tempId = `temp-${Date.now()}`;
-                                await addToOutbox('PATIENT_CREATE', { ...patientPayload, tempId });
+                                await addToOutbox('PATIENT_CREATE', { ...patientPayload, tempId }, patientIdemKey);
                                 setNewBooking(prev => ({ ...prev, patientId: tempId }));
                                 showNotif('info', 'QUEUED FOR SYNC', 'Patient profile saved locally. Will register on the server when connection is restored.');
                               } else {
                                 try {
-                                  const response = await apiClient.post('/patients', patientPayload);
+                                  const response = await apiClient.post('/patients', patientPayload, { headers: { 'Idempotency-Key': patientIdemKey } });
                                   const patientId = response.data.patientId;
                                   if (!patientId) throw new Error("API returned invalid patient identity");
                                   setNewBooking(prev => ({...prev, patientId}));
@@ -2779,7 +2792,7 @@ export default function AppointmentBoard() {
                                   // with a validation error.
                                   if (!error.response) {
                                     const tempId = `temp-${Date.now()}`;
-                                    await addToOutbox('PATIENT_CREATE', { ...patientPayload, tempId });
+                                    await addToOutbox('PATIENT_CREATE', { ...patientPayload, tempId }, patientIdemKey);
                                     setNewBooking(prev => ({ ...prev, patientId: tempId }));
                                     showNotif('info', 'QUEUED FOR SYNC', 'Network unavailable. Patient profile saved locally and will sync when reconnected.');
                                   } else {

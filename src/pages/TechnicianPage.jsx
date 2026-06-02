@@ -14,6 +14,9 @@ import useTickClock from '../utils/useTickClock';
 import { formatElapsed, premisesSeverity, premisesPillStyle } from '../utils/timeTracking';
 import { useOverdue } from '../components/OverdueAppointments/OverdueContext';
 import { getServiceLines, getUniqueModalities, matchesAnyModality, getReportProgressLabel } from '../utils/appointmentServices';
+import { watchAppointments, patchCachedAppointment } from '../db/repos/appointmentsRepo';
+import { syncNow } from '../sync/SyncEngine';
+import useOffline from '../hooks/useOffline';
 import '../styles/global.css';
 import '../styles/TechnicianPage.css';
 
@@ -40,6 +43,7 @@ const TODAY = new Date().toLocaleDateString('en-CA'); // YYYY-MM-DD format in lo
 
 export default function TechnicianPage() {
   const { activeCenter } = useContext(AuthContext);
+  const { addToOutbox, isOnline } = useOffline();
   // 60s tick keeps the on-premises pill counting up; isOverdue mirrors the bell.
   useTickClock();
   const { isOverdue } = useOverdue();
@@ -114,53 +118,42 @@ export default function TechnicianPage() {
   const [loadingProgress, setLoadingProgress] = useState({ stage: '', current: 0, total: 0 });
   const [processingStatus, setProcessingStatus] = useState('');
 
-  // --- API SYNC ---
-  const fetchWorklist = useCallback(async () => {
-    setLoading(true);
-    try {
-      // Fetch today's missions for the main bay, and past missions if in archive
-      const res = await apiClient.get('/appointments');
-
-      // Sort ASCENDING for correct sequential token number calculation
-      const sortedData = res.data.sort((a, b) => new Date(a.dateTime || 0).getTime() - new Date(b.dateTime || 0).getTime());
-      const dailyCounters = {};
-
-      const worklist = sortedData.map(a => {
-        const studyDate = a.dateTime ? new Date(a.dateTime).toLocaleDateString('en-CA') : null;
-        const dateKey = studyDate || TODAY;
-        dailyCounters[dateKey] = (dailyCounters[dateKey] || 0) + 1;
-
-        return {
+  // --- WORKLIST (offline-first) ---
+  // Read the worklist from the local Dexie cache via a liveQuery. It renders
+  // instantly, works fully OFFLINE (the SyncEngine keeps the cache fresh in the
+  // background and the cache survives reloads), and AUTO-updates whenever a new
+  // delta is written — so no per-page polling is needed here.
+  useEffect(() => {
+    const sub = watchAppointments({ mode: 'all' }).subscribe({
+      next: (rows) => {
+        const worklist = (rows || []).map(a => ({
           ...a,
           id: a.displayId,
-          // Real priority comes from the API; fall back to EMERGENCY-type for
-          // legacy records that pre-date the Priority column.
+          // Real priority comes from the record; fall back to EMERGENCY-type for
+          // legacy rows that pre-date the Priority column. tokenNo is already
+          // assigned by watchAppointments.
           priority: a.priority || (a.type === 'EMERGENCY' ? 'STAT' : 'ROUTINE'),
-          isToday: studyDate === TODAY,
-          // Prefer persisted server-side token; fall back to calculated for legacy records
-          tokenNo: a.dailyTokenNumber ?? dailyCounters[dateKey]
-        };
-      });
-
-      // Only update state if data has actually changed to prevent unnecessary re-renders
-      setStudies(prev => {
-        const prevJSON = JSON.stringify(prev);
-        const newJSON = JSON.stringify(worklist);
-        return prevJSON === newJSON ? prev : worklist;
-      });
-    } catch (err) {
-      console.error('[TECH] Worklist fetch failed', err);
-    } finally {
-      setLoading(false);
-    }
+          isToday: a.dateTime ? new Date(a.dateTime).toLocaleDateString('en-CA') === TODAY : false,
+        }));
+        // Only swap state when the data actually changed — avoids needless
+        // re-renders/flicker when a liveQuery fires with identical rows.
+        setStudies(prev => (JSON.stringify(prev) === JSON.stringify(worklist) ? prev : worklist));
+        setLoading(false);
+      },
+      error: (err) => {
+        console.warn('[TECH] worklist liveQuery error', err);
+        setLoading(false);
+      },
+    });
+    return () => sub.unsubscribe();
   }, [TODAY]);
 
-  useEffect(() => {
-    fetchWorklist();
-    // Increased from 5s to 30s to reduce UI flicker and improve performance
-    const interval = setInterval(fetchWorklist, 30000);
-    return () => clearInterval(interval);
-  }, [fetchWorklist]);
+  // Manual refresh (toolbar button + post-upload nudge): force an immediate
+  // sync; the liveQuery above then re-renders from the refreshed cache. Offline,
+  // this is a no-op and the cached worklist stays on screen.
+  const fetchWorklist = useCallback(async () => {
+    try { await syncNow(); } catch (err) { console.warn('[TECH] manual sync failed', err?.message || err); }
+  }, []);
 
   const fetchDoctors = useCallback(async () => {
     try {
@@ -181,6 +174,14 @@ export default function TechnicianPage() {
   }, [fetchDoctors]);
 
   const handleStatusUpdate = async (id, newStatus) => {
+    // Optimistically patch the cached row so the board reflects the new status
+    // immediately — including offline, where there's no pull to bring it back.
+    await patchCachedAppointment(id, (row) => ({ ...row, status: newStatus }));
+
+    if (!isOnline) {
+      await addToOutbox('APPOINTMENT_STATUS', { id, status: newStatus });
+      return;
+    }
     try {
       await apiClient.patch(`/appointments/${id}/status`, `"${newStatus}"`, {
         headers: { 'Content-Type': 'application/json' }
@@ -188,7 +189,13 @@ export default function TechnicianPage() {
       fetchWorklist();
     } catch (err) {
       console.error('[TECH] Status transition failed', err);
-      showNotif('error', 'STATUS UPDATE FAILED', 'Could not update the appointment status. Please check your connection and try again.');
+      if (!err.response) {
+        // Network drop mid-flight — queue it; the optimistic patch stays.
+        await addToOutbox('APPOINTMENT_STATUS', { id, status: newStatus });
+      } else {
+        showNotif('error', 'STATUS UPDATE FAILED', 'Could not update the appointment status. Please try again.');
+        fetchWorklist(); // re-sync to revert the optimistic patch to canonical
+      }
     }
   };
 
@@ -199,14 +206,43 @@ export default function TechnicianPage() {
   // the workspace UI updates without waiting for the refetch.
   const handleServiceStatus = async (appointmentId, serviceId, newStatus) => {
     if (!appointmentId || !serviceId) return;
+    const now = new Date().toISOString();
+
+    // Best-effort optimistic patch: update the target service's status (+ the
+    // matching timestamp), then roll the parent visit status up only when EVERY
+    // service agrees on the new tier. The server does the authoritative roll-up;
+    // this just keeps the UI live (and correct enough offline) until it syncs.
+    const applyPatch = (row) => {
+      const services = (row.services || []).map(svc =>
+        svc.id === serviceId
+          ? {
+              ...svc,
+              status:          newStatus,
+              scanStartedAt:   newStatus === 'IN_PROGRESS' ? (svc.scanStartedAt || now)   : svc.scanStartedAt,
+              scanCompletedAt: newStatus === 'SCANNED'     ? (svc.scanCompletedAt || now) : svc.scanCompletedAt,
+              deliveredAt:     newStatus === 'DELIVERED'   ? (svc.deliveredAt || now)     : svc.deliveredAt,
+            }
+          : svc
+      );
+      const allSame = services.length > 0 && services.every(s => (s.status || '').toUpperCase() === newStatus.toUpperCase());
+      return { ...row, services, ...(allSame ? { status: newStatus.toLowerCase() } : {}) };
+    };
+
+    await patchCachedAppointment(appointmentId, applyPatch);
+    // Mirror into the open workspace so the per-service buttons react instantly.
+    setActiveStudy(prev => (prev && prev.appointmentId === appointmentId ? applyPatch({ ...prev }) : prev));
+
+    if (!isOnline) {
+      await addToOutbox('SERVICE_STATUS', { appointmentId, serviceId, status: newStatus });
+      return;
+    }
     try {
       const res = await apiClient.patch(
         `/appointments/${appointmentId}/services/${serviceId}/status`,
         { status: newStatus }
       );
       const result = res?.data || {};
-      // Optimistic local patch — keeps the per-service buttons reactive
-      // without a full worklist refetch round trip.
+      // Reconcile the workspace with the server's authoritative roll-up.
       setActiveStudy(prev => {
         if (!prev || prev.appointmentId !== appointmentId) return prev;
         const updatedServices = (prev.services || []).map(svc =>
@@ -232,7 +268,12 @@ export default function TechnicianPage() {
       fetchWorklist();
     } catch (err) {
       console.error('[TECH] Per-service status transition failed', err);
-      showNotif('error', 'STATUS UPDATE FAILED', 'Could not update the service status. Please check your connection and try again.');
+      if (!err.response) {
+        await addToOutbox('SERVICE_STATUS', { appointmentId, serviceId, status: newStatus });
+      } else {
+        showNotif('error', 'STATUS UPDATE FAILED', 'Could not update the service status. Please try again.');
+        fetchWorklist();
+      }
     }
   };
 

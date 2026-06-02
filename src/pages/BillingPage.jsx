@@ -402,8 +402,11 @@ export default function BillingPage() {
       description: (editExpense.description || '').trim() || (editExpense.vendorName || '').trim(),
     };
 
+    // Stable key shared by the online call + outbox fallback so a lost-response
+    // retry can't record the expense twice.
+    const idemKey = crypto.randomUUID();
     if (!isOnline) {
-      await addToOutbox('EXPENSE', payload);
+      await addToOutbox('EXPENSE', payload, idemKey);
       notify({ type: 'info', title: 'Offline', message: 'Expense will sync when reconnected.' });
       setIsExpenseDrawerOpen(false);
       return;
@@ -412,9 +415,9 @@ export default function BillingPage() {
     try {
       setSavingExpense(true);
       if (payload.id) {
-        await apiClient.put(`/finance/expenses/${payload.id}`, payload);
+        await apiClient.put(`/finance/expenses/${payload.id}`, payload, { headers: { 'Idempotency-Key': idemKey } });
       } else {
-        await apiClient.post('/finance/expense', payload);
+        await apiClient.post('/finance/expense', payload, { headers: { 'Idempotency-Key': idemKey } });
       }
       setIsExpenseDrawerOpen(false);
       setEditExpense({
@@ -434,7 +437,7 @@ export default function BillingPage() {
     } catch (err) {
       console.error('[FINANCE] Expense save failed', err);
       if (!err.response) {
-        await addToOutbox('EXPENSE', payload);
+        await addToOutbox('EXPENSE', payload, idemKey);
         notify({ type: 'info', title: 'No connection', message: 'Expense added to offline queue.' });
         setIsExpenseDrawerOpen(false);
       } else {
@@ -678,11 +681,14 @@ export default function BillingPage() {
       lines
     };
 
+    // Stable key shared by the online call + outbox fallback so a lost-response
+    // retry can't double-record the payout / commission batch.
+    const idemKey = crypto.randomUUID();
     if (!isOnline) {
       if (isSingle) {
-        await addToOutbox('PAYOUT', singlePayload);
+        await addToOutbox('PAYOUT', singlePayload, idemKey);
       } else {
-        await addToOutbox('PAYOUT_BATCH', batchPayload);
+        await addToOutbox('PAYOUT_BATCH', batchPayload, idemKey);
       }
       notify({ type: 'info', title: 'Offline', message: 'Payout will sync when reconnected.' });
       setIsPayoutDrawerOpen(false);
@@ -696,10 +702,10 @@ export default function BillingPage() {
         await apiClient.put(`/referrers/commissions/${editPayout.commissionId}`, {
           ...singlePayload,
           commissionId: editPayout.commissionId
-        });
+        }, { headers: { 'Idempotency-Key': idemKey } });
       } else {
         // Per-service payout — one commission row per service line.
-        await apiClient.post('/referrers/commissions/batch', batchPayload);
+        await apiClient.post('/referrers/commissions/batch', batchPayload, { headers: { 'Idempotency-Key': idemKey } });
       }
 
       setIsPayoutDrawerOpen(false);
@@ -707,7 +713,7 @@ export default function BillingPage() {
     } catch (err) {
       console.error('[PAYOUT] Transaction failure:', err);
       if (!err.response) {
-        await addToOutbox(isSingle ? 'PAYOUT' : 'PAYOUT_BATCH', isSingle ? singlePayload : batchPayload);
+        await addToOutbox(isSingle ? 'PAYOUT' : 'PAYOUT_BATCH', isSingle ? singlePayload : batchPayload, idemKey);
         notify({ type: 'info', title: 'No connection', message: 'Payout added to offline queue.' });
         setIsPayoutDrawerOpen(false);
       } else {
@@ -1472,11 +1478,14 @@ export default function BillingPage() {
       paymentMethod: paymentMethod
     };
 
+    // Stable key shared by the online call + outbox fallback — a payment that
+    // reached the server but lost its response must NOT be charged twice.
+    const idemKey = crypto.randomUUID();
     try {
       console.log('[FINANCE] Committing settlement:', payload);
 
       if (!isOnline) {
-        await addToOutbox('PAYMENT', payload);
+        await addToOutbox('PAYMENT', payload, idemKey);
         setIsInvoiceDrawerOpen(false);
         setPaymentSuccess({
           amount: paymentAmount,
@@ -1488,7 +1497,7 @@ export default function BillingPage() {
         return;
       }
 
-      await apiClient.post('/finance/payments', payload);
+      await apiClient.post('/finance/payments', payload, { headers: { 'Idempotency-Key': idemKey } });
       setIsInvoiceDrawerOpen(false);
       refreshAllFinancialData();
       setPaymentSuccess({
@@ -1501,7 +1510,7 @@ export default function BillingPage() {
     } catch (err) {
       console.error('[FINANCE] Payment failed', err);
       if (!err.response) {
-         await addToOutbox('PAYMENT', payload);
+         await addToOutbox('PAYMENT', payload, idemKey);
          setIsInvoiceDrawerOpen(false);
          setPaymentSuccess({
            amount: paymentAmount,
@@ -1544,16 +1553,19 @@ export default function BillingPage() {
       }))
     };
 
+    // Stable key shared by the online call + outbox fallback so a lost-response
+    // retry can't create a duplicate invoice.
+    const idemKey = crypto.randomUUID();
     try {
       if (!isOnline) {
-        await addToOutbox('INVOICE', payload);
+        await addToOutbox('INVOICE', payload, idemKey);
         setIsNewInvoiceDrawerOpen(false);
         setNewInvoiceData({ patientName: '', items: [{ description: '', amount: 0, quantity: 1 }], centreDiscount: 0, referrerDiscount: 0, paymentMethod: 'CASH', referrerId: '' });
         notify({ type: 'info', title: 'Queued for Sync', message: 'You are offline. Invoice has been saved and will sync automatically when connection is restored.' });
         return;
       }
 
-      await apiClient.post('/finance/invoices', payload);
+      await apiClient.post('/finance/invoices', payload, { headers: { 'Idempotency-Key': idemKey } });
       setIsNewInvoiceDrawerOpen(false);
       setSelectedPatient(null);
       setPatientSearchQuery('');
@@ -1563,7 +1575,7 @@ export default function BillingPage() {
     } catch (err) {
       console.error('[FINANCE] Invoice creation failed', err);
       if (!err.response) {
-         await addToOutbox('INVOICE', payload);
+         await addToOutbox('INVOICE', payload, idemKey);
          notify({ type: 'info', title: 'Queued for Sync', message: 'No connection detected. Invoice has been queued and will sync when back online.' });
          setIsNewInvoiceDrawerOpen(false);
       } else {

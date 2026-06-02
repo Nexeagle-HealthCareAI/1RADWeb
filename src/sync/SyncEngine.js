@@ -55,10 +55,11 @@ import {
   highWatermarkIso  as commissionsHighWatermarkIso,
 } from '../db/repos/referralCommissionsRepo';
 import {
-  listPending  as outboxListPending,
-  remove       as outboxRemove,
-  markFailure  as outboxMarkFailure,
-  markPoisoned as outboxMarkPoisoned,
+  listPending   as outboxListPending,
+  remove        as outboxRemove,
+  markFailure   as outboxMarkFailure,
+  markPoisoned  as outboxMarkPoisoned,
+  clearBackoff  as outboxClearBackoff,
   rewriteTempIds as outboxRewriteTempIds,
 } from '../db/repos/outboxRepo';
 import { tables, getActiveHospitalId } from '../db/dexie';
@@ -66,7 +67,32 @@ import { evictAggressively, startQuotaMonitor } from './quotaMonitor';
 import { logEvent } from './syncTelemetry';
 
 const PULL_INTERVAL_MS = 30_000;
-const MAX_RETRY_ATTEMPTS = 5;
+
+// --- Auto-retry back-off -----------------------------------------------------
+// A transient failure (network drop, server busy, 5xx, timeout) is retried
+// automatically, forever, with a capped exponential back-off. We never give up
+// on the user's queued change just because the server was briefly unreachable —
+// dropping a clinical write would be far worse than retrying it a minute later.
+const RETRY_BASE_MS = 5_000;          // first retry ~5s out
+const RETRY_CAP_MS  = 5 * 60_000;     // never wait longer than 5 minutes
+
+function backoffMs(attempts) {
+  const exp = RETRY_BASE_MS * 2 ** Math.max(0, attempts - 1);
+  return Math.min(exp, RETRY_CAP_MS);
+}
+
+// Decide whether a failed push is worth retrying on its own.
+//   • transient  → no response at all (offline / DNS / timeout), 408, 429, or
+//                  any 5xx. The server might just be busy or mid-deploy; retry.
+//   • permanent  → any other 4xx (400/401/403/404/409/422…). The request is
+//                  wrong in a way a retry can't fix; surface it for a human.
+function isTransientError(err) {
+  const status = err?.response?.status;
+  if (status == null) return true;
+  if (status === 408 || status === 429) return true;
+  if (status >= 500 && status < 600) return true;
+  return false;
+}
 
 let started = false;
 let pollTimer = null;
@@ -291,6 +317,17 @@ function resolveRoute(item) {
                                           // server expects a raw JSON string for this endpoint
                                           body: JSON.stringify(p.status),
                                           headers: { 'Content-Type': 'application/json' } };
+    // Per-service status transition (Technician / Operations multi-service rollout).
+    case 'SERVICE_STATUS':       return { method: 'PATCH',  url: `/appointments/${p.appointmentId}/services/${p.serviceId}/status`,
+                                          body: { status: p.status } };
+    // Per-service technician notes (Operations board).
+    case 'SERVICE_NOTES':        return { method: 'PATCH',  url: `/appointments/${p.appointmentId}/services/${p.serviceId}/notes`,
+                                          body: { notes: p.notes ?? '' } };
+    // Operations board visit notes / comments.
+    case 'APPOINTMENT_COMMENT':  return { method: 'POST',   url: `/appointments/${p.appointmentId}/comments`,
+                                          body: { body: p.body } };
+    case 'APPOINTMENT_COMMENT_BULK': return { method: 'POST', url: '/appointments/comments/bulk',
+                                          body: { appointmentIds: p.appointmentIds, body: p.body } };
     case 'PATIENT_CREATE':       return { method: 'POST',   url: '/patients' };
     case 'PATIENT_UPDATE':       return { method: 'PUT',    url: `/patients/${p.patientId}` };
     default: return null;
@@ -363,17 +400,27 @@ async function pushCycle() {
     } catch (err) {
       const status = err?.response?.status;
       const errMsg = err?.response?.data?.error || err?.message || String(err);
-      const isPermanent = status === 404;
       const attempts = (item.attempts || 0) + 1;
-      if (isPermanent || attempts >= MAX_RETRY_ATTEMPTS) {
-        console.error(`[SYNC] Poisoning outbox ${item.id} (type=${item.type}) after ${attempts} attempt(s). Status=${status}. Server: ${errMsg}`);
+
+      if (!isTransientError(err)) {
+        // A data/permission problem a retry can't fix — flag for a human and
+        // move on to the next item (this one is individually bad; the rest of
+        // the queue may still be perfectly pushable).
+        console.error(`[SYNC] Outbox ${item.id} (type=${item.type}) needs attention. Status=${status}. Server: ${errMsg}`);
         await outboxMarkPoisoned(item.id, `${status}: ${errMsg}`);
         stats.poisoned++;
-      } else {
-        await outboxMarkFailure(item.id, errMsg, attempts);
-        console.warn(`[SYNC] Outbox push failed for ${item.id} (attempt ${attempts}/${MAX_RETRY_ATTEMPTS})`, err?.message || err);
-        stats.failed++;
+        continue;
       }
+
+      // Transient (offline / server busy / 5xx / timeout). Schedule an
+      // automatic retry with capped exponential back-off and STOP this cycle:
+      // a later queued item may depend on this one, and the network is
+      // evidently unhappy right now, so there's no point pushing further.
+      const delay = backoffMs(attempts);
+      await outboxMarkFailure(item.id, errMsg, attempts, Date.now() + delay);
+      stats.failed++;
+      console.warn(`[SYNC] Outbox ${item.id} will retry automatically in ~${Math.round(delay / 1000)}s (attempt ${attempts}).`, err?.message || err);
+      break;
     }
   }
 
@@ -395,6 +442,20 @@ async function pushCycle() {
 // the highest-priority paint; patients second so booking drawer search
 // works as soon as the worklist is on screen; reports last because they're
 // only consulted when the radiologist opens a specific row.
+// The pull sequence itself, with NO mutex/guards — callers hold the mutex.
+// Order matters: appointments first (highest-priority worklist paint),
+// patients second (booking search), the rest after.
+async function runAllPulls() {
+  await pullAppointments();
+  await pullPatients();
+  await pullReports();
+  await pullInvoices();
+  await pullExpenses();
+  await pullReferrers();
+  await pullReferralCommissions();
+  await tables.meta().put({ key: 'lastSuccessfulPullAt', value: new Date().toISOString() });
+}
+
 async function pullCycle() {
   if (pulling) return;
   if (!navigator.onLine) return;
@@ -405,19 +466,35 @@ async function pullCycle() {
   pulling = true;
   const startedAt = Date.now();
   try {
-    await pullAppointments();
-    await pullPatients();
-    await pullReports();
-    await pullInvoices();
-    await pullExpenses();
-    await pullReferrers();
-    await pullReferralCommissions();
-    await tables.meta().put({ key: 'lastSuccessfulPullAt', value: new Date().toISOString() });
+    await runAllPulls();
     logEvent('pull.cycle', { ok: true, ms: Date.now() - startedAt });
   } catch (err) {
     // Surface but don't throw — the engine must survive a single bad pull.
     // The next interval try will pick up wherever we left off.
     console.warn('[SYNC] Pull cycle failed', err?.message || err);
+    logEvent('pull.failure', { ms: Date.now() - startedAt, message: err?.message || String(err) });
+  } finally {
+    pulling = false;
+  }
+}
+
+// The steady-state heartbeat (every PULL_INTERVAL_MS). Unlike the old
+// pull-only tick, this also DRAINS the outbox first — so a change that failed
+// transiently retries on its own, automatically, without waiting for the user
+// to act or reconnect. pushCycle() respects each item's back-off gate, so a
+// down server isn't hammered every 30s. This is the heart of "auto sync".
+async function autoSyncTick() {
+  if (pulling) return;
+  if (!navigator.onLine) return;
+  if (!getActiveHospitalId()) return;
+  pulling = true;
+  const startedAt = Date.now();
+  try {
+    await pushCycle();
+    await runAllPulls();
+    logEvent('pull.cycle', { ok: true, ms: Date.now() - startedAt });
+  } catch (err) {
+    console.warn('[SYNC] Auto-sync tick failed', err?.message || err);
     logEvent('pull.failure', { ms: Date.now() - startedAt, message: err?.message || String(err) });
   } finally {
     pulling = false;
@@ -433,6 +510,11 @@ async function pushAndPullCycle() {
   if (pulling) return;
   pulling = true;
   try {
+    // This path is only reached on an explicit "try now" trigger (boot,
+    // reconnect, manual Sync now). Clear any back-off gates so items mid-wait
+    // retry immediately — the network is clearly back, no reason to wait out
+    // a 5-minute timer.
+    await outboxClearBackoff();
     const stats = await pushCycle();
     // Only re-pull when the push actually shipped something. Otherwise the
     // 30s pull tick is already keeping things fresh; no need to double up.
@@ -469,7 +551,8 @@ export function startSyncEngine() {
   // before the cache fills. Idempotent.
   startQuotaMonitor();
 
-  pollTimer = setInterval(pullCycle, PULL_INTERVAL_MS);
+  // Steady-state heartbeat now pushes (auto-retry) AND pulls — see autoSyncTick.
+  pollTimer = setInterval(autoSyncTick, PULL_INTERVAL_MS);
 
   // Reconnect: push queued mutations first, then pull. Single listener
   // (B1 had two — one here, one in useOffline — which fired in parallel
@@ -505,6 +588,9 @@ export async function syncNow() {
 // Lightweight nudge for the addToOutbox path: just drain the queue.
 // Returns the push stats so callers can show a toast.
 export async function syncPushNow() {
+  // Explicit nudge (e.g. right after enqueue, or a manual retry) → clear any
+  // back-off so the just-queued / re-armed item goes out on this very cycle.
+  await outboxClearBackoff();
   return pushCycle();
 }
 

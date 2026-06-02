@@ -63,7 +63,7 @@ export default function TopNav({ currentTime }) {
 
   if (!currentUser) return null;
 
-  const { isOnline, isSyncing, pendingCount } = useOffline();
+  const { isOnline, isSyncing, pendingCount, poisonedCount } = useOffline();
   // Cache-freshness chip in the existing Sync Hub. The SyncEngine writes
   // meta.lastSuccessfulPullAt after each pull; the hook below reads that
   // via Dexie liveQuery and derives a human label + colour tone.
@@ -377,27 +377,43 @@ export default function TopNav({ currentTime }) {
 
           {/* Tactical Status Indicators */}
           <div className="nav-status-indicators" style={{ display: 'flex', gap: '24px' }}>
-            {/* Sync Hub */}
-            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-              <div style={{ 
-                width: '32px', height: '32px', borderRadius: '8px', 
-                background: isOnline ? '#f0fdf4' : '#fef2f2',
+            {/* Sync Hub — click to open the Sync & Saved Changes page */}
+            <div
+              role="button"
+              tabIndex={0}
+              onClick={() => navigate('/settings/sync')}
+              onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); navigate('/settings/sync'); } }}
+              title={
+                poisonedCount > 0
+                  ? `${poisonedCount} change${poisonedCount === 1 ? '' : 's'} could not be saved — click to review`
+                  : (syncStatus.lastPullAtIso ? `Last sync: ${new Date(syncStatus.lastPullAtIso).toLocaleString()} — click for details` : 'Click for sync details')
+              }
+              style={{ display: 'flex', alignItems: 'center', gap: '10px', cursor: 'pointer' }}
+            >
+              <div style={{
+                width: '32px', height: '32px', borderRadius: '8px',
+                background: poisonedCount > 0 ? '#fef2f2' : (isOnline ? '#f0fdf4' : '#fef2f2'),
                 display: 'flex', alignItems: 'center', justifyContent: 'center',
-                border: `1px solid ${isOnline ? '#dcfce7' : '#fee2e2'}`
+                border: `1px solid ${poisonedCount > 0 ? '#fecaca' : (isOnline ? '#dcfce7' : '#fee2e2')}`
               }}>
-                <span style={{ fontSize: '14px' }}>{isOnline ? '🌐' : '📡'}</span>
+                <span style={{ fontSize: '14px' }}>{poisonedCount > 0 ? '⚠️' : (isOnline ? '🌐' : '📡')}</span>
               </div>
               <div
                 className="nav-status-details"
                 style={{ display: 'flex', flexDirection: 'column' }}
-                title={syncStatus.lastPullAtIso ? `Last sync: ${new Date(syncStatus.lastPullAtIso).toLocaleString()}` : 'No successful sync yet'}
               >
                 <span style={{ fontSize: '9px', fontWeight: 950, color: syncToneColor, textTransform: 'uppercase', letterSpacing: '0.5px' }}>
                   {isSyncing ? 'Syncing...' : isOnline ? 'Online' : 'Offline'}
                 </span>
-                <span style={{ fontSize: '10px', fontWeight: 700, color: '#64748b' }}>
-                  {pendingCount > 0 ? `${pendingCount} Pending` : syncStatus.label}
-                </span>
+                {poisonedCount > 0 ? (
+                  <span style={{ fontSize: '10px', fontWeight: 800, color: '#b91c1c' }}>
+                    {poisonedCount} need{poisonedCount === 1 ? 's' : ''} attention
+                  </span>
+                ) : (
+                  <span style={{ fontSize: '10px', fontWeight: 700, color: '#64748b' }}>
+                    {pendingCount > 0 ? `${pendingCount} saving…` : syncStatus.label}
+                  </span>
+                )}
               </div>
             </div>
 

@@ -10,6 +10,8 @@ import { formatElapsed, premisesSeverity, premisesPillStyle } from '../utils/tim
 import { useOverdue } from '../components/OverdueAppointments/OverdueContext';
 import { formatPatientAge } from '../utils/patientAge';
 import { getServiceLines, getUniqueModalities, matchesAnyModality, getReportProgressLabel } from '../utils/appointmentServices';
+import { watchAppointments, patchCachedAppointment } from '../db/repos/appointmentsRepo';
+import { syncNow } from '../sync/SyncEngine';
 import '../styles/global.css';
 import '../styles/DoctorBoard.css';
 
@@ -45,7 +47,7 @@ function getDefaultDoctorFilter(user) {
 
 export default function DoctorBoard() {
   const { activeCenter, currentUser } = useContext(AuthContext);
-  const { isOnline } = useOffline();
+  const { isOnline, addToOutbox } = useOffline();
   const navigate = useNavigate();
   // 60s tick keeps the on-premises pill counting up; isOverdue mirrors the bell.
   useTickClock();
@@ -99,46 +101,36 @@ export default function DoctorBoard() {
 
 
 
-  // --- API SYNC ---
-  const fetchCases = useCallback(async () => {
-    setLoading(true);
-    try {
-      const res = await apiClient.get('/appointments');
-      
-      // Sort ASCENDING for correct sequential token number calculation
-      const sortedData = res.data.sort((a, b) => new Date(a.dateTime || 0).getTime() - new Date(b.dateTime || 0).getTime());
-      const dailyCounters = {};
-
-      const allCases = sortedData.map(a => {
-        const studyDate = a.dateTime ? new Date(a.dateTime).toLocaleDateString('en-CA') : null;
-        const dateKey = studyDate || TODAY;
-        dailyCounters[dateKey] = (dailyCounters[dateKey] || 0) + 1;
-
-        return {
+  // --- WORKLIST (offline-first) ---
+  // Read the reporting worklist from the local Dexie cache via a liveQuery.
+  // Renders instantly, works fully OFFLINE (the SyncEngine keeps the cache fresh
+  // and it survives reloads), and auto-updates on every delta — replacing the
+  // old direct fetch + 5s poll + nativeStorage snapshot fallback.
+  useEffect(() => {
+    const sub = watchAppointments({ mode: 'all' }).subscribe({
+      next: (rows) => {
+        const allCases = (rows || []).map(a => ({
           ...a,
           id: a.displayId,
           priority: a.priority || (a.type === 'EMERGENCY' ? 'STAT' : 'ROUTINE'),
-          isToday: studyDate === TODAY,
-          // Prefer persisted server-side token; fall back to calculated for legacy records
-          tokenNo: a.dailyTokenNumber ?? dailyCounters[dateKey]
-        };
-      });
-      setCases(allCases);
-      await nativeStorage.set('1rad_cache_cases', allCases);
-    } catch (err) {
-      console.error('[DOCTOR] Case fetch failed, trying cache', err);
-      const cached = await nativeStorage.get('1rad_cache_cases');
-      if (cached) setCases(cached);
-    } finally {
-      setLoading(false);
-    }
+          isToday: a.dateTime ? new Date(a.dateTime).toLocaleDateString('en-CA') === TODAY : false,
+        }));
+        setCases(prev => (JSON.stringify(prev) === JSON.stringify(allCases) ? prev : allCases));
+        setLoading(false);
+      },
+      error: (err) => {
+        console.warn('[DOCTOR] worklist liveQuery error', err);
+        setLoading(false);
+      },
+    });
+    return () => sub.unsubscribe();
   }, [TODAY]);
 
-  useEffect(() => {
-    fetchCases();
-    const interval = setInterval(fetchCases, 5000); 
-    return () => clearInterval(interval);
-  }, [fetchCases]);
+  // Manual refresh / post-action nudge — force an immediate sync; the liveQuery
+  // re-renders from the refreshed cache. Offline this is a no-op.
+  const fetchCases = useCallback(async () => {
+    try { await syncNow(); } catch (err) { console.warn('[DOCTOR] manual sync failed', err?.message || err); }
+  }, []);
 
   const fetchDoctors = useCallback(async () => {
     try {
@@ -181,6 +173,13 @@ export default function DoctorBoard() {
   }, [fetchDoctors]);
 
   const handleStatusUpdate = async (id, newStatus) => {
+    // Optimistic cache patch so the worklist reflects it immediately / offline.
+    await patchCachedAppointment(id, (row) => ({ ...row, status: newStatus }));
+
+    if (!isOnline) {
+      await addToOutbox('APPOINTMENT_STATUS', { id, status: newStatus });
+      return;
+    }
     try {
       await apiClient.patch(`/appointments/${id}/status`, `"${newStatus}"`, {
         headers: { 'Content-Type': 'application/json' }
@@ -188,6 +187,11 @@ export default function DoctorBoard() {
       fetchCases();
     } catch (err) {
       console.error('[DOCTOR] Status update failed', err);
+      if (!err.response) {
+        await addToOutbox('APPOINTMENT_STATUS', { id, status: newStatus });
+      } else {
+        fetchCases(); // re-sync to revert the optimistic patch
+      }
     }
   };
 

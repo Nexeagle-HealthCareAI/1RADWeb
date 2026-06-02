@@ -52,8 +52,8 @@ export default function useOffline() {
     return () => sub.unsubscribe();
   }, []);
 
-  const addToOutbox = useCallback(async (type, payload) => {
-    const item = await enqueue(type, payload);
+  const addToOutbox = useCallback(async (type, payload, idempotencyKey) => {
+    const item = await enqueue(type, payload, idempotencyKey);
     console.log(`[OFFLINE] Record cached in outbox: ${type}`);
     // If we're online, attempt the push right away — no reason to wait
     // for the next user action. If offline, this is a no-op (the engine's

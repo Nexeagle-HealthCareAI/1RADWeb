@@ -15,21 +15,32 @@
 //     poisoned:        0 | 1 — Dexie can't index booleans
 //     lastError:       last failure message (debugging aid)
 //     createdAtMs:     when queued (drives FIFO order)
+//     nextAttemptAt:   ms timestamp — auto-retry back-off gate. The push
+//                     loop skips an item until the clock passes this. 0 (or
+//                     absent) means "eligible right now". Set when a transient
+//                     failure schedules an automatic retry; cleared on an
+//                     explicit trigger (reconnect / "Sync now" / manual retry).
 //   }
 
 import { liveQuery } from 'dexie';
 import { tables } from '../dexie';
 
-export async function enqueue(type, payload) {
+export async function enqueue(type, payload, idempotencyKey) {
   const item = {
     id:             crypto.randomUUID(),
     type,
     payload,
-    idempotencyKey: crypto.randomUUID(),
+    // Caller may supply a key so the SAME logical action can carry one stable
+    // Idempotency-Key across its online attempt AND this outbox fallback — that
+    // is what lets the server dedupe a "succeeded but response was lost, then
+    // re-queued" write instead of creating a duplicate. Falls back to a fresh
+    // UUID when the caller doesn't care (offline-only / idempotent mutations).
+    idempotencyKey: idempotencyKey || crypto.randomUUID(),
     attempts:       0,
     poisoned:       0,
     lastError:      null,
     createdAtMs:    Date.now(),
+    nextAttemptAt:  0,
   };
   await tables.outbox().add(item);
   return item;
@@ -39,9 +50,13 @@ export async function enqueue(type, payload) {
 // pushes can violate causality (e.g. STATUS_UPDATE arriving before the
 // CREATE the status references).
 export async function listPending() {
+  // Eligible = not poisoned AND past its auto-retry back-off gate. An item
+  // mid-back-off is intentionally invisible to the push loop until its
+  // nextAttemptAt elapses, so a flaky/offline server isn't hammered.
+  const now = Date.now();
   return tables.outbox()
     .orderBy('createdAtMs')
-    .filter(o => !o.poisoned)
+    .filter(o => !o.poisoned && (!o.nextAttemptAt || o.nextAttemptAt <= now))
     .toArray();
 }
 
@@ -54,12 +69,28 @@ export async function remove(id) {
   await tables.outbox().delete(id);
 }
 
-export async function markFailure(id, errorMessage, attempts) {
+export async function markFailure(id, errorMessage, attempts, nextAttemptAt) {
   if (!id) return;
   await tables.outbox().update(id, {
     attempts,
     lastError: errorMessage,
+    // Schedule the next automatic attempt. 0 = retry on the next cycle.
+    nextAttemptAt: nextAttemptAt || 0,
   });
+}
+
+// Clear every pending item's back-off gate so the very next push cycle
+// retries them immediately. Called on the explicit triggers where the user
+// (or a reconnect) is effectively saying "try now" — we don't want a 5-minute
+// back-off to delay a retry the moment the network is clearly back.
+export async function clearBackoff() {
+  const t = tables.outbox();
+  const all = await t.toArray();
+  for (const o of all) {
+    if (!o.poisoned && o.nextAttemptAt) {
+      await t.update(o.id, { nextAttemptAt: 0 });
+    }
+  }
 }
 
 export async function markPoisoned(id, errorMessage) {
@@ -75,6 +106,24 @@ export async function markPoisoned(id, errorMessage) {
 export async function purgePoisoned() {
   const t = tables.outbox();
   return t.where('poisoned').equals(1).delete();
+}
+
+// Un-poison a single item — clears the poisoned flag, resets the attempt
+// counter and last error so the next push cycle gives it a fresh run. Used by
+// the "Retry" action on the Sync & Outbox screen.
+export async function retryOne(id) {
+  if (!id) return;
+  await tables.outbox().update(id, { poisoned: 0, attempts: 0, lastError: null, nextAttemptAt: 0 });
+}
+
+// Un-poison ALL poisoned items at once. Returns how many were re-armed.
+export async function retryPoisoned() {
+  const t = tables.outbox();
+  const poisoned = await t.where('poisoned').equals(1).toArray();
+  for (const o of poisoned) {
+    await t.update(o.id, { poisoned: 0, attempts: 0, lastError: null, nextAttemptAt: 0 });
+  }
+  return poisoned.length;
 }
 
 // Reactive counter — drives the TopNav "N Pending" chip and any future

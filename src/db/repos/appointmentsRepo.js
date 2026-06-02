@@ -183,3 +183,27 @@ export async function getAppointmentById(appointmentId) {
   if (!appointmentId) return null;
   return tables.appointments().get(appointmentId);
 }
+
+// Optimistic local patch. Lets a board apply a status/comment change to the
+// cached appointment row IMMEDIATELY — so the liveQuery-driven worklist
+// reflects the change instantly, including while OFFLINE (where there's no
+// pull to bring the server's version back). The matching outbox mutation
+// carries the real write; on reconnect it pushes, then the next pull reconciles
+// this row with the canonical server copy.
+//
+//   mutate(row) → patched row (or falsy to skip).
+//
+// We deliberately DO NOT advance _updatedAtMs: the high-water cursor must stay
+// put so the server's reconciling delta isn't skipped on the next pull.
+export async function patchCachedAppointment(appointmentId, mutate) {
+  if (!appointmentId || typeof mutate !== 'function') return false;
+  const t = tables.appointments();
+  const row = await t.get(appointmentId);
+  if (!row) return false;
+  const patched = mutate({ ...row });
+  if (!patched) return false;
+  patched._localDirty = 1;            // marks an unsynced optimistic change
+  patched._updatedAtMs = row._updatedAtMs; // keep the delta cursor unchanged
+  await t.put(patched);
+  return true;
+}

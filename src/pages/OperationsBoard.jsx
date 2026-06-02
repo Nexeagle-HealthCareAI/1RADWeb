@@ -5,6 +5,9 @@ import useTickClock from '../utils/useTickClock';
 import { formatElapsed, premisesSeverity, premisesPillStyle } from '../utils/timeTracking';
 import { useOverdue } from '../components/OverdueAppointments/OverdueContext';
 import { getServiceLines, getUniqueModalities, matchesAnyModality, getReportProgressLabel, getStageElapsedMinutes, formatStageElapsed, getStageSlaBucket } from '../utils/appointmentServices';
+import { watchAppointments, patchCachedAppointment } from '../db/repos/appointmentsRepo';
+import { syncNow } from '../sync/SyncEngine';
+import useOffline from '../hooks/useOffline';
 import '../styles/global.css';
 import '../styles/AppointmentBoard.css';
 
@@ -34,6 +37,7 @@ export default function OperationsBoard() {
   // 60s tick keeps the on-premises pill counting up; isOverdue mirrors the bell.
   useTickClock();
   const { isOverdue } = useOverdue();
+  const { addToOutbox, isOnline } = useOffline();
   const [appointments, setAppointments] = useState([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
@@ -136,24 +140,30 @@ export default function OperationsBoard() {
     }, 4000);
   };
 
-  // Fetch appointments list
+  // Manual refresh / post-action nudge — force an immediate sync; the
+  // liveQuery below then re-renders from the refreshed cache. Offline this is a
+  // no-op and the cached board stays on screen.
   const fetchAppointments = async () => {
-    setLoading(true);
-    try {
-      const response = await apiClient.get('/appointments');
-      const allAppts = Array.isArray(response.data) ? response.data : [];
-      setAppointments(allAppts);
-    } catch (err) {
-      console.error(err);
-      showToast('Failed to retrieve active board appointments.', 'error');
-      setAppointments([]);
-    } finally {
-      setLoading(false);
-    }
+    try { await syncNow(); } catch (err) { console.warn('[OPS] manual sync failed', err?.message || err); }
   };
 
+  // Offline-first board: read the appointments from the local Dexie cache via a
+  // liveQuery. Renders instantly, works offline, and auto-updates whenever the
+  // SyncEngine writes a delta. The page filters this set by the selected date
+  // client-side, so we pull the whole cached set (mode: 'all').
   useEffect(() => {
-    fetchAppointments();
+    const sub = watchAppointments({ mode: 'all' }).subscribe({
+      next: (rows) => {
+        const allAppts = rows || [];
+        setAppointments(prev => (JSON.stringify(prev) === JSON.stringify(allAppts) ? prev : allAppts));
+        setLoading(false);
+      },
+      error: (err) => {
+        console.warn('[OPS] worklist liveQuery error', err);
+        setLoading(false);
+      },
+    });
+    return () => sub.unsubscribe();
   }, []);
 
   // Reset pagination to first page when filtering parameters change
@@ -176,18 +186,45 @@ export default function OperationsBoard() {
   // on ReportingPage, so we don't expose it here.
   const handleAdvanceServiceStatus = async (appointmentId, serviceId, nextStatus) => {
     if (!appointmentId || !serviceId || !nextStatus) return;
+    const now = new Date().toISOString();
+
+    // Optimistically patch the cached row so the board reflects the new status
+    // immediately — including offline. Roll the parent visit status up only
+    // when every service agrees; the server does the authoritative roll-up.
+    await patchCachedAppointment(appointmentId, (row) => {
+      const services = (row.services || []).map(svc =>
+        svc.id === serviceId
+          ? {
+              ...svc,
+              status:          nextStatus,
+              scanCompletedAt: nextStatus === 'SCANNED'   ? (svc.scanCompletedAt || now) : svc.scanCompletedAt,
+              deliveredAt:     nextStatus === 'DELIVERED' ? (svc.deliveredAt || now)     : svc.deliveredAt,
+            }
+          : svc
+      );
+      const allSame = services.length > 0 && services.every(s => (s.status || '').toUpperCase() === nextStatus.toUpperCase());
+      return { ...row, services, ...(allSame ? { status: nextStatus.toLowerCase() } : {}) };
+    });
+
+    if (!isOnline) {
+      await addToOutbox('SERVICE_STATUS', { appointmentId, serviceId, status: nextStatus });
+      return;
+    }
     try {
       await apiClient.patch(
         `/appointments/${appointmentId}/services/${serviceId}/status`,
         { status: nextStatus }
       );
-      // Best-effort refresh — the parent already polls but a manual
-      // refetch nudges the user's view ahead of the next poll tick.
       try { fetchAppointments?.(); } catch (_) { /* not always wired */ }
     } catch (err) {
       console.error('[OPS] Service status update failed', err);
-      const msg = err?.response?.data?.message || err?.response?.data?.error || 'Could not update this service. Please try again.';
-      showToast(msg, 'error');
+      if (!err.response) {
+        await addToOutbox('SERVICE_STATUS', { appointmentId, serviceId, status: nextStatus });
+      } else {
+        const msg = err?.response?.data?.message || err?.response?.data?.error || 'Could not update this service. Please try again.';
+        showToast(msg, 'error');
+        try { fetchAppointments?.(); } catch (_) { /* re-sync to revert optimistic patch */ }
+      }
     }
   };
 
@@ -195,6 +232,16 @@ export default function OperationsBoard() {
   // via the PATCH /notes endpoint. Empty string clears the note.
   const handleUpdateServiceNotes = async (appointmentId, serviceId, notes) => {
     if (!appointmentId || !serviceId) return;
+    // Optimistic patch so the note shows on the pill immediately / offline.
+    await patchCachedAppointment(appointmentId, (row) => ({
+      ...row,
+      services: (row.services || []).map(svc => svc.id === serviceId ? { ...svc, notes: notes ?? '' } : svc),
+    }));
+
+    if (!isOnline) {
+      await addToOutbox('SERVICE_NOTES', { appointmentId, serviceId, notes: notes ?? '' });
+      return;
+    }
     try {
       await apiClient.patch(
         `/appointments/${appointmentId}/services/${serviceId}/notes`,
@@ -203,8 +250,12 @@ export default function OperationsBoard() {
       try { fetchAppointments?.(); } catch (_) { /* parent may not pass it */ }
     } catch (err) {
       console.error('[OPS] Service notes update failed', err);
-      const msg = err?.response?.data?.message || err?.response?.data?.error || 'Could not save these notes. Please try again.';
-      showToast(msg, 'error');
+      if (!err.response) {
+        await addToOutbox('SERVICE_NOTES', { appointmentId, serviceId, notes: notes ?? '' });
+      } else {
+        const msg = err?.response?.data?.message || err?.response?.data?.error || 'Could not save these notes. Please try again.';
+        showToast(msg, 'error');
+      }
     }
   };
 
@@ -255,15 +306,35 @@ export default function OperationsBoard() {
     if (body.length === 0) { setModalOpen(false); return; }
 
     setSaving(true);
+    const appointmentId = selectedItem.appointmentId;
+    // Mirror the note onto the cached row's delay reason so the board reflects
+    // it immediately / offline (the server mirrors the latest comment the same way).
+    await patchCachedAppointment(appointmentId, (row) => ({ ...row, delayReason: body }));
+
+    if (!isOnline) {
+      await addToOutbox('APPOINTMENT_COMMENT', { appointmentId, body });
+      showToast('Visit note saved offline — will sync when reconnected.', 'info');
+      setModalOpen(false);
+      setNewReason('');
+      setSaving(false);
+      return;
+    }
     try {
-      await apiClient.post(`/appointments/${selectedItem.appointmentId}/comments`, { body });
+      await apiClient.post(`/appointments/${appointmentId}/comments`, { body });
       showToast('Visit note saved.', 'success');
       setModalOpen(false);
       setNewReason('');
       fetchAppointments();
     } catch (err) {
       console.error(err);
-      showToast('Failed to save visit note.', 'error');
+      if (!err.response) {
+        await addToOutbox('APPOINTMENT_COMMENT', { appointmentId, body });
+        showToast('Visit note saved offline — will sync when reconnected.', 'info');
+        setModalOpen(false);
+        setNewReason('');
+      } else {
+        showToast('Failed to save visit note.', 'error');
+      }
     } finally {
       setSaving(false);
     }
