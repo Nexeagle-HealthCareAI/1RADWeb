@@ -1596,13 +1596,16 @@ const ReportingPage = () => {
         }
       }
 
-      // Direct blob access DENIED with a real HTTP status (not a thrown
-      // network error). Happens when the storage account has "Allow blob public
-      // access" disabled (Azure returns 409 "Public access is not permitted")
-      // or blocks anonymous reads (403). The browser can't read the blob URL
-      // directly, so stream it through the backend proxy, which authenticates
-      // to storage. 404 is a genuine "gone" and must NOT be retried.
-      if (response && !response.ok && response.status !== 404) {
+      // Direct blob access DENIED with a real HTTP status (not a thrown network
+      // error). Causes: account public access disabled (409 "Public access is
+      // not permitted"), blocked anonymous read (403), OR — crucially — a
+      // PRIVATE container while the account allows public access, which Azure
+      // reports as an AMBIGUOUS 404 "ResourceNotFound" (it hides existence from
+      // anonymous callers). In all of these the browser can't read the blob
+      // directly, so we stream it through the backend proxy, which authenticates
+      // to storage. If the blob is genuinely gone the proxy fails too and we
+      // surface the real error below.
+      if (response && !response.ok) {
         console.log(`[DICOM_LOAD] Direct fetch returned ${response.status}; falling back to secure proxy...`);
         setProcessingStatus('Trying secure proxy...');
         try {
