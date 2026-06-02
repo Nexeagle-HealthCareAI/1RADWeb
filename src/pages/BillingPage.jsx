@@ -1154,6 +1154,33 @@ export default function BillingPage() {
             patientPaymentStatus: inv?.status ? String(inv.status).toUpperCase() : null
         };
     });
+    // Derive the patient's payment status for a commission by matching it to
+    // its invoice. The /referrers/commissions feed (which powers this hub) does
+    // NOT carry patientPaymentStatus, so we compute it here from the invoices
+    // BillingPage already holds — paid vs. total is the source of truth, with
+    // any ledger-supplied value as a fallback. This is what makes the "payment
+    // received" tick appear once the Revenue Hub collects from the patient.
+    const derivePatientPaymentStatus = (c) => {
+        const ref = c.referenceNumber || c.reference;
+        const apptId = c.appointmentId || c.AppointmentId;
+        const inv = (invoices || []).find(i =>
+            (ref && (i.displayId === ref || i.invoiceId === ref)) ||
+            (apptId && i.appointmentId === apptId)
+        );
+        if (inv) {
+            const paid = Number(inv.paidAmount) || 0;
+            const total = Number(inv.totalAmount) || 0;
+            if (total > 0 && paid >= total - 0.01) return 'PAID';
+            if (paid > 0) return 'PARTIAL';
+            const s = String(inv.status || '').toUpperCase();
+            if (s === 'PAID' || s === 'COMPLETED' || s === 'SETTLED') return 'PAID';
+            if (s === 'PARTIAL') return 'PARTIAL';
+            return 'PENDING';
+        }
+        // No invoice matched — fall back to whatever the row already carries.
+        return c.patientPaymentStatus ? String(c.patientPaymentStatus).toUpperCase() : null;
+    };
+
     const strategicCuts = referralCommissions.filter(c => c).map(c => {
         return {
             id: c.commissionId || c.id,
@@ -1167,10 +1194,7 @@ export default function BillingPage() {
             referrerId: c.referrerId,
             modality: c.modality || 'MRI',
             patientName: c.patientName || 'N/A',
-            // Normalise casing so the "patient must have paid" gate on the
-            // pay-commission checkbox compares reliably (backend now derives
-            // PAID/PARTIAL/PENDING from the actual collected amounts).
-            patientPaymentStatus: c.patientPaymentStatus ? String(c.patientPaymentStatus).toUpperCase() : null,
+            patientPaymentStatus: derivePatientPaymentStatus(c),
             paymentReceived: c.paymentReceived !== undefined ? c.paymentReceived : 0
         };
     });

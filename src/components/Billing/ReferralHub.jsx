@@ -122,12 +122,19 @@ const ReferralHub = ({
     });
   };
 
+  // A referrer commission becomes payable as soon as the patient has paid
+  // ANYTHING towards their invoice — full (PAID) or part (PARTIAL). We only keep
+  // the block when no payment has been received yet, so collecting at the
+  // Revenue Hub immediately unblocks the payout here.
+  const isPatientPaymentReceived = (cut) =>
+    cut?.patientPaymentStatus === 'PAID' || cut?.patientPaymentStatus === 'PARTIAL';
+
   // Only cuts that are genuinely eligible for bulk mark-as-paid drive "Select All".
   // Criteria must mirror openBulkPaidConfirm exactly so count/total in the popup
   // always match what the user selected.
   const selectableDrawerCuts = activePartner
     ? activePartner.cuts.filter(c =>
-        c.type === 'STRATEGIC' && c.status !== 'PAID' && c.patientPaymentStatus === 'PAID'
+        c.type === 'STRATEGIC' && c.status !== 'PAID' && isPatientPaymentReceived(c)
       )
     : [];
 
@@ -147,7 +154,7 @@ const ReferralHub = ({
   const openBulkPaidConfirm = () => {
     if (!activePartner) return;
     const eligible = activePartner.cuts.filter(c =>
-      drawerSelectedIds.has(c.id) && c.type === 'STRATEGIC' && c.status !== 'PAID' && c.patientPaymentStatus === 'PAID'
+      drawerSelectedIds.has(c.id) && c.type === 'STRATEGIC' && c.status !== 'PAID' && isPatientPaymentReceived(c)
     );
     const total = eligible.reduce((s, c) => s + (Number(c.amount) || 0), 0);
     setBulkConfirmModal({
@@ -682,19 +689,19 @@ const ReferralHub = ({
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
                   {activePartner.cuts.map(cut => {
                     const isLegacy = cut?.type === 'LEGACY';
-                    const blockPayment = cut?.status !== 'PAID' && cut?.patientPaymentStatus !== 'PAID';
+                    const blockPayment = cut?.status !== 'PAID' && !isPatientPaymentReceived(cut);
                     const isDisabled = isLegacy || blockPayment;
                     const amountFormatted = (Number(cut?.amount) || 0).toLocaleString();
 
                     return (
-                      <div key={cut?.id} style={{ background: 'white', borderRadius: '16px', border: '1px solid #e2e8f0', padding: '16px', boxShadow: '0 4px 12px rgba(0,0,0,0.04)', opacity: (cut?.status !== 'PAID' && cut?.patientPaymentStatus !== 'PAID') ? 0.65 : 1 }}>
+                      <div key={cut?.id} style={{ background: 'white', borderRadius: '16px', border: '1px solid #e2e8f0', padding: '16px', boxShadow: '0 4px 12px rgba(0,0,0,0.04)', opacity: blockPayment ? 0.65 : 1 }}>
                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '14px' }}>
                           <div style={{ display: 'flex', gap: '12px', alignItems: 'flex-start' }}>
                             <input
                               type="checkbox"
                               checked={drawerSelectedIds.has(cut?.id)}
                               onChange={() => toggleDrawerSelectRow(cut?.id)}
-                              disabled={cut?.status === 'PAID' || cut?.patientPaymentStatus !== 'PAID'}
+                              disabled={cut?.status === 'PAID' || !isPatientPaymentReceived(cut)}
                               style={{ width: '18px', height: '18px', accentColor: '#e11d48', marginTop: '2px' }}
                             />
                             <div>
@@ -793,15 +800,15 @@ const ReferralHub = ({
                   </thead>
                   <tbody>
                     {activePartner.cuts.map(cut => (
-                      <tr key={cut?.id} style={{ borderBottom: '1px solid #f1f5f9', opacity: (cut?.status !== 'PAID' && cut?.patientPaymentStatus !== 'PAID') ? 0.55 : 1 }}>
+                      <tr key={cut?.id} style={{ borderBottom: '1px solid #f1f5f9', opacity: (cut?.status !== 'PAID' && !isPatientPaymentReceived(cut)) ? 0.55 : 1 }}>
                         <td style={{ padding: '12px', textAlign: 'center' }}>
                           <input
                             type="checkbox"
                             checked={drawerSelectedIds.has(cut?.id)}
                             onChange={() => toggleDrawerSelectRow(cut?.id)}
-                            disabled={cut?.status === 'PAID' || cut?.patientPaymentStatus !== 'PAID'}
-                            title={cut?.status === 'PAID' ? 'Commission already paid' : cut?.patientPaymentStatus !== 'PAID' ? 'Patient payment not yet received' : undefined}
-                            style={{ width: '14px', height: '14px', accentColor: '#e11d48', cursor: (cut?.status === 'PAID' || cut?.patientPaymentStatus !== 'PAID') ? 'not-allowed' : 'pointer' }}
+                            disabled={cut?.status === 'PAID' || !isPatientPaymentReceived(cut)}
+                            title={cut?.status === 'PAID' ? 'Commission already paid' : !isPatientPaymentReceived(cut) ? 'Patient payment not yet received' : undefined}
+                            style={{ width: '14px', height: '14px', accentColor: '#e11d48', cursor: (cut?.status === 'PAID' || !isPatientPaymentReceived(cut)) ? 'not-allowed' : 'pointer' }}
                           />
                         </td>
                         <td style={{ padding: '12px 8px', fontSize: '10.5px', fontWeight: 700, color: '#475569', whiteSpace: 'nowrap' }}>{formatDate(cut?.date, true)}</td>
@@ -842,7 +849,7 @@ const ReferralHub = ({
                         <td style={{ padding: '12px 8px', textAlign: 'center' }}>
                           {(() => {
                             const isLegacy = cut?.type === 'LEGACY';
-                            const blockPayment = cut?.status !== 'PAID' && cut?.patientPaymentStatus !== 'PAID';
+                            const blockPayment = cut?.status !== 'PAID' && !isPatientPaymentReceived(cut);
                             const isDisabled = isLegacy || blockPayment;
                             return (
                               <>

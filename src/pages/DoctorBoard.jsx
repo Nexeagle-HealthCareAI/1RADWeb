@@ -331,9 +331,9 @@ export default function DoctorBoard() {
       <div className="board-header" style={{ padding: '15px 40px', background: 'white', borderBottom: '1px solid #f1f5f9', display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '15px' }}>
         <div>
            <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '4px' }}>
-              <h1 style={{ fontSize: '22px', fontWeight: 700, color: '#0a1628', letterSpacing: '-0.5px', margin: 0 }}>Reporting Worklist</h1>
+              <h1 style={{ fontSize: '16px', fontWeight: 700, color: '#0a1628', letterSpacing: '-0.5px', margin: 0 }}>Reporting Worklist</h1>
            </div>
-           <p style={{ fontSize: '12px', color: '#6b7280' }}>Review and write radiology reports for today's studies</p>
+           <p style={{ fontSize: '9.5px', color: '#6b7280' }}>Review and write radiology reports for today's studies</p>
         </div>
         
         <div className="admin-tabs" style={{ 
@@ -346,13 +346,13 @@ export default function DoctorBoard() {
           gap: '10px'
         }}>
             <button onClick={() => setView('QUEUE')} style={{
-              padding: '10px 22px', borderRadius: '8px', border: 'none', fontSize: '13px',
+              padding: '10px 22px', borderRadius: '8px', border: 'none', fontSize: '10.5px',
               fontWeight: 600, background: view === 'QUEUE' ? 'white' : 'transparent',
               color: view === 'QUEUE' ? '#1d4ed8' : '#6b7280', cursor: 'pointer',
               transition: '0.2s', boxShadow: view === 'QUEUE' ? '0 2px 8px rgba(0,0,0,0.08)' : 'none'
             }}>Today's Queue</button>
             <button onClick={() => setView('HISTORY')} style={{
-              padding: '10px 22px', borderRadius: '8px', border: 'none', fontSize: '13px',
+              padding: '10px 22px', borderRadius: '8px', border: 'none', fontSize: '10.5px',
               fontWeight: 600, background: view === 'HISTORY' ? 'white' : 'transparent',
               color: view === 'HISTORY' ? '#1d4ed8' : '#6b7280', cursor: 'pointer',
               transition: '0.2s', boxShadow: view === 'HISTORY' ? '0 2px 8px rgba(0,0,0,0.08)' : 'none'
@@ -364,68 +364,68 @@ export default function DoctorBoard() {
         {view === 'QUEUE' ? (
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '15px', marginBottom: '20px' }}>
             <div className="summary-card" style={{ background: 'white', border: '1px solid #e2e8f0', padding: '15px', borderRadius: '20px', boxShadow: '0 10px 40px rgba(0,0,0,0.02)' }}>
-              <span style={{ display: 'block', fontSize: '11px', fontWeight: 500, color: '#ef4444', marginBottom: '6px' }}>Needs Report</span>
+              <span style={{ display: 'block', fontSize: '9px', fontWeight: 500, color: '#ef4444', marginBottom: '6px' }}>Needs Report</span>
               <div style={{ display: 'flex', alignItems: 'baseline', gap: '8px' }}>
-                 <span style={{ fontSize: '28px', fontWeight: 700, color: '#ef4444' }}>{stats.pendingReports}</span>
-                 <span style={{ fontSize: '11px', fontWeight: 500, color: '#ef4444' }}>Awaiting</span>
+                 <span style={{ fontSize: '19px', fontWeight: 700, color: '#ef4444' }}>{stats.pendingReports}</span>
+                 <span style={{ fontSize: '9px', fontWeight: 500, color: '#ef4444' }}>Awaiting</span>
               </div>
             </div>
 
             <div className="summary-card" style={{ background: 'white', border: '1px solid #e2e8f0', padding: '15px', borderRadius: '20px', boxShadow: '0 10px 40px rgba(0,0,0,0.02)' }}>
-              <span style={{ display: 'block', fontSize: '11px', fontWeight: 500, color: '#6b7280', marginBottom: '6px' }}>In Progress</span>
+              <span style={{ display: 'block', fontSize: '9px', fontWeight: 500, color: '#6b7280', marginBottom: '6px' }}>In Progress</span>
               <div style={{ display: 'flex', alignItems: 'baseline', gap: '8px' }}>
-                 <span style={{ fontSize: '28px', fontWeight: 700, color: '#f59e0b' }}>{stats.drafts}</span>
-                 <span style={{ fontSize: '11px', fontWeight: 500, color: '#f59e0b' }}>Drafts</span>
+                 <span style={{ fontSize: '19px', fontWeight: 700, color: '#f59e0b' }}>{stats.drafts}</span>
+                 <span style={{ fontSize: '9px', fontWeight: 500, color: '#f59e0b' }}>Drafts</span>
               </div>
             </div>
 
             <div className="summary-card" style={{ background: 'white', border: '1px solid #e2e8f0', padding: '15px', borderRadius: '20px', boxShadow: '0 10px 40px rgba(0,0,0,0.02)' }}>
-              <span style={{ display: 'block', fontSize: '11px', fontWeight: 500, color: '#6b7280', marginBottom: '6px' }}>Finalized Today</span>
+              <span style={{ display: 'block', fontSize: '9px', fontWeight: 500, color: '#6b7280', marginBottom: '6px' }}>Finalized Today</span>
               <div style={{ display: 'flex', alignItems: 'baseline', gap: '8px' }}>
-                 <span style={{ fontSize: '28px', fontWeight: 700, color: '#2ecc71' }}>{stats.finalizedToday}</span>
-                 <span style={{ fontSize: '11px', fontWeight: 500, color: '#2ecc71' }}>Reports</span>
+                 <span style={{ fontSize: '19px', fontWeight: 700, color: '#2ecc71' }}>{stats.finalizedToday}</span>
+                 <span style={{ fontSize: '9px', fontWeight: 500, color: '#2ecc71' }}>Reports</span>
               </div>
             </div>
 
             <div className="summary-card" style={{ background: 'white', border: '1px solid #e2e8f0', padding: '15px', borderRadius: '20px', boxShadow: '0 10px 40px rgba(0,0,0,0.02)' }}>
-              <span style={{ display: 'block', fontSize: '11px', fontWeight: 500, color: '#6b7280', marginBottom: '6px' }}>Incoming</span>
+              <span style={{ display: 'block', fontSize: '9px', fontWeight: 500, color: '#6b7280', marginBottom: '6px' }}>Incoming</span>
               <div style={{ display: 'flex', alignItems: 'baseline', gap: '8px' }}>
-                 <span style={{ fontSize: '28px', fontWeight: 700, color: '#1d4ed8' }}>{stats.upcoming}</span>
-                 <span style={{ fontSize: '11px', fontWeight: 500, color: '#1d4ed8' }}>Studies</span>
+                 <span style={{ fontSize: '19px', fontWeight: 700, color: '#1d4ed8' }}>{stats.upcoming}</span>
+                 <span style={{ fontSize: '9px', fontWeight: 500, color: '#1d4ed8' }}>Studies</span>
               </div>
             </div>
           </div>
         ) : (
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '15px', marginBottom: '20px' }}>
             <div className="summary-card" style={{ background: 'white', border: '1px solid #e2e8f0', padding: '15px', borderRadius: '20px', boxShadow: '0 10px 40px rgba(0,0,0,0.02)' }}>
-              <span style={{ display: 'block', fontSize: '11px', fontWeight: 500, color: '#6b7280', marginBottom: '6px' }}>Total Archive</span>
+              <span style={{ display: 'block', fontSize: '9px', fontWeight: 500, color: '#6b7280', marginBottom: '6px' }}>Total Archive</span>
               <div style={{ display: 'flex', alignItems: 'baseline', gap: '8px' }}>
-                 <span style={{ fontSize: '28px', fontWeight: 700, color: '#1e293b' }}>{stats.archiveTotal}</span>
-                 <span style={{ fontSize: '11px', fontWeight: 500, color: '#6366f1' }}>Studies</span>
+                 <span style={{ fontSize: '19px', fontWeight: 700, color: '#1e293b' }}>{stats.archiveTotal}</span>
+                 <span style={{ fontSize: '9px', fontWeight: 500, color: '#6366f1' }}>Studies</span>
               </div>
             </div>
 
             <div className="summary-card" style={{ background: 'white', border: '1px solid #e2e8f0', padding: '15px', borderRadius: '20px', boxShadow: '0 10px 40px rgba(0,0,0,0.02)' }}>
-              <span style={{ display: 'block', fontSize: '11px', fontWeight: 500, color: '#6b7280', marginBottom: '6px' }}>Finalized</span>
+              <span style={{ display: 'block', fontSize: '9px', fontWeight: 500, color: '#6b7280', marginBottom: '6px' }}>Finalized</span>
               <div style={{ display: 'flex', alignItems: 'baseline', gap: '8px' }}>
-                 <span style={{ fontSize: '28px', fontWeight: 700, color: '#059669' }}>{stats.archiveFinalized}</span>
-                 <span style={{ fontSize: '11px', fontWeight: 500, color: '#059669' }}>Reports</span>
+                 <span style={{ fontSize: '19px', fontWeight: 700, color: '#059669' }}>{stats.archiveFinalized}</span>
+                 <span style={{ fontSize: '9px', fontWeight: 500, color: '#059669' }}>Reports</span>
               </div>
             </div>
 
             <div className="summary-card" style={{ background: 'white', border: '1px solid #e2e8f0', padding: '15px', borderRadius: '20px', boxShadow: '0 10px 40px rgba(0,0,0,0.02)' }}>
-              <span style={{ display: 'block', fontSize: '11px', fontWeight: 500, color: '#6b7280', marginBottom: '6px' }}>Open Drafts</span>
+              <span style={{ display: 'block', fontSize: '9px', fontWeight: 500, color: '#6b7280', marginBottom: '6px' }}>Open Drafts</span>
               <div style={{ display: 'flex', alignItems: 'baseline', gap: '8px' }}>
-                 <span style={{ fontSize: '28px', fontWeight: 700, color: '#f59e0b' }}>{stats.archiveDrafts}</span>
-                 <span style={{ fontSize: '11px', fontWeight: 500, color: '#f59e0b' }}>Drafts</span>
+                 <span style={{ fontSize: '19px', fontWeight: 700, color: '#f59e0b' }}>{stats.archiveDrafts}</span>
+                 <span style={{ fontSize: '9px', fontWeight: 500, color: '#f59e0b' }}>Drafts</span>
               </div>
             </div>
 
             <div className="summary-card" style={{ background: 'white', border: '1px solid #e2e8f0', padding: '15px', borderRadius: '20px', boxShadow: '0 10px 40px rgba(0,0,0,0.02)' }}>
-              <span style={{ display: 'block', fontSize: '11px', fontWeight: 500, color: '#6b7280', marginBottom: '6px' }}>Accuracy</span>
+              <span style={{ display: 'block', fontSize: '9px', fontWeight: 500, color: '#6b7280', marginBottom: '6px' }}>Accuracy</span>
               <div style={{ display: 'flex', alignItems: 'baseline', gap: '8px' }}>
-                 <span style={{ fontSize: '28px', fontWeight: 700, color: '#1d4ed8' }}>{stats.reportingAccuracy}%</span>
-                 <span style={{ fontSize: '11px', fontWeight: 500, color: '#1d4ed8' }}>Rate</span>
+                 <span style={{ fontSize: '19px', fontWeight: 700, color: '#1d4ed8' }}>{stats.reportingAccuracy}%</span>
+                 <span style={{ fontSize: '9px', fontWeight: 500, color: '#1d4ed8' }}>Rate</span>
               </div>
             </div>
           </div>
@@ -443,12 +443,12 @@ export default function DoctorBoard() {
                 style={{ 
                   width: '100%', padding: '12px 12px 12px 45px', borderRadius: '10px', 
                   border: search.startsWith('ID:') ? '2px solid #0f52ba' : '1px solid #e2e8f0', 
-                  fontSize: '16px', fontWeight: 700, outline: 'none',
+                  fontSize: '12.5px', fontWeight: 700, outline: 'none',
                   background: search.startsWith('ID:') ? '#f0f7ff' : 'white'
                 }} 
               />
               {search.startsWith('ID:') && (
-                <span style={{ position: 'absolute', right: '15px', top: '50%', transform: 'translateY(-50%)', background: '#1d4ed8', color: 'white', fontSize: '10px', fontWeight: 500, padding: '2px 8px', borderRadius: '4px' }}>Scanner Mode</span>
+                <span style={{ position: 'absolute', right: '15px', top: '50%', transform: 'translateY(-50%)', background: '#1d4ed8', color: 'white', fontSize: '8px', fontWeight: 500, padding: '2px 8px', borderRadius: '4px' }}>Scanner Mode</span>
               )}
             </div>
           </div>
@@ -456,38 +456,38 @@ export default function DoctorBoard() {
           {view === 'HISTORY' && (
             <div style={{ display: 'flex', gap: '10px', alignItems: 'center', background: '#f8fafc', padding: '5px 15px', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
               <div style={{ display: 'flex', background: '#e2e8f0', padding: '2px', borderRadius: '8px' }}>
-                <button onClick={() => setArchiveFilterMode('ALL')} style={{ padding: '6px 12px', borderRadius: '6px', border: 'none', fontSize: '9px', fontWeight: 950, background: archiveFilterMode === 'ALL' ? 'white' : 'transparent', color: archiveFilterMode === 'ALL' ? '#0f52ba' : '#64748b', cursor: 'pointer' }}>ALL</button>
-                <button onClick={() => setArchiveFilterMode('RANGE')} style={{ padding: '6px 12px', borderRadius: '6px', border: 'none', fontSize: '9px', fontWeight: 950, background: archiveFilterMode === 'RANGE' ? 'white' : 'transparent', color: archiveFilterMode === 'RANGE' ? '#0f52ba' : '#64748b', cursor: 'pointer' }}>RANGE</button>
+                <button onClick={() => setArchiveFilterMode('ALL')} style={{ padding: '6px 12px', borderRadius: '6px', border: 'none', fontSize: '7.5px', fontWeight: 950, background: archiveFilterMode === 'ALL' ? 'white' : 'transparent', color: archiveFilterMode === 'ALL' ? '#0f52ba' : '#64748b', cursor: 'pointer' }}>ALL</button>
+                <button onClick={() => setArchiveFilterMode('RANGE')} style={{ padding: '6px 12px', borderRadius: '6px', border: 'none', fontSize: '7.5px', fontWeight: 950, background: archiveFilterMode === 'RANGE' ? 'white' : 'transparent', color: archiveFilterMode === 'RANGE' ? '#0f52ba' : '#64748b', cursor: 'pointer' }}>RANGE</button>
               </div>
               
               {archiveFilterMode === 'RANGE' && (
                 <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-                  <input type="date" value={archiveDateRange.start} onChange={e => setArchiveDateRange({...archiveDateRange, start: e.target.value})} style={{ padding: '6px 10px', borderRadius: '8px', border: '1px solid #ddd', fontSize: '11px', fontWeight: 700 }} />
-                  <span style={{ fontSize: '10px', fontWeight: 900, color: '#94a3b8' }}>→</span>
-                  <input type="date" value={archiveDateRange.end} onChange={e => setArchiveDateRange({...archiveDateRange, end: e.target.value})} style={{ padding: '6px 10px', borderRadius: '8px', border: '1px solid #ddd', fontSize: '11px', fontWeight: 700 }} />
+                  <input type="date" value={archiveDateRange.start} onChange={e => setArchiveDateRange({...archiveDateRange, start: e.target.value})} style={{ padding: '6px 10px', borderRadius: '8px', border: '1px solid #ddd', fontSize: '9px', fontWeight: 700 }} />
+                  <span style={{ fontSize: '8px', fontWeight: 900, color: '#94a3b8' }}>→</span>
+                  <input type="date" value={archiveDateRange.end} onChange={e => setArchiveDateRange({...archiveDateRange, end: e.target.value})} style={{ padding: '6px 10px', borderRadius: '8px', border: '1px solid #ddd', fontSize: '9px', fontWeight: 700 }} />
                 </div>
               )}
             </div>
           )}
 
-          <select value={selectedDoctor} onChange={e => setSelectedDoctor(e.target.value)} style={{ padding: '10px 14px', borderRadius: '8px', border: '1px solid #e2e8f0', fontSize: '12px', fontWeight: 500, background: 'white', outline: 'none' }}>
+          <select value={selectedDoctor} onChange={e => setSelectedDoctor(e.target.value)} style={{ padding: '10px 14px', borderRadius: '8px', border: '1px solid #e2e8f0', fontSize: '9.5px', fontWeight: 500, background: 'white', outline: 'none' }}>
             <option value="ALL">All Doctors</option>
             {doctors.map(d => <option key={d.id} value={d.id}>{d.name}</option>)}
           </select>
 
-          <select value={filters.modality} onChange={e => setFilters({...filters, modality: e.target.value})} style={{ padding: '10px 14px', borderRadius: '8px', border: '1px solid #e2e8f0', fontSize: '12px', fontWeight: 500, background: 'white', outline: 'none' }}>
+          <select value={filters.modality} onChange={e => setFilters({...filters, modality: e.target.value})} style={{ padding: '10px 14px', borderRadius: '8px', border: '1px solid #e2e8f0', fontSize: '9.5px', fontWeight: 500, background: 'white', outline: 'none' }}>
             <option value="ALL">All Modalities</option>
             {Object.keys(MODALITY_ICONS).map(m => <option key={m} value={m}>{m}</option>)}
           </select>
 
-          <select value={filters.priority} onChange={e => setFilters({...filters, priority: e.target.value})} style={{ padding: '10px 14px', borderRadius: '8px', border: '1px solid #e2e8f0', fontSize: '12px', fontWeight: 500, background: 'white', outline: 'none' }}>
+          <select value={filters.priority} onChange={e => setFilters({...filters, priority: e.target.value})} style={{ padding: '10px 14px', borderRadius: '8px', border: '1px solid #e2e8f0', fontSize: '9.5px', fontWeight: 500, background: 'white', outline: 'none' }}>
             <option value="ALL">All Priorities</option>
             <option value="STAT">STAT</option>
             <option value="URGENT">Urgent</option>
             <option value="ROUTINE">Routine</option>
           </select>
 
-          <select value={filters.clinicalStatus} onChange={e => setFilters({...filters, clinicalStatus: e.target.value})} style={{ padding: '10px 14px', borderRadius: '8px', border: '1px solid #e2e8f0', fontSize: '12px', fontWeight: 500, background: 'white', outline: 'none' }}>
+          <select value={filters.clinicalStatus} onChange={e => setFilters({...filters, clinicalStatus: e.target.value})} style={{ padding: '10px 14px', borderRadius: '8px', border: '1px solid #e2e8f0', fontSize: '9.5px', fontWeight: 500, background: 'white', outline: 'none' }}>
             <option value="ALL">All Statuses</option>
             {view === 'QUEUE' ? (
               <>
@@ -504,35 +504,35 @@ export default function DoctorBoard() {
             )}
           </select>
 
-          <button className="gamified-btn" onClick={fetchCases} style={{ padding: '10px 18px', borderRadius: '8px', fontSize: '13px', fontWeight: 600 }}>Refresh</button>
+          <button className="gamified-btn" onClick={fetchCases} style={{ padding: '10px 18px', borderRadius: '8px', fontSize: '10.5px', fontWeight: 600 }}>Refresh</button>
         </div>
 
         <div style={{ background: 'white', borderRadius: '20px', border: '1px solid #e2e8f0', overflow: 'hidden', boxShadow: '0 4px 20px rgba(0,0,0,0.03)' }}>
           <table style={{ width: '100%', borderCollapse: 'collapse' }}>
             <thead style={{ background: '#f8fafc', borderBottom: '1px solid #e2e8f0' }}>
               <tr>
-                <th onClick={() => handleSort('patientName')} style={{ padding: '16px 20px', textAlign: 'left', fontSize: '11px', fontWeight: 600, color: '#6b7280', cursor: 'pointer', letterSpacing: '0.3px' }}>
+                <th onClick={() => handleSort('patientName')} style={{ padding: '16px 20px', textAlign: 'left', fontSize: '9px', fontWeight: 600, color: '#6b7280', cursor: 'pointer', letterSpacing: '0.3px' }}>
                   Patient {sortConfig.key === 'patientName' ? (sortConfig.direction === 'asc' ? '↑' : '↓') : '↕'}
                 </th>
-                <th onClick={() => handleSort('tokenNo')} style={{ padding: '16px 20px', textAlign: 'left', fontSize: '11px', fontWeight: 600, color: '#6b7280', cursor: 'pointer', letterSpacing: '0.3px' }}>
+                <th onClick={() => handleSort('tokenNo')} style={{ padding: '16px 20px', textAlign: 'left', fontSize: '9px', fontWeight: 600, color: '#6b7280', cursor: 'pointer', letterSpacing: '0.3px' }}>
                   Token {sortConfig.key === 'tokenNo' ? (sortConfig.direction === 'asc' ? '↑' : '↓') : '↕'}
                 </th>
-                <th onClick={() => handleSort('service')} style={{ padding: '16px 20px', textAlign: 'left', fontSize: '11px', fontWeight: 600, color: '#6b7280', cursor: 'pointer', letterSpacing: '0.3px' }}>
+                <th onClick={() => handleSort('service')} style={{ padding: '16px 20px', textAlign: 'left', fontSize: '9px', fontWeight: 600, color: '#6b7280', cursor: 'pointer', letterSpacing: '0.3px' }}>
                   Service {sortConfig.key === 'service' ? (sortConfig.direction === 'asc' ? '↑' : '↓') : '↕'}
                 </th>
-                <th onClick={() => handleSort('dateTime')} style={{ padding: '16px 20px', textAlign: 'left', fontSize: '11px', fontWeight: 600, color: '#6b7280', cursor: 'pointer', letterSpacing: '0.3px' }}>
+                <th onClick={() => handleSort('dateTime')} style={{ padding: '16px 20px', textAlign: 'left', fontSize: '9px', fontWeight: 600, color: '#6b7280', cursor: 'pointer', letterSpacing: '0.3px' }}>
                   Date {sortConfig.key === 'dateTime' ? (sortConfig.direction === 'asc' ? '↑' : '↓') : '↕'}
                 </th>
-                <th onClick={() => handleSort('doctorId')} style={{ padding: '16px 20px', textAlign: 'left', fontSize: '11px', fontWeight: 600, color: '#6b7280', cursor: 'pointer', letterSpacing: '0.3px' }}>
+                <th onClick={() => handleSort('doctorId')} style={{ padding: '16px 20px', textAlign: 'left', fontSize: '9px', fontWeight: 600, color: '#6b7280', cursor: 'pointer', letterSpacing: '0.3px' }}>
                   Doctor {sortConfig.key === 'doctorId' ? (sortConfig.direction === 'asc' ? '↑' : '↓') : '↕'}
                 </th>
-                <th style={{ padding: '16px 20px', textAlign: 'left', fontSize: '11px', fontWeight: 600, color: '#6b7280', letterSpacing: '0.3px' }}>
+                <th style={{ padding: '16px 20px', textAlign: 'left', fontSize: '9px', fontWeight: 600, color: '#6b7280', letterSpacing: '0.3px' }}>
                   Scan Notes
                 </th>
-                <th onClick={() => handleSort('status')} style={{ padding: '16px 20px', textAlign: 'left', fontSize: '11px', fontWeight: 600, color: '#6b7280', cursor: 'pointer', letterSpacing: '0.3px' }}>
+                <th onClick={() => handleSort('status')} style={{ padding: '16px 20px', textAlign: 'left', fontSize: '9px', fontWeight: 600, color: '#6b7280', cursor: 'pointer', letterSpacing: '0.3px' }}>
                   Status {sortConfig.key === 'status' ? (sortConfig.direction === 'asc' ? '↑' : '↓') : '↕'}
                 </th>
-                <th style={{ padding: '16px 20px', textAlign: 'right', fontSize: '11px', fontWeight: 600, color: '#6b7280', letterSpacing: '0.3px' }}>Actions</th>
+                <th style={{ padding: '16px 20px', textAlign: 'right', fontSize: '9px', fontWeight: 600, color: '#6b7280', letterSpacing: '0.3px' }}>Actions</th>
               </tr>
             </thead>
             <tbody>
@@ -564,22 +564,22 @@ export default function DoctorBoard() {
                   }}>
                     <td style={{ padding: '20px' }}>
                        <div style={{ display: 'flex', alignItems: 'center', gap: '15px' }}>
-                          <div style={{ width: '40px', height: '40px', borderRadius: '14px', background: '#f8fafc', color: '#0f52ba', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 900, fontSize: '16px', border: '1px solid #e2e8f0' }}>{c.patientName.charAt(0)}</div>
+                          <div style={{ width: '40px', height: '40px', borderRadius: '14px', background: '#f8fafc', color: '#0f52ba', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 900, fontSize: '12.5px', border: '1px solid #e2e8f0' }}>{c.patientName.charAt(0)}</div>
                           <div>
-                             <div style={{ fontWeight: 800, color: '#1e293b', fontSize: '14px' }}>{c.patientName.toUpperCase()}</div>
-                             <div style={{ fontSize: '10px', color: '#94a3b8', fontWeight: 700 }}>{c.id} | {c.patientGender || 'M'} | {formatPatientAge(c.patientAge, '45Y')}</div>
+                             <div style={{ fontWeight: 800, color: '#1e293b', fontSize: '11px' }}>{c.patientName.toUpperCase()}</div>
+                             <div style={{ fontSize: '8px', color: '#94a3b8', fontWeight: 700 }}>{c.id} | {c.patientGender || 'M'} | {formatPatientAge(c.patientAge, '45Y')}</div>
                              {/* TAT pills: on-premises (live) + scan→delivery (final). */}
                              {onPremisesElapsed && (
                                <div style={{ display: 'flex', alignItems: 'center', gap: '5px', marginTop: '4px', flexWrap: 'wrap' }}>
                                  <span title={c.deliveredAt ? 'Total time on premises' : 'On premises (live)'} style={{
-                                   fontSize: '9px', fontWeight: 950, letterSpacing: '0.3px',
+                                   fontSize: '7.5px', fontWeight: 950, letterSpacing: '0.3px',
                                    padding: '2px 6px', borderRadius: '999px',
                                    color: premisesStyle.color, background: premisesStyle.bg,
                                    border: `1px solid ${premisesStyle.border}`,
                                  }}>⏱ {onPremisesElapsed}</span>
                                  {scanToDelivery && (
                                    <span title="Scan start → delivered" style={{
-                                     fontSize: '9px', fontWeight: 950, letterSpacing: '0.3px',
+                                     fontSize: '7.5px', fontWeight: 950, letterSpacing: '0.3px',
                                      padding: '2px 6px', borderRadius: '999px',
                                      color: '#0369a1', background: '#e0f2fe',
                                      border: '1px solid #bae6fd',
@@ -595,7 +595,7 @@ export default function DoctorBoard() {
                          width: '45px', height: '45px', borderRadius: '12px', 
                          background: '#f0f7ff', border: '1px solid #dbeafe', 
                          display: 'flex', alignItems: 'center', justifyContent: 'center',
-                         fontSize: '18px', fontWeight: 950, color: '#0f52ba',
+                         fontSize: '13.5px', fontWeight: 950, color: '#0f52ba',
                          boxShadow: '0 4px 10px rgba(15, 82, 186, 0.1)'
                        }}>
                           {c.tokenNo || '-'}
@@ -656,20 +656,20 @@ export default function DoctorBoard() {
                                    }}
                                  >
                                    <span style={{
-                                     fontSize: '9px', fontWeight: 950, letterSpacing: '0.4px',
+                                     fontSize: '7.5px', fontWeight: 950, letterSpacing: '0.4px',
                                      color: tint.text, background: tint.bg,
                                      border: `1px solid ${tint.border}`,
                                      padding: '2px 7px', borderRadius: '5px',
                                      minWidth: '44px', textAlign: 'center',
                                    }}>{line.modality || 'OT'}</span>
                                    <span style={{
-                                     fontSize: '12.5px', fontWeight: 800, color: '#1a1a2e',
+                                     fontSize: '10px', fontWeight: 800, color: '#1a1a2e',
                                      textDecoration: cancelled ? 'line-through' : 'none',
                                      maxWidth: '220px',
                                      whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
                                    }} title={line.serviceName}>{line.serviceName || '—'}</span>
                                    <span style={{
-                                     fontSize: '8.5px', fontWeight: 900, letterSpacing: '0.3px',
+                                     fontSize: '7.5px', fontWeight: 900, letterSpacing: '0.3px',
                                      color: st.color, background: st.bg,
                                      padding: '2px 7px', borderRadius: '999px',
                                      border: `1px solid ${st.border}`,
@@ -685,7 +685,7 @@ export default function DoctorBoard() {
                                    <span
                                      className={c.priority === 'STAT' ? 'priority-chip-stat' : 'priority-chip-urgent'}
                                      style={{
-                                       fontSize: '9px', fontWeight: 950, letterSpacing: '0.5px',
+                                       fontSize: '7.5px', fontWeight: 950, letterSpacing: '0.5px',
                                        color: c.priority === 'STAT' ? '#dc2626' : '#d97706',
                                        background: c.priority === 'STAT' ? '#fee2e2' : '#fef3c7',
                                        border: `1px solid ${c.priority === 'STAT' ? '#fecaca' : '#fde68a'}`,
@@ -695,7 +695,7 @@ export default function DoctorBoard() {
                                  )}
                                  {progress && (
                                    <span title="Reporting progress across all services on this visit" style={{
-                                     fontSize: '9px', fontWeight: 900, letterSpacing: '0.3px',
+                                     fontSize: '7.5px', fontWeight: 900, letterSpacing: '0.3px',
                                      color: '#047857', background: '#d1fae5',
                                      padding: '2px 8px', borderRadius: '999px',
                                      border: '1px solid #a7f3d0',
@@ -708,31 +708,31 @@ export default function DoctorBoard() {
                        })()}
                     </td>
                     <td style={{ padding: '20px' }}>
-                        <div style={{ fontWeight: 800, color: '#1e293b', fontSize: '13px' }}>{c.dateTime ? new Date(c.dateTime).toLocaleDateString('en-GB', { timeZone: 'Asia/Kolkata', day: '2-digit', month: 'short', year: 'numeric' }).toUpperCase() : 'N/A'}</div>
-                        <div style={{ fontSize: '11px', color: '#94a3b8', fontWeight: 400, marginTop: '4px' }}>{c.dateTime ? `${new Date(c.dateTime).toLocaleTimeString('en-US', { timeZone: 'Asia/Kolkata', hour: '2-digit', minute: '2-digit', hour12: true })} IST` : '09:00 AM'}</div>
+                        <div style={{ fontWeight: 800, color: '#1e293b', fontSize: '10.5px' }}>{c.dateTime ? new Date(c.dateTime).toLocaleDateString('en-GB', { timeZone: 'Asia/Kolkata', day: '2-digit', month: 'short', year: 'numeric' }).toUpperCase() : 'N/A'}</div>
+                        <div style={{ fontSize: '9px', color: '#94a3b8', fontWeight: 400, marginTop: '4px' }}>{c.dateTime ? `${new Date(c.dateTime).toLocaleTimeString('en-US', { timeZone: 'Asia/Kolkata', hour: '2-digit', minute: '2-digit', hour12: true })} IST` : '09:00 AM'}</div>
                     </td>
                     <td style={{ padding: '20px' }}>
                         <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                            <div style={{ width: '28px', height: '28px', borderRadius: '50%', background: '#f1f5f9', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '10px', color: '#64748b', fontWeight: 800, border: '1px solid #e2e8f0', flexShrink: 0 }}>DR</div>
-                            <span style={{ fontSize: '13px', fontWeight: 700, color: '#334155', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '120px' }}>
+                            <div style={{ width: '28px', height: '28px', borderRadius: '50%', background: '#f1f5f9', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '8px', color: '#64748b', fontWeight: 800, border: '1px solid #e2e8f0', flexShrink: 0 }}>DR</div>
+                            <span style={{ fontSize: '10.5px', fontWeight: 700, color: '#334155', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '120px' }}>
                                 {c.doctor || doctors.find(d => d.id === c.doctorId)?.name || 'Unassigned'}
                             </span>
                         </div>
                     </td>
                     <td style={{ padding: '20px' }}>
                         <div style={{ maxWidth: '200px' }}>
-                           <div style={{ fontSize: '10px', fontWeight: 800, color: '#0f52ba', display: 'flex', alignItems: 'center', gap: '5px', marginBottom: '4px' }}>
+                           <div style={{ fontSize: '8px', fontWeight: 800, color: '#0f52ba', display: 'flex', alignItems: 'center', gap: '5px', marginBottom: '4px' }}>
                               <span style={{ width: '6px', height: '6px', borderRadius: '50%', background: status === 'scanned' ? '#2ecc71' : '#e2e8f0' }}></span>
                               {status === 'scanned' ? 'Scan complete' : 'In pipeline'}
                            </div>
-                           <div style={{ fontSize: '11px', color: c.technicianComments ? '#1e293b' : '#94a3b8', fontWeight: 500, fontStyle: c.technicianComments ? 'normal' : 'italic' }}>
+                           <div style={{ fontSize: '9px', color: c.technicianComments ? '#1e293b' : '#94a3b8', fontWeight: 500, fontStyle: c.technicianComments ? 'normal' : 'italic' }}>
                               {c.technicianComments || 'No scanning bay observations provided.'}
                            </div>
                         </div>
                     </td>
                     <td style={{ padding: '20px' }}>
                       <span style={{ 
-                        padding: '6px 12px', borderRadius: '10px', fontSize: '9px', fontWeight: 950,
+                        padding: '6px 12px', borderRadius: '10px', fontSize: '7.5px', fontWeight: 950,
                         background: status === 'reported' ? '#f0fdf4' : isReady ? '#e9f7ef' : isScanning ? '#fef3c7' : isExpected ? '#f0f7ff' : '#f8fafc',
                         color: status === 'reported' ? '#166534' : isReady ? '#27ae60' : isScanning ? '#d97706' : isExpected ? '#0f52ba' : '#64748b',
                         border: `1px solid ${status === 'reported' ? '#bbf7d0' : isReady ? '#c3e6cb' : isScanning ? '#fcd34d' : isExpected ? '#dbeafe' : '#e2e8f0'}`,
@@ -747,14 +747,14 @@ export default function DoctorBoard() {
                           style={{ 
                             width: '38px', height: '38px', borderRadius: '12px', background: '#fef3c7', color: '#d97706', 
                             border: '1px solid #fde68a', cursor: 'pointer', display: 'flex', 
-                            alignItems: 'center', justifyContent: 'center', fontSize: '18px'
+                            alignItems: 'center', justifyContent: 'center', fontSize: '13.5px'
                           }}
                           title="Print Prescription"
                         >📜</button>
                         <button 
                           className="gamified-btn" 
                           disabled={!isActive && view !== 'HISTORY'}
-                          style={{ padding: '10px 20px', fontSize: '11px', borderRadius: '12px', opacity: (isActive || view === 'HISTORY') ? 1 : 0.4, cursor: (isActive || view === 'HISTORY') ? 'pointer' : 'not-allowed' }} 
+                          style={{ padding: '10px 20px', fontSize: '9px', borderRadius: '12px', opacity: (isActive || view === 'HISTORY') ? 1 : 0.4, cursor: (isActive || view === 'HISTORY') ? 'pointer' : 'not-allowed' }} 
                           onClick={() => handleOpenWorkspace(c)}
                         >
                           {status === 'reported' ? 'Review' : isReady ? 'Write Report' : 'Open Report'}
@@ -766,7 +766,7 @@ export default function DoctorBoard() {
               })}
               {filteredCases.length === 0 && !loading && (
                 <tr>
-                  <td colSpan="8" style={{ textAlign: 'center', padding: '100px', color: '#94a3b8', fontStyle: 'italic', fontSize: '14px' }}>
+                  <td colSpan="8" style={{ textAlign: 'center', padding: '100px', color: '#94a3b8', fontStyle: 'italic', fontSize: '11px' }}>
                     No cases found
                   </td>
                 </tr>
@@ -775,19 +775,19 @@ export default function DoctorBoard() {
           </table>
           {view === 'HISTORY' && totalPages > 1 && (
             <div style={{ padding: '15px 30px', background: '#f8fafc', borderTop: '1px solid #f1f5f9', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <div style={{ fontSize: '12px', fontWeight: 500, color: '#6b7280' }}>
+              <div style={{ fontSize: '9.5px', fontWeight: 500, color: '#6b7280' }}>
                 Page <span style={{ color: '#1d4ed8' }}>{archivePage}</span> of <span style={{ color: '#1d4ed8' }}>{totalPages}</span>
               </div>
               <div style={{ display: 'flex', gap: '8px' }}>
                 <button
                   onClick={() => setArchivePage(p => Math.max(1, p - 1))}
                   disabled={archivePage === 1}
-                  style={{ padding: '7px 14px', borderRadius: '7px', border: '1px solid #e2e8f0', background: 'white', fontSize: '12px', fontWeight: 500, cursor: archivePage === 1 ? 'not-allowed' : 'pointer', opacity: archivePage === 1 ? 0.5 : 1 }}
+                  style={{ padding: '7px 14px', borderRadius: '7px', border: '1px solid #e2e8f0', background: 'white', fontSize: '9.5px', fontWeight: 500, cursor: archivePage === 1 ? 'not-allowed' : 'pointer', opacity: archivePage === 1 ? 0.5 : 1 }}
                 >Previous</button>
                 <button
                   onClick={() => setArchivePage(p => Math.min(totalPages, p + 1))}
                   disabled={archivePage === totalPages}
-                  style={{ padding: '7px 14px', borderRadius: '7px', border: '1px solid #e2e8f0', background: 'white', fontSize: '12px', fontWeight: 500, cursor: archivePage === totalPages ? 'not-allowed' : 'pointer', opacity: archivePage === totalPages ? 0.5 : 1 }}
+                  style={{ padding: '7px 14px', borderRadius: '7px', border: '1px solid #e2e8f0', background: 'white', fontSize: '9.5px', fontWeight: 500, cursor: archivePage === totalPages ? 'not-allowed' : 'pointer', opacity: archivePage === totalPages ? 0.5 : 1 }}
                 >Next</button>
               </div>
             </div>

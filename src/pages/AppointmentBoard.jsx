@@ -224,6 +224,15 @@ export default function AppointmentBoard() {
     }
   }, [bookingStep, isBookingOpen]);
 
+  // On step 2 (Clinical Configuration), default the Lead Specialist to the
+  // first available doctor if none is chosen yet — covers the case where the
+  // doctor list finishes loading after the user has advanced.
+  useEffect(() => {
+    if (bookingStep === 2 && doctors.length > 0) {
+      setNewBooking(prev => (prev.doctor ? prev : { ...prev, doctor: doctors[0] }));
+    }
+  }, [bookingStep, doctors]);
+
   // --- API SYNC ---
   const fetchAppointments = useCallback(async () => {
     setLoading(true);
@@ -559,16 +568,6 @@ export default function AppointmentBoard() {
   const isMobileValid = /^\d{10}$/.test(newPatient.mobile);
   const isNewPatientIncomplete = !newBooking.patientId && 
     (!newPatient.name.trim() || !isMobileValid || !newPatient.age.trim());
-
-  // Referrer contact validation derived state
-  const cleanReferrerContactDigits = (newReferrer.contact || '').trim().replace(/\D/g, '');
-  let sanitizedReferrerContact = cleanReferrerContactDigits;
-  if (sanitizedReferrerContact.startsWith('91') && sanitizedReferrerContact.length === 12) {
-    sanitizedReferrerContact = sanitizedReferrerContact.substring(2);
-  } else if (sanitizedReferrerContact.startsWith('0') && sanitizedReferrerContact.length === 11) {
-    sanitizedReferrerContact = sanitizedReferrerContact.substring(1);
-  }
-  const isReferrerContactValid = sanitizedReferrerContact.length === 10 && /^[6-9]\d{9}$/.test(sanitizedReferrerContact);
 
   // Reset page on filter change
   useEffect(() => {
@@ -975,8 +974,9 @@ export default function AppointmentBoard() {
 
   const handleAddReferrer = async (e) => {
     e.preventDefault();
-    
-    // Validation & Sanitization Logic (Indian Mobile number - 10 digits starting with 6-9)
+
+    // Only the name is required. Contact is optional and unvalidated — we just
+    // light-sanitize any digits the user typed so stored numbers stay tidy.
     let rawContact = (newReferrer.contact || '').trim();
     let digits = rawContact.replace(/\D/g, '');
     if (digits.startsWith('91') && digits.length === 12) {
@@ -984,21 +984,17 @@ export default function AppointmentBoard() {
     } else if (digits.startsWith('0') && digits.length === 11) {
       digits = digits.substring(1);
     }
+    const contactToSend = digits || rawContact;
 
-    if (!newReferrer.name || newReferrer.name.trim().length < 3) {
-      showNotif('error', 'INVALID NAME', 'Referrer name must be at least 3 characters long.');
-      return;
-    }
-    
-    if (digits.length !== 10 || !/^[6-9]\d{9}$/.test(digits)) {
-      showNotif('error', 'INVALID MOBILE', 'Please enter a valid 10-digit Indian mobile number starting with 6, 7, 8, or 9 (e.g., 9876543210).');
+    if (!newReferrer.name || newReferrer.name.trim().length < 1) {
+      showNotif('error', 'INVALID NAME', 'Referrer name is required.');
       return;
     }
 
     try {
       const response = await apiClient.post('/referrers', {
         name: newReferrer.name,
-        contact: digits,
+        contact: contactToSend,
         address: newReferrer.address
       });
       
@@ -1007,7 +1003,7 @@ export default function AppointmentBoard() {
         referrerId: referrerId,
         id: referrerId,
         name: newReferrer.name,
-        contact: digits,
+        contact: contactToSend,
         address: newReferrer.address
       };
       
@@ -2175,90 +2171,6 @@ export default function AppointmentBoard() {
             {isStep1 && (
               <div className="quest-step-container" style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
                 
-                {/* Search Patient Database at Top */}
-                <div style={{ background: '#f8f9fa', padding: '16px 20px', borderRadius: '14px', border: '1px solid #eef2f6' }}>
-                  <label style={{ fontSize: '10px', color: '#0f52ba', fontWeight: 800, marginBottom: '8px', display: 'block', letterSpacing: '1px' }}>SEARCH PATIENT DATABASE</label>
-                  <div className="search-input-group" style={{ width: '100%', marginBottom: '8px' }}>
-                    <input 
-                      type="text" 
-                      placeholder="Search patient database by name, mobile, or ID..." 
-                      value={drawerSearchQuery} 
-                      onChange={(e) => setDrawerSearchQuery(e.target.value)} 
-                      autoFocus 
-                      style={{ paddingLeft: '15px', height: '40px', fontSize: '13px', width: '100%', borderRadius: '10px', border: '1px solid #cbd5e1' }} 
-                    />
-                  </div>
-
-                  {drawerSearchQuery && (
-                    <div style={{ 
-                      maxHeight: '150px', 
-                      overflowY: 'auto', 
-                      marginTop: '8px', 
-                      background: 'white', 
-                      border: '1px solid #e2e8f0', 
-                      borderRadius: '10px', 
-                      boxShadow: '0 4px 12px rgba(0,0,0,0.05)' 
-                    }}>
-                      {patients.filter(p => 
-                        p.name.toLowerCase().includes(drawerSearchQuery.toLowerCase()) || 
-                        p.mobile.includes(drawerSearchQuery) || 
-                        p.id.toLowerCase().includes(drawerSearchQuery.toLowerCase()) ||
-                        (p.patientIdentifier && p.patientIdentifier.toLowerCase().includes(drawerSearchQuery.toLowerCase()))
-                      ).map(p => (
-                        <div key={p.id}
-                          className={`patient-search-result ${newBooking.patientId === p.id ? 'selected' : ''}`}
-                          onClick={() => { 
-                            setNewBooking({...newBooking, patientId: p.id});
-                            // Decode any stored unit suffix so the toggle
-                            // reflects what's already on file (a 6-month-old
-                            // is stored as "6m", reopens with M selected).
-                            const { value: ageVal, unit: ageUnitVal } = parsePatientAge(p.age);
-                            setNewPatient({
-                              name: p.name,
-                              mobile: p.mobile,
-                              age: ageVal,
-                              ageUnit: ageUnitVal,
-                              gender: p.gender || 'Male',
-                              village: p.village || '',
-                              district: p.district || '',
-                              address: p.address || '',
-                              referredBy: p.referredBy || '',
-                              sourceOfInfo: p.sourceOfInfo || ''
-                            });
-                            setDuplicatePatient(null); 
-                          }}
-                          style={{ padding: '10px 15px', display: 'flex', alignItems: 'center', gap: '10px', borderBottom: '1px solid #f1f5f9', cursor: 'pointer' }}
-                          onMouseOver={e => e.currentTarget.style.background = '#f8fafd'}
-                          onMouseOut={e => e.currentTarget.style.background = 'white'}
-                        >
-                          <div style={{
-                            width: '28px', height: '28px', borderRadius: '8px',
-                            background: newBooking.patientId === p.id ? '#0f52ba' : '#e8f0fe',
-                            color: newBooking.patientId === p.id ? 'white' : '#0f52ba',
-                            display: 'flex', alignItems: 'center', justifyContent: 'center',
-                            fontWeight: 900, fontSize: '11px', flexShrink: 0,
-                          }}>{p.name.charAt(0)}</div>
-                          <div style={{ flex: 1 }}>
-                             <div style={{ fontWeight: 700, fontSize: '12px', color: '#1a1a2e' }}>{p.name}</div>
-                             <div style={{ fontSize: '9px', color: '#888' }}>
-                               <span style={{ color: '#0f52ba', fontWeight: 800 }}>{p.patientIdentifier || p.id}</span> {'\u00b7'} {p.mobile} {'\u00b7'} {p.age}y {p.gender}
-                             </div>
-                          </div>
-                          {newBooking.patientId === p.id && <span style={{ color: '#0f52ba', fontWeight: 900, fontSize: '9px' }}>SELECTED</span>}
-                        </div>
-                      ))}
-                      {!patients.some(p => 
-                        p.name.toLowerCase().includes(drawerSearchQuery.toLowerCase()) || 
-                        p.mobile.includes(drawerSearchQuery) ||
-                        p.id.toLowerCase().includes(drawerSearchQuery.toLowerCase()) ||
-                        (p.patientIdentifier && p.patientIdentifier.toLowerCase().includes(drawerSearchQuery.toLowerCase()))
-                      ) && (
-                        <div style={{ padding: '12px', textAlign: 'center', color: '#999', fontSize: '11px' }}>No match found - fill details below</div>
-                      )}
-                    </div>
-                  )}
-                </div>
-
                 {/* Remaining Form in Two Columns */}
                 <div style={{
                   display: 'flex',
@@ -2616,7 +2528,13 @@ export default function AppointmentBoard() {
                               }
                             }
 
-                            // Advance to Clinical Configuration
+                            // Advance to Clinical Configuration. Default the Lead
+                            // Specialist to the first available doctor so step 2
+                            // opens with a selection already made.
+                            setNewBooking(prev => ({
+                              ...prev,
+                              doctor: prev.doctor || (doctors && doctors.length > 0 ? doctors[0] : '')
+                            }));
                             setBookingStep(2);
                             setShowBookingValidation(false);
                           }}
@@ -4373,17 +4291,15 @@ export default function AppointmentBoard() {
                 />
               </div>
               <div className="form-group" style={{ marginBottom: '15px' }}>
-                <label style={{ fontSize: '10px', fontWeight: 800, color: '#64748b' }}>CONTACT NUMBER (MOBILE)</label>
-                <input 
-                  type="tel" 
-                  required
-                  placeholder="e.g. 9876543210"
-                  style={{ 
-                    width: '100%', 
-                    padding: '10px', 
-                    borderRadius: '8px', 
-                    border: '1.5px solid',
-                    borderColor: (newReferrer.contact.length > 0 && !isReferrerContactValid) ? '#e74c3c' : '#cbd5e1',
+                <label style={{ fontSize: '10px', fontWeight: 800, color: '#64748b' }}>CONTACT NUMBER (MOBILE) — OPTIONAL</label>
+                <input
+                  type="tel"
+                  placeholder="e.g. 9876543210 (optional)"
+                  style={{
+                    width: '100%',
+                    padding: '10px',
+                    borderRadius: '8px',
+                    border: '1.5px solid #cbd5e1',
                     marginBottom: '4px',
                     outline: 'none',
                     transition: 'border-color 0.2s'
@@ -4391,8 +4307,8 @@ export default function AppointmentBoard() {
                   value={newReferrer.contact}
                   onChange={e => setNewReferrer({...newReferrer, contact: e.target.value})}
                 />
-                <span style={{ fontSize: '9px', color: (newReferrer.contact.length > 0 && !isReferrerContactValid) ? '#e74c3c' : '#64748b', display: 'block', fontWeight: 700 }}>
-                  Must be a 10-digit Indian mobile number.
+                <span style={{ fontSize: '9px', color: '#64748b', display: 'block', fontWeight: 700 }}>
+                  Optional — leave blank if not known.
                 </span>
               </div>
               <div className="form-group" style={{ marginBottom: '20px' }}>
