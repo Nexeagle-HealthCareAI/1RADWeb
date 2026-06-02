@@ -144,8 +144,15 @@ export default function DoctorBoard() {
     try {
       const res = await apiClient.get('/personnel');
       
-      const standardNonDoctors = ['admin', 'technician', 'receptionist', 'accountant'];
-      
+      // Positive doctor match only — a custom role (or any non-clinical role)
+      // must NOT be treated as a doctor. The old "not in [admin, technician,
+      // receptionist, accountant]" test wrongly swept custom-role users into
+      // the doctor list.
+      const isDoctorRole = (r) => {
+        const lower = String(r).toLowerCase().replace(/\s+/g, '');
+        return lower.includes('doctor') || lower.includes('radiolog');
+      };
+
       let docList = (res.data || []).map(p => {
         const rawRoles = p.roles || p.Roles || [];
         return {
@@ -153,7 +160,7 @@ export default function DoctorBoard() {
           name: p.fullName || p.FullName || 'UNKNOWN_STAFF',
           roles: rawRoles.map(r => String(r).toLowerCase())
         };
-      }).filter(p => p.roles.some(r => r.includes('doctor') || !standardNonDoctors.includes(r)));
+      }).filter(p => p.roles.some(isDoctorRole));
       
       if (docList.length === 0 && (res.data || []).length > 0) {
         docList = (res.data || []).map(p => ({

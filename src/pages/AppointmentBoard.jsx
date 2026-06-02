@@ -378,15 +378,23 @@ export default function AppointmentBoard() {
       });
     }
 
-    const standardNonDoctors = ['admin', 'technician', 'receptionist', 'accountant'];
+    // A "specialist" is ONLY someone with a genuine doctor/radiologist role.
+    // The old logic used "anyone NOT in [admin, technician, receptionist,
+    // accountant]" — which wrongly swept every CUSTOM ROLE into the doctor
+    // list, so custom-role users showed up as selectable specialists and got
+    // assigned to appointments as the doctor. A positive match fixes that:
+    // custom roles (and any non-clinical role) are no longer treated as doctors.
+    const isDoctorRole = (r) => {
+      const lower = String(r).toLowerCase().replace(/\s+/g, '');
+      return lower.includes('doctor') || lower.includes('radiolog');
+    };
     let specialists = allPersonnel.filter(p => {
       const rawRoles = p.roles || p.Roles || [];
-      return rawRoles.some(r => {
-        const lower = String(r).toLowerCase();
-        return lower.includes('doctor') || !standardNonDoctors.includes(lower);
-      });
+      return rawRoles.some(isDoctorRole);
     }).map(p => p.fullName || p.FullName || 'UNKNOWN_STAFF');
 
+    // Safety net: only if the centre has NO doctor-roled user at all do we fall
+    // back to listing everyone, so the booking flow can still assign someone.
     if (specialists.length === 0) {
       specialists = allPersonnel.map(p => p.fullName || p.FullName || 'UNKNOWN_STAFF');
     }
@@ -832,6 +840,14 @@ export default function AppointmentBoard() {
     // 3. Validate Specialist
     if (!newBooking.doctor) {
       showNotif('error', 'SPECIALIST REQUIRED', 'No Lead Specialist assigned. Every appointment requires a supervising physician.');
+      return;
+    }
+    // Defense-in-depth: the Lead Specialist must be a real doctor on the centre's
+    // roster — never a custom-role/non-clinical user. `doctors` is already filtered
+    // to genuine doctor roles, so anything outside it is rejected (catches stale
+    // selections or hand-edited values).
+    if (doctors.length > 0 && !doctors.includes(newBooking.doctor)) {
+      showNotif('error', 'INVALID SPECIALIST', 'The Lead Specialist must be a registered doctor. Please pick a doctor from the list.');
       return;
     }
 
