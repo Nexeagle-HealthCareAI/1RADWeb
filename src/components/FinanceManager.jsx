@@ -666,7 +666,8 @@ const FinanceManager = ({
                         onChange={e => {
                           const val = parseFloat(e.target.value) || 0;
                           const currentCut = editPrice.referralCutValue || 0;
-                          const clampedCut = Math.min(currentCut, val);
+                          // Keep the cut within [0, price] — never negative.
+                          const clampedCut = Math.max(0, Math.min(currentCut, val));
                           const calculatedPct = val > 0 ? (clampedCut / val) * 100 : 0;
                           setEditPrice({ ...editPrice, amount: val, referralCutValue: clampedCut, referralCutInput: calculatedPct.toFixed(2) });
                         }}
@@ -697,7 +698,7 @@ const FinanceManager = ({
                         onChange={e => {
                           const pct = parseFloat(e.target.value);
                           const calculated = (editPrice.amount * pct) / 100;
-                          const clamped = Math.min(calculated, editPrice.amount);
+                          const clamped = Math.max(0, Math.min(calculated, editPrice.amount));
                           const finalPct = editPrice.amount > 0 ? (clamped / editPrice.amount) * 100 : 0;
                           setEditPrice({...editPrice, referralCutInput: finalPct.toFixed(2), referralCutValue: clamped});
                         }}
@@ -716,7 +717,7 @@ const FinanceManager = ({
                             const val = e.target.value === '' ? '' : parseFloat(e.target.value);
                             const num = parseFloat(val) || 0;
                             const calculated = (editPrice.amount * num) / 100;
-                            const clamped = Math.min(calculated, editPrice.amount);
+                            const clamped = Math.max(0, Math.min(calculated, editPrice.amount));
                             setEditPrice({...editPrice, referralCutInput: val, referralCutValue: clamped});
                           }}
                           style={{ width: '100%', padding: '9px 12px', borderRadius: '8px', border: '1px solid #e2e8f0', fontSize: '13px', fontWeight: 600, outline: 'none', background: 'white', boxSizing: 'border-box' }}
@@ -731,7 +732,7 @@ const FinanceManager = ({
                           onChange={e => {
                             const val = e.target.value === '' ? '' : parseFloat(e.target.value);
                             const num = parseFloat(val) || 0;
-                            const clamped = Math.min(num, editPrice.amount);
+                            const clamped = Math.max(0, Math.min(num, editPrice.amount));
                             const calculatedPct = editPrice.amount > 0 ? (clamped / editPrice.amount) * 100 : 0;
                             setEditPrice({...editPrice, referralCutValue: val === '' ? '' : clamped, referralCutInput: calculatedPct.toFixed(2)});
                           }}
