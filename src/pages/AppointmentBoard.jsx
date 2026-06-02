@@ -15,8 +15,10 @@ import { getTrackingUrl } from '../utils/trackingUrl';
 import { buildPatientAge, formatPatientAge, parsePatientAge } from '../utils/patientAge';
 import { getServiceLines, getUniqueModalities, matchesAnyModality, getReportProgressLabel, getStageElapsedMinutes, formatStageElapsed, getStageSlaBucket } from '../utils/appointmentServices';
 import { watchAppointments } from '../db/repos/appointmentsRepo';
-import { watchPatients } from '../db/repos/patientsRepo';
+import { watchPatients, findDuplicateCandidates } from '../db/repos/patientsRepo';
+import { getAllReferrers } from '../db/repos/referrersRepo';
 import { snapshotPersonnel, getAllPersonnel } from '../db/repos/personnelRepo';
+import { rankPatientDuplicates, rankReferrerDuplicates } from '../utils/duplicateMatch';
 import { syncNow } from '../sync/SyncEngine';
 
 // --- CONSTANTS ---
@@ -205,6 +207,10 @@ export default function AppointmentBoard() {
     referrerContact: '', referrerAddress: ''
   });
   const [duplicatePatient, setDuplicatePatient] = useState(null);
+  // Live duplicate detection (fuzzy name + exact phone) over the offline cache.
+  const [patientDuplicates, setPatientDuplicates] = useState([]);
+  const [dupDismissed, setDupDismissed] = useState(false);
+  const [referrerSuggestions, setReferrerSuggestions] = useState([]);
 
   const [referrers, setReferrers] = useState([]);
   const [isAddingReferrer, setIsAddingReferrer] = useState(false);
@@ -511,6 +517,57 @@ export default function AppointmentBoard() {
     });
     return () => sub.unsubscribe();
   }, [drawerSearchQuery]);
+
+  // ── Live PATIENT duplicate detection ──────────────────────────────────────
+  // As the operator types the name/mobile for a NEW registration, fuzzy-match
+  // against the offline cache and surface probable duplicates. Debounced so we
+  // don't hit Dexie on every keystroke. Skipped once a patient is selected.
+  useEffect(() => {
+    if (newBooking.patientId) { setPatientDuplicates([]); return undefined; }
+    const name = (newPatient.name || '').trim();
+    if (name.length < 3) { setPatientDuplicates([]); return undefined; }
+    let cancelled = false;
+    const handle = setTimeout(async () => {
+      try {
+        const candidates = await findDuplicateCandidates({ name, mobile: newPatient.mobile, limit: 60 });
+        const ranked = rankPatientDuplicates(
+          { name, mobile: newPatient.mobile, age: newPatient.age, gender: newPatient.gender },
+          candidates,
+        );
+        if (!cancelled) setPatientDuplicates(ranked);
+      } catch (err) {
+        if (!cancelled) setPatientDuplicates([]);
+        console.warn('[DEDUPE] patient candidate scan failed', err?.message || err);
+      }
+    }, 280);
+    return () => { cancelled = true; clearTimeout(handle); };
+  }, [newPatient.name, newPatient.mobile, newPatient.age, newPatient.gender, newBooking.patientId]);
+
+  // Reset the "not a duplicate" dismissal whenever the name changes materially,
+  // so a fresh name re-arms detection.
+  useEffect(() => { setDupDismissed(false); }, [newPatient.name]);
+
+  // ── Live REFERRER "did you mean" ──────────────────────────────────────────
+  // Fuzzy-match the typed referral source against all cached referrers so a
+  // near-duplicate ("Dr Sharma" vs "Dr. Sharmaa") is caught before a second
+  // partner record is created. Skipped once an existing referrer is selected.
+  useEffect(() => {
+    if (newPatient.referrerId) { setReferrerSuggestions([]); return undefined; }
+    const name = (newPatient.referredBy || '').trim();
+    if (name.length < 3) { setReferrerSuggestions([]); return undefined; }
+    let cancelled = false;
+    const handle = setTimeout(async () => {
+      try {
+        const all = await getAllReferrers();
+        const ranked = rankReferrerDuplicates(name, all);
+        // Drop an exact (already-typed) name — only suggest genuine variants.
+        if (!cancelled) setReferrerSuggestions(ranked.filter(s => (s.referrer.name || '').toLowerCase() !== name.toLowerCase()));
+      } catch (err) {
+        if (!cancelled) setReferrerSuggestions([]);
+      }
+    }, 280);
+    return () => { cancelled = true; clearTimeout(handle); };
+  }, [newPatient.referredBy, newPatient.referrerId]);
 
   const fetchRegistry = useCallback(async () => {
     try {
@@ -2237,10 +2294,79 @@ export default function AppointmentBoard() {
                               background: showBookingValidation && !newPatient.name.trim() ? '#fff5f5' : 'white',
                               outline: 'none', fontWeight: 600
                             }} 
-                            value={newPatient.name} 
-                            onChange={e => { setNewPatient({...newPatient, name: e.target.value}); setNewBooking({...newBooking, patientId: ''}); }} 
+                            value={newPatient.name}
+                            onChange={e => { setNewPatient({...newPatient, name: e.target.value}); setNewBooking({...newBooking, patientId: ''}); }}
                           />
                         </div>
+
+                        {/* ── Ambient duplicate hint — the system finds the likely
+                            existing patient for the operator, no search needed. ── */}
+                        {!dupDismissed && !newBooking.patientId && patientDuplicates.length > 0 && (
+                          <div style={{
+                            marginBottom: '8px', borderRadius: '14px', overflow: 'hidden',
+                            border: '1.5px solid #fde68a', background: '#fffbeb',
+                            boxShadow: '0 6px 18px rgba(217,119,6,0.06)',
+                          }}>
+                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '9px 12px', borderBottom: '1px solid #fef3c7' }}>
+                              <span style={{ fontSize: '9px', fontWeight: 900, color: '#b45309', letterSpacing: '0.8px' }}>
+                                ⚠ POSSIBLE EXISTING PATIENT{patientDuplicates.length > 1 ? 'S' : ''}
+                              </span>
+                              <button
+                                type="button"
+                                onClick={() => setDupDismissed(true)}
+                                style={{ background: 'none', border: 'none', color: '#92400e', fontSize: '10px', fontWeight: 800, cursor: 'pointer', letterSpacing: '0.3px' }}
+                              >NEW PATIENT ✕</button>
+                            </div>
+                            <div style={{ display: 'flex', flexDirection: 'column' }}>
+                              {patientDuplicates.map((d, i) => {
+                                const p = d.patient;
+                                const tag = d.tier === 'high' ? { t: 'LIKELY SAME', c: '#b91c1c', bg: '#fee2e2' }
+                                          : d.tier === 'family' ? { t: 'SAME PHONE', c: '#92400e', bg: '#fef3c7' }
+                                          : { t: 'POSSIBLE', c: '#9a3412', bg: '#ffedd5' };
+                                return (
+                                  <div key={p.id || i} style={{
+                                    display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap',
+                                    padding: '10px 12px', borderTop: i ? '1px solid #fef3c7' : 'none',
+                                  }}>
+                                    <div style={{ flex: 1, minWidth: 0 }}>
+                                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                                        <span style={{ fontSize: '13px', fontWeight: 900, color: '#1e293b' }}>{(p.fullName || p.name || '').toUpperCase()}</span>
+                                        <span style={{ fontSize: '8px', fontWeight: 950, color: tag.c, background: tag.bg, padding: '2px 7px', borderRadius: '20px', letterSpacing: '0.5px' }}>{tag.t}</span>
+                                      </div>
+                                      <div style={{ fontSize: '10px', color: '#64748b', fontWeight: 700, marginTop: '2px' }}>
+                                        {[p.patientIdentifier || p.id, p.mobile, formatPatientAge ? formatPatientAge(p.age) : p.age, p.gender].filter(Boolean).join(' · ')}
+                                      </div>
+                                    </div>
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        const { value: ageVal, unit: ageUnitVal } = parsePatientAge(p.age);
+                                        setNewBooking(prev => ({ ...prev, patientId: p.id || p.patientId }));
+                                        setNewPatient({
+                                          name: p.fullName || p.name || '',
+                                          mobile: p.mobile || '',
+                                          age: ageVal,
+                                          ageUnit: ageUnitVal,
+                                          gender: p.gender || 'Female',
+                                          village: p.village || '',
+                                          district: p.district || '',
+                                          address: p.address || '',
+                                          referredBy: p.referredBy || '',
+                                          sourceOfInfo: p.sourceOfInfo || '',
+                                          referrerId: p.referrerId || null,
+                                          referrerContact: '', referrerAddress: '',
+                                        });
+                                        setPatientDuplicates([]);
+                                      }}
+                                      style={{ padding: '8px 14px', borderRadius: '10px', border: 'none', background: '#0f52ba', color: 'white', fontSize: '11px', fontWeight: 900, cursor: 'pointer', whiteSpace: 'nowrap' }}
+                                    >THIS IS THEM</button>
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          </div>
+                        )}
+
                         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
                           <div className="form-group" style={{ marginBottom: '4px' }}>
                             <label style={{ fontSize: '10px', fontWeight: 700, marginBottom: '4px', display: 'block' }}>AGE <span style={{ color: '#e74c3c' }}>*</span></label>
@@ -2433,6 +2559,29 @@ export default function AppointmentBoard() {
                             </div>
                           )}
                         </div>
+
+                        {/* "Did you mean" — fuzzy near-duplicate referrers so the
+                            operator links an existing partner instead of spawning
+                            "Dr Sharma" / "Dr. Sharmaa" as a second record. */}
+                        {!newPatient.referrerId && referrerSuggestions.length > 0 && (
+                          <div style={{ marginTop: '8px', display: 'flex', flexWrap: 'wrap', gap: '6px', alignItems: 'center' }}>
+                            <span style={{ fontSize: '8px', fontWeight: 900, color: '#b45309', letterSpacing: '0.5px' }}>DID YOU MEAN</span>
+                            {referrerSuggestions.map(s => (
+                              <button
+                                key={s.referrer.referrerId || s.referrer.id}
+                                type="button"
+                                onClick={() => {
+                                  setNewPatient(prev => ({ ...prev, referredBy: s.referrer.name, referrerId: s.referrer.referrerId || s.referrer.id }));
+                                  setReferrerSuggestions([]);
+                                  setReferrers([]);
+                                }}
+                                style={{ padding: '5px 11px', borderRadius: '20px', border: '1px solid #fde68a', background: '#fffbeb', color: '#92400e', fontSize: '10px', fontWeight: 800, cursor: 'pointer' }}
+                              >
+                                {s.referrer.name}{s.referrer.contact ? ` · ${s.referrer.contact}` : ''}
+                              </button>
+                            ))}
+                          </div>
+                        )}
 
                         {/* New referral source — typed name doesn't match an existing
                             partner. Capture optional mobile + address right here. */}

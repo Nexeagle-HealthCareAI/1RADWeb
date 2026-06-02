@@ -108,3 +108,30 @@ export async function getPatientById(patientId) {
   if (!patientId) return null;
   return tables.patients().get(patientId);
 }
+
+// Duplicate-detection candidate net. Pulls a small, index-served set the
+// fuzzy matcher can rank in JS, instead of scanning the whole cache:
+//   • exact phone (the strong signal), and
+//   • a short name-prefix (first ~3 chars of the first name token) so
+//     spelling variants that agree on the opening letters — Mohammed /
+//     Mohammad — are both captured, then separated by edit-distance.
+// Returns rows in the page's { id, name, ... } shape.
+export async function findDuplicateCandidates({ name = '', mobile = '', limit = 60 } = {}) {
+  const t = tables.patients();
+  const byId = new Map();
+  const add = (rows) => { for (const r of rows) if (r && !byId.has(r.patientId)) byId.set(r.patientId, r); };
+
+  const mob = lc(mobile).replace(/\D/g, '');
+  if (mob.length >= 4) {
+    add(await t.where('_mobileLower').equals(mob).limit(limit).toArray());
+  }
+
+  const norm = lc(name).replace(/[^a-z0-9\s]/g, ' ').trim();
+  const firstTok = norm.split(/\s+/).filter(Boolean)[0] || '';
+  if (firstTok.length >= 2) {
+    const prefix = firstTok.slice(0, Math.min(3, firstTok.length));
+    add(await t.where('_fullNameLower').startsWith(prefix).limit(limit).toArray());
+  }
+
+  return Array.from(byId.values()).map((p) => ({ ...p, id: p.patientId, name: p.fullName }));
+}

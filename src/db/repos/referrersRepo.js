@@ -48,5 +48,12 @@ export function watchReferrers({ search = '' } = {}) {
   });
 }
 
+// Whole cached referrer list, for the fuzzy duplicate matcher. The list is
+// small (tens–low-hundreds per centre) so a full read is cheap, and it works
+// offline — no /referrers round-trip needed to spot a near-duplicate name.
+export async function getAllReferrers() {
+  return tables.referrers().toArray();
+}
+
 // Referrers are tiny — no eviction unless we get into thousands per centre.
 export async function evictOlderThan() { return 0; }
