@@ -58,7 +58,10 @@ export async function highWatermarkIso() {
   const t = tables.appointments();
   const max = await t.orderBy('_updatedAtMs').reverse().limit(1).first();
   if (!max || !max._updatedAtMs) return null;
-  return new Date(max._updatedAtMs).toISOString();
+  // +1ms: the server stamps UpdatedAt at sub-millisecond precision, but JS Date
+  // truncates to ms — so sending the raw max re-pulls the boundary rows forever
+  // (server's UpdatedAt > our truncated value). Advance past them.
+  return new Date(max._updatedAtMs + 1).toISOString();
 }
 
 // liveQuery-backed reader. Mirrors the shape of the existing AppointmentBoard

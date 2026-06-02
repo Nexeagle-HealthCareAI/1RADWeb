@@ -32,8 +32,16 @@ function forceLogout(reason) {
     sessionStorage.removeItem('1rad_initiation_token');
   } catch { /* storage unavailable in private modes */ }
 
-  if (typeof window !== 'undefined' && !window.location.pathname.startsWith('/login')) {
-    window.location.replace(`/login?reason=${reason}`);
+  if (typeof window !== 'undefined') {
+    const path = window.location.pathname;
+    // TEMPORARY: while debugging custom-role access, do NOT bounce to /login
+    // from the access-denied screen — a background 401 (e.g. a sync poll) must
+    // not yank the user off the page they're inspecting. Remove this guard to
+    // restore the normal "expired session → login" behaviour everywhere.
+    if (path.startsWith('/access-denied')) return;
+    if (!path.startsWith('/login')) {
+      window.location.replace(`/login?reason=${reason}`);
+    }
   }
 }
 

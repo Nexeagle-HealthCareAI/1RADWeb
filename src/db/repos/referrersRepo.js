@@ -34,7 +34,9 @@ export async function highWatermarkIso() {
   const t = tables.referrers();
   const max = await t.orderBy('_updatedAtMs').reverse().limit(1).first();
   if (!max || !max._updatedAtMs) return null;
-  return new Date(max._updatedAtMs).toISOString();
+  // +1ms past the last-seen row — the server's sub-ms UpdatedAt is always > our
+  // ms-truncated value, which otherwise re-pulls the boundary rows every cycle.
+  return new Date(max._updatedAtMs + 1).toISOString();
 }
 
 export function watchReferrers({ search = '' } = {}) {

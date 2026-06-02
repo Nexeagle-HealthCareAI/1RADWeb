@@ -1,18 +1,25 @@
 import { useNavigate } from 'react-router-dom';
 import useAuth from '../auth/useAuth';
-import { ROLE_HOME } from '../data/roles';
+import { ROLE_HOME, getRolePermissions } from '../data/roles';
 import '../styles/global.css';
 
 export default function AccessDenied() {
-  const { currentUser } = useAuth();
+  const { currentUser, activeCenter } = useAuth();
   const navigate = useNavigate();
 
   const handleGoHome = () => {
-    if (currentUser) {
-      navigate(ROLE_HOME[currentUser.roles?.[0]] || '/');
-    } else {
-      navigate('/login');
+    if (!currentUser) { navigate('/login'); return; }
+    const roles = currentUser.roles || [];
+    // Prefer a system role's home; otherwise (custom roles) jump to the FIRST
+    // route the user actually has permission for so the button never bounces
+    // back to this page.
+    const systemHome = roles.map(r => ROLE_HOME[r]).find(Boolean);
+    if (systemHome) { navigate(systemHome); return; }
+    for (const r of roles) {
+      const perms = getRolePermissions(r, activeCenter?.id);
+      if (perms && perms.length > 0) { navigate(perms[0]); return; }
     }
+    navigate('/');
   };
 
   return (

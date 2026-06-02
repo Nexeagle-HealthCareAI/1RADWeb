@@ -2,7 +2,7 @@ import React, { useState, useMemo, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import apiClient, { BASE_URL } from '../api/apiClient';
 import useAuth from '../auth/useAuth';
-import { ROLE_LABELS, getCustomRoles } from '../data/roles';
+import { ROLE_LABELS, getCustomRoles, getRoleLabel } from '../data/roles';
 import useOffline from '../hooks/useOffline';
 import { nativeStorage } from '../hooks/useElectron';
 import '../styles/global.css';
@@ -4732,7 +4732,7 @@ return (
                   padding: '6px 14px', borderRadius: '20px', background: roleMeta.bg, 
                   color: roleMeta.color, fontSize: '10px', fontWeight: 950, letterSpacing: '1px' 
                 }}>
-                  {(ROLE_LABELS[userRole] || getCustomRoles(activeCenter?.id).find(r => r.roleId === userRole || r.roleName === userRole)?.roleName || userRole)?.toUpperCase()}
+                  {getRoleLabel(userRole, activeCenter?.id)?.toUpperCase()}
                 </div>
               </div>
 
