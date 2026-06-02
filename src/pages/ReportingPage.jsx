@@ -3869,7 +3869,7 @@ const ReportingPage = () => {
                   keyImages={keyImages}
                   onKeyImageToggle={toggleKeyImage}
                   onSliceChange={(idx) => setCurrentSlice(idx + 1)}
-                  enableFullscreen={false}
+                  enableFullscreen={true}
                   showMetadata={false}
                   showMeasurements={false}
                   showWindowingPresets={false}
