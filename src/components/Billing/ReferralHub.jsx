@@ -532,9 +532,12 @@ const ReferralHub = ({
           {/* Partner card grid */}
           <div style={{ padding: isMobile ? '15px' : '24px' }}>
             {partnerGroups.length === 0 ? (
-              <div style={{ padding: '80px', textAlign: 'center', color: '#94a3b8', fontSize: '12px', fontWeight: 700 }}>NO REFERRAL PAYOUTS DETECTED</div>
-            ) : (
-              <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : 'repeat(auto-fill, minmax(280px, 1fr))', gap: '16px' }}>
+              <div style={{ padding: '80px', textAlign: 'center', color: '#94a3b8', fontSize: '12px', fontWeight: 700 }}>No referral payouts found yet.</div>
+            ) : isMobile ? (
+              /* Phones & tablets keep the card layout — easier to read/tap than a
+                 wide table. Auto-fill so a phone shows 1 column and a tablet
+                 comfortably shows 2–3 instead of one stretched column. */
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(240px, 1fr))', gap: '14px' }}>
                 {partnerGroups.map(group => (
                   <button
                     key={group.id}
@@ -596,6 +599,50 @@ const ReferralHub = ({
                     </div>
                   </button>
                 ))}
+              </div>
+            ) : (
+              /* Desktop & tablet: every referred person in one clear table.
+                 The whole row is clickable — it opens that person's payout
+                 details, same as the cards did. */
+              <div style={{ overflowX: 'auto' }}>
+                <table style={{ width: '100%', borderCollapse: 'collapse', fontFamily: 'inherit' }}>
+                  <thead>
+                    <tr style={{ borderBottom: '2px solid #f1f5f9' }}>
+                      <th style={{ padding: '12px 14px', fontSize: '9px', fontWeight: 950, color: '#94a3b8', letterSpacing: '0.5px', textTransform: 'uppercase', textAlign: 'left' }}>Referred Person</th>
+                      <th style={{ padding: '12px 14px', fontSize: '9px', fontWeight: 950, color: '#94a3b8', letterSpacing: '0.5px', textTransform: 'uppercase', textAlign: 'right' }}>Total Payouts</th>
+                      <th style={{ padding: '12px 14px', fontSize: '9px', fontWeight: 950, color: '#94a3b8', letterSpacing: '0.5px', textTransform: 'uppercase', textAlign: 'right' }}>Paid</th>
+                      <th style={{ padding: '12px 14px', fontSize: '9px', fontWeight: 950, color: '#94a3b8', letterSpacing: '0.5px', textTransform: 'uppercase', textAlign: 'right' }}>Unpaid</th>
+                      <th style={{ padding: '12px 14px', fontSize: '9px', fontWeight: 950, color: '#94a3b8', letterSpacing: '0.5px', textTransform: 'uppercase', textAlign: 'center' }}>Number of Payouts</th>
+                      <th style={{ padding: '12px 14px', fontSize: '9px', fontWeight: 950, color: '#94a3b8', letterSpacing: '0.5px', textTransform: 'uppercase', textAlign: 'center' }}>Status</th>
+                      <th style={{ padding: '12px 14px', textAlign: 'right' }}></th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {partnerGroups.map(group => (
+                      <tr
+                        key={group.id}
+                        onClick={() => setActivePartnerId(group.id)}
+                        style={{ cursor: 'pointer', borderBottom: '1px solid #f1f5f9', background: group.unpaid > 0 ? '#fff5f6' : 'white', transition: 'background 0.12s' }}
+                        onMouseEnter={e => { e.currentTarget.style.background = '#f1f5f9'; }}
+                        onMouseLeave={e => { e.currentTarget.style.background = group.unpaid > 0 ? '#fff5f6' : 'white'; }}
+                      >
+                        <td style={{ padding: '14px', fontSize: '12.5px', fontWeight: 950, color: '#1e293b', letterSpacing: '0.3px' }}>{group.name}</td>
+                        <td style={{ padding: '14px', fontSize: '12px', fontWeight: 900, color: '#1e293b', textAlign: 'right' }}>₹{group.total.toLocaleString()}</td>
+                        <td style={{ padding: '14px', fontSize: '12px', fontWeight: 900, color: '#166534', textAlign: 'right' }}>₹{group.paid.toLocaleString()}</td>
+                        <td style={{ padding: '14px', fontSize: '12px', fontWeight: 900, color: group.unpaid > 0 ? '#e11d48' : '#cbd5e1', textAlign: 'right' }}>₹{group.unpaid.toLocaleString()}</td>
+                        <td style={{ padding: '14px', fontSize: '12px', fontWeight: 700, color: '#64748b', textAlign: 'center' }}>{group.count}</td>
+                        <td style={{ padding: '14px', textAlign: 'center' }}>
+                          <span style={{ padding: '3px 10px', borderRadius: '20px', fontSize: '9px', fontWeight: 950, letterSpacing: '0.3px', background: group.unpaid > 0 ? '#fee2e2' : '#dcfce7', color: group.unpaid > 0 ? '#991b1b' : '#166534' }}>
+                            {group.unpaid > 0 ? 'Payment Outstanding' : 'Fully Paid'}
+                          </span>
+                        </td>
+                        <td style={{ padding: '14px', textAlign: 'right' }}>
+                          <span style={{ color: '#e11d48', fontWeight: 950, fontSize: '11px', whiteSpace: 'nowrap' }}>View Details →</span>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
               </div>
             )}
           </div>
