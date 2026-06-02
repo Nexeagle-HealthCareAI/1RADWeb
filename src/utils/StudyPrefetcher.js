@@ -26,7 +26,14 @@ import { PrefetchSettings } from './PrefetchSettings';
 
 const MIN_FREE_BYTES = 500 * 1024 * 1024; // 500 MB
 const POLL_FOR_NEW_MS = 60 * 1000;        // re-scan worklist every 60s
-const PREFETCH_ROLES = ['doctor', 'radiologist', 'admindoctor'];
+// Roles that actually open DICOM studies. Technicians review acquisitions on
+// the Technician page, so they benefit from warm studies just like doctors.
+const PREFETCH_ROLES = ['doctor', 'radiologist', 'admindoctor', 'technician'];
+
+// On a metered/cellular link we still prefetch — but only the few most-imminent
+// studies, so we never silently chew through a data plan. Wi-Fi/ethernet stays
+// uncapped. The truly slow tiers (2g) are skipped entirely.
+const CELLULAR_PREFETCH_CAP = 3;
 
 // Statuses where the radiologist will likely open the study soon.
 const TARGET_STATUSES = new Set(['scanned', 'reporting', 'in_progress']);
@@ -163,14 +170,21 @@ class Prefetcher {
     if (this.cancelled) return { ok: false };
     if (this.state.paused) return { ok: false, reason: 'paused' };
 
-    // Network: skip on cellular or Save-Data, unless the user has opted in.
+    // Network policy:
+    //   • Save-Data or 2g/slow-2g → skip entirely (not worth it), unless the
+    //     user explicitly opted in via settings.
+    //   • 3g or an explicitly cellular link → prefetch but CAP to a few studies
+    //     so we bound data usage on a phone plan.
+    //   • 4g / wifi / ethernet → uncapped.
     const { allowCellular } = PrefetchSettings.get();
     const conn = navigator.connection || navigator.mozConnection || navigator.webkitConnection;
-    if (conn) {
-      if (conn.saveData && !allowCellular) return { ok: false, reason: 'save-data' };
-      if (conn.effectiveType && ['slow-2g', '2g', '3g'].includes(conn.effectiveType) && !allowCellular) {
-        return { ok: false, reason: 'cellular' };
-      }
+    let cap = null; // null = unlimited
+    if (conn && !allowCellular) {
+      const et = conn.effectiveType || '';
+      const isCellular = conn.type === 'cellular';
+      if (conn.saveData) return { ok: false, reason: 'save-data' };
+      if (['slow-2g', '2g'].includes(et)) return { ok: false, reason: 'cellular' };
+      if (et === '3g' || isCellular) cap = CELLULAR_PREFETCH_CAP;
     }
 
     // Storage estimate — if tight, try LRU eviction once before bailing.
@@ -195,7 +209,7 @@ class Prefetcher {
       } catch (e) { /* ignore */ }
     }
 
-    return { ok: true };
+    return { ok: true, cap };
   }
 
   async _fetchWorklist() {
@@ -230,7 +244,11 @@ class Prefetcher {
     const targets = this._pickTargets(appointments);
 
     // Build the queue: appointments not yet attempted this session.
-    const queue = targets.filter(a => !this.attemptedIds.has(String(a.appointmentId || a.id)));
+    let queue = targets.filter(a => !this.attemptedIds.has(String(a.appointmentId || a.id)));
+    // On a metered link, only take the few most-imminent studies per cycle so
+    // we don't drain the data plan. (Targets are already today's scanned /
+    // in-progress studies, i.e. the ones about to be opened.)
+    if (gate.cap != null) queue = queue.slice(0, gate.cap);
     this._set({ pending: queue.length });
 
     for (const appt of queue) {

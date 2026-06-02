@@ -116,8 +116,10 @@ export default function AppLayout() {
         onLogout={logout}
       />
 
-      {/* Background DICOM Prefetch Status — only on Technician & Doctor boards */}
-      {['/technician', '/doctor-board'].includes(location.pathname) && <PrefetchStatusIndicator />}
+      {/* Background DICOM Prefetch Status — on the DICOM-heavy surfaces:
+          Technician board, Doctor board, and the open report (/reporting/:id). */}
+      {(['/technician', '/doctor-board'].includes(location.pathname)
+        || location.pathname.startsWith('/reporting')) && <PrefetchStatusIndicator />}
 
       {/* Mobile Backdrop Overlay */}
       {isMobileSidebarOpen && (

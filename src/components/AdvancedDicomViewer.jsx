@@ -2164,12 +2164,23 @@ const AdvancedDicomViewer = ({
         // we only attach stackPrefetch when in stack mode.
         if (elementRef.current && !isVolumeMode) {
           const totalSlices = files.length;
+          // Mobile: prefetch only a FOCUSED WINDOW around the current slice
+          // instead of the whole study. stackPrefetch re-anchors to the active
+          // index as the user scrolls, so a small window stays just as smooth
+          // while (a) freeing the scarce mobile connection pool/bandwidth for
+          // the slice actually being viewed — speeding perceived load — and
+          // (b) slashing mobile-data usage and the iOS OOM risk. Desktop keeps
+          // the full-study prefetch.
+          const mobilePrefetchWindow = 24;
+          const maxImagesToPrefetch = isMobile
+            ? Math.min(totalSlices, mobilePrefetchWindow)
+            : totalSlices;
           utilities.stackPrefetch.enable(elementRef.current, {
-            maxImagesToPrefetch: isMobile ? Math.min(totalSlices, 150) : totalSlices,
+            maxImagesToPrefetch,
             preserveOrder: true,
             displaySetId: viewportId,
           });
-          console.log(`[DICOM] Stack prefetch enabled: max ${isMobile ? Math.min(totalSlices, 150) : totalSlices} of ${totalSlices} slices`);
+          console.log(`[DICOM] Stack prefetch enabled: max ${maxImagesToPrefetch} of ${totalSlices} slices`);
         } else if (isVolumeMode) {
           console.log(`[DICOM] Volume mode — internal volume.load() handles prefetch`);
         }

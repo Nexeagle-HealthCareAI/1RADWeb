@@ -14,7 +14,42 @@ import { useEffect, useState, useCallback } from 'react';
 import useAuth from '../auth/useAuth';
 import { hasPin, getPinInfo, verifyPin, removePin } from '../auth/pinAuth';
 import SettingsSubPageHeader from '../components/SettingsSubPageHeader';
+import { PrefetchSettings } from '../utils/PrefetchSettings';
 import '../styles/global.css';
+
+// Device-level preference: let the user opt into pre-loading DICOM studies over
+// mobile data. Off by default to protect data plans; the prefetcher still warms
+// a few imminent studies on 3G and stays uncapped on Wi-Fi. Self-contained so it
+// doesn't entangle with the PIN state machine above.
+function PrefetchPreferenceCard() {
+  const [settings, setSettings] = useState(PrefetchSettings.get());
+  useEffect(() => PrefetchSettings.subscribe(setSettings), []);
+  return (
+    <div style={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '20px 22px', boxShadow: '0 1px 3px rgba(15,23,42,0.04)', marginTop: '18px' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '12px' }}>
+        <div style={{ width: '40px', height: '40px', borderRadius: '10px', background: '#eff6ff', color: '#0f52ba', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '18px' }}>📥</div>
+        <div style={{ flex: 1 }}>
+          <div style={{ fontSize: '14px', fontWeight: 700, color: '#0f172a' }}>Pre-load studies in the background</div>
+          <div style={{ fontSize: '12px', color: '#64748b', marginTop: '2px' }}>
+            Downloads today's scans ahead of time so they open instantly. On Wi-Fi this is automatic.
+          </div>
+        </div>
+      </div>
+      <label style={{ display: 'flex', alignItems: 'center', gap: '10px', cursor: 'pointer', fontSize: '13px', fontWeight: 600, color: '#0f172a' }}>
+        <input
+          type="checkbox"
+          checked={settings.allowCellular}
+          onChange={e => PrefetchSettings.set({ allowCellular: e.target.checked })}
+          style={{ width: '18px', height: '18px', cursor: 'pointer', accentColor: '#0f52ba' }}
+        />
+        Allow pre-loading on mobile data (cellular)
+      </label>
+      <div style={{ fontSize: '11px', color: '#94a3b8', marginTop: '8px', lineHeight: 1.5 }}>
+        Off by default to protect your data plan. When off, 1Rad still pre-loads a few imminent studies on 3G and skips slow/2G links entirely.
+      </div>
+    </div>
+  );
+}
 
 function formatRelative(ms) {
   if (!ms) return '';
@@ -269,6 +304,8 @@ export default function SecuritySettingsPage() {
           </form>
         )}
       </div>
+
+      <PrefetchPreferenceCard />
     </div>
   );
 }

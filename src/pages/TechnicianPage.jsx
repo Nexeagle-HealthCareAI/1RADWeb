@@ -269,7 +269,7 @@ export default function TechnicianPage() {
       const matchesDoctor = selectedDoctor === 'ALL' || s.doctorId === selectedDoctor || s.doctor === doctors.find(d => d.id === selectedDoctor)?.name;
 
       if (hubTab === 'ACTIVE') {
-        return matchesDoctor && matchesSearch && matchesModality && matchesPriority && matchesStatus && s.isToday && ['scheduled', 'confirmed', 'in_progress', 'booked', 'scanned', 'reporting', 'reported', 'completed'].includes(status);
+        return matchesDoctor && matchesSearch && matchesModality && matchesPriority && matchesStatus && s.isToday && ['scheduled', 'confirmed', 'in_progress', 'booked', 'scanned', 'reporting', 'reported', 'completed', 'delivered'].includes(status);
       } else {
         const studyDate = s.dateTime ? s.dateTime.split('T')[0] : null;
         const matchesDate = archiveFilterMode === 'ALL' || (studyDate && studyDate >= archiveDateRange.start && studyDate <= archiveDateRange.end);
@@ -321,9 +321,10 @@ export default function TechnicianPage() {
   }, [searchQuery, filters, hubTab, archiveFilterMode, archiveDateRange]);
 
   const stats = {
-    total: studies.filter(s => s.isToday && ['scheduled', 'confirmed', 'in_progress', 'booked', 'scanned', 'reporting', 'reported', 'completed'].includes(s.status?.toLowerCase())).length,
+    total: studies.filter(s => s.isToday && ['scheduled', 'confirmed', 'in_progress', 'booked', 'scanned', 'reporting', 'reported', 'completed', 'delivered'].includes(s.status?.toLowerCase())).length,
     inProgress: studies.filter(s => s.isToday && s.status?.toLowerCase() === 'in_progress').length,
     pending: studies.filter(s => s.isToday && s.status?.toLowerCase() === 'confirmed').length,
+    delivered: studies.filter(s => s.isToday && s.status?.toLowerCase() === 'delivered').length,
     expected: studies.filter(s => s.isToday && ['scheduled', 'booked'].includes(s.status?.toLowerCase())).length,
     // Archive Stats
     archiveTotal: studies.filter(s => !s.isToday || ['reported', 'completed'].includes(s.status?.toLowerCase())).length,
@@ -600,22 +601,6 @@ export default function TechnicianPage() {
     setCurrentSlice(1);
   }, [activeAssetIndex]);
 
-  const reloadAssetsFromBackend = async () => {
-    if (!activeStudy?.appointmentId) return;
-    try {
-      console.log(`[TECH] 🔄 Reloading manifest for appointment: ${activeStudy.appointmentId}`);
-      const manifestRes = await apiClient.get(`/Study/${activeStudy.appointmentId}/manifest`)
-        .catch(() => ({ data: { success: false } }));
-      const manifestAssets = (manifestRes?.data?.success && manifestRes.data.data?.assets) || [];
-      if (manifestAssets.length > 0) {
-        const hydAssets = assetsFromManifest(manifestAssets);
-        setUploadedFiles(hydAssets);
-        console.log(`[TECH] ✅ Reloaded ${hydAssets.length} series-entries from manifest`);
-      }
-    } catch (err) {
-      console.error('[TECH] Failed to reload assets from backend', err);
-    }
-  };
 
   const persistStudyAsset = async (file) => {
     const appointmentId = activeStudy?.appointmentId;
@@ -642,7 +627,12 @@ export default function TechnicianPage() {
       });
       console.log(`[TECH] ✅ Direct upload completed: ${file.name}`);
       fetchWorklist();
-      setTimeout(() => { reloadAssetsFromBackend(); }, 1500);
+      // NOTE: we deliberately do NOT reload assets from the backend manifest
+      // here. The slices we just decoded locally are already on screen; the
+      // server copy is still mid-extraction for ~seconds, so reloading would
+      // swap the working viewer for an un-extracted ZIP entry and force a full
+      // re-download + re-decode — the visible "blink"/reload. The backend copy
+      // is for other sessions / the next open, which fetch it fresh anyway.
       return;
     } catch (sasErr) {
       console.warn('[TECH] Direct SAS upload failed, falling back to legacy multipart:', sasErr?.message);
@@ -659,7 +649,12 @@ export default function TechnicianPage() {
       });
       console.log(`[TECH] ✅ (fallback) Backend save completed: ${file.name}`);
       fetchWorklist();
-      setTimeout(() => { reloadAssetsFromBackend(); }, 1500);
+      // NOTE: we deliberately do NOT reload assets from the backend manifest
+      // here. The slices we just decoded locally are already on screen; the
+      // server copy is still mid-extraction for ~seconds, so reloading would
+      // swap the working viewer for an un-extracted ZIP entry and force a full
+      // re-download + re-decode — the visible "blink"/reload. The backend copy
+      // is for other sessions / the next open, which fetch it fresh anyway.
     } catch (err) {
       console.error('[TECH] Persistence failed (both paths)', err);
     }
@@ -887,7 +882,7 @@ export default function TechnicianPage() {
 
       <div className="board-padding">
         {hubTab === 'ACTIVE' ? (
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '10px', marginBottom: '15px' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))', gap: '10px', marginBottom: '15px' }}>
             <div className="summary-card" style={{ background: 'white', border: '1px solid #e2e8f0', padding: '8px 12px', borderRadius: '10px', boxShadow: '0 2px 8px rgba(0,0,0,0.02)' }}>
               <span style={{ display: 'block', fontSize: '11px', fontWeight: 500, color: '#6b7280', marginBottom: '4px' }}>Today's Studies</span>
               <div style={{ display: 'flex', alignItems: 'baseline', gap: '6px' }}>
@@ -917,6 +912,14 @@ export default function TechnicianPage() {
               <div style={{ display: 'flex', alignItems: 'baseline', gap: '6px' }}>
                  <span style={{ fontSize: '24px', fontWeight: 700, color: '#1d4ed8' }}>{stats.expected}</span>
                  <span style={{ fontSize: '11px', fontWeight: 500, color: '#1d4ed8' }}>Pending</span>
+              </div>
+            </div>
+
+            <div className="summary-card" style={{ background: 'white', border: '1px solid #e2e8f0', padding: '8px 12px', borderRadius: '10px', boxShadow: '0 2px 8px rgba(0,0,0,0.02)' }}>
+              <span style={{ display: 'block', fontSize: '11px', fontWeight: 500, color: '#6b7280', marginBottom: '4px' }}>Delivered</span>
+              <div style={{ display: 'flex', alignItems: 'baseline', gap: '6px' }}>
+                 <span style={{ fontSize: '24px', fontWeight: 700, color: '#15803d' }}>{stats.delivered}</span>
+                 <span style={{ fontSize: '11px', fontWeight: 500, color: '#15803d' }}>Handed to Patient</span>
               </div>
             </div>
           </div>

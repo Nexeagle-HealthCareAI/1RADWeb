@@ -13,8 +13,12 @@ export default function PrefetchStatusIndicator() {
   const [status, setStatus] = useState(StudyPrefetcher.getStatus());
   const [settings, setSettings] = useState(PrefetchSettings.get());
 
-  // Draggable position — default top-right
-  const [pos, setPos] = useState({ top: 16, right: 16, left: null, bottom: null });
+  // Draggable position — default top-right, but on phones drop below the fixed
+  // 56px mobile header so the panel doesn't cover the hamburger / centre switcher.
+  const [pos, setPos] = useState(() => ({
+    top: (typeof window !== 'undefined' && window.innerWidth < 768) ? 68 : 16,
+    right: 16, left: null, bottom: null,
+  }));
   const dragging = useRef(false);
   const offset = useRef({ x: 0, y: 0 });
   const panelRef = useRef(null);

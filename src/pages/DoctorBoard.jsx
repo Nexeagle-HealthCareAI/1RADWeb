@@ -204,7 +204,7 @@ export default function DoctorBoard() {
         c.doctor === doctors.find(d => d.id?.toLowerCase() === normalizedSelected)?.name;
 
       if (view === 'QUEUE') {
-        return matchesDoctor && matchesSearch && matchesModality && matchesPriority && matchesStatus && c.isToday && ['scheduled', 'confirmed', 'in_progress', 'scanned', 'reporting', 'booked', 'reported', 'completed'].includes(status);
+        return matchesDoctor && matchesSearch && matchesModality && matchesPriority && matchesStatus && c.isToday && ['scheduled', 'confirmed', 'in_progress', 'scanned', 'reporting', 'booked', 'reported', 'completed', 'delivered'].includes(status);
       } else {
         const studyDate = c.dateTime ? c.dateTime.split('T')[0] : null;
         const matchesDate = archiveFilterMode === 'ALL' || (studyDate && studyDate >= archiveDateRange.start && studyDate <= archiveDateRange.end);
@@ -259,6 +259,7 @@ export default function DoctorBoard() {
     pendingReports: cases.filter(c => c.isToday && ['scanned', 'reporting'].includes(c.status?.toLowerCase())).length,
     drafts: cases.filter(c => c.isToday && c.status?.toLowerCase() === 'reporting').length,
     finalizedToday: cases.filter(c => ['reported', 'completed'].includes(c.status?.toLowerCase()) && c.isToday).length,
+    delivered: cases.filter(c => c.isToday && c.status?.toLowerCase() === 'delivered').length,
     upcoming: cases.filter(c => c.isToday && ['scheduled', 'confirmed', 'in_progress', 'booked'].includes(c.status?.toLowerCase())).length,
     archiveTotal: cases.filter(c => !c.isToday || c.status?.toLowerCase() === 'reported').length,
     archiveFinalized: cases.filter(c => c.status?.toLowerCase() === 'reported').length,
@@ -362,7 +363,7 @@ export default function DoctorBoard() {
 
       <div className="board-padding">
         {view === 'QUEUE' ? (
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '15px', marginBottom: '20px' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: '15px', marginBottom: '20px' }}>
             <div className="summary-card" style={{ background: 'white', border: '1px solid #e2e8f0', padding: '15px', borderRadius: '20px', boxShadow: '0 10px 40px rgba(0,0,0,0.02)' }}>
               <span style={{ display: 'block', fontSize: '9px', fontWeight: 500, color: '#ef4444', marginBottom: '6px' }}>Needs Report</span>
               <div style={{ display: 'flex', alignItems: 'baseline', gap: '8px' }}>
@@ -392,6 +393,14 @@ export default function DoctorBoard() {
               <div style={{ display: 'flex', alignItems: 'baseline', gap: '8px' }}>
                  <span style={{ fontSize: '19px', fontWeight: 700, color: '#1d4ed8' }}>{stats.upcoming}</span>
                  <span style={{ fontSize: '9px', fontWeight: 500, color: '#1d4ed8' }}>Studies</span>
+              </div>
+            </div>
+
+            <div className="summary-card" style={{ background: 'white', border: '1px solid #e2e8f0', padding: '15px', borderRadius: '20px', boxShadow: '0 10px 40px rgba(0,0,0,0.02)' }}>
+              <span style={{ display: 'block', fontSize: '9px', fontWeight: 500, color: '#6b7280', marginBottom: '6px' }}>Delivered</span>
+              <div style={{ display: 'flex', alignItems: 'baseline', gap: '8px' }}>
+                 <span style={{ fontSize: '19px', fontWeight: 700, color: '#15803d' }}>{stats.delivered}</span>
+                 <span style={{ fontSize: '9px', fontWeight: 500, color: '#15803d' }}>Handed to Patient</span>
               </div>
             </div>
           </div>
