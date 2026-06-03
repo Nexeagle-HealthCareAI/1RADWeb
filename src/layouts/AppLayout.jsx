@@ -8,6 +8,7 @@ import '../styles/global.css';
 import TopNav from './TopNav';
 import SessionTimeoutModal from '../components/SessionTimeoutModal';
 import PrefetchStatusIndicator from '../components/PrefetchStatusIndicator';
+import DesktopUpdateBanner from '../components/DesktopUpdateBanner';
 import useOffline from '../hooks/useOffline';
 
 
@@ -108,6 +109,9 @@ export default function AppLayout() {
 
   return (
     <div className="app-layout">
+      {/* Desktop auto-update prompt (no-ops on web). */}
+      <DesktopUpdateBanner />
+
       {/* Session Inactivity Guard */}
       <SessionTimeoutModal
         isOpen={showTimeoutModal}

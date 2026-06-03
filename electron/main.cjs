@@ -4,6 +4,7 @@ const fs = require('fs');
 const os = require('os');
 const isDev = require('electron-is-dev');
 const Store = require('electron-store');
+const { autoUpdater } = require('electron-updater');
 
 // Initialize Electron Store
 const store = new Store();
@@ -162,9 +163,49 @@ ipcMain.handle('app:info', () => ({
   isDev
 }));
 
+// Silent auto-update. On launch (packaged builds only) electron-updater reads
+// latest.yml from the publish feed (the Blob URL baked in at build time),
+// downloads any newer version in the background, and installs it on quit — so
+// installed clinics stay current without anyone re-downloading. Dev runs skip
+// it (no update feed, and it throws when unpackaged).
+function initAutoUpdater() {
+  if (isDev) return;
+  autoUpdater.autoDownload = true;
+  // Still install on quit as a safety net if the user ignores the prompt.
+  autoUpdater.autoInstallOnAppQuit = true;
+
+  const notifyRenderer = (channel, payload) => {
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send(channel, payload);
+    }
+  };
+
+  autoUpdater.on('error', (err) => console.warn('[auto-update] error:', err?.message || err));
+  autoUpdater.on('update-available', (info) => {
+    console.info('[auto-update] update available:', info?.version);
+    notifyRenderer('update:available', { version: info?.version });
+  });
+  autoUpdater.on('update-downloaded', (info) => {
+    console.info('[auto-update] downloaded:', info?.version);
+    // Tell the renderer so it can offer "Restart to update". If ignored,
+    // autoInstallOnAppQuit still applies the update on next quit.
+    notifyRenderer('update:downloaded', { version: info?.version });
+  });
+
+  autoUpdater.checkForUpdates().catch((err) =>
+    console.warn('[auto-update] check failed:', err?.message || err));
+}
+
+// Renderer asked to restart and apply the downloaded update now.
+ipcMain.handle('update:install', () => {
+  autoUpdater.quitAndInstall();
+  return { ok: true };
+});
+
 // Lifecycle
 app.whenReady().then(() => {
   createWindow();
+  initAutoUpdater();
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow();

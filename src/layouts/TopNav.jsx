@@ -26,6 +26,9 @@ export default function TopNav({ currentTime }) {
   // change. Mirrors the AdminBoard switcher but compact for the header.
   const [isSwitcherOpen, setIsSwitcherOpen] = useState(false);
   const [isSwitchingCenter, setIsSwitchingCenter] = useState(false);
+  // "Get Desktop App" download + pin-to-taskbar prompt.
+  const [showDesktopModal, setShowDesktopModal] = useState(false);
+  const [desktopDownloaded, setDesktopDownloaded] = useState(false);
   const switcherRef = useRef(null);
   const hasMultipleHospitals = (centers?.length || 0) > 1;
 
@@ -451,21 +454,29 @@ export default function TopNav({ currentTime }) {
         <div style={{ display: 'flex', alignItems: 'center', gap: '25px' }} className="nav-user-section">
           {/* Get the desktop app — hidden when already running inside Electron. */}
           {!IS_ELECTRON_APP && (
-            <a
-              href={DESKTOP_DOWNLOAD_URL}
+            <button
+              type="button"
+              onClick={() => { setDesktopDownloaded(false); setShowDesktopModal(true); }}
               title="Download the 1Rad desktop app for Windows"
               className="nav-desktop-download"
               style={{
-                display: 'flex', alignItems: 'center', gap: '6px',
-                padding: '7px 12px', borderRadius: '9px',
-                background: '#eff6ff', border: '1px solid #bfdbfe',
+                display: 'flex', alignItems: 'center', gap: '8px',
+                padding: '7px 14px', borderRadius: '10px',
+                background: 'linear-gradient(135deg, #eff6ff 0%, #e0edff 100%)',
+                border: '1px solid #bfdbfe',
                 color: '#0f52ba', fontSize: '11px', fontWeight: 800,
-                textDecoration: 'none', whiteSpace: 'nowrap',
+                cursor: 'pointer', whiteSpace: 'nowrap',
+                boxShadow: '0 1px 2px rgba(15,82,186,0.08)',
               }}
             >
-              <span style={{ fontSize: '13px' }}>⬇</span>
+              {/* Desktop monitor icon */}
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                <rect x="2" y="3" width="20" height="14" rx="2" ry="2"></rect>
+                <line x1="8" y1="21" x2="16" y2="21"></line>
+                <line x1="12" y1="17" x2="12" y2="21"></line>
+              </svg>
               <span className="nav-desktop-download-label">Get Desktop App</span>
-            </a>
+            </button>
           )}
 
           {/* SLA bell — auto-hides when there are no overdue patients. */}
@@ -501,6 +512,72 @@ export default function TopNav({ currentTime }) {
           </div>
         </div>
       </header>
+
+      {/* Get Desktop App — download + pin-to-taskbar prompt */}
+      {showDesktopModal && (
+        <div
+          onClick={() => setShowDesktopModal(false)}
+          style={{ position: 'fixed', inset: 0, zIndex: 100000, background: 'rgba(15,23,42,0.55)', backdropFilter: 'blur(2px)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '20px' }}
+        >
+          <div onClick={e => e.stopPropagation()} style={{ width: '420px', maxWidth: '100%', background: 'white', borderRadius: '18px', boxShadow: '0 24px 70px rgba(0,0,0,0.4)', overflow: 'hidden' }}>
+            <div style={{ padding: '22px 24px', background: 'linear-gradient(135deg, #0a1628 0%, #0f52ba 100%)', color: 'white', display: 'flex', alignItems: 'center', gap: '12px' }}>
+              <span style={{ fontSize: '22px' }}>🖥️</span>
+              <div style={{ flex: 1 }}>
+                <div style={{ fontSize: '15px', fontWeight: 950 }}>Get the 1Rad Desktop App</div>
+                <div style={{ fontSize: '11px', fontWeight: 600, opacity: 0.85, marginTop: '2px' }}>Faster, works offline, and always one click away.</div>
+              </div>
+              <button onClick={() => setShowDesktopModal(false)} style={{ background: 'rgba(255,255,255,0.15)', border: 'none', color: 'white', width: '30px', height: '30px', borderRadius: '8px', fontSize: '15px', cursor: 'pointer', lineHeight: 1 }}>✕</button>
+            </div>
+
+            <div style={{ padding: '22px 24px' }}>
+              {!desktopDownloaded ? (
+                <>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const a = document.createElement('a');
+                      a.href = DESKTOP_DOWNLOAD_URL;
+                      a.rel = 'noopener';
+                      document.body.appendChild(a);
+                      a.click();
+                      a.remove();
+                      setDesktopDownloaded(true);
+                    }}
+                    style={{ width: '100%', padding: '14px', borderRadius: '12px', border: 'none', background: '#0f52ba', color: 'white', fontSize: '13px', fontWeight: 900, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', boxShadow: '0 8px 20px rgba(15,82,186,0.3)' }}
+                  >
+                    <span style={{ fontSize: '16px' }}>⬇</span> Download for Windows
+                  </button>
+                  <div style={{ marginTop: '16px', padding: '12px 14px', background: '#fffbeb', border: '1px solid #fde68a', borderRadius: '12px', display: 'flex', gap: '10px', alignItems: 'flex-start' }}>
+                    <span style={{ fontSize: '16px' }}>📌</span>
+                    <div style={{ fontSize: '12px', fontWeight: 700, color: '#92400e', lineHeight: 1.5 }}>
+                      Tip: After installing, you can pin 1Rad to your taskbar so it's always one click away. We'll show you how once the download starts.
+                    </div>
+                  </div>
+                </>
+              ) : (
+                <>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '14px' }}>
+                    <span style={{ fontSize: '20px' }}>✅</span>
+                    <div style={{ fontSize: '14px', fontWeight: 900, color: '#0f172a' }}>Your download has started</div>
+                  </div>
+                  <div style={{ fontSize: '12px', fontWeight: 700, color: '#475569', marginBottom: '10px' }}>Pin 1Rad to your taskbar for one-click access:</div>
+                  <ol style={{ margin: 0, paddingLeft: '20px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                    <li style={{ fontSize: '12px', fontWeight: 600, color: '#334155', lineHeight: 1.5 }}>Open the installer you just downloaded and follow the steps.</li>
+                    <li style={{ fontSize: '12px', fontWeight: 600, color: '#334155', lineHeight: 1.5 }}>Open <strong>1Rad</strong>, then <strong>right-click its icon in the taskbar</strong> and choose <strong>“Pin to taskbar”</strong>.</li>
+                  </ol>
+                  <button
+                    type="button"
+                    onClick={() => setShowDesktopModal(false)}
+                    style={{ marginTop: '20px', width: '100%', padding: '12px', borderRadius: '12px', border: 'none', background: '#0f52ba', color: 'white', fontSize: '13px', fontWeight: 900, cursor: 'pointer' }}
+                  >
+                    Done
+                  </button>
+                </>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
     </>
   );
 }

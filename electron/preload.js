@@ -33,6 +33,21 @@ contextBridge.exposeInMainWorld('electron', {
     },
   },
 
+  // Auto-update — surface "update ready" to the UI + trigger restart-to-apply.
+  updater: {
+    install: () => ipcRenderer.invoke('update:install'),
+    onUpdateDownloaded: (callback) => {
+      const subscription = (event, payload) => callback(payload);
+      ipcRenderer.on('update:downloaded', subscription);
+      return () => ipcRenderer.removeListener('update:downloaded', subscription);
+    },
+    onUpdateAvailable: (callback) => {
+      const subscription = (event, payload) => callback(payload);
+      ipcRenderer.on('update:available', subscription);
+      return () => ipcRenderer.removeListener('update:available', subscription);
+    },
+  },
+
   // App Metadata
   app: {
     version: () => ipcRenderer.invoke('app:info').then(info => info.version),

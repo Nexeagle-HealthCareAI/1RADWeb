@@ -38,8 +38,17 @@
       "oneClick": false,
       "perMachine": false,
       "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "1Rad",
       "artifactName": "1Rad-Setup.${ext}"
-    }
+    },
+    "publish": [
+      {
+        "provider": "generic",
+        "url": "https://REPLACE-ME.blob.core.windows.net/downloads/"
+      }
+    ]
   },
   "dependencies": {
     "@cornerstonejs/core": "^4.22.2",
@@ -65,6 +74,7 @@
     "cornerstone-wado-image-loader": "^4.13.2",
     "dexie": "^4.4.3",
     "dicom-parser": "^1.8.21",
+    "electron-updater": "^6.8.3",
     "fflate": "^0.8.3",
     "fuse.js": "^7.4.0",
     "gl-matrix": "^3.4.3",

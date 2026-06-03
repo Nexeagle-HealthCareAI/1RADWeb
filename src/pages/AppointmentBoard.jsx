@@ -125,7 +125,7 @@ export default function AppointmentBoard() {
   const [loading, setLoading] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [drawerSearchQuery, setDrawerSearchQuery] = useState('');
-  const [filters, setFilters] = useState({ date: TODAY, status: 'ALL', modality: 'ALL', doctor: 'ALL' });
+  const [filters, setFilters] = useState({ date: TODAY, status: 'ALL', modality: 'ALL', doctor: 'ALL', notArrived: false });
   const [expandedRow, setExpandedRow] = useState(null);
 
 
@@ -635,7 +635,12 @@ export default function AppointmentBoard() {
       // tolerates v1 rows that don't carry a services[] array yet.
       const matchesModality = matchesAnyModality(app, filters.modality);
       const matchesDoctor = filters.doctor === 'ALL' || app.doctor === filters.doctor;
-      return matchesSearch && matchesStatus && matchesModality && matchesDoctor;
+      // "Not arrived" quick filter — show only patients who are booked but
+      // haven't been marked arrived yet, so the front desk can find and check
+      // them in fast. Un-arrived = still in a pre-arrival status.
+      const isNotArrived = ['', 'scheduled', 'booked', 'future'].includes((app.status || '').toLowerCase());
+      const matchesArrival = !filters.notArrived || isNotArrived;
+      return matchesSearch && matchesStatus && matchesModality && matchesDoctor && matchesArrival;
     });
   }, [appointmentsForTab, searchQuery, filters]);
 
@@ -647,6 +652,13 @@ export default function AppointmentBoard() {
     (!newPatient.name.trim() || !newPatient.age.trim() || (newPatient.mobile.length > 0 && !isMobileValid));
   // Referrer mobile (inline new-referrer capture) — optional, 10-digit if present.
   const isReferrerContactValid = !newPatient.referrerContact || /^\d{10}$/.test(newPatient.referrerContact);
+  // When the referral is an "Other person" (agent), the supporting doctor is
+  // mandatory — it becomes the report's "Referred By". Block the step until it's
+  // filled. (Only applies once a referral name has been entered.)
+  const isSupportedDoctorMissing =
+    !!newPatient.referredBy?.trim() &&
+    newPatient.referrerIsDoctor === false &&
+    !String(newPatient.referrerSupportedByDoctor || '').trim();
 
   // Most-used services per modality, derived from this centre's recent
   // appointments. Powers the quick-pick suggestion chips in step 2 so the
@@ -1675,17 +1687,6 @@ export default function AppointmentBoard() {
           <option value="ALL">All Specialists</option>
           {doctors.map(d => <option key={d} value={d}>{d}</option>)}
         </select>
-
-        <select
-          className="filter-select"
-          value={filters.status}
-          onChange={e => setFilters({...filters, status: e.target.value})}
-        >
-          <option value="ALL">All Statuses</option>
-          {Object.entries(STATUS_META).map(([key, meta]) => (
-            <option key={key} value={key}>{meta.label}</option>
-          ))}
-        </select>
       </div>
 
       {(filters.status !== 'ALL' || filters.doctor !== 'ALL' || searchQuery) && (
@@ -2049,13 +2050,17 @@ export default function AppointmentBoard() {
                   // For an agent, surface the supporting doctor's profile by
                   // looking the doctor up in the partner list (it lives on the
                   // doctor's own referrer record, not the agent's).
-                  const supportDoc = matchedRef && matchedRef.isDoctor === false && matchedRef.supportedByDoctor
-                    ? (referrers || []).find(r => r.isDoctor !== false && (r.name || '').toLowerCase() === String(matchedRef.supportedByDoctor).toLowerCase())
+                  // Prefer THIS visit's supporting doctor (per-appointment) so an
+                  // agent who refers for different doctors shows the right one for
+                  // this booking; fall back to the agent's saved default.
+                  const apptSupportDoc = app.supportedByDoctor || (matchedRef && matchedRef.isDoctor === false ? matchedRef.supportedByDoctor : '') || '';
+                  const supportDoc = apptSupportDoc
+                    ? (referrers || []).find(r => r.isDoctor !== false && (r.name || '').toLowerCase() === String(apptSupportDoc).toLowerCase())
                     : null;
                   const refProfile = matchedRef ? {
                     referrerIsDoctor:        matchedRef.isDoctor !== false,
                     referrerContact:         matchedRef.contact || app.referredContact || '',
-                    referrerSupportedByDoctor: matchedRef.supportedByDoctor || '',
+                    referrerSupportedByDoctor: apptSupportDoc,
                     referrerSupportedSpecialty: supportDoc?.specialty || '',
                     referrerSupportedDegree:    supportDoc?.degree || '',
                     referrerEmail:           matchedRef.email || '',
@@ -2834,14 +2839,16 @@ export default function AppointmentBoard() {
                               // referring doctor they collect for gets its own
                               // clearly-labelled card — distinct from the agent's
                               // own contact fields above.
-                              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', padding: '12px', borderRadius: '12px', border: '1.5px dashed #bfdbfe', background: '#f5f9ff' }}>
+                              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', padding: '12px', borderRadius: '12px', border: `1.5px dashed ${isSupportedDoctorMissing ? '#f59e0b' : '#bfdbfe'}`, background: isSupportedDoctorMissing ? '#fffbeb' : '#f5f9ff' }}>
                                 <div style={{ fontSize: '9px', fontWeight: 900, color: '#0f52ba', letterSpacing: '0.6px', textTransform: 'uppercase', display: 'flex', alignItems: 'center', gap: '5px' }}>
-                                  <span>👨‍⚕️</span> Referring doctor
+                                  <span>👨‍⚕️</span> Referring doctor <span style={{ color: '#e11d48' }}>*</span>
+                                  <span style={{ fontSize: '8px', fontWeight: 800, color: '#b45309', letterSpacing: '0.3px' }}>required</span>
                                 </div>
                                 {/* Supported by doctor — auto-select from existing partner doctors */}
                                 <div style={{ position: 'relative' }}>
-                                  <input type="text" placeholder="Supported by doctor — search or type name" value={newPatient.referrerSupportedByDoctor || ''}
-                                    onChange={e => setNewPatient({...newPatient, referrerSupportedByDoctor: e.target.value})} style={inputStyle} />
+                                  <input type="text" placeholder="Supporting doctor name — search or type" value={newPatient.referrerSupportedByDoctor || ''}
+                                    onChange={e => setNewPatient({...newPatient, referrerSupportedByDoctor: e.target.value})}
+                                    style={{ ...inputStyle, border: `1.5px solid ${isSupportedDoctorMissing ? '#f59e0b' : '#dee2e6'}` }} />
                                   {(() => {
                                     const q = String(newPatient.referrerSupportedByDoctor || '').trim().toLowerCase();
                                     if (q.length < 1) return null;
@@ -2899,17 +2906,24 @@ export default function AppointmentBoard() {
                       <div className="drawer-footer" style={{ borderTop: 'none', paddingTop: '10px', marginTop: 'auto' }}>
                         <button
                           className="gamified-btn"
+                          disabled={isSupportedDoctorMissing}
                           style={{
                             width: '100%',
                             padding: isMobile ? '11px' : '12px',
                             borderRadius: '10px',
                             fontSize: isMobile ? '12px' : '13px',
-                            background: isNewPatientIncomplete && showBookingValidation ? '#94a3b8' : 'linear-gradient(90deg, #0f52ba, #00f2fe)',
-                            boxShadow: isNewPatientIncomplete && showBookingValidation ? 'none' : '0 10px 20px rgba(15, 82, 186, 0.2)',
+                            background: (isSupportedDoctorMissing || (isNewPatientIncomplete && showBookingValidation)) ? '#94a3b8' : 'linear-gradient(90deg, #0f52ba, #00f2fe)',
+                            boxShadow: (isSupportedDoctorMissing || (isNewPatientIncomplete && showBookingValidation)) ? 'none' : '0 10px 20px rgba(15, 82, 186, 0.2)',
+                            cursor: isSupportedDoctorMissing ? 'not-allowed' : 'pointer',
+                            opacity: isSupportedDoctorMissing ? 0.8 : 1,
                           }}
                           onClick={async () => {
                             if (isNewPatientIncomplete) {
                               setShowBookingValidation(true);
+                              return;
+                            }
+                            if (isSupportedDoctorMissing) {
+                              showNotif('warning', 'DOCTOR NAME REQUIRED', 'Please enter the supporting doctor for this referral before continuing.');
                               return;
                             }
 
@@ -5045,21 +5059,48 @@ export default function AppointmentBoard() {
             {doctors.map(d => <option key={d} value={d}>{d}</option>)}
           </select>
 
-          <select
-            className="filter-select"
-            value={filters.status}
-            onChange={e => setFilters({...filters, status: e.target.value})}
-          >
-            <option value="ALL">All Statuses</option>
-            {Object.entries(STATUS_META).map(([key, meta]) => (
-              <option key={key} value={key}>{meta.label}</option>
-            ))}
-          </select>
+          {/* One-click "Not Arrived" filter — high-visibility: amber attention
+              style when patients are still waiting to be checked in, solid when
+              the filter is on. Pulses gently while there are people waiting. */}
+          {(() => {
+            const waiting = (stats.expected || 0) > 0;
+            const on = filters.notArrived;
+            const bg = on ? '#f59e0b' : (waiting ? '#fffbeb' : 'white');
+            const bd = on ? '#f59e0b' : (waiting ? '#f59e0b' : '#e2e8f0');
+            const fg = on ? 'white' : (waiting ? '#b45309' : '#64748b');
+            return (
+              <button
+                type="button"
+                onClick={() => setFilters({ ...filters, notArrived: !filters.notArrived })}
+                title="Show only patients who have not arrived yet"
+                className={waiting && !on ? 'not-arrived-pulse' : ''}
+                style={{
+                  display: 'flex', alignItems: 'center', gap: '8px',
+                  padding: '0 18px', height: '44px', borderRadius: '12px',
+                  border: `2px solid ${bd}`, background: bg, color: fg,
+                  fontSize: '13px', fontWeight: 900, cursor: 'pointer', whiteSpace: 'nowrap',
+                  boxShadow: on
+                    ? '0 6px 16px rgba(245,158,11,0.35)'
+                    : (waiting ? '0 4px 12px rgba(245,158,11,0.20)' : 'none'),
+                  letterSpacing: '0.2px', transition: 'all 0.15s',
+                }}
+              >
+                <span style={{ fontSize: '16px' }}>🕒</span>
+                Not Arrived
+                <span style={{
+                  fontSize: '12px', fontWeight: 950, padding: '2px 9px', borderRadius: '999px',
+                  background: on ? 'rgba(255,255,255,0.3)' : (waiting ? '#f59e0b' : '#eef2f6'),
+                  color: on ? 'white' : (waiting ? 'white' : '#94a3b8'),
+                  minWidth: '22px', textAlign: 'center',
+                }}>{stats.expected}</span>
+              </button>
+            );
+          })()}
         </div>
 
         <button className="filter-reset-btn" onClick={() => {
           setSearchQuery('');
-          setFilters({ date: TODAY, status: 'ALL', modality: 'ALL', doctor: 'ALL' });
+          setFilters({ date: TODAY, status: 'ALL', modality: 'ALL', doctor: 'ALL', notArrived: false });
         }}>
           Reset Filters
         </button>

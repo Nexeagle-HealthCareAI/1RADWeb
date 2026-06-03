@@ -2949,3 +2949,15 @@ button, a, input[type="button"], input[type="submit"] {
   .priority-tr-stat,
   .priority-tr-urgent { animation: none; }
 }
+
+/* "Not Arrived" filter chip — gentle attention pulse while patients wait. */
+@keyframes notArrivedPulse {
+  0%, 100% { box-shadow: 0 4px 12px rgba(245, 158, 11, 0.20); }
+  50%      { box-shadow: 0 4px 18px rgba(245, 158, 11, 0.45); }
+}
+.not-arrived-pulse {
+  animation: notArrivedPulse 1.8s ease-in-out infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  .not-arrived-pulse { animation: none; }
+}

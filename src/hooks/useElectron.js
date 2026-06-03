@@ -134,6 +134,27 @@ export const nativeWord = {
 };
 
 /**
+ * Desktop auto-update bridge. No-ops on the web (PWA updates itself via the
+ * service worker), so callers can use it unconditionally.
+ */
+export const nativeUpdater = {
+  // Fires when a new version has finished downloading in the background.
+  onUpdateDownloaded: (callback) => {
+    if (IS_ELECTRON && window.electron.updater?.onUpdateDownloaded) {
+      return window.electron.updater.onUpdateDownloaded(callback);
+    }
+    return () => {};
+  },
+  // Restart the app and apply the downloaded update.
+  install: () => {
+    if (IS_ELECTRON && window.electron.updater?.install) {
+      return window.electron.updater.install();
+    }
+    return Promise.resolve({ ok: false });
+  },
+};
+
+/**
  * Thermal Printing Engine (Silent)
  */
 export const nativePrinter = {

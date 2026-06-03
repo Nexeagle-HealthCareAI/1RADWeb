@@ -314,13 +314,25 @@ export default function ReferralsPage() {
 
   const handleExportRoster = () => {
     if (!caseLedgerList) return;
-    let csv = "RANK,REFERRAL SOURCE,TYPE,EMAIL,SPECIALITY,DEGREE,SUPPORTED BY DOCTOR,CONTACT,ADDRESS,TOTAL STUDIES,PAID COMMISSION,UNPAID COMMISSION,TOTAL REVENUE\n";
+    // Plain, complete headers — every detail a partner row carries.
+    const headers = [
+      'Rank', 'Partner Name', 'Type', 'Speciality', 'Degree', 'Supporting Doctor',
+      'Email', 'Contact Number', 'Address', 'Total Studies', 'Total Revenue',
+      'Total Commission', 'Paid Commission', 'Unpaid Commission',
+    ];
+    const cell = (v) => `"${String(v ?? '').replace(/"/g, '""')}"`;
+    let csv = headers.join(',') + '\n';
     caseLedgerList.forEach((s, i) => {
       const type = s.isDoctor ? 'Doctor' : 'Other person';
       const spec = s.isDoctor ? (s.specialty || '') : '';
       const deg = s.isDoctor ? (s.degree || '') : '';
       const supp = !s.isDoctor ? (s.supportedByDoctor || '') : '';
-      csv += `${i+1},"${s.name}","${type}","${s.email || ''}","${spec}","${deg}","${supp}","${s.contact || ''}","${s.address || ''}",${s.patients?.length || 0},${s.paidCommission || 0},${s.unpaidCommission || 0},${s.totalRevenue || 0}\n`;
+      csv += [
+        i + 1, cell(s.name), cell(type), cell(spec), cell(deg), cell(supp),
+        cell(s.email), cell(s.contact), cell(s.address),
+        s.patientCount || 0, s.totalRevenue || 0, s.totalCommission || 0,
+        s.paidCommission || 0, s.unpaidCommission || 0,
+      ].join(',') + '\n';
     });
     const blob = new Blob([csv], { type: 'text/csv' });
     const url = window.URL.createObjectURL(blob);
@@ -3900,22 +3912,27 @@ export default function ReferralsPage() {
                 WebkitOverflowScrolling: 'touch'
               }}>
                 <div style={{ padding: isMobile ? '18px' : '25px 30px', borderBottom: '1px solid #e2e8f0', display: 'flex', flexWrap: 'wrap', justifyContent: 'space-between', alignItems: 'center', gap: '12px', background: '#fcfdfe', position: 'sticky', left: 0 }}>
-                   <div style={{ fontSize: '12px', fontWeight: 950, color: '#1e293b', letterSpacing: '1px' }}>PARTNER NETWORK ROSTER</div>
+                   <div>
+                     <div style={{ fontSize: '15px', fontWeight: 950, color: '#0f172a', letterSpacing: '-0.2px' }}>Partner Network</div>
+                     <div style={{ fontSize: '11px', fontWeight: 600, color: '#94a3b8', marginTop: '2px' }}>
+                       Everyone who refers patients to you, and what you owe them.
+                     </div>
+                   </div>
                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '10px' }}>
-                     <button 
+                     <button
                        onClick={() => {
-                         setEditingReferrer({ name: '', contact: '', address: '' });
+                         setEditingReferrer({ name: '', contact: '', address: '', isDoctor: true });
                          setIsReferrerEditDrawerOpen(true);
                        }}
-                       style={{ padding: '8px 16px', borderRadius: '12px', background: '#0f52ba', color: 'white', fontSize: '10px', fontWeight: 950, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '8px', border: 'none' }}
+                       style={{ padding: '10px 18px', borderRadius: '12px', background: '#0f52ba', color: 'white', fontSize: '12px', fontWeight: 800, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '8px', border: 'none', boxShadow: '0 4px 12px rgba(15,82,186,0.25)' }}
                      >
-                       ➕ ADD NEW PARTNER
+                       <span style={{ fontSize: '14px' }}>＋</span> Add Partner
                      </button>
-                     <button 
+                     <button
                        onClick={handleExportRoster}
-                       style={{ padding: '8px 16px', borderRadius: '12px', background: '#f0f3fd', border: '1px solid #0f52ba30', color: '#0f52ba', fontSize: '10px', fontWeight: 950, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '8px' }}
+                       style={{ padding: '10px 18px', borderRadius: '12px', background: '#f0f3fd', border: '1px solid #bfdbfe', color: '#0f52ba', fontSize: '12px', fontWeight: 800, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '8px' }}
                      >
-                       📥 DOWNLOAD PARTNER ROSTER (CSV)
+                       <span style={{ fontSize: '14px' }}>⬇</span> Download for Excel
                      </button>
                    </div>
                 </div>
@@ -3923,69 +3940,76 @@ export default function ReferralsPage() {
                 <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: '100%' }}>
                   <thead style={{ background: '#f8fafc', borderBottom: '1px solid #e2e8f0' }}>
                     <tr>
-                      <th style={{ padding: '20px 30px', textAlign: 'left', fontSize: '10px', fontWeight: 950, color: '#94a3b8', letterSpacing: '1px' }}>RANK</th>
-                      <th style={{ padding: '20px 30px', textAlign: 'left', fontSize: '10px', fontWeight: 950, color: '#94a3b8', letterSpacing: '1px' }}>REFERRAL SOURCE</th>
-                      <th style={{ padding: '20px 30px', textAlign: 'left', fontSize: '10px', fontWeight: 600, color: '#94a3b8', letterSpacing: '0.5px' }}>Contact</th>
-                      <th style={{ padding: '20px 30px', textAlign: 'left', fontSize: '10px', fontWeight: 600, color: '#94a3b8', letterSpacing: '0.5px' }}>Address</th>
-                      <th style={{ padding: '20px 30px', textAlign: 'right', fontSize: '10px', fontWeight: 600, color: '#94a3b8', letterSpacing: '0.5px' }}>Total Studies</th>
-                      <th style={{ padding: '20px 30px', textAlign: 'right', fontSize: '10px', fontWeight: 950, color: '#94a3b8', letterSpacing: '1px' }}>ACTIONS</th>
+                      <th style={{ padding: '16px 24px', textAlign: 'left', fontSize: '10px', fontWeight: 800, color: '#94a3b8', letterSpacing: '0.5px' }}>#</th>
+                      <th style={{ padding: '16px 24px', textAlign: 'left', fontSize: '10px', fontWeight: 800, color: '#94a3b8', letterSpacing: '0.5px' }}>Partner</th>
+                      <th style={{ padding: '16px 24px', textAlign: 'left', fontSize: '10px', fontWeight: 800, color: '#94a3b8', letterSpacing: '0.5px' }}>Contact</th>
+                      <th style={{ padding: '16px 24px', textAlign: 'right', fontSize: '10px', fontWeight: 800, color: '#94a3b8', letterSpacing: '0.5px' }}>Studies</th>
+                      <th style={{ padding: '16px 24px', textAlign: 'right', fontSize: '10px', fontWeight: 800, color: '#94a3b8', letterSpacing: '0.5px' }}>Total Commission</th>
+                      <th style={{ padding: '16px 24px', textAlign: 'right', fontSize: '10px', fontWeight: 800, color: '#94a3b8', letterSpacing: '0.5px' }}>Unpaid</th>
+                      <th style={{ padding: '16px 24px', textAlign: 'right', fontSize: '10px', fontWeight: 800, color: '#94a3b8', letterSpacing: '0.5px' }}>Actions</th>
                     </tr>
                   </thead>
                   <tbody>
                     {caseLedgerList.length === 0 ? (
                       <tr>
-                        <td colSpan="6" style={{ padding: '60px', textAlign: 'center', color: '#94a3b8', fontSize: '12px', fontWeight: 700 }}>NO RECONNAISSANCE DATA AVAILABLE FOR THIS PERIOD</td>
+                        <td colSpan="7" style={{ padding: '60px', textAlign: 'center', color: '#94a3b8', fontSize: '13px', fontWeight: 700 }}>No partners yet. Click “Add Partner” to add your first referring doctor or person.</td>
                       </tr>
                     ) : (
                       caseLedgerList
                         .filter(s => !referralRosterSearch || s.name.toLowerCase().includes(referralRosterSearch.toLowerCase()))
                         .map((s, i) => (
-                        <tr key={s.name || s.referrerId} style={{ borderBottom: '1px solid #f1f5f9', transition: 'all 0.2s' }}>
-                          <td style={{ padding: '20px 30px' }}>
-                            <div style={{ width: '28px', height: '28px', borderRadius: '8px', background: i < 3 ? '#f0f3fd' : '#f8fafc', color: i < 3 ? '#0f52ba' : '#64748b', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '11px', fontWeight: 950 }}>#{i + 1}</div>
+                        <tr key={s.name || s.referrerId} style={{ borderBottom: '1px solid #f1f5f9' }}
+                            onMouseOver={e => e.currentTarget.style.background = '#fafcff'}
+                            onMouseOut={e => e.currentTarget.style.background = 'transparent'}>
+                          <td style={{ padding: '16px 24px' }}>
+                            <div style={{ width: '28px', height: '28px', borderRadius: '8px', background: i < 3 ? '#f0f3fd' : '#f8fafc', color: i < 3 ? '#0f52ba' : '#94a3b8', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '11px', fontWeight: 900 }}>{i + 1}</div>
                           </td>
-                          <td style={{ padding: '20px 30px' }}>
-                            <div style={{ fontSize: '13px', fontWeight: 850, color: '#1e293b' }}>{(s.name || 'Anonymous').toUpperCase()}</div>
+                          <td style={{ padding: '16px 24px' }}>
+                            <div style={{ fontSize: '13px', fontWeight: 800, color: '#0f172a' }}>{s.name || 'Unnamed'}</div>
                             <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginTop: '5px', flexWrap: 'wrap' }}>
-                              <span style={{ fontSize: '9px', fontWeight: 900, padding: '2px 8px', borderRadius: '999px', background: s.isDoctor ? '#eff6ff' : '#fef3c7', color: s.isDoctor ? '#1d4ed8' : '#b45309' }}>
+                              <span style={{ fontSize: '9px', fontWeight: 800, padding: '2px 8px', borderRadius: '999px', background: s.isDoctor ? '#eff6ff' : '#fef3c7', color: s.isDoctor ? '#1d4ed8' : '#b45309' }}>
                                 {s.isDoctor ? '👨‍⚕️ Doctor' : '👤 Other person'}
                               </span>
                               {s.isDoctor && (s.specialty || s.degree) && (
-                                <span style={{ fontSize: '9px', fontWeight: 700, color: '#64748b' }}>{[s.specialty, s.degree].filter(Boolean).join(' · ')}</span>
+                                <span style={{ fontSize: '9px', fontWeight: 600, color: '#64748b' }}>{[s.specialty, s.degree].filter(Boolean).join(' · ')}</span>
                               )}
                               {!s.isDoctor && s.supportedByDoctor && (
-                                <span style={{ fontSize: '9px', fontWeight: 700, color: '#64748b' }}>supported by Dr. {s.supportedByDoctor}</span>
+                                <span style={{ fontSize: '9px', fontWeight: 600, color: '#64748b' }}>refers for Dr. {s.supportedByDoctor}</span>
                               )}
                             </div>
+                            {s.address && <div style={{ fontSize: '10px', fontWeight: 600, color: '#94a3b8', marginTop: '3px' }}>📍 {s.address}</div>}
                           </td>
-                          <td style={{ padding: '20px 30px' }}>
-                            <div style={{ fontSize: '11px', fontWeight: 700, color: '#64748b' }}>{s.contact || '—'}</div>
+                          <td style={{ padding: '16px 24px' }}>
+                            <div style={{ fontSize: '11px', fontWeight: 700, color: '#475569' }}>{s.contact || '—'}</div>
                             {s.email && <div style={{ fontSize: '10px', fontWeight: 600, color: '#94a3b8', marginTop: '2px' }}>{s.email}</div>}
                           </td>
-                          <td style={{ padding: '20px 30px' }}>
-                            <div style={{ fontSize: '10px', fontWeight: 800, color: '#1e293b', textTransform: 'uppercase' }}>{s.address || 'GLOBAL'}</div>
+                          <td style={{ padding: '16px 24px', textAlign: 'right' }}>
+                            <div style={{ fontSize: '16px', fontWeight: 900, color: '#0f172a' }}>{s.patientCount || 0}</div>
                           </td>
-                          <td style={{ padding: '20px 30px', textAlign: 'right' }}>
-                            <div style={{ fontSize: '16px', fontWeight: 950, color: '#0f52ba' }}>{s.patients?.length || 0}</div>
-                            <div style={{ fontSize: '9px', fontWeight: 800, color: '#94a3b8', letterSpacing: '0.5px' }}>UNITS</div>
+                          <td style={{ padding: '16px 24px', textAlign: 'right' }}>
+                            <div style={{ fontSize: '14px', fontWeight: 900, color: '#0f52ba' }}>₹{(s.totalCommission || 0).toLocaleString()}</div>
+                            {s.paidCommission > 0 && <div style={{ fontSize: '9px', fontWeight: 700, color: '#16a34a', marginTop: '2px' }}>₹{(s.paidCommission || 0).toLocaleString()} paid</div>}
                           </td>
-                          <td style={{ padding: '20px 30px', textAlign: 'right' }}>
+                          <td style={{ padding: '16px 24px', textAlign: 'right' }}>
+                            <div style={{ fontSize: '14px', fontWeight: 900, color: s.unpaidCommission > 0 ? '#b45309' : '#94a3b8' }}>₹{(s.unpaidCommission || 0).toLocaleString()}</div>
+                          </td>
+                          <td style={{ padding: '16px 24px', textAlign: 'right' }}>
                             <div style={{ display: 'inline-flex', gap: '8px' }}>
                               <button
                                 onClick={() => {
                                    setEditingReferrer(s);
                                    setIsReferrerEditDrawerOpen(true);
                                 }}
-                                style={{ padding: '6px 12px', borderRadius: '8px', border: '1px solid #e2e8f0', background: 'white', color: '#0f52ba', fontSize: '9px', fontWeight: 950, cursor: 'pointer' }}
+                                style={{ padding: '7px 14px', borderRadius: '8px', border: '1px solid #e2e8f0', background: 'white', color: '#0f52ba', fontSize: '10px', fontWeight: 800, cursor: 'pointer' }}
                               >
-                                EDIT
+                                Edit
                               </button>
                               <button
                                 onClick={() => handleDeleteReferrer(s)}
                                 title="Remove partner"
-                                style={{ padding: '6px 12px', borderRadius: '8px', border: '1px solid #fecaca', background: 'white', color: '#dc2626', fontSize: '9px', fontWeight: 950, cursor: 'pointer' }}
+                                style={{ padding: '7px 14px', borderRadius: '8px', border: '1px solid #fecaca', background: 'white', color: '#dc2626', fontSize: '10px', fontWeight: 800, cursor: 'pointer' }}
                               >
-                                DELETE
+                                Remove
                               </button>
                             </div>
                            </td>
@@ -3997,53 +4021,61 @@ export default function ReferralsPage() {
                 ) : (
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', padding: '10px', background: '#f8fafc' }}>
                     {caseLedgerList.length === 0 ? (
-                       <div style={{ padding: '60px', textAlign: 'center', color: '#94a3b8', fontSize: '12px', fontWeight: 700 }}>NO RECONNAISSANCE DATA AVAILABLE FOR THIS PERIOD</div>
+                       <div style={{ padding: '50px 20px', textAlign: 'center', color: '#94a3b8', fontSize: '13px', fontWeight: 700 }}>No partners yet. Tap “Add Partner” to add your first referring doctor or person.</div>
                     ) : (
                        caseLedgerList
                          .filter(s => !referralRosterSearch || s.name.toLowerCase().includes(referralRosterSearch.toLowerCase()))
                          .map((s, i) => (
                            <div key={s.name || s.referrerId} style={{ background: 'white', borderRadius: '16px', border: '1px solid #e2e8f0', padding: '16px', display: 'flex', flexDirection: 'column', gap: '12px', boxShadow: '0 2px 10px rgba(0,0,0,0.02)' }}>
-                              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                                 <div style={{ width: '28px', height: '28px', borderRadius: '8px', background: i < 3 ? '#f0f3fd' : '#f8fafc', color: i < 3 ? '#0f52ba' : '#64748b', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '11px', fontWeight: 950 }}>#{i + 1}</div>
-                                 <div style={{ fontSize: '14px', fontWeight: 850, color: '#1e293b' }}>{(s.name || 'Anonymous').toUpperCase()}</div>
+                              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '10px' }}>
+                                 <div style={{ display: 'flex', alignItems: 'center', gap: '10px', minWidth: 0 }}>
+                                   <div style={{ width: '26px', height: '26px', borderRadius: '8px', background: i < 3 ? '#f0f3fd' : '#f8fafc', color: i < 3 ? '#0f52ba' : '#94a3b8', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '11px', fontWeight: 900, flexShrink: 0 }}>{i + 1}</div>
+                                   <div style={{ fontSize: '14px', fontWeight: 800, color: '#0f172a', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{s.name || 'Unnamed'}</div>
+                                 </div>
                               </div>
                               <div style={{ display: 'flex', flexDirection: 'column', gap: '5px' }}>
                                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
-                                   <span style={{ fontSize: '9px', fontWeight: 900, padding: '2px 8px', borderRadius: '999px', background: s.isDoctor ? '#eff6ff' : '#fef3c7', color: s.isDoctor ? '#1d4ed8' : '#b45309' }}>
+                                   <span style={{ fontSize: '9px', fontWeight: 800, padding: '2px 8px', borderRadius: '999px', background: s.isDoctor ? '#eff6ff' : '#fef3c7', color: s.isDoctor ? '#1d4ed8' : '#b45309' }}>
                                      {s.isDoctor ? '👨‍⚕️ Doctor' : '👤 Other person'}
                                    </span>
                                    {s.isDoctor && (s.specialty || s.degree) && (
-                                     <span style={{ fontSize: '9px', fontWeight: 700, color: '#64748b' }}>{[s.specialty, s.degree].filter(Boolean).join(' · ')}</span>
+                                     <span style={{ fontSize: '9px', fontWeight: 600, color: '#64748b' }}>{[s.specialty, s.degree].filter(Boolean).join(' · ')}</span>
                                    )}
                                    {!s.isDoctor && s.supportedByDoctor && (
-                                     <span style={{ fontSize: '9px', fontWeight: 700, color: '#64748b' }}>supported by Dr. {s.supportedByDoctor}</span>
+                                     <span style={{ fontSize: '9px', fontWeight: 600, color: '#64748b' }}>refers for Dr. {s.supportedByDoctor}</span>
                                    )}
                                  </div>
-                                 <div style={{ fontSize: '11px', fontWeight: 700, color: '#64748b' }}>{s.contact || '—'}{s.email ? ` · ${s.email}` : ''}</div>
-                                 <div style={{ fontSize: '10px', fontWeight: 800, color: '#1e293b', textTransform: 'uppercase' }}>{s.address || 'GLOBAL'}</div>
+                                 <div style={{ fontSize: '11px', fontWeight: 700, color: '#475569' }}>{s.contact || '—'}{s.email ? ` · ${s.email}` : ''}</div>
+                                 {s.address && <div style={{ fontSize: '10px', fontWeight: 600, color: '#94a3b8' }}>📍 {s.address}</div>}
                               </div>
-                              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '4px', paddingTop: '12px', borderTop: '1px dashed #e2e8f0' }}>
-                                 <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                                    <div style={{ fontSize: '16px', fontWeight: 950, color: '#0f52ba' }}>{s.patients?.length || 0}</div>
-                                    <div style={{ fontSize: '9px', fontWeight: 800, color: '#94a3b8', letterSpacing: '0.5px' }}>UNITS</div>
+                              {/* Financials row */}
+                              <div style={{ display: 'flex', gap: '8px', paddingTop: '12px', borderTop: '1px dashed #e2e8f0' }}>
+                                 <div style={{ flex: 1, textAlign: 'center' }}>
+                                   <div style={{ fontSize: '15px', fontWeight: 900, color: '#0f172a' }}>{s.patientCount || 0}</div>
+                                   <div style={{ fontSize: '8px', fontWeight: 700, color: '#94a3b8' }}>Studies</div>
                                  </div>
-                                 <div style={{ display: 'flex', gap: '8px' }}>
-                                   <button
-                                     onClick={() => {
-                                        setEditingReferrer(s);
-                                        setIsReferrerEditDrawerOpen(true);
-                                     }}
-                                     style={{ padding: '6px 14px', borderRadius: '8px', border: '1px solid #e2e8f0', background: 'white', color: '#0f52ba', fontSize: '10px', fontWeight: 950, cursor: 'pointer' }}
-                                   >
-                                     EDIT
-                                   </button>
-                                   <button
-                                     onClick={() => handleDeleteReferrer(s)}
-                                     style={{ padding: '6px 14px', borderRadius: '8px', border: '1px solid #fecaca', background: 'white', color: '#dc2626', fontSize: '10px', fontWeight: 950, cursor: 'pointer' }}
-                                   >
-                                     DELETE
-                                   </button>
+                                 <div style={{ flex: 1, textAlign: 'center' }}>
+                                   <div style={{ fontSize: '15px', fontWeight: 900, color: '#0f52ba' }}>₹{(s.totalCommission || 0).toLocaleString()}</div>
+                                   <div style={{ fontSize: '8px', fontWeight: 700, color: '#94a3b8' }}>Commission</div>
                                  </div>
+                                 <div style={{ flex: 1, textAlign: 'center' }}>
+                                   <div style={{ fontSize: '15px', fontWeight: 900, color: s.unpaidCommission > 0 ? '#b45309' : '#94a3b8' }}>₹{(s.unpaidCommission || 0).toLocaleString()}</div>
+                                   <div style={{ fontSize: '8px', fontWeight: 700, color: '#94a3b8' }}>Unpaid</div>
+                                 </div>
+                              </div>
+                              <div style={{ display: 'flex', gap: '8px' }}>
+                                 <button
+                                   onClick={() => { setEditingReferrer(s); setIsReferrerEditDrawerOpen(true); }}
+                                   style={{ flex: 1, padding: '9px', borderRadius: '8px', border: '1px solid #e2e8f0', background: 'white', color: '#0f52ba', fontSize: '11px', fontWeight: 800, cursor: 'pointer' }}
+                                 >
+                                   Edit
+                                 </button>
+                                 <button
+                                   onClick={() => handleDeleteReferrer(s)}
+                                   style={{ flex: 1, padding: '9px', borderRadius: '8px', border: '1px solid #fecaca', background: 'white', color: '#dc2626', fontSize: '11px', fontWeight: 800, cursor: 'pointer' }}
+                                 >
+                                   Remove
+                                 </button>
                               </div>
                            </div>
                          ))

@@ -19,6 +19,10 @@ parameters:
     displayName: Upload the desktop installer to Blob after Prod?
     type: boolean
     default: false
+  - name: signDesktopInstaller
+    displayName: Code-sign the desktop installer? (requires cert secure file)
+    type: boolean
+    default: false
 
 pool:
   vmImage: ubuntu-latest
@@ -121,9 +125,46 @@ stages:
         pool:
           vmImage: windows-latest
         timeoutInMinutes: 45
+        # Needs the Blob coordinates so the auto-update feed URL baked into the
+        # app (app-update.yml) matches where PublishDesktop uploads the feed.
+        variables:
+          - group: sql-prod-secrets
         steps:
           - checkout: self
             clean: true
+
+          # Version-bump guard — only when actually publishing an update.
+          # Auto-update is version-comparison: if package.json's version isn't
+          # greater than what's already live in the feed, installed clients will
+          # never update. Fail fast (before the long build) so it can't ship.
+          # First release (no latest.yml yet → 404) passes.
+          - ${{ if eq(parameters.publishDesktopInstaller, true) }}:
+            - task: PowerShell@2
+              displayName: Verify version was bumped
+              inputs:
+                pwsh: true
+                targetType: inline
+                workingDirectory: $(Build.SourcesDirectory)
+                script: |
+                  $pkg = Get-Content package.json -Raw | ConvertFrom-Json
+                  $local = [version]$pkg.version
+                  $feed = "https://$(desktopStorageAccount).blob.core.windows.net/$(desktopBlobContainer)/latest.yml"
+                  try {
+                    $resp = Invoke-WebRequest -Uri $feed -UseBasicParsing -ErrorAction Stop
+                    $line = ($resp.Content -split "`n" | Where-Object { $_ -match '^version:' })[0]
+                    $published = [version](($line -replace 'version:\s*','').Trim())
+                    if ($local -le $published) {
+                      Write-Error "package.json version $local is NOT greater than the published $published. Bump the version before publishing a desktop update."
+                      exit 1
+                    }
+                    Write-Host "Version check OK: local $local > published $published"
+                  } catch {
+                    if ($_.Exception.Response -and $_.Exception.Response.StatusCode.value__ -eq 404) {
+                      Write-Host "No published latest.yml yet (first release) - skipping version check."
+                    } else {
+                      Write-Host "Could not read published feed: $($_.Exception.Message) - skipping version check."
+                    }
+                  }
 
           - task: NodeTool@0
             inputs:
@@ -141,14 +182,46 @@ stages:
             workingDirectory: $(Build.SourcesDirectory)
             displayName: Vite build (Prod API URL)
 
-          - script: npm run electron:pack
+          # Code-signing (optional). Upload an OV code-signing certificate as a
+          # DevOps Secure File named '1rad-codesign.pfx' and add CSC_KEY_PASSWORD
+          # (secret) to the sql-prod-secrets group, then queue with
+          # signDesktopInstaller = true. electron-builder picks up CSC_LINK +
+          # CSC_KEY_PASSWORD automatically and signs the installer.
+          - ${{ if eq(parameters.signDesktopInstaller, true) }}:
+            - task: DownloadSecureFile@1
+              name: codeCert
+              displayName: Download code-signing certificate
+              inputs:
+                secureFile: '1rad-codesign.pfx'
+
+          # Package the NSIS installer AND the update feed (latest.yml +
+          # .blockmap). -c.publish.url bakes the Blob feed URL into the app so
+          # electron-updater knows where to check for new versions.
+          - script: >
+              npx electron-builder --win
+              -c.publish.provider=generic
+              -c.publish.url=https://$(desktopStorageAccount).blob.core.windows.net/$(desktopBlobContainer)/
             workingDirectory: $(Build.SourcesDirectory)
-            displayName: Package installer (electron-builder NSIS)
+            displayName: Package installer + update feed (electron-builder)
+            ${{ if eq(parameters.signDesktopInstaller, true) }}:
+              env:
+                CSC_LINK: $(codeCert.secureFilePath)
+                CSC_KEY_PASSWORD: $(CSC_KEY_PASSWORD)
+
+          # Stage only the files the auto-updater needs (skip the bulky
+          # win-unpacked/ folder) for a lean artifact + clean blob upload.
+          - script: |
+              mkdir "$(Build.ArtifactStagingDirectory)\desktop"
+              copy "release\1Rad-Setup.exe" "$(Build.ArtifactStagingDirectory)\desktop\"
+              copy "release\1Rad-Setup.exe.blockmap" "$(Build.ArtifactStagingDirectory)\desktop\"
+              copy "release\latest.yml" "$(Build.ArtifactStagingDirectory)\desktop\"
+            workingDirectory: $(Build.SourcesDirectory)
+            displayName: Stage update feed
 
           - task: PublishPipelineArtifact@1
             displayName: Publish desktop installer artifact
             inputs:
-              targetPath: '$(Build.SourcesDirectory)/release/1Rad-Setup.exe'
+              targetPath: '$(Build.ArtifactStagingDirectory)/desktop'
               artifact: 'desktop-installer'
               publishLocation: 'pipeline'
 
@@ -297,17 +370,19 @@ stages:
                 - download: current
                   artifact: desktop-installer
 
+                # Upload the whole feed (1Rad-Setup.exe + .blockmap + latest.yml).
+                # latest.yml is what installed apps poll to detect a new version,
+                # so all three must land together for auto-update to work.
                 - task: AzureCLI@2
-                  displayName: Upload 1Rad-Setup.exe to Blob
+                  displayName: Upload installer + update feed to Blob
                   inputs:
                     azureSubscription: '$(desktopAzureServiceConnection)'
                     scriptType: bash
                     scriptLocation: inlineScript
                     inlineScript: |
-                      az storage blob upload \
+                      az storage blob upload-batch \
                         --account-name "$(desktopStorageAccount)" \
-                        --container-name "$(desktopBlobContainer)" \
-                        --name "1Rad-Setup.exe" \
-                        --file "$(Pipeline.Workspace)/desktop-installer/1Rad-Setup.exe" \
+                        --destination "$(desktopBlobContainer)" \
+                        --source "$(Pipeline.Workspace)/desktop-installer" \
                         --overwrite true \
                         --auth-mode login
