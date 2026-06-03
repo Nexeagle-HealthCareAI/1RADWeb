@@ -35,6 +35,7 @@ const FinanceManager = ({
   const [showAutoBillConfirm, setShowAutoBillConfirm] = useState(false);
 
   const [regModalityFilter, setRegModalityFilter] = useState('ALL');
+  const [regSearch, setRegSearch] = useState('');
   const [regSortConfig, setRegSortConfig] = useState({ key: 'modality', direction: 'asc' });
   const [regCurrentPage, setRegCurrentPage] = useState(1);
   const ITEMS_PER_PAGE = 5;
@@ -50,6 +51,13 @@ const FinanceManager = ({
     let list = [...(servicePrices || [])];
     if (regModalityFilter !== 'ALL') {
       list = list.filter(item => item.modality === regModalityFilter);
+    }
+    const q = regSearch.trim().toLowerCase();
+    if (q) {
+      list = list.filter(item =>
+        (item.serviceName || '').toLowerCase().includes(q) ||
+        (item.modality || '').toLowerCase().includes(q)
+      );
     }
     list.sort((a, b) => {
       let valA = a[regSortConfig.key];
@@ -172,8 +180,8 @@ const FinanceManager = ({
 
           {/* Service price table */}
           <div style={{ background: 'white', borderRadius: '16px', border: '1px solid #e2e8f0', overflow: 'hidden', boxShadow: '0 2px 8px rgba(0,0,0,0.04)' }}>
-            <div style={{ padding: '16px 24px', background: '#f8fafc', borderBottom: '1px solid #f1f5f9', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
+            <div style={{ padding: '16px 24px', background: '#f8fafc', borderBottom: '1px solid #f1f5f9', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
+              <div style={{ display: 'flex', gap: '10px', alignItems: 'center', flexWrap: 'wrap' }}>
                 <label style={{ fontSize: '12px', color: '#6b7280', fontWeight: 500 }}>Modality</label>
                 <select
                   value={regModalityFilter}
@@ -183,6 +191,25 @@ const FinanceManager = ({
                   <option value="ALL">All modalities</option>
                   {['X-RAY', 'MRI', 'CT', 'ULTRASOUND', 'DEXA', 'MAMMOGRAPHY', 'PET-CT'].map(m => <option key={m} value={m}>{m}</option>)}
                 </select>
+                {/* Search by service or modality name */}
+                <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
+                  <span style={{ position: 'absolute', left: '10px', fontSize: '12px', color: '#94a3b8', pointerEvents: 'none' }}>🔍</span>
+                  <input
+                    type="text"
+                    value={regSearch}
+                    onChange={e => { setRegSearch(e.target.value); setRegCurrentPage(1); }}
+                    placeholder="Search service…"
+                    style={{ padding: '6px 28px 6px 30px', borderRadius: '6px', border: '1px solid #e2e8f0', fontSize: '12px', fontWeight: 500, color: '#1e293b', outline: 'none', background: 'white', width: isMobile ? '100%' : '200px' }}
+                  />
+                  {regSearch && (
+                    <button
+                      type="button"
+                      onClick={() => { setRegSearch(''); setRegCurrentPage(1); }}
+                      title="Clear search"
+                      style={{ position: 'absolute', right: '8px', border: 'none', background: 'transparent', color: '#94a3b8', fontSize: '13px', cursor: 'pointer', lineHeight: 1 }}
+                    >✕</button>
+                  )}
+                </div>
               </div>
               <div style={{ fontSize: '12px', color: '#94a3b8' }}>{processedRegistry.length} entries</div>
             </div>

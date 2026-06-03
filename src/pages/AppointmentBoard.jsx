@@ -1049,6 +1049,16 @@ export default function AppointmentBoard() {
       showNotif('warning', 'SPECIALIST REQUIRED', 'No Lead Specialist assigned. Cannot save without a supervising physician.');
       return;
     }
+    // Mobile is required on edit and must be a valid 10-digit number.
+    const editMobile = String(editingAppointment.mobile || '').trim();
+    if (!/^\d{10}$/.test(editMobile)) {
+      showNotif('warning', 'MOBILE REQUIRED', 'Please enter a valid 10-digit mobile number for the patient.');
+      return;
+    }
+    if (!String(editingAppointment.patientGender || '').trim()) {
+      showNotif('warning', 'GENDER REQUIRED', 'Please select the patient\'s gender.');
+      return;
+    }
 
     // Build the full services[] list.
     //
@@ -1102,8 +1112,9 @@ export default function AppointmentBoard() {
         notes: editingAppointment.notes,
         referredBy: editingAppointment.referredBy || '',
         patientName: editingAppointment.patientName,
-        mobile: editingAppointment.mobile,
+        mobile: editMobile,
         patientAge: editingAppointment.patientAge,
+        patientGender: editingAppointment.patientGender,
       });
 
       setIsEditingOpen(false);
@@ -1112,7 +1123,15 @@ export default function AppointmentBoard() {
       refreshAppointments();
     } catch (error) {
       console.error('Failed to update appointment:', error);
-      showNotif('error', 'UPDATE FAILED', 'Could not update the appointment. Please check your connection and try again.');
+      // Surface the actual backend reason so a real failure is diagnosable
+      // instead of always blaming the connection.
+      const detail = error?.response?.data?.error
+        || error?.response?.data?.message
+        || (typeof error?.response?.data === 'string' ? error.response.data : null)
+        || error?.message;
+      showNotif('error', 'UPDATE FAILED', detail
+        ? `Could not update the appointment: ${detail}`
+        : 'Could not update the appointment. Please check your connection and try again.');
     }
   };
 
@@ -3761,6 +3780,15 @@ export default function AppointmentBoard() {
                   <div style={{ flex: 1 }}>
                     <label style={{ fontSize: '11px', fontWeight: 800, color: '#475569', display: 'block', marginBottom: '8px' }}>Age <span style={{ color: '#ef4444' }}>*</span></label>
                     <input type="text" required value={editingAppointment.patientAge || ''} onChange={e => setEditingAppointment({...editingAppointment, patientAge: e.target.value})} style={{ width: '100%', border: '1px solid #e2e8f0', borderRadius: '12px', background: '#f8fafc', fontSize: '13px', fontWeight: 700, padding: '12px 16px', outline: 'none', color: '#1e293b' }} />
+                  </div>
+                  <div style={{ flex: 1 }}>
+                    <label style={{ fontSize: '11px', fontWeight: 800, color: '#475569', display: 'block', marginBottom: '8px' }}>Gender <span style={{ color: '#ef4444' }}>*</span></label>
+                    <select required value={editingAppointment.patientGender || ''} onChange={e => setEditingAppointment({...editingAppointment, patientGender: e.target.value})} style={{ width: '100%', border: '1px solid #e2e8f0', borderRadius: '12px', background: '#f8fafc', fontSize: '13px', fontWeight: 700, padding: '12px 16px', outline: 'none', color: '#1e293b', height: '44px' }}>
+                      <option value="" disabled>Select</option>
+                      <option value="Female">Female</option>
+                      <option value="Male">Male</option>
+                      <option value="Other">Other</option>
+                    </select>
                   </div>
                 </div>
               </div>

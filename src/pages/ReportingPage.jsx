@@ -19,6 +19,7 @@ import PatientTimeline from '../components/PatientTimeline';
 import VoiceReportingPanel from '../components/VoiceReportingPanel';
 import { assetsFromManifest } from '../utils/dicomManifest';
 import { getReportByAppointmentId, saveLocalDraft } from '../db/repos/reportsRepo';
+import { getAppointmentById } from '../db/repos/appointmentsRepo';
 import { logEvent } from '../sync/syncTelemetry';
 import { getServiceLines } from '../utils/appointmentServices';
 
@@ -615,16 +616,38 @@ const ReportingPage = () => {
     console.info(`[1RAD] Initializing Reporting Context for AppID: ${appId}`);
 
     try {
-      // 1. Fetch Core Patient & Case Data first to resolve context
-      const appRes = await apiClient.get(`/appointments/${appId}`).catch(() => ({ data: null }));
+      // 1. Fetch Core Patient & Case Data first to resolve context.
+      //    Online-first, cache-fallback — the Doctor Board that linked here is
+      //    itself offline-first (it renders this case straight from the local
+      //    cache). So opening the case must NOT hard-fail just because the live
+      //    GET hiccups (a transient 5xx, a hospital-claim timing gap, a brief
+      //    network drop). Fall back to the cached appointment the board already
+      //    showed the doctor, so a case is always openable.
+      let appointmentData = null;
+      try {
+        const appRes = await apiClient.get(`/appointments/${appId}`);
+        appointmentData = appRes?.data || null;
+      } catch (liveErr) {
+        console.warn('[REPORTING] Live appointment fetch failed — falling back to offline cache.', liveErr?.response?.status || liveErr?.message);
+      }
+      if (!appointmentData) {
+        try {
+          const cached = await getAppointmentById(appId);
+          if (cached) {
+            appointmentData = cached;
+            console.info('[REPORTING] Loaded appointment from offline cache.');
+          }
+        } catch (cacheErr) {
+          console.warn('[REPORTING] Offline appointment cache read failed', cacheErr);
+        }
+      }
 
-      if (!appRes?.data) {
+      if (!appointmentData) {
         setError("PATIENT_CONTEXT_NOT_FOUND: The requested appointment record could not be retrieved.");
         setLoading(false);
         return;
       }
 
-      const appointmentData = appRes.data;
       setActiveAppointment(appointmentData);
 
       // Multi-service rollout (step 6). Cache the line items so the
@@ -679,8 +702,12 @@ const ReportingPage = () => {
       // per-slice URLs that the viewer loads directly via Cornerstone's wadouri
       // loader, eliminating the in-browser unzip wait.
       const [templRes, keyRes, protRes, reportRes, manifestRes] = await Promise.all([
-        apiClient.get('/reporting/templates'),
-        apiClient.get('/reporting/keywords'),
+        // Templates + keywords are editor conveniences. A failure here must NOT
+        // reject the whole load and block the doctor from opening the case —
+        // degrade to "none" so the workspace still opens and the report can be
+        // written from scratch.
+        apiClient.get('/reporting/templates').catch(() => ({ data: { success: false } })),
+        apiClient.get('/reporting/keywords').catch(() => ({ data: { success: false } })),
         doctorId ? apiClient.get(`/Prescription/${doctorId}`).catch(() => null) : Promise.resolve(null),
         // Offline-first fallback (Phase B1 Slice 3): if the network fetch
         // fails (offline, 5xx, DNS hiccup) check the local cache before

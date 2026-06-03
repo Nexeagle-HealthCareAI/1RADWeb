@@ -954,9 +954,11 @@ const DicomViewerPage = () => {
       {/* Left Series List Panel (always show if series data exists) */}
       {(hasMultipleSeries || allSeries?.length > 0) && (
         <div style={{
-          width: (isMobile) ? '100%' : '280px',
-          minWidth: (isMobile) ? 'auto' : '280px',
-          maxWidth: (isMobile) ? '100%' : '280px',
+          // Tablet keeps the desktop docked layout but at HALF the rail width
+          // (140px vs 280px) so the image viewport gets the maximum area.
+          width: isMobile ? '100%' : (isTablet ? '140px' : '280px'),
+          minWidth: isMobile ? 'auto' : (isTablet ? '140px' : '280px'),
+          maxWidth: isMobile ? '100%' : (isTablet ? '140px' : '280px'),
           height: (isMobile) ? 'auto' : '100%',
           // Mobile panel was 22vh (~154 px on a 700 px phone) but each tile
           // needed ~190 px (150 thumbnail + 40 text), so tiles clipped at
@@ -975,7 +977,7 @@ const DicomViewerPage = () => {
         }}>
           {/* Series List Header */}
           <div style={{
-            padding: (isMobile) ? '10px 14px' : '20px',
+            padding: isMobile ? '10px 14px' : (isTablet ? '12px' : '20px'),
             borderBottom: (isMobile) ? 'none' : '2px solid #334155',
             borderRight: (isMobile) ? '2px solid #334155' : 'none',
             background: 'linear-gradient(135deg, #8b5cf6, #6366f1)',

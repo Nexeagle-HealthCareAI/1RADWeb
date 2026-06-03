@@ -1125,14 +1125,24 @@ const AdvancedDicomViewer = ({
               y: center.y - rect.top
             };
             
-            // Apply zoom with center point
-            const newZoom = Math.max(0.1, Math.min(10, camera.parallelScale / scaleFactor));
-            viewport.setCamera({ 
-              parallelScale: newZoom,
-              focalPoint: camera.focalPoint,
-              position: camera.position
-            });
-            viewport.render();
+            // parallelScale is the camera's half-height in world units —
+            // SMALLER = more zoomed in. The old code clamped it to an ABSOLUTE
+            // [0.1, 10] range, but the fit-to-viewport scale depends on the
+            // image size and is usually far above 10. For a normal image that
+            // clamp slammed the scale down to 10 (hugely zoomed in) and then
+            // refused every zoom-OUT (10 / scaleFactor > 10 → clamped back to
+            // 10) — the "image is huge and won't shrink" bug. Mirror the
+            // working +/- button handler: scale relative to the current value,
+            // no absolute clamp.
+            const newZoom = camera.parallelScale / scaleFactor;
+            if (Number.isFinite(newZoom) && newZoom > 0) {
+              viewport.setCamera({
+                parallelScale: newZoom,
+                focalPoint: camera.focalPoint,
+                position: camera.position
+              });
+              viewport.render();
+            }
           }
         }
         
