@@ -93,6 +93,25 @@ export default defineConfig({
             handler: 'NetworkOnly',
           },
 
+          // Extracted DICOM slices + thumbnails (manifest / Option C path).
+          // These are fetched per-slice straight from Blob and are NOT persisted
+          // by the IndexedDB DicomCache (that only covers the legacy ZIP path),
+          // so without this they re-download on every visit. Each slice is
+          // immutable (keyed by asset/series/instance), so CacheFirst is safe
+          // and gives instant repeat views + cheaper re-scrolls.
+          {
+            urlPattern: ({ url }) =>
+              url.host.endsWith('.blob.core.windows.net') &&
+              url.pathname.includes('/extracted/'),
+            handler: 'CacheFirst',
+            options: {
+              cacheName: '1rad-dicom-slices',
+              // ~1500 small JPEG-LS slices ≈ a few recent studies. LRU-evicted.
+              expiration: { maxEntries: 1500, maxAgeSeconds: 60 * 60 * 24 * 14, purgeOnQuotaError: true },
+              cacheableResponse: { statuses: [0, 200] },
+            },
+          },
+
           // Azure Blob Storage (the actual DICOM ZIPs) — DO NOT use SW Cache here.
           // We already cache extracted series in IndexedDB via DicomCache + StudyPrefetcher.
           // Letting Workbox cache 100+ MB blobs would duplicate storage and fight that system.

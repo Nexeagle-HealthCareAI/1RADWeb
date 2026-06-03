@@ -280,7 +280,7 @@ async function initCornerstone() {
   console.log("[DICOM] Available loader methods:", Object.keys(cornerstoneDICOMImageLoader));
   
   imageLoader.registerImageLoader('wadouri', (imageId, options) => {
-    console.log(`[DICOM_TRACE] wadouri-loader CALLED for: ${imageId.slice(0, 80)}`);
+    if (DICOM_CONFIG.DEBUG_LOGGING) console.log(`[DICOM_TRACE] wadouri-loader CALLED for: ${imageId.slice(0, 80)}`);
 
     // Strategy: try cornerstone's BUILT-IN wadouri loader first. It uses the
     // codec workers and produces a fully-formed Image object that cornerstone3D's
@@ -305,7 +305,7 @@ async function initCornerstone() {
           loadPromise = cornerstoneDICOMImageLoader.loadImage(imageId, options);
           if (loadPromise && loadPromise.promise) loadPromise = loadPromise.promise;
         } else {
-          console.log(`[DICOM] Path C (manual) triggered for: ${imageId.slice(0, 60)}...`);
+          if (DICOM_CONFIG.DEBUG_LOGGING) console.log(`[DICOM] Path C (manual) triggered for: ${imageId.slice(0, 60)}...`);
           const blobUrl = imageId.replace('wadouri:', '');
           // Prefer reading the File object directly — fetch(blobUrl) can hang
           // on some mobile browsers when the blob is large. Falling back to
@@ -320,7 +320,7 @@ async function initCornerstone() {
           }
           const byteArray = new Uint8Array(arrayBuffer);
           const dataSet = dicomParser.parseDicom(byteArray);
-          console.log(`[DICOM] Path C parsed ${byteArray.length} bytes in ${file ? 'direct File' : 'fetched blob'} mode`);
+          if (DICOM_CONFIG.DEBUG_LOGGING) console.log(`[DICOM] Path C parsed ${byteArray.length} bytes in ${file ? 'direct File' : 'fetched blob'} mode`);
 
           // -- Pull all the pixel-format tags cornerstone3D's renderer actually needs --
           const rows               = dataSet.uint16('x00280010') || 0;
@@ -378,7 +378,7 @@ async function initCornerstone() {
             }
             if (!Number.isFinite(lo) || !Number.isFinite(hi)) { lo = 0; hi = 255; }
             minPixel = lo; maxPixel = hi;
-            console.log(`[DICOM] Path C derived min=${minPixel} max=${maxPixel} (DICOM tags absent)`);
+            if (DICOM_CONFIG.DEBUG_LOGGING) console.log(`[DICOM] Path C derived min=${minPixel} max=${maxPixel} (DICOM tags absent)`);
           }
 
           // Window/Level default — if DICOM had no WC/WW tags, use the actual
@@ -516,10 +516,11 @@ async function initCornerstone() {
       }
     });
 
-    // Wrap the promise so we can log resolve/reject of OUR loader.
+    // Wrap the promise so we can log resolve/reject of OUR loader (debug only —
+    // this fires once per slice, so leaving it on is a real scroll-time drag).
     const tracedPromise = promise.then(
-      (img) => { console.log(`[DICOM_TRACE] wadouri-loader RESOLVED ${imageId.slice(0, 60)} → image ${img?.width}x${img?.height}`); return img; },
-      (err) => { console.error(`[DICOM_TRACE] wadouri-loader REJECTED ${imageId.slice(0, 60)}:`, err?.message, err); throw err; }
+      (img) => { if (DICOM_CONFIG.DEBUG_LOGGING) console.log(`[DICOM_TRACE] wadouri-loader RESOLVED ${imageId.slice(0, 60)} → image ${img?.width}x${img?.height}`); return img; },
+      (err) => { if (DICOM_CONFIG.DEBUG_LOGGING) console.error(`[DICOM_TRACE] wadouri-loader REJECTED ${imageId.slice(0, 60)}:`, err?.message, err); throw err; }
     );
     return { promise: tracedPromise, cancelFn: () => {} };
   });
@@ -823,7 +824,7 @@ const AdvancedDicomViewer = ({
       if (newIndex !== currentImageIndex && renderingEngineRef.current) {
         const viewport = renderingEngineRef.current.getViewport(viewportId);
         if (viewport) {
-          console.log(`[DICOM] Keyboard slice navigation (${e.key}): ${newIndex + 1}/${files.length}`);
+          if (DICOM_CONFIG.DEBUG_LOGGING) console.log(`[DICOM] Keyboard slice navigation (${e.key}): ${newIndex + 1}/${files.length}`);
           viewport.setImageIdIndex(newIndex);
           setCurrentImageIndex(newIndex);
           if (onSliceChange) onSliceChange(newIndex, files.length);
@@ -1086,7 +1087,7 @@ const AdvancedDicomViewer = ({
             if (newIndex !== currentImageIndex && renderingEngineRef.current) {
               const viewport = renderingEngineRef.current.getViewport(viewportId);
               if (viewport) {
-                console.log(`[DICOM] Three-finger slice navigation: ${newIndex + 1}/${files.length}`);
+                if (DICOM_CONFIG.DEBUG_LOGGING) console.log(`[DICOM] Three-finger slice navigation: ${newIndex + 1}/${files.length}`);
                 viewport.setImageIdIndex(newIndex);
                 setCurrentImageIndex(newIndex);
                 if (onSliceChange) onSliceChange(newIndex, files.length);
