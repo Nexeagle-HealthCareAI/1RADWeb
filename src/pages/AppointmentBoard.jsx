@@ -287,17 +287,13 @@ export default function AppointmentBoard() {
         return timeA - timeB;
       });
       
-      const dailyCounters = {};
-      const itemsWithTokens = chronologicalData.map(item => {
-        const dateKey = item.dateTime ? item.dateTime.split('T')[0] : (item.date || TODAY);
-        dailyCounters[dateKey] = (dailyCounters[dateKey] || 0) + 1;
-        
-        return {
-          ...item,
-          // Prefer persisted server-side token; fall back to calculated for legacy records
-          tokenNo: item.dailyTokenNumber ?? dailyCounters[dateKey]
-        };
-      });
+      const itemsWithTokens = chronologicalData.map(item => ({
+        ...item,
+        // Token is assigned by the server on ARRIVAL — surface it as-is and
+        // leave it blank (dash in the UI) until the patient arrives. No more
+        // fabricated sequential numbers for not-yet-arrived patients.
+        tokenNo: item.dailyTokenNumber ?? null
+      }));
       
       // Worklist order: STAT → URGENT → ROUTINE, then token DESC. Priority
       // is still the dominant key so a STAT walk-in surfaces above all
@@ -931,8 +927,15 @@ export default function AppointmentBoard() {
       type: 'scheduled',
       doctor: newBooking.doctor,
       referredBy: newPatient.referredBy || '',
-      referredContact: referrers.find(r => r.name === newPatient.referredBy)?.contact || '',
-      referredAddress: referrers.find(r => r.name === newPatient.referredBy)?.address || '',
+      referredContact: newPatient.referrerContact || referrers.find(r => r.name === newPatient.referredBy)?.contact || '',
+      referredAddress: newPatient.referrerAddress || referrers.find(r => r.name === newPatient.referredBy)?.address || '',
+      // Optional referring-doctor profile.
+      referrerEmail: newPatient.referrerEmail || '',
+      referrerSpecialty: newPatient.referrerSpecialty || '',
+      referrerDegree: newPatient.referrerDegree || '',
+      // Referral pay-to person. Empty = pay the referring doctor.
+      referralPayeeName: newPatient.payeeMode === 'other' ? (newPatient.payeeName || '') : '',
+      referralPayeeContact: newPatient.payeeMode === 'other' ? (newPatient.payeeContact || '') : '',
       notes: newBooking.notes,
       priority: newBooking.priority || 'ROUTINE',
     };
@@ -2715,6 +2718,71 @@ export default function AppointmentBoard() {
                                 border: '1.5px solid #dee2e6'
                               }}
                             />
+                            {/* Optional referring-doctor profile */}
+                            <input
+                              type="email"
+                              placeholder="Email / Gmail (optional)"
+                              value={newPatient.referrerEmail || ''}
+                              onChange={e => setNewPatient({...newPatient, referrerEmail: e.target.value})}
+                              style={{ width: '100%', padding: '8px 12px', borderRadius: '10px', fontSize: '13px', fontWeight: 600, outline: 'none', background: '#f8fafc', border: '1.5px solid #dee2e6' }}
+                            />
+                            <div style={{ display: 'flex', gap: '8px' }}>
+                              <input
+                                type="text"
+                                placeholder="Speciality (optional)"
+                                value={newPatient.referrerSpecialty || ''}
+                                onChange={e => setNewPatient({...newPatient, referrerSpecialty: e.target.value})}
+                                style={{ flex: 1, padding: '8px 12px', borderRadius: '10px', fontSize: '13px', fontWeight: 600, outline: 'none', background: '#f8fafc', border: '1.5px solid #dee2e6' }}
+                              />
+                              <input
+                                type="text"
+                                placeholder="Degree (optional)"
+                                value={newPatient.referrerDegree || ''}
+                                onChange={e => setNewPatient({...newPatient, referrerDegree: e.target.value})}
+                                style={{ flex: 1, padding: '8px 12px', borderRadius: '10px', fontSize: '13px', fontWeight: 600, outline: 'none', background: '#f8fafc', border: '1.5px solid #dee2e6' }}
+                              />
+                            </div>
+                          </div>
+                        )}
+
+                        {/* Who receives the referral payment? Doctor by default,
+                            or an associated person (their agent). */}
+                        {newPatient.referredBy.trim() && (
+                          <div style={{ marginTop: '12px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                            <div style={{ fontSize: '9px', fontWeight: 800, color: '#64748b', letterSpacing: '0.5px' }}>
+                              WHO RECEIVES THE REFERRAL PAYMENT?
+                            </div>
+                            <div style={{ display: 'flex', gap: '8px' }}>
+                              {[{ k: 'doctor', label: 'The referring doctor' }, { k: 'other', label: 'Another person' }].map(opt => {
+                                const active = (newPatient.payeeMode || 'doctor') === opt.k;
+                                return (
+                                  <button
+                                    key={opt.k}
+                                    type="button"
+                                    onClick={() => setNewPatient({ ...newPatient, payeeMode: opt.k })}
+                                    style={{ flex: 1, padding: '10px', borderRadius: '10px', border: `1.5px solid ${active ? '#0f52ba' : '#dee2e6'}`, background: active ? '#eff6ff' : 'white', color: active ? '#0f52ba' : '#64748b', fontSize: '11px', fontWeight: 800, cursor: 'pointer', transition: 'all 0.15s' }}
+                                  >{opt.label}</button>
+                                );
+                              })}
+                            </div>
+                            {newPatient.payeeMode === 'other' && (
+                              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                                <input
+                                  type="text"
+                                  placeholder="Pay to — full name"
+                                  value={newPatient.payeeName || ''}
+                                  onChange={e => setNewPatient({ ...newPatient, payeeName: e.target.value })}
+                                  style={{ width: '100%', padding: '8px 12px', borderRadius: '10px', fontSize: '13px', fontWeight: 600, outline: 'none', background: '#f8fafc', border: '1.5px solid #dee2e6' }}
+                                />
+                                <input
+                                  type="tel"
+                                  placeholder="Contact number (10 digits)"
+                                  value={newPatient.payeeContact || ''}
+                                  onChange={e => setNewPatient({ ...newPatient, payeeContact: e.target.value.replace(/\D/g, '').slice(0, 10) })}
+                                  style={{ width: '100%', padding: '8px 12px', borderRadius: '10px', fontSize: '13px', fontWeight: 600, outline: 'none', background: '#f8fafc', border: '1.5px solid #dee2e6' }}
+                                />
+                              </div>
+                            )}
                           </div>
                         )}
                       </div>

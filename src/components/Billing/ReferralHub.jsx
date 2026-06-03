@@ -73,13 +73,25 @@ const ReferralHub = ({
   const partnerGroups = useMemo(() => {
     const groups = new Map();
     (filteredReferralCuts || []).forEach(cut => {
-      const key = cut?.referrerId || (cut?.name ? cut.name.toUpperCase() : '__DIRECT__');
-      const displayName = (cut?.name || 'DIRECT').toUpperCase();
+      // Group by who actually gets PAID (the payee). When a referral names a
+      // separate pay-to person, their payouts form their own group; otherwise
+      // the group is the referring doctor, exactly as before.
+      const hasPayee = !!cut?.payeeName;
+      const key = hasPayee
+        ? `PAYEE:${cut.payeeName.toUpperCase()}`
+        : (cut?.referrerId || (cut?.name ? cut.name.toUpperCase() : '__DIRECT__'));
+      const displayName = (cut?.payTo || cut?.name || 'DIRECT').toUpperCase();
       if (!groups.has(key)) {
         groups.set(key, {
           id: key,
           name: displayName,
-          isDirect: !cut?.referrerId && !cut?.name,
+          // Contact to reach the payee, and — when the payee isn't the doctor —
+          // the set of referring doctors this payee collects on behalf of (a
+          // payee can collect for SEVERAL doctors).
+          contact: cut?.payeeContact || null,
+          isPayee: hasPayee,
+          doctorSet: new Set(),
+          isDirect: !cut?.referrerId && !cut?.name && !hasPayee,
           cuts: [],
           total: 0,
           paid: 0,
@@ -88,6 +100,9 @@ const ReferralHub = ({
           lastDate: 0,
         });
       }
+      // Track which referring doctor each payout is for — shown per row and
+      // summarised in the group header so a multi-doctor payee is clear.
+      if (hasPayee && cut?.name) groups.get(key).doctorSet.add(cut.name);
       const g = groups.get(key);
       g.cuts.push(cut);
       g.count += 1;
@@ -96,6 +111,14 @@ const ReferralHub = ({
       if (cut?.status === 'PAID') g.paid += amt; else g.unpaid += amt;
       const cutDate = cut?.date ? new Date(cut.date).getTime() : 0;
       if (cutDate > g.lastDate) g.lastDate = cutDate;
+    });
+    // Summarise the referring doctor(s) for each payee group.
+    groups.forEach(g => {
+      const docs = Array.from(g.doctorSet || []);
+      g.onBehalfOfDoctors = docs;
+      g.onBehalfOf = !g.isPayee || docs.length === 0
+        ? null
+        : (docs.length === 1 ? `Dr. ${docs[0]}` : `${docs.length} doctors`);
     });
     return Array.from(groups.values()).sort((a, b) => {
       if (a.isDirect !== b.isDirect) return a.isDirect ? 1 : -1;
@@ -570,8 +593,17 @@ const ReferralHub = ({
                     }}
                   >
                     <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: '10px' }}>
-                      <div style={{ fontSize: '12.5px', fontWeight: 950, color: '#1e293b', letterSpacing: '0.5px', lineHeight: 1.3, wordBreak: 'break-word' }}>
-                        {group.name}
+                      <div style={{ minWidth: 0 }}>
+                        <div style={{ fontSize: '12.5px', fontWeight: 950, color: '#1e293b', letterSpacing: '0.5px', lineHeight: 1.3, wordBreak: 'break-word' }}>
+                          {group.name}
+                        </div>
+                        {(group.onBehalfOf || group.contact) && (
+                          <div style={{ fontSize: '9px', fontWeight: 700, color: '#64748b', marginTop: '3px', lineHeight: 1.4 }}>
+                            {group.onBehalfOf && <span>on behalf of {group.onBehalfOf}</span>}
+                            {group.onBehalfOf && group.contact && <span> · </span>}
+                            {group.contact && <span>📞 {group.contact}</span>}
+                          </div>
+                        )}
                       </div>
                       {group.unpaid > 0 && (
                         <span style={{ padding: '3px 8px', borderRadius: '6px', background: '#fee2e2', color: '#991b1b', fontSize: '8.5px', fontWeight: 950, letterSpacing: '0.5px', flexShrink: 0, whiteSpace: 'nowrap' }}>
@@ -626,7 +658,16 @@ const ReferralHub = ({
                         onMouseEnter={e => { e.currentTarget.style.background = '#f1f5f9'; }}
                         onMouseLeave={e => { e.currentTarget.style.background = group.unpaid > 0 ? '#fff5f6' : 'white'; }}
                       >
-                        <td style={{ padding: '14px', fontSize: '12.5px', fontWeight: 950, color: '#1e293b', letterSpacing: '0.3px' }}>{group.name}</td>
+                        <td style={{ padding: '14px', fontSize: '12.5px', fontWeight: 950, color: '#1e293b', letterSpacing: '0.3px' }}>
+                          {group.name}
+                          {(group.onBehalfOf || group.contact) && (
+                            <div style={{ fontSize: '9px', fontWeight: 700, color: '#64748b', marginTop: '2px' }}>
+                              {group.onBehalfOf && `on behalf of ${group.onBehalfOf}`}
+                              {group.onBehalfOf && group.contact && ' · '}
+                              {group.contact && `📞 ${group.contact}`}
+                            </div>
+                          )}
+                        </td>
                         <td style={{ padding: '14px', fontSize: '12px', fontWeight: 900, color: '#1e293b', textAlign: 'right' }}>₹{group.total.toLocaleString()}</td>
                         <td style={{ padding: '14px', fontSize: '12px', fontWeight: 900, color: '#166534', textAlign: 'right' }}>₹{group.paid.toLocaleString()}</td>
                         <td style={{ padding: '14px', fontSize: '12px', fontWeight: 900, color: group.unpaid > 0 ? '#e11d48' : '#cbd5e1', textAlign: 'right' }}>₹{group.unpaid.toLocaleString()}</td>
@@ -756,6 +797,11 @@ const ReferralHub = ({
                               <div style={{ fontSize: '12px', fontWeight: 700, color: '#64748b', marginTop: '4px' }}>
                                 {(cut?.modality || 'MRI').toUpperCase()}{cut?.reference ? ` · ${cut.reference}` : ''}
                               </div>
+                              {activePartner?.isPayee && cut?.name && (
+                                <div style={{ fontSize: '11px', fontWeight: 800, color: '#0f52ba', marginTop: '4px' }}>
+                                  Referred by Dr. {cut.name}
+                                </div>
+                              )}
                               <div style={{ fontSize: '11px', fontWeight: 700, color: '#94a3b8', marginTop: '4px' }}>{formatDate(cut?.date, true)}</div>
                             </div>
                           </div>
@@ -864,6 +910,9 @@ const ReferralHub = ({
                           <div style={{ fontSize: '9px', fontWeight: 700, color: '#94a3b8', marginTop: '2px' }}>
                             {(cut?.modality || 'MRI').toUpperCase()}{cut?.reference ? ` · ${cut.reference}` : ''}
                           </div>
+                          {activePartner?.isPayee && cut?.name && (
+                            <div style={{ fontSize: '9px', fontWeight: 800, color: '#0f52ba', marginTop: '2px' }}>Referred by Dr. {cut.name}</div>
+                          )}
                         </td>
                         <td style={{ padding: '12px 8px', textAlign: 'center' }}>
                           {cut?.patientPaymentStatus ? (

@@ -353,9 +353,12 @@ export default function OperationsBoard() {
   // Filter grid
   const filteredAppointments = useMemo(() => {
     return Array.isArray(appointments) ? appointments.filter(appt => {
+      // Cancelled visits never belong on the operations worklist.
+      if (String(appt.status || '').toUpperCase() === 'CANCELLED') return false;
+
       const apptDate = appt.dateTime ? appt.dateTime.split('T')[0] : '';
       const dateMatch = apptDate === selectedDate;
-      
+
       const searchLower = search.toLowerCase();
       // Search now also walks the service lines so a multi-service visit
       // surfaces when the user types any of its service names.

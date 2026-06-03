@@ -1217,7 +1217,12 @@ export default function BillingPage() {
             modality: c.modality || 'MRI',
             patientName: c.patientName || 'N/A',
             patientPaymentStatus: derivePatientPaymentStatus(c),
-            paymentReceived: c.paymentReceived !== undefined ? c.paymentReceived : 0
+            paymentReceived: c.paymentReceived !== undefined ? c.paymentReceived : 0,
+            // Pay-to person. Null payeeName = pay the referring doctor; the
+            // effective payee (payTo) is who the payout list actually pays.
+            payeeName: c.payeeName || null,
+            payeeContact: c.payeeContact || null,
+            payTo: c.payeeName || c.partnerName || c.referrerName || 'DIRECT'
         };
     });
 

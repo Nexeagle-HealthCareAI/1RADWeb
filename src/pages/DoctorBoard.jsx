@@ -110,7 +110,10 @@ export default function DoctorBoard() {
   useEffect(() => {
     const sub = watchAppointments({ mode: 'all' }).subscribe({
       next: (rows) => {
-        const allCases = (rows || []).map(a => ({
+        const allCases = (rows || [])
+          // Cancelled visits never appear on the reporting (doctor) board.
+          .filter(a => String(a.status || '').toUpperCase() !== 'CANCELLED')
+          .map(a => ({
           ...a,
           id: a.displayId,
           priority: a.priority || (a.type === 'EMERGENCY' ? 'STAT' : 'ROUTINE'),

@@ -127,7 +127,10 @@ export default function TechnicianPage() {
   useEffect(() => {
     const sub = watchAppointments({ mode: 'all' }).subscribe({
       next: (rows) => {
-        const worklist = (rows || []).map(a => ({
+        const worklist = (rows || [])
+          // Cancelled visits are dropped from the imaging worklist entirely.
+          .filter(a => String(a.status || '').toUpperCase() !== 'CANCELLED')
+          .map(a => ({
           ...a,
           id: a.displayId,
           // Real priority comes from the record; fall back to EMERGENCY-type for

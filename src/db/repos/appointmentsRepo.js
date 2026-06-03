@@ -124,22 +124,15 @@ export function watchAppointments({
       arr = arr.filter(a => (a.status || '').toUpperCase() === status.toUpperCase());
     }
 
-    // Assign per-day token numbers from the appointment's own
-    // dailyTokenNumber when present, falling back to chronological
-    // counting for legacy records (mirrors what AppointmentBoard
-    // used to do post-fetch).
-    const chronological = [...arr].sort(
-      (a, b) => new Date(a.dateTime || 0).getTime() - new Date(b.dateTime || 0).getTime()
-    );
-    const dailyCounters = {};
-    const withTokens = chronological.map(item => {
-      const dateKey = item.dateTime ? item.dateTime.split('T')[0] : (dateIso || 'unknown');
-      dailyCounters[dateKey] = (dailyCounters[dateKey] || 0) + 1;
-      return {
-        ...item,
-        tokenNo: item.dailyTokenNumber ?? dailyCounters[dateKey],
-      };
-    });
+    // Token number now reflects ARRIVAL order — the server assigns it when the
+    // patient is marked arrived, not at booking. So we surface the server's
+    // dailyTokenNumber as-is and leave it null until arrival (the UI renders a
+    // dash). We deliberately do NOT fabricate a sequential number anymore, which
+    // would have shown a fake token for patients who haven't arrived yet.
+    const withTokens = arr.map(item => ({
+      ...item,
+      tokenNo: item.dailyTokenNumber ?? null,
+    }));
 
     // Render order: STAT → URGENT → ROUTINE, then token DESC, then time DESC.
     // (Same policy the AppointmentBoard already applies after fetch.)
