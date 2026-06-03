@@ -188,6 +188,15 @@ export default function TechnicianPage() {
   }, [fetchDoctors]);
 
   const handleStatusUpdate = async (id, newStatus) => {
+    // Arrival gate — the technician can't move a study until the patient has
+    // arrived (the front desk marks arrival). Mirrors the backend rule.
+    const target = (studies || []).find(s => s.appointmentId === id || s.id === id);
+    const arrived = !!target?.arrivedAt || !['scheduled', 'booked', 'future', ''].includes(String(target?.status || '').toLowerCase());
+    if (target && !arrived) {
+      showNotif('warning', 'PATIENT NOT ARRIVED', 'Mark the patient as arrived before updating the study status.');
+      return;
+    }
+
     // Optimistically patch the cached row so the board reflects the new status
     // immediately — including offline, where there's no pull to bring it back.
     await patchCachedAppointment(id, (row) => ({ ...row, status: newStatus }));

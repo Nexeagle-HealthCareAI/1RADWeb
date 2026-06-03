@@ -314,9 +314,13 @@ export default function ReferralsPage() {
 
   const handleExportRoster = () => {
     if (!caseLedgerList) return;
-    let csv = "RANK,REFERRAL SOURCE,CONTACT,ADDRESS,TOTAL STUDIES,PAID COMMISSION,UNPAID COMMISSION,TOTAL REVENUE\n";
+    let csv = "RANK,REFERRAL SOURCE,TYPE,EMAIL,SPECIALITY,DEGREE,SUPPORTED BY DOCTOR,CONTACT,ADDRESS,TOTAL STUDIES,PAID COMMISSION,UNPAID COMMISSION,TOTAL REVENUE\n";
     caseLedgerList.forEach((s, i) => {
-      csv += `${i+1},"${s.name}","${s.contact}","${s.address || ''}",${s.patients?.length || 0},${s.paidCommission || 0},${s.unpaidCommission || 0},${s.totalRevenue || 0}\n`;
+      const type = s.isDoctor ? 'Doctor' : 'Other person';
+      const spec = s.isDoctor ? (s.specialty || '') : '';
+      const deg = s.isDoctor ? (s.degree || '') : '';
+      const supp = !s.isDoctor ? (s.supportedByDoctor || '') : '';
+      csv += `${i+1},"${s.name}","${type}","${s.email || ''}","${spec}","${deg}","${supp}","${s.contact || ''}","${s.address || ''}",${s.patients?.length || 0},${s.paidCommission || 0},${s.unpaidCommission || 0},${s.totalRevenue || 0}\n`;
     });
     const blob = new Blob([csv], { type: 'text/csv' });
     const url = window.URL.createObjectURL(blob);
@@ -655,10 +659,27 @@ export default function ReferralsPage() {
       digits = digits.substring(1);
     }
 
-    if (digits.length !== 10 || !/^[6-9]\d{9}$/.test(digits)) {
+    // Mobile is optional now — only validate the format if a number was typed.
+    if (digits.length > 0 && (digits.length !== 10 || !/^[6-9]\d{9}$/.test(digits))) {
       notifyToast('Please enter a valid 10-digit Indian mobile number (e.g., 9876543210).', 'error');
       return;
     }
+
+    const isDoctor = editingReferrer.isDoctor !== false;
+    // When the referral is NOT a doctor, the supporting doctor name is required.
+    if (!isDoctor && !String(editingReferrer.supportedByDoctor || '').trim()) {
+      notifyToast('Please enter the supporting doctor name for this referral.', 'error');
+      return;
+    }
+    const profile = {
+      contact: digits,
+      address: editingReferrer.address || '',
+      email: editingReferrer.email || '',
+      specialty: isDoctor ? (editingReferrer.specialty || '') : '',
+      degree: isDoctor ? (editingReferrer.degree || '') : '',
+      isDoctor,
+      supportedByDoctor: isDoctor ? '' : (editingReferrer.supportedByDoctor || ''),
+    };
 
     try {
       setIsSavingReferrer(true);
@@ -666,14 +687,12 @@ export default function ReferralsPage() {
         await apiClient.put(`/referrers/${editingReferrer.referrerId}`, {
           referrerId: editingReferrer.referrerId,
           name: editingReferrer.name,
-          contact: digits,
-          address: editingReferrer.address
+          ...profile
         });
       } else {
         await apiClient.post('/referrers', {
           name: editingReferrer.name,
-          contact: digits,
-          address: editingReferrer.address
+          ...profile
         });
       }
       
@@ -1119,6 +1138,12 @@ export default function ReferralsPage() {
         name: ref.name,
         contact: ref.contact,
         address: ref.address,
+        // Referral-source profile (payee-first model).
+        isDoctor: ref.isDoctor !== false,
+        email: ref.email || '',
+        specialty: ref.specialty || '',
+        degree: ref.degree || '',
+        supportedByDoctor: ref.supportedByDoctor || '',
         hasSentPatients: !!intel && intel.totalPatients > 0,
         patientCount: intel ? intel.totalPatients : 0,
         totalRevenue: intel ? intel.totalRevenue : 0,
@@ -3921,9 +3946,21 @@ export default function ReferralsPage() {
                           </td>
                           <td style={{ padding: '20px 30px' }}>
                             <div style={{ fontSize: '13px', fontWeight: 850, color: '#1e293b' }}>{(s.name || 'Anonymous').toUpperCase()}</div>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginTop: '5px', flexWrap: 'wrap' }}>
+                              <span style={{ fontSize: '9px', fontWeight: 900, padding: '2px 8px', borderRadius: '999px', background: s.isDoctor ? '#eff6ff' : '#fef3c7', color: s.isDoctor ? '#1d4ed8' : '#b45309' }}>
+                                {s.isDoctor ? '👨‍⚕️ Doctor' : '👤 Other person'}
+                              </span>
+                              {s.isDoctor && (s.specialty || s.degree) && (
+                                <span style={{ fontSize: '9px', fontWeight: 700, color: '#64748b' }}>{[s.specialty, s.degree].filter(Boolean).join(' · ')}</span>
+                              )}
+                              {!s.isDoctor && s.supportedByDoctor && (
+                                <span style={{ fontSize: '9px', fontWeight: 700, color: '#64748b' }}>supported by Dr. {s.supportedByDoctor}</span>
+                              )}
+                            </div>
                           </td>
                           <td style={{ padding: '20px 30px' }}>
-                            <div style={{ fontSize: '11px', fontWeight: 700, color: '#64748b' }}>{s.contact}</div>
+                            <div style={{ fontSize: '11px', fontWeight: 700, color: '#64748b' }}>{s.contact || '—'}</div>
+                            {s.email && <div style={{ fontSize: '10px', fontWeight: 600, color: '#94a3b8', marginTop: '2px' }}>{s.email}</div>}
                           </td>
                           <td style={{ padding: '20px 30px' }}>
                             <div style={{ fontSize: '10px', fontWeight: 800, color: '#1e293b', textTransform: 'uppercase' }}>{s.address || 'GLOBAL'}</div>
@@ -3970,8 +4007,19 @@ export default function ReferralsPage() {
                                  <div style={{ width: '28px', height: '28px', borderRadius: '8px', background: i < 3 ? '#f0f3fd' : '#f8fafc', color: i < 3 ? '#0f52ba' : '#64748b', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '11px', fontWeight: 950 }}>#{i + 1}</div>
                                  <div style={{ fontSize: '14px', fontWeight: 850, color: '#1e293b' }}>{(s.name || 'Anonymous').toUpperCase()}</div>
                               </div>
-                              <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                                 <div style={{ fontSize: '11px', fontWeight: 700, color: '#64748b' }}>{s.contact}</div>
+                              <div style={{ display: 'flex', flexDirection: 'column', gap: '5px' }}>
+                                 <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
+                                   <span style={{ fontSize: '9px', fontWeight: 900, padding: '2px 8px', borderRadius: '999px', background: s.isDoctor ? '#eff6ff' : '#fef3c7', color: s.isDoctor ? '#1d4ed8' : '#b45309' }}>
+                                     {s.isDoctor ? '👨‍⚕️ Doctor' : '👤 Other person'}
+                                   </span>
+                                   {s.isDoctor && (s.specialty || s.degree) && (
+                                     <span style={{ fontSize: '9px', fontWeight: 700, color: '#64748b' }}>{[s.specialty, s.degree].filter(Boolean).join(' · ')}</span>
+                                   )}
+                                   {!s.isDoctor && s.supportedByDoctor && (
+                                     <span style={{ fontSize: '9px', fontWeight: 700, color: '#64748b' }}>supported by Dr. {s.supportedByDoctor}</span>
+                                   )}
+                                 </div>
+                                 <div style={{ fontSize: '11px', fontWeight: 700, color: '#64748b' }}>{s.contact || '—'}{s.email ? ` · ${s.email}` : ''}</div>
                                  <div style={{ fontSize: '10px', fontWeight: 800, color: '#1e293b', textTransform: 'uppercase' }}>{s.address || 'GLOBAL'}</div>
                               </div>
                               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '4px', paddingTop: '12px', borderTop: '1px dashed #e2e8f0' }}>
@@ -4850,41 +4898,82 @@ return (
         </div>
 
         <form onSubmit={handleUpdateReferrer} style={{ padding: '40px', flex: 1, overflowY: 'auto' }}>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '25px' }}>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-              <label style={{ fontSize: '9px', fontWeight: 950, color: '#94a3b8', letterSpacing: '1px' }}>PARTNER NAME</label>
-              <input 
-                type="text"
-                required
-                value={editingReferrer?.name || ''}
-                onChange={e => setEditingReferrer(prev => ({ ...prev, name: e.target.value }))}
-                style={{ width: '100%', padding: '15px', borderRadius: '12px', border: '1px solid #e2e8f0', fontSize: '13px', fontWeight: 800, color: '#1e293b', outline: 'none' }}
-              />
-            </div>
+          {(() => {
+            const refIsDoctor = editingReferrer?.isDoctor !== false; // default Doctor
+            const fieldStyle = { width: '100%', padding: '15px', borderRadius: '12px', border: '1px solid #e2e8f0', fontSize: '13px', fontWeight: 800, color: '#1e293b', outline: 'none', boxSizing: 'border-box' };
+            const labelStyle = { fontSize: '9px', fontWeight: 950, color: '#94a3b8', letterSpacing: '1px' };
+            return (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '22px' }}>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                <label style={labelStyle}>NAME</label>
+                <input type="text" required value={editingReferrer?.name || ''}
+                  onChange={e => setEditingReferrer(prev => ({ ...prev, name: e.target.value }))} style={fieldStyle} />
+              </div>
 
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-              <label style={{ fontSize: '9px', fontWeight: 950, color: '#94a3b8', letterSpacing: '1px' }}>CONTACT IDENTIFIER (MOBILE)</label>
-              <input 
-                type="tel"
-                required
-                placeholder="e.g., 9876543210"
-                value={editingReferrer?.contact || ''}
-                onChange={e => setEditingReferrer(prev => ({ ...prev, contact: e.target.value }))}
-                style={{ width: '100%', padding: '15px', borderRadius: '12px', border: '1px solid #e2e8f0', fontSize: '13px', fontWeight: 800, color: '#1e293b', outline: 'none' }}
-              />
-              <span style={{ fontSize: '9px', color: '#64748b', marginTop: '2px', fontWeight: 700 }}>Must be a 10-digit Indian mobile number starting with 6, 7, 8, or 9.</span>
-            </div>
+              {/* Choice-first: who is the referral? */}
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                <label style={labelStyle}>WHO IS THE REFERRAL?</label>
+                <div style={{ display: 'flex', gap: '12px' }}>
+                  {[{ k: true, icon: '👨‍⚕️', label: 'Doctor' }, { k: false, icon: '👤', label: 'Other person' }].map(opt => {
+                    const active = refIsDoctor === opt.k;
+                    return (
+                      <button key={String(opt.k)} type="button"
+                        onClick={() => setEditingReferrer(prev => ({ ...prev, isDoctor: opt.k }))}
+                        style={{ flex: 1, padding: '16px 10px', borderRadius: '14px', border: `1.5px solid ${active ? '#0f52ba' : '#e2e8f0'}`, background: active ? '#eff6ff' : 'white', color: active ? '#0f52ba' : '#64748b', fontSize: '12px', fontWeight: 900, cursor: 'pointer', transition: 'all 0.15s', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '6px' }}>
+                        <span style={{ fontSize: '22px' }}>{opt.icon}</span>
+                        {opt.label}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
 
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-              <label style={{ fontSize: '9px', fontWeight: 950, color: '#94a3b8', letterSpacing: '1px' }}>CLINICAL SECTOR / ADDRESS</label>
-              <textarea 
-                required
-                value={editingReferrer?.address || ''}
-                onChange={e => setEditingReferrer(prev => ({ ...prev, address: e.target.value }))}
-                style={{ width: '100%', padding: '15px', borderRadius: '12px', border: '1px solid #e2e8f0', fontSize: '13px', fontWeight: 800, color: '#1e293b', outline: 'none', minHeight: '100px', resize: 'vertical' }}
-              />
+              {/* Mobile + Email (both optional) */}
+              <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap' }}>
+                <div style={{ flex: '1 1 160px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                  <label style={labelStyle}>MOBILE (OPTIONAL)</label>
+                  <input type="tel" placeholder="e.g., 9876543210" value={editingReferrer?.contact || ''}
+                    onChange={e => setEditingReferrer(prev => ({ ...prev, contact: e.target.value.replace(/\D/g, '').slice(0, 10) }))} style={fieldStyle} />
+                </div>
+                <div style={{ flex: '1 1 160px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                  <label style={labelStyle}>EMAIL (OPTIONAL)</label>
+                  <input type="email" placeholder="name@example.com" value={editingReferrer?.email || ''}
+                    onChange={e => setEditingReferrer(prev => ({ ...prev, email: e.target.value }))} style={fieldStyle} />
+                </div>
+              </div>
+
+              {/* Conditional: doctor → speciality + degree; other → supported by doctor */}
+              {refIsDoctor ? (
+                <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap' }}>
+                  <div style={{ flex: '1 1 160px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                    <label style={labelStyle}>SPECIALITY (OPTIONAL)</label>
+                    <input type="text" value={editingReferrer?.specialty || ''}
+                      onChange={e => setEditingReferrer(prev => ({ ...prev, specialty: e.target.value }))} style={fieldStyle} />
+                  </div>
+                  <div style={{ flex: '1 1 160px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                    <label style={labelStyle}>DEGREE (OPTIONAL)</label>
+                    <input type="text" value={editingReferrer?.degree || ''}
+                      onChange={e => setEditingReferrer(prev => ({ ...prev, degree: e.target.value }))} style={fieldStyle} />
+                  </div>
+                </div>
+              ) : (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                  <label style={labelStyle}>SUPPORTED BY DOCTOR</label>
+                  <input type="text" placeholder="Name of the doctor they bring patients from"
+                    value={editingReferrer?.supportedByDoctor || ''}
+                    onChange={e => setEditingReferrer(prev => ({ ...prev, supportedByDoctor: e.target.value }))} style={fieldStyle} />
+                </div>
+              )}
+
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                <label style={labelStyle}>ADDRESS / CLINIC (OPTIONAL)</label>
+                <textarea value={editingReferrer?.address || ''}
+                  onChange={e => setEditingReferrer(prev => ({ ...prev, address: e.target.value }))}
+                  style={{ ...fieldStyle, minHeight: '80px', resize: 'vertical' }} />
+              </div>
             </div>
-          </div>
+            );
+          })()}
 
           <div style={{ marginTop: '50px', display: 'flex', gap: '15px' }}>
              <button 

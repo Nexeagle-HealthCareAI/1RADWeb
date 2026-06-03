@@ -186,6 +186,16 @@ export default function OperationsBoard() {
   // on ReportingPage, so we don't expose it here.
   const handleAdvanceServiceStatus = async (appointmentId, serviceId, nextStatus) => {
     if (!appointmentId || !serviceId || !nextStatus) return;
+
+    // Arrival gate — a study can't be advanced (scanning/reporting/delivery)
+    // until the patient has arrived. Cancelling a line is still allowed.
+    const target = (appointments || []).find(a => a.appointmentId === appointmentId);
+    const arrived = !!target?.arrivedAt || !['scheduled', 'booked', 'future', ''].includes(String(target?.status || '').toLowerCase());
+    if (target && !arrived && String(nextStatus).toUpperCase() !== 'CANCELLED') {
+      showToast('Patient has not arrived yet. Mark the patient as arrived first.', 'error');
+      return;
+    }
+
     const now = new Date().toISOString();
 
     // Optimistically patch the cached row so the board reflects the new status
@@ -426,7 +436,10 @@ export default function OperationsBoard() {
   // getServiceLines, so legacy data still counts.
   const getMetrics = () => {
     const todayAppts = Array.isArray(appointments)
-      ? appointments.filter(a => (a.dateTime ? a.dateTime.split('T')[0] : '') === selectedDate)
+      ? appointments.filter(a =>
+          (a.dateTime ? a.dateTime.split('T')[0] : '') === selectedDate &&
+          // Cancelled visits are excluded from every KPI tile, not just the list.
+          String(a.status || '').toUpperCase() !== 'CANCELLED')
       : [];
 
     // Count appointments separately so the "Total Today" tile still

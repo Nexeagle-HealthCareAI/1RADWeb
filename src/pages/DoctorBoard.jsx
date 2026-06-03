@@ -13,6 +13,7 @@ import { getServiceLines, getUniqueModalities, matchesAnyModality, getReportProg
 import { watchAppointments, patchCachedAppointment } from '../db/repos/appointmentsRepo';
 import { snapshotPersonnel, watchPersonnel } from '../db/repos/personnelRepo';
 import { syncNow } from '../sync/SyncEngine';
+import { notifyToast } from '../utils/toast';
 import '../styles/global.css';
 import '../styles/DoctorBoard.css';
 
@@ -185,6 +186,14 @@ export default function DoctorBoard() {
   }, [fetchDoctors]);
 
   const handleStatusUpdate = async (id, newStatus) => {
+    // Arrival gate — reporting can't move a study until the patient has arrived.
+    const target = (cases || []).find(c => c.appointmentId === id || c.id === id);
+    const arrived = !!target?.arrivedAt || !['scheduled', 'booked', 'future', ''].includes(String(target?.status || '').toLowerCase());
+    if (target && !arrived) {
+      notifyToast({ title: 'Patient not arrived', message: 'Mark the patient as arrived before updating the study status.' }, 'warning');
+      return;
+    }
+
     // Optimistic cache patch so the worklist reflects it immediately / offline.
     await patchCachedAppointment(id, (row) => ({ ...row, status: newStatus }));
 

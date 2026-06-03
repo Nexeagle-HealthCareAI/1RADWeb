@@ -73,25 +73,20 @@ const ReferralHub = ({
   const partnerGroups = useMemo(() => {
     const groups = new Map();
     (filteredReferralCuts || []).forEach(cut => {
-      // Group by who actually gets PAID (the payee). When a referral names a
-      // separate pay-to person, their payouts form their own group; otherwise
-      // the group is the referring doctor, exactly as before.
-      const hasPayee = !!cut?.payeeName;
-      const key = hasPayee
-        ? `PAYEE:${cut.payeeName.toUpperCase()}`
-        : (cut?.referrerId || (cut?.name ? cut.name.toUpperCase() : '__DIRECT__'));
-      const displayName = (cut?.payTo || cut?.name || 'DIRECT').toUpperCase();
+      // The referral record IS the payee, so we group by the referrer. When
+      // that payee is an AGENT (not a doctor), we also track which doctor(s)
+      // they collect on behalf of — an agent can bring patients from several
+      // doctors.
+      const isAgent = cut?.referrerIsDoctor === false;
+      const key = cut?.referrerId || (cut?.name ? cut.name.toUpperCase() : '__DIRECT__');
+      const displayName = (cut?.name || 'DIRECT').toUpperCase();
       if (!groups.has(key)) {
         groups.set(key, {
           id: key,
           name: displayName,
-          // Contact to reach the payee, and — when the payee isn't the doctor —
-          // the set of referring doctors this payee collects on behalf of (a
-          // payee can collect for SEVERAL doctors).
-          contact: cut?.payeeContact || null,
-          isPayee: hasPayee,
+          isPayee: isAgent,            // "agent" payee — show the doctor context
           doctorSet: new Set(),
-          isDirect: !cut?.referrerId && !cut?.name && !hasPayee,
+          isDirect: !cut?.referrerId && !cut?.name,
           cuts: [],
           total: 0,
           paid: 0,
@@ -100,9 +95,9 @@ const ReferralHub = ({
           lastDate: 0,
         });
       }
-      // Track which referring doctor each payout is for — shown per row and
-      // summarised in the group header so a multi-doctor payee is clear.
-      if (hasPayee && cut?.name) groups.get(key).doctorSet.add(cut.name);
+      // Track the referring doctor for each payout of an agent payee — shown
+      // per row and summarised in the group header.
+      if (isAgent && cut?.referringDoctor) groups.get(key).doctorSet.add(cut.referringDoctor);
       const g = groups.get(key);
       g.cuts.push(cut);
       g.count += 1;
@@ -797,9 +792,9 @@ const ReferralHub = ({
                               <div style={{ fontSize: '12px', fontWeight: 700, color: '#64748b', marginTop: '4px' }}>
                                 {(cut?.modality || 'MRI').toUpperCase()}{cut?.reference ? ` · ${cut.reference}` : ''}
                               </div>
-                              {activePartner?.isPayee && cut?.name && (
+                              {activePartner?.isPayee && cut?.referringDoctor && (
                                 <div style={{ fontSize: '11px', fontWeight: 800, color: '#0f52ba', marginTop: '4px' }}>
-                                  Referred by Dr. {cut.name}
+                                  Referred by Dr. {cut.referringDoctor}
                                 </div>
                               )}
                               <div style={{ fontSize: '11px', fontWeight: 700, color: '#94a3b8', marginTop: '4px' }}>{formatDate(cut?.date, true)}</div>
@@ -910,8 +905,8 @@ const ReferralHub = ({
                           <div style={{ fontSize: '9px', fontWeight: 700, color: '#94a3b8', marginTop: '2px' }}>
                             {(cut?.modality || 'MRI').toUpperCase()}{cut?.reference ? ` · ${cut.reference}` : ''}
                           </div>
-                          {activePartner?.isPayee && cut?.name && (
-                            <div style={{ fontSize: '9px', fontWeight: 800, color: '#0f52ba', marginTop: '2px' }}>Referred by Dr. {cut.name}</div>
+                          {activePartner?.isPayee && cut?.referringDoctor && (
+                            <div style={{ fontSize: '9px', fontWeight: 800, color: '#0f52ba', marginTop: '2px' }}>Referred by Dr. {cut.referringDoctor}</div>
                           )}
                         </td>
                         <td style={{ padding: '12px 8px', textAlign: 'center' }}>

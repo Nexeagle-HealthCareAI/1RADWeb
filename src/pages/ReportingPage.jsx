@@ -648,7 +648,14 @@ const ReportingPage = () => {
         return;
       }
 
-      setActiveAppointment(appointmentData);
+      // The report must always show a DOCTOR as "Referred By". The server
+      // resolves referringDoctorName from the referral source (an agent
+      // referrer resolves to the doctor they're supported by); fall back to the
+      // raw referredBy when it isn't present.
+      setActiveAppointment({
+        ...appointmentData,
+        referredBy: appointmentData.referringDoctorName || appointmentData.referredBy,
+      });
 
       // Multi-service rollout (step 6). Cache the line items so the
       // service-picker strip can render and we can default to the

@@ -1218,11 +1218,13 @@ export default function BillingPage() {
             patientName: c.patientName || 'N/A',
             patientPaymentStatus: derivePatientPaymentStatus(c),
             paymentReceived: c.paymentReceived !== undefined ? c.paymentReceived : 0,
-            // Pay-to person. Null payeeName = pay the referring doctor; the
-            // effective payee (payTo) is who the payout list actually pays.
-            payeeName: c.payeeName || null,
-            payeeContact: c.payeeContact || null,
-            payTo: c.payeeName || c.partnerName || c.referrerName || 'DIRECT'
+            // Payee-first model: the referral record (name above) IS the payee.
+            // When that payee is NOT a doctor, the referring doctor is the
+            // "supported by" doctor; when it IS a doctor, they are the doctor.
+            referrerIsDoctor: c.referrerIsDoctor !== false,
+            referringDoctor: c.referrerIsDoctor === false
+              ? (c.supportedByDoctor || null)
+              : (c.partnerName || c.referrerName || null),
         };
     });
 
