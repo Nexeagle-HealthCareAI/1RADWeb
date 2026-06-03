@@ -247,11 +247,11 @@ stages:
     dependsOn: Build
     condition: and(succeeded(), ne(variables['Build.Reason'], 'PullRequest'))
     variables:
-      # SWA_TOKEN_DEV currently lives in the 'sql-dev-secrets' variable group
-      # alongside DB credentials. Recommend splitting later: one group per
-      # service so a pipeline that needs the DB secrets can't read the SWA
-      # deploy token, and vice versa.
-      - group: sql-dev-secrets
+      # SWA_TOKEN_DEV lives in the 'api-dev-secrets' variable group. The macro
+      # $(SWA_TOKEN_DEV) only resolves if it's defined in a referenced group —
+      # otherwise it passes through literally and the SWA CLI reports
+      # "deployment_token provided was invalid".
+      - group: api-dev-secrets
     jobs:
       - deployment: DeployDev
         displayName: Push to Dev Static Web App
@@ -305,10 +305,10 @@ stages:
     dependsOn: DeployDev
     condition: and(succeeded(), eq('${{ parameters.deployToProd }}', true), ne(variables['Build.Reason'], 'PullRequest'))
     variables:
-      # SWA_TOKEN_PROD lives in 'sql-prod-secrets' (same group as Prod DB
-      # secrets) to mirror the Dev arrangement. Recommended future split:
-      # move web tokens to a dedicated 'swa-prod-secrets' group.
-      - group: sql-prod-secrets
+      # SWA_TOKEN_PROD lives in the 'api-prod-secrets' variable group (same
+      # group as ProdAzureBlobConnectionString). Must be named exactly
+      # SWA_TOKEN_PROD so the $(SWA_TOKEN_PROD) macro below resolves.
+      - group: api-prod-secrets
     jobs:
       - deployment: DeployProd
         displayName: Push to Prod Static Web App
