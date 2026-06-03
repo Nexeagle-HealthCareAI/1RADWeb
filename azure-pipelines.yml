@@ -15,6 +15,10 @@ parameters:
     displayName: Promote to Production after Dev succeeds?
     type: boolean
     default: false
+  - name: publishDesktopInstaller
+    displayName: Upload the desktop installer to Blob after Prod?
+    type: boolean
+    default: false
 
 pool:
   vmImage: ubuntu-latest
@@ -104,6 +108,48 @@ stages:
             inputs:
               targetPath: '$(Build.SourcesDirectory)/dist'
               artifact: 'web-dist-prod'
+              publishLocation: 'pipeline'
+
+      # ── BuildDesktop — package the Windows desktop installer ────────────
+      # Runs on a Windows agent (native NSIS build — no Wine), only when a
+      # prod promotion is requested. Bakes the Prod API URL into the bundle,
+      # then electron-builder packages release/1Rad-Setup.exe, published as
+      # the 'desktop-installer' artifact for the PublishDesktop stage.
+      - job: BuildDesktop
+        displayName: Package Windows desktop installer
+        condition: and(ne(variables['Build.Reason'], 'PullRequest'), eq('${{ parameters.deployToProd }}', true))
+        pool:
+          vmImage: windows-latest
+        timeoutInMinutes: 45
+        steps:
+          - checkout: self
+            clean: true
+
+          - task: NodeTool@0
+            inputs:
+              versionSpec: $(nodeVersion)
+            displayName: Use Node $(nodeVersion)
+
+          - script: npm ci
+            workingDirectory: $(Build.SourcesDirectory)
+            displayName: npm ci
+
+          # Bake the Prod API URL, then build the web bundle electron wraps.
+          - script: |
+              set VITE_API_URL=$(prodApiUrl)
+              npm run build
+            workingDirectory: $(Build.SourcesDirectory)
+            displayName: Vite build (Prod API URL)
+
+          - script: npm run electron:pack
+            workingDirectory: $(Build.SourcesDirectory)
+            displayName: Package installer (electron-builder NSIS)
+
+          - task: PublishPipelineArtifact@1
+            displayName: Publish desktop installer artifact
+            inputs:
+              targetPath: '$(Build.SourcesDirectory)/release/1Rad-Setup.exe'
+              artifact: 'desktop-installer'
               publishLocation: 'pipeline'
 
   # ────────────────────────────────────────────────────────────────────────
@@ -218,3 +264,50 @@ stages:
                     skip_api_build: true
                     verbose: true
                     azure_static_web_apps_api_token: $(SWA_TOKEN_PROD)
+
+  # ────────────────────────────────────────────────────────────────────────
+  # Stage 4 — Publish desktop installer to Azure Blob Storage
+  # Runs only when BOTH parameters are true (deployToProd + publishDesktopInstaller),
+  # after a successful Prod deploy. Uploads release/1Rad-Setup.exe to a blob; the
+  # API's GET /download/desktop then redirects to it (set DesktopApp:InstallerUrl
+  # in the API config to the blob's public URL).
+  #
+  # ▶ One-time setup before enabling: add these to the 'sql-prod-secrets' group
+  #   (or a dedicated group) — names are placeholders for YOUR Azure resources:
+  #     • desktopAzureServiceConnection — name of an ARM service connection with
+  #       'Storage Blob Data Contributor' on the storage account
+  #     • desktopStorageAccount         — e.g. 1radassetsprod
+  #     • desktopBlobContainer          — e.g. downloads (public-read or fronted by CDN)
+  # ────────────────────────────────────────────────────────────────────────
+  - stage: PublishDesktop
+    displayName: Publish desktop installer (Blob)
+    dependsOn: DeployProd
+    condition: and(succeeded(), eq('${{ parameters.deployToProd }}', true), eq('${{ parameters.publishDesktopInstaller }}', true), ne(variables['Build.Reason'], 'PullRequest'))
+    variables:
+      - group: sql-prod-secrets
+    jobs:
+      - deployment: PublishDesktop
+        displayName: Upload installer to Blob Storage
+        environment: 'Production-SWA'
+        timeoutInMinutes: 30
+        strategy:
+          runOnce:
+            deploy:
+              steps:
+                - download: current
+                  artifact: desktop-installer
+
+                - task: AzureCLI@2
+                  displayName: Upload 1Rad-Setup.exe to Blob
+                  inputs:
+                    azureSubscription: '$(desktopAzureServiceConnection)'
+                    scriptType: bash
+                    scriptLocation: inlineScript
+                    inlineScript: |
+                      az storage blob upload \
+                        --account-name "$(desktopStorageAccount)" \
+                        --container-name "$(desktopBlobContainer)" \
+                        --name "1Rad-Setup.exe" \
+                        --file "$(Pipeline.Workspace)/desktop-installer/1Rad-Setup.exe" \
+                        --overwrite true \
+                        --auth-mode login

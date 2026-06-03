@@ -16,6 +16,35 @@ function esc(s) {
     .replace(/"/g, '&quot;');
 }
 
+// Normalise a CSS colour (#rgb, #rrggbb, rgb()/rgba()) to a 6-hex Word colour.
+function cssColorToHex(c) {
+  if (!c) return null;
+  const v = String(c).trim();
+  if (v.startsWith('#')) {
+    let h = v.slice(1);
+    if (h.length === 3) h = h.split('').map(x => x + x).join('');
+    return h.toUpperCase().padEnd(6, '0').slice(0, 6);
+  }
+  const m = v.match(/rgba?\(([^)]+)\)/i);
+  if (m) {
+    const [r, g, b] = m[1].split(',').map(x => parseInt(x.trim(), 10));
+    if ([r, g, b].every(Number.isFinite)) {
+      return [r, g, b].map(n => Math.max(0, Math.min(255, n)).toString(16).padStart(2, '0')).join('').toUpperCase();
+    }
+  }
+  return null;
+}
+
+// CSS font-size → Word half-points. The ribbon authors sizes in pt; some paths
+// carry px. parseFloat copes with either suffix (plain "+'14pt'" is NaN).
+function fontSizeToHalfPt(fs) {
+  if (!fs) return null;
+  const v = parseFloat(fs);
+  if (!(v > 0)) return null;
+  const pt = String(fs).includes('px') ? v * 0.75 : v;
+  return Math.round(pt * 2);
+}
+
 // ─── Run-property builder ─────────────────────────────────────────────────────
 function buildRPr(m) {
   let x = '';
@@ -56,8 +85,11 @@ function textRuns(node, marks) {
     if (st.fontStyle === 'italic') m.i = true;
     if (st.textDecoration?.includes('underline'))    m.u = true;
     if (st.textDecoration?.includes('line-through')) m.s = true;
-    if (st.fontSize?.endsWith('pt')) m.sz = Math.round(+st.fontSize * 2);
-    if (st.color?.startsWith('#'))   m.color = st.color.slice(1).toUpperCase().padEnd(6, '0');
+    const sz = fontSizeToHalfPt(st.fontSize);
+    if (sz) m.sz = sz;
+    if (st.fontFamily) m.font = st.fontFamily.replace(/['"]/g, '').split(',')[0].trim();
+    const col = cssColorToHex(st.color);
+    if (col) m.color = col;
   } else if (tag === 'a') {
     m.u = true;
     m.color = '0078D4';
@@ -384,11 +416,14 @@ function buildStyles() {
 
 // ─── Public API ───────────────────────────────────────────────────────────────
 /**
- * Convert the editor's HTML to a .docx file and trigger a browser download.
- * @param {string} html     - raw HTML from editor.getHTML()
- * @param {string} filename - download file name (default: radiology-report.docx)
+ * Build a .docx Blob from the editor's HTML, faithfully preserving its format
+ * (headings, bold/italic/underline, lists, tables, alignment, colours, fonts,
+ * sizes, page breaks). Returned so callers can download it OR hand the bytes
+ * to the desktop bridge to launch Microsoft Word.
+ * @param {string} html - raw HTML from editor.getHTML()
+ * @returns {Promise<Blob>}
  */
-export async function exportToDocx(html, filename = 'radiology-report.docx', { header, footer } = {}) {
+export async function buildDocxBlob(html, { header, footer } = {}) {
   const bodyWml = htmlToWmlBody(html);
   const hasHeader = !!(header?.text);
   const hasFooter = !!(footer?.text);
@@ -403,12 +438,20 @@ export async function exportToDocx(html, filename = 'radiology-report.docx', { h
   if (hasHeader) word.file('header1.xml', buildHeaderXml(header));
   if (hasFooter) word.file('footer1.xml', buildFooterXml(footer));
 
-  const blob = await zip.generateAsync({
+  return zip.generateAsync({
     type: 'blob',
     mimeType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
     compression: 'DEFLATE',
   });
+}
 
+/**
+ * Convert the editor's HTML to a .docx file and trigger a browser download.
+ * @param {string} html     - raw HTML from editor.getHTML()
+ * @param {string} filename - download file name (default: radiology-report.docx)
+ */
+export async function exportToDocx(html, filename = 'radiology-report.docx', opts = {}) {
+  const blob = await buildDocxBlob(html, opts);
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;

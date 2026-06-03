@@ -1,5 +1,7 @@
 const { app, BrowserWindow, ipcMain, shell } = require('electron');
 const path = require('path');
+const fs = require('fs');
+const os = require('os');
 const isDev = require('electron-is-dev');
 const Store = require('electron-store');
 
@@ -7,6 +9,44 @@ const Store = require('electron-store');
 const store = new Store();
 
 let mainWindow;
+
+// ── Word auto-sync file watching ─────────────────────────────────
+// Map<filePath, listener>. We poll with fs.watchFile (not fs.watch) because
+// Word saves atomically (writes a temp then renames), which breaks fs.watch's
+// handle on Windows; polling mtime survives that.
+const wordWatchers = new Map();
+
+// Word briefly locks the file while saving — read with a few retries.
+async function readFileWithRetry(filePath, tries = 6) {
+  for (let i = 0; i < tries; i++) {
+    try {
+      return fs.readFileSync(filePath);
+    } catch (e) {
+      if (i === tries - 1) throw e;
+      await new Promise(r => setTimeout(r, 400));
+    }
+  }
+}
+
+function watchWordFile(filePath) {
+  if (wordWatchers.has(filePath)) return;
+  const listener = (curr, prev) => {
+    // Only react to a genuine, completed write.
+    if (curr.mtimeMs === prev.mtimeMs || curr.size === 0) return;
+    readFileWithRetry(filePath)
+      .then(buf => {
+        if (buf && mainWindow && !mainWindow.isDestroyed()) {
+          mainWindow.webContents.send('word:fileChanged', {
+            path: filePath,
+            base64: buf.toString('base64'),
+          });
+        }
+      })
+      .catch(err => console.warn('[word-watch] read failed:', err.message));
+  };
+  fs.watchFile(filePath, { interval: 1000 }, listener);
+  wordWatchers.set(filePath, listener);
+}
 
 function createWindow() {
   mainWindow = new BrowserWindow({
@@ -38,6 +78,9 @@ function createWindow() {
 
   mainWindow.on('closed', () => {
     mainWindow = null;
+    // Tear down any lingering Word file watchers.
+    for (const fp of wordWatchers.keys()) fs.unwatchFile(fp);
+    wordWatchers.clear();
   });
 
   // Open external links in default browser
@@ -60,6 +103,56 @@ ipcMain.handle('printer:printReceipt', async (event, data) => {
   console.log('NATIVE_PRINT_REQUEST', data);
   // Implementation for thermal printer would go here (esc-pos / node-printer)
   return { ok: true, message: 'SENT_TO_SPOOLER' };
+});
+
+// Word Handler — write a Word-compatible .doc (HTML) to disk and ask the OS
+// to open it. On Windows that launches Microsoft Word (the default .doc
+// handler), giving the radiologist a fully-editable copy of the report.
+ipcMain.handle('word:open', async (event, payload) => {
+  try {
+    const { html, filename } = payload || {};
+    if (!html) return { ok: false, error: 'NO_CONTENT' };
+    const safe = String(filename || 'report').replace(/[^a-z0-9\-_]+/gi, '_').slice(0, 80);
+    const filePath = path.join(os.tmpdir(), `${safe}-${Date.now()}.doc`);
+    // Prepend a UTF-8 BOM so Word reads the document encoding correctly.
+    fs.writeFileSync(filePath, '﻿' + html, 'utf8');
+    const openErr = await shell.openPath(filePath); // '' on success
+    if (openErr) return { ok: false, error: openErr, path: filePath };
+    return { ok: true, path: filePath };
+  } catch (e) {
+    return { ok: false, error: e.message };
+  }
+});
+
+// Word Handler (binary) — write a real .docx (base64-encoded OOXML bytes) and
+// launch Word with it. Used for the faithful editor-format export so Word
+// opens with exactly the formatting authored in the report editor.
+//   watch:true → also poll the file so a Save inside Word streams the new
+//   bytes back to the renderer (the auto-sync round-trip).
+ipcMain.handle('word:openFile', async (event, payload) => {
+  try {
+    const { base64, filename, ext, watch } = payload || {};
+    if (!base64) return { ok: false, error: 'NO_CONTENT' };
+    const safe = String(filename || 'report').replace(/[^a-z0-9\-_]+/gi, '_').slice(0, 80);
+    const safeExt = String(ext || 'docx').replace(/[^a-z0-9]/gi, '') || 'docx';
+    const filePath = path.join(os.tmpdir(), `${safe}-${Date.now()}.${safeExt}`);
+    fs.writeFileSync(filePath, Buffer.from(base64, 'base64'));
+    if (watch) watchWordFile(filePath);
+    const openErr = await shell.openPath(filePath); // '' on success
+    if (openErr) return { ok: false, error: openErr, path: filePath };
+    return { ok: true, path: filePath };
+  } catch (e) {
+    return { ok: false, error: e.message };
+  }
+});
+
+// Stop watching a temp Word file (called when the report closes).
+ipcMain.handle('word:stopWatch', (event, filePath) => {
+  if (filePath && wordWatchers.has(filePath)) {
+    fs.unwatchFile(filePath);
+    wordWatchers.delete(filePath);
+  }
+  return { ok: true };
 });
 
 // App Info

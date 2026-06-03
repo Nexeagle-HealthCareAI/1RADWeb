@@ -11,7 +11,9 @@ import { dicomOptimizer } from '../utils/DicomPerformanceOptimizer';
 import { uploadStudyAssetDirect } from '../utils/azureUpload';
 import { jwtDecode } from 'jwt-decode';
 import useOffline from '../hooks/useOffline';
-import { nativeStorage } from '../hooks/useElectron';
+import { nativeStorage, nativeWord } from '../hooks/useElectron';
+import { openReportInWord } from '../utils/exportWord';
+import { docxToFindingsHtml } from '../utils/importWord';
 import ReportPreviewModal, { PatientInfoBlock } from '../components/ReportPreviewModal';
 import useTickClock from '../utils/useTickClock';
 import SearchableTemplatePicker from '../components/SearchableTemplatePicker';
@@ -1983,6 +1985,82 @@ const ReportingPage = () => {
     }
     setIsPreviewOpen(true);
   };
+
+  // Launch Microsoft Word with this patient's report (header + findings +
+  // impression + advice). Desktop opens Word directly; web downloads a .docx.
+  // On desktop we also watch the temp file: when the doctor saves in Word, the
+  // findings are pulled back into the editor and saved to the cloud (round-trip).
+  const [openingWord, setOpeningWord] = useState(false);
+  const wordSyncRef = useRef({ path: null, unsub: null, busy: false });
+
+  // Pull the saved Word bytes back into the editor and persist to cloud.
+  const importFromWordBytes = async (base64) => {
+    if (wordSyncRef.current.busy) return;
+    wordSyncRef.current.busy = true;
+    try {
+      const findings = await docxToFindingsHtml(base64);
+      if (findings && findings.trim()) {
+        applyEditorContent(findings);
+        // Let the editor commit the new content, then save a draft to cloud.
+        setTimeout(() => { try { handleSaveReport(false); } catch (_) {} }, 250);
+        showNotif('success', 'IMPORTED FROM WORD', 'Your Word edits were pulled in and saved as a draft.');
+      }
+    } catch (e) {
+      showNotif('error', 'WORD IMPORT FAILED', e?.message || 'Could not read the saved Word document.');
+    } finally {
+      wordSyncRef.current.busy = false;
+    }
+  };
+
+  // Stop watching the current temp Word file and drop the listener.
+  const teardownWordWatch = () => {
+    const s = wordSyncRef.current;
+    if (s.unsub) { try { s.unsub(); } catch (_) {} }
+    if (s.path) { try { nativeWord.stopWatch(s.path); } catch (_) {} }
+    wordSyncRef.current = { path: null, unsub: null, busy: false };
+  };
+
+  const handleOpenInWord = async () => {
+    try {
+      setOpeningWord(true);
+      // Pull the freshest findings straight from the editor (the autosave
+      // debounce may not have flushed editorText yet).
+      const findingsHtml = editorRef.current?.editor?.getHTML?.() ?? editorText;
+      // Replace any previous watch (e.g. user re-opens Word for the same case).
+      teardownWordWatch();
+      const res = await openReportInWord({
+        appointment: activeAppointment,
+        findingsHtml,
+        impression,
+        advice,
+        protocol,
+        watch: true,
+      });
+      if (res?.ok === false) {
+        showNotif('error', 'WORD LAUNCH FAILED', res.error || 'Could not open the report in Microsoft Word.');
+      } else if (res?.mode === 'BROWSER_DOWNLOAD') {
+        showNotif('success', 'REPORT DOWNLOADED', 'A Word document was downloaded. Open it to edit in Microsoft Word.');
+      } else {
+        // Desktop launch — wire the auto-sync watch for this file.
+        if (res?.path) {
+          const unsub = nativeWord.onFileChanged((payload) => {
+            if (payload?.path === wordSyncRef.current.path && payload?.base64) {
+              importFromWordBytes(payload.base64);
+            }
+          });
+          wordSyncRef.current = { path: res.path, unsub, busy: false };
+        }
+        showNotif('success', 'OPENING IN WORD', 'Editing in Word — save there and your changes sync back here automatically.');
+      }
+    } catch (err) {
+      showNotif('error', 'WORD LAUNCH FAILED', err?.message || 'Could not open the report in Microsoft Word.');
+    } finally {
+      setOpeningWord(false);
+    }
+  };
+
+  // Stop watching when leaving the report / unmounting.
+  useEffect(() => () => teardownWordWatch(), []);
 
   // handleKeyDown removed - logic now handled inside NarrativeEditor via Tiptap extension
 
@@ -5066,6 +5144,14 @@ const ReportingPage = () => {
                       style={{ flexShrink: 0, padding: '8px 10px', borderRadius: '8px', background: 'white', border: '1px solid #e2e8f0', color: '#0a1628', fontSize: '14px', cursor: 'pointer' }}
                     >👁️</button>
 
+                    {/* Open in Word (icon-only) */}
+                    <button
+                      onClick={handleOpenInWord}
+                      disabled={openingWord}
+                      title="Open in Microsoft Word"
+                      style={{ flexShrink: 0, padding: '8px 10px', borderRadius: '8px', background: 'white', border: '1px solid #e2e8f0', color: '#2b579a', fontSize: '14px', cursor: openingWord ? 'wait' : 'pointer', opacity: openingWord ? 0.6 : 1 }}
+                    >{openingWord ? '…' : '📝'}</button>
+
                     {/* Finalize */}
                     <button
                       onClick={() => handleSaveReport(true)}
@@ -5252,6 +5338,15 @@ const ReportingPage = () => {
                       onMouseEnter={(e) => { e.currentTarget.style.background = '#f8fafc'; e.currentTarget.style.borderColor = '#cbd5e1'; }}
                       onMouseLeave={(e) => { e.currentTarget.style.background = 'white'; e.currentTarget.style.borderColor = '#e2e8f0'; }}
                     >👁️ Preview</button>
+
+                    <button
+                      onClick={handleOpenInWord}
+                      disabled={openingWord}
+                      title="Open this report in Microsoft Word"
+                      style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', padding: '10px 14px', borderRadius: '10px', background: 'white', border: '1px solid #e2e8f0', color: '#2b579a', fontSize: '12px', fontWeight: 700, cursor: openingWord ? 'wait' : 'pointer', opacity: openingWord ? 0.6 : 1, transition: 'all 0.15s' }}
+                      onMouseEnter={(e) => { if (!openingWord) { e.currentTarget.style.background = '#f0f5fc'; e.currentTarget.style.borderColor = '#2b579a'; } }}
+                      onMouseLeave={(e) => { e.currentTarget.style.background = 'white'; e.currentTarget.style.borderColor = '#e2e8f0'; }}
+                    >{openingWord ? '… Opening' : '📝 Open in Word'}</button>
 
                     <button
                       onClick={() => handleSaveReport(true)}

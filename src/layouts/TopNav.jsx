@@ -5,7 +5,17 @@ import useOffline from '../hooks/useOffline';
 import useSyncStatus from '../sync/useSyncStatus';
 import useQuotaStatus from '../sync/useQuotaStatus';
 import OverdueBell from '../components/OverdueAppointments/OverdueBell';
+import { BASE_URL } from '../api/apiClient';
 import '../styles/global.css';
+
+// Where the "Get Desktop App" link points. Defaults to the API's download
+// endpoint (which serves the electron-builder installer), so it follows the
+// active environment's API base automatically (dev → dev API, prod → prod API).
+// An explicit VITE_DESKTOP_DOWNLOAD_URL overrides it if you host elsewhere.
+const DESKTOP_DOWNLOAD_URL =
+  import.meta.env.VITE_DESKTOP_DOWNLOAD_URL || `${BASE_URL}/download/desktop`;
+// No point offering the download inside the desktop app itself.
+const IS_ELECTRON_APP = typeof window !== 'undefined' && !!window.electron;
 
 export default function TopNav({ currentTime }) {
   const { currentUser, activeCenter, subscription, centers, switchCenter } = useAuth();
@@ -439,6 +449,25 @@ export default function TopNav({ currentTime }) {
 
         {/* Temporal / User HUD */}
         <div style={{ display: 'flex', alignItems: 'center', gap: '25px' }} className="nav-user-section">
+          {/* Get the desktop app — hidden when already running inside Electron. */}
+          {!IS_ELECTRON_APP && (
+            <a
+              href={DESKTOP_DOWNLOAD_URL}
+              title="Download the 1Rad desktop app for Windows"
+              className="nav-desktop-download"
+              style={{
+                display: 'flex', alignItems: 'center', gap: '6px',
+                padding: '7px 12px', borderRadius: '9px',
+                background: '#eff6ff', border: '1px solid #bfdbfe',
+                color: '#0f52ba', fontSize: '11px', fontWeight: 800,
+                textDecoration: 'none', whiteSpace: 'nowrap',
+              }}
+            >
+              <span style={{ fontSize: '13px' }}>⬇</span>
+              <span className="nav-desktop-download-label">Get Desktop App</span>
+            </a>
+          )}
+
           {/* SLA bell — auto-hides when there are no overdue patients. */}
           <OverdueBell />
 

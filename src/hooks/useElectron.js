@@ -69,6 +69,71 @@ export const nativeFile = {
 };
 
 /**
+ * Microsoft Word Launcher
+ * Desktop: writes a .doc and opens it in Word via the OS default handler.
+ * Browser: downloads a .doc the OS opens in Word on double-click (a sandboxed
+ * browser can't launch a native app directly).
+ */
+const blobToBase64 = (blob) => new Promise((resolve, reject) => {
+  const reader = new FileReader();
+  reader.onloadend = () => resolve(String(reader.result).split(',')[1] || '');
+  reader.onerror = reject;
+  reader.readAsDataURL(blob);
+});
+
+const downloadBlob = (blob, filename) => {
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+};
+
+export const nativeWord = {
+  // Launch Word with a real binary document (e.g. a .docx Blob). Desktop writes
+  // the bytes to a temp file and opens it in Word; browser downloads it.
+  //   watch:true → desktop polls the temp file so a Save in Word streams the
+  //   bytes back (auto-sync round-trip). Ignored on the web (no native watch).
+  openDocx: async (blob, filename, ext = 'docx', { watch = false } = {}) => {
+    if (IS_ELECTRON && window.electron.word?.openFile) {
+      const base64 = await blobToBase64(blob);
+      return window.electron.word.openFile({ base64, filename, ext, watch });
+    }
+    downloadBlob(blob, `${filename || 'report'}.${ext}`);
+    return { ok: true, mode: 'BROWSER_DOWNLOAD' };
+  },
+
+  // Subscribe to Word-save events (desktop only). Returns an unsubscribe fn.
+  onFileChanged: (callback) => {
+    if (IS_ELECTRON && window.electron.word?.onFileChanged) {
+      return window.electron.word.onFileChanged(callback);
+    }
+    return () => {};
+  },
+
+  // Stop watching a temp Word file.
+  stopWatch: (filePath) => {
+    if (IS_ELECTRON && window.electron.word?.stopWatch) {
+      return window.electron.word.stopWatch(filePath);
+    }
+    return Promise.resolve({ ok: true });
+  },
+
+  // Launch Word with HTML-as-.doc (legacy/simple path).
+  open: async (html, filename) => {
+    if (IS_ELECTRON && window.electron.word?.open) {
+      return window.electron.word.open({ html, filename });
+    }
+    const blob = new Blob(['﻿', html], { type: 'application/msword' });
+    downloadBlob(blob, `${filename || 'report'}.doc`);
+    return { ok: true, mode: 'BROWSER_DOWNLOAD' };
+  }
+};
+
+/**
  * Thermal Printing Engine (Silent)
  */
 export const nativePrinter = {

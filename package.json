@@ -10,7 +10,36 @@
     "lint": "eslint .",
     "preview": "vite preview",
     "electron": "electron .",
+    "dist:win": "vite build && electron-builder --win",
+    "electron:pack": "electron-builder --win",
     "test": "vitest"
+  },
+  "build": {
+    "appId": "com.nexeagle.1rad",
+    "productName": "1Rad",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "dist/**/*",
+      "electron/**/*",
+      "package.json"
+    ],
+    "extraMetadata": {
+      "main": "electron/main.cjs"
+    },
+    "win": {
+      "target": [
+        "nsis"
+      ],
+      "icon": "public/favicon.ico"
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "artifactName": "1Rad-Setup.${ext}"
+    }
   },
   "dependencies": {
     "@cornerstonejs/core": "^4.22.2",
@@ -43,6 +72,7 @@
     "html2pdf.js": "^0.14.0",
     "jszip": "^3.10.1",
     "jwt-decode": "^4.0.0",
+    "mammoth": "^1.12.0",
     "pdfjs-dist": "5.4.296",
     "qrcode": "^1.5.4",
     "qrcode.react": "^4.2.0",
@@ -62,6 +92,7 @@
     "@types/react-dom": "^19.2.3",
     "@vitejs/plugin-react": "^6.0.1",
     "electron": "^42.0.1",
+    "electron-builder": "^26.8.1",
     "electron-is-dev": "^1.2.0",
     "electron-store": "^6.0.1",
     "eslint": "^9.39.4",
