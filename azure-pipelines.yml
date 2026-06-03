@@ -125,10 +125,11 @@ stages:
         pool:
           vmImage: windows-latest
         timeoutInMinutes: 45
-        # Needs the Blob coordinates so the auto-update feed URL baked into the
-        # app (app-update.yml) matches where PublishDesktop uploads the feed.
+        # api-prod-secrets holds ProdAzureBlobConnectionString + desktopBlobContainer,
+        # used to derive the auto-update feed URL baked into the app (app-update.yml)
+        # so it matches where PublishDesktop uploads the feed.
         variables:
-          - group: sql-prod-secrets
+          - group: api-prod-secrets
         steps:
           - checkout: self
             clean: true
@@ -146,9 +147,10 @@ stages:
                 targetType: inline
                 workingDirectory: $(Build.SourcesDirectory)
                 script: |
+                  $acct = ((($env:BLOB_CONN -split ';') | Where-Object { $_ -like 'AccountName=*' }) -replace 'AccountName=','').Trim()
                   $pkg = Get-Content package.json -Raw | ConvertFrom-Json
                   $local = [version]$pkg.version
-                  $feed = "https://$(desktopStorageAccount).blob.core.windows.net/$(desktopBlobContainer)/latest.yml"
+                  $feed = "https://$acct.blob.core.windows.net/$(desktopBlobContainer)/latest.yml"
                   try {
                     $resp = Invoke-WebRequest -Uri $feed -UseBasicParsing -ErrorAction Stop
                     $line = ($resp.Content -split "`n" | Where-Object { $_ -match '^version:' })[0]
@@ -165,6 +167,8 @@ stages:
                       Write-Host "Could not read published feed: $($_.Exception.Message) - skipping version check."
                     }
                   }
+              env:
+                BLOB_CONN: $(ProdAzureBlobConnectionString)
 
           - task: NodeTool@0
             inputs:
@@ -195,16 +199,24 @@ stages:
                 secureFile: '1rad-codesign.pfx'
 
           # Package the NSIS installer AND the update feed (latest.yml +
-          # .blockmap). -c.publish.url bakes the Blob feed URL into the app so
-          # electron-updater knows where to check for new versions.
-          - script: >
-              npx electron-builder --win
-              -c.publish.provider=generic
-              -c.publish.url=https://$(desktopStorageAccount).blob.core.windows.net/$(desktopBlobContainer)/
-            workingDirectory: $(Build.SourcesDirectory)
+          # .blockmap). The Blob feed URL (baked into the app so electron-updater
+          # knows where to check) is derived from the AccountName in
+          # ProdAzureBlobConnectionString, so there's no separate account-name var.
+          - task: PowerShell@2
             displayName: Package installer + update feed (electron-builder)
-            ${{ if eq(parameters.signDesktopInstaller, true) }}:
-              env:
+            inputs:
+              pwsh: true
+              workingDirectory: $(Build.SourcesDirectory)
+              targetType: inline
+              script: |
+                $acct = ((($env:BLOB_CONN -split ';') | Where-Object { $_ -like 'AccountName=*' }) -replace 'AccountName=','').Trim()
+                if (-not $acct) { Write-Error 'Could not parse AccountName from ProdAzureBlobConnectionString'; exit 1 }
+                $feed = "https://$acct.blob.core.windows.net/$(desktopBlobContainer)/"
+                Write-Host "Auto-update feed: $feed"
+                npx electron-builder --win "-c.publish.provider=generic" "-c.publish.url=$feed"
+            env:
+              BLOB_CONN: $(ProdAzureBlobConnectionString)
+              ${{ if eq(parameters.signDesktopInstaller, true) }}:
                 CSC_LINK: $(codeCert.secureFilePath)
                 CSC_KEY_PASSWORD: $(CSC_KEY_PASSWORD)
 
@@ -345,44 +357,46 @@ stages:
   # API's GET /download/desktop then redirects to it (set DesktopApp:InstallerUrl
   # in the API config to the blob's public URL).
   #
-  # ▶ One-time setup before enabling: add these to the 'sql-prod-secrets' group
-  #   (or a dedicated group) — names are placeholders for YOUR Azure resources:
-  #     • desktopAzureServiceConnection — name of an ARM service connection with
-  #       'Storage Blob Data Contributor' on the storage account
-  #     • desktopStorageAccount         — e.g. 1radassetsprod
-  #     • desktopBlobContainer          — e.g. downloads (public-read or fronted by CDN)
+  # ▶ One-time setup before enabling — in the 'api-prod-secrets' group:
+  #     • ProdAzureBlobConnectionString — your prod storage connection string
+  #       (carries AccountName + AccountKey; auth needs no RBAC role) — already set
+  #     • desktopBlobContainer          — e.g. downloads (public-read, or CDN-fronted)
+  #   Then set the API app setting DesktopApp:InstallerUrl to
+  #   https://<account>.blob.core.windows.net/<container>/1Rad-Setup.exe
   # ────────────────────────────────────────────────────────────────────────
-  - stage: PublishDesktop
-    displayName: Publish desktop installer (Blob)
-    dependsOn: DeployProd
-    condition: and(succeeded(), eq('${{ parameters.deployToProd }}', true), eq('${{ parameters.publishDesktopInstaller }}', true), ne(variables['Build.Reason'], 'PullRequest'))
-    variables:
-      - group: sql-prod-secrets
-    jobs:
-      - deployment: PublishDesktop
-        displayName: Upload installer to Blob Storage
-        environment: 'Production-SWA'
-        timeoutInMinutes: 30
-        strategy:
-          runOnce:
-            deploy:
-              steps:
-                - download: current
-                  artifact: desktop-installer
+  #
+  # Compile-time gated: only emitted when publishDesktopInstaller = true, so the
+  # extra stage stays out of normal runs entirely.
+  - ${{ if eq(parameters.publishDesktopInstaller, true) }}:
+    - stage: PublishDesktop
+      displayName: Publish desktop installer (Blob)
+      dependsOn: DeployProd
+      condition: and(succeeded(), eq('${{ parameters.deployToProd }}', true), ne(variables['Build.Reason'], 'PullRequest'))
+      variables:
+        - group: api-prod-secrets
+      jobs:
+        - deployment: PublishDesktop
+          displayName: Upload installer to Blob Storage
+          environment: 'Production-SWA'
+          timeoutInMinutes: 30
+          strategy:
+            runOnce:
+              deploy:
+                steps:
+                  - download: current
+                    artifact: desktop-installer
 
-                # Upload the whole feed (1Rad-Setup.exe + .blockmap + latest.yml).
-                # latest.yml is what installed apps poll to detect a new version,
-                # so all three must land together for auto-update to work.
-                - task: AzureCLI@2
-                  displayName: Upload installer + update feed to Blob
-                  inputs:
-                    azureSubscription: '$(desktopAzureServiceConnection)'
-                    scriptType: bash
-                    scriptLocation: inlineScript
-                    inlineScript: |
+                  # Upload the whole feed (1Rad-Setup.exe + .blockmap + latest.yml).
+                  # latest.yml is what installed apps poll to detect a new version,
+                  # so all three must land together for auto-update to work.
+                  # Connection-string auth → no service connection / RBAC needed.
+                  # az CLI is preinstalled on the ubuntu-latest agent.
+                  - script: |
                       az storage blob upload-batch \
-                        --account-name "$(desktopStorageAccount)" \
+                        --connection-string "$BLOB_CONN" \
                         --destination "$(desktopBlobContainer)" \
                         --source "$(Pipeline.Workspace)/desktop-installer" \
-                        --overwrite true \
-                        --auth-mode login
+                        --overwrite true
+                    displayName: Upload installer + update feed to Blob
+                    env:
+                      BLOB_CONN: $(ProdAzureBlobConnectionString)
