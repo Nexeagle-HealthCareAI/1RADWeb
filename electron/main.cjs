@@ -70,6 +70,20 @@ function createWindow() {
     }
   });
 
+  // ── Web Serial (USB thermal printers) ───────────────────────────────────
+  // Enables navigator.serial inside the desktop app so the SAME browser-based
+  // printer setup drives a USB(-serial) thermal printer here too — replacing
+  // the native USB module that can't build against Electron 42's V8. This is a
+  // trusted local app (loads its own bundle + same API), so we grant serial and
+  // auto-pick the printer's port (front desks typically have one).
+  const ses = mainWindow.webContents.session;
+  ses.setPermissionCheckHandler(() => true);
+  ses.setDevicePermissionHandler((details) => details.deviceType === 'serial' || details.deviceType === 'hid');
+  ses.on('select-serial-port', (event, portList, _wc, callback) => {
+    event.preventDefault();
+    callback(portList && portList.length ? portList[0].portId : '');
+  });
+
   // Load the app (Vite dev server or built files). In production use loadFile()
   // — it builds a correct file:// URL from the OS path (handles Windows
   // backslashes / drive letters) where a hand-built `file://${path}` can fail.

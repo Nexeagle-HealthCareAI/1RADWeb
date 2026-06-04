@@ -69,8 +69,14 @@ function DesktopSettings() {
     }
     nativePrinter.list().then(r => {
       setPrinters(r?.printers || []);
-      setNativeUsb(r?.nativeAvailable !== false);
-      if (!cfg && r?.printers?.[0]) setUsbName(r.printers[0].name);
+      const usbOk = r?.nativeAvailable !== false;
+      setNativeUsb(usbOk);
+      // Native USB isn't available (the addon can't build on this Electron) →
+      // default this panel to Network; USB printers use the Web Serial method.
+      if (!cfg) {
+        if (usbOk && r?.printers?.[0]) setUsbName(r.printers[0].name);
+        else if (!usbOk) setConnection('network');
+      }
     });
   }, []);
 
@@ -235,15 +241,39 @@ function BrowserSettings() {
 }
 
 export default function ThermalPrinterSettings() {
-  const desktop = nativePrinter.supported;
-  const browser = !desktop && webPrinterSupported();
+  const hasApp = nativePrinter.supported;   // Electron bridge: network (tcp://)
+  const hasWeb = webPrinterSupported();     // Web Serial / WebUSB (Chrome AND the desktop app)
+  const both = hasApp && hasWeb;
+
+  // Pick the method from the saved config, else default to the app's network
+  // path on desktop / Web Serial in the browser.
+  const [method, setMethod] = useState(() => {
+    const cfg = getThermalConfig();
+    if (cfg?.transport) return 'web';
+    if (cfg?.interface) return 'app';
+    return hasApp ? 'app' : 'web';
+  });
 
   return (
     <div style={card}>
       <div style={{ fontSize: '13px', fontWeight: 700, color: '#374151', marginBottom: '20px' }}>Thermal Printer</div>
-      {desktop && <DesktopSettings />}
-      {browser && <BrowserSettings />}
-      {!desktop && !browser && (
+
+      {both && (
+        <div style={{ marginBottom: '18px' }}>
+          <label style={label}>Connection method</label>
+          <div style={{ display: 'flex', gap: '8px' }}>
+            <button type="button" onClick={() => setMethod('app')} style={pill(method === 'app')}>Network (App)</button>
+            <button type="button" onClick={() => setMethod('web')} style={pill(method === 'web')}>USB · Web Serial</button>
+          </div>
+          <div style={{ fontSize: '11px', color: '#94a3b8', marginTop: '6px' }}>
+            USB thermal printers use <b>Web Serial</b>; network printers use the app’s direct connection.
+          </div>
+        </div>
+      )}
+
+      {hasApp && method === 'app' && <DesktopSettings />}
+      {hasWeb && (method === 'web' || !hasApp) && <BrowserSettings />}
+      {!hasApp && !hasWeb && (
         <p style={{ fontSize: '12px', color: '#6b7280', lineHeight: 1.6, margin: 0 }}>
           Silent thermal printing needs the <b>desktop app</b>, or a Chromium browser (Chrome / Edge)
           that supports Web Serial. In other browsers, receipts open the normal print dialog instead.

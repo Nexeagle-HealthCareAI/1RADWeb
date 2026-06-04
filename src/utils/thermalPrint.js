@@ -24,12 +24,15 @@ async function dispatch(data, { nativeFn, buildBytes }) {
   const cfg = getThermalConfig();
   if (!cfg) return { ok: false, unconfigured: true };
 
-  // 1. Desktop native (USB / network).
-  if (nativePrinter.supported && cfg.interface) {
+  // 1. Native via the Electron bridge — used when configured with a network/USB
+  //    interface (desktop app, e.g. 'tcp://…').
+  if (cfg.interface && nativePrinter.supported) {
     return nativeFn({ ...withCfg(data, cfg), interface: cfg.interface });
   }
-  // 2. Browser raw (Web Serial / WebUSB).
-  if (!nativePrinter.supported && cfg.transport && webPrinterSupported()) {
+  // 2. Raw ESC/POS over Web Serial / WebUSB — used when configured with a
+  //    transport. Works in Chrome/Edge AND inside the desktop app (we enable
+  //    Web Serial in Electron), so the config shape drives the method.
+  if (cfg.transport && webPrinterSupported()) {
     return webPrint(buildBytes(withCfg(data, cfg)), cfg);
   }
   return { ok: false, unconfigured: true };
