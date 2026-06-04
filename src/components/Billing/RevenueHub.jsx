@@ -810,6 +810,9 @@ const RevenueHub = ({
                                  status: prior?.status || prior?.commissionStatus || 'UNPAID',
                                  serviceName: item.description || modality,
                                  appointmentServiceId: item.appointmentServiceId || null,
+                                 // Ceiling for the payout edit: a commission may equal but
+                                 // never exceed the service charge it was earned on.
+                                 serviceAmount: (Number(item.amount) || 0) * (Number(item.quantity) || 1),
                                };
                              };
 
@@ -821,6 +824,7 @@ const RevenueHub = ({
                                    status: 'UNPAID',
                                    serviceName: inv.modality || 'Service',
                                    appointmentServiceId: null,
+                                   serviceAmount: Number(inv.totalAmount) || Number(inv.grossAmount) || 0,
                                  }];
 
                              setEditPayout({
@@ -844,21 +848,35 @@ const RevenueHub = ({
                              boxShadow: '0 2px 5px rgba(225,29,72,0.1)' 
                            }} >UPDATE PAYOUT</button>
 
-                         <button 
-                           onClick={() => handlePrintA4(inv)}
-                           title="Print A4 Invoice"
-                           style={{ padding: '8px 12px', borderRadius: '8px', border: '1px solid #0f52ba', background: 'white', color: '#0f52ba', fontSize: '9px', fontWeight: 950, cursor: 'pointer' }}
-                         >A4</button>
-                         <button 
-                           onClick={() => handlePrintThermal(inv)}
-                           title="Print Thermal Receipt"
-                           style={{ padding: '8px 12px', borderRadius: '8px', border: 'none', background: '#0f52ba', color: 'white', fontSize: '9px', fontWeight: 950, cursor: 'pointer' }}
-                         >SLIP</button>
-                         <button 
-                           onClick={() => handlePrintReceipt(inv)}
-                           title="Print Payment Receipt"
-                           style={{ padding: '8px 12px', borderRadius: '8px', border: '1px solid #10b981', background: 'white', color: '#10b981', fontSize: '9px', fontWeight: 950, cursor: 'pointer' }}
-                         >RCPT</button>
+                         {/* Slips/receipts are issued ONLY after payment. Printing a bill
+                             before settlement let a receptionist collect cash on a high
+                             manual entry, then delete it and re-enter a lower one. Gating
+                             print to PAID (plus the post-payment delete lock below) closes
+                             that gap — bills are always generated after the payment. */}
+                         {inv?.status === 'PAID' ? (
+                           <>
+                             <button
+                               onClick={() => handlePrintA4(inv)}
+                               title="Print A4 Invoice"
+                               style={{ padding: '8px 12px', borderRadius: '8px', border: '1px solid #0f52ba', background: 'white', color: '#0f52ba', fontSize: '9px', fontWeight: 950, cursor: 'pointer' }}
+                             >A4</button>
+                             <button
+                               onClick={() => handlePrintThermal(inv)}
+                               title="Print Thermal Receipt"
+                               style={{ padding: '8px 12px', borderRadius: '8px', border: 'none', background: '#0f52ba', color: 'white', fontSize: '9px', fontWeight: 950, cursor: 'pointer' }}
+                             >SLIP</button>
+                             <button
+                               onClick={() => handlePrintReceipt(inv)}
+                               title="Print Payment Receipt"
+                               style={{ padding: '8px 12px', borderRadius: '8px', border: '1px solid #10b981', background: 'white', color: '#10b981', fontSize: '9px', fontWeight: 950, cursor: 'pointer' }}
+                             >RCPT</button>
+                           </>
+                         ) : (
+                           <span title="Collect payment first — slips are issued only after settlement"
+                                 style={{ padding: '8px 12px', borderRadius: '8px', border: '1px dashed #cbd5e1', background: '#f8fafc', color: '#94a3b8', fontSize: '9px', fontWeight: 950, userSelect: 'none' }}>
+                             🔒 SLIP AFTER PAYMENT
+                           </span>
+                         )}
                          <div style={{ width: '1px', height: '20px', background: '#e2e8f0', margin: '0 5px' }}></div>
                         <button 
                           onClick={() => { setSelectedInvoice(inv); setIsInvoiceDrawerOpen(true); }}

@@ -567,7 +567,10 @@ const ReportPreviewModal = ({
     const _topMm    = protocol?.headerMargin ?? (_isPlain ? 20 : 45);
     const _bottomMm = protocol?.bottomMargin ?? 20;
     const _widthMm  = Math.max(60, 210 - _leftMm - _rightMm);
-    const SAFETY_PX = 14; // small guard against metric differences — bias to NOT clip
+    // Reserve ~one text line so the print window (a separate document that can
+    // render a hair taller than the on-screen measurer) still fits each page
+    // without needing the overflow:visible margin spill — keeps preview = print.
+    const SAFETY_PX = 26;
     const capacityPx = Math.max(120, (297 - _topMm - _bottomMm) * PX_PER_MM - SAFETY_PX);
     // Page 1 also carries the patient banner — subtract its measured height
     // (the hidden measurer renders the same banner at the content width).
@@ -724,7 +727,7 @@ const ReportPreviewModal = ({
           right: ${rightMm}mm;
           bottom: ${bottomMm}mm;
           z-index: 2;
-          overflow: hidden;
+          overflow: visible;
         ">
           ${patientBannerHtml}
           <div class="report-content">${pageHTML}</div>
@@ -745,6 +748,20 @@ const ReportPreviewModal = ({
     }
   };
 
+  // Print the on-screen report EXACTLY as previewed. We print the `printTree`
+  // (a React mirror of the preview — same components, same .report-content
+  // styles, same pages[]), shown via the @media print rules that hide
+  // everything else. This guarantees PRINT === PREVIEW (the old new-window path
+  // rebuilt the HTML separately and drifted out of sync). Works in the browser
+  // and in the desktop app (Electron's window.print() opens the system dialog).
+  const handlePrint = () => {
+    // Let the print tree's letterhead/QR settle, then hand off to the OS dialog.
+    setTimeout(() => { try { window.print(); } catch (_) {} }, 60);
+  };
+
+  // Legacy fallback — opens a separate window with rebuilt HTML. Kept for
+  // reference; no longer wired to the Print button (it drifted out of sync
+  // with the preview).
   const handlePrintInNewWindow = () => {
     // Use the same helper function to generate complete pages
     const pagesHtml = pages.map((pageHTML, pageIdx) => generatePageHtml(pageHTML, pageIdx)).join('');
@@ -1022,7 +1039,7 @@ const ReportPreviewModal = ({
               >
                 <span>📥</span> {window.innerWidth > 600 ? 'DOWNLOAD_PDF' : 'PDF'}
               </button>
-              <button className="btn-preview-primary" style={{ flex: 1, background: '#0f52ba', border: 'none', color: 'white', padding: '10px 22px', borderRadius: '10px', fontWeight: 950, cursor: 'pointer', fontSize: '11px', boxShadow: '0 4px 15px rgba(15, 82, 186, 0.4)', transition: 'all 0.2s' }} onClick={handlePrintInNewWindow}>🖨️ {window.innerWidth > 600 ? 'AUTHENTIC_PRINT' : 'PRINT'}</button>
+              <button className="btn-preview-primary" style={{ flex: 1, background: '#0f52ba', border: 'none', color: 'white', padding: '10px 22px', borderRadius: '10px', fontWeight: 950, cursor: 'pointer', fontSize: '11px', boxShadow: '0 4px 15px rgba(15, 82, 186, 0.4)', transition: 'all 0.2s' }} onClick={handlePrint}>🖨️ {window.innerWidth > 600 ? 'AUTHENTIC_PRINT' : 'PRINT'}</button>
             </div>
           </div>
         </div>
@@ -1146,7 +1163,10 @@ const ReportPreviewModal = ({
                     right: m.right,
                     bottom: m.bottom,
                     zIndex: 2,
-                    overflow: 'hidden',
+                    // Let a slightly-tall last line spill into the bottom margin
+                    // (clipped only at the sheet edge by the parent) instead of
+                    // vanishing — keeps preview and print in sync, never drops content.
+                    overflow: 'visible',
                   }}>
                     {pageIdx === 0 && (
                       <PatientInfoBlock
@@ -1449,7 +1469,7 @@ const ReportPreviewModal = ({
               right: m.right,
               bottom: m.bottom,
               zIndex: 2,
-              overflow: 'hidden',
+              overflow: 'visible',
             }}>
               {pageIdx === 0 && (
                 <PatientInfoBlock

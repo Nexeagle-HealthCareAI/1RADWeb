@@ -23,6 +23,10 @@ export const InvoiceDrawer = ({
   const [deduction, setDeduction] = React.useState(0);
   const [isAdjusting, setIsAdjusting] = React.useState(false);
   const [adjustAmount, setAdjustAmount] = React.useState(0);
+  // Over-commission referral discount → confirmation (captures a reason) before
+  // the excess is booked as the doctor's deficit.
+  const [showDeficitConfirm, setShowDeficitConfirm] = React.useState(false);
+  const [deficitReason, setDeficitReason] = React.useState('');
 
   const handleSetCentreDisc = (val) => {
     const maxAllowed = Math.max(0, (selectedInvoice.grossAmount || 0) - referrerDisc - deduction);
@@ -30,8 +34,10 @@ export const InvoiceDrawer = ({
   };
 
   const handleSetReferrerDisc = (val) => {
-    const limit = selectedInvoice.commissionAmount || 0;
-    const maxAllowed = Math.max(0, Math.min(limit, (selectedInvoice.grossAmount || 0) - centreDisc - deduction));
+    // The referral concession may now EXCEED the doctor's commission — the
+    // excess becomes his carried deficit (confirmed at commit). It still can't
+    // exceed what the patient actually owes after the other deductions.
+    const maxAllowed = Math.max(0, (selectedInvoice.grossAmount || 0) - centreDisc - deduction);
     setReferrerDisc(Math.min(val, maxAllowed));
   };
 
@@ -45,6 +51,11 @@ export const InvoiceDrawer = ({
 
   const totalDeductions = centreDisc + referrerDisc + deduction;
   const netSettlement = (selectedInvoice.grossAmount || 0) - totalDeductions;
+
+  // A post-payment concession comes out of the centre's share — cap it at that
+  // (never above the settled total) so an adjustment can't refund/zero-out more
+  // than was actually collected.
+  const maxConcession = Math.max(0, (selectedInvoice.totalAmount || selectedInvoice.grossAmount || 0) - (selectedInvoice.commissionAmount || 0));
 
 
   return (
@@ -317,16 +328,18 @@ export const InvoiceDrawer = ({
                         <div style={{ display: 'flex', gap: '8px', alignItems: 'center', width: isMobile ? '100%' : '260px' }}>
                            <div style={{ display: 'flex', alignItems: 'center', background: '#fff', border: '2px solid #e11d48', borderRadius: '10px', padding: '2px 8px', flex: 1, boxShadow: '0 0 8px rgba(225, 29, 72, 0.1)' }}>
                               <span style={{ fontSize: '12px', fontWeight: 950, color: '#e11d48', marginRight: '4px' }}>₹</span>
-                              <input 
-                                type="number" 
-                                autoFocus 
-                                placeholder="Enter value" 
+                              <input
+                                type="number"
+                                autoFocus
+                                placeholder={`Max ₹${maxConcession.toLocaleString()}`}
+                                min="0"
+                                max={maxConcession}
                                 value={adjustAmount === 0 ? '' : adjustAmount}
-                                onChange={e => setAdjustAmount(parseFloat(e.target.value) || 0)}
+                                onChange={e => setAdjustAmount(Math.max(0, Math.min(parseFloat(e.target.value) || 0, maxConcession)))}
                                 style={{ width: '100%', padding: '6px 2px', border: 'none', background: 'transparent', fontSize: '13px', fontWeight: 900, color: '#1e293b', outline: 'none' }}
                               />
                            </div>
-                           <button onClick={() => { if (adjustAmount > 0 && onApplyAdjustment) { onApplyAdjustment(selectedInvoice.invoiceId, adjustAmount); setIsAdjusting(false); } }} style={{ padding: '8px 14px', borderRadius: '10px', border: 'none', background: '#e11d48', color: 'white', fontSize: '9px', fontWeight: 950, cursor: 'pointer' }}>APPLY</button>
+                           <button onClick={() => { if (adjustAmount > 0 && adjustAmount <= maxConcession && onApplyAdjustment) { onApplyAdjustment(selectedInvoice.invoiceId, adjustAmount); setIsAdjusting(false); } }} style={{ padding: '8px 14px', borderRadius: '10px', border: 'none', background: '#e11d48', color: 'white', fontSize: '9px', fontWeight: 950, cursor: 'pointer' }}>APPLY</button>
                            <button onClick={() => setIsAdjusting(false)} style={{ width: '28px', height: '28px', borderRadius: '10px', border: 'none', background: '#f1f5f9', color: '#64748b', cursor: 'pointer', fontSize: '11px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>✕</button>
                         </div>
                       )}
@@ -378,12 +391,21 @@ export const InvoiceDrawer = ({
 
                          <div style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
                             <span style={{ fontSize: '10px', fontWeight: 950, color: '#e11d48' }}>₹</span>
-                            <input 
-                              type="number" value={referrerDisc === 0 ? '' : referrerDisc} placeholder="0" min="0" max={selectedInvoice.commissionAmount || 0} onChange={e => handleSetReferrerDisc(Math.max(0, parseInt(e.target.value) || 0))}
+                            <input
+                              type="number" value={referrerDisc === 0 ? '' : referrerDisc} placeholder="0" min="0" max={Math.max(0, (selectedInvoice.grossAmount || 0) - centreDisc - deduction)} onChange={e => handleSetReferrerDisc(Math.max(0, parseInt(e.target.value) || 0))}
                               style={{ width: '60px', padding: '4px', border: '1px solid #f1f5f9', borderRadius: '6px', fontSize: '11px', fontWeight: 950, textAlign: 'right', color: '#e11d48' }}
                             />
                          </div>
                       </div>
+
+                      {referrerDisc > (selectedInvoice.commissionAmount || 0) && (
+                        <div style={{ display: 'flex', alignItems: 'flex-start', gap: '6px', padding: '7px 9px', background: '#fff7ed', border: '1px solid #fed7aa', borderRadius: '8px' }}>
+                          <span style={{ fontSize: '11px', lineHeight: 1.2 }}>⚠️</span>
+                          <span style={{ fontSize: '9px', fontWeight: 800, color: '#9a3412', lineHeight: 1.45 }}>
+                            ₹{(referrerDisc - (selectedInvoice.commissionAmount || 0)).toLocaleString()} over {selectedInvoice.referrerName || 'the referrer'}&apos;s commission (₹{(selectedInvoice.commissionAmount || 0).toLocaleString()}) — booked as their deficit, recovered from future referrals.
+                          </span>
+                        </div>
+                      )}
 
                       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                          <span style={{ fontSize: '8px', fontWeight: 950, color: '#64748b' }}>ADDITIONAL DISCOUNT</span>
@@ -427,7 +449,26 @@ export const InvoiceDrawer = ({
                          ))}
                       </div>
                    </div>
-                   <button onClick={() => handleCollectPayment(centreDisc, referrerDisc, deduction, netSettlement)} style={{ width: '100%', padding: '12px', borderRadius: '12px', border: 'none', background: '#0f52ba', color: 'white', fontWeight: 950, fontSize: '10px', cursor: 'pointer', boxShadow: '0 4px 12px rgba(15,82,186,0.2)' }}>COMMIT SETTLEMENT</button>
+                   {showDeficitConfirm && (
+                     <div style={{ padding: '12px', background: '#fff7ed', border: '1.5px solid #fb923c', borderRadius: '12px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                       <div style={{ fontSize: '9px', fontWeight: 950, color: '#9a3412', letterSpacing: '0.5px' }}>AUTHORISE OVER-COMMISSION DISCOUNT</div>
+                       <div style={{ fontSize: '10px', fontWeight: 700, color: '#7c2d12', lineHeight: 1.5 }}>
+                         ₹{(referrerDisc - (selectedInvoice.commissionAmount || 0)).toLocaleString()} over {selectedInvoice.referrerName || 'the referrer'}&apos;s commission will be recorded as their deficit and recovered from future referrals. This action is logged against your account.
+                       </div>
+                       <input value={deficitReason} onChange={e => setDeficitReason(e.target.value)} placeholder="Reason (optional)" style={{ width: '100%', padding: '8px', borderRadius: '8px', border: '1px solid #fed7aa', fontSize: '11px', fontWeight: 700, outline: 'none', boxSizing: 'border-box' }} />
+                       <div style={{ display: 'flex', gap: '8px' }}>
+                         <button onClick={() => { handleCollectPayment(centreDisc, referrerDisc, deduction, netSettlement, { deficitReason }); setShowDeficitConfirm(false); }} style={{ flex: 1, padding: '10px', borderRadius: '10px', border: 'none', background: '#ea580c', color: 'white', fontWeight: 950, fontSize: '9px', cursor: 'pointer' }}>CONFIRM &amp; COLLECT</button>
+                         <button onClick={() => setShowDeficitConfirm(false)} style={{ padding: '10px 14px', borderRadius: '10px', border: '1px solid #e2e8f0', background: 'white', color: '#64748b', fontWeight: 950, fontSize: '9px', cursor: 'pointer' }}>CANCEL</button>
+                       </div>
+                     </div>
+                   )}
+                   <button onClick={() => {
+                     // Over-commission discounts must be explicitly authorised (the
+                     // excess becomes the doctor's deficit). Everything else settles
+                     // straight through.
+                     if (referrerDisc > (selectedInvoice.commissionAmount || 0)) { setShowDeficitConfirm(true); return; }
+                     handleCollectPayment(centreDisc, referrerDisc, deduction, netSettlement);
+                   }} style={{ width: '100%', padding: '12px', borderRadius: '12px', border: 'none', background: '#0f52ba', color: 'white', fontWeight: 950, fontSize: '10px', cursor: 'pointer', boxShadow: '0 4px 12px rgba(15,82,186,0.2)' }}>COMMIT SETTLEMENT</button>
                    <button onClick={handleSaveInvoice} style={{ width: '100%', padding: '10px', borderRadius: '12px', border: '1px solid #e2e8f0', fontWeight: 800, fontSize: '9px', cursor: 'pointer', background: 'white' }}>SAVE AS DRAFT</button>
 
                 </div>

@@ -1157,12 +1157,9 @@ export default function AppointmentBoard() {
       showNotif('warning', 'SPECIALIST REQUIRED', 'No Lead Specialist assigned. Cannot save without a supervising physician.');
       return;
     }
-    // Mobile is required on edit and must be a valid 10-digit number.
+    // Mobile is OPTIONAL on edit — keep whatever the user typed (trimmed) and
+    // never block the save on it.
     const editMobile = String(editingAppointment.mobile || '').trim();
-    if (!/^\d{10}$/.test(editMobile)) {
-      showNotif('warning', 'MOBILE REQUIRED', 'Please enter a valid 10-digit mobile number for the patient.');
-      return;
-    }
     if (!String(editingAppointment.patientGender || '').trim()) {
       showNotif('warning', 'GENDER REQUIRED', 'Please select the patient\'s gender.');
       return;
@@ -3990,8 +3987,8 @@ export default function AppointmentBoard() {
                 
                 <div style={{ display: 'flex', gap: '15px', marginBottom: '15px' }}>
                   <div style={{ flex: 1 }}>
-                    <label style={{ fontSize: '11px', fontWeight: 800, color: '#475569', display: 'block', marginBottom: '8px' }}>Mobile <span style={{ color: '#ef4444' }}>*</span></label>
-                    <input type="text" required value={editingAppointment.mobile || ''} onChange={e => setEditingAppointment({...editingAppointment, mobile: e.target.value})} style={{ width: '100%', border: '1px solid #e2e8f0', borderRadius: '12px', background: '#f8fafc', fontSize: '13px', fontWeight: 700, padding: '12px 16px', outline: 'none', color: '#1e293b' }} />
+                    <label style={{ fontSize: '11px', fontWeight: 800, color: '#475569', display: 'block', marginBottom: '8px' }}>Mobile <span style={{ color: '#94a3b8', fontWeight: 600 }}>(optional)</span></label>
+                    <input type="text" value={editingAppointment.mobile || ''} onChange={e => setEditingAppointment({...editingAppointment, mobile: e.target.value})} style={{ width: '100%', border: '1px solid #e2e8f0', borderRadius: '12px', background: '#f8fafc', fontSize: '13px', fontWeight: 700, padding: '12px 16px', outline: 'none', color: '#1e293b' }} />
                   </div>
                   <div style={{ flex: 1 }}>
                     <label style={{ fontSize: '11px', fontWeight: 800, color: '#475569', display: 'block', marginBottom: '8px' }}>Age <span style={{ color: '#ef4444' }}>*</span></label>

@@ -690,6 +690,43 @@ export default function BillingPage() {
     }
   };
 
+  // Write off a referrer's carried deficit (net-negative commission balance):
+  // the centre absorbs it and the doctor's balance returns to zero. Records a
+  // clearly-labelled offsetting commission entry via the batch endpoint.
+  const handleWriteOffDeficit = (partner) => {
+    const referrerId = partner?.cuts?.find(c => c.referrerId)?.referrerId;
+    // Use the referrer's TRUE all-time net (not the filtered card total) — a
+    // date filter must never make us write off the wrong amount.
+    const net = (combinedReferralCuts || [])
+      .filter(c => c.referrerId === referrerId)
+      .reduce((s, c) => s + (Number(c.amount) || 0), 0);
+    const deficit = net < 0 ? Math.abs(net) : 0;
+    if (!referrerId || deficit <= 0) {
+      notify({ type: 'warning', message: 'No recoverable deficit to write off for this referrer (their all-time balance is not negative).' });
+      return;
+    }
+    confirmModal({
+      title: `Write off ₹${deficit.toLocaleString()} deficit?`,
+      message: `${partner.name || 'This referrer'} currently owes ₹${deficit.toLocaleString()}. Writing it off means the centre absorbs the loss and the referrer's balance returns to zero. This cannot be undone.`,
+      confirmText: 'Write off',
+      danger: true,
+      onConfirm: async () => {
+        try {
+          await apiClient.post('/referrers/commissions/batch', {
+            referrerId,
+            remarks: `DEFICIT WRITE-OFF (₹${deficit}) — centre absorbed`,
+            lines: [{ modality: 'WRITE-OFF', amount: deficit, status: 'PAID' }],
+          });
+          notify({ type: 'success', title: 'Written off', message: `₹${deficit.toLocaleString()} deficit cleared for ${partner.name || 'referrer'}.` });
+          refreshAllFinancialData();
+        } catch (err) {
+          console.error('[FINANCE] Deficit write-off failed', err);
+          notify({ type: 'error', message: 'Could not write off the deficit.' });
+        }
+      },
+    });
+  };
+
   const handleSavePayout = async (e) => {
     e.preventDefault();
     if (!editPayout.referrerId) {
@@ -704,7 +741,7 @@ export default function BillingPage() {
     // saving works whether or not the user touched the line editor).
     const rawLines = Array.isArray(editPayout.lines) && editPayout.lines.length > 0
       ? editPayout.lines
-      : [{ modality: editPayout.modality || 'MRI', amount: editPayout.amount, status: editPayout.status || 'UNPAID', appointmentServiceId: editPayout.appointmentServiceId || null }];
+      : [{ modality: editPayout.modality || 'MRI', amount: editPayout.amount, status: editPayout.status || 'UNPAID', appointmentServiceId: editPayout.appointmentServiceId || null, serviceAmount: editPayout.serviceAmount || 0 }];
 
     const lines = rawLines
       .map(l => ({
@@ -712,11 +749,26 @@ export default function BillingPage() {
         amount: parseFloat(l.amount) || 0,
         status: l.status || 'UNPAID',
         appointmentServiceId: l.appointmentServiceId || null,
+        serviceAmount: parseFloat(l.serviceAmount) || 0,
       }))
       .filter(l => l.amount > 0);
 
     if (!isSingle && lines.length === 0) {
       notify({ type: 'warning', message: 'Enter an amount for at least one service line.' });
+      return;
+    }
+
+    // Anti-fraud cap: a referral commission may EQUAL but never EXCEED the
+    // service charge it was earned on. Editing it above the service amount
+    // creates a financial discrepancy. Lines with no known service amount
+    // (serviceAmount = 0) are skipped.
+    const inflated = lines.find(l => l.serviceAmount > 0 && l.amount > l.serviceAmount);
+    if (inflated) {
+      notify({
+        type: 'warning',
+        title: 'PAYOUT LIMIT',
+        message: `Commission for ${inflated.modality} cannot exceed the service amount of ₹${inflated.serviceAmount.toLocaleString()}.`,
+      });
       return;
     }
 
@@ -1518,10 +1570,17 @@ export default function BillingPage() {
     setSelectedInvoice(recalculateInvoice({ ...selectedInvoice, items: newItems }));
   };
 
-  const handleCollectPayment = async (centreDiscount = 0, referrerDiscount = 0, deduction = 0, netAmount = 0) => {
+  const handleCollectPayment = async (centreDiscount = 0, referrerDiscount = 0, deduction = 0, netAmount = 0, meta = {}) => {
     const currentNet = netAmount || selectedInvoice.totalAmount;
     const currentPaid = selectedInvoice.paidAmount || 0;
     const paymentAmount = Math.max(0, currentNet - currentPaid);
+
+    // When the referral concession exceeds the doctor's commission, the excess
+    // is his carried deficit — flag it (with the biller's reason) so the API can
+    // record a negative commission + audit. The authoriser is the authenticated
+    // user, captured server-side.
+    const commission = selectedInvoice.commissionAmount || 0;
+    const commissionDeficit = Math.max(0, referrerDiscount - commission);
 
     const payload = {
       invoiceId: selectedInvoice.invoiceId,
@@ -1529,7 +1588,9 @@ export default function BillingPage() {
       centreDiscount,
       referrerDiscount,
       deduction,
-      paymentMethod: paymentMethod
+      paymentMethod: paymentMethod,
+      commissionDeficit,
+      deficitReason: meta.deficitReason || ''
     };
 
     // Stable key shared by the online call + outbox fallback — a payment that
@@ -2243,6 +2304,7 @@ export default function BillingPage() {
           setEndDate={setEndDate}
           referralSearch={referralSearch}
           setReferralSearch={setReferralSearch}
+          onWriteOffDeficit={handleWriteOffDeficit}
           handleToggleCommissionStatus={handleToggleCommissionStatus}
           handleDeleteExpense={handleDeleteExpense}
           setEditPayout={setEditPayout}

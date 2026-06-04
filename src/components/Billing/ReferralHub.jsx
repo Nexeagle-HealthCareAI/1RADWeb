@@ -25,6 +25,7 @@ const ReferralHub = ({
   referrers,
   referrerFilter,
   setReferrerFilter,
+  onWriteOffDeficit,
   modalityFilter,
   setModalityFilter
 }) => {
@@ -91,6 +92,8 @@ const ReferralHub = ({
           total: 0,
           paid: 0,
           unpaid: 0,
+          earned: 0,    // sum of positive commissions
+          deficit: 0,   // sum of |negative commissions| (over-commission concessions)
           count: 0,
           lastDate: 0,
         });
@@ -103,6 +106,7 @@ const ReferralHub = ({
       g.count += 1;
       const amt = Number(cut?.amount) || 0;
       g.total += amt;
+      if (amt >= 0) g.earned += amt; else g.deficit += -amt;
       if (cut?.status === 'PAID') g.paid += amt; else g.unpaid += amt;
       const cutDate = cut?.date ? new Date(cut.date).getTime() : 0;
       if (cutDate > g.lastDate) g.lastDate = cutDate;
@@ -607,8 +611,8 @@ const ReferralHub = ({
                       )}
                     </div>
                     <div>
-                      <div style={{ fontSize: '9px', fontWeight: 950, color: '#94a3b8', letterSpacing: '1px', marginBottom: '4px' }}>TOTAL PAYOUTS</div>
-                      <div style={{ fontSize: '22px', fontWeight: 950, color: '#1e293b' }}>₹{group.total.toLocaleString()}</div>
+                      <div style={{ fontSize: '9px', fontWeight: 950, color: '#94a3b8', letterSpacing: '1px', marginBottom: '4px' }}>{group.deficit > 0 ? 'NET PAYABLE' : 'TOTAL PAYOUTS'}</div>
+                      <div style={{ fontSize: '22px', fontWeight: 950, color: group.total < 0 ? '#ea580c' : '#1e293b' }}>₹{group.total.toLocaleString()}{group.total < 0 ? ' (owes)' : ''}</div>
                     </div>
                     <div style={{ display: 'flex', gap: '12px' }}>
                       <div style={{ flex: 1 }}>
@@ -620,6 +624,12 @@ const ReferralHub = ({
                         <div style={{ fontSize: '12px', fontWeight: 950, color: group.unpaid > 0 ? '#e11d48' : '#cbd5e1', marginTop: '2px' }}>₹{group.unpaid.toLocaleString()}</div>
                       </div>
                     </div>
+                    {group.deficit > 0 && (
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '6px 9px', background: '#fff7ed', border: '1px solid #fed7aa', borderRadius: '8px' }}>
+                        <span style={{ fontSize: '8.5px', fontWeight: 950, color: '#9a3412', letterSpacing: '0.5px' }}>EARNED ₹{group.earned.toLocaleString()} · DEFICIT</span>
+                        <span style={{ fontSize: '12px', fontWeight: 950, color: '#ea580c' }}>− ₹{group.deficit.toLocaleString()}</span>
+                      </div>
+                    )}
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderTop: '1px solid #f1f5f9', paddingTop: '10px', fontSize: '10px', color: '#94a3b8', fontWeight: 700 }}>
                       <span>{group.count} payout{group.count !== 1 ? 's' : ''}</span>
                       <span style={{ color: '#e11d48', fontWeight: 950, letterSpacing: '0.5px' }}>VIEW →</span>
@@ -724,7 +734,21 @@ const ReferralHub = ({
                     <div style={{ fontSize: '9px', fontWeight: 950, opacity: 0.75, letterSpacing: '0.5px', color: '#fed7d7' }}>UNPAID</div>
                     <div style={{ fontSize: '14px', fontWeight: 950, color: '#fed7d7' }}>₹{activePartner.unpaid.toLocaleString()}</div>
                   </div>
+                  {activePartner.deficit > 0 && (
+                    <div>
+                      <div style={{ fontSize: '9px', fontWeight: 950, opacity: 0.75, letterSpacing: '0.5px', color: '#fde68a' }}>DEFICIT (carried)</div>
+                      <div style={{ fontSize: '14px', fontWeight: 950, color: '#fde68a' }}>− ₹{activePartner.deficit.toLocaleString()}</div>
+                    </div>
+                  )}
                 </div>
+                {activePartner.total < 0 && onWriteOffDeficit && (
+                  <button
+                    type="button"
+                    onClick={() => onWriteOffDeficit(activePartner)}
+                    title="Centre absorbs the deficit; the referrer's balance returns to zero"
+                    style={{ marginTop: '14px', padding: '9px 16px', borderRadius: '10px', border: '1px solid rgba(255,255,255,0.4)', background: 'rgba(255,255,255,0.15)', color: 'white', fontSize: '10px', fontWeight: 950, letterSpacing: '0.5px', cursor: 'pointer' }}
+                  >✕ WRITE OFF DEFICIT (₹{Math.abs(activePartner.total).toLocaleString()})</button>
+                )}
               </div>
               <button
                 onClick={closeDrawer}
