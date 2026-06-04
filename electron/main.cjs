@@ -112,9 +112,18 @@ function createWindow() {
     wordWatchers.clear();
   });
 
-  // Open external links in default browser
+  // Window-open policy:
+  //   • Blank / blob / data popups are the app's OWN print + PDF preview windows
+  //     (window.open('', '_blank') + document.write + window.print()). Let them
+  //     open as real child windows so printing works in the desktop app.
+  //   • Real external links (https, mailto, tel, wa.me, …) open in the OS's
+  //     default handler, not inside the app.
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
-    shell.openExternal(url);
+    const u = url || '';
+    if (u === '' || u === 'about:blank' || u.startsWith('blob:') || u.startsWith('data:')) {
+      return { action: 'allow' };
+    }
+    shell.openExternal(u);
     return { action: 'deny' };
   });
 }

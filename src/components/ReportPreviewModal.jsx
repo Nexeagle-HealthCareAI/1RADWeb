@@ -12,6 +12,50 @@ import { notifyToast } from '../utils/toast';
 // Configure PDF.js worker to use CDN for maximum reliability
 pdfjs.GlobalWorkerOptions.workerSrc = `https://unpkg.com/pdfjs-dist@${pdfjs.version}/build/pdf.worker.min.mjs`;
 
+// Re-paginate ONE editor page-chunk by MEASURING each top-level block against
+// the real A4 writable area, then splitting at block boundaries so a page never
+// overflows its fixed-height (overflow:hidden) box — which is what truncated the
+// print. We split only (never merge across chunks), so the editor's page
+// boundaries — including manual page breaks — are preserved.
+//
+// Block heights use offsetTop deltas so collapsed margins between blocks are
+// counted (a block's footprint = where the next block starts − where it starts).
+// The measurer carries class `report-content` so it inherits the exact
+// print/preview typography (fonts, heading sizes, list/table spacing).
+function _paginateChunkByMeasurement(chunkHtml, { widthMm, capacityPx, firstCapacityPx }) {
+  if (!chunkHtml || !chunkHtml.trim()) return [''];
+  const m = document.createElement('div');
+  m.className = 'report-content';
+  m.style.cssText = `position:fixed; left:-99999px; top:0; visibility:hidden; pointer-events:none; width:${widthMm}mm; box-sizing:border-box;`;
+  m.innerHTML = chunkHtml;
+  document.body.appendChild(m);
+
+  const els = Array.from(m.children);
+  if (els.length <= 1) { document.body.removeChild(m); return [chunkHtml]; } // single block — can't split
+
+  const heights = els.map((el, i) => {
+    const top = el.offsetTop;
+    const next = (i + 1 < els.length) ? els[i + 1].offsetTop : m.scrollHeight;
+    return Math.max(0, next - top);
+  });
+  const htmls = els.map(el => el.outerHTML);
+  document.body.removeChild(m);
+
+  const pages = [];
+  let cur = [], curH = 0, cap = firstCapacityPx;
+  for (let i = 0; i < htmls.length; i++) {
+    const h = heights[i];
+    if (cur.length && curH + h > cap) {      // adding this block would overflow → new page
+      pages.push(cur.join(''));
+      cur = []; curH = 0; cap = capacityPx;   // pages after the first get the full height
+    }
+    cur.push(htmls[i]);
+    curH += h;
+  }
+  if (cur.length) pages.push(cur.join(''));
+  return pages.length ? pages : [chunkHtml];
+}
+
 // Patient info header — renders on page 1 of the preview and inside the
 // hidden measurer so pagination can subtract its height from page-1 capacity.
 // Premium patient-header card. Mirrored in `generatePageHtml` below so the
@@ -510,9 +554,39 @@ const ReportPreviewModal = ({
       else chunks[chunks.length - 1] = (chunks[chunks.length - 1] || '') + trailing;
     }
 
-    const pageCount = chunks.length ? chunks.length : 1;
-    console.log(`[ReportPreview] WYSIWYG pagination — ${pageCount} pages from editor chunks`);
-    setPages(chunks.length ? chunks : ['']);
+    // ── Re-paginate by measurement ──────────────────────────────────────────
+    // The editor's chunks were sized for the editor's layout, but spacing
+    // hydration + the appended impression/advice + any margin differences make a
+    // chunk overflow the print A4 box (height:297mm; overflow:hidden → clipped).
+    // Re-split each chunk against the ACTUAL writable area so content flows to a
+    // new page instead of being truncated. We only SPLIT (never merge across
+    // chunks), so editor page boundaries — incl. manual breaks — are preserved.
+    const PX_PER_MM = 96 / 25.4;
+    const _leftMm   = protocol?.leftMargin   ?? 20;
+    const _rightMm  = protocol?.rightMargin  ?? 20;
+    const _topMm    = protocol?.headerMargin ?? (_isPlain ? 20 : 45);
+    const _bottomMm = protocol?.bottomMargin ?? 20;
+    const _widthMm  = Math.max(60, 210 - _leftMm - _rightMm);
+    const SAFETY_PX = 14; // small guard against metric differences — bias to NOT clip
+    const capacityPx = Math.max(120, (297 - _topMm - _bottomMm) * PX_PER_MM - SAFETY_PX);
+    // Page 1 also carries the patient banner — subtract its measured height
+    // (the hidden measurer renders the same banner at the content width).
+    const bannerPx = (patientInfoMeasureRef.current?.offsetHeight || 110) + 8;
+    const firstCapacityPx = Math.max(120, capacityPx - bannerPx);
+
+    let paged = [];
+    chunks.forEach((chunkHtml) => {
+      const sub = _paginateChunkByMeasurement(chunkHtml, {
+        widthMm: _widthMm,
+        capacityPx,
+        // The banner reserve applies only to the very first page of the document.
+        firstCapacityPx: paged.length === 0 ? firstCapacityPx : capacityPx,
+      });
+      paged = paged.concat(sub);
+    });
+    if (!paged.length) paged = [''];
+    console.log(`[ReportPreview] Measured pagination — ${paged.length} page(s) from ${chunks.length} editor chunk(s)`);
+    setPages(paged);
   }, [isOpen, reportContent, protocol, savedMetadata, fullAppointment]);
 
   if (!isOpen) return null;
