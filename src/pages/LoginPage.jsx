@@ -103,6 +103,20 @@ export default function LoginPage() {
   // unknown user, inactive account, OTP rejection) in a high-attention
   // overlay rather than an easy-to-miss inline band.
   const [errorModal, setErrorModal] = useState({ open: false });
+  // Live connectivity — powers the "works offline" highlight on the sign-in
+  // card so users are reassured the app keeps working without internet.
+  const [isOnline, setIsOnline] = useState(typeof navigator === 'undefined' ? true : navigator.onLine);
+
+  useEffect(() => {
+    const goOnline = () => setIsOnline(true);
+    const goOffline = () => setIsOnline(false);
+    window.addEventListener('online', goOnline);
+    window.addEventListener('offline', goOffline);
+    return () => {
+      window.removeEventListener('online', goOnline);
+      window.removeEventListener('offline', goOffline);
+    };
+  }, []);
 
   useEffect(() => {
     const interval = setInterval(() => {
@@ -531,6 +545,45 @@ export default function LoginPage() {
           />
           <h2 className="auth-title" style={{ color: '#fff', fontSize: '24px', fontWeight: 900 }}>Welcome Back</h2>
           <p className="auth-subtitle" style={{ color: 'rgba(255,255,255,0.5)', fontSize: '12px' }}>Sign in to your account to continue</p>
+        </div>
+
+        {/* ── Offline-ready highlight — reassures users the app keeps working
+             without internet. Switches to a calm confirmation when offline. ── */}
+        <div style={{
+          display: 'flex', alignItems: 'center', gap: '12px',
+          padding: '11px 13px', marginBottom: '22px',
+          background: isOnline ? 'rgba(0,242,254,0.06)' : 'rgba(16,185,129,0.12)',
+          border: `1px solid ${isOnline ? 'rgba(0,242,254,0.18)' : 'rgba(16,185,129,0.40)'}`,
+          borderRadius: '12px',
+          transition: 'background 0.3s ease, border-color 0.3s ease',
+        }}>
+          <span style={{
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            width: '34px', height: '34px', flexShrink: 0, borderRadius: '9px',
+            background: isOnline ? 'rgba(0,242,254,0.12)' : 'rgba(16,185,129,0.20)',
+            color: isOnline ? '#00f2fe' : '#34d399',
+            boxShadow: isOnline ? '0 0 14px rgba(0,242,254,0.25)' : '0 0 14px rgba(16,185,129,0.30)',
+          }}>
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                 strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+              <path d="M4 14.899A7 7 0 1 1 15.71 8h1.79a4.5 4.5 0 0 1 2.5 8.242" />
+              <path d="M12 12v9" />
+              <path d="m8 17 4 4 4-4" />
+            </svg>
+          </span>
+          <div style={{ lineHeight: 1.45 }}>
+            <div style={{
+              fontSize: '11px', fontWeight: 900, letterSpacing: '0.5px', textTransform: 'uppercase',
+              color: isOnline ? '#00f2fe' : '#34d399',
+            }}>
+              {isOnline ? 'Works fully offline' : 'You are offline — that is okay'}
+            </div>
+            <div style={{ fontSize: '11px', fontWeight: 500, color: 'rgba(255,255,255,0.62)' }}>
+              {isOnline
+                ? 'Sign in once and keep working without internet — everything syncs automatically when you reconnect.'
+                : 'No internet needed. Sign in with your saved PIN and continue — your changes sync the moment you are back online.'}
+            </div>
+          </div>
         </div>
 
         <div className="login-mode-toggle" style={{ display: 'flex', gap: '10px', marginBottom: '25px', padding: '4px', background: 'rgba(255,255,255,0.05)', borderRadius: '10px' }}>

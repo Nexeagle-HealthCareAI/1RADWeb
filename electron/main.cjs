@@ -2,7 +2,12 @@ const { app, BrowserWindow, ipcMain, shell } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const os = require('os');
-const isDev = require('electron-is-dev');
+// Dev vs. packaged: use Electron's built-in flag instead of the electron-is-dev
+// module. app.isPackaged is false in `npm run electron` and true once the app
+// runs from the installed asar bundle — and it needs no extra dependency to
+// ship inside the installer (which is what caused the "Cannot find module
+// 'electron-is-dev'" crash).
+const isDev = !app.isPackaged;
 const Store = require('electron-store');
 const { autoUpdater } = require('electron-updater');
 
