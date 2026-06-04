@@ -51,6 +51,7 @@ import { TrackInsert, TrackDelete, TrackChanges } from './extensions/TrackChange
 import { CommentMark, Comment } from './extensions/Comment';
 import { MedicalAutocomplete } from './extensions/MedicalAutocomplete';
 import { StructuredField } from './extensions/StructuredField';
+import { Callout, Columns } from './extensions/Blocks';
 import TableToolbar from './TableToolbar';
 import ImageToolbar from './ImageToolbar';
 import ContextMenu from './ContextMenu';
@@ -65,6 +66,7 @@ import ReportTemplatesDialog from './dialogs/ReportTemplatesDialog';
 import VersionHistoryDialog, { loadVersions, persistVersions, addVersion, removeVersion } from './dialogs/VersionHistoryDialog';
 import CommentsPanel from './dialogs/CommentsPanel';
 import NormalFindingsDialog from './dialogs/NormalFindingsDialog';
+import RadsDialog from './dialogs/RadsDialog';
 import FinalizeDialog from './dialogs/FinalizeDialog';
 import MeasurementDialog from './dialogs/MeasurementDialog';
 import QualityCheckPanel from './dialogs/QualityCheckPanel';
@@ -406,6 +408,54 @@ const USE_DECORATION_PAGINATION =
   typeof window !== 'undefined' &&
   window.localStorage?.getItem('narrative-editor:decoration-pagination') === '1';
 
+// ── Tab-through report fields ──────────────────────────────────────────────
+// Jump the selection between fill-in placeholders so a radiologist can fly
+// through a template like PowerScribe/Word form fields. A field is bracketed
+// text "[like this]" or a run of 3+ underscores/asterisks. F2 = next, Shift+F2
+// = previous (wrapping around the document). Selecting the field means the next
+// keystroke (or dictated phrase) replaces it.
+const FIELD_RE = /\[[^\][\n]{0,80}\]|_{3,}|\*{3,}/g;
+function collectReportFields(doc) {
+  const fields = [];
+  doc.descendants((node, pos) => {
+    if (!node.isText || !node.text) return;
+    FIELD_RE.lastIndex = 0;
+    let m;
+    while ((m = FIELD_RE.exec(node.text)) !== null) {
+      fields.push({ from: pos + m.index, to: pos + m.index + m[0].length });
+    }
+  });
+  return fields;
+}
+function jumpReportField(editor, dir = 1) {
+  if (!editor) return false;
+  const fields = collectReportFields(editor.state.doc);
+  if (!fields.length) return false;
+  const sel = editor.state.selection;
+  let target;
+  if (dir >= 0) {
+    target = fields.find(f => f.from >= sel.to) || fields[0];                 // wrap to first
+  } else {
+    const before = fields.filter(f => f.to <= sel.from);
+    target = before.length ? before[before.length - 1] : fields[fields.length - 1]; // wrap to last
+  }
+  editor.chain().focus().setTextSelection({ from: target.from, to: target.to }).scrollIntoView().run();
+  return true;
+}
+
+// Diagonal page watermark as a tiled SVG background (shows behind text on
+// screen AND print). Applied per .word-page so it repeats on every page.
+function wmEscape(s) {
+  return String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+function watermarkBackground(text) {
+  const svg = `<svg xmlns='http://www.w3.org/2000/svg' width='520' height='360'>` +
+    `<text x='260' y='190' fill='rgba(15,23,42,0.07)' font-family='Arial, sans-serif' ` +
+    `font-size='52' font-weight='700' text-anchor='middle' transform='rotate(-32 260 180)'>` +
+    `${wmEscape(text)}</text></svg>`;
+  return `url("data:image/svg+xml,${encodeURIComponent(svg)}")`;
+}
+
 /**
  * NarrativeEditor
  * Clinical rich-text editor based on Tiptap.
@@ -431,6 +481,10 @@ const NarrativeEditor = React.forwardRef(function NarrativeEditor({
   // .word-page so ProseMirror cannot overwrite it. The first page's inner
   // padding-top is auto-extended to make room for the measured banner height.
   firstPageBanner,
+  // Inline AI co-pilot. async (action, text) => Promise<html>. When provided,
+  // the selection toolbar shows an "AI" menu (improve/proofread/expand/shorten
+  // + impression). Omitted on hosts without an AI backend.
+  onAiAssist,
 }, ref) {
   const containerRef = useRef(null);
   // Phone viewport detection — the desktop Ribbon (5 tabs, 17 tools) is
@@ -548,6 +602,9 @@ const NarrativeEditor = React.forwardRef(function NarrativeEditor({
 
   // ── Tier 2 features ──────────────────────────────────────────────────────
   const [normalFindingsOpen, setNormalFindingsOpen] = useState(false);
+  const [radsOpen, setRadsOpen] = useState(false);
+  const [watermark, setWatermark] = useState('');
+  const wmIdRef = useRef(`ne-wm-${Math.random().toString(36).slice(2, 8)}`);
   const [finalizeOpen, setFinalizeOpen]             = useState(false);
   const [measurementOpen, setMeasurementOpen]       = useState(false);
   const [isFinalized, setIsFinalized]               = useState(false);
@@ -999,6 +1056,8 @@ const NarrativeEditor = React.forwardRef(function NarrativeEditor({
       Comment,
       MedicalAutocomplete,
       StructuredField,
+      Callout,
+      Columns,
     ],
     content: ensurePagedHTML(content),
     editable,
@@ -1126,6 +1185,8 @@ const NarrativeEditor = React.forwardRef(function NarrativeEditor({
     // auto-page-break markers at every computed boundary so downstream
     // serializers split correctly. Safe to call regardless of flag state.
     getPrintHTML: () => editor ? getPaginatedPrintHTML(editor) : '',
+    // Current watermark text ('' = none) so the host's Word export can carry it.
+    getWatermark: () => watermark,
     container: containerRef.current,
     editor
   }));
@@ -1287,6 +1348,15 @@ const NarrativeEditor = React.forwardRef(function NarrativeEditor({
       // element has focus on the Reporting page. Dragon NaturallySpeaking
       // uses the same key, so it matches existing muscle memory.
       // No-op if the Web Speech API isn't available in this browser.
+      // F2 — jump to next fill-in field; Shift+F2 — previous. (Tab is left for
+      // list indent / table navigation, so field-jump gets its own key.)
+      if (e.key === 'F2' && !e.ctrlKey && !e.metaKey && !e.altKey) {
+        if (inEditor(e)) {
+          const moved = jumpReportField(editor, e.shiftKey ? -1 : 1);
+          if (moved) { e.preventDefault(); e.stopImmediatePropagation(); }
+        }
+        return;
+      }
       if (e.key === 'F8' && !e.shiftKey && !e.ctrlKey && !e.metaKey && !e.altKey) {
         const v = voiceRef.current;
         if (v?.supported && typeof v.toggle === 'function') {
@@ -2161,7 +2231,20 @@ const NarrativeEditor = React.forwardRef(function NarrativeEditor({
   } : {};
 
   return (
-    <div ref={containerRef} className={`narrative-editor-container${isFinalized ? ' is-finalized' : ''}${cssFullscreen ? ' ne--css-fullscreen' : ''} ${className}`} style={{ ...style, ...marginVars }}>
+    <div ref={containerRef} data-ne-wm={watermark ? wmIdRef.current : undefined} className={`narrative-editor-container${isFinalized ? ' is-finalized' : ''}${cssFullscreen ? ' ne--css-fullscreen' : ''} ${className}`} style={{ ...style, ...marginVars }}>
+      {/* Watermark — tiled diagonal text behind every page (screen + print). */}
+      {watermark && (
+        <style dangerouslySetInnerHTML={{ __html: `
+          [data-ne-wm="${wmIdRef.current}"] .word-page,
+          [data-ne-wm="${wmIdRef.current}"] .narrative-editor-content.flat-pagination {
+            background-image: ${watermarkBackground(watermark)} !important;
+            background-repeat: repeat !important;
+            background-position: center !important;
+            -webkit-print-color-adjust: exact !important;
+            print-color-adjust: exact !important;
+          }
+        ` }} />
+      )}
       {!previewMode && isMobile && (
         <MobileToolbar
           editor={editor}
@@ -2220,6 +2303,9 @@ const NarrativeEditor = React.forwardRef(function NarrativeEditor({
           isFinalized={isFinalized}
           onOpenNormalFindings={() => setNormalFindingsOpen(true)}
           onOpenMeasurement={() => setMeasurementOpen(true)}
+          onOpenRads={() => setRadsOpen(true)}
+          watermark={watermark}
+          onSetWatermark={setWatermark}
           onRunQualityCheck={handleRunQualityCheck}
           onRunGrammarCheck={handleGrammarCheck}
           grammarLoading={grammarLoading}
@@ -2279,6 +2365,7 @@ const NarrativeEditor = React.forwardRef(function NarrativeEditor({
           onOpenTemplates={() => setTemplatesOpen(true)}
           onOpenNormalFindings={() => setNormalFindingsOpen(true)}
           onOpenMeasurement={() => setMeasurementOpen(true)}
+          onOpenRads={() => setRadsOpen(true)}
         />
       )}
 
@@ -2286,7 +2373,7 @@ const NarrativeEditor = React.forwardRef(function NarrativeEditor({
           bubble that appears above any non-empty text selection. Saves the
           typist a trip up to the Ribbon for one-off format changes. Hidden
           in preview mode. */}
-      <SelectionToolbar editor={editor} previewMode={previewMode} containerRef={containerRef} />
+      <SelectionToolbar editor={editor} previewMode={previewMode} containerRef={containerRef} onAiAssist={onAiAssist} />
 
       <div className={`word-canvas${showFormattingMarks ? ' show-formatting-marks' : ''}${previewMode ? ' preview-mode-canvas' : ''}`} style={{ '--zoom': zoom / 100, position: 'relative' }}>
         {previewMode && (
@@ -2340,6 +2427,7 @@ const NarrativeEditor = React.forwardRef(function NarrativeEditor({
           editor={editor}
           isFinalized={isFinalized}
           position="bottom"
+          onOpenRads={() => setRadsOpen(true)}
         />
       )}
 
@@ -2477,6 +2565,12 @@ const NarrativeEditor = React.forwardRef(function NarrativeEditor({
           }).insertContent(html).run();
         }}
         onReplace={(html) => editor?.commands.setContent(ensurePagedHTML(html), false)}
+      />
+
+      <RadsDialog
+        open={radsOpen}
+        onClose={() => setRadsOpen(false)}
+        onInsert={(html) => editor?.chain().focus().insertContent(html).run()}
       />
 
       <FinalizeDialog

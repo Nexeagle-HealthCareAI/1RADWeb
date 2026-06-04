@@ -49,7 +49,7 @@ const SECTIONS = [
  * InsertTab — report templates, sections, table, image, link, page break, symbol,
  *             structured fields, etc.
  */
-export default function InsertTab({ editor, onOpenTemplates, onOpenNormalFindings, onOpenMeasurement }) {
+export default function InsertTab({ editor, onOpenTemplates, onOpenNormalFindings, onOpenMeasurement, onOpenRads }) {
   if (!editor) return null;
 
   const imageInputRef = useRef(null);
@@ -243,6 +243,30 @@ export default function InsertTab({ editor, onOpenTemplates, onOpenNormalFinding
           label="Normal Lib."
           title="Insert normal findings from the library"
           onClick={onOpenNormalFindings}
+        />
+      </Group>
+
+      <Sep />
+
+      {/* ── Structured RADS reporting ── */}
+      <Group label="Structured">
+        <BigBtn
+          icon="🎯"
+          label="RADS"
+          title="BI-RADS / TI-RADS / Lung-RADS / PI-RADS / LI-RADS assistant"
+          onClick={onOpenRads}
+        />
+      </Group>
+
+      <Sep />
+
+      {/* ── Text box / callout ── */}
+      <Group label="Text Box">
+        <BigBtn
+          icon="📦"
+          label="Text Box"
+          title="Insert a bordered text box / note callout"
+          onClick={() => editor.chain().focus().insertCallout().run()}
         />
       </Group>
 

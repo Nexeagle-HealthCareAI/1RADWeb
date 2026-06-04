@@ -253,6 +253,52 @@ const ReportingPage = () => {
     }
   }, [appointmentId]);
 
+  // Inline AI co-pilot — improve / proofread / expand / shorten a selection,
+  // or generate an impression from the findings. Returns HTML or throws with a
+  // friendly message (the editor surfaces it).
+  const handleAiAssist = useCallback(async (action, text) => {
+    const study = activeService?.serviceName || activeAppointment?.service || '';
+    const modality = activeService?.modality || activeAppointment?.modality || '';
+    const context = (study || modality) ? `Study/Service: ${study} (${modality}).` : '';
+    const res = await apiClient.post('/reporting/ai-assist', { action, text, context });
+    const data = res?.data || {};
+    if (data.success && data.html) return data.html;
+    throw new Error(data.error || data.message || 'AI request failed.');
+  }, [activeService, activeAppointment]);
+
+  // Prior-study copy-forward — pull a previous report's findings into the
+  // current report with a comparison line. Flattens any .word-page wrappers so
+  // the inserted content sits cleanly inside the editor's page model.
+  const handleCopyForward = useCallback(async (study) => {
+    const priorId = study?.appointmentId || study?.id;
+    if (!priorId) return;
+    try {
+      const res = await apiClient.get(`/reporting/report/${priorId}`);
+      const data = res?.data?.data || res?.data || {};
+      const findings = data.findings || '';
+      const dateStr = study.dateTime ? new Date(study.dateTime).toLocaleDateString() : '';
+      const studyName = study.service || study.modality || 'prior study';
+      const comparison = `<p><strong>Comparison:</strong> ${studyName}${dateStr ? ` dated ${dateStr}` : ''}.</p>`;
+      let flat = '';
+      if (findings) {
+        const tmp = document.createElement('div');
+        tmp.innerHTML = findings;
+        tmp.querySelectorAll('.word-page-inner, .word-page').forEach((el) => {
+          const p = el.parentNode;
+          while (el.firstChild) p.insertBefore(el.firstChild, el);
+          el.remove();
+        });
+        flat = tmp.innerHTML;
+      }
+      editorRef.current?.insertContent?.(comparison + flat);
+      showNotif('success', 'COPIED FORWARD', findings
+        ? 'Prior findings inserted with a comparison line. Edit for the current study.'
+        : 'Comparison line inserted (the prior report had no findings text).');
+    } catch (e) {
+      showNotif('error', 'COPY FAILED', e?.response?.data?.error || e?.message || 'Could not load the prior report.');
+    }
+  }, []);
+
   // Crash-recovery prompt — promise-based so the load flow can await the
   // user's choice and decide which version of the report to render.
   const [draftRecoveryModal, setDraftRecoveryModal] = useState({ isOpen: false, ageMin: 0, resolve: null });
@@ -2026,6 +2072,7 @@ const ReportingPage = () => {
       // Pull the freshest findings straight from the editor (the autosave
       // debounce may not have flushed editorText yet).
       const findingsHtml = editorRef.current?.editor?.getHTML?.() ?? editorText;
+      const watermark = editorRef.current?.getWatermark?.() || '';
       // Replace any previous watch (e.g. user re-opens Word for the same case).
       teardownWordWatch();
       const res = await openReportInWord({
@@ -2035,6 +2082,7 @@ const ReportingPage = () => {
         advice,
         protocol,
         watch: true,
+        watermark,
       });
       if (res?.ok === false) {
         showNotif('error', 'WORD LAUNCH FAILED', res.error || 'Could not open the report in Microsoft Word.');
@@ -5078,6 +5126,7 @@ const ReportingPage = () => {
                     onChange={(html) => setEditorText(html)}
                     placeholder="Start typing your radiology report…"
                     onSave={() => handleSaveReport(false)}
+                    onAiAssist={handleAiAssist}
                     style={{ flex: 1, minHeight: 0 }}
                     keywordLibrary={keywordLibrary}
                     pageMargins={protocol ? {
@@ -5430,6 +5479,7 @@ const ReportingPage = () => {
                     onChange={(html) => setEditorText(html)}
                     placeholder="Your generated report will appear here — or start typing…"
                     onSave={() => handleSaveReport(false)}
+                    onAiAssist={handleAiAssist}
                     style={{ flex: 1, minHeight: 0 }}
                     keywordLibrary={keywordLibrary}
                     pageMargins={protocol ? {
@@ -5459,6 +5509,7 @@ const ReportingPage = () => {
                     history={patientHistory}
                     loading={loadingTimeline}
                     activeAppointmentId={appointmentId}
+                    onCopyForward={handleCopyForward}
                     onViewDicom={(study) => {
                       // Open the historical study in the full-screen DICOM viewer in a new tab.
                       // The viewer hydrates from /Study/{id}/assets when launched via ?appointmentId=.

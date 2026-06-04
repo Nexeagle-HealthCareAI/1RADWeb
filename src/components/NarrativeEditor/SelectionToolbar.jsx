@@ -1,5 +1,15 @@
 import React, { useEffect, useState, useRef } from 'react';
 import { createPortal } from 'react-dom';
+import { notifyToast } from '../../utils/toast';
+
+// Inline AI actions offered on a text selection.
+const AI_ACTIONS = [
+  { key: 'improve',    label: 'Improve writing',     icon: '✨' },
+  { key: 'proofread',  label: 'Proofread',           icon: '✓' },
+  { key: 'expand',     label: 'Expand shorthand',    icon: '↔' },
+  { key: 'shorten',    label: 'Make concise',        icon: '⤵' },
+  { key: 'impression', label: 'Impression from this', icon: '🧠' },
+];
 
 /**
  * Word-style floating mini-toolbar that appears above a non-empty text
@@ -61,9 +71,11 @@ const Sep = () => (
   }} />
 );
 
-export default function SelectionToolbar({ editor, previewMode, containerRef }) {
+export default function SelectionToolbar({ editor, previewMode, containerRef, onAiAssist }) {
   const [anchor, setAnchor] = useState(null); // { top, left, placement: 'above'|'below' }
   const [, force] = useState(0);
+  const [aiOpen, setAiOpen] = useState(false);
+  const [aiBusy, setAiBusy] = useState(false);
   const toolbarRef = useRef(null);
 
   useEffect(() => {
@@ -143,6 +155,30 @@ export default function SelectionToolbar({ editor, previewMode, containerRef }) 
       editor.chain().focus().extendMarkRange('link').unsetLink().setLink({ href: url }).run();
     } else {
       editor.chain().focus().setLink({ href: url }).run();
+    }
+  };
+
+  // Run an inline AI action on the current selection. The transform actions
+  // replace the selection; "impression" inserts a summary after it.
+  const runAi = async (action) => {
+    if (!onAiAssist || aiBusy) return;
+    const { from, to } = editor.state.selection;
+    const text = editor.state.doc.textBetween(from, to, '\n', ' ').trim();
+    if (!text) { notifyToast('Select some report text first.', 'warning'); return; }
+    setAiBusy(true);
+    try {
+      const html = await onAiAssist(action, text);
+      if (action === 'impression') {
+        editor.chain().focus().insertContentAt(to, `<h2>Impression</h2>${html}`).run();
+      } else {
+        editor.chain().focus().insertContentAt({ from, to }, html).run();
+      }
+      notifyToast(action === 'impression' ? 'Impression added.' : 'AI edit applied.', 'success');
+    } catch (e) {
+      notifyToast(e?.message || 'AI request failed.', 'error');
+    } finally {
+      setAiBusy(false);
+      setAiOpen(false);
     }
   };
 
@@ -233,6 +269,59 @@ export default function SelectionToolbar({ editor, previewMode, containerRef }) 
           <path d="M14 11a5 5 0 0 0-7.07 0l-3 3a5 5 0 0 0 7.07 7.07l1.5-1.5" />
         </svg>
       </ToolbarBtn>
+
+      {/* AI co-pilot — only when the host wired an AI backend. */}
+      {onAiAssist && (
+        <>
+          <Sep />
+          <div style={{ position: 'relative' }}>
+            <ToolbarBtn
+              active={aiOpen}
+              title="AI assist"
+              onPress={() => setAiOpen((o) => !o)}
+            >
+              <span style={{ fontWeight: 800, color: '#a78bfa' }}>{aiBusy ? '…' : '✨ AI'}</span>
+            </ToolbarBtn>
+            {aiOpen && !aiBusy && (
+              <div
+                style={{
+                  position: 'absolute',
+                  top: 'calc(100% + 6px)',
+                  right: 0,
+                  minWidth: '210px',
+                  background: 'linear-gradient(180deg, #1e293b 0%, #0f172a 100%)',
+                  border: '1px solid rgba(255,255,255,0.12)',
+                  borderRadius: '8px',
+                  boxShadow: '0 12px 28px rgba(15,23,42,0.5)',
+                  padding: '4px',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: '1px',
+                }}
+              >
+                {AI_ACTIONS.map((a) => (
+                  <button
+                    key={a.key}
+                    type="button"
+                    onMouseDown={(e) => { e.preventDefault(); runAi(a.key); }}
+                    style={{
+                      display: 'flex', alignItems: 'center', gap: '9px',
+                      padding: '8px 10px', borderRadius: '6px',
+                      background: 'transparent', border: 'none', color: '#e2e8f0',
+                      fontSize: '12px', fontWeight: 600, cursor: 'pointer', textAlign: 'left', width: '100%',
+                    }}
+                    onMouseEnter={(e) => { e.currentTarget.style.background = 'rgba(255,255,255,0.10)'; }}
+                    onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; }}
+                  >
+                    <span style={{ width: '16px', textAlign: 'center' }}>{a.icon}</span>
+                    {a.label}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+        </>
+      )}
     </div>,
     document.body
   );

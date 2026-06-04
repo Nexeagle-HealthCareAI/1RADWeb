@@ -82,6 +82,7 @@ const MobileToolbar = ({
   isFullscreen,
   toggleFullscreen,
   position,
+  onOpenRads,
 }) => {
   const [headingOpen, setHeadingOpen] = useState(false);
   const headingRef = useRef(null);
@@ -385,6 +386,14 @@ const MobileToolbar = ({
             </div>
           )}
         </div>
+        {onOpenRads && (
+          <>
+            <Divider />
+            <TouchBtn title="RADS assistant (BI/TI/Lung/PI/LI-RADS)" onPress={() => onOpenRads()}>
+              <span style={{ fontSize: '16px' }}>🎯</span>
+            </TouchBtn>
+          </>
+        )}
       </div>
       )}
     </>

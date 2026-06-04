@@ -45,6 +45,22 @@ function fontSizeToHalfPt(fs) {
   return Math.round(pt * 2);
 }
 
+// mm → twips (1 inch = 1440 twips = 25.4 mm). Used for page margins.
+const mmToTwips = (mm) => Math.round((Number(mm) || 0) * 1440 / 25.4);
+
+// A CSS length (pt/px/mm/in/number) → twips. Used for paragraph spacing so the
+// editor's "space before/after" choices reach Word exactly.
+function cssLenToTwips(v) {
+  if (v == null || v === '') return null;
+  const n = parseFloat(v);
+  if (!Number.isFinite(n)) return null;
+  const s = String(v);
+  if (s.includes('pt')) return Math.round(n * 20);
+  if (s.includes('mm')) return Math.round(n * 56.6929);
+  if (s.includes('in')) return Math.round(n * 1440);
+  return Math.round(n * 15); // px (and unit-less) → 1px ≈ 0.75pt = 15 twips
+}
+
 // ─── Run-property builder ─────────────────────────────────────────────────────
 function buildRPr(m) {
   let x = '';
@@ -102,18 +118,22 @@ function textRuns(node, marks) {
   return out;
 }
 
-// ─── List item paragraph ──────────────────────────────────────────────────────
-function makeLiPara(inline, isBullet, ilvl, counter) {
-  const indent = (ilvl + 1) * 720;
-  const prefix = isBullet
-    ? `<w:r><w:t xml:space="preserve">• </w:t></w:r>`
-    : `<w:r><w:t xml:space="preserve">${counter}. </w:t></w:r>`;
-  return `<w:p><w:pPr><w:ind w:left="${indent}" w:hanging="360"/></w:pPr>${prefix}${inline}</w:p>`;
+// ─── Lists → real Word numbering ───────────────────────────────────────────────
+// We emit proper <w:numPr> paragraphs tied to numbering.xml (not literal "•/1."
+// text), so lists render as real Word lists AND round-trip back as <ul>/<ol>.
+// abstractNumId 0 = bullet, 1 = ordered. Each list element gets its own numId so
+// ordered lists restart at 1 and bullet/ordered nesting keep their own format.
+let _listNums = []; // [{ numId, abstractNumId }]
+function resetNumbering() { _listNums = []; }
+function allocNum(isOrdered) {
+  const numId = _listNums.length + 1;
+  _listNums.push({ numId, abstractNumId: isOrdered ? 1 : 0 });
+  return numId;
 }
 
-function listToWml(listEl, isBullet, ilvl) {
+function listToWml(listEl, isOrdered, ilvl) {
+  const numId = allocNum(isOrdered);
   let out = '';
-  let counter = 1;
   for (const child of listEl.childNodes) {
     if (child.nodeType !== 1 || child.tagName.toLowerCase() !== 'li') continue;
 
@@ -124,20 +144,97 @@ function listToWml(listEl, isBullet, ilvl) {
       if (t !== 'ul' && t !== 'ol') inline += textRuns(n, {});
     }
 
-    out += makeLiPara(inline, isBullet, ilvl, counter);
-    if (!isBullet) counter++;
+    out += `<w:p><w:pPr><w:pStyle w:val="ListParagraph"/>`
+      + `<w:numPr><w:ilvl w:val="${ilvl}"/><w:numId w:val="${numId}"/></w:numPr>`
+      + `</w:pPr>${inline}</w:p>`;
 
-    // Process nested lists
+    // Nested lists keep their own numId (own format) at the next indent level.
     for (const n of child.childNodes) {
       const t = n.tagName?.toLowerCase();
-      if (t === 'ul') out += listToWml(n, true,  ilvl + 1);
-      if (t === 'ol') out += listToWml(n, false, ilvl + 1);
+      if (t === 'ul') out += listToWml(n, false, ilvl + 1);
+      if (t === 'ol') out += listToWml(n, true,  ilvl + 1);
     }
   }
   return out;
 }
 
+// numbering.xml: one bullet abstractNum, one ordered abstractNum (9 levels each),
+// plus a <w:num> for every list allocated during this conversion.
+function buildNumberingXml() {
+  const bulletLvls = [];
+  const orderedLvls = [];
+  const orderedFmts = ['decimal', 'lowerLetter', 'lowerRoman'];
+  for (let i = 0; i < 9; i++) {
+    const indent = (i + 1) * 720;
+    bulletLvls.push(
+      `<w:lvl w:ilvl="${i}"><w:start w:val="1"/><w:numFmt w:val="bullet"/>` +
+      `<w:lvlText w:val="&#xF0B7;"/><w:lvlJc w:val="left"/>` +
+      `<w:pPr><w:ind w:left="${indent}" w:hanging="360"/></w:pPr>` +
+      `<w:rPr><w:rFonts w:ascii="Symbol" w:hAnsi="Symbol" w:hint="default"/></w:rPr></w:lvl>`
+    );
+    const fmt = orderedFmts[i % 3];
+    orderedLvls.push(
+      `<w:lvl w:ilvl="${i}"><w:start w:val="1"/><w:numFmt w:val="${fmt}"/>` +
+      `<w:lvlText w:val="%${i + 1}."/><w:lvlJc w:val="left"/>` +
+      `<w:pPr><w:ind w:left="${indent}" w:hanging="360"/></w:pPr></w:lvl>`
+    );
+  }
+  const nums = _listNums
+    .map(n => `<w:num w:numId="${n.numId}"><w:abstractNumId w:val="${n.abstractNumId}"/></w:num>`)
+    .join('');
+  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<w:numbering xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">
+  <w:abstractNum w:abstractNumId="0"><w:multiLevelType w:val="hybridMultilevel"/>${bulletLvls.join('')}</w:abstractNum>
+  <w:abstractNum w:abstractNumId="1"><w:multiLevelType w:val="hybridMultilevel"/>${orderedLvls.join('')}</w:abstractNum>
+  ${nums}
+</w:numbering>`;
+}
+
 // ─── Table ────────────────────────────────────────────────────────────────────
+// Build a <w:tblGrid> from the table's column widths (TipTap serialises a
+// per-cell `colwidth` attribute in px; some docs use a <colgroup>). Returns ''
+// when no widths are present, so untouched tables keep the full-width default.
+function tableGrid(table, rows) {
+  const widths = [];
+  const cols = Array.from(table.querySelectorAll(':scope > colgroup > col'));
+  if (cols.length) {
+    for (const c of cols) {
+      const w = parseFloat((c.style?.width || c.getAttribute('width') || '').toString());
+      widths.push(Number.isFinite(w) ? w : null);
+    }
+  } else if (rows[0]) {
+    const firstCells = rows[0].querySelectorAll(':scope > td, :scope > th');
+    for (const cell of firstCells) {
+      const cw = cell.getAttribute('colwidth');
+      if (cw) {
+        cw.split(',').forEach((x) => { const n = parseFloat(x); widths.push(Number.isFinite(n) ? n : null); });
+      } else {
+        const span = parseInt(cell.getAttribute('colspan') || '1', 10);
+        for (let k = 0; k < span; k++) widths.push(null);
+      }
+    }
+  }
+  if (!widths.length || widths.every((w) => w == null)) return '';
+  // px → twips (1px ≈ 15 twips). Fall back to ~60px for any unsized column.
+  const gridCols = widths.map((w) => `<w:gridCol w:w="${Math.round((w || 60) * 15)}"/>`).join('');
+  return `<w:tblGrid>${gridCols}</w:tblGrid>`;
+}
+
+// Render one real cell → <w:tc>. vMerge='restart' starts a vertical (row) merge.
+function cellToWml(cell, vMerge) {
+  const isHeader = cell.tagName.toLowerCase() === 'th';
+  const tcPrParts = [];
+  const colspan = parseInt(cell.getAttribute('colspan') || '1', 10);
+  if (colspan > 1) tcPrParts.push(`<w:gridSpan w:val="${colspan}"/>`);
+  if (vMerge === 'restart') tcPrParts.push('<w:vMerge w:val="restart"/>');
+  const bgHex = cssColorToHex(cell.style?.backgroundColor) || (isHeader ? 'D9D9D9' : null);
+  if (bgHex) tcPrParts.push(`<w:shd w:val="clear" w:color="auto" w:fill="${bgHex}"/>`);
+  let cellWml = '';
+  for (const c of cell.childNodes) cellWml += blockToWml(c);
+  if (!cellWml.includes('<w:p')) cellWml = `<w:p>${textRuns(cell, isHeader ? { b: true } : {})}</w:p>`;
+  return `<w:tc>${tcPrParts.length ? `<w:tcPr>${tcPrParts.join('')}</w:tcPr>` : ''}${cellWml}</w:tc>`;
+}
+
 function tableToWml(table) {
   const borderAttr = (side) =>
     `<w:${side} w:val="single" w:sz="4" w:color="auto"/>`;
@@ -145,30 +242,62 @@ function tableToWml(table) {
     ['top','left','bottom','right','insideH','insideV'].map(borderAttr).join('')
   }</w:tblBorders>`;
 
-  let wml = `<w:tbl><w:tblPr><w:tblW w:w="5000" w:type="pct"/>${borders}</w:tblPr>`;
-
   // Support both <table><tr> and <table><tbody><tr>
   const rows = Array.from(table.querySelectorAll('tr')).filter(
     r => r.closest('table') === table,
   );
 
-  for (const row of rows) {
-    wml += '<w:tr>';
-    const cells = row.querySelectorAll(':scope > td, :scope > th');
-    for (const cell of cells) {
-      const isHeader = cell.tagName.toLowerCase() === 'th';
-      wml += '<w:tc>';
-      if (isHeader) wml += '<w:tcPr><w:shd w:val="clear" w:color="auto" w:fill="D9D9D9"/></w:tcPr>';
+  // Honour explicit column widths when present; otherwise full-width (100%).
+  const grid = tableGrid(table, rows);
+  const tblW = grid ? '<w:tblW w:w="0" w:type="auto"/>' : '<w:tblW w:w="5000" w:type="pct"/>';
+  const layout = grid ? '<w:tblLayout w:type="fixed"/>' : '';
+  let wml = `<w:tbl><w:tblPr>${tblW}${layout}${borders}</w:tblPr>${grid}`;
 
-      // Try block children first, then fall back to inline
-      let cellWml = '';
-      for (const c of cell.childNodes) cellWml += blockToWml(c);
-      if (!cellWml.includes('<w:p')) {
-        cellWml = `<w:p>${textRuns(cell, isHeader ? { b: true } : {})}</w:p>`;
-      }
-      wml += cellWml + '</w:tc>';
+  // Vertical merges (rowspan) need column-grid tracking; only engage that path
+  // when the table actually uses rowspan, so the common case stays on the
+  // simple, proven loop.
+  const hasRowspan = Array.from(table.querySelectorAll(':scope tr > td[rowspan], :scope tr > th[rowspan]'))
+    .some((c) => parseInt(c.getAttribute('rowspan') || '1', 10) > 1);
+
+  if (!hasRowspan) {
+    for (const row of rows) {
+      wml += '<w:tr>';
+      const cells = row.querySelectorAll(':scope > td, :scope > th');
+      for (const cell of cells) wml += cellToWml(cell);
+      wml += '</w:tr>';
     }
-    wml += '</w:tr>';
+  } else {
+    // Total grid columns = the wider of the grid count and row-0's colspan sum.
+    const gridCount = (grid.match(/<w:gridCol/g) || []).length;
+    const r0 = rows[0] ? Array.from(rows[0].querySelectorAll(':scope > td, :scope > th')) : [];
+    let r0sum = 0; r0.forEach((c) => { r0sum += parseInt(c.getAttribute('colspan') || '1', 10); });
+    const totalCols = Math.max(gridCount, r0sum, 1);
+
+    const pending = new Array(totalCols).fill(0);     // continuation rows left, per column
+    const pendingSpan = new Array(totalCols).fill(1); // colspan of the merged region
+    for (const row of rows) {
+      wml += '<w:tr>';
+      const cells = Array.from(row.querySelectorAll(':scope > td, :scope > th'));
+      let ci = 0;
+      let col = 0;
+      while (col < totalCols) {
+        if (pending[col] > 0) {
+          const span = pendingSpan[col] || 1;
+          wml += `<w:tc><w:tcPr>${span > 1 ? `<w:gridSpan w:val="${span}"/>` : ''}<w:vMerge/></w:tcPr><w:p/></w:tc>`;
+          pending[col] -= 1;
+          col += span;
+          continue;
+        }
+        if (ci >= cells.length) { wml += '<w:tc><w:p/></w:tc>'; col += 1; continue; }
+        const cell = cells[ci++];
+        const colspan = parseInt(cell.getAttribute('colspan') || '1', 10);
+        const rowspan = parseInt(cell.getAttribute('rowspan') || '1', 10);
+        wml += cellToWml(cell, rowspan > 1 ? 'restart' : null);
+        if (rowspan > 1) { pending[col] = rowspan - 1; pendingSpan[col] = colspan; }
+        col += colspan;
+      }
+      wml += '</w:tr>';
+    }
   }
   return wml + '</w:tbl>';
 }
@@ -184,6 +313,18 @@ function blockToWml(node) {
 
   const tag = node.tagName.toLowerCase();
 
+  // Callout / text box → a single-cell shaded, bordered table (the closest
+  // faithful Word equivalent of the editor's bordered box).
+  if (tag === 'div' && node.getAttribute('data-callout') !== null) {
+    let inner = '';
+    for (const c of node.childNodes) inner += blockToWml(c);
+    if (!inner.includes('<w:p')) inner = `<w:p>${textRuns(node, {})}</w:p>`;
+    const tcBorders = `<w:tcBorders>${['top', 'left', 'bottom', 'right']
+      .map((s) => `<w:${s} w:val="single" w:sz="4" w:color="CBD5E1"/>`).join('')}</w:tcBorders>`;
+    return `<w:tbl><w:tblPr><w:tblW w:w="5000" w:type="pct"/></w:tblPr>` +
+      `<w:tr><w:tc><w:tcPr>${tcBorders}<w:shd w:val="clear" w:color="auto" w:fill="F8FAFC"/></w:tcPr>${inner}</w:tc></w:tr></w:tbl>`;
+  }
+
   // Headings
   const hm = tag.match(/^h([1-6])$/);
   if (hm) {
@@ -197,6 +338,19 @@ function blockToWml(node) {
     const jcMap = { center: 'center', right: 'right', justify: 'both' };
     const jc = jcMap[st.textAlign];
     if (jc) ppr += `<w:jc w:val="${jc}"/>`;
+    // Space before/after — the editor stores "Add space before/after paragraph"
+    // as data-spacing-* attributes (and/or inline margins). Carry them to Word
+    // so vertical rhythm matches the editor exactly.
+    const before = cssLenToTwips(node.getAttribute?.('data-spacing-before') || st.marginTop);
+    const after  = cssLenToTwips(node.getAttribute?.('data-spacing-after')  || st.marginBottom);
+    if (before != null || after != null) {
+      ppr += `<w:spacing${before != null ? ` w:before="${before}"` : ''}${after != null ? ` w:after="${after}"` : ''}/>`;
+    }
+    // Line height → w:spacing line (240ths of a line; lineRule auto).
+    const lh = parseFloat(st.lineHeight);
+    if (Number.isFinite(lh) && lh > 0 && lh < 5) {
+      ppr += `<w:spacing w:line="${Math.round(lh * 240)}" w:lineRule="auto"/>`;
+    }
     const ml = parseInt(st.marginLeft || '0');
     if (ml > 0) ppr += `<w:ind w:left="${Math.round(ml / 96 * 1440)}"/>`;
     return `<w:p>${ppr ? `<w:pPr>${ppr}</w:pPr>` : ''}${textRuns(node, {})}</w:p>`;
@@ -208,8 +362,8 @@ function blockToWml(node) {
   }
 
   // Lists
-  if (tag === 'ul') return listToWml(node, true,  0);
-  if (tag === 'ol') return listToWml(node, false, 0);
+  if (tag === 'ul') return listToWml(node, false, 0); // bullet
+  if (tag === 'ol') return listToWml(node, true,  0); // ordered
 
   // Table
   if (tag === 'table') return tableToWml(node);
@@ -273,15 +427,17 @@ function htmlToWmlBody(html) {
 }
 
 // ─── OOXML file builders ──────────────────────────────────────────────────────
-function buildContentTypes(hasHeader, hasFooter) {
+function buildContentTypes(hasHeader, hasFooter, imageExt, hasNumbering) {
   const hdrCT = hasHeader ? '\n  <Override PartName="/word/header1.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.header+xml"/>' : '';
   const ftrCT = hasFooter ? '\n  <Override PartName="/word/footer1.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.footer+xml"/>' : '';
+  const numCT = hasNumbering ? '\n  <Override PartName="/word/numbering.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.numbering+xml"/>' : '';
+  const imgCT = imageExt ? `\n  <Default Extension="${imageExt}" ContentType="image/${imageExt === 'jpg' ? 'jpeg' : imageExt}"/>` : '';
   return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
   <Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
-  <Default Extension="xml"  ContentType="application/xml"/>
+  <Default Extension="xml"  ContentType="application/xml"/>${imgCT}
   <Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/>
-  <Override PartName="/word/styles.xml"   ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.styles+xml"/>${hdrCT}${ftrCT}
+  <Override PartName="/word/styles.xml"   ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.styles+xml"/>${hdrCT}${ftrCT}${numCT}
 </Types>`;
 }
 
@@ -324,6 +480,74 @@ function buildHeaderXml({ text, fontFamily, fontSize, align }) {
 </w:hdr>`;
 }
 
+// Full-page (A4) letterhead drawing: anchored to the page, behind text, so it
+// renders as a repeating background on every page — exactly like the print
+// preview's full-page letterhead. 210×297 mm in EMU (1 mm = 36000 EMU).
+function letterheadDrawingXml() {
+  const cx = 7560000, cy = 10692000;
+  return `<w:r><w:drawing>` +
+    `<wp:anchor behindDoc="1" distT="0" distB="0" distL="0" distR="0" simplePos="0" locked="0" layoutInCell="1" allowOverlap="1" relativeHeight="0">` +
+    `<wp:simplePos x="0" y="0"/>` +
+    `<wp:positionH relativeFrom="page"><wp:posOffset>0</wp:posOffset></wp:positionH>` +
+    `<wp:positionV relativeFrom="page"><wp:posOffset>0</wp:posOffset></wp:positionV>` +
+    `<wp:extent cx="${cx}" cy="${cy}"/><wp:effectExtent l="0" t="0" r="0" b="0"/><wp:wrapNone/>` +
+    `<wp:docPr id="100" name="Letterhead"/><wp:cNvGraphicFramePr/>` +
+    `<a:graphic xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main">` +
+    `<a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/picture">` +
+    `<pic:pic xmlns:pic="http://schemas.openxmlformats.org/drawingml/2006/picture">` +
+    `<pic:nvPicPr><pic:cNvPr id="100" name="Letterhead"/><pic:cNvPicPr/></pic:nvPicPr>` +
+    `<pic:blipFill><a:blip r:embed="rIdLetterhead"/><a:stretch><a:fillRect/></a:stretch></pic:blipFill>` +
+    `<pic:spPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="${cx}" cy="${cy}"/></a:xfrm>` +
+    `<a:prstGeom prst="rect"><a:avLst/></a:prstGeom></pic:spPr>` +
+    `</pic:pic></a:graphicData></a:graphic></wp:anchor></w:drawing></w:r>`;
+}
+
+// Rich header — converts an HTML fragment (e.g. the patient banner: paragraphs
+// + a bordered table) into a real Word page header that repeats on every page.
+// When hasLetterhead, the full-page letterhead image is anchored behind it.
+// Standard Word watermark — a VML textpath shape in the header (repeats on every
+// page, behind the body). This is exactly the structure Word itself writes for a
+// text watermark, so Word opens it without a repair prompt.
+function watermarkVml(text) {
+  const s = esc(text);
+  return `<w:p><w:r><w:pict>` +
+    `<v:shapetype id="_x0000_t136" coordsize="21600,21600" o:spt="136" adj="10800" path="m@7,l@8,m@5,21600l@11,21600e">` +
+    `<v:formulas><v:f eqn="sum #0 0 10800"/><v:f eqn="prod #0 2 1"/><v:f eqn="sum 21600 0 @1"/><v:f eqn="sum 0 0 @2"/><v:f eqn="sum 21600 0 @3"/><v:f eqn="if @0 @3 0"/><v:f eqn="if @0 21600 @1"/><v:f eqn="if @0 0 @2"/><v:f eqn="if @0 @4 21600"/><v:f eqn="mid @5 @6"/><v:f eqn="mid @8 @5"/><v:f eqn="mid @10 @11"/><v:f eqn="mid @11 @7"/><v:f eqn="sum @6 0 @5"/></v:formulas>` +
+    `<v:path textpathok="t" o:connecttype="custom" o:connectlocs="@9,0;@10,10800;@11,21600;@12,10800" o:connectangles="270,180,90,0"/>` +
+    `<v:textpath on="t" fitshape="t"/>` +
+    `<v:handles><v:h position="#0,bottomRight" xrange="6629,14971"/></v:handles>` +
+    `<o:lock v:ext="edit" text="t" shapetype="t"/>` +
+    `</v:shapetype>` +
+    `<v:shape id="PowerPlusWaterMarkObject" o:spid="_x0000_s2049" type="#_x0000_t136" ` +
+    `style="position:absolute;margin-left:0;margin-top:0;width:415pt;height:207pt;rotation:315;z-index:-251654144;` +
+    `mso-position-horizontal:center;mso-position-horizontal-relative:margin;mso-position-vertical:center;mso-position-vertical-relative:margin" ` +
+    `o:allowincell="f" fillcolor="#d9d9d9" stroked="f">` +
+    `<v:textpath style="font-family:&quot;Calibri&quot;;font-size:1pt" string="${s}"/>` +
+    `</v:shape></w:pict></w:r></w:p>`;
+}
+
+function buildHeaderXmlFromHtml(headerHtml, hasLetterhead = false, watermark = '') {
+  const inner = htmlToWmlBody(headerHtml) || '<w:p/>';
+  const bg = hasLetterhead ? `<w:p>${letterheadDrawingXml()}</w:p>` : '';
+  const wm = watermark ? watermarkVml(watermark) : '';
+  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<w:hdr xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"
+       xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"
+       xmlns:wp="http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing"
+       xmlns:v="urn:schemas-microsoft-com:vml"
+       xmlns:o="urn:schemas-microsoft-com:office:office">
+  ${wm}${bg}${inner}
+</w:hdr>`;
+}
+
+// Relationship file linking the header to the embedded letterhead image.
+function buildHeaderRels(ext) {
+  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rIdLetterhead" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="media/letterhead.${ext}"/>
+</Relationships>`;
+}
+
 function buildFooterXml({ text, fontFamily, fontSize, align }) {
   const szVal = Math.round(Number(fontSize) * 2);
   const rPrXml = `<w:rPr><w:rFonts w:ascii="${esc(fontFamily)}" w:hAnsi="${esc(fontFamily)}"/><w:sz w:val="${szVal}"/><w:szCs w:val="${szVal}"/></w:rPr>`;
@@ -334,18 +558,26 @@ function buildFooterXml({ text, fontFamily, fontSize, align }) {
 </w:ftr>`;
 }
 
-function buildDocumentRels(hasHeader, hasFooter) {
+function buildDocumentRels(hasHeader, hasFooter, hasNumbering) {
   const hdrRel = hasHeader ? '\n  <Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/header" Target="header1.xml"/>' : '';
   const ftrRel = hasFooter ? '\n  <Relationship Id="rId3" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/footer" Target="footer1.xml"/>' : '';
+  const numRel = hasNumbering ? '\n  <Relationship Id="rId4" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/numbering" Target="numbering.xml"/>' : '';
   return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
-  <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/>${hdrRel}${ftrRel}
+  <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/>${hdrRel}${ftrRel}${numRel}
 </Relationships>`;
 }
 
-function buildDocument(bodyWml, hasHeader, hasFooter) {
+function buildDocument(bodyWml, hasHeader, hasFooter, margins) {
   const hdrRef = hasHeader ? '\n      <w:headerReference w:type="default" r:id="rId2"/>' : '';
   const ftrRef = hasFooter ? '\n      <w:footerReference w:type="default" r:id="rId3"/>' : '';
+  // Page margins from the report protocol (mm). Default 25.4 mm (1 inch) when
+  // unset, matching Word's own default.
+  const m = margins || {};
+  const top    = mmToTwips(m.top    ?? 25.4);
+  const right  = mmToTwips(m.right  ?? 25.4);
+  const bottom = mmToTwips(m.bottom ?? 25.4);
+  const left   = mmToTwips(m.left   ?? 25.4);
   return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <w:document
   xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"
@@ -353,21 +585,26 @@ function buildDocument(bodyWml, hasHeader, hasFooter) {
   <w:body>
     ${bodyWml}
     <w:sectPr>${hdrRef}${ftrRef}
-      <w:pgSz w:w="12240" w:h="15840"/>
-      <w:pgMar w:top="1440" w:right="1440" w:bottom="1440" w:left="1440" w:header="720" w:footer="720" w:gutter="0"/>
+      <w:pgSz w:w="11906" w:h="16838"/>
+      <w:pgMar w:top="${top}" w:right="${right}" w:bottom="${bottom}" w:left="${left}" w:header="720" w:footer="720" w:gutter="0"/>
     </w:sectPr>
   </w:body>
 </w:document>`;
 }
 
-function buildStyles() {
+function buildStyles(defaultFont) {
+  const f = defaultFont || {};
+  const fam = esc(f.family || 'Calibri');
+  const sz = Math.round((Number(f.sizePt) || 12) * 2); // pt → half-points
+  const color = cssColorToHex(f.color);
+  const colorXml = color ? `<w:color w:val="${color}"/>` : '';
   return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <w:styles xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">
   <w:docDefaults>
     <w:rPrDefault>
       <w:rPr>
-        <w:rFonts w:ascii="Calibri" w:hAnsi="Calibri"/>
-        <w:sz w:val="24"/><w:szCs w:val="24"/>
+        <w:rFonts w:ascii="${fam}" w:hAnsi="${fam}"/>
+        <w:sz w:val="${sz}"/><w:szCs w:val="${sz}"/>${colorXml}
       </w:rPr>
     </w:rPrDefault>
   </w:docDefaults>
@@ -411,6 +648,11 @@ function buildStyles() {
     <w:pPr><w:spacing w:before="120" w:after="40"/><w:outlineLvl w:val="3"/></w:pPr>
     <w:rPr><w:b/><w:bCs/><w:sz w:val="24"/><w:szCs w:val="24"/></w:rPr>
   </w:style>
+
+  <w:style w:type="paragraph" w:styleId="ListParagraph">
+    <w:name w:val="List Paragraph"/><w:basedOn w:val="Normal"/>
+    <w:pPr><w:spacing w:after="0"/><w:ind w:left="720"/><w:contextualSpacing/></w:pPr>
+  </w:style>
 </w:styles>`;
 }
 
@@ -423,20 +665,34 @@ function buildStyles() {
  * @param {string} html - raw HTML from editor.getHTML()
  * @returns {Promise<Blob>}
  */
-export async function buildDocxBlob(html, { header, footer } = {}) {
+export async function buildDocxBlob(html, { header, footer, headerHtml, margins, defaultFont, letterhead, watermark } = {}) {
+  // Reset the list-numbering registry, then convert (listToWml populates it).
+  resetNumbering();
   const bodyWml = htmlToWmlBody(html);
-  const hasHeader = !!(header?.text);
+  // headerHtml (rich, repeating patient banner) takes precedence over the
+  // legacy single-line header used by the editor's own header/footer feature.
+  // A watermark also requires a header (it's a VML shape in it).
+  const hasHeader = !!(headerHtml || header?.text || watermark);
   const hasFooter = !!(footer?.text);
+  // A letterhead is only embeddable when we have a rich header to anchor it in.
+  const hasLetterhead = !!(letterhead?.bytes && letterhead?.ext && headerHtml);
+  // Lists allocated any numbering definitions during conversion above.
+  const hasNumbering = _listNums.length > 0;
 
   const zip = new JSZip();
-  zip.file('[Content_Types].xml', buildContentTypes(hasHeader, hasFooter));
+  zip.file('[Content_Types].xml', buildContentTypes(hasHeader, hasFooter, hasLetterhead ? letterhead.ext : null, hasNumbering));
   zip.folder('_rels').file('.rels', buildRels());
   const word = zip.folder('word');
-  word.file('document.xml', buildDocument(bodyWml, hasHeader, hasFooter));
-  word.file('styles.xml', buildStyles());
-  word.folder('_rels').file('document.xml.rels', buildDocumentRels(hasHeader, hasFooter));
-  if (hasHeader) word.file('header1.xml', buildHeaderXml(header));
+  word.file('document.xml', buildDocument(bodyWml, hasHeader, hasFooter, margins));
+  word.file('styles.xml', buildStyles(defaultFont));
+  word.folder('_rels').file('document.xml.rels', buildDocumentRels(hasHeader, hasFooter, hasNumbering));
+  if (hasNumbering) word.file('numbering.xml', buildNumberingXml());
+  if (hasHeader) word.file('header1.xml', (headerHtml || watermark) ? buildHeaderXmlFromHtml(headerHtml || '', hasLetterhead, watermark) : buildHeaderXml(header));
   if (hasFooter) word.file('footer1.xml', buildFooterXml(footer));
+  if (hasLetterhead) {
+    word.file(`media/letterhead.${letterhead.ext}`, letterhead.bytes);
+    word.folder('_rels').file('header1.xml.rels', buildHeaderRels(letterhead.ext));
+  }
 
   return zip.generateAsync({
     type: 'blob',

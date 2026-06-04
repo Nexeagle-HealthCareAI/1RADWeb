@@ -8,6 +8,7 @@
 // ════════════════════════════════════════════════════════════════
 
 import mammoth from 'mammoth';
+import { docxToHtml } from './importDocx';
 import { FINDINGS_START_TOKEN, FINDINGS_END_TOKEN } from './exportWord';
 
 function base64ToArrayBuffer(b64) {
@@ -63,6 +64,15 @@ function extractFindings(html) {
  */
 export async function docxToFindingsHtml(input) {
   const arrayBuffer = typeof input === 'string' ? base64ToArrayBuffer(input) : input;
-  const { value: html } = await mammoth.convertToHtml({ arrayBuffer });
+  // Faithful reader (preserves font size/colour/family, alignment, spacing,
+  // headings, tables, lists). Fall back to mammoth only if it throws.
+  let html;
+  try {
+    html = await docxToHtml(arrayBuffer);
+  } catch (e) {
+    console.warn('[Word] faithful reader failed, falling back to mammoth:', e?.message);
+    const res = await mammoth.convertToHtml({ arrayBuffer });
+    html = res?.value || '';
+  }
   return extractFindings(html || '');
 }

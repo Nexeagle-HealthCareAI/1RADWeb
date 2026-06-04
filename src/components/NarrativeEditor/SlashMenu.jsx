@@ -36,6 +36,7 @@ const WORKFLOW_ITEMS = [
   { id: 'wf-templates',   icon: '📋', label: 'Templates',       hint: 'Apply a report template', action: 'templates' },
   { id: 'wf-normal',      icon: '✓',  label: 'Normal Findings', hint: 'Insert a "normal" macro', action: 'normalFindings' },
   { id: 'wf-measurement', icon: '📏', label: 'Measurement',     hint: 'Insert measurement template', action: 'measurement' },
+  { id: 'wf-rads',        icon: '🎯', label: 'RADS',            hint: 'BI/TI/Lung/PI/LI-RADS assistant', action: 'rads' },
 ];
 
 export default function SlashMenu({
@@ -44,6 +45,7 @@ export default function SlashMenu({
   onOpenTemplates,
   onOpenNormalFindings,
   onOpenMeasurement,
+  onOpenRads,
 }) {
   // Menu state — { open, anchor: {top,left}, slashPos, query }
   const [state, setState] = useState({ open: false, anchor: null, slashPos: -1, query: '' });
@@ -117,6 +119,7 @@ export default function SlashMenu({
       if (item.action === 'templates')       onOpenTemplates?.();
       if (item.action === 'normalFindings')  onOpenNormalFindings?.();
       if (item.action === 'measurement')     onOpenMeasurement?.();
+      if (item.action === 'rads')            onOpenRads?.();
     } else if (item.kind === 'radTemplate') {
       // Insert the template body. Plain-text templates use \n line breaks;
       // convert to <br> so they render as separate visual lines inside a
@@ -140,7 +143,7 @@ export default function SlashMenu({
       replaceSlash(tmp.innerHTML.replace(/\n/g, '<br>'));
     }
     close();
-  }, [replaceSlash, onOpenTemplates, onOpenNormalFindings, onOpenMeasurement, close]);
+  }, [replaceSlash, onOpenTemplates, onOpenNormalFindings, onOpenMeasurement, onOpenRads, close]);
 
   // ── Detect "/" entry + track query as more chars are typed ─────────────
   useEffect(() => {

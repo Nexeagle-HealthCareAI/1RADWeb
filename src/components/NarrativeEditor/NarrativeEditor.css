@@ -1428,3 +1428,20 @@ del[data-ci] {
 
 
 
+
+/* Text box / callout — a bordered, shaded box the radiologist types into. */
+.ne-callout {
+  border: 1px solid #cbd5e1;
+  background: #f8fafc;
+  border-radius: 8px;
+  padding: 10px 14px;
+  margin: 12px 0;
+}
+.ne-callout > :first-child { margin-top: 0; }
+.ne-callout > :last-child { margin-bottom: 0; }
+
+/* Multi-column section (CSS columns; flows within a page). */
+.ne-columns {
+  column-gap: 28px;
+}
+.ne-columns > * { break-inside: avoid; }

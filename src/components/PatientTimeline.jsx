@@ -14,6 +14,7 @@ const PatientTimeline = ({
   history = [],
   loading = false,
   onViewDicom,
+  onCopyForward,
   activeAppointmentId = null,
 }) => {
   const [isMobile, setIsMobile] = useState(typeof window !== 'undefined' && window.innerWidth < 768);
@@ -292,6 +293,27 @@ const PatientTimeline = ({
                     >
                       🔬 Open DICOM
                     </button>
+                    {/* Copy the prior findings into the current report with a
+                        comparison line — only when a report exists and the host
+                        wired the handler (the reporting workspace). Hidden for
+                        the current session's own row. */}
+                    {onCopyForward && reported && !isActive && (
+                      <button
+                        onClick={() => onCopyForward(study)}
+                        title="Insert this prior report's findings into the current report, with a comparison line"
+                        style={{
+                          display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: '6px',
+                          padding: '9px 14px', borderRadius: '10px',
+                          background: '#eff6ff', color: '#0f52ba',
+                          border: '1px solid #bfdbfe',
+                          fontSize: '11px', fontWeight: 800, cursor: 'pointer',
+                          letterSpacing: '0.3px', whiteSpace: 'nowrap',
+                          flex: isMobile ? 1 : 'none',
+                        }}
+                      >
+                        ↪ Copy forward
+                      </button>
+                    )}
                   </div>
                 </div>
               </div>

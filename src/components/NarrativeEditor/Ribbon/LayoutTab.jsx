@@ -7,8 +7,11 @@ import { notifyToast } from '../../../utils/toast';
  * (Margins/orientation are informational — actual values come from the
  * prescription protocol on the radiologist's profile.)
  */
-export default function LayoutTab({ editor, documentMeta = {} }) {
+export default function LayoutTab({ editor, documentMeta = {}, watermark = '', onSetWatermark }) {
   if (!editor) return null;
+
+  const PRESETS = ['', 'DRAFT', 'CONFIDENTIAL', 'PROVISIONAL'];
+  const wmSelectValue = PRESETS.includes(watermark) ? watermark : 'custom';
 
   return (
     <div style={{ display: 'flex', alignItems: 'stretch', height: '100%' }}>
@@ -53,6 +56,49 @@ export default function LayoutTab({ editor, documentMeta = {} }) {
           title="Insert page number token at cursor"
           onClick={() => editor.chain().focus().insertPageNumber().run()}
         />
+      </Group>
+
+      <Sep />
+
+      {/* Columns — wrap the selection into a 2/3-column CSS section. */}
+      <Group label="Columns">
+        <select
+          style={selectStyle}
+          title="Flow the selected text into columns"
+          value=""
+          onChange={(e) => { const n = parseInt(e.target.value, 10); if (n) editor.chain().focus().setColumns(n).run(); e.target.value = ''; }}
+        >
+          <option value="">Columns…</option>
+          <option value="1">One column</option>
+          <option value="2">Two columns</option>
+          <option value="3">Three columns</option>
+        </select>
+      </Group>
+
+      <Sep />
+
+      {/* Watermark — faint diagonal text on every page (screen + print). */}
+      <Group label="Watermark">
+        <select
+          style={selectStyle}
+          title="Show a diagonal watermark on every page"
+          value={wmSelectValue}
+          onChange={(e) => {
+            const v = e.target.value;
+            if (v === 'custom') {
+              const t = window.prompt('Watermark text', watermark || 'DRAFT');
+              if (t != null) onSetWatermark?.(t.trim());
+            } else {
+              onSetWatermark?.(v);
+            }
+          }}
+        >
+          <option value="">None</option>
+          <option value="DRAFT">DRAFT</option>
+          <option value="CONFIDENTIAL">CONFIDENTIAL</option>
+          <option value="PROVISIONAL">PROVISIONAL</option>
+          <option value="custom">Custom…</option>
+        </select>
       </Group>
     </div>
   );

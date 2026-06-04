@@ -86,6 +86,8 @@ const SECTIONS = [
       ['Ctrl + Home', 'Go to document start'],
       ['Ctrl + End', 'Go to document end'],
       ['Ctrl + G  /  F5', 'Go to page…'],
+      ['F2', 'Jump to next fill-in field ( [ … ] / ___ )'],
+      ['Shift + F2', 'Jump to previous fill-in field'],
       ['PgUp / PgDn', 'Scroll one page'],
     ],
   },
