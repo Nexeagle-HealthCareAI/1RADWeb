@@ -395,7 +395,7 @@ export default function LoginPage() {
       <div className="immersive-brand">
         {/* ── Brand — top ── */}
         <div style={{ display: 'flex', alignItems: 'center', gap: '14px', marginBottom: '6px' }}>
-          <img src="/Logo.png" alt="NexEagle" style={{
+          <img src={`${import.meta.env.BASE_URL}Logo.png`} alt="NexEagle" style={{
             width: '40px', height: '40px', objectFit: 'contain',
             borderRadius: '10px', boxShadow: '0 8px 24px rgba(0,242,254,0.3)',
           }} />
@@ -534,7 +534,7 @@ export default function LoginPage() {
       <div className="glass-card">
         <div className="auth-header" style={{ textAlign: 'center', marginBottom: '30px', display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
           <img
-            src="/Logo.png"
+            src={`${import.meta.env.BASE_URL}Logo.png`}
             alt="NexEagle"
             style={{
               width: '40px', height: '40px',

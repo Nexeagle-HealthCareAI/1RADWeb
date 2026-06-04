@@ -219,7 +219,7 @@ export default function RegisterPage() {
       <div className="immersive-brand">
         <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '8px' }}>
           <img
-            src="/Logo.png"
+            src={`${import.meta.env.BASE_URL}Logo.png`}
             alt="NexEagle"
             style={{ width: '40px', height: '40px', objectFit: 'contain', borderRadius: '8px' }}
           />

@@ -109,7 +109,7 @@ export default function MobileHeader({ onMenuToggle, isSidebarOpen, currentTime 
           >
             <div style={{ position: 'relative', flexShrink: 0 }}>
               <img
-                src="/Logo.png"
+                src={`${import.meta.env.BASE_URL}Logo.png`}
                 alt="NexEagle"
                 style={{ width: '28px', height: '28px', objectFit: 'contain', borderRadius: '6px' }}
               />

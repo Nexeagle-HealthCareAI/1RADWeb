@@ -123,7 +123,11 @@ export default defineConfig({
       },
     }),
   ],
-  base: '/',
+  // Web (Azure Static Web Apps) is served from the domain root → absolute '/'.
+  // The Electron desktop build loads index.html over file:// where '/assets/…'
+  // would resolve to the drive root (white screen), so it needs RELATIVE './'.
+  // The desktop build sets VITE_TARGET=electron (see package.json / pipeline).
+  base: process.env.VITE_TARGET === 'electron' ? './' : '/',
   server: {
     headers: {
       "Cross-Origin-Embedder-Policy": "require-corp",

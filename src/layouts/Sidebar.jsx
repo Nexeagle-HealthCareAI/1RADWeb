@@ -314,7 +314,7 @@ export default function Sidebar({ isMobileOpen, onMobileClose }) {
         <div style={{ display: 'flex', alignItems: 'center', gap: '12px', minWidth: 0, overflow: 'hidden' }}>
           {/* Logo — never hides */}
           <img
-            src="/Logo.png"
+            src={`${import.meta.env.BASE_URL}Logo.png`}
             alt="NexEagle"
             style={{
               width: '34px', height: '34px',

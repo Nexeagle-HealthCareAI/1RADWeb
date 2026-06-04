@@ -180,11 +180,14 @@ stages:
             displayName: npm ci
 
           # Bake the Prod API URL, then build the web bundle electron wraps.
+          # VITE_TARGET=electron switches Vite to a relative base ('./') so the
+          # packaged app's assets load over file:// (otherwise → white screen).
           - script: |
               set VITE_API_URL=$(prodApiUrl)
+              set VITE_TARGET=electron
               npm run build
             workingDirectory: $(Build.SourcesDirectory)
-            displayName: Vite build (Prod API URL)
+            displayName: Vite build (Prod API URL, Electron base)
 
           # Code-signing (optional). Upload an OV code-signing certificate as a
           # DevOps Secure File named '1rad-codesign.pfx' and add CSC_KEY_PASSWORD

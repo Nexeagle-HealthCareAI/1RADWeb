@@ -70,12 +70,21 @@ function createWindow() {
     }
   });
 
-  // Load the app (Vite dev server or build folder)
-  const startUrl = isDev 
-    ? 'http://localhost:5173' 
-    : `file://${path.join(__dirname, '../dist/index.html')}`;
+  // Load the app (Vite dev server or built files). In production use loadFile()
+  // — it builds a correct file:// URL from the OS path (handles Windows
+  // backslashes / drive letters) where a hand-built `file://${path}` can fail.
+  if (isDev) {
+    mainWindow.loadURL('http://localhost:5173');
+  } else {
+    mainWindow.loadFile(path.join(__dirname, '../dist/index.html'));
+  }
 
-  mainWindow.loadURL(startUrl);
+  // Surface a blank-screen cause instead of failing silently: if the renderer
+  // can't load, log it and open DevTools so the error is visible.
+  mainWindow.webContents.on('did-fail-load', (_e, code, desc, url) => {
+    console.error(`[main] did-fail-load ${code} ${desc} → ${url}`);
+    if (!isDev) mainWindow.webContents.openDevTools({ mode: 'detach' });
+  });
 
   mainWindow.once('ready-to-show', () => {
     mainWindow.show();
