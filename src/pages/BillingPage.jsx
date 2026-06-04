@@ -22,6 +22,7 @@ import ReferralHub from '../components/Billing/ReferralHub';
 import { useBillingNotice, BillingNoticeModal } from '../components/Billing/BillingNotice';
 import AnalyticsHub from '../components/Billing/AnalyticsHub';
 import FinanceManager from '../components/FinanceManager';
+import Pagination from '../components/Pagination';
 
 // Shared Drawers
 import { 
@@ -1379,39 +1380,29 @@ export default function BillingPage() {
   }, [combinedReferralCuts, timeFilter, startDate, endDate, modalityFilter, referrerFilter, sortConfig, referralSearch]);
 
 
-  const totalPages = Math.ceil(
-    billingViewMode === 'INVOICES' ? (timeFilter === 'FUTURE' ? (futureAppointments || []).length : (filteredInvoices || []).length) / itemsPerPage :
-    billingViewMode === 'EXPENSES' ? (filteredOutflow || []).length / itemsPerPage :
-    (filteredReferralCuts || []).length / itemsPerPage
+  // Total records + label for the current view — drives the shared pager's
+  // "Showing X–Y of N …" line and the page count.
+  const totalRecords =
+    billingViewMode === 'INVOICES' ? (timeFilter === 'FUTURE' ? (futureAppointments || []).length : (filteredInvoices || []).length) :
+    billingViewMode === 'EXPENSES' ? (filteredOutflow || []).length :
+    (filteredReferralCuts || []).length;
+  const recordLabel =
+    billingViewMode === 'INVOICES' ? (timeFilter === 'FUTURE' ? 'appointments' : 'invoices') :
+    billingViewMode === 'EXPENSES' ? 'expenses' :
+    'commissions';
+  const totalPages = Math.ceil(totalRecords / itemsPerPage);
+
+  const renderPagination = () => (
+    <Pagination
+      currentPage={currentPage}
+      totalPages={totalPages}
+      totalItems={totalRecords}
+      itemsPerPage={itemsPerPage}
+      onPageChange={setCurrentPage}
+      isMobile={isMobile}
+      itemLabel={recordLabel}
+    />
   );
-
-
-  const renderPagination = () => {
-    if (totalPages <= 1) return null;
-    return (
-      <div style={{ display: 'flex', justifyContent: 'center', gap: '8px', marginTop: '30px', padding: '10px' }}>
-        {Array.from({ length: totalPages }).map((_, i) => (
-          <button
-            key={i}
-            onClick={() => {
-              setCurrentPage(i + 1);
-              window.scrollTo({ top: 0, behavior: 'smooth' });
-            }}
-            style={{
-              width: '32px', height: '32px', display: 'flex', alignItems: 'center', justifyContent: 'center',
-              borderRadius: '10px', border: '1px solid #e2e8f0', fontSize: '11px', fontWeight: 950,
-              background: currentPage === i + 1 ? '#0f52ba' : 'white',
-              color: currentPage === i + 1 ? 'white' : '#64748b',
-              cursor: 'pointer', transition: 'all 0.2s',
-              boxShadow: currentPage === i + 1 ? '0 4px 12px rgba(15,82,186,0.2)' : 'none'
-            }}
-          >
-            {i + 1}
-          </button>
-        ))}
-      </div>
-    );
-  };
 
   const paginatedInvoices = useMemo(() => (filteredInvoices || []).slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage), [filteredInvoices, currentPage, itemsPerPage]);
   const paginatedFutureAppointments = useMemo(() => (futureAppointments || []).slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage), [futureAppointments, currentPage, itemsPerPage]);

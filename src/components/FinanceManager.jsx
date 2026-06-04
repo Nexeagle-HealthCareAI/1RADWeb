@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import apiClient from '../api/apiClient';
+import Pagination from './Pagination';
 
 const FinanceManager = ({
   isMobile,
@@ -272,22 +273,15 @@ const FinanceManager = ({
               </table>
             </div>
 
-            {totalPages > 1 && (
-              <div style={{ padding: '12px 24px', background: '#f8fafc', borderTop: '1px solid #f1f5f9', display: 'flex', justifyContent: 'center', gap: '6px' }}>
-                {[...Array(totalPages)].map((_, i) => (
-                  <button
-                    key={i}
-                    onClick={() => setRegCurrentPage(i + 1)}
-                    style={{
-                      width: '28px', height: '28px', borderRadius: '6px', border: '1px solid #e2e8f0',
-                      fontSize: '12px', fontWeight: 500, cursor: 'pointer',
-                      background: regCurrentPage === i + 1 ? '#1d4ed8' : 'white',
-                      color: regCurrentPage === i + 1 ? 'white' : '#6b7280'
-                    }}
-                  >{i + 1}</button>
-                ))}
-              </div>
-            )}
+            <Pagination
+              currentPage={regCurrentPage}
+              totalPages={totalPages}
+              totalItems={processedRegistry.length}
+              itemsPerPage={ITEMS_PER_PAGE}
+              onPageChange={setRegCurrentPage}
+              isMobile={isMobile}
+              itemLabel="services"
+            />
           </div>
 
           {/* Billing settings */}
