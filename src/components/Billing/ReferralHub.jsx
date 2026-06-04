@@ -94,6 +94,7 @@ const ReferralHub = ({
           unpaid: 0,
           earned: 0,    // sum of positive commissions
           deficit: 0,   // sum of |negative commissions| (over-commission concessions)
+          centreAbsorbed: 0, // over-commission excess the CENTRE funded (not a deficit)
           count: 0,
           lastDate: 0,
         });
@@ -107,6 +108,11 @@ const ReferralHub = ({
       const amt = Number(cut?.amount) || 0;
       g.total += amt;
       if (amt >= 0) g.earned += amt; else g.deficit += -amt;
+      // Over-commission excess the centre absorbed (audited into the remark as
+      // "[Excess ₹X absorbed by centre]") — surfaced so an admin sees what the
+      // centre funded, distinct from a referrer deficit.
+      const absorbedMatch = String(cut?.remarks || '').match(/Excess\s*₹?\s*([\d.]+)\s*absorbed by centre/i);
+      if (absorbedMatch) g.centreAbsorbed += Number(absorbedMatch[1]) || 0;
       if (cut?.status === 'PAID') g.paid += amt; else g.unpaid += amt;
       const cutDate = cut?.date ? new Date(cut.date).getTime() : 0;
       if (cutDate > g.lastDate) g.lastDate = cutDate;
@@ -630,6 +636,12 @@ const ReferralHub = ({
                         <span style={{ fontSize: '12px', fontWeight: 950, color: '#ea580c' }}>− ₹{group.deficit.toLocaleString()}</span>
                       </div>
                     )}
+                    {group.centreAbsorbed > 0 && (
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '6px 9px', background: '#eff6ff', border: '1px solid #bfdbfe', borderRadius: '8px' }}>
+                        <span style={{ fontSize: '8.5px', fontWeight: 950, color: '#1e40af', letterSpacing: '0.5px' }}>🏛️ CENTRE ABSORBED</span>
+                        <span style={{ fontSize: '12px', fontWeight: 950, color: '#1d4ed8' }}>₹{group.centreAbsorbed.toLocaleString()}</span>
+                      </div>
+                    )}
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderTop: '1px solid #f1f5f9', paddingTop: '10px', fontSize: '10px', color: '#94a3b8', fontWeight: 700 }}>
                       <span>{group.count} payout{group.count !== 1 ? 's' : ''}</span>
                       <span style={{ color: '#e11d48', fontWeight: 950, letterSpacing: '0.5px' }}>VIEW →</span>
@@ -740,6 +752,12 @@ const ReferralHub = ({
                       <div style={{ fontSize: '14px', fontWeight: 950, color: '#fde68a' }}>− ₹{activePartner.deficit.toLocaleString()}</div>
                     </div>
                   )}
+                  {activePartner.centreAbsorbed > 0 && (
+                    <div>
+                      <div style={{ fontSize: '9px', fontWeight: 950, opacity: 0.75, letterSpacing: '0.5px', color: '#bfdbfe' }}>🏛️ CENTRE ABSORBED</div>
+                      <div style={{ fontSize: '14px', fontWeight: 950, color: '#bfdbfe' }}>₹{activePartner.centreAbsorbed.toLocaleString()}</div>
+                    </div>
+                  )}
                 </div>
                 {activePartner.total < 0 && onWriteOffDeficit && (
                   <button
@@ -798,6 +816,12 @@ const ReferralHub = ({
                     const isLegacy = cut?.type === 'LEGACY';
                     const blockPayment = cut?.status !== 'PAID' && !isPatientPaymentReceived(cut);
                     const isDisabled = isLegacy || blockPayment;
+                    // A negative commission is a carried DEFICIT (an over-commission
+                    // concession), not a payable — never show it as PAID/MARK PAID.
+                    const isDeficit = (Number(cut?.amount) || 0) < 0;
+                    // Reason captured at the over-commission popup, audited into the
+                    // commission remarks as "… — <reason>]".
+                    const deficitReason = isDeficit ? (((cut?.remarks || '').match(/—\s*([^\]]+)\]/) || [])[1] || '').trim() : '';
                     const amountFormatted = (Number(cut?.amount) || 0).toLocaleString();
 
                     return (
@@ -822,10 +846,15 @@ const ReferralHub = ({
                                 </div>
                               )}
                               <div style={{ fontSize: '11px', fontWeight: 700, color: '#94a3b8', marginTop: '4px' }}>{formatDate(cut?.date, true)}</div>
+                              {isDeficit && deficitReason && (
+                                <div style={{ fontSize: '11px', fontWeight: 700, color: '#ea580c', marginTop: '6px', background: '#fff7ed', border: '1px solid #fed7aa', borderRadius: '6px', padding: '4px 8px' }}>
+                                  ⚠️ Over-commission reason: {deficitReason}
+                                </div>
+                              )}
                             </div>
                           </div>
                           <div style={{ textAlign: 'right' }}>
-                            <div style={{ fontSize: '18px', fontWeight: 950, color: '#e11d48' }}>₹{amountFormatted}</div>
+                            <div style={{ fontSize: '18px', fontWeight: 950, color: isDeficit ? '#ea580c' : '#e11d48' }}>₹{amountFormatted}</div>
                           </div>
                         </div>
 
@@ -848,21 +877,21 @@ const ReferralHub = ({
                         <div style={{ display: 'flex', gap: '10px' }}>
                           <button
                             onClick={() => {
-                              if (cut?.type === 'STRATEGIC' && !blockPayment) {
+                              if (!isDeficit && cut?.type === 'STRATEGIC' && !blockPayment) {
                                 setConfirmModal({
                                   isOpen: true, cutId: cut?.id, currentStatus: cut?.status || 'UNPAID', patientName: cut?.patientName || 'N/A', amount: cut?.amount || 0
                                 });
                               }
                             }}
-                            disabled={isDisabled}
+                            disabled={isDisabled || isDeficit}
                             style={{
                               flex: 1, padding: '12px', borderRadius: '12px', border: 'none', fontSize: '12px', fontWeight: 950,
-                              background: cut?.status === 'PAID' ? '#dcfce7' : isDisabled ? '#f1f5f9' : '#fee2e2',
-                              color: cut?.status === 'PAID' ? '#166534' : isDisabled ? '#94a3b8' : '#991b1b',
-                              cursor: isDisabled ? 'not-allowed' : 'pointer'
+                              background: isDeficit ? '#fff7ed' : cut?.status === 'PAID' ? '#dcfce7' : isDisabled ? '#f1f5f9' : '#fee2e2',
+                              color: isDeficit ? '#ea580c' : cut?.status === 'PAID' ? '#166534' : isDisabled ? '#94a3b8' : '#991b1b',
+                              cursor: (isDisabled || isDeficit) ? 'not-allowed' : 'pointer'
                             }}
                           >
-                            {cut?.status === 'PAID' ? '✓ PAID' : 'MARK PAID'}
+                            {isDeficit ? '⚠ DEFICIT' : cut?.status === 'PAID' ? '✓ PAID' : 'MARK PAID'}
                           </button>
 
                           {cut.type === 'LEGACY' ? (
@@ -966,11 +995,12 @@ const ReferralHub = ({
                             const isLegacy = cut?.type === 'LEGACY';
                             const blockPayment = cut?.status !== 'PAID' && !isPatientPaymentReceived(cut);
                             const isDisabled = isLegacy || blockPayment;
+                            const isDeficit = (Number(cut?.amount) || 0) < 0;
                             return (
                               <>
                                 <button
                                   onClick={() => {
-                                    if (cut?.type === 'STRATEGIC' && !blockPayment) {
+                                    if (!isDeficit && cut?.type === 'STRATEGIC' && !blockPayment) {
                                       setConfirmModal({
                                         isOpen: true,
                                         cutId: cut?.id,
@@ -980,17 +1010,17 @@ const ReferralHub = ({
                                       });
                                     }
                                   }}
-                                  disabled={isDisabled}
-                                  title={blockPayment ? 'Patient payment not yet received' : undefined}
+                                  disabled={isDisabled || isDeficit}
+                                  title={isDeficit ? 'Carried deficit — recovered from future referrals' : blockPayment ? 'Patient payment not yet received' : undefined}
                                   style={{
                                     padding: '5px 10px', borderRadius: '7px', border: 'none', fontSize: '8.5px', fontWeight: 950,
-                                    background: cut?.status === 'PAID' ? '#dcfce7' : isDisabled ? '#f1f5f9' : '#fee2e2',
-                                    color: cut?.status === 'PAID' ? '#166534' : isDisabled ? '#94a3b8' : '#991b1b',
-                                    cursor: isDisabled ? 'not-allowed' : 'pointer',
+                                    background: isDeficit ? '#fff7ed' : cut?.status === 'PAID' ? '#dcfce7' : isDisabled ? '#f1f5f9' : '#fee2e2',
+                                    color: isDeficit ? '#ea580c' : cut?.status === 'PAID' ? '#166534' : isDisabled ? '#94a3b8' : '#991b1b',
+                                    cursor: (isDisabled || isDeficit) ? 'not-allowed' : 'pointer',
                                     opacity: isDisabled && !isLegacy ? 0.7 : 1
                                   }}
                                 >
-                                  {cut?.status || 'UNPAID'}
+                                  {isDeficit ? 'DEFICIT' : cut?.status || 'UNPAID'}
                                 </button>
                                 {blockPayment && (
                                   <div style={{ marginTop: '4px', fontSize: '8px', fontWeight: 800, color: '#f59e0b', letterSpacing: '0.2px' }}>⚠ PATIENT UNPAID</div>

@@ -27,6 +27,7 @@ import SyncStatusPage from '../pages/SyncStatusPage';
 import SettingsHomePage from '../pages/SettingsHomePage';
 import DicomBridgePage from '../pages/DicomBridgePage';
 import ConfigurationPage from '../pages/ConfigurationPage';
+import ApprovalsPage from '../pages/ApprovalsPage';
 import OperationsBoard from '../pages/OperationsBoard';
 
 import { getRolePermissions } from '../data/roles';
@@ -257,6 +258,14 @@ export default function AppRouter() {
           element={
             <ProtectedRoute allowedRoles={['admindoctor', 'admin', 'technician', 'doctor']}>
               <ConfigurationPage />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/approvals"
+          element={
+            <ProtectedRoute allowedRoles={['admindoctor', 'admin']}>
+              <ApprovalsPage />
             </ProtectedRoute>
           }
         />

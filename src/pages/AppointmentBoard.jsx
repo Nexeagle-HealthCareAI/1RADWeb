@@ -159,6 +159,90 @@ export default function AppointmentBoard() {
   const [expandedRowId, setExpandedRowId] = useState(null);
   const [errorModal, setErrorModal] = useState({ isOpen: false, title: '', message: '' });
   const [cancelConfirmModal, setCancelConfirmModal] = useState({ isOpen: false, appointmentId: null, patientName: '' });
+  // Scenario 04 — cancelling a PAID appointment needs admin sign-off; this modal
+  // captures the reason and submits a CANCEL_APPOINTMENT request to Approvals.
+  const [cancelApprovalModal, setCancelApprovalModal] = useState({ isOpen: false, appointmentId: null, patientName: '', reason: '', submitting: false });
+
+  const submitCancelApproval = async () => {
+    const { appointmentId, patientName, reason } = cancelApprovalModal;
+    if (!reason.trim() || !appointmentId) return;
+    setCancelApprovalModal(m => ({ ...m, submitting: true }));
+    try {
+      await apiClient.post('/approvals', {
+        type: 'CANCEL_APPOINTMENT',
+        title: `${patientName || 'Patient'} — cancel paid appointment`,
+        appointmentId,
+        payload: '{}',
+        reason: reason.trim(),
+      });
+      setCancelApprovalModal({ isOpen: false, appointmentId: null, patientName: '', reason: '', submitting: false });
+      setErrorModal({
+        isOpen: true,
+        title: '✅ Sent for approval',
+        message: 'An admin will review this cancellation in Finance → Approvals. The appointment stays active until then.'
+      });
+    } catch (e) {
+      setCancelApprovalModal(m => ({ ...m, submitting: false }));
+      setErrorModal({
+        isOpen: true,
+        title: 'Could not send request',
+        message: e.response?.data?.error || e.response?.data?.message || 'Please try again.'
+      });
+    }
+  };
+
+  // Scenario 05 — correct the "Referred By". Applies immediately when nothing is
+  // paid; once payment exists the backend reports requiresApproval and we switch
+  // this modal to its reason-capture phase and submit a CHANGE_REFERRER request.
+  const [changeRefModal, setChangeRefModal] = useState({ isOpen: false, appointmentId: null, patientName: '', currentReferrer: '', newName: '', newContact: '', isDoctor: true, phase: 'edit', reason: '', submitting: false });
+
+  const submitChangeReferrer = async () => {
+    const m = changeRefModal;
+    if (!m.newName.trim() || !m.appointmentId) return;
+    setChangeRefModal(s => ({ ...s, submitting: true }));
+    try {
+      const res = await apiClient.post(`/appointments/${m.appointmentId}/change-referrer`, {
+        newReferrerName: m.newName.trim(),
+        newReferrerContact: m.newContact.trim() || null,
+        newReferrerIsDoctor: m.isDoctor,
+      });
+      if (res.data?.requiresApproval) {
+        setChangeRefModal(s => ({ ...s, phase: 'approval', submitting: false }));
+        return;
+      }
+      setChangeRefModal({ isOpen: false, appointmentId: null, patientName: '', currentReferrer: '', newName: '', newContact: '', isDoctor: true, phase: 'edit', reason: '', submitting: false });
+      refreshAppointments();
+      showNotif('success', 'REFERRER UPDATED', 'The referral commission now credits the corrected referrer.');
+    } catch (e) {
+      setChangeRefModal(s => ({ ...s, submitting: false }));
+      showNotif('error', 'UPDATE FAILED', e.response?.data?.message || e.response?.data?.error || 'Could not change the referrer. Please try again.');
+    }
+  };
+
+  const submitChangeReferrerApproval = async () => {
+    const m = changeRefModal;
+    if (!m.reason.trim() || !m.appointmentId) return;
+    setChangeRefModal(s => ({ ...s, submitting: true }));
+    try {
+      await apiClient.post('/approvals', {
+        type: 'CHANGE_REFERRER',
+        title: `${m.patientName || 'Patient'} — referrer → ${m.newName.trim()}`,
+        appointmentId: m.appointmentId,
+        payload: JSON.stringify({
+          newReferrerName: m.newName.trim(),
+          newReferrerContact: m.newContact.trim() || null,
+          newReferrerIsDoctor: m.isDoctor,
+        }),
+        reason: m.reason.trim(),
+      });
+      setChangeRefModal({ isOpen: false, appointmentId: null, patientName: '', currentReferrer: '', newName: '', newContact: '', isDoctor: true, phase: 'edit', reason: '', submitting: false });
+      setErrorModal({ isOpen: true, title: '✅ Sent for approval', message: 'An admin will review this referrer change in Finance → Approvals.' });
+    } catch (e) {
+      setChangeRefModal(s => ({ ...s, submitting: false }));
+      showNotif('error', 'COULD NOT SEND', e.response?.data?.message || e.response?.data?.error || 'Please try again.');
+    }
+  };
+
   const [notifModal, setNotifModal] = useState({ isOpen: false, type: 'info', title: '', message: '' });
   const showNotif = (type, title, message) => setNotifModal({ isOpen: true, type, title, message });
   const [tokenPrintData, setTokenPrintData] = useState(null);
@@ -628,9 +712,17 @@ export default function AppointmentBoard() {
 
   const filteredAppointments = useMemo(() => {
     return appointmentsForTab.filter(app => {
-      const matchesSearch = (app.patientName?.toLowerCase() || '').includes(searchQuery.toLowerCase()) || 
-                            (app.mobile || '').includes(searchQuery) || 
-                            (app.id || '').includes(searchQuery);
+      // Search now also matches the referred person and the service/test name(s)
+      // across every service line on the visit (Scenario 08).
+      const q = searchQuery.trim().toLowerCase();
+      const serviceText = [app.service, app.modality, ...((app.services || []).map(s => s.serviceName || s.service || s.modality))]
+        .filter(Boolean).join(' ').toLowerCase();
+      const matchesSearch = !q ||
+                            (app.patientName?.toLowerCase() || '').includes(q) ||
+                            (app.mobile || '').includes(searchQuery) ||
+                            (app.id || '').includes(searchQuery) ||
+                            (app.referredBy?.toLowerCase() || '').includes(q) ||
+                            serviceText.includes(q);
       const matchesStatus = filters.status === 'ALL' || app.status === filters.status;
       // Multi-service rollout: filter picks up a visit whose ANY service
       // line matches the chosen modality. matchesAnyModality also
@@ -779,12 +871,18 @@ export default function AppointmentBoard() {
       if (result && result.notAllowed) {
         // Rollback the optimistic UI state since it was not allowed by the business rule
         setAppointments(prev => prev.map(a => (a.id === id || a.appointmentId === id) ? { ...a, status: originalStatus } : a));
-        
-        setErrorModal({
-          isOpen: true,
-          title: "🔒 Cancellation Locked",
-          message: result.message || "Cannot cancel appointment at this time."
-        });
+
+        if (result.requiresApproval) {
+          // Scenario 04 — a PAID appointment isn't a dead end: capture a reason
+          // and route it to the admin Approvals queue instead of just locking.
+          setCancelApprovalModal({ isOpen: true, appointmentId: app.appointmentId, patientName: app.patientName || '', reason: '', submitting: false });
+        } else {
+          setErrorModal({
+            isOpen: true,
+            title: "🔒 Cancellation Locked",
+            message: result.message || "Cannot cancel appointment at this time."
+          });
+        }
       } else {
         refreshAppointments();
       }
@@ -883,6 +981,13 @@ export default function AppointmentBoard() {
     // 3. Validate Specialist
     if (!newBooking.doctor) {
       showNotif('error', 'SPECIALIST REQUIRED', 'No Lead Specialist assigned. Every appointment requires a supervising physician.');
+      return;
+    }
+    // Referred By is mandatory on every booking — the referral source drives
+    // commission and reporting. For a walk-in, the "🏥 Self / walk-in" button
+    // fills this with "Self", so the field is never legitimately blank.
+    if (!String(newPatient.referredBy || '').trim()) {
+      showNotif('error', 'REFERRED BY REQUIRED', 'Please enter who referred this patient. Use the “Self / walk-in” button if there is no referrer.');
       return;
     }
     // When the referral is NOT a doctor, the supporting doctor name is required.
@@ -1705,13 +1810,24 @@ export default function AppointmentBoard() {
       <div className="filter-search-group">
         <input
           type="text"
-          placeholder="Search patient, mobile, or ID..."
+          placeholder="Search patient, referrer, service, mobile…"
           value={searchQuery}
           onChange={e => setSearchQuery(e.target.value)}
         />
         {searchQuery && (
           <button onClick={() => setSearchQuery('')} className="filter-reset-btn" style={{ padding: '4px', borderRadius: '50%', width: '24px', height: '24px' }}>✕</button>
         )}
+      </div>
+
+      <div className="filter-select-group">
+        <select
+          className="filter-select"
+          value={filters.modality}
+          onChange={e => setFilters({...filters, modality: e.target.value})}
+        >
+          <option value="ALL">All Modalities</option>
+          {MODALITIES.map(m => <option key={m} value={m}>{m}</option>)}
+        </select>
       </div>
 
       <div className="filter-select-group">
@@ -1725,10 +1841,10 @@ export default function AppointmentBoard() {
         </select>
       </div>
 
-      {(filters.status !== 'ALL' || filters.doctor !== 'ALL' || searchQuery) && (
+      {(filters.status !== 'ALL' || filters.doctor !== 'ALL' || filters.modality !== 'ALL' || searchQuery) && (
         <button className="filter-reset-btn" onClick={() => {
           setSearchQuery('');
-          setFilters({ ...filters, status: 'ALL', doctor: 'ALL' });
+          setFilters({ ...filters, status: 'ALL', doctor: 'ALL', modality: 'ALL' });
         }}>
           Reset
         </button>
@@ -2135,6 +2251,13 @@ export default function AppointmentBoard() {
                 style={{ width: '28px', height: '28px', display: 'flex', alignItems: 'center', justifyContent: 'center', borderRadius: '6px', background: '#fff1f2', border: '1px solid #fecdd3', cursor: 'pointer', color: '#e11d48', fontSize: '12px' }}
                 title="Cancel"
               >✕</button>
+              {app.referredBy && String(app.referredBy).trim() && (
+                <button
+                  onClick={() => setChangeRefModal({ isOpen: true, appointmentId: app.appointmentId || app.id, patientName: app.patientName || '', currentReferrer: app.referredBy || '', newName: '', newContact: '', isDoctor: true, phase: 'edit', reason: '', submitting: false })}
+                  style={{ width: '28px', height: '28px', display: 'flex', alignItems: 'center', justifyContent: 'center', borderRadius: '6px', background: '#eff6ff', border: '1px solid #bfdbfe', cursor: 'pointer', color: '#1d4ed8', fontSize: '12px' }}
+                  title="Change referred by"
+                >↪</button>
+              )}
             </div>
           </div>
 
@@ -2770,6 +2893,34 @@ export default function AppointmentBoard() {
                               ))}
                             </div>
                           )}
+                        </div>
+
+                        {/* Self / walk-in — no external referrer. Credits the centre's
+                            own doctor by default (overridable in the Supporting doctor
+                            field), so a self-referred patient's commission lands on the
+                            in-house doctor. */}
+                        <div style={{ marginTop: '8px' }}>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setNewPatient(prev => ({
+                                ...prev,
+                                referredBy: 'Self',
+                                referrerId: null,
+                                referrerIsDoctor: false,
+                                referrerSupportedByDoctor: (prev.referrerSupportedByDoctor || '').trim() || ownerDetails?.name || '',
+                              }));
+                              setReferrers([]);
+                              setReferrerSuggestions([]);
+                            }}
+                            style={{
+                              padding: '6px 14px', borderRadius: '20px',
+                              border: (newPatient.referredBy || '').trim().toLowerCase() === 'self' ? '1.5px solid #0f52ba' : '1px solid #dbeafe',
+                              background: (newPatient.referredBy || '').trim().toLowerCase() === 'self' ? '#0f52ba' : '#f0f7ff',
+                              color: (newPatient.referredBy || '').trim().toLowerCase() === 'self' ? 'white' : '#0f52ba',
+                              fontSize: '10px', fontWeight: 900, cursor: 'pointer', letterSpacing: '0.3px',
+                            }}
+                          >🏥 Self / walk-in{ownerDetails?.name ? ` · Dr. ${ownerDetails.name}` : ''}</button>
                         </div>
 
                         {/* Top 3 most-frequent referring persons — one tap to fill.
@@ -4261,6 +4412,40 @@ export default function AppointmentBoard() {
                     <div style={{ display: 'flex', gap: '8px' }}>
                       <input type="text" placeholder="Search referrers..." value={editingAppointment.referredBy || ''} onChange={e => setEditingAppointment({...editingAppointment, referredBy: e.target.value})} style={{ width: '100%', border: '1px solid #e2e8f0', borderRadius: '12px', background: '#f8fafc', fontSize: '13px', fontWeight: 700, padding: '12px 16px', outline: 'none', color: '#1e293b' }} />
                     </div>
+                    {/* Fast typeahead — pick a known referrer to auto-fill their
+                        profile (type, contact, supporting doctor) instead of retyping. */}
+                    {(() => {
+                      const q = (editingAppointment.referredBy || '').trim().toLowerCase();
+                      if (q.length < 1) return null;
+                      const matches = (referrers || [])
+                        .filter(r => (r.name || '').toLowerCase().includes(q) && (r.name || '').toLowerCase() !== q)
+                        .slice(0, 6);
+                      if (matches.length === 0) return null;
+                      return (
+                        <div style={{ marginTop: '8px', display: 'flex', flexWrap: 'wrap', gap: '6px', alignItems: 'center' }}>
+                          <span style={{ fontSize: '8px', fontWeight: 900, color: '#b45309', letterSpacing: '0.5px' }}>DID YOU MEAN</span>
+                          {matches.map(r => (
+                            <button
+                              key={r.referrerId || r.id || r.name}
+                              type="button"
+                              onClick={() => setEditingAppointment(prev => ({
+                                ...prev,
+                                referredBy: r.name,
+                                referrerContact: r.contact || prev.referrerContact || '',
+                                referrerIsDoctor: r.isDoctor !== false,
+                                referrerEmail: r.email || '',
+                                referrerSpecialty: r.specialty || '',
+                                referrerDegree: r.degree || '',
+                                referrerSupportedByDoctor: r.isDoctor === false ? (r.supportedByDoctor || prev.referrerSupportedByDoctor || '') : '',
+                              }))}
+                              style={{ padding: '5px 11px', borderRadius: '20px', border: '1px solid #fde68a', background: '#fffbeb', color: '#92400e', fontSize: '10px', fontWeight: 800, cursor: 'pointer' }}
+                            >
+                              {r.name}{r.contact ? ` · ${r.contact}` : ''}{r.isDoctor === false ? ' · agent' : ''}
+                            </button>
+                          ))}
+                        </div>
+                      );
+                    })()}
                   </div>
                 </div>
 
@@ -5404,6 +5589,126 @@ export default function AppointmentBoard() {
       )}
 
       {/* Premium Glassmorphic Cancel Confirmation Modal */}
+      {changeRefModal.isOpen && (
+        <div style={{
+          position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
+          background: 'rgba(15, 23, 42, 0.45)', backdropFilter: 'blur(12px)', WebkitBackdropFilter: 'blur(12px)',
+          display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 99999, padding: '16px',
+          animation: 'fadeIn 0.25s ease-out'
+        }}>
+          <div style={{ background: '#ffffff', borderRadius: '24px', padding: '28px', width: '100%', maxWidth: '460px', boxShadow: '0 25px 50px -12px rgba(0,0,0,0.25)' }}>
+            <div style={{ fontSize: '34px', textAlign: 'center', marginBottom: '6px' }}>↪</div>
+            <h3 style={{ margin: 0, fontSize: '18px', fontWeight: 900, color: '#0f172a', textAlign: 'center' }}>Change referred by</h3>
+            <p style={{ fontSize: '12.5px', color: '#475569', textAlign: 'center', marginTop: '6px', lineHeight: 1.5 }}>
+              Currently referred by <strong style={{ color: '#0f172a' }}>{changeRefModal.currentReferrer || '—'}</strong>. The referral commission will move to the new referrer.
+            </p>
+
+            {changeRefModal.phase === 'edit' ? (
+              <>
+                <label style={{ display: 'block', fontSize: '10px', fontWeight: 950, color: '#64748b', letterSpacing: '0.5px', marginTop: '18px', marginBottom: '6px' }}>NEW REFERRER NAME</label>
+                <input
+                  autoFocus
+                  list="changeref-referrers"
+                  value={changeRefModal.newName}
+                  onChange={e => setChangeRefModal(s => ({ ...s, newName: e.target.value }))}
+                  placeholder="Type or pick a referrer…"
+                  style={{ width: '100%', padding: '12px', border: '1px solid #e2e8f0', borderRadius: '12px', fontSize: '14px', boxSizing: 'border-box', fontFamily: 'inherit' }}
+                />
+                <datalist id="changeref-referrers">
+                  {(referrers || []).map(r => <option key={r.referrerId || r.id || r.name} value={r.name} />)}
+                </datalist>
+
+                <div style={{ display: 'flex', gap: '10px', marginTop: '12px' }}>
+                  <div style={{ flex: 1 }}>
+                    <label style={{ display: 'block', fontSize: '10px', fontWeight: 950, color: '#64748b', letterSpacing: '0.5px', marginBottom: '6px' }}>CONTACT (OPTIONAL)</label>
+                    <input
+                      value={changeRefModal.newContact}
+                      onChange={e => setChangeRefModal(s => ({ ...s, newContact: e.target.value }))}
+                      placeholder="Phone number"
+                      style={{ width: '100%', padding: '12px', border: '1px solid #e2e8f0', borderRadius: '12px', fontSize: '14px', boxSizing: 'border-box', fontFamily: 'inherit' }}
+                    />
+                  </div>
+                  <div>
+                    <label style={{ display: 'block', fontSize: '10px', fontWeight: 950, color: '#64748b', letterSpacing: '0.5px', marginBottom: '6px' }}>TYPE</label>
+                    <div style={{ display: 'flex', gap: '4px' }}>
+                      {[['Doctor', true], ['Agent', false]].map(([lbl, val]) => (
+                        <button key={lbl} type="button" onClick={() => setChangeRefModal(s => ({ ...s, isDoctor: val }))}
+                          style={{ padding: '12px 12px', borderRadius: '10px', border: changeRefModal.isDoctor === val ? '2px solid #1d4ed8' : '1px solid #e2e8f0', background: changeRefModal.isDoctor === val ? '#eff6ff' : 'white', color: changeRefModal.isDoctor === val ? '#1d4ed8' : '#64748b', fontWeight: 800, fontSize: '12px', cursor: 'pointer' }}>{lbl}</button>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+
+                <div style={{ display: 'flex', gap: '10px', marginTop: '20px' }}>
+                  <button onClick={() => setChangeRefModal(s => ({ ...s, isOpen: false }))}
+                    style={{ flex: 1, padding: '14px', borderRadius: '14px', border: '1px solid #cbd5e1', background: '#ffffff', color: '#475569', fontWeight: 800, fontSize: '13px', cursor: 'pointer' }}>Cancel</button>
+                  <button onClick={submitChangeReferrer} disabled={!changeRefModal.newName.trim() || changeRefModal.submitting}
+                    style={{ flex: 1, padding: '14px', borderRadius: '14px', border: 'none', background: (!changeRefModal.newName.trim() || changeRefModal.submitting) ? '#cbd5e1' : 'linear-gradient(135deg, #1d4ed8, #0f52ba)', color: '#ffffff', fontWeight: 900, fontSize: '13px', cursor: (!changeRefModal.newName.trim() || changeRefModal.submitting) ? 'not-allowed' : 'pointer' }}>{changeRefModal.submitting ? 'Updating…' : 'Update Referrer'}</button>
+                </div>
+              </>
+            ) : (
+              <>
+                <div style={{ marginTop: '16px', padding: '12px', background: '#fffbeb', border: '1px solid #fde68a', borderRadius: '12px', fontSize: '12.5px', color: '#92400e', lineHeight: 1.5 }}>
+                  🔒 Payment was already collected, so changing the referrer to <strong>{changeRefModal.newName.trim()}</strong> needs admin approval.
+                </div>
+                <label style={{ display: 'block', fontSize: '10px', fontWeight: 950, color: '#64748b', letterSpacing: '0.5px', marginTop: '16px', marginBottom: '6px' }}>REASON FOR CHANGE</label>
+                <textarea
+                  autoFocus
+                  value={changeRefModal.reason}
+                  onChange={e => setChangeRefModal(s => ({ ...s, reason: e.target.value }))}
+                  placeholder="e.g. wrong referrer recorded at booking, commission belongs to another doctor…"
+                  rows={3}
+                  style={{ width: '100%', padding: '12px', border: '1px solid #e2e8f0', borderRadius: '12px', fontSize: '13px', resize: 'vertical', boxSizing: 'border-box', fontFamily: 'inherit' }}
+                />
+                <div style={{ display: 'flex', gap: '10px', marginTop: '18px' }}>
+                  <button onClick={() => setChangeRefModal(s => ({ ...s, isOpen: false }))}
+                    style={{ flex: 1, padding: '14px', borderRadius: '14px', border: '1px solid #cbd5e1', background: '#ffffff', color: '#475569', fontWeight: 800, fontSize: '13px', cursor: 'pointer' }}>Cancel</button>
+                  <button onClick={submitChangeReferrerApproval} disabled={!changeRefModal.reason.trim() || changeRefModal.submitting}
+                    style={{ flex: 1, padding: '14px', borderRadius: '14px', border: 'none', background: (!changeRefModal.reason.trim() || changeRefModal.submitting) ? '#cbd5e1' : 'linear-gradient(135deg, #1d4ed8, #0f52ba)', color: '#ffffff', fontWeight: 900, fontSize: '13px', cursor: (!changeRefModal.reason.trim() || changeRefModal.submitting) ? 'not-allowed' : 'pointer' }}>{changeRefModal.submitting ? 'Sending…' : 'Send for Approval'}</button>
+                </div>
+              </>
+            )}
+          </div>
+        </div>
+      )}
+
+      {cancelApprovalModal.isOpen && (
+        <div style={{
+          position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
+          background: 'rgba(15, 23, 42, 0.45)', backdropFilter: 'blur(12px)', WebkitBackdropFilter: 'blur(12px)',
+          display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 99999, padding: '16px',
+          animation: 'fadeIn 0.25s ease-out'
+        }}>
+          <div style={{ background: '#ffffff', borderRadius: '24px', padding: '28px', width: '100%', maxWidth: '440px', boxShadow: '0 25px 50px -12px rgba(0,0,0,0.25)' }}>
+            <div style={{ fontSize: '38px', textAlign: 'center', marginBottom: '8px' }}>🔒</div>
+            <h3 style={{ margin: 0, fontSize: '18px', fontWeight: 900, color: '#0f172a', textAlign: 'center' }}>Admin approval needed</h3>
+            <p style={{ fontSize: '13px', color: '#475569', textAlign: 'center', marginTop: '8px', lineHeight: 1.55 }}>
+              Payment was already collected for <strong style={{ color: '#0f172a' }}>{(cancelApprovalModal.patientName || 'this patient').toUpperCase()}</strong>. To cancel this paid appointment, send it for admin approval with a reason.
+            </p>
+            <label style={{ display: 'block', fontSize: '10px', fontWeight: 950, color: '#64748b', letterSpacing: '0.5px', marginTop: '18px', marginBottom: '6px' }}>REASON FOR CANCELLATION</label>
+            <textarea
+              autoFocus
+              value={cancelApprovalModal.reason}
+              onChange={e => setCancelApprovalModal(m => ({ ...m, reason: e.target.value }))}
+              placeholder="e.g. patient left without the test, duplicate booking, wrong patient…"
+              rows={3}
+              style={{ width: '100%', padding: '12px', border: '1px solid #e2e8f0', borderRadius: '12px', fontSize: '13px', resize: 'vertical', boxSizing: 'border-box', fontFamily: 'inherit' }}
+            />
+            <div style={{ display: 'flex', gap: '10px', marginTop: '18px' }}>
+              <button
+                onClick={() => setCancelApprovalModal({ isOpen: false, appointmentId: null, patientName: '', reason: '', submitting: false })}
+                style={{ flex: 1, padding: '14px', borderRadius: '14px', border: '1px solid #cbd5e1', background: '#ffffff', color: '#475569', fontWeight: 800, fontSize: '13px', cursor: 'pointer' }}
+              >Keep Appointment</button>
+              <button
+                onClick={submitCancelApproval}
+                disabled={!cancelApprovalModal.reason.trim() || cancelApprovalModal.submitting}
+                style={{ flex: 1, padding: '14px', borderRadius: '14px', border: 'none', background: (!cancelApprovalModal.reason.trim() || cancelApprovalModal.submitting) ? '#cbd5e1' : 'linear-gradient(135deg, #0f52ba, #061a40)', color: '#ffffff', fontWeight: 900, fontSize: '13px', cursor: (!cancelApprovalModal.reason.trim() || cancelApprovalModal.submitting) ? 'not-allowed' : 'pointer' }}
+              >{cancelApprovalModal.submitting ? 'Sending…' : 'Send for Approval'}</button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {cancelConfirmModal.isOpen && (
         <div style={{
           position: 'fixed',

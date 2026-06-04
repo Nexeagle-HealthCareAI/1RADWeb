@@ -1308,6 +1308,7 @@ export default function BillingPage() {
             status: (c.commissionStatus || c.status || 'UNPAID').toUpperCase(),
             referrerId: c.referrerId,
             modality: c.modality || 'MRI',
+            remarks: c.remarks || '',
             patientName: c.patientName || 'N/A',
             patientPaymentStatus: derivePatientPaymentStatus(c),
             paymentReceived: c.paymentReceived !== undefined ? c.paymentReceived : 0,
@@ -1590,7 +1591,10 @@ export default function BillingPage() {
       deduction,
       paymentMethod: paymentMethod,
       commissionDeficit,
-      deficitReason: meta.deficitReason || ''
+      deficitReason: meta.deficitReason || '',
+      // Over-commission excess funded by the centre (instead of the referrer's
+      // deficit): the API floors the commission at 0 and the centre absorbs it.
+      absorbExcessToCentre: !!meta.absorbToCentre
     };
 
     // Stable key shared by the online call + outbox fallback — a payment that
@@ -1714,9 +1718,31 @@ export default function BillingPage() {
     }
   };
 
+  // Submits a sensitive post-payment change for admin sign-off. The change is
+  // NOT applied here — it sits PENDING in Finance → Approvals until an admin
+  // approves it. Shared by the payment-edit / cancel / change-referrer triggers.
+  const handleRequestApproval = async ({ type, title, invoiceId, appointmentId, payload, reason }) => {
+    try {
+      await apiClient.post('/approvals', {
+        type,
+        title: title || '',
+        invoiceId: invoiceId || null,
+        appointmentId: appointmentId || null,
+        payload: payload || '{}',
+        reason,
+      });
+      notify({ type: 'success', title: 'Sent for approval', message: 'An admin will review this in Finance → Approvals.' });
+      setIsInvoiceDrawerOpen(false);
+    } catch (err) {
+      console.error('[APPROVALS] request failed', err);
+      notify({ type: 'error', title: 'Could not send', message: err.response?.data?.error || err.response?.data?.message || 'Please try again.' });
+      throw err;
+    }
+  };
+
   const handleApplyAdjustment = async (invoiceId, amount) => {
     try {
-      await apiClient.post('/finance/adjust', { 
+      await apiClient.post('/finance/adjust', {
         invoiceId, 
         extraDiscount: amount
       });
@@ -2395,6 +2421,7 @@ export default function BillingPage() {
           handlePrintA4={handlePrintA4}
           handlePrintThermal={handlePrintThermal}
           onApplyAdjustment={handleApplyAdjustment}
+          onRequestApproval={handleRequestApproval}
         />
 
       )}
