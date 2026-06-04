@@ -46,6 +46,11 @@ export const NAV_ITEMS = [
     allowedRoles: ['admindoctor', 'admin', 'accountant'],
   },
   {
+    label: 'Finance Approvals',
+    route: '/approvals',
+    allowedRoles: ['admindoctor', 'admin'],
+  },
+  {
     label: 'Imaging',
     route: '/technician',
     allowedRoles: ['admindoctor', 'technician'],
@@ -74,11 +79,6 @@ export const NAV_ITEMS = [
     label: 'Configuration',
     route: '/configuration',
     allowedRoles: ['admindoctor', 'admin', 'technician', 'doctor'],
-  },
-  {
-    label: 'Approvals',
-    route: '/approvals',
-    allowedRoles: ['admindoctor', 'admin'],
   },
   {
     label: 'Subscription',
