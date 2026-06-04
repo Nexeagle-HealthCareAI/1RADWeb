@@ -31,6 +31,10 @@
     "extraMetadata": {
       "main": "electron/main.cjs"
     },
+    "asarUnpack": [
+      "**/*.node",
+      "node_modules/@thiagoelg/**"
+    ],
     "win": {
       "target": [
         "nsis"
@@ -87,6 +91,7 @@
     "jszip": "^3.10.1",
     "jwt-decode": "^4.0.0",
     "mammoth": "^1.12.0",
+    "node-thermal-printer": "^4.6.0",
     "pdfjs-dist": "5.4.296",
     "qrcode": "^1.5.4",
     "qrcode.react": "^4.2.0",
@@ -95,6 +100,9 @@
     "react-pdf": "10.4.1",
     "react-router-dom": "^7.14.0",
     "xlsx": "^0.18.5"
+  },
+  "optionalDependencies": {
+    "@thiagoelg/node-printer": "^0.6.2"
   },
   "devDependencies": {
     "@eslint/js": "^9.39.4",

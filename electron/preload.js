@@ -14,9 +14,12 @@ contextBridge.exposeInMainWorld('electron', {
     getAll: () => ipcRenderer.invoke('store:getAll'),
   },
 
-  // Hardware / Printing
+  // Hardware / Printing — silent ESC/POS thermal receipts (58mm / 80mm)
   printer: {
+    list: () => ipcRenderer.invoke('printer:list'),
     printReceipt: (data) => ipcRenderer.invoke('printer:printReceipt', data),
+    printToken: (data) => ipcRenderer.invoke('printer:printToken', data),
+    test: (data) => ipcRenderer.invoke('printer:test', data),
   },
 
   // Microsoft Word — write a document and launch Word with it

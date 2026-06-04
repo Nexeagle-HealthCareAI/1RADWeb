@@ -4,6 +4,8 @@ import apiClient from '../api/apiClient';
 import { AuthContext } from '../auth/AuthContext';
 import useOffline from '../hooks/useOffline';
 import { nativeStorage } from '../hooks/useElectron';
+import { getThermalConfig } from '../utils/thermalPrinter';
+import { printThermalToken } from '../utils/thermalPrint';
 import AppointmentCard from '../components/AppointmentCard';
 import '../styles/global.css';
 import '../styles/AppointmentBoard.css';
@@ -1066,6 +1068,43 @@ export default function AppointmentBoard() {
     setShowBookingValidation(false);
   };
 
+  // Print the queue-token slip. On the desktop app with a thermal printer
+  // configured (Billing → Control), it prints SILENTLY as ESC/POS (big token
+  // number + QR). Otherwise — or if the printer errors — it opens the existing
+  // token modal so a slip can still be printed via the dialog.
+  const handlePrintToken = async (app) => {
+    const cfg = getThermalConfig();
+    if (cfg && (cfg.interface || cfg.transport)) {
+      const solo = (getServiceLines(app)?.[0]) || {};
+      // QR only when we have a real web origin (skip on desktop file://).
+      let qr = null;
+      try {
+        if (typeof window !== 'undefined' && /^https?:/.test(window.location.origin)) {
+          qr = await getTrackingUrl(app.appointmentId || app.id);
+        }
+      } catch (_) {}
+      const r = await printThermalToken({
+        clinic: {
+          name: activeCenter?.name || activeCenter?.hospitalName || '1RAD DIAGNOSTICS',
+          address: activeCenter?.address || '',
+        },
+        token: app.tokenNo ?? app.dailyTokenNumber ?? app.id,
+        patientName: app.patientName || '',
+        patientId: app.patientIdentifier || app.ptid || app.patientId || '',
+        datetime: app.dateTime
+          ? new Date(app.dateTime).toLocaleString('en-GB', { timeZone: 'Asia/Kolkata', day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit', hour12: true })
+          : '',
+        service: solo.serviceName || app.service || '',
+        modality: solo.modality || app.modality || '',
+        qr,
+        footer: ['PLEASE KEEP THIS TOKEN', 'THANK YOU'],
+      });
+      if (r?.ok) return; // printed silently — no modal needed
+    }
+    // Fallback: open the token modal (HTML slip / print dialog).
+    setTokenPrintData(app);
+  };
+
   // Open the print preview for a visit. When `serviceId` is supplied,
   // the GET fetches the service-scoped report (different services on a
   // multi-service visit have separate DiagnosticReport rows post-step-6)
@@ -2037,7 +2076,7 @@ export default function AppointmentBoard() {
                 title="View details"
               >👁️</button>
               <button
-                onClick={() => setTokenPrintData(app)}
+                onClick={() => handlePrintToken(app)}
                 style={{ width: '28px', height: '28px', display: 'flex', alignItems: 'center', justifyContent: 'center', borderRadius: '6px', background: 'white', border: '1px solid #e2e8f0', cursor: 'pointer', fontSize: '12px' }}
                 title="Print Token"
               >🖨️</button>
@@ -4698,7 +4737,7 @@ export default function AppointmentBoard() {
 
           {/* Footer actions */}
           <div style={{ position: 'sticky', bottom: 0, background: 'white', borderTop: '1px solid #e2e8f0', padding: '14px 20px', display: 'flex', gap: '10px' }}>
-            <button onClick={() => { setViewAppointment(null); setTokenPrintData(app); }} style={{ flex: 1, padding: '12px', borderRadius: '12px', border: '1px solid #e2e8f0', background: '#f8fafc', fontSize: '12px', fontWeight: 800, color: '#475569', cursor: 'pointer' }}>🖨️ Print token</button>
+            <button onClick={() => { setViewAppointment(null); handlePrintToken(app); }} style={{ flex: 1, padding: '12px', borderRadius: '12px', border: '1px solid #e2e8f0', background: '#f8fafc', fontSize: '12px', fontWeight: 800, color: '#475569', cursor: 'pointer' }}>🖨️ Print token</button>
             <button onClick={() => setViewAppointment(null)} style={{ flex: 1, padding: '12px', borderRadius: '12px', border: 'none', background: '#0f52ba', fontSize: '12px', fontWeight: 800, color: 'white', cursor: 'pointer' }}>Close</button>
           </div>
         </div>
@@ -5137,7 +5176,7 @@ export default function AppointmentBoard() {
                   statusMeta={STATUS_META}
                   getNextAction={getNextAction}
                   onAction={handleAction}
-                  onPrint={(app) => setTokenPrintData(app)}
+                  onPrint={(app) => handlePrintToken(app)}
                   onPrescription={(app) => handlePreviewPrint(app)}
                   // Multi-service rollout — per-service Print prescription
                   // for the mobile/tablet expander, mirroring the desktop.

@@ -4,6 +4,7 @@ import useAuth from '../auth/useAuth';
 import apiClient from '../api/apiClient';
 import useOffline from '../hooks/useOffline';
 import { nativeStorage } from '../hooks/useElectron';
+import { printThermalReceipt } from '../utils/thermalPrint';
 import { watchInvoices } from '../db/repos/invoicesRepo';
 import { watchExpenses } from '../db/repos/expensesRepo';
 import { watchReferrers } from '../db/repos/referrersRepo';
@@ -503,7 +504,7 @@ export default function BillingPage() {
     setBillingSettings(prev => ({ ...prev, autoBill: !prev.autoBill }));
   };
   
-  const handlePrintThermal = (invInput = null) => {
+  const handlePrintThermal = async (invInput = null) => {
     const inv = invInput || selectedInvoice;
     if (!inv) return;
 
@@ -537,6 +538,45 @@ export default function BillingPage() {
       modAgg.set(m, cur);
     }
     const modRows = [...modAgg.values()].sort((a, b) => b.subtotal - a.subtotal);
+
+    // ── Silent ESC/POS path ──────────────────────────────────────────────────
+    // When a thermal printer is configured (Configuration → Printing & Devices)
+    // print the receipt as raw ESC/POS — silent, auto paper-cut, optional
+    // cash-drawer, 58/80mm. Works in the desktop app (USB/network) and in
+    // Chrome/Edge (Web Serial / WebUSB). Any failure falls through to the HTML
+    // print slip below so a receipt always comes out.
+    const r = await printThermalReceipt({
+      clinic: {
+        name: activeCenter?.name || activeCenter?.hospitalName || '1RAD DIAGNOSTICS',
+        address: activeCenter?.address || '',
+        phone: ownerDetails?.contact || activeCenter?.contactNo || '',
+        email: ownerDetails?.email || 'contact@1rad.health',
+        rep: ownerDetails?.name || 'ADMINISTRATOR',
+      },
+      invoice: {
+        displayId: inv.displayId,
+        date: new Date().toLocaleDateString(),
+        patientName: inv.patientName || 'N/A',
+        patientId: inv.patientIdentifier || inv.patientId || 'N/A',
+        refNo: inv.referrerName || inv.referenceNumber || '',
+      },
+      items: items.map(it => ({
+        code: shortMod(it.modality || it.Modality),
+        desc: it.description || '',
+        qty: Number(it.quantity) || 1,
+        amount: Number(it.amount) || 0,
+      })),
+      modalitySummary: modRows.map(row => ({ code: shortMod(row.modality), name: row.modality, subtotal: row.subtotal })),
+      total: inv.totalAmount || 0,
+      footer: ['THANK YOU FOR CHOOSING 1RAD', 'DIGITAL REPORT AT 1RAD.HEALTH'],
+    });
+    if (r?.ok) {
+      notify?.({ type: 'success', title: 'Printed', message: 'Receipt sent to the thermal printer.' });
+      return;
+    }
+    if (!r?.unconfigured) {
+      notify?.({ type: 'warning', title: 'Thermal printer', message: `Could not print silently (${r?.error || 'error'}). Falling back to the print dialog.` });
+    }
 
     const itemsHtml = items.map(it => {
       const code = shortMod(it.modality || it.Modality);

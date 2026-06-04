@@ -155,17 +155,49 @@ export const nativeUpdater = {
 };
 
 /**
- * Thermal Printing Engine (Silent)
+ * Thermal Printing Engine (Silent ESC/POS, 58mm / 80mm)
+ * `supported` is true only in the desktop app; in the browser/PWA callers fall
+ * back to the HTML print slip.
  */
 export const nativePrinter = {
-  printReceipt: async (invoice) => {
+  supported: IS_ELECTRON && !!window.electron?.printer,
+
+  // Enumerate installed (USB/driver) printers for the settings dropdown.
+  list: async () => {
+    if (IS_ELECTRON && window.electron.printer?.list) {
+      try { return await window.electron.printer.list(); }
+      catch (e) { return { ok: false, error: e.message, printers: [] }; }
+    }
+    return { ok: false, error: 'NOT_ELECTRON', printers: [] };
+  },
+
+  printReceipt: async (data) => {
     if (IS_ELECTRON && window.electron.printer?.printReceipt) {
-      return window.electron.printer.printReceipt(invoice);
+      try { return await window.electron.printer.printReceipt(data); }
+      catch (e) { return { ok: false, error: e.message }; }
     }
     // Browser fallback: System print dialog
     window.print();
     return { ok: true, mode: 'BROWSER_DIALOG' };
-  }
+  },
+
+  // Print a queue-token slip (big token number) on the thermal printer.
+  printToken: async (data) => {
+    if (IS_ELECTRON && window.electron.printer?.printToken) {
+      try { return await window.electron.printer.printToken(data); }
+      catch (e) { return { ok: false, error: e.message }; }
+    }
+    return { ok: false, error: 'NOT_ELECTRON' };
+  },
+
+  // Print a small self-test slip from the settings panel.
+  test: async (data) => {
+    if (IS_ELECTRON && window.electron.printer?.test) {
+      try { return await window.electron.printer.test(data); }
+      catch (e) { return { ok: false, error: e.message }; }
+    }
+    return { ok: false, error: 'NOT_ELECTRON' };
+  },
 };
 
 export default function useElectron() {

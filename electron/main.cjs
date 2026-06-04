@@ -113,11 +113,221 @@ ipcMain.handle('store:set', (event, key, value) => store.set(key, value));
 ipcMain.handle('store:delete', (event, key) => store.delete(key));
 ipcMain.handle('store:getAll', (event) => store.store);
 
-// Printer Handlers (Silent Thermal Print Prototype)
-ipcMain.handle('printer:printReceipt', async (event, data) => {
-  console.log('NATIVE_PRINT_REQUEST', data);
-  // Implementation for thermal printer would go here (esc-pos / node-printer)
-  return { ok: true, message: 'SENT_TO_SPOOLER' };
+// ── Thermal printer (ESC/POS) ────────────────────────────────────
+// Silent receipt printing on 58mm / 80mm thermal printers. We build the raw
+// ESC/POS byte stream with node-thermal-printer (pure JS) and send it over the
+// configured interface:
+//   • 'tcp://192.168.x.x:9100'  → network printer (no native module needed)
+//   • 'printer:My Printer Name' → USB/driver printer (needs the optional native
+//                                  module @thiagoelg/node-printer)
+// Every require is lazy + guarded so a missing/half-built native module can
+// never crash app startup or the installer build — it just disables USB listing
+// while TCP keeps working, and the renderer falls back to the HTML slip.
+
+function loadThermal() {
+  try { return require('node-thermal-printer'); }
+  catch (e) { console.warn('[printer] node-thermal-printer unavailable:', e.message); return null; }
+}
+function loadNativePrinter() {
+  // node-thermal-printer pulls this in for the 'printer:' interface; we also use
+  // it directly to enumerate installed printers for the settings dropdown.
+  try { return require('@thiagoelg/node-printer'); }
+  catch (_) { return null; }
+}
+
+// Compose a clinic receipt onto a ThermalPrinter instance. Money uses "Rs."
+// (not ₹) — the default thermal code page (PC437) has no rupee glyph and would
+// print garbage. Width is in characters: 32 for 58mm, 48 for 80mm.
+function composeReceipt(p, data) {
+  const d = data || {};
+  const clinic = d.clinic || {};
+  const inv = d.invoice || {};
+  const money = (n) => 'Rs.' + (Number(n) || 0).toLocaleString('en-IN');
+
+  p.alignCenter();
+  p.bold(true);
+  try { p.setTextSize(1, 1); } catch (_) {}
+  p.println((clinic.name || '1RAD DIAGNOSTICS').toUpperCase());
+  try { p.setTextNormal(); } catch (_) {}
+  p.bold(false);
+  if (clinic.address) p.println(clinic.address);
+  if (clinic.phone)   p.println('Tel: ' + clinic.phone);
+  if (clinic.email)   p.println(clinic.email);
+  if (clinic.rep)     { p.bold(true); p.println('REP: ' + clinic.rep); p.bold(false); }
+  p.drawLine();
+
+  p.alignLeft();
+  if (inv.displayId)     p.println('INV : ' + inv.displayId);
+  p.println('DATE: ' + (inv.date || new Date().toLocaleDateString()));
+  p.bold(true);
+  p.println('PATIENT: ' + (inv.patientName || 'N/A').toUpperCase());
+  p.bold(false);
+  if (inv.patientId) p.println('ID  : ' + inv.patientId);
+  if (inv.refNo)     p.println('REF : ' + inv.refNo);
+  p.drawLine();
+
+  for (const it of (d.items || [])) {
+    const tag = it.code ? `[${it.code}] ` : '';
+    const name = `${tag}${(it.desc || '')}`.slice(0, (d.width === 58 ? 20 : 30));
+    const qty = Number(it.qty) || 1;
+    const sub = (Number(it.amount) || 0) * qty;
+    p.leftRight(`${name} x${qty}`, money(sub));
+  }
+
+  if ((d.modalitySummary || []).length > 1) {
+    p.drawLine();
+    p.bold(true); p.println('BY MODALITY'); p.bold(false);
+    for (const m of d.modalitySummary) {
+      p.leftRight(`${m.code || ''} ${m.name || ''}`.trim().slice(0, d.width === 58 ? 20 : 30), money(m.subtotal));
+    }
+  }
+
+  p.drawLine();
+  p.bold(true);
+  try { p.setTextSize(1, 1); } catch (_) {}
+  p.leftRight('TOTAL', money(d.total));
+  try { p.setTextNormal(); } catch (_) {}
+  p.bold(false);
+  p.drawLine();
+
+  p.alignCenter();
+  for (const line of (d.footer || ['THANK YOU FOR CHOOSING 1RAD'])) p.println(line);
+  p.println('');
+  p.println('Powered by NexEagle');
+  p.newLine();
+}
+
+// Compose a queue-token slip: clinic, a large TOKEN number, patient, time and
+// what they're in for — optionally a QR to the patient tracking page.
+function composeToken(p, data) {
+  const d = data || {};
+  const clinic = d.clinic || {};
+  p.alignCenter();
+  p.bold(true);
+  p.println((clinic.name || '1RAD DIAGNOSTICS').toUpperCase());
+  p.bold(false);
+  if (clinic.address) p.println(clinic.address);
+  p.drawLine();
+
+  p.println('TOKEN NO.');
+  p.bold(true);
+  // Big, glanceable token number. setTextSize(height,width) 0-7; fall back to
+  // the widely-supported quad area if the printer rejects custom sizes.
+  try { p.setTextSize(3, 3); }
+  catch (_) { try { p.setTextDoubleHeight(); p.setTextDoubleWidth(); } catch (__) {} }
+  p.println(String(d.token != null ? d.token : '-'));
+  try { p.setTextNormal(); } catch (_) {}
+  p.bold(false);
+  p.drawLine();
+
+  p.alignLeft();
+  if (d.patientName) { p.bold(true); p.println(String(d.patientName).toUpperCase()); p.bold(false); }
+  if (d.patientId) p.println('ID  : ' + d.patientId);
+  if (d.datetime)  p.println('TIME: ' + d.datetime);
+  if (d.service)   p.println('FOR : ' + String(d.service).slice(0, d.width === 58 ? 24 : 38));
+  if (d.modality)  p.println('MOD : ' + d.modality);
+
+  p.alignCenter();
+  if (d.qr) { try { p.printQR(String(d.qr), { cellSize: 5, correction: 'M' }); } catch (_) {} }
+  p.drawLine();
+  for (const line of (d.footer || ['PLEASE KEEP THIS TOKEN'])) p.println(line);
+  p.newLine();
+}
+
+// Print a queue-token slip. payload = { interface, width, cut, ...tokenData }
+ipcMain.handle('printer:printToken', async (event, payload) => {
+  const thermal = loadThermal();
+  if (!thermal) return { ok: false, error: 'THERMAL_LIB_UNAVAILABLE' };
+  const data = payload || {};
+  if (!data.interface) return { ok: false, error: 'NO_PRINTER_CONFIGURED' };
+  if (data.interface.startsWith('printer:') && !loadNativePrinter()) {
+    return { ok: false, error: 'USB_NATIVE_MODULE_MISSING' };
+  }
+  try {
+    const p = new thermal.printer({
+      type: thermal.types.EPSON,
+      interface: data.interface,
+      width: data.width === 58 ? 32 : 48,
+      characterSet: thermal.characterSet?.PC437_USA,
+      removeSpecialCharacters: false,
+      options: { timeout: 5000 },
+    });
+    composeToken(p, data);
+    if (data.cut !== false) p.cut();
+    const ok = await p.execute();
+    return { ok: ok !== false, message: 'PRINTED' };
+  } catch (e) {
+    console.error('[printer] token print failed:', e.message);
+    return { ok: false, error: e.message };
+  }
+});
+
+// Enumerate installed printers for the settings dropdown (USB/driver printers
+// only; network printers are entered by IP). Returns [] if the native module
+// isn't available.
+ipcMain.handle('printer:list', async () => {
+  const np = loadNativePrinter();
+  if (!np?.getPrinters) return { ok: true, printers: [], nativeAvailable: false };
+  try {
+    const printers = np.getPrinters().map(pr => ({ name: pr.name, status: pr.status }));
+    return { ok: true, printers, nativeAvailable: true };
+  } catch (e) {
+    return { ok: false, error: e.message, printers: [], nativeAvailable: true };
+  }
+});
+
+// Print a structured receipt. payload = { interface, width, cut, cashDrawer, ...receiptData }
+ipcMain.handle('printer:printReceipt', async (event, payload) => {
+  const thermal = loadThermal();
+  if (!thermal) return { ok: false, error: 'THERMAL_LIB_UNAVAILABLE' };
+  const data = payload || {};
+  const iface = data.interface;
+  if (!iface) return { ok: false, error: 'NO_PRINTER_CONFIGURED' };
+  if (iface.startsWith('printer:') && !loadNativePrinter()) {
+    return { ok: false, error: 'USB_NATIVE_MODULE_MISSING' };
+  }
+  try {
+    const p = new thermal.printer({
+      type: thermal.types.EPSON,
+      interface: iface,
+      width: data.width === 58 ? 32 : 48,
+      characterSet: thermal.characterSet?.PC437_USA,
+      removeSpecialCharacters: false,
+      options: { timeout: 5000 },
+    });
+    composeReceipt(p, data);
+    if (data.cut !== false) p.cut();
+    if (data.cashDrawer) { try { p.openCashDrawer(); } catch (_) {} }
+    const ok = await p.execute();
+    return { ok: ok !== false, message: 'PRINTED' };
+  } catch (e) {
+    console.error('[printer] print failed:', e.message);
+    return { ok: false, error: e.message };
+  }
+});
+
+// Tiny self-test slip so the user can verify the printer + width from settings.
+ipcMain.handle('printer:test', async (event, payload) => {
+  const thermal = loadThermal();
+  if (!thermal) return { ok: false, error: 'THERMAL_LIB_UNAVAILABLE' };
+  const data = payload || {};
+  if (!data.interface) return { ok: false, error: 'NO_PRINTER_CONFIGURED' };
+  try {
+    const p = new thermal.printer({
+      type: thermal.types.EPSON,
+      interface: data.interface,
+      width: data.width === 58 ? 32 : 48,
+      options: { timeout: 5000 },
+    });
+    p.alignCenter(); p.bold(true); p.println('1RAD TEST PRINT'); p.bold(false);
+    p.println(`${data.width || 80}mm OK`);
+    p.println(new Date().toLocaleString());
+    p.drawLine(); p.cut();
+    const ok = await p.execute();
+    return { ok: ok !== false };
+  } catch (e) {
+    return { ok: false, error: e.message };
+  }
 });
 
 // Word Handler — write a Word-compatible .doc (HTML) to disk and ask the OS
