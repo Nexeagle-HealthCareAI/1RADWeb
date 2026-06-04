@@ -31,10 +31,6 @@
     "extraMetadata": {
       "main": "electron/main.cjs"
     },
-    "asarUnpack": [
-      "**/*.node",
-      "node_modules/@thiagoelg/**"
-    ],
     "win": {
       "target": [
         "nsis"
@@ -100,9 +96,6 @@
     "react-pdf": "10.4.1",
     "react-router-dom": "^7.14.0",
     "xlsx": "^0.18.5"
-  },
-  "optionalDependencies": {
-    "@thiagoelg/node-printer": "^0.6.2"
   },
   "devDependencies": {
     "@eslint/js": "^9.39.4",
