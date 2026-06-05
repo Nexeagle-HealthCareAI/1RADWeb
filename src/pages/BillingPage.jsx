@@ -18,6 +18,8 @@ import '../styles/BillingPage.css';
 
 // Modular Hub Components
 import RevenueHub from '../components/Billing/RevenueHub';
+import { fetchApprovalMap, approvalForInvoice } from '../utils/approvalLookup';
+import { celebrate } from '../utils/celebrate';
 import ExpenseLedger from '../components/Billing/ExpenseLedger';
 import ReferralHub from '../components/Billing/ReferralHub';
 import { useBillingNotice, BillingNoticeModal } from '../components/Billing/BillingNotice';
@@ -83,6 +85,10 @@ export default function BillingPage() {
   const { notify, confirm: confirmModal, modalProps: noticeProps } = useBillingNotice();
   const [timeFilter, setTimeFilter] = useState('TODAY'); // 'TODAY', 'PAST', 'ALL'
   const [statusFilter, setStatusFilter] = useState('ALL'); // 'ALL', 'PAID', 'PENDING'
+  // Admin-approval visibility: latest request per invoice/appointment + a filter.
+  const [approvalMap, setApprovalMap] = useState({ byInvoice: {}, byAppointment: {}, rows: [] });
+  const [approvalFilter, setApprovalFilter] = useState('ALL'); // 'ALL' | 'AWAITING'
+  const loadApprovalMap = useCallback(async () => { setApprovalMap(await fetchApprovalMap()); }, []);
   const [modalityFilter, setModalityFilter] = useState('ALL'); // 'ALL', 'MRI', 'CT', 'X-RAY', etc.
   const [isExportDrawerOpen, setIsExportDrawerOpen] = useState(false);
   const [exportMode, setExportMode] = useState('ALL'); // 'ALL', 'RANGE'
@@ -292,7 +298,8 @@ export default function BillingPage() {
     fetchAppointments();
     fetchPersonnel();
     fetchPersonnel();
-  }, [fetchInvoices, fetchStats, fetchRegistry, fetchMatrix, fetchExpenses, fetchReferrers, fetchCommissions, fetchAppointments, fetchPersonnel]);
+    loadApprovalMap();
+  }, [fetchInvoices, fetchStats, fetchRegistry, fetchMatrix, fetchExpenses, fetchReferrers, fetchCommissions, fetchAppointments, fetchPersonnel, loadApprovalMap]);
 
   useEffect(() => {
     const handleResize = () => {
@@ -381,6 +388,9 @@ export default function BillingPage() {
     });
     return () => sub.unsubscribe();
   }, [searchTerm]);
+
+  // Load the approval-request map on mount (powers the Revenue approval column).
+  useEffect(() => { loadApprovalMap(); }, [loadApprovalMap]);
 
   // B3 Slice 5 — referral commissions liveQuery. Status defaults to ALL
   // (the page's own UI filters specific statuses post-query).
@@ -568,6 +578,8 @@ export default function BillingPage() {
       })),
       modalitySummary: modRows.map(row => ({ code: shortMod(row.modality), name: row.modality, subtotal: row.subtotal })),
       total: inv.totalAmount || 0,
+      gross: inv.grossAmount || 0,
+      discount: inv.discountAmount || 0,
       footer: ['THANK YOU FOR CHOOSING 1RAD', 'DIGITAL REPORT AT 1RAD.HEALTH'],
     });
     if (r?.ok) {
@@ -736,6 +748,19 @@ export default function BillingPage() {
 
     // Single-line REVISE of one existing commission keeps the legacy single endpoint.
     const isSingle = !!editPayout.commissionId;
+
+    // Reverting an already-PAID commission to UNPAID is sensitive (money already
+    // handed over) — it must go through admin approval, not a silent edit here.
+    // Send them to the dedicated guard (Referral Hub → tap the PAID badge →
+    // Request approval, which captures a reason and routes to Finance → Approvals).
+    if (isSingle && editPayout.originalStatus === 'PAID' && (editPayout.status || 'UNPAID') !== 'PAID') {
+      notify({
+        type: 'warning',
+        title: 'NEEDS APPROVAL',
+        message: 'To revert a paid commission to UNPAID, tap its PAID badge on the payout and Request approval — it needs admin sign-off with a reason.',
+      });
+      return;
+    }
 
     // Normalise the drawer's service lines (mirrors PayoutDrawer's derivation so
     // saving works whether or not the user touched the line editor).
@@ -1164,14 +1189,28 @@ export default function BillingPage() {
     
     return safeInvoices.filter(inv => {
       if (!inv) return false;
-      // Search Filter
-      const matchesSearch = String(inv.patientName || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
-                            (inv.displayId && String(inv.displayId).toLowerCase().includes(searchTerm.toLowerCase()));
-      
-      if (!matchesSearch) return false;
+      // Search Filter — patient, invoice no., referred-by, modality and any
+      // service/test name on the bill (Scenario 08).
+      const q = searchTerm.trim().toLowerCase();
+      if (q) {
+        const searchHay = [
+          inv.patientName,
+          inv.displayId,
+          inv.referrerName,
+          inv.modality,
+          ...((inv.items || []).map(it => it.description)),
+        ].filter(Boolean).join(' ').toLowerCase();
+        if (!searchHay.includes(q)) return false;
+      }
 
       // Status Filter
       if (statusFilter !== 'ALL' && inv.status !== statusFilter) return false;
+
+      // Approval Filter — only invoices with a request still awaiting admin sign-off.
+      if (approvalFilter === 'AWAITING') {
+        const ap = approvalForInvoice(approvalMap, inv);
+        if (!ap || ap.status !== 'PENDING') return false;
+      }
 
       // Time Filter Logic - Respect Appointment Schedule for categorization
       const linkedApp = safeApps.find(a => a.appointmentId === inv.appointmentId);
@@ -1201,7 +1240,7 @@ export default function BillingPage() {
       if (valA > valB) return sortConfig.direction === 'ASC' ? 1 : -1;
       return 0;
     });
-  }, [invoices, appointments, searchTerm, timeFilter, statusFilter, modalityFilter, startDate, endDate, sortConfig]);
+  }, [invoices, appointments, searchTerm, timeFilter, statusFilter, modalityFilter, startDate, endDate, sortConfig, approvalFilter, approvalMap]);
 
   const futureAppointments = useMemo(() => {
     const today = new Date().toLocaleDateString('en-CA');
@@ -1319,6 +1358,7 @@ export default function BillingPage() {
             referringDoctor: c.referrerIsDoctor === false
               ? (c.supportedByDoctor || null)
               : (c.partnerName || c.referrerName || null),
+            appointmentId: c.appointmentId || null,
         };
     });
 
@@ -1454,6 +1494,7 @@ export default function BillingPage() {
             const haystack = [
                 cut.patientName,
                 cut.name,
+                cut.referringDoctor,
                 cut.reference,
                 cut.modality,
                 cut.description
@@ -1617,6 +1658,7 @@ export default function BillingPage() {
       }
 
       await apiClient.post('/finance/payments', payload, { headers: { 'Idempotency-Key': idemKey } });
+      celebrate();
       setIsInvoiceDrawerOpen(false);
       refreshAllFinancialData();
       setPaymentSuccess({
@@ -1731,7 +1773,7 @@ export default function BillingPage() {
         payload: payload || '{}',
         reason,
       });
-      notify({ type: 'success', title: 'Sent for approval', message: 'An admin will review this in Finance → Approvals.' });
+      notify({ type: 'success', title: 'Sent for approval', message: 'An admin will review this in Admin Approval.' });
       setIsInvoiceDrawerOpen(false);
     } catch (err) {
       console.error('[APPROVALS] request failed', err);
@@ -2103,6 +2145,15 @@ export default function BillingPage() {
                 <span class="label">Payment Instrument:</span>
                 <span class="value">${inv.paymentMethod || 'CASH'} / ID: ${inv.invoiceId.substring(0, 8).toUpperCase()}</span>
               </div>
+              ${(Number(inv.discountAmount) || 0) > 0 ? `
+              <div class="content-row">
+                <span class="label">Gross Amount:</span>
+                <span class="value">₹${(Number(inv.grossAmount) || ((Number(inv.totalAmount) || 0) + (Number(inv.discountAmount) || 0))).toLocaleString()}</span>
+              </div>
+              <div class="content-row">
+                <span class="label">Total Discount Given:</span>
+                <span class="value">- ₹${(Number(inv.discountAmount) || 0).toLocaleString()}</span>
+              </div>` : ''}
 
               <div class="payment-card">
                 <div>
@@ -2280,6 +2331,9 @@ export default function BillingPage() {
       {billingViewMode === 'INVOICES' && (
         <RevenueHub
           filteredInvoices={filteredInvoices}
+          approvalMap={approvalMap}
+          approvalFilter={approvalFilter}
+          setApprovalFilter={setApprovalFilter}
           liveStats={liveStats}
           searchTerm={searchTerm}
           setSearchTerm={setSearchTerm}
@@ -2320,6 +2374,7 @@ export default function BillingPage() {
       {billingViewMode === 'REFERRAL_CUTS' && (
         <ReferralHub
           isMobile={isMobile}
+          approvalMap={approvalMap}
           filteredReferralCuts={filteredReferralCuts}
           paginatedReferralCuts={paginatedReferralCuts}
           timeFilter={timeFilter}

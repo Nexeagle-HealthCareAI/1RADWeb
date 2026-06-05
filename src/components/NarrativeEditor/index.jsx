@@ -646,11 +646,6 @@ const NarrativeEditor = React.forwardRef(function NarrativeEditor({
   const [pendingCommentId, setPendingCommentId] = useState(null);
   const [activeCommentId, setActiveCommentId] = useState(null);
 
-  // Medical Autocomplete
-  const [autocomplete, setAutocomplete] = useState({
-    active: false, query: '', suggestions: [], from: 0, rect: null, selected: 0,
-  });
-
   // Debounced onChange — avoid serialising the whole document to HTML on
   // every keystroke (which would cascade-re-render the entire ReportingPage).
   const onChangeRef = useRef(onChange);
@@ -752,49 +747,9 @@ const NarrativeEditor = React.forwardRef(function NarrativeEditor({
   // a Temporal Dead Zone error here because `editor` wasn't yet declared).
 
   // ── Medical autocomplete — listen to plugin events ────────────────────────
-  useEffect(() => {
-    const handler = (e) => {
-      const d = e.detail;
-      setAutocomplete(prev => ({
-        active:      d.active,
-        query:       d.query || '',
-        suggestions: d.suggestions || [],
-        from:        d.from ?? 0,
-        rect:        d.rect ?? null,
-        selected:    0,
-      }));
-    };
-    window.addEventListener('narrative-editor:autocomplete', handler);
-    return () => window.removeEventListener('narrative-editor:autocomplete', handler);
-  }, []);
-
-  // Keyboard navigation for autocomplete dropdown
-  useEffect(() => {
-    if (!autocomplete.active) return;
-    const handler = (e) => {
-      if (e.key === 'ArrowDown') {
-        e.preventDefault();
-        setAutocomplete(prev => ({ ...prev, selected: Math.min(prev.selected + 1, prev.suggestions.length - 1) }));
-      } else if (e.key === 'ArrowUp') {
-        e.preventDefault();
-        setAutocomplete(prev => ({ ...prev, selected: Math.max(prev.selected - 1, 0) }));
-      } else if (e.key === 'Enter' || e.key === 'Tab') {
-        if (autocomplete.suggestions.length > 0) {
-          e.preventDefault();
-          const term = autocomplete.suggestions[autocomplete.selected];
-          editor?.commands.insertAutocomplete({ term, from: autocomplete.from });
-          setAutocomplete(prev => ({ ...prev, active: false }));
-        }
-      } else if (e.key === 'Escape') {
-        setAutocomplete(prev => ({ ...prev, active: false }));
-      }
-    };
-    document.addEventListener('keydown', handler, true);
-    return () => document.removeEventListener('keydown', handler, true);
-    // `editor` intentionally omitted from deps: it's referenced via lexical
-    // closure with optional chaining and is initialised by `useEditor()` later
-    // in the function body. Including it would trigger Temporal Dead Zone.
-  }, [autocomplete.active, autocomplete.selected, autocomplete.suggestions, autocomplete.from]);
+  // Autocomplete is now inline ghost text (see MedicalAutocomplete) — no dropdown
+  // and no document-level key capture, so shortcuts (Arrows / Enter / Esc / Tab)
+  // keep working. Tab-to-accept is wired into the editor's Tab handler.
 
   const toggleFullscreen = () => {
     const el = containerRef.current;
@@ -1470,6 +1425,14 @@ const NarrativeEditor = React.forwardRef(function NarrativeEditor({
           !!target?.closest?.('.word-page-inner') ||
           (document.activeElement?.isContentEditable === true);
         if (!inEditable) return;
+
+        // Inline autocomplete: Tab ACCEPTS the ghost completion if one is showing
+        // (Gmail/Copilot style). Falls through to indent when there's no ghost.
+        if (editor?.commands?.acceptAutocomplete?.()) {
+          e.preventDefault();
+          e.stopImmediatePropagation();
+          return;
+        }
 
         // Let the Table extension handle Tab inside table cells
         const { state } = editor;
@@ -2658,67 +2621,8 @@ const NarrativeEditor = React.forwardRef(function NarrativeEditor({
         onClose={() => setAddendumOpen(false)}
       />
 
-      {/* ── Medical Autocomplete Dropdown ──
-          Suggestions are now {id, label, cat, short, ...} objects from the
-          1,621-term Fuse-indexed corpus (radiologyData.search). The row
-          shows the label with the matched prefix bolded, plus a small
-          subtitle "category · short definition" so the user can pick
-          confidently without consulting an external reference. */}
-      {autocomplete.active && autocomplete.suggestions.length > 0 && autocomplete.rect && (
-        <div
-          className="ne-autocomplete-dropdown"
-          style={{
-            top:  Math.min(autocomplete.rect.bottom + 4, window.innerHeight - 240),
-            left: Math.min(autocomplete.rect.left,       window.innerWidth  - 420),
-          }}
-          onMouseDown={e => e.preventDefault()} // keep editor focus
-        >
-          <div className="ne-autocomplete-header">Medical terms</div>
-          {autocomplete.suggestions.map((term, i) => {
-            // Defensive: accept legacy string-only entries (fallback path)
-            // so the UI keeps rendering even if the data layer falls back.
-            const label = typeof term === 'string' ? term : (term?.label || '');
-            const cat   = typeof term === 'string' ? ''    : (term?.cat   || '');
-            const short = typeof term === 'string' ? ''    : (term?.short || '');
-            const matchLen = autocomplete.query.length;
-            // Try to bold the leading matched prefix in the label. Falls
-            // back to whole-label render if the query isn't a prefix
-            // (Fuse can return matches whose hit isn't at position 0).
-            const matchedPrefix = label.toLowerCase().startsWith(autocomplete.query.toLowerCase())
-              ? label.slice(0, matchLen)
-              : '';
-            const rest = matchedPrefix ? label.slice(matchLen) : label;
-            return (
-              <div
-                key={term?.id ?? label}
-                className={`ne-autocomplete-item${i === autocomplete.selected ? ' ne-autocomplete-item--active' : ''}`}
-                onMouseEnter={() => setAutocomplete(prev => ({ ...prev, selected: i }))}
-                onMouseDown={() => {
-                  editor?.commands.insertAutocomplete({ term, from: autocomplete.from });
-                  setAutocomplete(prev => ({ ...prev, active: false }));
-                }}
-              >
-                <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: '8px' }}>
-                  <span>
-                    {matchedPrefix && <span className="ne-autocomplete-item__match">{matchedPrefix}</span>}
-                    {rest}
-                  </span>
-                  {cat && (
-                    <span style={{ fontSize: '10px', color: '#94a3b8', fontWeight: 600, letterSpacing: '0.3px', flexShrink: 0 }}>
-                      {cat}
-                    </span>
-                  )}
-                </div>
-                {short && (
-                  <div style={{ fontSize: '11px', color: '#64748b', marginTop: '2px', lineHeight: 1.35, fontWeight: 400 }}>
-                    {short}
-                  </div>
-                )}
-              </div>
-            );
-          })}
-        </div>
-      )}
+      {/* Medical autocomplete is now inline ghost text (MedicalAutocomplete
+          extension) — Tab accepts the greyed completion. No dropdown. */}
 
       {/* Floating toolbars */}
       <TableToolbar editor={editor} containerRef={containerRef} />

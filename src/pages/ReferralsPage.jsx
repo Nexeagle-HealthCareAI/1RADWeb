@@ -14,6 +14,7 @@ import PrescriptionPreview from '../components/PrescriptionPreview';
 import FinanceManager from '../components/FinanceManager';
 import RolesAndPermissions from '../components/RolesAndPermissions';
 import { notifyToast } from '../utils/toast';
+import * as XLSX from 'xlsx';
 
 
 // --- HELPERS ---
@@ -112,6 +113,7 @@ export default function ReferralsPage() {
   // Dashboard Filters
   const [selectedDateFilter, setSelectedDateFilter] = useState(TODAY);
   const [referrerFilter, setReferrerFilter] = useState('ALL');
+  const [personTypeFilter, setPersonTypeFilter] = useState('ALL'); // ALL | DOCTOR | OTHER | SELF (#2)
   const [overviewTimeframe, setOverviewTimeframe] = useState('ALL'); // 'DAY', 'WEEK', 'MONTH', 'YEAR', 'ALL'
   
   // Layout Builder State
@@ -224,6 +226,121 @@ export default function ReferralsPage() {
   const [pdfError, setPdfError] = useState(null);
   const [isReferrerEditDrawerOpen, setIsReferrerEditDrawerOpen] = useState(false);
   const [editingReferrer, setEditingReferrer] = useState(null);
+  // ── Bulk-add partners (#21): inline multi-row grid + Excel upload ─────────
+  const emptyBulkRow = () => ({ name: '', contact: '', specialty: '', degree: '', email: '', address: '', supportedByDoctor: '', isDoctor: true });
+  const bulkInput = { width: '100%', padding: '9px 10px', borderRadius: '9px', border: '1.5px solid #e2e8f0', fontSize: '12px', fontWeight: 700, outline: 'none', background: '#f8fafc', boxSizing: 'border-box' };
+  const [bulkOpen, setBulkOpen] = useState(false);
+  const [bulkMode, setBulkMode] = useState('GRID'); // 'GRID' | 'EXCEL'
+  const [bulkRows, setBulkRows] = useState([emptyBulkRow(), emptyBulkRow(), emptyBulkRow()]);
+  const [bulkSubmitting, setBulkSubmitting] = useState(false);
+  const [bulkResult, setBulkResult] = useState(null);
+
+  // ── Doctor portal share-links (#3) ───────────────────────────────────────
+  const [linksOpen, setLinksOpen] = useState(false);
+  const [linksBusy, setLinksBusy] = useState(false);
+  const doctorList = useMemo(
+    () => (allReferrers || []).filter(r => r.isDoctor !== false && (r.name || '').trim().toLowerCase() !== 'self'),
+    [allReferrers]
+  );
+  const linkBtn = (fg, bg, bd, disabled) => ({ padding: '7px 11px', borderRadius: '9px', border: `1px solid ${bd}`, background: disabled ? '#f1f5f9' : bg, color: disabled ? '#cbd5e1' : fg, fontSize: '11px', fontWeight: 800, cursor: disabled ? 'not-allowed' : 'pointer', whiteSpace: 'nowrap' });
+  const buildDoctorLink = async (referrerId) => {
+    const { data } = await apiClient.get(`/referrers/${referrerId}/share-link`);
+    return `${window.location.origin}/r/${referrerId}?t=${data.token}`;
+  };
+  const copyDoctorLink = async (referrerId) => {
+    try { await navigator.clipboard.writeText(await buildDoctorLink(referrerId)); notifyToast('Link copied ✓', 'success'); }
+    catch { notifyToast('Could not generate the link.', 'error'); }
+  };
+  const whatsappDoctor = async (d) => {
+    try {
+      const link = await buildDoctorLink(d.referrerId);
+      const digits = (d.contact || '').replace(/\D/g, '');
+      const num = digits.length === 10 ? `91${digits}` : digits;
+      const text = encodeURIComponent(`Hello Dr. ${d.name || ''}, here is your live referral dashboard: ${link}`);
+      window.open(num ? `https://wa.me/${num}?text=${text}` : `https://wa.me/?text=${text}`, '_blank');
+    } catch { notifyToast('Could not generate the link.', 'error'); }
+  };
+  const emailDoctors = async (ids) => {
+    if (!ids.length) { notifyToast('No doctors to email.', 'error'); return; }
+    setLinksBusy(true);
+    try {
+      const { data } = await apiClient.post('/referrers/send-links', { referrerIds: ids, baseUrl: window.location.origin });
+      notifyToast(`Emailed ${data.sent}${data.skipped ? ` · ${data.skipped} skipped (no email)` : ''}.`, data.sent > 0 ? 'success' : 'info');
+    } catch (e) {
+      notifyToast(e?.response?.data?.error || 'Could not send emails.', 'error');
+    } finally { setLinksBusy(false); }
+  };
+
+  const openBulkAdd = () => { setBulkRows([emptyBulkRow(), emptyBulkRow(), emptyBulkRow()]); setBulkResult(null); setBulkMode('GRID'); setBulkOpen(true); };
+  const setBulkRow = (i, patch) => setBulkRows(rows => rows.map((r, idx) => idx === i ? { ...r, ...patch } : r));
+
+  const downloadBulkTemplate = () => {
+    const ws = XLSX.utils.aoa_to_sheet([
+      ['Name', 'Contact', 'IsDoctor (Yes/No)', 'Specialty', 'Degree', 'Email', 'Address', 'SupportedByDoctor'],
+      ['Dr A Sharma', '9876543210', 'Yes', 'Radiology', 'MD', '', '', ''],
+      ['Rahul Kumar', '9000000000', 'No', '', '', '', '', 'Dr A Sharma'],
+    ]);
+    ws['!cols'] = [{ wch: 22 }, { wch: 14 }, { wch: 18 }, { wch: 16 }, { wch: 10 }, { wch: 18 }, { wch: 20 }, { wch: 20 }];
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'Partners');
+    XLSX.writeFile(wb, 'partner_upload_template.xlsx');
+  };
+
+  const parseBulkExcel = async (file) => {
+    if (!file) return;
+    try {
+      const buf = await file.arrayBuffer();
+      const wb = XLSX.read(buf, { type: 'array' });
+      const json = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { defval: '' });
+      const get = (row, keys) => {
+        for (const k of Object.keys(row)) {
+          if (keys.includes(k.toLowerCase().replace(/[^a-z]/g, ''))) return String(row[k] ?? '').trim();
+        }
+        return '';
+      };
+      const rows = json.map(r => {
+        const doc = get(r, ['isdoctor', 'isdoctoryesno', 'doctor']).toLowerCase();
+        return {
+          name: get(r, ['name', 'partnername', 'fullname']),
+          contact: get(r, ['contact', 'mobile', 'phone']),
+          specialty: get(r, ['specialty', 'speciality']),
+          degree: get(r, ['degree']),
+          email: get(r, ['email']),
+          address: get(r, ['address']),
+          supportedByDoctor: get(r, ['supportedbydoctor', 'forwhichdoctor']),
+          isDoctor: !(['no', 'n', 'false', '0'].includes(doc)),
+        };
+      }).filter(r => r.name);
+      if (rows.length === 0) { notifyToast('No partner rows found — use the template headers.', 'error'); return; }
+      setBulkRows(rows);
+      setBulkMode('GRID');
+      setBulkResult(null);
+      notifyToast(`${rows.length} partner${rows.length === 1 ? '' : 's'} loaded — review, then Add.`, 'success');
+    } catch {
+      notifyToast('Could not read that Excel file. Please use the template.', 'error');
+    }
+  };
+
+  const submitBulkAdd = async () => {
+    const payload = bulkRows
+      .filter(r => (r.name || '').trim())
+      .map(r => ({
+        name: r.name.trim(), contact: (r.contact || '').trim() || null, address: (r.address || '').trim() || null,
+        email: (r.email || '').trim() || null, specialty: (r.specialty || '').trim() || null, degree: (r.degree || '').trim() || null,
+        isDoctor: r.isDoctor !== false, supportedByDoctor: (r.supportedByDoctor || '').trim() || null,
+      }));
+    if (payload.length === 0) { notifyToast('Add at least one partner name first.', 'error'); return; }
+    setBulkSubmitting(true);
+    try {
+      const res = await apiClient.post('/referrers/bulk', { referrers: payload });
+      setBulkResult(res.data || { created: payload.length, merged: 0, skipped: 0 });
+      fetchReferralIntelligence();
+    } catch (e) {
+      notifyToast(e?.response?.data?.error || e?.response?.data?.message || 'Could not add partners.', 'error');
+    } finally {
+      setBulkSubmitting(false);
+    }
+  };
   const [isSavingReferrer, setIsSavingReferrer] = useState(false);
 
   const [isPatientEditDrawerOpen, setIsPatientEditDrawerOpen] = useState(false);
@@ -1143,7 +1260,13 @@ export default function ReferralsPage() {
     const safeAll = allReferrers || [];
     const safeIntel = referralIntelligence || [];
 
-    return safeAll.map(ref => {
+    return safeAll
+      .filter(ref => (ref.name || '').trim().toLowerCase() !== 'self') // Self is its own section, never a partner (#20)
+      .filter(ref => personTypeFilter === 'ALL' ? true
+        : personTypeFilter === 'DOCTOR' ? (ref.isDoctor !== false)
+        : personTypeFilter === 'OTHER' ? (ref.isDoctor === false)
+        : false) // SELF → no partner rows (#2)
+      .map(ref => {
       const intel = safeIntel.find(i => i.referrerId === ref.referrerId);
       return {
         referrerId: ref.referrerId,
@@ -1171,7 +1294,24 @@ export default function ReferralsPage() {
       if (!a.hasSentPatients && b.hasSentPatients) return 1;
       return b.patientCount - a.patientCount;
     });
-  }, [allReferrers, referralIntelligence]);
+  }, [allReferrers, referralIntelligence, personTypeFilter]);
+
+  // Self / walk-in summary — the backend collapses every self visit into a
+  // single "Self / Walk-in" intelligence node (referrerId = empty guid). Kept
+  // out of the partner list and surfaced as its own section. (#20)
+  const selfSummary = useMemo(() => {
+    const EMPTY = '00000000-0000-0000-0000-000000000000';
+    const node = (referralIntelligence || []).find(
+      i => i.referrerId === EMPTY || i.name === 'Self / Walk-in'
+    );
+    if (!node) return null;
+    return {
+      patientCount: node.totalPatients || 0,
+      totalRevenue: node.totalRevenue || 0,
+      totalDiscount: node.totalDiscount || 0,
+      patients: node.patients || [],
+    };
+  }, [referralIntelligence]);
 
   const filteredCaseLedger = useMemo(() => {
     if (!referralLogSearch) return caseLedgerList;
@@ -1184,8 +1324,13 @@ export default function ReferralsPage() {
   }, [caseLedgerList, referralLogSearch]);
 
   const referralAggregated = useMemo(() => {
-    // Map the backend intelligence DTOs to the frontend's expected Matrix structure
-    const mapped = referralIntelligence.map(ref => {
+    // Map the backend intelligence DTOs to the frontend's expected Matrix
+    // structure. The "Self / Walk-in" node (referrerId = empty guid) is NOT a
+    // partner — it's shown in its own section, so drop it here. (#20)
+    const EMPTY = '00000000-0000-0000-0000-000000000000';
+    const mapped = referralIntelligence
+      .filter(ref => ref.referrerId !== EMPTY && (ref.name || '').trim().toLowerCase() !== 'self' && ref.name !== 'Self / Walk-in')
+      .map(ref => {
       // Multi-service rollout (batch-5 fix). Per-modality counts now
       // walk the ServiceLines array when the server provided it — so a
       // single patient referred for X-Ray + CT + USG contributes 3
@@ -1225,6 +1370,7 @@ export default function ReferralsPage() {
     if (referralFilterMode === 'ALL') {
       const mappedIds = new Set(mapped.map(r => r.referrerId));
       allReferrers.forEach(ref => {
+        if ((ref.name || '').trim().toLowerCase() === 'self') return; // Self excluded from partners (#20)
         if (!mappedIds.has(ref.referrerId)) {
           mapped.push({
             referrerId: ref.referrerId,
@@ -1244,7 +1390,21 @@ export default function ReferralsPage() {
     }
 
     let final = [...mapped];
-    
+
+    // Person-type filter (#2): Doctor / Other / Self. isDoctor comes from the
+    // referrer roster (intelligence rows don't carry it). SELF hides partners —
+    // the Self / Walk-in card renders separately.
+    if (personTypeFilter === 'SELF') {
+      final = [];
+    } else if (personTypeFilter === 'DOCTOR' || personTypeFilter === 'OTHER') {
+      const wantDoctor = personTypeFilter === 'DOCTOR';
+      const docById = new Map((allReferrers || []).map(r => [r.referrerId, r.isDoctor !== false]));
+      final = final.filter(r => {
+        const isDoc = docById.has(r.referrerId) ? docById.get(r.referrerId) : true;
+        return wantDoctor ? isDoc : !isDoc;
+      });
+    }
+
     // Sort logic
     final.sort((a, b) => {
       let valA, valB;
@@ -1261,7 +1421,7 @@ export default function ReferralsPage() {
 
     const searchLow = referralMatrixSearch.toLowerCase();
     return final.filter(ref => ref.name.toLowerCase().includes(searchLow));
-  }, [referralIntelligence, referralViewMode, referralMatrixSearch, referralSort, allReferrers, referralFilterMode]);
+  }, [referralIntelligence, referralViewMode, referralMatrixSearch, referralSort, allReferrers, referralFilterMode, personTypeFilter]);
 
   // Auto-select first referrer in Matrix mode
   useEffect(() => {
@@ -3635,6 +3795,18 @@ export default function ReferralsPage() {
                 />
              </div>
 
+              {/* Person-type filter (#2) — Doctor / Other / Self */}
+              {(referralViewMode === 'MATRIX' || referralViewMode === 'LOG') && (
+                <div style={{ display: 'flex', background: '#f8fafc', padding: '4px', borderRadius: '14px', border: '1px solid #e2e8f0', gap: '3px', flexWrap: 'wrap' }}>
+                  {[['ALL', 'All'], ['DOCTOR', '👨‍⚕️ Doctor'], ['OTHER', '👤 Other'], ['SELF', '🏥 Self']].map(([k, lbl]) => (
+                    <button key={k} type="button" onClick={() => setPersonTypeFilter(k)}
+                      style={{ padding: '9px 13px', borderRadius: '11px', border: 'none', background: personTypeFilter === k ? '#0f52ba' : 'transparent', color: personTypeFilter === k ? 'white' : '#64748b', fontSize: '10px', fontWeight: 950, letterSpacing: '0.3px', cursor: 'pointer', whiteSpace: 'nowrap' }}>
+                      {lbl}
+                    </button>
+                  ))}
+                </div>
+              )}
+
               {/* Temporal Unit */}
              <div style={{ 
                display: 'flex', 
@@ -3773,6 +3945,50 @@ export default function ReferralsPage() {
             </div>
         ) : (
           <>
+
+            {/* Self / Walk-in — direct patients, NOT a partner (earn no
+                commission). Shown as its own block in Source Analytics, with the
+                full case list in Case Ledger. (#20) */}
+            {(referralViewMode === 'MATRIX' || referralViewMode === 'LOG') && (personTypeFilter === 'ALL' || personTypeFilter === 'SELF') && selfSummary && selfSummary.patientCount > 0 && (
+              <div style={{ marginBottom: '16px', background: 'linear-gradient(135deg, #0f172a, #1e293b)', borderRadius: '20px', padding: '20px 24px', border: '1px solid #1e293b', color: 'white' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '16px' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                    <span style={{ fontSize: '26px' }}>🏥</span>
+                    <div>
+                      <div style={{ fontSize: '14px', fontWeight: 950, letterSpacing: '0.5px' }}>SELF / WALK-IN</div>
+                      <div style={{ fontSize: '10px', fontWeight: 700, color: '#94a3b8' }}>Direct patients — no referral commission</div>
+                    </div>
+                  </div>
+                  <div style={{ display: 'flex', gap: '28px', flexWrap: 'wrap' }}>
+                    <div>
+                      <div style={{ fontSize: '9px', fontWeight: 900, color: '#94a3b8', letterSpacing: '1px' }}>PATIENTS</div>
+                      <div style={{ fontSize: '22px', fontWeight: 950 }}>{selfSummary.patientCount}</div>
+                    </div>
+                    <div>
+                      <div style={{ fontSize: '9px', fontWeight: 900, color: '#94a3b8', letterSpacing: '1px' }}>REVENUE</div>
+                      <div style={{ fontSize: '22px', fontWeight: 950, color: '#4ade80' }}>₹{(selfSummary.totalRevenue || 0).toLocaleString()}</div>
+                    </div>
+                    <div>
+                      <div style={{ fontSize: '9px', fontWeight: 900, color: '#94a3b8', letterSpacing: '1px' }}>DISCOUNT</div>
+                      <div style={{ fontSize: '22px', fontWeight: 950, color: '#f87171' }}>₹{(selfSummary.totalDiscount || 0).toLocaleString()}</div>
+                    </div>
+                  </div>
+                </div>
+                {referralViewMode === 'LOG' && selfSummary.patients.length > 0 && (
+                  <div style={{ marginTop: '16px', background: 'rgba(255,255,255,0.05)', borderRadius: '12px', overflow: 'hidden', maxHeight: '280px', overflowY: 'auto' }}>
+                    {selfSummary.patients.slice(0, 100).map((p, i) => (
+                      <div key={p.appointmentId || p.patientId || i} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px 14px', borderTop: i === 0 ? 'none' : '1px solid rgba(255,255,255,0.06)' }}>
+                        <div style={{ display: 'flex', flexDirection: 'column' }}>
+                          <span style={{ fontSize: '12px', fontWeight: 800 }}>{(p.name || 'Unknown').toUpperCase()}</span>
+                          <span style={{ fontSize: '9.5px', fontWeight: 700, color: '#94a3b8' }}>{p.registrationDate} · {p.modality || p.service || '—'}</span>
+                        </div>
+                        <span style={{ fontSize: '12px', fontWeight: 950, color: '#4ade80' }}>₹{(Number(p.totalAmount) || 0).toLocaleString()}</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
 
             {/* Level 3: Dual-Mode Intelligence List */}
             {referralViewMode === 'PATIENTS' ? (
@@ -3927,6 +4143,18 @@ export default function ReferralsPage() {
                        style={{ padding: '10px 18px', borderRadius: '12px', background: '#0f52ba', color: 'white', fontSize: '12px', fontWeight: 800, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '8px', border: 'none', boxShadow: '0 4px 12px rgba(15,82,186,0.25)' }}
                      >
                        <span style={{ fontSize: '14px' }}>＋</span> Add Partner
+                     </button>
+                     <button
+                       onClick={openBulkAdd}
+                       style={{ padding: '10px 18px', borderRadius: '12px', background: 'white', color: '#0f52ba', fontSize: '12px', fontWeight: 800, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '8px', border: '1px solid #bfdbfe' }}
+                     >
+                       <span style={{ fontSize: '14px' }}>⇪</span> Bulk Add
+                     </button>
+                     <button
+                       onClick={() => setLinksOpen(true)}
+                       style={{ padding: '10px 18px', borderRadius: '12px', background: 'white', color: '#15803d', fontSize: '12px', fontWeight: 800, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '8px', border: '1px solid #bbf7d0' }}
+                     >
+                       <span style={{ fontSize: '14px' }}>🔗</span> Doctor links
                      </button>
                      <button
                        onClick={handleExportRoster}
@@ -5258,6 +5486,104 @@ return (
       {renderReferralIntel()}
 
       {isReferrerEditDrawerOpen && renderReferrerEditDrawer()}
+
+      {/* Bulk-add partners modal (#21) — inline grid + Excel upload */}
+      {bulkOpen && (
+        <div onClick={() => !bulkSubmitting && setBulkOpen(false)} style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.5)', backdropFilter: 'blur(3px)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100000, padding: '20px' }}>
+          <div onClick={e => e.stopPropagation()} style={{ width: '100%', maxWidth: '760px', maxHeight: '88vh', display: 'flex', flexDirection: 'column', background: 'white', borderRadius: '20px', boxShadow: '0 30px 70px -15px rgba(0,0,0,0.4)', overflow: 'hidden' }}>
+            <div style={{ padding: '20px 24px', borderBottom: '1px solid #eef2f7', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <div>
+                <div style={{ fontSize: '17px', fontWeight: 950, color: '#0f172a' }}>Bulk add partners</div>
+                <div style={{ fontSize: '11.5px', fontWeight: 600, color: '#94a3b8', marginTop: '2px' }}>Add many at once — type them in or upload an Excel. Duplicates merge automatically.</div>
+              </div>
+              <button onClick={() => setBulkOpen(false)} style={{ border: 'none', background: '#f1f5f9', width: '32px', height: '32px', borderRadius: '50%', cursor: 'pointer', fontSize: '15px', fontWeight: 900, color: '#64748b' }}>✕</button>
+            </div>
+            <div style={{ display: 'flex', gap: '6px', padding: '14px 24px 0' }}>
+              {[['GRID', '⌨ Type in'], ['EXCEL', '📄 Upload Excel']].map(([k, lbl]) => (
+                <button key={k} onClick={() => setBulkMode(k)} style={{ padding: '9px 16px', borderRadius: '10px 10px 0 0', border: 'none', background: bulkMode === k ? '#0f52ba' : '#f1f5f9', color: bulkMode === k ? 'white' : '#64748b', fontSize: '12px', fontWeight: 900, cursor: 'pointer' }}>{lbl}</button>
+              ))}
+            </div>
+            <div style={{ flex: 1, overflowY: 'auto', padding: '18px 24px' }}>
+              {bulkMode === 'EXCEL' ? (
+                <div>
+                  <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap', marginBottom: '14px' }}>
+                    <button onClick={downloadBulkTemplate} style={{ padding: '11px 16px', borderRadius: '11px', border: '1px solid #bfdbfe', background: '#eff6ff', color: '#0f52ba', fontSize: '12px', fontWeight: 900, cursor: 'pointer' }}>⬇ Download template</button>
+                    <label style={{ padding: '11px 16px', borderRadius: '11px', border: '1px dashed #cbd5e1', background: '#f8fafc', color: '#334155', fontSize: '12px', fontWeight: 900, cursor: 'pointer' }}>
+                      📤 Choose Excel file
+                      <input type="file" accept=".xlsx,.xls,.csv" style={{ display: 'none' }} onChange={e => parseBulkExcel(e.target.files?.[0])} />
+                    </label>
+                  </div>
+                  <div style={{ fontSize: '11.5px', color: '#64748b', lineHeight: 1.6, background: '#f8fafc', border: '1px solid #eef2f7', borderRadius: '12px', padding: '14px 16px' }}>
+                    <b>Columns:</b> Name (required), Contact, IsDoctor (Yes/No), Specialty, Degree, Email, Address, SupportedByDoctor.<br />
+                    After choosing a file the rows load into the grid for review, then click <b>Add</b>.
+                  </div>
+                </div>
+              ) : (
+                <div>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1.4fr 1fr 0.9fr 1fr 0.8fr 32px', gap: '8px', padding: '0 4px 8px', fontSize: '9px', fontWeight: 950, color: '#94a3b8', letterSpacing: '0.5px' }}>
+                    <span>NAME *</span><span>CONTACT</span><span>TYPE</span><span>SPECIALTY</span><span>DEGREE</span><span></span>
+                  </div>
+                  {bulkRows.map((r, i) => (
+                    <div key={i} style={{ display: 'grid', gridTemplateColumns: '1.4fr 1fr 0.9fr 1fr 0.8fr 32px', gap: '8px', marginBottom: '8px', alignItems: 'center' }}>
+                      <input value={r.name} onChange={e => setBulkRow(i, { name: e.target.value })} placeholder="Dr A Sharma" style={bulkInput} />
+                      <input value={r.contact} onChange={e => setBulkRow(i, { contact: e.target.value })} placeholder="9876543210" style={bulkInput} />
+                      <button type="button" onClick={() => setBulkRow(i, { isDoctor: !r.isDoctor })} style={{ ...bulkInput, cursor: 'pointer', fontWeight: 900, color: r.isDoctor ? '#0f52ba' : '#b45309', background: r.isDoctor ? '#eff6ff' : '#fff7ed' }}>{r.isDoctor ? 'Doctor' : 'Agent'}</button>
+                      <input value={r.specialty} onChange={e => setBulkRow(i, { specialty: e.target.value })} placeholder="Radiology" style={bulkInput} />
+                      <input value={r.degree} onChange={e => setBulkRow(i, { degree: e.target.value })} placeholder="MD" style={bulkInput} />
+                      <button type="button" onClick={() => setBulkRows(rows => rows.length > 1 ? rows.filter((_, idx) => idx !== i) : rows)} title="Remove row" style={{ border: 'none', background: '#fee2e2', color: '#ef4444', width: '32px', height: '36px', borderRadius: '9px', cursor: 'pointer', fontWeight: 900 }}>✕</button>
+                    </div>
+                  ))}
+                  <button type="button" onClick={() => setBulkRows(rows => [...rows, emptyBulkRow()])} style={{ marginTop: '4px', padding: '9px 14px', borderRadius: '10px', border: '1px dashed #cbd5e1', background: 'white', color: '#0f52ba', fontSize: '12px', fontWeight: 900, cursor: 'pointer' }}>＋ Add row</button>
+                </div>
+              )}
+            </div>
+            <div style={{ padding: '16px 24px', borderTop: '1px solid #eef2f7', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
+              <div style={{ fontSize: '12px', fontWeight: 700, color: bulkResult ? '#15803d' : '#94a3b8' }}>
+                {bulkResult ? `✓ ${bulkResult.created} added · ${bulkResult.merged} merged · ${bulkResult.skipped} skipped` : `${bulkRows.filter(r => (r.name || '').trim()).length} ready to add`}
+              </div>
+              <div style={{ display: 'flex', gap: '10px' }}>
+                <button onClick={() => setBulkOpen(false)} style={{ padding: '11px 18px', borderRadius: '11px', border: 'none', background: '#f1f5f9', color: '#475569', fontSize: '12px', fontWeight: 900, cursor: 'pointer' }}>{bulkResult ? 'Close' : 'Cancel'}</button>
+                <button onClick={submitBulkAdd} disabled={bulkSubmitting} style={{ padding: '11px 20px', borderRadius: '11px', border: 'none', background: bulkSubmitting ? '#cbd5e1' : 'linear-gradient(135deg,#0f52ba,#1d4ed8)', color: 'white', fontSize: '12px', fontWeight: 900, cursor: bulkSubmitting ? 'not-allowed' : 'pointer' }}>{bulkSubmitting ? 'Adding…' : `Add ${bulkRows.filter(r => (r.name || '').trim()).length} partner${bulkRows.filter(r => (r.name || '').trim()).length === 1 ? '' : 's'}`}</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Doctor portal links (#3) — copy / WhatsApp / email per doctor + email all */}
+      {linksOpen && (
+        <div onClick={() => !linksBusy && setLinksOpen(false)} style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.5)', backdropFilter: 'blur(3px)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100000, padding: '20px' }}>
+          <div onClick={e => e.stopPropagation()} style={{ width: '100%', maxWidth: '640px', maxHeight: '88vh', display: 'flex', flexDirection: 'column', background: 'white', borderRadius: '20px', boxShadow: '0 30px 70px -15px rgba(0,0,0,0.4)', overflow: 'hidden' }}>
+            <div style={{ padding: '20px 24px', borderBottom: '1px solid #eef2f7', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <div>
+                <div style={{ fontSize: '17px', fontWeight: 950, color: '#0f172a' }}>Doctor referral links</div>
+                <div style={{ fontSize: '11.5px', fontWeight: 600, color: '#94a3b8', marginTop: '2px' }}>Each doctor gets a private, live dashboard of the patients they referred.</div>
+              </div>
+              <button onClick={() => setLinksOpen(false)} style={{ border: 'none', background: '#f1f5f9', width: '32px', height: '32px', borderRadius: '50%', cursor: 'pointer', fontSize: '15px', fontWeight: 900, color: '#64748b' }}>✕</button>
+            </div>
+            <div style={{ flex: 1, overflowY: 'auto', padding: '12px 16px' }}>
+              {doctorList.length === 0 ? (
+                <div style={{ padding: '50px', textAlign: 'center', color: '#94a3b8', fontSize: '13px', fontWeight: 700 }}>No doctor partners yet.</div>
+              ) : doctorList.map(d => (
+                <div key={d.referrerId} style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '10px 8px', borderBottom: '1px solid #f1f5f9' }}>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontSize: '13px', fontWeight: 800, color: '#0f172a', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{d.name}</div>
+                    <div style={{ fontSize: '10px', fontWeight: 700, color: '#94a3b8' }}>{d.email || (d.contact ? `📞 ${d.contact}` : 'no contact on file')}</div>
+                  </div>
+                  <button onClick={() => copyDoctorLink(d.referrerId)} title="Copy link" style={linkBtn('#0f52ba', '#eff6ff', '#bfdbfe')}>Copy</button>
+                  <button onClick={() => whatsappDoctor(d)} title="Share on WhatsApp" style={linkBtn('#15803d', '#f0fdf4', '#bbf7d0')}>WhatsApp</button>
+                  <button onClick={() => emailDoctors([d.referrerId])} disabled={linksBusy || !d.email} title={d.email ? 'Email this doctor' : 'No email on file'} style={linkBtn('#7c3aed', '#f5f3ff', '#ddd6fe', linksBusy || !d.email)}>Email</button>
+                </div>
+              ))}
+            </div>
+            <div style={{ padding: '14px 24px', borderTop: '1px solid #eef2f7', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
+              <span style={{ fontSize: '12px', fontWeight: 700, color: '#94a3b8' }}>{doctorList.length} doctor{doctorList.length === 1 ? '' : 's'} · {doctorList.filter(d => d.email).length} with email</span>
+              <button onClick={() => emailDoctors(doctorList.filter(d => d.email).map(d => d.referrerId))} disabled={linksBusy} style={{ padding: '11px 18px', borderRadius: '11px', border: 'none', background: linksBusy ? '#cbd5e1' : 'linear-gradient(135deg,#0f52ba,#1d4ed8)', color: 'white', fontSize: '12px', fontWeight: 900, cursor: linksBusy ? 'not-allowed' : 'pointer' }}>{linksBusy ? 'Sending…' : '📧 Email all doctors'}</button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {isPatientEditDrawerOpen && renderPatientEditDrawer()}
       {isUserDrawerOpen && (
         <div className="drawer-overlay" onClick={() => { setIsUserDrawerOpen(false); setUserRegStep(1); }} style={{ backdropFilter: 'blur(8px)', background: 'rgba(10, 22, 40, 0.4)' }}>

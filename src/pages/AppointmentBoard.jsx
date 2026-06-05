@@ -17,8 +17,12 @@ import { getTrackingUrl } from '../utils/trackingUrl';
 import { buildPatientAge, formatPatientAge, parsePatientAge } from '../utils/patientAge';
 import { getServiceLines, getUniqueModalities, matchesAnyModality, getReportProgressLabel, getStageElapsedMinutes, formatStageElapsed, getStageSlaBucket } from '../utils/appointmentServices';
 import { watchAppointments } from '../db/repos/appointmentsRepo';
+import { watchInvoices } from '../db/repos/invoicesRepo';
 import { watchPatients, findDuplicateCandidates } from '../db/repos/patientsRepo';
 import { getAllReferrers } from '../db/repos/referrersRepo';
+import { fetchApprovalMap, approvalForAppointment, approvalBadge } from '../utils/approvalLookup';
+import { withDoctorPrefix } from '../utils/referrerFormat';
+import { celebrate } from '../utils/celebrate';
 import { snapshotPersonnel, watchPersonnel } from '../db/repos/personnelRepo';
 import { snapshotServiceCharges, watchServiceCharges } from '../db/repos/serviceChargesRepo';
 import { rankPatientDuplicates, rankReferrerDuplicates } from '../utils/duplicateMatch';
@@ -135,6 +139,24 @@ export default function AppointmentBoard() {
   const [isAddPatientOpen, setIsAddPatientOpen] = useState(false);
   const [isEditingOpen, setIsEditingOpen] = useState(false);
   const [editingAppointment, setEditingAppointment] = useState(null);
+  // Admin-approval visibility — latest request per appointment.
+  const [approvalMap, setApprovalMap] = useState({ byInvoice: {}, byAppointment: {}, rows: [] });
+  useEffect(() => {
+    let alive = true;
+    fetchApprovalMap().then(m => { if (alive) setApprovalMap(m); });
+    return () => { alive = false; };
+  }, []);
+  // Payment-received visibility — appointment IDs whose invoice is fully PAID, so
+  // a card can show a green "paid" tick. Sourced from the shared invoices cache
+  // (kept fresh by the sync engine) and updated live.
+  const [paidApptIds, setPaidApptIds] = useState(() => new Set());
+  useEffect(() => {
+    const sub = watchInvoices({ status: 'PAID' }).subscribe({
+      next: (invs) => setPaidApptIds(new Set((invs || []).filter(i => i.appointmentId).map(i => i.appointmentId))),
+      error: (err) => console.warn('[AppointmentBoard] paid-invoice watch error', err),
+    });
+    return () => sub.unsubscribe();
+  }, []);
   // Multi-service edit state. The drawer's draft inputs (service /
   // modality / amount / referralCutValue) on editingAppointment model
   // the "in-progress" line; editServices is the list of lines already
@@ -179,7 +201,7 @@ export default function AppointmentBoard() {
       setErrorModal({
         isOpen: true,
         title: '✅ Sent for approval',
-        message: 'An admin will review this cancellation in Finance → Approvals. The appointment stays active until then.'
+        message: 'An admin will review this cancellation in Admin Approval. The appointment stays active until then.'
       });
     } catch (e) {
       setCancelApprovalModal(m => ({ ...m, submitting: false }));
@@ -194,14 +216,14 @@ export default function AppointmentBoard() {
   // Scenario 05 — correct the "Referred By". Applies immediately when nothing is
   // paid; once payment exists the backend reports requiresApproval and we switch
   // this modal to its reason-capture phase and submit a CHANGE_REFERRER request.
-  const [changeRefModal, setChangeRefModal] = useState({ isOpen: false, appointmentId: null, patientName: '', currentReferrer: '', newName: '', newContact: '', isDoctor: true, phase: 'edit', reason: '', submitting: false });
+  const [changeRefModal, setChangeRefModal] = useState({ isOpen: false, appointmentId: null, patientName: '', currentReferrer: '', newName: '', newContact: '', isDoctor: true, supportedByDoctor: '', supportedSpecialty: '', supportedDegree: '', email: '', specialty: '', degree: '', address: '', phase: 'edit', reason: '', submitting: false });
   // The change-referrer modal keeps its OWN roster — the shared `referrers`
   // state is a volatile search buffer that booking interactions clear, so the
   // suggestion list would otherwise come up empty.
   const [changeRefOptions, setChangeRefOptions] = useState([]);
 
   const openChangeRef = (app) => {
-    setChangeRefModal({ isOpen: true, appointmentId: app.appointmentId || app.id, patientName: app.patientName || '', currentReferrer: app.referredBy || '', newName: '', newContact: '', isDoctor: true, phase: 'edit', reason: '', submitting: false });
+    setChangeRefModal({ isOpen: true, appointmentId: app.appointmentId || app.id, patientName: app.patientName || '', currentReferrer: app.referredBy || '', newName: '', newContact: '', isDoctor: true, supportedByDoctor: '', supportedSpecialty: '', supportedDegree: '', email: '', specialty: '', degree: '', address: '', phase: 'edit', reason: '', submitting: false });
     apiClient.get('/referrers', { params: { search: '' } })
       .then(res => setChangeRefOptions(Array.isArray(res.data) ? res.data : []))
       .catch(() => setChangeRefOptions([]));
@@ -212,16 +234,25 @@ export default function AppointmentBoard() {
     if (!m.newName.trim() || !m.appointmentId) return;
     setChangeRefModal(s => ({ ...s, submitting: true }));
     try {
+      const isSelfRef = m.newName.trim().toLowerCase() === 'self';
+      const isOther = m.isDoctor === false && !isSelfRef;
       const res = await apiClient.post(`/appointments/${m.appointmentId}/change-referrer`, {
-        newReferrerName: m.newName.trim(),
+        newReferrerName: withDoctorPrefix(m.newName, m.isDoctor),
         newReferrerContact: m.newContact.trim() || null,
         newReferrerIsDoctor: m.isDoctor,
+        newReferrerSupportedByDoctor: isOther ? (m.supportedByDoctor || '').trim() : null,
+        newReferrerEmail: isSelfRef ? null : (m.email || '').trim() || null,
+        newReferrerSpecialty: (!isSelfRef && m.isDoctor) ? (m.specialty || '').trim() || null : null,
+        newReferrerDegree: (!isSelfRef && m.isDoctor) ? (m.degree || '').trim() || null : null,
+        newReferrerAddress: isSelfRef ? null : (m.address || '').trim() || null,
+        newReferrerSupportedSpecialty: isOther ? (m.supportedSpecialty || '').trim() || null : null,
+        newReferrerSupportedDegree: isOther ? (m.supportedDegree || '').trim() || null : null,
       });
       if (res.data?.requiresApproval) {
         setChangeRefModal(s => ({ ...s, phase: 'approval', submitting: false }));
         return;
       }
-      setChangeRefModal({ isOpen: false, appointmentId: null, patientName: '', currentReferrer: '', newName: '', newContact: '', isDoctor: true, phase: 'edit', reason: '', submitting: false });
+      setChangeRefModal({ isOpen: false, appointmentId: null, patientName: '', currentReferrer: '', newName: '', newContact: '', isDoctor: true, supportedByDoctor: '', supportedSpecialty: '', supportedDegree: '', email: '', specialty: '', degree: '', address: '', phase: 'edit', reason: '', submitting: false });
       refreshAppointments();
       showNotif('success', 'REFERRER UPDATED', 'The referral commission now credits the corrected referrer.');
     } catch (e) {
@@ -239,15 +270,26 @@ export default function AppointmentBoard() {
         type: 'CHANGE_REFERRER',
         title: `${m.patientName || 'Patient'} — referrer → ${m.newName.trim()}`,
         appointmentId: m.appointmentId,
-        payload: JSON.stringify({
-          newReferrerName: m.newName.trim(),
-          newReferrerContact: m.newContact.trim() || null,
-          newReferrerIsDoctor: m.isDoctor,
-        }),
+        payload: JSON.stringify((() => {
+          const isSelfRef = m.newName.trim().toLowerCase() === 'self';
+          const isOther = m.isDoctor === false && !isSelfRef;
+          return {
+            newReferrerName: withDoctorPrefix(m.newName, m.isDoctor),
+            newReferrerContact: m.newContact.trim() || null,
+            newReferrerIsDoctor: m.isDoctor,
+            newReferrerSupportedByDoctor: isOther ? (m.supportedByDoctor || '').trim() : null,
+            newReferrerEmail: isSelfRef ? null : (m.email || '').trim() || null,
+            newReferrerSpecialty: (!isSelfRef && m.isDoctor) ? (m.specialty || '').trim() || null : null,
+            newReferrerDegree: (!isSelfRef && m.isDoctor) ? (m.degree || '').trim() || null : null,
+            newReferrerAddress: isSelfRef ? null : (m.address || '').trim() || null,
+            newReferrerSupportedSpecialty: isOther ? (m.supportedSpecialty || '').trim() || null : null,
+            newReferrerSupportedDegree: isOther ? (m.supportedDegree || '').trim() || null : null,
+          };
+        })()),
         reason: m.reason.trim(),
       });
-      setChangeRefModal({ isOpen: false, appointmentId: null, patientName: '', currentReferrer: '', newName: '', newContact: '', isDoctor: true, phase: 'edit', reason: '', submitting: false });
-      setErrorModal({ isOpen: true, title: '✅ Sent for approval', message: 'An admin will review this referrer change in Finance → Approvals.' });
+      setChangeRefModal({ isOpen: false, appointmentId: null, patientName: '', currentReferrer: '', newName: '', newContact: '', isDoctor: true, supportedByDoctor: '', supportedSpecialty: '', supportedDegree: '', email: '', specialty: '', degree: '', address: '', phase: 'edit', reason: '', submitting: false });
+      setErrorModal({ isOpen: true, title: '✅ Sent for approval', message: 'An admin will review this referrer change in Admin Approval.' });
     } catch (e) {
       setChangeRefModal(s => ({ ...s, submitting: false }));
       showNotif('error', 'COULD NOT SEND', e.response?.data?.message || e.response?.data?.error || 'Please try again.');
@@ -762,6 +804,7 @@ export default function AppointmentBoard() {
   // filled. (Only applies once a referral name has been entered.)
   const isSupportedDoctorMissing =
     !!newPatient.referredBy?.trim() &&
+    newPatient.referredBy.trim().toLowerCase() !== 'self' &&
     newPatient.referrerIsDoctor === false &&
     !String(newPatient.referrerSupportedByDoctor || '').trim();
 
@@ -1013,7 +1056,7 @@ export default function AppointmentBoard() {
       return;
     }
     // When the referral is NOT a doctor, the supporting doctor name is required.
-    if (newPatient.referredBy?.trim() && newPatient.referrerIsDoctor === false && !String(newPatient.referrerSupportedByDoctor || '').trim()) {
+    if (newPatient.referredBy?.trim() && newPatient.referredBy.trim().toLowerCase() !== 'self' && newPatient.referrerIsDoctor === false && !String(newPatient.referrerSupportedByDoctor || '').trim()) {
       showNotif('error', 'DOCTOR NAME REQUIRED', 'Please enter the supporting doctor name for this referral.');
       return;
     }
@@ -1108,7 +1151,7 @@ export default function AppointmentBoard() {
       dateTime: localDateTimeStr,
       type: 'scheduled',
       doctor: newBooking.doctor,
-      referredBy: newPatient.referredBy || '',
+      referredBy: withDoctorPrefix(newPatient.referredBy, newPatient.referrerIsDoctor),
       referredContact: newPatient.referrerContact || referrers.find(r => r.name === newPatient.referredBy)?.contact || '',
       referredAddress: newPatient.referrerAddress || referrers.find(r => r.name === newPatient.referredBy)?.address || '',
       // Referral source (payee-first). The referrer IS the payee; the type
@@ -1141,6 +1184,7 @@ export default function AppointmentBoard() {
     try {
       await apiClient.post('/appointments', payload, { headers: { 'Idempotency-Key': idemKey } });
 
+      celebrate();
       setIsBookingOpen(false);
       resetBooking();
       refreshAppointments();
@@ -1292,7 +1336,7 @@ export default function AppointmentBoard() {
       return;
     }
     // When the referral is NOT a doctor, the supporting doctor name is required.
-    if (editingAppointment.referredBy?.trim() && editingAppointment.referrerIsDoctor === false && !String(editingAppointment.referrerSupportedByDoctor || '').trim()) {
+    if (editingAppointment.referredBy?.trim() && editingAppointment.referredBy.trim().toLowerCase() !== 'self' && editingAppointment.referrerIsDoctor === false && !String(editingAppointment.referrerSupportedByDoctor || '').trim()) {
       showNotif('warning', 'DOCTOR NAME REQUIRED', 'Please enter the supporting doctor name for this referral.');
       return;
     }
@@ -1347,7 +1391,7 @@ export default function AppointmentBoard() {
         dateTime: editingAppointment.dateTime,
         doctor: editingAppointment.doctor,
         notes: editingAppointment.notes,
-        referredBy: editingAppointment.referredBy || '',
+        referredBy: withDoctorPrefix(editingAppointment.referredBy, editingAppointment.referrerIsDoctor),
         // Contact applies to both a doctor and an agent payee.
         referredContact: editingAppointment.referrerContact || '',
         // Referral source (payee-first). Send the type only when known so an
@@ -1359,6 +1403,7 @@ export default function AppointmentBoard() {
         referrerEmail: editingAppointment.referrerIsDoctor !== false ? (editingAppointment.referrerEmail || '') : '',
         referrerSpecialty: editingAppointment.referrerIsDoctor !== false ? (editingAppointment.referrerSpecialty || '') : '',
         referrerDegree: editingAppointment.referrerIsDoctor !== false ? (editingAppointment.referrerDegree || '') : '',
+        referredAddress: editingAppointment.referrerAddress || '',
         patientName: editingAppointment.patientName,
         mobile: editMobile,
         patientAge: editingAppointment.patientAge,
@@ -1782,7 +1827,7 @@ export default function AppointmentBoard() {
         <div className="intel-card">
           <span className="intel-label">Expected/Arrived</span>
           <div className="intel-value" style={{ color: 'var(--primary-accent)' }}>
-            {stats.expected}<span style={{ fontSize: '16px', color: '#cbd5e1', margin: '0 4px' }}>/</span>{stats.confirmed}
+            {stats.expected}<span style={{ fontSize: '16px', color: '#cbd5e1', margin: '0 4px' }}>/</span>{stats.arrived}
           </div>
           <div className="intel-trend">
             <span style={{ color: 'var(--text-secondary)' }}>PENDING INTAKE</span>
@@ -1791,7 +1836,7 @@ export default function AppointmentBoard() {
 
         <div className="intel-card">
           <span className="intel-label">In Progress</span>
-          <div className="intel-value" style={{ color: '#f59e0b' }}>{stats.inProgress}</div>
+          <div className="intel-value" style={{ color: '#f59e0b' }}>{stats.scanning}</div>
           <div className="intel-trend">
             <span style={{ color: '#f59e0b' }}>SCANNING/REPORTING</span>
           </div>
@@ -2027,6 +2072,21 @@ export default function AppointmentBoard() {
                   <span style={{ fontSize: '9px', fontWeight: 900, color: '#475569', background: '#f1f5f9', padding: '1px 5px', borderRadius: '4px', textTransform: 'uppercase' }}>
                     {app.patientGender || 'U'} · {formatPatientAge(app.patientAge)}
                   </span>
+                  {paidApptIds.has(app.appointmentId || app.id) && (
+                    <span title="Payment received" style={{ display: 'inline-flex', alignItems: 'center', gap: '3px', fontSize: '8.5px', fontWeight: 950, letterSpacing: '0.3px', padding: '1px 7px', borderRadius: '999px', color: '#15803d', background: '#dcfce7', border: '1px solid #86efac', whiteSpace: 'nowrap' }}>
+                      ✓ PAID
+                    </span>
+                  )}
+                  {(() => {
+                    const ap = approvalForAppointment(approvalMap, app.appointmentId || app.id);
+                    const b = ap && approvalBadge(ap.status);
+                    if (!ap || !b) return null;
+                    return (
+                      <span title={`${b.label}${ap.reason ? ` — ${ap.reason}` : ''}`} style={{ fontSize: '8.5px', fontWeight: 950, letterSpacing: '0.3px', padding: '1px 7px', borderRadius: '999px', color: b.color, background: b.bg, border: `1px solid ${b.bd}`, whiteSpace: 'nowrap' }}>
+                        {b.icon} {b.short}
+                      </span>
+                    );
+                  })()}
                   {app.priority && app.priority !== 'ROUTINE' && (
                     <span
                       className={app.priority === 'STAT' ? 'priority-chip-stat' : 'priority-chip-urgent'}
@@ -2240,6 +2300,7 @@ export default function AppointmentBoard() {
                     referrerEmail:           matchedRef.email || '',
                     referrerSpecialty:       matchedRef.specialty || '',
                     referrerDegree:          matchedRef.degree || '',
+                    referrerAddress:         matchedRef.address || app.referredAddress || '',
                   } : {};
                   setEditingAppointment({ ...app, ...refProfile });
                   const lines = getServiceLines(app);
@@ -2925,12 +2986,15 @@ export default function AppointmentBoard() {
                           <button
                             type="button"
                             onClick={() => {
+                              // Self / walk-in — no commission, but default the
+                              // attending doctor to the clinic's own doctor so the
+                              // reporting page still has a doctor name to use.
                               setNewPatient(prev => ({
                                 ...prev,
                                 referredBy: 'Self',
                                 referrerId: null,
                                 referrerIsDoctor: false,
-                                referrerSupportedByDoctor: (prev.referrerSupportedByDoctor || '').trim() || ownerDetails?.name || '',
+                                referrerSupportedByDoctor: ownerDetails?.name || '',
                               }));
                               setReferrers([]);
                               setReferrerSuggestions([]);
@@ -2942,7 +3006,18 @@ export default function AppointmentBoard() {
                               color: (newPatient.referredBy || '').trim().toLowerCase() === 'self' ? 'white' : '#0f52ba',
                               fontSize: '10px', fontWeight: 900, cursor: 'pointer', letterSpacing: '0.3px',
                             }}
-                          >🏥 Self / walk-in{ownerDetails?.name ? ` · Dr. ${ownerDetails.name}` : ''}</button>
+                          >🏥 Self / walk-in</button>
+                          {(newPatient.referredBy || '').trim().toLowerCase() === 'self' && (
+                            <div style={{ marginTop: '8px' }}>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '7px', padding: '8px 11px', borderRadius: '10px', background: '#fff7ed', border: '1.5px solid #fed7aa' }}>
+                                <span style={{ fontSize: '13px' }}>ℹ️</span>
+                                <span style={{ fontSize: '10.5px', fontWeight: 800, color: '#9a3412', lineHeight: 1.4 }}>Self / walk-in — <b>not eligible for any referral commission</b>.</span>
+                              </div>
+                              <label style={{ fontSize: '9px', fontWeight: 900, color: '#64748b', letterSpacing: '0.5px', margin: '10px 0 5px', display: 'block' }}>DOCTOR FOR THIS VISIT <span style={{ fontWeight: 700, color: '#94a3b8' }}>· used on the report</span></label>
+                              <input value={newPatient.referrerSupportedByDoctor || ''} onChange={e => setNewPatient({ ...newPatient, referrerSupportedByDoctor: e.target.value })} placeholder="Doctor name"
+                                style={{ width: '100%', padding: '10px 12px', borderRadius: '10px', border: '1.5px solid #dee2e6', fontSize: '13px', fontWeight: 600, background: '#f8fafc', boxSizing: 'border-box', outline: 'none' }} />
+                            </div>
+                          )}
                         </div>
 
                         {/* Top 3 most-frequent referring persons — one tap to fill.
@@ -2974,7 +3049,7 @@ export default function AppointmentBoard() {
                             "Dr Sharma" / "Dr. Sharmaa" as a second record. */}
                         {!newPatient.referrerId && referrerSuggestions.length > 0 && (
                           <div style={{ marginTop: '8px', display: 'flex', flexWrap: 'wrap', gap: '6px', alignItems: 'center' }}>
-                            <span style={{ fontSize: '8px', fontWeight: 900, color: '#b45309', letterSpacing: '0.5px' }}>DID YOU MEAN</span>
+                            <span style={{ fontSize: '8px', fontWeight: 900, color: '#b45309', letterSpacing: '0.5px' }}>{referrerSuggestions.some(s => s.tier === 'high') ? '⚠️ ALREADY EXISTS — TAP TO USE' : 'DID YOU MEAN'}</span>
                             {referrerSuggestions.map(s => (
                               <button
                                 key={s.referrer.referrerId || s.referrer.id}
@@ -2993,8 +3068,9 @@ export default function AppointmentBoard() {
                         )}
 
                         {/* New referral source — typed name doesn't match an existing
-                            partner. Choice-first: is this a doctor or another person? */}
-                        {newPatient.referredBy.trim() && !newPatient.referrerId && (() => {
+                            partner. Choice-first: is this a doctor or another person?
+                            Hidden for Self (walk-in needs no referrer details). */}
+                        {newPatient.referredBy.trim() && newPatient.referredBy.trim().toLowerCase() !== 'self' && !newPatient.referrerId && (() => {
                           const refIsDoctor = newPatient.referrerIsDoctor !== false; // default Doctor
                           const inputStyle = { width: '100%', padding: '8px 12px', borderRadius: '10px', fontSize: '13px', fontWeight: 600, outline: 'none', background: '#f8fafc', border: '1.5px solid #dee2e6', boxSizing: 'border-box' };
                           return (
@@ -4478,6 +4554,7 @@ export default function AppointmentBoard() {
                                 referrerEmail: r.email || '',
                                 referrerSpecialty: r.specialty || '',
                                 referrerDegree: r.degree || '',
+                                referrerAddress: r.address || '',
                                 referrerSupportedByDoctor: r.isDoctor === false ? (r.supportedByDoctor || prev.referrerSupportedByDoctor || '') : '',
                               }))}
                               style={{ padding: '5px 11px', borderRadius: '20px', border: '1px solid #fde68a', background: '#fffbeb', color: '#92400e', fontSize: '10px', fontWeight: 800, cursor: 'pointer' }}
@@ -4488,11 +4565,33 @@ export default function AppointmentBoard() {
                         </div>
                       );
                     })()}
+
+                    {/* Self / walk-in — no external referrer (no commission). */}
+                    <button type="button"
+                      onClick={() => setEditingAppointment(prev => ({ ...prev, referredBy: 'Self', referrerContact: '', referrerIsDoctor: false, referrerSupportedByDoctor: ownerDetails?.name || '' }))}
+                      style={{ marginTop: '8px', padding: '6px 14px', borderRadius: '20px',
+                        border: (editingAppointment.referredBy || '').trim().toLowerCase() === 'self' ? '1.5px solid #0f52ba' : '1px solid #dbeafe',
+                        background: (editingAppointment.referredBy || '').trim().toLowerCase() === 'self' ? '#0f52ba' : '#f0f7ff',
+                        color: (editingAppointment.referredBy || '').trim().toLowerCase() === 'self' ? 'white' : '#0f52ba',
+                        fontSize: '10px', fontWeight: 900, cursor: 'pointer', letterSpacing: '0.3px' }}
+                    >🏥 Self / walk-in</button>
+                    {(editingAppointment.referredBy || '').trim().toLowerCase() === 'self' && (
+                      <div style={{ marginTop: '8px' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '7px', padding: '8px 11px', borderRadius: '10px', background: '#fff7ed', border: '1.5px solid #fed7aa' }}>
+                          <span style={{ fontSize: '13px' }}>ℹ️</span>
+                          <span style={{ fontSize: '10.5px', fontWeight: 800, color: '#9a3412', lineHeight: 1.4 }}>Self / walk-in — <b>not eligible for any referral commission</b>.</span>
+                        </div>
+                        <label style={{ fontSize: '9px', fontWeight: 900, color: '#64748b', letterSpacing: '0.5px', margin: '10px 0 5px', display: 'block' }}>DOCTOR FOR THIS VISIT <span style={{ fontWeight: 700, color: '#94a3b8' }}>· used on the report</span></label>
+                        <input value={editingAppointment.referrerSupportedByDoctor || ''} onChange={e => setEditingAppointment({ ...editingAppointment, referrerSupportedByDoctor: e.target.value })} placeholder="Doctor name"
+                          style={{ width: '100%', padding: '10px 12px', borderRadius: '10px', border: '1.5px solid #dee2e6', fontSize: '13px', fontWeight: 600, background: '#f8fafc', boxSizing: 'border-box', outline: 'none' }} />
+                      </div>
+                    )}
+
                   </div>
                 </div>
 
-                {/* Referral type — same payee-first choice as booking. */}
-                {editingAppointment.referredBy?.trim() && (() => {
+                {/* Referral type — same payee-first choice as booking. Hidden for Self. */}
+                {editingAppointment.referredBy?.trim() && String(editingAppointment.referredBy).trim().toLowerCase() !== 'self' && (() => {
                   const refIsDoctor = editingAppointment.referrerIsDoctor !== false;
                   const inp = { width: '100%', border: '1px solid #e2e8f0', borderRadius: '12px', background: '#f8fafc', fontSize: '13px', fontWeight: 700, padding: '10px 14px', outline: 'none', color: '#1e293b', boxSizing: 'border-box' };
                   return (
@@ -4562,6 +4661,9 @@ export default function AppointmentBoard() {
                           </div>
                         </div>
                       )}
+                      {/* Address / clinic — editable (parity with booking). */}
+                      <input type="text" placeholder="Address / clinic (optional)" value={editingAppointment.referrerAddress || ''}
+                        onChange={e => setEditingAppointment({ ...editingAppointment, referrerAddress: e.target.value })} style={inp} />
                     </div>
                   );
                 })()}
@@ -5306,13 +5408,22 @@ export default function AppointmentBoard() {
         <div className="filter-search-group">
           <input
             type="text"
-            placeholder="Search mission records..."
+            placeholder="Search patient, referrer, service, mobile…"
             value={searchQuery}
             onChange={e => setSearchQuery(e.target.value)}
           />
         </div>
 
         <div className="filter-select-group">
+          <select
+            className="filter-select"
+            value={filters.modality}
+            onChange={e => setFilters({...filters, modality: e.target.value})}
+          >
+            <option value="ALL">All Modalities</option>
+            {MODALITIES.map(m => <option key={m} value={m}>{m}</option>)}
+          </select>
+
           <select
             className="filter-select"
             value={filters.doctor}
@@ -5677,6 +5788,11 @@ export default function AppointmentBoard() {
                             newName: r.name,
                             newContact: r.contact || s.newContact,
                             isDoctor: r.isDoctor !== false,
+                            email: r.email || '',
+                            specialty: r.specialty || '',
+                            degree: r.degree || '',
+                            address: r.address || '',
+                            supportedByDoctor: r.isDoctor === false ? (r.supportedByDoctor || '') : '',
                           }))}
                           style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%', textAlign: 'left', padding: '10px 12px', border: 'none', borderBottom: '1px solid #f1f5f9', background: 'white', cursor: 'pointer', fontSize: '13px' }}
                         >
@@ -5699,33 +5815,121 @@ export default function AppointmentBoard() {
                     fontSize: '11px', fontWeight: 900, cursor: 'pointer', letterSpacing: '0.3px' }}
                 >🏥 Self / walk-in · no commission</button>
 
-                <div style={{ display: 'flex', gap: '10px', marginTop: '12px' }}>
-                  <div style={{ flex: 1 }}>
-                    <label style={{ display: 'block', fontSize: '10px', fontWeight: 950, color: '#64748b', letterSpacing: '0.5px', marginBottom: '6px' }}>CONTACT (OPTIONAL)</label>
-                    <input
-                      value={changeRefModal.newContact}
-                      onChange={e => setChangeRefModal(s => ({ ...s, newContact: e.target.value }))}
-                      placeholder="Phone number"
-                      style={{ width: '100%', padding: '12px', border: '1px solid #e2e8f0', borderRadius: '12px', fontSize: '14px', boxSizing: 'border-box', fontFamily: 'inherit' }}
-                    />
-                  </div>
-                  <div>
-                    <label style={{ display: 'block', fontSize: '10px', fontWeight: 950, color: '#64748b', letterSpacing: '0.5px', marginBottom: '6px' }}>TYPE</label>
-                    <div style={{ display: 'flex', gap: '4px' }}>
-                      {[['Doctor', true], ['Agent', false]].map(([lbl, val]) => (
-                        <button key={lbl} type="button" onClick={() => setChangeRefModal(s => ({ ...s, isDoctor: val }))}
-                          style={{ padding: '12px 12px', borderRadius: '10px', border: changeRefModal.isDoctor === val ? '2px solid #1d4ed8' : '1px solid #e2e8f0', background: changeRefModal.isDoctor === val ? '#eff6ff' : 'white', color: changeRefModal.isDoctor === val ? '#1d4ed8' : '#64748b', fontWeight: 800, fontSize: '12px', cursor: 'pointer' }}>{lbl}</button>
-                      ))}
+                {/* Doctor / referrer address — shown when the typed name matches a
+                    referrer on the roster, so the user can confirm the right person. */}
+                {(() => {
+                  const name = String(changeRefModal.newName || '').trim().toLowerCase();
+                  if (!name || name === 'self') return null;
+                  const match = (changeRefOptions || []).find(r => String(r.name || '').trim().toLowerCase() === name);
+                  if (!match) return null;
+                  return (
+                    <div style={{ marginTop: '8px', fontSize: '11.5px', color: '#475569', lineHeight: 1.5, background: '#f8fafc', border: '1px dashed #e2e8f0', borderRadius: '10px', padding: '9px 11px' }}>
+                      <span style={{ fontWeight: 900, color: '#94a3b8', fontSize: '9px', letterSpacing: '0.5px' }}>{match.isDoctor !== false ? 'DOCTOR' : 'REFERRER'} ADDRESS</span>
+                      <div style={{ marginTop: '2px' }}>{match.address ? match.address : <span style={{ color: '#cbd5e1' }}>No address on file</span>}</div>
                     </div>
-                  </div>
-                </div>
+                  );
+                })()}
 
+                {/* Type + details — hidden for Self (walk-in, no commission). Matches
+                    the booking flow: Doctor vs Other person, with a supporting doctor. */}
+                {changeRefModal.newName.trim() && String(changeRefModal.newName).trim().toLowerCase() !== 'self' && (
+                  <>
+                    <div style={{ marginTop: '14px' }}>
+                      <div style={{ fontSize: '10px', fontWeight: 950, color: '#64748b', letterSpacing: '0.5px', marginBottom: '7px' }}>WHO IS THE REFERRAL?</div>
+                      <div style={{ display: 'flex', gap: '8px' }}>
+                        {[{ k: true, icon: '👨‍⚕️', label: 'Doctor' }, { k: false, icon: '👤', label: 'Other person' }].map(opt => {
+                          const active = changeRefModal.isDoctor === opt.k;
+                          return (
+                            <button key={String(opt.k)} type="button"
+                              onClick={() => setChangeRefModal(s => ({ ...s, isDoctor: opt.k }))}
+                              style={{ flex: 1, padding: '12px 10px', borderRadius: '12px', border: `1.5px solid ${active ? '#0f52ba' : '#dee2e6'}`, background: active ? '#eff6ff' : 'white', color: active ? '#0f52ba' : '#64748b', fontSize: '12px', fontWeight: 800, cursor: 'pointer', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '4px' }}>
+                              <span style={{ fontSize: '18px' }}>{opt.icon}</span>{opt.label}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+
+                    <div style={{ display: 'flex', gap: '8px', marginTop: '12px' }}>
+                      <input value={changeRefModal.newContact} onChange={e => setChangeRefModal(s => ({ ...s, newContact: e.target.value }))} placeholder="Mobile (optional)"
+                        style={{ flex: 1, padding: '11px', border: '1px solid #e2e8f0', borderRadius: '12px', fontSize: '13px', boxSizing: 'border-box', fontFamily: 'inherit' }} />
+                      <input type="email" value={changeRefModal.email || ''} onChange={e => setChangeRefModal(s => ({ ...s, email: e.target.value }))} placeholder="Email (optional)"
+                        style={{ flex: 1, padding: '11px', border: '1px solid #e2e8f0', borderRadius: '12px', fontSize: '13px', boxSizing: 'border-box', fontFamily: 'inherit' }} />
+                    </div>
+
+                    {/* Doctor → speciality + degree (parity with booking). */}
+                    {changeRefModal.isDoctor !== false && (
+                      <div style={{ display: 'flex', gap: '8px', marginTop: '10px' }}>
+                        <input value={changeRefModal.specialty || ''} onChange={e => setChangeRefModal(s => ({ ...s, specialty: e.target.value }))} placeholder="Speciality (optional)"
+                          style={{ flex: 1, padding: '11px', border: '1px solid #e2e8f0', borderRadius: '12px', fontSize: '13px', boxSizing: 'border-box', fontFamily: 'inherit' }} />
+                        <input value={changeRefModal.degree || ''} onChange={e => setChangeRefModal(s => ({ ...s, degree: e.target.value }))} placeholder="Degree (optional)"
+                          style={{ flex: 1, padding: '11px', border: '1px solid #e2e8f0', borderRadius: '12px', fontSize: '13px', boxSizing: 'border-box', fontFamily: 'inherit' }} />
+                      </div>
+                    )}
+
+                    {/* Other person → the doctor they collect for (mandatory). */}
+                    {changeRefModal.isDoctor === false && (() => {
+                      const missing = !String(changeRefModal.supportedByDoctor || '').trim();
+                      return (
+                      <div style={{ marginTop: '12px', padding: '12px', borderRadius: '12px', border: `1.5px dashed ${missing ? '#f59e0b' : '#bfdbfe'}`, background: missing ? '#fffbeb' : '#f5f9ff' }}>
+                        <div style={{ fontSize: '9px', fontWeight: 900, color: '#0f52ba', letterSpacing: '0.6px', textTransform: 'uppercase', marginBottom: '7px', display: 'flex', alignItems: 'center', gap: '5px' }}>
+                          <span>👨‍⚕️</span> Referring doctor <span style={{ color: '#e11d48' }}>*</span>
+                          <span style={{ fontSize: '8px', fontWeight: 800, color: '#b45309' }}>required</span>
+                        </div>
+                        <div style={{ position: 'relative' }}>
+                          <input value={changeRefModal.supportedByDoctor || ''} onChange={e => setChangeRefModal(s => ({ ...s, supportedByDoctor: e.target.value }))}
+                            placeholder="Supporting doctor name — search or type"
+                            style={{ width: '100%', padding: '11px', border: `1.5px solid ${missing ? '#f59e0b' : '#dee2e6'}`, borderRadius: '10px', fontSize: '13px', boxSizing: 'border-box', fontFamily: 'inherit' }} />
+                          {(() => {
+                            const q = String(changeRefModal.supportedByDoctor || '').trim().toLowerCase();
+                            if (q.length < 1) return null;
+                            const matches = (changeRefOptions || []).filter(r => r.isDoctor !== false && (r.name || '').toLowerCase().includes(q) && (r.name || '').toLowerCase() !== q).slice(0, 5);
+                            if (matches.length === 0) return null;
+                            return (
+                              <div style={{ position: 'absolute', top: '100%', left: 0, right: 0, zIndex: 40, background: 'white', border: '1px solid #e2e8f0', borderRadius: '10px', boxShadow: '0 6px 18px rgba(15,23,42,0.12)', marginTop: '4px', maxHeight: '160px', overflowY: 'auto' }}>
+                                {matches.map(d => (
+                                  <div key={d.referrerId || d.name} onMouseDown={() => setChangeRefModal(s => ({ ...s, supportedByDoctor: d.name, supportedSpecialty: d.specialty || '', supportedDegree: d.degree || '' }))}
+                                    style={{ padding: '9px 12px', cursor: 'pointer', borderBottom: '1px solid #f1f5f9' }}>
+                                    <div style={{ fontSize: '12px', fontWeight: 700, color: '#1e293b' }}>{d.name}</div>
+                                    {(d.specialty || d.degree) && <div style={{ fontSize: '10px', color: '#64748b', marginTop: '1px' }}>{[d.specialty, d.degree].filter(Boolean).join(' · ')}</div>}
+                                  </div>
+                                ))}
+                              </div>
+                            );
+                          })()}
+                        </div>
+                        {/* Supporting doctor's profile (parity with booking). */}
+                        <div style={{ display: 'flex', gap: '8px', marginTop: '8px' }}>
+                          <input value={changeRefModal.supportedSpecialty || ''} onChange={e => setChangeRefModal(s => ({ ...s, supportedSpecialty: e.target.value }))} placeholder="Doctor speciality (optional)"
+                            style={{ flex: 1, padding: '10px', border: '1px solid #e2e8f0', borderRadius: '10px', fontSize: '12.5px', boxSizing: 'border-box', fontFamily: 'inherit' }} />
+                          <input value={changeRefModal.supportedDegree || ''} onChange={e => setChangeRefModal(s => ({ ...s, supportedDegree: e.target.value }))} placeholder="Doctor degree (optional)"
+                            style={{ flex: 1, padding: '10px', border: '1px solid #e2e8f0', borderRadius: '10px', fontSize: '12.5px', boxSizing: 'border-box', fontFamily: 'inherit' }} />
+                        </div>
+                      </div>
+                      );
+                    })()}
+
+                    {/* Address / clinic (both Doctor and Other person). */}
+                    <div style={{ marginTop: '10px' }}>
+                      <input value={changeRefModal.address || ''} onChange={e => setChangeRefModal(s => ({ ...s, address: e.target.value }))} placeholder="Address / clinic (optional)"
+                        style={{ width: '100%', padding: '11px', border: '1px solid #e2e8f0', borderRadius: '12px', fontSize: '13px', boxSizing: 'border-box', fontFamily: 'inherit' }} />
+                    </div>
+                  </>
+                )}
+
+                {(() => {
+                  const isOther = changeRefModal.isDoctor === false && String(changeRefModal.newName).trim().toLowerCase() !== 'self';
+                  const supMissing = isOther && !String(changeRefModal.supportedByDoctor || '').trim();
+                  const disabled = !changeRefModal.newName.trim() || changeRefModal.submitting || supMissing;
+                  return (
                 <div style={{ display: 'flex', gap: '10px', marginTop: '20px' }}>
                   <button onClick={() => setChangeRefModal(s => ({ ...s, isOpen: false }))}
                     style={{ flex: 1, padding: '14px', borderRadius: '14px', border: '1px solid #cbd5e1', background: '#ffffff', color: '#475569', fontWeight: 800, fontSize: '13px', cursor: 'pointer' }}>Cancel</button>
-                  <button onClick={submitChangeReferrer} disabled={!changeRefModal.newName.trim() || changeRefModal.submitting}
-                    style={{ flex: 1, padding: '14px', borderRadius: '14px', border: 'none', background: (!changeRefModal.newName.trim() || changeRefModal.submitting) ? '#cbd5e1' : 'linear-gradient(135deg, #1d4ed8, #0f52ba)', color: '#ffffff', fontWeight: 900, fontSize: '13px', cursor: (!changeRefModal.newName.trim() || changeRefModal.submitting) ? 'not-allowed' : 'pointer' }}>{changeRefModal.submitting ? 'Updating…' : 'Update Referrer'}</button>
+                  <button onClick={submitChangeReferrer} disabled={disabled}
+                    style={{ flex: 1, padding: '14px', borderRadius: '14px', border: 'none', background: disabled ? '#cbd5e1' : 'linear-gradient(135deg, #1d4ed8, #0f52ba)', color: '#ffffff', fontWeight: 900, fontSize: '13px', cursor: disabled ? 'not-allowed' : 'pointer' }}>{changeRefModal.submitting ? 'Updating…' : 'Update Referrer'}</button>
                 </div>
+                  );
+                })()}
               </>
             ) : (
               <>

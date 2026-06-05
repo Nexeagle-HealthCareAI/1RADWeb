@@ -1,7 +1,85 @@
-import React, { useMemo, useState, useEffect } from 'react';
+import React, { useMemo, useState, useEffect, useRef, useLayoutEffect, useCallback } from 'react';
+import { approvalForInvoice, approvalBadge } from '../../utils/approvalLookup';
+
+// One-time keyframe for the row-actions menu's "grow from the button" entrance.
+if (typeof document !== 'undefined' && !document.getElementById('row-actions-menu-kf')) {
+  const s = document.createElement('style');
+  s.id = 'row-actions-menu-kf';
+  s.textContent = '@keyframes rowMenuIn { from { opacity: 0; transform: scale(0.95); } to { opacity: 1; transform: scale(1); } }';
+  document.head.appendChild(s);
+}
+
+// Premium row-actions dropdown — collapses a row's action buttons behind a
+// single "⋯" trigger so the table stays clean. The menu is rendered fixed
+// (anchored to the trigger) so it is never clipped by the table's overflow,
+// and closes on outside-click, scroll or resize. Children are the existing
+// action buttons, stacked as menu rows.
+function RowActionsMenu({ children }) {
+  const [open, setOpen] = useState(false);
+  const [pos, setPos] = useState(null); // { top, left, origin } — null until measured
+  const wrapRef = useRef(null);
+  const menuRef = useRef(null);
+
+  // Place the menu attached to the trigger, opening downward. If it would slip
+  // under the viewport bottom, nudge it up only enough to stay fully visible
+  // (no jarring full-flip). Measures the REAL menu height first so the clamp is
+  // exact regardless of how many actions the row has.
+  const place = useCallback(() => {
+    const b = wrapRef.current?.getBoundingClientRect();
+    const m = menuRef.current;
+    if (!b || !m) return;
+    const margin = 8;
+    const W = m.offsetWidth || 230;
+    const H = m.offsetHeight || 240;
+    let left = Math.min(Math.max(margin, b.right - W), window.innerWidth - W - margin);
+    let top = b.bottom + 6;
+    let oy = 'top';
+    if (top + H > window.innerHeight - margin) {
+      const above = b.top - 6 - H;
+      if (above >= margin) { top = above; oy = 'bottom'; }       // open just above the button
+      else { top = Math.max(margin, window.innerHeight - H - margin); } // clamp into view
+    }
+    const ox = (b.right - left) > W / 2 ? 'right' : 'left';
+    setPos({ top, left, origin: `${oy} ${ox}` });
+  }, []);
+
+  useLayoutEffect(() => { if (open) place(); }, [open, place]);
+
+  useEffect(() => {
+    if (!open) return;
+    const close = () => setOpen(false);
+    const onDoc = (e) => { if (!wrapRef.current?.contains(e.target) && !menuRef.current?.contains(e.target)) setOpen(false); };
+    window.addEventListener('scroll', close, true);
+    window.addEventListener('resize', close);
+    document.addEventListener('mousedown', onDoc);
+    return () => {
+      window.removeEventListener('scroll', close, true);
+      window.removeEventListener('resize', close);
+      document.removeEventListener('mousedown', onDoc);
+    };
+  }, [open]);
+
+  return (
+    <div ref={wrapRef} style={{ display: 'inline-block', position: 'relative' }}>
+      <button onClick={() => { setPos(null); setOpen(o => !o); }} title="Actions"
+        style={{ width: '36px', height: '34px', borderRadius: '10px', border: '1px solid #e2e8f0', background: open ? 'linear-gradient(135deg,#0f52ba,#1d4ed8)' : 'white', color: open ? 'white' : '#475569', fontSize: '18px', fontWeight: 900, cursor: 'pointer', lineHeight: 1, boxShadow: open ? '0 6px 16px -4px rgba(15,82,186,0.5)' : '0 1px 3px rgba(0,0,0,0.06)' }}>
+        ⋯
+      </button>
+      {open && (
+        <div ref={menuRef} onClick={() => setOpen(false)}
+          style={{ position: 'fixed', top: pos ? pos.top : -9999, left: pos ? pos.left : -9999, transformOrigin: pos ? pos.origin : 'top right', width: '230px', maxHeight: '70vh', overflowY: 'auto', background: 'white', borderRadius: '16px', border: '1px solid #e7ecf3', boxShadow: '0 22px 50px -12px rgba(15,23,42,0.35)', padding: '8px', zIndex: 100000, display: 'flex', flexDirection: 'column', gap: '6px', alignItems: 'stretch', opacity: pos ? undefined : 0, animation: pos ? 'rowMenuIn 0.13s ease-out' : 'none' }}>
+          {children}
+        </div>
+      )}
+    </div>
+  );
+}
 
 const RevenueHub = ({
   filteredInvoices,
+  approvalMap = { byInvoice: {}, byAppointment: {} },
+  approvalFilter = 'ALL',
+  setApprovalFilter = () => {},
   liveStats,
   searchTerm,
   setSearchTerm,
@@ -382,6 +460,12 @@ const RevenueHub = ({
                    ))}
                 </div>
              </div>
+             {/* Quick filter — only invoices awaiting admin approval. */}
+             <button
+               onClick={() => setApprovalFilter(approvalFilter === 'AWAITING' ? 'ALL' : 'AWAITING')}
+               style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', padding: '9px 14px', borderRadius: '10px', border: '1px solid', borderColor: approvalFilter === 'AWAITING' ? '#7c3aed' : '#e2e8f0', background: approvalFilter === 'AWAITING' ? '#7c3aed' : 'white', color: approvalFilter === 'AWAITING' ? 'white' : '#64748b', fontSize: '9px', fontWeight: 950, letterSpacing: '0.5px', cursor: 'pointer', whiteSpace: 'nowrap' }}>
+               ⏳ AWAITING APPROVAL
+             </button>
              {!isMobile && <div style={{ width: '1px', height: '30px', background: '#cbd5e1' }}></div>}
            </>
          )}
@@ -501,7 +585,7 @@ const RevenueHub = ({
                  type="text"
                  value={searchTerm || ''}
                  onChange={e => setSearchTerm(e.target.value)}
-                 placeholder="Search by patient name or invoice ID..."
+                 placeholder="Search patient, invoice ID, referred-by, service or modality..."
                  style={{
                    width: '100%',
                    padding: '10px 36px 10px 36px',
@@ -566,6 +650,7 @@ const RevenueHub = ({
                       <th onClick={() => handleSort('commissionAmount')} style={{ cursor: 'pointer', padding: '15px 10px', fontSize: '10px', fontWeight: 950, color: '#e11d48', letterSpacing: '1px' }}>CUT {getSortIcon('commissionAmount')}</th>
                       <th style={{ padding: '15px 10px', fontSize: '10px', fontWeight: 950, color: '#166534', letterSpacing: '1px', background: '#f0fdf4' }}>INCOME</th>
                       <th onClick={() => handleSort('status')} style={{ cursor: 'pointer', padding: '15px 10px', fontSize: '10px', fontWeight: 950, color: '#94a3b8', letterSpacing: '1px' }}>STATUS {getSortIcon('status')}</th>
+                      <th style={{ padding: '15px 10px', fontSize: '10px', fontWeight: 950, color: '#7c3aed', letterSpacing: '1px' }}>APPROVAL</th>
                       <th style={{ padding: '15px 10px', fontSize: '10px', fontWeight: 950, color: '#94a3b8', letterSpacing: '1px', textAlign: 'right' }}>ACTIONS</th>
                     </>
                   )}
@@ -749,7 +834,7 @@ const RevenueHub = ({
                        })()}
                      </td>
                      <td style={{ padding: '20px 10px', fontSize: '11.5px', fontWeight: 700, color: '#64748b', background: '#f8fafc' }}>₹{(inv.grossAmount || 0).toLocaleString()}</td>
-                     <td style={{ padding: '20px 10px', fontSize: '11.5px', fontWeight: 950, color: '#ef4444', background: '#fff1f2' }}>{(inv?.discountAmount || 0) > 0 ? `-₹${(inv.discountAmount || 0).toLocaleString()}` : '—'}</td>
+                     <td style={{ padding: '20px 10px', fontSize: '11.5px', fontWeight: 950, color: '#ef4444', background: '#fff1f2' }}>{(inv?.discountAmount || 0) > 0 ? `-₹${(inv.discountAmount || 0).toLocaleString()}` : '₹0'}</td>
                      <td style={{ padding: '20px 10px', fontSize: '12px', fontWeight: 950, color: '#0f52ba', background: '#f0f4ff' }}>₹{(inv?.totalAmount || 0).toLocaleString()}</td>
                      <td style={{ padding: '20px 10px' }}>
                          {(Number(inv?.commissionAmount) || 0) > 0 ? (
@@ -758,20 +843,78 @@ const RevenueHub = ({
                               <span style={{ fontSize: '8px', fontWeight: 800, color: '#e11d48', opacity: 0.7 }}>LOGGED_PAYOUT</span>
                            </div>
                          ) : (
-                           <span style={{ fontSize: '11px', color: '#cbd5e1', fontWeight: 700 }}>—</span>
+                           <span style={{ fontSize: '13px', color: '#cbd5e1', fontWeight: 900 }}>₹0</span>
                          )}
                      </td>
                      <td style={{ padding: '20px 10px', fontSize: '12px', fontWeight: 950, color: '#166534', background: '#f0fdf4' }}>₹{(Number(inv?.totalAmount || 0) - (Number(inv?.commissionAmount) || 0)).toLocaleString()}</td>
                      <td style={{ padding: '20px 10px' }}>
-                        <span style={{ 
-                          padding: '6px 12px', borderRadius: '8px', fontSize: '8.5px', fontWeight: 950,
-                          background: inv?.status === 'PAID' ? '#ecfdf5' : '#fff7ed',
-                          color: inv?.status === 'PAID' ? '#059669' : '#ea580c'
-                        }}>
-                          {inv?.status || 'PENDING'}
-                        </span>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', alignItems: 'flex-start' }}>
+                          <span style={{
+                            padding: '6px 12px', borderRadius: '8px', fontSize: '8.5px', fontWeight: 950,
+                            background: inv?.status === 'PAID' ? '#ecfdf5' : '#fff7ed',
+                            color: inv?.status === 'PAID' ? '#059669' : '#ea580c'
+                          }}>
+                            {inv?.status || 'PENDING'}
+                          </span>
+                          {inv?.isFree && (
+                            <span style={{ padding: '4px 9px', borderRadius: '7px', fontSize: '8px', fontWeight: 950, letterSpacing: '0.5px', background: '#f0fdfa', color: '#0d9488', border: '1px solid #99f6e4' }}>🎁 FREE</span>
+                          )}
+                        </div>
                      </td>
-                     <td style={{ padding: '20px 10px', textAlign: 'right', display: 'flex', gap: '10px', justifyContent: 'flex-end', alignItems: 'center' }}>
+                     {/* Admin-approval status for this invoice (request reason + outcome). */}
+                     <td style={{ padding: '20px 10px' }}>
+                        {(() => {
+                          const ap = approvalForInvoice(approvalMap, inv);
+                          const b = ap && approvalBadge(ap.status);
+                          if (!ap || !b) return <span style={{ fontSize: '10px', color: '#cbd5e1', fontWeight: 700 }}>—</span>;
+                          return (
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', alignItems: 'flex-start', maxWidth: '200px' }}>
+                              <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', padding: '4px 9px', borderRadius: '999px', fontSize: '8.5px', fontWeight: 950, letterSpacing: '0.3px', background: b.bg, color: b.color, border: `1px solid ${b.bd}`, whiteSpace: 'nowrap' }}>{b.icon} {b.short}</span>
+                              {ap.reason && <span title={ap.reason} style={{ fontSize: '9px', color: '#64748b', lineHeight: 1.4, display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}><b style={{ color: '#94a3b8' }}>Why:</b> {ap.reason}</span>}
+                              {ap.status === 'REJECTED' && ap.reviewNote && <span title={ap.reviewNote} style={{ fontSize: '9px', color: '#991b1b', lineHeight: 1.4, display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}><b>Admin:</b> {ap.reviewNote}</span>}
+                            </div>
+                          );
+                        })()}
+                     </td>
+                     <td style={{ padding: '20px 10px', textAlign: 'right' }}>
+                        <RowActionsMenu>
+                        {/* 1) Payment / View — the primary action, first. */}
+                        <button
+                          onClick={() => { setSelectedInvoice(inv); setIsInvoiceDrawerOpen(true); }}
+                          style={{ padding: '6px 12px', borderRadius: '10px', border: '1px solid #e2e8f0', background: 'white', color: '#0f52ba', fontSize: '9px', fontWeight: 950, cursor: 'pointer' }}
+                        >{inv.status === 'PAID' ? 'VIEW' : 'PAYMENT'}</button>
+
+                         {/* 2) Slips/receipts — issued ONLY after payment. Printing a bill
+                             before settlement let a receptionist collect cash on a high
+                             manual entry, then delete it and re-enter a lower one. Gating
+                             print to PAID (plus the post-payment delete lock below) closes
+                             that gap — bills are always generated after the payment. */}
+                         {inv?.status === 'PAID' ? (
+                           <>
+                             <button
+                               onClick={() => handlePrintA4(inv)}
+                               title="Print A4 Invoice"
+                               style={{ padding: '8px 12px', borderRadius: '8px', border: '1px solid #0f52ba', background: 'white', color: '#0f52ba', fontSize: '9px', fontWeight: 950, cursor: 'pointer' }}
+                             >A4</button>
+                             <button
+                               onClick={() => handlePrintThermal(inv)}
+                               title="Print Thermal Receipt"
+                               style={{ padding: '8px 12px', borderRadius: '8px', border: 'none', background: '#0f52ba', color: 'white', fontSize: '9px', fontWeight: 950, cursor: 'pointer' }}
+                             >SLIP</button>
+                             <button
+                               onClick={() => handlePrintReceipt(inv)}
+                               title="Print Payment Receipt"
+                               style={{ padding: '8px 12px', borderRadius: '8px', border: '1px solid #10b981', background: 'white', color: '#10b981', fontSize: '9px', fontWeight: 950, cursor: 'pointer' }}
+                             >RCPT</button>
+                           </>
+                         ) : (
+                           <span title="Collect payment first — slips are issued only after settlement"
+                                 style={{ padding: '8px 12px', borderRadius: '8px', border: '1px dashed #cbd5e1', background: '#f8fafc', color: '#94a3b8', fontSize: '9px', fontWeight: 950, userSelect: 'none' }}>
+                             🔒 SLIP AFTER PAYMENT
+                           </span>
+                         )}
+                         <div style={{ height: '1px', width: '100%', background: '#eef2f7', margin: '2px 0' }}></div>
+                        {/* 3) Update payout — sits just before Delete. */}
                         <button
                           onClick={() => {
                              // Multi-stage referrer identity resolution
@@ -839,71 +982,41 @@ const RevenueHub = ({
                              });
                              setIsPayoutDrawerOpen(true);
                           }}
-                           style={{ 
-                             padding: '6px 10px', borderRadius: '10px', border: 'none', 
-                             background: '#fff1f2', 
-                             color: '#e11d48', 
-                             fontSize: '8.5px', fontWeight: 950, 
-                             cursor: 'pointer', 
-                             boxShadow: '0 2px 5px rgba(225,29,72,0.1)' 
+                           style={{
+                             padding: '6px 10px', borderRadius: '10px', border: 'none',
+                             background: '#fff1f2',
+                             color: '#e11d48',
+                             fontSize: '8.5px', fontWeight: 950,
+                             cursor: 'pointer',
+                             boxShadow: '0 2px 5px rgba(225,29,72,0.1)'
                            }} >UPDATE PAYOUT</button>
 
-                         {/* Slips/receipts are issued ONLY after payment. Printing a bill
-                             before settlement let a receptionist collect cash on a high
-                             manual entry, then delete it and re-enter a lower one. Gating
-                             print to PAID (plus the post-payment delete lock below) closes
-                             that gap — bills are always generated after the payment. */}
-                         {inv?.status === 'PAID' ? (
-                           <>
-                             <button
-                               onClick={() => handlePrintA4(inv)}
-                               title="Print A4 Invoice"
-                               style={{ padding: '8px 12px', borderRadius: '8px', border: '1px solid #0f52ba', background: 'white', color: '#0f52ba', fontSize: '9px', fontWeight: 950, cursor: 'pointer' }}
-                             >A4</button>
-                             <button
-                               onClick={() => handlePrintThermal(inv)}
-                               title="Print Thermal Receipt"
-                               style={{ padding: '8px 12px', borderRadius: '8px', border: 'none', background: '#0f52ba', color: 'white', fontSize: '9px', fontWeight: 950, cursor: 'pointer' }}
-                             >SLIP</button>
-                             <button
-                               onClick={() => handlePrintReceipt(inv)}
-                               title="Print Payment Receipt"
-                               style={{ padding: '8px 12px', borderRadius: '8px', border: '1px solid #10b981', background: 'white', color: '#10b981', fontSize: '9px', fontWeight: 950, cursor: 'pointer' }}
-                             >RCPT</button>
-                           </>
-                         ) : (
-                           <span title="Collect payment first — slips are issued only after settlement"
-                                 style={{ padding: '8px 12px', borderRadius: '8px', border: '1px dashed #cbd5e1', background: '#f8fafc', color: '#94a3b8', fontSize: '9px', fontWeight: 950, userSelect: 'none' }}>
-                             🔒 SLIP AFTER PAYMENT
-                           </span>
-                         )}
-                         <div style={{ width: '1px', height: '20px', background: '#e2e8f0', margin: '0 5px' }}></div>
-                        <button 
-                          onClick={() => { setSelectedInvoice(inv); setIsInvoiceDrawerOpen(true); }}
-                          style={{ padding: '6px 12px', borderRadius: '10px', border: '1px solid #e2e8f0', background: 'white', color: '#0f52ba', fontSize: '9px', fontWeight: 950, cursor: 'pointer' }}
-                        >{inv.status === 'PAID' ? 'VIEW' : 'PAYMENT'}</button>
 
 
 
-
+                        {/* Delete is only for MANUAL invoices. Appointment-linked bills
+                            are managed (cancelled) from the Appointment board, so they
+                            stay locked here — keeps the bill in lock-step with its study. */}
                         {inv?.status === 'PAID' ? (
                            <span title="Cannot delete a paid invoice" style={{ padding: '6px 10px', borderRadius: '10px', background: '#f1f5f9', color: '#cbd5e1', fontSize: '9px', fontWeight: 950, cursor: 'not-allowed', userSelect: 'none' }}>🔒 LOCKED</span>
-                         ) : ['scanned', 'reporting', 'reported', 'completed'].includes(inv?.appointmentStatus?.toLowerCase()) ? (
-                           <button
+                         ) : inv?.appointmentId ? (
+                           <span
                              onClick={() => setErrorModal({
                                isOpen: true,
-                               title: "DELETION BLOCK",
-                               message: `Cannot delete unpaid invoice ${inv.displayId || 'N/A'} because the associated study status is "${inv.appointmentStatus.toUpperCase()}". Deletion is only allowed for expected or arrived studies.`
+                               title: 'TIED TO AN APPOINTMENT',
+                               message: `Invoice ${inv.displayId || 'N/A'} is linked to an appointment, so it can't be deleted here. To remove it, cancel the appointment from the Appointment board — the bill is kept in step with the study.`
                              })}
-                             style={{ padding: '6px 10px', borderRadius: '10px', border: 'none', background: '#f1f5f9', color: '#94a3b8', fontSize: '9px', fontWeight: 950, cursor: 'pointer' }}
-                             title="Delete option blocked for scanned/processed studies"
-                           >DEL</button>
+                             title="Tied to an appointment — cancel it from the Appointment board"
+                             style={{ padding: '6px 10px', borderRadius: '10px', background: '#f1f5f9', color: '#cbd5e1', fontSize: '9px', fontWeight: 950, cursor: 'pointer', userSelect: 'none' }}
+                           >🔒 LOCKED</span>
                          ) : (
                            <button
                              onClick={() => setDeleteConfirmModal({ isOpen: true, invoiceId: inv.invoiceId, commissionId: inv.commissionId, displayId: inv.displayId || 'N/A' })}
+                             title="Delete this manual invoice"
                              style={{ padding: '6px 10px', borderRadius: '10px', border: 'none', background: '#fee2e2', color: '#ef4444', fontSize: '9px', fontWeight: 950, cursor: 'pointer' }}
                            >DEL</button>
                          )}
+                        </RowActionsMenu>
                      </td>
                    </tr>
                  ))

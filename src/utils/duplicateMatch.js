@@ -137,7 +137,11 @@ export function rankReferrerDuplicates(name, candidates, { limit = 4 } = {}) {
   for (const r of candidates || []) {
     if (!r) continue;
     const sim = nameSimilarity(name, r.name || '');
-    if (sim >= 1) continue; // exact (already selected) — nothing to suggest
+    // Skip only when the RAW text is identical (the operator typed this exact
+    // referrer). A normalized-equal but differently-spelled variant like
+    // "Aquib" vs "Md Aquib" (both normalise to "aquib", sim = 1) MUST still be
+    // surfaced so they reuse the existing record instead of creating a second.
+    if ((name || '').trim().toLowerCase() === (r.name || '').trim().toLowerCase()) continue;
     let tier = null;
     if (sim >= 0.92) tier = 'high';
     else if (sim >= SIM_STRONG) tier = 'medium';

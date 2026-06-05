@@ -3,6 +3,15 @@
 .ne-search-match { background: #fde68a; border-radius: 2px; }
 .ne-search-current { background: #fb923c; color: #000; border-radius: 2px; }
 
+/* Inline autocomplete ghost text — greyed completion shown after the cursor;
+   press Tab to accept. Non-selectable so it never interferes with editing. */
+.ne-ghost-completion {
+  color: #9ca3af;
+  opacity: 0.85;
+  pointer-events: none;
+  user-select: none;
+}
+
 .narrative-editor-container {
   display: flex;
   flex-direction: column;

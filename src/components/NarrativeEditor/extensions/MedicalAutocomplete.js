@@ -1,104 +1,93 @@
 import { Extension } from '@tiptap/core';
 import { Plugin, PluginKey } from '@tiptap/pm/state';
+import { Decoration, DecorationSet } from '@tiptap/pm/view';
 import { search as searchTerms, warmRadiologyData } from '../../../data/radiologyData';
 
-const AUTOCOMPLETE_PLUGIN_KEY = new PluginKey('medicalAutocomplete');
+export const AUTOCOMPLETE_PLUGIN_KEY = new PluginKey('medicalAutocomplete');
+
+const EMPTY = { deco: DecorationSet.empty, suffix: '', at: null, word: '' };
 
 /**
- * Returns the "current word" — the text from the last whitespace/punctuation
- * up to the cursor position within the current paragraph.
+ * The "current word" — text from the last whitespace/punctuation up to the
+ * cursor within the current paragraph.
  */
 function getCurrentWord(state) {
   const { selection } = state;
-  if (!selection.empty) return { word: '', from: selection.from };
-
+  if (!selection.empty) return { word: '' };
   const { $from } = selection;
   const textBefore = $from.parent.textBetween(0, $from.parentOffset, undefined, '\x00');
-  // Match the last run of word characters (letters, digits, hyphens, apostrophes)
   const match = textBefore.match(/[\w\-'.]+$/);
-  if (!match) return { word: '', from: $from.pos };
+  return { word: match ? match[0] : '' };
+}
 
-  return {
-    word: match[0],
-    from: $from.pos - match[0].length,
+/**
+ * Find an inline completion: the top ranked term whose label STARTS WITH the
+ * typed word (case-insensitive) and is longer — returns the remaining suffix to
+ * show as ghost text and insert on Tab.
+ */
+function getGhostSuffix(word) {
+  if (!word || word.length < 2) return '';
+  const lower = word.toLowerCase();
+  const ranked = searchTerms(word, 8) || [];
+  for (const t of ranked) {
+    const label = (t?.label || '');
+    if (label.length > word.length && label.toLowerCase().startsWith(lower)) {
+      return label.slice(word.length);
+    }
+  }
+  return '';
+}
+
+function ghostWidget(suffix) {
+  return () => {
+    const span = document.createElement('span');
+    span.className = 'ne-ghost-completion';
+    span.setAttribute('contenteditable', 'false');
+    span.textContent = suffix;
+    return span;
   };
 }
 
 /**
- * MedicalAutocomplete — dispatches window events for the React layer to render
- * a dropdown of matching radiology terms as the user types.
+ * MedicalAutocomplete — inline "ghost text" completion (Gmail/Copilot style).
  *
- * Events dispatched:
- *   narrative-editor:autocomplete  → { active, query, suggestions, from, rect }
- *
- * Events listened:
- *   narrative-editor:autocomplete-select → { term, from }  — inserts chosen term
+ * As the radiologist types, the most likely radiology term is shown greyed-out
+ * inline after the cursor. Pressing Tab accepts it (handled in the editor's Tab
+ * handler via `acceptAutocomplete`). No dropdown, so it never steals Arrow /
+ * Enter / Escape and your shortcuts keep working.
  */
 export const MedicalAutocomplete = Extension.create({
   name: 'medicalAutocomplete',
 
   addProseMirrorPlugins() {
-    let lastQuery = '';
-
-    // Fire-and-forget warmup so the 1,621-term corpus is fetched + Fuse
-    // index built BEFORE the user's first 2-char query. By the time they
-    // type "ao" the result is ready; if they're faster than the network
-    // the data module falls back to a startsWith filter until Fuse arrives.
     warmRadiologyData();
-
     return [
       new Plugin({
         key: AUTOCOMPLETE_PLUGIN_KEY,
+        state: {
+          init: () => EMPTY,
+          apply(tr, value, _old, newState) {
+            if (!tr.docChanged && !tr.selectionSet) return value;
+            const sel = newState.selection;
+            if (!sel.empty) return (value.suffix || value.word) ? EMPTY : value;
 
-        view() {
-          return {
-            update(view, prevState) {
-              const { state } = view;
-              if (state.selection.eq(prevState.selection) && state.doc.eq(prevState.doc)) return;
-
-              const { word, from } = getCurrentWord(state);
-
-              if (word.length < 2) {
-                if (lastQuery) {
-                  lastQuery = '';
-                  window.dispatchEvent(new CustomEvent('narrative-editor:autocomplete', {
-                    detail: { active: false, query: '', suggestions: [], from, rect: null },
-                  }));
-                }
-                return;
-              }
-
-              const lower = word.toLowerCase();
-              if (lower === lastQuery) return;
-              lastQuery = lower;
-
-              // Suggestions are now {id, label, cat, short, key, alt} objects
-              // ranked by Fuse.js fuzzy match. The consumer dropdown renders
-              // `label  ·  cat  ·  short` so the user sees what each row is
-              // before selecting. Filter out the exact match — typing "aortic"
-              // shouldn't suggest "aortic" back.
-              const ranked = searchTerms(word, 8);
-              const suggestions = ranked.filter(
-                t => (t?.label || '').toLowerCase() !== lower
-              );
-
-              let rect = null;
-              try {
-                const coords = view.coordsAtPos(state.selection.from);
-                rect = { top: coords.top, bottom: coords.bottom, left: coords.left };
-              } catch (_) {}
-
-              window.dispatchEvent(new CustomEvent('narrative-editor:autocomplete', {
-                detail: { active: suggestions.length > 0, query: word, suggestions, from, rect },
-              }));
-            },
-
-            destroy() {
-              window.dispatchEvent(new CustomEvent('narrative-editor:autocomplete', {
-                detail: { active: false, query: '', suggestions: [], from: 0, rect: null },
-              }));
-            },
-          };
+            const { word } = getCurrentWord(newState);
+            // Word unchanged + only positions moved → remap the existing ghost.
+            if (word === value.word && !tr.docChanged) {
+              if (value.deco === DecorationSet.empty) return value;
+              return { ...value, deco: value.deco.map(tr.mapping, tr.doc), at: sel.from };
+            }
+            const suffix = getGhostSuffix(word);
+            if (!suffix) return { ...EMPTY, word };
+            const pos = sel.from;
+            const deco = DecorationSet.create(newState.doc, [
+              Decoration.widget(pos, ghostWidget(suffix), { side: 1, ignoreSelection: true }),
+            ]);
+            return { deco, suffix, at: pos, word };
+          },
+        },
+        props: {
+          decorations(state) { return AUTOCOMPLETE_PLUGIN_KEY.getState(state)?.deco; },
         },
       }),
     ];
@@ -106,24 +95,14 @@ export const MedicalAutocomplete = Extension.create({
 
   addCommands() {
     return {
-      /**
-       * Replace the current word (from..cursor) with the chosen term.
-       */
-      insertAutocomplete:
-        ({ term, from }) =>
-        ({ state, chain }) => {
-          const to = state.selection.from;
-          if (from >= to) return false;
-          // Accept either a raw string (legacy fallback path) or the new
-          // {label, ...} object shape from radiologyData.search().
-          const label = typeof term === 'string' ? term : (term?.label || '');
-          if (!label) return false;
-          return chain()
-            .focus()
-            .deleteRange({ from, to })
-            .insertContent(label)
-            .run();
-        },
+      // Insert the ghost completion at the cursor. Returns false (no-op) when
+      // there's no active suggestion, so Tab falls through to indent.
+      acceptAutocomplete: () => ({ state, dispatch }) => {
+        const s = AUTOCOMPLETE_PLUGIN_KEY.getState(state);
+        if (!s || !s.suffix || s.at == null) return false;
+        if (dispatch) dispatch(state.tr.insertText(s.suffix, s.at));
+        return true;
+      },
     };
   },
 });

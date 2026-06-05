@@ -68,6 +68,7 @@ function RootRedirect() {
 }
 
 import StatusTracking from '../pages/StatusTracking';
+import DoctorReferralPortal from '../pages/DoctorReferralPortal';
 import WaitingAreaBoard from '../pages/WaitingAreaBoard';
 
 export default function AppRouter() {
@@ -77,6 +78,8 @@ export default function AppRouter() {
     <Routes>
       {/* Public / Semi-Public */}
       <Route path="/track/:id" element={<StatusTracking />} />
+      {/* Public doctor referral portal — anonymous, signed token in ?t= (#3) */}
+      <Route path="/r/:id" element={<DoctorReferralPortal />} />
       <Route path="/waiting-board" element={<WaitingAreaBoard />} />
       <Route 
         path="/register" 

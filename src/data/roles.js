@@ -46,7 +46,7 @@ export const NAV_ITEMS = [
     allowedRoles: ['admindoctor', 'admin', 'accountant'],
   },
   {
-    label: 'Finance Approvals',
+    label: 'Admin Approval',
     route: '/approvals',
     allowedRoles: ['admindoctor', 'admin'],
   },

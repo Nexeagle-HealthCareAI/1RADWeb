@@ -120,7 +120,13 @@ export function buildReceiptBytes(data = {}) {
     }
   }
 
-  p.drawLine().bold(true).size(1, 1).leftRight('TOTAL', money(data.total)).size(1, 1).bold(false).drawLine();
+  p.drawLine();
+  if ((Number(data.discount) || 0) > 0) {
+    const sub = (Number(data.gross) || 0) > 0 ? data.gross : (Number(data.total) || 0) + (Number(data.discount) || 0);
+    p.leftRight('SUBTOTAL', money(sub));
+    p.leftRight('DISCOUNT', '-' + money(data.discount));
+  }
+  p.bold(true).size(1, 1).leftRight('TOTAL', money(data.total)).size(1, 1).bold(false).drawLine();
   p.align('center');
   for (const line of (data.footer || ['THANK YOU FOR CHOOSING 1RAD'])) p.line(line);
   p.line('').line('Powered by NexEagle').feed(1);
@@ -152,6 +158,7 @@ export function buildTokenBytes(data = {}) {
   if (data.qr) p.qr(String(data.qr), { size: 6, ec: 'M' });
   p.drawLine();
   for (const line of (data.footer || ['PLEASE KEEP THIS TOKEN'])) p.line(line);
+  p.line('').line('Powered by NexEagle');
   p.feed(1);
   if (data.cut !== false) p.cut();
   return p.getBytes();

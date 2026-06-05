@@ -206,6 +206,11 @@ function composeReceipt(p, data) {
   }
 
   p.drawLine();
+  if ((Number(d.discount) || 0) > 0) {
+    const sub = (Number(d.gross) || 0) > 0 ? d.gross : (Number(d.total) || 0) + (Number(d.discount) || 0);
+    p.leftRight('SUBTOTAL', money(sub));
+    p.leftRight('DISCOUNT', '-' + money(d.discount));
+  }
   p.bold(true);
   try { p.setTextSize(1, 1); } catch (_) {}
   p.leftRight('TOTAL', money(d.total));
@@ -254,6 +259,8 @@ function composeToken(p, data) {
   if (d.qr) { try { p.printQR(String(d.qr), { cellSize: 5, correction: 'M' }); } catch (_) {} }
   p.drawLine();
   for (const line of (d.footer || ['PLEASE KEEP THIS TOKEN'])) p.println(line);
+  p.println('');
+  p.println('Powered by NexEagle');
   p.newLine();
 }
 
@@ -439,8 +446,14 @@ function initAutoUpdater() {
     notifyRenderer('update:downloaded', { version: info?.version });
   });
 
-  autoUpdater.checkForUpdates().catch((err) =>
+  const check = () => autoUpdater.checkForUpdates().catch((err) =>
     console.warn('[auto-update] check failed:', err?.message || err));
+
+  // Check at launch, then every 30 minutes — many clinics leave the app open for
+  // days, so a launch-only check would never pick up a deploy. electron-updater
+  // de-dupes, so re-checking the same version is cheap and harmless.
+  check();
+  setInterval(check, 30 * 60 * 1000);
 }
 
 // Renderer asked to restart and apply the downloaded update now.

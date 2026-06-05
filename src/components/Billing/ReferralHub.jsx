@@ -1,5 +1,10 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import * as XLSX from 'xlsx';
+import apiClient from '../../api/apiClient';
+import { notifyToast } from '../../utils/toast';
+
+// Self / walk-in visits earn no commission, so their payouts are never editable.
+const isSelfReferrer = (name) => String(name || '').trim().toLowerCase() === 'self';
 
 const ReferralHub = ({
   isMobile,
@@ -45,8 +50,38 @@ const ReferralHub = ({
     cutId: null,
     currentStatus: '',
     patientName: '',
-    amount: 0
+    amount: 0,
+    reason: ''
   });
+  const [submittingUnpay, setSubmittingUnpay] = useState(false);
+
+  // Reverting a *PAID* commission back to UNPAID is sensitive (money already
+  // handed over), so it cannot be toggled directly — it goes to the admin as an
+  // approval request with a mandatory reason. The commission stays PAID until
+  // an admin signs off on Finance → Approvals.
+  const submitUnpayApproval = async () => {
+    const reason = (confirmModal.reason || '').trim();
+    if (reason.length < 4) {
+      notifyToast('Please enter a clear reason for reverting this paid commission.', 'error');
+      return;
+    }
+    setSubmittingUnpay(true);
+    try {
+      await apiClient.post('/approvals', {
+        type: 'UNPAY_COMMISSION',
+        title: `Revert paid commission — ${(confirmModal.patientName || 'N/A')} (₹${Number(confirmModal.amount || 0).toLocaleString()})`,
+        payload: JSON.stringify({ commissionId: confirmModal.cutId }),
+        reason,
+      });
+      notifyToast('Sent to admin for approval ✓  The commission stays PAID until it is approved.', 'success');
+      setConfirmModal({ isOpen: false, cutId: null, currentStatus: '', patientName: '', amount: 0, reason: '' });
+    } catch (e) {
+      const msg = e?.response?.data?.error || e?.response?.data?.message || e?.message;
+      notifyToast(`Could not submit the request${msg ? `: ${msg}` : ''}.`, 'error');
+    } finally {
+      setSubmittingUnpay(false);
+    }
+  };
 
   // Per-partner drill-down state
   const [activePartnerId, setActivePartnerId] = useState(null);
@@ -74,6 +109,9 @@ const ReferralHub = ({
   const partnerGroups = useMemo(() => {
     const groups = new Map();
     (filteredReferralCuts || []).forEach(cut => {
+      // Self / walk-in is NOT a partner — it earns no commission and is tracked
+      // in its own section, never in the partner payout list. (#20)
+      if (isSelfReferrer(cut?.name)) return;
       // The referral record IS the payee, so we group by the referrer. When
       // that payee is an AGENT (not a doctor), we also track which doctor(s)
       // they collect on behalf of — an agent can bring patients from several
@@ -823,6 +861,7 @@ const ReferralHub = ({
                     // commission remarks as "… — <reason>]".
                     const deficitReason = isDeficit ? (((cut?.remarks || '').match(/—\s*([^\]]+)\]/) || [])[1] || '').trim() : '';
                     const amountFormatted = (Number(cut?.amount) || 0).toLocaleString();
+                    const isSelf = isSelfReferrer(cut?.name);
 
                     return (
                       <div key={cut?.id} style={{ background: 'white', borderRadius: '16px', border: '1px solid #e2e8f0', padding: '16px', boxShadow: '0 4px 12px rgba(0,0,0,0.04)', opacity: blockPayment ? 0.65 : 1 }}>
@@ -901,14 +940,17 @@ const ReferralHub = ({
                             >DEL</button>
                           ) : (
                             <button
+                              disabled={isSelf}
+                              title={isSelf ? 'Self / walk-in earns no commission — nothing to update' : 'Edit this payout'}
                               onClick={() => {
+                                if (isSelf) return;
                                 setEditPayout({
-                                  commissionId: cut.id, referrerId: cut.referrerId, referrerName: cut.name, amount: cut.amount, modality: cut.modality || 'MRI', remarks: (cut.description || '').includes(' - ') ? cut.description.split(' - ')[1] : '', invoiceId: cut.reference, status: cut.status
+                                  commissionId: cut.id, referrerId: cut.referrerId, referrerName: cut.name, amount: cut.amount, modality: cut.modality || 'MRI', remarks: (cut.description || '').includes(' - ') ? cut.description.split(' - ')[1] : '', invoiceId: cut.reference, status: cut.status, originalStatus: cut.status
                                 });
                                 setIsPayoutDrawerOpen(true);
                               }}
-                              style={{ padding: '12px 16px', borderRadius: '12px', border: '1px solid #bfdbfe', background: '#eff6ff', color: '#0f52ba', fontSize: '12px', fontWeight: 950, cursor: 'pointer' }}
-                            >EDIT</button>
+                              style={{ padding: '12px 16px', borderRadius: '12px', border: isSelf ? '1px solid #e2e8f0' : '1px solid #bfdbfe', background: isSelf ? '#f1f5f9' : '#eff6ff', color: isSelf ? '#cbd5e1' : '#0f52ba', fontSize: '12px', fontWeight: 950, cursor: isSelf ? 'not-allowed' : 'pointer' }}
+                            >{isSelf ? '🔒 SELF' : 'EDIT'}</button>
                           )}
                         </div>
                         {blockPayment && (
@@ -1037,7 +1079,10 @@ const ReferralHub = ({
                             >DEL</button>
                           ) : (
                             <button
+                              disabled={isSelfReferrer(cut.name)}
+                              title={isSelfReferrer(cut.name) ? 'Self / walk-in earns no commission — nothing to update' : 'Update this payout'}
                               onClick={() => {
+                                if (isSelfReferrer(cut.name)) return;
                                 setEditPayout({
                                   commissionId: cut.id,
                                   referrerId: cut.referrerId,
@@ -1046,12 +1091,13 @@ const ReferralHub = ({
                                   modality: cut.modality || 'MRI',
                                   remarks: (cut.description || '').includes(' - ') ? cut.description.split(' - ')[1] : '',
                                   invoiceId: cut.reference,
-                                  status: cut.status
+                                  status: cut.status,
+                                  originalStatus: cut.status
                                 });
                                 setIsPayoutDrawerOpen(true);
                               }}
-                              style={{ padding: '5px 10px', borderRadius: '7px', border: 'none', background: '#f0f4ff', color: '#0f52ba', fontSize: '8.5px', fontWeight: 950, cursor: 'pointer' }}
-                            >UPDATE</button>
+                              style={{ padding: '5px 10px', borderRadius: '7px', border: 'none', background: isSelfReferrer(cut.name) ? '#f1f5f9' : '#f0f4ff', color: isSelfReferrer(cut.name) ? '#cbd5e1' : '#0f52ba', fontSize: '8.5px', fontWeight: 950, cursor: isSelfReferrer(cut.name) ? 'not-allowed' : 'pointer' }}
+                            >{isSelfReferrer(cut.name) ? '🔒 SELF' : 'UPDATE'}</button>
                           )}
                         </td>
                       </tr>
@@ -1205,8 +1251,35 @@ const ReferralHub = ({
                 fontFamily: 'system-ui, -apple-system, sans-serif'
               }}
             >
-              Are you sure you want to transition the commission status of the referral for <strong style={{ color: '#e11d48' }}>{confirmModal.patientName.toUpperCase()}</strong> (amounting to <strong style={{ color: '#10b981' }}>₹{confirmModal.amount.toLocaleString()}</strong>) from <span style={{ padding: '3px 8px', borderRadius: '6px', fontSize: '9px', fontWeight: 950, background: confirmModal.currentStatus === 'PAID' ? '#dcfce7' : '#fee2e2', color: confirmModal.currentStatus === 'PAID' ? '#166534' : '#991b1b' }}>{confirmModal.currentStatus}</span> to <span style={{ padding: '3px 8px', borderRadius: '6px', fontSize: '9px', fontWeight: 950, background: confirmModal.currentStatus === 'PAID' ? '#fee2e2' : '#dcfce7', color: confirmModal.currentStatus === 'PAID' ? '#991b1b' : '#166534' }}>{confirmModal.currentStatus === 'PAID' ? 'UNPAID' : 'PAID'}</span>? This will sync immediately with the ledger.
+              {confirmModal.currentStatus === 'PAID' ? (
+                <>Reverting a <strong style={{ color: '#16a34a' }}>PAID</strong> commission for <strong style={{ color: '#e11d48' }}>{confirmModal.patientName.toUpperCase()}</strong> (<strong style={{ color: '#10b981' }}>₹{confirmModal.amount.toLocaleString()}</strong>) back to <strong style={{ color: '#991b1b' }}>UNPAID</strong> needs <strong>admin approval</strong>. It will <strong>stay PAID</strong> until an admin signs off. Please give a clear reason below.</>
+              ) : (
+                <>Are you sure you want to transition the commission status of the referral for <strong style={{ color: '#e11d48' }}>{confirmModal.patientName.toUpperCase()}</strong> (amounting to <strong style={{ color: '#10b981' }}>₹{confirmModal.amount.toLocaleString()}</strong>) from <span style={{ padding: '3px 8px', borderRadius: '6px', fontSize: '9px', fontWeight: 950, background: '#fee2e2', color: '#991b1b' }}>UNPAID</span> to <span style={{ padding: '3px 8px', borderRadius: '6px', fontSize: '9px', fontWeight: 950, background: '#dcfce7', color: '#166534' }}>PAID</span>? This will sync immediately with the ledger.</>
+              )}
             </p>
+
+            {confirmModal.currentStatus === 'PAID' && (
+              <div style={{ textAlign: 'left', marginBottom: '20px' }}>
+                <label style={{ display: 'block', fontSize: '10px', fontWeight: 950, color: '#64748b', letterSpacing: '0.6px', marginBottom: '6px' }}>
+                  REASON FOR REVERTING <span style={{ color: '#e11d48' }}>*</span>
+                </label>
+                <textarea
+                  value={confirmModal.reason || ''}
+                  onChange={(e) => setConfirmModal({ ...confirmModal, reason: e.target.value })}
+                  autoFocus
+                  rows={3}
+                  placeholder="e.g. Paid twice by mistake / wrong payee / payout was cancelled by the partner…"
+                  style={{
+                    width: '100%', boxSizing: 'border-box', resize: 'vertical',
+                    padding: '11px 12px', borderRadius: '10px', border: '1.5px solid #e2e8f0',
+                    fontSize: '12px', fontWeight: 600, color: '#1e293b', fontFamily: 'system-ui, -apple-system, sans-serif',
+                    outline: 'none', lineHeight: 1.5
+                  }}
+                  onFocus={(e) => { e.currentTarget.style.borderColor = '#e11d48'; }}
+                  onBlur={(e) => { e.currentTarget.style.borderColor = '#e2e8f0'; }}
+                />
+              </div>
+            )}
 
             {/* Actions */}
             <div style={{ display: 'flex', gap: '12px' }}>
@@ -1229,29 +1302,55 @@ const ReferralHub = ({
               >
                 CANCEL
               </button>
-              <button 
-                onClick={() => {
-                  handleToggleCommissionStatus(confirmModal.cutId, confirmModal.currentStatus);
-                  setConfirmModal({ ...confirmModal, isOpen: false });
-                }}
-                style={{
-                  flex: 1,
-                  padding: '12px 20px',
-                  background: 'linear-gradient(135deg, #e11d48 0%, #be123c 100%)',
-                  color: '#ffffff',
-                  border: 'none',
-                  borderRadius: '12px',
-                  fontSize: '11px',
-                  fontWeight: 950,
-                  cursor: 'pointer',
-                  boxShadow: '0 8px 18px -4px rgba(225, 29, 72, 0.3)',
-                  transition: 'filter 0.2s'
-                }}
-                onMouseOver={(e) => { e.currentTarget.style.filter = 'brightness(1.1)'; }}
-                onMouseOut={(e) => { e.currentTarget.style.filter = 'none'; }}
-              >
-                CONFIRM & CHANGE
-              </button>
+              {confirmModal.currentStatus === 'PAID' ? (
+                <button
+                  onClick={submitUnpayApproval}
+                  disabled={submittingUnpay || (confirmModal.reason || '').trim().length < 4}
+                  style={{
+                    flex: 1.4,
+                    padding: '12px 20px',
+                    background: (submittingUnpay || (confirmModal.reason || '').trim().length < 4)
+                      ? '#cbd5e1'
+                      : 'linear-gradient(135deg, #7c3aed 0%, #6d28d9 100%)',
+                    color: '#ffffff',
+                    border: 'none',
+                    borderRadius: '12px',
+                    fontSize: '11px',
+                    fontWeight: 950,
+                    cursor: (submittingUnpay || (confirmModal.reason || '').trim().length < 4) ? 'not-allowed' : 'pointer',
+                    boxShadow: (submittingUnpay || (confirmModal.reason || '').trim().length < 4) ? 'none' : '0 8px 18px -4px rgba(124, 58, 237, 0.35)',
+                    transition: 'filter 0.2s'
+                  }}
+                  onMouseOver={(e) => { if (!e.currentTarget.disabled) e.currentTarget.style.filter = 'brightness(1.1)'; }}
+                  onMouseOut={(e) => { e.currentTarget.style.filter = 'none'; }}
+                >
+                  {submittingUnpay ? 'SENDING…' : '🛡 REQUEST APPROVAL'}
+                </button>
+              ) : (
+                <button
+                  onClick={() => {
+                    handleToggleCommissionStatus(confirmModal.cutId, confirmModal.currentStatus);
+                    setConfirmModal({ ...confirmModal, isOpen: false });
+                  }}
+                  style={{
+                    flex: 1,
+                    padding: '12px 20px',
+                    background: 'linear-gradient(135deg, #16a34a 0%, #15803d 100%)',
+                    color: '#ffffff',
+                    border: 'none',
+                    borderRadius: '12px',
+                    fontSize: '11px',
+                    fontWeight: 950,
+                    cursor: 'pointer',
+                    boxShadow: '0 8px 18px -4px rgba(22, 163, 74, 0.3)',
+                    transition: 'filter 0.2s'
+                  }}
+                  onMouseOver={(e) => { e.currentTarget.style.filter = 'brightness(1.1)'; }}
+                  onMouseOut={(e) => { e.currentTarget.style.filter = 'none'; }}
+                >
+                  CONFIRM & CHANGE
+                </button>
+              )}
             </div>
           </div>
           <style>{`

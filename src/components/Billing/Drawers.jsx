@@ -79,17 +79,25 @@ export const InvoiceDrawer = ({
   const [freeReqOpen, setFreeReqOpen] = React.useState(false);
   const [freeReason, setFreeReason] = React.useState('');
   const [freeSubmitting, setFreeSubmitting] = React.useState(false);
+  const [freeBearer, setFreeBearer] = React.useState('BOTH'); // CENTRE | BOTH | REFERRER (default: shared)
+
+  // Show the "who bears it" choice whenever there's a real (non-Self) referrer.
+  // Self / walk-in / no-referrer visits are always centre-borne, so the choice
+  // is hidden there.
+  const refName = String(selectedInvoice?.referrerName || '').trim();
+  const hasReferrerCut = !!refName && refName.toLowerCase() !== 'self';
 
   const submitFreeRequest = async () => {
     if (!freeReason.trim() || !onRequestApproval) return;
+    const bearer = hasReferrerCut ? freeBearer : 'CENTRE';
     setFreeSubmitting(true);
     try {
       await onRequestApproval({
         type: 'MARK_FREE',
         invoiceId: selectedInvoice.invoiceId,
         appointmentId: selectedInvoice.appointmentId || null,
-        title: `${selectedInvoice.displayId || ''} · ${selectedInvoice.patientName || ''} — mark FREE`.trim(),
-        payload: '{}',
+        title: `${selectedInvoice.displayId || ''} · ${selectedInvoice.patientName || ''} — mark FREE (${bearer.toLowerCase()}-borne)`.trim(),
+        payload: JSON.stringify({ bearer }),
         reason: freeReason.trim(),
       });
       setFreeReqOpen(false);
@@ -381,68 +389,8 @@ export const InvoiceDrawer = ({
                 );
               })()}
 
-              {isPaid && (
-                <div style={{ 
-                  marginTop: '15px', padding: '16px', background: 'linear-gradient(145deg, #fffafa, #fff5f5)', 
-                  borderRadius: '16px', border: '1px solid #fecaca', boxShadow: '0 4px 12px rgba(225, 29, 72, 0.03)'
-                }}>
-                   <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                      <div style={{ display: 'flex', flexDirection: isMobile ? 'column' : 'row', justifyContent: 'space-between', alignItems: isMobile ? 'flex-start' : 'center', gap: isMobile ? '12px' : '0' }}>
-                        <div>
-                           <span style={{ fontSize: '9px', fontWeight: 950, color: '#e11d48', letterSpacing: '1.5px', textTransform: 'uppercase' }}>POST-PAYMENT CONCESSION</span>
-                           <div style={{ fontSize: '10px', color: '#9f1239', fontWeight: 700, marginTop: '2px', opacity: 0.6 }}>Adjust from Centre Share · needs admin approval</div>
-                        </div>
-
-                        {!isAdjusting ? (
-                          <button onClick={() => { setAdjustAmount(0); setAdjustReason(''); setIsAdjusting(true); }} style={{ width: isMobile ? '100%' : 'auto', padding: '8px 16px', borderRadius: '10px', border: 'none', background: '#e11d48', color: 'white', fontSize: '9px', fontWeight: 950, cursor: 'pointer', boxShadow: '0 4px 10px rgba(225, 29, 72, 0.2)' }}>ADD CONCESSION</button>
-                        ) : (
-                          <div style={{ display: 'flex', gap: '8px', alignItems: 'center', width: isMobile ? '100%' : '260px' }}>
-                             <div style={{ display: 'flex', alignItems: 'center', background: '#fff', border: '2px solid #e11d48', borderRadius: '10px', padding: '2px 8px', flex: 1, boxShadow: '0 0 8px rgba(225, 29, 72, 0.1)' }}>
-                                <span style={{ fontSize: '12px', fontWeight: 950, color: '#e11d48', marginRight: '4px' }}>₹</span>
-                                <input
-                                  type="number"
-                                  autoFocus
-                                  placeholder={`Max ₹${maxConcession.toLocaleString()}`}
-                                  min="0"
-                                  max={maxConcession}
-                                  value={adjustAmount === 0 ? '' : adjustAmount}
-                                  onChange={e => setAdjustAmount(Math.max(0, Math.min(parseFloat(e.target.value) || 0, maxConcession)))}
-                                  style={{ width: '100%', padding: '6px 2px', border: 'none', background: 'transparent', fontSize: '13px', fontWeight: 900, color: '#1e293b', outline: 'none' }}
-                                />
-                             </div>
-                             <button onClick={() => setIsAdjusting(false)} style={{ width: '28px', height: '28px', borderRadius: '10px', border: 'none', background: '#f1f5f9', color: '#64748b', cursor: 'pointer', fontSize: '11px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>✕</button>
-                          </div>
-                        )}
-                      </div>
-
-                      {isAdjusting && (
-                        <>
-                          <textarea value={adjustReason} onChange={e => setAdjustReason(e.target.value)} rows={2} placeholder="Reason for this post-payment concession (required)…"
-                            style={{ width: '100%', padding: '9px 11px', borderRadius: '10px', border: '1px solid #fecaca', fontSize: '12px', resize: 'vertical', boxSizing: 'border-box', fontFamily: 'inherit', background: 'white' }} />
-                          <button
-                            onClick={async () => {
-                              if (!(adjustAmount > 0 && adjustAmount <= maxConcession) || !adjustReason.trim() || !onRequestApproval) return;
-                              await onRequestApproval({
-                                type: 'EDIT_PAYMENT',
-                                invoiceId: selectedInvoice.invoiceId,
-                                title: `${selectedInvoice.displayId || ''} · ${selectedInvoice.patientName || ''} — concession ₹${Number(adjustAmount).toLocaleString()}`.trim(),
-                                payload: JSON.stringify({
-                                  centreDiscount: (Number(selectedInvoice.centreDiscount) || 0) + Number(adjustAmount),
-                                  referrerDiscount: Number(selectedInvoice.referrerDiscount) || 0,
-                                  deduction: Number(selectedInvoice.institutionalDeduction) || 0,
-                                }),
-                                reason: adjustReason.trim(),
-                              });
-                              setIsAdjusting(false); setAdjustAmount(0); setAdjustReason('');
-                            }}
-                            disabled={!(adjustAmount > 0) || !adjustReason.trim()}
-                            style={{ width: '100%', padding: '11px', borderRadius: '10px', border: 'none', background: (adjustAmount > 0 && adjustReason.trim()) ? '#e11d48' : '#fecaca', color: 'white', fontSize: '10px', fontWeight: 950, cursor: (adjustAmount > 0 && adjustReason.trim()) ? 'pointer' : 'not-allowed' }}
-                          >SEND FOR APPROVAL</button>
-                        </>
-                      )}
-                   </div>
-                </div>
-              )}
+              {/* Post-payment concession lives inside the Edit window now
+                  (Request Payment Edit) — a single place for all corrections. */}
            </div>
 
            {/* Right Column: Financial Summary & Actions */}
@@ -567,36 +515,11 @@ export const InvoiceDrawer = ({
                    <button onClick={() => handlePrintA4(selectedInvoice)} style={{ width: '100%', padding: '12px', borderRadius: '12px', border: '1.5px solid #0f52ba', background: 'white', color: '#0f52ba', fontWeight: 950, fontSize: '10px', cursor: 'pointer' }}>PRINT A4 INVOICE</button>
                    <button onClick={() => handlePrintThermal(selectedInvoice)} style={{ width: '100%', padding: '12px', borderRadius: '12px', border: 'none', background: 'linear-gradient(135deg, #0f52ba, #061a40)', color: 'white', fontWeight: 950, fontSize: '10px', cursor: 'pointer' }}>THERMAL SLIP</button>
 
-                   {/* Scenario 03 — edit a recorded payment (admin approval required). */}
-                   {onRequestApproval && (!editReqOpen ? (
+                   {/* Scenario 03 — edit a settled invoice's concessions,
+                       admin-approved. (Referrer changes live on the appointment.) */}
+                   {onRequestApproval && (
                      <button onClick={openEditRequest} style={{ width: '100%', padding: '12px', borderRadius: '12px', border: '1px dashed #cbd5e1', background: 'white', color: '#475569', fontWeight: 900, fontSize: '10px', cursor: 'pointer' }}>✎ REQUEST PAYMENT EDIT</button>
-                   ) : (
-                     <div style={{ marginTop: '4px', padding: '14px', background: '#f8fafc', borderRadius: '14px', border: '1px solid #e2e8f0', display: 'flex', flexDirection: 'column', gap: '10px' }}>
-                        <div style={{ fontSize: '9px', fontWeight: 950, color: '#0f52ba', letterSpacing: '1px' }}>REQUEST PAYMENT EDIT · NEEDS ADMIN APPROVAL</div>
-                        {[['Centre concession', editCentre, setEditCentre], ['Referral concession', editReferrer, setEditReferrer], ['Additional discount', editDeduction, setEditDeduction]].map(([label, val, setVal]) => (
-                          <div key={label} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                             <span style={{ fontSize: '9px', fontWeight: 800, color: '#64748b' }}>{label}</span>
-                             <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-                                <span style={{ fontSize: '10px', fontWeight: 950, color: '#ef4444' }}>₹</span>
-                                <input type="number" min="0" value={val === 0 ? '' : val} placeholder="0"
-                                  onChange={e => setVal(Math.max(0, parseFloat(e.target.value) || 0))}
-                                  style={{ width: '70px', padding: '5px', border: '1px solid #e2e8f0', borderRadius: '8px', fontSize: '11px', fontWeight: 900, textAlign: 'right', color: '#1e293b' }} />
-                             </div>
-                          </div>
-                        ))}
-                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderTop: '1px solid #e2e8f0', paddingTop: '8px' }}>
-                           <span style={{ fontSize: '9px', fontWeight: 950, color: '#0f52ba', letterSpacing: '0.5px' }}>NEW NET</span>
-                           <span style={{ fontSize: '14px', fontWeight: 950, color: '#0f52ba' }}>₹{Math.max(0, (Number(selectedInvoice.grossAmount) || 0) - editCentre - editReferrer - editDeduction).toLocaleString()}</span>
-                        </div>
-                        <textarea value={editReason} onChange={e => setEditReason(e.target.value)} placeholder="Reason for this edit (required) — e.g. wrong discount applied, price correction…" rows={2}
-                          style={{ width: '100%', padding: '9px', border: '1px solid #e2e8f0', borderRadius: '10px', fontSize: '11px', resize: 'vertical', boxSizing: 'border-box', fontFamily: 'inherit' }} />
-                        <div style={{ display: 'flex', gap: '8px' }}>
-                           <button onClick={submitEditRequest} disabled={!editReason.trim() || editSubmitting}
-                             style={{ flex: 1, padding: '11px', borderRadius: '10px', border: 'none', background: (!editReason.trim() || editSubmitting) ? '#cbd5e1' : '#0f52ba', color: 'white', fontWeight: 950, fontSize: '10px', cursor: (!editReason.trim() || editSubmitting) ? 'not-allowed' : 'pointer' }}>{editSubmitting ? 'SENDING…' : 'SEND FOR APPROVAL'}</button>
-                           <button onClick={() => setEditReqOpen(false)} style={{ padding: '11px 14px', borderRadius: '10px', border: '1px solid #e2e8f0', background: 'white', color: '#64748b', fontWeight: 800, fontSize: '10px', cursor: 'pointer' }}>CANCEL</button>
-                        </div>
-                     </div>
-                   ))}
+                   )}
                 </div>
               )}
 
@@ -608,7 +531,38 @@ export const InvoiceDrawer = ({
                   ) : (
                     <div style={{ padding: '13px', background: '#f0fdfa', borderRadius: '12px', border: '1px solid #99f6e4', display: 'flex', flexDirection: 'column', gap: '9px' }}>
                        <div style={{ fontSize: '9px', fontWeight: 950, color: '#0d9488', letterSpacing: '0.8px' }}>MARK FREE · NEEDS ADMIN APPROVAL</div>
-                       <div style={{ fontSize: '10px', color: '#0f766e', lineHeight: 1.5 }}>No bill, no referral commission, no income — everything is set to ₹0. Any money already collected is reversed.</div>
+                       <div style={{ fontSize: '10px', color: '#0f766e', lineHeight: 1.5 }}>No bill, no income — the patient pays ₹0 and any money already collected is reversed.</div>
+
+                       {/* Who bears the free test? Only when there's a referrer cut to
+                           share — Self / no-commission visits are always centre-borne. */}
+                       {hasReferrerCut && (
+                         <div>
+                           <div style={{ fontSize: '8.5px', fontWeight: 950, color: '#0d9488', letterSpacing: '0.6px', marginBottom: '6px' }}>WHO BEARS THE FEE?</div>
+                           <div style={{ display: 'flex', gap: '6px' }}>
+                             {[['CENTRE', 'Centre'], ['BOTH', 'Both'], ['REFERRER', (selectedInvoice.referrerName || 'Referrer')]].map(([val, label]) => (
+                               <button key={val} type="button" onClick={() => setFreeBearer(val)}
+                                 style={{ flex: 1, padding: '8px 6px', borderRadius: '9px', border: freeBearer === val ? '2px solid #0d9488' : '1px solid #99f6e4', background: freeBearer === val ? '#0d9488' : 'white', color: freeBearer === val ? 'white' : '#0f766e', fontSize: '9px', fontWeight: 900, cursor: 'pointer', lineHeight: 1.2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                 {label}
+                               </button>
+                             ))}
+                           </div>
+                           {(() => {
+                             const refLabel = (selectedInvoice.referrerName || 'The referrer');
+                             const cfg = freeBearer === 'CENTRE'
+                               ? { bg: '#ecfdf5', bd: '#a7f3d0', fg: '#047857', icon: '🛡️', text: <>Centre bears the whole fee — <b>{refLabel} keeps their full commission</b>.</> }
+                               : freeBearer === 'BOTH'
+                                 ? { bg: '#fffbeb', bd: '#fcd34d', fg: '#b45309', icon: '⚖️', text: <>Centre &amp; referrer share the cost — <b>{refLabel} gets no commission</b>.</> }
+                                 : { bg: '#fef2f2', bd: '#fca5a5', fg: '#b91c1c', icon: '⚠️', text: <><b style={{ textTransform: 'uppercase' }}>{refLabel} forfeits their entire commission</b> — the referrer alone bears this free test.</> };
+                             return (
+                               <div style={{ marginTop: '6px', display: 'flex', alignItems: 'flex-start', gap: '8px', padding: '10px 12px', borderRadius: '10px', background: cfg.bg, border: `1.5px solid ${cfg.bd}` }}>
+                                 <span style={{ fontSize: '15px', lineHeight: 1.2 }}>{cfg.icon}</span>
+                                 <span style={{ fontSize: '11px', fontWeight: 700, color: cfg.fg, lineHeight: 1.5 }}>{cfg.text}</span>
+                               </div>
+                             );
+                           })()}
+                         </div>
+                       )}
+
                        <textarea value={freeReason} onChange={e => setFreeReason(e.target.value)} placeholder="Reason for making this test free (required)…" rows={2}
                          style={{ width: '100%', padding: '9px', border: '1px solid #99f6e4', borderRadius: '10px', fontSize: '11px', resize: 'vertical', boxSizing: 'border-box', fontFamily: 'inherit', background: 'white' }} />
                        <div style={{ display: 'flex', gap: '8px' }}>
@@ -623,6 +577,86 @@ export const InvoiceDrawer = ({
            </div>
         </div>
       </div>
+
+      {/* ── Big sectioned payment-edit window (concessions), admin-approved ── */}
+      {editReqOpen && (() => {
+        const fee = Number(selectedInvoice.grossAmount) || 0;
+        const commission = Number(selectedInvoice.commissionAmount) || 0;
+        const maxCentre = Math.max(0, fee - commission);
+        const maxReferral = commission;
+        const editTotal = (Number(editCentre) || 0) + (Number(editReferrer) || 0) + (Number(editDeduction) || 0);
+        const newNet = Math.max(0, fee - editTotal);
+        const overFee = editTotal > fee + 0.001;
+        const clampCentre = (v) => setEditCentre(Math.max(0, Math.min(v, fee - (Number(editReferrer) || 0) - (Number(editDeduction) || 0))));
+        const clampReferrer = (v) => setEditReferrer(Math.max(0, Math.min(v, maxReferral, fee - (Number(editCentre) || 0) - (Number(editDeduction) || 0))));
+        const clampAdd = (v) => setEditDeduction(Math.max(0, Math.min(v, fee - (Number(editCentre) || 0) - (Number(editReferrer) || 0))));
+
+        return (
+        <div onClick={() => setEditReqOpen(false)} style={{ position: 'fixed', inset: 0, zIndex: 11000, background: 'rgba(10,22,40,0.55)', backdropFilter: 'blur(4px)', display: 'flex', alignItems: isMobile ? 'flex-end' : 'center', justifyContent: 'center', padding: isMobile ? '0' : '20px' }}>
+          <div onClick={e => e.stopPropagation()} style={{ width: '100%', maxWidth: '620px', maxHeight: isMobile ? '94vh' : '90vh', background: 'white', borderRadius: isMobile ? '20px 20px 0 0' : '20px', overflow: 'hidden', display: 'flex', flexDirection: 'column', boxShadow: '0 20px 60px rgba(0,0,0,0.4)' }}>
+            <div style={{ padding: '16px 20px', background: 'linear-gradient(135deg,#0f52ba,#061a40)', color: 'white', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexShrink: 0 }}>
+              <div>
+                <div style={{ fontSize: '8px', fontWeight: 950, letterSpacing: '1.5px', opacity: 0.8 }}>EDIT INVOICE · NEEDS ADMIN APPROVAL</div>
+                <div style={{ fontSize: '15px', fontWeight: 950, marginTop: '2px' }}>{selectedInvoice.displayId} · {selectedInvoice.patientName}</div>
+              </div>
+              <button onClick={() => setEditReqOpen(false)} style={{ background: 'none', border: 'none', color: 'white', fontSize: '20px', cursor: 'pointer', opacity: 0.8 }}>✕</button>
+            </div>
+
+            <div style={{ padding: '18px 20px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '16px', flex: 1 }}>
+
+              {/* ① Concessions */}
+              <div style={{ background: '#f8fafc', border: '1px solid #eef2f7', borderRadius: '14px', padding: '14px' }}>
+                <div style={{ fontSize: '9px', fontWeight: 950, color: '#0f52ba', letterSpacing: '1px', marginBottom: '4px' }}>① CONCESSIONS</div>
+                <div style={{ fontSize: '10px', color: '#94a3b8', fontWeight: 700, marginBottom: '10px' }}>Fee ₹{fee.toLocaleString()} · Referrer commission ₹{commission.toLocaleString()}</div>
+
+                {[
+                  ['Centre concession', editCentre, clampCentre, '#ef4444', maxCentre, false],
+                  ['Referral concession', editReferrer, clampReferrer, '#e11d48', maxReferral, commission <= 0],
+                  ['Additional discount', editDeduction, clampAdd, '#1e293b', null, false],
+                ].map(([label, val, clamp, color, max, disabled]) => (
+                  <div key={label} style={{ marginBottom: '12px', opacity: disabled ? 0.5 : 1 }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' }}>
+                      <span style={{ fontSize: '10px', fontWeight: 800, color: '#64748b' }}>{label}</span>
+                      {max != null && <span style={{ fontSize: '9px', fontWeight: 800, color }}>max ₹{max.toLocaleString()}</span>}
+                    </div>
+                    <input type="number" min="0" disabled={disabled} value={val === 0 ? '' : val} placeholder="0"
+                      onChange={e => clamp(Math.max(0, parseFloat(e.target.value) || 0))}
+                      style={{ width: '100%', boxSizing: 'border-box', padding: '9px', borderRadius: '9px', border: '1px solid #e2e8f0', fontSize: '13px', fontWeight: 900, color }} />
+                  </div>
+                ))}
+
+                <div style={{ marginTop: '4px', borderTop: '1px solid #e2e8f0', paddingTop: '10px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <div>
+                    <div style={{ fontSize: '9px', fontWeight: 900, color: '#94a3b8' }}>TOTAL CONCESSION</div>
+                    <div style={{ fontSize: '13px', fontWeight: 950, color: overFee ? '#ef4444' : '#475569' }}>₹{editTotal.toLocaleString()} / ₹{fee.toLocaleString()}</div>
+                  </div>
+                  <div style={{ textAlign: 'right' }}>
+                    <div style={{ fontSize: '9px', fontWeight: 900, color: '#0f52ba' }}>NEW NET</div>
+                    <div style={{ fontSize: '18px', fontWeight: 950, color: '#0f52ba' }}>₹{newNet.toLocaleString()}</div>
+                  </div>
+                </div>
+                {overFee && <div style={{ marginTop: '8px', fontSize: '10px', fontWeight: 800, color: '#ef4444' }}>⚠ Total concession can’t exceed the fee of ₹{fee.toLocaleString()}.</div>}
+              </div>
+
+              {/* ② Reason */}
+              <div>
+                <div style={{ fontSize: '9px', fontWeight: 950, color: '#0f52ba', letterSpacing: '1px', marginBottom: '8px' }}>② REASON</div>
+                <textarea value={editReason} onChange={e => setEditReason(e.target.value)} rows={2} placeholder="Reason for this edit (required) — e.g. wrong discount, price correction…"
+                  style={{ width: '100%', boxSizing: 'border-box', padding: '10px', borderRadius: '10px', border: '1px solid #e2e8f0', fontSize: '12px', resize: 'vertical', fontFamily: 'inherit' }} />
+              </div>
+            </div>
+
+            <div style={{ padding: '14px 20px', borderTop: '1px solid #eef2f7', display: 'flex', gap: '10px', flexShrink: 0 }}>
+              <button onClick={() => setEditReqOpen(false)} style={{ padding: '12px 18px', borderRadius: '11px', border: '1px solid #e2e8f0', background: 'white', color: '#64748b', fontWeight: 800, fontSize: '11px', cursor: 'pointer' }}>Cancel</button>
+              <button onClick={submitEditRequest} disabled={!editReason.trim() || editSubmitting || overFee}
+                style={{ flex: 1, padding: '12px', borderRadius: '11px', border: 'none', color: 'white', fontWeight: 950, fontSize: '11px', background: (!editReason.trim() || editSubmitting || overFee) ? '#cbd5e1' : 'linear-gradient(135deg,#0f52ba,#061a40)', cursor: (!editReason.trim() || editSubmitting || overFee) ? 'not-allowed' : 'pointer' }}>
+                {editSubmitting ? 'SENDING…' : 'SEND FOR APPROVAL'}
+              </button>
+            </div>
+          </div>
+        </div>
+        );
+      })()}
 
       {showDeficitModal && (
         <div onClick={(e) => e.stopPropagation()} style={{ position: 'fixed', inset: 0, zIndex: 11000, background: 'rgba(10,22,40,0.55)', backdropFilter: 'blur(4px)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '20px' }}>
@@ -1291,15 +1325,29 @@ export const PayoutDrawer = ({
                      <div className="form-group">
                         <label style={{ display: 'block', fontSize: '9px', fontWeight: 950, color: '#94a3b8', letterSpacing: '2px', marginBottom: '10px' }}>PAYMENT_STATUS</label>
                         <div style={{ display: 'flex', background: '#f8fafc', padding: '5px', borderRadius: '12px', border: '1px solid #eee' }}>
-                           {['UNPAID', 'PAID'].map(s => (
+                           {['UNPAID', 'PAID'].map(s => {
+                             // A commission that's already PAID can't be flipped back to
+                             // UNPAID from this edit form — that's a guarded action that
+                             // needs admin approval (Referral Hub → PAID badge).
+                             const lockedUnpaid = s === 'UNPAID' && editPayout.originalStatus === 'PAID';
+                             return (
                              <button key={s} type="button"
-                               onClick={() => setEditPayout({...editPayout, status: s})}
+                               disabled={lockedUnpaid}
+                               title={lockedUnpaid ? 'Reverting a paid commission needs admin approval — use the PAID badge on the payout.' : undefined}
+                               onClick={() => { if (!lockedUnpaid) setEditPayout({...editPayout, status: s}); }}
                                style={{ flex: 1, padding: '10px', borderRadius: '8px', border: 'none', fontSize: '10px', fontWeight: 950,
                                  background: editPayout.status === s ? (s === 'PAID' ? '#10b981' : '#e11d48') : 'transparent',
-                                 color: editPayout.status === s ? 'white' : '#64748b', cursor: 'pointer', transition: 'all 0.2s' }}
-                             >{s}</button>
-                           ))}
+                                 color: editPayout.status === s ? 'white' : lockedUnpaid ? '#cbd5e1' : '#64748b',
+                                 cursor: lockedUnpaid ? 'not-allowed' : 'pointer', transition: 'all 0.2s' }}
+                             >{lockedUnpaid ? '🔒 UNPAID' : s}</button>
+                             );
+                           })}
                         </div>
+                        {editPayout.originalStatus === 'PAID' && (
+                          <div style={{ marginTop: '8px', fontSize: '9.5px', fontWeight: 700, color: '#7c3aed', lineHeight: 1.4 }}>
+                            🛡 To revert this paid commission, use the <strong>PAID</strong> badge on the payout — it needs admin approval.
+                          </div>
+                        )}
                      </div>
                    </>
                  ) : (
