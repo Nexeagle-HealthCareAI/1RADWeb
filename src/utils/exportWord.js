@@ -14,9 +14,12 @@
 //   • Browser/PWA: the .docx downloads (opens in Word on double-click).
 // ════════════════════════════════════════════════════════════════
 
+import QRCode from 'qrcode';
 import { buildDocxBlob } from '../components/NarrativeEditor/utils/exportDocx';
 import { nativeWord } from '../hooks/useElectron';
 import { BASE_URL } from '../api/apiClient';
+import { getTrackingUrl } from './trackingUrl';
+import { formatPatientAge } from './patientAge';
 
 // Resolve the letterhead asset URL, proxying Azure blobs through the API (same
 // origin) so the fetch/canvas isn't blocked by CORS — mirrors ReportPreviewModal.
@@ -90,34 +93,68 @@ export const FINDINGS_START_TOKEN = '[[1RAD-FINDINGS-START]]';
 export const FINDINGS_END_TOKEN   = '[[1RAD-FINDINGS-END]]';
 const marker = (token) => `<p><span style="font-size:1pt; color:#FFFFFF">${token}</span></p>`;
 
-// Build a patient-header HTML block authored so the docx converter captures it
-// faithfully: sizes via <span style="font-size:Npt">, bold via <b>, a bordered
-// <table> with one <p> per cell (single clean paragraph, bold labels).
-function buildHeaderHtml({ appointment, protocol, hasLetterhead = false }) {
+// Generate the patient-tracking QR as a PNG data URL (high-res so it stays crisp
+// when Word scales it down in the banner). Best-effort — '' on any failure.
+async function buildQrDataUrl(appointmentId) {
+  if (!appointmentId) return '';
+  let url;
+  try { url = await getTrackingUrl(appointmentId); }
+  catch { url = `${(typeof window !== 'undefined' ? window.location.origin : '')}/track/${appointmentId}`; }
+  try {
+    return await QRCode.toDataURL(url, {
+      errorCorrectionLevel: 'M', type: 'image/png', width: 240, margin: 1,
+      color: { dark: '#000000', light: '#ffffff' },
+    });
+  } catch (e) {
+    console.warn('[Word] QR generation failed:', e?.message);
+    return '';
+  }
+}
+
+// Build the patient banner — the polished, organised block from the on-screen
+// preview (QR + name + a clean detail strip + the "thank you for referring"
+// line). Authored as HTML the docx converter captures faithfully: a bordered
+// <table> for the card, <span style="font-size/color"> for type, <b>/<i> for
+// emphasis, and an <img> (data URI) for the QR. Lives at the TOP OF THE BODY on
+// page 1 (not the repeating header) so it matches the preview and is bound by
+// the configured page margins.
+function buildPatientBannerHtml({ appointment, protocol, study, qrDataUrl, hasLetterhead = false }) {
   const name   = (appointment?.patientName || '').toUpperCase() || '—';
   const ptid   = appointment?.patientIdentifier || appointment?.ptid || appointment?.id || '—';
-  const age    = appointment?.patientAge ?? appointment?.age ?? '—';
+  // Age with its saved unit (Y / M / D) — e.g. "56Y", "6M", "15D".
+  const age    = formatPatientAge(appointment?.patientAge ?? appointment?.age, '—');
   const sex    = appointment?.patientGender || appointment?.gender || '—';
-  const study  = appointment?.service || appointment?.modality || '—';
-  const modality = appointment?.modality || '—'; // the scanner / scan type
   const refBy  = appointment?.referredBy || 'Self';
-  const token  = appointment?.dailyTokenNumber != null ? `#${appointment.dailyTokenNumber}` : '';
-  const repDate = new Date().toLocaleDateString();
+  // Reported date as "5 June, 2026" (day-first, month name, comma before year).
+  const _d = new Date();
+  const repDate = `${_d.getDate()} ${_d.toLocaleString('en-US', { month: 'long' })}, ${_d.getFullYear()}`;
   const clinic = protocol?.clinicName || protocol?.practiceName || protocol?.hospitalName || '';
 
-  const cell = (inner) => `<td><p>${inner}</p></td>`;
+  // Grey label + bold value, with a middot separator between fields.
+  const lbl = (t) => `<span style="color:#94A3B8"><b>${esc(t)}</b></span>`;
+  const sep = `<span style="color:#CBD5E1">&#160;&#160;·&#160;&#160;</span>`;
+  const metaLine =
+    `${lbl('Patient ID:')} <b>${esc(ptid)}</b>${sep}` +
+    `${lbl('Age / Sex:')} <b>${esc(age)} / ${esc(sex)}</b>${sep}` +
+    `${lbl('Study:')} <span style="color:#0F52BA"><b>${esc(study)}</b></span>${sep}` +
+    `${lbl('Prescribed By:')} <b>${esc(refBy)}</b>${sep}` +
+    `${lbl('Reported:')} <b>${esc(repDate)}</b>`;
 
-  // When a letterhead image is present it already carries the clinic branding,
-  // so we drop the clinic name + "DIAGNOSTIC REPORT" title to avoid duplication.
+  const detailsCell =
+    `<td colwidth="${qrDataUrl ? 470 : 560}"><p><span style="font-size:16pt; color:#0A1628"><b>${esc(name)}</b></span></p>` +
+    `<p><span style="font-size:10pt; color:#475569">${metaLine}</span></p></td>`;
+
+  // QR ("scanner") sits on the LEFT, details on the right.
+  const qrCell = qrDataUrl
+    ? `<td colwidth="96"><p style="text-align:center"><img src="${qrDataUrl}" width="84" height="84"/></p></td>`
+    : '';
+
   return `
     ${(!hasLetterhead && clinic) ? `<p style="text-align:center"><span style="font-size:15pt; color:#0A1628"><b>${esc(clinic)}</b></span></p>` : ''}
-    ${hasLetterhead ? '' : '<p style="text-align:center"><span style="font-size:11pt; color:#64748B"><b>DIAGNOSTIC REPORT</b></span></p>'}
-    <p><span style="font-size:16pt; color:#0A1628"><b>${esc(name)}</b></span>${token ? `<span style="color:#64748B">   Token ${esc(token)}</span>` : ''}</p>
     <table>
-      <tr>${cell(`<b>Patient ID:</b> ${esc(ptid)}`)}${cell(`<b>Age / Sex:</b> ${esc(age)} / ${esc(sex)}`)}</tr>
-      <tr>${cell(`<b>Study:</b> ${esc(study)}`)}${cell(`<b>Modality / Scanner:</b> ${esc(modality)}`)}</tr>
-      <tr>${cell(`<b>Referred By:</b> ${esc(refBy)}`)}${cell(`<b>Reported:</b> ${esc(repDate)}`)}</tr>
+      <tr>${qrCell}${detailsCell}</tr>
     </table>
+    <p style="text-align:center"><span style="font-size:10.5pt; color:#475569"><i>Thank you for referring the patient for </i></span><span style="font-size:10.5pt; color:#0F52BA"><b>${esc(study)}</b></span><span style="font-size:10.5pt; color:#475569"><i>.</i></span></p>
     <p></p>`;
 }
 
@@ -145,50 +182,55 @@ function buildImpressionHtml(impression, advice) {
  * page-inner and the END fence + impression into the LAST. When there are no
  * wrappers (flat pagination) we concatenate.
  */
-export function buildReportHtml({ findingsHtml, impression, advice }) {
+export function buildReportHtml({ findingsHtml, impression, advice, bannerHtml = '' }) {
   const trailingHtml = buildImpressionHtml(impression, advice);
   const startM = marker(FINDINGS_START_TOKEN);
   const endM = marker(FINDINGS_END_TOKEN);
 
+  // The patient banner goes ABOVE the START fence (page 1, top of body) so it's
+  // never read as findings by the auto-sync importer.
   if (typeof document !== 'undefined') {
     const tmp = document.createElement('div');
     tmp.innerHTML = findingsHtml || '';
     const inners = tmp.querySelectorAll('.word-page-inner');
     if (inners.length > 0) {
-      inners[0].insertAdjacentHTML('afterbegin', startM);
+      inners[0].insertAdjacentHTML('afterbegin', bannerHtml + startM);
       inners[inners.length - 1].insertAdjacentHTML('beforeend', endM + trailingHtml);
       return tmp.innerHTML;
     }
   }
-  return `${startM}${findingsHtml || ''}${endM}${trailingHtml}`;
+  return `${bannerHtml}${startM}${findingsHtml || ''}${endM}${trailingHtml}`;
 }
 
 /**
  * Convert the current report to a faithful .docx and launch Microsoft Word.
  * Returns the nativeWord.openDocx() result ({ ok, mode|path|error }).
  */
-// Top margin (mm) reserved so the repeating patient header never overlaps the
-// body. The header sits ~12 mm from the page top (w:header offset), so this
-// leaves ~36 mm for the banner — enough for the clinic line, name and the
-// 3-row detail table.
-const HEADER_RESERVE_MM = 48;
-
-export async function openReportInWord({ appointment, findingsHtml, impression, advice, protocol, watch = false, watermark = '' }) {
+/**
+ * Build the report .docx as a Blob — the SINGLE source of truth used by both
+ * "Launch Word" and the on-screen true-Word preview (docx-preview renders this
+ * exact blob, so the preview is byte-identical to what Word opens).
+ */
+export async function buildReportDocxBlob({ appointment, findingsHtml, impression, advice, protocol, watermark = '' }) {
   // Embed the actual letterhead (image, or PDF page 1) as a full-page repeating
   // background when the protocol has one. Best-effort — null if absent/failed.
   const letterhead = await fetchLetterhead(protocol);
 
-  // Patient banner → repeating Word page header (every page); body = findings.
-  const headerHtml = buildHeaderHtml({ appointment, protocol, hasLetterhead: !!letterhead });
-  const bodyHtml = buildReportHtml({ findingsHtml, impression, advice });
+  // Patient banner (with QR) → TOP OF THE BODY on page 1, exactly like the
+  // on-screen preview. Bound by the configured page margins (not a header band),
+  // so left/right/top match the editor. The letterhead/watermark stay in the
+  // repeating page header as the branding background.
+  const apptId = appointment?.appointmentId || appointment?.id || appointment?.ptid || null;
+  const qrDataUrl = await buildQrDataUrl(apptId);
+  const study = appointment?.service || appointment?.modality || '—';
+  const bannerHtml = buildPatientBannerHtml({ appointment, protocol, study, qrDataUrl, hasLetterhead: !!letterhead });
+  const bodyHtml = buildReportHtml({ findingsHtml, impression, advice, bannerHtml });
 
   // Carry the report's page margins (mm) and base font into Word so the
-  // document opens with the same layout the doctor configured in the editor.
-  // With a letterhead, honour the configured headerMargin (the clearance set
-  // for the letterhead art); otherwise reserve room for the text banner.
+  // document opens with the SAME layout the doctor configured in the editor —
+  // headerMargin (top) / leftMargin / rightMargin / bottomMargin, verbatim.
   const margins = {
-    top:    letterhead ? (protocol?.headerMargin ?? HEADER_RESERVE_MM)
-                       : Math.max(protocol?.headerMargin ?? 20, HEADER_RESERVE_MM),
+    top:    protocol?.headerMargin ?? 25,
     left:   protocol?.leftMargin   ?? 20,
     right:  protocol?.rightMargin  ?? 20,
     bottom: protocol?.bottomMargin ?? 20,
@@ -199,7 +241,13 @@ export async function openReportInWord({ appointment, findingsHtml, impression, 
     color:  protocol?.fontColor  || undefined,
   };
 
-  const blob = await buildDocxBlob(bodyHtml, { headerHtml, margins, defaultFont, letterhead, watermark });
+  // No headerHtml — the patient banner is in the body now. The header carries
+  // only the letterhead background + optional watermark.
+  return buildDocxBlob(bodyHtml, { margins, defaultFont, letterhead, watermark });
+}
+
+export async function openReportInWord({ appointment, findingsHtml, impression, advice, protocol, watch = false, watermark = '' }) {
+  const blob = await buildReportDocxBlob({ appointment, findingsHtml, impression, advice, protocol, watermark });
   const who = (appointment?.patientName || 'patient').replace(/\s+/g, '-').replace(/[^a-z0-9\-]/gi, '');
   const filename = `report-${who}-${new Date().toISOString().split('T')[0]}`;
   return nativeWord.openDocx(blob, filename, 'docx', { watch });

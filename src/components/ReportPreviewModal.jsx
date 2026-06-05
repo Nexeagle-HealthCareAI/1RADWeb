@@ -441,8 +441,9 @@ const ReportPreviewModal = ({
 
     const { mode: rcMode, text: rcText, data: rcData, impression: rcImpression, advice: rcAdvice } = reportContent;
     const _isPlain = !protocol?.letterheadBlobUrl;
-    const _baseFontSize = protocol?.fontSize || (_isPlain ? 12 : 14);
-    const _contentStyle = `font-size: ${_baseFontSize}px; line-height: 1.6; color: ${protocol?.fontColor || '#1e293b'}; font-family: ${protocol?.fontFamily || 'inherit'};`;
+    const _baseFontSize = protocol?.fontSize || 12;
+    // Unified with the editor + Word export: font size in POINTS, line-height 1.5.
+    const _contentStyle = `font-size: ${_baseFontSize}pt; line-height: 1.5; color: ${protocol?.fontColor || '#1e293b'}; font-family: ${protocol?.fontFamily || 'inherit'};`;
 
     // ── WYSIWYG pagination ──────────────────────────────────────────────
     // Honor the editor's own page splits. The editor has already paginated
@@ -564,7 +565,7 @@ const ReportPreviewModal = ({
     const PX_PER_MM = 96 / 25.4;
     const _leftMm   = protocol?.leftMargin   ?? 20;
     const _rightMm  = protocol?.rightMargin  ?? 20;
-    const _topMm    = protocol?.headerMargin ?? (_isPlain ? 20 : 45);
+    const _topMm    = protocol?.headerMargin ?? 25;
     const _bottomMm = protocol?.bottomMargin ?? 20;
     const _widthMm  = Math.max(60, 210 - _leftMm - _rightMm);
     // Reserve ~one text line so the print window (a separate document that can
@@ -602,13 +603,13 @@ const ReportPreviewModal = ({
   console.log(`[ReportPreview] Total pages to render: ${pages.length}`);
   
   // Honor protocol.fontSize when provided; fall back per scenario
-  const baseFontSize = protocol?.fontSize || (isPlain ? 12 : 14);
+  const baseFontSize = protocol?.fontSize || 12;
 
   // Surgical Margin Resolution (mm to style) — drives both preview & print.
   // Honor protocol-configured margins in both modes (?? so an explicit 0 is
   // respected). Fall back to sensible defaults only when the setting is unset:
   // blank A4 → 20mm uniform; letterhead → 45mm top to clear typical header art.
-  const topMm    = protocol?.headerMargin ?? (isPlain ? 20 : 45);
+  const topMm    = protocol?.headerMargin ?? 25;
   const leftMm   = protocol?.leftMargin   ?? 20;
   const rightMm  = protocol?.rightMargin  ?? 20;
   const bottomMm = protocol?.bottomMargin ?? 20;
@@ -809,8 +810,8 @@ const ReportPreviewModal = ({
           .report-content,
           .print-container {
             font-family: "Calibri", "Segoe UI", -apple-system, sans-serif;
-            font-size: 12pt;
-            line-height: 1.6;
+            font-size: ${baseFontSize}pt;
+            line-height: 1.5;
             color: #000000;
             word-wrap: break-word;
             overflow-wrap: break-word;
@@ -821,7 +822,7 @@ const ReportPreviewModal = ({
           .report-content h4 { font-size: 14pt; font-weight: 600; line-height: 1.4; margin: 12px 0 4px 0; color: #374151; }
           .report-content p { margin: 0 0 8px 0; }
           .report-content ul, .report-content ol { padding-left: 28px; margin: 6px 0 10px; }
-          .report-content li { margin: 3px 0; line-height: 1.6; }
+          .report-content li { margin: 3px 0; line-height: 1.5; }
           .report-content li p { margin: 0; }
           .report-content table { border-collapse: collapse; width: 100%; margin: 14px 0; border: 1px solid #c8c8c8; }
           .report-content th { background: #d6e4f7; font-weight: 700; text-align: left; padding: 8px 12px; border: 1px solid #c8c8c8; font-size: 11pt; color: #1f3864; }

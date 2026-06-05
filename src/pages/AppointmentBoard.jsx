@@ -195,6 +195,17 @@ export default function AppointmentBoard() {
   // paid; once payment exists the backend reports requiresApproval and we switch
   // this modal to its reason-capture phase and submit a CHANGE_REFERRER request.
   const [changeRefModal, setChangeRefModal] = useState({ isOpen: false, appointmentId: null, patientName: '', currentReferrer: '', newName: '', newContact: '', isDoctor: true, phase: 'edit', reason: '', submitting: false });
+  // The change-referrer modal keeps its OWN roster — the shared `referrers`
+  // state is a volatile search buffer that booking interactions clear, so the
+  // suggestion list would otherwise come up empty.
+  const [changeRefOptions, setChangeRefOptions] = useState([]);
+
+  const openChangeRef = (app) => {
+    setChangeRefModal({ isOpen: true, appointmentId: app.appointmentId || app.id, patientName: app.patientName || '', currentReferrer: app.referredBy || '', newName: '', newContact: '', isDoctor: true, phase: 'edit', reason: '', submitting: false });
+    apiClient.get('/referrers', { params: { search: '' } })
+      .then(res => setChangeRefOptions(Array.isArray(res.data) ? res.data : []))
+      .catch(() => setChangeRefOptions([]));
+  };
 
   const submitChangeReferrer = async () => {
     const m = changeRefModal;
@@ -753,6 +764,17 @@ export default function AppointmentBoard() {
     !!newPatient.referredBy?.trim() &&
     newPatient.referrerIsDoctor === false &&
     !String(newPatient.referrerSupportedByDoctor || '').trim();
+
+  // Step 1 (Patient Identity + Referral) is complete only when a patient is
+  // identified, a referrer is named (MANDATORY — use the Self / walk-in button
+  // when there's none), any agent's supporting doctor is filled, and a typed
+  // referrer mobile is valid. Gates the "Proceed → Clinical Config" button.
+  const isReferrerMissing = !String(newPatient.referredBy || '').trim();
+  const isPatientStepIncomplete =
+    isNewPatientIncomplete ||
+    isReferrerMissing ||
+    isSupportedDoctorMissing ||
+    !isReferrerContactValid;
 
   // Most-used services per modality, derived from this centre's recent
   // appointments. Powers the quick-pick suggestion chips in step 2 so the
@@ -2253,7 +2275,7 @@ export default function AppointmentBoard() {
               >✕</button>
               {app.referredBy && String(app.referredBy).trim() && (
                 <button
-                  onClick={() => setChangeRefModal({ isOpen: true, appointmentId: app.appointmentId || app.id, patientName: app.patientName || '', currentReferrer: app.referredBy || '', newName: '', newContact: '', isDoctor: true, phase: 'edit', reason: '', submitting: false })}
+                  onClick={() => openChangeRef(app)}
                   style={{ width: '28px', height: '28px', display: 'flex', alignItems: 'center', justifyContent: 'center', borderRadius: '6px', background: '#eff6ff', border: '1px solid #bfdbfe', cursor: 'pointer', color: '#1d4ed8', fontSize: '12px' }}
                   title="Change referred by"
                 >↪</button>
@@ -2849,7 +2871,7 @@ export default function AppointmentBoard() {
                       <label style={{ fontSize: '10px', color: '#0f52ba', fontWeight: 800, marginBottom: '12px', display: 'block', letterSpacing: '1px' }}>REFERRAL SOURCE</label>
                       
                       <div className="form-group" style={{ position: 'relative', flex: 1 }}>
-                        <label style={{ fontSize: '10px', fontWeight: 800, color: '#64748b', marginBottom: '6px', display: 'block' }}>REFERRED BY</label>
+                        <label style={{ fontSize: '10px', fontWeight: 800, color: '#64748b', marginBottom: '6px', display: 'block' }}>REFERRED BY <span style={{ color: '#ef4444' }}>*</span></label>
                         {/* Search OR type. If the typed name matches no existing
                             referrer, it becomes a brand-new referral source on
                             proceed — no separate "add" button needed. */}
@@ -3093,20 +3115,24 @@ export default function AppointmentBoard() {
                       <div className="drawer-footer" style={{ borderTop: 'none', paddingTop: '10px', marginTop: 'auto' }}>
                         <button
                           className="gamified-btn"
-                          disabled={isSupportedDoctorMissing}
+                          disabled={isPatientStepIncomplete}
                           style={{
                             width: '100%',
                             padding: isMobile ? '11px' : '12px',
                             borderRadius: '10px',
                             fontSize: isMobile ? '12px' : '13px',
-                            background: (isSupportedDoctorMissing || (isNewPatientIncomplete && showBookingValidation)) ? '#94a3b8' : 'linear-gradient(90deg, #0f52ba, #00f2fe)',
-                            boxShadow: (isSupportedDoctorMissing || (isNewPatientIncomplete && showBookingValidation)) ? 'none' : '0 10px 20px rgba(15, 82, 186, 0.2)',
-                            cursor: isSupportedDoctorMissing ? 'not-allowed' : 'pointer',
-                            opacity: isSupportedDoctorMissing ? 0.8 : 1,
+                            background: isPatientStepIncomplete ? '#94a3b8' : 'linear-gradient(90deg, #0f52ba, #00f2fe)',
+                            boxShadow: isPatientStepIncomplete ? 'none' : '0 10px 20px rgba(15, 82, 186, 0.2)',
+                            cursor: isPatientStepIncomplete ? 'not-allowed' : 'pointer',
+                            opacity: isPatientStepIncomplete ? 0.8 : 1,
                           }}
                           onClick={async () => {
                             if (isNewPatientIncomplete) {
                               setShowBookingValidation(true);
+                              return;
+                            }
+                            if (isReferrerMissing) {
+                              showNotif('warning', 'REFERRED BY REQUIRED', 'Please enter who referred this patient. Use the “Self / walk-in” button if there is no referrer.');
                               return;
                             }
                             if (isSupportedDoctorMissing) {
@@ -3246,6 +3272,17 @@ export default function AppointmentBoard() {
                         >
                           PROCEED {'\u2192'} CLINICAL CONFIG
                         </button>
+                        {isPatientStepIncomplete && (
+                          <div style={{ marginTop: '8px', fontSize: '10px', fontWeight: 700, color: '#94a3b8', textAlign: 'center' }}>
+                            {isNewPatientIncomplete
+                              ? 'Complete the patient details to continue.'
+                              : isReferrerMissing
+                              ? 'Referred By is required \u2014 enter a referrer or tap \u201cSelf / walk-in\u201d.'
+                              : isSupportedDoctorMissing
+                              ? 'Enter the supporting doctor for this referral.'
+                              : 'Referrer mobile must be 10 digits or left blank.'}
+                          </div>
+                        )}
                       </div>
                     </div>
                   </div>
@@ -4019,7 +4056,7 @@ export default function AppointmentBoard() {
                           background: 'linear-gradient(90deg, #0f52ba, #00f2fe)',
                           color: 'white', border: 'none', cursor: 'pointer',
                           boxShadow: '0 4px 12px rgba(15, 82, 186, 0.2)',
-                          opacity: (!newBooking.patientId || (!newBooking.service && (newBooking.addedServices || []).length === 0) || !newBooking.doctor) ? 0.7 : 1,
+                          opacity: (!newBooking.patientId || (!newBooking.service && (newBooking.addedServices || []).length === 0) || !newBooking.doctor || !String(newPatient.referredBy || '').trim() || isSupportedDoctorMissing) ? 0.7 : 1,
                           whiteSpace: 'nowrap',
                         }}
                         disabled={
@@ -4027,7 +4064,12 @@ export default function AppointmentBoard() {
                           // Either a draft service is in the inputs OR there's
                           // at least one committed line in the visit tray.
                           (!newBooking.service && (newBooking.addedServices || []).length === 0) ||
-                          !newBooking.doctor
+                          !newBooking.doctor ||
+                          // Referred By is mandatory (use the Self / walk-in button
+                          // when there is no external referrer).
+                          !String(newPatient.referredBy || '').trim() ||
+                          // Agent referral needs its supporting doctor filled.
+                          isSupportedDoctorMissing
                         }
                         onClick={handleBookAppointment}
                       >
@@ -5608,15 +5650,54 @@ export default function AppointmentBoard() {
                 <label style={{ display: 'block', fontSize: '10px', fontWeight: 950, color: '#64748b', letterSpacing: '0.5px', marginTop: '18px', marginBottom: '6px' }}>NEW REFERRER NAME</label>
                 <input
                   autoFocus
-                  list="changeref-referrers"
                   value={changeRefModal.newName}
                   onChange={e => setChangeRefModal(s => ({ ...s, newName: e.target.value }))}
                   placeholder="Type or pick a referrer…"
                   style={{ width: '100%', padding: '12px', border: '1px solid #e2e8f0', borderRadius: '12px', fontSize: '14px', boxSizing: 'border-box', fontFamily: 'inherit' }}
                 />
-                <datalist id="changeref-referrers">
-                  {(referrers || []).map(r => <option key={r.referrerId || r.id || r.name} value={r.name} />)}
-                </datalist>
+                {/* Custom suggestion list — reliable across browsers/Electron,
+                    unlike a native <datalist>. Filters the referrer roster; an
+                    exact match hides the list. Click fills name + contact + type. */}
+                {(() => {
+                  const q = (changeRefModal.newName || '').trim().toLowerCase();
+                  const pool = (changeRefOptions || []).filter(r => (r.name || '').trim());
+                  const matches = (q.length === 0
+                    ? pool
+                    : pool.filter(r => (r.name || '').toLowerCase().includes(q) && (r.name || '').toLowerCase() !== q)
+                  ).slice(0, 8);
+                  if (matches.length === 0) return null;
+                  return (
+                    <div style={{ marginTop: '6px', maxHeight: '180px', overflowY: 'auto', border: '1px solid #e2e8f0', borderRadius: '12px', background: 'white' }}>
+                      {matches.map(r => (
+                        <button
+                          key={r.referrerId || r.id || r.name}
+                          type="button"
+                          onClick={() => setChangeRefModal(s => ({
+                            ...s,
+                            newName: r.name,
+                            newContact: r.contact || s.newContact,
+                            isDoctor: r.isDoctor !== false,
+                          }))}
+                          style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%', textAlign: 'left', padding: '10px 12px', border: 'none', borderBottom: '1px solid #f1f5f9', background: 'white', cursor: 'pointer', fontSize: '13px' }}
+                        >
+                          <span style={{ fontWeight: 700, color: '#1e293b' }}>{r.name}{r.isDoctor === false ? ' · agent' : ''}</span>
+                          {r.contact ? <span style={{ fontSize: '11px', color: '#94a3b8' }}>{r.contact}</span> : null}
+                        </button>
+                      ))}
+                    </div>
+                  );
+                })()}
+
+                {/* Quick "Self" — change the referrer to a walk-in (no commission). */}
+                <button
+                  type="button"
+                  onClick={() => setChangeRefModal(s => ({ ...s, newName: 'Self', newContact: '', isDoctor: false }))}
+                  style={{ marginTop: '8px', padding: '8px 14px', borderRadius: '20px',
+                    border: (changeRefModal.newName || '').trim().toLowerCase() === 'self' ? '1.5px solid #0f52ba' : '1px solid #dbeafe',
+                    background: (changeRefModal.newName || '').trim().toLowerCase() === 'self' ? '#0f52ba' : '#f0f7ff',
+                    color: (changeRefModal.newName || '').trim().toLowerCase() === 'self' ? 'white' : '#0f52ba',
+                    fontSize: '11px', fontWeight: 900, cursor: 'pointer', letterSpacing: '0.3px' }}
+                >🏥 Self / walk-in · no commission</button>
 
                 <div style={{ display: 'flex', gap: '10px', marginTop: '12px' }}>
                   <div style={{ flex: 1 }}>

@@ -404,6 +404,14 @@ const ZOOM_LEVELS = [50, 75, 90, 100, 110, 125, 150, 200];
 //
 // Default is OFF — Path A continues to ship until Path B is validated for
 // header/footer rendering and print/PDF parity.
+// Pagination model. Path A (default) = distinct A4 page SHEETS that content
+// flows across (page 1 → page 2 → …), exactly like Word's print layout. The old
+// "editor pages ≠ Word pages" divergence was a METRICS problem (font unit, line
+// height, spacing, margins) — now unified in Phase 1 — not a model problem, so
+// the flowing-sheet model is the right one. The true-Word preview (docx-preview)
+// remains the authoritative paginated output.
+// Opt-in escape hatch to the continuous decoration model (Path B): set
+// localStorage 'narrative-editor:decoration-pagination' = '1'.
 const USE_DECORATION_PAGINATION =
   typeof window !== 'undefined' &&
   window.localStorage?.getItem('narrative-editor:decoration-pagination') === '1';
@@ -476,6 +484,10 @@ const NarrativeEditor = React.forwardRef(function NarrativeEditor({
   // both the writable area (.word-page-inner padding) and the dark margin
   // guide overlay. Defaults match Word's "Normal" margins (~25/20/20/20 mm).
   pageMargins,
+  // Base body font size in POINTS (from protocol.fontSize). Drives the editor's
+  // --report-font-size so the editor, preview and Word export all render the
+  // report at the same physical size. Defaults to 12pt.
+  bodyFontPt,
   // React node rendered into the first A4 page (above the editable content)
   // as a hardcoded, non-editable banner. Portaled into a sibling slot inside
   // .word-page so ProseMirror cannot overwrite it. The first page's inner
@@ -2223,12 +2235,16 @@ const NarrativeEditor = React.forwardRef(function NarrativeEditor({
 
   // Convert mm → px at 96 dpi for the protocol-driven margin CSS variables.
   const mmToPx = (mm) => `${(Number(mm) * 96 / 25.4).toFixed(2)}px`;
-  const marginVars = pageMargins ? {
-    '--page-margin-top':    mmToPx(pageMargins.top    ?? 25),
-    '--page-margin-right':  mmToPx(pageMargins.right  ?? 20),
-    '--page-margin-bottom': mmToPx(pageMargins.bottom ?? 20),
-    '--page-margin-left':   mmToPx(pageMargins.left   ?? 20),
-  } : {};
+  const marginVars = {
+    ...(pageMargins ? {
+      '--page-margin-top':    mmToPx(pageMargins.top    ?? 25),
+      '--page-margin-right':  mmToPx(pageMargins.right  ?? 20),
+      '--page-margin-bottom': mmToPx(pageMargins.bottom ?? 20),
+      '--page-margin-left':   mmToPx(pageMargins.left   ?? 20),
+    } : {}),
+    // Unified body font (points) — shared with preview + Word export.
+    '--report-font-size': `${Number(bodyFontPt) > 0 ? Number(bodyFontPt) : 12}pt`,
+  };
 
   return (
     <div ref={containerRef} data-ne-wm={watermark ? wmIdRef.current : undefined} className={`narrative-editor-container${isFinalized ? ' is-finalized' : ''}${cssFullscreen ? ' ne--css-fullscreen' : ''} ${className}`} style={{ ...style, ...marginVars }}>

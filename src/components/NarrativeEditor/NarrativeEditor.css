@@ -188,8 +188,11 @@
 .narrative-editor-content {
   outline: none;
   font-family: "Calibri", "Segoe UI", -apple-system, sans-serif;
-  font-size: 12pt;
-  line-height: 1.6;
+  /* Base body font + line-height are unified with the preview and the Word
+     export (single source of truth = the protocol). --report-font-size is set
+     from protocol.fontSize (in pt); line-height is the shared 1.5. */
+  font-size: var(--report-font-size, 12pt);
+  line-height: 1.5;
   color: #000000;
   word-wrap: break-word;
   overflow-wrap: break-word;
@@ -1313,11 +1316,17 @@ del[data-ci] {
   box-shadow:
     0 1px 3px rgba(0, 0, 0, 0.30),
     0 4px 10px rgba(0, 0, 0, 0.15);
-  /* Top padding expands by the first-page banner height (set by the React
-     bannerHostRef effect) so typed content never sits under the banner.
-     The pagination plugin reads the same value and subtracts it from
-     page 1's writable area so the boundary lands in the right place. */
-  padding: calc(96px + var(--patient-banner-height, 0px)) 96px 96px 96px;
+  /* Margins follow the protocol (--page-margin-*) just like Path A, so the
+     editor, the true-Word preview and the .docx export all agree. Page 1's top
+     padding also expands by the first-page banner height (set by the React
+     bannerHostRef effect) so typed content never sits under the banner; the
+     pagination plugin reads the same padding and subtracts it from page 1's
+     writable area so the soft boundary lands in the right place. */
+  padding:
+    calc(var(--page-margin-top, 96px) + var(--patient-banner-height, 0px))
+    var(--page-margin-right, 96px)
+    var(--page-margin-bottom, 96px)
+    var(--page-margin-left, 96px);
   box-sizing: border-box;
   min-height: 1123px;
 }

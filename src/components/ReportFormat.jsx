@@ -89,10 +89,10 @@ export default function ReportFormat({ doc, onUpdate }) {
                {['top', 'right', 'bottom', 'left'].map(side => (
                  <div key={side}>
                     <label style={{ fontSize: '8px', color: '#91a7ff', fontWeight: 800, textTransform: 'uppercase', display: 'block', marginBottom: '5px' }}>{side}</label>
-                    <input 
-                      type="number" 
-                      value={localLayout[side] ?? DEFAULT_MARGIN_MM} 
-                      onChange={e => updateLayout(side, parseInt(e.target.value) || 0)} 
+                    <input
+                      type="number"
+                      value={localLayout[side] ?? DEFAULT_MARGIN_MM}
+                      onChange={e => updateLayout(side, parseInt(e.target.value) || 0)}
                       style={{ width: '100%', padding: '10px', border: '1px solid #dbe9ff', borderRadius: '8px', fontSize: '13px', fontWeight: 700 }}
                     />
                  </div>

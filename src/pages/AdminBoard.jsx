@@ -2208,6 +2208,10 @@ export default function AdminBoard() {
               
               <div style={{ display: 'grid', gap: '25px' }}>
                 {[
+                  // All four margins are user-set — header/footer especially, since
+                  // letterhead height varies per clinic on the same A4 sheet. These
+                  // flow verbatim to the narrative editor, the Word export and the
+                  // prescription preview (single source of truth).
                   { id: 'headerMargin', label: 'HEADER GAP', icon: 'TOP', min: 8, max: 150 },
                   { id: 'leftMargin', label: 'LEFT GUTTER', icon: 'LEFT', min: 8, max: 100 },
                   { id: 'rightMargin', label: 'RIGHT GUTTER', icon: 'RIGHT', min: 8, max: 100 },
@@ -2221,14 +2225,14 @@ export default function AdminBoard() {
                       </label>
                       <span style={{ fontSize: '11px', fontWeight: 950, color: '#0f52ba', background: '#eff6ff', padding: '4px 10px', borderRadius: '6px' }}>{prescriptionSettings[m.id]}mm</span>
                     </div>
-                    <input 
-                      type="range" 
-                      min={m.min} 
-                      max={m.max} 
-                      value={prescriptionSettings[m.id]} 
+                    <input
+                      type="range"
+                      min={m.min}
+                      max={m.max}
+                      value={prescriptionSettings[m.id]}
                       onChange={(e) => setPrescriptionSettings({...prescriptionSettings, [m.id]: parseInt(e.target.value)})}
-                      style={{ 
-                        width: '100%', cursor: 'pointer', height: '6px', appearance: 'none', 
+                      style={{
+                        width: '100%', cursor: 'pointer', height: '6px', appearance: 'none',
                         background: '#e2e8f0', borderRadius: '3px', outline: 'none'
                       }}
                     />

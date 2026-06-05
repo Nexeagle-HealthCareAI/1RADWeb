@@ -61,6 +61,66 @@ function cssLenToTwips(v) {
   return Math.round(n * 15); // px (and unit-less) → 1px ≈ 0.75pt = 15 twips
 }
 
+// ─── Inline images ────────────────────────────────────────────────────────────
+// <img src="data:image/png;base64,…"> → a real embedded Word inline picture.
+// Images are collected during conversion (like list numbering), then written to
+// word/media/ with relationships + content-types in buildDocxBlob. Only data
+// URIs are handled (no async network fetch); width/height attrs set the size.
+let _images = []; // [{ idx, rId, ext, bytes }]
+function resetImages() { _images = []; }
+
+// Usable text width in twips (page width − left/right margins). Tables and
+// images are clamped to this so nothing runs off the right edge in Word. 0 =
+// no limit (set per-document in buildDocxBlob before conversion).
+let _maxContentTwips = 0;
+
+function dataUriToImage(uri) {
+  const m = /^data:([^;]+);base64,(.*)$/s.exec(String(uri || '').trim());
+  if (!m) return null;
+  const mime = m[1].toLowerCase();
+  const ext = mime.includes('png') ? 'png'
+            : (mime.includes('jpeg') || mime.includes('jpg')) ? 'jpeg'
+            : mime.includes('gif') ? 'gif' : 'png';
+  try {
+    const bin = atob(m[2]);
+    const bytes = new Uint8Array(bin.length);
+    for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+    return { bytes, ext };
+  } catch { return null; }
+}
+
+// Emit an inline-picture run for an <img> node (data URI only). px → EMU at
+// 96 dpi (1px = 9525 EMU). wp namespace is declared on the element so the body
+// document (which only declares w/r) stays valid.
+function imageRunXml(node) {
+  const decoded = dataUriToImage(node.getAttribute?.('src'));
+  if (!decoded) return '';
+  const wPx = parseFloat(node.getAttribute?.('width')  || node.style?.width  || '') || 96;
+  const hPx = parseFloat(node.getAttribute?.('height') || node.style?.height || '') || 96;
+  let cx = Math.round(wPx * 9525);
+  let cy = Math.round(hPx * 9525);
+  // Don't let an oversized image overflow the right margin (1 twip = 635 EMU).
+  const maxEmu = _maxContentTwips > 0 ? _maxContentTwips * 635 : 0;
+  if (maxEmu && cx > maxEmu) { cy = Math.round(cy * (maxEmu / cx)); cx = maxEmu; }
+  const idx = _images.length + 1;
+  const rId = `rIdImg${idx}`;
+  const did = 300 + idx;
+  _images.push({ idx, rId, ext: decoded.ext, bytes: decoded.bytes });
+  return `<w:r><w:drawing>` +
+    `<wp:inline xmlns:wp="http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing" distT="0" distB="0" distL="0" distR="0">` +
+    `<wp:extent cx="${cx}" cy="${cy}"/><wp:effectExtent l="0" t="0" r="0" b="0"/>` +
+    `<wp:docPr id="${did}" name="Image${did}"/>` +
+    `<wp:cNvGraphicFramePr><a:graphicFrameLocks xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" noChangeAspect="1"/></wp:cNvGraphicFramePr>` +
+    `<a:graphic xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main">` +
+    `<a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/picture">` +
+    `<pic:pic xmlns:pic="http://schemas.openxmlformats.org/drawingml/2006/picture">` +
+    `<pic:nvPicPr><pic:cNvPr id="${did}" name="Image${did}"/><pic:cNvPicPr/></pic:nvPicPr>` +
+    `<pic:blipFill><a:blip r:embed="${rId}"/><a:stretch><a:fillRect/></a:stretch></pic:blipFill>` +
+    `<pic:spPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="${cx}" cy="${cy}"/></a:xfrm>` +
+    `<a:prstGeom prst="rect"><a:avLst/></a:prstGeom></pic:spPr>` +
+    `</pic:pic></a:graphicData></a:graphic></wp:inline></w:drawing></w:r>`;
+}
+
 // ─── Run-property builder ─────────────────────────────────────────────────────
 function buildRPr(m) {
   let x = '';
@@ -79,9 +139,18 @@ function buildRPr(m) {
 // ─── Inline text-run walker ───────────────────────────────────────────────────
 function textRuns(node, marks) {
   if (node.nodeType === 3) {
-    const t = esc(node.textContent);
-    if (!t) return '';
-    return `<w:r>${buildRPr(marks)}<w:t xml:space="preserve">${t}</w:t></w:r>`;
+    const raw = node.textContent;
+    if (!raw) return '';
+    const rpr = buildRPr(marks);
+    // Convert literal tab characters into REAL Word tabs (<w:tab/>) so they
+    // honour tab stops / hanging indents instead of rendering as raw text.
+    if (raw.includes('\t')) {
+      return raw.split('\t').map((seg, i) =>
+        (i > 0 ? `<w:r>${rpr}<w:tab/></w:r>` : '') +
+        (seg ? `<w:r>${rpr}<w:t xml:space="preserve">${esc(seg)}</w:t></w:r>` : '')
+      ).join('');
+    }
+    return `<w:r>${rpr}<w:t xml:space="preserve">${esc(raw)}</w:t></w:r>`;
   }
   if (node.nodeType !== 1) return '';
 
@@ -95,20 +164,27 @@ function textRuns(node, marks) {
   else if (tag === 'sub')  m.sub = true;
   else if (tag === 'sup')  m.sup = true;
   else if (tag === 'br')   return '<w:r><w:br/></w:r>';
+  else if (tag === 'img')  return imageRunXml(node);
   else if (tag === 'span') {
-    const st = node.style || {};
-    if (+st.fontWeight >= 600 || st.fontWeight === 'bold') m.b = true;
-    if (st.fontStyle === 'italic') m.i = true;
-    if (st.textDecoration?.includes('underline'))    m.u = true;
-    if (st.textDecoration?.includes('line-through')) m.s = true;
-    const sz = fontSizeToHalfPt(st.fontSize);
-    if (sz) m.sz = sz;
-    if (st.fontFamily) m.font = st.fontFamily.replace(/['"]/g, '').split(',')[0].trim();
-    const col = cssColorToHex(st.color);
-    if (col) m.color = col;
+    // Structured fill-in fields render as plain text in Word (no pill /
+    // colour / underline) — their styling is decorative editor chrome only.
+    if (node.getAttribute?.('data-field-type') == null) {
+      const st = node.style || {};
+      if (+st.fontWeight >= 600 || st.fontWeight === 'bold') m.b = true;
+      if (st.fontStyle === 'italic') m.i = true;
+      if (st.textDecoration?.includes('underline'))    m.u = true;
+      if (st.textDecoration?.includes('line-through')) m.s = true;
+      const sz = fontSizeToHalfPt(st.fontSize);
+      if (sz) m.sz = sz;
+      if (st.fontFamily) m.font = st.fontFamily.replace(/['"]/g, '').split(',')[0].trim();
+      const col = cssColorToHex(st.color);
+      if (col) m.color = col;
+    }
   } else if (tag === 'a') {
-    m.u = true;
-    m.color = '0078D4';
+    // Only style as a hyperlink when it's a REAL URL. In-document anchors /
+    // field markers (no http href) must stay plain — not blue-underlined.
+    const href = node.getAttribute?.('href') || '';
+    if (/^https?:\/\//i.test(href)) { m.u = true; m.color = '0078D4'; }
   } else if (tag === 'code') {
     m.font = 'Courier New';
   }
@@ -216,7 +292,15 @@ function tableGrid(table, rows) {
   }
   if (!widths.length || widths.every((w) => w == null)) return '';
   // px → twips (1px ≈ 15 twips). Fall back to ~60px for any unsized column.
-  const gridCols = widths.map((w) => `<w:gridCol w:w="${Math.round((w || 60) * 15)}"/>`).join('');
+  let twips = widths.map((w) => Math.round((w || 60) * 15));
+  // If the table is wider than the usable text area, scale every column down
+  // proportionally so it fits the page instead of running off the right edge.
+  const total = twips.reduce((a, b) => a + (b || 0), 0);
+  if (_maxContentTwips > 0 && total > _maxContentTwips) {
+    const f = _maxContentTwips / total;
+    twips = twips.map((t) => Math.max(120, Math.round(t * f)));
+  }
+  const gridCols = twips.map((t) => `<w:gridCol w:w="${t}"/>`).join('');
   return `<w:tblGrid>${gridCols}</w:tblGrid>`;
 }
 
@@ -325,6 +409,12 @@ function blockToWml(node) {
       `<w:tr><w:tc><w:tcPr>${tcBorders}<w:shd w:val="clear" w:color="auto" w:fill="F8FAFC"/></w:tcPr>${inner}</w:tc></w:tr></w:tbl>`;
   }
 
+  // Standalone image (block-level) → its own paragraph.
+  if (tag === 'img') {
+    const run = imageRunXml(node);
+    return run ? `<w:p>${run}</w:p>` : '';
+  }
+
   // Headings
   const hm = tag.match(/^h([1-6])$/);
   if (hm) {
@@ -351,8 +441,19 @@ function blockToWml(node) {
     if (Number.isFinite(lh) && lh > 0 && lh < 5) {
       ppr += `<w:spacing w:line="${Math.round(lh * 240)}" w:lineRule="auto"/>`;
     }
-    const ml = parseInt(st.marginLeft || '0');
-    if (ml > 0) ppr += `<w:ind w:left="${Math.round(ml / 96 * 1440)}"/>`;
+    // Indentation. Left = margin-left + padding-left (px → twips). text-indent
+    // becomes a Word FIRST-LINE indent (positive) or a HANGING indent (negative)
+    // so wrapped lines align under the first line — e.g. the organ-label layout.
+    const pxToTw = (v) => Math.round((parseFloat(v) || 0) / 96 * 1440);
+    const leftTw = pxToTw(st.marginLeft) + pxToTw(st.paddingLeft);
+    const tiPx = parseFloat(st.textIndent) || 0;
+    if (leftTw > 0 || tiPx) {
+      let indAttr = '';
+      if (leftTw > 0) indAttr += ` w:left="${leftTw}"`;
+      if (tiPx < 0) indAttr += ` w:hanging="${Math.round(-tiPx / 96 * 1440)}"`;
+      else if (tiPx > 0) indAttr += ` w:firstLine="${Math.round(tiPx / 96 * 1440)}"`;
+      if (indAttr) ppr += `<w:ind${indAttr}/>`;
+    }
     return `<w:p>${ppr ? `<w:pPr>${ppr}</w:pPr>` : ''}${textRuns(node, {})}</w:p>`;
   }
 
@@ -427,11 +528,12 @@ function htmlToWmlBody(html) {
 }
 
 // ─── OOXML file builders ──────────────────────────────────────────────────────
-function buildContentTypes(hasHeader, hasFooter, imageExt, hasNumbering) {
+function buildContentTypes(hasHeader, hasFooter, imageExts, hasNumbering) {
   const hdrCT = hasHeader ? '\n  <Override PartName="/word/header1.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.header+xml"/>' : '';
   const ftrCT = hasFooter ? '\n  <Override PartName="/word/footer1.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.footer+xml"/>' : '';
   const numCT = hasNumbering ? '\n  <Override PartName="/word/numbering.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.numbering+xml"/>' : '';
-  const imgCT = imageExt ? `\n  <Default Extension="${imageExt}" ContentType="image/${imageExt === 'jpg' ? 'jpeg' : imageExt}"/>` : '';
+  const exts = Array.from(new Set((imageExts || []).filter(Boolean)));
+  const imgCT = exts.map(e => `\n  <Default Extension="${e}" ContentType="image/${e === 'jpg' ? 'jpeg' : e}"/>`).join('');
   return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
   <Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
@@ -558,13 +660,16 @@ function buildFooterXml({ text, fontFamily, fontSize, align }) {
 </w:ftr>`;
 }
 
-function buildDocumentRels(hasHeader, hasFooter, hasNumbering) {
+function buildDocumentRels(hasHeader, hasFooter, hasNumbering, images) {
   const hdrRel = hasHeader ? '\n  <Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/header" Target="header1.xml"/>' : '';
   const ftrRel = hasFooter ? '\n  <Relationship Id="rId3" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/footer" Target="footer1.xml"/>' : '';
   const numRel = hasNumbering ? '\n  <Relationship Id="rId4" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/numbering" Target="numbering.xml"/>' : '';
+  const imgRels = (images || []).map(im =>
+    `\n  <Relationship Id="${im.rId}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="media/img${im.idx}.${im.ext}"/>`
+  ).join('');
   return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
-  <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/>${hdrRel}${ftrRel}${numRel}
+  <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/>${hdrRel}${ftrRel}${numRel}${imgRels}
 </Relationships>`;
 }
 
@@ -611,42 +716,35 @@ function buildStyles(defaultFont) {
 
   <w:style w:type="paragraph" w:default="1" w:styleId="Normal">
     <w:name w:val="Normal"/>
-    <w:pPr><w:spacing w:after="160" w:line="276" w:lineRule="auto"/></w:pPr>
+    <!-- Unified with editor + preview: line-height 1.5 (=360/240) and an 8px
+         (~6pt = 120 twip) gap after each paragraph. -->
+    <w:pPr><w:spacing w:after="120" w:line="360" w:lineRule="auto"/></w:pPr>
   </w:style>
 
+  <!-- Heading sizes/colours unified with the editor + preview:
+       h1 26pt #1F3864 · h2 20pt #2E4D7B · h3 16pt #2E4D7B · h4 14pt #374151. -->
   <w:style w:type="paragraph" w:styleId="Heading1">
     <w:name w:val="heading 1"/><w:basedOn w:val="Normal"/><w:next w:val="Normal"/>
-    <w:pPr><w:spacing w:before="240" w:after="60"/><w:outlineLvl w:val="0"/></w:pPr>
-    <w:rPr>
-      <w:rFonts w:ascii="Calibri Light" w:hAnsi="Calibri Light"/>
-      <w:b/><w:bCs/><w:sz w:val="40"/><w:szCs w:val="40"/>
-      <w:color w:val="2F3645"/>
-    </w:rPr>
+    <w:pPr><w:spacing w:before="0" w:after="120"/><w:outlineLvl w:val="0"/></w:pPr>
+    <w:rPr><w:b/><w:bCs/><w:sz w:val="52"/><w:szCs w:val="52"/><w:color w:val="1F3864"/></w:rPr>
   </w:style>
 
   <w:style w:type="paragraph" w:styleId="Heading2">
     <w:name w:val="heading 2"/><w:basedOn w:val="Normal"/><w:next w:val="Normal"/>
-    <w:pPr><w:spacing w:before="200" w:after="40"/><w:outlineLvl w:val="1"/></w:pPr>
-    <w:rPr>
-      <w:rFonts w:ascii="Calibri Light" w:hAnsi="Calibri Light"/>
-      <w:b/><w:bCs/><w:sz w:val="32"/><w:szCs w:val="32"/>
-      <w:color w:val="2E74B5"/>
-    </w:rPr>
+    <w:pPr><w:spacing w:before="180" w:after="80"/><w:outlineLvl w:val="1"/></w:pPr>
+    <w:rPr><w:b/><w:bCs/><w:sz w:val="40"/><w:szCs w:val="40"/><w:color w:val="2E4D7B"/></w:rPr>
   </w:style>
 
   <w:style w:type="paragraph" w:styleId="Heading3">
     <w:name w:val="heading 3"/><w:basedOn w:val="Normal"/><w:next w:val="Normal"/>
-    <w:pPr><w:spacing w:before="160" w:after="40"/><w:outlineLvl w:val="2"/></w:pPr>
-    <w:rPr>
-      <w:b/><w:bCs/><w:sz w:val="28"/><w:szCs w:val="28"/>
-      <w:color w:val="1F3864"/>
-    </w:rPr>
+    <w:pPr><w:spacing w:before="140" w:after="60"/><w:outlineLvl w:val="2"/></w:pPr>
+    <w:rPr><w:b/><w:bCs/><w:sz w:val="32"/><w:szCs w:val="32"/><w:color w:val="2E4D7B"/></w:rPr>
   </w:style>
 
   <w:style w:type="paragraph" w:styleId="Heading4">
     <w:name w:val="heading 4"/><w:basedOn w:val="Normal"/><w:next w:val="Normal"/>
     <w:pPr><w:spacing w:before="120" w:after="40"/><w:outlineLvl w:val="3"/></w:pPr>
-    <w:rPr><w:b/><w:bCs/><w:sz w:val="24"/><w:szCs w:val="24"/></w:rPr>
+    <w:rPr><w:b/><w:bCs/><w:sz w:val="28"/><w:szCs w:val="28"/><w:color w:val="374151"/></w:rPr>
   </w:style>
 
   <w:style w:type="paragraph" w:styleId="ListParagraph">
@@ -666,32 +764,52 @@ function buildStyles(defaultFont) {
  * @returns {Promise<Blob>}
  */
 export async function buildDocxBlob(html, { header, footer, headerHtml, margins, defaultFont, letterhead, watermark } = {}) {
-  // Reset the list-numbering registry, then convert (listToWml populates it).
+  // Reset per-document registries, then convert (these populate during walk).
   resetNumbering();
+  resetImages();
+  // Usable text width (A4 = 11906 twips wide) minus the page margins — tables
+  // and images wider than this are scaled down so nothing is cut off the right.
+  {
+    const m0 = margins || {};
+    _maxContentTwips = Math.max(1440, 11906 - mmToTwips(m0.left ?? 25.4) - mmToTwips(m0.right ?? 25.4));
+  }
   const bodyWml = htmlToWmlBody(html);
-  // headerHtml (rich, repeating patient banner) takes precedence over the
-  // legacy single-line header used by the editor's own header/footer feature.
-  // A watermark also requires a header (it's a VML shape in it).
-  const hasHeader = !!(headerHtml || header?.text || watermark);
+
+  // A letterhead embeds as a full-page background in the header; a watermark is
+  // a VML shape in the header. Either (or a rich/legacy header) means a header.
+  const hasLetterhead = !!(letterhead?.bytes && letterhead?.ext);
+  const hasHeader = !!(headerHtml || header?.text || watermark || hasLetterhead);
   const hasFooter = !!(footer?.text);
-  // A letterhead is only embeddable when we have a rich header to anchor it in.
-  const hasLetterhead = !!(letterhead?.bytes && letterhead?.ext && headerHtml);
-  // Lists allocated any numbering definitions during conversion above.
+
+  // Build header/footer WML up front so any images they carry are registered
+  // before we emit media files / relationships / content-types.
+  const headerXml = hasHeader
+    ? ((headerHtml || watermark || hasLetterhead)
+        ? buildHeaderXmlFromHtml(headerHtml || '', hasLetterhead, watermark)
+        : buildHeaderXml(header))
+    : null;
+  const footerXml = hasFooter ? buildFooterXml(footer) : null;
+
   const hasNumbering = _listNums.length > 0;
+  const images = _images.slice();
+  const imageExts = [...(hasLetterhead ? [letterhead.ext] : []), ...images.map(im => im.ext)];
 
   const zip = new JSZip();
-  zip.file('[Content_Types].xml', buildContentTypes(hasHeader, hasFooter, hasLetterhead ? letterhead.ext : null, hasNumbering));
+  zip.file('[Content_Types].xml', buildContentTypes(hasHeader, hasFooter, imageExts, hasNumbering));
   zip.folder('_rels').file('.rels', buildRels());
   const word = zip.folder('word');
   word.file('document.xml', buildDocument(bodyWml, hasHeader, hasFooter, margins));
   word.file('styles.xml', buildStyles(defaultFont));
-  word.folder('_rels').file('document.xml.rels', buildDocumentRels(hasHeader, hasFooter, hasNumbering));
+  word.folder('_rels').file('document.xml.rels', buildDocumentRels(hasHeader, hasFooter, hasNumbering, images));
   if (hasNumbering) word.file('numbering.xml', buildNumberingXml());
-  if (hasHeader) word.file('header1.xml', (headerHtml || watermark) ? buildHeaderXmlFromHtml(headerHtml || '', hasLetterhead, watermark) : buildHeaderXml(header));
-  if (hasFooter) word.file('footer1.xml', buildFooterXml(footer));
+  if (headerXml) word.file('header1.xml', headerXml);
+  if (footerXml) word.file('footer1.xml', footerXml);
   if (hasLetterhead) {
     word.file(`media/letterhead.${letterhead.ext}`, letterhead.bytes);
     word.folder('_rels').file('header1.xml.rels', buildHeaderRels(letterhead.ext));
+  }
+  for (const im of images) {
+    word.file(`media/img${im.idx}.${im.ext}`, im.bytes);
   }
 
   return zip.generateAsync({

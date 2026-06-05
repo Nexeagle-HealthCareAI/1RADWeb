@@ -15,6 +15,7 @@ import { nativeStorage, nativeWord } from '../hooks/useElectron';
 import { openReportInWord } from '../utils/exportWord';
 import { docxToFindingsHtml } from '../utils/importWord';
 import ReportPreviewModal, { PatientInfoBlock } from '../components/ReportPreviewModal';
+import WordDocxPreview from '../components/WordDocxPreview';
 import useTickClock from '../utils/useTickClock';
 import SearchableTemplatePicker from '../components/SearchableTemplatePicker';
 import PatientTimeline from '../components/PatientTimeline';
@@ -116,6 +117,13 @@ const ReportingPage = () => {
   const [editorState, setEditorState] = useState('standard'); // 'standard', 'expanded', 'collapsed'
   const [editorWidth, setEditorWidth] = useState(50); // percentage
   const [isPreviewOpen, setIsPreviewOpen] = useState(false);
+  // True-Word preview — renders the EXACT .docx that Launch Word produces.
+  const [wordPreview, setWordPreview] = useState({ open: false, findingsHtml: '', watermark: '' });
+  const handleWordPreview = () => {
+    const findingsHtml = editorRef.current?.editor?.getHTML?.() ?? editorText;
+    const watermark = editorRef.current?.getWatermark?.() || '';
+    setWordPreview({ open: true, findingsHtml, watermark });
+  };
   const isResizing = useRef(false);
   const [isTablet, setIsTablet] = useState(window.innerWidth < 1100);
   const [isMobile, setIsMobile] = useState(window.innerWidth < 768);
@@ -5135,6 +5143,7 @@ const ReportingPage = () => {
                       bottom: protocol.bottomMargin ?? 20,
                       left:   protocol.leftMargin   ?? 20,
                     } : undefined}
+                    bodyFontPt={protocol?.fontSize || 12}
                     firstPageBanner={activeAppointment ? (
                       <PatientInfoBlock
                         appointmentId={appointmentId}
@@ -5389,6 +5398,14 @@ const ReportingPage = () => {
                     >👁️ Preview</button>
 
                     <button
+                      onClick={handleWordPreview}
+                      title="Preview exactly as Microsoft Word will open it"
+                      style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', padding: '10px 14px', borderRadius: '10px', background: 'white', border: '1px solid #e2e8f0', color: '#0a1628', fontSize: '12px', fontWeight: 700, cursor: 'pointer', transition: 'all 0.15s' }}
+                      onMouseEnter={(e) => { e.currentTarget.style.background = '#f8fafc'; e.currentTarget.style.borderColor = '#cbd5e1'; }}
+                      onMouseLeave={(e) => { e.currentTarget.style.background = 'white'; e.currentTarget.style.borderColor = '#e2e8f0'; }}
+                    >📄 Word preview</button>
+
+                    <button
                       onClick={handleOpenInWord}
                       disabled={openingWord}
                       title="Open this report in Microsoft Word"
@@ -5488,6 +5505,7 @@ const ReportingPage = () => {
                       bottom: protocol.bottomMargin ?? 20,
                       left:   protocol.leftMargin   ?? 20,
                     } : undefined}
+                    bodyFontPt={protocol?.fontSize || 12}
                     firstPageBanner={activeAppointment ? (
                       <PatientInfoBlock
                         appointmentId={appointmentId}
@@ -5632,6 +5650,32 @@ const ReportingPage = () => {
             isFinalized: isFinalized
           }}
         />
+
+        {/* True-Word preview — renders the EXACT .docx Launch-Word produces. */}
+        {wordPreview.open && (
+          <div style={{ position: 'fixed', inset: 0, zIndex: 100001, background: 'rgba(10,22,40,0.55)', backdropFilter: 'blur(6px)', display: 'flex', flexDirection: 'column', padding: '24px' }}
+            onClick={() => setWordPreview(w => ({ ...w, open: false }))}>
+            <div onClick={(e) => e.stopPropagation()} style={{ background: '#f1f5f9', borderRadius: '16px', overflow: 'hidden', display: 'flex', flexDirection: 'column', width: '100%', maxWidth: '900px', margin: '0 auto', flex: 1, minHeight: 0, boxShadow: '0 25px 60px rgba(0,0,0,0.35)' }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '14px 20px', background: 'white', borderBottom: '1px solid #e2e8f0' }}>
+                <div>
+                  <div style={{ fontSize: '14px', fontWeight: 900, color: '#0a1628' }}>📄 Word preview</div>
+                  <div style={{ fontSize: '11px', color: '#64748b', fontWeight: 600 }}>Exactly as Microsoft Word will open it (rendered from the real .docx).</div>
+                </div>
+                <button onClick={() => setWordPreview(w => ({ ...w, open: false }))} style={{ width: '32px', height: '32px', borderRadius: '10px', border: '1px solid #e2e8f0', background: 'white', color: '#64748b', fontSize: '14px', cursor: 'pointer' }}>✕</button>
+              </div>
+              <WordDocxPreview
+                appointment={activeAppointment}
+                findingsHtml={wordPreview.findingsHtml}
+                impression={impression}
+                advice={advice}
+                protocol={protocol}
+                watermark={wordPreview.watermark}
+                style={{ flex: 1, minHeight: 0 }}
+              />
+            </div>
+          </div>
+        )}
+
         {renderShortcutsHelp()}
       </div>
 
