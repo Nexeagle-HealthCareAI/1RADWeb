@@ -118,7 +118,7 @@ async function buildQrDataUrl(appointmentId) {
 // emphasis, and an <img> (data URI) for the QR. Lives at the TOP OF THE BODY on
 // page 1 (not the repeating header) so it matches the preview and is bound by
 // the configured page margins.
-function buildPatientBannerHtml({ appointment, protocol, study, qrDataUrl, hasLetterhead = false }) {
+function buildPatientBannerHtml({ appointment, protocol, study, qrDataUrl, hasLetterhead = false, margins }) {
   const name   = (appointment?.patientName || '').toUpperCase() || '—';
   const ptid   = appointment?.patientIdentifier || appointment?.ptid || appointment?.id || '—';
   // Age with its saved unit (Y / M / D) — e.g. "56Y", "6M", "15D".
@@ -130,23 +130,38 @@ function buildPatientBannerHtml({ appointment, protocol, study, qrDataUrl, hasLe
   const repDate = `${_d.getDate()} ${_d.toLocaleString('en-US', { month: 'long' })}, ${_d.getFullYear()}`;
   const clinic = protocol?.clinicName || protocol?.practiceName || protocol?.hospitalName || '';
 
-  // Grey label + bold value, with a middot separator between fields.
+  // Grey label + bold value, with a middot separator between fields. The detail
+  // strip is split into TWO short lines so it never wraps awkwardly mid-field
+  // (e.g. "Patient ID: PTID000…" breaking onto the next line).
   const lbl = (t) => `<span style="color:#94A3B8"><b>${esc(t)}</b></span>`;
   const sep = `<span style="color:#CBD5E1">&#160;&#160;·&#160;&#160;</span>`;
-  const metaLine =
+  const metaLine1 =
     `${lbl('Patient ID:')} <b>${esc(ptid)}</b>${sep}` +
     `${lbl('Age / Sex:')} <b>${esc(age)} / ${esc(sex)}</b>${sep}` +
-    `${lbl('Study:')} <span style="color:#0F52BA"><b>${esc(study)}</b></span>${sep}` +
+    `${lbl('Study:')} <span style="color:#0F52BA"><b>${esc(study)}</b></span>`;
+  const metaLine2 =
     `${lbl('Prescribed By:')} <b>${esc(refBy)}</b>${sep}` +
     `${lbl('Reported:')} <b>${esc(repDate)}</b>`;
 
+  // Card spans the text width (A4 210mm − left − right margins) → px @96dpi, with
+  // a small safety inset so it can NEVER exceed the text area (which is what
+  // clips text / "half-cuts fonts" at the right edge in Word).
+  const QR_W = 92;
+  const textWidthPx = Math.max(
+    360,
+    Math.round((210 - (Number(margins?.left) || 20) - (Number(margins?.right) || 20)) * 96 / 25.4),
+  );
+  const tableW = textWidthPx - 8;
+  const detailsW = qrDataUrl ? Math.max(260, tableW - QR_W) : tableW;
+
   const detailsCell =
-    `<td colwidth="${qrDataUrl ? 470 : 560}"><p><span style="font-size:16pt; color:#0A1628"><b>${esc(name)}</b></span></p>` +
-    `<p><span style="font-size:10pt; color:#475569">${metaLine}</span></p></td>`;
+    `<td colwidth="${detailsW}"><p><span style="font-size:15pt; color:#0A1628"><b>${esc(name)}</b></span></p>` +
+    `<p><span style="font-size:9.5pt; color:#475569">${metaLine1}</span></p>` +
+    `<p><span style="font-size:9.5pt; color:#475569">${metaLine2}</span></p></td>`;
 
   // QR ("scanner") sits on the LEFT, details on the right.
   const qrCell = qrDataUrl
-    ? `<td colwidth="96"><p style="text-align:center"><img src="${qrDataUrl}" width="84" height="84"/></p></td>`
+    ? `<td colwidth="${QR_W}"><p style="text-align:center"><img src="${qrDataUrl}" width="80" height="80"/></p></td>`
     : '';
 
   return `
@@ -220,12 +235,6 @@ export async function buildReportDocxBlob({ appointment, findingsHtml, impressio
   // on-screen preview. Bound by the configured page margins (not a header band),
   // so left/right/top match the editor. The letterhead/watermark stay in the
   // repeating page header as the branding background.
-  const apptId = appointment?.appointmentId || appointment?.id || appointment?.ptid || null;
-  const qrDataUrl = await buildQrDataUrl(apptId);
-  const study = appointment?.service || appointment?.modality || '—';
-  const bannerHtml = buildPatientBannerHtml({ appointment, protocol, study, qrDataUrl, hasLetterhead: !!letterhead });
-  const bodyHtml = buildReportHtml({ findingsHtml, impression, advice, bannerHtml });
-
   // Carry the report's page margins (mm) and base font into Word so the
   // document opens with the SAME layout the doctor configured in the editor —
   // headerMargin (top) / leftMargin / rightMargin / bottomMargin, verbatim.
@@ -235,6 +244,14 @@ export async function buildReportDocxBlob({ appointment, findingsHtml, impressio
     right:  protocol?.rightMargin  ?? 20,
     bottom: protocol?.bottomMargin ?? 20,
   };
+
+  const apptId = appointment?.appointmentId || appointment?.id || appointment?.ptid || null;
+  const qrDataUrl = await buildQrDataUrl(apptId);
+  const study = appointment?.service || appointment?.modality || '—';
+  // Banner spans the full text width (page − left − right) so it lines up with
+  // the margins instead of being a fixed-width card floating on the page.
+  const bannerHtml = buildPatientBannerHtml({ appointment, protocol, study, qrDataUrl, hasLetterhead: !!letterhead, margins });
+  const bodyHtml = buildReportHtml({ findingsHtml, impression, advice, bannerHtml });
   const defaultFont = {
     family: protocol?.fontFamily || 'Calibri',
     sizePt: protocol?.fontSize   || 12,

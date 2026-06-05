@@ -62,6 +62,30 @@ export default function WordDocxPreview({
           Could not render the Word preview{err ? `: ${err}` : ''}.
         </div>
       )}
+      {/* Print the TRUE Word render (all pages, faithful) — bypasses the legacy
+          preview-print that clipped to one page. */}
+      {status === 'ready' && (
+        <button
+          onClick={() => {
+            const el = containerRef.current;
+            if (!el) return;
+            const win = window.open('', '_blank', 'width=900,height=1000');
+            if (!win) return;
+            win.document.write(
+              `<!doctype html><html><head><title>Report</title>` +
+              `<style>@page{size:A4;margin:0} html,body{margin:0;padding:0;background:#fff} ` +
+              `.docx-wrapper{background:#fff!important;padding:0!important;display:block!important} ` +
+              `.docx-wrapper>section.docx{box-shadow:none!important;margin:0 auto!important} ` +
+              `@media print{.docx-wrapper>section.docx{break-after:page;page-break-after:always}}</style>` +
+              `</head><body>${el.innerHTML}</body></html>`
+            );
+            win.document.close();
+            win.focus();
+            setTimeout(() => { try { win.print(); } catch (_) {} }, 600);
+          }}
+          style={{ position: 'absolute', top: '10px', right: '16px', zIndex: 5, padding: '8px 14px', borderRadius: '10px', border: 'none', background: '#0f52ba', color: 'white', fontSize: '12px', fontWeight: 800, cursor: 'pointer', boxShadow: '0 4px 12px rgba(15,82,186,0.25)' }}
+        >🖨️ Print</button>
+      )}
       {/* docx-preview renders A4 page sheets here */}
       <div ref={containerRef} className="word-docx-preview" style={{ padding: '20px', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '20px' }} />
     </div>

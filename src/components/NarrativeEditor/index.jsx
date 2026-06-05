@@ -1202,7 +1202,37 @@ const NarrativeEditor = React.forwardRef(function NarrativeEditor({
     // Current watermark text ('' = none) so the host's Word export can carry it.
     getWatermark: () => watermark,
     container: containerRef.current,
-    editor
+    editor,
+    // Print EXACTLY the editor's own pages (the .word-page sheets + banner),
+    // so the printout paginates the "narrative-editor way" — not via a separate
+    // chunker. Copies the canvas + all document styles + the margin/font CSS
+    // vars into a clean print window and page-breaks between sheets.
+    printPages: () => {
+      const container = containerRef.current;
+      const canvas = container?.querySelector('.word-canvas');
+      if (!canvas) return;
+      const win = window.open('', '_blank', 'width=820,height=1060');
+      if (!win) return;
+      const styles = Array.from(document.querySelectorAll('style, link[rel="stylesheet"]'))
+        .map(n => n.outerHTML).join('\n');
+      const vars = container.getAttribute('style') || ''; // holds --page-margin-* / --report-font-size / --patient-banner-height
+      win.document.write(
+        `<!doctype html><html><head><title>Report</title>${styles}` +
+        `<style>` +
+        `@page{size:A4;margin:0}` +
+        `html,body{margin:0;padding:0;background:#fff}` +
+        `.print-root{${vars}}` +
+        `.print-root .word-canvas{--zoom:1 !important;padding:0 !important;margin:0 !important;background:#fff !important;box-shadow:none !important;overflow:visible !important}` +
+        `.print-root .word-page{box-shadow:none !important;margin:0 !important;break-after:page;page-break-after:always}` +
+        `.print-root .word-page:last-child{break-after:auto;page-break-after:auto}` +
+        `</style></head><body>` +
+        `<div class="print-root narrative-editor-container">${canvas.outerHTML}</div>` +
+        `</body></html>`
+      );
+      win.document.close();
+      win.focus();
+      setTimeout(() => { try { win.print(); } catch (_) {} }, 700);
+    },
   }));
 
   // Sync content prop → editor whenever it changes from the outside

@@ -743,15 +743,32 @@ const ReportingPage = () => {
       // TACTICAL RESOLUTION: Try appointment first, then Auth Token fallback
       let doctorId = appointmentData.doctorId || appointmentData.doctorUserId || appointmentData.doctor?.userId;
 
+      // The logged-in user IS the reporting doctor. Auth now lives in
+      // localStorage ('1rad_user' / '1rad_token') — it was migrated off
+      // sessionStorage, which is why the old session-based fallback returned
+      // nothing and the branding protocol (margins/font/letterhead) never loaded.
       if (!doctorId) {
-        console.warn("[1RAD] Doctor ID missing in Appointment. Attempting Auth Token fallback...");
+        console.warn("[1RAD] Doctor ID missing in Appointment. Falling back to the signed-in user...");
         try {
-          const token = sessionStorage.getItem('1rad_token');
+          const storedUser = localStorage.getItem('1rad_user') || sessionStorage.getItem('1rad_user');
+          if (storedUser) {
+            const u = JSON.parse(storedUser);
+            doctorId = u?.id || u?.userId || u?.Id || u?.UserId;
+            if (doctorId) console.info(`[1RAD] Resolved DoctorID from signed-in user: ${doctorId}`);
+          }
+        } catch (e) {
+          console.error("[1RAD] Stored-user resolution failed:", e);
+        }
+      }
+
+      if (!doctorId) {
+        try {
+          const token = localStorage.getItem('1rad_token') || sessionStorage.getItem('1rad_token');
           if (token) {
             const decoded = jwtDecode(token);
-            // Try standard OIDC claims
-            doctorId = decoded.sub || decoded.nameid || decoded.UserId || decoded.id;
-            console.info(`[1RAD] Resolved DoctorID from Auth Token: ${doctorId}`);
+            doctorId = decoded.sub || decoded.nameid || decoded.UserId || decoded.id ||
+              decoded['http://schemas.xmlsoap.org/ws/2005/05/identity/claims/nameidentifier'];
+            if (doctorId) console.info(`[1RAD] Resolved DoctorID from Auth Token: ${doctorId}`);
           }
         } catch (jwtErr) {
           console.error("[1RAD] Auth Token resolution failed:", jwtErr);
@@ -5404,6 +5421,14 @@ const ReportingPage = () => {
                       onMouseEnter={(e) => { e.currentTarget.style.background = '#f8fafc'; e.currentTarget.style.borderColor = '#cbd5e1'; }}
                       onMouseLeave={(e) => { e.currentTarget.style.background = 'white'; e.currentTarget.style.borderColor = '#e2e8f0'; }}
                     >📄 Word preview</button>
+
+                    <button
+                      onClick={() => editorRef.current?.printPages?.()}
+                      title="Print the report exactly as the editor's pages (same pagination)"
+                      style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', padding: '10px 14px', borderRadius: '10px', background: 'white', border: '1px solid #e2e8f0', color: '#0a1628', fontSize: '12px', fontWeight: 700, cursor: 'pointer', transition: 'all 0.15s' }}
+                      onMouseEnter={(e) => { e.currentTarget.style.background = '#f8fafc'; e.currentTarget.style.borderColor = '#cbd5e1'; }}
+                      onMouseLeave={(e) => { e.currentTarget.style.background = 'white'; e.currentTarget.style.borderColor = '#e2e8f0'; }}
+                    >🖨️ Print (editor pages)</button>
 
                     <button
                       onClick={handleOpenInWord}
