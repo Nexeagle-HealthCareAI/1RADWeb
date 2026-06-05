@@ -268,11 +268,41 @@ const ReportingPage = () => {
     const study = activeService?.serviceName || activeAppointment?.service || '';
     const modality = activeService?.modality || activeAppointment?.modality || '';
     const context = (study || modality) ? `Study/Service: ${study} (${modality}).` : '';
-    const res = await apiClient.post('/reporting/ai-assist', { action, text, context });
+    // appointmentId lets the server de-identify (name/PTID/phone) before the
+    // text reaches Gemini — PHI never leaves our API.
+    const res = await apiClient.post('/reporting/ai-assist', { action, text, context, appointmentId });
     const data = res?.data || {};
     if (data.success && data.html) return data.html;
     throw new Error(data.error || data.message || 'AI request failed.');
-  }, [activeService, activeAppointment]);
+  }, [activeService, activeAppointment, appointmentId]);
+
+  // Whole-report AI (restructure / spelling). Runs on the FULL report, then
+  // shows a before/after review — nothing is applied until the radiologist
+  // accepts (AI output is never finalized unreviewed). On any failure it falls
+  // back to the unchanged text, so report delivery never blocks on Gemini.
+  const aiBtnStyle = { padding: '6px 11px', borderRadius: '8px', border: '1px solid #ddd6fe', background: '#f5f3ff', color: '#6d28d9', fontSize: '11px', fontWeight: 800, cursor: 'pointer' };
+  const [aiReview, setAiReview] = useState({ open: false, mode: '', before: '', after: '', busy: false });
+  const runWholeReportAi = useCallback(async (mode) => {
+    const before = editorRef.current?.getHTML?.() || '';
+    if (!before.replace(/<[^>]*>/g, '').trim()) {
+      showNotif('info', 'NOTHING TO FORMAT', 'Write some report text first.');
+      return;
+    }
+    setAiReview((s) => ({ ...s, busy: true, mode }));
+    try {
+      const after = await handleAiAssist(mode, before);
+      setAiReview({ open: true, mode, before, after, busy: false });
+    } catch (e) {
+      setAiReview((s) => ({ ...s, busy: false }));
+      showNotif('warning', 'AI UNAVAILABLE', `${e?.message || 'Could not format'} — your text is unchanged.`);
+    }
+  }, [handleAiAssist]);
+  const acceptAiReview = () => {
+    editorRef.current?.setContent?.(aiReview.after);
+    setEditorText(aiReview.after);
+    setAiReview({ open: false, mode: '', before: '', after: '', busy: false });
+    showNotif('success', 'APPLIED', 'AI-formatted report applied. Review and edit before finalizing.');
+  };
 
   // Prior-study copy-forward — pull a previous report's findings into the
   // current report with a comparison line. Flattens any .word-page wrappers so
@@ -5145,6 +5175,42 @@ const ReportingPage = () => {
                   boxShadow: '0 4px 20px rgba(15, 23, 42, 0.05)',
                   overflow: 'hidden',
                 }}>
+                  {/* Whole-report AI — restructure / spelling, with review-before-apply */}
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '8px 12px', borderBottom: '1px solid #f1f5f9', background: '#fafbfc', flexWrap: 'wrap' }}>
+                    <span style={{ fontSize: '10px', fontWeight: 900, color: '#7c3aed', letterSpacing: '0.5px' }}>✨ AI</span>
+                    <button type="button" onClick={() => runWholeReportAi('restructure')} disabled={aiReview.busy} style={aiBtnStyle}>Restructure report</button>
+                    <button type="button" onClick={() => runWholeReportAi('proofread')} disabled={aiReview.busy} style={aiBtnStyle}>Fix spelling &amp; grammar</button>
+                    {aiReview.busy && <span style={{ fontSize: '11px', fontWeight: 700, color: '#94a3b8' }}>Formatting… your text is safe</span>}
+                  </div>
+
+                  {aiReview.open && (
+                    <div onClick={() => setAiReview((s) => ({ ...s, open: false }))} style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.5)', backdropFilter: 'blur(3px)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100000, padding: '20px' }}>
+                      <div onClick={(e) => e.stopPropagation()} style={{ width: '100%', maxWidth: '1000px', maxHeight: '88vh', display: 'flex', flexDirection: 'column', background: 'white', borderRadius: '18px', overflow: 'hidden', boxShadow: '0 30px 70px -15px rgba(0,0,0,0.4)' }}>
+                        <div style={{ padding: '18px 22px', borderBottom: '1px solid #eef2f7', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '12px' }}>
+                          <div>
+                            <div style={{ fontSize: '16px', fontWeight: 950, color: '#0f172a' }}>Review AI {aiReview.mode === 'restructure' ? 'restructure' : 'spelling & grammar'}</div>
+                            <div style={{ fontSize: '11.5px', color: '#94a3b8', fontWeight: 600, marginTop: '2px' }}>Nothing is saved until you accept. Patient identifiers were masked before the AI saw the text.</div>
+                          </div>
+                          <button onClick={() => setAiReview((s) => ({ ...s, open: false }))} style={{ border: 'none', background: '#f1f5f9', width: '32px', height: '32px', borderRadius: '50%', cursor: 'pointer', fontWeight: 900, color: '#64748b' }}>✕</button>
+                        </div>
+                        <div style={{ flex: 1, overflow: 'auto', display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: '1px', background: '#eef2f7' }}>
+                          <div style={{ background: 'white', padding: '16px', overflow: 'auto' }}>
+                            <div style={{ fontSize: '10px', fontWeight: 950, color: '#94a3b8', letterSpacing: '0.6px', marginBottom: '10px' }}>BEFORE</div>
+                            <div style={{ fontSize: '13px', lineHeight: 1.6, color: '#334155' }} dangerouslySetInnerHTML={{ __html: aiReview.before }} />
+                          </div>
+                          <div style={{ background: 'white', padding: '16px', overflow: 'auto' }}>
+                            <div style={{ fontSize: '10px', fontWeight: 950, color: '#7c3aed', letterSpacing: '0.6px', marginBottom: '10px' }}>AI SUGGESTION ✨</div>
+                            <div style={{ fontSize: '13px', lineHeight: 1.6, color: '#0f172a' }} dangerouslySetInnerHTML={{ __html: aiReview.after }} />
+                          </div>
+                        </div>
+                        <div style={{ padding: '14px 22px', borderTop: '1px solid #eef2f7', display: 'flex', justifyContent: 'flex-end', gap: '10px' }}>
+                          <button onClick={() => setAiReview((s) => ({ ...s, open: false }))} style={{ padding: '11px 18px', borderRadius: '11px', border: 'none', background: '#f1f5f9', color: '#475569', fontSize: '12px', fontWeight: 900, cursor: 'pointer' }}>Discard</button>
+                          <button onClick={acceptAiReview} style={{ padding: '11px 20px', borderRadius: '11px', border: 'none', background: 'linear-gradient(135deg,#7c3aed,#6d28d9)', color: 'white', fontSize: '12px', fontWeight: 900, cursor: 'pointer' }}>✓ Apply to report</button>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
                   <NarrativeEditor
                     ref={editorRef}
                     content={editorText}

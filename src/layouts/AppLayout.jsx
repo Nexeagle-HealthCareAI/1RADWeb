@@ -9,6 +9,7 @@ import TopNav from './TopNav';
 import SessionTimeoutModal from '../components/SessionTimeoutModal';
 import PrefetchStatusIndicator from '../components/PrefetchStatusIndicator';
 import DesktopUpdateBanner from '../components/DesktopUpdateBanner';
+import RadAI from '../components/RadAI';
 import useOffline from '../hooks/useOffline';
 
 
@@ -158,6 +159,9 @@ export default function AppLayout() {
           <Outlet />
         </main>
       </div>
+
+      {/* Floating RadAI help desk — on every authenticated page */}
+      <RadAI />
     </div>
   );
 }
