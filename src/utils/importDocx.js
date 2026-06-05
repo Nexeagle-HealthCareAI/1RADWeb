@@ -119,6 +119,28 @@ function paraMeta(p) {
       if (line > 0 && (rule === 'auto' || !rule)) styleParts.push(`line-height:${(line / 240).toFixed(2)}`);
     }
 
+    // Indentation (inverse of exportDocx's w:ind). twips → px (1440 tw = 96 px).
+    // A hanging indent becomes padding-left + negative text-indent (what the
+    // editor's ParagraphIndent/hangingIndent attributes re-parse).
+    const ind = kid(pPr, 'w:ind');
+    if (ind) {
+      const twToPx = (tw) => Math.round((parseFloat(tw) || 0) / 1440 * 96);
+      const leftTw  = parseFloat(ind.getAttribute('w:left'))      || 0;
+      const hangTw  = parseFloat(ind.getAttribute('w:hanging'))   || 0;
+      const firstTw = parseFloat(ind.getAttribute('w:firstLine')) || 0;
+      if (hangTw > 0) {
+        const hPx = twToPx(hangTw);
+        const mlPx = twToPx(Math.max(0, leftTw - hangTw));
+        if (mlPx > 0) styleParts.push(`margin-left:${mlPx}px`);
+        styleParts.push(`padding-left:${hPx}px`);
+        styleParts.push(`text-indent:-${hPx}px`);
+      } else {
+        const mlPx = twToPx(leftTw);
+        if (mlPx > 0) styleParts.push(`margin-left:${mlPx}px`);
+        if (firstTw > 0) styleParts.push(`text-indent:${twToPx(firstTw)}px`);
+      }
+    }
+
     const numPr = kid(pPr, 'w:numPr');
     if (numPr) {
       list = {
