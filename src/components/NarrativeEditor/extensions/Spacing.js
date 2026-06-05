@@ -194,6 +194,21 @@ export const ParagraphIndent = Extension.create({
             return { style: `margin-left: ${attrs.indent * 24}px` };
           },
         },
+        // Hanging indent (px): first line at the left indent, wrapped lines
+        // indented by `hangingIndent`. Rendered as padding-left + negative
+        // text-indent; the docx exporter turns this into a Word hanging indent.
+        hangingIndent: {
+          default: 0,
+          parseHTML: el => {
+            const ti = parseFloat(el.style.textIndent);
+            return Number.isFinite(ti) && ti < 0 ? Math.round(-ti) : 0;
+          },
+          renderHTML: attrs => {
+            if (!attrs.hangingIndent) return {};
+            const h = attrs.hangingIndent;
+            return { style: `padding-left: ${h}px; text-indent: -${h}px` };
+          },
+        },
       },
     }];
   },
@@ -216,6 +231,27 @@ export const ParagraphIndent = Extension.create({
         return commands.updateAttributes(nodeType, {
           indent: Math.max(0, current - 1),
         });
+      },
+      // Set the hanging indent (px) on the current paragraph/heading.
+      setHangingIndent: (px) => ({ state, commands }) => {
+        const { $from } = state.selection;
+        const nodeType = $from.parent.type.name;
+        if (!this.options.types.includes(nodeType)) return false;
+        return commands.updateAttributes(nodeType, { hangingIndent: Math.max(0, Math.round(px || 0)) });
+      },
+      increaseHangingIndent: () => ({ state, commands }) => {
+        const { $from } = state.selection;
+        const nodeType = $from.parent.type.name;
+        if (!this.options.types.includes(nodeType)) return false;
+        const cur = $from.parent.attrs.hangingIndent || 0;
+        return commands.updateAttributes(nodeType, { hangingIndent: Math.min(480, cur + this.options.step) });
+      },
+      decreaseHangingIndent: () => ({ state, commands }) => {
+        const { $from } = state.selection;
+        const nodeType = $from.parent.type.name;
+        if (!this.options.types.includes(nodeType)) return false;
+        const cur = $from.parent.attrs.hangingIndent || 0;
+        return commands.updateAttributes(nodeType, { hangingIndent: Math.max(0, cur - this.options.step) });
       },
     };
   },

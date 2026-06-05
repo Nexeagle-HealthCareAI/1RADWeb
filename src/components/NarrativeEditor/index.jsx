@@ -2368,7 +2368,7 @@ const NarrativeEditor = React.forwardRef(function NarrativeEditor({
       )}
 
       {!previewMode && showRuler && (
-        <HorizontalRuler editor={editor} zoom={zoom} />
+        <HorizontalRuler editor={editor} zoom={zoom} pageMargins={pageMargins} />
       )}
 
       {/* Slash menu — type "/" in the editor to open a popover with Templates,

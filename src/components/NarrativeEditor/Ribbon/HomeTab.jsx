@@ -1243,6 +1243,17 @@ export default function HomeTab({ editor, showFormattingMarks, onToggleFormattin
               title="Increase Indent (Tab)"
               style={{ fontSize: '14px' }}
             >⇥</Btn>
+            {/* Hanging indent — wrapped lines hang under the first line (e.g. the
+                organ-label layout). Toggle on (~0.5") / off; fine-tune on the ruler. */}
+            <Btn
+              onClick={() => {
+                const cur = (editor.getAttributes('paragraph')?.hangingIndent || editor.getAttributes('heading')?.hangingIndent || 0);
+                editor.chain().focus().setHangingIndent(cur > 0 ? 0 : 36).run();
+              }}
+              active={(editor.getAttributes('paragraph')?.hangingIndent || editor.getAttributes('heading')?.hangingIndent || 0) > 0}
+              title="Hanging indent — wrapped lines indent under the first line"
+              style={{ fontSize: '13px' }}
+            >↳</Btn>
             {/* Word-style "Line and Paragraph Spacing" button with a rich
                 dropdown — line-spacing presets at top, custom-options entry
                 in the middle, and "Add / Remove Space Before / After
