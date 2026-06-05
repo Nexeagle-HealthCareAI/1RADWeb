@@ -59,6 +59,20 @@ export default function FindReplaceDialog({ editor, open, onClose, focusReplace 
     setActiveIdx(prev => Math.min(prev, Math.max(0, matches.length - 1)));
   }, [matches.length]);
 
+  // Highlight ALL matches (Word-style), current one emphasised. Push the match
+  // list into the SearchHighlight plugin whenever it (or the active index)
+  // changes; clear the highlights when the dialog closes/unmounts.
+  useEffect(() => {
+    if (!editor?.commands?.setSearchHighlights) return;
+    if (open) editor.commands.setSearchHighlights(matches, activeIdx);
+  }, [editor, open, matches, activeIdx]);
+
+  useEffect(() => {
+    if (!editor?.commands?.clearSearchHighlights) return;
+    if (!open) editor.commands.clearSearchHighlights();
+    return () => { try { editor.commands.clearSearchHighlights(); } catch (_) {} };
+  }, [editor, open]);
+
   const jumpTo = (idx) => {
     if (!editor || matches.length === 0) return;
     const i = ((idx % matches.length) + matches.length) % matches.length;

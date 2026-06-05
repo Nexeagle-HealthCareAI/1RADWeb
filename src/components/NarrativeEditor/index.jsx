@@ -51,6 +51,7 @@ import { TrackInsert, TrackDelete, TrackChanges } from './extensions/TrackChange
 import { CommentMark, Comment } from './extensions/Comment';
 import { MedicalAutocomplete } from './extensions/MedicalAutocomplete';
 import { StructuredField } from './extensions/StructuredField';
+import { SearchHighlight } from './extensions/SearchReplace';
 import { Callout, Columns } from './extensions/Blocks';
 import TableToolbar from './TableToolbar';
 import ImageToolbar from './ImageToolbar';
@@ -1068,6 +1069,7 @@ const NarrativeEditor = React.forwardRef(function NarrativeEditor({
       Comment,
       MedicalAutocomplete,
       StructuredField,
+      SearchHighlight,
       Callout,
       Columns,
     ],

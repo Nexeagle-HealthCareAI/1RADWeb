@@ -1,4 +1,8 @@
 /* ── Container ───────────────────────────────────────────────────────────────── */
+/* Find & Replace match highlights. */
+.ne-search-match { background: #fde68a; border-radius: 2px; }
+.ne-search-current { background: #fb923c; color: #000; border-radius: 2px; }
+
 .narrative-editor-container {
   display: flex;
   flex-direction: column;
