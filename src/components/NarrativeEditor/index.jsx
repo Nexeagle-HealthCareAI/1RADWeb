@@ -32,6 +32,7 @@ import EditorToolbar from './EditorToolbar';
 import Ribbon from './Ribbon';
 import MobileToolbar from './MobileToolbar';
 import SlashMenu from './SlashMenu';
+import TermAutocomplete from './TermAutocomplete';
 import SelectionToolbar from './SelectionToolbar';
 import { PageDocument, Page } from './extensions/PageNode';
 import { Pagination } from './extensions/Pagination';
@@ -47,6 +48,7 @@ import { PageNumber } from './extensions/PageNumberNode';
 import { AutoCorrect } from './extensions/AutoCorrect';
 import Footnote from './extensions/Footnote';
 import { GrammarCheck, buildOffsetMap, buildGrammarDecorations } from './extensions/GrammarCheck';
+import apiClient from '../../api/apiClient';
 import { TrackInsert, TrackDelete, TrackChanges } from './extensions/TrackChanges';
 import { CommentMark, Comment } from './extensions/Comment';
 import { MedicalAutocomplete } from './extensions/MedicalAutocomplete';
@@ -638,6 +640,7 @@ const NarrativeEditor = React.forwardRef(function NarrativeEditor({
   const [grammarMatches, setGrammarMatches]         = useState([]);
   const [grammarLoading, setGrammarLoading]         = useState(false);
   const [grammarOpen, setGrammarOpen]               = useState(false);
+  const [termLoading, setTermLoading]               = useState(false);
 
   // ── Tier 1 features ──────────────────────────────────────────────────────
   // Track Changes
@@ -936,6 +939,53 @@ const NarrativeEditor = React.forwardRef(function NarrativeEditor({
       showToast('Grammar check failed — check your connection', 'error');
     } finally {
       setGrammarLoading(false);
+    }
+  };
+
+  // ── RadLex term check (radiology-aware spelling) ──────────────────────────
+  // Flags words that aren't recognised radiology terms but have a likely fix,
+  // reusing the grammar decoration + fix-popup. Distinct from the LanguageTool
+  // grammar check (which is general English and would mis-flag real terms).
+  const handleTermCheck = async () => {
+    if (!editor) return;
+    setTermLoading(true);
+    setGrammarMatches([]);
+    editor.commands.clearGrammarDecorations();
+    try {
+      const text = editor.state.doc.textContent;
+      if (!text.trim()) { showToast('Document is empty', 'info'); return; }
+      const res = await apiClient.post('/reporting/terms/check', { text });
+      const issues = res?.data?.issues || [];
+      const esc = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      const matches = [];
+      for (const issue of issues) {
+        const word = issue.word || '';
+        if (!word) continue;
+        const re = new RegExp(`(?<![A-Za-z])${esc(word)}(?![A-Za-z])`, 'gi');
+        let mm;
+        while ((mm = re.exec(text)) !== null) {
+          matches.push({
+            offset: mm.index,
+            length: mm[0].length,
+            message: `"${mm[0]}" is not a recognised radiology term.`,
+            rule: { issueType: 'misspelling', category: { name: 'Radiology term' }, id: 'radlex' },
+            replacements: (issue.suggestions || []).slice(0, 3).map((s) => ({ value: s })),
+          });
+          if (re.lastIndex === mm.index) re.lastIndex++;
+        }
+      }
+      matches.sort((a, b) => a.offset - b.offset);
+      const offsetMap = buildOffsetMap(editor.state.doc);
+      const { decoSet, validMatches } = buildGrammarDecorations(editor.state.doc, matches, offsetMap);
+      editor.commands.setGrammarDecorations(decoSet);
+      setGrammarMatches(validMatches);
+      setGrammarOpen(validMatches.length > 0);
+      const n = validMatches.length;
+      showToast(n === 0 ? 'No term issues found ✓' : `${n} term issue${n !== 1 ? 's' : ''} flagged`, n === 0 ? 'success' : 'warning');
+    } catch {
+      showToast('Term check failed — check your connection', 'error');
+    } finally {
+      setTermLoading(false);
     }
   };
 
@@ -2326,6 +2376,8 @@ const NarrativeEditor = React.forwardRef(function NarrativeEditor({
           onRunGrammarCheck={handleGrammarCheck}
           grammarLoading={grammarLoading}
           grammarMatchCount={grammarMatches.length}
+          onRunTermCheck={handleTermCheck}
+          termLoading={termLoading}
           onOpenSnippetManager={() => setSnippetManagerOpen(true)}
           editLog={editLog}
           trackChangesOn={trackChangesOn}
@@ -2406,6 +2458,7 @@ const NarrativeEditor = React.forwardRef(function NarrativeEditor({
           onOpenRads={() => setRadsOpen(true)}
         />
       )}
+      {!previewMode && <TermAutocomplete editor={editor} />}
 
       {/* Floating selection mini-toolbar — Word-style B/I/U/S/Highlight/Link
           bubble that appears above any non-empty text selection. Saves the

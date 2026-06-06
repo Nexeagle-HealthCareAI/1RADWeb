@@ -23,6 +23,8 @@ export default function ReviewTab({
   onRunGrammarCheck,
   grammarLoading = false,
   grammarMatchCount = 0,
+  onRunTermCheck,
+  termLoading = false,
   onOpenSnippetManager,
   editLog = [],
   // Track Changes
@@ -201,6 +203,12 @@ export default function ReviewTab({
           active={grammarMatchCount > 0 && !grammarLoading}
           onClick={onRunGrammarCheck}
           style={grammarMatchCount > 0 && !grammarLoading ? { color: '#92400e', background: '#fffbeb', borderColor: '#fde68a' } : {}}
+        />
+        <BigBtn
+          icon={termLoading ? '⏳' : '🩺'}
+          label={termLoading ? 'Checking…' : 'Terms'}
+          title="Radiology spell-check against the RadLex term library — flags non-standard terms with one-click fixes"
+          onClick={onRunTermCheck}
         />
         <BigBtn
           icon="⚡"

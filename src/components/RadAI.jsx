@@ -213,7 +213,6 @@ export default function RadAI() {
       notifyToast('Microphone is not available. You can type your question instead.', 'error');
     }
   };
-  const stopRecording = () => { try { mediaRef.current?.stop(); } catch { /* ignore */ } setRecording(false); };
 
   // ── Hands-free wake word ("Hey RadAI …") ──────────────────────────────────
   const recogRef = useRef(null);
@@ -300,6 +299,68 @@ export default function RadAI() {
     try { recogRef.current?.stop(); } catch { /* ignore */ }
   };
 
+  // ── Tap-mic: transcribe in the BROWSER (speech-to-text), then send the TEXT to
+  // the help service (which answers with Claude Haiku). Audio never leaves the
+  // device and Gemini's transcription path is bypassed. Falls back to recording
+  // audio only when the browser has no speech recognition (e.g. Firefox).
+  const voiceRecogRef = useRef(null);
+  const voiceTextRef = useRef('');
+  const capturingRef = useRef(false);
+
+  const resumeHandsFree = () => {
+    if (handsFreeRef.current && !busyRef.current && !speakingRef.current) {
+      setTimeout(() => startRecog(), 400);
+    }
+  };
+
+  const startVoiceCapture = () => {
+    if (busy) return;
+    if (!wakeSupported) { startRecording(); return; }   // no STT → fall back to audio
+    capturingRef.current = true;
+    voiceTextRef.current = '';
+    stopRecog();                                         // pause hands-free while capturing
+    try {
+      const r = new SR();
+      r.continuous = true;
+      r.interimResults = true;
+      r.lang = lang === 'hi' ? 'hi-IN' : 'en-IN';
+      r.onresult = (e) => {
+        let finalT = '';
+        for (let i = e.resultIndex; i < e.results.length; i++) {
+          if (e.results[i].isFinal) finalT += (e.results[i][0]?.transcript || '') + ' ';
+        }
+        if (finalT.trim()) voiceTextRef.current = `${voiceTextRef.current} ${finalT}`.trim();
+      };
+      r.onerror = (ev) => {
+        capturingRef.current = false; setRecording(false);
+        const err = ev?.error;
+        if (err === 'not-allowed' || err === 'service-not-allowed') notifyToast('Microphone permission is needed.', 'error');
+        else if (err === 'no-speech') notifyToast("Didn't catch that — please try again or type.", 'info');
+        else if (err !== 'aborted') notifyToast('Voice input failed — please type your question.', 'error');
+        resumeHandsFree();
+      };
+      r.onend = () => {
+        const q = voiceTextRef.current.trim();
+        capturingRef.current = false; setRecording(false);
+        if (q) { setMessages((m) => [...m, { id: uid(), role: 'user', text: q }]); ask({ question: q }, true); }
+        resumeHandsFree();
+      };
+      voiceRecogRef.current = r;
+      r.start();
+      setRecording(true);
+    } catch {
+      capturingRef.current = false;
+      startRecording(); // fall back to audio
+    }
+  };
+
+  const stopVoiceCapture = () => {
+    // Stop STT (its onend sends the buffered transcript) or the audio fallback.
+    try { voiceRecogRef.current?.stop(); } catch { /* ignore */ }
+    try { mediaRef.current?.stop(); } catch { /* ignore */ }
+    setRecording(false);
+  };
+
   // Keep the recognition callbacks pointed at the latest closures, and drive
   // start/stop from the live flags. Recognition runs only while hands-free is on
   // AND we're idle (not processing, not speaking) so RadAI never transcribes its
@@ -308,7 +369,7 @@ export default function RadAI() {
     apiRef.current.onHeard = handleHeard;
     apiRef.current.onIdle = () => {
       recogRunning.current = false;
-      if (handsFreeRef.current && !busyRef.current && !speakingRef.current) {
+      if (handsFreeRef.current && !busyRef.current && !speakingRef.current && !capturingRef.current) {
         setTimeout(() => startRecog(), 300);
       }
     };
@@ -493,7 +554,7 @@ export default function RadAI() {
           <div style={{ padding: '10px 12px 9px', borderTop: '1px solid #eef2f7', background: 'white' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '6px', background: '#f4f3fb', borderRadius: '15px', padding: '5px 5px 5px 7px', border: '1.5px solid #ece9fb' }}>
               <button
-                onClick={recording ? stopRecording : startRecording}
+                onClick={recording ? stopVoiceCapture : startVoiceCapture}
                 disabled={busy}
                 title={recording ? 'Stop & send' : 'Speak (Hindi/English)'}
                 style={{ flexShrink: 0, width: '34px', height: '34px', borderRadius: '50%', border: 'none', cursor: busy ? 'not-allowed' : 'pointer', background: recording ? '#dc2626' : 'transparent', color: recording ? 'white' : '#7c3aed', fontSize: '16px', display: 'flex', alignItems: 'center', justifyContent: 'center', animation: recording ? 'radaiPulse 1s infinite' : 'none' }}
