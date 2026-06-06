@@ -233,8 +233,11 @@ export default function ReferralsPage() {
   const [bulkResult, setBulkResult] = useState(null);
 
   // ── Doctor portal share-links (#3) ───────────────────────────────────────
-  const [linksOpen, setLinksOpen] = useState(false);
+  // Now a dedicated "Doctor Links" tab (was a modal). The send flow captures a
+  // missing email / mobile inline and lets the user pick the channel.
   const [linksBusy, setLinksBusy] = useState(false);
+  const [referralLinksSearch, setReferralLinksSearch] = useState('');
+  const [linkSend, setLinkSend] = useState(null); // { doctor, channel, email, contact, saving, err }
   const doctorList = useMemo(
     () => (allReferrers || []).filter(r => r.isDoctor !== false && (r.name || '').trim().toLowerCase() !== 'self'),
     [allReferrers]
@@ -266,6 +269,50 @@ export default function ReferralsPage() {
     } catch (e) {
       notifyToast(e?.response?.data?.error || 'Could not send emails.', 'error');
     } finally { setLinksBusy(false); }
+  };
+
+  // Persist a newly-entered email / mobile onto the doctor's profile. Sends the
+  // full name+profile (PUT replaces) so existing fields are preserved.
+  const saveDoctorContact = async (d, { email, contact }) => {
+    await apiClient.put(`/referrers/${d.referrerId}`, {
+      referrerId: d.referrerId,
+      name: d.name,
+      contact: (contact ?? d.contact ?? '').replace(/\D/g, ''),
+      address: d.address || '',
+      email: (email ?? d.email ?? '').trim(),
+      specialty: d.specialty || '',
+      degree: d.degree || '',
+      isDoctor: d.isDoctor !== false,
+      supportedByDoctor: d.isDoctor === false ? (d.supportedByDoctor || '') : '',
+    });
+  };
+
+  // Open the send sheet, defaulting to whichever channel we can already reach.
+  const openLinkSend = (d) => {
+    const channel = d.email ? 'email' : (d.contact ? 'whatsapp' : 'email');
+    setLinkSend({ doctor: d, channel, email: d.email || '', contact: d.contact || '', saving: false, err: '' });
+  };
+
+  // Save any newly-filled contact, then deliver the link via the chosen channel.
+  const submitLinkSend = async () => {
+    if (!linkSend) return;
+    const { doctor, channel, email, contact } = linkSend;
+    if (channel === 'email' && !(email || '').trim()) { setLinkSend(s => ({ ...s, err: 'Enter an email address to send.' })); return; }
+    if (channel === 'whatsapp' && (contact || '').replace(/\D/g, '').length < 10) { setLinkSend(s => ({ ...s, err: 'Enter a valid 10-digit mobile number.' })); return; }
+    setLinkSend(s => ({ ...s, saving: true, err: '' }));
+    try {
+      const emailChanged = (email || '').trim() !== (doctor.email || '').trim();
+      const contactChanged = (contact || '').replace(/\D/g, '') !== (doctor.contact || '').replace(/\D/g, '');
+      if (emailChanged || contactChanged) {
+        await saveDoctorContact(doctor, { email, contact });
+        fetchReferralIntelligence(); // refresh the roster so the new contact sticks
+      }
+      if (channel === 'email') await emailDoctors([doctor.referrerId]);
+      else await whatsappDoctor({ ...doctor, contact: (contact || '').replace(/\D/g, '') });
+      setLinkSend(null);
+    } catch (e) {
+      setLinkSend(s => ({ ...s, saving: false, err: e?.response?.data?.error || 'Could not send. Please try again.' }));
+    }
   };
 
   const openBulkAdd = () => { setBulkRows([]); setBulkResult(null); setBulkOpen(true); };
@@ -3737,7 +3784,7 @@ export default function ReferralsPage() {
               msOverflowStyle: 'none',
               gap: '4px'
             }}>
-              {['MATRIX', 'LOG', 'ROSTER', 'PATIENTS'].map(mode => (
+              {['MATRIX', 'LOG', 'ROSTER', 'PATIENTS', 'LINKS'].map(mode => (
                 <button 
                   key={mode} 
                   onClick={() => {
@@ -3754,7 +3801,7 @@ export default function ReferralsPage() {
                     flex: isMobile ? '0 0 auto' : 1
                   }}
                 >
-                  {mode === 'MATRIX' ? 'Source Analytics' : mode === 'LOG' ? 'Case Ledger' : mode === 'ROSTER' ? 'Partner Network' : 'Master Index'}
+                  {mode === 'MATRIX' ? 'Source Analytics' : mode === 'LOG' ? 'Case Ledger' : mode === 'ROSTER' ? 'Partner Network' : mode === 'PATIENTS' ? 'Master Index' : 'Doctor Links'}
                 </button>
               ))}
             </div>
@@ -3769,18 +3816,21 @@ export default function ReferralsPage() {
                   placeholder={
                     referralViewMode === 'MATRIX' ? "FILTER ANALYTICS..." : 
                     referralViewMode === 'LOG' ? "SEARCH CASE LEDGER..." : 
-                    referralViewMode === 'ROSTER' ? "FILTER NETWORK..." : "SEARCH MASTER INDEX..."
+                    referralViewMode === 'ROSTER' ? "FILTER NETWORK..." :
+                    referralViewMode === 'LINKS' ? "SEARCH DOCTORS..." : "SEARCH MASTER INDEX..."
                   }
                   value={
                     referralViewMode === 'MATRIX' ? referralMatrixSearch : 
                     referralViewMode === 'LOG' ? referralLogSearch : 
-                    referralViewMode === 'ROSTER' ? referralRosterSearch : referralPatientsSearch
+                    referralViewMode === 'ROSTER' ? referralRosterSearch :
+                    referralViewMode === 'LINKS' ? referralLinksSearch : referralPatientsSearch
                   }
                   onChange={e => {
                     const str = e.target.value;
                     if (referralViewMode === 'MATRIX') setReferralMatrixSearch(str);
                     else if (referralViewMode === 'LOG') setReferralLogSearch(str);
                     else if (referralViewMode === 'ROSTER') setReferralRosterSearch(str);
+                    else if (referralViewMode === 'LINKS') setReferralLinksSearch(str);
                     else setReferralPatientsSearch(str);
                   }}
                   style={{ 
@@ -3986,7 +4036,7 @@ export default function ReferralsPage() {
             )}
 
             {/* Level 3: Dual-Mode Intelligence List */}
-            {referralViewMode === 'PATIENTS' ? (
+            {referralViewMode === 'LINKS' ? renderLinksView() : referralViewMode === 'PATIENTS' ? (
               <div style={{ 
                 background: 'white', 
                 borderRadius: '24px', 
@@ -4146,7 +4196,7 @@ export default function ReferralsPage() {
                        <span style={{ fontSize: '14px' }}>⇪</span> Upload Excel
                      </button>
                      <button
-                       onClick={() => setLinksOpen(true)}
+                       onClick={() => setReferralViewMode('LINKS')}
                        style={{ padding: '10px 18px', borderRadius: '12px', background: 'white', color: '#15803d', fontSize: '12px', fontWeight: 800, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '8px', border: '1px solid #bbf7d0' }}
                      >
                        <span style={{ fontSize: '14px' }}>🔗</span> Doctor links
@@ -4897,7 +4947,7 @@ return (
               </div>
             )}
 
-            {(referralViewMode === 'LOG' ? (temporalMatrixData?.rows.length === 0) : (temporalPatients.length === 0)) && (
+            {referralViewMode !== 'LINKS' && (referralViewMode === 'LOG' ? (temporalMatrixData?.rows.length === 0) : (temporalPatients.length === 0)) && (
               <div style={{ padding: '150px 20px', textAlign: 'center', background: 'white', borderRadius: '40px', border: '1px dashed #cbd5e1' }}>
                 <div style={{ fontSize: '60px', marginBottom: '25px' }}>📡</div>
                 <div style={{ fontSize: '18px', fontWeight: 950, color: '#1e293b' }}>NO REFERRAL DATA FOUND</div>
@@ -4909,6 +4959,119 @@ return (
       </div>
     );
   };
+  // Per-doctor send sheet: choose email or WhatsApp, capture a missing contact.
+  const renderLinkSendSheet = () => {
+    const d = linkSend.doctor;
+    const ch = linkSend.channel;
+    return (
+      <div onClick={() => !linkSend.saving && setLinkSend(null)} style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.5)', backdropFilter: 'blur(4px)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100000, padding: '20px' }}>
+        <div onClick={e => e.stopPropagation()} style={{ width: '100%', maxWidth: '440px', background: 'white', borderRadius: '20px', overflow: 'hidden', boxShadow: '0 30px 70px -15px rgba(0,0,0,0.4)' }}>
+          <div style={{ padding: '20px 24px', background: 'linear-gradient(135deg,#0a1628,#0f52ba)', color: 'white' }}>
+            <div style={{ fontSize: '10px', fontWeight: 950, letterSpacing: '1.5px', opacity: 0.75 }}>SEND PORTAL LINK</div>
+            <div style={{ fontSize: '18px', fontWeight: 950, marginTop: '4px' }}>{d.name}</div>
+          </div>
+          <div style={{ padding: '20px 24px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
+            <div>
+              <div style={{ fontSize: '10px', fontWeight: 900, color: '#64748b', letterSpacing: '0.5px', textTransform: 'uppercase', marginBottom: '8px' }}>How would you like to send it?</div>
+              <div style={{ display: 'flex', gap: '8px' }}>
+                {[['email', '📧 Email'], ['whatsapp', '💬 WhatsApp']].map(([key, label]) => (
+                  <button key={key} onClick={() => setLinkSend(s => ({ ...s, channel: key, err: '' }))}
+                    style={{ flex: 1, padding: '12px', borderRadius: '12px', border: ch === key ? '2px solid #0f52ba' : '1px solid #e2e8f0', background: ch === key ? '#eff6ff' : 'white', color: ch === key ? '#0f52ba' : '#64748b', fontSize: '12px', fontWeight: 900, cursor: 'pointer' }}>{label}</button>
+                ))}
+              </div>
+            </div>
+            {ch === 'email' ? (
+              <div>
+                <label style={{ fontSize: '10px', fontWeight: 900, color: '#64748b', letterSpacing: '0.5px', textTransform: 'uppercase' }}>Email address</label>
+                <input type="email" value={linkSend.email} onChange={e => setLinkSend(s => ({ ...s, email: e.target.value, err: '' }))} placeholder="name@example.com"
+                  style={{ width: '100%', boxSizing: 'border-box', marginTop: '5px', padding: '11px 13px', borderRadius: '10px', border: '1px solid #e2e8f0', fontSize: '13px', fontWeight: 600, outline: 'none' }} />
+                {!d.email && <div style={{ fontSize: '10px', fontWeight: 700, color: '#94a3b8', marginTop: '5px' }}>No email on file — we&apos;ll save this to their profile.</div>}
+              </div>
+            ) : (
+              <div>
+                <label style={{ fontSize: '10px', fontWeight: 900, color: '#64748b', letterSpacing: '0.5px', textTransform: 'uppercase' }}>Mobile number</label>
+                <input type="tel" value={linkSend.contact} onChange={e => setLinkSend(s => ({ ...s, contact: e.target.value, err: '' }))} placeholder="10-digit mobile"
+                  style={{ width: '100%', boxSizing: 'border-box', marginTop: '5px', padding: '11px 13px', borderRadius: '10px', border: '1px solid #e2e8f0', fontSize: '13px', fontWeight: 600, outline: 'none' }} />
+                {!d.contact && <div style={{ fontSize: '10px', fontWeight: 700, color: '#94a3b8', marginTop: '5px' }}>No mobile on file — we&apos;ll save this to their profile.</div>}
+              </div>
+            )}
+            {linkSend.err && <div style={{ fontSize: '11px', fontWeight: 800, color: '#b91c1c' }}>{linkSend.err}</div>}
+            <div style={{ display: 'flex', gap: '8px' }}>
+              <button onClick={submitLinkSend} disabled={linkSend.saving}
+                style={{ flex: 1, padding: '12px', borderRadius: '11px', border: 'none', background: linkSend.saving ? '#cbd5e1' : 'linear-gradient(135deg,#0f52ba,#1d4ed8)', color: 'white', fontSize: '12px', fontWeight: 950, cursor: linkSend.saving ? 'not-allowed' : 'pointer' }}>
+                {linkSend.saving ? 'Sending…' : (ch === 'email' ? 'Save & email' : 'Save & open WhatsApp')}
+              </button>
+              <button onClick={() => setLinkSend(null)} disabled={linkSend.saving} style={{ padding: '12px 16px', borderRadius: '11px', border: '1px solid #e2e8f0', background: 'white', color: '#64748b', fontSize: '12px', fontWeight: 800, cursor: 'pointer' }}>Cancel</button>
+            </div>
+            <button onClick={() => copyDoctorLink(d.referrerId)} style={{ padding: '9px', borderRadius: '10px', border: '1px dashed #cbd5e1', background: 'white', color: '#475569', fontSize: '11px', fontWeight: 800, cursor: 'pointer' }}>Or just copy the link</button>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
+  // The "Doctor Links" tab — premium hero + per-doctor send/copy.
+  const renderLinksView = () => {
+    const q = referralLinksSearch.trim().toLowerCase();
+    const list = q ? doctorList.filter(d => (d.name || '').toLowerCase().includes(q)) : doctorList;
+    const withEmail = doctorList.filter(d => d.email).length;
+    const withContact = doctorList.filter(d => d.contact).length;
+    return (
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+        <div style={{ position: 'relative', overflow: 'hidden', borderRadius: '24px', padding: isMobile ? '24px' : '30px 34px', background: 'linear-gradient(135deg,#0a1628 0%,#0f52ba 100%)', color: 'white', boxShadow: '0 18px 44px -14px rgba(15,82,186,0.5)' }}>
+          <div style={{ position: 'absolute', top: '-40px', right: '-30px', width: '180px', height: '180px', borderRadius: '50%', background: 'radial-gradient(circle, rgba(96,165,250,0.4), transparent 70%)', pointerEvents: 'none' }} />
+          <div style={{ position: 'relative' }}>
+            <div style={{ fontSize: '10px', fontWeight: 950, letterSpacing: '2px', opacity: 0.75 }}>🔗 DOCTOR PORTAL LINKS</div>
+            <div style={{ fontSize: isMobile ? '20px' : '26px', fontWeight: 950, marginTop: '8px', letterSpacing: '-0.4px' }}>Give every doctor their private dashboard</div>
+            <div style={{ fontSize: '12.5px', fontWeight: 600, opacity: 0.82, marginTop: '6px', maxWidth: '560px', lineHeight: 1.6 }}>A live, secure link showing each doctor the patients they referred and their earnings. Send by email or WhatsApp — we&apos;ll capture any missing contact as you go.</div>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '10px', marginTop: '18px' }}>
+              {[['👨‍⚕️', doctorList.length, 'doctors'], ['📧', withEmail, 'with email'], ['💬', withContact, 'with mobile']].map(([i, v, l], k) => (
+                <div key={k} style={{ background: 'rgba(255,255,255,0.12)', borderRadius: '12px', padding: '9px 14px', border: '1px solid rgba(255,255,255,0.14)' }}>
+                  <span style={{ fontSize: '15px', fontWeight: 950 }}>{i} {v}</span>
+                  <span style={{ fontSize: '9px', fontWeight: 800, opacity: 0.7, letterSpacing: '0.5px', textTransform: 'uppercase', marginLeft: '6px' }}>{l}</span>
+                </div>
+              ))}
+            </div>
+            <div style={{ marginTop: '18px' }}>
+              <button onClick={() => emailDoctors(doctorList.filter(d => d.email).map(d => d.referrerId))} disabled={linksBusy || withEmail === 0}
+                style={{ padding: '11px 18px', borderRadius: '12px', border: 'none', background: (linksBusy || withEmail === 0) ? 'rgba(255,255,255,0.2)' : 'white', color: (linksBusy || withEmail === 0) ? 'rgba(255,255,255,0.6)' : '#0f52ba', fontSize: '12px', fontWeight: 950, cursor: (linksBusy || withEmail === 0) ? 'not-allowed' : 'pointer' }}>
+                {linksBusy ? 'Sending…' : `📧 Email all (${withEmail})`}
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <div style={{ background: 'white', borderRadius: '20px', border: '1px solid #e2e8f0', overflow: 'hidden' }}>
+          {list.length === 0 ? (
+            <div style={{ padding: '60px', textAlign: 'center', color: '#94a3b8', fontSize: '13px', fontWeight: 700 }}>{doctorList.length === 0 ? 'No doctor partners yet.' : 'No doctors match your search.'}</div>
+          ) : (
+            <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : 'repeat(auto-fill, minmax(320px, 1fr))' }}>
+              {list.map(d => {
+                const reachable = d.email || d.contact;
+                return (
+                  <div key={d.referrerId} style={{ padding: '16px 18px', borderBottom: '1px solid #f1f5f9', borderRight: !isMobile ? '1px solid #f1f5f9' : 'none', display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                    <div style={{ minWidth: 0 }}>
+                      <div style={{ fontSize: '13.5px', fontWeight: 900, color: '#0f172a', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{d.name}</div>
+                      <div style={{ fontSize: '10.5px', fontWeight: 700, color: reachable ? '#64748b' : '#e11d48', marginTop: '2px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                        {d.email ? `📧 ${d.email}` : ''}{d.email && d.contact ? ' · ' : ''}{d.contact ? `💬 ${d.contact}` : ''}{!reachable ? '⚠ no contact on file' : ''}
+                      </div>
+                    </div>
+                    <div style={{ display: 'flex', gap: '7px', flexWrap: 'wrap' }}>
+                      <button onClick={() => copyDoctorLink(d.referrerId)} style={linkBtn('#0f52ba', '#eff6ff', '#bfdbfe')}>Copy link</button>
+                      <button onClick={() => openLinkSend(d)} style={{ padding: '7px 13px', borderRadius: '9px', border: 'none', background: 'linear-gradient(135deg,#0f52ba,#1d4ed8)', color: 'white', fontSize: '11px', fontWeight: 900, cursor: 'pointer' }}>Send link →</button>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+
+        {linkSend && renderLinkSendSheet()}
+      </div>
+    );
+  };
+
   const renderLayouts = () => (
     <div className="layouts-view">
        <div className="board-header" style={{ 
@@ -5532,39 +5695,8 @@ return (
         </div>
       )}
 
-      {/* Doctor portal links (#3) — copy / WhatsApp / email per doctor + email all */}
-      {linksOpen && (
-        <div onClick={() => !linksBusy && setLinksOpen(false)} style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.5)', backdropFilter: 'blur(3px)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100000, padding: '20px' }}>
-          <div onClick={e => e.stopPropagation()} style={{ width: '100%', maxWidth: '640px', maxHeight: '88vh', display: 'flex', flexDirection: 'column', background: 'white', borderRadius: '20px', boxShadow: '0 30px 70px -15px rgba(0,0,0,0.4)', overflow: 'hidden' }}>
-            <div style={{ padding: '20px 24px', borderBottom: '1px solid #eef2f7', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <div>
-                <div style={{ fontSize: '17px', fontWeight: 950, color: '#0f172a' }}>Doctor referral links</div>
-                <div style={{ fontSize: '11.5px', fontWeight: 600, color: '#94a3b8', marginTop: '2px' }}>Each doctor gets a private, live dashboard of the patients they referred.</div>
-              </div>
-              <button onClick={() => setLinksOpen(false)} style={{ border: 'none', background: '#f1f5f9', width: '32px', height: '32px', borderRadius: '50%', cursor: 'pointer', fontSize: '15px', fontWeight: 900, color: '#64748b' }}>✕</button>
-            </div>
-            <div style={{ flex: 1, overflowY: 'auto', padding: '12px 16px' }}>
-              {doctorList.length === 0 ? (
-                <div style={{ padding: '50px', textAlign: 'center', color: '#94a3b8', fontSize: '13px', fontWeight: 700 }}>No doctor partners yet.</div>
-              ) : doctorList.map(d => (
-                <div key={d.referrerId} style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '10px 8px', borderBottom: '1px solid #f1f5f9' }}>
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{ fontSize: '13px', fontWeight: 800, color: '#0f172a', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{d.name}</div>
-                    <div style={{ fontSize: '10px', fontWeight: 700, color: '#94a3b8' }}>{d.email || (d.contact ? `📞 ${d.contact}` : 'no contact on file')}</div>
-                  </div>
-                  <button onClick={() => copyDoctorLink(d.referrerId)} title="Copy link" style={linkBtn('#0f52ba', '#eff6ff', '#bfdbfe')}>Copy</button>
-                  <button onClick={() => whatsappDoctor(d)} title="Share on WhatsApp" style={linkBtn('#15803d', '#f0fdf4', '#bbf7d0')}>WhatsApp</button>
-                  <button onClick={() => emailDoctors([d.referrerId])} disabled={linksBusy || !d.email} title={d.email ? 'Email this doctor' : 'No email on file'} style={linkBtn('#7c3aed', '#f5f3ff', '#ddd6fe', linksBusy || !d.email)}>Email</button>
-                </div>
-              ))}
-            </div>
-            <div style={{ padding: '14px 24px', borderTop: '1px solid #eef2f7', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
-              <span style={{ fontSize: '12px', fontWeight: 700, color: '#94a3b8' }}>{doctorList.length} doctor{doctorList.length === 1 ? '' : 's'} · {doctorList.filter(d => d.email).length} with email</span>
-              <button onClick={() => emailDoctors(doctorList.filter(d => d.email).map(d => d.referrerId))} disabled={linksBusy} style={{ padding: '11px 18px', borderRadius: '11px', border: 'none', background: linksBusy ? '#cbd5e1' : 'linear-gradient(135deg,#0f52ba,#1d4ed8)', color: 'white', fontSize: '12px', fontWeight: 900, cursor: linksBusy ? 'not-allowed' : 'pointer' }}>{linksBusy ? 'Sending…' : '📧 Email all doctors'}</button>
-            </div>
-          </div>
-        </div>
-      )}
+      {/* Doctor portal links (#3) are now the dedicated "Doctor Links" tab
+          (renderLinksView) — the old modal was replaced by it. */}
 
       {isPatientEditDrawerOpen && renderPatientEditDrawer()}
       {isUserDrawerOpen && (
