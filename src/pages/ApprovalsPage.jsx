@@ -33,22 +33,32 @@ const STATUS_META = {
 };
 
 // "5 Jun 2026" + "3:42 PM" as a two-line stack.
+// Backend timestamps are UTC but serialise without a 'Z', so a bare new Date()
+// parses them as LOCAL time and skews every value by the IST offset (~5.5h) —
+// which is why a just-raised request showed "awaiting 5h 32m". Append 'Z' when
+// there's no timezone designator so they parse as UTC; the toLocale*(...,
+// timeZone: 'Asia/Kolkata') calls below then render correct IST.
+const toUtc = (iso) => {
+  const s = String(iso);
+  const hasTz = /[zZ]$|[+-]\d{2}:?\d{2}$/.test(s);
+  return new Date(hasTz ? s : s + 'Z');
+};
 const fmtDate = (iso) => {
   if (!iso) return '—';
   try {
-    return new Date(iso).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'Asia/Kolkata' });
+    return toUtc(iso).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'Asia/Kolkata' });
   } catch { return iso; }
 };
 const fmtTime = (iso) => {
   if (!iso) return '';
   try {
-    return new Date(iso).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', timeZone: 'Asia/Kolkata' }) + ' IST';
+    return toUtc(iso).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', timeZone: 'Asia/Kolkata' }) + ' IST';
   } catch { return ''; }
 };
 // How long a request has been waiting (since it was raised), e.g. "2d 4h" / "15m".
 const awaitedFor = (iso) => {
   if (!iso) return '';
-  const ms = Date.now() - new Date(iso).getTime();
+  const ms = Date.now() - toUtc(iso).getTime();
   if (ms < 0) return 'just now';
   const m = Math.floor(ms / 60000);
   if (m < 1) return 'just now';

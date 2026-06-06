@@ -1339,6 +1339,9 @@ export default function BillingPage() {
         return {
             id: c.commissionId || c.id,
             date: c.payoutDate || c.transactionDate,
+            // The appointment/service date — future-dated cuts are "upcoming"
+            // (optimistic) rather than earned. Falls back to the transaction date.
+            serviceDate: c.serviceDate || c.payoutDate || c.transactionDate,
             name: c.partnerName || c.referrerName,
             description: c.studyAndServices || `Commission [${c.modality || 'MRI'}] ${c.remarks ? `- ${c.remarks}` : ''}`,
             reference: c.referenceNumber,
@@ -1612,8 +1615,10 @@ export default function BillingPage() {
     setSelectedInvoice(recalculateInvoice({ ...selectedInvoice, items: newItems }));
   };
 
-  const handleCollectPayment = async (centreDiscount = 0, referrerDiscount = 0, deduction = 0, netAmount = 0, meta = {}) => {
-    const currentNet = netAmount || selectedInvoice.totalAmount;
+  const handleCollectPayment = async (centreDiscount = 0, referrerDiscount = 0, deduction = 0, netAmount = null, meta = {}) => {
+    // netAmount can legitimately be 0 (a discount that fully covers the bill), so a
+    // falsy `||` fallback would wrongly re-bill the gross. Guard for null/undefined.
+    const currentNet = (netAmount === null || netAmount === undefined) ? (selectedInvoice.totalAmount || 0) : netAmount;
     const currentPaid = selectedInvoice.paidAmount || 0;
     const paymentAmount = Math.max(0, currentNet - currentPaid);
 

@@ -226,12 +226,9 @@ export default function ReferralsPage() {
   const [pdfError, setPdfError] = useState(null);
   const [isReferrerEditDrawerOpen, setIsReferrerEditDrawerOpen] = useState(false);
   const [editingReferrer, setEditingReferrer] = useState(null);
-  // ── Bulk-add partners (#21): inline multi-row grid + Excel upload ─────────
-  const emptyBulkRow = () => ({ name: '', contact: '', specialty: '', degree: '', email: '', address: '', supportedByDoctor: '', isDoctor: true });
-  const bulkInput = { width: '100%', padding: '9px 10px', borderRadius: '9px', border: '1.5px solid #e2e8f0', fontSize: '12px', fontWeight: 700, outline: 'none', background: '#f8fafc', boxSizing: 'border-box' };
+  // ── Bulk-add partners (#21): Excel upload only ───────────────────────────
   const [bulkOpen, setBulkOpen] = useState(false);
-  const [bulkMode, setBulkMode] = useState('GRID'); // 'GRID' | 'EXCEL'
-  const [bulkRows, setBulkRows] = useState([emptyBulkRow(), emptyBulkRow(), emptyBulkRow()]);
+  const [bulkRows, setBulkRows] = useState([]);   // populated by the Excel upload
   const [bulkSubmitting, setBulkSubmitting] = useState(false);
   const [bulkResult, setBulkResult] = useState(null);
 
@@ -271,8 +268,7 @@ export default function ReferralsPage() {
     } finally { setLinksBusy(false); }
   };
 
-  const openBulkAdd = () => { setBulkRows([emptyBulkRow(), emptyBulkRow(), emptyBulkRow()]); setBulkResult(null); setBulkMode('GRID'); setBulkOpen(true); };
-  const setBulkRow = (i, patch) => setBulkRows(rows => rows.map((r, idx) => idx === i ? { ...r, ...patch } : r));
+  const openBulkAdd = () => { setBulkRows([]); setBulkResult(null); setBulkOpen(true); };
 
   const downloadBulkTemplate = () => {
     const ws = XLSX.utils.aoa_to_sheet([
@@ -313,7 +309,6 @@ export default function ReferralsPage() {
       }).filter(r => r.name);
       if (rows.length === 0) { notifyToast('No partner rows found — use the template headers.', 'error'); return; }
       setBulkRows(rows);
-      setBulkMode('GRID');
       setBulkResult(null);
       notifyToast(`${rows.length} partner${rows.length === 1 ? '' : 's'} loaded — review, then Add.`, 'success');
     } catch {
@@ -4148,7 +4143,7 @@ export default function ReferralsPage() {
                        onClick={openBulkAdd}
                        style={{ padding: '10px 18px', borderRadius: '12px', background: 'white', color: '#0f52ba', fontSize: '12px', fontWeight: 800, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '8px', border: '1px solid #bfdbfe' }}
                      >
-                       <span style={{ fontSize: '14px' }}>⇪</span> Bulk Add
+                       <span style={{ fontSize: '14px' }}>⇪</span> Upload Excel
                      </button>
                      <button
                        onClick={() => setLinksOpen(true)}
@@ -5487,53 +5482,40 @@ return (
 
       {isReferrerEditDrawerOpen && renderReferrerEditDrawer()}
 
-      {/* Bulk-add partners modal (#21) — inline grid + Excel upload */}
+      {/* Bulk-add partners modal (#21) — Excel upload only */}
       {bulkOpen && (
         <div onClick={() => !bulkSubmitting && setBulkOpen(false)} style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.5)', backdropFilter: 'blur(3px)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100000, padding: '20px' }}>
           <div onClick={e => e.stopPropagation()} style={{ width: '100%', maxWidth: '760px', maxHeight: '88vh', display: 'flex', flexDirection: 'column', background: 'white', borderRadius: '20px', boxShadow: '0 30px 70px -15px rgba(0,0,0,0.4)', overflow: 'hidden' }}>
             <div style={{ padding: '20px 24px', borderBottom: '1px solid #eef2f7', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
               <div>
-                <div style={{ fontSize: '17px', fontWeight: 950, color: '#0f172a' }}>Bulk add partners</div>
-                <div style={{ fontSize: '11.5px', fontWeight: 600, color: '#94a3b8', marginTop: '2px' }}>Add many at once — type them in or upload an Excel. Duplicates merge automatically.</div>
+                <div style={{ fontSize: '17px', fontWeight: 950, color: '#0f172a' }}>Upload partners (Excel)</div>
+                <div style={{ fontSize: '11.5px', fontWeight: 600, color: '#94a3b8', marginTop: '2px' }}>Add many at once from an Excel file. Duplicates merge automatically.</div>
               </div>
               <button onClick={() => setBulkOpen(false)} style={{ border: 'none', background: '#f1f5f9', width: '32px', height: '32px', borderRadius: '50%', cursor: 'pointer', fontSize: '15px', fontWeight: 900, color: '#64748b' }}>✕</button>
             </div>
-            <div style={{ display: 'flex', gap: '6px', padding: '14px 24px 0' }}>
-              {[['GRID', '⌨ Type in'], ['EXCEL', '📄 Upload Excel']].map(([k, lbl]) => (
-                <button key={k} onClick={() => setBulkMode(k)} style={{ padding: '9px 16px', borderRadius: '10px 10px 0 0', border: 'none', background: bulkMode === k ? '#0f52ba' : '#f1f5f9', color: bulkMode === k ? 'white' : '#64748b', fontSize: '12px', fontWeight: 900, cursor: 'pointer' }}>{lbl}</button>
-              ))}
-            </div>
             <div style={{ flex: 1, overflowY: 'auto', padding: '18px 24px' }}>
-              {bulkMode === 'EXCEL' ? (
-                <div>
-                  <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap', marginBottom: '14px' }}>
-                    <button onClick={downloadBulkTemplate} style={{ padding: '11px 16px', borderRadius: '11px', border: '1px solid #bfdbfe', background: '#eff6ff', color: '#0f52ba', fontSize: '12px', fontWeight: 900, cursor: 'pointer' }}>⬇ Download template</button>
-                    <label style={{ padding: '11px 16px', borderRadius: '11px', border: '1px dashed #cbd5e1', background: '#f8fafc', color: '#334155', fontSize: '12px', fontWeight: 900, cursor: 'pointer' }}>
-                      📤 Choose Excel file
-                      <input type="file" accept=".xlsx,.xls,.csv" style={{ display: 'none' }} onChange={e => parseBulkExcel(e.target.files?.[0])} />
-                    </label>
-                  </div>
-                  <div style={{ fontSize: '11.5px', color: '#64748b', lineHeight: 1.6, background: '#f8fafc', border: '1px solid #eef2f7', borderRadius: '12px', padding: '14px 16px' }}>
-                    <b>Columns:</b> Name (required), Contact, IsDoctor (Yes/No), Specialty, Degree, Email, Address, SupportedByDoctor.<br />
-                    After choosing a file the rows load into the grid for review, then click <b>Add</b>.
-                  </div>
+              <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap', marginBottom: '14px' }}>
+                <button onClick={downloadBulkTemplate} style={{ padding: '11px 16px', borderRadius: '11px', border: '1px solid #bfdbfe', background: '#eff6ff', color: '#0f52ba', fontSize: '12px', fontWeight: 900, cursor: 'pointer' }}>⬇ Download template</button>
+                <label style={{ padding: '11px 16px', borderRadius: '11px', border: '1px dashed #cbd5e1', background: '#f8fafc', color: '#334155', fontSize: '12px', fontWeight: 900, cursor: 'pointer' }}>
+                  📤 Choose Excel file
+                  <input type="file" accept=".xlsx,.xls,.csv" style={{ display: 'none' }} onChange={e => parseBulkExcel(e.target.files?.[0])} />
+                </label>
+              </div>
+              {bulkRows.length === 0 ? (
+                <div style={{ fontSize: '11.5px', color: '#64748b', lineHeight: 1.6, background: '#f8fafc', border: '1px solid #eef2f7', borderRadius: '12px', padding: '14px 16px' }}>
+                  <b>Columns:</b> Name (required), Contact, IsDoctor (Yes/No), Specialty, Degree, Email, Address, SupportedByDoctor.<br />
+                  Download the template, fill it in, then choose the file. The partners load below for review before you add them.
                 </div>
               ) : (
                 <div>
-                  <div style={{ display: 'grid', gridTemplateColumns: '1.4fr 1fr 0.9fr 1fr 0.8fr 32px', gap: '8px', padding: '0 4px 8px', fontSize: '9px', fontWeight: 950, color: '#94a3b8', letterSpacing: '0.5px' }}>
-                    <span>NAME *</span><span>CONTACT</span><span>TYPE</span><span>SPECIALTY</span><span>DEGREE</span><span></span>
-                  </div>
+                  <div style={{ fontSize: '10px', fontWeight: 950, color: '#94a3b8', letterSpacing: '0.5px', marginBottom: '8px' }}>{bulkRows.length} PARTNER{bulkRows.length === 1 ? '' : 'S'} READY — REVIEW</div>
                   {bulkRows.map((r, i) => (
-                    <div key={i} style={{ display: 'grid', gridTemplateColumns: '1.4fr 1fr 0.9fr 1fr 0.8fr 32px', gap: '8px', marginBottom: '8px', alignItems: 'center' }}>
-                      <input value={r.name} onChange={e => setBulkRow(i, { name: e.target.value })} placeholder="Dr A Sharma" style={bulkInput} />
-                      <input value={r.contact} onChange={e => setBulkRow(i, { contact: e.target.value })} placeholder="9876543210" style={bulkInput} />
-                      <button type="button" onClick={() => setBulkRow(i, { isDoctor: !r.isDoctor })} style={{ ...bulkInput, cursor: 'pointer', fontWeight: 900, color: r.isDoctor ? '#0f52ba' : '#b45309', background: r.isDoctor ? '#eff6ff' : '#fff7ed' }}>{r.isDoctor ? 'Doctor' : 'Agent'}</button>
-                      <input value={r.specialty} onChange={e => setBulkRow(i, { specialty: e.target.value })} placeholder="Radiology" style={bulkInput} />
-                      <input value={r.degree} onChange={e => setBulkRow(i, { degree: e.target.value })} placeholder="MD" style={bulkInput} />
-                      <button type="button" onClick={() => setBulkRows(rows => rows.length > 1 ? rows.filter((_, idx) => idx !== i) : rows)} title="Remove row" style={{ border: 'none', background: '#fee2e2', color: '#ef4444', width: '32px', height: '36px', borderRadius: '9px', cursor: 'pointer', fontWeight: 900 }}>✕</button>
+                    <div key={i} style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '9px 12px', marginBottom: '6px', borderRadius: '10px', border: '1px solid #eef2f7', background: '#f8fafc' }}>
+                      <span style={{ flexShrink: 0, padding: '3px 8px', borderRadius: '999px', fontSize: '9px', fontWeight: 900, color: r.isDoctor ? '#0f52ba' : '#b45309', background: r.isDoctor ? '#eff6ff' : '#fff7ed' }}>{r.isDoctor ? 'Doctor' : 'Agent'}</span>
+                      <span style={{ flex: 1, minWidth: 0, fontSize: '12.5px', fontWeight: 800, color: '#0f172a', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{r.name}{r.specialty ? <span style={{ color: '#94a3b8', fontWeight: 600 }}> · {r.specialty}</span> : null}</span>
+                      <span style={{ flexShrink: 0, fontSize: '11.5px', fontWeight: 700, color: '#64748b' }}>{r.contact || '—'}</span>
                     </div>
                   ))}
-                  <button type="button" onClick={() => setBulkRows(rows => [...rows, emptyBulkRow()])} style={{ marginTop: '4px', padding: '9px 14px', borderRadius: '10px', border: '1px dashed #cbd5e1', background: 'white', color: '#0f52ba', fontSize: '12px', fontWeight: 900, cursor: 'pointer' }}>＋ Add row</button>
                 </div>
               )}
             </div>
@@ -5543,7 +5525,7 @@ return (
               </div>
               <div style={{ display: 'flex', gap: '10px' }}>
                 <button onClick={() => setBulkOpen(false)} style={{ padding: '11px 18px', borderRadius: '11px', border: 'none', background: '#f1f5f9', color: '#475569', fontSize: '12px', fontWeight: 900, cursor: 'pointer' }}>{bulkResult ? 'Close' : 'Cancel'}</button>
-                <button onClick={submitBulkAdd} disabled={bulkSubmitting} style={{ padding: '11px 20px', borderRadius: '11px', border: 'none', background: bulkSubmitting ? '#cbd5e1' : 'linear-gradient(135deg,#0f52ba,#1d4ed8)', color: 'white', fontSize: '12px', fontWeight: 900, cursor: bulkSubmitting ? 'not-allowed' : 'pointer' }}>{bulkSubmitting ? 'Adding…' : `Add ${bulkRows.filter(r => (r.name || '').trim()).length} partner${bulkRows.filter(r => (r.name || '').trim()).length === 1 ? '' : 's'}`}</button>
+                <button onClick={submitBulkAdd} disabled={bulkSubmitting || bulkRows.length === 0} style={{ padding: '11px 20px', borderRadius: '11px', border: 'none', background: (bulkSubmitting || bulkRows.length === 0) ? '#cbd5e1' : 'linear-gradient(135deg,#0f52ba,#1d4ed8)', color: 'white', fontSize: '12px', fontWeight: 900, cursor: (bulkSubmitting || bulkRows.length === 0) ? 'not-allowed' : 'pointer' }}>{bulkSubmitting ? 'Adding…' : `Add ${bulkRows.filter(r => (r.name || '').trim()).length} partner${bulkRows.filter(r => (r.name || '').trim()).length === 1 ? '' : 's'}`}</button>
               </div>
             </div>
           </div>

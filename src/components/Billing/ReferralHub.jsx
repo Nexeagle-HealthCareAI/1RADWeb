@@ -6,6 +6,47 @@ import { notifyToast } from '../../utils/toast';
 // Self / walk-in visits earn no commission, so their payouts are never editable.
 const isSelfReferrer = (name) => String(name || '').trim().toLowerCase() === 'self';
 
+// Group cuts by payee/partner with aggregates. Shared by the Earned and Upcoming
+// views. Sorted: outstanding DESC, then total DESC; "DIRECT" pinned to the bottom.
+const groupCutsByPartner = (cuts) => {
+  const groups = new Map();
+  (cuts || []).forEach(cut => {
+    if (isSelfReferrer(cut?.name)) return;
+    const isAgent = cut?.referrerIsDoctor === false;
+    const key = cut?.referrerId || (cut?.name ? cut.name.toUpperCase() : '__DIRECT__');
+    const displayName = (cut?.name || 'DIRECT').toUpperCase();
+    if (!groups.has(key)) {
+      groups.set(key, {
+        id: key, name: displayName, isPayee: isAgent, doctorSet: new Set(),
+        isDirect: !cut?.referrerId && !cut?.name, cuts: [],
+        total: 0, paid: 0, unpaid: 0, earned: 0, deficit: 0, centreAbsorbed: 0, count: 0, lastDate: 0,
+      });
+    }
+    if (isAgent && cut?.referringDoctor) groups.get(key).doctorSet.add(cut.referringDoctor);
+    const g = groups.get(key);
+    g.cuts.push(cut);
+    g.count += 1;
+    const amt = Number(cut?.amount) || 0;
+    g.total += amt;
+    if (amt >= 0) g.earned += amt; else g.deficit += -amt;
+    const absorbedMatch = String(cut?.remarks || '').match(/Excess\s*₹?\s*([\d.]+)\s*absorbed by centre/i);
+    if (absorbedMatch) g.centreAbsorbed += Number(absorbedMatch[1]) || 0;
+    if (cut?.status === 'PAID') g.paid += amt; else g.unpaid += amt;
+    const cutDate = cut?.date ? new Date(cut.date).getTime() : 0;
+    if (cutDate > g.lastDate) g.lastDate = cutDate;
+  });
+  groups.forEach(g => {
+    const docs = Array.from(g.doctorSet || []);
+    g.onBehalfOfDoctors = docs;
+    g.onBehalfOf = !g.isPayee || docs.length === 0 ? null : (docs.length === 1 ? `Dr. ${docs[0]}` : `${docs.length} doctors`);
+  });
+  return Array.from(groups.values()).sort((a, b) => {
+    if (a.isDirect !== b.isDirect) return a.isDirect ? 1 : -1;
+    if (b.unpaid !== a.unpaid) return b.unpaid - a.unpaid;
+    return b.total - a.total;
+  });
+};
+
 const ReferralHub = ({
   isMobile,
   filteredReferralCuts,
@@ -32,17 +73,78 @@ const ReferralHub = ({
   setReferrerFilter,
   onWriteOffDeficit,
   modalityFilter,
-  setModalityFilter
+  setModalityFilter,
+  approvalMap = { rows: [] }
 }) => {
+  // Map the latest "revert PAID → UNPAID" approval onto each commission (by the
+  // commissionId in its payload), so a row can show it's been sent for admin
+  // review (with the staff reason) and, once decided, the admin's note.
+  const commissionReview = useMemo(() => {
+    const map = {};
+    for (const r of (approvalMap?.rows || [])) {
+      if (r?.type !== 'UNPAY_COMMISSION') continue;
+      let cid = null;
+      try { cid = JSON.parse(r.payload || '{}').commissionId; } catch { /* ignore */ }
+      if (!cid || map[cid]) continue; // rows arrive newest-first → keep the latest
+      map[cid] = { status: r.status, reason: r.reason, reviewNote: r.reviewNote };
+    }
+    return map;
+  }, [approvalMap]);
+
+  const commissionReviewNote = (cut) => {
+    const rv = commissionReview[cut?.id];
+    if (!rv) return null;
+    const st = String(rv.status || '').toUpperCase();
+    const cfg = st === 'PENDING'  ? { bg: '#fffbeb', bd: '#fde68a', fg: '#b45309', icon: '⏳', label: 'Sent for admin review' }
+              : st === 'APPROVED' ? { bg: '#ecfdf5', bd: '#a7f3d0', fg: '#166534', icon: '✅', label: 'Admin approved — reverted to UNPAID' }
+              : st === 'REJECTED' ? { bg: '#fef2f2', bd: '#fecaca', fg: '#991b1b', icon: '⛔', label: 'Admin rejected — stays PAID' }
+              : null;
+    if (!cfg) return null;
+    return (
+      <div style={{ marginTop: '6px', padding: '5px 8px', borderRadius: '8px', background: cfg.bg, border: `1px solid ${cfg.bd}`, fontSize: '9px', fontWeight: 800, color: cfg.fg, lineHeight: 1.4, textAlign: 'left' }}>
+        <div>{cfg.icon} {cfg.label}</div>
+        {st === 'PENDING' && rv.reason && <div style={{ marginTop: '2px', color: '#92400e' }}>Reason: {rv.reason}</div>}
+        {rv.reviewNote && <div style={{ marginTop: '2px', color: '#475569' }}><b>Admin:</b> {rv.reviewNote}</div>}
+      </div>
+    );
+  };
+
+  // Split cuts by their service (appointment) date. A future-dated appointment
+  // hasn't happened yet, so its commission is "upcoming/optimistic" — shown in a
+  // separate gamified view rather than mixed into earned payouts. (item 4)
+  const { presentCuts, futureCuts } = useMemo(() => {
+    const todayStr = new Date().toLocaleDateString('en-CA');
+    const present = [], future = [];
+    (filteredReferralCuts || []).forEach(c => {
+      let dayStr = null;
+      if (c?.serviceDate) { const d = new Date(c.serviceDate); if (!isNaN(d.getTime())) dayStr = d.toLocaleDateString('en-CA'); }
+      if (dayStr && dayStr > todayStr) future.push(c); else present.push(c);
+    });
+    return { presentCuts: present, futureCuts: future };
+  }, [filteredReferralCuts]);
+
   const referralStats = useMemo(() => {
-    const cuts = filteredReferralCuts || [];
+    const cuts = presentCuts || [];
     return {
       total: cuts.reduce((sum, c) => sum + (Number(c?.amount) || 0), 0),
       paid: cuts.filter(c => c.status === 'PAID').reduce((sum, c) => sum + (Number(c?.amount) || 0), 0),
       unpaid: cuts.filter(c => c.status !== 'PAID').reduce((sum, c) => sum + (Number(c?.amount) || 0), 0),
       count: cuts.length
     };
-  }, [filteredReferralCuts]);
+  }, [presentCuts]);
+
+  // Aggregates for the gamified "upcoming" view (projected, not yet earned).
+  const futureStats = useMemo(() => {
+    const cuts = futureCuts || [];
+    const projected = cuts.reduce((s, c) => s + (Number(c?.amount) || 0), 0);
+    const patients = new Set(cuts.map(c => c?.patientName).filter(Boolean)).size;
+    const partners = new Set(cuts.map(c => c?.referrerId || c?.name).filter(Boolean)).size;
+    let nextDate = null;
+    cuts.forEach(c => { if (c?.serviceDate) { const d = new Date(c.serviceDate); if (!isNaN(d.getTime()) && (!nextDate || d < nextDate)) nextDate = d; } });
+    return { projected, count: cuts.length, patients, partners, nextDate };
+  }, [futureCuts]);
+
+  const [viewMode, setViewMode] = useState('earned'); // 'earned' | 'upcoming'
 
   const [selectedIds, setSelectedIds] = useState(new Set());
   const [confirmModal, setConfirmModal] = useState({
@@ -104,71 +206,12 @@ const ReferralHub = ({
     setDrawerSelectedIds(new Set());
   }, [activePartnerId]);
 
-  // Group filtered cuts by partner, with aggregates. Sorted: outstanding DESC,
-  // then total DESC; "DIRECT" (no referrer) pinned to the bottom.
-  const partnerGroups = useMemo(() => {
-    const groups = new Map();
-    (filteredReferralCuts || []).forEach(cut => {
-      // Self / walk-in is NOT a partner — it earns no commission and is tracked
-      // in its own section, never in the partner payout list. (#20)
-      if (isSelfReferrer(cut?.name)) return;
-      // The referral record IS the payee, so we group by the referrer. When
-      // that payee is an AGENT (not a doctor), we also track which doctor(s)
-      // they collect on behalf of — an agent can bring patients from several
-      // doctors.
-      const isAgent = cut?.referrerIsDoctor === false;
-      const key = cut?.referrerId || (cut?.name ? cut.name.toUpperCase() : '__DIRECT__');
-      const displayName = (cut?.name || 'DIRECT').toUpperCase();
-      if (!groups.has(key)) {
-        groups.set(key, {
-          id: key,
-          name: displayName,
-          isPayee: isAgent,            // "agent" payee — show the doctor context
-          doctorSet: new Set(),
-          isDirect: !cut?.referrerId && !cut?.name,
-          cuts: [],
-          total: 0,
-          paid: 0,
-          unpaid: 0,
-          earned: 0,    // sum of positive commissions
-          deficit: 0,   // sum of |negative commissions| (over-commission concessions)
-          centreAbsorbed: 0, // over-commission excess the CENTRE funded (not a deficit)
-          count: 0,
-          lastDate: 0,
-        });
-      }
-      // Track the referring doctor for each payout of an agent payee — shown
-      // per row and summarised in the group header.
-      if (isAgent && cut?.referringDoctor) groups.get(key).doctorSet.add(cut.referringDoctor);
-      const g = groups.get(key);
-      g.cuts.push(cut);
-      g.count += 1;
-      const amt = Number(cut?.amount) || 0;
-      g.total += amt;
-      if (amt >= 0) g.earned += amt; else g.deficit += -amt;
-      // Over-commission excess the centre absorbed (audited into the remark as
-      // "[Excess ₹X absorbed by centre]") — surfaced so an admin sees what the
-      // centre funded, distinct from a referrer deficit.
-      const absorbedMatch = String(cut?.remarks || '').match(/Excess\s*₹?\s*([\d.]+)\s*absorbed by centre/i);
-      if (absorbedMatch) g.centreAbsorbed += Number(absorbedMatch[1]) || 0;
-      if (cut?.status === 'PAID') g.paid += amt; else g.unpaid += amt;
-      const cutDate = cut?.date ? new Date(cut.date).getTime() : 0;
-      if (cutDate > g.lastDate) g.lastDate = cutDate;
-    });
-    // Summarise the referring doctor(s) for each payee group.
-    groups.forEach(g => {
-      const docs = Array.from(g.doctorSet || []);
-      g.onBehalfOfDoctors = docs;
-      g.onBehalfOf = !g.isPayee || docs.length === 0
-        ? null
-        : (docs.length === 1 ? `Dr. ${docs[0]}` : `${docs.length} doctors`);
-    });
-    return Array.from(groups.values()).sort((a, b) => {
-      if (a.isDirect !== b.isDirect) return a.isDirect ? 1 : -1;
-      if (b.unpaid !== a.unpaid) return b.unpaid - a.unpaid;
-      return b.total - a.total;
-    });
-  }, [filteredReferralCuts]);
+  // Earned payouts grouped by partner (present/past service dates). Self/walk-in
+  // is excluded inside the helper — it earns no commission. (#20)
+  const partnerGroups = useMemo(() => groupCutsByPartner(presentCuts), [presentCuts]);
+
+  // Upcoming/optimistic payouts grouped by partner (future service dates).
+  const futureGroups = useMemo(() => groupCutsByPartner(futureCuts), [futureCuts]);
 
   const activePartner = useMemo(
     () => partnerGroups.find(g => g.id === activePartnerId) || null,
@@ -415,6 +458,123 @@ const ReferralHub = ({
     return sortConfig.direction === 'ASC' ? '↑' : '↓';
   };
 
+  // ── Earned / Upcoming segmented toggle (item 4) ──────────────────────────
+  const renderViewToggle = () => {
+    const tabs = [
+      { key: 'earned', icon: '💰', label: 'Earned', sub: `₹${referralStats.total.toLocaleString()}`, foot: 'SETTLED + OUTSTANDING', count: referralStats.count },
+      { key: 'upcoming', icon: '🚀', label: 'Upcoming', sub: `₹${futureStats.projected.toLocaleString()}`, foot: 'OPTIMISTIC · NOT YET EARNED', count: futureStats.count },
+    ];
+    return (
+      <div style={{ display: 'flex', gap: isMobile ? '8px' : '12px', marginBottom: isMobile ? '20px' : '28px' }}>
+        {tabs.map(t => {
+          const active = viewMode === t.key;
+          const isUp = t.key === 'upcoming';
+          return (
+            <button key={t.key} type="button" onClick={() => setViewMode(t.key)}
+              style={{
+                flex: 1, textAlign: 'left', cursor: 'pointer', position: 'relative', overflow: 'hidden',
+                padding: isMobile ? '12px 14px' : '16px 20px', borderRadius: '16px',
+                border: active ? '1.5px solid transparent' : '1px solid #e2e8f0',
+                background: active
+                  ? (isUp ? 'linear-gradient(135deg, #4c1d95 0%, #7c3aed 100%)' : 'linear-gradient(135deg, #0f172a 0%, #1e293b 100%)')
+                  : 'white',
+                color: active ? 'white' : '#475569',
+                boxShadow: active ? (isUp ? '0 10px 30px -8px rgba(124,58,237,0.5)' : '0 10px 30px -8px rgba(15,23,42,0.4)') : '0 1px 4px rgba(0,0,0,0.03)',
+                transition: 'all 0.2s',
+              }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px' }}>
+                <span style={{ fontSize: isMobile ? '10px' : '11px', fontWeight: 950, letterSpacing: '0.5px', textTransform: 'uppercase', opacity: active ? 0.85 : 0.6 }}>{t.icon} {t.label}</span>
+                {t.count > 0 && (
+                  <span style={{ fontSize: '8.5px', fontWeight: 950, padding: '2px 7px', borderRadius: '999px', background: active ? 'rgba(255,255,255,0.18)' : (isUp ? '#ede9fe' : '#f1f5f9'), color: active ? 'white' : (isUp ? '#6d28d9' : '#475569') }}>{t.count}</span>
+                )}
+              </div>
+              <div style={{ fontSize: isMobile ? '18px' : '22px', fontWeight: 950, marginTop: '6px', letterSpacing: '-0.5px' }}>{t.sub}</div>
+              <div style={{ fontSize: '8.5px', fontWeight: 800, marginTop: '2px', opacity: active ? 0.8 : 0.55, letterSpacing: '0.3px' }}>{t.foot}</div>
+            </button>
+          );
+        })}
+      </div>
+    );
+  };
+
+  // ── Gamified "upcoming / optimistic cuts" view (item 4) ──────────────────
+  const renderUpcoming = () => {
+    const shortDate = (v) => {
+      if (!v) return '—';
+      const d = new Date(v);
+      return isNaN(d.getTime()) ? '—' : d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
+    };
+    if (!futureCuts || futureCuts.length === 0) {
+      return (
+        <div style={{ background: 'linear-gradient(135deg, #1e1b4b 0%, #312e81 100%)', borderRadius: '24px', padding: isMobile ? '40px 24px' : '64px 40px', textAlign: 'center', color: 'white', boxShadow: '0 20px 50px -12px rgba(49,46,129,0.5)' }}>
+          <div style={{ fontSize: '44px', marginBottom: '12px' }}>🔮</div>
+          <div style={{ fontSize: isMobile ? '16px' : '20px', fontWeight: 950, letterSpacing: '-0.3px' }}>No upcoming cuts — yet</div>
+          <div style={{ fontSize: isMobile ? '11px' : '12.5px', fontWeight: 600, opacity: 0.7, marginTop: '8px', maxWidth: '420px', marginLeft: 'auto', marginRight: 'auto', lineHeight: 1.6 }}>
+            Book appointments ahead and every future referral lands here as an optimistic cut — your projected earnings, unlocking the day each patient is served.
+          </div>
+        </div>
+      );
+    }
+    return (
+      <div style={{ display: 'flex', flexDirection: 'column', gap: isMobile ? '18px' : '24px' }}>
+        {/* Hero — projected earnings */}
+        <div style={{ position: 'relative', overflow: 'hidden', background: 'linear-gradient(135deg, #1e1b4b 0%, #4c1d95 55%, #7c3aed 100%)', borderRadius: '24px', padding: isMobile ? '24px' : '32px 36px', color: 'white', boxShadow: '0 20px 50px -12px rgba(76,29,149,0.55)' }}>
+          <div style={{ position: 'absolute', top: '-40px', right: '-30px', width: '180px', height: '180px', borderRadius: '50%', background: 'radial-gradient(circle, rgba(167,139,250,0.45), transparent 70%)', pointerEvents: 'none' }} />
+          <div style={{ position: 'relative' }}>
+            <div style={{ fontSize: isMobile ? '9px' : '10px', fontWeight: 950, letterSpacing: '2px', opacity: 0.75 }}>🚀 OPTIMISTIC EARNINGS INCOMING</div>
+            <div style={{ fontSize: isMobile ? '34px' : '46px', fontWeight: 950, letterSpacing: '-1.5px', marginTop: '8px', lineHeight: 1 }}>₹{futureStats.projected.toLocaleString()}</div>
+            <div style={{ fontSize: isMobile ? '10px' : '11px', fontWeight: 700, opacity: 0.7, marginTop: '6px' }}>projected across {futureStats.count} upcoming cut{futureStats.count !== 1 ? 's' : ''}</div>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: isMobile ? '8px' : '12px', marginTop: '20px' }}>
+              {[
+                ['👥', `${futureStats.patients}`, 'patients booked'],
+                ['🤝', `${futureStats.partners}`, 'partners'],
+                ['📅', shortDate(futureStats.nextDate), 'next arrival'],
+              ].map(([icon, val, lbl], i) => (
+                <div key={i} style={{ flex: isMobile ? '1 1 40%' : 'none', background: 'rgba(255,255,255,0.1)', borderRadius: '14px', padding: isMobile ? '10px 12px' : '12px 18px', border: '1px solid rgba(255,255,255,0.12)' }}>
+                  <div style={{ fontSize: isMobile ? '14px' : '17px', fontWeight: 950 }}>{icon} {val}</div>
+                  <div style={{ fontSize: '8.5px', fontWeight: 800, opacity: 0.7, letterSpacing: '0.5px', textTransform: 'uppercase', marginTop: '2px' }}>{lbl}</div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+
+        {/* Upcoming cuts, grouped by partner */}
+        <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : 'repeat(auto-fill, minmax(300px, 1fr))', gap: isMobile ? '14px' : '18px' }}>
+          {futureGroups.map(group => (
+            <div key={group.id} style={{ background: 'white', borderRadius: '20px', border: '1px solid #ede9fe', overflow: 'hidden', boxShadow: '0 4px 20px rgba(124,58,237,0.06)' }}>
+              <div style={{ padding: isMobile ? '14px 16px' : '16px 20px', background: 'linear-gradient(135deg, #faf5ff 0%, white 80%)', borderBottom: '1px solid #f3e8ff', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '10px' }}>
+                <div style={{ minWidth: 0 }}>
+                  <div style={{ fontSize: '12.5px', fontWeight: 950, color: '#1e293b', letterSpacing: '0.3px', wordBreak: 'break-word' }}>{group.name}</div>
+                  {group.onBehalfOf && <div style={{ fontSize: '9px', fontWeight: 700, color: '#7c3aed', marginTop: '2px' }}>on behalf of {group.onBehalfOf}</div>}
+                </div>
+                <div style={{ textAlign: 'right', flexShrink: 0 }}>
+                  <div style={{ fontSize: '8px', fontWeight: 950, color: '#a78bfa', letterSpacing: '0.5px' }}>PROJECTED</div>
+                  <div style={{ fontSize: '16px', fontWeight: 950, color: '#6d28d9' }}>₹{group.total.toLocaleString()}</div>
+                </div>
+              </div>
+              <div style={{ padding: isMobile ? '10px 12px' : '12px 16px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                {group.cuts.slice().sort((a, b) => new Date(a.serviceDate) - new Date(b.serviceDate)).map(cut => (
+                  <div key={cut.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px', padding: '8px 10px', borderRadius: '12px', background: '#faf5ff', border: '1px dashed #ddd6fe' }}>
+                    <div style={{ minWidth: 0 }}>
+                      <div style={{ fontSize: '11px', fontWeight: 900, color: '#1e293b', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{(cut.patientName || 'Patient').toUpperCase()}</div>
+                      <div style={{ fontSize: '8.5px', fontWeight: 700, color: '#94a3b8', marginTop: '1px' }}>{(cut.modality || '').toUpperCase()}{cut.modality ? ' · ' : ''}🔒 unlocks {shortDate(cut.serviceDate)}</div>
+                    </div>
+                    <div style={{ fontSize: '12px', fontWeight: 950, color: (Number(cut.amount) || 0) < 0 ? '#ea580c' : '#6d28d9', flexShrink: 0 }}>₹{(Number(cut.amount) || 0).toLocaleString()}</div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          ))}
+        </div>
+
+        <div style={{ textAlign: 'center', fontSize: '9.5px', fontWeight: 700, color: '#a78bfa', letterSpacing: '0.5px' }}>
+          ✨ These cuts unlock automatically once each patient is served &amp; their payment is collected.
+        </div>
+      </div>
+    );
+  };
+
   return (
     <div className="referral-cuts-main" style={{ animation: 'fadeIn 0.3s' }}>
        <div style={{ 
@@ -539,6 +699,11 @@ const ReferralHub = ({
           </div>
        </div>
 
+       {/* Earned / Upcoming toggle (item 4) */}
+       {renderViewToggle()}
+
+       {viewMode === 'earned' ? (
+        <>
        <div className="referral-kpi-grid" style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : 'repeat(3, 1fr)', gap: isMobile ? '15px' : '25px', marginBottom: '40px' }}>
           <div style={{ background: 'white', padding: '20px', borderRadius: '24px', border: '1px solid #e2e8f0', boxShadow: '0 4px 20px rgba(0,0,0,0.02)' }}>
              <div style={{ fontSize: '10px', fontWeight: 950, color: '#94a3b8', letterSpacing: '1px', marginBottom: '8px' }}>STRATEGIC_OUTFLOW</div>
@@ -743,6 +908,8 @@ const ReferralHub = ({
             )}
           </div>
       </div>
+        </>
+       ) : renderUpcoming()}
 
       {/* ── Drill-down Drawer: per-partner payout list with bulk select ── */}
       {activePartner && (
@@ -939,23 +1106,39 @@ const ReferralHub = ({
                               style={{ padding: '12px 16px', borderRadius: '12px', border: 'none', background: '#fee2e2', color: '#ef4444', fontSize: '12px', fontWeight: 950, cursor: 'pointer' }}
                             >DEL</button>
                           ) : (
-                            <button
-                              disabled={isSelf}
-                              title={isSelf ? 'Self / walk-in earns no commission — nothing to update' : 'Edit this payout'}
-                              onClick={() => {
-                                if (isSelf) return;
-                                setEditPayout({
-                                  commissionId: cut.id, referrerId: cut.referrerId, referrerName: cut.name, amount: cut.amount, modality: cut.modality || 'MRI', remarks: (cut.description || '').includes(' - ') ? cut.description.split(' - ')[1] : '', invoiceId: cut.reference, status: cut.status, originalStatus: cut.status
-                                });
-                                setIsPayoutDrawerOpen(true);
-                              }}
-                              style={{ padding: '12px 16px', borderRadius: '12px', border: isSelf ? '1px solid #e2e8f0' : '1px solid #bfdbfe', background: isSelf ? '#f1f5f9' : '#eff6ff', color: isSelf ? '#cbd5e1' : '#0f52ba', fontSize: '12px', fontWeight: 950, cursor: isSelf ? 'not-allowed' : 'pointer' }}
-                            >{isSelf ? '🔒 SELF' : 'EDIT'}</button>
+                            (() => {
+                              // Lock EDIT once the commission is PAID (money handed over —
+                              // change it via the PAID badge → admin approval) or the visit
+                              // is cancelled. Self/walk-in never has a payout to edit.
+                              const isPaid = cut?.status === 'PAID';
+                              const isCancelled = String(cut?.status || '').toLowerCase() === 'cancelled';
+                              const editLocked = isSelf || isPaid || isCancelled;
+                              const lockLabel = isSelf ? '🔒 SELF' : isPaid ? '🔒 PAID' : isCancelled ? '🔒 CANCELLED' : 'EDIT';
+                              const lockTitle = isSelf ? 'Self / walk-in earns no commission — nothing to update'
+                                : isPaid ? 'Commission already paid — to change it, revert via the PAID badge (needs admin approval)'
+                                : isCancelled ? 'Cancelled — payout is locked'
+                                : 'Edit this payout';
+                              return (
+                                <button
+                                  disabled={editLocked}
+                                  title={lockTitle}
+                                  onClick={() => {
+                                    if (editLocked) return;
+                                    setEditPayout({
+                                      commissionId: cut.id, referrerId: cut.referrerId, referrerName: cut.name, amount: cut.amount, modality: cut.modality || 'MRI', remarks: (cut.description || '').includes(' - ') ? cut.description.split(' - ')[1] : '', invoiceId: cut.reference, status: cut.status, originalStatus: cut.status
+                                    });
+                                    setIsPayoutDrawerOpen(true);
+                                  }}
+                                  style={{ padding: '12px 16px', borderRadius: '12px', border: editLocked ? '1px solid #e2e8f0' : '1px solid #bfdbfe', background: editLocked ? '#f1f5f9' : '#eff6ff', color: editLocked ? '#cbd5e1' : '#0f52ba', fontSize: '12px', fontWeight: 950, cursor: editLocked ? 'not-allowed' : 'pointer' }}
+                                >{lockLabel}</button>
+                              );
+                            })()
                           )}
                         </div>
                         {blockPayment && (
                            <div style={{ marginTop: '10px', fontSize: '11px', fontWeight: 800, color: '#f59e0b', textAlign: 'center' }}>⚠ Patient payment pending</div>
                         )}
+                        {commissionReviewNote(cut)}
                       </div>
                     );
                   })}
@@ -1078,27 +1261,44 @@ const ReferralHub = ({
                               style={{ padding: '5px 9px', borderRadius: '7px', border: 'none', background: '#fee2e2', color: '#ef4444', fontSize: '8.5px', fontWeight: 950, cursor: 'pointer' }}
                             >DEL</button>
                           ) : (
-                            <button
-                              disabled={isSelfReferrer(cut.name)}
-                              title={isSelfReferrer(cut.name) ? 'Self / walk-in earns no commission — nothing to update' : 'Update this payout'}
-                              onClick={() => {
-                                if (isSelfReferrer(cut.name)) return;
-                                setEditPayout({
-                                  commissionId: cut.id,
-                                  referrerId: cut.referrerId,
-                                  referrerName: cut.name,
-                                  amount: cut.amount,
-                                  modality: cut.modality || 'MRI',
-                                  remarks: (cut.description || '').includes(' - ') ? cut.description.split(' - ')[1] : '',
-                                  invoiceId: cut.reference,
-                                  status: cut.status,
-                                  originalStatus: cut.status
-                                });
-                                setIsPayoutDrawerOpen(true);
-                              }}
-                              style={{ padding: '5px 10px', borderRadius: '7px', border: 'none', background: isSelfReferrer(cut.name) ? '#f1f5f9' : '#f0f4ff', color: isSelfReferrer(cut.name) ? '#cbd5e1' : '#0f52ba', fontSize: '8.5px', fontWeight: 950, cursor: isSelfReferrer(cut.name) ? 'not-allowed' : 'pointer' }}
-                            >{isSelfReferrer(cut.name) ? '🔒 SELF' : 'UPDATE'}</button>
+                            (() => {
+                              // Same lock as the card view: PAID (money handed over → change
+                              // via the PAID badge + admin approval) or Cancelled rows can't
+                              // be edited; Self/walk-in has no payout.
+                              const isSelf = isSelfReferrer(cut.name);
+                              const isPaid = cut?.status === 'PAID';
+                              const isCancelled = String(cut?.status || '').toLowerCase() === 'cancelled';
+                              const editLocked = isSelf || isPaid || isCancelled;
+                              const lockLabel = isSelf ? '🔒 SELF' : isPaid ? '🔒 PAID' : isCancelled ? '🔒 CANCELLED' : 'UPDATE';
+                              const lockTitle = isSelf ? 'Self / walk-in earns no commission — nothing to update'
+                                : isPaid ? 'Commission already paid — to change it, revert via the PAID badge (needs admin approval)'
+                                : isCancelled ? 'Cancelled — payout is locked'
+                                : 'Update this payout';
+                              return (
+                                <button
+                                  disabled={editLocked}
+                                  title={lockTitle}
+                                  onClick={() => {
+                                    if (editLocked) return;
+                                    setEditPayout({
+                                      commissionId: cut.id,
+                                      referrerId: cut.referrerId,
+                                      referrerName: cut.name,
+                                      amount: cut.amount,
+                                      modality: cut.modality || 'MRI',
+                                      remarks: (cut.description || '').includes(' - ') ? cut.description.split(' - ')[1] : '',
+                                      invoiceId: cut.reference,
+                                      status: cut.status,
+                                      originalStatus: cut.status
+                                    });
+                                    setIsPayoutDrawerOpen(true);
+                                  }}
+                                  style={{ padding: '5px 10px', borderRadius: '7px', border: 'none', background: editLocked ? '#f1f5f9' : '#f0f4ff', color: editLocked ? '#cbd5e1' : '#0f52ba', fontSize: '8.5px', fontWeight: 950, cursor: editLocked ? 'not-allowed' : 'pointer' }}
+                                >{lockLabel}</button>
+                              );
+                            })()
                           )}
+                          {commissionReviewNote(cut)}
                         </td>
                       </tr>
                     ))}

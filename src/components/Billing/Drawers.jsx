@@ -50,6 +50,8 @@ export const InvoiceDrawer = ({
     setEditReferrer(Number(selectedInvoice.referrerDiscount) || 0);
     setEditDeduction(Number(selectedInvoice.institutionalDeduction) || 0);
     setEditReason('');
+    setFundingChoice('centre');
+    setDeficitReason('');
     setEditReqOpen(true);
   };
 
@@ -65,6 +67,8 @@ export const InvoiceDrawer = ({
           centreDiscount: Number(editCentre) || 0,
           referrerDiscount: Number(editReferrer) || 0,
           deduction: Number(editDeduction) || 0,
+          // Over-commission surplus: true → centre absorbs it; false → referrer deficit.
+          absorbExcessToCentre: (Number(editReferrer) || 0) > (Number(selectedInvoice.commissionAmount) || 0) && fundingChoice === 'centre',
         }),
         reason: editReason.trim(),
       });
@@ -107,7 +111,12 @@ export const InvoiceDrawer = ({
   };
 
   const handleSetCentreDisc = (val) => {
-    const maxAllowed = Math.max(0, (selectedInvoice.grossAmount || 0) - referrerDisc - deduction);
+    const gross = selectedInvoice.grossAmount || 0;
+    const commission = selectedInvoice.commissionAmount || 0;
+    // The centre can't discount into the doctor's referral commission — cap at
+    // total − commission (and never more than what's left after the other
+    // deductions). With no commission this is just gross − referrerDisc − deduction.
+    const maxAllowed = Math.max(0, Math.min(gross - referrerDisc - deduction, gross - commission));
     setCentreDisc(Math.min(val, maxAllowed));
   };
 
@@ -124,11 +133,50 @@ export const InvoiceDrawer = ({
     setDeduction(Math.min(val, maxAllowed));
   };
 
+  // Inline "the referral concession exceeds the eligible commission" notice +
+  // funding choice (centre absorbs the surplus, or the referrer carries the
+  // deficit). Shared by the pre-payment form and the post-payment edit modal.
+  const overCommissionChoice = (excess, refName, showReason) => {
+    if (!(excess > 0)) return null;
+    const opt = (key, title, sub, accent, bg) => (
+      <div onClick={() => setFundingChoice(key)} style={{ cursor: 'pointer', padding: '8px 10px', borderRadius: '9px', border: fundingChoice === key ? `2px solid ${accent}` : '1px solid #e2e8f0', background: fundingChoice === key ? bg : 'white' }}>
+        <div style={{ fontSize: '10px', fontWeight: 900, color: '#0f172a' }}>{fundingChoice === key ? '🔘' : '⚪'} {title}</div>
+        <div style={{ fontSize: '8.5px', color: '#64748b', marginTop: '2px', paddingLeft: '16px', lineHeight: 1.4 }}>{sub}</div>
+      </div>
+    );
+    return (
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', padding: '9px 10px', background: '#fffdf7', border: '1px solid #fde68a', borderRadius: '10px' }}>
+        <div style={{ fontSize: '9px', fontWeight: 800, color: '#9a3412', lineHeight: 1.4 }}>
+          ⚠️ ₹{Number(excess).toLocaleString()} over {refName || 'the referrer'}&apos;s commission. Adjust the surplus to the centre, or keep it as a deficit?
+        </div>
+        {opt('centre', `Adjust ₹${Number(excess).toLocaleString()} to the centre`, 'The centre absorbs the surplus — no deficit for the referrer.', '#0f52ba', '#f0f4ff')}
+        {opt('deficit', `Keep as ${refName || 'the referrer'}'s deficit`, 'Booked as their deficit, recovered from future referrals.', '#ea580c', '#fff7ed')}
+        {showReason && fundingChoice === 'deficit' && (
+          <input value={deficitReason} onChange={e => setDeficitReason(e.target.value)} placeholder="Reason for the deficit (required)"
+            style={{ width: '100%', boxSizing: 'border-box', padding: '7px 9px', borderRadius: '8px', border: '1px solid #fcd34d', fontSize: '10px', fontWeight: 600, outline: 'none' }} />
+        )}
+      </div>
+    );
+  };
+
 
   if (!selectedInvoice) return null;
 
   const totalDeductions = centreDisc + referrerDisc + deduction;
   const netSettlement = (selectedInvoice.grossAmount || 0) - totalDeductions;
+
+  // Max the centre may discount: total − referral commission (and ≤ what's left
+  // after the other deductions). Shown next to the centre concession field.
+  const centreCommission = selectedInvoice.commissionAmount || 0;
+  const maxCentreDiscount = Math.max(0, Math.min((selectedInvoice.grossAmount || 0) - referrerDisc - deduction, (selectedInvoice.grossAmount || 0) - centreCommission));
+  // Belt-and-braces: a field changed after the discount was set could push it
+  // past the max — block settlement until it's brought back in range.
+  const overCentreDiscount = centreDisc > maxCentreDiscount + 0.01;
+  // Over-commission funding: when the referral concession exceeds the eligible
+  // commission, the surplus is either absorbed by the centre or carried as the
+  // referrer's deficit (a reason is then required before settling).
+  const overCommissionExcess = Math.max(0, referrerDisc - centreCommission);
+  const deficitNeedsReason = overCommissionExcess > 0 && fundingChoice === 'deficit' && !deficitReason.trim();
 
   // A post-payment concession comes out of the centre's share — cap it at that
   // (never above the settled total) so an adjustment can't refund/zero-out more
@@ -400,7 +448,9 @@ export const InvoiceDrawer = ({
                    <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', marginBottom: '15px', padding: '12px', background: '#fff', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
                       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                          <div>
-                            <span style={{ fontSize: '8px', fontWeight: 950, color: '#64748b' }}>CONCESSION: CENTRE</span>
+                            <span style={{ fontSize: '8px', fontWeight: 950, color: '#64748b' }}>CONCESSION: CENTRE
+                              {centreCommission > 0 && <span style={{ color: '#0f52ba', marginLeft: '5px' }}>· MAX ₹{maxCentreDiscount.toLocaleString()}</span>}
+                            </span>
                             <div style={{ display: 'flex', gap: '3px', marginTop: '4px' }}>
                                {[10, 25, 50, 100].map(p => (
                                  <button 
@@ -446,14 +496,7 @@ export const InvoiceDrawer = ({
                          </div>
                       </div>
 
-                      {referrerDisc > (selectedInvoice.commissionAmount || 0) && (
-                        <div style={{ display: 'flex', alignItems: 'flex-start', gap: '6px', padding: '7px 9px', background: '#fff7ed', border: '1px solid #fed7aa', borderRadius: '8px' }}>
-                          <span style={{ fontSize: '11px', lineHeight: 1.2 }}>⚠️</span>
-                          <span style={{ fontSize: '9px', fontWeight: 800, color: '#9a3412', lineHeight: 1.45 }}>
-                            ₹{(referrerDisc - (selectedInvoice.commissionAmount || 0)).toLocaleString()} over {selectedInvoice.referrerName || 'the referrer'}&apos;s commission (₹{(selectedInvoice.commissionAmount || 0).toLocaleString()}) — booked as their deficit, recovered from future referrals.
-                          </span>
-                        </div>
-                      )}
+                      {overCommissionChoice(referrerDisc - (selectedInvoice.commissionAmount || 0), selectedInvoice.referrerName, true)}
 
                       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                          <span style={{ fontSize: '8px', fontWeight: 950, color: '#64748b' }}>ADDITIONAL DISCOUNT</span>
@@ -499,11 +542,22 @@ export const InvoiceDrawer = ({
                    </div>
                    {/* Over-commission discounts require an explicit confirmation
                        popup (with a reason); everything else settles straight through. */}
+                   {overCentreDiscount && (
+                     <div style={{ fontSize: '9px', fontWeight: 800, color: '#dc2626', background: '#fef2f2', border: '1px solid #fecaca', borderRadius: '10px', padding: '8px 10px', lineHeight: 1.45 }}>
+                       ⚠ Centre discount can&apos;t exceed ₹{maxCentreDiscount.toLocaleString()} — more would eat into the ₹{centreCommission.toLocaleString()} referral commission. Lower it to continue.
+                     </div>
+                   )}
                    <button onClick={() => {
-                     if (referrerDisc > (selectedInvoice.commissionAmount || 0)) { setFundingChoice('centre'); setDeficitReason(''); setShowDeficitModal(true); return; }
-                     handleCollectPayment(centreDisc, referrerDisc, deduction, netSettlement);
-                   }} style={{ width: '100%', padding: '12px', borderRadius: '12px', border: 'none', background: '#0f52ba', color: 'white', fontWeight: 950, fontSize: '10px', cursor: 'pointer', boxShadow: '0 4px 12px rgba(15,82,186,0.2)' }}>COMMIT SETTLEMENT</button>
+                     if (overCentreDiscount || deficitNeedsReason) return;
+                     const excess = Math.max(0, referrerDisc - (selectedInvoice.commissionAmount || 0));
+                     const meta = excess > 0
+                       ? (fundingChoice === 'centre' ? { absorbToCentre: true } : { deficitReason: deficitReason.trim() })
+                       : {};
+                     handleCollectPayment(centreDisc, referrerDisc, deduction, netSettlement, meta);
+                   }} disabled={overCentreDiscount || deficitNeedsReason} style={{ width: '100%', padding: '12px', borderRadius: '12px', border: 'none', background: (overCentreDiscount || deficitNeedsReason) ? '#cbd5e1' : '#0f52ba', color: 'white', fontWeight: 950, fontSize: '10px', cursor: (overCentreDiscount || deficitNeedsReason) ? 'not-allowed' : 'pointer', boxShadow: (overCentreDiscount || deficitNeedsReason) ? 'none' : '0 4px 12px rgba(15,82,186,0.2)' }}>COMMIT SETTLEMENT</button>
                    <button onClick={handleSaveInvoice} style={{ width: '100%', padding: '10px', borderRadius: '12px', border: '1px solid #e2e8f0', fontWeight: 800, fontSize: '9px', cursor: 'pointer', background: 'white' }}>SAVE AS DRAFT</button>
+                   {/* Print the invoice/estimate before collecting payment. */}
+                   <button onClick={() => handlePrintA4(selectedInvoice)} style={{ width: '100%', padding: '10px', borderRadius: '12px', border: '1.5px solid #0f52ba', fontWeight: 900, fontSize: '9px', cursor: 'pointer', background: 'white', color: '#0f52ba' }}>🖨 PRINT INVOICE</button>
 
                 </div>
 
@@ -548,15 +602,32 @@ export const InvoiceDrawer = ({
                            </div>
                            {(() => {
                              const refLabel = (selectedInvoice.referrerName || 'The referrer');
+                             const fee = Number(selectedInvoice.grossAmount) || 0;
+                             const commission = Number(selectedInvoice.commissionAmount) || 0;
+                             const referrerDeficit = Math.max(0, fee - commission); // total − commission
+                             const inr = (n) => `₹${Number(n).toLocaleString()}`;
+                             // Each bearer choice spells out who ends up in deficit and by how much.
                              const cfg = freeBearer === 'CENTRE'
-                               ? { bg: '#ecfdf5', bd: '#a7f3d0', fg: '#047857', icon: '🛡️', text: <>Centre bears the whole fee — <b>{refLabel} keeps their full commission</b>.</> }
+                               ? { bg: '#ecfdf5', bd: '#a7f3d0', fg: '#047857', icon: '🛡️',
+                                   text: <>Centre bears the whole fee — <b>{refLabel} still earns their full {inr(commission)} commission</b>.</>,
+                                   sub: <>The centre goes into deficit of <b>−{inr(commission)}</b> — it pays {refLabel}&apos;s commission even though the test is free.</>,
+                                   subBg: '#d1fae5', subFg: '#065f46' }
                                : freeBearer === 'BOTH'
-                                 ? { bg: '#fffbeb', bd: '#fcd34d', fg: '#b45309', icon: '⚖️', text: <>Centre &amp; referrer share the cost — <b>{refLabel} gets no commission</b>.</> }
-                                 : { bg: '#fef2f2', bd: '#fca5a5', fg: '#b91c1c', icon: '⚠️', text: <><b style={{ textTransform: 'uppercase' }}>{refLabel} forfeits their entire commission</b> — the referrer alone bears this free test.</> };
+                                 ? { bg: '#fffbeb', bd: '#fcd34d', fg: '#b45309', icon: '⚖️',
+                                     text: <>Centre &amp; referrer share the cost — <b>{refLabel} gets no commission</b>.</>,
+                                     sub: <>Net <b>₹0</b> — no one is left in deficit.</>,
+                                     subBg: '#fef3c7', subFg: '#92400e' }
+                                 : { bg: '#fef2f2', bd: '#fca5a5', fg: '#b91c1c', icon: '⚠️',
+                                     text: <><b style={{ textTransform: 'uppercase' }}>{refLabel} alone bears this free test</b> — they forfeit their {inr(commission)} commission.</>,
+                                     sub: <><b>{refLabel} is left in deficit of −{inr(referrerDeficit)}</b> ({inr(fee)} fee − {inr(commission)} commission). ⚠ Choosing this can damage your relationship with {refLabel} — they effectively pay for this visit.</>,
+                                     subBg: '#fee2e2', subFg: '#991b1b' };
                              return (
-                               <div style={{ marginTop: '6px', display: 'flex', alignItems: 'flex-start', gap: '8px', padding: '10px 12px', borderRadius: '10px', background: cfg.bg, border: `1.5px solid ${cfg.bd}` }}>
-                                 <span style={{ fontSize: '15px', lineHeight: 1.2 }}>{cfg.icon}</span>
-                                 <span style={{ fontSize: '11px', fontWeight: 700, color: cfg.fg, lineHeight: 1.5 }}>{cfg.text}</span>
+                               <div style={{ marginTop: '6px', display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                                 <div style={{ display: 'flex', alignItems: 'flex-start', gap: '8px', padding: '10px 12px', borderRadius: '10px', background: cfg.bg, border: `1.5px solid ${cfg.bd}` }}>
+                                   <span style={{ fontSize: '15px', lineHeight: 1.2 }}>{cfg.icon}</span>
+                                   <span style={{ fontSize: '11px', fontWeight: 700, color: cfg.fg, lineHeight: 1.5 }}>{cfg.text}</span>
+                                 </div>
+                                 <div style={{ padding: '8px 11px', borderRadius: '9px', background: cfg.subBg, fontSize: '10px', fontWeight: 700, color: cfg.subFg, lineHeight: 1.5 }}>{cfg.sub}</div>
                                </div>
                              );
                            })()}
@@ -583,12 +654,14 @@ export const InvoiceDrawer = ({
         const fee = Number(selectedInvoice.grossAmount) || 0;
         const commission = Number(selectedInvoice.commissionAmount) || 0;
         const maxCentre = Math.max(0, fee - commission);
-        const maxReferral = commission;
         const editTotal = (Number(editCentre) || 0) + (Number(editReferrer) || 0) + (Number(editDeduction) || 0);
         const newNet = Math.max(0, fee - editTotal);
         const overFee = editTotal > fee + 0.001;
         const clampCentre = (v) => setEditCentre(Math.max(0, Math.min(v, fee - (Number(editReferrer) || 0) - (Number(editDeduction) || 0))));
-        const clampReferrer = (v) => setEditReferrer(Math.max(0, Math.min(v, maxReferral, fee - (Number(editCentre) || 0) - (Number(editDeduction) || 0))));
+        // Referral concession may now EXCEED the eligible commission (the surplus is
+        // funded by the centre or carried as a deficit — chosen below). Still capped
+        // at what the patient owes after the other concessions.
+        const clampReferrer = (v) => setEditReferrer(Math.max(0, Math.min(v, fee - (Number(editCentre) || 0) - (Number(editDeduction) || 0))));
         const clampAdd = (v) => setEditDeduction(Math.max(0, Math.min(v, fee - (Number(editCentre) || 0) - (Number(editReferrer) || 0))));
 
         return (
@@ -611,7 +684,7 @@ export const InvoiceDrawer = ({
 
                 {[
                   ['Centre concession', editCentre, clampCentre, '#ef4444', maxCentre, false],
-                  ['Referral concession', editReferrer, clampReferrer, '#e11d48', maxReferral, commission <= 0],
+                  ['Referral concession', editReferrer, clampReferrer, '#e11d48', null, commission <= 0],
                   ['Additional discount', editDeduction, clampAdd, '#1e293b', null, false],
                 ].map(([label, val, clamp, color, max, disabled]) => (
                   <div key={label} style={{ marginBottom: '12px', opacity: disabled ? 0.5 : 1 }}>
@@ -637,6 +710,8 @@ export const InvoiceDrawer = ({
                 </div>
                 {overFee && <div style={{ marginTop: '8px', fontSize: '10px', fontWeight: 800, color: '#ef4444' }}>⚠ Total concession can’t exceed the fee of ₹{fee.toLocaleString()}.</div>}
               </div>
+
+              {Number(editReferrer) > commission && overCommissionChoice(Number(editReferrer) - commission, selectedInvoice.referrerName, false)}
 
               {/* ② Reason */}
               <div>
@@ -1264,9 +1339,6 @@ export const PayoutDrawer = ({
     const next = lines.map((l, i) => (i === idx ? { ...l, ...patch } : l));
     setEditPayout({ ...editPayout, lines: next });
   };
-  const addLine = () => {
-    setEditPayout({ ...editPayout, lines: [...lines, { modality: 'MRI', amount: '', status: 'UNPAID', serviceName: '' }] });
-  };
   const removeLine = (idx) => {
     const next = lines.filter((_, i) => i !== idx);
     setEditPayout({ ...editPayout, lines: next.length ? next : [{ modality: 'MRI', amount: '', status: 'UNPAID', serviceName: '' }] });
@@ -1354,10 +1426,6 @@ export const PayoutDrawer = ({
                    <div className="form-group">
                       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
                         <label style={{ fontSize: '9px', fontWeight: 950, color: '#94a3b8', letterSpacing: '2px' }}>SERVICE LINES</label>
-                        <button type="button" onClick={addLine}
-                          style={{ padding: '6px 12px', borderRadius: '8px', border: '1px dashed #93c5fd', background: '#eff6ff', color: '#0f52ba', fontSize: '9px', fontWeight: 950, cursor: 'pointer' }}>
-                          ➕ ADD SERVICE
-                        </button>
                       </div>
 
                       <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>

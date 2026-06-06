@@ -1,5 +1,6 @@
 import React, { useMemo, useState, useEffect, useRef, useLayoutEffect, useCallback } from 'react';
 import { approvalForInvoice, approvalBadge } from '../../utils/approvalLookup';
+import { celebrate } from '../../utils/celebrate';
 
 // One-time keyframe for the row-actions menu's "grow from the button" entrance.
 if (typeof document !== 'undefined' && !document.getElementById('row-actions-menu-kf')) {
@@ -116,6 +117,15 @@ const RevenueHub = ({
 }) => {
   const [errorModal, setErrorModal] = useState({ isOpen: false, title: '', message: '' });
   const [deleteConfirmModal, setDeleteConfirmModal] = useState({ isOpen: false, invoiceId: null, commissionId: null, displayId: '' });
+
+  // Whether the referrer's commission for this invoice is already PAID. Once it
+  // is, "Update payout" is locked by default — money has already changed hands,
+  // so any change must go through Admin Approval (revert the PAID badge → request
+  // approval), not a silent edit here.
+  const isPayoutPaid = (inv) => (referralCommissions || []).some(c =>
+    ((c.referenceNumber || c.reference) === inv.displayId || c.id === inv.commissionId)
+    && String(c.status || c.commissionStatus || '').toUpperCase() === 'PAID'
+  );
 
   const getSortIcon = (key) => {
     if (sortConfig.key !== key) return '↕';
@@ -851,11 +861,14 @@ const RevenueHub = ({
                         <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', alignItems: 'flex-start' }}>
                           <span style={{
                             padding: '6px 12px', borderRadius: '8px', fontSize: '8.5px', fontWeight: 950,
-                            background: inv?.status === 'PAID' ? '#ecfdf5' : '#fff7ed',
-                            color: inv?.status === 'PAID' ? '#059669' : '#ea580c'
+                            background: inv?.status === 'PAID' ? '#ecfdf5' : inv?.status === 'CANCELLED' ? '#f1f5f9' : '#fff7ed',
+                            color: inv?.status === 'PAID' ? '#059669' : inv?.status === 'CANCELLED' ? '#64748b' : '#ea580c'
                           }}>
-                            {inv?.status || 'PENDING'}
+                            {inv?.status === 'CANCELLED' ? '🚫 CANCELLED' : (inv?.status || 'PENDING')}
                           </span>
+                          {inv?.status === 'CANCELLED' && (
+                            <span style={{ padding: '4px 9px', borderRadius: '7px', fontSize: '8px', fontWeight: 800, background: '#fff7ed', color: '#9a3412', border: '1px solid #fed7aa', lineHeight: 1.3 }}>Appointment cancelled · refunded · net ₹0</span>
+                          )}
                           {inv?.isFree && (
                             <span style={{ padding: '4px 9px', borderRadius: '7px', fontSize: '8px', fontWeight: 950, letterSpacing: '0.5px', background: '#f0fdfa', color: '#0d9488', border: '1px solid #99f6e4' }}>🎁 FREE</span>
                           )}
@@ -877,46 +890,44 @@ const RevenueHub = ({
                         })()}
                      </td>
                      <td style={{ padding: '20px 10px', textAlign: 'right' }}>
-                        <RowActionsMenu>
-                        {/* 1) Payment / View — the primary action, first. */}
+                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: '6px' }}>
+                        {/* Payment / View — the primary action, pulled OUT of the
+                            dropdown so it's always one click (no menu). */}
                         <button
-                          onClick={() => { setSelectedInvoice(inv); setIsInvoiceDrawerOpen(true); }}
-                          style={{ padding: '6px 12px', borderRadius: '10px', border: '1px solid #e2e8f0', background: 'white', color: '#0f52ba', fontSize: '9px', fontWeight: 950, cursor: 'pointer' }}
-                        >{inv.status === 'PAID' ? 'VIEW' : 'PAYMENT'}</button>
-
-                         {/* 2) Slips/receipts — issued ONLY after payment. Printing a bill
-                             before settlement let a receptionist collect cash on a high
-                             manual entry, then delete it and re-enter a lower one. Gating
-                             print to PAID (plus the post-payment delete lock below) closes
-                             that gap — bills are always generated after the payment. */}
-                         {inv?.status === 'PAID' ? (
+                          onClick={() => { celebrate(); setSelectedInvoice(inv); setIsInvoiceDrawerOpen(true); }}
+                          title={inv.status === 'CANCELLED' ? 'View cancelled invoice' : inv.status === 'PAID' ? 'View invoice' : 'Record payment'}
+                          style={{ padding: '8px 14px', borderRadius: '10px', border: (inv.status === 'PAID' || inv.status === 'CANCELLED') ? '1px solid #cbd5e1' : 'none', background: (inv.status === 'PAID' || inv.status === 'CANCELLED') ? 'white' : 'linear-gradient(135deg,#0f52ba,#1d4ed8)', color: (inv.status === 'PAID' || inv.status === 'CANCELLED') ? '#475569' : 'white', fontSize: '9px', fontWeight: 950, cursor: 'pointer', whiteSpace: 'nowrap', boxShadow: (inv.status === 'PAID' || inv.status === 'CANCELLED') ? '0 1px 3px rgba(0,0,0,0.06)' : '0 4px 12px -3px rgba(15,82,186,0.45)' }}
+                        >{(inv.status === 'PAID' || inv.status === 'CANCELLED') ? 'VIEW' : 'PAYMENT'}</button>
+                        <RowActionsMenu>
+                         {/* Invoice — printable BEFORE and after payment (a proforma /
+                             estimate to hand the patient, then the final bill). The
+                             receipts below require a recorded payment — you can't receipt
+                             money that hasn't been collected. */}
+                         <button
+                           onClick={() => { celebrate(); handlePrintA4(inv); }}
+                           title="Print invoice"
+                           style={{ padding: '8px 12px', borderRadius: '8px', border: '1px solid #0f52ba', background: 'white', color: '#0f52ba', fontSize: '9px', fontWeight: 950, cursor: 'pointer' }}
+                         >Invoice</button>
+                         {inv?.status === 'PAID' && (
                            <>
                              <button
-                               onClick={() => handlePrintA4(inv)}
-                               title="Print A4 Invoice"
-                               style={{ padding: '8px 12px', borderRadius: '8px', border: '1px solid #0f52ba', background: 'white', color: '#0f52ba', fontSize: '9px', fontWeight: 950, cursor: 'pointer' }}
-                             >A4</button>
-                             <button
-                               onClick={() => handlePrintThermal(inv)}
+                               onClick={() => { celebrate(); handlePrintThermal(inv); }}
                                title="Print Thermal Receipt"
                                style={{ padding: '8px 12px', borderRadius: '8px', border: 'none', background: '#0f52ba', color: 'white', fontSize: '9px', fontWeight: 950, cursor: 'pointer' }}
-                             >SLIP</button>
+                             >Thermal Receipt</button>
                              <button
-                               onClick={() => handlePrintReceipt(inv)}
+                               onClick={() => { celebrate(); handlePrintReceipt(inv); }}
                                title="Print Payment Receipt"
                                style={{ padding: '8px 12px', borderRadius: '8px', border: '1px solid #10b981', background: 'white', color: '#10b981', fontSize: '9px', fontWeight: 950, cursor: 'pointer' }}
-                             >RCPT</button>
+                             >Receipt</button>
                            </>
-                         ) : (
-                           <span title="Collect payment first — slips are issued only after settlement"
-                                 style={{ padding: '8px 12px', borderRadius: '8px', border: '1px dashed #cbd5e1', background: '#f8fafc', color: '#94a3b8', fontSize: '9px', fontWeight: 950, userSelect: 'none' }}>
-                             🔒 SLIP AFTER PAYMENT
-                           </span>
                          )}
                          <div style={{ height: '1px', width: '100%', background: '#eef2f7', margin: '2px 0' }}></div>
                         {/* 3) Update payout — sits just before Delete. */}
                         <button
                           onClick={() => {
+                             if (isPayoutPaid(inv)) return;   // locked once the referrer is paid
+                             celebrate();
                              // Multi-stage referrer identity resolution
                              let refId = inv.referrerId;
                              if (!refId && inv.referrerName) {
@@ -982,14 +993,16 @@ const RevenueHub = ({
                              });
                              setIsPayoutDrawerOpen(true);
                           }}
+                          disabled={isPayoutPaid(inv)}
+                          title={isPayoutPaid(inv) ? 'Referral already paid — to change it, revert via the PAID badge and request admin approval.' : 'Update referral payout'}
                            style={{
                              padding: '6px 10px', borderRadius: '10px', border: 'none',
-                             background: '#fff1f2',
-                             color: '#e11d48',
+                             background: isPayoutPaid(inv) ? '#f1f5f9' : '#fff1f2',
+                             color: isPayoutPaid(inv) ? '#94a3b8' : '#e11d48',
                              fontSize: '8.5px', fontWeight: 950,
-                             cursor: 'pointer',
-                             boxShadow: '0 2px 5px rgba(225,29,72,0.1)'
-                           }} >UPDATE PAYOUT</button>
+                             cursor: isPayoutPaid(inv) ? 'not-allowed' : 'pointer',
+                             boxShadow: isPayoutPaid(inv) ? 'none' : '0 2px 5px rgba(225,29,72,0.1)'
+                           }} >{isPayoutPaid(inv) ? '🔒 PAYOUT PAID' : 'UPDATE PAYOUT'}</button>
 
 
 
@@ -1017,6 +1030,7 @@ const RevenueHub = ({
                            >DEL</button>
                          )}
                         </RowActionsMenu>
+                        </div>
                      </td>
                    </tr>
                  ))
