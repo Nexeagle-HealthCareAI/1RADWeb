@@ -16,7 +16,7 @@ import { useOverdue } from '../components/OverdueAppointments/OverdueContext';
 import { getTrackingUrl } from '../utils/trackingUrl';
 import { buildPatientAge, formatPatientAge, parsePatientAge } from '../utils/patientAge';
 import { getServiceLines, getUniqueModalities, matchesAnyModality, getReportProgressLabel, getStageElapsedMinutes, formatStageElapsed, getStageSlaBucket } from '../utils/appointmentServices';
-import { watchAppointments } from '../db/repos/appointmentsRepo';
+import { watchAppointments, insertCachedAppointment } from '../db/repos/appointmentsRepo';
 import { watchInvoices } from '../db/repos/invoicesRepo';
 import { watchPatients, findDuplicateCandidates } from '../db/repos/patientsRepo';
 import { getAllReferrers } from '../db/repos/referrersRepo';
@@ -1182,7 +1182,35 @@ export default function AppointmentBoard() {
     }
 
     try {
-      await apiClient.post('/appointments', payload, { headers: { 'Idempotency-Key': idemKey } });
+      const res = await apiClient.post('/appointments', payload, { headers: { 'Idempotency-Key': idemKey } });
+
+      // Show the new appointment INSTANTLY by writing it to the local cache
+      // rather than waiting for the next sync pull to bring it back. The pull
+      // kicked by refreshAppointments() below reconciles the canonical row
+      // (token, displayId, …) keyed by the same appointmentId.
+      const newId = res?.data?.appointmentId;
+      if (newId) {
+        try {
+          await insertCachedAppointment({
+            appointmentId: newId,
+            patientId: newBooking.patientId,
+            patientName: newPatient.name,
+            patientAge: newPatient.age,
+            patientGender: newPatient.gender,
+            patientMobile: newPatient.mobile,
+            service: primary.serviceName,
+            modality: primary.modality,
+            services: serviceLines,
+            dateTime: localDateTimeStr,
+            doctor: newBooking.doctor,
+            status: 'BOOKED',
+            priority: newBooking.priority || 'ROUTINE',
+            referredBy: payload.referredBy,
+            referredContact: payload.referredContact,
+            dailyTokenNumber: null,
+          });
+        } catch { /* non-blocking — the pull will still bring it */ }
+      }
 
       celebrate();
       setIsBookingOpen(false);

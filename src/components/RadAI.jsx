@@ -32,12 +32,23 @@ const wakeSupported = !!SR;
 const WAKE = /(hey\s+rad\s*ai|ok\s+rad\s*ai|hey\s+rad\b|rad\s*ai|radai)/i;
 
 const loadPos = () => {
+  if (typeof window === 'undefined') return { x: 20, y: 20 };
+  // Default: bottom-right, above the page edge.
+  let p = { x: window.innerWidth - LW - 20, y: window.innerHeight - LH - 90 };
   try {
     const raw = localStorage.getItem('radai_pos');
-    if (raw) return JSON.parse(raw);
+    if (raw) {
+      const j = JSON.parse(raw);
+      if (j && Number.isFinite(j.x) && Number.isFinite(j.y)) p = j;
+    }
   } catch { /* ignore */ }
-  if (typeof window === 'undefined') return { x: 20, y: 20 };
-  return { x: window.innerWidth - LW - 20, y: window.innerHeight - LH - 90 };
+  // ALWAYS clamp into the current viewport. A position saved on a larger screen
+  // (or before a rotate / dev-tools resize) would otherwise land off-screen and
+  // the launcher would be invisible — which reads as "RadAI is gone".
+  return {
+    x: clamp(p.x, 8, Math.max(8, window.innerWidth - LW - 8)),
+    y: clamp(p.y, 8, Math.max(8, window.innerHeight - LH - 8)),
+  };
 };
 
 const blobToDataUrl = (blob) => new Promise((res) => {

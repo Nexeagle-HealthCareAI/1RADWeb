@@ -282,15 +282,15 @@ const ReportPreviewModal = ({
 
           console.log(`[ReportPreview] Syncing branding. Target Doctor: ${resolvedDoctorId || 'NONE'}`);
 
-          // 2. Fetch Branding & Signatory Profile using actual Doctor ID
-          if (resolvedDoctorId) {
-            const res = await apiClient.get(`/Prescription/${resolvedDoctorId}`);
-            if (res.data?.success) {
-              console.info("[ReportPreview] Branding Data Received:", res.data.data);
-              setProtocol(res.data.data);
-            }
-          } else {
-             console.warn("[ReportPreview] No Doctor ID found. Skipping custom branding.");
+          // 2. Fetch Branding & Signatory Profile. When we couldn't resolve the
+          // report's doctor (e.g. a non-doctor user with no session doctor id),
+          // ask for "me" — the backend falls back to the centre's default
+          // protocol either way, so the letterhead margins always load.
+          const brandingEndpoint = resolvedDoctorId ? `/Prescription/${resolvedDoctorId}` : '/Prescription/me';
+          const res = await apiClient.get(brandingEndpoint);
+          if (res.data?.success) {
+            console.info("[ReportPreview] Branding Data Received:", res.data.data);
+            setProtocol(res.data.data);
           }
 
         } catch (err) {

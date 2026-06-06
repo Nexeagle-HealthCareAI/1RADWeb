@@ -15,7 +15,7 @@ if (typeof document !== 'undefined' && !document.getElementById('row-actions-men
 // (anchored to the trigger) so it is never clipped by the table's overflow,
 // and closes on outside-click, scroll or resize. Children are the existing
 // action buttons, stacked as menu rows.
-function RowActionsMenu({ children }) {
+function RowActionsMenu({ children, isMobile }) {
   const [open, setOpen] = useState(false);
   const [pos, setPos] = useState(null); // { top, left, origin } — null until measured
   const wrapRef = useRef(null);
@@ -63,7 +63,7 @@ function RowActionsMenu({ children }) {
   return (
     <div ref={wrapRef} style={{ display: 'inline-block', position: 'relative' }}>
       <button onClick={() => { setPos(null); setOpen(o => !o); }} title="Actions"
-        style={{ width: '36px', height: '34px', borderRadius: '10px', border: '1px solid #e2e8f0', background: open ? 'linear-gradient(135deg,#0f52ba,#1d4ed8)' : 'white', color: open ? 'white' : '#475569', fontSize: '18px', fontWeight: 900, cursor: 'pointer', lineHeight: 1, boxShadow: open ? '0 6px 16px -4px rgba(15,82,186,0.5)' : '0 1px 3px rgba(0,0,0,0.06)' }}>
+        style={{ width: isMobile ? '42px' : '36px', height: isMobile ? '42px' : '34px', borderRadius: '10px', border: '1px solid #e2e8f0', background: open ? 'linear-gradient(135deg,#0f52ba,#1d4ed8)' : 'white', color: open ? 'white' : '#475569', fontSize: isMobile ? '20px' : '18px', fontWeight: 900, cursor: 'pointer', lineHeight: 1, boxShadow: open ? '0 6px 16px -4px rgba(15,82,186,0.5)' : '0 1px 3px rgba(0,0,0,0.06)' }}>
         ⋯
       </button>
       {open && (
@@ -661,7 +661,7 @@ const RevenueHub = ({
                       <th style={{ padding: '15px 10px', fontSize: '10px', fontWeight: 950, color: '#166534', letterSpacing: '1px', background: '#f0fdf4' }}>INCOME</th>
                       <th onClick={() => handleSort('status')} style={{ cursor: 'pointer', padding: '15px 10px', fontSize: '10px', fontWeight: 950, color: '#94a3b8', letterSpacing: '1px' }}>STATUS {getSortIcon('status')}</th>
                       <th style={{ padding: '15px 10px', fontSize: '10px', fontWeight: 950, color: '#7c3aed', letterSpacing: '1px' }}>APPROVAL</th>
-                      <th style={{ padding: '15px 10px', fontSize: '10px', fontWeight: 950, color: '#94a3b8', letterSpacing: '1px', textAlign: 'right' }}>ACTIONS</th>
+                      <th style={{ padding: '15px 10px', fontSize: '10px', fontWeight: 950, color: '#94a3b8', letterSpacing: '1px', textAlign: 'right', ...(isMobile ? { position: 'sticky', right: 0, background: 'white', zIndex: 3, boxShadow: '-8px 0 14px -10px rgba(15,23,42,0.18)' } : {}) }}>ACTIONS</th>
                     </>
                   )}
                 </tr>
@@ -889,16 +889,16 @@ const RevenueHub = ({
                           );
                         })()}
                      </td>
-                     <td style={{ padding: '20px 10px', textAlign: 'right' }}>
-                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: '6px' }}>
+                     <td style={{ padding: isMobile ? '14px 10px' : '20px 10px', textAlign: 'right', ...(isMobile ? { position: 'sticky', right: 0, background: 'white', zIndex: 2, boxShadow: '-8px 0 14px -10px rgba(15,23,42,0.18)' } : {}) }}>
+                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: isMobile ? '8px' : '6px' }}>
                         {/* Payment / View — the primary action, pulled OUT of the
                             dropdown so it's always one click (no menu). */}
                         <button
                           onClick={() => { celebrate(); setSelectedInvoice(inv); setIsInvoiceDrawerOpen(true); }}
                           title={inv.status === 'CANCELLED' ? 'View cancelled invoice' : inv.status === 'PAID' ? 'View invoice' : 'Record payment'}
-                          style={{ padding: '8px 14px', borderRadius: '10px', border: (inv.status === 'PAID' || inv.status === 'CANCELLED') ? '1px solid #cbd5e1' : 'none', background: (inv.status === 'PAID' || inv.status === 'CANCELLED') ? 'white' : 'linear-gradient(135deg,#0f52ba,#1d4ed8)', color: (inv.status === 'PAID' || inv.status === 'CANCELLED') ? '#475569' : 'white', fontSize: '9px', fontWeight: 950, cursor: 'pointer', whiteSpace: 'nowrap', boxShadow: (inv.status === 'PAID' || inv.status === 'CANCELLED') ? '0 1px 3px rgba(0,0,0,0.06)' : '0 4px 12px -3px rgba(15,82,186,0.45)' }}
+                          style={{ padding: isMobile ? '11px 18px' : '8px 14px', minHeight: isMobile ? '42px' : undefined, borderRadius: '10px', border: (inv.status === 'PAID' || inv.status === 'CANCELLED') ? '1px solid #cbd5e1' : 'none', background: (inv.status === 'PAID' || inv.status === 'CANCELLED') ? 'white' : 'linear-gradient(135deg,#0f52ba,#1d4ed8)', color: (inv.status === 'PAID' || inv.status === 'CANCELLED') ? '#475569' : 'white', fontSize: isMobile ? '11px' : '9px', fontWeight: 950, cursor: 'pointer', whiteSpace: 'nowrap', boxShadow: (inv.status === 'PAID' || inv.status === 'CANCELLED') ? '0 1px 3px rgba(0,0,0,0.06)' : '0 4px 12px -3px rgba(15,82,186,0.45)' }}
                         >{(inv.status === 'PAID' || inv.status === 'CANCELLED') ? 'VIEW' : 'PAYMENT'}</button>
-                        <RowActionsMenu>
+                        <RowActionsMenu isMobile={isMobile}>
                          {/* Invoice — printable BEFORE and after payment (a proforma /
                              estimate to hand the patient, then the final bill). The
                              receipts below require a recorded payment — you can't receipt

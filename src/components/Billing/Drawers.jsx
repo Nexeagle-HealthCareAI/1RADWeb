@@ -1323,7 +1323,8 @@ export const PayoutDrawer = ({
   handleSavePayout,
   editPayout,
   setEditPayout,
-  isSavingPayout
+  isSavingPayout,
+  isMobile,
 }) => {
   // Two modes:
   //  • Single-line REVISE — when editing one existing commission row
@@ -1348,8 +1349,8 @@ export const PayoutDrawer = ({
 
   return (
     <div className="drawer-overlay" onClick={() => setIsPayoutDrawerOpen(false)} style={{ backdropFilter: 'blur(8px)', background: 'rgba(10, 22, 40, 0.4)', zIndex: 10000 }}>
-      <div className="drawer-content" style={{ padding: 0, width: '480px', maxWidth: '100vw', background: 'white' }} onClick={e => e.stopPropagation()}>
-        <div style={{ padding: '35px', background: 'linear-gradient(135deg, #0f52ba 0%, #061a40 100%)', color: 'white' }}>
+      <div className="drawer-content" style={{ padding: 0, width: isMobile ? '100%' : '480px', maxWidth: '100vw', background: 'white' }} onClick={e => e.stopPropagation()}>
+        <div style={{ padding: isMobile ? '22px 20px' : '35px', background: 'linear-gradient(135deg, #0f52ba 0%, #061a40 100%)', color: 'white' }}>
            <h2 style={{ fontSize: '11px', fontWeight: 950, color: '#38bdf8', letterSpacing: '3px', textTransform: 'uppercase', marginBottom: '8px' }}>Fiscal Disbursement</h2>
            <div style={{ fontSize: '20px', fontWeight: 950, letterSpacing: '-1px' }}>{isSingle ? 'REVISE REFERRAL RECORD' : 'RECORD REFERRAL PAYOUT'}</div>
            {!isSingle && editPayout.invoiceId && (
@@ -1359,7 +1360,7 @@ export const PayoutDrawer = ({
            )}
         </div>
 
-        <div style={{ padding: '35px' }}>
+        <div style={{ padding: isMobile ? '20px' : '35px' }}>
            <form onSubmit={handleSavePayout}>
               <div style={{ display: 'flex', flexDirection: 'column', gap: '25px' }}>
                  <div className="form-group">
@@ -1373,13 +1374,22 @@ export const PayoutDrawer = ({
 
                  {isSingle ? (
                    <>
-                     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px' }}>
+                     <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: isMobile ? '16px' : '20px' }}>
                         <div className="form-group">
                            <label style={{ display: 'block', fontSize: '9px', fontWeight: 950, color: '#94a3b8', letterSpacing: '2px', marginBottom: '10px' }}>DISBURSEMENT_AMOUNT (₹)</label>
                            <input
                               type="number" required min="0" step="1" placeholder="0"
+                              max={Number(editPayout.serviceAmount) > 0 ? editPayout.serviceAmount : undefined}
                               value={editPayout.amount}
-                              onChange={e => setEditPayout({...editPayout, amount: e.target.value === '' ? '' : Number(e.target.value)})}
+                              onChange={e => {
+                                const raw = e.target.value;
+                                if (raw === '') { setEditPayout({ ...editPayout, amount: '' }); return; }
+                                let v = Number(raw);
+                                if (!Number.isFinite(v)) return;
+                                v = Math.max(0, v);                                                       // never negative
+                                if (Number(editPayout.serviceAmount) > 0) v = Math.min(v, Number(editPayout.serviceAmount)); // cap at the service charge when known
+                                setEditPayout({ ...editPayout, amount: v });
+                              }}
                               style={{ width: '100%', border: 'none', borderBottom: '2px solid #f0f0f0', fontSize: '20px', fontWeight: 950, padding: '10px 0', outline: 'none', color: '#0f52ba' }}
                            />
                         </div>
@@ -1450,10 +1460,22 @@ export const PayoutDrawer = ({
                                 </select>
                               </div>
                               <div>
-                                <label style={{ display: 'block', fontSize: '8px', fontWeight: 950, color: '#94a3b8', letterSpacing: '1px', marginBottom: '6px' }}>AMOUNT (₹)</label>
+                                <label style={{ display: 'flex', justifyContent: 'space-between', fontSize: '8px', fontWeight: 950, color: '#94a3b8', letterSpacing: '1px', marginBottom: '6px' }}>
+                                  <span>AMOUNT (₹)</span>
+                                  {Number(line.serviceAmount) > 0 && <span>max ₹{Number(line.serviceAmount).toLocaleString()}</span>}
+                                </label>
                                 <input type="number" min="0" step="1" placeholder="0"
+                                  max={Number(line.serviceAmount) > 0 ? line.serviceAmount : undefined}
                                   value={line.amount}
-                                  onChange={e => updateLine(idx, { amount: e.target.value === '' ? '' : Number(e.target.value) })}
+                                  onChange={e => {
+                                    const raw = e.target.value;
+                                    if (raw === '') { updateLine(idx, { amount: '' }); return; }
+                                    let v = Number(raw);
+                                    if (!Number.isFinite(v)) return;
+                                    v = Math.max(0, v);                                                 // never negative
+                                    if (Number(line.serviceAmount) > 0) v = Math.min(v, Number(line.serviceAmount)); // never above the service charge
+                                    updateLine(idx, { amount: v });
+                                  }}
                                   style={{ width: '100%', padding: '10px', borderRadius: '10px', border: '1px solid #eee', fontSize: '13px', fontWeight: 900, color: '#0f52ba', outline: 'none' }} />
                               </div>
                             </div>
@@ -1477,7 +1499,7 @@ export const PayoutDrawer = ({
                  )}
               </div>
 
-              <div style={{ marginTop: '40px', display: 'flex', gap: '15px' }}>
+              <div style={{ marginTop: isMobile ? '28px' : '40px', display: 'flex', gap: '12px' }}>
                  <button type="button" onClick={() => setIsPayoutDrawerOpen(false)} style={{ flex: 1, padding: '16px', borderRadius: '16px', border: '1px solid #eee', fontSize: '11px', fontWeight: 950, cursor: 'pointer' }}>CANCEL</button>
                  <button type="submit" disabled={isSavingPayout} style={{ flex: 2, padding: '16px', borderRadius: '16px', border: 'none', background: '#0f52ba', color: 'white', fontSize: '11px', fontWeight: 950, cursor: 'pointer' }}>
                    {isSavingPayout ? 'COMMITING...' : 'AUTHORIZE DISBURSEMENT →'}

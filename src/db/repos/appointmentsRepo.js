@@ -200,3 +200,19 @@ export async function patchCachedAppointment(appointmentId, mutate) {
   await t.put(patched);
   return true;
 }
+
+// Optimistic local INSERT for a just-booked appointment, so the worklist shows
+// it INSTANTLY (via liveQuery) instead of waiting for the next delta pull to
+// bring it back. The server already created it (we pass its real id); the next
+// pull then reconciles this partial row with the canonical copy (token,
+// displayId, etc.). _updatedAtMs stays 0 so the high-water cursor doesn't move
+// past the server's reconciling delta. If a pull already landed the row first,
+// we leave that canonical copy untouched.
+export async function insertCachedAppointment(row) {
+  if (!row || !row.appointmentId) return false;
+  const t = tables.appointments();
+  const existing = await t.get(row.appointmentId);
+  if (existing) return false;
+  await t.put({ ...row, _updatedAtMs: 0, _localDirty: 1 });
+  return true;
+}
