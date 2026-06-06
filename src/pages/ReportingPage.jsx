@@ -26,6 +26,53 @@ import { getAppointmentById } from '../db/repos/appointmentsRepo';
 import { logEvent } from '../sync/syncTelemetry';
 import { getServiceLines } from '../utils/appointmentServices';
 
+// Maps a study's modality + service name to a RadAI knowledge-pack test_code for
+// the structured formatter. Returns { modality, testCode } or null (=> the generic
+// polish handles it). Conservative: only returns a match when the region is
+// recognised, so unfamiliar studies safely fall back to polish.
+function resolvePackTest(modalityRaw, serviceRaw) {
+  const m = `${modalityRaw || ''}`.toLowerCase();
+  const s = `${serviceRaw || ''}`.toLowerCase();
+  const both = `${m} ${s}`;
+  const has = (re) => re.test(s) || re.test(m);
+
+  let mod = null;
+  if (/\b(usg|ultrasound|sonograph|sonography|doppler)\b/.test(both)) mod = 'USG';
+  else if (/\b(mri|mr)\b/.test(both) || /magnetic resonance/.test(both)) mod = 'MRI';
+  else if (/\b(ct|cect|ncct)\b/.test(both) || /computed tomograph/.test(both)) mod = 'CT';
+  else if (/\b(x-?ray|xray|radiograph|radiography)\b/.test(both)) mod = 'XRAY';
+  if (!mod) return null;
+
+  const t = (testCode) => ({ modality: mod, testCode });
+
+  if (mod === 'USG') {
+    if (has(/obstet|pregnan|gestation|foetal|fetal|antenatal|anomaly|growth scan|nt scan/)) return t('USG_OBSTETRIC');
+    if (has(/thyroid|neck/)) return t('USG_THYROID');
+    if (has(/abdomen|abdominal/) && has(/pelvi|uterus|ovary|adnexa|gyn/)) return t('USG_ABDOMEN_PELVIS_F');
+    if (has(/\bkub\b|urinary|bladder|prostate|renal|kidney/)) return t('USG_KUB');
+    if (has(/abdomen|abdominal|\bkub\b/)) return t('USG_ABDOMEN');
+    return null;
+  }
+  if (mod === 'CT') {
+    if (has(/brain|head|skull|cranial|stroke/)) return t('CT_BRAIN_PLAIN');
+    if (has(/chest|thorax|thoracic|lung|pulmonary|hrct/)) return t('CT_CHEST');
+    if (has(/abdomen|abdominal|pelvi|\bkub\b|kidney|renal|liver/)) return t('CT_ABDOMEN');
+    return null;
+  }
+  if (mod === 'MRI') {
+    if (has(/brain|head|cranial|pituitary|sella|stroke/)) return t('MRI_BRAIN_PLAIN');
+    if (has(/knee/)) return t('MRI_KNEE');
+    if (has(/lumbar|lumbosacral|ls spine|l-s spine/)) return t('MRI_LUMBAR_SPINE');
+    return null;
+  }
+  // XRAY
+  if (has(/chest|thorax|thoracic|\bpa\b|lung/)) return t('XRAY_CHEST_PA');
+  if (has(/\bkub\b|abdomen|abdominal/)) return t('XRAY_KUB');
+  if (has(/spine|lumbar|cervical|dorsal|lumbosacral|sacrum|coccyx/)) return t('XRAY_SPINE');
+  if (has(/knee|shoulder|wrist|ankle|elbow|\bhip\b|joint|\bbone\b|hand|foot|femur|tibia|fibula|humerus|radius|ulna|forearm|\bleg\b|clavicle|pelvis|skull|finger|toe/)) return t('XRAY_BONE_JOINT');
+  return null;
+}
+
 const ReportingPage = () => {
   const navigate = useNavigate();
   const params = useParams();
@@ -280,8 +327,7 @@ const ReportingPage = () => {
   // shows a before/after review — nothing is applied until the radiologist
   // accepts (AI output is never finalized unreviewed). On any failure it falls
   // back to the unchanged text, so report delivery never blocks on Gemini.
-  const aiBtnStyle = { padding: '6px 11px', borderRadius: '8px', border: '1px solid #ddd6fe', background: '#f5f3ff', color: '#6d28d9', fontSize: '11px', fontWeight: 800, cursor: 'pointer' };
-  const [aiReview, setAiReview] = useState({ open: false, mode: '', before: '', after: '', busy: false });
+  const [aiReview, setAiReview] = useState({ open: false, mode: '', before: '', after: '', busy: false, corrections: [], flags: [], protectedItems: [] });
   const runWholeReportAi = useCallback(async (mode) => {
     const before = editorRef.current?.getHTML?.() || '';
     if (!before.replace(/<[^>]*>/g, '').trim()) {
@@ -300,9 +346,54 @@ const ReportingPage = () => {
   const acceptAiReview = () => {
     editorRef.current?.setContent?.(aiReview.after);
     setEditorText(aiReview.after);
-    setAiReview({ open: false, mode: '', before: '', after: '', busy: false });
+    setAiReview({ open: false, mode: '', before: '', after: '', busy: false, corrections: [], flags: [], protectedItems: [] });
     showNotif('success', 'APPLIED', 'AI-formatted report applied. Review and edit before finalizing.');
   };
+
+  // RadAI dispatcher: for a known modality/test (USG-first slice: USG abdomen)
+  // use the structured knowledge-pack formatter; otherwise fall back to the
+  // generic whole-report polish. Both open the same before/after review — nothing
+  // is saved until the radiologist accepts.
+  const runFormatReport = useCallback(async (pack) => {
+    const before = editorRef.current?.getHTML?.() || '';
+    if (!before.replace(/<[^>]*>/g, '').trim()) {
+      showNotif('info', 'NOTHING TO FORMAT', 'Write some report text first.');
+      return;
+    }
+    setAiReview((s) => ({ ...s, busy: true, mode: 'format' }));
+    try {
+      const res = await apiClient.post('/reporting/format', {
+        rawText: before,
+        modality: pack.modality,
+        testCode: pack.testCode,
+        houseSpelling: 'UK',
+        assumeUnmentionedNormal: false,
+        appointmentId,
+      });
+      const body = res?.data || {};
+      if (!body.success || !body.html) throw new Error(body.error || 'Formatter returned nothing.');
+      setAiReview({
+        open: true, mode: 'format', before, after: body.html, busy: false,
+        corrections: body.data?.corrections || [],
+        flags: body.data?.flags || [],
+        protectedItems: body.data?.unchangedProtected || [],
+      });
+    } catch (e) {
+      setAiReview((s) => ({ ...s, busy: false }));
+      showNotif('info', 'USING QUICK CLEANUP', 'Detailed formatter unavailable — running quick cleanup instead.');
+      runWholeReportAi('polish');
+    }
+  }, [appointmentId, runWholeReportAi]);
+
+  const runRadAiCleanup = useCallback(() => {
+    const modality = activeService?.modality || activeAppointment?.modality || '';
+    const service = activeService?.serviceName || activeAppointment?.service || '';
+    // USG / X-ray / CT / MRI with a recognised region -> structured formatter;
+    // anything else -> the generic en-GB polish.
+    const pack = resolvePackTest(modality, service);
+    if (pack) return runFormatReport(pack);
+    return runWholeReportAi('polish');
+  }, [activeService, activeAppointment, runFormatReport, runWholeReportAi]);
 
   // Prior-study copy-forward — pull a previous report's findings into the
   // current report with a comparison line. Flattens any .word-page wrappers so
@@ -5175,40 +5266,67 @@ const ReportingPage = () => {
                   boxShadow: '0 4px 20px rgba(15, 23, 42, 0.05)',
                   overflow: 'hidden',
                 }}>
-                  {/* Whole-report AI — restructure / spelling, with review-before-apply */}
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '8px 12px', borderBottom: '1px solid #f1f5f9', background: '#fafbfc', flexWrap: 'wrap' }}>
-                    <span style={{ fontSize: '10px', fontWeight: 900, color: '#7c3aed', letterSpacing: '0.5px' }}>✨ AI</span>
-                    <button type="button" onClick={() => runWholeReportAi('restructure')} disabled={aiReview.busy} style={aiBtnStyle}>Restructure report</button>
-                    <button type="button" onClick={() => runWholeReportAi('proofread')} disabled={aiReview.busy} style={aiBtnStyle}>Fix spelling &amp; grammar</button>
-                    {aiReview.busy && <span style={{ fontSize: '11px', fontWeight: 700, color: '#94a3b8' }}>Formatting… your text is safe</span>}
-                  </div>
-
-                  {aiReview.open && (
-                    <div onClick={() => setAiReview((s) => ({ ...s, open: false }))} style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.5)', backdropFilter: 'blur(3px)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100000, padding: '20px' }}>
-                      <div onClick={(e) => e.stopPropagation()} style={{ width: '100%', maxWidth: '1000px', maxHeight: '88vh', display: 'flex', flexDirection: 'column', background: 'white', borderRadius: '18px', overflow: 'hidden', boxShadow: '0 30px 70px -15px rgba(0,0,0,0.4)' }}>
-                        <div style={{ padding: '18px 22px', borderBottom: '1px solid #eef2f7', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '12px' }}>
-                          <div>
-                            <div style={{ fontSize: '16px', fontWeight: 950, color: '#0f172a' }}>Review AI {aiReview.mode === 'restructure' ? 'restructure' : 'spelling & grammar'}</div>
-                            <div style={{ fontSize: '11.5px', color: '#94a3b8', fontWeight: 600, marginTop: '2px' }}>Nothing is saved until you accept. Patient identifiers were masked before the AI saw the text.</div>
+                  {/* The before/after review modal is portaled into the overlay host
+                      so it shows on top even when the editor is in fullscreen. The
+                      single "✨ RadAI" trigger button lives in the editor ribbon toolbar. */}
+                  {aiReview.open && overlayHost && createPortal(
+                        <div onClick={() => setAiReview((s) => ({ ...s, open: false }))} style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.5)', backdropFilter: 'blur(3px)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100000, padding: '20px' }}>
+                          <div onClick={(e) => e.stopPropagation()} style={{ width: '100%', maxWidth: '1000px', maxHeight: '88vh', display: 'flex', flexDirection: 'column', background: 'white', borderRadius: '18px', overflow: 'hidden', boxShadow: '0 30px 70px -15px rgba(0,0,0,0.4)' }}>
+                            <div style={{ padding: '18px 22px', borderBottom: '1px solid #eef2f7', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '12px' }}>
+                              <div>
+                                <div style={{ fontSize: '16px', fontWeight: 950, color: '#0f172a' }}>Review RadAI {aiReview.mode === 'format' ? 'formatting' : aiReview.mode === 'polish' ? 'cleanup' : aiReview.mode === 'restructure' ? 'restructure' : 'spelling & grammar'}</div>
+                                <div style={{ fontSize: '11.5px', color: '#94a3b8', fontWeight: 600, marginTop: '2px' }}>Nothing is saved until you accept. Patient identifiers were masked before the AI saw the text.</div>
+                              </div>
+                              <button onClick={() => setAiReview((s) => ({ ...s, open: false }))} style={{ border: 'none', background: '#f1f5f9', width: '32px', height: '32px', borderRadius: '50%', cursor: 'pointer', fontWeight: 900, color: '#64748b' }}>✕</button>
+                            </div>
+                            <div style={{ flex: 1, overflow: 'auto', display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: '1px', background: '#eef2f7' }}>
+                              <div style={{ background: 'white', padding: '16px', overflow: 'auto' }}>
+                                <div style={{ fontSize: '10px', fontWeight: 950, color: '#94a3b8', letterSpacing: '0.6px', marginBottom: '10px' }}>BEFORE</div>
+                                <div style={{ fontSize: '13px', lineHeight: 1.6, color: '#334155' }} dangerouslySetInnerHTML={{ __html: aiReview.before }} />
+                              </div>
+                              <div style={{ background: 'white', padding: '16px', overflow: 'auto' }}>
+                                <div style={{ fontSize: '10px', fontWeight: 950, color: '#7c3aed', letterSpacing: '0.6px', marginBottom: '10px' }}>AI SUGGESTION ✨</div>
+                                <div style={{ fontSize: '13px', lineHeight: 1.6, color: '#0f172a' }} dangerouslySetInnerHTML={{ __html: aiReview.after }} />
+                              </div>
+                            </div>
+                            {aiReview.mode === 'format' && ((aiReview.flags?.length || 0) + (aiReview.corrections?.length || 0) + (aiReview.protectedItems?.length || 0)) > 0 && (
+                              <div style={{ borderTop: '1px solid #eef2f7', padding: '12px 16px', maxHeight: '30vh', overflow: 'auto', background: '#fbfcfe', display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                                {aiReview.flags?.length > 0 && (
+                                  <div>
+                                    <div style={{ fontSize: '10px', fontWeight: 950, color: '#dc2626', letterSpacing: '0.6px', marginBottom: '6px' }}>⚠ NEEDS YOUR ATTENTION ({aiReview.flags.length})</div>
+                                    {aiReview.flags.map((f, i) => (
+                                      <div key={i} style={{ fontSize: '12px', color: '#7f1d1d', background: '#fef2f2', border: '1px solid #fecaca', borderRadius: '8px', padding: '7px 10px', marginBottom: '5px' }}>
+                                        <strong>{f.text}</strong>{f.issue ? ` — ${f.issue}` : ''}
+                                      </div>
+                                    ))}
+                                  </div>
+                                )}
+                                {aiReview.corrections?.length > 0 && (
+                                  <div>
+                                    <div style={{ fontSize: '10px', fontWeight: 950, color: '#b45309', letterSpacing: '0.6px', marginBottom: '6px' }}>CHANGES MADE ({aiReview.corrections.length})</div>
+                                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '5px' }}>
+                                      {aiReview.corrections.map((c, i) => (
+                                        <span key={i} title={c.type} style={{ fontSize: '11.5px', background: '#fef9c3', border: '1px solid #fde68a', borderRadius: '6px', padding: '3px 8px', color: '#713f12' }}>
+                                          <span style={{ textDecoration: 'line-through', opacity: 0.7 }}>{c.from}</span> → <strong>{c.to}</strong>
+                                        </span>
+                                      ))}
+                                    </div>
+                                  </div>
+                                )}
+                                {aiReview.protectedItems?.length > 0 && (
+                                  <div style={{ fontSize: '11px', color: '#64748b' }}>
+                                    <strong style={{ color: '#16a34a' }}>✓ Preserved verbatim:</strong> {aiReview.protectedItems.join(' · ')}
+                                  </div>
+                                )}
+                              </div>
+                            )}
+                            <div style={{ padding: '14px 22px', borderTop: '1px solid #eef2f7', display: 'flex', justifyContent: 'flex-end', gap: '10px' }}>
+                              <button onClick={() => setAiReview((s) => ({ ...s, open: false }))} style={{ padding: '11px 18px', borderRadius: '11px', border: 'none', background: '#f1f5f9', color: '#475569', fontSize: '12px', fontWeight: 900, cursor: 'pointer' }}>Discard</button>
+                              <button onClick={acceptAiReview} style={{ padding: '11px 20px', borderRadius: '11px', border: 'none', background: 'linear-gradient(135deg,#7c3aed,#6d28d9)', color: 'white', fontSize: '12px', fontWeight: 900, cursor: 'pointer' }}>✓ Apply to report</button>
+                            </div>
                           </div>
-                          <button onClick={() => setAiReview((s) => ({ ...s, open: false }))} style={{ border: 'none', background: '#f1f5f9', width: '32px', height: '32px', borderRadius: '50%', cursor: 'pointer', fontWeight: 900, color: '#64748b' }}>✕</button>
-                        </div>
-                        <div style={{ flex: 1, overflow: 'auto', display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: '1px', background: '#eef2f7' }}>
-                          <div style={{ background: 'white', padding: '16px', overflow: 'auto' }}>
-                            <div style={{ fontSize: '10px', fontWeight: 950, color: '#94a3b8', letterSpacing: '0.6px', marginBottom: '10px' }}>BEFORE</div>
-                            <div style={{ fontSize: '13px', lineHeight: 1.6, color: '#334155' }} dangerouslySetInnerHTML={{ __html: aiReview.before }} />
-                          </div>
-                          <div style={{ background: 'white', padding: '16px', overflow: 'auto' }}>
-                            <div style={{ fontSize: '10px', fontWeight: 950, color: '#7c3aed', letterSpacing: '0.6px', marginBottom: '10px' }}>AI SUGGESTION ✨</div>
-                            <div style={{ fontSize: '13px', lineHeight: 1.6, color: '#0f172a' }} dangerouslySetInnerHTML={{ __html: aiReview.after }} />
-                          </div>
-                        </div>
-                        <div style={{ padding: '14px 22px', borderTop: '1px solid #eef2f7', display: 'flex', justifyContent: 'flex-end', gap: '10px' }}>
-                          <button onClick={() => setAiReview((s) => ({ ...s, open: false }))} style={{ padding: '11px 18px', borderRadius: '11px', border: 'none', background: '#f1f5f9', color: '#475569', fontSize: '12px', fontWeight: 900, cursor: 'pointer' }}>Discard</button>
-                          <button onClick={acceptAiReview} style={{ padding: '11px 20px', borderRadius: '11px', border: 'none', background: 'linear-gradient(135deg,#7c3aed,#6d28d9)', color: 'white', fontSize: '12px', fontWeight: 900, cursor: 'pointer' }}>✓ Apply to report</button>
-                        </div>
-                      </div>
-                    </div>
+                        </div>,
+                    overlayHost
                   )}
 
                   <NarrativeEditor
@@ -5218,6 +5336,8 @@ const ReportingPage = () => {
                     placeholder="Start typing your radiology report…"
                     onSave={() => handleSaveReport(false)}
                     onAiAssist={handleAiAssist}
+                    onWholeReportAi={runRadAiCleanup}
+                    aiBusy={aiReview.busy}
                     style={{ flex: 1, minHeight: 0 }}
                     keywordLibrary={keywordLibrary}
                     pageMargins={protocol ? {
@@ -5588,6 +5708,8 @@ const ReportingPage = () => {
                     placeholder="Your generated report will appear here — or start typing…"
                     onSave={() => handleSaveReport(false)}
                     onAiAssist={handleAiAssist}
+                    onWholeReportAi={runRadAiCleanup}
+                    aiBusy={aiReview.busy}
                     style={{ flex: 1, minHeight: 0 }}
                     keywordLibrary={keywordLibrary}
                     pageMargins={protocol ? {

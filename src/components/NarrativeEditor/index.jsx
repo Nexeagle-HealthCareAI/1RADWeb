@@ -498,6 +498,11 @@ const NarrativeEditor = React.forwardRef(function NarrativeEditor({
   // the selection toolbar shows an "AI" menu (improve/proofread/expand/shorten
   // + impression). Omitted on hosts without an AI backend.
   onAiAssist,
+  // Whole-report AI. (mode) => void — 'restructure' | 'proofread'. When provided,
+  // a small "✨ AI" bar shows under the ribbon (so it stays reachable even in
+  // fullscreen). aiBusy disables it while a request is running.
+  onWholeReportAi,
+  aiBusy = false,
 }, ref) {
   const containerRef = useRef(null);
   // Phone viewport detection — the desktop Ribbon (5 tabs, 17 tools) is
@@ -2346,6 +2351,28 @@ const NarrativeEditor = React.forwardRef(function NarrativeEditor({
             setCommentsOpen(true);
           }}
         />
+      )}
+
+      {/* RadAI — one-click cleanup, placed directly under the toolbar for easy
+          access. Restructures the report AND fixes spelling/grammar in one pass,
+          then opens the before/after review. Renders under the desktop ribbon and
+          the mobile toolbar alike; inside containerRef so it survives fullscreen. */}
+      {onWholeReportAi && !previewMode && (
+        <div style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '6px 14px', borderBottom: '1px solid #ece9fb', background: 'linear-gradient(90deg,#faf9ff,#f3f0ff)', flexShrink: 0 }}>
+          <button
+            type="button"
+            onClick={() => onWholeReportAi('polish')}
+            disabled={aiBusy}
+            title="RadAI — restructure & fix spelling in one click"
+            style={{ display: 'inline-flex', alignItems: 'center', gap: '7px', padding: '7px 16px', borderRadius: '999px', border: 'none', background: aiBusy ? '#c4b5fd' : 'linear-gradient(135deg,#7c3aed,#6d28d9)', color: '#fff', fontSize: '12px', fontWeight: 800, letterSpacing: '0.3px', cursor: aiBusy ? 'wait' : 'pointer', boxShadow: aiBusy ? 'none' : '0 2px 8px rgba(124,58,237,0.35)', transition: 'opacity 0.18s' }}
+            onMouseEnter={(e) => { if (!aiBusy) e.currentTarget.style.opacity = '0.92'; }}
+            onMouseLeave={(e) => { e.currentTarget.style.opacity = '1'; }}
+          >
+            <span aria-hidden="true">✨</span>
+            <span>{aiBusy ? 'RadAI working…' : 'RadAI'}</span>
+          </button>
+          <span style={{ fontSize: '11px', fontWeight: 600, color: '#94a3b8' }}>One click — restructure &amp; fix spelling</span>
+        </div>
       )}
 
       {isFinalized && (

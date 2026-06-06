@@ -1,0 +1,36 @@
+{
+  "_meta": {
+    "purpose": "Links every knowledge-file entry to the code it was derived from. Maintainers use this to re-verify an entry when that code changes. Enrichment (bucket B) MUST add a citation here or the addition is not allowed. Replace the example paths with your real files.",
+    "rule": "No knowledge entry without a source_map entry."
+  },
+  "modules": {
+    "booking": [
+      "src/pages/AppointmentPage.tsx",
+      "src/components/BookingForm.tsx",
+      "src/api/AppointmentController.cs",
+      "src/services/AppointmentService.cs (slot caps, mandatory referred-by)"
+    ],
+    "referred_by": [
+      "src/components/ReferredByField.tsx (Self button, typeahead)",
+      "src/api/DoctorController.cs (suggest endpoint)"
+    ],
+    "billing": [
+      "src/pages/BillingPage.tsx",
+      "src/services/BillingService.cs (discount limit check, commission calc, add-to-centre)"
+    ],
+    "approvals": [
+      "src/pages/finance/ApprovalsPage.tsx",
+      "src/api/ApprovalsController.cs ([Authorize(Roles=\"Admin,AdminDoctor\")])",
+      "src/services/ApprovalService.cs (request types + apply-on-approve)"
+    ],
+    "free_test": [ "src/pages/BillingPage.tsx (MarkFree)", "src/services/BillingService.cs (markFree)" ],
+    "concession": [ "src/pages/BillingPage.tsx (Concession)", "src/services/BillingService.cs (applyConcession)" ],
+    "report_formatter": [ "src/pages/ReportPage.tsx", "src/services/RadiologyFormatterService.cs" ]
+  },
+  "faqs": {
+    "why_discount_popup": [ "src/services/BillingService.cs (assignedLimit branch ~L140)" ],
+    "what_is_add_to_centre": [ "src/services/BillingService.cs (centreCommission adjustment ~L165)" ],
+    "where_is_approvals": [ "src/pages/finance/ApprovalsPage.tsx", "routes config" ],
+    "make_free": [ "src/services/BillingService.cs (markFree ~L88)" ]
+  }
+}

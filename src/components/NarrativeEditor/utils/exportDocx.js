@@ -716,9 +716,9 @@ function buildStyles(defaultFont) {
 
   <w:style w:type="paragraph" w:default="1" w:styleId="Normal">
     <w:name w:val="Normal"/>
-    <!-- Unified with editor + preview: line-height 1.5 (=360/240) and an 8px
-         (~6pt = 120 twip) gap after each paragraph. -->
-    <w:pPr><w:spacing w:after="120" w:line="360" w:lineRule="auto"/></w:pPr>
+    <!-- Unified with editor + preview: line-height 1.15 (=276/240) Word-style
+         single spacing, and an 8px (~6pt = 120 twip) gap after each paragraph. -->
+    <w:pPr><w:spacing w:after="120" w:line="276" w:lineRule="auto"/></w:pPr>
   </w:style>
 
   <!-- Heading sizes/colours unified with the editor + preview:

@@ -1,0 +1,253 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>RadAI Assistant — 1rad</title>
+<style>
+  :root{
+    --brand:#2563eb; --brand-dark:#1e40af; --bg:#ffffff; --panel:#f8fafc;
+    --text:#0f172a; --muted:#64748b; --user:#2563eb; --bot:#eef2ff; --border:#e2e8f0;
+    --ok:#16a34a; --warn:#dc2626;
+  }
+  *{box-sizing:border-box;font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif}
+  body{margin:0;background:#f1f5f9;color:var(--text)}
+
+  /* Floating button */
+  #radai-fab{position:fixed;bottom:24px;right:24px;width:60px;height:60px;border-radius:50%;
+    background:var(--brand);color:#fff;border:none;cursor:pointer;box-shadow:0 6px 20px rgba(37,99,235,.4);
+    font-size:24px;display:flex;align-items:center;justify-content:center;z-index:9999;transition:transform .15s}
+  #radai-fab:hover{transform:scale(1.06)}
+
+  /* Panel */
+  #radai-panel{position:fixed;bottom:96px;right:24px;width:370px;max-width:calc(100vw - 32px);height:560px;
+    max-height:calc(100vh - 130px);background:var(--bg);border-radius:16px;box-shadow:0 12px 40px rgba(0,0,0,.18);
+    display:none;flex-direction:column;overflow:hidden;z-index:9999;border:1px solid var(--border)}
+  #radai-panel.open{display:flex}
+
+  .radai-head{background:var(--brand);color:#fff;padding:14px 16px;display:flex;align-items:center;gap:10px}
+  .radai-head .dot{width:9px;height:9px;border-radius:50%;background:#4ade80}
+  .radai-head h3{margin:0;font-size:16px;flex:1}
+  .radai-head .lang{display:flex;gap:4px}
+  .radai-head .lang button{background:rgba(255,255,255,.18);color:#fff;border:none;border-radius:6px;
+    padding:4px 8px;font-size:12px;cursor:pointer}
+  .radai-head .lang button.active{background:#fff;color:var(--brand);font-weight:600}
+  .radai-head .x{background:none;border:none;color:#fff;font-size:20px;cursor:pointer;line-height:1}
+
+  .radai-body{flex:1;overflow-y:auto;padding:14px;background:var(--panel)}
+  .msg{margin-bottom:12px;display:flex}
+  .msg.user{justify-content:flex-end}
+  .bubble{max-width:80%;padding:10px 13px;border-radius:14px;font-size:14px;line-height:1.45;white-space:pre-wrap}
+  .msg.user .bubble{background:var(--user);color:#fff;border-bottom-right-radius:4px}
+  .msg.bot .bubble{background:var(--bot);color:var(--text);border-bottom-left-radius:4px}
+  .bubble .speak{margin-top:6px;font-size:12px;color:var(--brand);cursor:pointer;display:inline-block}
+
+  .chips{display:flex;flex-wrap:wrap;gap:6px;padding:0 14px 8px}
+  .chip{background:#fff;border:1px solid var(--border);color:var(--brand);border-radius:20px;
+    padding:6px 11px;font-size:12.5px;cursor:pointer;white-space:nowrap}
+  .chip:hover{background:var(--bot)}
+
+  .radai-foot{padding:10px;border-top:1px solid var(--border);display:flex;gap:8px;align-items:center;background:#fff}
+  .radai-foot input{flex:1;border:1px solid var(--border);border-radius:22px;padding:10px 14px;font-size:14px;outline:none}
+  .radai-foot input:focus{border-color:var(--brand)}
+  .icon-btn{width:42px;height:42px;border-radius:50%;border:none;cursor:pointer;font-size:18px;
+    display:flex;align-items:center;justify-content:center;flex-shrink:0}
+  #radai-mic{background:#fff;border:1px solid var(--border)}
+  #radai-mic.listening{background:var(--warn);color:#fff;animation:pulse 1s infinite}
+  #radai-send{background:var(--brand);color:#fff}
+  @keyframes pulse{0%,100%{opacity:1}50%{opacity:.55}}
+  .typing{font-size:13px;color:var(--muted);font-style:italic;padding:0 14px 8px}
+  .demo-note{position:fixed;top:14px;left:14px;background:#fff;border:1px solid var(--border);
+    border-radius:10px;padding:10px 14px;font-size:13px;color:var(--muted);max-width:380px;box-shadow:0 2px 10px rgba(0,0,0,.05)}
+</style>
+</head>
+<body>
+
+<div class="demo-note">
+  <strong>RadAI prototype.</strong> Click the blue button (bottom-right). Try a chip, type, or tap the mic and speak.
+  Voice in/out uses the free browser Web Speech API (best in Chrome/Edge). By default it answers from the local
+  knowledge file; set <code>USE_BACKEND=true</code> in the script to route to Gemini Flash.
+</div>
+
+<!-- Floating button -->
+<button id="radai-fab" title="Ask RadAI">💬</button>
+
+<!-- Assistant panel -->
+<div id="radai-panel">
+  <div class="radai-head">
+    <span class="dot"></span>
+    <h3>RadAI</h3>
+    <div class="lang">
+      <button data-lang="en" class="active">EN</button>
+      <button data-lang="hi">हिं</button>
+    </div>
+    <button class="x" id="radai-close">×</button>
+  </div>
+
+  <div class="radai-body" id="radai-body"></div>
+  <div class="typing" id="radai-typing" style="display:none">RadAI is thinking…</div>
+  <div class="chips" id="radai-chips"></div>
+
+  <div class="radai-foot">
+    <button class="icon-btn" id="radai-mic" title="Speak">🎤</button>
+    <input id="radai-input" placeholder="Ask how to do anything…" autocomplete="off">
+    <button class="icon-btn" id="radai-send" title="Send">➤</button>
+  </div>
+</div>
+
+<script>
+/* ============================================================================
+   RadAI prototype — wiring
+   ----------------------------------------------------------------------------
+   USE_BACKEND = false  -> answers locally from app_knowledge.json (no server,
+                           good for demos). Simple keyword match over FAQs/modules.
+   USE_BACKEND = true   -> POSTs { question, lang } to BACKEND_URL, which should
+                           call Gemini Flash with assistant_system_prompt.md +
+                           app_knowledge.json and return { answer, reply_language,
+                           suggested_followups }. Keep your API key on the server.
+============================================================================ */
+const USE_BACKEND = false;
+const BACKEND_URL = "/api/radai/ask";
+const KNOWLEDGE_URL = "./app_knowledge.json";
+
+let LANG = "en";                 // 'en' or 'hi' — also auto-switched by speech
+let KB = null;                   // loaded knowledge base
+
+const $ = id => document.getElementById(id);
+const panel = $("radai-panel"), body = $("radai-body"), typing = $("radai-typing"), chipsBox = $("radai-chips");
+
+/* ---------- Load knowledge base ---------- */
+fetch(KNOWLEDGE_URL).then(r=>r.json()).then(d=>{KB=d; renderChips(); greet();})
+  .catch(()=>{ KB={suggested_chips:[],faqs:[],modules:[],support_fallback:{message:"Please contact your centre admin or 1rad support."}};
+               greet(); });
+
+/* ---------- Panel open/close ---------- */
+$("radai-fab").onclick = ()=>{ panel.classList.toggle("open"); if(panel.classList.contains("open")) $("radai-input").focus(); };
+$("radai-close").onclick = ()=> panel.classList.remove("open");
+
+/* ---------- Language toggle ---------- */
+document.querySelectorAll(".lang button").forEach(b=>{
+  b.onclick = ()=>{ LANG=b.dataset.lang;
+    document.querySelectorAll(".lang button").forEach(x=>x.classList.remove("active"));
+    b.classList.add("active");
+    $("radai-input").placeholder = LANG==="hi" ? "कुछ भी पूछें…" : "Ask how to do anything…";
+  };
+});
+
+/* ---------- Render suggested chips ---------- */
+function renderChips(){
+  const chips = (KB && KB.suggested_chips) || [];
+  chipsBox.innerHTML = "";
+  chips.slice(0,6).forEach(c=>{
+    const el=document.createElement("button"); el.className="chip"; el.textContent=c;
+    el.onclick=()=>ask(c); chipsBox.appendChild(el);
+  });
+}
+function greet(){
+  addBubble("bot", LANG==="hi"
+    ? "नमस्ते! मैं RadAI हूँ। 1rad ऐप के बारे में कुछ भी पूछें — बोलकर, टाइप करके, या नीचे दिए सवाल चुनकर।"
+    : "Hi! I'm RadAI. Ask me anything about using the 1rad app — speak, type, or tap a question below.", false);
+}
+
+/* ---------- Add a chat bubble ---------- */
+function addBubble(who, text, withSpeak){
+  const m=document.createElement("div"); m.className="msg "+who;
+  const b=document.createElement("div"); b.className="bubble"; b.textContent=text;
+  if(who==="bot" && withSpeak!==false){
+    const s=document.createElement("span"); s.className="speak"; s.textContent="🔊 Replay";
+    s.onclick=()=>speak(text, LANG); b.appendChild(document.createElement("br")); b.appendChild(s);
+  }
+  m.appendChild(b); body.appendChild(m); body.scrollTop=body.scrollHeight;
+  return b;
+}
+
+/* ---------- Ask flow ---------- */
+$("radai-send").onclick = ()=>{ const v=$("radai-input").value.trim(); if(v) ask(v); };
+$("radai-input").addEventListener("keydown", e=>{ if(e.key==="Enter"){ const v=e.target.value.trim(); if(v) ask(v); }});
+
+async function ask(question){
+  $("radai-input").value="";
+  addBubble("user", question);
+  typing.style.display="block";
+  try{
+    const res = USE_BACKEND ? await askBackend(question) : await askLocal(question);
+    typing.style.display="none";
+    LANG = res.reply_language==="hi" ? "hi" : (res.reply_language==="en" ? "en" : LANG);
+    addBubble("bot", res.answer);
+    speak(res.answer, LANG);
+    if(res.suggested_followups && res.suggested_followups.length){
+      chipsBox.innerHTML="";
+      res.suggested_followups.slice(0,3).forEach(c=>{
+        const el=document.createElement("button"); el.className="chip"; el.textContent=c;
+        el.onclick=()=>ask(c); chipsBox.appendChild(el);
+      });
+    }
+  }catch(err){
+    typing.style.display="none";
+    addBubble("bot", LANG==="hi" ? "माफ़ कीजिए, अभी जवाब नहीं मिल पाया। कृपया दोबारा कोशिश करें।"
+                                 : "Sorry, I couldn't get an answer right now. Please try again.");
+  }
+}
+
+/* ---------- Backend mode (Gemini Flash via your server) ---------- */
+async function askBackend(question){
+  const r = await fetch(BACKEND_URL, {method:"POST", headers:{"Content-Type":"application/json"},
+    body: JSON.stringify({ question, lang: LANG })});
+  if(!r.ok) throw new Error("backend");
+  return await r.json();   // { answer, reply_language, suggested_followups }
+}
+
+/* ---------- Local mode (offline demo: keyword match over the KB) ---------- */
+async function askLocal(question){
+  const q = question.toLowerCase();
+  const score = t => t.toLowerCase().split(/\W+/).filter(w=>w.length>2 && q.includes(w)).length;
+  let best=null, bestScore=0;
+  (KB.faqs||[]).forEach(f=>{ const s=score(f.q)+score(f.a)*0.3; if(s>bestScore){bestScore=s;best={answer:f.a};} });
+  (KB.modules||[]).forEach(m=>{ const s=score(m.label)*2+score(m.summary);
+    if(s>bestScore){bestScore=s; best={answer:m.summary+(m.how_to?"\n\n"+m.how_to.map((x,i)=>(i+1)+". "+x).join("\n"):"")};} });
+  const answer = (best && bestScore>0) ? best.answer
+                 : (KB.support_fallback && KB.support_fallback.message) || "Please contact 1rad support.";
+  // Local mode doesn't translate; backend (Flash) handles Hindi. Echo current LANG.
+  return { answer, reply_language: LANG, suggested_followups: (KB.suggested_chips||[]).slice(0,3) };
+}
+
+/* ============================================================================
+   VOICE INPUT — Web Speech API (SpeechRecognition)
+============================================================================ */
+const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+const mic = $("radai-mic");
+if(SR){
+  const rec = new SR();
+  rec.continuous=false; rec.interimResults=false;
+  mic.onclick = ()=>{
+    rec.lang = LANG==="hi" ? "hi-IN" : "en-IN";   // recognize in the selected language
+    try{ rec.start(); mic.classList.add("listening"); }catch(e){}
+  };
+  rec.onresult = e=>{ const said = e.results[0][0].transcript; mic.classList.remove("listening"); if(said) ask(said); };
+  rec.onerror = ()=> mic.classList.remove("listening");
+  rec.onend   = ()=> mic.classList.remove("listening");
+}else{
+  mic.disabled=true; mic.title="Voice input not supported in this browser (use Chrome/Edge)";
+  mic.style.opacity=.4;
+}
+
+/* ============================================================================
+   VOICE OUTPUT — speechSynthesis
+============================================================================ */
+function speak(text, lang){
+  if(!window.speechSynthesis) return;
+  window.speechSynthesis.cancel();              // stop any current speech
+  const u = new SpeechSynthesisUtterance(text);
+  u.lang = lang==="hi" ? "hi-IN" : "en-IN";
+  // try to pick a matching installed voice
+  const v = window.speechSynthesis.getVoices().find(x=>x.lang===u.lang)
+         || window.speechSynthesis.getVoices().find(x=>x.lang.startsWith(lang==="hi"?"hi":"en"));
+  if(v) u.voice=v;
+  u.rate=1.0; u.pitch=1.0;
+  window.speechSynthesis.speak(u);
+}
+// voices load async in some browsers
+if(window.speechSynthesis) window.speechSynthesis.onvoiceschanged = ()=>{};
+</script>
+</body>
+</html>

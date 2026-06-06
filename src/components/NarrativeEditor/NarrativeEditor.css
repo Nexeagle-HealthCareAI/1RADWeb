@@ -203,9 +203,10 @@
   font-family: "Calibri", "Segoe UI", -apple-system, sans-serif;
   /* Base body font + line-height are unified with the preview and the Word
      export (single source of truth = the protocol). --report-font-size is set
-     from protocol.fontSize (in pt); line-height is the shared 1.5. */
+     from protocol.fontSize (in pt); line-height is the shared 1.15 (Word-style
+     single spacing) so reports default to a tight, organized layout. */
   font-size: var(--report-font-size, 12pt);
-  line-height: 1.5;
+  line-height: 1.15;
   color: #000000;
   word-wrap: break-word;
   overflow-wrap: break-word;
@@ -993,7 +994,7 @@
      360-px-wide page. Editors can still apply explicit font-size to override. */
   .narrative-editor-container .narrative-editor-content {
     font-size: 11pt;
-    line-height: 1.5;
+    line-height: 1.15;
   }
   /* Both toolbars never shrink — canvas does. */
   .narrative-editor-container .ne-mobile-top,
