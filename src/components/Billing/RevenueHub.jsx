@@ -274,6 +274,16 @@ const RevenueHub = ({
     const isExportingSelected = selectedIds.size > 0;
     const fileName = `1RAD_Financial_Report_${timeFilter}_${isExportingSelected ? 'Selected' : 'All'}_${timestampStr}`;
 
+    // Admin-approval columns: the latest approval request tied to a row (by its
+    // invoiceId / appointmentId) → its status + the reason given. Blank when the
+    // row never went through admin approval.
+    const approvalCells = (row) => {
+      const a = approvalForInvoice(approvalMap, row);
+      if (!a) return ['—', ''];
+      const b = approvalBadge(a.status);
+      return [b ? b.short : (a.status || '—'), a.reason || ''];
+    };
+
     if (timeFilter === 'FUTURE') {
       headers = [
         'Appointment ID',
@@ -284,7 +294,9 @@ const RevenueHub = ({
         'Service Name',
         'Projected Revenue (INR)',
         'Estimated Referral Cut (INR)',
-        'Estimated Net (INR)'
+        'Estimated Net (INR)',
+        'Admin Approval',
+        'Reason'
       ];
 
       // Future appointments
@@ -305,7 +317,8 @@ const RevenueHub = ({
           app.service || 'N/A',
           price,
           cut,
-          price - cut
+          price - cut,
+          ...approvalCells(app)
         ]);
       });
 
@@ -325,7 +338,8 @@ const RevenueHub = ({
           'MANUAL_INVOICE_LEDGER',
           inv.totalAmount || 0,
           inv.commissionAmount || 0,
-          (inv.totalAmount || 0) - (inv.commissionAmount || 0)
+          (inv.totalAmount || 0) - (inv.commissionAmount || 0),
+          ...approvalCells(inv)
         ]);
       });
     } else {
@@ -340,7 +354,9 @@ const RevenueHub = ({
         'Net Payable (INR)',
         'Referral Cut (INR)',
         'Net Clinic Income (INR)',
-        'Status'
+        'Status',
+        'Admin Approval',
+        'Reason'
       ];
 
       const invoicesToExport = filteredInvoices || [];
@@ -360,7 +376,8 @@ const RevenueHub = ({
           inv.totalAmount || 0,
           inv.commissionAmount || 0,
           (inv.totalAmount || 0) - (inv.commissionAmount || 0),
-          inv.status || 'PENDING'
+          inv.status || 'PENDING',
+          ...approvalCells(inv)
         ]);
       });
     }

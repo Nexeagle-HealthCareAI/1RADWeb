@@ -74,8 +74,18 @@ const ReferralHub = ({
   onWriteOffDeficit,
   modalityFilter,
   setModalityFilter,
+  invoices = [],
   approvalMap = { rows: [] }
 }) => {
+  // Net revenue (post-discount) of a commission's invoice — used to cap the
+  // "Update payout" amount so a referral commission can never exceed what the
+  // visit actually earned. Looked up by the cut's invoice reference. (item 4)
+  const netRevenueForCut = (cut) => {
+    const ref = cut?.reference;
+    const inv = (invoices || []).find(i => i?.displayId === ref || i?.id === cut?.invoiceId);
+    return Number(inv?.totalAmount) || Number(inv?.grossAmount) || 0;
+  };
+
   // Map the latest "revert PAID → UNPAID" approval onto each commission (by the
   // commissionId in its payload), so a row can show it's been sent for admin
   // review (with the staff reason) and, once decided, the admin's note.
@@ -668,11 +678,11 @@ const ReferralHub = ({
                overflowX: 'auto',
                width: isMobile ? '100%' : 'auto'
              }}>
-                {['TODAY', 'PAST', 'ALL', 'CUSTOM'].map(t => (
-                  <button 
+                {['TODAY', 'PAST', 'FUTURE', 'ALL', 'CUSTOM'].map(t => (
+                  <button
                     key={t}
-                    onClick={() => setTimeFilter(t)}
-                    style={{ 
+                    onClick={() => { setTimeFilter(t); setViewMode(t === 'FUTURE' ? 'upcoming' : 'earned'); }}
+                    style={{
                       padding: '8px 16px', borderRadius: '8px', border: 'none', fontSize: '9px', fontWeight: 950,
                       background: timeFilter === t ? '#e11d48' : 'transparent',
                       color: timeFilter === t ? 'white' : '#64748b',
@@ -1125,7 +1135,7 @@ const ReferralHub = ({
                                   onClick={() => {
                                     if (editLocked) return;
                                     setEditPayout({
-                                      commissionId: cut.id, referrerId: cut.referrerId, referrerName: cut.name, amount: cut.amount, modality: cut.modality || 'MRI', remarks: (cut.description || '').includes(' - ') ? cut.description.split(' - ')[1] : '', invoiceId: cut.reference, status: cut.status, originalStatus: cut.status
+                                      commissionId: cut.id, referrerId: cut.referrerId, referrerName: cut.name, amount: cut.amount, modality: cut.modality || 'MRI', remarks: (cut.description || '').includes(' - ') ? cut.description.split(' - ')[1] : '', invoiceId: cut.reference, status: cut.status, originalStatus: cut.status, serviceAmount: netRevenueForCut(cut)
                                     });
                                     setIsPayoutDrawerOpen(true);
                                   }}
@@ -1289,7 +1299,8 @@ const ReferralHub = ({
                                       remarks: (cut.description || '').includes(' - ') ? cut.description.split(' - ')[1] : '',
                                       invoiceId: cut.reference,
                                       status: cut.status,
-                                      originalStatus: cut.status
+                                      originalStatus: cut.status,
+                                      serviceAmount: netRevenueForCut(cut)
                                     });
                                     setIsPayoutDrawerOpen(true);
                                   }}

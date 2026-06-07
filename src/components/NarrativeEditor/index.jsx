@@ -80,7 +80,7 @@ import OnboardingHints from './OnboardingHints';
 import { FONT_SIZES } from './Ribbon/RibbonControls';
 import { useVoiceDictation } from './hooks/useVoiceDictation';
 import { exportToDocx } from './utils/exportDocx';
-import { exportPdf } from './utils/exportPdf';
+import PrintPreviewModal from './PrintPreviewModal';
 import { runQualityCheck } from './utils/reportQuality';
 import { loadSnippets, saveSnippets } from './data/snippetStorage';
 import './NarrativeEditor.css';
@@ -306,32 +306,6 @@ function resetParagraph(editor) {
   } catch {}
 }
 
-// Returns true when the given paragraph/heading DOM element is currently a
-// single visual line AND adding one more indent step (stepPx) would shrink its
-// width enough that the text would wrap. Used by the Tab handler to "snap" a
-// short signature line to right-align instead of indenting it into a wrap.
-function paragraphWouldWrapOnIndent(pEl, stepPx = 24) {
-  if (!pEl || pEl.nodeType !== 1) return false;
-  try {
-    const cs = window.getComputedStyle(pEl);
-    const lineHeight = parseFloat(cs.lineHeight) || (parseFloat(cs.fontSize) || 14) * 1.4;
-    // Only auto-snap when the line is currently unwrapped (single line).
-    if (pEl.scrollHeight > lineHeight * 1.6) return false;
-    const padL = parseFloat(cs.paddingLeft) || 0;
-    const padR = parseFloat(cs.paddingRight) || 0;
-    // Width available to text AFTER the next indent step is applied (margin-left
-    // grows by stepPx, so the paragraph's content box shrinks by the same).
-    const availableAfter = pEl.clientWidth - padL - padR - stepPx;
-    // Actual rendered width of the text on its line.
-    const range = document.createRange();
-    range.selectNodeContents(pEl);
-    const textWidth = range.getBoundingClientRect().width;
-    return textWidth > availableAfter;
-  } catch {
-    return false;
-  }
-}
-
 /**
  * Shift+F3 — cycle selection case: Mixed → ALL UPPER → all lower → Title Case → …
  */
@@ -491,6 +465,11 @@ const NarrativeEditor = React.forwardRef(function NarrativeEditor({
   // --report-font-size so the editor, preview and Word export all render the
   // report at the same physical size. Defaults to 12pt.
   bodyFontPt,
+  // Base body line-height (unitless CSS multiplier, e.g. 1.15). Drives the
+  // editor's --report-line-height so the editor, preview and Word export share
+  // ONE line spacing — no hardcoded constant. Per-paragraph line spacing set via
+  // the ribbon still overrides this (inline style wins). Defaults to 1.15.
+  bodyLineHeight,
   // React node rendered into the first A4 page (above the editable content)
   // as a hardcoded, non-editable banner. Portaled into a sibling slot inside
   // .word-page so ProseMirror cannot overwrite it. The first page's inner
@@ -605,6 +584,8 @@ const NarrativeEditor = React.forwardRef(function NarrativeEditor({
 
   // Preview / reading mode
   const [previewMode, setPreviewMode] = useState(false);
+  // Full-screen print-preview modal (true-to-print A4 pages + silent print).
+  const [printPreviewOpen, setPrintPreviewOpen] = useState(false);
 
   // ── Edit log — ring buffer of up to 20 timestamped document snapshots ────
   const [editLog, setEditLog] = useState([]);
@@ -834,15 +815,11 @@ const NarrativeEditor = React.forwardRef(function NarrativeEditor({
     showToast('Report exported as DOCX');
   };
 
-  // ── Export PDF ────────────────────────────────────────────────────────────
-  const handleExportPdf = () => {
-    exportPdf(containerRef.current, {
-      title: 'Radiology Report',
-      header: headerState.text ? headerState : undefined,
-      footer: footerState.text ? footerState : undefined,
-    });
-    showToast('PDF print dialog opened', 'info');
-  };
+  // ── Print / PDF ───────────────────────────────────────────────────────────
+  // Opens the full-screen print preview (true-to-print A4 pages). Printing from
+  // there is silent to the default printer in the desktop app, and the standard
+  // print dialog on the web.
+  const handleExportPdf = () => setPrintPreviewOpen(true);
 
   // ── Report Finalization ───────────────────────────────────────────────────
   const handleFinalize = ({ name, credentials, timestamp }) => {
@@ -1468,7 +1445,7 @@ const NarrativeEditor = React.forwardRef(function NarrativeEditor({
         return;
       }
 
-      // ── Tab — Word-style indent (no modifier required) ────
+      // ── Tab — insert a real tab stop at the cursor (no modifier) ────
       if (e.key === 'Tab' && !e.ctrlKey && !e.metaKey && !e.altKey) {
         // Only intercept when focus is in the actual editable surface.
         // If focus is on a Ribbon button, a template dropdown, a dialog
@@ -1518,38 +1495,33 @@ const NarrativeEditor = React.forwardRef(function NarrativeEditor({
           const blockType = $from.parent.type.name;
           const isAlignable = blockType === 'paragraph' || blockType === 'heading';
           if (e.shiftKey) {
-            // Shift+Tab: lift list item, OR un-snap a right-aligned line back
-            // to left, OR decrease paragraph indent.
+            // Shift+Tab: pop a list item out a level; else delete a tab sitting
+            // just before the cursor (back-tab); else un-snap a legacy
+            // right-aligned line or outdent a previously-indented paragraph.
             if (canRun('liftListItem')) {
               editor.chain().focus().liftListItem('listItem').run();
-            } else if (isAlignable && editor.isActive({ textAlign: 'right' })) {
-              // Reverse the auto-snap: right-aligned signature → back to left.
-              editor.chain().focus().setTextAlign('left').run();
             } else {
-              editor.chain().focus().decreaseParagraphIndent().run();
+              const sel = state.selection;
+              const prevChar = sel.empty && $from.parentOffset > 0
+                ? $from.parent.textBetween($from.parentOffset - 1, $from.parentOffset)
+                : '';
+              if (prevChar === '\t') {
+                editor.chain().focus().deleteRange({ from: sel.from - 1, to: sel.from }).run();
+              } else if (isAlignable && editor.isActive({ textAlign: 'right' })) {
+                editor.chain().focus().setTextAlign('left').run();
+              } else {
+                editor.chain().focus().decreaseParagraphIndent().run();
+              }
             }
           } else {
-            // Tab: sink list item, OR indent the paragraph — but if indenting a
-            // short single-line paragraph would wrap it, snap to right-align
-            // instead so a signature line keeps moving right without breaking.
+            // Tab: sink a list item (lists keep their demote behavior); in any
+            // other block insert a REAL tab character at the cursor so the text
+            // after it steps to the right — like a bigger space, with no cap.
+            // Whole-paragraph indent now lives on Ctrl+M and the ribbon.
             if (canRun('sinkListItem')) {
               editor.chain().focus().sinkListItem('listItem').run();
             } else {
-              let snapped = false;
-              if (isAlignable && !editor.isActive({ textAlign: 'right' })) {
-                const posBefore = $from.before($from.depth);
-                const pEl = editor.view.nodeDOM(posBefore);
-                if (paragraphWouldWrapOnIndent(pEl)) {
-                  // Clear any accumulated indent and pin to the right margin so
-                  // the line sits flush-right on a single line.
-                  editor.chain().focus()
-                    .updateAttributes(blockType, { indent: 0 })
-                    .setTextAlign('right')
-                    .run();
-                  snapped = true;
-                }
-              }
-              if (!snapped) editor.chain().focus().increaseParagraphIndent().run();
+              editor.chain().focus().insertContent('\t').run();
             }
           }
         } catch (tabErr) {
@@ -2294,6 +2266,10 @@ const NarrativeEditor = React.forwardRef(function NarrativeEditor({
     } : {}),
     // Unified body font (points) — shared with preview + Word export.
     '--report-font-size': `${Number(bodyFontPt) > 0 ? Number(bodyFontPt) : 12}pt`,
+    // Unified body line spacing — shared with preview + Word export. Only set
+    // when supplied so the CSS fallback (1.15) stays the single default; never
+    // a hardcoded value baked separately into editor vs preview.
+    ...(Number(bodyLineHeight) > 0 ? { '--report-line-height': String(bodyLineHeight) } : {}),
   };
 
   return (
@@ -2578,6 +2554,15 @@ const NarrativeEditor = React.forwardRef(function NarrativeEditor({
       )}
 
       <SymbolPickerDialog editor={editor} open={symbolOpen} onClose={() => setSymbolOpen(false)} />
+
+      <PrintPreviewModal
+        open={printPreviewOpen}
+        onClose={() => setPrintPreviewOpen(false)}
+        containerEl={containerRef.current}
+        header={headerState.text ? headerState : undefined}
+        footer={footerState.text ? footerState : undefined}
+        showToast={showToast}
+      />
 
       <ShortcutsDialog open={shortcutsOpen} onClose={() => setShortcutsOpen(false)} />
 

@@ -22,6 +22,13 @@ contextBridge.exposeInMainWorld('electron', {
     test: (data) => ipcRenderer.invoke('printer:test', data),
   },
 
+  // A4 report printing — silent print of a self-contained HTML document to the
+  // default (or named) printer. Used by the report print-preview modal.
+  report: {
+    printSilent: (payload) => ipcRenderer.invoke('report:printSilent', payload),
+    listPrinters: () => ipcRenderer.invoke('report:listPrinters'),
+  },
+
   // Microsoft Word — write a document and launch Word with it
   word: {
     open: (payload) => ipcRenderer.invoke('word:open', payload),

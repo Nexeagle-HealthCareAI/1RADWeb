@@ -19,9 +19,12 @@ export const InvoiceDrawer = ({
   onApplyAdjustment,
   onRequestApproval
 }) => {
-  const [centreDisc, setCentreDisc] = React.useState(0);
-  const [referrerDisc, setReferrerDisc] = React.useState(0);
-  const [deduction, setDeduction] = React.useState(0);
+  // Lazy-init from the invoice so a previously-saved draft (discount breakdown)
+  // is restored when the drawer is reopened. The drawer is remounted on each
+  // open, so these initialisers re-run with the current invoice.
+  const [centreDisc, setCentreDisc] = React.useState(() => Number(selectedInvoice?.centreDiscount) || 0);
+  const [referrerDisc, setReferrerDisc] = React.useState(() => Number(selectedInvoice?.referrerDiscount) || 0);
+  const [deduction, setDeduction] = React.useState(() => Number(selectedInvoice?.institutionalDeduction) || 0);
   const [isAdjusting, setIsAdjusting] = React.useState(false);
   const [adjustAmount, setAdjustAmount] = React.useState(0);
   // Scenario 09 — a concession after payment must be approved by an admin, so
@@ -555,7 +558,7 @@ export const InvoiceDrawer = ({
                        : {};
                      handleCollectPayment(centreDisc, referrerDisc, deduction, netSettlement, meta);
                    }} disabled={overCentreDiscount || deficitNeedsReason} style={{ width: '100%', padding: '12px', borderRadius: '12px', border: 'none', background: (overCentreDiscount || deficitNeedsReason) ? '#cbd5e1' : '#0f52ba', color: 'white', fontWeight: 950, fontSize: '10px', cursor: (overCentreDiscount || deficitNeedsReason) ? 'not-allowed' : 'pointer', boxShadow: (overCentreDiscount || deficitNeedsReason) ? 'none' : '0 4px 12px rgba(15,82,186,0.2)' }}>COMMIT SETTLEMENT</button>
-                   <button onClick={handleSaveInvoice} style={{ width: '100%', padding: '10px', borderRadius: '12px', border: '1px solid #e2e8f0', fontWeight: 800, fontSize: '9px', cursor: 'pointer', background: 'white' }}>SAVE AS DRAFT</button>
+                   <button onClick={() => handleSaveInvoice({ centreDisc, referrerDisc, deduction })} style={{ width: '100%', padding: '10px', borderRadius: '12px', border: '1px solid #e2e8f0', fontWeight: 800, fontSize: '9px', cursor: 'pointer', background: 'white' }}>SAVE AS DRAFT</button>
                    {/* Print the invoice/estimate before collecting payment. */}
                    <button onClick={() => handlePrintA4(selectedInvoice)} style={{ width: '100%', padding: '10px', borderRadius: '12px', border: '1.5px solid #0f52ba', fontWeight: 900, fontSize: '9px', cursor: 'pointer', background: 'white', color: '#0f52ba' }}>🖨 PRINT INVOICE</button>
 
@@ -1430,6 +1433,19 @@ export const PayoutDrawer = ({
                             🛡 To revert this paid commission, use the <strong>PAID</strong> badge on the payout — it needs admin approval.
                           </div>
                         )}
+                     </div>
+                     <div className="form-group">
+                        <label style={{ display: 'block', fontSize: '9px', fontWeight: 950, color: '#94a3b8', letterSpacing: '2px', marginBottom: '10px' }}>REASON FOR CHANGE <span style={{ color: '#e11d48' }}>*</span></label>
+                        <textarea
+                           value={editPayout.approvalReason || ''}
+                           onChange={e => setEditPayout({ ...editPayout, approvalReason: e.target.value })}
+                           placeholder="Why is this payout being changed? An admin must approve it."
+                           rows={2}
+                           style={{ width: '100%', padding: '10px', borderRadius: '10px', border: '1px solid #eee', fontSize: '12px', fontFamily: 'inherit', resize: 'vertical', boxSizing: 'border-box' }}
+                        />
+                        <div style={{ marginTop: '6px', fontSize: '9px', fontWeight: 700, color: '#7c3aed', lineHeight: 1.4 }}>
+                           🛡 Edits to a recorded payout apply only after admin approval.
+                        </div>
                      </div>
                    </>
                  ) : (

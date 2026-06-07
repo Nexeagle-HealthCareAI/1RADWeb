@@ -797,6 +797,47 @@ export default function BillingPage() {
       return;
     }
 
+    // ── Edits to a recorded commission need admin sign-off (item 5) ──────────
+    // The single-line revise targets ONE existing commission; route the change
+    // to Finance → Approvals with a mandatory reason instead of applying it
+    // directly. (Batch recording of a brand-new payout below still applies now.)
+    if (isSingle) {
+      const reason = String(editPayout.approvalReason || '').trim();
+      if (reason.length < 4) {
+        notify({ type: 'warning', title: 'REASON REQUIRED', message: 'Enter a short reason for this payout change — edits to a recorded payout need admin approval.' });
+        return;
+      }
+      if (!isOnline) {
+        notify({ type: 'warning', title: 'OFFLINE', message: 'Reconnect to send this payout change for approval.' });
+        return;
+      }
+      try {
+        setIsSavingPayout(true);
+        await apiClient.post('/approvals', {
+          type: 'EDIT_COMMISSION',
+          title: `Payout edit — ${editPayout.referrerName || ''} · ₹${(parseFloat(editPayout.amount) || 0).toLocaleString()} ${editPayout.modality || ''}`.trim(),
+          appointmentId: editPayout.appointmentId || null,
+          payload: JSON.stringify({
+            commissionId: editPayout.commissionId,
+            amount: parseFloat(editPayout.amount) || 0,
+            modality: editPayout.modality || '',
+            status: editPayout.status || 'UNPAID',
+            remarks: editPayout.remarks || '',
+          }),
+          reason,
+        });
+        window.dispatchEvent(new Event('1rad_approvals_changed'));   // refresh the nav badge
+        notify({ type: 'success', title: 'Sent for approval', message: 'The payout change will apply once an admin approves it.' });
+        setIsPayoutDrawerOpen(false);
+      } catch (err) {
+        console.error('[PAYOUT] approval request failed', err);
+        notify({ type: 'error', message: 'Could not send the change for approval. Please try again.' });
+      } finally {
+        setIsSavingPayout(false);
+      }
+      return;
+    }
+
     const singlePayload = {
       referrerId: editPayout.referrerId,
       amount: parseFloat(editPayout.amount),
@@ -1473,11 +1514,22 @@ export default function BillingPage() {
     const q = referralSearch.trim().toLowerCase();
     return combinedReferralCuts.filter(cut => {
         const cutDate = cut.date ? new Date(cut.date).toLocaleDateString('en-CA') : null;
-        if (timeFilter === 'TODAY' && cutDate !== today) return false;
-        if (timeFilter === 'PAST' && cutDate === today) return false;
-        if (timeFilter === 'CUSTOM') {
-            if (startDate && cutDate < startDate) return false;
-            if (endDate && cutDate > endDate) return false;
+        const svcDate = cut.serviceDate ? new Date(cut.serviceDate).toLocaleDateString('en-CA') : null;
+        const isFuture = !!svcDate && svcDate > today;   // appointment not yet served = upcoming
+
+        // FUTURE tab = every upcoming commission (future service date), regardless
+        // of when it was booked. The other date tabs exclude upcoming cuts so they
+        // surface only under Future (and All, which shows everything).
+        if (timeFilter === 'FUTURE') {
+            if (!isFuture) return false;
+        } else if (timeFilter !== 'ALL') {
+            if (isFuture) return false;
+            if (timeFilter === 'TODAY' && cutDate !== today) return false;
+            if (timeFilter === 'PAST' && cutDate === today) return false;
+            if (timeFilter === 'CUSTOM') {
+                if (startDate && cutDate < startDate) return false;
+                if (endDate && cutDate > endDate) return false;
+            }
         }
         // Modality Filter alignment
         if (modalityFilter !== 'ALL') {
@@ -1751,14 +1803,25 @@ export default function BillingPage() {
     }
   };
 
-  const handleSaveInvoice = async () => {
+  // Save-as-draft from the settlement drawer. When the drawer passes its live
+  // discount breakdown ({ centreDisc, referrerDisc, deduction }) we persist that
+  // breakdown so reopening the invoice restores the partial edits; otherwise we
+  // fall back to the invoice's current discount total.
+  const handleSaveInvoice = async (draft = null) => {
+    const hasBreakdown = draft && typeof draft === 'object' && 'centreDisc' in draft;
+    const body = hasBreakdown
+      ? {
+          centreDiscount: Number(draft.centreDisc) || 0,
+          referrerDiscount: Number(draft.referrerDisc) || 0,
+          institutionalDeduction: Number(draft.deduction) || 0,
+          discountAmount: (Number(draft.centreDisc) || 0) + (Number(draft.referrerDisc) || 0) + (Number(draft.deduction) || 0),
+        }
+      : { discountAmount: selectedInvoice.discountAmount };
     try {
-      await apiClient.post(`/finance/invoices/${selectedInvoice.invoiceId}/discount`, {
-        discountAmount: selectedInvoice.discountAmount
-      });
+      await apiClient.post(`/finance/invoices/${selectedInvoice.invoiceId}/discount`, body);
       refreshAllFinancialData();
       setIsInvoiceDrawerOpen(false);
-      notify({ type: 'success', title: 'Invoice Updated', message: 'Discount has been applied and the invoice updated successfully.' });
+      notify({ type: 'success', title: 'Draft Saved', message: 'Your changes were saved. Reopen the invoice to continue.' });
     } catch (err) {
       console.error('[FINANCE] Discount application failed', err);
       notify({ type: 'error', title: 'Update Failed', message: 'Could not update the invoice. Please try again.' });

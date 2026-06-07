@@ -202,11 +202,19 @@
   outline: none;
   font-family: "Calibri", "Segoe UI", -apple-system, sans-serif;
   /* Base body font + line-height are unified with the preview and the Word
-     export (single source of truth = the protocol). --report-font-size is set
-     from protocol.fontSize (in pt); line-height is the shared 1.15 (Word-style
-     single spacing) so reports default to a tight, organized layout. */
+     export (single source of truth = the protocol). Both are CSS variables so
+     there is NO hardcoded constant that can drift between editor and preview:
+     --report-font-size from protocol.fontSize (pt), --report-line-height from
+     protocol line spacing (unitless). The 1.15 here is only a last-resort
+     fallback (Word-style single spacing); per-paragraph line spacing set via the
+     ribbon overrides it (inline style wins). */
   font-size: var(--report-font-size, 12pt);
-  line-height: 1.15;
+  line-height: var(--report-line-height, 1.15);
+  /* Tab key inserts a real tab character (see index.jsx Tab handler); render it
+     as a moderate, predictable advance rather than the browser's wide 8-char
+     default. ProseMirror sets white-space: pre-wrap, so tabs are preserved. */
+  tab-size: 4;
+  -moz-tab-size: 4;
   color: #000000;
   word-wrap: break-word;
   overflow-wrap: break-word;
@@ -994,7 +1002,7 @@
      360-px-wide page. Editors can still apply explicit font-size to override. */
   .narrative-editor-container .narrative-editor-content {
     font-size: 11pt;
-    line-height: 1.15;
+    line-height: var(--report-line-height, 1.15);
   }
   /* Both toolbars never shrink — canvas does. */
   .narrative-editor-container .ne-mobile-top,
@@ -1088,23 +1096,15 @@
   background-color: #fefefe;
 }
 
-/* Better reading typography: larger text, generous line height */
+/* Reading view is true WYSIWYG: it must match the editor AND the Word/PDF
+   export exactly (single source of truth = the protocol). The Word export reads
+   each paragraph's *computed* line-height straight from this DOM, so re-styling
+   text metrics here would not only look different on screen — it would change
+   the exported document if exported from reading view. We therefore inherit
+   font-size / line-height / letter-spacing / paragraph spacing from
+   .narrative-editor-content and only change the read-only cursor. */
 .preview-mode-canvas .word-page-inner {
   cursor: default;
-  font-size: 15px;
-  line-height: 1.8;
-  letter-spacing: 0.01em;
-}
-
-.preview-mode-canvas .word-page-inner p {
-  margin-bottom: 0.9em;
-}
-
-.preview-mode-canvas .word-page-inner h1,
-.preview-mode-canvas .word-page-inner h2,
-.preview-mode-canvas .word-page-inner h3 {
-  line-height: 1.35;
-  margin-top: 1.2em;
 }
 
 /* ── Report Finalized state ──────────────────────────────────────────────────── */
@@ -1468,3 +1468,157 @@ del[data-ci] {
   column-gap: 28px;
 }
 .ne-columns > * { break-inside: avoid; }
+
+/* ── Print Preview modal ─────────────────────────────────────────────────────
+   Full-screen, true-to-print preview (PrintPreviewModal.jsx). The pages inside
+   are real cloned .word-page nodes, so they inherit all the report typography
+   from the rules above; we only style the surrounding chrome here. */
+.ppv-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 100000;
+  display: flex;
+  flex-direction: column;
+  background: rgba(15, 23, 42, 0.55);
+  backdrop-filter: blur(2px);
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+}
+
+.ppv-toolbar {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  height: 56px;
+  padding: 0 16px;
+  background: #1f2937;
+  color: #e5e7eb;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.35);
+}
+.ppv-toolbar__group {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.ppv-toolbar__title {
+  font-weight: 700;
+  letter-spacing: 0.2px;
+  color: #f9fafb;
+}
+.ppv-toolbar__right {
+  margin-left: auto;
+}
+.ppv-dot {
+  display: inline-block;
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: #22c55e;
+  margin-right: 8px;
+  box-shadow: 0 0 0 3px rgba(34, 197, 94, 0.2);
+}
+
+.ppv-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-width: 34px;
+  height: 34px;
+  padding: 0 12px;
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  background: rgba(255, 255, 255, 0.06);
+  color: #e5e7eb;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.12s, border-color 0.12s, opacity 0.12s;
+}
+.ppv-btn:hover:not(:disabled) { background: rgba(255, 255, 255, 0.14); }
+.ppv-btn:disabled { opacity: 0.4; cursor: default; }
+.ppv-btn--icon { padding: 0; font-size: 14px; }
+.ppv-btn--primary {
+  background: #2563eb;
+  border-color: #2563eb;
+  color: #fff;
+  padding: 0 18px;
+}
+.ppv-btn--primary:hover:not(:disabled) { background: #1d4ed8; }
+
+/* Printer picker (desktop only) */
+.ppv-printer {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: #cbd5e1;
+  font-size: 13px;
+}
+.ppv-printer__select {
+  height: 34px;
+  max-width: 210px;
+  padding: 0 8px;
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  background: rgba(255, 255, 255, 0.06);
+  color: #e5e7eb;
+  font-size: 12.5px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.ppv-printer__select option { color: #111827; }
+
+.ppv-pageind, .ppv-zoomind {
+  font-size: 12.5px;
+  font-weight: 600;
+  color: #cbd5e1;
+  min-width: 84px;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+.ppv-zoomind { min-width: 46px; }
+
+.ppv-scroll {
+  flex: 1;
+  overflow: auto;
+  background: #4b5563;
+  padding: 28px 16px 48px;
+  display: flex;
+  justify-content: center;
+  -webkit-overflow-scrolling: touch;
+}
+.ppv-pages {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+.ppv-page-slot {
+  position: relative;
+  flex-shrink: 0;
+}
+.ppv-page-scale {
+  position: absolute;
+  top: 0;
+  left: 0;
+}
+/* Pages already carry their own shadow; neutralise the inter-page margin since
+   the slot reserves the gap, and give a crisp white sheet. */
+.ppv-page-scale .word-page {
+  margin: 0 !important;
+  box-shadow: 0 6px 22px rgba(0, 0, 0, 0.35) !important;
+  background: #fff !important;
+}
+.ppv-empty {
+  color: #e5e7eb;
+  font-size: 14px;
+  margin: auto;
+  opacity: 0.85;
+}
+
+@media (max-width: 640px) {
+  .ppv-toolbar { gap: 10px; height: 52px; padding: 0 10px; }
+  .ppv-toolbar__title { display: none; }
+  .ppv-pageind { min-width: 70px; font-size: 11.5px; }
+  .ppv-btn { min-width: 32px; height: 32px; padding: 0 9px; }
+  .ppv-printer__select { max-width: 120px; }
+}

@@ -183,7 +183,7 @@ export default function AppointmentBoard() {
   const [cancelConfirmModal, setCancelConfirmModal] = useState({ isOpen: false, appointmentId: null, patientName: '' });
   // Scenario 04 — cancelling a PAID appointment needs admin sign-off; this modal
   // captures the reason and submits a CANCEL_APPOINTMENT request to Approvals.
-  const [cancelApprovalModal, setCancelApprovalModal] = useState({ isOpen: false, appointmentId: null, patientName: '', reason: '', submitting: false });
+  const [cancelApprovalModal, setCancelApprovalModal] = useState({ isOpen: false, appointmentId: null, patientName: '', referredBy: '', reason: '', submitting: false });
 
   const submitCancelApproval = async () => {
     const { appointmentId, patientName, reason } = cancelApprovalModal;
@@ -197,7 +197,7 @@ export default function AppointmentBoard() {
         payload: '{}',
         reason: reason.trim(),
       });
-      setCancelApprovalModal({ isOpen: false, appointmentId: null, patientName: '', reason: '', submitting: false });
+      setCancelApprovalModal({ isOpen: false, appointmentId: null, patientName: '', referredBy: '', reason: '', submitting: false });
       setErrorModal({
         isOpen: true,
         title: '✅ Sent for approval',
@@ -940,7 +940,7 @@ export default function AppointmentBoard() {
         if (result.requiresApproval) {
           // Scenario 04 — a PAID appointment isn't a dead end: capture a reason
           // and route it to the admin Approvals queue instead of just locking.
-          setCancelApprovalModal({ isOpen: true, appointmentId: app.appointmentId, patientName: app.patientName || '', reason: '', submitting: false });
+          setCancelApprovalModal({ isOpen: true, appointmentId: app.appointmentId, patientName: app.patientName || '', referredBy: app.referredBy || '', reason: '', submitting: false });
         } else {
           setErrorModal({
             isOpen: true,
@@ -3427,11 +3427,12 @@ export default function AppointmentBoard() {
                       <div style={{ display: 'flex', flexDirection: isMobile ? 'column' : 'row', gap: '10px', alignItems: 'flex-start' }}>
                       <div className="form-group" style={{ marginTop: '6px', position: 'relative', flex: 2, width: '100%' }}>
                         <label style={{ fontSize: '9px', fontWeight: 800, letterSpacing: '0.5px', color: '#888', marginBottom: '4px', display: 'block' }}>2. SERVICE / PROCEDURE <span style={{ color: '#e74c3c' }}>*</span></label>
-                        <input 
-                          type="text" 
-                          required 
-                          placeholder="e.g. Chest X-Ray with Lateral" 
-                          value={newBooking.service} 
+                        <input
+                          id="booking-service-input"
+                          type="text"
+                          required
+                          placeholder="e.g. Chest X-Ray with Lateral"
+                          value={newBooking.service}
                           onChange={e => {
                             const val = e.target.value;
                             setNewBooking(prev => ({ ...prev, service: val }));
@@ -3668,6 +3669,37 @@ export default function AppointmentBoard() {
                                 {lines.length === 0
                                   ? 'Add this service to the visit'
                                   : 'Add another service to this visit'}
+                              </button>
+                            )}
+
+                            {/* When services are already on the visit but no draft
+                                is in progress, keep an obvious "add another" CTA so
+                                building a multi-service visit never dead-ends after
+                                the first line. It focuses the service input to start
+                                the next one. */}
+                            {!draftHasService && lines.length > 0 && (
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  const el = document.getElementById('booking-service-input');
+                                  if (el) { el.focus(); el.scrollIntoView({ block: 'center', behavior: 'smooth' }); }
+                                }}
+                                style={{
+                                  marginTop: '10px',
+                                  width: '100%',
+                                  padding: '12px',
+                                  borderRadius: '12px',
+                                  border: '1.5px dashed #9db8e8',
+                                  background: '#f5f9ff',
+                                  color: '#0f52ba',
+                                  fontSize: '13px', fontWeight: 900, letterSpacing: '0.3px', fontFamily: 'inherit',
+                                  cursor: 'pointer',
+                                  display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: '8px',
+                                }}
+                                title="Add another service to this visit"
+                              >
+                                <span style={{ fontSize: '17px', lineHeight: 1 }}>+</span>
+                                Add another service
                               </button>
                             )}
 
@@ -5998,6 +6030,24 @@ export default function AppointmentBoard() {
             <p style={{ fontSize: '13px', color: '#475569', textAlign: 'center', marginTop: '8px', lineHeight: 1.55 }}>
               Payment was already collected for <strong style={{ color: '#0f172a' }}>{(cancelApprovalModal.patientName || 'this patient').toUpperCase()}</strong>. To cancel this paid appointment, send it for admin approval with a reason.
             </p>
+
+            {/* Referral-paid deficit warning (item 2) — the centre may have already
+                paid the referrer; on cancel that payout is reversed into a
+                recoverable deficit against them, so the admin knows refunding the
+                patient leaves the centre short until it's recovered. */}
+            {(() => {
+              const ref = String(cancelApprovalModal.referredBy || '').trim();
+              if (!ref || ref.toLowerCase() === 'self') return null;
+              return (
+                <div style={{ marginTop: '14px', padding: '12px 14px', background: '#fff7ed', border: '1px solid #fed7aa', borderRadius: '12px' }}>
+                  <div style={{ fontSize: '11px', fontWeight: 950, color: '#9a3412', letterSpacing: '0.3px', marginBottom: '5px' }}>⚠ REFERRAL MAY BE ALREADY PAID</div>
+                  <div style={{ fontSize: '12px', color: '#7c2d12', lineHeight: 1.5 }}>
+                    Referred by <strong>{ref}</strong>. If their commission has already been <strong>paid</strong>, cancelling reverses it — the amount is booked as a <strong>recoverable deficit</strong> against {ref} (recovered from future referrals). Refunding the patient leaves the centre short by that amount until recovered. The exact figure shows as {ref}&apos;s deficit in the Referral Hub.
+                  </div>
+                </div>
+              );
+            })()}
+
             <label style={{ display: 'block', fontSize: '10px', fontWeight: 950, color: '#64748b', letterSpacing: '0.5px', marginTop: '18px', marginBottom: '6px' }}>REASON FOR CANCELLATION</label>
             <textarea
               autoFocus
@@ -6009,7 +6059,7 @@ export default function AppointmentBoard() {
             />
             <div style={{ display: 'flex', gap: '10px', marginTop: '18px' }}>
               <button
-                onClick={() => setCancelApprovalModal({ isOpen: false, appointmentId: null, patientName: '', reason: '', submitting: false })}
+                onClick={() => setCancelApprovalModal({ isOpen: false, appointmentId: null, patientName: '', referredBy: '', reason: '', submitting: false })}
                 style={{ flex: 1, padding: '14px', borderRadius: '14px', border: '1px solid #cbd5e1', background: '#ffffff', color: '#475569', fontWeight: 800, fontSize: '13px', cursor: 'pointer' }}
               >Keep Appointment</button>
               <button

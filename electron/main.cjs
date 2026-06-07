@@ -136,6 +136,70 @@ ipcMain.handle('store:set', (event, key, value) => store.set(key, value));
 ipcMain.handle('store:delete', (event, key) => store.delete(key));
 ipcMain.handle('store:getAll', (event) => store.store);
 
+// ── A4 report printing (silent, default/selected printer) ────────────────
+// The renderer hands us a fully self-contained HTML document — every stylesheet
+// is inlined (see src/.../utils/printReport.js), so it renders identically here
+// without resolving any <link href>. We load it into a hidden window and print
+// silently. A temp .html file (not a data: URL) keeps large reports with
+// embedded base64 images well under URL size limits.
+ipcMain.handle('report:printSilent', async (event, { html, deviceName } = {}) => {
+  if (!html) return { ok: false, reason: 'NO_HTML' };
+  const tmpFile = path.join(os.tmpdir(), `1rad-report-${Date.now()}-${Math.random().toString(36).slice(2)}.html`);
+  let printWin = null;
+  try {
+    fs.writeFileSync(tmpFile, html, 'utf8');
+    printWin = new BrowserWindow({
+      show: false,
+      webPreferences: { sandbox: true, contextIsolation: true, nodeIntegration: false },
+    });
+    await printWin.loadFile(tmpFile);
+    // Let fonts / images settle before the print snapshot is taken.
+    await new Promise((r) => setTimeout(r, 450));
+
+    const result = await new Promise((resolve) => {
+      printWin.webContents.print(
+        {
+          silent: true,
+          printBackground: true,
+          color: true,
+          deviceName: deviceName || '',   // '' → system default printer
+          pageSize: 'A4',
+          margins: { marginType: 'none' }, // we control margins via the page CSS
+        },
+        (success, failureReason) => resolve({ ok: success, reason: failureReason || null }),
+      );
+    });
+    return result;
+  } catch (err) {
+    return { ok: false, reason: err?.message || 'PRINT_ERROR' };
+  } finally {
+    // Close after the job has spooled; clean the temp file a moment later.
+    setTimeout(() => { try { if (printWin && !printWin.isDestroyed()) printWin.close(); } catch { /* noop */ } }, 1000);
+    setTimeout(() => { try { fs.unlinkSync(tmpFile); } catch { /* noop */ } }, 4000);
+  }
+});
+
+// Enumerate installed printers for the report print-preview picker, so the user
+// can target a specific device (e.g. the A4 laser, not the thermal receipt).
+ipcMain.handle('report:listPrinters', async () => {
+  try {
+    const wc = (mainWindow && !mainWindow.isDestroyed()) ? mainWindow.webContents : null;
+    if (!wc) return { ok: false, printers: [] };
+    const list = await wc.getPrintersAsync();
+    return {
+      ok: true,
+      printers: (list || []).map((p) => ({
+        name: p.name,
+        displayName: p.displayName || p.name,
+        isDefault: !!p.isDefault,
+        status: p.status,
+      })),
+    };
+  } catch (err) {
+    return { ok: false, error: err?.message || 'LIST_ERROR', printers: [] };
+  }
+});
+
 // ── Thermal printer (ESC/POS) ────────────────────────────────────
 // Silent receipt printing on 58mm / 80mm thermal printers. We build the raw
 // ESC/POS byte stream with node-thermal-printer (pure JS) and send it over the

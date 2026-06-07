@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from 'react';
 import { NavLink, useNavigate, useLocation } from 'react-router-dom';
 import useAuth from '../auth/useAuth';
 import { NAV_ITEMS, ROLE_LABELS, getRolePermissions } from '../data/roles';
+import apiClient from '../api/apiClient';
 import '../styles/global.css';
 
 // ── Design tokens ─────────────────────────────────────────────────────────────
@@ -103,7 +104,7 @@ function Tooltip({ label, anchorRef, visible }) {
 }
 
 // ── Nav row ───────────────────────────────────────────────────────────────────
-function NavRow({ item, collapsed, isMobile, onClose }) {
+function NavRow({ item, collapsed, isMobile, onClose, badge = 0 }) {
   const location = useLocation();
   const [hov, setHov] = useState(false);
   const rowRef = useRef(null);
@@ -162,6 +163,25 @@ function NavRow({ item, collapsed, isMobile, onClose }) {
             }}>SOON</span>
           )}
         </div>
+
+        {/* Pending-count badge (expanded) — e.g. waiting Admin Approvals */}
+        {badge > 0 && !showCollapsed && (
+          <span style={{
+            flexShrink: 0,
+            minWidth: '18px', height: '18px', padding: '0 6px',
+            borderRadius: '999px', background: '#ef4444', color: '#fff',
+            fontSize: '10.5px', fontWeight: 800, lineHeight: 1,
+            display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+          }}>{badge > 99 ? '99+' : badge}</span>
+        )}
+        {/* Collapsed rail — show a small red dot instead of the pill */}
+        {badge > 0 && showCollapsed && (
+          <span style={{
+            position: 'absolute', top: '7px', right: '11px',
+            width: '7px', height: '7px', borderRadius: '999px',
+            background: '#ef4444', border: `1.5px solid ${T.bg}`,
+          }} />
+        )}
 
         {/* Active dot — collapsed desktop */}
         {isActive && showCollapsed && (
@@ -232,6 +252,9 @@ export default function Sidebar({ isMobileOpen, onMobileClose }) {
                           || sidebarLocation.pathname.startsWith('/settings/');
 
   const [refreshKey, setRefreshKey] = useState(0);
+  // Pending admin-approval count → badge on the "Admin Approval" nav row, so
+  // admins can see at a glance how many requests are waiting on them.
+  const [pendingApprovals, setPendingApprovals] = useState(0);
 
   useEffect(() => {
     const onResize = () => setViewW(window.innerWidth);
@@ -243,6 +266,37 @@ export default function Sidebar({ isMobileOpen, onMobileClose }) {
       window.removeEventListener('1rad_permissions_updated', onPermissionsUpdate);
     };
   }, []);
+
+  // Poll the pending-approvals count (only for users who can see /approvals).
+  // Refreshes on a 60s tick, on window focus, and whenever an approval is
+  // created/decided (the '1rad_approvals_changed' event).
+  useEffect(() => {
+    const roles = currentUser?.roles || [];
+    const allowed = roles.reduce(
+      (acc, role) => [...acc, ...getRolePermissions(role, activeCenter?.id)], []);
+    // No /approvals access → the nav row isn't rendered for this user, so the
+    // count is never shown; leave it untouched (avoids a synchronous setState).
+    if (!allowed.includes('/approvals')) return undefined;
+
+    let alive = true;
+    const load = async () => {
+      try {
+        const res = await apiClient.get('/approvals?status=PENDING');
+        if (alive) setPendingApprovals(Array.isArray(res.data) ? res.data.length : 0);
+      } catch { /* keep the last known count on a transient error */ }
+    };
+    load();
+    const id = setInterval(load, 60000);
+    const onChanged = () => load();
+    window.addEventListener('focus', onChanged);
+    window.addEventListener('1rad_approvals_changed', onChanged);
+    return () => {
+      alive = false;
+      clearInterval(id);
+      window.removeEventListener('focus', onChanged);
+      window.removeEventListener('1rad_approvals_changed', onChanged);
+    };
+  }, [currentUser, activeCenter]);
 
   const isMobile = viewW < 640;
   const isTablet = viewW >= 640 && viewW < 1024;
@@ -423,6 +477,7 @@ export default function Sidebar({ isMobileOpen, onMobileClose }) {
             item={item}
             collapsed={showCollapsed}
             isMobile={isMobile}
+            badge={item.route === '/approvals' ? pendingApprovals : 0}
             onClose={isMobile ? onMobileClose : undefined}
           />
         ))}
