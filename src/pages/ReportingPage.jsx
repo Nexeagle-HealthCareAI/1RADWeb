@@ -1,8 +1,6 @@
 import React, { useState, useRef, useEffect, useMemo, useCallback } from 'react';
-import { createPortal } from 'react-dom';
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import JSZip from 'jszip';
-import dicomParser from 'dicom-parser';
 import AdvancedDicomViewer from '../components/AdvancedDicomViewer';
 import NarrativeEditor from '../components/NarrativeEditor';
 import apiClient, { BASE_URL } from '../api/apiClient';
@@ -11,6 +9,9 @@ import { dicomOptimizer } from '../utils/DicomPerformanceOptimizer';
 import { uploadStudyAssetDirect } from '../utils/azureUpload';
 import { jwtDecode } from 'jwt-decode';
 import useOffline from '../hooks/useOffline';
+import useReportAutosave from '../hooks/useReportAutosave';
+import useReportAi from '../hooks/useReportAi';
+import usePatientTimeline from '../hooks/usePatientTimeline';
 import { nativeStorage, nativeWord } from '../hooks/useElectron';
 import { openReportInWord } from '../utils/exportWord';
 import { docxToFindingsHtml } from '../utils/importWord';
@@ -19,58 +20,15 @@ import useTickClock from '../utils/useTickClock';
 import SearchableTemplatePicker from '../components/SearchableTemplatePicker';
 import PatientTimeline from '../components/PatientTimeline';
 import VoiceReportingPanel from '../components/VoiceReportingPanel';
+import ReportingDicomPanel from '../components/Reporting/ReportingDicomPanel';
+import ReportingEditorPanel from '../components/Reporting/ReportingEditorPanel';
+import { NotificationModal, DraftRecoveryModal } from '../components/Reporting/ReportingModals';
 import { assetsFromManifest } from '../utils/dicomManifest';
-import { getReportByAppointmentId, saveLocalDraft } from '../db/repos/reportsRepo';
+import { getReportByAppointmentId } from '../db/repos/reportsRepo';
 import { getAppointmentById } from '../db/repos/appointmentsRepo';
 import { logEvent } from '../sync/syncTelemetry';
 import { getServiceLines } from '../utils/appointmentServices';
 
-// Maps a study's modality + service name to a RadAI knowledge-pack test_code for
-// the structured formatter. Returns { modality, testCode } or null (=> the generic
-// polish handles it). Conservative: only returns a match when the region is
-// recognised, so unfamiliar studies safely fall back to polish.
-function resolvePackTest(modalityRaw, serviceRaw) {
-  const m = `${modalityRaw || ''}`.toLowerCase();
-  const s = `${serviceRaw || ''}`.toLowerCase();
-  const both = `${m} ${s}`;
-  const has = (re) => re.test(s) || re.test(m);
-
-  let mod = null;
-  if (/\b(usg|ultrasound|sonograph|sonography|doppler)\b/.test(both)) mod = 'USG';
-  else if (/\b(mri|mr)\b/.test(both) || /magnetic resonance/.test(both)) mod = 'MRI';
-  else if (/\b(ct|cect|ncct)\b/.test(both) || /computed tomograph/.test(both)) mod = 'CT';
-  else if (/\b(x-?ray|xray|radiograph|radiography)\b/.test(both)) mod = 'XRAY';
-  if (!mod) return null;
-
-  const t = (testCode) => ({ modality: mod, testCode });
-
-  if (mod === 'USG') {
-    if (has(/obstet|pregnan|gestation|foetal|fetal|antenatal|anomaly|growth scan|nt scan/)) return t('USG_OBSTETRIC');
-    if (has(/thyroid|neck/)) return t('USG_THYROID');
-    if (has(/abdomen|abdominal/) && has(/pelvi|uterus|ovary|adnexa|gyn/)) return t('USG_ABDOMEN_PELVIS_F');
-    if (has(/\bkub\b|urinary|bladder|prostate|renal|kidney/)) return t('USG_KUB');
-    if (has(/abdomen|abdominal|\bkub\b/)) return t('USG_ABDOMEN');
-    return null;
-  }
-  if (mod === 'CT') {
-    if (has(/brain|head|skull|cranial|stroke/)) return t('CT_BRAIN_PLAIN');
-    if (has(/chest|thorax|thoracic|lung|pulmonary|hrct/)) return t('CT_CHEST');
-    if (has(/abdomen|abdominal|pelvi|\bkub\b|kidney|renal|liver/)) return t('CT_ABDOMEN');
-    return null;
-  }
-  if (mod === 'MRI') {
-    if (has(/brain|head|cranial|pituitary|sella|stroke/)) return t('MRI_BRAIN_PLAIN');
-    if (has(/knee/)) return t('MRI_KNEE');
-    if (has(/lumbar|lumbosacral|ls spine|l-s spine/)) return t('MRI_LUMBAR_SPINE');
-    return null;
-  }
-  // XRAY
-  if (has(/chest|thorax|thoracic|\bpa\b|lung/)) return t('XRAY_CHEST_PA');
-  if (has(/\bkub\b|abdomen|abdominal/)) return t('XRAY_KUB');
-  if (has(/spine|lumbar|cervical|dorsal|lumbosacral|sacrum|coccyx/)) return t('XRAY_SPINE');
-  if (has(/knee|shoulder|wrist|ankle|elbow|\bhip\b|joint|\bbone\b|hand|foot|femur|tibia|fibula|humerus|radius|ulna|forearm|\bleg\b|clavicle|pelvis|skull|finger|toe/)) return t('XRAY_BONE_JOINT');
-  return null;
-}
 
 const ReportingPage = () => {
   const navigate = useNavigate();
@@ -90,16 +48,10 @@ const ReportingPage = () => {
   const initialServiceIdFromUrl = searchParams.get('serviceId') || null;
   const [activeServiceId, setActiveServiceId] = useState(initialServiceIdFromUrl);
   const [appointmentServices, setAppointmentServices] = useState([]);
-  const [showKeywordDrawer, setShowKeywordDrawer] = useState(false);
-  const [showTableModal, setShowTableModal] = useState(false);
   const [editorText, setEditorText] = useState('');
-  const [showInlineSuggestion, setShowInlineSuggestion] = useState(false);
-  const [showSlashMenu, setShowSlashMenu] = useState(false);
-  const [cursorPos, setCursorPos] = useState({ top: 0, left: 0 });
   const [templates, setTemplates] = useState([]);
   const [keywordLibrary, setKeywordLibrary] = useState([]);
   const editorRef = useRef(null);
-  const fileInputRef = useRef(null);
   // The findings HTML as it currently exists on the SERVER (set when a report
   // is loaded and after each successful save). Stored inside every local draft
   // as `serverBaseline` so the crash-recovery prompt can tell whether the
@@ -107,15 +59,8 @@ const ReportingPage = () => {
   // vs. a stale draft that the server has already moved past. Fixes the bug
   // where the prompt always claimed the local draft was "newer" because the
   // report entity has no server-side UpdatedAt timestamp to compare against.
-  const serverBaselineRef = useRef(null);
-  // B2 Track 3 — OCC token of the report we last loaded / saved. Sent
-  // back on every save so a concurrent edit returns 409 instead of
-  // silently overwriting. Updated after each successful load + save.
-  const rowVersionRef = useRef(null);
-  // 409 undo-toast state. When set, shows a banner with the user's
-  // pre-conflict content stashed in `previous` for 30s — clicking Undo
-  // re-sends that content as the new save. Auto-dismisses after 30s.
-  const [occConflict, setOccConflict] = useState(null);
+  // OCC tokens (serverBaseline / rowVersion) + the 409 conflict state now live
+  // in the useReportAutosave hook (declared below).
 
   // Imperative editor-content setter. Lifted from inside the report-fetch
   // effect because the OCC undo handler (and any other top-level callback)
@@ -135,6 +80,9 @@ const ReportingPage = () => {
       }
     });
   }, []);
+  // Monotonic token so an in-flight context load can detect it's been superseded
+  // by a newer one (appointmentId change / unmount) and skip applying stale data.
+  const fetchReqRef = useRef(0);
   const [selectedImg, setSelectedImg] = useState(null);
   const [imgToolbarPos, setImgToolbarPos] = useState({ top: 0, left: 0 });
   const [isFullscreen, setIsFullscreen] = useState(false);
@@ -154,7 +102,6 @@ const ReportingPage = () => {
   const [layoutMode, setLayoutMode] = useState('1x1');
   const [viewportProps, setViewportProps] = useState({ invert: false, flipHorizontal: false, flipVertical: false, rotation: 0 });
   const [resetTrigger, setResetTrigger] = useState(0);
-  const [screenshotData, setScreenshotData] = useState(null);
   const [keyImages, setKeyImages] = useState([]);
   const [isSyncEnabled, setIsSyncEnabled] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -200,7 +147,6 @@ const ReportingPage = () => {
 
   // --- API SYNC STATES ---
   const [protocol, setProtocol] = useState(null);
-  const [isSaving, setIsSaving] = useState(false);
 
   const [activeAppointment, setActiveAppointment] = useState(null);
 
@@ -245,12 +191,9 @@ const ReportingPage = () => {
   const [selectedTemplateId, setSelectedTemplateId] = useState(null);
 
   // --- PATIENT TIMELINE STATES ---
-  const [patientHistory, setPatientHistory] = useState([]);
-  const [loadingTimeline, setLoadingTimeline] = useState(false);
+  const { patientHistory, loadingTimeline, fetchPatientTimeline } = usePatientTimeline();
   const [showTimeline, setShowTimeline] = useState(false);
   const [activeRightTab, setActiveRightTab] = useState('REPORT'); // 'REPORT', 'TIMELINE'
-  const [expandedHistoryReport, setExpandedHistoryReport] = useState({}); // { [appointmentId]: { loading, data, error } }
-  const [expandedHistoryDicom, setExpandedHistoryDicom] = useState({}); // { [appointmentId]: true/false }
   const [isHistoricalMode, setIsHistoricalMode] = useState(false);
   const [historicalStudyContext, setHistoricalStudyContext] = useState(null);
   const [originalAssets, setOriginalAssets] = useState([]);
@@ -266,14 +209,50 @@ const ReportingPage = () => {
   //   savingVisible → flips true only if a save lasts >500ms. Sub-500ms
   //                 saves never show "Saving…" at all — eliminates the
   //                 single biggest source of pill-bouncing.
-  const [lastSavedAt, setLastSavedAt] = useState(null);
-  const [saveStatus, setSaveStatus] = useState('IDLE'); // 'IDLE', 'DIRTY', 'SAVING', 'SUCCESS', 'CONFLICT'
-  const [isCloudSyncing, setIsCloudSyncing] = useState(false);
-  const [savingVisible, setSavingVisible] = useState(false);
-  const savingShowTimerRef = useRef(null);
+  // saveStatus / lastSavedAt / savingVisible / isCloudSyncing now come from the
+  // useReportAutosave hook (declared below).
 
   const [notifModal, setNotifModal] = useState({ isOpen: false, type: 'info', title: '', message: '' });
   const showNotif = (type, title, message) => setNotifModal({ isOpen: true, type, title, message });
+
+  // ── Report save subsystem (local + cloud autosave, OCC, 409 conflict, manual
+  //    save / finalize) — all in one hook. saveNow/undoConflict are aliased to
+  //    the old names so the JSX call sites stay unchanged. ──────────────────
+  const applyContent = useCallback(({ findings, impression: imp, advice: adv, templateId }) => {
+    applyEditorContent(findings || '');
+    setImpression(imp || '');
+    setAdvice(adv || '');
+    if (templateId) setSelectedTemplateId(String(templateId));
+  }, [applyEditorContent]);
+  const onReportFinalized = useCallback(() => {
+    setIsFinalized(true);
+    navigate('/doctor-board');
+  }, [navigate]);
+  const {
+    saveStatus,
+    lastSavedAt,
+    savingVisible,
+    cloudAutosaveDisabledReason,
+    occConflict,
+    saveNow: handleSaveReport,
+    undoConflict: handleUndoConflict,
+    setBaseline: setReportBaseline,
+  } = useReportAutosave({
+    appointmentId,
+    activeServiceId,
+    selectedTemplateId,
+    isFinalized,
+    isOnline,
+    editorText,
+    impression,
+    advice,
+    editorRef,
+    applyContent,
+    addToOutbox,
+    notify: showNotif,
+    logEvent,
+    onFinalized: onReportFinalized,
+  });
 
   // Voice Reporting → AI draft. Sends the dictation transcript + chosen
   // template + appointment context to the backend, which prompts Claude Haiku
@@ -300,92 +279,10 @@ const ReportingPage = () => {
     }
   }, [appointmentId]);
 
-  // Inline AI co-pilot — improve / proofread / expand / shorten a selection,
-  // or generate an impression from the findings. Returns HTML or throws with a
-  // friendly message (the editor surfaces it).
-  const handleAiAssist = useCallback(async (action, text) => {
-    const study = activeService?.serviceName || activeAppointment?.service || '';
-    const modality = activeService?.modality || activeAppointment?.modality || '';
-    const context = (study || modality) ? `Study/Service: ${study} (${modality}).` : '';
-    // appointmentId lets the server de-identify (name/PTID/phone) before the
-    // text reaches Gemini — PHI never leaves our API.
-    const res = await apiClient.post('/reporting/ai-assist', { action, text, context, appointmentId });
-    const data = res?.data || {};
-    if (data.success && data.html) return data.html;
-    throw new Error(data.error || data.message || 'AI request failed.');
-  }, [activeService, activeAppointment, appointmentId]);
-
-  // Whole-report AI (restructure / spelling). Runs on the FULL report, then
-  // shows a before/after review — nothing is applied until the radiologist
-  // accepts (AI output is never finalized unreviewed). On any failure it falls
-  // back to the unchanged text, so report delivery never blocks on Gemini.
-  const [aiReview, setAiReview] = useState({ open: false, mode: '', before: '', after: '', busy: false, corrections: [], flags: [], protectedItems: [] });
-  const runWholeReportAi = useCallback(async (mode) => {
-    const before = editorRef.current?.getHTML?.() || '';
-    if (!before.replace(/<[^>]*>/g, '').trim()) {
-      showNotif('info', 'NOTHING TO FORMAT', 'Write some report text first.');
-      return;
-    }
-    setAiReview((s) => ({ ...s, busy: true, mode }));
-    try {
-      const after = await handleAiAssist(mode, before);
-      setAiReview({ open: true, mode, before, after, busy: false });
-    } catch (e) {
-      setAiReview((s) => ({ ...s, busy: false }));
-      showNotif('warning', 'AI UNAVAILABLE', `${e?.message || 'Could not format'} — your text is unchanged.`);
-    }
-  }, [handleAiAssist]);
-  const acceptAiReview = () => {
-    editorRef.current?.setContent?.(aiReview.after);
-    setEditorText(aiReview.after);
-    setAiReview({ open: false, mode: '', before: '', after: '', busy: false, corrections: [], flags: [], protectedItems: [] });
-    showNotif('success', 'APPLIED', 'AI-formatted report applied. Review and edit before finalizing.');
-  };
-
-  // RadAI dispatcher: for a known modality/test (USG-first slice: USG abdomen)
-  // use the structured knowledge-pack formatter; otherwise fall back to the
-  // generic whole-report polish. Both open the same before/after review — nothing
-  // is saved until the radiologist accepts.
-  const runFormatReport = useCallback(async (pack) => {
-    const before = editorRef.current?.getHTML?.() || '';
-    if (!before.replace(/<[^>]*>/g, '').trim()) {
-      showNotif('info', 'NOTHING TO FORMAT', 'Write some report text first.');
-      return;
-    }
-    setAiReview((s) => ({ ...s, busy: true, mode: 'format' }));
-    try {
-      const res = await apiClient.post('/reporting/format', {
-        rawText: before,
-        modality: pack.modality,
-        testCode: pack.testCode,
-        houseSpelling: 'UK',
-        assumeUnmentionedNormal: false,
-        appointmentId,
-      });
-      const body = res?.data || {};
-      if (!body.success || !body.html) throw new Error(body.error || 'Formatter returned nothing.');
-      setAiReview({
-        open: true, mode: 'format', before, after: body.html, busy: false,
-        corrections: body.data?.corrections || [],
-        flags: body.data?.flags || [],
-        protectedItems: body.data?.unchangedProtected || [],
-      });
-    } catch (e) {
-      setAiReview((s) => ({ ...s, busy: false }));
-      showNotif('info', 'USING QUICK CLEANUP', 'Detailed formatter unavailable — running quick cleanup instead.');
-      runWholeReportAi('polish');
-    }
-  }, [appointmentId, runWholeReportAi]);
-
-  const runRadAiCleanup = useCallback(() => {
-    const modality = activeService?.modality || activeAppointment?.modality || '';
-    const service = activeService?.serviceName || activeAppointment?.service || '';
-    // USG / X-ray / CT / MRI with a recognised region -> structured formatter;
-    // anything else -> the generic en-GB polish.
-    const pack = resolvePackTest(modality, service);
-    if (pack) return runFormatReport(pack);
-    return runWholeReportAi('polish');
-  }, [activeService, activeAppointment, runFormatReport, runWholeReportAi]);
+  const {
+    aiReview, setAiReview,
+    handleAiAssist, runRadAiCleanup, acceptAiReview,
+  } = useReportAi({ activeService, activeAppointment, appointmentId, editorRef, applyEditorContent, showNotif });
 
   // Prior-study copy-forward — pull a previous report's findings into the
   // current report with a comparison line. Flattens any .word-page wrappers so
@@ -501,269 +398,11 @@ const ReportingPage = () => {
     };
   }, []);
 
-  // 1. LOCAL AUTOSAVE: Immediate persistence to nativeStorage/localStorage
-  useEffect(() => {
-    if (!appointmentId || isFinalized) return;
-
-    const timer = setTimeout(async () => {
-      // Read the FRESH editor HTML, not the (debounced) editorText state, so
-      // attribute changes like right-align that haven't crossed the 300 ms
-      // onUpdate debounce yet still get persisted.
-      const freshFindings = editorRef.current?.editor?.getHTML?.() ?? editorText;
-
-      const draft = {
-        appointmentId,
-        templateId: selectedTemplateId,
-        findings: freshFindings,
-        impression,
-        advice,
-        reportingMode: 'Narrative',
-        timestamp: new Date().toISOString(),
-        serverBaseline: serverBaselineRef.current,
-      };
-
-      try {
-        await nativeStorage.set(`1rad_draft_${appointmentId}`, draft);
-        if (saveStatus === 'IDLE' || saveStatus === 'SUCCESS') {
-          setSaveStatus('DIRTY');
-        }
-        console.info(`[AUTOSAVE] Local draft cached for ${appointmentId}`);
-      } catch (e) {
-        console.warn('[AUTOSAVE] Local cache failed', e);
-      }
-    }, 1500); // 1.5s debounce
-
-    return () => clearTimeout(timer);
-  }, [editorText, impression, advice, appointmentId, isFinalized, selectedTemplateId]);
-
-  // 2. CLOUD AUTOSAVE: Background API sync every 45 seconds if dirty.
-  //
-  // Failure policy:
-  //   • 404 on the save endpoint = endpoint is gone (typo, deploy mid-flight,
-  //     gateway misconfig). No amount of retrying will help. We DISABLE the
-  //     cloud autosave for the rest of the session, log a clear console
-  //     warning, and surface a banner so the user knows their work is
-  //     still safe in localStorage (the local autosave is unaffected) but
-  //     cloud sync is paused until they reload.
-  //   • Any other failure (network blip, 5xx, 401) backs off exponentially:
-  //     45s → 90s → 180s → 360s → 720s → 1440s (24 min cap). Success resets.
-  const autosaveFailuresRef = useRef(0);
-  const [cloudAutosaveDisabledReason, setCloudAutosaveDisabledReason] = useState(null);
-  useEffect(() => {
-    if (cloudAutosaveDisabledReason) return;
-    if (saveStatus !== 'DIRTY' || !appointmentId || isFinalized || !isOnline || isCloudSyncing) return;
-
-    const failures = autosaveFailuresRef.current;
-    const delay = Math.min(45_000 * Math.pow(2, failures), 24 * 60 * 1000);
-    if (failures > 0) {
-      console.info(`[AUTOSAVE] Backing off after ${failures} failure(s); next attempt in ${Math.round(delay / 1000)}s`);
-    }
-
-    const cloudTimer = setTimeout(async () => {
-      console.info(`[AUTOSAVE] Triggering background cloud sync...`);
-      setIsCloudSyncing(true);
-      setSaveStatus('SAVING');
-      // Only show "Saving…" if the save lasts longer than 500ms. Fast saves
-      // (the common case) never flicker the label — the UI just transitions
-      // straight to "Saved just now".
-      if (savingShowTimerRef.current) clearTimeout(savingShowTimerRef.current);
-      savingShowTimerRef.current = setTimeout(() => setSavingVisible(true), 500);
-      try {
-        const freshFindings = editorRef.current?.editor?.getHTML?.() ?? editorText;
-        const payload = {
-          appointmentId,
-          // Multi-service rollout — when scoped, the server keys the
-          // upsert by (AppointmentId, AppointmentServiceId) so the
-          // CT and USG reports for the same visit land in separate
-          // rows with separate RowVersions. Null = legacy behaviour.
-          appointmentServiceId: activeServiceId || null,
-          templateId: selectedTemplateId,
-          findings: freshFindings,
-          impression: impression || '',
-          advice: advice || '',
-          reportingMode: 'Narrative',
-          isFinalized: false,
-          // B2 Track 3 — OCC token. Server runs the concurrency check
-          // when this is present; falls back to last-write-wins when null.
-          rowVersion: rowVersionRef.current,
-        };
-        const res = await apiClient.post('/reporting/save', payload);
-        if (res.data?.success) {
-          setLastSavedAt(new Date());
-          setSaveStatus('SUCCESS');
-          autosaveFailuresRef.current = 0;
-          // Save completed - cancel the deferred "Saving…" label and
-          // hide it if it had already shown. Either way the next render
-          // shows "Saved just now".
-          if (savingShowTimerRef.current) { clearTimeout(savingShowTimerRef.current); savingShowTimerRef.current = null; }
-          setSavingVisible(false);
-          // Advance the OCC token so the NEXT autosave / manual save sends
-          // the up-to-date value. Server echoes the new RowVersion in the
-          // response payload.
-          const updated = res.data?.data;
-          if (updated?.rowVersion ?? updated?.RowVersion) {
-            rowVersionRef.current = updated.rowVersion ?? updated.RowVersion;
-          }
-        } else {
-          autosaveFailuresRef.current = failures + 1;
-          setSaveStatus('DIRTY');
-        }
-      } catch (err) {
-        const status = err?.response?.status;
-        // 404 from this endpoint actually comes back two ways:
-        //   1. The route is missing on the deployed API (rare; only mid-deploy).
-        //   2. The SaveReport handler caught a KeyNotFoundException because
-        //      the appointment id doesn't exist in the user's hospital
-        //      context (the body carries an explanatory error message).
-        // We can't distinguish those reliably from the status alone, but
-        // either way retrying is futile until the user does something
-        // (reload, navigate back, fix the URL). Disable cloud autosave for
-        // the session in both cases.
-        if (status === 404) {
-          const serverMsg = err?.response?.data?.error
-            || 'The save endpoint returned 404 (no body).';
-          console.error(
-            '[AUTOSAVE] /reporting/save returned 404. Cloud autosave is now ' +
-            'DISABLED for this session — local autosave is still active. ' +
-            'Server said:', serverMsg
-          );
-          setCloudAutosaveDisabledReason(serverMsg);
-          setSaveStatus('DIRTY'); // a future manual save can still try
-        } else if (status === 409) {
-          // B2 Track 3 — concurrent edit. The radiologist is actively
-          // typing; overwriting the editor mid-keystroke would be jarring.
-          // Surface the conflict via saveStatus + a non-destructive banner
-          // so they can decide when to engage. The NEXT manual save will
-          // trip the same 409 and enter the full undo-toast flow.
-          console.warn('[AUTOSAVE] 409 — concurrent edit detected; deferring to manual save.');
-          autosaveFailuresRef.current = failures + 1;
-          setSaveStatus('CONFLICT');
-        } else {
-          console.warn('[AUTOSAVE] Cloud sync failed, will retry later.', err?.message || err);
-          autosaveFailuresRef.current = failures + 1;
-          setSaveStatus('DIRTY');
-        }
-      } finally {
-        setIsCloudSyncing(false);
-        // Cancel the deferred "Saving…" label and hide it regardless of
-        // success/failure — the next paint either shows "Saved just now"
-        // or an error banner, both of which supersede the saving label.
-        if (savingShowTimerRef.current) { clearTimeout(savingShowTimerRef.current); savingShowTimerRef.current = null; }
-        setSavingVisible(false);
-      }
-    }, delay);
-
-    return () => clearTimeout(cloudTimer);
-  }, [saveStatus, editorText, impression, advice, appointmentId, isFinalized, isOnline, selectedTemplateId, isCloudSyncing, cloudAutosaveDisabledReason]);
 
 
 
   // --- TIMELINE FETCH (standalone so refresh button can call it) ---
-  const fetchPatientTimeline = useCallback(async (appointmentData, currentAppId) => {
-    if (!appointmentData) return;
-    setLoadingTimeline(true);
-    try {
-      const patientId = appointmentData.patientId || appointmentData.patientIdentifier;
 
-      // Try the dedicated patient timeline API first if patientId is a valid Guid
-      const guidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-      const isGuid = guidRegex.test(patientId);
-
-      if (isGuid) {
-        console.info(`[TIMELINE] Querying dedicated timeline API for patient Guid: ${patientId}`);
-        const res = await apiClient.get(`/patients/${patientId}/timeline`);
-        if (res.data?.success && Array.isArray(res.data.data)) {
-          const formattedHistory = res.data.data
-            .filter(a => String(a.appointmentId) !== String(appointmentData.appointmentId) && a.displayId !== currentAppId)
-            .map(a => ({
-              ...a,
-              assetCount: a.assets?.length || 0,
-              reportImpression: a.report?.impression || '',
-              report: a.report
-            }));
-          setPatientHistory(formattedHistory);
-          setLoadingTimeline(false);
-          return;
-        }
-      }
-
-      // Fallback search
-      const searchQuery = patientId
-        ? String(patientId)
-        : (appointmentData.patientName || '');
-
-      if (!searchQuery) return;
-
-      const [todayRes, archiveRes] = await Promise.all([
-        apiClient.get('/appointments', { params: { search: searchQuery } }).catch(() => ({ data: [] })),
-        apiClient.get('/appointments', { params: { search: searchQuery, isArchive: true } }).catch(() => ({ data: [] })),
-      ]);
-
-      const seen = new Set();
-      const merged = [...(Array.isArray(todayRes.data) ? todayRes.data : []), ...(Array.isArray(archiveRes.data) ? archiveRes.data : [])]
-        .filter(a => {
-          const key = String(a.appointmentId);
-          if (seen.has(key)) return false;
-          seen.add(key);
-          return true;
-        });
-
-      const past = merged
-        .filter(a => {
-          const samePatient =
-            (patientId && (String(a.patientId) === String(patientId) || String(a.patientIdentifier) === String(patientId))) ||
-            a.patientName?.toLowerCase().trim() === appointmentData.patientName?.toLowerCase().trim();
-          const different =
-            String(a.appointmentId) !== String(appointmentData.appointmentId) &&
-            a.displayId !== currentAppId;
-          return samePatient && different;
-        })
-        .sort((a, b) => new Date(b.dateTime) - new Date(a.dateTime));
-
-      setPatientHistory(past);
-    } catch (err) {
-      console.warn('[TIMELINE] Fetch failed:', err.message);
-    } finally {
-      setLoadingTimeline(false);
-    }
-  }, []);
-
-  const handleLoadHistoricalDicom = async (study) => {
-    const historicalId = study.appointmentId || study.AppointmentId || study.id || study.Id;
-    if (historicalId === String(appointmentId)) return;
-
-    setLoading(true);
-    setProcessingStatus(`Synchronizing comparative study: ${study.modality || 'DICOM'}...`);
-
-    try {
-      // Manifest endpoint — same Option C migration as the initial load.
-      const manifestRes = await apiClient.get(`/Study/${historicalId}/manifest`)
-        .catch(() => ({ data: { success: false } }));
-      const manifestAssets = (manifestRes?.data?.success && manifestRes.data.data?.assets) || [];
-
-      if (manifestAssets.length > 0) {
-        const hydAssets = assetsFromManifest(manifestAssets, { isHistorical: true });
-
-        setUploadedFiles(hydAssets);
-        setIsHistoricalMode(true);
-        setHistoricalStudyContext(study);
-        setActiveAssetIndex(0);
-
-        // Switch to split mode to ensure visibility
-        setEditorState('standard');
-
-        console.info(`[1RAD] Historical Context Injected: ${historicalId}`);
-      } else {
-        showNotif('warning', 'NO IMAGING ASSETS', 'No imaging assets were found for this historical study.');
-      }
-    } catch (err) {
-      console.error("[1RAD] Historical load failure:", err);
-      showNotif('error', 'SYNC ERROR', 'Could not synchronize historical study assets. Please try again.');
-    } finally {
-      setLoading(false);
-      setProcessingStatus('');
-    }
-  };
 
   const handleRestoreCurrentStudy = () => {
     setLoading(true);
@@ -780,6 +419,8 @@ const ReportingPage = () => {
 
   // --- DATA FETCHING ---
   const fetchReportingContext = useCallback(async (appId) => {
+    const reqId = ++fetchReqRef.current;               // supersede any older in-flight load
+    const isStale = () => reqId !== fetchReqRef.current;
     setLoading(true);
     setError(null);
     console.info(`[1RAD] Initializing Reporting Context for AppID: ${appId}`);
@@ -827,6 +468,11 @@ const ReportingPage = () => {
         setLoading(false);
         return;
       }
+
+      // A newer load (the user switched appointment/service, or navigated away)
+      // started while this one was in flight — drop this result so we don't clobber
+      // the current context with stale data. Don't clear loading: the newer load owns it.
+      if (isStale()) return;
 
       // The report must always show a DOCTOR as "Referred By". The server
       // resolves referringDoctorName from the referral source (an agent
@@ -1038,11 +684,10 @@ const ReportingPage = () => {
         console.info(`[1RAD] Found Existing Report.`);
 
         const findingsHtml = r.findings || '';
-        // Record what the server currently holds so draft-recovery can compare
-        // lineage (see serverBaselineRef declaration).
-        serverBaselineRef.current = findingsHtml;
-        // B2 Track 3 — stash the OCC token for the next save.
-        rowVersionRef.current = r.rowVersion ?? r.RowVersion ?? null;
+        // Seed the hook's OCC tokens (serverBaseline + rowVersion) from the
+        // loaded report so the next save runs the concurrency check correctly,
+        // and draft-recovery can compare lineage via the on-disk serverBaseline.
+        setReportBaseline({ findings: findingsHtml, rowVersion: r.rowVersion ?? r.RowVersion ?? null });
         // ── Text-align persistence diagnostic (load side) ────────────────
         // If save logged alignCount > 0 but this logs 0, the API round-trip
         // is dropping inline styles. If both show alignCount > 0, the issue
@@ -1168,16 +813,7 @@ const ReportingPage = () => {
       const draft = await nativeStorage.get(`1rad_draft_${appId}`);
       if (draft) {
         console.info('[1RAD] Reconstituting Workspace from Local Draft');
-        // Use the same imperative+state pattern so the editor catches up.
-        setEditorText(draft.findings || '');
-        requestAnimationFrame(() => {
-          const handle = editorRef.current;
-          if (!handle) return;
-          if (handle.setContent) handle.setContent(draft.findings || '');
-          else if (handle.editor) {
-            try { handle.editor.commands.setContent(draft.findings || '', false); } catch {}
-          }
-        });
+        applyEditorContent(draft.findings || '');
         setImpression(draft.impression || '');
         setAdvice(draft.advice || '');
         setSelectedTemplateId(draft.selectedTemplateId);
@@ -1197,6 +833,9 @@ const ReportingPage = () => {
     if (appointmentId) {
       fetchReportingContext(appointmentId);
     }
+    // Invalidate any in-flight load when the appointment/service changes or the
+    // page unmounts, so a late-arriving response can't apply stale context.
+    return () => { fetchReqRef.current++; };
     // Multi-service rollout: re-fetch when the user switches between
     // service tabs so the editor reloads with that service's report.
   }, [appointmentId, activeServiceId, fetchReportingContext]);
@@ -1271,240 +910,14 @@ const ReportingPage = () => {
   }, [appointmentId, isFinalized, isOnline]);
 
   // --- OFFLINE AUTOSAVE ---
-  useEffect(() => {
-    if (!appointmentId || isFinalized) return;
-
-    const autosaveTimer = setTimeout(async () => {
-      // Pull fresh editor HTML so attribute-only changes (right-align,
-      // text-color, etc.) made within the 300 ms onUpdate debounce window
-      // still make it into the persisted draft.
-      const freshFindings = editorRef.current?.editor?.getHTML?.() ?? editorText;
-      const draft = {
-        findings: freshFindings,
-        impression,
-        advice,
-        selectedTemplateId,
-        timestamp: new Date().getTime(),
-        serverBaseline: serverBaselineRef.current,
-      };
-      console.log(`[REPORTING] Autosaving draft for ${appointmentId}...`);
-      await nativeStorage.set(`1rad_draft_${appointmentId}`, draft);
-      // Mirror the draft into the offline cache (Phase B1 Slice 3). The
-      // nativeStorage write above still drives the existing crash-recovery
-      // prompt; this write keeps the IndexedDB cache row aligned with the
-      // user's latest in-flight edit so a re-open while offline shows the
-      // freshest version, not the last server snapshot.
-      try {
-        await saveLocalDraft(appointmentId, {
-          findings: freshFindings,
-          impression,
-          advice,
-          templateId: selectedTemplateId,
-        });
-      } catch (cacheErr) {
-        console.warn('[REPORTING] Local cache draft write failed', cacheErr);
-      }
-    }, 2000); // Debounce for 2 seconds
-
-    return () => clearTimeout(autosaveTimer);
-  }, [editorText, impression, advice, selectedTemplateId, appointmentId, isFinalized]);
-
-
-
-  const handleSaveReport = async (finalizing = false) => {
-    if (!appointmentId) {
-      showNotif('error', 'CONTEXT MISSING', 'Cannot save the report — appointment context is missing. Please reload the page.');
-      return;
-    }
-
-    // Flush any pending editor changes (debounce is 300ms) so all content is saved
-    let currentFindings = editorText;
-    if (editorRef.current?.editor) {
-      currentFindings = editorRef.current.editor.getHTML();
-    }
-    // ── Text-align persistence diagnostic ──────────────────────────────
-    // Count text-align occurrences in the HTML being saved so we can tell
-    // the user whether alignment leaves the browser intact. If this prints
-    // alignCount > 0 but the post-reload version reports 0, the bug is
-    // server-side or wire-level. If this prints 0 right after the user
-    // clicked Right-Align, the bug is in the editor command itself.
-    try {
-      const sample = (currentFindings || '');
-      const alignMatches = sample.match(/text-align\s*:\s*[a-z]+/gi) || [];
-      console.info('[ALIGN_DIAG] save payload:', {
-        finalizing,
-        htmlLength: sample.length,
-        alignCount: alignMatches.length,
-        aligns: alignMatches.slice(0, 5),
-        firstSnippet: sample.slice(0, 200),
-      });
-    } catch (_) { /* never block save on diagnostic */ }
-
-    const payload = {
-      appointmentId: appointmentId,
-      // Multi-service rollout — scope to the active service line.
-      appointmentServiceId: activeServiceId || null,
-      templateId: selectedTemplateId,
-      findings: currentFindings,
-      impression: impression || '',
-      advice: advice || '',
-      isFinalized: finalizing,
-      reportingMode: 'Narrative',
-      // B2 Track 3 — OCC token from the last load / save.
-      rowVersion: rowVersionRef.current,
-    };
-
-    if (!isOnline) {
-      await addToOutbox('REPORT', payload);
-      showNotif('warning', finalizing ? 'QUEUED FOR SYNC' : 'CACHED LOCALLY', finalizing ? 'You are offline. The finalized report has been queued and will sync automatically when reconnected.' : 'You are offline. Draft has been saved locally and will sync when reconnected.');
-      if (finalizing) {
-        setIsFinalized(true);
-        navigate('/doctor-board');
-      }
-      return;
-    }
-
-    setIsSaving(true);
-    try {
-      const res = await apiClient.post('/reporting/save', payload);
-      if (res.data?.success) {
-        // The server now holds exactly what we just sent — advance the
-        // baseline so any subsequent draft compares lineage against this
-        // saved content (and a reload right after save won't falsely prompt).
-        serverBaselineRef.current = currentFindings;
-        // B2 Track 3 — advance the OCC token to the just-saved version.
-        const updated = res.data?.data;
-        if (updated?.rowVersion ?? updated?.RowVersion) {
-          rowVersionRef.current = updated.rowVersion ?? updated.RowVersion;
-        }
-        // Bump the calm status line so the user sees "Saved just now" in
-        // the corner even when the manual save modal isn't visible.
-        setSaveStatus('SUCCESS');
-        setLastSavedAt(new Date());
-        showNotif('success', finalizing ? 'REPORT FINALIZED' : 'DRAFT SAVED', finalizing ? 'Report has been finalized and dispatched successfully.' : 'Your changes have been saved successfully.');
-        if (finalizing) {
-          setIsFinalized(true);
-          // Clear local draft on success
-          await nativeStorage.delete(`1rad_draft_${appointmentId}`);
-          navigate('/doctor-board');
-        }
-      }
-    } catch (err) {
-      console.error('[REPORTING] Save failed', err);
-      if (err?.response?.status === 409 && err.response.data?.code === 'OCC_CONFLICT') {
-        // B2 Track 3 — auto-merge + Undo.
-        // Stash the user's content so the 30s Undo can re-apply it.
-        // Replace the editor with the server's canonical state. Show a
-        // banner; on Undo click the user's content is sent back with the
-        // server's new RowVersion (so it wins deliberately).
-        const server = err.response.data?.data || {};
-        const previousContent = {
-          findings:    currentFindings,
-          impression:  impression || '',
-          advice:      advice || '',
-          templateId:  selectedTemplateId,
-          isFinalized: finalizing,
-        };
-        // Apply server state to the editor.
-        applyEditorContent(server.findings || '');
-        setImpression(server.impression || '');
-        setAdvice(server.advice || '');
-        if (server.templateId) setSelectedTemplateId(String(server.templateId));
-        // Advance our token to the server's (so a subsequent save — Undo
-        // included — uses the up-to-date concurrency value).
-        rowVersionRef.current = server.rowVersion ?? server.RowVersion ?? null;
-        serverBaselineRef.current = server.findings || '';
-        setOccConflict({
-          shownAt: Date.now(),
-          previous: previousContent,
-        });
-        setSaveStatus('CONFLICT');
-        logEvent('conflict.shown', { appointmentId, finalizing });
-      } else if (!err.response) {
-        await addToOutbox('REPORT', payload);
-        showNotif('warning', 'SAVED TO OUTBOX', 'Network error encountered. Report has been saved to the offline outbox and will sync automatically.');
-        if (finalizing) {
-          setIsFinalized(true);
-          navigate('/doctor-board');
-        }
-      } else {
-        showNotif('error', 'SAVE FAILED', `Could not save the report: ${err.response?.data?.error || err.message}`);
-      }
-    } finally {
-      setIsSaving(false);
-    }
-  };
-
-  // B2 Track 3 — Undo handler for a 409 auto-merge. Re-applies the user's
-  // pre-conflict content and submits it with the server's NEW RowVersion
-  // so it wins deliberately. The conflict toast auto-dismisses after 30s.
-  const handleUndoConflict = useCallback(async () => {
-    const prev = occConflict?.previous;
-    if (!prev || !appointmentId) return;
-    applyEditorContent(prev.findings || '');
-    setImpression(prev.impression || '');
-    setAdvice(prev.advice || '');
-    if (prev.templateId) setSelectedTemplateId(String(prev.templateId));
-    setOccConflict(null);
-    try {
-      const res = await apiClient.post('/reporting/save', {
-        appointmentId,
-        appointmentServiceId: activeServiceId || null,
-        templateId: prev.templateId,
-        findings: prev.findings,
-        impression: prev.impression,
-        advice: prev.advice,
-        isFinalized: prev.isFinalized,
-        reportingMode: 'Narrative',
-        rowVersion: rowVersionRef.current,
-      });
-      if (res.data?.success) {
-        const updated = res.data?.data;
-        if (updated?.rowVersion ?? updated?.RowVersion) {
-          rowVersionRef.current = updated.rowVersion ?? updated.RowVersion;
-        }
-        serverBaselineRef.current = prev.findings;
-        setSaveStatus('SUCCESS');
-        setLastSavedAt(new Date());
-        showNotif('success', 'UNDO APPLIED', 'Your changes have been re-applied over the conflicting save.');
-        logEvent('conflict.resolved', { appointmentId, choice: 'undo' });
-      }
-    } catch (e) {
-      console.warn('[REPORTING] Undo failed', e);
-      showNotif('error', 'UNDO FAILED', 'Could not re-apply your changes. Try saving again.');
-    }
-  }, [occConflict, appointmentId, applyEditorContent, showNotif]);
-
-  // Auto-dismiss the conflict toast after 30 seconds. The user can still
-  // act on it during that window via the Undo button.
-  useEffect(() => {
-    if (!occConflict) return undefined;
-    const t = setTimeout(() => setOccConflict(null), 30_000);
-    return () => clearTimeout(t);
-  }, [occConflict]);
 
 
 
 
 
-  const handleApplyTemplate = (template) => {
-    setSelectedTemplateId(template.id);
-    setEditorText(template.content || template.Content || '');
-  };
 
-  const handleApplyKeyword = (macro) => {
-    const textToInsert = macro.replacementText || '';
-    insertContent(textToInsert);
 
-    // Also copy plain text version to clipboard for tactical versatility
-    try {
-      const plainText = textToInsert.replace(/<[^>]*>?/gm, '');
-      navigator.clipboard.writeText(plainText);
-      console.info(`[1RAD] Macro "${macro.trigger}" inserted and copied to clipboard.`);
-    } catch (err) {
-      console.warn('[1RAD] Clipboard fallback failed:', err);
-    }
-  };
+
 
   const onMeasurement = (measurement) => {
     console.log('[1RAD] Clinical Measurement Recorded:', measurement);
@@ -1677,68 +1090,6 @@ const ReportingPage = () => {
     if (e.target) e.target.value = '';
   };
 
-  const testAssetConnection = async (asset) => {
-    try {
-      console.log(`[DICOM_TEST] Testing connection to: ${asset.remoteUrl}`);
-
-      // Try direct first
-      try {
-        const headResponse = await fetch(asset.remoteUrl, {
-          method: 'HEAD',
-          mode: 'cors',
-          cache: 'no-cache'
-        });
-        if (headResponse.ok) {
-          console.log(`[DICOM_TEST] ✅ Direct access successful.`);
-          return { success: true, useProxy: false };
-        }
-      } catch (e) {
-        console.warn(`[DICOM_TEST] Direct HEAD failed (likely CORS):`, e.message);
-      }
-
-      // Try proxy using apiClient (optional - if backend supports it)
-      try {
-        console.log(`[DICOM_TEST] Attempting proxy test...`);
-        const proxyResponse = await apiClient.get(`/Study/proxy-asset`, {
-          params: { url: asset.remoteUrl },
-          responseType: 'blob',
-          timeout: 5000
-        });
-
-        if (proxyResponse.status === 200 && proxyResponse.data) {
-          console.log(`[DICOM_TEST] ✅ Secure proxy access successful.`);
-          return { success: true, useProxy: true };
-        }
-      } catch (proxyError) {
-        console.warn(`[DICOM_TEST] Proxy test failed:`, {
-          status: proxyError.response?.status,
-          statusText: proxyError.response?.statusText,
-          message: proxyError.message
-        });
-
-        // If proxy returns 405, it means endpoint doesn't support this method
-        // This is not a critical error - we can still try direct download
-        if (proxyError.response?.status === 405) {
-          console.warn(`[DICOM_TEST] Proxy endpoint not available (405 Method Not Allowed)`);
-        }
-      }
-
-      // Return success=false but don't throw - let the main download logic handle it
-      console.log(`[DICOM_TEST] Connection test inconclusive, will attempt direct download`);
-      return {
-        success: false,
-        useProxy: false,
-        error: "Connection test failed, but direct download will be attempted"
-      };
-    } catch (error) {
-      console.error(`[DICOM_TEST] Connection test error:`, error);
-      return {
-        success: false,
-        useProxy: false,
-        error: error.message
-      };
-    }
-  };
 
   const hydrateZipAsset = async (index) => {
     const asset = uploadedFiles[index];
@@ -1819,7 +1170,7 @@ const ReportingPage = () => {
             } else {
               throw new Error('Proxy returned no data.');
             }
-          } catch (proxyErr) {
+          } catch {
             throw new Error(`CORS_ERROR: Direct access blocked and proxy failed. Contact your administrator to configure CORS on Azure Blob Storage.`);
           }
         } else {
@@ -2112,52 +1463,14 @@ const ReportingPage = () => {
 
 
 
-  const insertContent = (content) => {
-    if (!editorRef.current) return;
-
-    let htmlContent = content;
-    // Check if content is a Markdown-style table and convert to real HTML
-    if (content.trim().startsWith('|')) {
-      const rows = content.trim().split('\n').filter(r => !r.includes('---') && r.trim() !== '');
-      htmlContent = `<table style="width:100%; border-collapse: collapse; margin: 15px 0; border: 1px solid #e2e8f0;">` +
-        rows.map((row, i) => {
-          const cells = row.split('|').filter(c => c.trim() !== '' || row.indexOf('|') !== row.lastIndexOf('|'));
-          const tag = i === 0 ? 'th' : 'td';
-          return `<tr>${cells.map(c => `<${tag} style="border: 1px solid #e2e8f0; padding: 10px; background: ${i === 0 ? '#f8fafc' : '#fff'}; text-align: left;">${c.trim() || '&nbsp;'}</${tag}>`).join('')}</tr>`;
-        }).join('') +
-        `</table><p>&nbsp;</p>`;
-    } else {
-      // Ensure we don't double wrap if it's already HTML, but convert newlines for simple text
-      if (!content.includes('<')) {
-        htmlContent = content.replace(/\n/g, '<br>');
-      }
-    }
-
-    editorRef.current.insertContent(htmlContent);
-  };
 
 
 
 
-  const handleEditorChange = (html) => {
-    setEditorText(html);
-  };
 
 
 
 
-  const toggleFullscreen = () => {
-    const container = document.querySelector('.panel-right');
-    if (!container) return;
-    if (!document.fullscreenElement) {
-      container.requestFullscreen().then(() => setIsFullscreen(true)).catch(err => {
-        console.error(`Error: ${err.message}`);
-      });
-    } else {
-      document.exitFullscreen();
-      setIsFullscreen(false);
-    }
-  };
 
   // Sync state if user exits via Escape key
   useEffect(() => {
@@ -2168,10 +1481,6 @@ const ReportingPage = () => {
 
 
 
-  const handleSuggestionSelect = () => {
-    insertContent('Gall bladder shows echogenic calculi with posterior acoustic shadowing. No pericholecystic fluid is seen.');
-    setShowInlineSuggestion(false);
-  };
 
   const handlePreviewPrint = () => {
     // Flush any pending editor changes (debounce is 300ms) so the preview shows all pages
@@ -2284,13 +1593,6 @@ const ReportingPage = () => {
     document.body.style.userSelect = 'auto';
   }, [handleResizing]);
 
-  const startResizing = useCallback(() => {
-    isResizing.current = true;
-    document.addEventListener('mousemove', handleResizing);
-    document.addEventListener('mouseup', stopResizing);
-    document.body.style.cursor = 'col-resize';
-    document.body.style.userSelect = 'none';
-  }, [handleResizing, stopResizing]);
 
   useEffect(() => {
     const handleKeys = (e) => {
@@ -2715,34 +2017,7 @@ const ReportingPage = () => {
     else if (editorState === 'collapsed') setEditorWidth(5);
   }, [editorState]);
 
-  const insertTable = (preset) => {
-    const header = `| ${preset.columns.join(' | ')} |`;
-    const separator = `| ${preset.columns.map(() => '---').join(' | ')} |`;
-    const row = `| ${preset.columns.map(() => ' ').join(' | ')} |`;
-    const tableMd = `\n${header}\n${separator}\n${row}\n`;
-    insertContent(tableMd);
-    setShowTableModal(false);
-  };
 
-  const handleSaveTable = () => {
-    if (!newTable.name) { showNotif('warning', 'TABLE NAME REQUIRED', 'Please enter a name for the table before saving.'); return; }
-    setTablePresets([...tablePresets, { id: Date.now(), ...newTable }]);
-    setShowTableBuilder(false);
-    setNewTable({ name: '', columns: [''] });
-  };
-
-  const handleImageUpload = (e) => {
-    const file = e.target.files[0];
-    if (!file) return;
-    const reader = new FileReader();
-    reader.onload = (event) => {
-      const id = 'img_' + Date.now();
-      const imgHtml = `<div id="${id}_container" style="margin: 15px 0; text-align: center; position: relative; display: inline-block; width: 50%;"><img src="${event.target.result}" id="${id}" style="width: 100%; border-radius: 8px; border: 1px solid #e2e8f0; cursor: pointer;" onclick="window.onImgClick('${id}')" /><div style="font-size: 11px; color: #64748b; margin-top: 5px;">Clinical Image: ${file.name}</div></div><p>&nbsp;</p>`;
-      insertContent(imgHtml);
-    };
-    reader.readAsDataURL(file);
-    e.target.value = null;
-  };
 
   // Expose function to global scope for the inline onclick handler
   useEffect(() => {
@@ -2759,51 +2034,6 @@ const ReportingPage = () => {
     };
   }, []);
 
-  const handleSlashCommand = (cmd) => {
-    if (cmd === 'table') setShowTableModal(true);
-    else if (cmd === 'image') fileInputRef.current.click();
-    else if (cmd === 'diagram') showNotif('info', 'COMING SOON', 'The integrated flowchart / diagram engine is currently under development and will be available soon.');
-    setShowSlashMenu(false);
-  };
-
-  const resizeImg = (size) => {
-    if (!selectedImg) return;
-    const container = document.getElementById(selectedImg + '_container');
-    if (container) {
-      container.style.width = size;
-      setEditorText(editorRef.current?.getHTML() || '');
-    }
-  };
-
-  const deleteImg = () => {
-    if (!selectedImg) return;
-    const container = document.getElementById(selectedImg + '_container');
-    if (container) {
-      container.remove();
-      setSelectedImg(null);
-      setEditorText(editorRef.current?.getHTML() || '');
-    }
-  };
-
-
-
-  const syncFromStructured = () => {
-    // Mock sync logic: takes structured data and generates a clean summary
-    const syncText = "SYNALYSIS REPORT:\n" +
-      "Clinical: Pain abdomen, fever.\n" +
-      "Liver: Normal size and echotexture.\n" +
-      "Kidneys: Right measures 10.2 cm. Left measures 9.8 cm.\n" +
-      "Impression: Normal study.";
-    setEditorText(syncText);
-  };
-
-  const commonPhrases = [
-    { label: 'Normal Study', text: 'The study reveals no significant abnormality in the scanned region.' },
-    { label: 'Clinical Correlation', text: 'Clinical correlation is suggested for further management.' },
-    { label: 'Follow-up Suggested', text: 'A follow-up scan is recommended in 3-6 months to assess progression.' },
-    { label: 'Normal Liver', text: 'Liver is normal in size and echotexture. No focal lesion seen.' },
-    { label: 'No Calculus', text: 'No evidence of radiopaque calculus or hydronephrosis seen.' }
-  ];
 
   if (loading && !activeAppointment) {
     return (
@@ -2840,6 +2070,39 @@ const ReportingPage = () => {
       </div>
     );
   }
+
+  // Single source of truth for the report editor — rendered in both the default
+  // and the generated-report layouts (only the placeholder differs), so its
+  // props never drift between the two call sites.
+  const renderNarrativeEditor = (placeholder) => (
+    <NarrativeEditor
+      ref={editorRef}
+      content={editorText}
+      onChange={(html) => setEditorText(html)}
+      placeholder={placeholder}
+      onSave={() => handleSaveReport(false)}
+      onAiAssist={handleAiAssist}
+      onWholeReportAi={runRadAiCleanup}
+      aiBusy={aiReview.busy}
+      style={{ flex: 1, minHeight: 0 }}
+      keywordLibrary={keywordLibrary}
+      pageMargins={protocol ? {
+        top:    protocol.headerMargin ?? 25,
+        right:  protocol.rightMargin  ?? 20,
+        bottom: protocol.bottomMargin ?? 20,
+        left:   protocol.leftMargin   ?? 20,
+      } : undefined}
+      bodyFontPt={protocol?.fontSize || 12}
+      firstPageBanner={activeAppointment ? (
+        <PatientInfoBlock
+          appointmentId={appointmentId}
+          appointmentServiceId={activeServiceId || null}
+          fullAppointment={activeAppointment}
+          savedMetadata={null}
+        />
+      ) : null}
+    />
+  );
 
   return (
     <>
@@ -3957,1701 +3220,76 @@ const ReportingPage = () => {
             Intentionally does NOT use the .panel-center class — that class has a
             mobile media-query rule forcing height: 65vh + flex-row that fights
             this layout. We give the wrapper its own inline-only styles instead. */}
-        {activeMainTab === 'DICOM' && isMobile && (() => {
-          // Use the per-service filtered list — switching services
-          // updates the mobile viewer too, not just the desktop.
-          const activeAsset = visibleUploadedFiles[activeAssetIndex];
-          const hasRawFiles = !!(activeAsset?.rawFiles?.length);
-          const needsLoad = !!activeAsset?.needsHydration && !hasRawFiles;
-          return (
-          <div style={{
-            display: 'flex',
-            flexDirection: 'column',
-            flex: '1 1 auto',
-            width: '100%',
-            // Use SMALL viewport height (svh) instead of dynamic (dvh). dvh
-            // shrinks when the URL bar collapses, causing the entire DICOM
-            // layout to grow upward on the first user gesture — the
-            // user-reported "series going up" issue. svh stays pinned to the
-            // smallest reasonable viewport, so the canvas height never shifts
-            // after mount. 80 px = 20 px container top margin + 60 px page
-            // header.
-            height: 'calc(100svh - 80px)',
-            minHeight: '480px',
-            padding: 0,
-            background: '#0a0a0f',
-            overflow: 'hidden',
-            // Block scroll anchoring — if Cornerstone re-renders into a
-            // resized canvas, browsers may try to "keep the user's view
-            // anchored" by scrolling the parent, which manifests as the
-            // series strip drifting up. Force a stable layout.
-            overflowAnchor: 'none',
-          }}>
-            {/* Top strip — slice counter + count of series. Fixed height so
-                the layout stays stable on tap. Shrunk from 40 → 34 px. */}
-            <div style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: '6px',
-              padding: '4px 8px',
-              background: 'linear-gradient(180deg, #0f172a 0%, #1e293b 100%)',
-              borderBottom: '1px solid #334155',
-              flexShrink: 0,
-              height: '34px',
-            }}>
-              <div style={{ color: '#94a3b8', fontSize: '10px', fontWeight: 900, letterSpacing: '1.5px' }}>
-                {visibleUploadedFiles.length} SERIES
-              </div>
-              <div style={{ flex: 1 }} />
-              {/* Mobile = info-only. The radiologist on a phone is
-                  reviewing what's on the page, not measuring or
-                  windowing — those workflows happen on tablet/desktop
-                  where the viewer has the real toolset. So the only
-                  affordance on the mobile DICOM top strip is the
-                  slice counter. */}
-              {hasRawFiles && (
-                <div style={{
-                  background: 'rgba(59, 130, 246, 0.25)',
-                  border: '1px solid rgba(59, 130, 246, 0.5)',
-                  padding: '5px 10px', borderRadius: '6px',
-                  fontSize: '11px', fontWeight: 800, color: 'white', whiteSpace: 'nowrap',
-                }}>
-                  {currentSlice} / {activeAsset.rawFiles.length}
-                </div>
-              )}
-            </div>
-
-            {/* Horizontal scrolling series strip — compact density on phones.
-                Heights are FIXED (no minHeight) so the strip cannot grow when
-                a tile gains a focus outline or active border, which was making
-                the layout shift on tap. */}
-            {visibleUploadedFiles.length > 0 && (
-              <div style={{
-                display: 'flex',
-                flexDirection: 'row',
-                gap: '6px',
-                padding: '5px 8px',
-                background: '#0f172a',
-                borderBottom: '1px solid #334155',
-                overflowX: 'auto',
-                overflowY: 'hidden',
-                WebkitOverflowScrolling: 'touch',
-                scrollSnapType: 'x proximity',
-                flexShrink: 0,
-                // Strip is 48 px tall (tile 38 + 5 px padding × 2). Fixed
-                // height — not minHeight — prevents content from pushing the
-                // viewer down when an active tile gains its 2 px border.
-                height: '48px',
-                overflowAnchor: 'none',
-              }}>
-                {visibleUploadedFiles.map((f, i) => {
-                  const isActive = activeAssetIndex === i;
-                  const sliceCount = f.rawFiles?.length || 0;
-                  return (
-                    <button
-                      key={i}
-                      type="button"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        setActiveAssetIndex(i);
-                      }}
-                      title={f.name}
-                      style={{
-                        flexShrink: 0,
-                        minWidth: '64px',
-                        maxWidth: '88px',
-                        height: '38px',
-                        // Box-sizing forces the active 2 px border to absorb
-                        // INTO the 38 px height rather than adding to it.
-                        boxSizing: 'border-box',
-                        padding: '3px 6px',
-                        borderRadius: '6px',
-                        border: isActive ? '2px solid #3b82f6' : '1px solid rgba(255,255,255,0.1)',
-                        background: isActive
-                          ? 'linear-gradient(135deg, #3b82f6, #1d4ed8)'
-                          : 'rgba(255,255,255,0.05)',
-                        color: isActive ? 'white' : '#cbd5e1',
-                        cursor: 'pointer',
-                        display: 'flex',
-                        flexDirection: 'column',
-                        justifyContent: 'center',
-                        alignItems: 'flex-start',
-                        gap: '1px',
-                        scrollSnapAlign: 'start',
-                        touchAction: 'manipulation',
-                        WebkitTapHighlightColor: 'transparent',
-                        boxShadow: isActive ? '0 2px 8px rgba(59, 130, 246, 0.35)' : 'none',
-                      }}
-                    >
-                      <div style={{ fontSize: '10px', fontWeight: 950, letterSpacing: '0.3px', lineHeight: 1 }}>
-                        S{i + 1}
-                      </div>
-                      <div style={{
-                        fontSize: '8px',
-                        fontWeight: 600,
-                        opacity: 0.8,
-                        lineHeight: 1,
-                        overflow: 'hidden',
-                        textOverflow: 'ellipsis',
-                        whiteSpace: 'nowrap',
-                        width: '100%',
-                      }}>
-                        {sliceCount > 0 ? `${sliceCount}` : '…'}
-                      </div>
-                    </button>
-                  );
-                })}
-              </div>
-            )}
-
-            {/* Viewer / state area — explicit min-height so flex never collapses to 0 */}
-            <div style={{
-              flex: '1 1 auto',
-              position: 'relative',
-              background: '#000',
-              minHeight: '300px',
-              overflow: 'hidden',
-            }}>
-              {loading && (
-                <div style={{
-                  position: 'absolute', inset: 0,
-                  background: 'rgba(15, 23, 42, 0.95)',
-                  backdropFilter: 'blur(8px)', zIndex: 100,
-                  display: 'flex', flexDirection: 'column',
-                  alignItems: 'center', justifyContent: 'center',
-                  color: 'white', padding: '20px', textAlign: 'center',
-                }}>
-                  <div style={{ width: '40px', height: '40px', border: '3px solid rgba(59,130,246,0.2)', borderTopColor: '#3b82f6', borderRadius: '50%', animation: 'spin 1s linear infinite' }} />
-                  <div style={{ fontSize: '12px', fontWeight: 900, marginTop: '14px', letterSpacing: '1px' }}>PROCESSING DICOM</div>
-                  <div style={{ fontSize: '10px', color: '#94a3b8', marginTop: '6px', maxWidth: '90%', wordBreak: 'break-word' }}>{processingStatus || 'Initializing…'}</div>
-                  <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
-                </div>
-              )}
-
-              {uploadedFiles.length === 0 ? (
-                /* No assets at all for this study */
-                <div style={{ height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#94a3b8', fontSize: '11px', fontWeight: 800, letterSpacing: '1.5px', flexDirection: 'column', gap: '16px', padding: '20px', textAlign: 'center' }}>
-                  <div style={{ fontSize: '36px', opacity: 0.3 }}>📡</div>
-                  <div>NO DICOM ASSETS FOR THIS STUDY</div>
-                  <input type="file" multiple accept=".dcm,.dicom,.zip" onChange={handleFileChange} style={{ fontSize: '11px', color: '#3b82f6' }} />
-                </div>
-              ) : needsLoad && !loading ? (
-                /* Asset metadata exists but rawFiles not yet downloaded */
-                <div style={{ height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#cbd5e1', fontSize: '12px', fontWeight: 800, flexDirection: 'column', gap: '14px', padding: '20px', textAlign: 'center' }}>
-                  <div style={{ fontSize: '36px', opacity: 0.4 }}>☁️</div>
-                  <div style={{ letterSpacing: '1px' }}>STUDY READY TO LOAD</div>
-                  <div style={{ fontSize: '10px', color: '#94a3b8', maxWidth: '260px', lineHeight: '1.4' }}>
-                    Tap to download imaging data from cloud storage and start viewing.
-                  </div>
-                  <button
-                    onClick={() => hydrateZipAsset(activeAssetIndex)}
-                    style={{
-                      marginTop: '8px',
-                      padding: '10px 20px',
-                      borderRadius: '10px',
-                      border: '1px solid #3b82f6',
-                      background: 'linear-gradient(135deg, #3b82f6, #1d4ed8)',
-                      color: 'white',
-                      fontSize: '12px',
-                      fontWeight: 900,
-                      letterSpacing: '1px',
-                      cursor: 'pointer',
-                    }}
-                  >
-                    ▼ LOAD STUDY
-                  </button>
-                </div>
-              ) : !hasRawFiles ? (
-                /* Files prop will be empty — show a neutral state instead of mounting the viewer with [] */
-                <div style={{ height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#475569', fontSize: '11px', fontWeight: 800, letterSpacing: '1.5px' }}>
-                  WAITING FOR DATA…
-                </div>
-              ) : (
-                <AdvancedDicomViewer
-                  key={`mobile-${activeAssetIndex}_${resetTrigger}`}
-                  files={activeAsset.rawFiles}
-                  placeholderUrl={activeAsset.thumbnailUrl}
-                  preParsedMetadata={activeAsset.metadata}
-                  activeTool={activeTool}
-                  isCine={cineEnabled}
-                  isSynced={false}
-                  keyImages={keyImages}
-                  onKeyImageToggle={toggleKeyImage}
-                  onSliceChange={(idx) => setCurrentSlice(idx + 1)}
-                  enableFullscreen={true}
-                  showMetadata={false}
-                  showMeasurements={false}
-                  showWindowingPresets={false}
-                  enableAdvancedTools={false}
-                  onMetadata={setActiveMetadata}
-                  invert={viewportProps.invert}
-                  flipHorizontal={viewportProps.flipHorizontal}
-                  flipVertical={viewportProps.flipVertical}
-                  rotation={viewportProps.rotation}
-                  resetTrigger={resetTrigger}
-                />
-              )}
-            </div>
-          </div>
-          );
-        })()}
-
-        {/* DICOM TAB — DESKTOP / TABLET (existing complex layout) */}
-        {activeMainTab === 'DICOM' && !isMobile && (
-          <div className="panel panel-center" style={{ display: 'flex', flex: 1, padding: 0 }}>
-            {/* LEFT TOOLBAR - Tablet Optimized */}
-            {true && (
-            <div
-              id="dicom-toolbar"
-              style={{
-                width: isTablet ? (window.innerWidth > 1024 ? '320px' : '280px') : '200px',
-                background: 'linear-gradient(180deg, #0f172a 0%, #1e293b 100%)',
-                borderRight: '2px solid #334155',
-                display: 'flex',
-                flexDirection: 'column',
-                overflow: 'hidden',
-                boxShadow: isTablet ? '4px 0 20px rgba(0,0,0,0.3)' : 'none',
-                position: 'relative',
-                zIndex: 10,
-                transition: 'transform 0.3s ease',
-                transform: 'translateX(0)' // Default to visible on tablets
-              }}>
-
-              {/* Tablet Toolbar Toggle - Show on tablets only */}
-              {isTablet && (
-                <button
-                  onClick={() => {
-                    const toolbar = document.getElementById('dicom-toolbar');
-                    if (toolbar.style.transform === 'translateX(-100%)') {
-                      toolbar.style.transform = 'translateX(0)';
-                    } else {
-                      toolbar.style.transform = 'translateX(-100%)';
-                    }
-                  }}
-                  style={{
-                    position: 'absolute',
-                    right: '-40px',
-                    top: '50%',
-                    transform: 'translateY(-50%)',
-                    background: 'linear-gradient(135deg, #3b82f6, #8b5cf6)',
-                    border: 'none',
-                    color: 'white',
-                    width: '40px',
-                    height: '80px',
-                    borderRadius: '0 8px 8px 0',
-                    cursor: 'pointer',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    fontSize: '16px',
-                    zIndex: 20,
-                    boxShadow: '2px 0 10px rgba(0,0,0,0.3)',
-                    touchAction: 'manipulation'
-                  }}
-                >
-                  🛠️
-                </button>
-              )}
-              {/* Toolbar Header */}
-              <div style={{
-                padding: isTablet ? '25px 20px' : '15px',
-                borderBottom: '2px solid #334155',
-                background: 'linear-gradient(135deg, #3b82f6, #8b5cf6)',
-                position: 'relative'
-              }}>
-                <div style={{
-                  color: 'white',
-                  fontSize: isTablet ? '16px' : '12px',
-                  fontWeight: 900,
-                  letterSpacing: '1px',
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '10px'
-                }}>
-                  <span style={{ fontSize: isTablet ? '24px' : '16px' }}>🛠️</span>
-                  DICOM TOOLS
-                </div>
-                {isTablet && (
-                  <div style={{
-                    color: 'rgba(255,255,255,0.8)',
-                    fontSize: '11px',
-                    marginTop: '6px',
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '6px'
-                  }}>
-                    <span>📱</span> Touch optimized interface
-                  </div>
-                )}
-              </div>
-
-              {/* Quick Actions - Tablet Only */}
-              {isTablet && (
-                <div style={{ padding: '20px', borderBottom: '1px solid #334155', background: 'rgba(59, 130, 246, 0.1)' }}>
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
-                    <button
-                      onClick={() => {
-                        setActiveTool('WindowLevelTool');
-                        setResetTrigger(prev => prev + 1);
-                      }}
-                      style={{
-                        background: 'linear-gradient(135deg, #10b981, #059669)',
-                        border: 'none',
-                        color: 'white',
-                        padding: '12px',
-                        borderRadius: '8px',
-                        fontSize: '12px',
-                        fontWeight: 900,
-                        cursor: 'pointer',
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: '8px',
-                        touchAction: 'manipulation',
-                        boxShadow: '0 4px 12px rgba(16, 185, 129, 0.3)'
-                      }}
-                    >
-                      <span style={{ fontSize: '16px' }}>🔄</span>
-                      RESET VIEW
-                    </button>
-                    <button
-                      onClick={() => {
-                        showNotif('info', 'TOUCH GESTURE GUIDE', 'Pinch to zoom in/out  •  Single finger to pan  •  Double tap to reset view  •  Use toolbar for measurements  •  Keyboard shortcuts available with external keyboard.');
-                      }}
-                      style={{
-                        background: 'linear-gradient(135deg, #8b5cf6, #7c3aed)',
-                        border: 'none',
-                        color: 'white',
-                        padding: '12px',
-                        borderRadius: '8px',
-                        fontSize: '12px',
-                        fontWeight: 900,
-                        cursor: 'pointer',
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: '8px',
-                        touchAction: 'manipulation',
-                        boxShadow: '0 4px 12px rgba(139, 92, 246, 0.3)'
-                      }}
-                    >
-                      <span style={{ fontSize: '16px' }}>❓</span>
-                      HELP
-                    </button>
-                  </div>
-                </div>
-              )}
-
-              {/* Essential Tools */}
-              {/* Navigation Tools */}
-              <div style={{ padding: isTablet ? '25px 20px' : '15px', borderBottom: '1px solid #334155' }}>
-                <div style={{
-                  color: '#3b82f6',
-                  fontSize: isTablet ? '14px' : '10px',
-                  fontWeight: 900,
-                  marginBottom: isTablet ? '20px' : '10px',
-                  letterSpacing: '1px',
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '8px'
-                }}>
-                  <span style={{ fontSize: isTablet ? '18px' : '14px' }}>🎮</span>
-                  NAVIGATION
-                </div>
-                <div style={{
-                  display: 'grid',
-                  gridTemplateColumns: isTablet ? '1fr 1fr' : '1fr 1fr 1fr',
-                  gap: isTablet ? '12px' : '4px'
-                }}>
-                  {[
-                    { id: 'WindowLevelTool', icon: '☀️', label: 'Window/Level', shortcut: 'W', desc: 'Adjust brightness & contrast' },
-                    { id: 'ZoomTool', icon: '🔍', label: 'Zoom', shortcut: 'Z', desc: 'Magnify image' },
-                    { id: 'PanTool', icon: '✋', label: 'Pan', shortcut: 'P', desc: 'Move image around' },
-                    { id: 'StackScrollTool', icon: '📜', label: 'Scroll', shortcut: 'S', desc: 'Navigate slices' }
-                  ].map(t => (
-                    <button
-                      key={t.id}
-                      onClick={() => setActiveTool(t.id)}
-                      style={{
-                        background: activeTool === t.id
-                          ? 'linear-gradient(135deg, #3b82f6, #2563eb)'
-                          : 'rgba(255,255,255,0.05)',
-                        border: activeTool === t.id ? '3px solid #60a5fa' : '3px solid transparent',
-                        color: activeTool === t.id ? 'white' : '#e2e8f0',
-                        padding: isTablet ? '16px 12px' : '6px 4px',
-                        borderRadius: '10px',
-                        fontSize: isTablet ? '11px' : '8px',
-                        fontWeight: 900,
-                        cursor: 'pointer',
-                        display: 'flex',
-                        flexDirection: 'column',
-                        alignItems: 'center',
-                        gap: isTablet ? '8px' : '3px',
-                        transition: 'all 0.3s ease',
-                        width: '100%',
-                        textAlign: 'center',
-                        minHeight: isTablet ? '80px' : '45px',
-                        touchAction: 'manipulation',
-                        boxShadow: activeTool === t.id
-                          ? '0 6px 20px rgba(59, 130, 246, 0.4)'
-                          : '0 2px 8px rgba(0,0,0,0.1)',
-                        transform: activeTool === t.id ? 'translateY(-2px)' : 'none'
-                      }}
-                      title={isTablet ? t.desc : undefined}
-                    >
-                      <span style={{ fontSize: isTablet ? '20px' : '12px' }}>{t.icon}</span>
-                      <span style={{ fontSize: isTablet ? '10px' : '7px', lineHeight: '1.2', textAlign: 'center' }}>
-                        {t.label}
-                      </span>
-                      <span style={{
-                        fontSize: isTablet ? '9px' : '6px',
-                        background: 'rgba(255,255,255,0.2)',
-                        padding: isTablet ? '3px 6px' : '1px 2px',
-                        borderRadius: '4px',
-                        letterSpacing: '0.5px'
-                      }}>{t.shortcut}</span>
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              {/* Measurement Tools */}
-              <div style={{ padding: isTablet ? '25px 20px' : '15px', borderBottom: '1px solid #334155' }}>
-                <div style={{
-                  color: '#10b981',
-                  fontSize: isTablet ? '14px' : '10px',
-                  fontWeight: 900,
-                  marginBottom: isTablet ? '20px' : '10px',
-                  letterSpacing: '1px',
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '8px'
-                }}>
-                  <span style={{ fontSize: isTablet ? '18px' : '14px' }}>📏</span>
-                  MEASUREMENTS
-                </div>
-                <div style={{
-                  display: 'grid',
-                  gridTemplateColumns: isTablet ? '1fr 1fr' : '1fr 1fr 1fr',
-                  gap: isTablet ? '12px' : '4px'
-                }}>
-                  {[
-                    { id: 'LengthTool', icon: '📏', label: 'Length', shortcut: 'L', desc: 'Measure distance' },
-                    { id: 'HeightTool', icon: '📐', label: 'Height', shortcut: 'H', desc: 'Measure height' },
-                    { id: 'BidirectionalTool', icon: '↔️', label: 'Bidirectional', shortcut: 'B', desc: 'RECIST measurement' },
-                    { id: 'AngleTool', icon: '∠', label: 'Angle', shortcut: 'A', desc: 'Measure angles' },
-                    { id: 'CobbAngleTool', icon: '🦴', label: 'Cobb Angle', shortcut: 'C', desc: 'Spine curvature' },
-                    { id: 'CircleROITool', icon: '🔵', label: 'Circle ROI', shortcut: 'O', desc: 'Circular region' }
-                  ].map(t => (
-                    <button
-                      key={t.id}
-                      onClick={() => setActiveTool(t.id)}
-                      style={{
-                        background: activeTool === t.id
-                          ? 'linear-gradient(135deg, #10b981, #059669)'
-                          : 'rgba(255,255,255,0.05)',
-                        border: activeTool === t.id ? '3px solid #34d399' : '3px solid transparent',
-                        color: activeTool === t.id ? 'white' : '#e2e8f0',
-                        padding: isTablet ? '16px 12px' : '6px 4px',
-                        borderRadius: '10px',
-                        fontSize: isTablet ? '11px' : '8px',
-                        fontWeight: 900,
-                        cursor: 'pointer',
-                        display: 'flex',
-                        flexDirection: 'column',
-                        alignItems: 'center',
-                        gap: isTablet ? '8px' : '3px',
-                        transition: 'all 0.3s ease',
-                        width: '100%',
-                        textAlign: 'center',
-                        minHeight: isTablet ? '80px' : '45px',
-                        touchAction: 'manipulation',
-                        boxShadow: activeTool === t.id
-                          ? '0 6px 20px rgba(16, 185, 129, 0.4)'
-                          : '0 2px 8px rgba(0,0,0,0.1)',
-                        transform: activeTool === t.id ? 'translateY(-2px)' : 'none'
-                      }}
-                      title={isTablet ? t.desc : undefined}
-                    >
-                      <span style={{ fontSize: isTablet ? '20px' : '12px' }}>{t.icon}</span>
-                      <span style={{ fontSize: isTablet ? '10px' : '7px', lineHeight: '1.2', textAlign: 'center' }}>
-                        {t.label}
-                      </span>
-                      <span style={{
-                        fontSize: isTablet ? '9px' : '6px',
-                        background: 'rgba(255,255,255,0.2)',
-                        padding: isTablet ? '3px 6px' : '1px 2px',
-                        borderRadius: '4px',
-                        letterSpacing: '0.5px'
-                      }}>{t.shortcut}</span>
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              {/* ROI Analysis Tools */}
-              <div style={{ padding: isTablet ? '25px 20px' : '15px', borderBottom: '1px solid #334155' }}>
-                <div style={{
-                  color: '#f59e0b',
-                  fontSize: isTablet ? '14px' : '10px',
-                  fontWeight: 900,
-                  marginBottom: isTablet ? '20px' : '10px',
-                  letterSpacing: '1px',
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '8px'
-                }}>
-                  <span style={{ fontSize: isTablet ? '18px' : '14px' }}>🎯</span>
-                  ROI ANALYSIS
-                </div>
-                <div style={{
-                  display: 'grid',
-                  gridTemplateColumns: isTablet ? '1fr 1fr' : '1fr 1fr 1fr',
-                  gap: isTablet ? '12px' : '4px'
-                }}>
-                  {[
-                    { id: 'EllipticalROITool', icon: '⭕', label: 'Ellipse ROI', shortcut: 'E', desc: 'Elliptical region' },
-                    { id: 'RectangleROITool', icon: '⬜', label: 'Rectangle ROI', shortcut: 'R', desc: 'Rectangular region' },
-                    { id: 'PlanarFreehandROITool', icon: '✏️', label: 'Freehand ROI', shortcut: 'F', desc: 'Custom shape' },
-                    { id: 'ProbeTool', icon: '🎯', label: 'HU Probe', shortcut: 'U', desc: 'Pixel values' },
-                    { id: 'ArrowAnnotateTool', icon: '➡️', label: 'Arrow', shortcut: 'N', desc: 'Point annotation' },
-                    { id: 'AdvancedMagnifyTool', icon: '🔍', label: 'Magnify', shortcut: 'M', desc: 'Magnification tool' }
-                  ].map(t => (
-                    <button
-                      key={t.id}
-                      onClick={() => setActiveTool(t.id)}
-                      style={{
-                        background: activeTool === t.id
-                          ? 'linear-gradient(135deg, #f59e0b, #d97706)'
-                          : 'rgba(255,255,255,0.05)',
-                        border: activeTool === t.id ? '3px solid #fbbf24' : '3px solid transparent',
-                        color: activeTool === t.id ? 'white' : '#e2e8f0',
-                        padding: isTablet ? '16px 12px' : '6px 4px',
-                        borderRadius: '10px',
-                        fontSize: isTablet ? '11px' : '8px',
-                        fontWeight: 900,
-                        cursor: 'pointer',
-                        display: 'flex',
-                        flexDirection: 'column',
-                        alignItems: 'center',
-                        gap: isTablet ? '8px' : '3px',
-                        transition: 'all 0.3s ease',
-                        width: '100%',
-                        textAlign: 'center',
-                        minHeight: isTablet ? '80px' : '45px',
-                        touchAction: 'manipulation',
-                        boxShadow: activeTool === t.id
-                          ? '0 6px 20px rgba(245, 158, 11, 0.4)'
-                          : '0 2px 8px rgba(0,0,0,0.1)',
-                        transform: activeTool === t.id ? 'translateY(-2px)' : 'none'
-                      }}
-                      title={isTablet ? t.desc : undefined}
-                    >
-                      <span style={{ fontSize: isTablet ? '20px' : '12px' }}>{t.icon}</span>
-                      <span style={{ fontSize: isTablet ? '10px' : '7px', lineHeight: '1.2', textAlign: 'center' }}>
-                        {t.label}
-                      </span>
-                      <span style={{
-                        fontSize: isTablet ? '9px' : '6px',
-                        background: 'rgba(255,255,255,0.2)',
-                        padding: isTablet ? '3px 6px' : '1px 2px',
-                        borderRadius: '4px',
-                        letterSpacing: '0.5px'
-                      }}>{t.shortcut}</span>
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              {/* Tablet Footer Info */}
-              {isTablet && (
-                <div style={{
-                  padding: '20px',
-                  background: 'rgba(15, 23, 42, 0.8)',
-                  marginTop: 'auto'
-                }}>
-                  <div style={{
-                    color: '#94a3b8',
-                    fontSize: '10px',
-                    lineHeight: '1.4',
-                    textAlign: 'center'
-                  }}>
-                    <div style={{ marginBottom: '8px', color: '#e2e8f0', fontWeight: 700 }}>
-                      📱 TABLET OPTIMIZED
-                    </div>
-                    <div style={{ marginBottom: '4px' }}>
-                      • Touch gestures for navigation
-                    </div>
-                    <div style={{ marginBottom: '4px' }}>
-                      • Large touch targets (WCAG AA)
-                    </div>
-                    <div>
-                      • Professional medical imaging
-                    </div>
-                  </div>
-                </div>
-              )}
-
-              {/* Advanced Tools Info */}
-              <div style={{ padding: '15px', background: 'rgba(59, 130, 246, 0.1)' }}>
-                <div style={{
-                  color: '#3b82f6',
-                  fontSize: '9px',
-                  fontWeight: 900,
-                  marginBottom: '8px',
-                  letterSpacing: '1px'
-                }}>
-                  ⚡ QUICK ACCESS
-                </div>
-                <div style={{ fontSize: '8px', color: '#94a3b8', lineHeight: '1.4' }}>
-                  <div style={{ marginBottom: '4px' }}>
-                    <strong style={{ color: '#e2e8f0' }}>All tools accessible via keyboard shortcuts</strong>
-                  </div>
-                  <div style={{ marginBottom: '2px' }}>• Press <kbd style={{ background: 'rgba(255,255,255,0.1)', padding: '1px 3px', borderRadius: '2px', fontSize: '7px' }}>ESC</kbd> to reset</div>
-                  <div>• Press <kbd style={{ background: 'rgba(255,255,255,0.1)', padding: '1px 3px', borderRadius: '2px', fontSize: '7px' }}>?</kbd> for help</div>
-                </div>
-              </div>
-
-              {/* Footer */}
-              <div style={{ marginTop: 'auto', padding: '15px' }}>
-                <button
-                  onClick={() => setShowShortcutsHelp(true)}
-                  style={{
-                    width: '100%',
-                    background: 'linear-gradient(135deg, rgba(139, 92, 246, 0.2), rgba(59, 130, 246, 0.2))',
-                    border: '1px solid rgba(139, 92, 246, 0.5)',
-                    color: '#c4b5fd',
-                    padding: '8px',
-                    borderRadius: '6px',
-                    fontSize: '10px',
-                    fontWeight: 900,
-                    cursor: 'pointer',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    gap: '6px'
-                  }}
-                >
-                  <span>❓</span> SHORTCUTS
-                </button>
-              </div>
-            </div>
-            )}
-
-            {/* MAIN VIEWER AREA */}
-            <div style={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
-              {/* Top Controls */}
-              <div style={{
-                height: '50px',
-                background: '#1e293b',
-                borderBottom: '1px solid #334155',
-                display: 'flex',
-                alignItems: 'center',
-                padding: '0 15px',
-                gap: '15px',
-                justifyContent: 'space-between'
-              }}>
-                {/* Series Display Indicator */}
-                <div style={{
-                  background: 'rgba(139, 92, 246, 0.2)',
-                  border: '1px solid rgba(139, 92, 246, 0.5)',
-                  padding: '6px 12px',
-                  borderRadius: '6px',
-                  fontSize: '11px',
-                  fontWeight: 900,
-                  color: '#c4b5fd',
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '6px'
-                }}>
-                  <span>🎬</span> SERIES: S{(activeAssetIndex + 1)} / {visibleUploadedFiles.length} {visibleUploadedFiles[activeAssetIndex]?.name && `(${visibleUploadedFiles[activeAssetIndex].name.substring(0, 20)}...)`}
-                </div>
-
-                {/* Active Tool Display */}
-                <div style={{
-                  background: 'rgba(59, 130, 246, 0.2)',
-                  border: '1px solid rgba(59, 130, 246, 0.5)',
-                  padding: '6px 12px',
-                  borderRadius: '6px',
-                  fontSize: '11px',
-                  fontWeight: 900,
-                  color: '#60a5fa',
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '6px'
-                }}>
-                  <span>⚡</span> ACTIVE: {activeTool.replace('Tool', '').toUpperCase()}
-                </div>
-
-                {/* Controls */}
-                <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
-                  <button
-                    onClick={() => setCineEnabled(!cineEnabled)}
-                    title="Toggle Cine Mode (Space)"
-                    style={{
-                      background: cineEnabled ? '#ef4444' : 'rgba(255,255,255,0.08)',
-                      border: '2px solid ' + (cineEnabled ? '#f87171' : 'transparent'),
-                      color: 'white',
-                      padding: '6px 10px',
-                      borderRadius: '6px',
-                      fontSize: '10px',
-                      fontWeight: 900,
-                      cursor: 'pointer',
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: '4px'
-                    }}
-                  >
-                    <span>🎬</span> CINE
-                  </button>
-
-                  <select
-                    value={layoutMode}
-                    onChange={e => setLayoutMode(e.target.value)}
-                    style={{
-                      background: 'rgba(255,255,255,0.08)',
-                      color: 'white',
-                      border: '2px solid #334155',
-                      padding: '6px 10px',
-                      borderRadius: '6px',
-                      fontSize: '10px',
-                      fontWeight: 900,
-                      outline: 'none',
-                      cursor: 'pointer'
-                    }}
-                  >
-                    <option value="1x1" style={{ background: '#1e293b', color: 'white' }}>1×1</option>
-                    <option value="2x2" style={{ background: '#1e293b', color: 'white' }}>2×2</option>
-                  </select>
-
-                  {/* FULLSCREEN BUTTON */}
-                  <button
-                    onClick={() => {
-                      // Per-service filter — fullscreen viewer only
-                      // gets the series belonging to the active
-                      // service tab (or the full set on single-
-                      // service visits where the filter is a no-op).
-                      const validSeries = visibleUploadedFiles.filter(file => file.rawFiles && file.rawFiles.length > 0);
-
-                      if (validSeries.length > 0) {
-                        // Pass ALL filtered series to the viewer.
-                        const allSeries = validSeries.map(series => ({
-                          name: series.name,
-                          files: series.rawFiles,
-                          seriesUID: series.seriesUID,
-                          modality: series.modality,
-                          // Pre-rendered JPEG thumbnail (Option C manifest) —
-                          // shown as placeholder in viewer during cold start.
-                          thumbnailUrl: series.thumbnailUrl
-                        }));
-
-                        const activeValidSeriesIndex = validSeries.findIndex(s => s.name === visibleUploadedFiles[activeAssetIndex]?.name);
-
-                        const navigationState = {
-                          allSeries: allSeries, // Pass all series
-                          files: validSeries[0].rawFiles, // Default to first series for backward compatibility
-                          seriesName: visibleUploadedFiles[activeAssetIndex]?.name || 'DICOM STUDY',
-                          activeSeriesIndex: activeValidSeriesIndex >= 0 ? activeValidSeriesIndex : 0, // Map to validSeries index
-                          layoutMode: layoutMode, // Preserve layout mode
-                          appointmentData: {
-                            ...activeAppointment,
-                            appointmentId: appointmentId,
-                            id: appointmentId
-                          }
-                        };
-
-                        navigate('/dicom-viewer', {
-                          state: navigationState,
-                          replace: false
-                        });
-                      } else {
-                        showNotif('warning', 'NO DICOM FILES', 'No DICOM files are available for full-screen viewing. Please ensure DICOM files are loaded in the viewer first.');
-                      }
-                    }}
-                    title="Open Full Screen DICOM Viewer"
-                    style={{
-                      background: 'linear-gradient(135deg, #10b981, #059669)',
-                      border: '2px solid #34d399',
-                      color: 'white',
-                      padding: '8px 12px',
-                      borderRadius: '6px',
-                      fontSize: '10px',
-                      fontWeight: 900,
-                      cursor: 'pointer',
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: '6px',
-                      boxShadow: '0 4px 12px rgba(16, 185, 129, 0.3)'
-                    }}
-                  >
-                    <span style={{ fontSize: '12px' }}>🔍</span>
-                    FULL VIEW
-                  </button>
-                </div>
-              </div>
-
-              <div style={{ flex: 1, background: '#000', position: 'relative', display: 'flex', flexDirection: isMobile ? 'column' : 'row', gap: '2px', padding: '2px' }}>
-                {/* Floating Toolbar Toggle for Tablets */}
-                {isTablet && (
-                  <button
-                    onClick={() => {
-                      const toolbar = document.getElementById('dicom-toolbar');
-                      if (toolbar) {
-                        if (toolbar.style.transform === 'translateX(-100%)') {
-                          toolbar.style.transform = 'translateX(0)';
-                          toolbar.style.transition = 'transform 0.3s ease';
-                        } else {
-                          toolbar.style.transform = 'translateX(-100%)';
-                          toolbar.style.transition = 'transform 0.3s ease';
-                        }
-                      }
-                    }}
-                    style={{
-                      position: 'absolute',
-                      top: '20px',
-                      left: '20px',
-                      background: 'linear-gradient(135deg, #3b82f6, #8b5cf6)',
-                      border: 'none',
-                      color: 'white',
-                      width: '60px',
-                      height: '60px',
-                      borderRadius: '50%',
-                      cursor: 'pointer',
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      fontSize: '24px',
-                      zIndex: 100,
-                      boxShadow: '0 4px 20px rgba(59, 130, 246, 0.4)',
-                      touchAction: 'manipulation',
-                      transition: 'all 0.3s ease'
-                    }}
-                    onMouseEnter={(e) => {
-                      e.target.style.transform = 'scale(1.1)';
-                    }}
-                    onMouseLeave={(e) => {
-                      e.target.style.transform = 'scale(1)';
-                    }}
-                    title="Toggle DICOM Tools"
-                  >
-                    🛠️
-                  </button>
-                )}
-                {/* PROGRESS OVERLAY */}
-                {loading && (
-                  <div style={{
-                    position: 'absolute',
-                    top: 0,
-                    left: 0,
-                    right: 0,
-                    bottom: 0,
-                    background: 'rgba(15, 23, 42, 0.95)',
-                    backdropFilter: 'blur(8px)',
-                    zIndex: 1000,
-                    display: 'flex',
-                    flexDirection: 'column',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    color: 'white',
-                    gap: '20px'
-                  }}>
-                    <div style={{
-                      width: '60px',
-                      height: '60px',
-                      border: '3px solid rgba(59, 130, 246, 0.2)',
-                      borderTopColor: '#3b82f6',
-                      borderRadius: '50%',
-                      animation: 'spin 1s linear infinite'
-                    }}></div>
-
-                    <div style={{ textAlign: 'center', maxWidth: '350px' }}>
-                      <div style={{ fontSize: '14px', fontWeight: 900, marginBottom: '8px', letterSpacing: '1px' }}>
-                        PROCESSING DICOM DATA
-                      </div>
-                      <div style={{ fontSize: '11px', color: '#94a3b8', marginBottom: '15px' }}>
-                        {processingStatus || 'Initializing...'}
-                      </div>
-
-                      {loadingProgress.total > 0 && (
-                        <div style={{ width: '250px', margin: '0 auto' }}>
-                          <div style={{
-                            width: '100%',
-                            height: '6px',
-                            background: 'rgba(255, 255, 255, 0.1)',
-                            borderRadius: '3px',
-                            overflow: 'hidden',
-                            marginBottom: '8px'
-                          }}>
-                            <div style={{
-                              width: `${(loadingProgress.current / loadingProgress.total) * 100}%`,
-                              height: '100%',
-                              background: 'linear-gradient(90deg, #3b82f6, #1d4ed8)',
-                              borderRadius: '3px',
-                              transition: 'width 0.3s ease'
-                            }}></div>
-                          </div>
-                          <div style={{ fontSize: '10px', color: '#cbd5e1' }}>
-                            {loadingProgress.current} / {loadingProgress.total} files
-                            {loadingProgress.seriesCount && ` • ${loadingProgress.seriesCount} series`}
-                          </div>
-                        </div>
-                      )}
-                    </div>
-
-                    <style>{`
-                  @keyframes spin {
-                    to { transform: rotate(360deg); }
-                  }
-                `}</style>
-                  </div>
-                )}
-
-                {/* SERIES LIBRARY MINI-SIDEBAR — horizontal strip on
-                    mobile, vertical sidebar otherwise. Uses the
-                    per-service filtered list so the sidebar only
-                    shows the active service's series. */}
-                {visibleUploadedFiles.length > 0 && (
-                  <div style={{
-                    width: isMobile ? '100%' : '60px',
-                    minWidth: isMobile ? 'auto' : '60px',
-                    maxWidth: isMobile ? 'none' : '60px',
-                    height: isMobile ? '70px' : '100%',
-                    minHeight: isMobile ? '70px' : 'auto',
-                    flexShrink: 0,
-                    background: '#0f172a',
-                    borderRight: isMobile ? 'none' : '2px solid #334155',
-                    borderBottom: isMobile ? '2px solid #334155' : 'none',
-                    display: 'flex',
-                    flexDirection: isMobile ? 'row' : 'column',
-                    gap: isMobile ? '8px' : '10px',
-                    padding: isMobile ? '8px' : '10px 5px',
-                    zIndex: 99999,
-                    position: 'relative',
-                    overflow: isMobile ? 'auto' : 'hidden',
-                    WebkitOverflowScrolling: 'touch',
-                    pointerEvents: 'auto'
-                  }}>
-                    {visibleUploadedFiles.map((f, i) => (
-                      <button
-                        key={i}
-                        type="button"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          console.log('[SERIES SELECTOR] Clicked series index:', i, 'Series name:', f.name);
-                          setActiveAssetIndex(i);
-                        }}
-                        title={f.name}
-                        style={{
-                          width: isMobile ? '70px' : '100%',
-                          minWidth: isMobile ? '70px' : 'auto',
-                          height: isMobile ? '100%' : '50px',
-                          flexShrink: 0,
-                          background: activeAssetIndex === i ? 'linear-gradient(135deg, #3b82f6, #2563eb)' : 'rgba(255,255,255,0.05)',
-                          border: activeAssetIndex === i ? '2px solid #1d4ed8' : 'none', borderRadius: '8px', cursor: 'pointer', display: 'flex', flexDirection: 'column',
-                          alignItems: 'center', justifyContent: 'center', transition: 'all 0.2s ease', gap: '4px', boxShadow: activeAssetIndex === i ? '0 4px 12px rgba(59, 130, 246, 0.4)' : 'none',
-                          transform: activeAssetIndex === i ? 'scale(1.05)' : 'scale(1)',
-                          pointerEvents: 'auto',
-                          position: 'relative',
-                          zIndex: 99999,
-                          touchAction: 'manipulation',
-                          WebkitTapHighlightColor: 'transparent'
-                        }}
-                        onMouseEnter={(e) => {
-                          if (activeAssetIndex !== i) {
-                            e.currentTarget.style.background = 'rgba(255,255,255,0.15)';
-                          }
-                        }}
-                        onMouseLeave={(e) => {
-                          if (activeAssetIndex !== i) {
-                            e.currentTarget.style.background = 'rgba(255,255,255,0.05)';
-                          }
-                        }}
-                      >
-                        <div style={{ fontSize: '12px' }}>🎞️</div>
-                        <div style={{ fontSize: '8px', color: 'white', fontWeight: 900, whiteSpace: 'nowrap', overflow: 'hidden', width: '100%', textAlign: 'center' }}>S{i + 1}</div>
-                      </button>
-                    ))}
-                  </div>
-                )}
-
-                {uploadedFiles.length === 0 ? (
-                  <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#334155', fontSize: '12px', fontWeight: 950, letterSpacing: '2px', flexDirection: 'column', gap: '20px' }}>
-                    <div style={{ fontSize: '48px', opacity: 0.2 }}>📡</div>
-                    <div style={{ textAlign: 'center' }}>
-                      <div>WAITING_FOR_DATA_SIGNAL</div>
-                      <div style={{ fontSize: '10px', color: '#64748b', marginTop: '10px', fontWeight: 400 }}>
-                        Upload DICOM files or ZIP archives to begin analysis
-                      </div>
-                    </div>
-                    <input
-                      type="file"
-                      multiple
-                      accept=".dcm,.dicom,.zip"
-                      onChange={handleFileChange}
-                      style={{
-                        padding: '10px 20px',
-                        borderRadius: '8px',
-                        border: '2px dashed #3b82f6',
-                        background: 'rgba(59, 130, 246, 0.1)',
-                        color: '#3b82f6',
-                        cursor: 'pointer',
-                        fontSize: '11px',
-                        fontWeight: 700
-                      }}
-                    />
-                  </div>
-                ) : (
-                  <div style={{ flex: 1, display: 'grid', gridTemplateColumns: layoutMode === '2x2' ? '1fr 1fr' : '1fr', gridTemplateRows: layoutMode === '2x2' ? '1fr 1fr' : '1fr', gap: '2px' }}>
-                    {(() => null)()}
-                    {[...Array(layoutMode === '2x2' ? 4 : 1)].map((_, idx) => {
-                      // Per-service filter is now hoisted to a useMemo
-                      // at component top so the mobile viewer, sidebar,
-                      // and this desktop viewport all see the same set.
-                      // For 2x2, cycle through series. For 1x1, just use active series.
-                      const seriesIndex = layoutMode === '2x2'
-                        ? (activeAssetIndex + idx) % Math.max(1, visibleUploadedFiles.length)
-                        : activeAssetIndex % Math.max(1, visibleUploadedFiles.length);
-
-                      const currentSeries = visibleUploadedFiles[seriesIndex];
-                      const currentFiles = currentSeries?.rawFiles && Array.isArray(currentSeries.rawFiles)
-                        ? currentSeries.rawFiles
-                        : [];
-
-                      console.log(`[DICOM VIEWER] Viewport ${idx} (${layoutMode}): activeIndex=${activeAssetIndex}, seriesIdx=${seriesIndex}`, {
-                        seriesName: currentSeries?.name,
-                        hasRawFiles: !!currentFiles,
-                        rawFilesLength: currentFiles?.length || 0,
-                        rawFilesType: typeof currentFiles,
-                        isArray: Array.isArray(currentFiles),
-                        firstFileExists: currentFiles?.[0] ? true : false,
-                        firstFileName: currentFiles?.[0]?.name,
-                        uploadedFilesCount: uploadedFiles.length
-                      });
-
-                      return (
-                        <div key={idx} style={{ position: 'relative', background: '#000', overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
-                          {/* DICOM Viewer with Advanced Tools */}
-                          <div style={{ flex: 1, position: 'relative' }}>
-                            <AdvancedDicomViewer
-                              // Include activeServiceId so the viewer
-                              // remounts with a fresh engine when the
-                              // doctor switches services — otherwise
-                              // the previous service's modality
-                              // toolset would linger on screen.
-                              key={`${activeServiceId || 'visit'}_${activeAssetIndex}_${idx}_${resetTrigger}`}
-                              modality={activeServiceMod || undefined}
-                              files={currentFiles || []}
-                              placeholderUrl={currentSeries?.thumbnailUrl}
-                              preParsedMetadata={currentSeries?.metadata}
-                              activeTool={activeTool}
-                              isCine={cineEnabled}
-                              isSynced={isSyncEnabled}
-                              keyImages={keyImages}
-                              onKeyImageToggle={toggleKeyImage}
-                              onSliceChange={(index, total) => {
-                                if (idx === 0) setCurrentSlice(index + 1);
-                              }}
-                              // Enhanced features - all enabled
-                              enableFullscreen={true}
-                              showMetadata={true}
-                              showMeasurements={true}
-                              showWindowingPresets={true}
-                              enableAdvancedTools={true}
-                              onFullscreenChange={(isFullscreen) => {
-                                console.log(`[DICOM] Viewport ${idx} fullscreen:`, isFullscreen);
-                              }}
-                              onMeasurement={(measurement) => {
-                                console.log(`[DICOM] New measurement in viewport ${idx}:`, measurement);
-                                if (onMeasurement) onMeasurement(measurement);
-                              }}
-                              onMetadata={(metadata) => {
-                                if (idx === 0) setActiveMetadata(metadata);
-                              }}
-                              // Viewport transformations
-                              invert={viewportProps.invert}
-                              flipHorizontal={viewportProps.flipHorizontal}
-                              flipVertical={viewportProps.flipVertical}
-                              rotation={viewportProps.rotation}
-                              resetTrigger={resetTrigger}
-                            />
-
-                            {/* Enhanced Overlay Information */}
-                            <div style={{ position: 'absolute', top: '15px', left: '15px', zIndex: 10, display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                              <div style={{ background: 'rgba(15, 23, 42, 0.9)', backdropFilter: 'blur(8px)', padding: '8px 15px', borderRadius: '8px', fontSize: '11px', color: '#e2e8f0', fontWeight: 900, letterSpacing: '1px', border: '1px solid rgba(255,255,255,0.1)' }}>
-                                {uploadedFiles[(activeAssetIndex + idx) % uploadedFiles.length]?.name?.toUpperCase() || 'SERIES'}
-                              </div>
-                              <div style={{ background: 'rgba(59, 130, 246, 0.9)', padding: '6px 12px', borderRadius: '6px', fontSize: '12px', color: 'white', fontWeight: 900, width: 'fit-content' }}>
-                                SLICE: {idx === 0 ? currentSlice : '?'} / {currentFiles?.length || 0}
-                              </div>
-                              {activeMetadata && idx === 0 && (
-                                <div style={{ background: 'rgba(16, 185, 129, 0.9)', padding: '4px 10px', borderRadius: '4px', fontSize: '10px', color: 'white', fontWeight: 900, width: 'fit-content' }}>
-                                  {activeMetadata.modality} • {activeMetadata.rows}x{activeMetadata.columns}
-                                </div>
-                              )}
-                            </div>
-
-                            {/* ACTIVE TOOL INDICATOR — hidden on mobile */}
-                            {!isMobile && (
-                            <div style={{ position: 'absolute', top: '15px', right: '15px', zIndex: 10 }}>
-                              <div style={{
-                                background: 'rgba(59, 130, 246, 0.9)',
-                                padding: '8px 15px',
-                                borderRadius: '8px',
-                                fontSize: '11px',
-                                color: 'white',
-                                fontWeight: 900,
-                                display: 'flex',
-                                alignItems: 'center',
-                                gap: '8px',
-                                border: '2px solid rgba(255,255,255,0.2)'
-                              }}>
-                                <span style={{ fontSize: '14px' }}>
-                                  {activeTool === 'WindowLevelTool' && '☀️'}
-                                  {activeTool === 'ZoomTool' && '🔍'}
-                                  {activeTool === 'PanTool' && '✋'}
-                                  {activeTool === 'LengthTool' && '📏'}
-                                  {activeTool === 'ArrowAnnotateTool' && '➡️'}
-                                  {!['WindowLevelTool', 'ZoomTool', 'PanTool', 'LengthTool', 'ArrowAnnotateTool'].includes(activeTool) && '⚡'}
-                                </span>
-                                <span>
-                                  {activeTool === 'WindowLevelTool' && 'WINDOW/LEVEL'}
-                                  {activeTool === 'ZoomTool' && 'ZOOM'}
-                                  {activeTool === 'PanTool' && 'PAN'}
-                                  {activeTool === 'LengthTool' && 'MEASURE'}
-                                  {activeTool === 'ArrowAnnotateTool' && 'ANNOTATE'}
-                                  {activeTool === 'HeightTool' && 'HEIGHT'}
-                                  {activeTool === 'BidirectionalTool' && 'BIDIRECTIONAL'}
-                                  {activeTool === 'AngleTool' && 'ANGLE'}
-                                  {activeTool === 'CobbAngleTool' && 'COBB ANGLE'}
-                                  {activeTool === 'EllipticalROITool' && 'ELLIPSE ROI'}
-                                  {activeTool === 'RectangleROITool' && 'RECTANGLE ROI'}
-                                  {activeTool === 'CircleROITool' && 'CIRCLE ROI'}
-                                  {activeTool === 'PlanarFreehandROITool' && 'FREEHAND ROI'}
-                                  {activeTool === 'ProbeTool' && 'HU PROBE'}
-                                  {activeTool === 'AdvancedMagnifyTool' && 'MAGNIFY'}
-                                  {!['WindowLevelTool', 'ZoomTool', 'PanTool', 'LengthTool', 'ArrowAnnotateTool', 'HeightTool', 'BidirectionalTool', 'AngleTool', 'CobbAngleTool', 'EllipticalROITool', 'RectangleROITool', 'CircleROITool', 'PlanarFreehandROITool', 'ProbeTool', 'AdvancedMagnifyTool'].includes(activeTool) && 'ADVANCED TOOL'}
-                                </span>
-                              </div>
-                            </div>
-                            )}
-
-                            {/* Windowing Presets - Bottom Right — hidden on mobile */}
-                            {!isMobile && (
-                            <div style={{ position: 'absolute', bottom: '15px', right: '15px', zIndex: 10 }}>
-                              <select
-                                onChange={(e) => {
-                                  // This would be handled by the AdvancedDicomViewer component
-                                  console.log('Windowing preset changed:', e.target.value);
-                                }}
-                                style={{
-                                  background: 'rgba(15, 23, 42, 0.9)',
-                                  color: 'white',
-                                  border: '2px solid rgba(255,255,255,0.2)',
-                                  padding: '6px 12px',
-                                  borderRadius: '6px',
-                                  fontSize: '10px',
-                                  fontWeight: 900,
-                                  outline: 'none',
-                                  cursor: 'pointer'
-                                }}
-                              >
-                                <option value="Default">DEFAULT W/L</option>
-                                <option value="Lung">LUNG</option>
-                                <option value="Bone">BONE</option>
-                                <option value="Brain">BRAIN</option>
-                                <option value="Abdomen">ABDOMEN</option>
-                                <option value="Liver">LIVER</option>
-                                <option value="Mediastinum">MEDIASTINUM</option>
-                                <option value="Angio">ANGIO</option>
-                              </select>
-                            </div>
-                            )}
-
-                            {/* Key Images Indicator */}
-                            {keyImages.includes(`${activeAssetIndex + idx}_${currentSlice}`) && (
-                              <div style={{ position: 'absolute', top: '60px', right: '15px', zIndex: 10 }}>
-                                <div style={{ background: 'rgba(245, 158, 11, 0.9)', padding: '4px 10px', borderRadius: '6px', fontSize: '10px', color: 'white', fontWeight: 900, display: 'flex', alignItems: 'center', gap: '5px' }}>
-                                  ⭐ KEY IMAGE
-                                </div>
-                              </div>
-                            )}
-
-                            {/* Active Tool & Instructions - Bottom Left — hidden on mobile */}
-                            {!isMobile && (
-                            <div style={{ position: 'absolute', bottom: '15px', left: '15px', zIndex: 10, display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                              <div style={{ background: 'rgba(15, 23, 42, 0.8)', backdropFilter: 'blur(8px)', padding: '4px 10px', borderRadius: '6px', fontSize: '9px', color: '#94a3b8', fontWeight: 900, letterSpacing: '1px', border: '1px solid rgba(255,255,255,0.1)' }}>
-                                ACTIVE: {activeTool?.replace('Tool', '').toUpperCase() || 'WINDOW_LEVEL'}
-                              </div>
-                              {activeTool && activeTool !== 'WindowLevelTool' && (
-                                <div style={{ background: 'rgba(59, 130, 246, 0.8)', padding: '3px 8px', borderRadius: '4px', fontSize: '8px', color: 'white', fontWeight: 700, maxWidth: '200px' }}>
-                                  {activeTool === 'LengthTool' && 'Click and drag to measure distance'}
-                                  {activeTool === 'AngleTool' && 'Click 3 points to measure angle'}
-                                  {activeTool === 'EllipticalROITool' && 'Draw ellipse for ROI analysis'}
-                                  {activeTool === 'ProbeTool' && 'Click to probe pixel values'}
-                                  {activeTool === 'ArrowAnnotateTool' && 'Click and drag to annotate'}
-                                  {activeTool === 'ZoomTool' && 'Click and drag to zoom'}
-                                  {activeTool === 'PanTool' && 'Click and drag to pan'}
-                                </div>
-                              )}
-                            </div>
-                            )}
-
-                            {/* Measurement Results - Bottom Right — hidden on mobile */}
-                            {!isMobile && idx === 0 && (
-                              <div style={{ position: 'absolute', bottom: '15px', right: '15px', zIndex: 10, maxWidth: '250px' }}>
-                                <div style={{ background: 'rgba(15, 23, 42, 0.9)', backdropFilter: 'blur(8px)', padding: '8px 12px', borderRadius: '8px', border: '1px solid rgba(255,255,255,0.1)' }}>
-                                  <div style={{ fontSize: '8px', color: '#94a3b8', fontWeight: 900, marginBottom: '4px', letterSpacing: '1px' }}>MEASUREMENTS</div>
-                                  <div style={{ fontSize: '10px', color: '#e2e8f0', fontWeight: 700 }}>
-                                    {/* This would be populated by the AdvancedDicomViewer component */}
-                                    <div>Distance: 12.4 mm</div>
-                                    <div>Area: 156.7 mm²</div>
-                                    <div>HU: -45 ± 12</div>
-                                  </div>
-                                </div>
-                              </div>
-                            )}
-                          </div>
-                        </div>
-                      );
-                    })}
-
-                    {/* Historical Mode Status Banner */}
-                    {isHistoricalMode && (
-                      <div style={{
-                        position: 'absolute', top: '15px', left: '50%', transform: 'translateX(-50%)', zIndex: 100,
-                        background: 'rgba(234, 88, 12, 0.9)', backdropFilter: 'blur(10px)',
-                        padding: '8px 20px', borderRadius: '30px', border: '1px solid rgba(255,255,255,0.2)',
-                        display: 'flex', alignItems: 'center', gap: '15px', boxShadow: '0 10px 30px rgba(0,0,0,0.3)',
-                        animation: 'slideDown 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275)'
-                      }}>
-                        <div style={{ display: 'flex', flexDirection: 'column' }}>
-                          <span style={{ fontSize: '9px', fontWeight: 950, color: 'rgba(255,255,255,0.8)', letterSpacing: '2px' }}>COMPARATIVE_VIEW_ACTIVE</span>
-                          <span style={{ fontSize: '11px', fontWeight: 950, color: 'white' }}>
-                            {historicalStudyContext?.modality} - {new Date(historicalStudyContext?.dateTime || historicalStudyContext?.appointmentDate).toLocaleDateString()}
-                          </span>
-                        </div>
-                        <button
-                          onClick={handleRestoreCurrentStudy}
-                          style={{
-                            background: 'white', color: '#ea580c', border: 'none',
-                            padding: '6px 12px', borderRadius: '20px', fontSize: '9px',
-                            fontWeight: 950, cursor: 'pointer', transition: 'all 0.2s'
-                          }}
-                        >
-                          RETURN TO CURRENT CASE
-                        </button>
-                      </div>
-                    )}
-                  </div>
-                )}
-              </div>
-            </div>
-          </div>
+        {activeMainTab === 'DICOM' && (
+          <ReportingDicomPanel
+            isMobile={isMobile}
+            isTablet={isTablet}
+            isSyncEnabled={isSyncEnabled}
+            isHistoricalMode={isHistoricalMode}
+            activeAppointment={activeAppointment}
+            appointmentId={appointmentId}
+            activeServiceId={activeServiceId}
+            activeServiceMod={activeServiceMod}
+            activeAssetIndex={activeAssetIndex}
+            setActiveAssetIndex={setActiveAssetIndex}
+            activeMetadata={activeMetadata}
+            setActiveMetadata={setActiveMetadata}
+            activeTool={activeTool}
+            setActiveTool={setActiveTool}
+            cineEnabled={cineEnabled}
+            setCineEnabled={setCineEnabled}
+            currentSlice={currentSlice}
+            setCurrentSlice={setCurrentSlice}
+            layoutMode={layoutMode}
+            setLayoutMode={setLayoutMode}
+            resetTrigger={resetTrigger}
+            setResetTrigger={setResetTrigger}
+            setShowShortcutsHelp={setShowShortcutsHelp}
+            keyImages={keyImages}
+            toggleKeyImage={toggleKeyImage}
+            loadingProgress={loadingProgress}
+            processingStatus={processingStatus}
+            historicalStudyContext={historicalStudyContext}
+            uploadedFiles={uploadedFiles}
+            visibleUploadedFiles={visibleUploadedFiles}
+            viewportProps={viewportProps}
+            handleFileChange={handleFileChange}
+            handleRestoreCurrentStudy={handleRestoreCurrentStudy}
+            hydrateZipAsset={hydrateZipAsset}
+            navigate={navigate}
+            showNotif={showNotif}
+            loading={loading}
+            onMeasurement={onMeasurement}
+          />
         )}
 
             {/* REPORTING TAB */}
             {activeMainTab === 'REPORTING' && (
-              <div className="panel panel-right" style={{
-                flex: 1,
-                display: 'flex',
-                flexDirection: isMobile ? 'column-reverse' : 'row',
-                minHeight: 0,
-                background: '#f1f5f9',
-                padding: isMobile ? '10px' : (isTablet ? '12px' : '16px'),
-                gap: isMobile ? '10px' : (isTablet ? '12px' : '16px'),
-                overflow: 'hidden',
-              }}>
-
-                {/* ── LEFT (or BOTTOM on mobile): editor card ────────────────── */}
-                <div style={{
-                  flex: 1, minWidth: 0, minHeight: 0,
-                  display: 'flex', flexDirection: 'column',
-                  background: 'white', borderRadius: '14px',
-                  border: '1px solid #e8edf2',
-                  boxShadow: '0 4px 20px rgba(15, 23, 42, 0.05)',
-                  overflow: 'hidden',
-                }}>
-                  {/* The before/after review modal is portaled into the overlay host
-                      so it shows on top even when the editor is in fullscreen. The
-                      single "✨ RadAI" trigger button lives in the editor ribbon toolbar. */}
-                  {aiReview.open && overlayHost && createPortal(
-                        <div onClick={() => setAiReview((s) => ({ ...s, open: false }))} style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.5)', backdropFilter: 'blur(3px)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100000, padding: '20px' }}>
-                          <div onClick={(e) => e.stopPropagation()} style={{ width: '100%', maxWidth: '1000px', maxHeight: '88vh', display: 'flex', flexDirection: 'column', background: 'white', borderRadius: '18px', overflow: 'hidden', boxShadow: '0 30px 70px -15px rgba(0,0,0,0.4)' }}>
-                            <div style={{ padding: '18px 22px', borderBottom: '1px solid #eef2f7', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '12px' }}>
-                              <div>
-                                <div style={{ fontSize: '16px', fontWeight: 950, color: '#0f172a' }}>Review RadAI {aiReview.mode === 'format' ? 'formatting' : aiReview.mode === 'polish' ? 'cleanup' : aiReview.mode === 'restructure' ? 'restructure' : 'spelling & grammar'}</div>
-                                <div style={{ fontSize: '11.5px', color: '#94a3b8', fontWeight: 600, marginTop: '2px' }}>Nothing is saved until you accept. Patient identifiers were masked before the AI saw the text.</div>
-                              </div>
-                              <button onClick={() => setAiReview((s) => ({ ...s, open: false }))} style={{ border: 'none', background: '#f1f5f9', width: '32px', height: '32px', borderRadius: '50%', cursor: 'pointer', fontWeight: 900, color: '#64748b' }}>✕</button>
-                            </div>
-                            <div style={{ flex: 1, overflow: 'auto', display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: '1px', background: '#eef2f7' }}>
-                              <div style={{ background: 'white', padding: '16px', overflow: 'auto' }}>
-                                <div style={{ fontSize: '10px', fontWeight: 950, color: '#94a3b8', letterSpacing: '0.6px', marginBottom: '10px' }}>BEFORE</div>
-                                <div style={{ fontSize: '13px', lineHeight: 1.6, color: '#334155' }} dangerouslySetInnerHTML={{ __html: aiReview.before }} />
-                              </div>
-                              <div style={{ background: 'white', padding: '16px', overflow: 'auto' }}>
-                                <div style={{ fontSize: '10px', fontWeight: 950, color: '#7c3aed', letterSpacing: '0.6px', marginBottom: '10px' }}>AI SUGGESTION ✨</div>
-                                <div style={{ fontSize: '13px', lineHeight: 1.6, color: '#0f172a' }} dangerouslySetInnerHTML={{ __html: aiReview.after }} />
-                              </div>
-                            </div>
-                            {aiReview.mode === 'format' && ((aiReview.flags?.length || 0) + (aiReview.corrections?.length || 0) + (aiReview.protectedItems?.length || 0)) > 0 && (
-                              <div style={{ borderTop: '1px solid #eef2f7', padding: '12px 16px', maxHeight: '30vh', overflow: 'auto', background: '#fbfcfe', display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                                {aiReview.flags?.length > 0 && (
-                                  <div>
-                                    <div style={{ fontSize: '10px', fontWeight: 950, color: '#dc2626', letterSpacing: '0.6px', marginBottom: '6px' }}>⚠ NEEDS YOUR ATTENTION ({aiReview.flags.length})</div>
-                                    {aiReview.flags.map((f, i) => (
-                                      <div key={i} style={{ fontSize: '12px', color: '#7f1d1d', background: '#fef2f2', border: '1px solid #fecaca', borderRadius: '8px', padding: '7px 10px', marginBottom: '5px' }}>
-                                        <strong>{f.text}</strong>{f.issue ? ` — ${f.issue}` : ''}
-                                      </div>
-                                    ))}
-                                  </div>
-                                )}
-                                {aiReview.corrections?.length > 0 && (
-                                  <div>
-                                    <div style={{ fontSize: '10px', fontWeight: 950, color: '#b45309', letterSpacing: '0.6px', marginBottom: '6px' }}>CHANGES MADE ({aiReview.corrections.length})</div>
-                                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '5px' }}>
-                                      {aiReview.corrections.map((c, i) => (
-                                        <span key={i} title={c.type} style={{ fontSize: '11.5px', background: '#fef9c3', border: '1px solid #fde68a', borderRadius: '6px', padding: '3px 8px', color: '#713f12' }}>
-                                          <span style={{ textDecoration: 'line-through', opacity: 0.7 }}>{c.from}</span> → <strong>{c.to}</strong>
-                                        </span>
-                                      ))}
-                                    </div>
-                                  </div>
-                                )}
-                                {aiReview.protectedItems?.length > 0 && (
-                                  <div style={{ fontSize: '11px', color: '#64748b' }}>
-                                    <strong style={{ color: '#16a34a' }}>✓ Preserved verbatim:</strong> {aiReview.protectedItems.join(' · ')}
-                                  </div>
-                                )}
-                              </div>
-                            )}
-                            <div style={{ padding: '14px 22px', borderTop: '1px solid #eef2f7', display: 'flex', justifyContent: 'flex-end', gap: '10px' }}>
-                              <button onClick={() => setAiReview((s) => ({ ...s, open: false }))} style={{ padding: '11px 18px', borderRadius: '11px', border: 'none', background: '#f1f5f9', color: '#475569', fontSize: '12px', fontWeight: 900, cursor: 'pointer' }}>Discard</button>
-                              <button onClick={acceptAiReview} style={{ padding: '11px 20px', borderRadius: '11px', border: 'none', background: 'linear-gradient(135deg,#7c3aed,#6d28d9)', color: 'white', fontSize: '12px', fontWeight: 900, cursor: 'pointer' }}>✓ Apply to report</button>
-                            </div>
-                          </div>
-                        </div>,
-                    overlayHost
-                  )}
-
-                  <NarrativeEditor
-                    ref={editorRef}
-                    content={editorText}
-                    onChange={(html) => setEditorText(html)}
-                    placeholder="Start typing your radiology report…"
-                    onSave={() => handleSaveReport(false)}
-                    onAiAssist={handleAiAssist}
-                    onWholeReportAi={runRadAiCleanup}
-                    aiBusy={aiReview.busy}
-                    style={{ flex: 1, minHeight: 0 }}
-                    keywordLibrary={keywordLibrary}
-                    pageMargins={protocol ? {
-                      top:    protocol.headerMargin ?? 25,
-                      right:  protocol.rightMargin  ?? 20,
-                      bottom: protocol.bottomMargin ?? 20,
-                      left:   protocol.leftMargin   ?? 20,
-                    } : undefined}
-                    bodyFontPt={protocol?.fontSize || 12}
-                    firstPageBanner={activeAppointment ? (
-                      <PatientInfoBlock
-                        appointmentId={appointmentId}
-                        appointmentServiceId={activeServiceId || null}
-                        fullAppointment={activeAppointment}
-                        savedMetadata={null}
-                      />
-                    ) : null}
-                  />
-                </div>
-
-                {/* ── MOBILE: compact action bar (replaces the full sidebar) ──── */}
-                {isMobile ? (
-                  <div style={{
-                    flexShrink: 0,
-                    display: 'flex', alignItems: 'center', gap: '8px',
-                    background: 'white', borderRadius: '12px',
-                    border: '1px solid #e8edf2',
-                    boxShadow: '0 2px 8px rgba(15, 23, 42, 0.04)',
-                    padding: '8px 10px',
-                  }}>
-                    {/* Status dot */}
-                    <div title={isOnline ? 'Cloud connected' : 'Offline'} style={{ width: '10px', height: '10px', borderRadius: '50%', background: isOnline ? '#10b981' : '#f59e0b', boxShadow: `0 0 0 3px ${isOnline ? '#10b98125' : '#f59e0b25'}`, flexShrink: 0 }} />
-
-                    {/* Template selector — compact, searchable */}
-                    <div style={{ flex: 1, minWidth: 0 }}>
-                      <SearchableTemplatePicker
-                        compact
-                        templates={templates}
-                        value={selectedTemplateId}
-                        placeholder="Pick template…"
-                        onChange={(tpl) => {
-                          const html = tpl.content || tpl.Content || '';
-                          setSelectedTemplateId(tpl.id);
-                          setEditorText(html);
-                          requestAnimationFrame(() => {
-                            const handle = editorRef.current;
-                            if (handle?.setContent) handle.setContent(html);
-                            else if (handle?.editor) { try { handle.editor.commands.setContent(html, false); } catch {} }
-                          });
-                        }}
-                      />
-                    </div>
-
-                    {/* Save draft (icon-only) */}
-                    <button
-                      onClick={() => handleSaveReport(false)}
-                      title="Save draft"
-                      style={{ flexShrink: 0, padding: '8px 10px', borderRadius: '8px', background: 'white', border: '1px solid #e2e8f0', color: '#0a1628', fontSize: '14px', cursor: 'pointer' }}
-                    >💾</button>
-
-                    {/* Preview (icon-only) */}
-                    <button
-                      onClick={handlePreviewPrint}
-                      title="Preview"
-                      style={{ flexShrink: 0, padding: '8px 10px', borderRadius: '8px', background: 'white', border: '1px solid #e2e8f0', color: '#0a1628', fontSize: '14px', cursor: 'pointer' }}
-                    >👁️</button>
-
-                    {/* Open in Word (icon-only) */}
-                    <button
-                      onClick={handleOpenInWord}
-                      disabled={openingWord}
-                      title="Open in Microsoft Word"
-                      style={{ flexShrink: 0, padding: '8px 10px', borderRadius: '8px', background: 'white', border: '1px solid #e2e8f0', color: '#2b579a', fontSize: '14px', cursor: openingWord ? 'wait' : 'pointer', opacity: openingWord ? 0.6 : 1 }}
-                    >{openingWord ? '…' : '📝'}</button>
-
-                    {/* Finalize */}
-                    <button
-                      onClick={() => handleSaveReport(true)}
-                      style={{ flexShrink: 0, padding: '8px 14px', borderRadius: '8px', background: 'linear-gradient(135deg, #16a34a 0%, #15803d 100%)', border: 'none', color: 'white', fontSize: '11px', fontWeight: 800, cursor: 'pointer', letterSpacing: '0.3px', boxShadow: '0 4px 12px rgba(22, 163, 74, 0.3)' }}
-                    >🖊 Sign</button>
-                  </div>
-                ) : (
-                <aside style={{
-                  width: isTablet ? '240px' : '280px',
-                  flexShrink: 0,
-                  display: 'flex',
-                  flexDirection: 'column',
-                  gap: '12px',
-                  overflowY: 'auto',
-                  paddingRight: '2px',
-                }}>
-                  {/* Status card — connection + autosave indicator */}
-                  <div style={{
-                    background: 'white', borderRadius: '14px',
-                    border: '1px solid #e8edf2',
-                    boxShadow: '0 2px 8px rgba(15, 23, 42, 0.04)',
-                    padding: '14px 16px',
-                  }}>
-                    {/* Calmed save-status (friction #3): one line that
-                        rolls forward through "Saved just now" / "Saved Xm
-                        ago" without bouncing. Sub-500ms saves never flash
-                        "Saving…" — the timer that would flip
-                        savingVisible=true is cleared before it fires.
-                        The dot reflects the connection state, the label
-                        the save state; both are muted by default and
-                        only escalate to colour on actual problems. */}
-                    {(() => {
-                      const now = Date.now();
-                      const savedMs = lastSavedAt ? now - lastSavedAt.getTime() : null;
-                      let label;
-                      let tone = 'muted';
-                      if (savingVisible && saveStatus === 'SAVING') {
-                        label = 'Saving…';
-                      } else if (saveStatus === 'CONFLICT') {
-                        label = 'Conflict — see banner';
-                        tone = 'warn';
-                      } else if (savedMs != null) {
-                        if (savedMs < 45_000) label = 'Saved just now';
-                        else if (savedMs < 3_600_000) {
-                          const mins = Math.max(1, Math.round(savedMs / 60_000));
-                          label = `Saved ${mins}m ago`;
-                        } else {
-                          label = `Saved at ${lastSavedAt.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`;
-                        }
-                      } else if (saveStatus === 'DIRTY') {
-                        label = 'Unsaved changes';
-                        tone = 'warn';
-                      } else {
-                        label = 'Ready';
-                      }
-                      const dotColor = isOnline ? '#10b981' : '#f59e0b';
-                      const labelColor = tone === 'warn' ? '#b45309' : '#64748b';
-                      return (
-                        <div
-                          title={isOnline ? 'Cloud connected' : 'Offline cache active'}
-                          style={{ display: 'flex', alignItems: 'center', gap: '8px' }}
-                        >
-                          <div style={{ width: '7px', height: '7px', borderRadius: '50%', background: dotColor, flexShrink: 0 }} />
-                          <span style={{ fontSize: '11px', fontWeight: 600, color: labelColor, letterSpacing: '0.2px' }}>
-                            {label}
-                          </span>
-                        </div>
-                      );
-                    })()}
-                    {cloudAutosaveDisabledReason && (
-                      <div style={{
-                        marginTop: '10px',
-                        background: '#fef2f2',
-                        border: '1px solid #fecaca',
-                        borderLeft: '3px solid #dc2626',
-                        color: '#7f1d1d',
-                        borderRadius: '8px',
-                        padding: '8px 10px',
-                        fontSize: '10px',
-                        fontWeight: 600,
-                        lineHeight: 1.5,
-                      }}>
-                        <div style={{ fontWeight: 900, letterSpacing: '0.5px', marginBottom: '3px' }}>
-                          ⚠ Cloud autosave paused
-                        </div>
-                        <div style={{ fontWeight: 500, color: '#991b1b' }}>
-                          {cloudAutosaveDisabledReason}
-                        </div>
-                        <div style={{ marginTop: '4px', fontWeight: 500, color: '#7f1d1d' }}>
-                          Your work is still being saved locally. Return to the worklist and reopen this appointment, or reload to retry.
-                        </div>
-                      </div>
-                    )}
-                    {occConflict && (
-                      <div style={{
-                        marginTop: '10px',
-                        background: '#fffbeb',
-                        border: '1px solid #fde68a',
-                        borderLeft: '3px solid #b45309',
-                        color: '#78350f',
-                        borderRadius: '8px',
-                        padding: '10px',
-                        fontSize: '10px',
-                        fontWeight: 600,
-                        lineHeight: 1.5,
-                      }}>
-                        <div style={{ fontWeight: 900, letterSpacing: '0.5px', marginBottom: '4px' }}>
-                          ⚠ Updated by another user
-                        </div>
-                        <div style={{ fontWeight: 500, color: '#78350f', marginBottom: '8px' }}>
-                          Their version is now showing. Your earlier edits are still recoverable for 30s.
-                        </div>
-                        <button
-                          type="button"
-                          onClick={handleUndoConflict}
-                          style={{
-                            background: '#b45309',
-                            color: 'white',
-                            border: 'none',
-                            padding: '5px 12px',
-                            borderRadius: '6px',
-                            fontWeight: 900,
-                            fontSize: '10px',
-                            letterSpacing: '0.5px',
-                            cursor: 'pointer',
-                          }}
-                        >
-                          UNDO — RESTORE MY VERSION
-                        </button>
-                      </div>
-                    )}
-                  </div>
-
-                  {/* Template selector card */}
-                  <div style={{
-                    background: 'white', borderRadius: '14px',
-                    border: '1px solid #e8edf2',
-                    boxShadow: '0 2px 8px rgba(15, 23, 42, 0.04)',
-                    padding: '14px 16px',
-                  }}>
-                    <div style={{ fontSize: '9px', fontWeight: 800, color: '#94a3b8', letterSpacing: '1.2px', textTransform: 'uppercase', marginBottom: '10px' }}>Report Template</div>
-                    <SearchableTemplatePicker
-                      templates={templates}
-                      value={selectedTemplateId}
-                      placeholder="Select a template…"
-                      onChange={(tpl) => {
-                        const html = tpl.content || tpl.Content || '';
-                        setSelectedTemplateId(tpl.id);
-                        setEditorText(html);
-                        requestAnimationFrame(() => {
-                          const handle = editorRef.current;
-                          if (handle?.setContent) handle.setContent(html);
-                          else if (handle?.editor) { try { handle.editor.commands.setContent(html, false); } catch {} }
-                        });
-                      }}
-                    />
-                    {selectedTemplateId && (
-                      <div style={{ fontSize: '10px', color: '#16a34a', fontWeight: 700, marginTop: '8px', display: 'flex', alignItems: 'center', gap: '4px' }}>
-                        <span>✓</span> Template applied
-                      </div>
-                    )}
-                  </div>
-
-                  {/* Actions card */}
-                  <div style={{
-                    background: 'white', borderRadius: '14px',
-                    border: '1px solid #e8edf2',
-                    boxShadow: '0 2px 8px rgba(15, 23, 42, 0.04)',
-                    padding: '14px 16px',
-                    display: 'flex', flexDirection: 'column', gap: '8px',
-                  }}>
-                    <div style={{ fontSize: '9px', fontWeight: 800, color: '#94a3b8', letterSpacing: '1.2px', textTransform: 'uppercase', marginBottom: '4px' }}>Actions</div>
-
-                    <button
-                      onClick={() => handleSaveReport(false)}
-                      style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', padding: '10px 14px', borderRadius: '10px', background: 'white', border: '1px solid #e2e8f0', color: '#0a1628', fontSize: '12px', fontWeight: 700, cursor: 'pointer', transition: 'all 0.15s' }}
-                      onMouseEnter={(e) => { e.currentTarget.style.background = '#f8fafc'; e.currentTarget.style.borderColor = '#cbd5e1'; }}
-                      onMouseLeave={(e) => { e.currentTarget.style.background = 'white'; e.currentTarget.style.borderColor = '#e2e8f0'; }}
-                    >💾 Save draft</button>
-
-                    <button
-                      onClick={handlePreviewPrint}
-                      style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', padding: '10px 14px', borderRadius: '10px', background: 'white', border: '1px solid #e2e8f0', color: '#0a1628', fontSize: '12px', fontWeight: 700, cursor: 'pointer', transition: 'all 0.15s' }}
-                      onMouseEnter={(e) => { e.currentTarget.style.background = '#f8fafc'; e.currentTarget.style.borderColor = '#cbd5e1'; }}
-                      onMouseLeave={(e) => { e.currentTarget.style.background = 'white'; e.currentTarget.style.borderColor = '#e2e8f0'; }}
-                    >👁️ Preview</button>
-
-                    <button
-                      onClick={handleOpenInWord}
-                      disabled={openingWord}
-                      title="Open this report in Microsoft Word"
-                      style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', padding: '10px 14px', borderRadius: '10px', background: 'white', border: '1px solid #e2e8f0', color: '#2b579a', fontSize: '12px', fontWeight: 700, cursor: openingWord ? 'wait' : 'pointer', opacity: openingWord ? 0.6 : 1, transition: 'all 0.15s' }}
-                      onMouseEnter={(e) => { if (!openingWord) { e.currentTarget.style.background = '#f0f5fc'; e.currentTarget.style.borderColor = '#2b579a'; } }}
-                      onMouseLeave={(e) => { e.currentTarget.style.background = 'white'; e.currentTarget.style.borderColor = '#e2e8f0'; }}
-                    >{openingWord ? '… Opening' : '📝 Open in Word'}</button>
-
-                    <button
-                      onClick={() => handleSaveReport(true)}
-                      style={{
-                        marginTop: '4px',
-                        display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px',
-                        padding: '12px 14px', borderRadius: '10px',
-                        background: 'linear-gradient(135deg, #16a34a 0%, #15803d 100%)',
-                        border: 'none', color: 'white',
-                        fontSize: '12px', fontWeight: 800, cursor: 'pointer',
-                        letterSpacing: '0.3px',
-                        boxShadow: '0 6px 16px rgba(22, 163, 74, 0.3)',
-                        transition: 'all 0.15s',
-                      }}
-                      onMouseEnter={(e) => { e.currentTarget.style.transform = 'translateY(-1px)'; e.currentTarget.style.boxShadow = '0 8px 20px rgba(22, 163, 74, 0.4)'; }}
-                      onMouseLeave={(e) => { e.currentTarget.style.transform = 'none'; e.currentTarget.style.boxShadow = '0 6px 16px rgba(22, 163, 74, 0.3)'; }}
-                    >🖊 Finalize &amp; Sign</button>
-                  </div>
-
-                  {/* Signature card */}
-                  <div style={{
-                    background: 'linear-gradient(135deg, #0a1628 0%, #1e3a5f 100%)',
-                    borderRadius: '14px',
-                    padding: '14px 16px',
-                    color: 'white',
-                    position: 'relative', overflow: 'hidden',
-                    boxShadow: '0 4px 14px rgba(10, 22, 40, 0.15)',
-                  }}>
-                    <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: '2px', background: 'linear-gradient(90deg, transparent, #d4a017 50%, transparent)' }} />
-                    <div style={{ fontSize: '9px', fontWeight: 800, color: '#d4a017', letterSpacing: '1.2px', textTransform: 'uppercase', marginBottom: '8px' }}>Signature</div>
-                    <div style={{ fontWeight: 800, fontSize: '13px', color: 'white', lineHeight: 1.3, marginBottom: '4px' }}>
-                      {protocol?.hospital?.name || 'Authorized Diagnostic Center'}
-                    </div>
-                    <div style={{ fontSize: '10px', color: 'rgba(255,255,255,0.55)', fontWeight: 500 }}>
-                      Digital Medical Record Signature
-                    </div>
-                  </div>
-                </aside>
-                )}
-
-              </div>
+              <ReportingEditorPanel
+                renderNarrativeEditor={renderNarrativeEditor}
+                applyEditorContent={applyEditorContent}
+                templates={templates}
+                selectedTemplateId={selectedTemplateId}
+                setSelectedTemplateId={setSelectedTemplateId}
+                protocol={protocol}
+                handleOpenInWord={handleOpenInWord}
+                handlePreviewPrint={handlePreviewPrint}
+                openingWord={openingWord}
+                handleSaveReport={handleSaveReport}
+                handleUndoConflict={handleUndoConflict}
+                saveStatus={saveStatus}
+                lastSavedAt={lastSavedAt}
+                savingVisible={savingVisible}
+                cloudAutosaveDisabledReason={cloudAutosaveDisabledReason}
+                occConflict={occConflict}
+                isOnline={isOnline}
+                aiReview={aiReview}
+                setAiReview={setAiReview}
+                acceptAiReview={acceptAiReview}
+                overlayHost={overlayHost}
+                isMobile={isMobile}
+                isTablet={isTablet}
+              />
             )}
 
             {/* VOICE REPORTING TAB — split: controls (left) + live editor (right) */}
@@ -5673,10 +3311,7 @@ const ReportingPage = () => {
                     onGenerated={(html) => {
                       // Drop the AI draft straight into the right-hand editor —
                       // no tab switch; the doctor reviews & edits it in place.
-                      setEditorText(html || '');
-                      const handle = editorRef.current;
-                      if (handle?.setContent) handle.setContent(html || '');
-                      else if (handle?.editor) { try { handle.editor.commands.setContent(html || '', false); } catch {} }
+                      applyEditorContent(html || '');
                     }}
                   />
                 </div>
@@ -5688,33 +3323,7 @@ const ReportingPage = () => {
                   background: 'white', borderRadius: '14px', border: '1px solid #e8edf2',
                   boxShadow: '0 4px 20px rgba(15,23,42,0.05)', overflow: 'hidden',
                 }}>
-                  <NarrativeEditor
-                    ref={editorRef}
-                    content={editorText}
-                    onChange={(html) => setEditorText(html)}
-                    placeholder="Your generated report will appear here — or start typing…"
-                    onSave={() => handleSaveReport(false)}
-                    onAiAssist={handleAiAssist}
-                    onWholeReportAi={runRadAiCleanup}
-                    aiBusy={aiReview.busy}
-                    style={{ flex: 1, minHeight: 0 }}
-                    keywordLibrary={keywordLibrary}
-                    pageMargins={protocol ? {
-                      top:    protocol.headerMargin ?? 25,
-                      right:  protocol.rightMargin  ?? 20,
-                      bottom: protocol.bottomMargin ?? 20,
-                      left:   protocol.leftMargin   ?? 20,
-                    } : undefined}
-                    bodyFontPt={protocol?.fontSize || 12}
-                    firstPageBanner={activeAppointment ? (
-                      <PatientInfoBlock
-                        appointmentId={appointmentId}
-                        appointmentServiceId={activeServiceId || null}
-                        fullAppointment={activeAppointment}
-                        savedMetadata={null}
-                      />
-                    ) : null}
-                  />
+                  {renderNarrativeEditor('Your generated report will appear here — or start typing…')}
                 </div>
               </div>
             )}
@@ -5753,80 +3362,6 @@ const ReportingPage = () => {
       
 
 
-        {/* Insert Table Modal */}
-        {showTableModal && (
-          <div className="overlay" style={{ zIndex: 10001 }} onClick={() => { setShowTableModal(false); setShowTableBuilder(false); }}>
-            <div className="modal" style={{ width: '600px' }} onClick={e => e.stopPropagation()}>
-              <div className="modal-header">
-                <span>{showTableBuilder ? '⚙️ Table Configuration' : '📊 Insert Measurement Table'}</span>
-                <button className="tool-btn" onClick={() => { setShowTableModal(false); setShowTableBuilder(false); }}>✕</button>
-              </div>
-              <div className="modal-body">
-                {!showTableBuilder ? (
-                  <>
-                    <div style={{ fontSize: '12px', color: '#64748b', marginBottom: '15px' }}>Choose a preset to insert into your report:</div>
-                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
-                      {tablePresets.map(preset => (
-                        <div key={preset.id} className="preset-card" onClick={() => insertTable(preset)} style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                          <div style={{ fontSize: '20px' }}>📊</div>
-                          <div>
-                            <div style={{ fontSize: '14px', fontWeight: 700 }}>{preset.name}</div>
-                            <div style={{ fontSize: '10px', color: '#64748b', marginTop: '4px' }}>{preset.columns.length} columns</div>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                    <button className="btn btn-primary" style={{ width: '100%', marginTop: '20px' }} onClick={() => setShowTableBuilder(true)}>+ Configure New Table Type</button>
-                  </>
-                ) : (
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '15px' }}>
-                    <div>
-                      <label style={{ fontSize: '11px', fontWeight: 700, color: '#64748b', display: 'block', marginBottom: '5px' }}>TABLE NAME</label>
-                      <input
-                        type="text"
-                        placeholder="e.g., Fetal Growth"
-                        value={newTable.name}
-                        onChange={e => setNewTable({ ...newTable, name: e.target.value })}
-                        style={{ width: '100%', padding: '10px', border: '1px solid #cbd5e1', borderRadius: '6px' }}
-                      />
-                    </div>
-                    <div>
-                      <label style={{ fontSize: '11px', fontWeight: 700, color: '#64748b', display: 'block', marginBottom: '5px' }}>COLUMN HEADERS</label>
-                      {newTable.columns.map((col, idx) => (
-                        <div key={idx} style={{ display: 'flex', gap: '5px', marginBottom: '8px' }}>
-                          <input
-                            type="text"
-                            placeholder={`Column ${idx + 1}`}
-                            value={col}
-                            onChange={e => {
-                              const newCols = [...newTable.columns];
-                              newCols[idx] = e.target.value;
-                              setNewTable({ ...newTable, columns: newCols });
-                            }}
-                            style={{ flex: 1, padding: '8px', border: '1px solid #cbd5e1', borderRadius: '6px', fontSize: '13px' }}
-                          />
-                          <button
-                            className="tool-btn"
-                            onClick={() => {
-                              const newCols = newTable.columns.filter((_, i) => i !== idx);
-                              setNewTable({ ...newTable, columns: newCols });
-                            }}
-                            style={{ background: '#fecaca', color: '#dc2626' }}
-                          >✕</button>
-                        </div>
-                      ))}
-                      <button className="btn btn-outline" style={{ width: '100%', fontSize: '12px' }} onClick={() => setNewTable({ ...newTable, columns: [...newTable.columns, ''] })}>+ Add Column</button>
-                    </div>
-                    <div style={{ display: 'flex', gap: '10px', marginTop: '10px' }}>
-                      <button className="btn btn-outline" style={{ flex: 1 }} onClick={() => setShowTableBuilder(false)}>Cancel</button>
-                      <button className="btn btn-primary" style={{ flex: 2 }} onClick={handleSaveTable}>Save Table Preset</button>
-                    </div>
-                  </div>
-                )}
-              </div>
-            </div>
-          </div>
-        )}
 
         <ReportPreviewModal
           isOpen={isPreviewOpen}
@@ -5855,96 +3390,18 @@ const ReportingPage = () => {
       </div>
 
       {/* ── Universal Notification Modal ─────────────────────────── */}
-      {notifModal.isOpen && overlayHost && (() => {
-        const NOTIF_CFG = {
-          success: { gradient: 'linear-gradient(135deg,#dcfce7,#bbf7d0)', iconColor: '#16a34a', border: '#bbf7d0', titleColor: '#15803d', shadow: 'rgba(22,163,74,0.22)',  icon: '✓', btnGrad: 'linear-gradient(135deg,#16a34a,#15803d)', btnShadow: 'rgba(22,163,74,0.4)'  },
-          error:   { gradient: 'linear-gradient(135deg,#fee2e2,#fecaca)', iconColor: '#dc2626', border: '#fecaca', titleColor: '#991b1b', shadow: 'rgba(220,38,38,0.22)',  icon: '✕', btnGrad: 'linear-gradient(135deg,#e11d48,#be123c)', btnShadow: 'rgba(225,29,72,0.4)'  },
-          warning: { gradient: 'linear-gradient(135deg,#fef3c7,#fde68a)', iconColor: '#d97706', border: '#fde68a', titleColor: '#92400e', shadow: 'rgba(217,119,6,0.22)', icon: '⚠', btnGrad: 'linear-gradient(135deg,#d97706,#b45309)', btnShadow: 'rgba(217,119,6,0.4)' },
-          info:    { gradient: 'linear-gradient(135deg,#dbeafe,#bfdbfe)', iconColor: '#0f52ba', border: '#bfdbfe', titleColor: '#1e40af', shadow: 'rgba(15,82,186,0.22)', icon: '↻', btnGrad: 'linear-gradient(135deg,#0f52ba,#1e40af)', btnShadow: 'rgba(15,82,186,0.4)' },
-        };
-        const cfg = NOTIF_CFG[notifModal.type] || NOTIF_CFG.info;
-        return createPortal(
-          <div
-            style={{ position: 'fixed', inset: 0, zIndex: 100002, background: 'rgba(10,22,40,0.65)', backdropFilter: 'blur(12px)', WebkitBackdropFilter: 'blur(12px)', display: 'flex', justifyContent: 'center', alignItems: 'center', animation: 'rpNoticeFade 0.2s ease-out' }}
-            onClick={() => setNotifModal(m => ({ ...m, isOpen: false }))}
-          >
-            <div
-              style={{ width: '90%', maxWidth: '460px', background: 'linear-gradient(160deg,#ffffff 0%,#f8fafc 100%)', borderRadius: '28px', border: `1px solid ${cfg.border}`, boxShadow: `0 24px 60px -12px ${cfg.shadow}, 0 0 0 1px rgba(0,0,0,0.04)`, padding: '40px 32px 32px', textAlign: 'center', animation: 'rpNoticePop 0.3s cubic-bezier(0.34,1.56,0.64,1)' }}
-              onClick={e => e.stopPropagation()}
-            >
-              <div style={{ width: '76px', height: '76px', borderRadius: '50%', background: cfg.gradient, border: `2px solid ${cfg.border}`, display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 22px', fontSize: '30px', boxShadow: `0 12px 28px -8px ${cfg.shadow}` }}>
-                <span style={{ color: cfg.iconColor, fontWeight: 900, lineHeight: 1 }}>{cfg.icon}</span>
-              </div>
-              <div style={{ display: 'inline-block', background: cfg.gradient, border: `1px solid ${cfg.border}`, borderRadius: '8px', padding: '3px 12px', marginBottom: '12px' }}>
-                <span style={{ fontSize: '9px', fontWeight: 950, letterSpacing: '2px', color: cfg.titleColor, fontFamily: 'system-ui,sans-serif' }}>{notifModal.type.toUpperCase()}</span>
-              </div>
-              <div style={{ fontSize: '13px', fontWeight: 950, letterSpacing: '1.5px', color: '#0f172a', marginBottom: '12px', fontFamily: 'system-ui,sans-serif', lineHeight: 1.3 }}>{notifModal.title}</div>
-              <div style={{ width: '40px', height: '3px', background: cfg.gradient, borderRadius: '99px', margin: '0 auto 16px' }} />
-              <p style={{ fontSize: '13px', lineHeight: 1.75, color: '#475569', fontWeight: 500, margin: '0 0 28px', fontFamily: 'system-ui,sans-serif', whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>{notifModal.message}</p>
-              <button
-                onClick={() => setNotifModal(m => ({ ...m, isOpen: false }))}
-                style={{ width: '100%', padding: '15px', background: cfg.btnGrad, color: 'white', border: 'none', borderRadius: '16px', fontSize: '11px', fontWeight: 950, letterSpacing: '1.5px', cursor: 'pointer', boxShadow: `0 8px 20px -6px ${cfg.btnShadow}`, fontFamily: 'system-ui,sans-serif' }}
-                onMouseEnter={e => { e.currentTarget.style.opacity = '0.88'; }}
-                onMouseLeave={e => { e.currentTarget.style.opacity = '1'; }}
-              >UNDERSTOOD</button>
-            </div>
-            <style>{`
-              @keyframes rpNoticeFade { from { opacity: 0 } to { opacity: 1 } }
-              @keyframes rpNoticePop  { from { transform: scale(0.88) translateY(20px); opacity: 0 } to { transform: scale(1) translateY(0); opacity: 1 } }
-            `}</style>
-          </div>,
-          overlayHost   // ← portal target: fullscreen element if active, else <body>
-        );
-      })()}
+      <NotificationModal
+        notifModal={notifModal}
+        setNotifModal={setNotifModal}
+        overlayHost={overlayHost}
+      />
 
       {/* ── Draft Recovery Modal ─────────────────────────────────── */}
-      {draftRecoveryModal.isOpen && overlayHost && createPortal(
-        <div
-          style={{ position: 'fixed', inset: 0, zIndex: 100003, background: 'rgba(10,22,40,0.65)', backdropFilter: 'blur(12px)', WebkitBackdropFilter: 'blur(12px)', display: 'flex', justifyContent: 'center', alignItems: 'center', animation: 'rpNoticeFade 0.2s ease-out' }}
-          // Backdrop click defaults to "Use server version" — same as Cancel
-          // on the old window.confirm, so behaviour is unchanged for users
-          // who dismiss without reading.
-          onClick={() => resolveDraftRecovery(false)}
-        >
-          <div
-            style={{ width: '90%', maxWidth: '500px', background: 'linear-gradient(160deg,#ffffff 0%,#f8fafc 100%)', borderRadius: '28px', border: '1px solid #fde68a', boxShadow: '0 24px 60px -12px rgba(217,119,6,0.22), 0 0 0 1px rgba(0,0,0,0.04)', padding: '40px 32px 28px', textAlign: 'center', animation: 'rpNoticePop 0.3s cubic-bezier(0.34,1.56,0.64,1)' }}
-            onClick={e => e.stopPropagation()}
-          >
-            <div style={{ width: '76px', height: '76px', borderRadius: '50%', background: 'linear-gradient(135deg,#fef3c7,#fde68a)', border: '2px solid #fde68a', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 22px', fontSize: '34px', boxShadow: '0 12px 28px -8px rgba(217,119,6,0.22)' }}>
-              <span style={{ color: '#d97706', fontWeight: 900, lineHeight: 1 }}>⟲</span>
-            </div>
-            <div style={{ display: 'inline-block', background: 'linear-gradient(135deg,#fef3c7,#fde68a)', border: '1px solid #fde68a', borderRadius: '8px', padding: '3px 12px', marginBottom: '12px' }}>
-              <span style={{ fontSize: '9px', fontWeight: 950, letterSpacing: '2px', color: '#92400e', fontFamily: 'system-ui,sans-serif' }}>UNSAVED DRAFT FOUND</span>
-            </div>
-            <div style={{ fontSize: '15px', fontWeight: 950, letterSpacing: '0.5px', color: '#0f172a', marginBottom: '12px', fontFamily: 'system-ui,sans-serif', lineHeight: 1.3 }}>
-              Restore your unsaved work?
-            </div>
-            <div style={{ width: '40px', height: '3px', background: 'linear-gradient(135deg,#fef3c7,#fde68a)', borderRadius: '99px', margin: '0 auto 16px' }} />
-            <p style={{ fontSize: '13px', lineHeight: 1.7, color: '#475569', fontWeight: 500, margin: '0 0 8px', fontFamily: 'system-ui,sans-serif' }}>
-              An autosaved draft from <strong style={{ color: '#0f172a' }}>~{draftRecoveryModal.ageMin} min ago</strong> exists on this device and <strong style={{ color: '#0f172a' }}>differs</strong> from the saved copy on the server.
-            </p>
-            <p style={{ fontSize: '12px', lineHeight: 1.6, color: '#64748b', fontWeight: 500, margin: '0 0 26px', fontFamily: 'system-ui,sans-serif' }}>
-              Pick which version to load. The other one will be discarded.
-            </p>
-            <div style={{ display: 'flex', gap: '10px' }}>
-              <button
-                onClick={() => resolveDraftRecovery(false)}
-                style={{ flex: 1, padding: '14px', background: 'white', color: '#475569', border: '1.5px solid #e2e8f0', borderRadius: '14px', fontSize: '11px', fontWeight: 800, letterSpacing: '1px', cursor: 'pointer', fontFamily: 'system-ui,sans-serif' }}
-                onMouseEnter={e => { e.currentTarget.style.background = '#f8fafc'; e.currentTarget.style.borderColor = '#cbd5e1'; }}
-                onMouseLeave={e => { e.currentTarget.style.background = 'white'; e.currentTarget.style.borderColor = '#e2e8f0'; }}
-              >USE SERVER COPY</button>
-              <button
-                onClick={() => resolveDraftRecovery(true)}
-                autoFocus
-                style={{ flex: 1.3, padding: '14px', background: 'linear-gradient(135deg,#d97706,#b45309)', color: 'white', border: 'none', borderRadius: '14px', fontSize: '11px', fontWeight: 950, letterSpacing: '1.5px', cursor: 'pointer', boxShadow: '0 8px 20px -6px rgba(217,119,6,0.4)', fontFamily: 'system-ui,sans-serif' }}
-                onMouseEnter={e => { e.currentTarget.style.opacity = '0.88'; }}
-                onMouseLeave={e => { e.currentTarget.style.opacity = '1'; }}
-              >RESTORE DRAFT</button>
-            </div>
-          </div>
-        </div>,
-        overlayHost
-      )}
+      <DraftRecoveryModal
+        draftRecoveryModal={draftRecoveryModal}
+        resolveDraftRecovery={resolveDraftRecovery}
+        overlayHost={overlayHost}
+      />
     </>
   );
 
