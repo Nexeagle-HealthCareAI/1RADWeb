@@ -139,6 +139,10 @@ export default function AppointmentBoard() {
   const [isAddPatientOpen, setIsAddPatientOpen] = useState(false);
   const [isEditingOpen, setIsEditingOpen] = useState(false);
   const [editingAppointment, setEditingAppointment] = useState(null);
+  // Guards against a double-submit (double-click / Enter+click) firing two
+  // concurrent PUT /appointments/{id} — the second races the first's RowVersion
+  // and the server rejects it as an OCC conflict ("modified by someone else").
+  const [isSavingEdit, setIsSavingEdit] = useState(false);
   // Admin-approval visibility — latest request per appointment.
   const [approvalMap, setApprovalMap] = useState({ byInvoice: {}, byAppointment: {}, rows: [] });
   useEffect(() => {
@@ -1344,6 +1348,7 @@ export default function AppointmentBoard() {
 
   const handleEditAppointment = async () => {
     if (!editingAppointment) return;
+    if (isSavingEdit) return;   // double-submit guard — see isSavingEdit
 
     const draftHasService = !!String(editingAppointment.service || '').trim();
     const hasAddedService = (editServices || []).length > 0;
@@ -1404,6 +1409,7 @@ export default function AppointmentBoard() {
       serviceName: '', modality: '', amount: 0, referralCutValue: 0,
     };
 
+    setIsSavingEdit(true);
     try {
       await apiClient.put(`/appointments/${editingAppointment.appointmentId}`, {
         appointmentId: editingAppointment.appointmentId,
@@ -1453,6 +1459,8 @@ export default function AppointmentBoard() {
       showNotif('error', 'UPDATE FAILED', detail
         ? `Could not update the appointment: ${detail}`
         : 'Could not update the appointment. Please check your connection and try again.');
+    } finally {
+      setIsSavingEdit(false);
     }
   };
 
@@ -4937,12 +4945,13 @@ export default function AppointmentBoard() {
             >
               Cancel
             </button>
-            <button 
+            <button
               type="button"
               onClick={handleEditAppointment}
-              style={{ flex:2, padding:'11px', borderRadius:'10px', border:'none', background:`linear-gradient(135deg,#0a1628,#1e3a5f)`, color:'white', fontWeight:800, fontSize:'13px', cursor:'pointer', boxShadow:'0 4px 14px rgba(10,22,40,0.25)' }}
+              disabled={isSavingEdit}
+              style={{ flex:2, padding:'11px', borderRadius:'10px', border:'none', background:`linear-gradient(135deg,#0a1628,#1e3a5f)`, color:'white', fontWeight:800, fontSize:'13px', cursor:isSavingEdit?'wait':'pointer', opacity:isSavingEdit?0.6:1, boxShadow:'0 4px 14px rgba(10,22,40,0.25)' }}
             >
-              Save Modifications
+              {isSavingEdit ? 'Saving…' : 'Save Modifications'}
             </button>
           </div>
 
