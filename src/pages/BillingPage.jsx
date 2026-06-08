@@ -1310,6 +1310,49 @@ export default function BillingPage() {
     });
   }, [appointments, searchTerm, modalityFilter, sortConfig]);
 
+  // Upcoming referral commissions — projected from FUTURE appointments that
+  // carry a referrer. Real ReferralCommission rows are only created on ARRIVAL,
+  // so without this a future booking's referrer payout never appears under the
+  // Future tab even though its appointment/invoice does. These are optimistic
+  // (UNPAID, not yet earned) and surface only under Future / All via the
+  // serviceDate filter. Kept OUT of `combinedReferralCuts` so the earned-stats
+  // and recorded-payout logic don't count money that hasn't been earned yet.
+  const upcomingReferralCuts = useMemo(() => {
+    return (futureAppointments || [])
+      .filter(app => {
+        const ref = String(app.referredBy || '').trim();
+        return ref && ref.toLowerCase() !== 'self';
+      })
+      .map(app => {
+        const lines = Array.isArray(app.services) ? app.services : [];
+        const cut = lines.length
+          ? lines.reduce((s, l) => s + (Number(l.referralCutValue ?? l.ReferralCutValue) || 0), 0)
+          : (Number(app.referralCutValue) || 0);
+        const when = app.dateTime || app.date;
+        return {
+          id: `upcoming-${app.appointmentId || app.id}`,
+          date: when,
+          serviceDate: when,                       // future → routed to the Future tab
+          name: app.referredBy,
+          description: `Upcoming commission${app.modality ? ` [${app.modality}]` : ''}`,
+          reference: app.displayId || null,
+          amount: cut,
+          type: 'STRATEGIC',
+          status: 'UNPAID',
+          referrerId: app.referrerId || null,
+          modality: app.modality || '',
+          remarks: '',
+          patientName: app.patientName || 'N/A',
+          patientPaymentStatus: null,
+          paymentReceived: 0,
+          referrerIsDoctor: app.referrerIsDoctor !== false,
+          referringDoctor: app.referredBy || null,
+          appointmentId: app.appointmentId || app.id || null,
+          upcoming: true,
+        };
+      });
+  }, [futureAppointments]);
+
   const liveStats = useMemo(() => {
     const safeInvoices = filteredInvoices || [];
     const paidInvoices = safeInvoices.filter(inv => inv?.status === 'PAID');
@@ -1512,7 +1555,10 @@ export default function BillingPage() {
   const filteredReferralCuts = useMemo(() => {
     const today = new Date().toLocaleDateString('en-CA');
     const q = referralSearch.trim().toLowerCase();
-    return combinedReferralCuts.filter(cut => {
+    // Include the projected upcoming cuts so future bookings' referrer payouts
+    // appear under Future/All. Their future serviceDate keeps them out of the
+    // earned (Today/Past/Custom) tabs automatically.
+    return [...combinedReferralCuts, ...upcomingReferralCuts].filter(cut => {
         const cutDate = cut.date ? new Date(cut.date).toLocaleDateString('en-CA') : null;
         const svcDate = cut.serviceDate ? new Date(cut.serviceDate).toLocaleDateString('en-CA') : null;
         const isFuture = !!svcDate && svcDate > today;   // appointment not yet served = upcoming
@@ -1566,7 +1612,7 @@ export default function BillingPage() {
         if (valA > valB) return sortConfig.direction === 'ASC' ? 1 : -1;
         return 0;
     });
-  }, [combinedReferralCuts, timeFilter, startDate, endDate, modalityFilter, referrerFilter, sortConfig, referralSearch]);
+  }, [combinedReferralCuts, upcomingReferralCuts, timeFilter, startDate, endDate, modalityFilter, referrerFilter, sortConfig, referralSearch]);
 
 
   // Total records + label for the current view — drives the shared pager's
