@@ -1841,6 +1841,7 @@ export default function BillingPage() {
         payload: payload || '{}',
         reason,
       });
+      window.dispatchEvent(new Event('1rad_approvals_changed'));   // update the nav badge immediately
       notify({ type: 'success', title: 'Sent for approval', message: 'An admin will review this in Admin Approval.' });
       setIsInvoiceDrawerOpen(false);
     } catch (err) {

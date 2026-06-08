@@ -6,6 +6,7 @@ import { AuthContext } from '../auth/AuthContext';
 import AdvancedDicomViewer from '../components/AdvancedDicomViewer';
 import ReportPreviewModal from '../components/ReportPreviewModal';
 import { DicomCache } from '../utils/DicomCache';
+import { isPatientArrived } from '../utils/arrival';
 import { dicomOptimizer } from '../utils/DicomPerformanceOptimizer';
 import { assetsFromManifest } from '../utils/dicomManifest';
 import { formatPatientAge } from '../utils/patientAge';
@@ -191,7 +192,7 @@ export default function TechnicianPage() {
     // Arrival gate — the technician can't move a study until the patient has
     // arrived (the front desk marks arrival). Mirrors the backend rule.
     const target = (studies || []).find(s => s.appointmentId === id || s.id === id);
-    const arrived = !!target?.arrivedAt || !['scheduled', 'booked', 'future', ''].includes(String(target?.status || '').toLowerCase());
+    const arrived = isPatientArrived(target);
     if (target && !arrived) {
       showNotif('warning', 'PATIENT NOT ARRIVED', 'Mark the patient as arrived before updating the study status.');
       return;
@@ -1331,7 +1332,7 @@ export default function TechnicianPage() {
                     </td>
                     <td style={{ padding: '8px 15px', textAlign: 'right' }}>
                       {hubTab === 'ACTIVE' ? (
-                        <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
+                        <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end', flexWrap: 'wrap' }}>
 
                           <button 
                             onClick={(e) => { e.stopPropagation(); handlePreviewPrint(study); }}
@@ -1342,14 +1343,20 @@ export default function TechnicianPage() {
                             }}
                             title="Print Prescription"
                           >RX</button>
-                          <button 
-                            className="gamified-btn" 
-                            disabled={!study.isToday && hubTab !== 'ARCHIVE'}
-                            style={{ padding: '8px 20px', fontSize: '10px', borderRadius: '12px', opacity: (study.isToday || hubTab === 'ARCHIVE') ? 1 : 0.4, background: (status === 'reported' || status === 'completed') ? '#16a34a' : '' }} 
+                          <button
+                            className="gamified-btn"
+                            disabled={hubTab !== 'ARCHIVE' && (!study.isToday || !isPatientArrived(study))}
+                            style={{ padding: '8px 20px', fontSize: '10px', borderRadius: '12px', opacity: (hubTab === 'ARCHIVE' || (study.isToday && isPatientArrived(study))) ? 1 : 0.4, background: (status === 'reported' || status === 'completed') ? '#16a34a' : '' }}
                             onClick={() => handleOpenWorkspace(study)}
+                            title={hubTab !== 'ARCHIVE' && !isPatientArrived(study) ? 'Patient not arrived — work disabled' : undefined}
                           >
                              {(status === 'reported' || status === 'completed') ? 'Review' : isDone ? 'Re-upload' : 'Start Scan'}
                           </button>
+                          {hubTab !== 'ARCHIVE' && !isPatientArrived(study) && (
+                            <div style={{ flexBasis: '100%', marginTop: '4px', fontSize: '9px', fontWeight: 800, color: '#b45309', textAlign: 'right', whiteSpace: 'nowrap' }}>
+                              ⏳ Patient not arrived — work disabled
+                            </div>
+                          )}
                         </div>
                       ) : (
                         <div style={{ display: 'flex', gap: '10px', justifyContent: 'flex-end' }}>

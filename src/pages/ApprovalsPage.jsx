@@ -96,6 +96,21 @@ function TypeChip({ type }) {
   );
 }
 
+// For a CHANGE_REFERRER request, pull the snapshot the requester stamped in:
+// the currently-credited referrer and how much commission they've ALREADY been
+// PAID. Returns null unless there's a positive paid amount — that's the case
+// the admin must be warned about (approving re-points that paid amount).
+function changeRefPaidInfo(row) {
+  if (row?.type !== 'CHANGE_REFERRER') return null;
+  try {
+    const p = JSON.parse(row.payload || '{}');
+    const amount = Number(p.previousPaidCommission) || 0;
+    if (amount <= 0) return null;
+    return { name: p.previousReferrerName || 'the previous referrer', amount };
+  } catch { return null; }
+}
+const inr = (n) => `₹${(Number(n) || 0).toLocaleString('en-IN')}`;
+
 function StatusChip({ status }) {
   const s = STATUS_META[status] || STATUS_META.PENDING;
   return (
@@ -247,6 +262,7 @@ export default function ApprovalsPage() {
       celebrate();
       setApproveModal({ open: false, row: null, note: '' });
       await load();
+      window.dispatchEvent(new Event('1rad_approvals_changed'));   // update the nav badge immediately
     } catch (e) {
       const msg = e?.response?.data?.error || e?.response?.data?.message || e?.message;
       notifyToast(`Could not approve the request${msg ? `: ${msg}` : ''}.`, 'error');
@@ -267,6 +283,7 @@ export default function ApprovalsPage() {
       celebrate('calm');
       setReject({ open: false, row: null, reason: '' });
       await load();
+      window.dispatchEvent(new Event('1rad_approvals_changed'));   // update the nav badge immediately
     } catch (e) {
       const msg = e?.response?.data?.error || e?.response?.data?.message || e?.message;
       notifyToast(`Could not reject the request${msg ? `: ${msg}` : ''}.`, 'error');
@@ -422,6 +439,14 @@ export default function ApprovalsPage() {
                       <TD>
                         <TypeChip type={row.type} />
                         <div style={{ fontSize: '12.5px', fontWeight: 800, color: '#1e293b', marginTop: '7px', lineHeight: 1.35 }}>{row.title || '—'}</div>
+                        {(() => {
+                          const pp = changeRefPaidInfo(row);
+                          return pp ? (
+                            <div style={{ marginTop: '7px', fontSize: '11px', fontWeight: 800, color: '#b45309', background: '#fffbeb', border: '1px solid #fde68a', padding: '6px 9px', borderRadius: '8px', lineHeight: 1.45, maxWidth: '300px' }}>
+                              ⚠️ {pp.name} was already paid {inr(pp.amount)} — approving credits the new referrer with the same paid amount.
+                            </div>
+                          ) : null;
+                        })()}
                       </TD>
 
                       {/* Requested by */}
@@ -584,6 +609,15 @@ export default function ApprovalsPage() {
             <p style={{ textAlign: 'center', fontSize: '12.5px', color: '#64748b', margin: '8px 0 16px', lineHeight: 1.5 }}>
               {approveModal.row?.title}. The change is applied right away — add a note if useful.
             </p>
+            {(() => {
+              const pp = changeRefPaidInfo(approveModal.row);
+              return pp ? (
+                <div style={{ display: 'flex', gap: '9px', alignItems: 'flex-start', fontSize: '12px', fontWeight: 700, color: '#92400e', background: '#fffbeb', border: '1px solid #fde68a', padding: '11px 12px', borderRadius: '11px', lineHeight: 1.5, marginBottom: '16px' }}>
+                  <span style={{ fontSize: '15px', lineHeight: 1 }}>⚠️</span>
+                  <span>Previous referrer <b>{pp.name}</b> has already been paid <b>{inr(pp.amount)}</b>. Approving re-points this paid commission to the new referrer (it carries over as already-paid).</span>
+                </div>
+              ) : null;
+            })()}
             <label style={{ display: 'block', fontSize: '10px', fontWeight: 950, color: '#64748b', letterSpacing: '0.6px', marginBottom: '8px' }}>
               NOTE <span style={{ color: '#94a3b8', fontWeight: 800 }}>· optional</span>
             </label>

@@ -185,6 +185,7 @@ const ReferralHub = ({
         payload: JSON.stringify({ commissionId: confirmModal.cutId }),
         reason,
       });
+      window.dispatchEvent(new Event('1rad_approvals_changed'));   // update the nav badge immediately
       notifyToast('Sent to admin for approval ✓  The commission stays PAID until it is approved.', 'success');
       setConfirmModal({ isOpen: false, cutId: null, currentStatus: '', patientName: '', amount: 0, reason: '' });
     } catch (e) {

@@ -2,6 +2,7 @@ import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import * as XLSX from 'xlsx';
 import apiClient from '../api/apiClient';
 import useTickClock from '../utils/useTickClock';
+import { isPatientArrived } from '../utils/arrival';
 import { formatElapsed, premisesSeverity, premisesPillStyle } from '../utils/timeTracking';
 import { useOverdue } from '../components/OverdueAppointments/OverdueContext';
 import { getServiceLines, getUniqueModalities, matchesAnyModality, getReportProgressLabel, getStageElapsedMinutes, formatStageElapsed, getStageSlaBucket } from '../utils/appointmentServices';
@@ -190,7 +191,7 @@ export default function OperationsBoard() {
     // Arrival gate — a study can't be advanced (scanning/reporting/delivery)
     // until the patient has arrived. Cancelling a line is still allowed.
     const target = (appointments || []).find(a => a.appointmentId === appointmentId);
-    const arrived = !!target?.arrivedAt || !['scheduled', 'booked', 'future', ''].includes(String(target?.status || '').toLowerCase());
+    const arrived = isPatientArrived(target);
     if (target && !arrived && String(nextStatus).toUpperCase() !== 'CANCELLED') {
       showToast('Patient has not arrived yet. Mark the patient as arrived first.', 'error');
       return;
@@ -1022,6 +1023,7 @@ export default function OperationsBoard() {
                             (doctor's save). DELIVERED/CANCELLED show
                             nothing — the work on the row is done. */}
                         {nextAction && line.id && (
+                          isPatientArrived(appt) ? (
                           <button
                             type="button"
                             onClick={() => handleAdvanceServiceStatus(appt.appointmentId, line.id, nextAction.status)}
@@ -1042,6 +1044,16 @@ export default function OperationsBoard() {
                           >
                             {nextAction.label}
                           </button>
+                          ) : (
+                          // Patient not arrived — show the action disabled + a note.
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', alignItems: 'flex-start' }}>
+                            <button type="button" disabled title="Patient not arrived — work disabled"
+                              style={{ padding: '6px 10px', borderRadius: '8px', border: 'none', background: '#e2e8f0', color: '#94a3b8', fontSize: '10px', fontWeight: 900, letterSpacing: '0.3px', cursor: 'not-allowed', fontFamily: 'inherit' }}>
+                              {nextAction.label}
+                            </button>
+                            <span style={{ fontSize: '9px', fontWeight: 800, color: '#b45309' }}>⏳ Patient not arrived — work disabled</span>
+                          </div>
+                          )
                         )}
                       </div>
                     );

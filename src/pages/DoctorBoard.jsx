@@ -6,6 +6,7 @@ import ReportPreviewModal from '../components/ReportPreviewModal';
 import useOffline from '../hooks/useOffline';
 import { nativeStorage } from '../hooks/useElectron';
 import useTickClock from '../utils/useTickClock';
+import { isPatientArrived } from '../utils/arrival';
 import { formatElapsed, premisesSeverity, premisesPillStyle } from '../utils/timeTracking';
 import { useOverdue } from '../components/OverdueAppointments/OverdueContext';
 import { formatPatientAge } from '../utils/patientAge';
@@ -188,7 +189,7 @@ export default function DoctorBoard() {
   const handleStatusUpdate = async (id, newStatus) => {
     // Arrival gate — reporting can't move a study until the patient has arrived.
     const target = (cases || []).find(c => c.appointmentId === id || c.id === id);
-    const arrived = !!target?.arrivedAt || !['scheduled', 'booked', 'future', ''].includes(String(target?.status || '').toLowerCase());
+    const arrived = isPatientArrived(target);
     if (target && !arrived) {
       notifyToast({ title: 'Patient not arrived', message: 'Mark the patient as arrived before updating the study status.' }, 'warning');
       return;
@@ -794,13 +795,19 @@ export default function DoctorBoard() {
                         >📜</button>
                         <button 
                           className="gamified-btn" 
-                          disabled={!isActive && view !== 'HISTORY'}
-                          style={{ padding: '10px 20px', fontSize: '9px', borderRadius: '12px', opacity: (isActive || view === 'HISTORY') ? 1 : 0.4, cursor: (isActive || view === 'HISTORY') ? 'pointer' : 'not-allowed' }} 
+                          disabled={view !== 'HISTORY' && (!isActive || !isPatientArrived(c))}
+                          style={{ padding: '10px 20px', fontSize: '9px', borderRadius: '12px', opacity: (view === 'HISTORY' || (isActive && isPatientArrived(c))) ? 1 : 0.4, cursor: (view === 'HISTORY' || (isActive && isPatientArrived(c))) ? 'pointer' : 'not-allowed' }}
                           onClick={() => handleOpenWorkspace(c)}
+                          title={view !== 'HISTORY' && !isPatientArrived(c) ? 'Patient not arrived — work disabled' : undefined}
                         >
                           {status === 'reported' ? 'Review' : isReady ? 'Write Report' : 'Open Report'}
                         </button>
                       </div>
+                      {view !== 'HISTORY' && !isPatientArrived(c) && (
+                        <div style={{ marginTop: '6px', fontSize: '9px', fontWeight: 800, color: '#b45309', textAlign: 'right', whiteSpace: 'nowrap' }}>
+                          ⏳ Patient not arrived — work disabled
+                        </div>
+                      )}
                     </td>
                   </tr>
                 );

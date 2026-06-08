@@ -6,6 +6,7 @@ import useOffline from '../hooks/useOffline';
 import { nativeStorage } from '../hooks/useElectron';
 import { getThermalConfig } from '../utils/thermalPrinter';
 import { printThermalToken } from '../utils/thermalPrint';
+import { isPatientArrived } from '../utils/arrival';
 import AppointmentCard from '../components/AppointmentCard';
 import '../styles/global.css';
 import '../styles/AppointmentBoard.css';
@@ -16,7 +17,7 @@ import { useOverdue } from '../components/OverdueAppointments/OverdueContext';
 import { getTrackingUrl } from '../utils/trackingUrl';
 import { buildPatientAge, formatPatientAge, parsePatientAge } from '../utils/patientAge';
 import { getServiceLines, getUniqueModalities, matchesAnyModality, getReportProgressLabel, getStageElapsedMinutes, formatStageElapsed, getStageSlaBucket } from '../utils/appointmentServices';
-import { watchAppointments, insertCachedAppointment } from '../db/repos/appointmentsRepo';
+import { watchAppointments, insertCachedAppointment, applyServerDeltas } from '../db/repos/appointmentsRepo';
 import { watchInvoices } from '../db/repos/invoicesRepo';
 import { watchPatients, findDuplicateCandidates } from '../db/repos/patientsRepo';
 import { getAllReferrers } from '../db/repos/referrersRepo';
@@ -201,6 +202,7 @@ export default function AppointmentBoard() {
         payload: '{}',
         reason: reason.trim(),
       });
+      window.dispatchEvent(new Event('1rad_approvals_changed'));   // update the nav badge immediately
       setCancelApprovalModal({ isOpen: false, appointmentId: null, patientName: '', referredBy: '', reason: '', submitting: false });
       setErrorModal({
         isOpen: true,
@@ -253,7 +255,12 @@ export default function AppointmentBoard() {
         newReferrerSupportedDegree: isOther ? (m.supportedDegree || '').trim() || null : null,
       });
       if (res.data?.requiresApproval) {
-        setChangeRefModal(s => ({ ...s, phase: 'approval', submitting: false }));
+        // Snapshot for the admin: who's already paid and how much (shown on the
+        // approval card/modal). Falls back to the name we already have.
+        setChangeRefModal(s => ({ ...s, phase: 'approval', submitting: false,
+          previousReferrerName: res.data.previousReferrerName || s.currentReferrer || '',
+          previousPaidCommission: Number(res.data.previousPaidCommission) || 0,
+        }));
         return;
       }
       setChangeRefModal({ isOpen: false, appointmentId: null, patientName: '', currentReferrer: '', newName: '', newContact: '', isDoctor: true, supportedByDoctor: '', supportedSpecialty: '', supportedDegree: '', email: '', specialty: '', degree: '', address: '', phase: 'edit', reason: '', submitting: false });
@@ -288,10 +295,16 @@ export default function AppointmentBoard() {
             newReferrerAddress: isSelfRef ? null : (m.address || '').trim() || null,
             newReferrerSupportedSpecialty: isOther ? (m.supportedSpecialty || '').trim() || null : null,
             newReferrerSupportedDegree: isOther ? (m.supportedDegree || '').trim() || null : null,
+            // Snapshot of who's already credited + how much commission they've
+            // been PAID — shown to the admin so they know approving re-points
+            // that paid amount to the new referrer.
+            previousReferrerName: m.previousReferrerName || m.currentReferrer || null,
+            previousPaidCommission: Number(m.previousPaidCommission) || 0,
           };
         })()),
         reason: m.reason.trim(),
       });
+      window.dispatchEvent(new Event('1rad_approvals_changed'));   // update the nav badge immediately
       setChangeRefModal({ isOpen: false, appointmentId: null, patientName: '', currentReferrer: '', newName: '', newContact: '', isDoctor: true, supportedByDoctor: '', supportedSpecialty: '', supportedDegree: '', email: '', specialty: '', degree: '', address: '', phase: 'edit', reason: '', submitting: false });
       setErrorModal({ isOpen: true, title: '✅ Sent for approval', message: 'An admin will review this referrer change in Admin Approval.' });
     } catch (e) {
@@ -493,6 +506,15 @@ export default function AppointmentBoard() {
       console.error('Failed to fetch referrers:', error);
     }
   }, []);
+
+  // Debounced referrer search for the booking "Referred By" field. Firing a
+  // /referrers request on every keystroke flooded the API and made the field
+  // lag; coalesce to one request 300ms after the user stops typing.
+  const referrerSearchTimer = useRef(null);
+  const searchReferrers = useCallback((query) => {
+    if (referrerSearchTimer.current) clearTimeout(referrerSearchTimer.current);
+    referrerSearchTimer.current = setTimeout(() => fetchReferrers(query), 300);
+  }, [fetchReferrers]);
 
   // Personnel processing — runs against either the live API response or
   // the cached snapshot from the offline fallback. Extracted so both
@@ -1214,6 +1236,16 @@ export default function AppointmentBoard() {
             dailyTokenNumber: null,
           });
         } catch { /* non-blocking — the pull will still bring it */ }
+
+        // Pull the CANONICAL row (real displayId, token, server-formatted
+        // dateTime) straight into the cache so the board shows the actual
+        // appointment immediately — without waiting on the 30s background poll,
+        // whose pull is skipped when one is already running (pullCycle guards on
+        // `pulling`). Uses the same mapping the sync engine uses, so it's a true
+        // upsert over the optimistic stub above.
+        apiClient.get(`/appointments/${newId}`)
+          .then(full => { if (full?.data?.appointmentId) return applyServerDeltas([full.data]); })
+          .catch(() => { /* optimistic stub + the next sync still cover it */ });
       }
 
       celebrate();
@@ -1277,7 +1309,10 @@ export default function AppointmentBoard() {
   // token modal so a slip can still be printed via the dialog.
   const handlePrintToken = async (app) => {
     const cfg = getThermalConfig();
-    if (cfg && (cfg.interface || cfg.transport)) {
+    // Only silent-print a real queue token once the patient has arrived. Before
+    // arrival there's no token, so fall through to the modal slip (which shows a
+    // "TOKEN ISSUED ON ARRIVAL" placeholder instead of a number).
+    if (isPatientArrived(app) && cfg && (cfg.interface || cfg.transport)) {
       const solo = (getServiceLines(app)?.[0]) || {};
       // QR only when we have a real web origin (skip on desktop file://).
       let qr = null;
@@ -1443,6 +1478,16 @@ export default function AppointmentBoard() {
         patientAge: editingAppointment.patientAge,
         patientGender: editingAppointment.patientGender,
       });
+
+      // Pull the CANONICAL row (reconciled services + amounts) into the cache so
+      // the board reflects the add/remove immediately. The edit path has no
+      // optimistic service patch, so without this the board keeps showing the
+      // PREVIOUS services/billing until the 30s background poll (whose pull is
+      // skipped when one is already running — pullCycle guards on `pulling`).
+      const editedApptId = editingAppointment.appointmentId;
+      apiClient.get(`/appointments/${editedApptId}`)
+        .then(full => { if (full?.data?.appointmentId) return applyServerDeltas([full.data]); })
+        .catch(() => { /* the next sync still reconciles */ });
 
       setIsEditingOpen(false);
       setEditingAppointment(null);
@@ -2985,7 +3030,7 @@ export default function AppointmentBoard() {
                             onChange={e => {
                               const val = e.target.value;
                               setNewPatient({...newPatient, referredBy: val, referrerId: null});
-                              fetchReferrers(val);
+                              searchReferrers(val);
                             }}
                           />
                           {newPatient.referredBy && referrers.length > 0 && !referrers.some(r => r.name === newPatient.referredBy) && (
@@ -5159,8 +5204,15 @@ export default function AppointmentBoard() {
                 <div style={{ fontSize: '8px', fontWeight: 700, marginTop: '2px' }}>DIAGNOSTIC COMMAND CENTER</div>
               </div>
               <div style={{ marginBottom: '10px' }}>
-                <div style={{ fontSize: '9px', fontWeight: 800 }}>TOKEN NO.</div>
-                <div style={{ fontSize: '38px', fontWeight: 950, margin: '2px 0' }}>{tokenPrintData.tokenNo || tokenPrintData.id}</div>
+                {isPatientArrived(tokenPrintData) ? (
+                  <>
+                    <div style={{ fontSize: '9px', fontWeight: 800 }}>TOKEN NO.</div>
+                    <div style={{ fontSize: '38px', fontWeight: 950, margin: '2px 0' }}>{tokenPrintData.tokenNo || tokenPrintData.id}</div>
+                  </>
+                ) : (
+                  // Not arrived yet — no queue token exists, so withhold the number.
+                  <div style={{ fontSize: '13px', fontWeight: 800, margin: '6px 0', padding: '8px 6px', border: '1px dashed #000' }}>TOKEN ISSUED ON ARRIVAL</div>
+                )}
               </div>
               <div style={{ borderTop: '1px dashed #000', borderBottom: '1px dashed #000', padding: '8px 0', margin: '8px 0', textAlign: 'left' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '4px' }}>

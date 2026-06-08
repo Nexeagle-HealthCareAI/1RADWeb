@@ -281,12 +281,21 @@ export default function Sidebar({ isMobileOpen, onMobileClose }) {
     let alive = true;
     const load = async () => {
       try {
-        const res = await apiClient.get('/approvals?status=PENDING');
-        if (alive) setPendingApprovals(Array.isArray(res.data) ? res.data.length : 0);
+        // Cheap count endpoint (just CountAsync). Fall back to the full list's
+        // length on an older backend that doesn't expose /count yet.
+        let count;
+        try {
+          const res = await apiClient.get('/approvals/count?status=PENDING');
+          count = Number(res.data?.count) || 0;
+        } catch {
+          const res = await apiClient.get('/approvals?status=PENDING');
+          count = Array.isArray(res.data) ? res.data.length : 0;
+        }
+        if (alive) setPendingApprovals(count);
       } catch { /* keep the last known count on a transient error */ }
     };
     load();
-    const id = setInterval(load, 60000);
+    const id = setInterval(load, 30000);
     const onChanged = () => load();
     window.addEventListener('focus', onChanged);
     window.addEventListener('1rad_approvals_changed', onChanged);
