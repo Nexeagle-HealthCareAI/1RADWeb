@@ -27,6 +27,13 @@ import { saveLocalDraft } from '../db/repos/reportsRepo';
  * read/write (editorRef + applyContent) are injected so the hook stays
  * page-agnostic and testable.
  */
+// Per-service draft key. Multi-service appointments keep ONE draft per service
+// line so switching services (and launching Word per service) doesn't restore
+// another service's autosaved work over the one you're on. A null serviceId
+// (single-service / v1) keeps the legacy appointment-level key for compatibility.
+export const reportDraftKey = (appointmentId, serviceId) =>
+  `1rad_draft_${appointmentId}${serviceId ? `_svc_${serviceId}` : ''}`;
+
 export default function useReportAutosave({
   // scope / gating
   appointmentId,
@@ -89,7 +96,7 @@ export default function useReportAutosave({
       };
 
       try {
-        await nativeStorage.set(`1rad_draft_${appointmentId}`, draft);
+        await nativeStorage.set(reportDraftKey(appointmentId, activeServiceId), draft);
         // Functional update so we act on the LATEST status, not the stale value
         // captured when this debounced effect ran (saveStatus isn't a dep here).
         setSaveStatus(prev => (prev === 'IDLE' || prev === 'SUCCESS') ? 'DIRTY' : prev);
@@ -100,7 +107,7 @@ export default function useReportAutosave({
     }, 1500); // 1.5s debounce
 
     return () => clearTimeout(timer);
-  }, [editorText, impression, advice, appointmentId, isFinalized, selectedTemplateId]);
+  }, [editorText, impression, advice, appointmentId, activeServiceId, isFinalized, selectedTemplateId]);
 
   // ── 1b. LOCAL AUTOSAVE (IndexedDB mirror). A second, slightly slower debounce
   //    that also writes the offline cache row (saveLocalDraft) so a re-open while
@@ -128,7 +135,7 @@ export default function useReportAutosave({
         serverBaseline: serverBaselineRef.current,
       };
       console.log(`[REPORTING] Autosaving draft for ${appointmentId}...`);
-      await nativeStorage.set(`1rad_draft_${appointmentId}`, draft);
+      await nativeStorage.set(reportDraftKey(appointmentId, activeServiceId), draft);
       // Mirror the draft into the offline cache (Phase B1 Slice 3). The
       // nativeStorage write above still drives the existing crash-recovery
       // prompt; this write keeps the IndexedDB cache row aligned with the
@@ -147,7 +154,7 @@ export default function useReportAutosave({
     }, 2000); // Debounce for 2 seconds
 
     return () => clearTimeout(autosaveTimer);
-  }, [editorText, impression, advice, selectedTemplateId, appointmentId, isFinalized]);
+  }, [editorText, impression, advice, selectedTemplateId, appointmentId, activeServiceId, isFinalized]);
 
   // ── 2. CLOUD AUTOSAVE: Background API sync if dirty. ───────────────────────
   //
@@ -332,7 +339,7 @@ export default function useReportAutosave({
         notify('success', finalizing ? 'REPORT FINALIZED' : 'DRAFT SAVED', finalizing ? 'Report has been finalized and dispatched successfully.' : 'Your changes have been saved successfully.');
         if (finalizing) {
           // Clear local draft on success
-          await nativeStorage.delete(`1rad_draft_${appointmentId}`);
+          await nativeStorage.delete(reportDraftKey(appointmentId, activeServiceId));
           onFinalized();
         }
       }

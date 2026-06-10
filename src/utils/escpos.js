@@ -127,9 +127,18 @@ export function buildReceiptBytes(data = {}) {
     p.leftRight('DISCOUNT', '-' + money(data.discount));
   }
   p.bold(true).size(1, 1).leftRight('TOTAL', money(data.total)).size(1, 1).bold(false).drawLine();
+  // Partial payment — show what's been paid and what's still due so the slip
+  // is proof the patient paid a part amount (not the whole bill).
+  if ((Number(data.paid) || 0) > 0 && (Number(data.balance) || 0) > 0.01) {
+    p.leftRight('PAID', money(data.paid));
+    p.bold(true).leftRight('BALANCE DUE', money(data.balance)).bold(false);
+    p.align('center');
+    p.bold(true).line('** PART PAYMENT - BALANCE DUE **').bold(false);
+    p.drawLine();
+  }
   p.align('center');
   for (const line of (data.footer || ['THANK YOU FOR CHOOSING 1RAD'])) p.line(line);
-  p.line('').line('Powered by NexEagle').feed(1);
+  p.line('').line('1Rad Powered by NexEagle').feed(1);
   if (data.cut !== false) p.cut();
   if (data.cashDrawer) p.cashDrawer();
   return p.getBytes();
@@ -158,7 +167,7 @@ export function buildTokenBytes(data = {}) {
   if (data.qr) p.qr(String(data.qr), { size: 6, ec: 'M' });
   p.drawLine();
   for (const line of (data.footer || ['PLEASE KEEP THIS TOKEN'])) p.line(line);
-  p.line('').line('Powered by NexEagle');
+  p.line('').line('1Rad Powered by NexEagle');
   p.feed(1);
   if (data.cut !== false) p.cut();
   return p.getBytes();

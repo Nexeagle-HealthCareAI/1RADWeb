@@ -9,7 +9,7 @@ import { dicomOptimizer } from '../utils/DicomPerformanceOptimizer';
 import { uploadStudyAssetDirect } from '../utils/azureUpload';
 import { jwtDecode } from 'jwt-decode';
 import useOffline from '../hooks/useOffline';
-import useReportAutosave from '../hooks/useReportAutosave';
+import useReportAutosave, { reportDraftKey } from '../hooks/useReportAutosave';
 import useReportAi from '../hooks/useReportAi';
 import usePatientTimeline from '../hooks/usePatientTimeline';
 import { nativeStorage, nativeWord } from '../hooks/useElectron';
@@ -713,7 +713,7 @@ const ReportingPage = () => {
         // refreshes, and "I forgot to click Save" mistakes.
         let restored = false;
         try {
-          const localDraft = await nativeStorage.get(`1rad_draft_${appId}`);
+          const localDraft = await nativeStorage.get(reportDraftKey(appId, activeServiceId));
           if (localDraft && localDraft.findings) {
             const draftDiffers = (localDraft.findings || '') !== findingsHtml;
 
@@ -810,7 +810,7 @@ const ReportingPage = () => {
         setActiveAppointment(cachedAppointment);
       }
 
-      const draft = await nativeStorage.get(`1rad_draft_${appId}`);
+      const draft = await nativeStorage.get(reportDraftKey(appId, activeServiceId));
       if (draft) {
         console.info('[1RAD] Reconstituting Workspace from Local Draft');
         applyEditorContent(draft.findings || '');

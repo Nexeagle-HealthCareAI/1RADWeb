@@ -1696,7 +1696,7 @@ export default function AppointmentBoard() {
           </div>
           <div style="margin-top: 150px; font-size: 10px; color: #94a3b8; text-align: center; border-top: 1px solid #f1f5f9; padding-top: 20px;">
              This is a computer-generated diagnostic invoice. No physical signature required.<br/>
-             Powered by Nexeagle
+             1Rad Powered by NexEagle
           </div>
         </body>
       </html>
@@ -1746,7 +1746,7 @@ export default function AppointmentBoard() {
           <div class="center" style="margin-top: 20px; font-size: 10px; font-weight: bold;">
             THANK YOU FOR CHOOSING 1RAD
           </div>
-          <div class="center" style="font-size: 8px; color: #555; margin-top: 15px; font-weight: bold; font-family: monospace; letter-spacing: 1px;">POWERED BY NEXEAGLE</div>
+          <div class="center" style="font-size: 8px; color: #555; margin-top: 15px; font-weight: bold; font-family: monospace; letter-spacing: 1px;">1RAD POWERED BY NEXEAGLE</div>
         </body>
       </html>
     `);
@@ -1857,7 +1857,7 @@ export default function AppointmentBoard() {
                  </div>
               </div>
             </div>
-            <div style="text-align: center; font-size: 9px; color: #94a3b8; margin-top: 30px; font-weight: 700; letter-spacing: 1px; text-transform: uppercase;">Powered by Nexeagle</div>
+            <div style="text-align: center; font-size: 9px; color: #94a3b8; margin-top: 30px; font-weight: 700; letter-spacing: 1px; text-transform: uppercase;">1Rad Powered by NexEagle</div>
           </div>
         </body>
       </html>

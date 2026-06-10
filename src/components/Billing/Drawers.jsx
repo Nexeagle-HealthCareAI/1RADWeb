@@ -47,6 +47,9 @@ export const InvoiceDrawer = ({
   const [editDeduction, setEditDeduction] = React.useState(0);
   const [editReason, setEditReason] = React.useState('');
   const [editSubmitting, setEditSubmitting] = React.useState(false);
+  // Partial payment: amount the biller is collecting now. null = default to the
+  // full outstanding balance; a number = take exactly that (rest stays due).
+  const [enteredAmount, setEnteredAmount] = React.useState(null);
 
   const openEditRequest = () => {
     setEditCentre(Number(selectedInvoice.centreDiscount) || 0);
@@ -167,6 +170,17 @@ export const InvoiceDrawer = ({
 
   const totalDeductions = centreDisc + referrerDisc + deduction;
   const netSettlement = (selectedInvoice.grossAmount || 0) - totalDeductions;
+
+  // Partial payments. The patient can pay part now and keep the rest due. The
+  // biller types the amount received; the default is the whole balance (net −
+  // already-paid). `enteredAmount === null` keeps the default tracking the
+  // balance as discounts change; once typed, we clamp the value to [0, balance].
+  const paidSoFar = Number(selectedInvoice?.paidAmount) || 0;
+  const balanceDue = Math.max(0, netSettlement - paidSoFar);
+  const amountReceived = enteredAmount === null
+    ? balanceDue
+    : Math.min(Math.max(0, Number(enteredAmount) || 0), balanceDue);
+  const remainingAfter = Math.max(0, balanceDue - amountReceived);
 
   // Max the centre may discount: total − referral commission (and ≤ what's left
   // after the other deductions). Shown next to the centre concession field.
@@ -524,6 +538,21 @@ export const InvoiceDrawer = ({
                     <div style={{ fontSize: '9px', fontWeight: 950, color: '#0f52ba', letterSpacing: '1px' }}>NET_SETTLEMENT</div>
                     <div style={{ fontSize: isMobile ? '20px' : '24px', fontWeight: 950, color: '#0f52ba' }}>₹{(isPaid ? selectedInvoice.totalAmount : netSettlement).toLocaleString()}</div>
                  </div>
+
+                 {/* Re-collecting a partially-paid invoice — show what's in and
+                     what's still due so the biller takes the right amount. */}
+                 {!isPaid && paidSoFar > 0 && (
+                   <>
+                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '8px' }}>
+                        <div style={{ fontSize: '9px', fontWeight: 950, color: '#059669', letterSpacing: '1px' }}>ALREADY_PAID</div>
+                        <div style={{ fontSize: '11px', fontWeight: 950, color: '#059669' }}>₹{paidSoFar.toLocaleString()}</div>
+                     </div>
+                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '4px' }}>
+                        <div style={{ fontSize: '9px', fontWeight: 950, color: '#ea580c', letterSpacing: '1px' }}>BALANCE_DUE</div>
+                        <div style={{ fontSize: '13px', fontWeight: 950, color: '#ea580c' }}>₹{balanceDue.toLocaleString()}</div>
+                     </div>
+                   </>
+                 )}
               </div>
 
               {!isPaid ? (
@@ -543,6 +572,32 @@ export const InvoiceDrawer = ({
                          ))}
                       </div>
                    </div>
+
+                   {/* Amount received now — defaults to the full balance; type a
+                       lower number to take a part-payment (the rest stays due). */}
+                   <div>
+                      <span style={{ fontSize: '9px', fontWeight: 950, color: '#94a3b8', letterSpacing: '1px', marginBottom: '8px', display: 'block' }}>AMOUNT RECEIVED NOW</span>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '4px 12px' }}>
+                         <span style={{ fontSize: '16px', fontWeight: 950, color: '#0f52ba' }}>₹</span>
+                         <input
+                           type="number"
+                           min="0"
+                           max={balanceDue}
+                           value={enteredAmount === null ? balanceDue : enteredAmount}
+                           onChange={(e) => {
+                             const v = e.target.value;
+                             setEnteredAmount(v === '' ? 0 : Math.min(Math.max(0, parseFloat(v) || 0), balanceDue));
+                           }}
+                           style={{ flex: 1, padding: '8px 0', border: 'none', outline: 'none', fontSize: '18px', fontWeight: 950, color: '#0f52ba', minWidth: 0 }}
+                         />
+                         <button type="button" onClick={() => setEnteredAmount(null)} title="Set to full balance" style={{ fontSize: '8px', fontWeight: 950, color: '#0f52ba', background: '#f0f4ff', border: 'none', borderRadius: '6px', padding: '5px 8px', cursor: 'pointer' }}>FULL</button>
+                      </div>
+                      {remainingAfter > 0 && (
+                        <div style={{ fontSize: '9px', fontWeight: 900, color: '#ea580c', marginTop: '6px', lineHeight: 1.4 }}>
+                          Part-payment — ₹{remainingAfter.toLocaleString()} stays due after this. Invoice will be marked PARTIAL.
+                        </div>
+                      )}
+                   </div>
                    {/* Over-commission discounts require an explicit confirmation
                        popup (with a reason); everything else settles straight through. */}
                    {overCentreDiscount && (
@@ -556,11 +611,17 @@ export const InvoiceDrawer = ({
                      const meta = excess > 0
                        ? (fundingChoice === 'centre' ? { absorbToCentre: true } : { deficitReason: deficitReason.trim() })
                        : {};
-                     handleCollectPayment(centreDisc, referrerDisc, deduction, netSettlement, meta);
-                   }} disabled={overCentreDiscount || deficitNeedsReason} style={{ width: '100%', padding: '12px', borderRadius: '12px', border: 'none', background: (overCentreDiscount || deficitNeedsReason) ? '#cbd5e1' : '#0f52ba', color: 'white', fontWeight: 950, fontSize: '10px', cursor: (overCentreDiscount || deficitNeedsReason) ? 'not-allowed' : 'pointer', boxShadow: (overCentreDiscount || deficitNeedsReason) ? 'none' : '0 4px 12px rgba(15,82,186,0.2)' }}>COMMIT SETTLEMENT</button>
+                     handleCollectPayment(centreDisc, referrerDisc, deduction, netSettlement, { ...meta, amountReceived });
+                   }} disabled={overCentreDiscount || deficitNeedsReason} style={{ width: '100%', padding: '12px', borderRadius: '12px', border: 'none', background: (overCentreDiscount || deficitNeedsReason) ? '#cbd5e1' : '#0f52ba', color: 'white', fontWeight: 950, fontSize: '10px', cursor: (overCentreDiscount || deficitNeedsReason) ? 'not-allowed' : 'pointer', boxShadow: (overCentreDiscount || deficitNeedsReason) ? 'none' : '0 4px 12px rgba(15,82,186,0.2)' }}>{remainingAfter > 0 ? `COLLECT ₹${amountReceived.toLocaleString()} (PART)` : 'COMMIT SETTLEMENT'}</button>
                    <button onClick={() => handleSaveInvoice({ centreDisc, referrerDisc, deduction })} style={{ width: '100%', padding: '10px', borderRadius: '12px', border: '1px solid #e2e8f0', fontWeight: 800, fontSize: '9px', cursor: 'pointer', background: 'white' }}>SAVE AS DRAFT</button>
                    {/* Print the invoice/estimate before collecting payment. */}
                    <button onClick={() => handlePrintA4(selectedInvoice)} style={{ width: '100%', padding: '10px', borderRadius: '12px', border: '1.5px solid #0f52ba', fontWeight: 900, fontSize: '9px', cursor: 'pointer', background: 'white', color: '#0f52ba' }}>🖨 PRINT INVOICE</button>
+                   {/* Part-payment receipt: a partially-paid invoice (paid > 0,
+                       balance still due) can print a thermal slip showing PAID +
+                       BALANCE DUE as proof of the part-payment. */}
+                   {paidSoFar > 0 && (
+                     <button onClick={() => handlePrintThermal(selectedInvoice)} style={{ width: '100%', padding: '10px', borderRadius: '12px', border: 'none', background: 'linear-gradient(135deg, #0f52ba, #061a40)', color: 'white', fontWeight: 900, fontSize: '9px', cursor: 'pointer' }}>🧾 THERMAL SLIP · PART-PAYMENT</button>
+                   )}
 
                 </div>
 
@@ -784,7 +845,7 @@ export const InvoiceDrawer = ({
                     const meta = fundingChoice === 'centre'
                       ? { absorbToCentre: true }
                       : { deficitReason: deficitReason.trim() };
-                    handleCollectPayment(centreDisc, referrerDisc, deduction, netSettlement, meta);
+                    handleCollectPayment(centreDisc, referrerDisc, deduction, netSettlement, { ...meta, amountReceived });
                     setShowDeficitModal(false);
                   }}
                   disabled={!canConfirm}

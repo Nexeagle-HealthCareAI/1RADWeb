@@ -580,6 +580,10 @@ export default function BillingPage() {
       total: inv.totalAmount || 0,
       gross: inv.grossAmount || 0,
       discount: inv.discountAmount || 0,
+      // Partial-payment proof on the slip: amount paid + balance still due.
+      paid: Number(inv.paidAmount) || 0,
+      balance: Math.max(0, (Number(inv.totalAmount) || 0) - (Number(inv.paidAmount) || 0)),
+      status: inv.status || 'PENDING',
       footer: ['THANK YOU FOR CHOOSING 1RAD', 'DIGITAL REPORT AT 1RAD.HEALTH'],
     });
     if (r?.ok) {
@@ -657,12 +661,21 @@ export default function BillingPage() {
             <span>TOTAL</span>
             <span>₹${(inv.totalAmount || 0).toLocaleString()}</span>
           </div>
+          ${(Number(inv.paidAmount) || 0) > 0 && ((Number(inv.totalAmount) || 0) - (Number(inv.paidAmount) || 0)) > 0.01 ? `
+          <div style="display: flex; justify-content: space-between; font-size: 12px; font-family: monospace; margin-top: 5px;">
+            <span>PAID</span><span>₹${(Number(inv.paidAmount) || 0).toLocaleString()}</span>
+          </div>
+          <div style="display: flex; justify-content: space-between; font-weight: bold; font-size: 13px; font-family: monospace;">
+            <span>BALANCE DUE</span><span>₹${Math.max(0, (Number(inv.totalAmount) || 0) - (Number(inv.paidAmount) || 0)).toLocaleString()}</span>
+          </div>
+          <div class="center" style="font-size: 10px; font-weight: bold; margin-top: 6px;">** PART PAYMENT - BALANCE DUE **</div>
+          ` : ''}
           <div class="divider"></div>
           <div class="center" style="margin-top: 15px; font-size: 10px; font-weight: bold;">
             THANK YOU FOR CHOOSING 1RAD<br/>
             DIGITAL REPORT AT 1RAD.HEALTH
           </div>
-          <div class="center" style="font-size: 8px; color: #555; margin-top: 15px; font-weight: bold; font-family: monospace; letter-spacing: 1px;">POWERED BY NEXEAGLE</div>
+          <div class="center" style="font-size: 8px; color: #555; margin-top: 15px; font-weight: bold; font-family: monospace; letter-spacing: 1px;">1RAD POWERED BY NEXEAGLE</div>
         </body>
       </html>
     `);
@@ -1244,8 +1257,16 @@ export default function BillingPage() {
         if (!searchHay.includes(q)) return false;
       }
 
-      // Status Filter
-      if (statusFilter !== 'ALL' && inv.status !== statusFilter) return false;
+      // Status Filter. "PENDING" means "still owes money" — so it includes
+      // PARTIAL invoices (part-paid, balance outstanding), which is exactly the
+      // list a biller works to collect the remainder from.
+      if (statusFilter !== 'ALL') {
+        if (statusFilter === 'PENDING') {
+          if (inv.status !== 'PENDING' && inv.status !== 'PARTIAL') return false;
+        } else if (inv.status !== statusFilter) {
+          return false;
+        }
+      }
 
       // Approval Filter — only invoices with a request still awaiting admin sign-off.
       if (approvalFilter === 'AWAITING') {
@@ -1718,7 +1739,14 @@ export default function BillingPage() {
     // falsy `||` fallback would wrongly re-bill the gross. Guard for null/undefined.
     const currentNet = (netAmount === null || netAmount === undefined) ? (selectedInvoice.totalAmount || 0) : netAmount;
     const currentPaid = selectedInvoice.paidAmount || 0;
-    const paymentAmount = Math.max(0, currentNet - currentPaid);
+    const balance = Math.max(0, currentNet - currentPaid);
+    // Partial payment: when the drawer supplies an explicit amount-received,
+    // collect exactly that (clamped to the balance) and leave the rest due;
+    // otherwise collect the full balance. The API records the Payment and flips
+    // the invoice to PARTIAL when 0 < paid < total.
+    const paymentAmount = (meta.amountReceived === null || meta.amountReceived === undefined)
+      ? balance
+      : Math.min(Math.max(0, Number(meta.amountReceived) || 0), balance);
 
     // When the referral concession exceeds the doctor's commission, the excess
     // is his carried deficit — flag it (with the biller's reason) so the API can
@@ -2168,7 +2196,7 @@ export default function BillingPage() {
                 <div style="font-size: 9px; color: #94a3b8; margin-top: 4px;">1Rad Finance</div>
               </div>
             </div>
-            <div style="text-align: center; font-size: 9px; color: #94a3b8; margin-top: 40px; font-weight: 700; letter-spacing: 1px; text-transform: uppercase;">Powered by Nexeagle</div>
+            <div style="text-align: center; font-size: 9px; color: #94a3b8; margin-top: 40px; font-weight: 700; letter-spacing: 1px; text-transform: uppercase;">1Rad Powered by NexEagle</div>
           </div>
         </body>
       </html>
@@ -2290,7 +2318,7 @@ export default function BillingPage() {
                  </div>
               </div>
             </div>
-            <div style="text-align: center; font-size: 9px; color: #94a3b8; margin-top: 30px; font-weight: 700; letter-spacing: 1px; text-transform: uppercase;">Powered by Nexeagle</div>
+            <div style="text-align: center; font-size: 9px; color: #94a3b8; margin-top: 30px; font-weight: 700; letter-spacing: 1px; text-transform: uppercase;">1Rad Powered by NexEagle</div>
           </div>
         </body>
       </html>

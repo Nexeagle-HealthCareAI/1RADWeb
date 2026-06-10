@@ -878,13 +878,18 @@ const RevenueHub = ({
                         <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', alignItems: 'flex-start' }}>
                           <span style={{
                             padding: '6px 12px', borderRadius: '8px', fontSize: '8.5px', fontWeight: 950,
-                            background: inv?.status === 'PAID' ? '#ecfdf5' : inv?.status === 'CANCELLED' ? '#f1f5f9' : '#fff7ed',
-                            color: inv?.status === 'PAID' ? '#059669' : inv?.status === 'CANCELLED' ? '#64748b' : '#ea580c'
+                            background: inv?.status === 'PAID' ? '#ecfdf5' : inv?.status === 'CANCELLED' ? '#f1f5f9' : inv?.status === 'PARTIAL' ? '#fffbeb' : '#fff7ed',
+                            color: inv?.status === 'PAID' ? '#059669' : inv?.status === 'CANCELLED' ? '#64748b' : inv?.status === 'PARTIAL' ? '#b45309' : '#ea580c'
                           }}>
-                            {inv?.status === 'CANCELLED' ? '🚫 CANCELLED' : (inv?.status || 'PENDING')}
+                            {inv?.status === 'CANCELLED' ? '🚫 CANCELLED' : inv?.status === 'PARTIAL' ? '◐ PARTIAL' : (inv?.status || 'PENDING')}
                           </span>
                           {inv?.status === 'CANCELLED' && (
                             <span style={{ padding: '4px 9px', borderRadius: '7px', fontSize: '8px', fontWeight: 800, background: '#fff7ed', color: '#9a3412', border: '1px solid #fed7aa', lineHeight: 1.3 }}>Appointment cancelled · refunded · net ₹0</span>
+                          )}
+                          {inv?.status === 'PARTIAL' && (
+                            <span style={{ padding: '4px 9px', borderRadius: '7px', fontSize: '8px', fontWeight: 900, background: '#fffbeb', color: '#b45309', border: '1px solid #fde68a', lineHeight: 1.3 }}>
+                              ₹{(Number(inv?.paidAmount) || 0).toLocaleString()} paid · ₹{Math.max(0, (Number(inv?.totalAmount) || 0) - (Number(inv?.paidAmount) || 0)).toLocaleString()} due
+                            </span>
                           )}
                           {inv?.isFree && (
                             <span style={{ padding: '4px 9px', borderRadius: '7px', fontSize: '8px', fontWeight: 950, letterSpacing: '0.5px', background: '#f0fdfa', color: '#0d9488', border: '1px solid #99f6e4' }}>🎁 FREE</span>
