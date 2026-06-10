@@ -1,4 +1,4 @@
-import React, { useRef, useState, useEffect, useId, useCallback } from 'react';
+import React, { useRef, useState, useEffect, useId, useCallback, useMemo } from 'react';
 import { notifyToast } from '../utils/toast';
 import {
   RenderingEngine,
@@ -40,6 +40,9 @@ import {
 import * as cornerstone from '@cornerstonejs/core';
 import cornerstoneDICOMImageLoader from '@cornerstonejs/dicom-image-loader';
 import dicomParser from 'dicom-parser';
+import MprViewport from './MprViewport';
+import { isMprEligible } from '../utils/dicomVolume';
+import { DicomCache } from '../utils/DicomCache';
 
 // ============================================
 // ADVANCED DICOM VIEWER CONFIGURATION
@@ -148,6 +151,64 @@ export function clearDicomBlobUrlCache() {
     try { URL.revokeObjectURL(url); } catch (e) {}
   });
   blobUrlTracker.clear();
+}
+
+// ── Manifest slice cache (Option C) ───────────────────────────────────────
+// The manifest path hands cornerstone per-slice HTTPS URLs. Without a local
+// cache, every study re-open re-fetches every slice. We intercept those loads:
+//   • cache HIT  → serve the compressed bytes from IndexedDB (zero network)
+//   • cache MISS → fetch once, persist (batched), then decode
+// Either way the bytes are decoded by cornerstone's worker pool — we hand it a
+// local object URL so there's no second network trip, revoked once decode
+// settles. Writes are buffered and flushed per series (one transaction) so a
+// 200-slice study is a handful of commits, not 200.
+const slicePersistBuffer = [];
+let slicePersistTimer = null;
+const SLICE_PERSIST_DEBOUNCE_MS = 800;
+const SLICE_PERSIST_MAX_BATCH = 64;
+
+function flushSlicePersist() {
+  if (slicePersistTimer) { clearTimeout(slicePersistTimer); slicePersistTimer = null; }
+  if (slicePersistBuffer.length === 0) return;
+  const batch = slicePersistBuffer.splice(0, slicePersistBuffer.length);
+  DicomCache.putSlices(batch).catch(() => {});
+}
+
+function queueSlicePersist(key, blob) {
+  slicePersistBuffer.push({ key, blob, size: blob.size });
+  if (slicePersistBuffer.length >= SLICE_PERSIST_MAX_BATCH) {
+    flushSlicePersist();
+    return;
+  }
+  if (slicePersistTimer) clearTimeout(slicePersistTimer);
+  slicePersistTimer = setTimeout(flushSlicePersist, SLICE_PERSIST_DEBOUNCE_MS);
+}
+
+// Load one manifest slice with the IndexedDB compressed cache in front.
+async function loadManifestSliceCached(httpsUrl, options) {
+  let blob = null;
+  try { blob = await DicomCache.getSlice(httpsUrl); } catch { blob = null; }
+  if (!blob) {
+    const res = await fetch(httpsUrl);
+    if (!res.ok) throw new Error(`HTTP ${res.status} fetching slice ${httpsUrl.slice(0, 80)}`);
+    blob = await res.blob();
+    queueSlicePersist(httpsUrl, blob);
+  }
+  // Hand cornerstone a LOCAL object URL so its wadouri loader worker-decodes
+  // the bytes with no second network trip. Revoke once decode settles (the
+  // decoded image + parsed dataSet are cached in memory by then).
+  const objUrl = URL.createObjectURL(blob);
+  let result;
+  try {
+    result = cornerstoneDICOMImageLoader.wadouri.loadImage(`wadouri:${objUrl}`, options);
+  } catch (e) {
+    try { URL.revokeObjectURL(objUrl); } catch { /* noop */ }
+    throw e;
+  }
+  const p = result && result.promise ? result.promise : Promise.resolve(result);
+  const revoke = () => { try { URL.revokeObjectURL(objUrl); } catch { /* noop */ } };
+  p.then(revoke, revoke);
+  return p;
 }
 
 // --- GLOBAL INITIALIZATION ---
@@ -281,6 +342,15 @@ async function initCornerstone() {
   
   imageLoader.registerImageLoader('wadouri', (imageId, options) => {
     if (DICOM_CONFIG.DEBUG_LOGGING) console.log(`[DICOM_TRACE] wadouri-loader CALLED for: ${imageId.slice(0, 80)}`);
+
+    // Manifest (Option C) slice — a remote HTTPS URL. Route through the
+    // IndexedDB compressed cache so re-opening a study is near-instant. Local
+    // `blob:` URLs (uploaded files / in-browser unzip) keep the direct path
+    // below; their bytes already live in memory, nothing to cache to disk.
+    const rawUrl = imageId.replace('wadouri:', '');
+    if (/^https?:\/\//i.test(rawUrl)) {
+      return { promise: loadManifestSliceCached(rawUrl, options), cancelFn: () => {} };
+    }
 
     // Strategy: try cornerstone's BUILT-IN wadouri loader first. It uses the
     // codec workers and produces a fully-formed Image object that cornerstone3D's
@@ -578,7 +648,15 @@ const AdvancedDicomViewer = ({
   // Series name for display
   seriesName = null,
   // Pre-parsed metadata to skip redundant parsing
-  preParsedMetadata = null
+  preParsedMetadata = null,
+  // Whether an eligible volumetric series may AUTO-open the 4-up MPR on land.
+  // Off in the multi-series 2×2 comparison grid — 4 MPR overlays there clutter
+  // the layout (and hid the page header). The manual MPR toggle still works.
+  autoMpr = true,
+  // Compact sizing for grid cells (e.g. the 2×2 comparison layout): drops the
+  // 400px canvas min-height so the viewer fits its cell instead of overflowing
+  // and pushing the page chrome off-screen. Single view keeps the min-height.
+  compact = false
 }) => {
   const containerRef = useRef(null);
   const elementRef = useRef(null);
@@ -643,6 +721,41 @@ const AdvancedDicomViewer = ({
   }, []);
   const [showCrosshairs, setShowCrosshairs] = useState(false);
   const [showReferenceLines, setShowReferenceLines] = useState(false);
+
+  // ── MPR / 3D mode ────────────────────────────────────────────────────
+  // When true, an isolated <MprViewport> overlay (its own engine + volume)
+  // covers the 2D stack viewer. The stack viewer stays mounted untouched
+  // underneath, so closing MPR returns instantly to exactly where the user
+  // was. Eligibility is a cheap gate (slice count + GPU); the heavy geometry
+  // validation runs inside the overlay once the user opts in.
+  const [mprMode, setMprMode] = useState(false);
+  const mprEligibility = useMemo(
+    () => isMprEligible({ sliceCount: files?.length || 0 }),
+    [files?.length]
+  );
+  // Same wadouri ids the stack viewer uses (module-level blob cache) so the
+  // volume reuses cornerstone's already-decoded slices — center slice warm.
+  const mprImageIds = useMemo(
+    () => (Array.isArray(files) ? files.map((f) => `wadouri:${getOrCreateBlobUrl(f)}`) : []),
+    [files]
+  );
+  // Land directly in the 4-up MPR view for eligible (volumetric) series — the
+  // radiologist shouldn't have to click into it. A manual switch back to 2D is
+  // remembered per-series (autoMprSeriesRef) so it doesn't keep re-opening, and
+  // non-volumetric series (X-ray, single images, <8 slices) stay on the 2D
+  // stack. Runs on eligibility too, since slices can stream in after mount.
+  const autoMprSeriesRef = useRef(null);
+  useEffect(() => {
+    // New series — forget the prior auto/manual decision and reset to 2D first.
+    autoMprSeriesRef.current = null;
+    setMprMode(false);
+  }, [seriesName]);
+  useEffect(() => {
+    if (!autoMpr || !mprEligibility.ok) return; // skip auto-open in multi-view grid
+    if (autoMprSeriesRef.current === seriesName) return; // already decided this series
+    autoMprSeriesRef.current = seriesName;
+    setMprMode(true);
+  }, [autoMpr, mprEligibility.ok, seriesName]);
   
   // Fullscreen and tablet support states
   const [isFullscreen, setIsFullscreen] = useState(false);
@@ -1583,6 +1696,29 @@ const AdvancedDicomViewer = ({
         const middleIdx = Math.floor(imageIds.length / 2);
         const firstLoadId = imageIds[middleIdx] ?? imageIds[0];
 
+        // One prioritized neighbour scheduler for the whole stack: warm slices
+        // symmetrically outward from `center`, CLOSEST FIRST, over offsets
+        // [fromOffset, toOffset]. Cornerstone dedupes repeats and (per the notes
+        // below) enqueue order dominates, so the visible slice + nearest
+        // neighbours always reach the decode workers first; off-screen slices
+        // stream in behind. `usePriority` is left OFF for the cold-start inner
+        // warm so it can never be reordered ahead of the middle slice, and ON
+        // for the outer window (matching the prior behaviour exactly).
+        const warmNeighbors = (center, fromOffset, toOffset, usePriority) => {
+          for (let offset = fromOffset; offset <= toOffset; offset++) {
+            if (!isMounted) break;
+            const ahead = center + offset;
+            const behind = center - offset;
+            const opts = usePriority ? { priority: offset } : undefined;
+            if (ahead < imageIds.length) {
+              cornerstone.imageLoader.loadAndCacheImage(imageIds[ahead], opts).catch(() => {});
+            }
+            if (behind >= 0) {
+              cornerstone.imageLoader.loadAndCacheImage(imageIds[behind], opts).catch(() => {});
+            }
+          }
+        };
+
         // Load and assign Stack
         // Volume viewports load their pixel data via the volume loader, not via
         // loadAndCacheImage + setStack. Skip the entire stack-load+setStack block.
@@ -1608,17 +1744,9 @@ const AdvancedDicomViewer = ({
             // decoding the next adjacent slice instead of sitting idle while
             // we wait for the middle one. This converts the cold-start "single
             // worker grinding" into a 5-way parallel decode and the user sees
-            // adjacent slices ready the moment they scroll.
-            for (let offset = 1; offset <= 2; offset++) {
-              const aheadIdx  = middleIdx + offset;
-              const behindIdx = middleIdx - offset;
-              if (aheadIdx < imageIds.length) {
-                cornerstone.imageLoader.loadAndCacheImage(imageIds[aheadIdx]).catch(() => {});
-              }
-              if (behindIdx >= 0) {
-                cornerstone.imageLoader.loadAndCacheImage(imageIds[behindIdx]).catch(() => {});
-              }
-            }
+            // adjacent slices ready the moment they scroll. No priority arg —
+            // these must never be reordered ahead of the middle slice below.
+            warmNeighbors(middleIdx, 1, 2, false);
 
             console.log(`[DICOM] Calling loadAndCacheImage on middle slice…`);
             const loadPromise = cornerstone.imageLoader.loadAndCacheImage(firstLoadId);
@@ -1756,24 +1884,9 @@ const AdvancedDicomViewer = ({
         const OUTWARD_PREFETCH_WINDOW = 30;
         if (!isVolumeMode && imageIds.length > 1) {
           const maxOffset = Math.min(OUTWARD_PREFETCH_WINDOW, imageIds.length);
-          for (let offset = 1; offset < maxOffset; offset++) {
-            if (!isMounted) break;
-            const ahead    = middleIdx + offset;
-            const behind   = middleIdx - offset;
-            // Skip the ±1..2 slices we already enqueued during the initial
-            // parallel preload above — Cornerstone dedupes but it's cleaner.
-            const skipPre  = offset <= 2;
-            if (!skipPre && ahead < imageIds.length) {
-              cornerstone.imageLoader.loadAndCacheImage(
-                imageIds[ahead], { priority: offset }
-              ).catch(() => {});
-            }
-            if (!skipPre && behind >= 0) {
-              cornerstone.imageLoader.loadAndCacheImage(
-                imageIds[behind], { priority: offset }
-              ).catch(() => {});
-            }
-          }
+          // Offsets 3..maxOffset-1 — the ±1..2 inner ring was already enqueued
+          // during the cold-start warm above (Cornerstone dedupes regardless).
+          warmNeighbors(middleIdx, 3, maxOffset - 1, true);
         }
 
         // Safety net: hide the loader after a longer delay regardless of the render
@@ -2798,8 +2911,45 @@ const AdvancedDicomViewer = ({
         </div>
       )}
 
+      {/* MPR / 3D TOGGLE BUTTON — only for multi-slice volumes on a capable GPU */}
+      {isReady && !mprMode && mprEligibility.ok && (
+        <button
+          onClick={() => setMprMode(true)}
+          style={{
+            position: 'absolute',
+            top: '15px',
+            right: isFullscreen
+              ? '120px'
+              : showMetadata && metadata
+                ? '390px'
+                : '120px',
+            background: 'rgba(15, 23, 42, 0.9)',
+            backdropFilter: 'blur(10px)',
+            border: '1px solid rgba(59, 130, 246, 0.4)',
+            color: '#93c5fd',
+            padding: isMobile ? '12px 16px' : isTablet ? '12px' : '8px 12px',
+            minHeight: isMobile ? '46px' : undefined,
+            borderRadius: '12px',
+            cursor: 'pointer',
+            zIndex: 200,
+            fontSize: isMobile ? '16px' : '13px',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '6px',
+            fontWeight: 800,
+            letterSpacing: '0.5px',
+            transition: 'all 0.3s',
+            opacity: showToolbar ? 1 : (isFullscreen ? 0.3 : 1),
+          }}
+          title="Open multi-planar reconstruction (axial / coronal / sagittal + 3D)"
+          aria-label="Open MPR 3D view"
+        >
+          🧊{!isTablet && <span style={{ fontSize: '10px', letterSpacing: '0.5px' }}>MPR / 3D</span>}
+        </button>
+      )}
+
       {/* FULLSCREEN TOGGLE BUTTON */}
-      {isReady && enableFullscreen && (
+      {isReady && enableFullscreen && !mprMode && (
         <button
           onClick={toggleFullscreen}
           style={{
@@ -2839,7 +2989,7 @@ const AdvancedDicomViewer = ({
       )}
 
       {/* TABLET GESTURE HINT */}
-      {(isTablet || isMobile) && isReady && !isFullscreen && (
+      {(isTablet || isMobile) && isReady && !isFullscreen && !mprMode && (
         <div className="dicom-viewer-gesture-hint" style={{
           position: 'absolute',
           bottom: '20px',
@@ -3406,18 +3556,36 @@ const AdvancedDicomViewer = ({
           flex: 1,
           width: '100%',
           height: '100%',
-          minHeight: isMobile ? '240px' : '400px',
+          minHeight: compact ? 0 : (isMobile ? '240px' : '400px'),
           background: '#111',
           borderRadius: '10px',
           overflow: 'hidden',
           position: 'relative',
-          border: '2px solid #0f52ba'
+          border: '2px solid #0f52ba',
+          // Own ALL touch gestures here. Without this, iPad Safari's native
+          // pinch-zoom fires ON TOP of our custom Cornerstone pinch handler —
+          // the image double-zooms ("enlarges too much") and the browser's zoom
+          // can't be undone by the app gesture ("unable to reduce"). `none`
+          // hands every touch (pinch/pan/double-tap) to our handlers only.
+          touchAction: 'none'
         }}
       />
 
+      {/* MPR / 3D OVERLAY — isolated engine + volume, covers the 2D viewer.
+          Mounted only while active so it builds/destroys its volume on
+          toggle; the stack viewer above stays mounted and untouched. */}
+      {mprMode && (
+        <MprViewport
+          imageIds={mprImageIds}
+          seriesName={seriesName}
+          modality={metadata?.modality}
+          onClose={() => setMprMode(false)}
+        />
+      )}
+
       {/* ENHANCED STACK SCROLL HUD - Desktop & Tablet Compatible - RIGHT SIDE */}
       {(() => {
-        const shouldShow = isReady && files && files.length > 1;
+        const shouldShow = isReady && !mprMode && files && files.length > 1;
         console.log('[DICOM HUD] Visibility check:', {
           isReady,
           hasFiles: !!files,

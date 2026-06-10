@@ -33,6 +33,10 @@ const DicomViewerPage = () => {
   const [isSyncEnabled, setIsSyncEnabled] = useState(false);
   const [showShortcutsHelp, setShowShortcutsHelp] = useState(false);
   const [showLeftToolbar, setShowLeftToolbar] = useState(true);
+  // Series rail width: 'full' → 'half' → 'hidden', cycled by the header button
+  // so the user can trade rail width for image width on laptop/tablet. The
+  // viewer's ResizeObserver re-fits the canvas to whatever width it gets.
+  const [seriesRailMode, setSeriesRailMode] = useState('full');
   const [isTablet, setIsTablet] = useState(false);
   const [isMobile, setIsMobile] = useState(typeof window !== 'undefined' && window.innerWidth < 768);
   
@@ -952,13 +956,13 @@ const DicomViewerPage = () => {
       overflow: 'hidden'
     }}>
       {/* Left Series List Panel (always show if series data exists) */}
-      {(hasMultipleSeries || allSeries?.length > 0) && (
+      {(hasMultipleSeries || allSeries?.length > 0) && (isMobile || seriesRailMode !== 'hidden') && (
         <div style={{
-          // Tablet keeps the desktop docked layout but at HALF the rail width
-          // (140px vs 280px) so the image viewport gets the maximum area.
-          width: isMobile ? '100%' : (isTablet ? '140px' : '280px'),
-          minWidth: isMobile ? 'auto' : (isTablet ? '140px' : '280px'),
-          maxWidth: isMobile ? '100%' : (isTablet ? '140px' : '280px'),
+          // Tablet docked rail is already narrower (140px); 'half' mode halves
+          // whichever base applies so the image viewport gets the maximum area.
+          width: isMobile ? '100%' : (seriesRailMode === 'half' ? (isTablet ? '80px' : '150px') : (isTablet ? '140px' : '280px')),
+          minWidth: isMobile ? 'auto' : (seriesRailMode === 'half' ? (isTablet ? '80px' : '150px') : (isTablet ? '140px' : '280px')),
+          maxWidth: isMobile ? '100%' : (seriesRailMode === 'half' ? (isTablet ? '80px' : '150px') : (isTablet ? '140px' : '280px')),
           height: (isMobile) ? 'auto' : '100%',
           // Mobile panel was 22vh (~154 px on a 700 px phone) but each tile
           // needed ~190 px (150 thumbnail + 40 text), so tiles clipped at
@@ -1155,7 +1159,7 @@ const DicomViewerPage = () => {
       {renderLeftToolbar()}
 
       {/* Main Viewer Area */}
-      <div style={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
+      <div style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
         {/* Top Header */}
         <div style={{
           height: isMobile ? '54px' : (isTablet ? '70px' : '60px'),
@@ -1299,15 +1303,40 @@ const DicomViewerPage = () => {
                 {showLeftToolbar ? '🛠️ HIDE' : '🛠️ TOOLS'}
               </button>
             )}
+
+            {/* Series rail toggle — desktop/tablet, only when there are series.
+                Hiding the rail hands the freed width to the viewport. */}
+            {!isMobile && (hasMultipleSeries || allSeries?.length > 0) && (
+              <button
+                onClick={() => setSeriesRailMode((m) => (m === 'full' ? 'half' : m === 'half' ? 'hidden' : 'full'))}
+                title="Series panel width — tap to cycle: full → half → hidden"
+                style={{
+                  background: seriesRailMode !== 'hidden' ? '#10b981' : 'rgba(255,255,255,0.1)',
+                  border: '1px solid ' + (seriesRailMode !== 'hidden' ? '#10b981' : 'rgba(255,255,255,0.2)'),
+                  color: 'white',
+                  padding: isTablet ? '8px 14px' : '8px 12px',
+                  borderRadius: '6px',
+                  cursor: 'pointer',
+                  fontSize: isTablet ? '11px' : '12px',
+                  fontWeight: 700,
+                  touchAction: 'manipulation',
+                  WebkitTapHighlightColor: 'transparent'
+                }}
+              >
+                {seriesRailMode === 'full' ? '📊 SERIES' : seriesRailMode === 'half' ? '📊 SERIES ½' : '📊 SHOW'}
+              </button>
+            )}
           </div>
         </div>
 
         {/* DICOM Viewer Area */}
-        <div style={{ 
-          flex: 1, 
-          display: 'grid', 
-          gridTemplateColumns: layoutMode === '2x2' ? '1fr 1fr' : '1fr', 
-          gridTemplateRows: layoutMode === '2x2' ? '1fr 1fr' : '1fr', 
+        <div style={{
+          flex: 1,
+          minHeight: 0,        // let the grid shrink to the available height
+          overflow: 'hidden',  // clip cells instead of pushing the header off-screen
+          display: 'grid',
+          gridTemplateColumns: layoutMode === '2x2' ? '1fr 1fr' : '1fr',
+          gridTemplateRows: layoutMode === '2x2' ? '1fr 1fr' : '1fr',
           gap: '2px',
           background: '#111',
           position: 'relative'
@@ -1327,10 +1356,12 @@ const DicomViewerPage = () => {
               : (hydratedSeries?.[0]?.thumbnailUrl ?? null);
             
             return (
-              <div key={`viewport-${idx}`} style={{ position: 'relative', overflow: 'hidden' }}>
+              <div key={`viewport-${idx}`} style={{ position: 'relative', overflow: 'hidden', minHeight: 0, minWidth: 0 }}>
                 <AdvancedDicomViewer
                   files={displayFiles}
                   seriesName={displayName}
+                  autoMpr={layoutMode !== '2x2'}
+                  compact={layoutMode === '2x2'}
                   placeholderUrl={displayThumbnail}
                   activeTool={activeTool}
                   isCine={cineEnabled}
