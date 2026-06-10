@@ -48,6 +48,9 @@ import { PageNumber } from './extensions/PageNumberNode';
 import { AutoCorrect } from './extensions/AutoCorrect';
 import Footnote from './extensions/Footnote';
 import { GrammarCheck, buildOffsetMap, buildGrammarDecorations } from './extensions/GrammarCheck';
+import { SpellCheck, buildSpellDecorations } from './extensions/SpellCheck';
+import SpellSuggestionPopup from './SpellSuggestionPopup';
+import { warmSpellDictionary, isWordValid } from '../../data/spellDictionary';
 import apiClient from '../../api/apiClient';
 import { TrackInsert, TrackDelete, TrackChanges } from './extensions/TrackChanges';
 import { CommentMark, Comment } from './extensions/Comment';
@@ -623,6 +626,13 @@ const NarrativeEditor = React.forwardRef(function NarrativeEditor({
   const [grammarOpen, setGrammarOpen]               = useState(false);
   const [termLoading, setTermLoading]               = useState(false);
 
+  // ── Live spell-check (radiology-aware, client-side) ──────────────────────
+  // Popup state for the correction menu; `recheckSpellRef` lets the popup force
+  // an immediate re-scan after Ignore / Add-to-dictionary (which don't change
+  // the doc, so the 'update'-driven rescan wouldn't otherwise fire).
+  const [spellPopup, setSpellPopup]                 = useState({ open: false });
+  const recheckSpellRef                             = useRef(() => {});
+
   // ── Tier 1 features ──────────────────────────────────────────────────────
   // Track Changes
   const [trackChangesOn, setTrackChangesOn] = useState(false);
@@ -1018,6 +1028,7 @@ const NarrativeEditor = React.forwardRef(function NarrativeEditor({
       AutoCorrect,
       Footnote,
       GrammarCheck,
+      SpellCheck,
       // Cover every block type a user could place the cursor in. Without
       // `listItem`/`tableCell`/`tableHeader`/`blockquote` the align buttons
       // silently no-op inside those contexts.
@@ -1934,12 +1945,55 @@ const NarrativeEditor = React.forwardRef(function NarrativeEditor({
     return () => window.removeEventListener('narrative-editor:open-header-footer', open);
   }, []);
 
-  // Toggle the browser's native spellcheck attribute on the ProseMirror DOM.
+  // Native browser spellcheck stays OFF permanently — our radiology-aware
+  // SpellCheck plugin owns the underline now (the browser would otherwise flag
+  // every RadLex term and ignore en-GB). The `spellcheckOn` toggle drives our
+  // checker, wired in the effect below.
   useEffect(() => {
     if (!editor) return;
     const el = editor.view?.dom;
-    if (el) el.setAttribute('spellcheck', spellcheckOn ? 'true' : 'false');
+    if (el) el.setAttribute('spellcheck', 'false');
+  }, [editor]);
+
+  // Live spell-check: scan on edits (debounced) while the toggle is on, push a
+  // wavy-red decoration set, and skip the word under the caret so it doesn't
+  // underline mid-type. Detection/suggestions live in src/data/spellDictionary.
+  useEffect(() => {
+    if (!editor) return undefined;
+    let cancelled = false;
+    let timer = null;
+
+    const run = () => {
+      if (cancelled || editor.isDestroyed) return;
+      const { selection } = editor.state;
+      const head = selection.empty ? selection.head : null;
+      const decoSet = buildSpellDecorations(editor.state.doc, isWordValid, head);
+      editor.commands.setSpellDecorations(decoSet);
+    };
+    recheckSpellRef.current = run;
+
+    if (!spellcheckOn) {
+      editor.commands.clearSpellDecorations();
+      return () => { recheckSpellRef.current = () => {}; };
+    }
+
+    const schedule = () => { if (timer) clearTimeout(timer); timer = setTimeout(run, 400); };
+    // First scan once the dictionaries are warm, then on every edit.
+    warmSpellDictionary().then(() => { if (!cancelled) run(); });
+    editor.on('update', schedule);
+    return () => {
+      cancelled = true;
+      recheckSpellRef.current = () => {};
+      editor.off('update', schedule);
+      if (timer) clearTimeout(timer);
+    };
   }, [editor, spellcheckOn]);
+
+  // Bridge the SpellCheck plugin's click/right-click to the React popup.
+  useEffect(() => {
+    if (!editor?.storage?.spellCheck) return;
+    editor.storage.spellCheck.onOpenSuggestions = (payload) => setSpellPopup({ open: true, ...payload });
+  }, [editor]);
 
   // Auto-save: debounce 3 s after last change, then call onSave()
   useEffect(() => {
@@ -2497,6 +2551,14 @@ const NarrativeEditor = React.forwardRef(function NarrativeEditor({
           onOpenRads={() => setRadsOpen(true)}
         />
       )}
+
+      {/* ── Live spell-check correction popup ───────────────────────────── */}
+      <SpellSuggestionPopup
+        state={spellPopup}
+        editor={editor}
+        onClose={() => setSpellPopup({ open: false })}
+        onAfterMutate={() => recheckSpellRef.current?.()}
+      />
 
       {/* ── Grammar errors panel ────────────────────────────────────────── */}
       {grammarOpen && grammarMatches.length > 0 && (

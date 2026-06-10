@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useRef, useCallback } from 'react';
 import { createPortal } from 'react-dom';
-import apiClient from '../../api/apiClient';
+import { search as searchTerms, warmRadiologyData } from '../../data/radiologyData';
 
 /**
  * RadLex term autocomplete for the NarrativeEditor.
@@ -20,7 +20,6 @@ import apiClient from '../../api/apiClient';
  */
 const MIN_CHARS = 3;
 const MAX_ITEMS = 8;
-const DEBOUNCE_MS = 160;
 // Common English words that prefix RadLex terms but aren't worth suggesting on.
 const STOP = new Set([
   'the', 'and', 'was', 'were', 'has', 'have', 'had', 'for', 'with', 'are',
@@ -37,6 +36,8 @@ export default function TermAutocomplete({ editor }) {
   const itemsRef = useRef(items);
   const reqRef = useRef(0);
   const debounceRef = useRef(null);
+  // Warm the local RadLex index so it's ready by the time the user types.
+  useEffect(() => { warmRadiologyData(); }, []);
   useEffect(() => { stateRef.current = state; }, [state]);
   useEffect(() => { itemsRef.current = items; }, [items]);
 
@@ -88,22 +89,19 @@ export default function TermAutocomplete({ editor }) {
       const from = blockStart + ($from.parentOffset - word.length);
       const to = $from.pos;
 
-      if (debounceRef.current) clearTimeout(debounceRef.current);
-      const myReq = ++reqRef.current;
-      debounceRef.current = setTimeout(async () => {
-        try {
-          const res = await apiClient.get('/reporting/terms/suggest', { params: { q: word, limit: MAX_ITEMS } });
-          if (myReq !== reqRef.current) return;                 // a newer keystroke superseded this
-          const list = (res?.data?.items || []).filter((t) => t && t.toLowerCase() !== word.toLowerCase());
-          if (list.length === 0) { close(); return; }
-          let anchor = null;
-          try { const c = editor.view.coordsAtPos(from); anchor = { top: c.bottom + 4, left: c.left }; } catch { /* ignore */ }
-          if (!anchor) { close(); return; }
-          setItems(list);
-          setSelected(0);
-          setState({ open: true, anchor, from, to, query: word });
-        } catch { /* network/abort — stay quiet */ }
-      }, DEBOUNCE_MS);
+      // Instant, offline, frequency-ranked match against the local 68k RadLex
+      // index (no per-keystroke network). Same source as the inline ghost, so
+      // the dropdown's top item and the ghost agree — no Tab ambiguity.
+      const list = searchTerms(word, MAX_ITEMS)
+        .map((r) => r.label)
+        .filter((t) => t && t.toLowerCase() !== word.toLowerCase());
+      if (list.length === 0) { if (stateRef.current.open) close(); return; }
+      let anchor = null;
+      try { const c = editor.view.coordsAtPos(from); anchor = { top: c.bottom + 4, left: c.left }; } catch { /* ignore */ }
+      if (!anchor) { if (stateRef.current.open) close(); return; }
+      setItems(list);
+      setSelected(0);
+      setState({ open: true, anchor, from, to, query: word });
     };
 
     editor.on('selectionUpdate', recompute);
