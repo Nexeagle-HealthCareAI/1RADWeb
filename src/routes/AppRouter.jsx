@@ -19,6 +19,7 @@ import ViewerPage from '../pages/ViewerPage';
 import BillingPage from '../pages/BillingPage';
 import ReportingPage from '../pages/ReportingPage';
 import DicomViewerPage from '../pages/DicomViewerPage';
+import StudiesPage from '../pages/StudiesPage';
 import SubscriptionPage from '../pages/SubscriptionPage';
 import PatientTimelinePage from '../pages/PatientTimelinePage';
 import ActiveSessionsPage from '../pages/ActiveSessionsPage';
@@ -103,7 +104,8 @@ export default function AppRouter() {
         element={
           <ProtectedRoute
             allowedRoles={['admindoctor', 'admin', 'doctor', 'technician', 'receptionist', 'accountant']}
-            moduleRoutes={['/doctor-board', '/technician', '/appointment-board', '/admin-board']}>
+            moduleRoutes={['/doctor-board', '/technician', '/appointment-board', '/admin-board']}
+            requiredModule="PACS">
             <DicomViewerPage />
           </ProtectedRoute>
         }
@@ -171,7 +173,7 @@ export default function AppRouter() {
         <Route
           path="/referrals"
           element={
-            <ProtectedRoute allowedRoles={['admindoctor', 'admin']}>
+            <ProtectedRoute allowedRoles={['admindoctor', 'admin']} requiredModule="RIS">
               <ReferralsPage />
             </ProtectedRoute>
           }
@@ -195,7 +197,7 @@ export default function AppRouter() {
         <Route
           path="/appointment-board"
           element={
-            <ProtectedRoute allowedRoles={['admindoctor', 'admin', 'receptionist']}>
+            <ProtectedRoute allowedRoles={['admindoctor', 'admin', 'receptionist']} requiredModule="RIS">
               <AppointmentBoard />
             </ProtectedRoute>
           }
@@ -203,7 +205,7 @@ export default function AppRouter() {
         <Route
           path="/technician"
           element={
-            <ProtectedRoute allowedRoles={['admindoctor', 'technician']}>
+            <ProtectedRoute allowedRoles={['admindoctor', 'technician']} requiredModule="RIS">
               <TechnicianPage />
             </ProtectedRoute>
           }
@@ -219,7 +221,7 @@ export default function AppRouter() {
         <Route
           path="/billing"
           element={
-            <ProtectedRoute allowedRoles={['admindoctor', 'admin', 'accountant']}>
+            <ProtectedRoute allowedRoles={['admindoctor', 'admin', 'accountant']} requiredModule="RIS">
               <BillingPage />
             </ProtectedRoute>
           }
@@ -227,7 +229,7 @@ export default function AppRouter() {
         <Route
           path="/viewer"
           element={
-            <ProtectedRoute allowedRoles={['admindoctor', 'doctor', 'technician']} moduleRoutes={['/doctor-board', '/technician']}>
+            <ProtectedRoute allowedRoles={['admindoctor', 'doctor', 'technician']} moduleRoutes={['/doctor-board', '/technician']} requiredModule="PACS">
               <ViewerPage />
             </ProtectedRoute>
           }
@@ -237,6 +239,24 @@ export default function AppRouter() {
           element={
             <ProtectedRoute allowedRoles={['admindoctor', 'doctor', 'technician']} moduleRoutes={['/doctor-board', '/technician']}>
               <ReportingPage />
+            </ProtectedRoute>
+          }
+        />
+        {/* Query-only entry for Cloud PACS-only reporting: /reporting?studyId=… */}
+        <Route
+          path="/reporting"
+          element={
+            <ProtectedRoute allowedRoles={['admindoctor', 'doctor', 'technician']} moduleRoutes={['/doctor-board', '/technician', '/studies']} requiredModule="PACS">
+              <ReportingPage />
+            </ProtectedRoute>
+          }
+        />
+        {/* Cloud PACS worklist + Upload Center. */}
+        <Route
+          path="/studies"
+          element={
+            <ProtectedRoute allowedRoles={['admindoctor', 'admin', 'doctor', 'technician', 'receptionist']} requiredModule="PACS">
+              <StudiesPage />
             </ProtectedRoute>
           }
         />
@@ -251,7 +271,7 @@ export default function AppRouter() {
         <Route
           path="/dicom-bridge"
           element={
-            <ProtectedRoute allowedRoles={['admindoctor', 'admin']}>
+            <ProtectedRoute allowedRoles={['admindoctor', 'admin']} requiredModule="PACS">
               <DicomBridgePage />
             </ProtectedRoute>
           }

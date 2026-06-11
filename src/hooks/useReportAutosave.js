@@ -37,6 +37,10 @@ export const reportDraftKey = (appointmentId, serviceId) =>
 export default function useReportAutosave({
   // scope / gating
   appointmentId,
+  // Cloud PACS-only: the report owner when there is no appointment. Exactly
+  // one of appointmentId / imagingStudyId is set. The appointment path is
+  // unchanged — every site below falls back to the appointment when present.
+  imagingStudyId,
   activeServiceId,
   selectedTemplateId,
   isFinalized,
@@ -74,9 +78,13 @@ export default function useReportAutosave({
     rowVersionRef.current = rowVersion ?? null;
   }, []);
 
+  // Single owner key for gating + the local-draft cache key. Appointment when
+  // present (unchanged behaviour), else the study (PACS-only).
+  const ownerKey = appointmentId || (imagingStudyId ? `study_${imagingStudyId}` : null);
+
   // ── 1. LOCAL AUTOSAVE: Immediate persistence to nativeStorage/localStorage ──
   useEffect(() => {
-    if (!appointmentId || isFinalized) return;
+    if (!ownerKey || isFinalized) return;
 
     const timer = setTimeout(async () => {
       // Read the FRESH editor HTML, not the (debounced) editorText state, so
@@ -96,7 +104,7 @@ export default function useReportAutosave({
       };
 
       try {
-        await nativeStorage.set(reportDraftKey(appointmentId, activeServiceId), draft);
+        await nativeStorage.set(reportDraftKey(ownerKey, activeServiceId), draft);
         // Functional update so we act on the LATEST status, not the stale value
         // captured when this debounced effect ran (saveStatus isn't a dep here).
         setSaveStatus(prev => (prev === 'IDLE' || prev === 'SUCCESS') ? 'DIRTY' : prev);
@@ -107,7 +115,7 @@ export default function useReportAutosave({
     }, 1500); // 1.5s debounce
 
     return () => clearTimeout(timer);
-  }, [editorText, impression, advice, appointmentId, activeServiceId, isFinalized, selectedTemplateId]);
+  }, [editorText, impression, advice, appointmentId, imagingStudyId, activeServiceId, isFinalized, selectedTemplateId]);
 
   // ── 1b. LOCAL AUTOSAVE (IndexedDB mirror). A second, slightly slower debounce
   //    that also writes the offline cache row (saveLocalDraft) so a re-open while
@@ -119,7 +127,7 @@ export default function useReportAutosave({
   const [cloudAutosaveDisabledReason, setCloudAutosaveDisabledReason] = useState(null);
 
   useEffect(() => {
-    if (!appointmentId || isFinalized) return;
+    if (!ownerKey || isFinalized) return;
 
     const autosaveTimer = setTimeout(async () => {
       // Pull fresh editor HTML so attribute-only changes (right-align,
@@ -135,26 +143,30 @@ export default function useReportAutosave({
         serverBaseline: serverBaselineRef.current,
       };
       console.log(`[REPORTING] Autosaving draft for ${appointmentId}...`);
-      await nativeStorage.set(reportDraftKey(appointmentId, activeServiceId), draft);
+      await nativeStorage.set(reportDraftKey(ownerKey, activeServiceId), draft);
       // Mirror the draft into the offline cache (Phase B1 Slice 3). The
       // nativeStorage write above still drives the existing crash-recovery
       // prompt; this write keeps the IndexedDB cache row aligned with the
       // user's latest in-flight edit so a re-open while offline shows the
       // freshest version, not the last server snapshot.
-      try {
-        await saveLocalDraft(appointmentId, {
-          findings: freshFindings,
-          impression,
-          advice,
-          templateId: selectedTemplateId,
-        });
-      } catch (cacheErr) {
-        console.warn('[REPORTING] Local cache draft write failed', cacheErr);
+      // The IndexedDB offline cache is appointment-keyed (Phase B1). Study-only
+      // (PACS-only) reports are online-first — skip the appointment mirror.
+      if (appointmentId) {
+        try {
+          await saveLocalDraft(appointmentId, {
+            findings: freshFindings,
+            impression,
+            advice,
+            templateId: selectedTemplateId,
+          });
+        } catch (cacheErr) {
+          console.warn('[REPORTING] Local cache draft write failed', cacheErr);
+        }
       }
     }, 2000); // Debounce for 2 seconds
 
     return () => clearTimeout(autosaveTimer);
-  }, [editorText, impression, advice, selectedTemplateId, appointmentId, activeServiceId, isFinalized]);
+  }, [editorText, impression, advice, selectedTemplateId, appointmentId, imagingStudyId, activeServiceId, isFinalized]);
 
   // ── 2. CLOUD AUTOSAVE: Background API sync if dirty. ───────────────────────
   //
@@ -169,7 +181,7 @@ export default function useReportAutosave({
   //     45s → 90s → 180s → 360s → 720s → 1440s (24 min cap). Success resets.
   useEffect(() => {
     if (cloudAutosaveDisabledReason) return;
-    if (saveStatus !== 'DIRTY' || !appointmentId || isFinalized || !isOnline || isCloudSyncing) return;
+    if (saveStatus !== 'DIRTY' || !ownerKey || isFinalized || !isOnline || isCloudSyncing) return;
 
     const failures = autosaveFailuresRef.current;
     // Max-wait cadence: stamp when the content first went dirty so this timer —
@@ -198,6 +210,9 @@ export default function useReportAutosave({
         const freshFindings = editorRef.current?.editor?.getHTML?.() ?? editorText;
         const payload = {
           appointmentId,
+          // PACS-only: server upserts by ImagingStudyId when there's no
+          // appointment. Harmless (ignored) on the appointment path.
+          imagingStudyId: imagingStudyId || null,
           // Multi-service rollout — when scoped, the server keys the
           // upsert by (AppointmentId, AppointmentServiceId) so the
           // CT and USG reports for the same visit land in separate
@@ -281,12 +296,12 @@ export default function useReportAutosave({
     }, delay);
 
     return () => clearTimeout(cloudTimer);
-  }, [saveStatus, editorText, impression, advice, appointmentId, isFinalized, isOnline, selectedTemplateId, isCloudSyncing, cloudAutosaveDisabledReason]);
+  }, [saveStatus, editorText, impression, advice, appointmentId, imagingStudyId, isFinalized, isOnline, selectedTemplateId, isCloudSyncing, cloudAutosaveDisabledReason]);
 
   // ── Manual Save / Finalize (shares the /reporting/save endpoint + OCC). ────
   const saveNow = useCallback(async (finalizing = false) => {
-    if (!appointmentId) {
-      notify('error', 'CONTEXT MISSING', 'Cannot save the report — appointment context is missing. Please reload the page.');
+    if (!ownerKey) {
+      notify('error', 'CONTEXT MISSING', 'Cannot save the report — study/appointment context is missing. Please reload the page.');
       return;
     }
 
@@ -298,6 +313,8 @@ export default function useReportAutosave({
 
     const payload = {
       appointmentId: appointmentId,
+      // PACS-only: study-keyed upsert when there's no appointment.
+      imagingStudyId: imagingStudyId || null,
       // Multi-service rollout — scope to the active service line.
       appointmentServiceId: activeServiceId || null,
       templateId: selectedTemplateId,
@@ -339,7 +356,7 @@ export default function useReportAutosave({
         notify('success', finalizing ? 'REPORT FINALIZED' : 'DRAFT SAVED', finalizing ? 'Report has been finalized and dispatched successfully.' : 'Your changes have been saved successfully.');
         if (finalizing) {
           // Clear local draft on success
-          await nativeStorage.delete(reportDraftKey(appointmentId, activeServiceId));
+          await nativeStorage.delete(reportDraftKey(ownerKey, activeServiceId));
           onFinalized();
         }
       }
@@ -388,14 +405,14 @@ export default function useReportAutosave({
     } finally {
       setIsSaving(false);
     }
-  }, [appointmentId, activeServiceId, selectedTemplateId, editorText, impression, advice, isOnline, editorRef, applyContent, addToOutbox, notify, logEvent, onFinalized]);
+  }, [appointmentId, imagingStudyId, activeServiceId, selectedTemplateId, editorText, impression, advice, isOnline, editorRef, applyContent, addToOutbox, notify, logEvent, onFinalized]);
 
   // B2 Track 3 — Undo handler for a 409 auto-merge. Re-applies the user's
   // pre-conflict content and submits it with the server's NEW RowVersion
   // so it wins deliberately. The conflict toast auto-dismisses after 30s.
   const undoConflict = useCallback(async () => {
     const prev = occConflict?.previous;
-    if (!prev || !appointmentId) return;
+    if (!prev || !ownerKey) return;
     applyContent({
       findings:   prev.findings || '',
       impression: prev.impression || '',
@@ -406,6 +423,7 @@ export default function useReportAutosave({
     try {
       const res = await apiClient.post('/reporting/save', {
         appointmentId,
+        imagingStudyId: imagingStudyId || null,
         appointmentServiceId: activeServiceId || null,
         templateId: prev.templateId,
         findings: prev.findings,
@@ -430,7 +448,7 @@ export default function useReportAutosave({
       console.warn('[REPORTING] Undo failed', e);
       notify('error', 'UNDO FAILED', 'Could not re-apply your changes. Try saving again.');
     }
-  }, [occConflict, appointmentId, activeServiceId, applyContent, notify, logEvent]);
+  }, [occConflict, appointmentId, imagingStudyId, activeServiceId, applyContent, notify, logEvent]);
 
   // Auto-dismiss the conflict toast after 30 seconds. The user can still
   // act on it during that window via the Undo button.

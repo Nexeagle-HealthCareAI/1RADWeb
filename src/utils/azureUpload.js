@@ -193,3 +193,75 @@ export async function uploadStudyAssetDirect(file, appointmentId, onProgress, op
 
   return { assetId, publicReadUrl };
 }
+
+/**
+ * Cloud PACS-only: register an appointment-free ImagingStudy, returning its id.
+ * Demographics are optional — the extraction worker refines them from the real
+ * DICOM tags once the pixels are parsed.
+ *
+ * @param {{ studyInstanceUID?, patientName?, dicomPatientId?, accessionNumber?, modality?, studyDate?, studyDescription?, source? }} [meta]
+ * @returns {Promise<string>} imagingStudyId
+ */
+export async function registerStudy(meta = {}) {
+  const res = await apiClient.post('/Study/studies/register', {
+    StudyInstanceUID: meta.studyInstanceUID ?? null,
+    PatientName: meta.patientName ?? null,
+    DicomPatientId: meta.dicomPatientId ?? null,
+    AccessionNumber: meta.accessionNumber ?? null,
+    Modality: meta.modality ?? null,
+    StudyDate: meta.studyDate ?? null,
+    StudyDescription: meta.studyDescription ?? null,
+    Source: meta.source ?? 'web-upload',
+  });
+  if (!res?.data?.success || !res.data.data?.imagingStudyId) {
+    throw new Error('Study register failed: ' + JSON.stringify(res?.data));
+  }
+  return res.data.data.imagingStudyId;
+}
+
+/**
+ * Cloud PACS-only sibling of {@link uploadStudyAssetDirect}: SAS-uploads `file`
+ * straight to Azure against an ImagingStudy (no appointment), then registers the
+ * asset. Same single-PUT vs parallel-block strategy.
+ *
+ * @param {File} file
+ * @param {string} imagingStudyId
+ * @param {(progress) => void} [onProgress]
+ * @returns {Promise<{ assetId, publicReadUrl }>}
+ */
+export async function uploadStudyAssetToStudy(file, imagingStudyId, onProgress) {
+  if (!file) throw new Error('No file provided.');
+  if (!imagingStudyId) throw new Error('No imagingStudyId provided.');
+
+  if (onProgress) onProgress({ loaded: 0, total: file.size, pct: 0, stage: 'requesting-token' });
+  const tokenRes = await apiClient.post(`/Study/studies/${imagingStudyId}/upload-token`, {
+    FileName: file.name,
+    FileSize: file.size,
+    ContentType: file.type || 'application/zip',
+  });
+  if (!tokenRes?.data?.success || !tokenRes.data.data) {
+    throw new Error('Backend did not return a SAS token: ' + JSON.stringify(tokenRes?.data));
+  }
+  const { assetId, sasUrl, blobPath, containerName } = tokenRes.data.data;
+
+  const useBlocks = file.size > 8 * 1024 * 1024;
+  if (useBlocks) {
+    await blockedPutToAzure(sasUrl, file, { blockSize: 4 * 1024 * 1024, concurrency: 4, onProgress });
+  } else {
+    await singlePutToAzure(sasUrl, file, file.type, onProgress);
+  }
+
+  if (onProgress) onProgress({ loaded: file.size, total: file.size, pct: 1, stage: 'finalising' });
+  const completeRes = await apiClient.post(`/Study/studies/${imagingStudyId}/upload-complete`, {
+    AssetId: assetId,
+    BlobPath: blobPath,
+    ContainerName: containerName,
+    FileName: file.name,
+    ActualSize: file.size,
+  });
+  if (!completeRes?.data?.success) {
+    throw new Error('study upload-complete failed: ' + JSON.stringify(completeRes?.data));
+  }
+
+  return { assetId, publicReadUrl: completeRes.data.data?.blobUrl };
+}

@@ -28,7 +28,10 @@ export const ROLE_HOME = {
   accountant: '/billing',
 };
 
-// Sidebar navigation items with strict RBAC
+// Sidebar navigation items with strict RBAC.
+// `requiredModule` ties an item to a product SKU module ('RIS' | 'PACS'):
+// the sidebar hides items whose module the active center hasn't bought.
+// Items without one (Reporting, Staff, Operations, …) appear in every SKU.
 export const NAV_ITEMS = [
   {
     label: 'Dashboard',
@@ -39,11 +42,13 @@ export const NAV_ITEMS = [
     label: 'Appointments',
     route: '/appointment-board',
     allowedRoles: ['admindoctor', 'admin', 'receptionist'],
+    requiredModule: 'RIS',
   },
   {
     label: 'Billing',
     route: '/billing',
     allowedRoles: ['admindoctor', 'admin', 'accountant'],
+    requiredModule: 'RIS',
   },
   {
     label: 'Admin Approval',
@@ -54,6 +59,7 @@ export const NAV_ITEMS = [
     label: 'Imaging',
     route: '/technician',
     allowedRoles: ['admindoctor', 'technician'],
+    requiredModule: 'RIS',
   },
   {
     label: 'Reporting',
@@ -64,6 +70,7 @@ export const NAV_ITEMS = [
     label: 'Referrals',
     route: '/referrals',
     allowedRoles: ['admindoctor', 'admin'],
+    requiredModule: 'RIS',
   },
   {
     label: 'Staff & Payroll',
@@ -89,15 +96,22 @@ export const NAV_ITEMS = [
     label: 'DICOM Bridge',
     route: '/dicom-bridge',
     allowedRoles: ['admindoctor', 'admin'],
+    requiredModule: 'PACS',
+  },
+  {
+    label: 'Studies',
+    route: '/studies',
+    allowedRoles: ['admindoctor', 'admin', 'doctor', 'technician', 'receptionist'],
+    requiredModule: 'PACS',
   }
 ];
 
 export const DEFAULT_SYSTEM_PERMISSIONS = {
-  admindoctor: ['/configuration', '/approvals', '/admin-board', '/referrals', '/staff', '/staff/dashboard', '/appointment-board', '/billing', '/technician', '/doctor-board', '/subscription', '/dicom-bridge', '/operations-board'],
-  admin: ['/configuration', '/approvals', '/admin-board', '/referrals', '/staff', '/staff/dashboard', '/appointment-board', '/billing', '/subscription', '/dicom-bridge', '/operations-board'],
-  receptionist: ['/appointment-board', '/operations-board'],
-  technician: ['/configuration', '/technician', '/doctor-board', '/operations-board'],
-  doctor: ['/configuration', '/doctor-board', '/operations-board'],
+  admindoctor: ['/configuration', '/approvals', '/admin-board', '/referrals', '/staff', '/staff/dashboard', '/appointment-board', '/billing', '/technician', '/doctor-board', '/subscription', '/dicom-bridge', '/operations-board', '/studies'],
+  admin: ['/configuration', '/approvals', '/admin-board', '/referrals', '/staff', '/staff/dashboard', '/appointment-board', '/billing', '/subscription', '/dicom-bridge', '/operations-board', '/studies'],
+  receptionist: ['/appointment-board', '/operations-board', '/studies'],
+  technician: ['/configuration', '/technician', '/doctor-board', '/operations-board', '/studies'],
+  doctor: ['/configuration', '/doctor-board', '/operations-board', '/studies'],
   accountant: ['/billing', '/operations-board'],
 };
 

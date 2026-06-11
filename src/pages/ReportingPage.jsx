@@ -39,6 +39,8 @@ const ReportingPage = () => {
   // actively reporting — shows the case "ageing" in real time.
   useTickClock();
   const appointmentId = params.id || searchParams.get('id');
+  // Cloud PACS-only: report against an ImagingStudy with no appointment.
+  const studyId = searchParams.get('studyId');
   // Multi-service rollout (step 6). When the URL has ?serviceId=<guid>
   // the page scopes its load/save to that specific AppointmentService
   // line; different services on the same visit each get their own
@@ -239,6 +241,7 @@ const ReportingPage = () => {
     setBaseline: setReportBaseline,
   } = useReportAutosave({
     appointmentId,
+    imagingStudyId: studyId,
     activeServiceId,
     selectedTemplateId,
     isFinalized,
@@ -261,6 +264,8 @@ const ReportingPage = () => {
     try {
       const res = await apiClient.post('/reporting/voice-generate', {
         appointmentId,
+        // PACS-only: study supplies the dictation context when no appointment.
+        imagingStudyId: studyId || null,
         // Multi-service rollout — the active service tab decides which
         // service's name + modality the server feeds Claude Haiku as
         // dictation context. Null = single-service / legacy path.
@@ -277,7 +282,7 @@ const ReportingPage = () => {
       const msg = e?.response?.data?.error || e?.response?.data?.message || e?.message || 'Request failed.';
       return { success: false, error: msg };
     }
-  }, [appointmentId]);
+  }, [appointmentId, studyId]);
 
   const {
     aiReview, setAiReview,
@@ -829,8 +834,95 @@ const ReportingPage = () => {
     // this is safe to re-run.
   }, [activeServiceId]);
 
+  // Cloud PACS-only context loader. A study has no appointment / services /
+  // timeline — it carries its own demographics and its assets come back on the
+  // study-detail payload. Kept separate from fetchReportingContext so the
+  // appointment path is entirely unchanged.
+  const fetchStudyReportingContext = useCallback(async (sId) => {
+    const reqId = ++fetchReqRef.current;
+    const isStale = () => reqId !== fetchReqRef.current;
+    setLoading(true);
+    setError(null);
+    try {
+      // Resolve the signed-in doctor (the reporter) for branding.
+      let doctorId = null;
+      try {
+        const storedUser = localStorage.getItem('1rad_user') || sessionStorage.getItem('1rad_user');
+        if (storedUser) {
+          const u = JSON.parse(storedUser);
+          doctorId = u?.id || u?.userId || u?.Id || u?.UserId;
+        }
+      } catch { /* ignore */ }
+
+      const [studyRes, templRes, keyRes, protRes, reportRes] = await Promise.all([
+        apiClient.get(`/Study/studies/${sId}`).catch(() => ({ data: { success: false } })),
+        apiClient.get('/reporting/templates').catch(() => ({ data: { success: false } })),
+        apiClient.get('/reporting/keywords').catch(() => ({ data: { success: false } })),
+        doctorId ? apiClient.get(`/Prescription/${doctorId}`).catch(() => null) : Promise.resolve(null),
+        apiClient.get(`/reporting/report/by-study/${sId}`).catch(() => ({ data: { success: false } })),
+      ]);
+      if (isStale()) return;
+
+      const study = (studyRes.data?.success && studyRes.data.data) || null;
+      if (!study) {
+        setError('STUDY_NOT_FOUND: The requested study could not be retrieved.');
+        setLoading(false);
+        return;
+      }
+
+      // Synthetic "appointment" so the patient header renders off the study's
+      // denormalised demographics. No visit, so no services.
+      setActiveAppointment({
+        patientName: study.patientName,
+        patientIdentifier: study.dicomPatientId,
+        modality: study.modality,
+        service: study.studyDescription || study.modality,
+        appointmentDate: study.studyDate,
+        isStudyOnly: true,
+      });
+      setAppointmentServices([]);
+
+      if (templRes.data?.success) {
+        setTemplates((templRes.data.data || []).map(t => ({
+          id: t.id ?? t.Id, name: t.name ?? t.Name ?? '', modality: t.modality ?? t.Modality ?? '', content: t.content ?? t.Content ?? '',
+        })));
+      }
+      if (keyRes.data?.success) {
+        setKeywordLibrary(keyRes.data.data.map(k => ({ ...k, trigger: k.trigger || k.keyword })));
+      }
+      if (protRes?.data?.success) setProtocol(protRes.data.data);
+
+      const manifestAssets = study.assets || [];
+      if (manifestAssets.length > 0) {
+        const hyd = assetsFromManifest(manifestAssets);
+        setUploadedFiles(hyd);
+        setOriginalAssets(hyd);
+      }
+
+      // Apply any existing report for this study.
+      const rBody = reportRes.data;
+      const r = (rBody?.success && rBody?.data) ? rBody.data : null;
+      if (r) {
+        const findingsHtml = r.findings || '';
+        applyEditorContent(findingsHtml);
+        setReportBaseline({ findings: findingsHtml, rowVersion: r.rowVersion ?? r.RowVersion ?? null });
+        setImpression(r.impression || '');
+        setAdvice(r.advice || '');
+        setIsFinalized(!!r.isFinalized);
+        if (r.templateId) setSelectedTemplateId(String(r.templateId));
+      }
+    } catch (err) {
+      console.error('[REPORTING] Study context init failure', err);
+      setError('SYSTEM_INITIALIZATION_ERROR: Could not prepare the study reporting workspace. ' + (err.message || ''));
+    } finally {
+      setLoading(false);
+    }
+  }, [setReportBaseline]);
+
   useEffect(() => {
-    if (appointmentId) {
+    if (studyId) {
+      fetchStudyReportingContext(studyId);
+    } else if (appointmentId) {
       fetchReportingContext(appointmentId);
     }
     // Invalidate any in-flight load when the appointment/service changes or the
@@ -838,7 +930,7 @@ const ReportingPage = () => {
     return () => { fetchReqRef.current++; };
     // Multi-service rollout: re-fetch when the user switches between
     // service tabs so the editor reloads with that service's report.
-  }, [appointmentId, activeServiceId, fetchReportingContext]);
+  }, [appointmentId, studyId, activeServiceId, fetchReportingContext, fetchStudyReportingContext]);
 
   // --- LIVE BACKGROUND POLLING FOR STUDY ASSETS & STATUS ---
   useEffect(() => {

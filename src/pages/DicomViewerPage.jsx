@@ -8,6 +8,8 @@ const DicomViewerPage = () => {
   const location = useLocation();
   const [searchParams] = useSearchParams();
   const urlAppointmentId = searchParams.get('appointmentId');
+  // Cloud PACS-only launch: open a study with no appointment.
+  const urlStudyId = searchParams.get('studyId');
   const [hydrating, setHydrating] = useState(false);
   const [hydrationError, setHydrationError] = useState(null);
   const [hydratedSeries, setHydratedSeries] = useState(null); // array of series objects when fetched by appointmentId
@@ -55,7 +57,7 @@ const DicomViewerPage = () => {
   // safety net, so the only real failure mode here is "extraction in flight",
   // which we surface as a pending-state UI with a retry button.
   useEffect(() => {
-    if (!urlAppointmentId) return;
+    if (!urlAppointmentId && !urlStudyId) return;
     if (stateFiles || stateAllSeries) return; // navigation state already supplied data
     if (hydratedSeries) return;
 
@@ -67,7 +69,10 @@ const DicomViewerPage = () => {
       setPendingExtractionAssets([]);
       setHydrationProgress({ phase: 'fetching-manifest', current: 0, total: 0, elapsedMs: 0 });
       try {
-        const manifestRes = await apiClient.get(`/Study/${urlAppointmentId}/manifest`);
+        const manifestRes = await apiClient.get(
+          urlStudyId
+            ? `/Study/by-study/${urlStudyId}/manifest`
+            : `/Study/${urlAppointmentId}/manifest`);
         if (!manifestRes.data?.success) {
           throw new Error(manifestRes.data?.error || 'Manifest request failed.');
         }
@@ -173,7 +178,7 @@ const DicomViewerPage = () => {
     };
     hydrate();
     return () => { cancelled = true; };
-  }, [urlAppointmentId, stateFiles, stateAllSeries, hydratedSeries, hydrationAttempt]);
+  }, [urlAppointmentId, urlStudyId, stateFiles, stateAllSeries, hydratedSeries, hydrationAttempt]);
 
   // Effective sources — prefer navigation state, fall back to hydrated assets.
   const files          = stateFiles || (hydratedSeries && hydratedSeries.length === 1 ? hydratedSeries[0].files : null);

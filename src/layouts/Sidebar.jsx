@@ -236,7 +236,7 @@ const SettingsIcon = () => (
 
 // ── Main Sidebar ──────────────────────────────────────────────────────────────
 export default function Sidebar({ isMobileOpen, onMobileClose }) {
-  const { currentUser, logout, activeCenter } = useAuth();
+  const { currentUser, logout, activeCenter, hasModule } = useAuth();
   const [collapsed, setCollapsed] = useState(false);
   const [soHov, setSoHov] = useState(false);
   // Per-row hover state for Security/Sync/Sessions was inlined when those
@@ -330,7 +330,11 @@ export default function Sidebar({ isMobileOpen, onMobileClose }) {
   }, []);
 
   const navItems = NAV_ITEMS.filter(item =>
-    allowedRoutes.includes(item.route)
+    allowedRoutes.includes(item.route) &&
+    // Product-module gate (RIS / PACS SKUs): hide items the active center's
+    // subscription doesn't include. hasModule() is permissive while the
+    // subscription is still loading, so the menu doesn't flash on boot.
+    hasModule(item.requiredModule)
   );
 
   const handleLogout = () => { logout(); navigate('/login'); };

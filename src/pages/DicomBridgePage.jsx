@@ -195,6 +195,7 @@ export default function DicomBridgePage() {
             { id: 'monitor', label: 'Activity Monitor' },
             { id: 'settings', label: 'Bridge Settings' },
             { id: 'setup',   label: 'Setup Guide' },
+            { id: 'worklist', label: 'Worklist (MWL)' },
           ].map(t => (
             <button
               key={t.id}
@@ -601,6 +602,173 @@ export default function DicomBridgePage() {
                     After a few seconds, return to the <strong>Activity Monitor</strong> tab on this page; the status indicator at the top will automatically turn green ("BRIDGE ONLINE").
                   </div>
                 </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* TAB: WORKLIST (MWL) SETUP */}
+        {activeTab === 'worklist' && (
+          <div style={{ background: 'white', borderRadius: '20px', border: '1px solid #e8edf2', padding: isMobile ? '24px' : '40px', boxShadow: '0 4px 20px rgba(0,0,0,0.04)', maxWidth: '900px', margin: '0 auto' }}>
+            <div style={{ marginBottom: '20px' }}>
+              <div style={{ fontSize: '14px', fontWeight: 950, color: '#0a1628', textTransform: 'uppercase', letterSpacing: '1px' }}>Modality Worklist (MWL) Setup</div>
+              <div style={{ fontSize: '12px', color: '#64748b', marginTop: '4px' }}>
+                Publish today's 1Rad appointments to Orthanc so each machine knows who it's scanning — and stamps the Accession Number into every image. This turns fuzzy name-matching into exact, 100%-confidence matching.
+              </div>
+            </div>
+
+            {/* Flow strip */}
+            <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '8px', background: '#f8fafc', border: '1px solid #e8edf2', borderRadius: '14px', padding: '16px', marginBottom: '28px' }}>
+              {[
+                'Appointment booked in 1Rad',
+                'Bridge writes worklist',
+                'Orthanc serves it',
+                'GE queries → stamps Accession',
+                'Study matches at 100%',
+              ].map((s, i, arr) => (
+                <React.Fragment key={i}>
+                  <span style={{ fontSize: '11px', fontWeight: 800, color: '#0f52ba', background: 'white', border: '1px solid #dbeafe', borderRadius: '8px', padding: '6px 10px' }}>{s}</span>
+                  {i < arr.length - 1 && <span style={{ color: '#94a3b8', fontWeight: 900 }}>→</span>}
+                </React.Fragment>
+              ))}
+            </div>
+
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '32px' }}>
+
+              {/* Step 1 — env */}
+              <div style={{ display: 'flex', gap: '20px', alignItems: 'flex-start' }}>
+                <div style={{ width: '32px', height: '32px', borderRadius: '50%', background: '#eff6ff', color: '#0f52ba', fontSize: '14px', fontWeight: 950, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>1</div>
+                <div style={{ width: '100%' }}>
+                  <div style={{ fontSize: '15px', fontWeight: 800, color: '#0a1628', marginBottom: '6px' }}>Add the worklist settings to your <code>.env</code></div>
+                  <div style={{ fontSize: '13px', color: '#475569', lineHeight: 1.6, marginBottom: '16px' }}>
+                    Open the <code>.env</code> file inside your bridge folder (created in the Setup Guide tab) and append the settings below. <code>ORTHANC_WORKLIST_DIR</code> is the folder Orthanc will serve the list from.
+                  </div>
+                  <div style={{ borderRadius: '10px', overflow: 'hidden', border: '1px solid #334155' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px 16px', background: '#1e293b' }}>
+                      <span style={{ fontSize: '11px', color: '#94a3b8', fontWeight: 700, fontFamily: 'monospace' }}>worklist settings → append to .env</span>
+                      <button
+                        onClick={() => {
+                          const t = `# --- Modality Worklist (MWL) ---\nWORKLIST_ENABLED=true\nORTHANC_WORKLIST_DIR=C:\\ProgramData\\Orthanc\\Worklists\nWORKLIST_SYNC_SECONDS=120\nWORKLIST_UID_ROOT=1.2.826.0.1.3680043.10.99999\n# Optional: one machine per modality? Map modality -> that machine's AE Title.\nWORKLIST_STATION_AETS={"CT":"GE_CT_01","DX":"GE_XR_01"}\n`;
+                          const blob = new Blob([t], { type: 'text/plain' });
+                          const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = 'worklist.env.txt'; a.click();
+                        }}
+                        style={{ background: 'transparent', border: '1px solid #475569', color: '#e2e8f0', padding: '4px 12px', borderRadius: '6px', fontSize: '10px', fontWeight: 800, cursor: 'pointer' }}>
+                        Download
+                      </button>
+                    </div>
+                    <pre style={{ margin: 0, padding: '16px', background: '#0f172a', color: '#38bdf8', fontFamily: 'monospace', fontSize: '12px', whiteSpace: 'pre-wrap', lineHeight: 1.7 }}>{`WORKLIST_ENABLED=true
+ORTHANC_WORKLIST_DIR=C:\\ProgramData\\Orthanc\\Worklists
+WORKLIST_SYNC_SECONDS=120
+WORKLIST_UID_ROOT=1.2.826.0.1.3680043.10.99999
+WORKLIST_STATION_AETS={"CT":"GE_CT_01","DX":"GE_XR_01"}`}</pre>
+                  </div>
+                </div>
+              </div>
+
+              {/* Step 2 — folder */}
+              <div style={{ display: 'flex', gap: '20px', alignItems: 'flex-start' }}>
+                <div style={{ width: '32px', height: '32px', borderRadius: '50%', background: '#eff6ff', color: '#0f52ba', fontSize: '14px', fontWeight: 950, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>2</div>
+                <div>
+                  <div style={{ fontSize: '15px', fontWeight: 800, color: '#0a1628', marginBottom: '6px' }}>Create the worklist folder</div>
+                  <div style={{ fontSize: '13px', color: '#475569', lineHeight: 1.6 }}>
+                    Create the folder Orthanc will serve and the bridge will write into. It must match <code>ORTHANC_WORKLIST_DIR</code> from step 1.
+                  </div>
+                  <div style={{ marginTop: '12px' }}>
+                    <code style={{ fontSize: '12px', background: '#f8fafc', border: '1px solid #e2e8f0', padding: '10px 14px', borderRadius: '8px', display: 'block', fontFamily: 'monospace', color: '#0f52ba' }}>
+                      mkdir C:\ProgramData\Orthanc\Worklists
+                    </code>
+                  </div>
+                </div>
+              </div>
+
+              {/* Step 3 — orthanc.json */}
+              <div style={{ display: 'flex', gap: '20px', alignItems: 'flex-start' }}>
+                <div style={{ width: '32px', height: '32px', borderRadius: '50%', background: '#eff6ff', color: '#0f52ba', fontSize: '14px', fontWeight: 950, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>3</div>
+                <div style={{ width: '100%' }}>
+                  <div style={{ fontSize: '15px', fontWeight: 800, color: '#0a1628', marginBottom: '6px' }}>Enable the worklist plugin in Orthanc</div>
+                  <div style={{ fontSize: '13px', color: '#475569', lineHeight: 1.6, marginBottom: '16px' }}>
+                    Open your <code>orthanc.json</code>, merge in the block below (register each machine under <code>DicomModalities</code> with its real AE Title, IP and port), then restart Orthanc.
+                  </div>
+                  <div style={{ borderRadius: '10px', overflow: 'hidden', border: '1px solid #334155' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px 16px', background: '#1e293b' }}>
+                      <span style={{ fontSize: '11px', color: '#94a3b8', fontWeight: 700, fontFamily: 'monospace' }}>orthanc.json (merge these keys)</span>
+                      <button
+                        onClick={() => {
+                          const t = `{\n  "Worklists": {\n    "Enable": true,\n    "Database": "C:\\\\ProgramData\\\\Orthanc\\\\Worklists"\n  },\n  "DicomModalities": {\n    "ge_ct": [ "GE_CT_01", "192.168.1.50", 104 ],\n    "ge_xr": [ "GE_XR_01", "192.168.1.51", 104 ]\n  },\n  "DicomAet": "ORTHANC",\n  "DicomPort": 4242\n}\n`;
+                          const blob = new Blob([t], { type: 'application/json' });
+                          const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = 'orthanc-worklist.json'; a.click();
+                        }}
+                        style={{ background: 'transparent', border: '1px solid #475569', color: '#e2e8f0', padding: '4px 12px', borderRadius: '6px', fontSize: '10px', fontWeight: 800, cursor: 'pointer' }}>
+                        Download
+                      </button>
+                    </div>
+                    <pre style={{ margin: 0, padding: '16px', background: '#0f172a', color: '#a5f3fc', fontFamily: 'monospace', fontSize: '12px', whiteSpace: 'pre-wrap', lineHeight: 1.7 }}>{`{
+  "Worklists": {
+    "Enable": true,
+    "Database": "C:\\\\ProgramData\\\\Orthanc\\\\Worklists"
+  },
+  "DicomModalities": {
+    "ge_ct": [ "GE_CT_01", "192.168.1.50", 104 ],
+    "ge_xr": [ "GE_XR_01", "192.168.1.51", 104 ]
+  },
+  "DicomAet": "ORTHANC",
+  "DicomPort": 4242
+}`}</pre>
+                  </div>
+                </div>
+              </div>
+
+              {/* Step 4 — point GE machine */}
+              <div style={{ display: 'flex', gap: '20px', alignItems: 'flex-start' }}>
+                <div style={{ width: '32px', height: '32px', borderRadius: '50%', background: '#eff6ff', color: '#0f52ba', fontSize: '14px', fontWeight: 950, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>4</div>
+                <div>
+                  <div style={{ fontSize: '15px', fontWeight: 800, color: '#0a1628', marginBottom: '6px' }}>Point each GE machine at the worklist</div>
+                  <div style={{ fontSize: '13px', color: '#475569', lineHeight: 1.6 }}>
+                    On each modality console, set the <strong>Worklist / MWL SCP</strong> to Orthanc:
+                  </div>
+                  <div style={{ marginTop: '10px', fontSize: '13px', color: '#334155', lineHeight: 1.9 }}>
+                    • Remote AE Title: <code>ORTHANC</code><br />
+                    • IP Address: this server's IP<br />
+                    • Port: <code>4242</code> (Orthanc DicomPort)<br />
+                    • Station AE Title: match a key in <code>WORKLIST_STATION_AETS</code> (e.g. <code>GE_CT_01</code>) if you filter per machine.
+                  </div>
+                </div>
+              </div>
+
+              {/* Step 5 — test */}
+              <div style={{ display: 'flex', gap: '20px', alignItems: 'flex-start' }}>
+                <div style={{ width: '32px', height: '32px', borderRadius: '50%', background: '#eff6ff', color: '#0f52ba', fontSize: '14px', fontWeight: 950, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>5</div>
+                <div>
+                  <div style={{ fontSize: '15px', fontWeight: 800, color: '#0a1628', marginBottom: '6px' }}>Test the worklist</div>
+                  <div style={{ fontSize: '13px', color: '#475569', lineHeight: 1.6 }}>
+                    From the bridge folder, run the test. It prints today's appointments and writes the <code>.wl</code> files — run it any time to check the list before involving a machine.
+                  </div>
+                  <div style={{ marginTop: '12px' }}>
+                    <code style={{ fontSize: '12px', background: '#f8fafc', border: '1px solid #e2e8f0', padding: '10px 14px', borderRadius: '8px', display: 'block', fontFamily: 'monospace', color: '#0f52ba' }}>
+                      cd C:\1Rad-Bridge<br />
+                      npm run worklist:test
+                    </code>
+                  </div>
+                </div>
+              </div>
+
+              {/* Step 6 — verify */}
+              <div style={{ display: 'flex', gap: '20px', alignItems: 'flex-start' }}>
+                <div style={{ width: '32px', height: '32px', borderRadius: '50%', background: '#22c55e', color: 'white', fontSize: '14px', fontWeight: 950, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>✓</div>
+                <div>
+                  <div style={{ fontSize: '15px', fontWeight: 800, color: '#0a1628', marginBottom: '6px' }}>Verify</div>
+                  <div style={{ fontSize: '13px', color: '#475569', lineHeight: 1.6 }}>
+                    On the GE console, open the worklist and query — today's patients should appear. Scan a test patient; in the <strong>Activity Monitor</strong> tab the new study should show <strong>100% confidence</strong> (the Accession path) instead of a fuzzy percentage.
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* DisplayId callout */}
+            <div style={{ marginTop: '28px', background: '#fffbeb', border: '1px solid #fde68a', borderRadius: '12px', padding: '14px 18px' }}>
+              <div style={{ fontSize: '12px', fontWeight: 900, color: '#b45309', marginBottom: '4px' }}>⚠ Keep the appointment Display ID ≤ 16 characters</div>
+              <div style={{ fontSize: '12px', color: '#92400e', lineHeight: 1.6 }}>
+                The DICOM Accession Number caps at 16 characters. Longer IDs get truncated and the match falls back to fuzzy. IDs like <code>1R-250611-0042</code> are well within the limit.
               </div>
             </div>
           </div>

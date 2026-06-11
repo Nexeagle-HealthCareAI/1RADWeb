@@ -120,6 +120,25 @@ export function AuthProvider({ children }) {
     }
   }, [activeCenterId]);
 
+  // Product modules (RIS / PACS) for the ACTIVE center, from the
+  // subscription status payload. `null` while loading — callers treat that
+  // as "allow" so the UI doesn't flash-hide during boot; the backend
+  // [RequiresModule] checks are the real enforcement.
+  const modules = useMemo(() => {
+    if (!subscription) return null;
+    const arr = subscription.modules;
+    return Array.isArray(arr) ? arr.map((m) => String(m).toUpperCase()) : null;
+  }, [subscription]);
+
+  const hasModule = useCallback(
+    (module) => {
+      if (!module) return true;
+      if (!modules) return true; // unknown yet → don't block the UI
+      return modules.includes(String(module).toUpperCase());
+    },
+    [modules],
+  );
+
   const activeCenter = useMemo(() => {
     return centers.find(c => c.id === activeCenterId) || centers[0];
   }, [centers, activeCenterId]);
@@ -252,6 +271,15 @@ export function AuthProvider({ children }) {
       }
     }
   }, [currentUser?.id]); // Depend on ID, not object reference
+
+  // Re-fetch subscription status when the active center changes: centers in
+  // one group can run different SKUs (modules), and switchCenter has already
+  // swapped the token's hospital claim by the time activeCenterId updates.
+  useEffect(() => {
+    if (currentUser?.id && activeCenterId) {
+      refreshSubscription();
+    }
+  }, [activeCenterId, currentUser?.id, refreshSubscription]);
 
   // Synchronize Hub Discovery: Automatically refresh centers list when session starts
   useEffect(() => {
@@ -770,7 +798,12 @@ export function AuthProvider({ children }) {
       timeoutCountdown,
       resetIdleTimer,
       subscription,
-      refreshSubscription
+      refreshSubscription,
+      // Product modules for the active center ("RIS", "PACS"); null while
+      // loading. hasModule(m) is the preferred check — it allows while
+      // loading so the UI doesn't flash, and the backend enforces anyway.
+      modules,
+      hasModule
     }}>
       {children}
     </AuthContext.Provider>

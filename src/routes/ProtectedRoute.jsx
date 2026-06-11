@@ -6,8 +6,8 @@ import { getRolePermissions } from '../data/roles';
 // so admins can resolve payment without being caught in a redirect loop.
 const SUBSCRIPTION_EXEMPT_ROUTES = ['/subscription'];
 
-export default function ProtectedRoute({ allowedRoles, moduleRoutes, authOnly, children }) {
-  const { currentUser, hasAdminDoctor, activeCenter, subscription } = useAuth();
+export default function ProtectedRoute({ allowedRoles, moduleRoutes, authOnly, requiredModule, children }) {
+  const { currentUser, hasAdminDoctor, activeCenter, subscription, hasModule } = useAuth();
   const location = useLocation();
 
   // 1. Initial Launch Check: If no AdminDoctor exists, force to /register
@@ -28,6 +28,14 @@ export default function ProtectedRoute({ allowedRoles, moduleRoutes, authOnly, c
   );
   if (!isSubscriptionExempt && subscription !== null && subscription.isActive === false) {
     return <Navigate to="/subscription" replace />;
+  }
+
+  // 3b. Product-module gate (RIS / PACS SKUs): the active center's
+  // subscription must include the route's module. hasModule() returns true
+  // while the subscription is still loading, so this never blocks boot —
+  // the backend's [RequiresModule] is the hard enforcement.
+  if (requiredModule && !hasModule(requiredModule)) {
+    return <Navigate to="/access-denied" replace />;
   }
 
   // If authOnly is true, skip RBAC checks
