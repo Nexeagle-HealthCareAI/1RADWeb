@@ -46,7 +46,7 @@ const GOLD  = '#d4a017';
 const GOLD2 = '#f5d76e';
 
 // ─── Payment Request Side Drawer ──────────────────────────────────────────────
-const PaymentRequestDrawer = ({ isOpen, plan, billingCycle, onClose, onSuccess, currentUser }) => {
+const PaymentRequestDrawer = ({ isOpen, plan, billingCycle, planId, estimate, onClose, onSuccess, currentUser }) => {
   const [step, setStep] = useState('form'); // 'form' | 'submitting' | 'done' | 'error'
   const [form, setForm] = useState({
     payerName: currentUser?.name || '',
@@ -66,7 +66,9 @@ const PaymentRequestDrawer = ({ isOpen, plan, billingCycle, onClose, onSuccess, 
   }, [isOpen, currentUser]);
 
   const priceMap = { monthly: 4999, yearly: 53988 };
-  const amount = priceMap[billingCycle] || priceMap.monthly;
+  // Server-computed amount due (base + metered storage overage) when available;
+  // else the legacy full-product price.
+  const amount = estimate?.total ?? (priceMap[billingCycle] || priceMap.monthly);
 
   const validate = () => {
     const e = {};
@@ -83,6 +85,9 @@ const PaymentRequestDrawer = ({ isOpen, plan, billingCycle, onClose, onSuccess, 
     setStep('submitting');
     try {
       await apiClient.post('/subscriptions/payment-request', {
+        // PlanId is authoritative — the server derives the edition, modules,
+        // storage overage and final amount from it. The rest is for the record.
+        planId: planId || null,
         planName: plan.name,
         billingCycle: billingCycle.charAt(0).toUpperCase() + billingCycle.slice(1),
         amount,
@@ -145,6 +150,11 @@ const PaymentRequestDrawer = ({ isOpen, plan, billingCycle, onClose, onSuccess, 
                 <div>
                   <div style={{ fontSize:'10px',fontWeight:800,color:'#94a3b8',letterSpacing:'1px',textTransform:'uppercase' }}>Amount to Pay</div>
                   <div style={{ fontSize:'22px',fontWeight:900,color:'#0ea5e9',letterSpacing:'-1px' }}>₹{amount.toLocaleString('en-IN')}</div>
+                  {estimate?.overageAmount > 0 && (
+                    <div style={{ fontSize:'11px',color:'#64748b',fontWeight:600,marginTop:'2px' }}>
+                      ₹{estimate.basePrice.toLocaleString('en-IN')} base + ₹{estimate.overageAmount.toLocaleString('en-IN')} storage ({estimate.overageGb}GB over {estimate.includedStorageGb}GB)
+                    </div>
+                  )}
                 </div>
                 <div style={{ textAlign:'right' }}>
                   <div style={{ fontSize:'10px',fontWeight:800,color:'#94a3b8',letterSpacing:'1px',textTransform:'uppercase' }}>Pay To</div>
@@ -325,6 +335,34 @@ const SubscriptionPage = () => {
   const pendingStatus = subscription?.pendingRequestStatus ?? null;
   const isPaidPlan = !isTrial && (subStatus === 'Active' || subStatus === 'Expiring');
 
+  // ── Edition-aware pricing (per-SKU + metered storage) ──────────────────────
+  const [plans, setPlans] = useState([]);
+  const [estimate, setEstimate] = useState(null);
+  useEffect(() => {
+    apiClient.get('/subscriptions/plans').then(r => setPlans(r?.data?.data || [])).catch(() => {});
+  }, []);
+
+  // The center renews/pays for its current edition. Derive it from the modules
+  // the subscription enables.
+  const currentEdition = (() => {
+    const m = (subscription?.modules || []).map(x => String(x).toUpperCase());
+    const hasR = m.includes('RIS'), hasP = m.includes('PACS');
+    if (hasR && hasP) return 'RIS+PACS';
+    if (hasR) return 'RIS';
+    if (hasP) return 'PACS';
+    return 'RIS+PACS';
+  })();
+  const cycleName = billingCycle === 'yearly' ? 'Yearly' : 'Monthly';
+  const currentPlan = plans.find(p => p.edition === currentEdition && p.name === cycleName);
+
+  // Metered amount-due estimate for the resolved plan (base + storage overage).
+  useEffect(() => {
+    if (!currentPlan?.planId) { setEstimate(null); return; }
+    apiClient.get('/subscriptions/estimate', { params: { planId: currentPlan.planId } })
+      .then(r => setEstimate(r?.data?.success ? r.data.data : null))
+      .catch(() => setEstimate(null));
+  }, [currentPlan?.planId]);
+
   const handleBillingCycle = (cycle) => {
     setBillingCycle(cycle);
     localStorage.setItem('1rad_billing_pref', cycle);
@@ -419,6 +457,8 @@ const SubscriptionPage = () => {
         isOpen={!!paymentModal}
         plan={premiumPlan}
         billingCycle={paymentModal || 'monthly'}
+        planId={currentPlan?.planId}
+        estimate={estimate}
         currentUser={currentUser}
         onClose={() => setPaymentModal(null)}
         onSuccess={onPaymentSuccess}

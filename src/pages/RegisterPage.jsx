@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import useAuth from '../auth/useAuth';
+import apiClient from '../api/apiClient';
 import RadiologyWorkflowBG from '../components/RadiologyWorkflowBG';
 import AuthErrorModal from '../components/AuthErrorModal';
 import '../styles/global.css';
@@ -57,6 +58,68 @@ function Input({ label, ...props }) {
   );
 }
 
+// Product packages (SKUs). `modules` is the value stored on the subscription;
+// reporting is included in all three.
+const PACKAGES = [
+  {
+    modules: 'RIS,PACS', edition: 'RIS+PACS',
+    name: 'RIS + Cloud PACS',
+    tag: 'Recommended',
+    blurb: 'The full product — patient workflow plus cloud imaging.',
+    includes: ['Appointments, worklist & billing', 'Cloud DICOM storage + web viewer', 'Modality bridge upload', 'Reporting'],
+  },
+  {
+    modules: 'RIS', edition: 'RIS',
+    name: 'RIS only',
+    blurb: 'Run your centre’s workflow; store images locally.',
+    includes: ['Appointments, worklist & billing', 'Referrals', 'Attach PDF/JPG to visits', 'Reporting', 'No cloud DICOM upload/viewer'],
+  },
+  {
+    modules: 'PACS', edition: 'PACS',
+    name: 'Cloud PACS only',
+    blurb: 'Teleradiology — receive, view and report studies. No scheduling.',
+    includes: ['Cloud DICOM storage + web viewer', 'Modality bridge upload', 'Reporting on studies', 'No appointment/billing workflow'],
+  },
+];
+
+const fmtINR = (n) => '₹' + Number(n || 0).toLocaleString('en-IN');
+
+function PackageCard({ pkg, plan, cycle, selected, onSelect }) {
+  return (
+    <button type="button" onClick={onSelect}
+      style={{
+        textAlign: 'left', width: '100%', padding: '12px 14px', borderRadius: '12px', cursor: 'pointer',
+        border: `1.5px solid ${selected ? 'rgba(96,165,250,0.8)' : 'rgba(255,255,255,0.10)'}`,
+        background: selected ? 'rgba(96,165,250,0.10)' : 'rgba(255,255,255,0.02)',
+        transition: 'all 0.15s ease',
+      }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '4px' }}>
+        <span style={{
+          width: '16px', height: '16px', borderRadius: '50%', flexShrink: 0,
+          border: `2px solid ${selected ? '#60a5fa' : 'rgba(255,255,255,0.3)'}`,
+          background: selected ? '#60a5fa' : 'transparent',
+        }} />
+        <strong style={{ color: '#e6ebf2', fontSize: '14px' }}>{pkg.name}</strong>
+        {pkg.tag && <span style={{ fontSize: '10px', fontWeight: 700, color: '#34d399', border: '1px solid rgba(52,211,153,0.4)', borderRadius: '6px', padding: '1px 6px' }}>{pkg.tag}</span>}
+        {plan && (
+          <span style={{ marginLeft: 'auto', textAlign: 'right' }}>
+            <span style={{ color: '#e6ebf2', fontSize: '15px', fontWeight: 700 }}>{fmtINR(plan.price)}</span>
+            <span style={{ color: '#8a94a6', fontSize: '11px' }}>/{cycle === 'Yearly' ? 'yr' : 'mo'}</span>
+          </span>
+        )}
+      </div>
+      <div style={{ color: '#9aa4b2', fontSize: '12px', marginLeft: '24px', marginBottom: '6px' }}>
+        {pkg.blurb}
+        {plan?.includedStorageGb ? <span style={{ color: '#8a94a6' }}> · {plan.includedStorageGb}GB incl. (+{fmtINR(plan.perGbOveragePrice)}/GB)</span> : null}
+      </div>
+      <ul style={{ margin: 0, paddingLeft: '40px', color: '#8a94a6', fontSize: '11.5px', lineHeight: 1.5 }}>
+        {pkg.includes.map((f, i) => <li key={i}>{f}</li>)}
+      </ul>
+      <div style={{ color: '#6b7280', fontSize: '10px', marginLeft: '24px', marginTop: '4px' }}>14-day free trial — pay after.</div>
+    </button>
+  );
+}
+
 function PrimaryBtn({ children, disabled, ...props }) {
   return (
     <button
@@ -88,7 +151,19 @@ export default function RegisterPage() {
     specialization: '', licenseNo: '', degree: '',
     centerName: '', chainName: '', centerAddress: '',
     gstinNumber: '', registrationNumber: '', panNumber: '', nabhNumber: '',
+    // Chosen product package (SKU) + billing cycle. Defaults to the full product.
+    modules: 'RIS,PACS',
+    cycle: 'Monthly',
   });
+  // Plans fetched for pricing display (public endpoint).
+  const [plans, setPlans] = useState([]);
+  useEffect(() => {
+    apiClient.get('/subscriptions/plans')
+      .then(r => setPlans(r?.data?.data || []))
+      .catch(() => setPlans([]));
+  }, []);
+  // The plan matching a package's edition at the selected cycle.
+  const planFor = (edition) => plans.find(p => p.edition === edition && p.name === formData.cycle);
 
   const [step,          setStep]         = useState(1);
   const [isOtpSent,     setIsOtpSent]    = useState(false);
@@ -177,6 +252,7 @@ export default function RegisterPage() {
         registrationNumber: formData.registrationNumber, panNumber: formData.panNumber,
         nabhNumber: formData.nabhNumber, specialization: formData.specialization,
         degree: formData.degree, licenseNo: formData.licenseNo,
+        modules: formData.modules,
       });
       setLoading(false);
       if (res.success) {
@@ -397,6 +473,33 @@ export default function RegisterPage() {
           {/* ── Step 4: Centre ── */}
           {step === 4 && (
             <div>
+              {/* Package picker — choose the product SKU. Reporting is in all
+                  three; the two differentiators are scheduling (RIS) and cloud
+                  DICOM storage/viewer (PACS). */}
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '8px' }}>
+                <label style={{ ...labelBase, marginBottom: 0 }}>Choose your package</label>
+                {/* Monthly / Yearly toggle drives the price shown on each card. */}
+                <div style={{ display: 'inline-flex', border: '1px solid rgba(255,255,255,0.12)', borderRadius: '8px', overflow: 'hidden' }}>
+                  {['Monthly', 'Yearly'].map(c => (
+                    <button key={c} type="button" onClick={() => set('cycle', c)}
+                      style={{
+                        padding: '4px 12px', fontSize: '12px', cursor: 'pointer', border: 'none',
+                        background: formData.cycle === c ? '#60a5fa' : 'transparent',
+                        color: formData.cycle === c ? '#fff' : '#9aa4b2',
+                      }}>
+                      {c}{c === 'Yearly' ? ' · 10% off' : ''}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              <div style={{ display: 'grid', gap: '10px', marginBottom: '16px' }}>
+                {PACKAGES.map(p => (
+                  <PackageCard key={p.modules} pkg={p} plan={planFor(p.edition)} cycle={formData.cycle}
+                    selected={formData.modules === p.modules}
+                    onSelect={() => set('modules', p.modules)} />
+                ))}
+              </div>
+
               <Input label="Centre name" type="text" required value={formData.centerName} onChange={e => set('centerName', e.target.value)} placeholder="e.g. City Diagnostic Centre" />
               <Input label="Group / chain (optional)" type="text" value={formData.chainName} onChange={e => set('chainName', e.target.value)} placeholder="e.g. Apollo Group" />
 

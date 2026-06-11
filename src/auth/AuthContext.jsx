@@ -618,7 +618,8 @@ export function AuthProvider({ children }) {
         nabhNumber: userData.nabhNumber,
         specialization: userData.specialization,
         degree: userData.degree,
-        licenseNo: userData.licenseNo
+        licenseNo: userData.licenseNo,
+        modules: userData.modules, // chosen product package (SKU)
       }, {
         headers: { Authorization: `Bearer ${nextToken}` }
       });
