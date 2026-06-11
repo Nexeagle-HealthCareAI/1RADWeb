@@ -139,7 +139,7 @@ function PrimaryBtn({ children, disabled, ...props }) {
   );
 }
 
-const STEP_LABELS = ['Verify contact', 'Your details', 'Clinical info', 'Centre details'];
+const STEP_LABELS = ['Verify contact', 'Your details', 'Clinical info', 'Choose package', 'Centre details'];
 
 export default function RegisterPage() {
   const { registerAdminDoctor, sendOtp, verifyOtp } = useAuth();
@@ -184,6 +184,11 @@ export default function RegisterPage() {
   const [identityClash, setIdentityClash] = useState({ open: false, message: '' });
 
   const set = (key, val) => setFormData(p => ({ ...p, [key]: val }));
+
+  // Role-aware step sequence: Operations Directors skip the clinical step.
+  // `step` stays an absolute id (1..5); the sequence drives numbering/progress.
+  const stepSeq = formData.role === 'admindoctor' ? [1, 2, 3, 4, 5] : [1, 2, 4, 5];
+  const stepIndex = Math.max(0, stepSeq.indexOf(step));
 
   const validateGSTIN = g => !g || /^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z]{1}[1-9A-Z]{1}Z[0-9A-Z]{1}$/.test(g);
   const validatePAN   = p => !p || /^[A-Z]{5}[0-9]{4}[A-Z]{1}$/.test(p);
@@ -239,6 +244,10 @@ export default function RegisterPage() {
       setStep(4); return;
     }
     if (step === 4) {
+      // Package always has a default selection — just advance.
+      setStep(5); return;
+    }
+    if (step === 5) {
       if (!formData.centerName || !formData.centerAddress)
         return setError('Centre name and address are required.');
       if (!validateGSTIN(formData.gstinNumber))
@@ -277,7 +286,7 @@ export default function RegisterPage() {
   // ── Progress dots ──────────────────────────────────────────────────────────
   const StepDots = () => (
     <div style={{ display: 'flex', gap: '8px', justifyContent: 'center', marginBottom: '18px' }}>
-      {[1, 2, 3, 4].map(n => (
+      {stepSeq.map(n => (
         <div key={n} style={{
           height: '5px', width: step >= n ? '24px' : '16px',
           borderRadius: '3px',
@@ -313,41 +322,43 @@ export default function RegisterPage() {
           Radiology management platform
         </div>
 
-        {/* Steps overview */}
+        {/* Steps overview (role-aware: Ops Directors skip the clinical step) */}
         <div style={{ marginTop: '32px', display: 'flex', flexDirection: 'column', gap: '10px' }}>
-          {STEP_LABELS.map((label, i) => (
-            <div key={i} style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+          {stepSeq.map((n, i) => (
+            <div key={n} style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
               <div style={{
                 width: '22px', height: '22px', borderRadius: '50%', flexShrink: 0,
-                background: step > i + 1 ? '#3b82f6' : step === i + 1 ? 'rgba(59,130,246,0.3)' : 'rgba(255,255,255,0.08)',
-                border: step === i + 1 ? '2px solid #3b82f6' : '2px solid transparent',
+                background: step > n ? '#3b82f6' : step === n ? 'rgba(59,130,246,0.3)' : 'rgba(255,255,255,0.08)',
+                border: step === n ? '2px solid #3b82f6' : '2px solid transparent',
                 display: 'flex', alignItems: 'center', justifyContent: 'center',
-                fontSize: '10px', fontWeight: 700, color: step > i + 1 ? 'white' : step === i + 1 ? '#60a5fa' : 'rgba(255,255,255,0.3)',
+                fontSize: '10px', fontWeight: 700, color: step > n ? 'white' : step === n ? '#60a5fa' : 'rgba(255,255,255,0.3)',
               }}>
-                {step > i + 1 ? '✓' : i + 1}
+                {step > n ? '✓' : i + 1}
               </div>
               <span style={{
-                fontSize: '13px', fontWeight: step === i + 1 ? 600 : 400,
-                color: step === i + 1 ? 'rgba(255,255,255,0.90)' : 'rgba(255,255,255,0.35)',
+                fontSize: '13px', fontWeight: step === n ? 600 : 400,
+                color: step === n ? 'rgba(255,255,255,0.90)' : 'rgba(255,255,255,0.35)',
                 fontFamily: '"Segoe UI", sans-serif',
-              }}>{label}</span>
+              }}>{STEP_LABELS[n - 1]}</span>
             </div>
           ))}
         </div>
       </div>
 
-      {/* ── Form card ── */}
-      <div className="glass-card" style={{ maxWidth: '540px' }}>
+      {/* ── Form card — each step is sized to fit the viewport; on very short
+            screens the card scrolls internally rather than the page. ── */}
+      <div className="glass-card" style={{ maxWidth: '540px', maxHeight: '92vh', overflowY: 'auto' }}>
         <StepDots />
 
         <div style={{ textAlign: 'center', marginBottom: '24px' }}>
           <h2 style={{ fontSize: '20px', fontWeight: 700, color: 'white', margin: '0 0 4px', fontFamily: '"Segoe UI", sans-serif' }}>
             {step === 1 ? 'Create your account' :
              step === 2 ? 'Your details' :
-             step === 3 ? 'Clinical information' : 'Centre details'}
+             step === 3 ? 'Clinical information' :
+             step === 4 ? 'Choose your package' : 'Centre details'}
           </h2>
           <p style={{ fontSize: '12px', color: 'rgba(255,255,255,0.45)', margin: 0, fontFamily: '"Segoe UI", sans-serif' }}>
-            Step {step} of {formData.role === 'admindoctor' ? 4 : 3} — {STEP_LABELS[step - 1]}
+            Step {stepIndex + 1} of {stepSeq.length} — {STEP_LABELS[step - 1]}
           </p>
         </div>
 
@@ -471,14 +482,14 @@ export default function RegisterPage() {
             </div>
           )}
 
-          {/* ── Step 4: Centre ── */}
+          {/* ── Step 4: Package ── */}
           {step === 4 && (
             <div>
               {/* Package picker — choose the product SKU. Reporting is in all
                   three; the two differentiators are scheduling (RIS) and cloud
                   DICOM storage/viewer (PACS). */}
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '8px' }}>
-                <label style={{ ...labelBase, marginBottom: 0 }}>Choose your package</label>
+                <label style={{ ...labelBase, marginBottom: 0 }}>Pick what fits your centre</label>
                 {/* Monthly / Yearly toggle drives the price shown on each card. */}
                 <div style={{ display: 'inline-flex', border: '1px solid rgba(255,255,255,0.12)', borderRadius: '8px', overflow: 'hidden' }}>
                   {['Monthly', 'Yearly'].map(c => (
@@ -501,6 +512,18 @@ export default function RegisterPage() {
                 ))}
               </div>
 
+              <div style={{ display: 'flex', gap: '10px' }}>
+                <button type="button" onClick={() => setStep(formData.role === 'admindoctor' ? 3 : 2)} style={{ flex: 1, padding: '12px', border: '1px solid rgba(255,255,255,0.12)', borderRadius: '10px', background: 'transparent', color: 'rgba(255,255,255,0.60)', cursor: 'pointer', fontSize: '13px', fontFamily: '"Segoe UI", sans-serif' }}>
+                  Back
+                </button>
+                <div style={{ flex: 2 }}><PrimaryBtn type="submit">Continue</PrimaryBtn></div>
+              </div>
+            </div>
+          )}
+
+          {/* ── Step 5: Centre ── */}
+          {step === 5 && (
+            <div>
               <Input label="Centre name" type="text" required value={formData.centerName} onChange={e => set('centerName', e.target.value)} placeholder="e.g. City Diagnostic Centre" />
               <Input label="Group / chain (optional)" type="text" value={formData.chainName} onChange={e => set('chainName', e.target.value)} placeholder="e.g. Apollo Group" />
 
@@ -567,7 +590,7 @@ export default function RegisterPage() {
               </Field>
 
               <div style={{ display: 'flex', gap: '10px' }}>
-                <button type="button" onClick={() => setStep(formData.role === 'admindoctor' ? 3 : 2)} style={{ flex: 1, padding: '12px', border: '1px solid rgba(255,255,255,0.12)', borderRadius: '10px', background: 'transparent', color: 'rgba(255,255,255,0.60)', cursor: 'pointer', fontSize: '13px', fontFamily: '"Segoe UI", sans-serif' }}>
+                <button type="button" onClick={() => setStep(4)} style={{ flex: 1, padding: '12px', border: '1px solid rgba(255,255,255,0.12)', borderRadius: '10px', background: 'transparent', color: 'rgba(255,255,255,0.60)', cursor: 'pointer', fontSize: '13px', fontFamily: '"Segoe UI", sans-serif' }}>
                   Back
                 </button>
                 <div style={{ flex: 2 }}><PrimaryBtn type="submit" disabled={loading}>{loading ? 'Creating account...' : 'Create account'}</PrimaryBtn></div>

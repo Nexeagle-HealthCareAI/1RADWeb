@@ -338,7 +338,8 @@ const SubscriptionPage = () => {
   // ── Edition-aware pricing (per-SKU tiers + metered storage + PAYG) ─────────
   const [plans, setPlans] = useState([]);
   const [estimate, setEstimate] = useState(null);
-  const [selectedPlanId, setSelectedPlanId] = useState(null); // chosen tier/PAYG
+  // Selection is BY TIER (not plan id) so it survives cycle/edition switches.
+  const [selectedTier, setSelectedTier] = useState(null); // 'Starter'|'Growth'|'Clinic'|'PAYG'
   useEffect(() => {
     apiClient.get('/subscriptions/plans').then(r => setPlans(r?.data?.data || [])).catch(() => {});
   }, []);
@@ -363,10 +364,12 @@ const SubscriptionPage = () => {
   // PAYG + Chain plans for the edition in view (cycle-independent).
   const editionPayg = plans.find(p => p.edition === editionInView && p.billingMode === 'PerStudy');
   const editionChain = plans.find(p => p.edition === editionInView && p.isCustom);
-  // Everything self-serve-selectable (tiers + PAYG, never the bespoke Chain).
-  const selectablePlans = plans.filter(p => !p.isCustom && (p.billingMode === 'PerStudy' || p.name === cycleName));
-  const defaultPlan = editionTiers[0] || null; // cheapest tier of the edition in view
-  const activePlan = selectablePlans.find(p => p.planId === selectedPlanId) || defaultPlan;
+  // Default highlight = the middle tier (most popular); selection follows the
+  // TIER across cycle/edition switches instead of resetting.
+  const defaultPlan = editionTiers[1] || editionTiers[0] || null;
+  const activePlan = selectedTier === 'PAYG'
+    ? (editionPayg || defaultPlan)
+    : (editionTiers.find(p => p.tier === selectedTier) || defaultPlan);
 
   // Metered amount-due estimate for the active plan (base + storage overage, or
   // PAYG studies × rate).
@@ -446,6 +449,72 @@ const SubscriptionPage = () => {
         .status-cell { padding: 18px; background: #f8fafc; border-radius: 14px; border: 1px solid #e2e8f0; }
 
         .plans-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; align-items: start; }
+
+        /* ── Upgrade tab (premium pricing layout) ── */
+        .up-hero { text-align: center; margin-bottom: 30px; }
+        .up-hero h3 { font-size: 24px; font-weight: 800; color: #0a1628; margin: 0 0 6px; letter-spacing: -0.5px; }
+        .up-hero p { margin: 0 0 18px; font-size: 13px; color: #6b7280; }
+        .up-controls { display: flex; justify-content: center; gap: 12px; flex-wrap: wrap; }
+        .up-seg { background: white; border: 1px solid #e2e8f0; border-radius: 12px; padding: 4px; display: inline-flex; gap: 4px; flex-wrap: wrap; }
+        .up-seg button { padding: 8px 16px; border-radius: 9px; border: none; background: transparent; color: #6b7280; font-size: 13px; font-weight: 700; cursor: pointer; transition: all 0.2s; display: inline-flex; align-items: center; gap: 7px; }
+        .up-seg button.on { background: #0a1628; color: white; }
+        .up-current-dot { width: 7px; height: 7px; border-radius: 50%; background: #10b981; display: inline-block; }
+        .up-save-chip { background: #ecfdf5; color: #10b981; font-size: 10px; font-weight: 800; padding: 2px 7px; border-radius: 20px; }
+
+        .up-tiers { display: grid; grid-template-columns: repeat(3, 1fr); gap: 20px; align-items: stretch; }
+        .up-tier { position: relative; display: flex; flex-direction: column; background: white; border: 1.5px solid #e2e8f0; border-radius: 22px; padding: 28px 26px 24px; cursor: pointer; transition: transform 0.22s, box-shadow 0.22s, border-color 0.22s, background 0.22s; }
+        .up-tier:hover { transform: translateY(-3px); box-shadow: 0 16px 36px -14px rgba(10,22,40,0.16); }
+        .up-tier.popular { border-color: #bfdbfe; box-shadow: 0 18px 44px -16px rgba(29,78,216,0.22); }
+        .up-tier.on { background: #0a1628; border-color: #1d4ed8; box-shadow: 0 24px 52px -14px rgba(10,22,40,0.45); }
+        .up-ribbon { position: absolute; top: -11px; left: 50%; transform: translateX(-50%); background: linear-gradient(90deg, #38bdf8, #1d4ed8); color: white; font-size: 10px; font-weight: 800; letter-spacing: 0.8px; text-transform: uppercase; padding: 4px 14px; border-radius: 20px; box-shadow: 0 4px 12px rgba(29,78,216,0.35); white-space: nowrap; }
+        .up-tier-name { font-size: 11px; font-weight: 900; letter-spacing: 1.5px; text-transform: uppercase; color: #94a3b8; margin: 0 0 2px; }
+        .up-tier.on .up-tier-name { color: #38bdf8; }
+        .up-tagline { font-size: 12px; color: #6b7280; margin: 0 0 16px; min-height: 18px; }
+        .up-tier.on .up-tagline { color: #94a3b8; }
+        .up-price-row { display: flex; align-items: baseline; gap: 5px; }
+        .up-price { font-size: 32px; font-weight: 800; letter-spacing: -1px; color: #0a1628; }
+        .up-tier.on .up-price, .up-flex-card.on .up-price { color: white; }
+        .up-cycle { font-size: 13px; color: #6b7280; font-weight: 500; }
+        .up-tier.on .up-cycle, .up-flex-card.on .up-cycle { color: #94a3b8; }
+        .up-price-note { font-size: 12px; color: #6b7280; margin: 4px 0 0; min-height: 16px; }
+        .up-tier.on .up-price-note { color: #94a3b8; }
+        .up-price-note em { font-style: normal; color: #10b981; font-weight: 700; }
+        .up-features { display: flex; flex-direction: column; gap: 9px; margin: 18px 0 22px; flex: 1; }
+        .up-feature { display: flex; align-items: center; gap: 10px; font-size: 13px; color: #374151; font-weight: 500; }
+        .up-tier.on .up-feature { color: #e2e8f0; }
+        .up-tick { color: #94a3b8; flex-shrink: 0; display: flex; }
+        .up-tier.on .up-tick { color: #38bdf8; }
+        .up-tier.popular:not(.on) .up-tick { color: #1d4ed8; }
+        .up-cta { padding: 11px 18px; border-radius: 10px; border: 1px solid #e2e8f0; background: #f8fafc; color: #475569; font-size: 13px; font-weight: 700; cursor: pointer; width: 100%; transition: all 0.2s; }
+        .up-cta:hover { border-color: #93c5fd; color: #1d4ed8; }
+        .up-tier.popular:not(.on) .up-cta { background: #1d4ed8; border-color: #1d4ed8; color: white; }
+        .up-cta.on { background: #1d4ed8; border-color: #1d4ed8; color: white; }
+
+        .up-divider { display: flex; align-items: center; gap: 14px; margin: 28px 0 18px; }
+        .up-divider::before, .up-divider::after { content: ''; flex: 1; height: 1px; background: #e2e8f0; }
+        .up-divider span { font-size: 10px; font-weight: 900; letter-spacing: 1.5px; text-transform: uppercase; color: #94a3b8; }
+        .up-flex { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+        .up-flex-card { display: flex; justify-content: space-between; gap: 20px; background: white; border: 1.5px solid #e2e8f0; border-radius: 18px; padding: 22px 24px; cursor: pointer; transition: all 0.2s; }
+        .up-flex-card:hover:not(.chain) { border-color: #93c5fd; }
+        .up-flex-card.on { background: #0a1628; border-color: #1d4ed8; box-shadow: 0 18px 40px -14px rgba(10,22,40,0.4); }
+        .up-flex-card.on .up-tier-name { color: #38bdf8; }
+        .up-flex-card.chain { border-style: dashed; cursor: default; }
+        .up-flex-body { flex: 1; min-width: 0; }
+        .up-flex-text { font-size: 12.5px; color: #6b7280; line-height: 1.6; margin: 6px 0 0; }
+        .up-flex-card.on .up-flex-text { color: #94a3b8; }
+        .up-flex-side { display: flex; flex-direction: column; align-items: flex-end; justify-content: space-between; gap: 12px; flex-shrink: 0; }
+        .up-flex-side .up-cta { width: auto; white-space: nowrap; }
+
+        .up-summary { margin-top: 26px; background: #0a1628; border: 1px solid #1e293b; border-radius: 20px; padding: 22px 26px; display: flex; justify-content: space-between; align-items: center; gap: 16px; flex-wrap: wrap; }
+        .up-summary-label { font-size: 10px; font-weight: 800; color: #64748b; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 6px; }
+        .up-summary-title { font-size: 18px; font-weight: 700; color: white; }
+        .up-summary-sub { font-size: 13px; color: #94a3b8; margin-top: 4px; }
+        .up-submit { padding: 13px 28px; border-radius: 10px; border: none; background: #1d4ed8; color: white; font-size: 14px; font-weight: 700; cursor: pointer; box-shadow: 0 4px 14px rgba(29,78,216,0.3); transition: all 0.2s; }
+        .up-submit:hover { background: #1e40af; }
+        .up-footnote { margin-top: 16px; font-size: 12px; color: #94a3b8; text-align: center; line-height: 1.7; }
+        .up-footnote-meta { display: block; font-size: 11px; color: #cbd5e1; }
+
+        @media (max-width: 980px) { .up-tiers { grid-template-columns: 1fr; gap: 24px; } .up-flex { grid-template-columns: 1fr; } }
 
         .billing-toggle { background: white; padding: 4px; border-radius: 10px; display: flex; gap: 4px; border: 1px solid #e2e8f0; }
 
@@ -767,124 +836,131 @@ const SubscriptionPage = () => {
       {/* ── Upgrade Tab ── */}
       {activeTab === 'upgrade' && (
         <div style={{ width: '100%' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px', flexWrap: 'wrap', gap: '12px' }}>
-            <div>
-              <h3 style={{ fontSize: '18px', fontWeight: 700, color: '#0a1628', margin: '0 0 4px', letterSpacing: '-0.3px' }}>Choose a Plan</h3>
-              <p style={{ margin: 0, fontSize: '12px', color: '#6b7280' }}>Pay directly to our account — activated within 24 hours of review.</p>
-            </div>
-            <div className="billing-toggle">
-              {[{ key: 'monthly', label: 'Monthly' }, { key: 'yearly', label: 'Yearly', badge: '10% off' }].map(c => (
-                <button key={c.key} onClick={() => handleBillingCycle(c.key)}
-                  style={{ padding: '7px 16px', borderRadius: '7px', border: 'none', background: billingCycle === c.key ? '#0a1628' : 'transparent', color: billingCycle === c.key ? 'white' : '#6b7280', fontSize: '13px', fontWeight: 600, cursor: 'pointer', transition: 'all 0.2s', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                  {c.label}
-                  {c.badge && <span style={{ background: '#ecfdf5', color: '#10b981', fontSize: '10px', padding: '1px 6px', borderRadius: '20px', fontWeight: 700 }}>{c.badge}</span>}
-                </button>
-              ))}
+          {/* Hero + controls */}
+          <div className="up-hero">
+            <h3>Choose your plan</h3>
+            <p>Simple pricing that scales with your centre. Pay offline, activated within 24 hours of review.</p>
+            <div className="up-controls">
+              <div className="up-seg">
+                {[{ k: 'RIS', label: 'RIS' }, { k: 'PACS', label: 'Cloud PACS' }, { k: 'RIS+PACS', label: 'RIS + Cloud PACS' }].map(e => (
+                  <button key={e.k} className={editionInView === e.k ? 'on' : ''} onClick={() => setSelectedEdition(e.k)}>
+                    {e.label}
+                    {e.k === currentEdition && <span className="up-current-dot" title="Your current edition" />}
+                  </button>
+                ))}
+              </div>
+              <div className="up-seg">
+                {[{ key: 'monthly', label: 'Monthly' }, { key: 'yearly', label: 'Yearly', badge: 'Save 10%' }].map(c => (
+                  <button key={c.key} className={billingCycle === c.key ? 'on' : ''} onClick={() => handleBillingCycle(c.key)}>
+                    {c.label}
+                    {c.badge && <span className="up-save-chip">{c.badge}</span>}
+                  </button>
+                ))}
+              </div>
             </div>
           </div>
 
-          {/* Edition switcher — RIS / Cloud PACS / RIS+PACS */}
-          <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', marginBottom: '20px' }}>
-            {[{ k: 'RIS', label: 'RIS' }, { k: 'PACS', label: 'Cloud PACS' }, { k: 'RIS+PACS', label: 'RIS + Cloud PACS' }].map(e => {
-              const on = editionInView === e.k;
-              return (
-                <button key={e.k} onClick={() => { setSelectedEdition(e.k); setSelectedPlanId(null); }}
-                  style={{ padding: '8px 16px', borderRadius: '9px', border: `1px solid ${on ? '#1d4ed8' : '#e2e8f0'}`, background: on ? '#eff6ff' : 'white', color: on ? '#1d4ed8' : '#475569', fontSize: '13px', fontWeight: 700, cursor: 'pointer', transition: 'all 0.2s' }}>
-                  {e.label}{e.k === currentEdition && <span style={{ marginLeft: 6, fontSize: '10px', color: '#10b981' }}>● current</span>}
-                </button>
-              );
-            })}
-          </div>
-
-          {/* Tier cards for the edition + cycle in view */}
-          <div className="plans-grid">
+          {/* Tier cards */}
+          <div className="up-tiers">
             {editionTiers.map((p, i) => {
               const on = activePlan?.planId === p.planId;
-              const popular = i === 1; // middle tier (Growth)
+              const popular = i === 1 && editionTiers.length > 2;
               const fmt = (n) => '₹' + Number(n || 0).toLocaleString('en-IN');
+              const monthlyTwin = plans.find(x => x.edition === p.edition && x.tier === p.tier && x.name === 'Monthly' && x.billingMode !== 'PerStudy' && !x.isCustom);
+              const yearlySave = cycleName === 'Yearly' && monthlyTwin ? Math.max(0, monthlyTwin.price * 12 - p.price) : 0;
+              const tagline = { Starter: 'For solo practices getting started', Growth: 'For busy single-centre clinics', Clinic: 'For high-volume, multi-room centres' }[p.tier] || '';
               return (
-                <div key={p.planId} onClick={() => setSelectedPlanId(p.planId)}
-                  style={{ background: on ? '#0a1628' : 'white', color: on ? 'white' : '#0a1628', padding: '26px', borderRadius: '20px', border: `2px solid ${on ? '#1d4ed8' : '#e2e8f0'}`, cursor: 'pointer', position: 'relative', overflow: 'hidden', transition: 'all 0.2s', boxShadow: on ? '0 20px 40px -10px rgba(10,22,40,0.3)' : 'none' }}>
-                  {popular && <div style={{ position: 'absolute', top: '14px', right: '14px', background: '#1d4ed8', color: 'white', fontSize: '10px', fontWeight: 700, padding: '3px 10px', borderRadius: '20px' }}>POPULAR</div>}
-                  <p style={{ fontSize: '10px', fontWeight: 900, color: on ? '#38bdf8' : '#94a3b8', textTransform: 'uppercase', letterSpacing: '1.5px', margin: '0 0 12px' }}>{p.tier}</p>
-                  <div style={{ display: 'flex', alignItems: 'baseline', gap: '4px', marginBottom: '4px' }}>
-                    <span style={{ fontSize: '32px', fontWeight: 700, letterSpacing: '-1px' }}>{fmt(p.price)}</span>
-                    <span style={{ fontSize: '13px', color: on ? '#94a3b8' : '#6b7280', fontWeight: 500 }}>/ {cycleName === 'Yearly' ? 'yr' : 'mo'}</span>
+                <div key={p.planId} className={`up-tier${on ? ' on' : ''}${popular ? ' popular' : ''}`} onClick={() => setSelectedTier(p.tier)}>
+                  {popular && <div className="up-ribbon">Most popular</div>}
+                  <p className="up-tier-name">{p.tier}</p>
+                  <p className="up-tagline">{tagline}</p>
+                  <div className="up-price-row">
+                    <span className="up-price">{fmt(p.price)}</span>
+                    <span className="up-cycle">/ {cycleName === 'Yearly' ? 'year' : 'month'}</span>
                   </div>
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', margin: '18px 0' }}>
+                  <div className="up-price-note">
+                    {cycleName === 'Yearly'
+                      ? <>≈ {fmt(Math.round(p.price / 12))}/mo{yearlySave > 0 && <em> · save {fmt(yearlySave)}</em>}</>
+                      : <>billed monthly</>}
+                  </div>
+                  <div className="up-features">
                     {[
-                      `${p.maxUsers == null ? 'Unlimited' : `Up to ${p.maxUsers}`} users`,
+                      `${p.maxUsers == null ? 'Unlimited' : `Up to ${p.maxUsers}`} staff users`,
                       `${p.maxSites == null ? 'Unlimited' : p.maxSites} site${p.maxSites === 1 ? '' : 's'}`,
-                      p.includedStorageGb > 0 ? `${p.includedStorageGb} GB cloud storage` : (p.edition === 'RIS' ? 'No image storage (RIS)' : 'Storage included'),
+                      p.includedStorageGb > 0 ? `${p.includedStorageGb >= 1024 ? `${Math.round(p.includedStorageGb / 1024)} TB` : `${p.includedStorageGb} GB`} cloud DICOM storage` : (p.edition === 'RIS' ? 'PDF / JPG attachments' : 'Storage included'),
+                      'Diagnostic reporting included',
                     ].map(f => (
-                      <div key={f} style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                        <div style={{ color: on ? '#38bdf8' : '#94a3b8', flexShrink: 0 }}><Icons.Check /></div>
-                        <span style={{ fontSize: '13px', color: on ? '#e2e8f0' : '#374151', fontWeight: 500 }}>{f}</span>
+                      <div key={f} className="up-feature">
+                        <span className="up-tick"><Icons.Check /></span>
+                        <span>{f}</span>
                       </div>
                     ))}
                   </div>
-                  <button onClick={(ev) => { ev.stopPropagation(); setSelectedPlanId(p.planId); }}
-                    style={{ padding: '10px 18px', borderRadius: '9px', border: on ? 'none' : '1px solid #e2e8f0', background: on ? '#1d4ed8' : '#f8fafc', color: on ? 'white' : '#475569', fontSize: '13px', fontWeight: 700, cursor: 'pointer', width: '100%' }}>
-                    {on ? 'Selected' : 'Select'}
+                  <button className={`up-cta${on ? ' on' : ''}`} onClick={(ev) => { ev.stopPropagation(); setSelectedTier(p.tier); }}>
+                    {on ? '✓ Selected' : `Choose ${p.tier}`}
                   </button>
                 </div>
               );
             })}
-
-            {/* Pay-as-you-go card */}
-            {editionPayg && (() => {
-              const on = activePlan?.planId === editionPayg.planId;
-              return (
-                <div onClick={() => setSelectedPlanId(editionPayg.planId)}
-                  style={{ background: on ? '#0a1628' : 'white', color: on ? 'white' : '#0a1628', padding: '26px', borderRadius: '20px', border: `2px solid ${on ? '#1d4ed8' : '#e2e8f0'}`, cursor: 'pointer', transition: 'all 0.2s', boxShadow: on ? '0 20px 40px -10px rgba(10,22,40,0.3)' : 'none' }}>
-                  <p style={{ fontSize: '10px', fontWeight: 900, color: on ? '#38bdf8' : '#94a3b8', textTransform: 'uppercase', letterSpacing: '1.5px', margin: '0 0 12px' }}>Pay per study</p>
-                  <div style={{ display: 'flex', alignItems: 'baseline', gap: '4px', marginBottom: '4px' }}>
-                    <span style={{ fontSize: '32px', fontWeight: 700, letterSpacing: '-1px' }}>₹{Number(editionPayg.perStudyPrice || 0).toLocaleString('en-IN')}</span>
-                    <span style={{ fontSize: '13px', color: on ? '#94a3b8' : '#6b7280', fontWeight: 500 }}>/ finalized study</span>
-                  </div>
-                  <p style={{ margin: '14px 0 18px', color: on ? '#94a3b8' : '#6b7280', fontSize: '13px', lineHeight: 1.6 }}>
-                    No monthly base. Billed monthly in arrears for every finalized report — ideal for low or variable volume.
-                  </p>
-                  <button onClick={(ev) => { ev.stopPropagation(); setSelectedPlanId(editionPayg.planId); }}
-                    style={{ padding: '10px 18px', borderRadius: '9px', border: on ? 'none' : '1px solid #e2e8f0', background: on ? '#1d4ed8' : '#f8fafc', color: on ? 'white' : '#475569', fontSize: '13px', fontWeight: 700, cursor: 'pointer', width: '100%' }}>
-                    {on ? 'Selected' : 'Select'}
-                  </button>
-                </div>
-              );
-            })()}
-
-            {/* Chain / enterprise — contact us */}
-            {editionChain && (
-              <div style={{ background: 'white', padding: '26px', borderRadius: '20px', border: '2px dashed #e2e8f0' }}>
-                <p style={{ fontSize: '10px', fontWeight: 900, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '1.5px', margin: '0 0 12px' }}>Chain</p>
-                <div style={{ fontSize: '24px', fontWeight: 700, color: '#0a1628', marginBottom: '4px' }}>Custom</div>
-                <p style={{ margin: '14px 0 18px', color: '#6b7280', fontSize: '13px', lineHeight: 1.6 }}>
-                  Unlimited users, multi-site, and bespoke storage for hospital chains. Talk to us for a tailored quote.
-                </p>
-                <button disabled style={{ padding: '10px 18px', borderRadius: '9px', border: '1px solid #e2e8f0', background: '#f8fafc', color: '#94a3b8', fontSize: '13px', fontWeight: 700, cursor: 'default', width: '100%' }}>
-                  Contact us
-                </button>
-              </div>
-            )}
           </div>
+
+          {/* Flexible options — PAYG + Chain */}
+          {(editionPayg || editionChain) && (
+            <>
+              <div className="up-divider"><span>Flexible options</span></div>
+              <div className="up-flex">
+                {editionPayg && (() => {
+                  const on = activePlan?.planId === editionPayg.planId;
+                  return (
+                    <div className={`up-flex-card${on ? ' on' : ''}`} onClick={() => setSelectedTier('PAYG')}>
+                      <div className="up-flex-body">
+                        <p className="up-tier-name">Pay per study</p>
+                        <p className="up-flex-text">No monthly commitment — billed monthly in arrears for every finalized report. Ideal for low or variable volume.</p>
+                      </div>
+                      <div className="up-flex-side">
+                        <div className="up-price-row">
+                          <span className="up-price" style={{ fontSize: 26 }}>₹{Number(editionPayg.perStudyPrice || 0).toLocaleString('en-IN')}</span>
+                          <span className="up-cycle">/ study</span>
+                        </div>
+                        <button className={`up-cta${on ? ' on' : ''}`} onClick={(ev) => { ev.stopPropagation(); setSelectedTier('PAYG'); }}>
+                          {on ? '✓ Selected' : 'Choose PAYG'}
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })()}
+                {editionChain && (
+                  <div className="up-flex-card chain">
+                    <div className="up-flex-body">
+                      <p className="up-tier-name">Chain / Enterprise</p>
+                      <p className="up-flex-text">Unlimited users, multi-site and bespoke storage for hospital chains. Tailored quote and onboarding.</p>
+                    </div>
+                    <div className="up-flex-side">
+                      <div className="up-price-row"><span className="up-price" style={{ fontSize: 26 }}>Custom</span></div>
+                      <button className="up-cta" disabled style={{ cursor: 'default', opacity: 0.7 }}>Contact us</button>
+                    </div>
+                  </div>
+                )}
+              </div>
+            </>
+          )}
 
           {/* Selected-plan summary + submit */}
           {activePlan && (
-            <div style={{ marginTop: '24px', background: '#0a1628', borderRadius: '20px', padding: '24px', border: '1px solid #1e293b', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '16px' }}>
+            <div className="up-summary">
               <div>
-                <div style={{ fontSize: '10px', fontWeight: 800, color: '#64748b', textTransform: 'uppercase', letterSpacing: '1px', marginBottom: '6px' }}>You selected</div>
-                <div style={{ fontSize: '18px', fontWeight: 700, color: 'white' }}>
-                  {editionInView === 'PACS' ? 'Cloud PACS' : editionInView} · {activePlan.tier}
-                  {activePlan.billingMode === 'PerStudy' && ' · Pay per study'}
+                <div className="up-summary-label">You selected</div>
+                <div className="up-summary-title">
+                  {editionInView === 'PACS' ? 'Cloud PACS' : editionInView} · {activePlan.billingMode === 'PerStudy' ? 'Pay per study' : `${activePlan.tier} · ${cycleName}`}
                 </div>
                 {activePlan.billingMode === 'PerStudy' ? (
-                  <div style={{ fontSize: '13px', color: '#94a3b8', marginTop: '4px' }}>
+                  <div className="up-summary-sub">
                     {estimate?.studiesCount != null
                       ? `${estimate.studiesCount} finalized ${estimate.studiesCount === 1 ? 'study' : 'studies'} this cycle × ₹${Number(activePlan.perStudyPrice).toLocaleString('en-IN')} = ₹${Number(estimate.total || 0).toLocaleString('en-IN')} due`
                       : `₹${Number(activePlan.perStudyPrice).toLocaleString('en-IN')} per finalized study, billed monthly`}
                   </div>
                 ) : (
-                  <div style={{ fontSize: '13px', color: '#94a3b8', marginTop: '4px' }}>
+                  <div className="up-summary-sub">
                     ₹{Number(estimate?.total ?? activePlan.price).toLocaleString('en-IN')} due
                     {estimate && estimate.overageAmount > 0 && ` (incl. ₹${Number(estimate.overageAmount).toLocaleString('en-IN')} storage overage)`}
                     {' '}· per {cycleName === 'Yearly' ? 'year' : 'month'}
@@ -892,23 +968,22 @@ const SubscriptionPage = () => {
                 )}
               </div>
               {hasPending ? (
-                <div style={{ padding: '12px 18px', borderRadius: '10px', background: 'rgba(59,130,246,0.15)', color: '#93c5fd', fontSize: '13px', fontWeight: 700, border: '1px solid rgba(59,130,246,0.2)' }}>
-                  ⏳ Payment Under Review
-                </div>
+                <div className="pending-badge" style={{ alignSelf: 'center' }}>⏳ Payment Under Review</div>
               ) : (
-                <button
-                  onClick={() => setPaymentModal(billingCycle)}
-                  style={{ padding: '13px 28px', borderRadius: '10px', border: 'none', background: '#1d4ed8', color: 'white', fontSize: '14px', fontWeight: 700, cursor: 'pointer', boxShadow: '0 4px 14px rgba(29,78,216,0.3)' }}>
+                <button className="up-submit" onClick={() => setPaymentModal(billingCycle)}>
                   Submit Payment →
                 </button>
               )}
             </div>
           )}
 
-          {/* Trial footnote */}
-          <p style={{ marginTop: '16px', fontSize: '12px', color: '#94a3b8', textAlign: 'center' }}>
-            {isTrial ? 'You are on the 14-day free trial — pick a plan to continue after it ends.' : 'Pay the shown amount to the provided UPI ID, then Submit Payment with your transaction reference. Activated within 24 hours of review.'}
-          </p>
+          {/* Reassurance strip */}
+          <div className="up-footnote">
+            {isTrial
+              ? 'You are on the 14-day free trial — pick a plan to continue after it ends.'
+              : 'Pay the shown amount to the provided UPI ID, then Submit Payment with your transaction reference. Activated within 24 hours of review.'}
+            <span className="up-footnote-meta">Prices in INR · Reporting included in every plan · Upgrade or change anytime</span>
+          </div>
         </div>
       )}
     </div>

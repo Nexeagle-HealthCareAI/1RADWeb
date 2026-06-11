@@ -39,6 +39,10 @@ function forceLogout(reason) {
     // not yank the user off the page they're inspecting. Remove this guard to
     // restore the normal "expired session → login" behaviour everywhere.
     if (path.startsWith('/access-denied')) return;
+    // Public pages (registration, password reset) never bounce to /login: a
+    // stale token from an old session firing a background 401 must not yank a
+    // new user off the signup form. Storage is already cleared above.
+    if (path.startsWith('/register') || path.startsWith('/forgot-password')) return;
     if (!path.startsWith('/login')) {
       window.location.replace(`/login?reason=${reason}`);
     }
@@ -79,20 +83,32 @@ async function performTokenRefresh() {
   return newAccess;
 }
 
+// Registration-stage routes authenticate with the short-lived INITIATION token
+// minted by OTP verify — never with a (possibly stale) login session token. A
+// leftover expired 1rad_token from an old session must not shadow it, or the
+// signup flow 401s and the user gets bounced off the registration form.
+const REGISTRATION_ROUTES = ['/auth/identity-setup', '/auth/deploy-infrastructure'];
+
 // Interceptor to add Authorization header
 apiClient.interceptors.request.use((config) => {
   // Do not add auth header for public authentication routes
   const isPublicRoute = PUBLIC_AUTH_ROUTES.some(route => config.url.includes(route));
 
   if (!isPublicRoute) {
+    const isRegistrationRoute = REGISTRATION_ROUTES.some(route => config.url.includes(route));
     // Auth tokens migrated from sessionStorage to localStorage (one session
     // per browser, survives tab restarts). We still read sessionStorage as a
     // one-time fallback so an in-flight tab can finish its request after the
     // deploy without an unsolicited 401.
-    const token = localStorage.getItem('1rad_token')
-      || localStorage.getItem('1rad_initiation_token')
-      || sessionStorage.getItem('1rad_token')
-      || sessionStorage.getItem('1rad_initiation_token');
+    const token = isRegistrationRoute
+      ? (localStorage.getItem('1rad_initiation_token')
+        || sessionStorage.getItem('1rad_initiation_token')
+        || localStorage.getItem('1rad_token')
+        || sessionStorage.getItem('1rad_token'))
+      : (localStorage.getItem('1rad_token')
+        || localStorage.getItem('1rad_initiation_token')
+        || sessionStorage.getItem('1rad_token')
+        || sessionStorage.getItem('1rad_initiation_token'));
     if (token) {
       config.headers.Authorization = `Bearer ${token}`;
     }
