@@ -180,6 +180,18 @@ const DicomViewerPage = () => {
     return () => { cancelled = true; };
   }, [urlAppointmentId, urlStudyId, stateFiles, stateAllSeries, hydratedSeries, hydrationAttempt]);
 
+  // Auto-refresh while extraction is still in flight — re-fetch the manifest
+  // every few seconds (study OR appointment launch) until the slices are ready,
+  // so the user doesn't have to hit RETRY. Stops once hydrated or all-failed.
+  useEffect(() => {
+    if (hydratedSeries) return;
+    if (!urlAppointmentId && !urlStudyId) return;
+    const stillWorking = pendingExtractionAssets.some((a) => a.extractionStatus !== 'Failed');
+    if (!stillWorking) return;
+    const t = setInterval(() => setHydrationAttempt((n) => n + 1), 6000);
+    return () => clearInterval(t);
+  }, [hydratedSeries, pendingExtractionAssets, urlAppointmentId, urlStudyId]);
+
   // Effective sources — prefer navigation state, fall back to hydrated assets.
   const files          = stateFiles || (hydratedSeries && hydratedSeries.length === 1 ? hydratedSeries[0].files : null);
   const seriesName     = stateSeriesName || (hydratedSeries && hydratedSeries.length === 1 ? hydratedSeries[0].name : null);

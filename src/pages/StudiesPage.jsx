@@ -25,8 +25,10 @@ export default function StudiesPage() {
   const [modality, setModality] = useState('');
   const [studies, setStudies] = useState([]);
   const [total, setTotal] = useState(0);
+  const [page, setPage] = useState(1);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
+  const PAGE_SIZE = 50;
 
   // Upload state
   const fileInputRef = useRef(null);
@@ -35,15 +37,18 @@ export default function StudiesPage() {
 
   // Assign modal state
   const [assignFor, setAssignFor] = useState(null); // the study being assigned
+  const [assignMode, setAssignMode] = useState('patient'); // 'patient' | 'appointment'
   const [patientQuery, setPatientQuery] = useState('');
   const [patientResults, setPatientResults] = useState([]);
+  const [apptQuery, setApptQuery] = useState('');
+  const [apptResults, setApptResults] = useState([]);
   const [assignBusy, setAssignBusy] = useState(false);
 
   const fetchStudies = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
-      const params = { page: 1, pageSize: 100 };
+      const params = { page, pageSize: PAGE_SIZE };
       if (tab === TABS.INBOX) params.assigned = false;
       if (q.trim()) params.q = q.trim();
       if (modality.trim()) params.modality = modality.trim();
@@ -57,7 +62,10 @@ export default function StudiesPage() {
     } finally {
       setLoading(false);
     }
-  }, [tab, q, modality]);
+  }, [tab, q, modality, page]);
+
+  // Reset to page 1 whenever the tab or filters change.
+  useEffect(() => { setPage(1); }, [tab, q, modality]);
 
   useEffect(() => { fetchStudies(); }, [fetchStudies]);
 
@@ -100,24 +108,80 @@ export default function StudiesPage() {
     }
   }, []);
 
+  const searchAppointments = useCallback(async (term) => {
+    if (!term || term.trim().length < 2) { setApptResults([]); return; }
+    try {
+      const res = await apiClient.get('/appointments', { params: { search: term.trim() } });
+      const list = Array.isArray(res?.data) ? res.data : (res?.data?.data || res?.data?.items || []);
+      setApptResults(list.slice(0, 20));
+    } catch {
+      setApptResults([]);
+    }
+  }, []);
+
   useEffect(() => {
     const t = setTimeout(() => searchPatients(patientQuery), 300);
     return () => clearTimeout(t);
   }, [patientQuery, searchPatients]);
 
-  const assignToPatient = async (patientId) => {
+  useEffect(() => {
+    const t = setTimeout(() => searchAppointments(apptQuery), 300);
+    return () => clearTimeout(t);
+  }, [apptQuery, searchAppointments]);
+
+  const closeAssign = () => {
+    setAssignFor(null);
+    setAssignMode('patient');
+    setPatientQuery(''); setPatientResults([]);
+    setApptQuery(''); setApptResults([]);
+  };
+
+  const doAssign = async (body) => {
     if (!assignFor) return;
     setAssignBusy(true);
     try {
-      await apiClient.post(`/Study/studies/${assignFor.imagingStudyId}/assign`, { PatientId: patientId });
-      setAssignFor(null);
-      setPatientQuery('');
-      setPatientResults([]);
+      await apiClient.post(`/Study/studies/${assignFor.imagingStudyId}/assign`, body);
+      closeAssign();
       fetchStudies();
     } catch (e) {
       alert(e?.response?.data?.error || e.message || 'Assign failed.');
     } finally {
       setAssignBusy(false);
+    }
+  };
+  const assignToPatient = (patientId) => doAssign({ PatientId: patientId });
+  const assignToAppointment = (appointmentId) => doAssign({ AppointmentId: appointmentId });
+
+  const exportStudy = async (s) => {
+    try {
+      const res = await apiClient.get(`/Study/studies/${s.imagingStudyId}/export`);
+      const files = res?.data?.data?.files || [];
+      if (files.length === 0) { alert('No files available to export for this study.'); return; }
+      // Trigger a download per original file, staggered so the browser doesn't
+      // drop concurrent downloads.
+      for (const f of files) {
+        if (!f.downloadUrl) continue;
+        const a = document.createElement('a');
+        a.href = f.downloadUrl;
+        a.download = f.fileName || 'study-file';
+        a.target = '_blank';
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        await new Promise((r) => setTimeout(r, 400));
+      }
+    } catch (e) {
+      alert(e?.response?.data?.error || e.message || 'Export failed.');
+    }
+  };
+
+  const deleteStudy = async (s) => {
+    if (!window.confirm(`Delete this study and all its images?\n\n${s.patientName || 'Unknown'} · ${s.modality || '—'} · ${fmtDate(s.studyDate)}\n\nThis permanently removes the DICOM files and cannot be undone.`)) return;
+    try {
+      await apiClient.delete(`/Study/studies/${s.imagingStudyId}`);
+      fetchStudies();
+    } catch (e) {
+      alert(e?.response?.data?.error || e.message || 'Delete failed.');
     }
   };
 
@@ -205,6 +269,9 @@ export default function StudiesPage() {
                   <button style={linkBtn} disabled={s.status !== 'Ready'} onClick={() => navigate(`/dicom-viewer?studyId=${s.imagingStudyId}`)}>View</button>
                   <button style={linkBtn} onClick={() => navigate(`/reporting?studyId=${s.imagingStudyId}`)}>Report</button>
                   {isInbox(s) && <button style={linkBtn} onClick={() => setAssignFor(s)}>Assign</button>}
+                  <button style={linkBtn} onClick={() => exportStudy(s)}>Export</button>
+                  {/* Delete is PACS-only (backend blocks appointment-linked studies). */}
+                  {!s.appointmentId && <button style={dangerBtn} onClick={() => deleteStudy(s)}>Delete</button>}
                 </td>
               </tr>
             ))}
@@ -212,30 +279,71 @@ export default function StudiesPage() {
         </table>
       )}
 
+      {/* Pagination */}
+      {!loading && total > PAGE_SIZE && (
+        <div style={{ display: 'flex', gap: 8, alignItems: 'center', justifyContent: 'flex-end', marginTop: 12 }}>
+          <button style={linkBtn} disabled={page <= 1} onClick={() => setPage((p) => Math.max(1, p - 1))}>Prev</button>
+          <span style={{ color: '#8a94a6', fontSize: 13 }}>
+            Page {page} of {Math.max(1, Math.ceil(total / PAGE_SIZE))}
+          </span>
+          <button style={linkBtn} disabled={page >= Math.ceil(total / PAGE_SIZE)} onClick={() => setPage((p) => p + 1)}>Next</button>
+        </div>
+      )}
+
       {/* Assign modal */}
       {assignFor && (
-        <div style={modalBackdrop} onClick={() => setAssignFor(null)}>
+        <div style={modalBackdrop} onClick={closeAssign}>
           <div style={modalBox} onClick={(e) => e.stopPropagation()}>
-            <h3 style={{ marginTop: 0 }}>Assign study to patient</h3>
+            <h3 style={{ marginTop: 0 }}>Assign study</h3>
             <div style={{ color: '#8a94a6', fontSize: 13, marginBottom: 8 }}>
               {assignFor.patientName || 'Unknown'} · {assignFor.modality || '—'} · {fmtDate(assignFor.studyDate)}
             </div>
-            <input autoFocus placeholder="Search patient by name / MRN…" value={patientQuery}
-              onChange={(e) => setPatientQuery(e.target.value)} style={{ ...inputStyle, width: '100%', marginBottom: 8 }} />
-            <div style={{ maxHeight: 240, overflowY: 'auto' }}>
-              {patientResults.map((p) => (
-                <div key={p.patientId || p.PatientId}
-                  style={{ padding: '8px 10px', borderBottom: '1px solid #232a36', display: 'flex', justifyContent: 'space-between' }}>
-                  <span>{p.fullName || p.FullName || '—'} <span style={{ color: '#8a94a6' }}>({p.patientIdentifier || p.PatientIdentifier || 'no MRN'})</span></span>
-                  <button style={linkBtn} disabled={assignBusy} onClick={() => assignToPatient(p.patientId || p.PatientId)}>Assign</button>
-                </div>
-              ))}
-              {patientQuery.length >= 2 && patientResults.length === 0 && (
-                <div style={{ color: '#8a94a6', padding: 8 }}>No patients found.</div>
-              )}
+            <div style={{ display: 'flex', gap: 8, marginBottom: 10 }}>
+              <button style={tabStyle(assignMode === 'patient')} onClick={() => setAssignMode('patient')}>To patient</button>
+              <button style={tabStyle(assignMode === 'appointment')} onClick={() => setAssignMode('appointment')}>To appointment</button>
             </div>
+
+            {assignMode === 'patient' ? (
+              <>
+                <input autoFocus placeholder="Search patient by name / MRN…" value={patientQuery}
+                  onChange={(e) => setPatientQuery(e.target.value)} style={{ ...inputStyle, width: '100%', marginBottom: 8 }} />
+                <div style={{ maxHeight: 240, overflowY: 'auto' }}>
+                  {patientResults.map((p) => (
+                    <div key={p.patientId || p.PatientId}
+                      style={{ padding: '8px 10px', borderBottom: '1px solid #232a36', display: 'flex', justifyContent: 'space-between' }}>
+                      <span>{p.fullName || p.FullName || '—'} <span style={{ color: '#8a94a6' }}>({p.patientIdentifier || p.PatientIdentifier || 'no MRN'})</span></span>
+                      <button style={linkBtn} disabled={assignBusy} onClick={() => assignToPatient(p.patientId || p.PatientId)}>Assign</button>
+                    </div>
+                  ))}
+                  {patientQuery.length >= 2 && patientResults.length === 0 && (
+                    <div style={{ color: '#8a94a6', padding: 8 }}>No patients found.</div>
+                  )}
+                </div>
+              </>
+            ) : (
+              <>
+                <input autoFocus placeholder="Search appointment by patient / ID / mobile…" value={apptQuery}
+                  onChange={(e) => setApptQuery(e.target.value)} style={{ ...inputStyle, width: '100%', marginBottom: 8 }} />
+                <div style={{ maxHeight: 240, overflowY: 'auto' }}>
+                  {apptResults.map((a) => {
+                    const id = a.appointmentId || a.AppointmentId;
+                    return (
+                      <div key={id}
+                        style={{ padding: '8px 10px', borderBottom: '1px solid #232a36', display: 'flex', justifyContent: 'space-between' }}>
+                        <span>{a.patientName || a.PatientName || '—'} <span style={{ color: '#8a94a6' }}>({a.displayId || a.DisplayId || '—'} · {a.modality || a.Modality || '—'})</span></span>
+                        <button style={linkBtn} disabled={assignBusy} onClick={() => assignToAppointment(id)}>Assign</button>
+                      </div>
+                    );
+                  })}
+                  {apptQuery.length >= 2 && apptResults.length === 0 && (
+                    <div style={{ color: '#8a94a6', padding: 8 }}>No appointments found.</div>
+                  )}
+                </div>
+              </>
+            )}
+
             <div style={{ marginTop: 12, textAlign: 'right' }}>
-              <button style={tabStyle(false)} onClick={() => setAssignFor(null)}>Cancel</button>
+              <button style={tabStyle(false)} onClick={closeAssign}>Cancel</button>
             </div>
           </div>
         </div>
@@ -252,5 +360,6 @@ const tabStyle = (active) => ({
   background: active ? '#4f8cff' : '#1b212c', color: active ? '#fff' : '#cbd3e1',
 });
 const linkBtn = { padding: '4px 8px', marginRight: 6, borderRadius: 6, border: '1px solid #3a4252', background: '#1b212c', color: '#cbd3e1', cursor: 'pointer' };
+const dangerBtn = { padding: '4px 8px', marginRight: 6, borderRadius: 6, border: '1px solid #5a2a2a', background: '#2a1717', color: '#ff8a8a', cursor: 'pointer' };
 const modalBackdrop = { position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 };
 const modalBox = { background: '#12161d', border: '1px solid #2a3140', borderRadius: 10, padding: 20, width: 460, maxWidth: '90vw' };

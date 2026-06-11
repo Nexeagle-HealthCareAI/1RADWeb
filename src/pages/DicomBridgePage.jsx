@@ -42,7 +42,8 @@ export default function DicomBridgePage() {
   const [lastFetch, setLastFetch]   = useState(null);
   const [filterStatus, setFilter]   = useState('ALL');
   const [search, setSearch]         = useState('');
-  const [activeTab, setActiveTab]   = useState('monitor'); // 'monitor' | 'setup' | 'settings'
+  const [activeTab, setActiveTab]   = useState('monitor'); // 'monitor' | 'setup' | 'settings' | 'worklist'
+  const [consoleVendor, setConsoleVendor] = useState('ge'); // 'ge' | 'siemens' — worklist console walkthrough
   const [localConfig, setLocalConfig] = useState({ uploadMode: 'auto', autoModalities: [] });
 
   const [isMobile, setIsMobile] = useState(window.innerWidth <= 768);
@@ -761,6 +762,70 @@ WORKLIST_STATION_AETS={"CT":"GE_CT_01","DX":"GE_XR_01"}`}</pre>
                     On the GE console, open the worklist and query — today's patients should appear. Scan a test patient; in the <strong>Activity Monitor</strong> tab the new study should show <strong>100% confidence</strong> (the Accession path) instead of a fuzzy percentage.
                   </div>
                 </div>
+              </div>
+            </div>
+
+            {/* Console setup — field by field (GE / Siemens) */}
+            <div style={{ marginTop: '32px', borderTop: '1px solid #eef2f6', paddingTop: '28px' }}>
+              <div style={{ fontSize: '14px', fontWeight: 950, color: '#0a1628', marginBottom: '4px' }}>Console setup — field by field</div>
+              <div style={{ fontSize: '12px', color: '#64748b', marginBottom: '16px' }}>
+                Adding the worklist is a <strong>separate setting from the image-send destination</strong> you already use — it's the same Orthanc, just a different screen. Exact menu names vary by model and software version, but the values are identical. Pick your console:
+              </div>
+
+              {/* vendor toggle */}
+              <div style={{ display: 'flex', gap: '8px', marginBottom: '20px' }}>
+                {[{ id: 'ge', label: 'GE Console' }, { id: 'siemens', label: 'Siemens (syngo)' }].map(v => (
+                  <button
+                    key={v.id}
+                    onClick={() => setConsoleVendor(v.id)}
+                    style={{ padding: '7px 16px', borderRadius: '9px', border: '1px solid ' + (consoleVendor === v.id ? '#0f52ba' : '#e2e8f0'), background: consoleVendor === v.id ? '#0f52ba' : 'white', color: consoleVendor === v.id ? 'white' : '#475569', fontSize: '12px', fontWeight: 800, cursor: 'pointer' }}>
+                    {v.label}
+                  </button>
+                ))}
+              </div>
+
+              {/* values (same for both) */}
+              <div style={{ background: '#f8fafc', border: '1px solid #e8edf2', borderRadius: '12px', padding: '16px 18px', marginBottom: '20px' }}>
+                <div style={{ fontSize: '11px', fontWeight: 900, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '1px', marginBottom: '10px' }}>Values to enter (identical on both)</div>
+                <div style={{ fontSize: '13px', color: '#334155', lineHeight: 1.9 }}>
+                  • Service / Role: <strong>Modality Worklist (MWL)</strong> — query / SCU<br />
+                  • Remote AE Title: <code>ORTHANC</code><br />
+                  • Remote IP: the Orthanc box's IP <em>(same one images already go to)</em><br />
+                  • Remote Port: <code>4242</code><br />
+                  • Calling / Local AE Title: this machine's own AE (e.g. <code>GE_CT_01</code>)<br />
+                  • Scheduled Station AE Title: match a key in <code>WORKLIST_STATION_AETS</code>, or leave blank<br />
+                  • Default query: this Modality + Scheduled date = <strong>Today</strong>
+                </div>
+              </div>
+
+              {/* GE steps */}
+              {consoleVendor === 'ge' && (
+                <ol style={{ margin: 0, paddingLeft: '20px', fontSize: '13px', color: '#475569', lineHeight: 1.9 }}>
+                  <li>Open the service / config menu — typically <strong>Service Desktop → Connectivity</strong>, or <strong>Utilities → System Configuration → Connectivity</strong> (CT), or <strong>System → Configuration → DICOM</strong> (Definium / Brivo X-ray).</li>
+                  <li>Find the <strong>Worklist / MWL / RIS</strong> host list — this is <em>separate</em> from the Storage / Destination list you used to send images.</li>
+                  <li>Add a new host with the values above, and set its Service / Type to <strong>Worklist (MWL)</strong>.</li>
+                  <li>In the query-filter section (if present), set <strong>Modality + Today's date</strong>; set Scheduled Station AE Title to this machine's AE, or leave blank.</li>
+                  <li>Use the console's <strong>DICOM Echo / Verify / Ping</strong> button — it should pass, since storage already reaches the same host.</li>
+                  <li>Open the <strong>Worklist / Scheduled</strong> tab on the patient-registration screen and Query / Refresh — today's patients appear. Select one and scan.</li>
+                  <li style={{ color: '#94a3b8' }}>Some GE consoles require a Service-level login to edit connectivity. If the screen is locked, your GE service engineer can add the worklist host in a few minutes.</li>
+                </ol>
+              )}
+
+              {/* Siemens steps */}
+              {consoleVendor === 'siemens' && (
+                <ol style={{ margin: 0, paddingLeft: '20px', fontSize: '13px', color: '#475569', lineHeight: 1.9 }}>
+                  <li>Open <strong>Options → Configuration</strong> (the syngo Configuration Panel). On some systems it's <strong>Service → Configuration → DICOM</strong>.</li>
+                  <li>Go to <strong>Network / "Sites &amp; Nodes"</strong> (or a dedicated <strong>DICOM Worklist / RIS</strong> section).</li>
+                  <li>Add a node: Name <code>Orthanc</code>, AE Title <code>ORTHANC</code>, the IP, and Port <code>4242</code>.</li>
+                  <li>Assign the <strong>Worklist (MWL) / RIS</strong> role to that node — enable it as the scheduled-patients / worklist provider.</li>
+                  <li>Set the local AE Title and, if present, the Scheduled Station AE Title (match <code>WORKLIST_STATION_AETS</code> or leave blank); set query scope to <strong>Modality + Today</strong>.</li>
+                  <li>Use the built-in <strong>Verify / DICOM Echo</strong> to test, then open the <strong>Worklist / Scheduled patients</strong> view and Refresh.</li>
+                  <li style={{ color: '#94a3b8' }}>syngo connectivity config is usually behind service / admin rights. If the panel is locked, a Siemens engineer can add the worklist node quickly.</li>
+                </ol>
+              )}
+
+              <div style={{ marginTop: '16px', fontSize: '12px', color: '#64748b', lineHeight: 1.6 }}>
+                <strong>If the query returns nothing:</strong> the machine is probably filtering by Station AE Title. Either set that machine's station AE into <code>WORKLIST_STATION_AETS</code>, or remove the station filter on the console and query by date only.
               </div>
             </div>
 

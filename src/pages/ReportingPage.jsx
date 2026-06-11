@@ -899,17 +899,41 @@ const ReportingPage = () => {
         setOriginalAssets(hyd);
       }
 
-      // Apply any existing report for this study.
+      // Apply the server report (always set the baseline, even when empty, so
+      // the autosave lineage check works), then offer crash-recovery if a newer
+      // local draft of unsaved edits survived a refresh.
       const rBody = reportRes.data;
       const r = (rBody?.success && rBody?.data) ? rBody.data : null;
+      const serverFindings = r?.findings || '';
+      applyEditorContent(serverFindings);
+      setReportBaseline({ findings: serverFindings, rowVersion: r?.rowVersion ?? r?.RowVersion ?? null });
       if (r) {
-        const findingsHtml = r.findings || '';
-        applyEditorContent(findingsHtml);
-        setReportBaseline({ findings: findingsHtml, rowVersion: r.rowVersion ?? r.RowVersion ?? null });
         setImpression(r.impression || '');
         setAdvice(r.advice || '');
         setIsFinalized(!!r.isFinalized);
         if (r.templateId) setSelectedTemplateId(String(r.templateId));
+      }
+      try {
+        // Study mode has no service scope — the draft key matches the autosave
+        // hook's ownerKey (`study_<id>`).
+        const localDraft = await nativeStorage.get(reportDraftKey(`study_${sId}`, activeServiceId));
+        const draftDiffers = localDraft?.findings && localDraft.findings !== serverFindings;
+        // Genuine unsaved edits = the draft was based on the server content we
+        // just loaded (lineage), or it predates baseline tracking.
+        const unsaved = localDraft && (localDraft.serverBaseline === undefined || localDraft.serverBaseline === serverFindings);
+        if (draftDiffers && unsaved && !(r?.isFinalized)) {
+          const draftTs = new Date(localDraft.timestamp || 0).getTime();
+          const ageMin = Math.max(1, Math.round((Date.now() - draftTs) / 60000));
+          if (await askDraftRecovery(ageMin)) {
+            applyEditorContent(localDraft.findings || '');
+            if (localDraft.impression) setImpression(localDraft.impression);
+            if (localDraft.advice) setAdvice(localDraft.advice);
+            const dtpl = localDraft.templateId || localDraft.selectedTemplateId;
+            if (dtpl) setSelectedTemplateId(String(dtpl));
+          }
+        }
+      } catch (recoverErr) {
+        console.warn('[REPORTING] Study draft crash-recovery check failed', recoverErr);
       }
     } catch (err) {
       console.error('[REPORTING] Study context init failure', err);
